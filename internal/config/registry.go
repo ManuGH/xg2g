@@ -130,6 +130,10 @@ func buildRegistry() (*Registry, error) {
 		{Path: "api.token", Env: "XG2G_API_TOKEN", FieldPath: "APIToken", Profile: ProfileSimple, Status: StatusActive},
 		{Path: "api.tokenScopes", Env: "XG2G_API_TOKEN_SCOPES", FieldPath: "APITokenScopes", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.tokens", Env: "XG2G_API_TOKENS", FieldPath: "APITokens", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "api.playbackDecisionSecret", Env: "XG2G_PLAYBACK_DECISION_SECRET", FieldPath: "PlaybackDecisionSecret", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "api.playbackDecisionKeyId", Env: "XG2G_PLAYBACK_DECISION_KID", FieldPath: "PlaybackDecisionKeyID", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "api.playbackDecisionPreviousKeys", Env: "XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS", FieldPath: "PlaybackDecisionPreviousKeys", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "api.playbackDecisionRotationWindow", Env: "XG2G_PLAYBACK_DECISION_ROTATION_WINDOW", FieldPath: "PlaybackDecisionRotationWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Minute},
 		{Path: "api.allowedOrigins", Env: "XG2G_ALLOWED_ORIGINS", FieldPath: "AllowedOrigins", Profile: ProfileAdvanced, Status: StatusActive},
 
 		// --- EPG ---

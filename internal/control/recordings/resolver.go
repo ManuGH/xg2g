@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -120,6 +121,7 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 	// Construct Result
 	containerNorm := normalize.Token(plan.Container)
 	isMP4 := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v"
+	durationTruth := durationTruthFromPlan(plan)
 	res := PlaybackInfoResult{
 		Decision: playback.Decision{
 			Mode:     plan.Mode,
@@ -132,27 +134,20 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 			AudioCodec:            plan.AudioCodec,
 			IsMP4FastPathEligible: isMP4, // PIDE Protocol Check acts as eligibility gate
 		},
-		Reason:     string(plan.DecisionReason), // Legacy string field
-		Container:  s(plan.Container),
-		VideoCodec: s(plan.VideoCodec),
-		AudioCodec: s(plan.AudioCodec),
+		Reason:        string(plan.DecisionReason), // Legacy string field
+		DurationTruth: durationTruth,
+		Container:     s(plan.Container),
+		VideoCodec:    s(plan.VideoCodec),
+		AudioCodec:    s(plan.AudioCodec),
 	}
 
-	// Use Duration from PIDE Plan (authoritative)
-	if plan.Duration > 0 {
-		res.DurationSeconds = i64(int64(plan.Duration))
-		res.MediaInfo.Duration = plan.Duration
-
-		// Map Source for legacy observability (best effort)
-		if meta, ok := r.vodManager.GetMetadata(serviceRef); ok {
-			if float64(meta.Duration) != plan.Duration {
-				ds := DurationSourceStore
-				res.DurationSource = &ds
-			} else {
-				ds := DurationSourceCache
-				res.DurationSource = &ds
-			}
-		}
+	if sec := durationTruth.DurationSeconds(); sec != nil && *sec > 0 {
+		res.DurationSeconds = i64(*sec)
+		res.MediaInfo.Duration = float64(*sec)
+	}
+	if durationTruth.Source.Valid() && durationTruth.Source != DurationTruthSourceUnknown {
+		ds := DurationSource(durationTruth.Source)
+		res.DurationSource = &ds
 	}
 
 	return res, nil
@@ -171,4 +166,54 @@ func mapProtocolToArtifact(p playback.Protocol) playback.ArtifactKind {
 	default:
 		return playback.ArtifactNone
 	}
+}
+
+func durationTruthFromPlan(plan playback.PlaybackPlan) DurationTruth {
+	input := DurationTruthResolveInput{}
+	source := DurationTruthSource(plan.DurationSource)
+	durationSec := int64(math.Round(plan.Duration))
+
+	switch source {
+	case DurationTruthSourceMetadata:
+		input.PrimaryDurationSeconds = durationSec
+	case DurationTruthSourceFFProbe, DurationTruthSourceContainer:
+		input.SecondaryDurationSeconds = durationSec
+		input.SecondarySource = source
+	case DurationTruthSourceHeuristic:
+		input.AllowHeuristic = true
+		input.HeuristicDurationSeconds = durationSec
+	default:
+		// If source is absent/unknown but duration exists, treat as secondary best-effort.
+		if durationSec > 0 {
+			input.SecondaryDurationSeconds = durationSec
+		}
+	}
+
+	for _, reason := range plan.DurationReasons {
+		if reason == string(DurationReasonProbeFailed) {
+			input.SecondaryFailed = true
+			break
+		}
+	}
+
+	out := ResolveDurationTruth(input)
+	if conf := DurationTruthConfidence(plan.DurationConfidence); conf.Valid() {
+		out.Confidence = conf
+	}
+
+	if len(plan.DurationReasons) > 0 {
+		existing := make(map[DurationReasonCode]bool, len(out.Reasons))
+		for _, reason := range out.Reasons {
+			existing[reason] = true
+		}
+		for _, raw := range plan.DurationReasons {
+			reason := DurationReasonCode(raw)
+			if reason.Valid() && !existing[reason] {
+				out.Reasons = append(out.Reasons, reason)
+			}
+		}
+		sortDurationReasonsByPriority(out.Reasons)
+	}
+
+	return out
 }

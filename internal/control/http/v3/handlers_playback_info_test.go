@@ -1,6 +1,7 @@
 package v3
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -115,7 +116,7 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		Url             *string                     `json:"url"`
 		Seekable        *bool                       `json:"seekable,omitempty"`
 		DurationSeconds *int64                      `json:"durationSeconds,omitempty"`
-		DurationSource  *PlaybackInfoDurationSource `json:"duration_source,omitempty"`
+		DurationSource  *PlaybackInfoDurationSource `json:"durationSource,omitempty"`
 		RequestId       string                      `json:"requestId"`
 		SessionId       string                      `json:"sessionId"`
 
@@ -168,8 +169,8 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		err := json.Unmarshal(w.Body.Bytes(), &dto)
 		assert.NoError(t, err)
 
-		// Expect HLS because VP9 is not in web_conservative (H264)
-		assert.Equal(t, PlaybackInfoModeHls, dto.Mode)
+		// Expect explicit transcode mode because VP9 is not in web_conservative (H264)
+		assert.Equal(t, PlaybackInfoModeTranscode, dto.Mode)
 		require.NotNil(t, dto.Url)
 		assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", *dto.Url)
 		assert.NotEmpty(t, dto.RequestId)
@@ -231,8 +232,8 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &raw)
 	assert.NoError(t, err)
 
-	// 1. Mode uses HLS when DirectStream is selected
-	assert.Equal(t, "hls", raw["mode"])
+	// 1. Mode uses hlsjs execution when DirectStream is selected and no explicit engine hints are present
+	assert.Equal(t, "hlsjs", raw["mode"])
 	// 2. URL points at HLS playlist
 	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", raw["url"])
 
@@ -242,4 +243,191 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 	assert.Equal(t, "direct_stream", dec["mode"])
 	assert.Equal(t, "hls", dec["selectedOutputKind"])
 	assert.NotEmpty(t, dec["outputs"])
+}
+
+func TestPostRecordingPlaybackInfo_ModeFromCapabilities(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/mode_caps.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	tests := []struct {
+		name       string
+		hlsEngines []PlaybackCapabilitiesHlsEngines
+		wantMode   PlaybackInfoMode
+	}{
+		{
+			name:       "native_hls selected when native engine reported",
+			hlsEngines: []PlaybackCapabilitiesHlsEngines{PlaybackCapabilitiesHlsEnginesNative},
+			wantMode:   PlaybackInfoModeNativeHls,
+		},
+		{
+			name:       "hlsjs selected when hlsjs engine reported",
+			hlsEngines: []PlaybackCapabilitiesHlsEngines{PlaybackCapabilitiesHlsEnginesHlsjs},
+			wantMode:   PlaybackInfoModeHlsjs,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := new(MockRecordingsService)
+			svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+				Container:  "ts",
+				VideoCodec: "h264",
+				AudioCodec: "aac",
+			}, nil)
+
+			s := createTestServerDTO(svc)
+
+			body, err := json.Marshal(PlaybackCapabilities{
+				CapabilitiesVersion: 1,
+				Container:           []string{"mp4"},
+				VideoCodecs:         []string{"h264"},
+				AudioCodecs:         []string{"aac"},
+				SupportsHls:         boolPtr(true),
+				HlsEngines:          &tt.hlsEngines,
+				SupportsRange:       boolPtr(true),
+				AllowTranscode:      boolPtr(true),
+			})
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", bytes.NewReader(body))
+			s.PostRecordingPlaybackInfo(w, r, recordingID)
+
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var dto PlaybackInfo
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &dto))
+			assert.Equal(t, tt.wantMode, dto.Mode)
+			require.NotNil(t, dto.Decision)
+			assert.Equal(t, PlaybackDecisionMode("direct_stream"), dto.Decision.Mode)
+		})
+	}
+}
+
+func TestPostRecordingPlaybackInfo_DenyHasNoSelectedOutput(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/deny_no_output.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+		Container:  "mp4",
+		VideoCodec: "vp9",
+		AudioCodec: "aac",
+	}, nil)
+
+	// serverCanTranscode=false => codec mismatch must become deny.
+	cfg := config.AppConfig{}
+	s := &Server{cfg: cfg, recordingsService: svc}
+
+	hlsEngines := []PlaybackCapabilitiesHlsEngines{PlaybackCapabilitiesHlsEnginesHlsjs}
+	body, err := json.Marshal(PlaybackCapabilities{
+		CapabilitiesVersion: 1,
+		Container:           []string{"mp4"},
+		VideoCodecs:         []string{"h264"},
+		AudioCodecs:         []string{"aac"},
+		SupportsHls:         boolPtr(true),
+		HlsEngines:          &hlsEngines,
+		SupportsRange:       boolPtr(true),
+		AllowTranscode:      boolPtr(true),
+	})
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", bytes.NewReader(body))
+	s.PostRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var dto PlaybackInfo
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &dto))
+	assert.Equal(t, PlaybackInfoModeDeny, dto.Mode)
+	assert.Nil(t, dto.Url, "deny must not expose playback url")
+	require.NotNil(t, dto.Decision)
+	assert.Equal(t, PlaybackDecisionMode("deny"), dto.Decision.Mode)
+	assert.Nil(t, dto.Decision.SelectedOutputUrl, "deny must not expose selected output url")
+	assert.Nil(t, dto.Decision.SelectedOutputKind, "deny must not expose selected output kind")
+	assert.Empty(t, dto.Decision.Outputs, "deny must expose zero outputs")
+	require.NotNil(t, dto.Reason)
+	assert.NotEqual(t, PlaybackInfoReasonUnknown, *dto.Reason)
+}
+
+func TestPostRecordingPlaybackInfo_MissingHLSEnginesNoSilentFallback(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/old_client.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+		Container:  "ts",
+		VideoCodec: "h264",
+		AudioCodec: "aac",
+	}, nil)
+
+	s := createTestServerDTO(svc)
+
+	body, err := json.Marshal(PlaybackCapabilities{
+		CapabilitiesVersion: 1,
+		Container:           []string{"mp4", "ts", "mpegts"},
+		VideoCodecs:         []string{"h264"},
+		AudioCodecs:         []string{"aac"},
+		SupportsHls:         boolPtr(true),
+		SupportsRange:       boolPtr(true),
+		AllowTranscode:      boolPtr(true),
+	})
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", bytes.NewReader(body))
+	s.PostRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var dto PlaybackInfo
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &dto))
+	assert.Equal(t, PlaybackInfoModeDeny, dto.Mode)
+	assert.NotEqual(t, PlaybackInfoModeHlsjs, dto.Mode)
+	assert.NotEqual(t, PlaybackInfoModeNativeHls, dto.Mode)
+}
+
+func TestPostRecordingPlaybackInfo_DirectMP4Guard(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/direct_mp4_guard.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	// HEVC is intentionally client-compatible to trigger decision direct_play,
+	// then the v3 mode guard must fail-closed to deny.
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+		Container:  "mp4",
+		VideoCodec: "hevc",
+		AudioCodec: "aac",
+	}, nil)
+
+	s := createTestServerDTO(svc)
+
+	hlsEngines := []PlaybackCapabilitiesHlsEngines{PlaybackCapabilitiesHlsEnginesHlsjs}
+	body, err := json.Marshal(PlaybackCapabilities{
+		CapabilitiesVersion: 1,
+		Container:           []string{"mp4"},
+		VideoCodecs:         []string{"hevc"},
+		AudioCodecs:         []string{"aac"},
+		SupportsHls:         boolPtr(true),
+		HlsEngines:          &hlsEngines,
+		SupportsRange:       boolPtr(true),
+		AllowTranscode:      boolPtr(true),
+	})
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", bytes.NewReader(body))
+	s.PostRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var dto PlaybackInfo
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &dto))
+	assert.Equal(t, PlaybackInfoModeDeny, dto.Mode)
+	assert.Nil(t, dto.Url)
+	require.NotNil(t, dto.Decision)
+	assert.Equal(t, PlaybackDecisionMode("direct_play"), dto.Decision.Mode)
+	assert.Nil(t, dto.Decision.SelectedOutputUrl)
+	assert.Nil(t, dto.Decision.SelectedOutputKind)
 }

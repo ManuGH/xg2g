@@ -23,6 +23,10 @@ type intentRoutes interface {
 	CreateIntent(w http.ResponseWriter, r *http.Request)
 }
 
+type livePlaybackRoutes interface {
+	PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request)
+}
+
 type logRoutes interface {
 	GetLogs(w http.ResponseWriter, r *http.Request)
 }

@@ -18,9 +18,9 @@ echo "--- Verifying OpenAPI Drift ---"
 GENERATE_SCRIPT="$REPO_ROOT/scripts/generate-normative-snapshot.sh"
 TEMP_SNAPSHOT=$(mktemp)
 
-# Run generation to temp file (hack: modifying script slightly to output to location? 
+# Run generation to temp file (hack: modifying script slightly to output to location?
 # Or just let it overwrite and revert? No, side effects bad.)
-# Let's rely on the generate script modifying the file in place, 
+# Let's rely on the generate script modifying the file in place,
 # so we copy the committed one to a safe place, run generate on the repo file, compare, then restore?
 # Better: Make generate script accept output path.
 
@@ -36,7 +36,8 @@ if command -v jq &> /dev/null; then
     FORBIDDEN_FIELDS=$(jq -r '.entries[] | select(.category=="forbidden") | .fieldPath' "$MANIFEST_FILE")
     for FIELD in $FORBIDDEN_FIELDS; do
         FIELD_KEY="${FIELD##*.}"
-        sed -i "/^[[:space:]]*$FIELD_KEY:/d" "$TEMP_API"
+        sed -i.bak "/^[[:space:]]*$FIELD_KEY:/d" "$TEMP_API"
+        rm -f "${TEMP_API}.bak"
     done
 fi
 
@@ -64,23 +65,23 @@ FORBIDDEN_FIELDS=$(jq -r '.entries[] | select(.category=="forbidden") | .fieldPa
 
 FAILED=0
 for FIELD in $FORBIDDEN_FIELDS; do
-    # Simple grep check - strictly looking for the key in the yaml. 
+    # Simple grep check - strictly looking for the key in the yaml.
     # This is a heuristic. A real parser would be better, but this stops the bleeding.
     # We look for "  field:" or " field:" to avoid matching substrings.
     FIELD_KEY="${FIELD##*.}" # Get last part (e.g. 'outputs' from 'decision.outputs')
-    
+
     if grep -q "$FIELD_KEY:" "$SNAPSHOT_FILE"; then
          # Only fail if it's NOT marked as forbidden/legacy in the snapshot itself (if we had markers).
-         # For now, if the manifest says forbidden, it SHOULD NOT be in our normative snapshot 
-         # (if the snapshot was truly filtered). 
-         # BUT: The current snapshot is a full copy. 
+         # For now, if the manifest says forbidden, it SHOULD NOT be in our normative snapshot
+         # (if the snapshot was truly filtered).
+         # BUT: The current snapshot is a full copy.
          # SO: This check actually validates if we *filtered* the snapshot.
-         # Since we decided (implicitly) that the snapshot is the FULL API for now (copy), 
+         # Since we decided (implicitly) that the snapshot is the FULL API for now (copy),
          # we might fail here if the API *has* the forbidden fields.
-         
+
          # CORRECTION: The plan says "v3.normative.snapshot.yaml (only normative + telemetry)".
          # So we MUST filter the snapshot.
-         
+
          echo "❌ Found forbidden field '$FIELD' in normative snapshot."
          FAILED=1
     fi

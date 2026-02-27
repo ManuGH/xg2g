@@ -548,7 +548,11 @@ func TestV3Contract_HLS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rrPlaylist.Code)
 	require.Equal(t, "application/vnd.apple.mpegurl", rrPlaylist.Header().Get("Content-Type"))
+	require.Equal(t, "no-store", rrPlaylist.Header().Get("Cache-Control"))
 	require.Equal(t, playlist, rrPlaylist.Body.Bytes())
+	sanity := assertGateYPlaylistSanity(t, rrPlaylist.Body.String(), playlistSanityExpectation{expectVOD: false})
+	require.Equal(t, "fmp4", sanity.format)
+	require.Equal(t, "init.mp4", sanity.initURI)
 	validateOpenAPIResponse(t, doc, reqPlaylist, rrPlaylist, &openapi3filter.Options{
 		ExcludeResponseBody: true,
 	})
@@ -560,6 +564,9 @@ func TestV3Contract_HLS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rrTS.Code)
 	require.Equal(t, "video/mp2t", rrTS.Header().Get("Content-Type"))
+	require.Equal(t, "public, max-age=60", rrTS.Header().Get("Cache-Control"))
+	require.Equal(t, "identity", rrTS.Header().Get("Content-Encoding"))
+	require.Equal(t, "bytes", rrTS.Header().Get("Accept-Ranges"))
 	require.NotEmpty(t, rrTS.Body.Bytes())
 	validateOpenAPIResponse(t, doc, reqTS, rrTS, &openapi3filter.Options{
 		ExcludeResponseBody: true,
@@ -572,6 +579,9 @@ func TestV3Contract_HLS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rrInit.Code)
 	require.Equal(t, "video/mp4", rrInit.Header().Get("Content-Type"))
+	require.Equal(t, "public, max-age=3600", rrInit.Header().Get("Cache-Control"))
+	require.Equal(t, "identity", rrInit.Header().Get("Content-Encoding"))
+	require.Equal(t, "bytes", rrInit.Header().Get("Accept-Ranges"))
 	require.Equal(t, initSeg, rrInit.Body.Bytes())
 	require.True(t, bytes.Contains(rrInit.Body.Bytes(), []byte("ftyp")))
 	validateOpenAPIResponse(t, doc, reqInit, rrInit, &openapi3filter.Options{
@@ -585,6 +595,9 @@ func TestV3Contract_HLS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rrM4s.Code)
 	require.Equal(t, "video/mp4", rrM4s.Header().Get("Content-Type"))
+	require.Equal(t, "public, max-age=60", rrM4s.Header().Get("Cache-Control"))
+	require.Equal(t, "identity", rrM4s.Header().Get("Content-Encoding"))
+	require.Equal(t, "bytes", rrM4s.Header().Get("Accept-Ranges"))
 	require.Equal(t, mediaSeg, rrM4s.Body.Bytes())
 	require.True(t, bytes.Contains(rrM4s.Body.Bytes(), []byte("moof")))
 	require.True(t, bytes.Contains(rrM4s.Body.Bytes(), []byte("mdat")))

@@ -1,14 +1,16 @@
 import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as sdk from '../src/client-ts/sdk.gen';
+import { suppressExpectedConsoleNoise } from './helpers/consoleNoise';
 
 vi.mock('../src/client-ts/sdk.gen', async () => {
   const actual = await vi.importActual<any>('../src/client-ts/sdk.gen');
   return {
     ...actual,
-    getRecordingPlaybackInfo: vi.fn(),
+    postRecordingPlaybackInfo: vi.fn(),
+    postLivePlaybackInfo: vi.fn(),
     getSessionStatus: vi.fn(),
     postSessionHeartbeat: vi.fn(),
   };
@@ -16,15 +18,50 @@ vi.mock('../src/client-ts/sdk.gen', async () => {
 
 describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
   const originalFetch = globalThis.fetch;
+  let restoreConsoleNoise: (() => void) | null = null;
+
+  beforeAll(() => {
+    restoreConsoleNoise = suppressExpectedConsoleNoise({
+      // Expected negative-path diagnostics asserted by this suite.
+      error: [
+        /PlayerError: player\.sessionFailed: SESSION_GONE: recording_deleted/i,
+        /\[V3Player\]\[Heartbeat\] Session expired \(410\)/i
+      ],
+      warn: [
+        /Failed to stop v3 session/i,
+        /Failed to parse URL from \/api\/v3\/intents/i
+      ]
+    });
+  });
 
   beforeEach(() => {
     globalThis.fetch = vi.fn();
     vi.clearAllMocks();
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
+      if (contentType === 'application/vnd.apple.mpegurl') {
+        return 'probably';
+      }
+      return '';
+    });
+    (sdk.postLivePlaybackInfo as any).mockResolvedValue({
+      data: {
+        mode: 'native_hls',
+        requestId: 'live-decision-errors-1',
+        playbackDecisionToken: 'live-token-errors-1',
+        decision: { reasons: ['direct_stream_match'] },
+      },
+      response: { status: 200, headers: new Map() }
+    });
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    restoreConsoleNoise?.();
+    restoreConsoleNoise = null;
   });
 
   const flushMicrotasks = async () => {
@@ -33,7 +70,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
   };
 
   it('handles 409 LEASE_BUSY with Retry-After hint', async () => {
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       error: { code: 'LEASE_BUSY' },
       response: {
         status: 409,
@@ -50,7 +87,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
   });
 
   it('handles 401/403 Authentication Failure', async () => {
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       error: { title: 'Unauthorized' },
       response: {
         status: 401,
@@ -85,6 +122,17 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     });
 
     (globalThis.fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(
+          response(200, {
+            mode: 'native_hls',
+            requestId: 'live-decision-errors-410',
+            playbackDecisionToken: 'live-token-errors-410',
+            decision: { reasons: ['direct_stream_match'] }
+          })
+        );
+      }
+
       if (url.includes('/intents')) {
         const parsed = init?.body ? JSON.parse(String(init.body)) : {};
         if (parsed?.type === 'stream.start') {
@@ -154,6 +202,17 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     });
 
     (globalThis.fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(
+          response(200, {
+            mode: 'native_hls',
+            requestId: 'live-decision-errors-503',
+            playbackDecisionToken: 'live-token-errors-503',
+            decision: { reasons: ['direct_stream_match'] }
+          })
+        );
+      }
+
       if (url.includes('/intents')) {
         const parsed = init?.body ? JSON.parse(String(init.body)) : {};
         if (parsed?.type === 'stream.start') {
@@ -223,6 +282,19 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     let heartbeatCount = 0;
 
     (globalThis.fetch as any).mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            mode: 'native_hls',
+            requestId: 'live-decision-errors-heartbeat',
+            playbackDecisionToken: 'live-token-errors-heartbeat',
+            decision: { reasons: ['direct_stream_match'] }
+          })
+        });
+      }
+
       if (url.includes('/intents')) return Promise.resolve({ ok: true, status: 200, json: async () => ({ sessionId: 'sess-123' }) });
       if (url.includes('/sessions/sess-123') && !url.includes('/heartbeat')) {
         return Promise.resolve({

@@ -198,7 +198,7 @@ seg2.ts
 		json.Unmarshal(w.Body.Bytes(), &dto)
 
 		require.NotNil(t, dto.IsSeekable)
-		assert.True(t, *dto.IsSeekable, "VOD must be seekable even without PDT")
+		assert.False(t, *dto.IsSeekable, "VOD seek must be fail-closed for low-confidence heuristic duration")
 
 		require.NotNil(t, dto.DvrWindowSeconds)
 		assert.Equal(t, int64(20), *dto.DvrWindowSeconds)
@@ -243,7 +243,7 @@ seg2.ts`
 		require.NotNil(t, dto.IsSeekable)
 		assert.True(t, *dto.IsSeekable)
 
-		assert.Equal(t, PlaybackInfoModeHls, dto.Mode)
+		assert.Equal(t, PlaybackInfoModeTranscode, dto.Mode)
 
 		require.NotNil(t, dto.StartUnix)
 		start := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC).Unix()

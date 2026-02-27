@@ -63,6 +63,11 @@ var (
 		Help: "Routing decisions for stream-like requests (auto HLS vs TS vs proxy)",
 	}, []string{"decision", "reason"})
 
+	LiveIntentsPlaybackKeyTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_live_intents_playback_key_total",
+		Help: "Usage and validation outcomes for live playback decision keys in /api/v3/intents",
+	}, []string{"key", "result"})
+
 	// --- Phase 4 Metrics ---
 
 	// Enigma2ReadyDuration tracks time spent waiting for readiness check
@@ -135,6 +140,13 @@ func IncStreamRouting(decision, reason string) {
 	StreamRoutingTotal.WithLabelValues(decision, reason).Inc()
 }
 
+func IncLiveIntentsPlaybackKey(key, result string) {
+	LiveIntentsPlaybackKeyTotal.WithLabelValues(
+		normalizeLiveIntentPlaybackKeyLabel(key),
+		normalizeLiveIntentPlaybackResultLabel(result),
+	).Inc()
+}
+
 // ObserveEnigma2Ready records readiness check duration.
 func ObserveEnigma2Ready(duration time.Duration) {
 	Enigma2ReadyDuration.Observe(duration.Seconds())
@@ -153,4 +165,22 @@ func IncEnigma2InvariantViolation() {
 // IncFFmpegExit increments the ffmpeg exit counter
 func IncFFmpegExit(profile, code, reason string) {
 	FFmpegExitTotal.WithLabelValues(profile, code, reason).Inc()
+}
+
+func normalizeLiveIntentPlaybackKeyLabel(key string) string {
+	switch key {
+	case "playback_decision_token", "playback_decision_id", "both", "none":
+		return key
+	default:
+		return "unknown"
+	}
+}
+
+func normalizeLiveIntentPlaybackResultLabel(result string) string {
+	switch result {
+	case "accepted", "equal", "mismatch", "rejected_missing", "rejected_invalid":
+		return result
+	default:
+		return "unknown"
+	}
 }

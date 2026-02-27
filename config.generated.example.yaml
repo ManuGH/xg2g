@@ -3,6 +3,10 @@
 api:
   allowedOrigins: []
   listenAddr: :8088
+  playbackDecisionKeyId: ""
+  playbackDecisionPreviousKeys: []
+  playbackDecisionRotationWindow: "1"
+  playbackDecisionSecret: ""
   token: ""
   tokenScopes:
     - v3:read

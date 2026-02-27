@@ -68,14 +68,17 @@ type ResolveRequest struct {
 }
 
 type PlaybackPlan struct {
-	Mode           PlaybackMode
-	Protocol       Protocol
-	Container      string
-	VideoCodec     string
-	AudioCodec     string
-	DecisionReason ReasonCode
-	TruthReason    string
-	Duration       float64
+	Mode               PlaybackMode
+	Protocol           Protocol
+	Container          string
+	VideoCodec         string
+	AudioCodec         string
+	DecisionReason     ReasonCode
+	TruthReason        string
+	Duration           float64
+	DurationSource     string
+	DurationConfidence string
+	DurationReasons    []string
 }
 
 // MediaInfo represents pure facts about the recording (used inside PlaybackInfoResult domain).
@@ -91,15 +94,18 @@ type MediaInfo struct {
 
 // MediaTruth represents the source of truth for the media.
 type MediaTruth struct {
-	State      string // "READY", "PREPARING", "FAILED"
-	Container  string
-	VideoCodec string
-	AudioCodec string
-	Duration   float64
-	Width      int
-	Height     int
-	FPS        float64
-	Interlaced bool
+	State              string // "READY", "PREPARING", "FAILED"
+	Container          string
+	VideoCodec         string
+	AudioCodec         string
+	Duration           float64
+	DurationSource     string
+	DurationConfidence string
+	DurationReasons    []string
+	Width              int
+	Height             int
+	FPS                float64
+	Interlaced         bool
 }
 
 // PlaybackCapabilities represents the core capability set for playback decisions.

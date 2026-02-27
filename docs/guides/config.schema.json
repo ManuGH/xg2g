@@ -62,6 +62,22 @@
           "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
           "type": "string"
         },
+        "playbackDecisionKeyId": {
+          "type": "string"
+        },
+        "playbackDecisionPreviousKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "playbackDecisionRotationWindow": {
+          "default": "1",
+          "type": "string"
+        },
+        "playbackDecisionSecret": {
+          "type": "string"
+        },
         "token": {
           "description": "Bearer token for API authentication. Can also be provided via environment variable XG2G_API_TOKEN. Never logged in plaintext. Environment variables are expanded.",
           "examples": [

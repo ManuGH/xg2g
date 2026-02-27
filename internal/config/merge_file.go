@@ -33,7 +33,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if err := l.mergeFileRecordingPlayback(dst, src); err != nil {
 		return err
 	}
-	l.mergeFileAPI(dst, src)
+	if err := l.mergeFileAPI(dst, src); err != nil {
+		return err
+	}
 	l.mergeFileServer(dst, src)
 	l.mergeFileNetwork(dst, src)
 	l.mergeFileMetrics(dst, src)
@@ -159,7 +161,7 @@ func (l *Loader) mergeFileRecordingPlayback(dst *AppConfig, src *FileConfig) err
 	return nil
 }
 
-func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) {
+func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) error {
 	// API
 	if src.API.Token != "" {
 		dst.APIToken = expandEnv(src.API.Token)
@@ -169,6 +171,22 @@ func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) {
 	}
 	if len(src.API.Tokens) > 0 {
 		dst.APITokens = append([]ScopedToken(nil), src.API.Tokens...)
+	}
+	if src.API.PlaybackDecisionSecret != "" {
+		dst.PlaybackDecisionSecret = expandEnv(src.API.PlaybackDecisionSecret)
+	}
+	if src.API.PlaybackDecisionKeyID != "" {
+		dst.PlaybackDecisionKeyID = expandEnv(src.API.PlaybackDecisionKeyID)
+	}
+	if len(src.API.PlaybackDecisionPreviousKeys) > 0 {
+		dst.PlaybackDecisionPreviousKeys = append([]string(nil), src.API.PlaybackDecisionPreviousKeys...)
+	}
+	if src.API.PlaybackDecisionRotationWindow != "" {
+		d, err := time.ParseDuration(src.API.PlaybackDecisionRotationWindow)
+		if err != nil {
+			return fmt.Errorf("invalid api.playbackDecisionRotationWindow: %w", err)
+		}
+		dst.PlaybackDecisionRotationWindow = d
 	}
 	if src.API.ListenAddr != "" {
 		dst.APIListenAddr = expandEnv(src.API.ListenAddr)
@@ -191,6 +209,7 @@ func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) {
 	if len(src.API.AllowedOrigins) > 0 {
 		dst.AllowedOrigins = src.API.AllowedOrigins
 	}
+	return nil
 }
 
 func (l *Loader) mergeFileServer(dst *AppConfig, src *FileConfig) {

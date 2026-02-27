@@ -47,30 +47,33 @@ type Server struct {
 	startTime time.Time
 
 	// Core Components
-	v3Bus               bus.Bus
-	v3Store             SessionStateStore
-	resumeStore         resume.Store
-	v3Scan              ChannelScanner
-	owiFactory          receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
-	recordingPathMapper *recinfra.PathMapper
-	channelManager      *channels.Manager
-	seriesManager       *dvr.Manager
-	seriesEngine        *dvr.SeriesEngine
-	vodManager          *vod.Manager
-	resolver            recservice.Resolver // Strict V4 Resolver (Domain)
-	artifacts           artifacts.Resolver
-	epgCache            *epg.TV // EPG Cache reference
-	owiClient           *openwebif.Client
-	owiEpoch            uint64
-	configManager       *config.Manager
-	configMu            sync.Mutex // Serializes configuration updates
-	epgCacheTime        time.Time
-	epgCacheMTime       time.Time
-	epgSfg              singleflight.Group
-	receiverSfg         singleflight.Group
-	libraryService      *library.Service // Media library per ADR-ENG-002
-	admission           *admission.Controller
-	admissionState      AdmissionState
+	v3Bus                  bus.Bus
+	v3Store                SessionStateStore
+	resumeStore            resume.Store
+	v3Scan                 ChannelScanner
+	owiFactory             receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
+	recordingPathMapper    *recinfra.PathMapper
+	channelManager         *channels.Manager
+	seriesManager          *dvr.Manager
+	seriesEngine           *dvr.SeriesEngine
+	vodManager             *vod.Manager
+	resolver               recservice.Resolver // Strict V4 Resolver (Domain)
+	artifacts              artifacts.Resolver
+	epgCache               *epg.TV // EPG Cache reference
+	owiClient              *openwebif.Client
+	owiEpoch               uint64
+	configManager          *config.Manager
+	configMu               sync.Mutex // Serializes configuration updates
+	epgCacheTime           time.Time
+	epgCacheMTime          time.Time
+	epgSfg                 singleflight.Group
+	receiverSfg            singleflight.Group
+	libraryService         *library.Service // Media library per ADR-ENG-002
+	admission              *admission.Controller
+	admissionState         AdmissionState
+	liveDecisionKeyring    liveDecisionKeyring
+	liveDecisionSigningKey []byte
+	liveDecisionTTL        time.Duration
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -119,13 +122,19 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		}
 	}
 
+	liveDecisionKeyring := resolveLiveDecisionKeyring(cfg, time.Now().UTC())
+	_, signingKey, _ := liveDecisionKeyring.signingKey()
+
 	s := &Server{
-		cfg:            cfg,
-		configManager:  cfgMgr,
-		startTime:      time.Now(),
-		libraryService: librarySvc,
-		storageMonitor: NewStorageMonitor(),
-		admission:      admission.NewController(cfg),
+		cfg:                    cfg,
+		configManager:          cfgMgr,
+		startTime:              time.Now(),
+		libraryService:         librarySvc,
+		storageMonitor:         NewStorageMonitor(),
+		admission:              admission.NewController(cfg),
+		liveDecisionKeyring:    liveDecisionKeyring,
+		liveDecisionSigningKey: signingKey,
+		liveDecisionTTL:        defaultLivePlaybackDecisionTTL,
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
 	s.epgSource = &epgAdapter{s}

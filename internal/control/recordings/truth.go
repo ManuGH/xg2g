@@ -224,23 +224,31 @@ func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (p
 		return playback.MediaTruth{State: playback.StatePreparing}, nil
 	}
 
-	// Determine Final Truth Duration
-	finalDuration := float64(meta.Duration)
-	if storeDuration > 0 {
-		finalDuration = float64(storeDuration)
+	durationInput := DurationTruthResolveInput{
+		PrimaryDurationSeconds:   storeDuration,
+		SecondaryDurationSeconds: meta.Duration,
+		SecondarySource:          durationSecondarySourceFromMetadata(meta),
+	}
+	durationTruth := ResolveDurationTruth(durationInput)
+	finalDuration := float64(0)
+	if sec := durationTruth.DurationSeconds(); sec != nil {
+		finalDuration = float64(*sec)
 	}
 
 	// Return Truth
 	return playback.MediaTruth{
-		State:      playback.StateReady,
-		Container:  meta.Container,
-		VideoCodec: meta.VideoCodec,
-		AudioCodec: meta.AudioCodec,
-		Duration:   finalDuration,
-		Width:      meta.Width,
-		Height:     meta.Height,
-		FPS:        meta.FPS,
-		Interlaced: meta.Interlaced,
+		State:              playback.StateReady,
+		Container:          meta.Container,
+		VideoCodec:         meta.VideoCodec,
+		AudioCodec:         meta.AudioCodec,
+		Duration:           finalDuration,
+		DurationSource:     string(durationTruth.Source),
+		DurationConfidence: string(durationTruth.Confidence),
+		DurationReasons:    durationTruth.ReasonStrings(),
+		Width:              meta.Width,
+		Height:             meta.Height,
+		FPS:                meta.FPS,
+		Interlaced:         meta.Interlaced,
 	}, nil
 }
 
@@ -277,6 +285,14 @@ func (t *TruthProvider) resolveSource(ctx context.Context, serviceRef string) (k
 func hashSingleflightKey(kind, source string) string {
 	sum := sha256.Sum256([]byte(kind + "|" + source))
 	return hex.EncodeToString(sum[:])
+}
+
+func durationSecondarySourceFromMetadata(meta vod.Metadata) DurationTruthSource {
+	// If we have a final artifact path, duration can be treated as container-derived.
+	if meta.ArtifactPath != "" {
+		return DurationTruthSourceContainer
+	}
+	return DurationTruthSourceFFProbe
 }
 
 // --- Library Adapters (Moved from resolver.go) ---

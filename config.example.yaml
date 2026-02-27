@@ -115,6 +115,26 @@ api:
   #   - token: "read-only-token"
   #     scopes: ["v3:read"]
 
+  # Secret for signing live playback decision attestations (multi-instance safe).
+  # Recommended: at least 32 random characters.
+  # ENV: XG2G_PLAYBACK_DECISION_SECRET
+  # playbackDecisionSecret: ""
+
+  # Active key id (`kid`) for live playback decision attestations.
+  # Optional: auto-derived from secret if omitted.
+  # ENV: XG2G_PLAYBACK_DECISION_KID
+  # playbackDecisionKeyId: "kid-2026-02"
+
+  # Previous keys accepted during rotation window.
+  # Format: "<kid>:<secret>" (secret-only entries auto-derive kid).
+  # ENV: XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS
+  # playbackDecisionPreviousKeys:
+  #   - "kid-2026-01:abcdefghijklmnopqrstuvwxyz0123456789ABCDE2"
+
+  # Grace window for previous keys (duration string).
+  # ENV: XG2G_PLAYBACK_DECISION_ROTATION_WINDOW
+  # playbackDecisionRotationWindow: "10m"
+
   # API server listen address
   # ENV: XG2G_LISTEN
   listenAddr: ":8088"

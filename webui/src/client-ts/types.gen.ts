@@ -50,11 +50,25 @@ export type IntentRequest = {
      */
     idempotencyKey?: string;
     /**
-     * Additional parameters
+     * Additional parameters.
+     * Live playback attestation keys:
+     * - canonical: playback_decision_token
+     * - deprecated alias: playback_decision_id (temporary compatibility)
+     * Conflict rule:
+     * - if both keys are present and values differ, request is rejected with HTTP 400 (code INVALID_INPUT)
+     *
      */
     params?: {
         [key: string]: string;
     };
+};
+
+export type LivePlaybackInfoRequest = {
+    /**
+     * Live service reference to evaluate.
+     */
+    serviceRef: string;
+    capabilities: PlaybackCapabilities;
 };
 
 export type SessionResponse = {
@@ -115,6 +129,14 @@ export type Service = {
      * Service reference for streaming (extracted from M3U URL)
      */
     serviceRef?: string;
+    /**
+     * Video resolution (e.g. 1920x1080)
+     */
+    resolution?: string;
+    /**
+     * Video codec (e.g. h264)
+     */
+    codec?: string;
 };
 
 export type SessionRecord = {
@@ -318,8 +340,12 @@ export type StreamingConfig = {
     deliveryPolicy?: 'universal';
 };
 
-export type FeatureFlags = {
-    [key: string]: unknown;
+export type VerificationConfig = {
+    enabled?: boolean;
+    /**
+     * Drift verification interval (e.g. "1m")
+     */
+    interval?: string;
 };
 
 export type SeriesRuleRunReport = {
@@ -442,7 +468,11 @@ export type ConfigUpdate = {
     bouquets?: Array<string>;
     epg?: EpgConfig;
     picons?: PiconsConfig;
-    featureFlags?: FeatureFlags;
+    verification?: VerificationConfig;
+    /**
+     * Log level to set (debug, info, warn, error)
+     */
+    logLevel?: string;
 };
 
 export type AppConfig = {
@@ -454,7 +484,7 @@ export type AppConfig = {
     epg?: EpgConfig;
     picons?: PiconsConfig;
     streaming?: StreamingConfig;
-    featureFlags?: FeatureFlags;
+    verification?: VerificationConfig;
 };
 
 export type Bouquet = {
@@ -533,9 +563,13 @@ export type PlaybackInfo = {
      * Unique ID for the stream session. Mandatory in P3-1.
      */
     sessionId: string;
+    /**
+     * Signed short-lived attestation token required when submitting live playback_mode to /intents.
+     */
+    playbackDecisionToken?: string;
     mode: PlaybackInfoMode;
     /**
-     * Relative URL for the selected playback strategy. Optional for deny or decision-led cases.
+     * Relative URL selected by backend playback decision (manifest or media URL). Optional for deny.
      */
     url?: string;
     /**
@@ -559,10 +593,19 @@ export type PlaybackInfo = {
      */
     startUnix?: number;
     /**
-     * Duration in seconds. Omitted if unknown or preparing.
+     * Deprecated compatibility field. Prefer durationMs. Omitted if unknown or preparing.
      */
     durationSeconds?: number;
+    /**
+     * Authoritative finite duration in milliseconds. Omitted if unknown.
+     */
+    durationMs?: number;
     durationSource?: PlaybackInfoDurationSource;
+    durationConfidence?: PlaybackInfoDurationConfidence;
+    /**
+     * Machine-readable duration provenance/fallback reasons.
+     */
+    durationReasons?: Array<PlaybackInfoDurationReason>;
     resume?: ResumeSummary;
     /**
      * Truthful container name if known (e.g., ts, mp4, mkv).
@@ -581,19 +624,29 @@ export type PlaybackInfo = {
 };
 
 /**
- * Selected playback strategy output mode.
+ * Backend-selected playback execution mode.
  */
-export type PlaybackInfoMode = 'hls' | 'direct_mp4' | 'deny';
+export type PlaybackInfoMode = 'native_hls' | 'hlsjs' | 'direct_mp4' | 'transcode' | 'deny';
 
 /**
- * Source of the reported duration, when durationSeconds is present.
+ * Source of the reported duration, when durationMs is present.
  */
-export type PlaybackInfoDurationSource = 'store' | 'cache' | 'probe';
+export type PlaybackInfoDurationSource = 'source_metadata' | 'ffprobe' | 'container' | 'heuristic' | 'unknown';
+
+/**
+ * Confidence of the resolved duration.
+ */
+export type PlaybackInfoDurationConfidence = 'high' | 'medium' | 'low';
+
+/**
+ * Frozen duration reason vocabulary.
+ */
+export type PlaybackInfoDurationReason = 'duration_from_source_metadata' | 'duration_from_ffprobe' | 'duration_from_container' | 'duration_from_heuristic' | 'duration_primary_missing' | 'duration_probe_failed' | 'duration_container_missing' | 'duration_inconsistent_clamped' | 'duration_unknown_denied_seek' | 'resume_clamped_to_duration';
 
 /**
  * Reason for the playback decision.
  */
-export type PlaybackInfoReason = 'directplay_match' | 'transcode_audio' | 'transcode_video' | 'transcode_all' | 'container_mismatch' | 'unknown';
+export type PlaybackInfoReason = 'directplay_match' | 'directstream_match' | 'policy_denies_transcode' | 'container_not_supported_by_client' | 'video_codec_not_supported_by_client' | 'audio_codec_not_supported_by_client' | 'hls_not_supported_by_client' | 'no_compatible_playback_path' | 'decision_ambiguous' | 'unknown';
 
 /**
  * Client capabilities for playback decision (P4-1)
@@ -628,6 +681,10 @@ export type PlaybackCapabilities = {
      */
     supportsHls?: boolean;
     /**
+     * Available HLS playback engines measured by the client runtime.
+     */
+    hlsEngines?: Array<'native' | 'hlsjs'>;
+    /**
      * Whether client supports HTTP range requests
      */
     supportsRange?: boolean;
@@ -650,13 +707,13 @@ export type PlaybackDecision = {
      */
     mode: 'direct_play' | 'direct_stream' | 'transcode' | 'deny';
     /**
-     * The explicitly selected playback URL (backend-driven).
+     * The explicitly selected playback URL (backend-driven). Omitted for deny.
      */
-    selectedOutputUrl: string;
+    selectedOutputUrl?: string | null;
     /**
-     * The explicitly selected playback kind.
+     * The explicitly selected playback kind. Omitted for deny.
      */
-    selectedOutputKind: 'file' | 'hls';
+    selectedOutputKind?: 'file' | 'hls';
     /**
      * Selected output format
      */
@@ -922,10 +979,6 @@ export type RecordingResponse = {
     breadcrumbs?: Array<Breadcrumb>;
     directories?: Array<DirectoryItem>;
     recordings?: Array<RecordingItem>;
-};
-
-export type FeatureFlagsWritable = {
-    [key: string]: unknown;
 };
 
 export type SeriesRuleWritable = {
@@ -1198,7 +1251,7 @@ export type GetServicesResponses = {
 
 export type GetServicesResponse = GetServicesResponses[keyof GetServicesResponses];
 
-export type PostServicesByIdToggleData = {
+export type PostServicesIdToggleData = {
     body: {
         enabled?: boolean;
     };
@@ -1209,14 +1262,14 @@ export type PostServicesByIdToggleData = {
     url: '/services/{id}/toggle';
 };
 
-export type PostServicesByIdToggleErrors = {
+export type PostServicesIdToggleErrors = {
     /**
      * Service not found
      */
     404: unknown;
 };
 
-export type PostServicesByIdToggleResponses = {
+export type PostServicesIdToggleResponses = {
     /**
      * Status updated
      */
@@ -1304,7 +1357,7 @@ export type DeleteRecordingResponses = {
 
 export type DeleteRecordingResponse = DeleteRecordingResponses[keyof DeleteRecordingResponses];
 
-export type GetRecordingsByRecordingIdStatusData = {
+export type GetRecordingsRecordingIdStatusData = {
     body?: never;
     path: {
         recordingId: string;
@@ -1313,23 +1366,23 @@ export type GetRecordingsByRecordingIdStatusData = {
     url: '/recordings/{recordingId}/status';
 };
 
-export type GetRecordingsByRecordingIdStatusErrors = {
+export type GetRecordingsRecordingIdStatusErrors = {
     /**
      * Invalid recording ID
      */
     400: ApiError;
 };
 
-export type GetRecordingsByRecordingIdStatusError = GetRecordingsByRecordingIdStatusErrors[keyof GetRecordingsByRecordingIdStatusErrors];
+export type GetRecordingsRecordingIdStatusError = GetRecordingsRecordingIdStatusErrors[keyof GetRecordingsRecordingIdStatusErrors];
 
-export type GetRecordingsByRecordingIdStatusResponses = {
+export type GetRecordingsRecordingIdStatusResponses = {
     /**
      * Build status
      */
     200: RecordingBuildStatus;
 };
 
-export type GetRecordingsByRecordingIdStatusResponse = GetRecordingsByRecordingIdStatusResponses[keyof GetRecordingsByRecordingIdStatusResponses];
+export type GetRecordingsRecordingIdStatusResponse = GetRecordingsRecordingIdStatusResponses[keyof GetRecordingsRecordingIdStatusResponses];
 
 export type GetRecordingPlaybackInfoData = {
     body?: never;
@@ -2158,6 +2211,39 @@ export type CreateIntentResponses = {
 };
 
 export type CreateIntentResponse = CreateIntentResponses[keyof CreateIntentResponses];
+
+export type PostLivePlaybackInfoData = {
+    body: LivePlaybackInfoRequest;
+    path?: never;
+    query?: never;
+    url: '/live/stream-info';
+};
+
+export type PostLivePlaybackInfoErrors = {
+    /**
+     * Invalid request or capabilities
+     */
+    400: ProblemCapabilitiesInvalid;
+    /**
+     * Capabilities missing (required for v3.1+)
+     */
+    412: ProblemCapabilitiesMissing;
+    /**
+     * Decision ambiguous
+     */
+    422: ProblemDecisionAmbiguous;
+};
+
+export type PostLivePlaybackInfoError = PostLivePlaybackInfoErrors[keyof PostLivePlaybackInfoErrors];
+
+export type PostLivePlaybackInfoResponses = {
+    /**
+     * Live playback decision and info
+     */
+    200: PlaybackInfo;
+};
+
+export type PostLivePlaybackInfoResponse = PostLivePlaybackInfoResponses[keyof PostLivePlaybackInfoResponses];
 
 export type ListSessionsData = {
     body?: never;

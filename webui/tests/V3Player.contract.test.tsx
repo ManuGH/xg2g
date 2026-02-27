@@ -1,25 +1,45 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as sdk from '../src/client-ts/sdk.gen';
+import { suppressExpectedConsoleNoise } from './helpers/consoleNoise';
 
 vi.mock('../src/client-ts/sdk.gen', async () => {
   const actual = await vi.importActual<any>('../src/client-ts/sdk.gen');
   return {
     ...actual,
-    getRecordingPlaybackInfo: vi.fn(),
+    postRecordingPlaybackInfo: vi.fn(),
   };
 });
 
 describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
+  let restoreConsoleNoise: (() => void) | null = null;
+
+  beforeAll(() => {
+    restoreConsoleNoise = suppressExpectedConsoleNoise({
+      // jsdom test environment does not provide a usable HLS playback engine.
+      error: [/HLS playback engine not available/i]
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    restoreConsoleNoise?.();
+    restoreConsoleNoise = null;
   });
 
   it('fails loudly if decision exists but selectedOutputUrl is missing (governance violation)', async () => {
     // Mock a response that has forbidden 'outputs' but missing 'selectedOutputUrl'
     const mockInfo: any = {
+      mode: 'hlsjs',
       decision: {
         mode: 'direct_play',
         outputs: [{ kind: 'file', url: '/forbidden/path.mp4' }]
@@ -28,21 +48,21 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
       requestId: 'req-bad-contract'
     };
 
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
 
     render(<V3Player autoStart={true} recordingId="rec-1" />);
 
     await waitFor(async () => {
-      // Check for the specific decision-led error message within the error toast
+      // Backend must fail closed if selected output URL is missing.
       const errorToast = await screen.findByRole('alert');
-      expect(errorToast.textContent).toContain('Decision-led playback missing explicit selection');
+      expect(errorToast.textContent).toContain('Backend decision missing selectedOutputUrl');
     });
   });
 
   it('prefers normative selectedOutputUrl over legacy url', async () => {
     const mockInfo: any = {
       url: '/legacy/url.m3u8',
-      mode: 'hls',
+      mode: 'transcode',
       decision: {
         mode: 'transcode',
         selectedOutputUrl: '/normative/url.m3u8',
@@ -51,7 +71,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
       requestId: 'req-good-contract'
     };
 
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
 
     // Mock fetch to capture which URL is probed
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({

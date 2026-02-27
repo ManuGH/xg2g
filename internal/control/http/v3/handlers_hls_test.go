@@ -1,11 +1,14 @@
 package v3
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -260,4 +263,238 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			}
 		})
 	}
+}
+
+type playlistSanityExpectation struct {
+	expectVOD bool
+}
+
+type playlistSanityResult struct {
+	format      string
+	initURI     string
+	segmentURIs []string
+}
+
+func TestHLSHandlers_GateY_PlaylistAndMediaSanity(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	writeFile := func(name string, payload []byte) string {
+		t.Helper()
+		path := filepath.Join(tmpDir, name)
+		require.NoError(t, os.WriteFile(path, payload, 0644))
+		return path
+	}
+
+	tsPath := writeFile("seg_000101.ts", bytes.Repeat([]byte{0x47}, 188))
+	initPath := writeFile("init.mp4", []byte("....ftyp...."))
+	m4sPath := writeFile("seg_000001.m4s", []byte("....moof....mdat...."))
+
+	tests := []struct {
+		name        string
+		playlist    string
+		expectation playlistSanityExpectation
+	}{
+		{
+			name: "Live_TS",
+			playlist: `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:4
+#EXT-X-MEDIA-SEQUENCE:101
+#EXTINF:4.000,
+seg_000101.ts
+#EXTINF:4.000,
+seg_000102.ts
+`,
+			expectation: playlistSanityExpectation{expectVOD: false},
+		},
+		{
+			name: "VOD_fMP4",
+			playlist: `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-PLAYLIST-TYPE:VOD
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:2.000,
+seg_000001.m4s
+#EXT-X-ENDLIST
+`,
+			expectation: playlistSanityExpectation{expectVOD: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recordingID := "rec-gate-y"
+			mockRes := new(MockArtifactResolver)
+			s := &Server{artifacts: mockRes}
+
+			mockRes.
+				On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything).
+				Return(artifacts.ArtifactOK{
+					Data:    []byte(tt.playlist),
+					ModTime: now,
+					Kind:    artifacts.ArtifactKindPlaylist,
+				}, (*artifacts.ArtifactError)(nil)).
+				Once()
+
+			rrPlaylist := httptest.NewRecorder()
+			reqPlaylist := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", nil)
+			s.GetRecordingHLSPlaylist(rrPlaylist, reqPlaylist, recordingID)
+
+			require.Equal(t, http.StatusOK, rrPlaylist.Code)
+			require.Contains(t, []string{"application/vnd.apple.mpegurl", "application/x-mpegURL"}, rrPlaylist.Header().Get("Content-Type"))
+			require.Equal(t, "no-store", rrPlaylist.Header().Get("Cache-Control"))
+			require.Empty(t, rrPlaylist.Header().Get("Accept-Ranges"))
+
+			sanity := assertGateYPlaylistSanity(t, rrPlaylist.Body.String(), tt.expectation)
+
+			if sanity.initURI != "" {
+				mockRes.
+					On("ResolveSegment", mock.Anything, recordingID, sanity.initURI).
+					Return(artifacts.ArtifactOK{
+						AbsPath: initPath,
+						ModTime: now,
+						Kind:    artifacts.ArtifactKindSegmentInit,
+					}, (*artifacts.ArtifactError)(nil)).
+					Once()
+
+				rrInit := httptest.NewRecorder()
+				reqInit := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/"+sanity.initURI, nil)
+				s.GetRecordingHLSCustomSegment(rrInit, reqInit, recordingID, sanity.initURI)
+
+				require.Equal(t, http.StatusOK, rrInit.Code)
+				require.Equal(t, "video/mp4", rrInit.Header().Get("Content-Type"))
+				require.Equal(t, "public, max-age=3600", rrInit.Header().Get("Cache-Control"))
+				require.Equal(t, "bytes", rrInit.Header().Get("Accept-Ranges"))
+			}
+
+			firstSegment := sanity.segmentURIs[0]
+			segmentPath := tsPath
+			segmentKind := artifacts.ArtifactKindSegmentTS
+			if sanity.format == "fmp4" {
+				segmentPath = m4sPath
+				segmentKind = artifacts.ArtifactKindSegmentFMP4
+			}
+
+			mockRes.
+				On("ResolveSegment", mock.Anything, recordingID, firstSegment).
+				Return(artifacts.ArtifactOK{
+					AbsPath: segmentPath,
+					ModTime: now,
+					Kind:    segmentKind,
+				}, (*artifacts.ArtifactError)(nil)).
+				Once()
+
+			rrSeg := httptest.NewRecorder()
+			reqSeg := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/"+firstSegment, nil)
+			s.GetRecordingHLSCustomSegment(rrSeg, reqSeg, recordingID, firstSegment)
+
+			require.Equal(t, http.StatusOK, rrSeg.Code)
+			if sanity.format == "ts" {
+				require.Equal(t, "video/mp2t", rrSeg.Header().Get("Content-Type"))
+			} else {
+				require.Contains(t, []string{"video/mp4", "video/iso.segment"}, rrSeg.Header().Get("Content-Type"))
+			}
+			require.Equal(t, "public, max-age=60", rrSeg.Header().Get("Cache-Control"))
+			require.Equal(t, "bytes", rrSeg.Header().Get("Accept-Ranges"))
+			require.Equal(t, "identity", rrSeg.Header().Get("Content-Encoding"))
+
+			mockRes.AssertExpectations(t)
+		})
+	}
+}
+
+func assertGateYPlaylistSanity(t *testing.T, playlist string, expectation playlistSanityExpectation) playlistSanityResult {
+	t.Helper()
+
+	linesRaw := strings.Split(strings.ReplaceAll(playlist, "\r\n", "\n"), "\n")
+	lines := make([]string, 0, len(linesRaw))
+	for _, line := range linesRaw {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		lines = append(lines, trimmed)
+	}
+
+	require.NotEmpty(t, lines)
+	require.Equal(t, "#EXTM3U", lines[0], "playlist must begin with #EXTM3U")
+
+	result := playlistSanityResult{}
+
+	hasVersion := false
+	hasTargetDuration := false
+	hasMediaSequence := false
+	hasEndlist := false
+	hasPlaylistTypeVOD := false
+
+	for idx, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "#EXT-X-VERSION:"):
+			hasVersion = true
+		case strings.HasPrefix(line, "#EXT-X-TARGETDURATION:"):
+			hasTargetDuration = true
+			raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
+			value, err := strconv.Atoi(raw)
+			require.NoError(t, err, "TARGETDURATION must be integer")
+			require.Greater(t, value, 0, "TARGETDURATION must be > 0")
+		case strings.HasPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"):
+			hasMediaSequence = true
+		case strings.EqualFold(line, "#EXT-X-PLAYLIST-TYPE:VOD"):
+			hasPlaylistTypeVOD = true
+		case line == "#EXT-X-ENDLIST":
+			hasEndlist = true
+		case strings.HasPrefix(line, "#EXT-X-MAP:"):
+			result.format = "fmp4"
+			result.initURI = extractMapURI(line)
+			require.NotEmpty(t, result.initURI, "EXT-X-MAP URI must be present")
+			require.True(t, strings.HasSuffix(result.initURI, ".mp4"), "fMP4 init segment must end with .mp4")
+		case strings.HasPrefix(line, "#EXTINF:"):
+			require.Less(t, idx+1, len(lines), "EXTINF must have a following segment URI")
+			next := strings.TrimSpace(lines[idx+1])
+			require.NotEmpty(t, next, "segment URI after EXTINF must not be empty")
+			require.False(t, strings.HasPrefix(next, "#"), "segment URI must follow EXTINF directly")
+			result.segmentURIs = append(result.segmentURIs, next)
+		}
+	}
+
+	require.True(t, hasVersion, "playlist must contain EXT-X-VERSION")
+	require.True(t, hasTargetDuration, "playlist must contain EXT-X-TARGETDURATION")
+	require.NotEmpty(t, result.segmentURIs, "playlist must contain at least one segment")
+
+	if expectation.expectVOD {
+		require.True(t, hasPlaylistTypeVOD, "VOD playlist must contain EXT-X-PLAYLIST-TYPE:VOD")
+		require.True(t, hasEndlist, "VOD playlist must contain EXT-X-ENDLIST")
+	} else {
+		require.True(t, hasMediaSequence, "live playlist must contain EXT-X-MEDIA-SEQUENCE")
+		require.False(t, hasEndlist, "live playlist must not contain EXT-X-ENDLIST")
+	}
+
+	if result.format == "" {
+		result.format = "ts"
+	}
+	for _, uri := range result.segmentURIs {
+		if result.format == "fmp4" {
+			require.True(t, strings.HasSuffix(uri, ".m4s"), "fMP4 playlist segments must end with .m4s")
+			continue
+		}
+		require.True(t, strings.HasSuffix(uri, ".ts"), "TS playlist segments must end with .ts")
+	}
+
+	return result
+}
+
+func extractMapURI(line string) string {
+	const marker = `URI="`
+	idx := strings.Index(line, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := line[idx+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
 }

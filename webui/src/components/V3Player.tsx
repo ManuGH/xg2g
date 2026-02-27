@@ -18,7 +18,12 @@ import type {
 import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
+import { assertOkOrProblem, formatProblemMessage, parseProblemResponse } from '../lib/httpProblem';
 import { debugError, debugLog, debugWarn } from '../utils/logging';
+import {
+  resolveAvailableLiveEngineFromMode,
+  parseServerPlaybackMode
+} from './v3playerModeBridge';
 import styles from './V3Player.module.css';
 
 interface PlayerStats {
@@ -132,18 +137,15 @@ class PlayerError extends Error {
   }
 }
 
-async function readResponseBody(res: Response): Promise<{ json: any | null; text: string | null }> {
-  try {
-    const text = await res.text();
-    if (!text) return { json: null, text: '' };
-    try {
-      return { json: JSON.parse(text), text };
-    } catch {
-      return { json: null, text };
+function pickStringField(body: Record<string, unknown> | null, keys: string[]): string | undefined {
+  if (!body) return undefined;
+  for (const key of keys) {
+    const raw = body[key];
+    if (typeof raw === 'string' && raw.length > 0) {
+      return raw;
     }
-  } catch {
-    return { json: null, text: null };
   }
+  return undefined;
 }
 
 function V3Player(props: V3PlayerProps) {
@@ -230,7 +232,8 @@ function V3Player(props: V3PlayerProps) {
     recordingId: activeRecordingId || undefined,
     duration: durationSeconds,
     videoElement: videoRef.current,
-    isPlaying
+    isPlaying,
+    isSeekable: canSeek
   });
 
   const sleep = (ms: number): Promise<void> =>
@@ -258,18 +261,28 @@ function V3Player(props: V3PlayerProps) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   }, []);
 
+  const playbackInfoDurationSeconds = useCallback((info: PlaybackInfo): number | null => {
+    if (typeof info.durationMs === 'number' && Number.isFinite(info.durationMs) && info.durationMs > 0) {
+      return Math.floor(info.durationMs / 1000);
+    }
+    if (typeof info.durationSeconds === 'number' && Number.isFinite(info.durationSeconds) && info.durationSeconds > 0) {
+      return info.durationSeconds;
+    }
+    return null;
+  }, []);
+
   const refreshSeekableState = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     let start = 0;
     let end = 0;
-    if (playbackMode === 'VOD' && durationSeconds && durationSeconds > 0) {
-      end = durationSeconds;
+    if (playbackMode === 'VOD') {
+      if (durationSeconds && durationSeconds > 0) {
+        end = durationSeconds;
+      }
     } else if (video.seekable && video.seekable.length > 0) {
       start = video.seekable.start(0);
       end = video.seekable.end(video.seekable.length - 1);
-    } else if (Number.isFinite(video.duration) && video.duration > 0) {
-      end = video.duration;
     } else if (durationSeconds && durationSeconds > 0) {
       end = durationSeconds;
     }
@@ -280,13 +293,14 @@ function V3Player(props: V3PlayerProps) {
 
   const seekTo = useCallback((targetSeconds: number) => {
     const video = videoRef.current;
-    if (!video || !Number.isFinite(targetSeconds)) return;
+    if (!video || !Number.isFinite(targetSeconds) || !canSeek) return;
+    // visual-clamp-only: local media-element safety bounds; no persisted/server seek policy.
     let clamped = Math.max(0, targetSeconds);
     if (seekableEnd > seekableStart) {
       clamped = Math.min(Math.max(targetSeconds, seekableStart), seekableEnd);
     }
     video.currentTime = clamped;
-  }, [seekableEnd, seekableStart]);
+  }, [canSeek, seekableEnd, seekableStart]);
 
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;
@@ -420,6 +434,7 @@ function V3Player(props: V3PlayerProps) {
 
     if (!sessionIdRef.current) return;
     try {
+      // raw-fetch-justified: fire-and-forget feedback should not depend on SDK error mapping.
       await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -501,6 +516,7 @@ function V3Player(props: V3PlayerProps) {
     if (!force && stopSentRef.current === idToStop) return;
     stopSentRef.current = idToStop;
     try {
+      // raw-fetch-justified: stop-intent stays transport-explicit for best-effort teardown semantics.
       await fetch(`${apiBase}/intents`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -553,33 +569,25 @@ function V3Player(props: V3PlayerProps) {
 
         // CTO Contract (Phase 5.3): terminal sessions return 410 Gone with a problem+json body.
         if (res.status === 410) {
-          const { json, text } = await readResponseBody(res);
-          const requestId =
-            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
-            res.headers.get('X-Request-ID') ||
-            undefined;
-
-          const reason = (json && typeof json === 'object' ? (json.reason ?? json.state ?? json.code) : undefined) as
-            | string
-            | undefined;
-          const reasonDetail =
-            (json && typeof json === 'object' ? (json.reason_detail ?? json.reasonDetail ?? json.detail) : undefined) as
-              | string
-              | undefined;
+          const { body, problem } = await parseProblemResponse(res);
+          const requestId = problem?.requestId || pickStringField(body, ['requestId']) || res.headers.get('X-Request-ID') || undefined;
+          const reason = pickStringField(body, ['reason', 'state', 'code']) || problem?.code;
+          const reasonDetail = pickStringField(body, ['reason_detail', 'reasonDetail', 'detail']) || problem?.detail;
 
           const combined = `${reason ?? 'GONE'}${reasonDetail ? `: ${reasonDetail}` : ''}`;
           const details = {
             url: res.url,
             status: res.status,
             requestId,
-            code: json?.code,
-            title: json?.title,
-            detail: json?.detail,
-            session: json?.session,
-            state: json?.state,
-            reason: json?.reason,
-            reason_detail: json?.reason_detail,
-            body: json ?? text
+            type: problem?.type,
+            code: problem?.code || pickStringField(body, ['code']),
+            title: problem?.title || pickStringField(body, ['title']),
+            detail: problem?.detail || pickStringField(body, ['detail']),
+            session: body?.session,
+            state: body?.state,
+            reason: body?.reason,
+            reason_detail: body?.reason_detail,
+            body: body ?? null
           };
 
           telemetry.emit('ui.error', {
@@ -597,19 +605,20 @@ function V3Player(props: V3PlayerProps) {
         }
 
         if (!res.ok) {
-          const { json, text } = await readResponseBody(res);
-          const requestId =
-            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
-            res.headers.get('X-Request-ID') ||
-            undefined;
-          throw new PlayerError(`${t('player.failedToFetchSession')} (HTTP ${res.status})`, {
+          const { body, problem } = await parseProblemResponse(res);
+          const requestId = problem?.requestId || pickStringField(body, ['requestId']) || res.headers.get('X-Request-ID') || undefined;
+          const fallback = `${t('player.failedToFetchSession')} (HTTP ${res.status})`;
+          const problemMsg = formatProblemMessage(problem, fallback);
+          const message = problem ? `${fallback}: ${problemMsg}` : fallback;
+          throw new PlayerError(message, {
             url: res.url,
             status: res.status,
             requestId,
-            code: json?.code,
-            title: json?.title,
-            detail: json?.detail,
-            body: json ?? text
+            type: problem?.type,
+            code: problem?.code || pickStringField(body, ['code']),
+            title: problem?.title || pickStringField(body, ['title']),
+            detail: problem?.detail || pickStringField(body, ['detail']),
+            body: body ?? null
           });
         }
 
@@ -742,6 +751,7 @@ function V3Player(props: V3PlayerProps) {
       });
 
       hls.on(Hls.Events.FRAG_LOADED, (_e, data: FragLoadedData) => {
+        // duration-display-only: fragment duration is telemetry/debug stats, never playback truth.
         debugLog('[V3Player] HLS Frag Loaded', { sn: data.frag.sn, dur: data.frag.duration });
 
         // Ensure stats are current
@@ -752,6 +762,7 @@ function V3Player(props: V3PlayerProps) {
 
         setStats(prev => ({
           ...prev,
+          // duration-display-only: UI buffer widget only.
           buffer: Math.round(data.frag.duration * 100) / 100,
           levelIndex: hls.currentLevel // Force sync
         }));
@@ -915,6 +926,13 @@ function V3Player(props: V3PlayerProps) {
     activeRecordingRef.current = id;
     setActiveRecordingId(id);
     setVodStreamMode(null);
+    setCanSeek(false);
+    setSeekableStart(0);
+    setSeekableEnd(0);
+    setCurrentPlaybackTime(0);
+    setDurationSeconds(null);
+    setResumeState(null);
+    setShowResumeOverlay(false);
     clearVodRetry();
     clearVodFetch();
     resetPlaybackEngine();
@@ -1001,15 +1019,15 @@ function V3Player(props: V3PlayerProps) {
           });
           throw new Error('Backend decision missing mode');
         }
-        mode = pInfo.mode;
-
-        if (!['native_hls', 'hlsjs', 'direct_mp4', 'transcode', 'deny'].includes(mode)) {
+        const parsedMode = parseServerPlaybackMode(pInfo.mode);
+        if (!parsedMode) {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.mode.invalid',
-            reason: String(mode)
+            reason: String(pInfo.mode)
           });
-          throw new Error(`Unsupported backend playback mode: ${mode}`);
+          throw new Error(`Unsupported backend playback mode: ${String(pInfo.mode)}`);
         }
+        mode = parsedMode;
         if (mode === 'deny') {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.mode.deny',
@@ -1042,8 +1060,11 @@ function V3Player(props: V3PlayerProps) {
         setVodStreamMode(mode as any);
 
         // Truth Consumption
-        if (pInfo.durationSeconds && pInfo.durationSeconds > 0) {
-          setDurationSeconds(pInfo.durationSeconds);
+        const resolvedDuration = playbackInfoDurationSeconds(pInfo);
+        if (resolvedDuration && resolvedDuration > 0) {
+          setDurationSeconds(resolvedDuration);
+        } else {
+          setDurationSeconds(null);
         }
 
         if (pInfo.requestId) setTraceId(pInfo.requestId);
@@ -1051,8 +1072,8 @@ function V3Player(props: V3PlayerProps) {
         if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
 
         // Resume State
-        if (pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
-          const d = pInfo.resume.durationSeconds || (pInfo.durationSeconds || 0);
+        if (pInfo.resume && pInfo.isSeekable !== false && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
+          const d = pInfo.resume.durationSeconds || (resolvedDuration || 0);
           if (!d || pInfo.resume.posSeconds < d - 10) {
             setResumeState({
               posSeconds: pInfo.resume.posSeconds,
@@ -1129,7 +1150,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie, gatherPlaybackCapabilities]);
+  }, [apiBase, authHeaders, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie, gatherPlaybackCapabilities, playbackInfoDurationSeconds]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -1190,6 +1211,7 @@ function V3Player(props: V3PlayerProps) {
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
 
         const requestCaps = await gatherPlaybackCapabilities();
+        // raw-fetch-justified: fail-closed live contract path is asserted via explicit fetch transport in tests.
         const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
           method: 'POST',
           headers: authHeaders(true),
@@ -1203,9 +1225,7 @@ function V3Player(props: V3PlayerProps) {
           setError(t('player.authFailed'));
           return;
         }
-        if (!liveResponse.ok) {
-          throw new Error(`${t('player.apiError')}: ${liveResponse.status}`);
-        }
+        await assertOkOrProblem(liveResponse, `${t('player.apiError')}: ${liveResponse.status}`);
         const liveInfo = (await liveResponse.json()) as PlaybackInfo;
 
         if (!liveInfo?.mode) {
@@ -1216,14 +1236,15 @@ function V3Player(props: V3PlayerProps) {
           throw new Error('Backend live decision missing mode');
         }
 
-        liveMode = liveInfo.mode;
-        if (!['native_hls', 'hlsjs', 'direct_mp4', 'transcode', 'deny'].includes(liveMode)) {
+        const parsedLiveMode = parseServerPlaybackMode(liveInfo.mode);
+        if (!parsedLiveMode) {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.live.mode.invalid',
-            reason: String(liveMode)
+            reason: String(liveInfo.mode)
           });
-          throw new Error(`Unsupported backend live playback mode: ${liveMode}`);
+          throw new Error(`Unsupported backend live playback mode: ${String(liveInfo.mode)}`);
         }
+        liveMode = parsedLiveMode;
 
         if (!liveInfo.requestId) {
           telemetry.emit('ui.failclosed', {
@@ -1253,23 +1274,26 @@ function V3Player(props: V3PlayerProps) {
           throw new Error('Backend live decision missing playbackDecisionToken');
         }
 
-        if (liveMode === 'native_hls') {
-          liveEngine = 'native';
-        } else if (liveMode === 'hlsjs' || liveMode === 'transcode') {
-          liveEngine = 'hlsjs';
-        } else {
+        const liveEngineAvailability = {
+          native: !!requestCaps.hlsEngines?.includes('native'),
+          hlsjs: !!requestCaps.hlsEngines?.includes('hlsjs')
+        };
+        const mappedEngine = resolveAvailableLiveEngineFromMode(liveMode, liveEngineAvailability);
+        if (!mappedEngine) {
           telemetry.emit('ui.failclosed', {
-            context: 'V3Player.live.mode.unsupported',
-            reason: liveMode
+            context: 'V3Player.live.engine.unavailable',
+            reason: `${liveMode}|native=${liveEngineAvailability.native}|hlsjs=${liveEngineAvailability.hlsjs}`
           });
-          throw new Error(`Unsupported live playback mode: ${liveMode}`);
+          throw new Error(`Live playback engine unavailable for mode: ${liveMode}`);
         }
+        liveEngine = mappedEngine;
 
         telemetry.emit('ui.contract.consumed', {
           mode: 'backend',
           fields: ['mode']
         });
 
+        // raw-fetch-justified: start-intent parses status/retry headers directly for contract-accurate UX.
         const res = await fetch(`${apiBase}/intents`, {
           method: 'POST',
           headers: authHeaders(true),
@@ -1312,7 +1336,7 @@ function V3Player(props: V3PlayerProps) {
           return;
         }
 
-        if (!res.ok) throw new Error(`${t('player.apiError')}: ${res.status}`);
+        await assertOkOrProblem(res, `${t('player.apiError')}: ${res.status}`);
         const data: V3SessionResponse = await res.json();
         newSessionId = data.sessionId;
         if (data.requestId) setTraceId(data.requestId);
@@ -1438,6 +1462,7 @@ function V3Player(props: V3PlayerProps) {
 
     const timerId = setInterval(async () => {
       try {
+        // raw-fetch-justified: heartbeat endpoint is internal session lease control without generated SDK helper.
         const res = await fetch(`${apiBase}/sessions/${sessionId}/heartbeat`, {
           method: 'POST',
           headers: authHeaders(true)
@@ -1870,7 +1895,9 @@ function V3Player(props: V3PlayerProps) {
         : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
       : '';
 
+  // display-only: timeline window normalization for slider rendering.
   const windowDuration = Math.max(0, seekableEnd - seekableStart);
+  // display-only: slider rendering normalization only.
   const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart));
   const hasSeekWindow = canSeek && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';

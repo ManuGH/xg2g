@@ -221,6 +221,32 @@ func Validate(cfg AppConfig) error {
 			v.AddError("APITokenScopes", "unknown scope", scope)
 		}
 	}
+	if secret := strings.TrimSpace(cfg.PlaybackDecisionSecret); secret != "" && len(secret) < 32 {
+		v.AddError("PlaybackDecisionSecret", "must be at least 32 characters", "")
+	}
+	if kid := normalizePlaybackDecisionKeyID(cfg.PlaybackDecisionKeyID); strings.TrimSpace(cfg.PlaybackDecisionKeyID) != "" && kid == "" {
+		v.AddError("PlaybackDecisionKeyID", "must match [a-z0-9._-]+", cfg.PlaybackDecisionKeyID)
+	}
+	if cfg.PlaybackDecisionRotationWindow < 0 {
+		v.AddError("PlaybackDecisionRotationWindow", "must be >= 0", cfg.PlaybackDecisionRotationWindow)
+	}
+	if len(cfg.PlaybackDecisionPreviousKeys) > 0 && cfg.PlaybackDecisionRotationWindow <= 0 {
+		v.AddError("PlaybackDecisionRotationWindow", "must be > 0 when PlaybackDecisionPreviousKeys are configured", cfg.PlaybackDecisionRotationWindow)
+	}
+	for _, raw := range cfg.PlaybackDecisionPreviousKeys {
+		keyID, secret := parsePlaybackDecisionPreviousKey(raw)
+		if len(secret) == 0 {
+			v.AddError("PlaybackDecisionPreviousKeys", "entry must be <kid>:<secret> or <secret>", raw)
+			continue
+		}
+		if keyID != "" && normalizePlaybackDecisionKeyID(keyID) == "" {
+			v.AddError("PlaybackDecisionPreviousKeys", "key id must match [a-z0-9._-]+", raw)
+			continue
+		}
+		if len(secret) < 32 {
+			v.AddError("PlaybackDecisionPreviousKeys", "secret must be at least 32 characters", raw)
+		}
+	}
 	seenTokens := map[string]struct{}{}
 	for _, token := range cfg.APITokens {
 		tokenVal := strings.TrimSpace(token.Token)
@@ -362,4 +388,38 @@ func Validate(cfg AppConfig) error {
 	}
 
 	return nil
+}
+
+func parsePlaybackDecisionPreviousKey(raw string) (keyID string, secret string) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", ""
+	}
+	idx := strings.Index(value, ":")
+	if idx < 0 {
+		return "", strings.TrimSpace(value)
+	}
+	keyID = strings.TrimSpace(value[:idx])
+	secret = strings.TrimSpace(value[idx+1:])
+	return keyID, secret
+}
+
+func normalizePlaybackDecisionKeyID(raw string) string {
+	keyID := strings.ToLower(strings.TrimSpace(raw))
+	if keyID == "" {
+		return ""
+	}
+	for _, ch := range keyID {
+		if ch >= 'a' && ch <= 'z' {
+			continue
+		}
+		if ch >= '0' && ch <= '9' {
+			continue
+		}
+		if ch == '_' || ch == '-' || ch == '.' {
+			continue
+		}
+		return ""
+	}
+	return keyID
 }

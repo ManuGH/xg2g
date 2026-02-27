@@ -100,13 +100,7 @@ type PlaybackInfoInput struct {
 	Profile     PlaybackProfile
 }
 
-type DurationSource string
-
-const (
-	DurationSourceStore DurationSource = "store"
-	DurationSourceCache DurationSource = "cache"
-	DurationSourceProbe DurationSource = "probe"
-)
+type DurationSource = DurationTruthSource
 
 type PlaybackInfoResult struct {
 	Decision        playback.Decision
@@ -114,6 +108,7 @@ type PlaybackInfoResult struct {
 	Reason          string
 	DurationSeconds *int64
 	DurationSource  *DurationSource
+	DurationTruth   DurationTruth
 	Container       *string
 	VideoCodec      *string
 	AudioCodec      *string

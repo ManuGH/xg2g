@@ -162,11 +162,17 @@ func TestContract_PlaybackInfo_UpstreamError(t *testing.T) {
 	assert.Equal(t, "recordings/upstream", prob.Type)
 }
 
-func TestInvariant_SuccessAlwaysSeekable(t *testing.T) {
+func TestInvariant_SeekabilityFollowsDurationTruth(t *testing.T) {
 	svc := new(MockRecordingsService)
 
-	// Case 1: Direct Play
+	// Case 1: finite duration truth present -> seekable true
 	svc.On("GetMediaTruth", mock.Anything, validRecordingID).Return(playback.MediaTruth{
+		Duration:           1800,
+		DurationSource:     string(recordings.DurationTruthSourceMetadata),
+		DurationConfidence: string(recordings.DurationTruthConfidenceHigh),
+		DurationReasons: []string{
+			string(recordings.DurationReasonFromSourceMetadata),
+		},
 		Container:  "mp4",
 		VideoCodec: "h264",
 		AudioCodec: "aac",
@@ -182,9 +188,9 @@ func TestInvariant_SuccessAlwaysSeekable(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &dto)
 	seekable, ok := dto["isSeekable"].(bool)
 	assert.True(t, ok, "isSeekable field missing or not bool")
-	assert.True(t, seekable, "isSeekable must be true for 200 responses (Fail Close otherwise)")
+	assert.True(t, seekable, "isSeekable must be true when finite high-confidence duration exists")
 
-	// Case 2: HLS (Transcode)
+	// Case 2: no finite duration truth -> seekable false (fail-closed)
 	svc.On("GetMediaTruth", mock.Anything, validRecordingID).Return(playback.MediaTruth{
 		Container:  "ts",
 		VideoCodec: "h264",
@@ -198,5 +204,5 @@ func TestInvariant_SuccessAlwaysSeekable(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &dto)
 	seekable, ok = dto["isSeekable"].(bool)
 	assert.True(t, ok, "isSeekable field missing or not bool")
-	assert.True(t, seekable, "isSeekable must be true for 200 responses (Fail Close otherwise)")
+	assert.False(t, seekable, "isSeekable must fail closed when duration truth is unknown")
 }

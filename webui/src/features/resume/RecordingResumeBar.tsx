@@ -3,6 +3,7 @@ import type { ResumeSummary } from './types';
 import styles from './resume.module.css';
 
 function clamp(n: number, min: number, max: number) {
+  // display-only: progress-bar normalization for rendering.
   return Math.max(min, Math.min(max, n));
 }
 
@@ -41,6 +42,7 @@ export default function RecordingResumeBar(props: {
 
   const percent = useMemo(() => {
     if (!d || d <= 0) return 0;
+    // display-only: normalize bar width percentage in UI.
     return Math.round(clamp(resume.posSeconds / d, 0, 1) * 100);
   }, [resume.posSeconds, d]);
 

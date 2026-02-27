@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
-import { Capabilities } from '../contracts/PolicyEngine';
+
+type Capabilities = Record<string, string | boolean | undefined>;
 
 // Default to V3 Legacy (No strict contracts)
 const DEFAULT_CAPABILITIES: Capabilities = {

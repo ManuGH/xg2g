@@ -10,9 +10,10 @@ interface UseResumeProps {
   duration?: number | null;
   videoElement: HTMLVideoElement | null;
   isPlaying: boolean;
+  isSeekable?: boolean;
 }
 
-export function useResume({ recordingId, duration, videoElement, isPlaying }: UseResumeProps) {
+export function useResume({ recordingId, duration, videoElement, isPlaying, isSeekable = true }: UseResumeProps) {
   const lastSavedTime = useRef<number>(0);
   const saveTimerRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
@@ -24,12 +25,13 @@ export function useResume({ recordingId, duration, videoElement, isPlaying }: Us
 
   const save = useCallback(async (forceFinished: boolean = false) => {
     if (!recordingId || !videoElement) return;
+    if (!isSeekable) return;
 
     // Prevent overwriting finished state unless forced
     if (finishedRef.current && !forceFinished) return;
 
     const currentTime = videoElement.currentTime;
-    const durationSec = duration || videoElement.duration;
+    const durationSec = duration && duration > 0 ? duration : 0;
 
     // Safety check: don't save 0 if we haven't started (unless forceFinished)
     if (currentTime < 1 && !forceFinished) return;
@@ -43,18 +45,18 @@ export function useResume({ recordingId, duration, videoElement, isPlaying }: Us
     try {
       await saveResume(recordingId, {
         position: currentTime,
-        total: durationSec || undefined,
+        total: durationSec > 0 ? durationSec : undefined,
         finished: isFinished
       });
       lastSavedTime.current = currentTime;
     } catch (err) {
       debugWarn('[useResume] Failed to save resume state', formatError(err));
     }
-  }, [recordingId, videoElement, duration]);
+  }, [recordingId, videoElement, duration, isSeekable]);
 
   // Periodic Save
   useEffect(() => {
-    if (!isPlaying || !recordingId) {
+    if (!isPlaying || !recordingId || !isSeekable) {
       if (saveTimerRef.current) {
         window.clearInterval(saveTimerRef.current);
         saveTimerRef.current = null;
@@ -72,11 +74,11 @@ export function useResume({ recordingId, duration, videoElement, isPlaying }: Us
         saveTimerRef.current = null;
       }
     };
-  }, [isPlaying, recordingId, save]);
+  }, [isPlaying, recordingId, isSeekable, save]);
 
   // Event Listeners (Pause, Ended, Seeking)
   useEffect(() => {
-    if (!videoElement || !recordingId) return;
+    if (!videoElement || !recordingId || !isSeekable) return;
 
     const handlePause = () => save();
     const handleEnded = () => save(true);
@@ -103,5 +105,5 @@ export function useResume({ recordingId, duration, videoElement, isPlaying }: Us
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [videoElement, recordingId, save]);
+  }, [videoElement, recordingId, isSeekable, save]);
 }

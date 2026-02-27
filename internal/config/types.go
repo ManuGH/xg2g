@@ -146,12 +146,16 @@ type ScopedToken struct {
 
 // APIConfig holds API server configuration
 type APIConfig struct {
-	Token          string          `yaml:"token,omitempty"`
-	TokenScopes    []string        `yaml:"tokenScopes,omitempty"`
-	Tokens         []ScopedToken   `yaml:"tokens,omitempty"`
-	ListenAddr     string          `yaml:"listenAddr,omitempty"`
-	RateLimit      RateLimitConfig `yaml:"rateLimit,omitempty"`
-	AllowedOrigins []string        `yaml:"allowedOrigins,omitempty"`
+	Token                          string          `yaml:"token,omitempty"`
+	TokenScopes                    []string        `yaml:"tokenScopes,omitempty"`
+	Tokens                         []ScopedToken   `yaml:"tokens,omitempty"`
+	PlaybackDecisionSecret         string          `yaml:"playbackDecisionSecret,omitempty"`
+	PlaybackDecisionKeyID          string          `yaml:"playbackDecisionKeyId,omitempty"`
+	PlaybackDecisionPreviousKeys   []string        `yaml:"playbackDecisionPreviousKeys,omitempty"`
+	PlaybackDecisionRotationWindow string          `yaml:"playbackDecisionRotationWindow,omitempty"`
+	ListenAddr                     string          `yaml:"listenAddr,omitempty"`
+	RateLimit                      RateLimitConfig `yaml:"rateLimit,omitempty"`
+	AllowedOrigins                 []string        `yaml:"allowedOrigins,omitempty"`
 }
 
 // ServerFileConfig holds HTTP server runtime settings in YAML.
@@ -271,25 +275,29 @@ type BreakerConfig struct {
 
 // AppConfig holds all configuration for the application
 type AppConfig struct {
-	Version           string
-	ConfigVersion     string
-	ConfigStrict      bool
-	DataDir           string
-	LogLevel          string
-	LogService        string
-	Bouquet           string // Comma-separated list of bouquets (empty = all)
-	XMLTVPath         string
-	PiconBase         string
-	FuzzyMax          int
-	APIToken          string // Optional: for securing API endpoints (e.g., /api/v3/*)
-	APITokenScopes    []string
-	APITokens         []ScopedToken
-	apiTokensParseErr error
-	APIListenAddr     string // Optional: API listen address (if set via config.yaml)
-	Server            ServerRuntimeConfig
-	TrustedProxies    string // Comma-separated list of trusted CIDRs
-	MetricsEnabled    bool   // Optional: enable Prometheus metrics server
-	MetricsAddr       string // Optional: metrics listen address (if enabled)
+	Version                        string
+	ConfigVersion                  string
+	ConfigStrict                   bool
+	DataDir                        string
+	LogLevel                       string
+	LogService                     string
+	Bouquet                        string // Comma-separated list of bouquets (empty = all)
+	XMLTVPath                      string
+	PiconBase                      string
+	FuzzyMax                       int
+	APIToken                       string // Optional: for securing API endpoints (e.g., /api/v3/*)
+	APITokenScopes                 []string
+	APITokens                      []ScopedToken
+	PlaybackDecisionSecret         string
+	PlaybackDecisionKeyID          string
+	PlaybackDecisionPreviousKeys   []string
+	PlaybackDecisionRotationWindow time.Duration
+	apiTokensParseErr              error
+	APIListenAddr                  string // Optional: API listen address (if set via config.yaml)
+	Server                         ServerRuntimeConfig
+	TrustedProxies                 string // Comma-separated list of trusted CIDRs
+	MetricsEnabled                 bool   // Optional: enable Prometheus metrics server
+	MetricsAddr                    string // Optional: metrics listen address (if enabled)
 
 	// EPG Configuration
 	EPGEnabled         bool

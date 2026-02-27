@@ -51,9 +51,11 @@ transcoder.tar.gz
 .env
 .env.*
 !.env.example
+.venv/
 config.yaml
 config.yml
 node_modules/
+.node_modules_partial_*/
 webui/dist/
 webui/node_modules/
 internal/control/http/ui/

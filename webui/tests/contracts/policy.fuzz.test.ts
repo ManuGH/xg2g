@@ -1,7 +1,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { resolvePlaybackInfoPolicy } from '../../src/contracts/PolicyEngine';
+import { resolvePlaybackInfoPolicy } from './helpers/PolicyEngine';
 
 describe('PolicyEngine Fuzzing', () => {
   it('Invariant: Never throws', () => {
