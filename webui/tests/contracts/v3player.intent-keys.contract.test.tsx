@@ -18,9 +18,15 @@ describe('V3Player Intent Keys Contract', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
+      if (contentType === 'application/vnd.apple.mpegurl') {
+        return 'probably';
+      }
+      return '';
+    });
 
     mockLiveFlowFetch({
-      mode: 'hlsjs',
+      mode: 'native_hls',
       requestId: 'req-intent-keys-1',
       playbackDecisionToken: 'token-intent-keys-1',
       sessionId: 'sess-intent-keys-1',

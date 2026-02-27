@@ -19,8 +19,14 @@ describe('V3Player ServiceRef Input', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
+      if (contentType === 'application/vnd.apple.mpegurl') {
+        return 'probably';
+      }
+      return '';
+    });
     mockLiveFlowFetch({
-      mode: 'hlsjs',
+      mode: 'native_hls',
       requestId: 'live-decision-1',
       playbackDecisionToken: 'live-token-1',
       sessionId: 'sess-live-ref-1',
@@ -61,7 +67,7 @@ describe('V3Player ServiceRef Input', () => {
     expect(intentsCall).toBeDefined();
     const intentsBody = JSON.parse(String(intentsCall?.[1]?.body ?? '{}'));
     expect(intentsBody.serviceRef).toBe(newRef);
-    expect(intentsBody.params.playback_mode).toBe('hlsjs');
+    expect(intentsBody.params.playback_mode).toBe('native_hls');
     expect(intentsBody.params.playback_decision_token).toBe('live-token-1');
     expect(intentsBody.params.playback_decision_id).toBeUndefined();
   });
@@ -94,7 +100,7 @@ describe('V3Player ServiceRef Input', () => {
     expect(intentsCall).toBeDefined();
     const intentsBody = JSON.parse(String(intentsCall?.[1]?.body ?? '{}'));
     expect(intentsBody.serviceRef).toBe(newRef);
-    expect(intentsBody.params.playback_mode).toBe('hlsjs');
+    expect(intentsBody.params.playback_mode).toBe('native_hls');
     expect(intentsBody.params.playback_decision_token).toBe('live-token-1');
     expect(intentsBody.params.playback_decision_id).toBeUndefined();
   });

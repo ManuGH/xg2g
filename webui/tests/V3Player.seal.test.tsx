@@ -20,9 +20,15 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
+      if (contentType === 'application/vnd.apple.mpegurl') {
+        return 'probably';
+      }
+      return '';
+    });
 
     mockLiveFlowFetch({
-      mode: 'hlsjs',
+      mode: 'native_hls',
       requestId: 'live-decision-seal-1',
       playbackDecisionToken: 'live-token-seal-1',
       sessionId: 'sess-live-seal-1',
@@ -76,7 +82,7 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
     const intentsCall = findFetchCall((global.fetch as any), '/intents');
     const intentsBody = JSON.parse(String(intentsCall?.[1]?.body ?? '{}'));
     expect(intentsBody.serviceRef).toBe('1:0:1:ABCD');
-    expect(intentsBody.params.playback_mode).toBe('hlsjs');
+    expect(intentsBody.params.playback_mode).toBe('native_hls');
     expect(intentsBody.params.playback_decision_token).toBe('live-token-seal-1');
     expect(intentsBody.params.playback_decision_id).toBeUndefined();
   });
