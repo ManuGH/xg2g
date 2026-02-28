@@ -221,8 +221,8 @@ func TestAuthMiddleware_EmptyScopesAdditionalToken(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// Test legacy X-API-Token header support
-func TestAuthMiddleware_ValidXAPIToken(t *testing.T) {
+// Test legacy X-API-Token header support when explicitly enabled.
+func TestAuthMiddleware_ValidXAPITokenWhenLegacyEnabled(t *testing.T) {
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
@@ -233,6 +233,8 @@ func TestAuthMiddleware_ValidXAPIToken(t *testing.T) {
 		cfg: config.AppConfig{
 			APIToken:       "secret-token",
 			APITokenScopes: []string{string(ScopeV3Read)},
+			// Direct server config in this unit test bypasses registry defaults.
+			APIDisableLegacyTokenSources: false,
 		},
 	}
 	handler := s.authMiddleware(next)
@@ -248,8 +250,10 @@ func TestAuthMiddleware_ValidXAPIToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_LegacyTokenSourcesDisabled(t *testing.T) {
+	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("next handler should not be called")
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
 	})
 
 	s := &Server{
@@ -267,6 +271,14 @@ func TestAuthMiddleware_LegacyTokenSourcesDisabled(t *testing.T) {
 
 	handler.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	bearerReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	bearerReq.Header.Set("Authorization", "Bearer secret-token")
+	bearerResp := httptest.NewRecorder()
+	handler.ServeHTTP(bearerResp, bearerReq)
+
+	assert.True(t, nextCalled)
+	assert.Equal(t, http.StatusOK, bearerResp.Code)
 }
 
 func TestCreateSession(t *testing.T) {

@@ -70,7 +70,7 @@ func TestCircuitBreakerFlow(t *testing.T) {
 			nil,
 		)
 		req.Header.Set("Origin", testServer.URL) // CSRF protection
-		req.Header.Set("X-API-Token", "test-token")
+		req.Header.Set("Authorization", "Bearer test-token")
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -362,7 +362,7 @@ func TestRateLimitingBehavior(t *testing.T) {
 				nil,
 			)
 			req.Header.Set("Origin", testServer.URL) // CSRF protection
-			req.Header.Set("X-API-Token", "test-token")
+			req.Header.Set("Authorization", "Bearer test-token")
 
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {

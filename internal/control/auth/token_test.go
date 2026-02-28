@@ -32,6 +32,16 @@ func TestExtractToken_IgnoresQueryParams(t *testing.T) {
 	}
 }
 
+func TestExtractToken_DefaultDisablesLegacySources(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.local/test", nil)
+	r.Header.Set("X-API-Token", "legacy-header-token")
+	r.AddCookie(&http.Cookie{Name: "X-API-Token", Value: "legacy-cookie-token"})
+
+	if got := ExtractToken(r); got != "" {
+		t.Fatalf("ExtractToken() = %q, want empty when only legacy sources are present", got)
+	}
+}
+
 func TestExtractTokenDetailedWithOptions_DisablesLegacySources(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "http://example.local/test", nil)
 	r.Header.Set("X-API-Token", "legacy-header-token")

@@ -30,14 +30,15 @@ func ExtractToken(r *http.Request) string {
 }
 
 // ExtractTokenDetailed retrieves the API token and its source from the request.
+// Legacy sources are disabled by default.
 // Sources:
 // 1. Authorization: Bearer <token>
 // 2. Cookie: xg2g_session
-// 3. Header: X-API-Token (Legacy)
-// 4. Cookie: X-API-Token (Legacy, last resort)
+// 3. Header: X-API-Token (Legacy, optional)
+// 4. Cookie: X-API-Token (Legacy, optional and last resort)
 func ExtractTokenDetailed(r *http.Request) (string, string) {
 	return ExtractTokenDetailedWithOptions(r, TokenExtractOptions{
-		AllowLegacySources: true,
+		AllowLegacySources: false,
 	})
 }
 

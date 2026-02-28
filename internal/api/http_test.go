@@ -346,7 +346,7 @@ func TestMiddlewareChain(t *testing.T) {
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
 	require.NoError(t, err)
-	req.Header.Set("X-API-Token", "test-token")
+	req.Header.Set("Authorization", "Bearer test-token")
 	req.RemoteAddr = "192.0.2.1"
 
 	rr := httptest.NewRecorder()
