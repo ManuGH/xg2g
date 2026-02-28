@@ -46,7 +46,21 @@ func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) e
 	// Ensure runtime values are visible before the first request.
 	s.v3Handler.UpdateConfig(cfg, s.snap)
 
+	// 1. Build Probe Manager (Gate R2)
+	probeMgr := recservice.NewProbeManager(s.vodManager, func(ctx context.Context, serviceRef, sourceURL string) error {
+		// SSRF Guard: sourceURL is already derived from validated IDs in TruthProvider.
+		// We call the synchronous Probe method here.
+		info, err := s.vodManager.Probe(ctx, sourceURL)
+		if err != nil {
+			return err
+		}
+		// Success! Mark it probed in VOD manager.
+		s.vodManager.MarkProbed(serviceRef, sourceURL, info, nil)
+		return nil
+	})
+
 	var resolverOpts recservice.ResolverOptions
+	resolverOpts.ProbeManager = probeMgr
 	if libSvc := s.v3Handler.LibraryService(); libSvc != nil {
 		resolverOpts.DurationStore = recservice.NewLibraryDurationStore(libSvc.GetStore())
 		resolverOpts.PathResolver = recservice.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs())
@@ -65,7 +79,7 @@ func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) e
 	owiAdapter := v3.NewOWIAdapter(s.owiClient)
 	resumeAdapter := v3.NewResumeAdapter(s.v3RuntimeDeps.ResumeStore)
 
-	recSvc, err := recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter, v4Resolver)
+	recSvc, err := recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter, v4Resolver.TruthProvider(), v4Resolver.ProbeManager())
 	if err != nil {
 		return fmt.Errorf("initialize recordings service: %w", err)
 	}

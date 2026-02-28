@@ -15,6 +15,15 @@ var (
 
 // --- Enums ---
 
+type MediaStatus string
+
+const (
+	MediaStatusReady               MediaStatus = "ready"
+	MediaStatusPreparing           MediaStatus = "preparing"
+	MediaStatusNotFound            MediaStatus = "not_found"
+	MediaStatusUpstreamUnavailable MediaStatus = "upstream_unavailable"
+)
+
 // PlaybackMode defines the calculated strategy.
 type PlaybackMode string
 
@@ -91,7 +100,10 @@ type MediaInfo struct {
 
 // MediaTruth represents the source of truth for the media.
 type MediaTruth struct {
-	State      string // "READY", "PREPARING", "FAILED"
+	Status     MediaStatus
+	Reasons    []ReasonCode
+	RetryAfter int
+	ProbeState string
 	Container  string
 	VideoCodec string
 	AudioCodec string
@@ -126,6 +138,7 @@ type MaxVideo struct {
 }
 
 const (
+	// Deprecated
 	StateReady     = "READY"
 	StatePreparing = "PREPARING"
 	StateFailed    = "FAILED"

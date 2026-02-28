@@ -36,7 +36,24 @@ func (m *MockResolverForService) Resolve(ctx context.Context, serviceRef string,
 
 func (m *MockResolverForService) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
 	// Simple stub for tests that don't verify truth specifically
-	return playback.MediaTruth{}, nil
+	args := m.Called(ctx, recordingID)
+	return args.Get(0).(playback.MediaTruth), args.Error(1)
+}
+
+func (m *MockResolverForService) TruthProvider() *TruthProvider {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*TruthProvider)
+}
+
+func (m *MockResolverForService) ProbeManager() *ProbeManager {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*ProbeManager)
 }
 
 type MockRunnerForService struct {
@@ -92,6 +109,8 @@ func setupServiceTest(t *testing.T) (*service, *MockOWIClient, *MockResumeStore,
 		resumeStore: res,
 		resolver:    slv,
 		vodManager:  vm,
+		truth:       nil, // Can be injected as needed in specific tests
+		probeMgr:    nil,
 	}
 	return s, owi, res, slv, vm
 }

@@ -84,7 +84,10 @@ export interface V3SessionStatusResponse {
   playbackUrl?: string;
   // ADR-009: Session Lease Semantics
   heartbeat_interval?: number; // seconds
+  heartbeatInterval?: number; // seconds (camelCase compatibility)
   lease_expires_at?: string; // ISO 8601
+  leaseExpiresAt?: string; // ISO 8601 (camelCase compatibility)
+  leaseExpiresAtUnix?: number; // unix seconds (legacy compatibility)
   last_heartbeat?: string; // ISO 8601
   stop_reason?: string; // USER_STOPPED, LEASE_EXPIRED, FAILED, CLEANUP
 }

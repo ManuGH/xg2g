@@ -58,6 +58,7 @@
     "closePlayer": "Player schließen",
     "preparingDirectPlay": "Direktwiedergabe wird vorbereitet...",
     "serviceRefPlaceholder": "Service-Ref (1:0:1...)",
+    "serviceRefRequired": "Service-Ref ist erforderlich.",
     "seekBack15m": "15 Min. zurück",
     "seekBack60s": "60 Sek. zurück",
     "seekBack15s": "15 Sek. zurück",

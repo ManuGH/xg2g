@@ -11,6 +11,7 @@ func registerSessionRoutes(register routeRegistrar, handler sessionRoutes) {
 	register.add(http.MethodGet, "/sessions/{sessionID}", "GetSessionState", handler.GetSessionState)
 	register.add(http.MethodGet, "/sessions/{sessionID}/hls/{filename}", "ServeHLS", handler.ServeHLS)
 	register.add(http.MethodHead, "/sessions/{sessionID}/hls/{filename}", "ServeHLSHead", handler.ServeHLSHead)
+	register.add(http.MethodPost, "/sessions/{sessionID}/heartbeat", "GetSessionState", handler.SessionHeartbeat)
 	register.add(http.MethodPost, "/sessions/{sessionId}/feedback", "ReportPlaybackFeedback", handler.ReportPlaybackFeedback)
 }
 

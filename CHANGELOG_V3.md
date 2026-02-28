@@ -1,5 +1,29 @@
 # v3 API Change Log
 
+## [v3.1.1] - 2026-02-27
+
+### Added
+
+- **Operator-grade live stream security boundary**: strict HS256 `playbackDecisionToken` with `iss`/`aud`/`sub`/`jti`/`iat`/`nbf`/`exp`, short TTL policy (≤120s) and deterministic verification hook (`VerifyStrictAt`).
+- **DecisionReason SSOT**: machine-readable `decisionReason` codes exposed via `PlaybackInfo` DTO/OpenAPI for deterministic client telemetry and debugging.
+- **Player recovery hardening**: deterministic HLS.js recovery policy (`NETWORK_ERROR` exponential backoff with caps; `MEDIA_ERROR` single-shot recovery) + explicit `recovering` state.
+
+### Fixed
+
+- **Fail-closed intents**: unified 401/403/400 semantics for `/api/v3/intents` with RFC7807 `problem+json` responses and stable `/problems/...` type URIs.
+- **CORS correctness**: credentialed CORS no longer falls back to `Access-Control-Allow-Origin: *`; `Origin` is reflected with `Vary: Origin`, and requests without `Origin` emit no CORS headers.
+- **Live ref validation split**: `ValidateLiveRef` separated from DVR path validation; rejects path traversal and cross-contamination.
+
+### Governance Gates
+
+- **Boundary gates mechanically proven (A–E)**:
+  - **A: E2E claim mismatch** → 403 `CLAIM_MISMATCH`
+  - **B: JWT parser strictness** → 401 on malformed/forged input; no panics
+  - **C: Media path authz** → Bearer-only 401, session cookie 200
+  - **D: DecisionReason codes stable via SSOT**
+  - **E: CORS header assertions** → never `*` with credentials; `Vary: Origin`
+- Legacy intent tests remediated to test admission/preflight/lease logic post-JWT gate.
+
 ## [v3.1.0] - 2026-01-22
 
 ### ⚠️ BREAKING CHANGES

@@ -66,7 +66,7 @@ func newStatusTestServer(t *testing.T) (*Server, *vod.Manager) {
 	require.NoError(t, err)
 	dummyRes, err := recservice.NewResolver(&cfg, vodMgr, recservice.ResolverOptions{})
 	require.NoError(t, err)
-	recSvc, err := recservice.NewService(&cfg, vodMgr, dummyRes, nil, nil, dummyRes)
+	recSvc, err := recservice.NewService(&cfg, vodMgr, dummyRes, nil, nil, dummyRes.TruthProvider(), dummyRes.ProbeManager())
 	require.NoError(t, err)
 
 	srv.SetDependencies(Dependencies{

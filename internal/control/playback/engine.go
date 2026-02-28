@@ -36,10 +36,10 @@ func (e *DecisionEngine) GetMediaTruth(ctx context.Context, id string) (MediaTru
 
 func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, protocolHint string) (PlaybackPlan, error) {
 	// 3. State Gate
-	if truth.State == StatePreparing {
+	if truth.Status == MediaStatusPreparing {
 		return PlaybackPlan{}, ErrPreparing
 	}
-	if truth.State == StateFailed {
+	if truth.Status == MediaStatusUpstreamUnavailable {
 		return PlaybackPlan{}, ErrUpstream
 	}
 

@@ -68,6 +68,7 @@ type sessionRoutes interface {
 	GetSessionState(w http.ResponseWriter, r *http.Request)
 	ServeHLS(w http.ResponseWriter, r *http.Request)
 	ServeHLSHead(w http.ResponseWriter, r *http.Request)
+	SessionHeartbeat(w http.ResponseWriter, r *http.Request)
 	ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request)
 }
 

@@ -156,7 +156,7 @@ func TestTruthProvider_ImpossibleProbe_FailsFast(t *testing.T) {
 			localPath:   "/tmp/exists",
 			probe:       nil, // Mocked existence check in code won't actually check FS in this unit test logic unless we mock PathResolver
 			wantError:   nil,
-			wantState:   playback.StatePreparing,
+			wantState:   string(playback.MediaStatusPreparing),
 			expectProbe: true,
 		},
 	}
@@ -192,7 +192,7 @@ func TestTruthProvider_ImpossibleProbe_FailsFast(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.wantState, got.State)
+				assert.Equal(t, playback.MediaStatus(tt.wantState), got.Status)
 			}
 		})
 	}
@@ -232,7 +232,7 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 	// 1. First Call: Should return Preparing and trigger probe
 	got, err := tp.GetMediaTruth(context.Background(), "ref")
 	require.NoError(t, err)
-	assert.Equal(t, playback.StatePreparing, got.State)
+	assert.Equal(t, playback.MediaStatusPreparing, got.Status)
 
 	// Wait for async probe to error out and persist FAILED state.
 	// We rely on Eventually because we don't have a callback hook in this simple mock.

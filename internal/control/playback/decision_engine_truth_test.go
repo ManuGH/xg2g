@@ -64,7 +64,7 @@ func TestPlaybackInfo_G2_NotFound_Terminal(t *testing.T) {
 func TestPlaybackInfo_G3_Preparing_ReturnsPreparing(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{}, nil)
-	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{State: StatePreparing}, nil)
+	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{Status: MediaStatusPreparing}, nil)
 
 	_, err := e.Resolve(context.Background(), ResolveRequest{RecordingID: "rec1"})
 	assert.ErrorIs(t, err, ErrPreparing)
@@ -76,7 +76,7 @@ func TestPlaybackInfo_G4_DirectPlay_H264_AAC_MP4(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State:      StateReady,
+		Status:     MediaStatusReady,
 		Container:  "mp4",
 		VideoCodec: "h264",
 		AudioCodec: "aac",
@@ -101,7 +101,7 @@ func TestPlaybackInfo_G4_DirectPlay_CaseInsensitiveTokens(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State:      StateReady,
+		Status:     MediaStatusReady,
 		Container:  "MP4",
 		VideoCodec: "H264",
 		AudioCodec: "AAC",
@@ -126,7 +126,7 @@ func TestPlaybackInfo_G4_DirectPlay_UnicodeWhitespaceTokens(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State:      StateReady,
+		Status:     MediaStatusReady,
 		Container:  "\u00A0mp4\u200B",  // NBSP + ZWSP
 		VideoCodec: "\u200Dh264\u00A0", // ZWJ + NBSP
 		AudioCodec: "\uFEFFaac\u200C",  // BOM + ZWNJ
@@ -153,7 +153,7 @@ func TestPlaybackInfo_G5_DirectPlay_SafariNative_HLS(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State:      StateReady,
+		Status:     MediaStatusReady,
 		Container:  "mpegts",
 		VideoCodec: "h264",
 		AudioCodec: "aac",
@@ -181,7 +181,7 @@ func TestPlaybackInfo_G6_DirectStream_RemuxOnly(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State:      StateReady,
+		Status:     MediaStatusReady,
 		Container:  "mkv",
 		VideoCodec: "h264",
 		AudioCodec: "aac",
@@ -207,7 +207,7 @@ func TestPlaybackInfo_G7_Transcode_VideoIncompatible_MPEG2(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State:      StateReady,
+		Status:     MediaStatusReady,
 		Container:  "mpegts",
 		VideoCodec: "mpeg2video",
 		AudioCodec: "mp2",
@@ -232,7 +232,7 @@ func TestPlaybackInfo_G8_Transcode_AudioOnly_AC3(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State:      StateReady,
+		Status:     MediaStatusReady,
 		Container:  "mp4",
 		VideoCodec: "h264",
 		AudioCodec: "ac3",
@@ -259,7 +259,7 @@ func TestPlaybackInfo_G9_UnknownCodecTruth_FailsClosed(t *testing.T) {
 
 	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{}, nil)
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State:      StateReady,
+		Status:     MediaStatusReady,
 		Container:  "mp4",
 		VideoCodec: "unknown",
 		AudioCodec: "unknown",
@@ -277,7 +277,7 @@ func TestPlaybackInfo_G10_RepeatedCalls_StableDecision(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
-		State: StateReady, Container: "mp4", VideoCodec: "h264", AudioCodec: "aac"}, nil).Twice()
+		Status: MediaStatusReady, Container: "mp4", VideoCodec: "h264", AudioCodec: "aac"}, nil).Twice()
 
 	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{
 		Containers:  []string{"mp4"},

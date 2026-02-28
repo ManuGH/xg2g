@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -242,4 +243,52 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 	assert.Equal(t, "direct_stream", dec["mode"])
 	assert.Equal(t, "hls", dec["selectedOutputKind"])
 	assert.NotEmpty(t, dec["outputs"])
+}
+
+func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {
+	svc := new(MockRecordingsService)
+	s := createTestServerDTO(svc)
+
+	body := `{
+		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
+		"capabilities":{
+			"capabilitiesVersion":1,
+			"container":["mpegts","ts"],
+			"videoCodecs":["h264"],
+			"audioCodecs":["aac"]
+		}
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	s.PostLivePlaybackInfo(w, r)
+
+	assert.NotEqual(t, http.StatusBadRequest, w.Code, "valid live serviceRef should not fail as invalid recording id")
+	assert.NotContains(t, w.Body.String(), "Invalid recording ID format")
+}
+
+func TestPostLivePlaybackInfo_InvalidServiceRef_RejectsNonLiveFormat(t *testing.T) {
+	svc := new(MockRecordingsService)
+	s := createTestServerDTO(svc)
+
+	body := `{
+		"serviceRef":"channel_abc",
+		"capabilities":{
+			"capabilitiesVersion":1,
+			"container":["mpegts"],
+			"videoCodecs":["h264"],
+			"audioCodecs":["aac"]
+		}
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	s.PostLivePlaybackInfo(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "serviceRef must be a valid live Enigma2 reference")
 }

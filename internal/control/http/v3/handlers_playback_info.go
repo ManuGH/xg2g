@@ -8,9 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,10 +58,19 @@ func (s *Server) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Reques
 
 // PostLivePlaybackInfo implements ServerInterface (Live Stream Info)
 func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {
+	// Read body for diagnostics
+	bodyBytes, readErr := io.ReadAll(r.Body)
+	if readErr != nil {
+		writeProblem(w, r, http.StatusBadRequest, "live/invalid", "Invalid Request", "INVALID_INPUT", "Failed to read request body: "+readErr.Error(), nil)
+		return
+	}
+	log.L().Debug().Str("body", string(bodyBytes)).Msg("PostLivePlaybackInfo request body")
+
 	var req PostLivePlaybackInfoJSONRequestBody
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields() // CTO Requirement 3: Strict validation
+	dec := json.NewDecoder(strings.NewReader(string(bodyBytes)))
+	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
+		log.L().Warn().Err(err).Str("body", string(bodyBytes)).Msg("PostLivePlaybackInfo parse failed")
 		writeProblem(w, r, http.StatusBadRequest, "live/invalid", "Invalid Request", "INVALID_INPUT", "Failed to parse request body: "+err.Error(), nil)
 		return
 	}
@@ -67,11 +78,15 @@ func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, r, http.StatusBadRequest, "live/invalid", "Invalid Request", "INVALID_INPUT", "serviceRef is required", nil)
 		return
 	}
+	serviceRef := normalize.ServiceRef(req.ServiceRef)
+	if err := recordings.ValidateLiveRef(serviceRef); err != nil {
+		writeProblem(w, r, http.StatusBadRequest, "live/invalid", "Invalid Request", "INVALID_INPUT", "serviceRef must be a valid live Enigma2 reference", nil)
+		return
+	}
 
-	// For MVP of PostLivePlaybackInfo, we delegate to handlePlaybackInfo using the serviceRef encoded as RecordingID
-	// The frontend uses the returned PlaybackInfo to check mode and find the playbackDecisionToken.
-	// We inject "recordingId" as encoded service ref so it bypasses normal structural truth and just hits decision engine
-	s.handlePlaybackInfo(w, r, recordings.EncodeRecordingID(req.ServiceRef), (*PlaybackCapabilities)(&req.Capabilities), "v3.1", "live")
+	// For live playback we pass the normalized serviceRef through the shared decision path.
+	// The frontend uses the returned PlaybackInfo to check mode and obtain playbackDecisionToken.
+	s.handlePlaybackInfo(w, r, serviceRef, (*PlaybackCapabilities)(&req.Capabilities), "v3.1", "live")
 }
 
 func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, caps *PlaybackCapabilities, apiVersion string, schemaType string) {
@@ -86,10 +101,17 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	}
 
 	// 2. Resolve Truth & Policy
-	_, ok := recordings.DecodeRecordingID(recordingId)
-	if !ok {
-		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", "Invalid recording ID format", nil)
-		return
+	if schemaType == "live" {
+		if err := recordings.ValidateLiveRef(recordingId); err != nil {
+			writeProblem(w, r, http.StatusBadRequest, "live/invalid", "Invalid Request", "INVALID_INPUT", "Invalid serviceRef format", nil)
+			return
+		}
+	} else {
+		_, ok := recordings.DecodeRecordingID(recordingId)
+		if !ok {
+			writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", "Invalid recording ID format", nil)
+			return
+		}
 	}
 
 	var truth playback.MediaTruth
@@ -106,10 +128,19 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 			return
 		}
 
-		// 2b. Check for Preparing State (Async Probe In Progress)
-		if truth.State == playback.StatePreparing {
-			w.Header().Set("Retry-After", "5")
-			writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", "Retry shortly.", nil)
+		// 2b. Check for Preparing Status (Async Probe In Progress)
+		if truth.Status == playback.MediaStatusPreparing {
+			w.Header().Set("Retry-After", strconv.Itoa(truth.RetryAfter))
+			writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", "Retry shortly.", map[string]interface{}{
+				"retryAfterSeconds": truth.RetryAfter,
+				"probeState":        truth.ProbeState,
+			})
+			return
+		}
+
+		// 2c. Check for Upstream Unavailable
+		if truth.Status == playback.MediaStatusUpstreamUnavailable {
+			writeProblem(w, r, http.StatusServiceUnavailable, "recordings/upstream_unavailable", "Upstream media source is unavailable", "UPSTREAM_UNAVAILABLE", "Retry later.", nil)
 			return
 		}
 	}
@@ -486,7 +517,7 @@ func readArtifactContent(a artifacts.ArtifactOK) (string, error) {
 func assumeLiveTruth(recordingId string) playback.MediaTruth {
 	log.L().Debug().Str("recordingId", recordingId).Msg("Bypassing media truth probe for Live schema with deterministic structural truth")
 	return playback.MediaTruth{
-		State:      playback.StateReady,
+		Status:     playback.MediaStatusReady,
 		Container:  "mpegts", // Enigma2 feeds are M2TS
 		VideoCodec: "h264",   // DVB Standard Video
 		AudioCodec: "aac",    // DVB Standard Audio

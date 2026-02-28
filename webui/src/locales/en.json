@@ -58,6 +58,7 @@
     "closePlayer": "Close Player",
     "preparingDirectPlay": "Preparing Direct Play...",
     "serviceRefPlaceholder": "Service Ref (1:0:1...)",
+    "serviceRefRequired": "Service Ref is required.",
     "seekBack15m": "Back 15m",
     "seekBack60s": "Back 60s",
     "seekBack15s": "Back 15s",

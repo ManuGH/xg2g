@@ -17,6 +17,12 @@ import (
 // Renews session lease if not expired. Returns 410 if already expired.
 // Idempotent: multiple heartbeats within interval = no-op.
 func (s *Server) SessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID string) {
+	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.handleSessionHeartbeat(w, r, sessionID)
+	})).ServeHTTP(w, r)
+}
+
+func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID string) {
 	ctx := r.Context()
 	logger := log.WithComponentFromContext(ctx, "api")
 

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 )
 
 var (
@@ -21,7 +19,7 @@ const (
 	recordingIDMaxLen = 1024
 )
 
-// ValidateRecordingRef checks if the service reference string is valid.
+// ValidateRecordingRef checks if the service reference string is valid and safe (R5).
 func ValidateRecordingRef(serviceRef string) error {
 	if !utf8.ValidString(serviceRef) {
 		return ErrInvalidRecordingRef
@@ -38,22 +36,36 @@ func ValidateRecordingRef(serviceRef string) error {
 		return ErrInvalidRecordingRef
 	}
 
-	receiverPath := internalrecordings.ExtractPathFromServiceRef(trimmedRef)
-	if !strings.HasPrefix(receiverPath, "/") {
+	// 1. Structural Enigma2 check (1:0:0:0:0:0:0:0:0:0:PATH)
+	parts := strings.Split(trimmedRef, ":")
+	if len(parts) < 11 {
 		return ErrInvalidRecordingRef
 	}
+
+	// 2. Strict SSRF/Traversal guards on the path component (Gate R5)
+	receiverPath := parts[10]
+	if receiverPath == "" {
+		return ErrInvalidRecordingRef
+	}
+
+	// Explicitly deny common SSRF/Traversal patterns
+	if strings.Contains(receiverPath, "..") {
+		return ErrInvalidRecordingRef
+	}
+	if strings.Contains(receiverPath, "://") {
+		return ErrInvalidRecordingRef
+	}
+
+	// 3. Path normalization check
 	cleanRef := strings.TrimLeft(receiverPath, "/")
 	cleanRef = path.Clean("/" + cleanRef)
 	cleanRef = strings.TrimPrefix(cleanRef, "/")
 	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
 		return ErrInvalidRecordingRef
 	}
-	if strings.Contains(receiverPath, "/../") || strings.HasSuffix(receiverPath, "/..") {
-		return ErrInvalidRecordingRef
-	}
 
 	if decoded, err := url.PathUnescape(receiverPath); err == nil {
-		if strings.Contains(decoded, "/../") || strings.HasSuffix(decoded, "/..") {
+		if strings.Contains(decoded, "..") || strings.Contains(decoded, "://") {
 			return ErrInvalidRecordingRef
 		}
 	}

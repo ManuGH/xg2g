@@ -132,15 +132,8 @@ func GetEpg(ctx context.Context, src EpgSource, q EpgQuery, clock Clock) ([]EpgE
 		}
 
 		results = append(results, EpgEntry{
-			// ID logic? Legacy didn't set ID explicitly in EpgItem struct definition (it was *string)
-			// But usually it's empty or p.Channel?
-			// Look at legacy:
-			// EpgItem{ ServiceRef: p.Channel, Title: p.Title.Text ... }
-			// Id field uses p.Channel? No, let's check legacy again.
-			// The legacy struct had Id *string.
-			// I'll check legacy code again.
-			ID:         p.Channel,
-			ServiceRef: p.Channel,
+			ID:         CanonicalServiceRef(p.Channel),
+			ServiceRef: CanonicalServiceRef(p.Channel),
 			Title:      p.Title.Text,
 			Desc: func() string {
 				if p.Desc != nil {

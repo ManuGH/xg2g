@@ -181,15 +181,22 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Validate Capabilities Hash mismatch
-		// Since Capabilities are passed currently in body or params, we should use the same MapHash function over IntentRequest.
+		// Preferred path: client forwards token-bound capHash in params.capHash.
+		// Legacy fallback: derive hash from params map for older callers.
 		var expectedHash string
 		if req.Params != nil {
-			genericMap := make(map[string]interface{})
-			for k, v := range req.Params {
-				genericMap[k] = v
-			}
-			if cHash, err := normalize.MapHash(genericMap); err == nil {
-				expectedHash = cHash
+			if rawCapHash := normalize.Token(req.Params["capHash"]); rawCapHash != "" {
+				expectedHash = rawCapHash
+			} else if rawCapHash := normalize.Token(req.Params["cap_hash"]); rawCapHash != "" {
+				expectedHash = rawCapHash
+			} else {
+				genericMap := make(map[string]interface{})
+				for k, v := range req.Params {
+					genericMap[k] = v
+				}
+				if cHash, err := normalize.MapHash(genericMap); err == nil {
+					expectedHash = cHash
+				}
 			}
 		}
 		if claims.CapHash != "" && claims.CapHash != expectedHash {

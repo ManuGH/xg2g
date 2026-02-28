@@ -336,14 +336,18 @@
   font-size: 13px;
   color: var(--text-tertiary);
   line-height: 1.5;
-  opacity: 0.8;
+  opacity: 0.85;
   white-space: pre-wrap;
-  max-height: 3.6em;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
 .programmeDescExpanded {
-  max-height: none;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
   opacity: 1;
 }
 
@@ -418,9 +422,11 @@
   background: var(--bg-input);
   border: 1px solid var(--border-base);
   color: var(--text-secondary);
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
   cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
   transition: background var(--motion-standard) var(--ease-standard), border-color var(--motion-standard) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
 }
 

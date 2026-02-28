@@ -25,6 +25,9 @@ func (m *mockResolver) GetMediaTruth(ctx context.Context, recordingID string) (p
 	return playback.MediaTruth{}, nil
 }
 
+func (m *mockResolver) TruthProvider() *recservice.TruthProvider { return nil }
+func (m *mockResolver) ProbeManager() *recservice.ProbeManager   { return nil }
+
 func TestSecurityFailClosedInvariant(t *testing.T) {
 	// 1. Setup Server with Mock Resolver
 	s := &Server{}

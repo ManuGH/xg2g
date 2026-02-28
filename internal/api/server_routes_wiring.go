@@ -6,6 +6,9 @@ package api
 import (
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
@@ -15,6 +18,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/go-chi/chi/v5"
 )
+
+// piconFilenameRE matches safe picon filenames: hex/digit segments separated by underscores, ending in .png.
+var piconFilenameRE = regexp.MustCompile(`^[0-9A-Fa-f_]+\.png$`)
 
 func (s *Server) newRouter() chi.Router {
 	r := middleware.NewRouter(middleware.StackConfig{
@@ -74,6 +80,48 @@ func (s *Server) registerPublicRoutes(r chi.Router) {
 	})))
 	r.Get("/ui", redirectTo("/ui/", http.StatusMovedPermanently))
 	r.Get("/", redirectTo("/ui/", http.StatusTemporaryRedirect))
+
+	// Serve picon logos from {dataDir}/picons/ directory.
+	// URLs are generated as /logos/{REF}.png by refresh and services.go.
+	r.Get("/logos/{filename}", s.servePiconLogo)
+}
+
+// servePiconLogo securely serves a picon PNG from the data directory.
+func (s *Server) servePiconLogo(w http.ResponseWriter, r *http.Request) {
+	filename := chi.URLParam(r, "filename")
+
+	// Strict validation: only hex/digit+underscore filenames ending in .png.
+	if !piconFilenameRE.MatchString(filename) {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	piconDir := filepath.Join(s.cfg.DataDir, "picons")
+	fullPath := filepath.Join(piconDir, filename)
+
+	// Defense-in-depth: ensure resolved path stays inside picons dir.
+	absPath, err := filepath.Abs(fullPath)
+	if err != nil || !strings.HasPrefix(absPath, filepath.Clean(piconDir)) {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	f, err := os.Open(absPath) // #nosec G304
+	if err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.ServeContent(w, r, filename, info.ModTime(), f)
 }
 
 func redirectTo(path string, code int) http.HandlerFunc {

@@ -34,6 +34,9 @@ func (m *mockResolver) GetMediaTruth(ctx context.Context, id string) (playback.M
 	return playback.MediaTruth{}, nil
 }
 
+func (m *mockResolver) TruthProvider() *recservice.TruthProvider { return nil }
+func (m *mockResolver) ProbeManager() *recservice.ProbeManager   { return nil }
+
 // TestVODPlayback_Path_Wiring_ErrorPath verifies that the VOD failure path is wired correctly.
 // Requirements:
 // 1. Stack serves /api/v3/vod/{id}

@@ -6,11 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
@@ -18,8 +16,65 @@ import (
 	"github.com/ManuGH/xg2g/internal/library"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/sync/singleflight"
 )
+
+// --- Truth Outcomes (R1/R5) ---
+
+type TruthStatus string
+
+const (
+	TruthStatusReady               TruthStatus = "ready"
+	TruthStatusPreparing           TruthStatus = "preparing"
+	TruthStatusNotFound            TruthStatus = "not_found"
+	TruthStatusUpstreamUnavailable TruthStatus = "upstream_unavailable"
+)
+
+type ReasonCode string
+
+const (
+	ReasonReady               ReasonCode = "ready"
+	ReasonProbeQueued         ReasonCode = "probe_queued"
+	ReasonProbeInFlight       ReasonCode = "probe_in_flight"
+	ReasonProbeBlocked        ReasonCode = "probe_blocked"
+	ReasonProbeBackoff        ReasonCode = "probe_backoff"
+	ReasonProbeDisabled       ReasonCode = "probe_disabled"
+	ReasonNotFound            ReasonCode = "not_found"
+	ReasonInvalidID           ReasonCode = "invalid_id"
+	ReasonUpstreamFailure     ReasonCode = "upstream_failure"
+	ReasonReceiverUnreachable ReasonCode = "receiver_unreachable"
+	ReasonProbeFailed         ReasonCode = "probe_failed"
+)
+
+type TruthOutcome struct {
+	Status     TruthStatus
+	Reasons    []ReasonCode
+	Truth      *playback.MediaTruth // nil unless Status == Ready
+	RetryAfter int
+	ProbeState string
+}
+
+func (o TruthOutcome) ToMediaTruth() playback.MediaTruth {
+	var t playback.MediaTruth
+	t.Status = playback.MediaStatus(o.Status)
+	t.RetryAfter = o.RetryAfter
+	t.ProbeState = o.ProbeState
+
+	if o.Status == TruthStatusReady && o.Truth != nil {
+		readyTruth := *o.Truth
+		readyTruth.Status = playback.MediaStatusReady
+		t = readyTruth
+	}
+
+	// Map domain codes to playback codes (identity mapping since both are strings)
+	t.Reasons = make([]playback.ReasonCode, len(o.Reasons))
+	for i, r := range o.Reasons {
+		t.Reasons[i] = playback.ReasonCode(r)
+	}
+
+	return t
+}
+
+var ErrInvalidRecordingID = errors.New("invalid recording ID")
 
 // DurationStore abstracts duration persistence.
 type DurationStore interface {
@@ -39,9 +94,7 @@ type TruthProvider struct {
 	vodManager      MetadataManager
 	durationStore   DurationStore
 	pathResolver    PathResolver
-	probeFn         func(ctx context.Context, sourceURL string) error
 	probeConfigured bool
-	sf              singleflight.Group
 }
 
 // NewTruthProvider creates a new TruthProvider with strict invariant enforcement.
@@ -53,44 +106,40 @@ func NewTruthProvider(cfg *config.AppConfig, manager MetadataManager, opts Resol
 		return nil, fmt.Errorf("NewTruthProvider: manager is nil")
 	}
 
-	probe := opts.ProbeFn
-	probeConfigured := true
-	if probe == nil {
-		probeConfigured = false
-		probe = func(ctx context.Context, sourceURL string) error {
-			return ErrProbeNotConfigured
-		}
-	}
-
 	return &TruthProvider{
 		cfg:             cfg,
 		vodManager:      manager,
 		durationStore:   opts.DurationStore,
 		pathResolver:    opts.PathResolver,
-		probeFn:         probe,
-		probeConfigured: probeConfigured,
+		probeConfigured: opts.ProbeFn != nil,
 	}, nil
 }
 
 // GetMediaTruth implements playback.MediaTruthProvider.
 // It centralizes the precedence logic: Job > Store > Cache > Probe.
 func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error) {
+	outcome := t.GetMediaTruthOutcome(ctx, serviceRef)
+	return outcome.ToMediaTruth(), nil
+}
+
+// GetMediaTruthOutcome evaluates the current state of truth without side effects (R1).
+func (t *TruthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef string) TruthOutcome {
 	kind, source, _, err := t.resolveSource(ctx, serviceRef)
 	if err != nil {
-		log.Warn().Err(err).Str("sref", serviceRef).Msg("GetMediaTruth: resolveSource failed")
+		log.Warn().Err(err).Str("sref", serviceRef).Msg("GetMediaTruthOutcome: resolveSource failed")
 		if errors.As(err, &ErrNotFound{}) {
-			return playback.MediaTruth{}, playback.ErrNotFound
+			return TruthOutcome{Status: TruthStatusNotFound, Reasons: []ReasonCode{ReasonNotFound}}
 		}
-		return playback.MediaTruth{}, playback.ErrUpstream
+		return TruthOutcome{Status: TruthStatusUpstreamUnavailable, Reasons: []ReasonCode{ReasonUpstreamFailure}}
 	}
-	log.Info().Str("sref", serviceRef).Str("kind", kind).Str("source", source).Msg("GetMediaTruth: source resolved")
+	log.Debug().Str("sref", serviceRef).Str("kind", kind).Str("source", source).Msg("GetMediaTruthOutcome: source resolved")
 
 	// 0. Job State Gate (Active Build?)
 	cacheDir, err := RecordingCacheDir(t.cfg.HLS.Root, serviceRef)
 	if err == nil {
 		if status, exists := t.vodManager.Get(ctx, cacheDir); exists {
 			if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {
-				return playback.MediaTruth{State: playback.StatePreparing}, nil
+				return TruthOutcome{Status: TruthStatusPreparing, Reasons: []ReasonCode{ReasonProbeInFlight}}
 			}
 		}
 	}
@@ -117,15 +166,10 @@ func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (p
 
 	// 2. Duration Store Lookup (Precedence: Store > Cache)
 	var storeDuration int64
-	var storeKnownEmpty bool
 	if t.durationStore != nil && rootID != "" && relPath != "" {
 		dur, ok, err := t.durationStore.GetDuration(ctx, rootID, relPath)
-		if err == nil {
-			if ok && dur > 0 {
-				storeDuration = dur
-			} else {
-				storeKnownEmpty = true
-			}
+		if err == nil && ok && dur > 0 {
+			storeDuration = dur
 		}
 	}
 
@@ -134,7 +178,7 @@ func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (p
 
 	// Gate: Terminal Failure preventing re-probe
 	if metaOk && meta.State == vod.ArtifactStateFailed {
-		return playback.MediaTruth{}, playback.ErrUpstream
+		return TruthOutcome{Status: TruthStatusUpstreamUnavailable, Reasons: []ReasonCode{ReasonProbeFailed}}
 	}
 
 	// Gate: Impossible Probe (Fail Fast)
@@ -143,20 +187,13 @@ func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (p
 		if localPath == "" {
 			if !t.probeConfigured {
 				// No local path + No probe configured = Cannot ever succeed
-				return playback.MediaTruth{}, playback.ErrUpstream
+				return TruthOutcome{Status: TruthStatusPreparing, Reasons: []ReasonCode{ReasonProbeDisabled}}
 			}
-			// No local path + Probe Configured BUT Remote inference unsupported
-			// The current async probe logic for remote returns ErrRemoteProbeUnsupported.
-			// We fail fast here to avoid "Preparing" loop.
-			return playback.MediaTruth{}, ErrRemoteProbeUnsupported
 		}
 	}
 
 	codecComplete := metaOk && meta.Container != "" && meta.VideoCodec != "" && meta.AudioCodec != ""
 
-	// Needs Probe?
-	// Rule: If we lack Codecs -> Probe.
-	// Rule: If we lack Duration AND Store missed -> Probe.
 	needsProbe := false
 	if !codecComplete {
 		needsProbe = true
@@ -165,63 +202,12 @@ func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (p
 	}
 
 	if needsProbe {
-		// Async Probe Trigger via Singleflight
-		// Caller receives StatePreparing (HTTP 202/503) and should retry.
-		go func() {
-			_, _, _ = t.sf.Do(hashSingleflightKey(kind, source), func() (interface{}, error) {
-				// Use a detached context for background work
-				bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-				defer cancel()
-
-				var info *vod.StreamInfo
-				var probeErr error
-
-				// Local Probe
-				if localPath != "" {
-					var err error
-					info, err = t.vodManager.Probe(bgCtx, localPath)
-					if err != nil {
-						probeErr = err
-					} else if info == nil {
-						probeErr = vod.ErrProbeCorrupt
-					}
-				} else {
-					// Remote Probe
-					if err := t.probeFn(bgCtx, source); err != nil {
-						probeErr = err
-					} else {
-						// Remote probe success but no data returned.
-						probeErr = ErrRemoteProbeUnsupported
-					}
-				}
-
-				if probeErr != nil {
-					log.Warn().Err(probeErr).Str("source", source).Msg("async probe failed")
-					// Persist failure atomically (preserves existing fields)
-					t.vodManager.MarkFailed(serviceRef, probeErr.Error())
-					return nil, probeErr
-				}
-
-				// Success: Atomic Update (C1 Symmetry)
-				// We pass localPath as resolvedPath to ensure it's persisted if not already.
-				t.vodManager.MarkProbed(serviceRef, localPath, info, nil)
-
-				// Success: Update Store if valid duration and store was explicitly empty
-				dur := int64(0)
-				if info != nil {
-					dur = int64(math.Round(info.Video.Duration))
-				}
-				if dur > 0 && t.durationStore != nil && rootID != "" && relPath != "" && storeKnownEmpty {
-					// Best effort update
-					_ = t.durationStore.SetDuration(bgCtx, rootID, relPath, dur)
-				}
-
-				return nil, nil
-			})
-		}()
-
-		// Return StatePreparing immediately so GET is not blocked.
-		return playback.MediaTruth{State: playback.StatePreparing}, nil
+		// Valid metadata exists, but we are missing critical codec/container truth.
+		// Pure classification: return status and indicate that probe is required.
+		return TruthOutcome{
+			Status:  TruthStatusPreparing,
+			Reasons: []ReasonCode{ReasonProbeQueued},
+		}
 	}
 
 	// Determine Final Truth Duration
@@ -230,18 +216,23 @@ func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (p
 		finalDuration = float64(storeDuration)
 	}
 
-	// Return Truth
-	return playback.MediaTruth{
-		State:      playback.StateReady,
-		Container:  meta.Container,
-		VideoCodec: meta.VideoCodec,
-		AudioCodec: meta.AudioCodec,
-		Duration:   finalDuration,
-		Width:      meta.Width,
-		Height:     meta.Height,
-		FPS:        meta.FPS,
-		Interlaced: meta.Interlaced,
-	}, nil
+	// Return Truth (Gate R1 Invariant: Status == Ready => Truth != nil)
+	return TruthOutcome{
+		Status:  TruthStatusReady,
+		Reasons: []ReasonCode{ReasonReady},
+		Truth: &playback.MediaTruth{
+			Status:     playback.MediaStatusReady,
+			Reasons:    []playback.ReasonCode{playback.ReasonCode(ReasonReady)},
+			Container:  meta.Container,
+			VideoCodec: meta.VideoCodec,
+			AudioCodec: meta.AudioCodec,
+			Duration:   finalDuration,
+			Width:      meta.Width,
+			Height:     meta.Height,
+			FPS:        meta.FPS,
+			Interlaced: meta.Interlaced,
+		},
+	}
 }
 
 // resolveSource determines protocol and address

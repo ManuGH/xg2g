@@ -41,6 +41,7 @@ interface ApiErrorResponse {
 type PreferredCodec = 'av1' | 'hevc' | 'h264';
 
 let cachedPreferredCodecs: PreferredCodec[] | null = null;
+const HEARTBEAT_INTERVAL_FALLBACK_SECONDS = 10;
 
 async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): Promise<PreferredCodec[]> {
   if (cachedPreferredCodecs) return cachedPreferredCodecs;
@@ -145,6 +146,24 @@ async function readResponseBody(res: Response): Promise<{ json: any | null; text
   }
 }
 
+function extractCapHashFromDecisionToken(token: string): string | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const payloadB64 = parts[1];
+    if (!payloadB64) return null;
+    const normalized = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded));
+    if (payload && typeof payload.capHash === 'string' && payload.capHash) {
+      return payload.capHash;
+    }
+  } catch {
+    // Decision token parsing is best-effort; server enforces token validity.
+  }
+  return null;
+}
+
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
   const { token, autoStart, onClose, duration } = props;
@@ -153,7 +172,7 @@ function V3Player(props: V3PlayerProps) {
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
 
   const [sRef, setSRef] = useState<string>(
-    channel?.serviceRef || channel?.id || ''
+    (channel?.serviceRef || channel?.id || '').trim()
   );
 
   // Traceability State
@@ -180,6 +199,7 @@ function V3Player(props: V3PlayerProps) {
   const startIntentInFlight = useRef<boolean>(false);
   // ADR-00X: Profile-related refs removed (universal policy only)
   const isTeardownRef = useRef<boolean>(false);
+  const userPauseIntentRef = useRef<boolean>(false);
 
   // UX Features State
   const [showStats, setShowStats] = useState(false);
@@ -314,8 +334,10 @@ function V3Player(props: V3PlayerProps) {
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
+      userPauseIntentRef.current = false;
       videoRef.current.play().catch(e => debugWarn("Play failed", e));
     } else {
+      userPauseIntentRef.current = true;
       videoRef.current.pause();
     }
   }, []);
@@ -522,11 +544,27 @@ function V3Player(props: V3PlayerProps) {
       setDurationSeconds(session.durationSeconds);
     }
     // ADR-009: Parse lease fields from session response
-    if (typeof session.heartbeat_interval === 'number') {
-      setHeartbeatInterval(session.heartbeat_interval);
+    const heartbeatSeconds =
+      typeof session.heartbeat_interval === 'number'
+        ? session.heartbeat_interval
+        : typeof (session as any).heartbeatInterval === 'number'
+          ? (session as any).heartbeatInterval
+          : null;
+    if (typeof heartbeatSeconds === 'number' && heartbeatSeconds > 0) {
+      setHeartbeatInterval(heartbeatSeconds);
+    } else {
+      // Backward-compat fallback: older session responses may omit heartbeat interval fields.
+      setHeartbeatInterval(prev => (typeof prev === 'number' && prev > 0 ? prev : HEARTBEAT_INTERVAL_FALLBACK_SECONDS));
     }
-    if (session.lease_expires_at) {
-      setLeaseExpiresAt(session.lease_expires_at);
+
+    const leaseExpiresAtValue =
+      session.lease_expires_at ||
+      (session as any).leaseExpiresAt ||
+      (typeof (session as any).leaseExpiresAtUnix === 'number'
+        ? new Date((session as any).leaseExpiresAtUnix * 1000).toISOString()
+        : null);
+    if (leaseExpiresAtValue) {
+      setLeaseExpiresAt(leaseExpiresAtValue);
     }
   }, []);
 
@@ -1191,6 +1229,7 @@ function V3Player(props: V3PlayerProps) {
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
     startIntentInFlight.current = true;
+    userPauseIntentRef.current = false;
     applyAutoplayMute();
 
     try {
@@ -1231,7 +1270,14 @@ function V3Player(props: V3PlayerProps) {
       stopSentRef.current = null;
       setDurationSeconds(duration && duration > 0 ? duration : null);
 
-      const ref = refToUse || sRef;
+      const ref = (refToUse || sRef || '').trim();
+      if (!ref) {
+        setStatus('error');
+        setError(t('player.serviceRefRequired'));
+        setErrorDetails(null);
+        setShowErrorDetails(false);
+        return;
+      }
       let newSessionId: string | null = null;
       setStatus('starting');
       setError(null);
@@ -1257,6 +1303,13 @@ function V3Player(props: V3PlayerProps) {
         });
         const { json: liveInfoJson } = await readResponseBody(liveResponse);
         const liveInfo = liveInfoJson as any;
+        const liveRequestId =
+          (typeof liveInfo?.requestId === 'string' ? liveInfo.requestId : undefined) ||
+          liveResponse.headers.get('X-Request-ID') ||
+          undefined;
+        if (liveRequestId) {
+          setTraceId(liveRequestId);
+        }
 
         if (!liveResponse.ok) {
           if (liveResponse.status === 401 || liveResponse.status === 403) {
@@ -1264,7 +1317,12 @@ function V3Player(props: V3PlayerProps) {
             setError(t('player.authFailed'));
             return;
           }
-          throw new Error(`${t('player.apiError')}: ${liveResponse.status}`);
+          const detailParts: string[] = [];
+          if (typeof liveInfo?.code === 'string' && liveInfo.code) detailParts.push(`code=${liveInfo.code}`);
+          if (typeof liveInfo?.detail === 'string' && liveInfo.detail) detailParts.push(liveInfo.detail);
+          if (liveRequestId) detailParts.push(`requestId=${liveRequestId}`);
+          const detailSuffix = detailParts.length > 0 ? ` (${detailParts.join(' · ')})` : '';
+          throw new Error(`${t('player.apiError')}: ${liveResponse.status}${detailSuffix}`);
         }
 
         if (!liveInfo?.mode) {
@@ -1346,16 +1404,20 @@ function V3Player(props: V3PlayerProps) {
           fields: ['mode']
         });
 
+        const intentParams: Record<string, string> = {};
+        const capHash = extractCapHashFromDecisionToken(liveDecisionToken);
+        if (capHash) {
+          intentParams.capHash = capHash;
+        }
+
         const res = await fetch(`${apiBase}/intents`, {
           method: 'POST',
           headers: authHeaders(true),
           body: JSON.stringify({
             type: 'stream.start',
             serviceRef: ref,
-            params: {
-              playback_mode: liveMode,
-              playback_decision_token: liveDecisionToken
-            }
+            playbackDecisionToken: liveDecisionToken,
+            ...(Object.keys(intentParams).length > 0 ? { params: intentParams } : {})
           })
         });
 
@@ -1415,21 +1477,41 @@ function V3Player(props: V3PlayerProps) {
         }
         if (!res.ok) {
           let errorMsg = `${t('player.apiError')}: ${res.status}`;
-          let errorDetails = null;
+          let errorDetails: string | null = null;
           try {
-            const isJson = res.headers.get('content-type')?.includes('application/json');
-            if (isJson) {
-              const apiErr: import('../client-ts').ApiError = await res.json();
-              if (apiErr.message) errorMsg = apiErr.message;
-              if (apiErr.details) errorDetails = typeof apiErr.details === 'string' ? apiErr.details : JSON.stringify(apiErr.details);
-            } else {
-              errorDetails = await res.text();
+            const { json, text } = await readResponseBody(res);
+            const responseRequestId =
+              (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
+              res.headers.get('X-Request-ID') ||
+              undefined;
+
+            if (json && typeof json === 'object') {
+              const title = typeof json.title === 'string' && json.title ? json.title : null;
+              const message = typeof json.message === 'string' && json.message ? json.message : null;
+              if (title) {
+                errorMsg = title;
+              } else if (message) {
+                errorMsg = message;
+              }
+
+              const detailParts: string[] = [];
+              if (typeof json.code === 'string' && json.code) detailParts.push(`code=${json.code}`);
+              if (typeof json.detail === 'string' && json.detail) detailParts.push(json.detail);
+              if (json.details) {
+                detailParts.push(typeof json.details === 'string' ? json.details : JSON.stringify(json.details));
+              }
+              if (responseRequestId) detailParts.push(`requestId=${responseRequestId}`);
+              if (detailParts.length > 0) {
+                errorDetails = detailParts.join(' · ');
+              }
+            } else if (text) {
+              errorDetails = text;
             }
           } catch (e) {
             debugWarn("Failed to parse error response", e);
           }
           const err = new Error(errorMsg);
-          err.stack = errorDetails || undefined;
+          (err as any).details = errorDetails || undefined;
           throw err;
         }
 
@@ -1471,6 +1553,7 @@ function V3Player(props: V3PlayerProps) {
   }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, t, duration, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
+    userPauseIntentRef.current = true;
     if (hlsRef.current) hlsRef.current.destroy();
     if (videoRef.current) {
       videoRef.current.pause();
@@ -1549,8 +1632,8 @@ function V3Player(props: V3PlayerProps) {
 
   // ADR-009: Session Heartbeat Loop
   useEffect(() => {
-    if (!sessionId || !heartbeatInterval || status !== 'ready') {
-      return; // Only run when session is READY
+    if (!sessionId || !heartbeatInterval) {
+      return;
     }
 
     const intervalMs = heartbeatInterval * 1000;
@@ -1595,7 +1678,7 @@ function V3Player(props: V3PlayerProps) {
       debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
       clearInterval(timerId);
     };
-  }, [sessionId, heartbeatInterval, status, apiBase, authHeaders, t]);
+  }, [sessionId, heartbeatInterval, apiBase, authHeaders, t]);
 
   // Video Event Listeners
   useEffect(() => {
@@ -1650,13 +1733,42 @@ function V3Player(props: V3PlayerProps) {
 
     const onPlaying = () => {
       debugLog('[V3Player] Event: playing -> playing');
+      userPauseIntentRef.current = false;
       setStatus('playing');
       setError(null);
       setErrorDetails(null);
       setShowErrorDetails(false);
     };
 
-    const onPause = () => setStatus(prev => (prev === 'error' ? prev : 'paused'));
+    const onPause = () => {
+      if (isTeardownRef.current) {
+        return;
+      }
+
+      // Distinguish real user pause from transient startup/network pauses on live playback.
+      if (!userPauseIntentRef.current && playbackMode === 'LIVE' && sessionIdRef.current) {
+        let buffHealth = 0;
+        if (videoEl.buffered.length > 0) {
+          for (let i = 0; i < videoEl.buffered.length; i++) {
+            if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) {
+              buffHealth = videoEl.buffered.end(i) - videoEl.currentTime;
+              break;
+            }
+          }
+        }
+
+        if (videoEl.readyState < 3 || buffHealth < 0.5) {
+          debugLog('[V3Player] Event: pause classified as buffering', {
+            readyState: videoEl.readyState,
+            buff: buffHealth.toFixed(1)
+          });
+          setStatus(prev => (prev === 'error' ? prev : 'buffering'));
+          return;
+        }
+      }
+
+      setStatus(prev => (prev === 'error' ? prev : 'paused'));
+    };
 
     const onSeeked = () => {
       setStatus(prev => (prev === 'error' ? prev : (videoEl.paused ? 'paused' : 'playing')));
@@ -1717,7 +1829,7 @@ function V3Player(props: V3PlayerProps) {
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('error', onError);
     };
-  }, [reportError]);
+  }, [reportError, playbackMode]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -1978,7 +2090,7 @@ function V3Player(props: V3PlayerProps) {
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
-      const ref = channel.serviceRef || channel.id;
+      const ref = (channel.serviceRef || channel.id || '').trim();
       if (ref) setSRef(ref);
     }
   }, [channel]);
@@ -1986,10 +2098,11 @@ function V3Player(props: V3PlayerProps) {
   useEffect(() => {
     if (!autoStart || mounted.current) return;
     // UI-INV-PLAYER-001: Autostart requires an explicit source.
-    const hasSource = !!(src || recordingId || sRef);
+    const normalizedRef = sRef.trim();
+    const hasSource = !!(src || recordingId || normalizedRef);
     if (hasSource) {
       mounted.current = true;
-      startStream(sRef);
+      startStream(normalizedRef || undefined);
     }
   }, [autoStart, src, recordingId, sRef, startStream]);
 

@@ -71,10 +71,11 @@ type service struct {
 	resolver    Resolver
 	owiClient   OWIClient
 	resumeStore ResumeStore
-	truth       playback.MediaTruthProvider
+	truth       *TruthProvider
+	probeMgr    *ProbeManager
 }
 
-func NewService(cfg *config.AppConfig, manager *vod.Manager, resolver Resolver, owi OWIClient, resume ResumeStore, truth playback.MediaTruthProvider) (Service, error) {
+func NewService(cfg *config.AppConfig, manager *vod.Manager, resolver Resolver, owi OWIClient, resume ResumeStore, truth *TruthProvider, probeMgr *ProbeManager) (Service, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("NewService: cfg is nil")
 	}
@@ -87,6 +88,9 @@ func NewService(cfg *config.AppConfig, manager *vod.Manager, resolver Resolver, 
 	if truth == nil {
 		return nil, fmt.Errorf("NewService: truth is nil")
 	}
+	if probeMgr == nil {
+		return nil, fmt.Errorf("NewService: probeMgr is nil")
+	}
 
 	return &service{
 		cfg:         cfg,
@@ -95,6 +99,7 @@ func NewService(cfg *config.AppConfig, manager *vod.Manager, resolver Resolver, 
 		owiClient:   owi,
 		resumeStore: resume,
 		truth:       truth,
+		probeMgr:    probeMgr,
 	}, nil
 }
 
@@ -368,7 +373,22 @@ func (s *service) GetMediaTruth(ctx context.Context, recordingID string) (playba
 	if !ok {
 		return playback.MediaTruth{}, ErrInvalidArgument{Field: "recordingID", Reason: "invalid format"}
 	}
-	return s.truth.GetMediaTruth(ctx, serviceRef)
+
+	// 1. Get Pure Truth Outcome (Gate R1)
+	outcome := s.truth.GetMediaTruthOutcome(ctx, serviceRef)
+
+	// 2. Orchestrate Side Effects if Preparing (Gate R2)
+	if outcome.Status == TruthStatusPreparing {
+		// Valid metadata exists or recording is known, but we need truth.
+		// Trigger idempotent orchestration.
+		_, source, localPath, _ := s.truth.resolveSource(ctx, serviceRef)
+		state, retryAfter := s.probeMgr.EnsureProbed(ctx, serviceRef, source, localPath)
+		outcome.ProbeState = string(state)
+		outcome.RetryAfter = retryAfter
+	}
+
+	// 3. Map to Playback DTO
+	return outcome.ToMediaTruth(), nil
 }
 
 func (s *service) Stream(ctx context.Context, in StreamInput) (StreamResult, error) {

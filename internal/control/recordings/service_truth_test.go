@@ -23,6 +23,9 @@ func (m *MockResolverForTruth) GetMediaTruth(ctx context.Context, id string) (pl
 	return playback.MediaTruth{}, nil
 }
 
+func (m *MockResolverForTruth) TruthProvider() *TruthProvider { return nil }
+func (m *MockResolverForTruth) ProbeManager() *ProbeManager   { return nil }
+
 // TestResolvePlayback_TruthPropagation ensures that truthful fields (Container, Codecs)
 // are correctly mapped from the Resolver result to the Service Resolution.
 // This prevents regression of the "422 Decision Ambiguous" bug where Container was dropped.

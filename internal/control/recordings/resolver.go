@@ -16,6 +16,8 @@ import (
 type Resolver interface {
 	Resolve(ctx context.Context, serviceRef string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error)
 	GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error)
+	TruthProvider() *TruthProvider
+	ProbeManager() *ProbeManager
 }
 
 var ErrProbeNotConfigured = errors.New("probe not configured")
@@ -36,12 +38,15 @@ type PlaybackInfoResolver struct {
 	cfg        *config.AppConfig
 	vodManager MetadataManager
 	engine     *playback.DecisionEngine
+	truth      *TruthProvider
+	probeMgr   *ProbeManager
 }
 
 type ResolverOptions struct {
 	DurationStore DurationStore
 	PathResolver  PathResolver
 	ProbeFn       func(ctx context.Context, sourceURL string) error
+	ProbeManager  *ProbeManager
 }
 
 // NewResolver creates a new Resolver with strict invariant enforcement.
@@ -70,8 +75,13 @@ func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOp
 		cfg:        cfg,
 		vodManager: manager,
 		engine:     engine,
+		truth:      truth,
+		probeMgr:   opts.ProbeManager,
 	}, nil
 }
+
+func (r *PlaybackInfoResolver) TruthProvider() *TruthProvider { return r.truth }
+func (r *PlaybackInfoResolver) ProbeManager() *ProbeManager   { return r.probeMgr }
 
 // Resolve delegates to the Decision Engine and maps the result to the domain DTO.
 func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error) {

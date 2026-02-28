@@ -53,7 +53,7 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 	require.NoError(t, err)
 	dummyRes, err := recordings.NewResolver(&cfg, dummyMgr, recordings.ResolverOptions{})
 	require.NoError(t, err)
-	recSvc, err := recordings.NewService(&cfg, dummyMgr, dummyRes, NewOWIAdapter(owiClient), nil, dummyRes)
+	recSvc, err := recordings.NewService(&cfg, dummyMgr, dummyRes, NewOWIAdapter(owiClient), nil, dummyRes.TruthProvider(), dummyRes.ProbeManager())
 	require.NoError(t, err)
 	s.recordingsService = recSvc
 
