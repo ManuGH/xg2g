@@ -12,23 +12,45 @@ type HeaderTracker interface {
 	WroteHeader() bool
 }
 
+// StatusTracker provides a read-only view of the final HTTP status code.
+type StatusTracker interface {
+	StatusCode() int
+}
+
 // baseResponseWriter is the core wrapper that tracks if headers were written.
 type baseResponseWriter struct {
 	http.ResponseWriter
-	wrote atomic.Bool
+	wrote  atomic.Bool
+	status atomic.Int64
 }
 
 func (b *baseResponseWriter) WroteHeader() bool {
 	return b.wrote.Load()
 }
 
+func (b *baseResponseWriter) StatusCode() int {
+	v := int(b.status.Load())
+	if v > 0 {
+		return v
+	}
+	return http.StatusOK
+}
+
+func (b *baseResponseWriter) markWrite() {
+	b.wrote.Store(true)
+	if b.status.Load() == 0 {
+		b.status.Store(http.StatusOK)
+	}
+}
+
 func (b *baseResponseWriter) WriteHeader(code int) {
 	b.wrote.Store(true)
+	b.status.Store(int64(code))
 	b.ResponseWriter.WriteHeader(code)
 }
 
 func (b *baseResponseWriter) Write(p []byte) (int, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ResponseWriter.Write(p)
 }
 
@@ -47,7 +69,7 @@ type bwRF struct {
 }
 
 func (b *bwRF) ReadFrom(r io.Reader) (int64, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ReaderFrom.ReadFrom(r)
 }
 
@@ -73,7 +95,7 @@ type bwRF_H struct {
 }
 
 func (b *bwRF_H) ReadFrom(r io.Reader) (int64, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ReaderFrom.ReadFrom(r)
 }
 
@@ -84,7 +106,7 @@ type bwRF_F struct {
 }
 
 func (b *bwRF_F) ReadFrom(r io.Reader) (int64, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ReaderFrom.ReadFrom(r)
 }
 
@@ -95,7 +117,7 @@ type bwRF_P struct {
 }
 
 func (b *bwRF_P) ReadFrom(r io.Reader) (int64, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ReaderFrom.ReadFrom(r)
 }
 
@@ -125,7 +147,7 @@ type bwRF_H_F struct {
 }
 
 func (b *bwRF_H_F) ReadFrom(r io.Reader) (int64, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ReaderFrom.ReadFrom(r)
 }
 
@@ -137,7 +159,7 @@ type bwRF_H_P struct {
 }
 
 func (b *bwRF_H_P) ReadFrom(r io.Reader) (int64, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ReaderFrom.ReadFrom(r)
 }
 
@@ -149,7 +171,7 @@ type bwRF_F_P struct {
 }
 
 func (b *bwRF_F_P) ReadFrom(r io.Reader) (int64, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ReaderFrom.ReadFrom(r)
 }
 
@@ -169,7 +191,7 @@ type bwRF_H_F_P struct {
 }
 
 func (b *bwRF_H_F_P) ReadFrom(r io.Reader) (int64, error) {
-	b.wrote.Store(true)
+	b.markWrite()
 	return b.ReaderFrom.ReadFrom(r)
 }
 

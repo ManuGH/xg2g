@@ -14,6 +14,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -74,6 +76,37 @@ const validRecordingRef = "1:0:0:0:0:0:0:0:0:0:/hdd/movie/rec1.ts"
 
 var validRecordingID = hex.EncodeToString([]byte(validRecordingRef))
 
+func counterValueForLabels(t *testing.T, metricName string, labels map[string]string) float64 {
+	t.Helper()
+	mfs, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, mf := range mfs {
+		if mf.GetName() != metricName || mf.GetType() != dto.MetricType_COUNTER {
+			continue
+		}
+		for _, metric := range mf.GetMetric() {
+			match := true
+			for key, want := range labels {
+				found := false
+				for _, lp := range metric.GetLabel() {
+					if lp.GetName() == key && lp.GetValue() == want {
+						found = true
+						break
+					}
+				}
+				if !found {
+					match = false
+					break
+				}
+			}
+			if match {
+				return metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
+}
+
 func createTestServer(svc recordings.Service) *v3.Server {
 	s_srv := v3.NewServer(config.AppConfig{}, nil, nil)
 	s_srv.SetRecordingsService(svc)
@@ -106,6 +139,43 @@ func TestContract_PlaybackInfo_Preparing(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &prob)
 	require.NoError(t, err)
 	assert.Equal(t, "recordings/preparing", prob.Type)
+}
+
+func TestContract_PlaybackInfo_PreparingBlockedWhenProbeDisabled(t *testing.T) {
+	svc := new(MockRecordingsService)
+	svc.On("GetMediaTruth", mock.Anything, validRecordingID).Return(playback.MediaTruth{
+		State:              playback.StatePreparing,
+		ProbeState:         playback.ProbeStateBlocked,
+		ProbeBlockedReason: playback.ProbeBlockedReasonDisabled,
+		RetryAfterSeconds:  30,
+	}, nil)
+
+	s_srv := createTestServer(svc)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v3/recordings/"+validRecordingID+"/stream-info", nil)
+	initialCounter := counterValueForLabels(t, "xg2g_recordings_preparing_total", map[string]string{
+		"probe_state":    "blocked",
+		"blocked_reason": "probe_disabled",
+	})
+
+	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "30", w.Header().Get("Retry-After"))
+
+	var prob map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &prob)
+	require.NoError(t, err)
+	assert.Equal(t, "recordings/preparing", prob["type"])
+	assert.Equal(t, "RECORDING_PREPARING", prob["code"])
+	assert.Equal(t, "blocked", prob["probeState"])
+	assert.Equal(t, "probe_disabled", prob["blockedReason"])
+	assert.EqualValues(t, 30, prob["retryAfterSeconds"])
+	finalCounter := counterValueForLabels(t, "xg2g_recordings_preparing_total", map[string]string{
+		"probe_state":    "blocked",
+		"blocked_reason": "probe_disabled",
+	})
+	assert.Equal(t, initialCounter+1, finalCounter)
 }
 
 func TestContract_PlaybackInfo_Forbidden(t *testing.T) {
@@ -154,12 +224,12 @@ func TestContract_PlaybackInfo_UpstreamError(t *testing.T) {
 
 	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
 
-	assert.Equal(t, http.StatusBadGateway, w.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	var prob struct {
 		Type string `json:"type"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &prob)
-	assert.Equal(t, "recordings/upstream", prob.Type)
+	assert.Equal(t, "recordings/upstream_unavailable", prob.Type)
 }
 
 func TestInvariant_SeekabilityFollowsDurationTruth(t *testing.T) {

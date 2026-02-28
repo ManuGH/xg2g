@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/normalize"
+	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/singleflight"
 )
 
 // Resolver interface in domain.
@@ -37,6 +41,12 @@ type PlaybackInfoResolver struct {
 	cfg        *config.AppConfig
 	vodManager MetadataManager
 	engine     *playback.DecisionEngine
+	truth      *TruthProvider
+	sf         singleflight.Group
+	probeTTL   time.Duration
+	probeMu    sync.Mutex
+	lastProbe  map[string]time.Time
+	backoff    map[string]time.Time
 }
 
 type ResolverOptions struct {
@@ -44,6 +54,8 @@ type ResolverOptions struct {
 	PathResolver  PathResolver
 	ProbeFn       func(ctx context.Context, sourceURL string) error
 }
+
+const defaultResolverProbeTriggerTTL = 5 * time.Second
 
 // NewResolver creates a new Resolver with strict invariant enforcement.
 // It acts as a thin adapter, wiring up TruthProvider and ProfileResolver.
@@ -71,6 +83,10 @@ func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOp
 		cfg:        cfg,
 		vodManager: manager,
 		engine:     engine,
+		truth:      truth,
+		probeTTL:   defaultResolverProbeTriggerTTL,
+		lastProbe:  make(map[string]time.Time),
+		backoff:    make(map[string]time.Time),
 	}, nil
 }
 
@@ -86,6 +102,7 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 	if err != nil {
 		// Map Engine Errors to Domain Errors
 		if errors.Is(err, playback.ErrPreparing) {
+			r.ensureProbeForPreparing(ctx, serviceRef)
 			return PlaybackInfoResult{}, ErrPreparing{RecordingID: serviceRef}
 		}
 		if errors.Is(err, playback.ErrForbidden) {
@@ -154,7 +171,142 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 }
 
 func (r *PlaybackInfoResolver) GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error) {
-	return r.engine.GetMediaTruth(ctx, serviceRef)
+	if r.truth == nil {
+		return r.engine.GetMediaTruth(ctx, serviceRef)
+	}
+	outcome, err := r.truth.GetMediaTruthOutcome(ctx, serviceRef)
+	if err != nil {
+		return outcome.Truth, err
+	}
+	if outcome.NeedsProbe {
+		ps, blockedReason, retryAfter := r.scheduleProbe(serviceRef, outcome.ProbeHint)
+		if ps != playback.ProbeStateUnknown {
+			outcome.Truth.ProbeState = ps
+		}
+		if blockedReason != playback.ProbeBlockedReasonNone {
+			outcome.Truth.ProbeBlockedReason = blockedReason
+		}
+		if retryAfter > 0 {
+			outcome.Truth.RetryAfterSeconds = retryAfter
+		}
+	}
+	if outcome.Truth.State == playback.StatePreparing && outcome.Truth.ProbeState == playback.ProbeStateUnknown {
+		outcome.Truth.ProbeState = playback.ProbeStateInFlight
+		if outcome.Truth.RetryAfterSeconds <= 0 {
+			outcome.Truth.RetryAfterSeconds = playback.RetryAfterPreparingDefault
+		}
+	}
+	return outcome.Truth, nil
+}
+
+func (r *PlaybackInfoResolver) ensureProbeForPreparing(ctx context.Context, serviceRef string) {
+	if r.truth == nil {
+		return
+	}
+	outcome, err := r.truth.GetMediaTruthOutcome(ctx, serviceRef)
+	if err != nil {
+		return
+	}
+	if outcome.NeedsProbe {
+		_, _, _ = r.scheduleProbe(serviceRef, outcome.ProbeHint)
+	}
+}
+
+func (r *PlaybackInfoResolver) shouldTriggerProbeNow(key string, now time.Time) bool {
+	r.probeMu.Lock()
+	defer r.probeMu.Unlock()
+
+	last, ok := r.lastProbe[key]
+	if ok && now.Sub(last) < r.probeTTL {
+		return false
+	}
+	r.lastProbe[key] = now
+	return true
+}
+
+func (r *PlaybackInfoResolver) scheduleProbe(serviceRef string, hint ProbeHint) (playback.ProbeState, playback.ProbeBlockedReason, int) {
+	key := hashSingleflightKey(hint.Kind, hint.Source)
+	now := time.Now()
+	if until := r.currentBackoffUntil(key); now.Before(until) {
+		remaining := int(until.Sub(now).Seconds())
+		if remaining <= 0 {
+			remaining = playback.RetryAfterPreparingBlockedDefault
+		}
+		return playback.ProbeStateBlocked, playback.ProbeBlockedReasonBackoff, remaining
+	}
+
+	if !r.shouldTriggerProbeNow(key, now) {
+		return playback.ProbeStateInFlight, playback.ProbeBlockedReasonNone, playback.RetryAfterPreparingDefault
+	}
+
+	go func() {
+		_, _, _ = r.sf.Do(hashSingleflightKey(hint.Kind, hint.Source), func() (interface{}, error) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			if hint.LocalPath == "" && !r.truth.probeConfigured {
+				return nil, nil
+			}
+
+			if hint.LocalPath == "" {
+				if err := r.truth.probeFn(bgCtx, hint.Source); err != nil {
+					if errors.Is(err, ErrProbeNotConfigured) || errors.Is(err, ErrRemoteProbeUnsupported) {
+						return nil, nil
+					}
+					log.Warn().Err(err).Str("source", hint.Source).Msg("remote probe failed")
+					r.vodManager.MarkFailed(serviceRef, remoteProbeErrorPrefix+err.Error())
+					r.markBackoff(key, time.Now().Add(playback.RetryAfterPreparingBlockedDefault*time.Second))
+					return nil, err
+				}
+				r.clearBackoff(key)
+				return nil, nil
+			}
+
+			info, err := r.vodManager.Probe(bgCtx, hint.LocalPath)
+			if err != nil {
+				log.Warn().Err(err).Str("path", hint.LocalPath).Msg("local probe failed")
+				r.vodManager.MarkFailed(serviceRef, err.Error())
+				r.markBackoff(key, time.Now().Add(playback.RetryAfterPreparingBlockedDefault*time.Second))
+				return nil, err
+			}
+			if info == nil {
+				log.Warn().Str("path", hint.LocalPath).Msg("local probe returned no media info")
+				r.vodManager.MarkFailed(serviceRef, vod.ErrProbeCorrupt.Error())
+				r.markBackoff(key, time.Now().Add(playback.RetryAfterPreparingBlockedDefault*time.Second))
+				return nil, vod.ErrProbeCorrupt
+			}
+
+			r.vodManager.MarkProbed(serviceRef, hint.LocalPath, info, nil)
+			r.clearBackoff(key)
+
+			dur := int64(math.Round(info.Video.Duration))
+			if dur > 0 && r.truth.durationStore != nil && hint.RootID != "" && hint.RelPath != "" && hint.StoreKnownEmpty {
+				_ = r.truth.durationStore.SetDuration(bgCtx, hint.RootID, hint.RelPath, dur)
+			}
+
+			return nil, nil
+		})
+	}()
+
+	return playback.ProbeStateQueued, playback.ProbeBlockedReasonNone, playback.RetryAfterPreparingDefault
+}
+
+func (r *PlaybackInfoResolver) currentBackoffUntil(key string) time.Time {
+	r.probeMu.Lock()
+	defer r.probeMu.Unlock()
+	return r.backoff[key]
+}
+
+func (r *PlaybackInfoResolver) markBackoff(key string, until time.Time) {
+	r.probeMu.Lock()
+	defer r.probeMu.Unlock()
+	r.backoff[key] = until
+}
+
+func (r *PlaybackInfoResolver) clearBackoff(key string) {
+	r.probeMu.Lock()
+	defer r.probeMu.Unlock()
+	delete(r.backoff, key)
 }
 
 func mapProtocolToArtifact(p playback.Protocol) playback.ArtifactKind {

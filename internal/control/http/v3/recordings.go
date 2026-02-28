@@ -16,6 +16,7 @@ import (
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // Types are now generated in server_gen.go
@@ -199,7 +200,9 @@ func (s *Server) ProbeRecordingMp4(w http.ResponseWriter, r *http.Request, recor
 
 func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string, isHead bool) {
 	deps := s.recordingsModuleDeps()
+	sessionID := "rec:" + recordingId
 	if deps.recordingsService == nil {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "SERVICE_UNAVAILABLE")
 		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
 		return
 	}
@@ -209,11 +212,12 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 		RecordingID: recordingId,
 	})
 	if err != nil {
-		s.writeRecordingError(w, r, err)
+		s.writeRecordingStreamError(w, r, recordingId, err)
 		return
 	}
 
 	if !res.Ready {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "RECORDING_PREPARING")
 		s.writePreparingResponse(w, r, recordingId, res.State, res.RetryAfter)
 		return
 	}
@@ -222,6 +226,27 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 	f, err := os.Open(res.LocalPath)
 	if err != nil {
 		log.L().Error().Err(err).Str("path", res.LocalPath).Msg("failed to open ready artifact")
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "INTERNAL_ERROR")
+		if deps.playbackSLO != nil {
+			outcome := deps.playbackSLO.MarkOutcome(playbackSessionMeta{
+				SessionID:   sessionID,
+				Schema:      playbackSchemaRecordingLabel,
+				Mode:        playbackModeMP4Label,
+				RecordingID: recordingId,
+			}, "failed")
+			if outcome.TTFFObserved {
+				log.L().Info().
+					Str("event", "playback.slo.ttff").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", sessionID).
+					Str("schema", outcome.Schema).
+					Str("mode", outcome.Mode).
+					Str("outcome", outcome.Outcome).
+					Str("recording_id", recordingId).
+					Float64("ttff_seconds", outcome.TTFFSeconds).
+					Msg("recording playback ttff outcome observed")
+			}
+		}
 		s.writeRecordingError(w, r, err)
 		return
 	}
@@ -229,6 +254,7 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 
 	info, err := f.Stat()
 	if err != nil {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "INTERNAL_ERROR")
 		s.writeRecordingError(w, r, err)
 		return
 	}
@@ -246,6 +272,37 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 		w.WriteHeader(http.StatusOK)
 		if !isHead {
 			_, _ = io.Copy(w, f)
+			if deps.playbackSLO != nil {
+				obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
+					SessionID:   sessionID,
+					Schema:      playbackSchemaRecordingLabel,
+					Mode:        playbackModeMP4Label,
+					RecordingID: recordingId,
+				})
+				if obs.TTFFObserved {
+					log.L().Info().
+						Str("event", "playback.slo.ttff").
+						Str("request_id", requestID(r.Context())).
+						Str("session_id", sessionID).
+						Str("schema", obs.Schema).
+						Str("mode", obs.Mode).
+						Str("outcome", "ok").
+						Str("recording_id", recordingId).
+						Float64("ttff_seconds", obs.TTFFSeconds).
+						Msg("recording playback ttff observed")
+				}
+				if obs.RebufferSeverity != "" {
+					log.L().Warn().
+						Str("event", "playback.slo.rebuffer").
+						Str("request_id", requestID(r.Context())).
+						Str("session_id", sessionID).
+						Str("schema", obs.Schema).
+						Str("mode", obs.Mode).
+						Str("severity", obs.RebufferSeverity).
+						Str("recording_id", recordingId).
+						Msg("recording playback rebuffer proxy event observed")
+				}
+			}
 		}
 		return
 	}
@@ -253,6 +310,7 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 	// 5. Case B: Range Header Present (Parse via SSOT)
 	rng, err := xg2ghttp.ParseRange(rangeHeader, size)
 	if err != nil {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "INVALID_INPUT")
 		// Policy A: Invalid or Multi-range -> 416
 		xg2ghttp.Write416(w, size)
 		return
@@ -266,12 +324,44 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 
 	if !isHead {
 		if _, err := f.Seek(rng.Start, io.SeekStart); err != nil {
+			metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "INTERNAL_ERROR")
 			log.L().Error().Err(err).Int64("start", rng.Start).Msg("failed to seek in artifact")
 			// Already sent 206, but haven't written body.
 			// Too late for WriteHeader, but we can't do much here.
 			return
 		}
 		_, _ = io.CopyN(w, f, contentLength)
+		if deps.playbackSLO != nil {
+			obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
+				SessionID:   sessionID,
+				Schema:      playbackSchemaRecordingLabel,
+				Mode:        playbackModeMP4Label,
+				RecordingID: recordingId,
+			})
+			if obs.TTFFObserved {
+				log.L().Info().
+					Str("event", "playback.slo.ttff").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", sessionID).
+					Str("schema", obs.Schema).
+					Str("mode", obs.Mode).
+					Str("outcome", "ok").
+					Str("recording_id", recordingId).
+					Float64("ttff_seconds", obs.TTFFSeconds).
+					Msg("recording playback ttff observed")
+			}
+			if obs.RebufferSeverity != "" {
+				log.L().Warn().
+					Str("event", "playback.slo.rebuffer").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", sessionID).
+					Str("schema", obs.Schema).
+					Str("mode", obs.Mode).
+					Str("severity", obs.RebufferSeverity).
+					Str("recording_id", recordingId).
+					Msg("recording playback rebuffer proxy event observed")
+			}
+		}
 	}
 }
 
@@ -299,6 +389,48 @@ func (s *Server) writeRecordingError(w http.ResponseWriter, r *http.Request, err
 		log.L().Error().Err(err).Msg("recordings service error")
 		writeProblem(w, r, http.StatusInternalServerError, "recordings/internal", "Internal Error", "INTERNAL_ERROR", "An unexpected error occurred", nil)
 	}
+}
+
+func (s *Server) writeRecordingStreamError(w http.ResponseWriter, r *http.Request, recordingID string, err error) {
+	class := recservice.Classify(err)
+	switch class {
+	case recservice.ClassInvalidArgument:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "INVALID_INPUT")
+	case recservice.ClassNotFound:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "NOT_FOUND")
+	case recservice.ClassForbidden:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "FORBIDDEN")
+	case recservice.ClassPreparing:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "RECORDING_PREPARING")
+	case recservice.ClassUnsupported:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "REMOTE_PROBE_UNSUPPORTED")
+	case recservice.ClassUpstream:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "UPSTREAM_UNAVAILABLE")
+	default:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "INTERNAL_ERROR")
+	}
+	deps := s.recordingsModuleDeps()
+	if deps.playbackSLO != nil {
+		outcome := deps.playbackSLO.MarkOutcome(playbackSessionMeta{
+			SessionID:   "rec:" + recordingID,
+			Schema:      playbackSchemaRecordingLabel,
+			Mode:        playbackModeMP4Label,
+			RecordingID: recordingID,
+		}, "failed")
+		if outcome.TTFFObserved {
+			log.L().Info().
+				Str("event", "playback.slo.ttff").
+				Str("request_id", requestID(r.Context())).
+				Str("session_id", "rec:"+recordingID).
+				Str("schema", outcome.Schema).
+				Str("mode", outcome.Mode).
+				Str("outcome", outcome.Outcome).
+				Str("recording_id", recordingID).
+				Float64("ttff_seconds", outcome.TTFFSeconds).
+				Msg("recording playback ttff outcome observed")
+		}
+	}
+	s.writeRecordingError(w, r, err)
 }
 
 // Helpers

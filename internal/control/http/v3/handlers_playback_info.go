@@ -21,6 +21,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
@@ -56,6 +57,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	resumeStore := deps.resumeStore
 
 	if svc == nil {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "UNAVAILABLE")
 		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Service Unavailable", "UNAVAILABLE", "Recordings service is not initialized", nil)
 		return
 	}
@@ -63,6 +65,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	// 2. Resolve Truth & Policy
 	_, ok := recordings.DecodeRecordingID(recordingId)
 	if !ok {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "INVALID_INPUT")
 		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", "Invalid recording ID format", nil)
 		return
 	}
@@ -76,9 +79,38 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 
 	// 2b. Check for Preparing State (Async Probe In Progress)
 	if truth.State == playback.StatePreparing {
-		w.Header().Set("Retry-After", "5")
-		// Use standard "Recordings Preparing" problem
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", "Retry shortly.", nil)
+		retryAfterSeconds := truth.RetryAfterSeconds
+		if retryAfterSeconds <= 0 {
+			retryAfterSeconds = playback.RetryAfterPreparingDefault
+		}
+		probeState := truth.ProbeState
+		if probeState == playback.ProbeStateUnknown {
+			probeState = playback.ProbeStateInFlight
+		}
+		metrics.IncRecordingsPreparing(string(probeState), string(truth.ProbeBlockedReason))
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "RECORDING_PREPARING")
+		logEvt := log.L().Debug()
+		if probeState == playback.ProbeStateBlocked {
+			logEvt = log.L().Info()
+		}
+		evt := logEvt.
+			Str("event", "recordings.playback.preparing").
+			Str("recording_id", recordingId).
+			Str("probe_state", string(probeState)).
+			Int("retry_after_seconds", retryAfterSeconds)
+		if truth.ProbeBlockedReason != playback.ProbeBlockedReasonNone {
+			evt = evt.Str("blocked_reason", string(truth.ProbeBlockedReason))
+		}
+		evt.Msg("recording playback preparing response")
+		extra := map[string]any{
+			"retryAfterSeconds": retryAfterSeconds,
+			"probeState":        string(probeState),
+		}
+		if truth.ProbeBlockedReason != playback.ProbeBlockedReasonNone {
+			extra["blockedReason"] = string(truth.ProbeBlockedReason)
+		}
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfterSeconds))
+		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", "Retry shortly.", extra)
 		return
 	}
 
@@ -136,6 +168,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 
 	// 5. Handle RFC7807 Problems from Engine
 	if prob != nil {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, prob.Code)
 		writeProblem(w, r, prob.Status, prob.Type, prob.Title, prob.Code, prob.Detail, nil)
 		return
 	}
@@ -163,6 +196,23 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 
 	// 8. Transform to DTO (passing truth directly)
 	dto := s.mapPlaybackInfoV2(r.Context(), recordingId, dec, caps, resumeState, segmentTruth, attemptedTruth, truth)
+	if deps.playbackSLO != nil && dto.Mode != PlaybackInfoModeDeny {
+		modeLabel := playbackModeLabelFromPlaybackInfoMode(dto.Mode)
+		deps.playbackSLO.Start(playbackSessionMeta{
+			SessionID:   dto.SessionId,
+			Schema:      playbackSchemaRecordingLabel,
+			Mode:        modeLabel,
+			RecordingID: recordingId,
+		})
+		log.L().Debug().
+			Str("event", "playback.slo.start").
+			Str("request_id", requestID(r.Context())).
+			Str("session_id", dto.SessionId).
+			Str("schema", playbackSchemaRecordingLabel).
+			Str("mode", modeLabel).
+			Str("recording_id", recordingId).
+			Msg("recording playback start tracked")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(dto)
@@ -177,19 +227,37 @@ func (s *Server) mapPlaybackError(w http.ResponseWriter, r *http.Request, id str
 
 	switch class {
 	case recordings.ClassInvalidArgument:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "INVALID_INPUT")
 		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", msg, nil)
 	case recordings.ClassNotFound:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "NOT_FOUND")
 		writeProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", "NOT_FOUND", msg, nil)
 	case recordings.ClassForbidden:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "FORBIDDEN")
 		writeProblem(w, r, http.StatusForbidden, "recordings/forbidden", "Access Denied", "FORBIDDEN", msg, nil)
 	case recordings.ClassPreparing:
-		w.Header().Set("Retry-After", "5")
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", "PREPARING", msg, nil)
+		const retryAfterSeconds = playback.RetryAfterPreparingDefault
+		metrics.IncRecordingsPreparing(string(playback.ProbeStateInFlight), string(playback.ProbeBlockedReasonNone))
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "RECORDING_PREPARING")
+		log.L().Debug().
+			Str("event", "recordings.playback.preparing").
+			Str("recording_id", id).
+			Str("probe_state", string(playback.ProbeStateInFlight)).
+			Int("retry_after_seconds", retryAfterSeconds).
+			Msg("recording playback preparing response (error classification path)")
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfterSeconds))
+		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", msg, map[string]any{
+			"retryAfterSeconds": retryAfterSeconds,
+			"probeState":        string(playback.ProbeStateInFlight),
+		})
 	case recordings.ClassUnsupported:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "REMOTE_PROBE_UNSUPPORTED")
 		writeProblem(w, r, http.StatusUnprocessableEntity, "recordings/remote-probe-unsupported", "Remote Probe Unsupported", "REMOTE_PROBE_UNSUPPORTED", msg, nil)
 	case recordings.ClassUpstream:
-		writeProblem(w, r, http.StatusBadGateway, "recordings/upstream", "Upstream Error", "UPSTREAM_ERROR", msg, nil)
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "UPSTREAM_UNAVAILABLE")
+		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/upstream_unavailable", "Upstream Unavailable", "UPSTREAM_UNAVAILABLE", msg, nil)
 	default:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaybackInfoLabel, "INTERNAL_ERROR")
 		log.L().Error().Err(err).Str("id", id).Msg("playback resolution failed")
 		writeProblem(w, r, http.StatusInternalServerError, "playback/resolution_failed", "Resolution Failed", "INTERNAL_ERROR", "Failed to resolve playback info", nil)
 	}

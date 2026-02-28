@@ -9,6 +9,7 @@ import (
 	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // PR-P9-2: HLS Handlers (Hardened Contract)
@@ -32,6 +33,7 @@ func (s *Server) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string, isTimeshift bool, isHead bool) {
+	deps := s.recordingsModuleDeps()
 	profile := detectClientProfile(r)
 
 	var artifact artifacts.ArtifactOK
@@ -44,7 +46,7 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 	}
 
 	if artErr != nil {
-		s.writeArtifactError(w, r, recordingId, artErr)
+		s.writeArtifactError(w, r, recordingId, playbackStagePlaylistLabel, artErr)
 		return
 	}
 
@@ -53,6 +55,7 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 
 	// PR-P9-2: Range Policy A for Playlists (Explicitly 416 if range present)
 	if r.Header.Get("Range") != "" {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaylistLabel, "INVALID_INPUT")
 		size := int64(len(artifact.Data))
 		if artifact.AbsPath != "" {
 			if info, err := os.Stat(artifact.AbsPath); err == nil {
@@ -88,6 +91,37 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 			}
 		}
 	}
+	if !isHead && deps.playbackSLO != nil {
+		obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
+			SessionID:   "rec:" + recordingId,
+			Schema:      playbackSchemaRecordingLabel,
+			Mode:        playbackModeHLSLabel,
+			RecordingID: recordingId,
+		})
+		if obs.TTFFObserved {
+			log.L().Info().
+				Str("event", "playback.slo.ttff").
+				Str("request_id", requestID(r.Context())).
+				Str("session_id", "rec:"+recordingId).
+				Str("schema", obs.Schema).
+				Str("mode", obs.Mode).
+				Str("outcome", "ok").
+				Str("recording_id", recordingId).
+				Float64("ttff_seconds", obs.TTFFSeconds).
+				Msg("recording playback ttff observed")
+		}
+		if obs.RebufferSeverity != "" {
+			log.L().Warn().
+				Str("event", "playback.slo.rebuffer").
+				Str("request_id", requestID(r.Context())).
+				Str("session_id", "rec:"+recordingId).
+				Str("schema", obs.Schema).
+				Str("mode", obs.Mode).
+				Str("severity", obs.RebufferSeverity).
+				Str("recording_id", recordingId).
+				Msg("recording playback rebuffer proxy event observed")
+		}
+	}
 }
 
 // GetRecordingHLSCustomSegment handles GET /api/v3/recordings/{recordingId}/{segment}
@@ -100,15 +134,37 @@ func (s *Server) GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http
 }
 
 func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string, isHead bool) {
+	deps := s.recordingsModuleDeps()
 	artifact, artErr := s.artifacts.ResolveSegment(r.Context(), recordingId, segment)
 	if artErr != nil {
-		s.writeArtifactError(w, r, recordingId, artErr)
+		s.writeArtifactError(w, r, recordingId, playbackStageSegmentLabel, artErr)
 		return
 	}
 
 	f, err := os.Open(artifact.AbsPath)
 	if err != nil {
 		log.L().Error().Err(err).Str("path", artifact.AbsPath).Msg("failed to open ready segment")
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageSegmentLabel, "INTERNAL_ERROR")
+		if deps.playbackSLO != nil {
+			outcome := deps.playbackSLO.MarkOutcome(playbackSessionMeta{
+				SessionID:   "rec:" + recordingId,
+				Schema:      playbackSchemaRecordingLabel,
+				Mode:        playbackModeHLSLabel,
+				RecordingID: recordingId,
+			}, "failed")
+			if outcome.TTFFObserved {
+				log.L().Info().
+					Str("event", "playback.slo.ttff").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", "rec:"+recordingId).
+					Str("schema", outcome.Schema).
+					Str("mode", outcome.Mode).
+					Str("outcome", outcome.Outcome).
+					Str("recording_id", recordingId).
+					Float64("ttff_seconds", outcome.TTFFSeconds).
+					Msg("recording playback ttff outcome observed")
+			}
+		}
 		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to open segment")
 		return
 	}
@@ -120,6 +176,7 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 
 	info, err := f.Stat()
 	if err != nil {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageSegmentLabel, "INTERNAL_ERROR")
 		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "stat failed")
 		return
 	}
@@ -137,6 +194,37 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 		w.WriteHeader(http.StatusOK)
 		if !isHead {
 			_, _ = io.Copy(w, f)
+			if deps.playbackSLO != nil {
+				obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
+					SessionID:   "rec:" + recordingId,
+					Schema:      playbackSchemaRecordingLabel,
+					Mode:        playbackModeHLSLabel,
+					RecordingID: recordingId,
+				})
+				if obs.TTFFObserved {
+					log.L().Info().
+						Str("event", "playback.slo.ttff").
+						Str("request_id", requestID(r.Context())).
+						Str("session_id", "rec:"+recordingId).
+						Str("schema", obs.Schema).
+						Str("mode", obs.Mode).
+						Str("outcome", "ok").
+						Str("recording_id", recordingId).
+						Float64("ttff_seconds", obs.TTFFSeconds).
+						Msg("recording playback ttff observed")
+				}
+				if obs.RebufferSeverity != "" {
+					log.L().Warn().
+						Str("event", "playback.slo.rebuffer").
+						Str("request_id", requestID(r.Context())).
+						Str("session_id", "rec:"+recordingId).
+						Str("schema", obs.Schema).
+						Str("mode", obs.Mode).
+						Str("severity", obs.RebufferSeverity).
+						Str("recording_id", recordingId).
+						Msg("recording playback rebuffer proxy event observed")
+				}
+			}
 		}
 		return
 	}
@@ -144,6 +232,7 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 	// 3. Range Present (Policy A: Single-range)
 	rng, err := xg2ghttp.ParseRange(rangeHeader, size)
 	if err != nil {
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageSegmentLabel, "INVALID_INPUT")
 		xg2ghttp.Write416(w, size)
 		return
 	}
@@ -155,15 +244,49 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 
 	if !isHead {
 		if _, err := f.Seek(rng.Start, io.SeekStart); err != nil {
+			metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageSegmentLabel, "INTERNAL_ERROR")
 			return
 		}
 		_, _ = io.CopyN(w, f, contentLength)
+		if deps.playbackSLO != nil {
+			obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
+				SessionID:   "rec:" + recordingId,
+				Schema:      playbackSchemaRecordingLabel,
+				Mode:        playbackModeHLSLabel,
+				RecordingID: recordingId,
+			})
+			if obs.TTFFObserved {
+				log.L().Info().
+					Str("event", "playback.slo.ttff").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", "rec:"+recordingId).
+					Str("schema", obs.Schema).
+					Str("mode", obs.Mode).
+					Str("outcome", "ok").
+					Str("recording_id", recordingId).
+					Float64("ttff_seconds", obs.TTFFSeconds).
+					Msg("recording playback ttff observed")
+			}
+			if obs.RebufferSeverity != "" {
+				log.L().Warn().
+					Str("event", "playback.slo.rebuffer").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", "rec:"+recordingId).
+					Str("schema", obs.Schema).
+					Str("mode", obs.Mode).
+					Str("severity", obs.RebufferSeverity).
+					Str("recording_id", recordingId).
+					Msg("recording playback rebuffer proxy event observed")
+			}
+		}
 	}
 }
 
-func (s *Server) writeArtifactError(w http.ResponseWriter, r *http.Request, recordingId string, err *artifacts.ArtifactError) {
+func (s *Server) writeArtifactError(w http.ResponseWriter, r *http.Request, recordingId string, stage string, err *artifacts.ArtifactError) {
+	deps := s.recordingsModuleDeps()
 	switch err.Code {
 	case artifacts.CodePreparing:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, stage, "RECORDING_PREPARING")
 		retrySec := 5
 		if err.RetryAfter > 0 {
 			retrySec = int(err.RetryAfter.Seconds())
@@ -173,12 +296,56 @@ func (s *Server) writeArtifactError(w http.ResponseWriter, r *http.Request, reco
 		}
 		s.writePreparingResponse(w, r, recordingId, "PREPARING", retrySec)
 	case artifacts.CodeNotFound:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, stage, "NOT_FOUND")
+		if deps.playbackSLO != nil {
+			outcome := deps.playbackSLO.MarkOutcome(playbackSessionMeta{
+				SessionID:   "rec:" + recordingId,
+				Schema:      playbackSchemaRecordingLabel,
+				Mode:        playbackModeHLSLabel,
+				RecordingID: recordingId,
+			}, "failed")
+			if outcome.TTFFObserved {
+				log.L().Info().
+					Str("event", "playback.slo.ttff").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", "rec:"+recordingId).
+					Str("schema", outcome.Schema).
+					Str("mode", outcome.Mode).
+					Str("outcome", outcome.Outcome).
+					Str("recording_id", recordingId).
+					Float64("ttff_seconds", outcome.TTFFSeconds).
+					Msg("recording playback ttff outcome observed")
+			}
+		}
 		RespondError(w, r, http.StatusNotFound, ErrRecordingNotFound, err.Detail)
 	case artifacts.CodeInvalid:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, stage, "INVALID_INPUT")
 		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, err.Detail)
 	case artifacts.CodeInternal:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, stage, "INTERNAL_ERROR")
+		if deps.playbackSLO != nil {
+			outcome := deps.playbackSLO.MarkOutcome(playbackSessionMeta{
+				SessionID:   "rec:" + recordingId,
+				Schema:      playbackSchemaRecordingLabel,
+				Mode:        playbackModeHLSLabel,
+				RecordingID: recordingId,
+			}, "failed")
+			if outcome.TTFFObserved {
+				log.L().Info().
+					Str("event", "playback.slo.ttff").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", "rec:"+recordingId).
+					Str("schema", outcome.Schema).
+					Str("mode", outcome.Mode).
+					Str("outcome", outcome.Outcome).
+					Str("recording_id", recordingId).
+					Float64("ttff_seconds", outcome.TTFFSeconds).
+					Msg("recording playback ttff outcome observed")
+			}
+		}
 		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, err.Error())
 	default:
+		metrics.IncPlaybackError(playbackSchemaRecordingLabel, stage, "INTERNAL_ERROR")
 		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "internal error")
 	}
 }

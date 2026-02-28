@@ -74,6 +74,7 @@ type Server struct {
 	liveDecisionKeyring    liveDecisionKeyring
 	liveDecisionSigningKey []byte
 	liveDecisionTTL        time.Duration
+	playbackSLO            *playbackSessionTracker
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -135,6 +136,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		liveDecisionKeyring:    liveDecisionKeyring,
 		liveDecisionSigningKey: signingKey,
 		liveDecisionTTL:        defaultLivePlaybackDecisionTTL,
+		playbackSLO:            newPlaybackSessionTracker(defaultPlaybackSLOSessionTTL),
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
 	s.epgSource = &epgAdapter{s}
@@ -258,6 +260,13 @@ func (s *Server) SetRecordingsService(svc recservice.Service) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.recordingsService = svc
+}
+
+// SetArtifactsResolver overrides the recordings artifact resolver (tests).
+func (s *Server) SetArtifactsResolver(res artifacts.Resolver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.artifacts = res
 }
 
 // SetAdmission sets the resource monitor for admission control.

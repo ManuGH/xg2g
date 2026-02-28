@@ -3,6 +3,7 @@ package recordings_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -129,20 +130,29 @@ func TestDurationTruth_Read_ProbeFallback(t *testing.T) {
 	ds.On("SetDuration", mock.Anything, "1", "movie.ts", int64(3600)).Return(nil)
 
 	mgr := new(mockMetadataManager)
+	probeFinished := make(chan struct{})
 
-	// Mock Sequence:
-	// 1. Return Empty (Failure Pass) -> Consumed by Resolve logic (1 call)
-	// 2. Return Complete (Success Pass) -> Consumed by Resolve logic (2 calls)
-	mgr.On("GetMetadata", mock.Anything).Return(vod.Metadata{}, false).Once()
-	mgr.On("GetMetadata", mock.Anything).Return(vod.Metadata{
-		Container: "mp4", VideoCodec: "h264", AudioCodec: "aac", Duration: 3600,
-	}, true)
+	// Read-model transitions to complete metadata after probe succeeds.
+	mgr.On("GetMetadata", mock.Anything).Return(func(_ string) vod.Metadata {
+		select {
+		case <-probeFinished:
+			return vod.Metadata{Container: "mp4", VideoCodec: "h264", AudioCodec: "aac", Duration: 3600}
+		default:
+			return vod.Metadata{}
+		}
+	}, func(_ string) bool {
+		select {
+		case <-probeFinished:
+			return true
+		default:
+			return false
+		}
+	})
 
 	mgr.On("MarkProbed", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
 	mgr.On("Get", mock.Anything, mock.Anything).Return(nil, false)
 
 	// Probe mock setup
-	probeFinished := make(chan struct{})
 	var probeOnce sync.Once
 	mgr.On("Probe", mock.Anything, "/local/movie.ts").Return(&vod.StreamInfo{
 		Container: "mp4",
@@ -303,29 +313,25 @@ func TestMediaTruth(t *testing.T) {
 			ExpErrIs:    recordings.ErrPreparing{RecordingID: "service:ref"},
 		},
 		{
-			// Remote Probe -> FAIL FAST (Gate 2)
+			// Remote probe unsupported is now soft: stay PREPARING, do not escalate to upstream.
 			Name:           "Remote Probe Unsupported (No Codecs)",
 			ServiceRef:     "1:0:0:0:0:0:0:0:0:0:/local/x",
 			CacheMeta:      vod.Metadata{},
-			ExpectProbe:    false, // No probe triggered (fail fast)
-			ExpectAsync:    false, // Sync error
+			ExpectProbe:    false,
+			ExpectAsync:    true,
 			ProbeRemoteErr: recordings.ErrRemoteProbeUnsupported,
-			// Resolver maps ErrRemoteProbeUnsupported -> ErrUpstream{Op: "probe_remote_unsupported"}
-			ExpErrIs: recordings.ErrUpstream{Op: "probe_remote_unsupported", Cause: recordings.ErrRemoteProbeUnsupported},
+			ExpErrIs:       recordings.ErrPreparing{RecordingID: "1:0:0:0:0:0:0:0:0:0:/local/x"},
 		},
 		{
-			// Remote Probe Failure -> FAIL FAST (Gate 2)
-			Name:        "Remote Probe Failure (Upstream)",
-			CacheMeta:   vod.Metadata{},
-			ExpectProbe: false,
-			ExpectAsync: false,
-			ProbeErr:    errors.New("conn refused"),
-			// Since we use logic: if !probeConfigured -> ErrUpstream.
-			// Here probe IS configured (test harness sets it).
-			// So it hits "Gate 2": if localPath=="" && probeConfigured -> ErrRemoteProbeUnsupported.
-			// It implies any "Remote Probe" attempt without local path is unsupported currently.
-			// So expected error is ErrRemoteProbeUnsupported (mapped to Upstream)
-			ExpErrIs: recordings.ErrUpstream{Op: "probe_remote_unsupported", Cause: recordings.ErrRemoteProbeUnsupported},
+			// Remote probe hard failure is escalated after async probe attempt.
+			Name:           "Remote Probe Failure (Upstream)",
+			CacheMeta:      vod.Metadata{},
+			ExpectProbe:    false,
+			ExpectAsync:    true,
+			ProbeRemoteErr: errors.New("conn refused"),
+			// Mock metadata manager in this table is read-only, so we assert PREPARING here.
+			// Hard-failure escalation is covered in TestTruthProvider_RemoteProbeHardFailure_BecomesUpstream.
+			ExpErrIs: recordings.ErrPreparing{RecordingID: "service:ref"},
 		},
 		{
 			Name:        "Store Get Error (No Overwrite)",
@@ -466,6 +472,13 @@ func TestMediaTruth(t *testing.T) {
 					mgr.On("MarkProbed", svcRef, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 				}
 			}
+			if tc.LocalPath == "" && tc.ProbeRemoteErr != nil &&
+				!errors.Is(tc.ProbeRemoteErr, recordings.ErrRemoteProbeUnsupported) &&
+				!errors.Is(tc.ProbeRemoteErr, recordings.ErrProbeNotConfigured) {
+				mgr.On("MarkFailed", svcRef, mock.MatchedBy(func(reason string) bool {
+					return strings.Contains(reason, tc.ProbeRemoteErr.Error())
+				})).Return().Maybe()
+			}
 
 			r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 				DurationStore: ds,
@@ -498,13 +511,14 @@ func TestMediaTruth(t *testing.T) {
 					t.Log("Warning: Probe test channel timed out (maybe already closed or not called)")
 				}
 
-				// Retry verification if success expected
-				if tc.ExpErr == nil && tc.ExpErrIs == nil {
-					// 2. Second Call
-					res2, err2 := r.Resolve(context.Background(), svcRef, recordings.IntentStream, recordings.ProfileGeneric)
+				// 2. Second Call
+				res2, err2 := r.Resolve(context.Background(), svcRef, recordings.IntentStream, recordings.ProfileGeneric)
+				if tc.ExpErrIs != nil {
+					assert.ErrorIs(t, err2, tc.ExpErrIs)
+				} else if tc.ExpErr != nil {
+					assert.Equal(t, tc.ExpErr, err2)
+				} else {
 					assert.NoError(t, err2)
-
-					// Assertions on final result
 					if tc.ExpRes.Reason != "" {
 						assert.Equal(t, tc.ExpRes.Reason, res2.Reason)
 					}
