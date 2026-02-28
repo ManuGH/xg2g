@@ -19,7 +19,8 @@ const (
 
 // TokenExtractOptions controls accepted token sources during request parsing.
 type TokenExtractOptions struct {
-	AllowLegacySources bool
+	AllowLegacySources  bool
+	ResolveSessionToken func(sessionID string) (string, bool)
 }
 
 // ExtractToken retrieves the API token from the request.
@@ -54,8 +55,14 @@ func ExtractTokenDetailedWithOptions(r *http.Request, opts TokenExtractOptions) 
 	}
 
 	// 2. Cookie
-	if t := ExtractSessionToken(r); t != "" {
-		return t, "xg2g_session cookie"
+	if sessionID := ExtractSessionToken(r); sessionID != "" {
+		if opts.ResolveSessionToken != nil {
+			if token, ok := opts.ResolveSessionToken(sessionID); ok && token != "" {
+				return token, "xg2g_session cookie"
+			}
+			return "", ""
+		}
+		return sessionID, "xg2g_session cookie"
 	}
 
 	if !opts.AllowLegacySources {

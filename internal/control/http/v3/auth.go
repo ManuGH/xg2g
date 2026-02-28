@@ -9,9 +9,16 @@ package v3
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/log"
+)
+
+const (
+	sessionCookieName          = "xg2g_session"
+	sessionCookieMaxAgeSeconds = 86400
+	defaultAuthSessionTTL      = 24 * time.Hour
 )
 
 // ctxPrincipalKey is used to store the authenticated principal in context
@@ -38,7 +45,7 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 		// For general API, we allow Header (Bearer) and session cookie.
 		// Legacy X-API-Token vectors are optional behind config flag.
 		allowLegacySources := !cfg.APIDisableLegacyTokenSources
-		reqToken, authSource := extractTokenDetailedWithLegacyPolicy(r, allowLegacySources)
+		reqToken, authSource := s.extractTokenDetailedWithLegacyPolicy(r, allowLegacySources)
 
 		logger := log.FromContext(r.Context()).With().
 			Str("component", "auth").
@@ -108,15 +115,53 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	store := s.authSessionStoreOrDefault()
+	if existingCookie, err := r.Cookie(sessionCookieName); err == nil {
+		store.DeleteSession(existingCookie.Value)
+	}
+
+	sessionID, err := store.CreateSession(reqToken, s.authSessionTTLOrDefault())
+	if err != nil {
+		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to create session")
+		return
+	}
+
 	http.SetCookie(w, &http.Cookie{
-		Name:     "xg2g_session",
-		Value:    reqToken,
+		Name:     sessionCookieName,
+		Value:    sessionID,
 		Path:     "/api/v3/",
 		HttpOnly: true,
 		Secure:   r.TLS != nil || forceHTTPS, // auto-detect or force
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   86400, // 24h
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   sessionCookieMaxAgeSeconds,
 	})
 
 	w.WriteHeader(http.StatusOK) // 200 OK
+}
+
+func (s *Server) authSessionStoreOrDefault() auth.SessionTokenStore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.authSessionStore == nil {
+		s.authSessionStore = auth.NewInMemorySessionTokenStore()
+	}
+	return s.authSessionStore
+}
+
+func (s *Server) authSessionTTLOrDefault() time.Duration {
+	s.mu.RLock()
+	ttl := s.authSessionTTL
+	s.mu.RUnlock()
+	if ttl <= 0 {
+		return defaultAuthSessionTTL
+	}
+	return ttl
+}
+
+func (s *Server) resolveSessionToken(sessionID string) (string, bool) {
+	return s.authSessionStoreOrDefault().ResolveSessionToken(sessionID)
+}
+
+func (s *Server) deleteAuthSession(sessionID string) {
+	s.authSessionStoreOrDefault().DeleteSession(sessionID)
 }

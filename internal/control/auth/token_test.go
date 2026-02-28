@@ -71,6 +71,42 @@ func TestExtractTokenDetailedWithOptions_AllowsSessionCookieWhenLegacyDisabled(t
 	}
 }
 
+func TestExtractTokenDetailedWithOptions_ResolvesSessionCookie(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.local/test", nil)
+	r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "opaque-session-id"})
+
+	got, src := ExtractTokenDetailedWithOptions(r, TokenExtractOptions{
+		AllowLegacySources: false,
+		ResolveSessionToken: func(sessionID string) (string, bool) {
+			if sessionID == "opaque-session-id" {
+				return "resolved-token", true
+			}
+			return "", false
+		},
+	})
+	if got != "resolved-token" {
+		t.Fatalf("expected resolved token, got %q", got)
+	}
+	if src != "xg2g_session cookie" {
+		t.Fatalf("expected session cookie source, got %q", src)
+	}
+}
+
+func TestExtractTokenDetailedWithOptions_RejectsUnknownSessionID(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.local/test", nil)
+	r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "unknown-session-id"})
+
+	got, src := ExtractTokenDetailedWithOptions(r, TokenExtractOptions{
+		AllowLegacySources: false,
+		ResolveSessionToken: func(sessionID string) (string, bool) {
+			return "", false
+		},
+	})
+	if got != "" || src != "" {
+		t.Fatalf("expected unresolved session to be rejected, got token=%q source=%q", got, src)
+	}
+}
+
 func TestAuthorizeToken(t *testing.T) {
 	if AuthorizeToken("secret", "secret") != true {
 		t.Fatal("AuthorizeToken should accept exact match")

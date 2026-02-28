@@ -11,14 +11,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/auth"
 )
 
-// extractToken delegates to the shared internal/auth package to ensure parity with valid proxy auth.
-func extractToken(r *http.Request) string {
-	return auth.ExtractToken(r)
-}
-
-func extractTokenDetailedWithLegacyPolicy(r *http.Request, allowLegacySources bool) (string, string) {
+func (s *Server) extractTokenDetailedWithLegacyPolicy(r *http.Request, allowLegacySources bool) (string, string) {
 	return auth.ExtractTokenDetailedWithOptions(r, auth.TokenExtractOptions{
-		AllowLegacySources: allowLegacySources,
+		AllowLegacySources:  allowLegacySources,
+		ResolveSessionToken: s.resolveSessionToken,
 	})
 }
 

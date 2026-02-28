@@ -103,9 +103,10 @@ func TestAuthMiddleware_ValidCookie(t *testing.T) {
 		},
 	}
 	handler := s.authMiddleware(next)
+	sessionID := mustCreateAuthSession(t, s, "secret-token")
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "secret-token"})
+	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: sessionID})
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -126,6 +127,7 @@ func TestAuthMiddleware_MediaRequiresSessionCookie(t *testing.T) {
 		},
 	}
 	handler := s.authMiddleware(next)
+	sessionID := mustCreateAuthSession(t, s, "secret-token")
 
 	paths := []string{
 		"/api/v3/recordings/abc/stream.mp4",
@@ -146,7 +148,7 @@ func TestAuthMiddleware_MediaRequiresSessionCookie(t *testing.T) {
 
 		t.Run(path+"/cookie", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
-			req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "secret-token"})
+			req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: sessionID})
 			w := httptest.NewRecorder()
 
 			handler.ServeHTTP(w, req)
@@ -306,11 +308,16 @@ func TestCreateSession(t *testing.T) {
 	for _, c := range cookies {
 		if c.Name == "xg2g_session" {
 			found = true
-			assert.Equal(t, "secret", c.Value)
+			assert.NotEqual(t, "secret", c.Value)
+			assert.NotEmpty(t, c.Value)
 			assert.True(t, c.HttpOnly)
 			assert.True(t, c.Secure) // ForceHTTPS=true
+			assert.Equal(t, http.SameSiteLaxMode, c.SameSite)
 			assert.Equal(t, "/api/v3/", c.Path)
 			assert.Equal(t, 24*time.Hour, time.Duration(c.MaxAge)*time.Second)
+			resolved, ok := s.resolveSessionToken(c.Value)
+			assert.True(t, ok)
+			assert.Equal(t, "secret", resolved)
 		}
 	}
 	assert.True(t, found, "xg2g_session cookie not found")
@@ -379,4 +386,58 @@ func TestCreateSession_RejectsCookieOnly(t *testing.T) {
 	s.CreateSession(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestAuthMiddleware_InvalidSessionID(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	})
+
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken:       "secret-token",
+			APITokenScopes: []string{string(ScopeV3Read)},
+		},
+	}
+	handler := s.authMiddleware(next)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "invalid-session-id"})
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestAuthSession_DeleteInvalidatesCookie(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken:       "secret-token",
+			APITokenScopes: []string{string(ScopeV3Read)},
+		},
+	}
+	handler := s.authMiddleware(next)
+
+	sessionID := mustCreateAuthSession(t, s, "secret-token")
+	s.deleteAuthSession(sessionID)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: sessionID})
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func mustCreateAuthSession(t *testing.T, s *Server, token string) string {
+	t.Helper()
+	sessionID, err := s.authSessionStoreOrDefault().CreateSession(token, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	return sessionID
 }
