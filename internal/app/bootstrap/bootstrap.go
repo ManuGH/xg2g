@@ -280,7 +280,8 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	if cfg.MetricsEnabled {
 		metricsAddr = strings.TrimSpace(cfg.MetricsAddr)
 		if metricsAddr == "" {
-			metricsAddr = ":9090"
+			// Bind to 0.0.0.0 only if behind authenticated reverse proxy.
+			metricsAddr = "127.0.0.1:9090"
 		}
 	}
 
