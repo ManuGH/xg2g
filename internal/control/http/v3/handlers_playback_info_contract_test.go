@@ -125,20 +125,28 @@ func TestContract_PlaybackInfo_Preparing(t *testing.T) {
 	s_srv := createTestServer(svc)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+validRecordingID+"/stream-info", nil)
+	initialCounter := counterValueForLabels(t, "xg2g_recordings_preparing_total", map[string]string{
+		"probe_state":    "in_flight",
+		"blocked_reason": "none",
+	})
 
 	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
 
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Equal(t, "5", w.Header().Get("Retry-After"))
 
-	var prob struct {
-		Type  string `json:"type"`
-		Title string `json:"title"`
-		Code  string `json:"code"`
-	}
+	var prob map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &prob)
 	require.NoError(t, err)
-	assert.Equal(t, "recordings/preparing", prob.Type)
+	assert.Equal(t, "recordings/preparing", prob["type"])
+	assert.Equal(t, "RECORDING_PREPARING", prob["code"])
+	assert.Equal(t, "in_flight", prob["probeState"])
+	assert.EqualValues(t, 5, prob["retryAfterSeconds"])
+	finalCounter := counterValueForLabels(t, "xg2g_recordings_preparing_total", map[string]string{
+		"probe_state":    "in_flight",
+		"blocked_reason": "none",
+	})
+	assert.Equal(t, initialCounter+1, finalCounter)
 }
 
 func TestContract_PlaybackInfo_PreparingBlockedWhenProbeDisabled(t *testing.T) {
