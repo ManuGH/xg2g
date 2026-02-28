@@ -17,10 +17,14 @@ import (
 	"sync"
 )
 
+const vaapiRuntimeFailureThreshold = 3
+
 var (
 	vaapiMu      sync.RWMutex
 	vaapiChecked bool
 	vaapiPassed  bool
+	// Runtime VAAPI encode failures observed after successful startup preflight.
+	vaapiRuntimeFailures int
 
 	// Per-encoder preflight results. These are populated by the FFmpeg adapter's
 	// PreflightVAAPI(), and allow higher layers to make codec-specific decisions
@@ -47,6 +51,7 @@ func SetVAAPIPreflightResult(passed bool) {
 	defer vaapiMu.Unlock()
 	vaapiChecked = true
 	vaapiPassed = passed
+	vaapiRuntimeFailures = 0
 }
 
 // SetVAAPIEncoderPreflight records per-encoder preflight status (e.g. "av1_vaapi" -> true).
@@ -85,4 +90,29 @@ func IsVAAPIEncoderReady(encoder string) bool {
 		return false
 	}
 	return vaapiEncVerified[encoder]
+}
+
+// RecordVAAPIRuntimeFailure increments the runtime failure counter after startup preflight.
+// After threshold is reached, VAAPI is demoted to not-ready and encoder readiness is cleared.
+func RecordVAAPIRuntimeFailure() (failures int, demoted bool) {
+	vaapiMu.Lock()
+	if !vaapiChecked || !vaapiPassed {
+		failures = vaapiRuntimeFailures
+		vaapiMu.Unlock()
+		return failures, false
+	}
+	vaapiRuntimeFailures++
+	failures = vaapiRuntimeFailures
+	if vaapiRuntimeFailures < vaapiRuntimeFailureThreshold {
+		vaapiMu.Unlock()
+		return failures, false
+	}
+	vaapiPassed = false
+	vaapiMu.Unlock()
+
+	vaapiEncMu.Lock()
+	vaapiEncChecked = true
+	vaapiEncVerified = map[string]bool{}
+	vaapiEncMu.Unlock()
+	return failures, true
 }

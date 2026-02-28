@@ -209,6 +209,8 @@ func (a *LocalAdapter) testVaapiEncoder(encoder string) error {
 
 // VaapiEncoderVerified returns true if the given encoder passed preflight.
 func (a *LocalAdapter) VaapiEncoderVerified(encoder string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.vaapiEncoders[encoder]
 }
 
@@ -317,8 +319,13 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 	go func() {
 		defer close(scanDone)
 		scanner := bufio.NewScanner(stderr)
+		vaapiRuntimeFailureSeen := false
 		for scanner.Scan() {
 			line := scanner.Text()
+			if !vaapiRuntimeFailureSeen && isVAAPIRuntimeErrorLine(line) {
+				vaapiRuntimeFailureSeen = true
+				a.recordVAAPIRuntimeFailure(sessionID, line)
+			}
 			wd.ParseLine(line)
 		}
 		if scanErr := scanner.Err(); scanErr != nil {
@@ -360,6 +367,51 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 
 	if procErr != nil {
 		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
+	}
+}
+
+func isVAAPIRuntimeErrorLine(line string) bool {
+	s := strings.ToLower(strings.TrimSpace(line))
+	if s == "" {
+		return false
+	}
+	hasGPUContext := strings.Contains(s, "vaapi") || strings.Contains(s, "hwaccel") || strings.Contains(s, "renderd128") || strings.Contains(s, "drm")
+	if !hasGPUContext {
+		return false
+	}
+	return strings.Contains(s, "error") ||
+		strings.Contains(s, "failed") ||
+		strings.Contains(s, "cannot") ||
+		strings.Contains(s, "not support") ||
+		strings.Contains(s, "no such device") ||
+		strings.Contains(s, "invalid argument")
+}
+
+func (a *LocalAdapter) recordVAAPIRuntimeFailure(sessionID, line string) {
+	if strings.TrimSpace(a.VaapiDevice) == "" {
+		return
+	}
+
+	failures, demoted := hardware.RecordVAAPIRuntimeFailure()
+	if demoted {
+		a.mu.Lock()
+		a.vaapiEncoders = map[string]bool{}
+		a.mu.Unlock()
+		a.Logger.Error().
+			Str("sessionId", sessionID).
+			Int("failure_count", failures).
+			Str("threshold_action", "gpu_demoted_cpu_fallback").
+			Str("ffmpeg_error", strings.TrimSpace(line)).
+			Msg("vaapi runtime failures reached threshold; demoting GPU")
+		return
+	}
+
+	if failures > 0 {
+		a.Logger.Warn().
+			Str("sessionId", sessionID).
+			Int("failure_count", failures).
+			Str("ffmpeg_error", strings.TrimSpace(line)).
+			Msg("vaapi runtime failure observed")
 	}
 }
 
