@@ -33,6 +33,9 @@ func TestSecurityHeaders_ProxyAwareness(t *testing.T) {
 		if expectHSTS && hsts == "" {
 			t.Errorf("%s: Expected HSTS header, got none", desc)
 		}
+		if expectHSTS && hsts != "max-age=63072000; includeSubDomains" {
+			t.Errorf("%s: unexpected HSTS value %q", desc, hsts)
+		}
 		if !expectHSTS && hsts != "" {
 			t.Errorf("%s: Expected NO HSTS header, got %q", desc, hsts)
 		}

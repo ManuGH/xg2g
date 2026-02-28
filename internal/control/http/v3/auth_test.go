@@ -7,6 +7,7 @@
 package v3
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -313,6 +314,53 @@ func TestCreateSession(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "xg2g_session cookie not found")
+}
+
+func TestCreateSession_CookieSecureFlagByTLSOrForceHTTPS(t *testing.T) {
+	testCases := []struct {
+		name         string
+		forceHTTPS   bool
+		tlsRequest   bool
+		expectSecure bool
+	}{
+		{name: "plain HTTP without force", forceHTTPS: false, tlsRequest: false, expectSecure: false},
+		{name: "direct TLS request", forceHTTPS: false, tlsRequest: true, expectSecure: true},
+		{name: "forced HTTPS", forceHTTPS: true, tlsRequest: false, expectSecure: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{
+				cfg: config.AppConfig{
+					APIToken:       "secret",
+					APITokenScopes: []string{string(ScopeV3Read)},
+					ForceHTTPS:     tc.forceHTTPS,
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v3/auth/session", nil)
+			req.Header.Set("Authorization", "Bearer secret")
+			if tc.tlsRequest {
+				req.TLS = &tls.ConnectionState{}
+			}
+			w := httptest.NewRecorder()
+
+			s.CreateSession(w, req)
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			var sessionCookie *http.Cookie
+			for _, c := range w.Result().Cookies() {
+				if c.Name == "xg2g_session" {
+					sessionCookie = c
+					break
+				}
+			}
+			if sessionCookie == nil {
+				t.Fatalf("xg2g_session cookie not found")
+			}
+			assert.Equal(t, tc.expectSecure, sessionCookie.Secure)
+		})
+	}
 }
 
 func TestCreateSession_RejectsCookieOnly(t *testing.T) {

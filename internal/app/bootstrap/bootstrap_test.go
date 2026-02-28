@@ -118,6 +118,9 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 			cfg.TLSKey = keyPath
 		}
 	}
+	if cfg.TLSEnabled && !cfg.ForceHTTPS {
+		cfg.ForceHTTPS = true
+	}
 
 	// 7. Initialize API Server (The "Big Ball of Mud" Factory - wrapped here)
 	s, err := api.New(cfg, configMgr)

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -165,6 +166,7 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 		// Check for TLS configuration
 		tlsCert := m.deps.Config.TLSCert
 		tlsKey := m.deps.Config.TLSKey
+		tokenAuthConfigured := strings.TrimSpace(m.deps.Config.APIToken) != "" || len(m.deps.Config.APITokens) > 0
 
 		if tlsCert != "" && tlsKey != "" {
 			m.logger.Info().
@@ -179,6 +181,10 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 				errChan <- fmt.Errorf("API server (HTTPS): %w", err)
 			}
 		} else {
+			if tokenAuthConfigured {
+				m.logger.Warn().
+					Msg("running with token auth over cleartext HTTP - credentials can be sniffed on network")
+			}
 			m.logger.Info().
 				Str("addr", m.serverCfg.ListenAddr).
 				Msg("API server listening (HTTP)")

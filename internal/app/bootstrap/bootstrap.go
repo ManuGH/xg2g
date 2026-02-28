@@ -219,6 +219,10 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 			return nil, fmt.Errorf("initialize fallback resume store: %w", err)
 		}
 	}
+	if cfg.TLSEnabled && !cfg.ForceHTTPS {
+		cfg.ForceHTTPS = true
+		logger.Info().Msg("tls enabled - forcing HTTPS redirects by default")
+	}
 
 	v3ScanStore, err := scan.NewStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {

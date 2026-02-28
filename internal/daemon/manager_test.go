@@ -7,12 +7,14 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +28,23 @@ import (
 // contains is a helper to check if a string contains a substring
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
+}
+
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func reserveListenAddr(t *testing.T) string {
@@ -376,6 +395,49 @@ func TestManager_WithMetrics(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Start() did not return after context cancellation")
 	}
+}
+
+func TestManager_StartAPIServer_WarnsOnCleartextTokenAuth(t *testing.T) {
+	var logBuf safeBuffer
+	testLogger := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	m := &manager{
+		serverCfg: config.ServerConfig{
+			ListenAddr:      "127.0.0.1:0",
+			ReadTimeout:     1 * time.Second,
+			WriteTimeout:    1 * time.Second,
+			IdleTimeout:     10 * time.Second,
+			MaxHeaderBytes:  1 << 20,
+			ShutdownTimeout: 1 * time.Second,
+		},
+		deps: Deps{
+			Logger:     testLogger,
+			Config:     config.AppConfig{APIToken: "secret-token"},
+			APIHandler: http.NotFoundHandler(),
+		},
+		logger: testLogger,
+	}
+
+	errChan := make(chan error, 1)
+	if err := m.startAPIServer(context.Background(), errChan); err != nil {
+		t.Fatalf("startAPIServer() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if m.apiServer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_ = m.apiServer.Shutdown(ctx)
+		}
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(logBuf.String(), "running with token auth over cleartext HTTP") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected cleartext token auth warning in logs, got: %s", logBuf.String())
 }
 
 func TestManager_PropagatesListenErrors(t *testing.T) {
