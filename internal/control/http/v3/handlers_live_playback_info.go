@@ -16,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
@@ -25,17 +26,20 @@ func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
+		metrics.IncPlaybackError(playbackSchemaLiveLabel, playbackStagePlaybackInfoLabel, "INVALID_CAPABILITIES")
 		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_CAPABILITIES", "Failed to parse live playback body: "+err.Error(), nil)
 		return
 	}
 
 	serviceRef := strings.TrimSpace(req.ServiceRef)
 	if serviceRef == "" {
+		metrics.IncPlaybackError(playbackSchemaLiveLabel, playbackStagePlaybackInfoLabel, "INVALID_INPUT")
 		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", "serviceRef is required", nil)
 		return
 	}
 
 	if req.Capabilities.CapabilitiesVersion < 1 {
+		metrics.IncPlaybackError(playbackSchemaLiveLabel, playbackStagePlaybackInfoLabel, "INVALID_CAPABILITIES")
 		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_CAPABILITIES", "capabilities_version must be >= 1", nil)
 		return
 	}
@@ -50,6 +54,7 @@ func (s *Server) handleLivePlaybackInfo(w http.ResponseWriter, r *http.Request, 
 	if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
 		normalized, err := platformnet.ValidateOutboundURL(r.Context(), u.String(), outboundPolicyFromConfig(cfg))
 		if err != nil {
+			metrics.IncPlaybackError(playbackSchemaLiveLabel, playbackStagePlaybackInfoLabel, "INVALID_INPUT")
 			writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", "direct URL serviceRef rejected by outbound policy", nil)
 			return
 		}
@@ -93,6 +98,7 @@ func (s *Server) handleLivePlaybackInfo(w http.ResponseWriter, r *http.Request, 
 
 	_, decOut, prob := decision.Decide(r.Context(), input, "compact")
 	if prob != nil {
+		metrics.IncPlaybackError(playbackSchemaLiveLabel, playbackStagePlaybackInfoLabel, prob.Code)
 		writeProblem(w, r, prob.Status, prob.Type, prob.Title, prob.Code, prob.Detail, nil)
 		return
 	}
@@ -107,6 +113,7 @@ func (s *Server) handleLivePlaybackInfo(w http.ResponseWriter, r *http.Request, 
 	if dto.Mode != PlaybackInfoModeDeny {
 		decisionToken := s.attestLivePlaybackDecision(dto.RequestId, principal, serviceRef, string(dto.Mode))
 		if decisionToken == "" {
+			metrics.IncPlaybackError(playbackSchemaLiveLabel, playbackStagePlaybackInfoLabel, "ATTESTATION_UNAVAILABLE")
 			writeProblem(w, r, http.StatusServiceUnavailable, "recordings/unavailable", "Service Unavailable", "ATTESTATION_UNAVAILABLE", "live playback attestation unavailable", nil)
 			return
 		}

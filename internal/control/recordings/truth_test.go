@@ -57,6 +57,19 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 		assert.Contains(t, s, "%20")
 	})
 
+	t.Run("Receiver URL keeps allowlisted host for SSRF-like service refs", func(t *testing.T) {
+		serviceRef := "1:0:1:1:1:1:1:0:0:0:/media/hdd/movie/http://evil.example/clip.ts"
+
+		kind, source, _, err := tp.resolveSource(context.Background(), serviceRef)
+		require.NoError(t, err)
+		assert.Equal(t, "receiver", kind)
+
+		u, err := url.Parse(source)
+		require.NoError(t, err)
+		assert.Equal(t, "receiver:8001", u.Host)
+		assert.Equal(t, "http", u.Scheme)
+	})
+
 	t.Run("Local mapping uses extracted path", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		cfg.RecordingPlaybackPolicy = config.PlaybackPolicyLocalOnly
@@ -118,7 +131,7 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 	})
 }
 
-func TestTruthProvider_ImpossibleProbe_FailsFast(t *testing.T) {
+func TestTruthProvider_UnknownOrUnprobed_ReturnsPreparing(t *testing.T) {
 	cfg := &config.AppConfig{
 		Enigma2: config.Enigma2Settings{BaseURL: "http://test:80"},
 	}
@@ -136,20 +149,22 @@ func TestTruthProvider_ImpossibleProbe_FailsFast(t *testing.T) {
 		expectProbe bool
 	}{
 		{
-			name:        "Impossible: No Local Path + No Probe Configured",
+			name:        "No Local Path + No Probe Configured",
 			localPath:   "",
 			probe:       nil,
-			wantError:   playback.ErrUpstream,
+			wantError:   nil,
+			wantState:   playback.StatePreparing,
 			expectProbe: false,
 		},
 		{
-			name:      "Impossible: No Local Path + Remote Probe Unsupported",
+			name:      "No Local Path + Remote Probe Unsupported",
 			localPath: "",
 			probe: func(ctx context.Context, s string) error {
 				return ErrRemoteProbeUnsupported // Simulate remote not supported
 			},
-			wantError:   ErrRemoteProbeUnsupported, // Should be passed through
-			expectProbe: false,                     // Should fail fast before async
+			wantError:   nil,
+			wantState:   playback.StatePreparing,
+			expectProbe: true,
 		},
 		{
 			name:        "Possible: Local Path Exists",
@@ -172,33 +187,212 @@ func TestTruthProvider_ImpossibleProbe_FailsFast(t *testing.T) {
 			tp, err := NewTruthProvider(cfg, mgr, opts)
 			require.NoError(t, err)
 
-			// We must ensure the file exists for the "local path" logic to work if it checks FS?
-			// The logic in GetMediaTruth is:
-			// if t.pathResolver != nil { resolved = ... }
-			// fallback to file:// ...
-			// The simplified test here assumes pathResolver works.
-
-			got, err := tp.GetMediaTruth(context.Background(), "ref")
+			outcome, err := tp.GetMediaTruthOutcome(context.Background(), "ref")
 
 			if tt.wantError != nil {
-				// We expect an error
-				// Check strict equality or error wrapping depending on implementation
-				// ErrRemoteProbeUnsupported is specific. ErrUpstream is generic.
-				if errors.Is(tt.wantError, ErrRemoteProbeUnsupported) {
-					assert.True(t, errors.Is(err, ErrRemoteProbeUnsupported), "expected ErrRemoteProbeUnsupported, got %v", err)
-				} else {
-					assert.Error(t, err)
-					assert.True(t, errors.Is(err, tt.wantError), "expected error %v, got %v", tt.wantError, err)
-				}
+				assert.Error(t, err)
+				assert.True(t, errors.Is(err, tt.wantError), "expected error %v, got %v", tt.wantError, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.wantState, got.State)
+				assert.Equal(t, tt.wantState, outcome.Truth.State)
+				assert.Equal(t, tt.expectProbe, outcome.NeedsProbe)
 			}
 		})
 	}
 }
 
-func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
+func TestTruthProvider_GetMediaTruthOutcome_NoSideEffects(t *testing.T) {
+	cfg := &config.AppConfig{
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://receiver:80",
+			StreamPort: 8001,
+		},
+		RecordingPlaybackPolicy: config.PlaybackPolicyReceiverOnly,
+	}
+	mgr := &mockManager{data: make(map[string]vod.Metadata)}
+
+	probeFnCalls := 0
+	tp, err := NewTruthProvider(cfg, mgr, ResolverOptions{
+		ProbeFn: func(ctx context.Context, sourceURL string) error {
+			probeFnCalls++
+			return nil
+		},
+	})
+	require.NoError(t, err)
+
+	outcome, err := tp.GetMediaTruthOutcome(context.Background(), "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/no_side_effect.ts")
+	require.NoError(t, err)
+	assert.Equal(t, playback.StatePreparing, outcome.Truth.State)
+	assert.True(t, outcome.NeedsProbe)
+	assert.Equal(t, 0, probeFnCalls, "truth classification must not trigger probe side-effects")
+}
+
+func TestTruthProvider_ImpossibleProbe_OptionAContract(t *testing.T) {
+	cfg := &config.AppConfig{
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://receiver:80",
+			StreamPort: 8001,
+		},
+		RecordingPlaybackPolicy: config.PlaybackPolicyReceiverOnly,
+	}
+	mgr := &mockManager{data: make(map[string]vod.Metadata)}
+
+	disabledTP, err := NewTruthProvider(cfg, mgr, ResolverOptions{})
+	require.NoError(t, err)
+
+	disabledOutcome, err := disabledTP.GetMediaTruthOutcome(context.Background(), "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/disabled.ts")
+	require.NoError(t, err)
+	assert.Equal(t, playback.StatePreparing, disabledOutcome.Truth.State)
+	assert.Equal(t, playback.ProbeStateBlocked, disabledOutcome.Truth.ProbeState)
+	assert.Equal(t, playback.ProbeBlockedReasonDisabled, disabledOutcome.Truth.ProbeBlockedReason)
+	assert.Equal(t, playback.RetryAfterPreparingBlockedDefault, disabledOutcome.Truth.RetryAfterSeconds)
+	assert.False(t, disabledOutcome.NeedsProbe, "disabled probe path must not schedule probing")
+
+	enabledTP, err := NewTruthProvider(cfg, mgr, ResolverOptions{
+		ProbeFn: func(ctx context.Context, sourceURL string) error { return ErrRemoteProbeUnsupported },
+	})
+	require.NoError(t, err)
+
+	enabledOutcome, err := enabledTP.GetMediaTruthOutcome(context.Background(), "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/enabled.ts")
+	require.NoError(t, err)
+	assert.Equal(t, playback.StatePreparing, enabledOutcome.Truth.State)
+	assert.True(t, enabledOutcome.NeedsProbe, "configured remote probe path must request scheduling")
+	assert.Equal(t, playback.ProbeStateUnknown, enabledOutcome.Truth.ProbeState)
+	assert.Equal(t, playback.ProbeBlockedReasonNone, enabledOutcome.Truth.ProbeBlockedReason)
+	assert.Equal(t, playback.RetryAfterPreparingDefault, enabledOutcome.Truth.RetryAfterSeconds)
+	assert.NotEmpty(t, enabledOutcome.ProbeHint.Source)
+}
+
+func TestResolver_ProbeTriggerTTL_RemotePath(t *testing.T) {
+	cfg := &config.AppConfig{
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://receiver:80",
+			StreamPort: 8001,
+		},
+		RecordingPlaybackPolicy: config.PlaybackPolicyReceiverOnly,
+	}
+	mgr := &mockManager{data: make(map[string]vod.Metadata)}
+
+	var mu sync.Mutex
+	probeCalls := 0
+	resolver, err := NewResolver(cfg, mgr, ResolverOptions{
+		ProbeFn: func(ctx context.Context, sourceURL string) error {
+			mu.Lock()
+			probeCalls++
+			mu.Unlock()
+			return ErrRemoteProbeUnsupported // soft-fail: should stay preparing
+		},
+	})
+	require.NoError(t, err)
+	r := resolver.(*PlaybackInfoResolver)
+	r.probeTTL = 120 * time.Millisecond
+
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/ttl.ts"
+
+	for i := 0; i < 3; i++ {
+		got, err := r.GetMediaTruth(context.Background(), serviceRef)
+		require.NoError(t, err)
+		assert.Equal(t, playback.StatePreparing, got.State)
+	}
+
+	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return probeCalls == 1
+	}, 500*time.Millisecond, 10*time.Millisecond, "probe should be throttled within TTL")
+
+	time.Sleep(140 * time.Millisecond)
+	got, err := r.GetMediaTruth(context.Background(), serviceRef)
+	require.NoError(t, err)
+	assert.Equal(t, playback.StatePreparing, got.State)
+
+	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return probeCalls >= 2
+	}, 500*time.Millisecond, 10*time.Millisecond, "probe should run again after TTL")
+}
+
+func TestResolver_RemoteProbeHardFailure_BecomesUpstream(t *testing.T) {
+	cfg := &config.AppConfig{
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://receiver:80",
+			StreamPort: 8001,
+		},
+		RecordingPlaybackPolicy: config.PlaybackPolicyReceiverOnly,
+	}
+	mgr := &mockManager{data: make(map[string]vod.Metadata)}
+
+	resolver, err := NewResolver(cfg, mgr, ResolverOptions{
+		ProbeFn: func(ctx context.Context, sourceURL string) error {
+			return errors.New("connection refused")
+		},
+	})
+	require.NoError(t, err)
+	r := resolver.(*PlaybackInfoResolver)
+	r.probeTTL = 20 * time.Millisecond
+
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/upstream.ts"
+	got, err := r.GetMediaTruth(context.Background(), serviceRef)
+	require.NoError(t, err)
+	assert.Equal(t, playback.StatePreparing, got.State)
+
+	assert.Eventually(t, func() bool {
+		m, ok := mgr.GetMetadata(serviceRef)
+		return ok && m.State == vod.ArtifactStateFailed && strings.HasPrefix(m.Error, remoteProbeErrorPrefix)
+	}, 1*time.Second, 10*time.Millisecond)
+
+	got2, err := r.GetMediaTruth(context.Background(), serviceRef)
+	assert.ErrorIs(t, err, playback.ErrUpstream)
+	assert.Equal(t, playback.StateFailed, got2.State)
+}
+
+func TestResolver_GetMediaTruth_TerminalErrorsKeepTruthPayload(t *testing.T) {
+	cfg := &config.AppConfig{}
+	mgr := &mockManager{
+		data: map[string]vod.Metadata{
+			"missing-ref": {
+				State:      vod.ArtifactStateMissing,
+				Container:  "mp4",
+				VideoCodec: "h264",
+				AudioCodec: "aac",
+				Duration:   120,
+				Width:      1920,
+				Height:     1080,
+			},
+			"upstream-ref": {
+				State:      vod.ArtifactStateFailed,
+				Error:      remoteProbeErrorPrefix + "dial tcp timeout",
+				Container:  "ts",
+				VideoCodec: "h264",
+				AudioCodec: "mp2",
+				Duration:   61,
+			},
+		},
+	}
+
+	resolver, err := NewResolver(cfg, mgr, ResolverOptions{})
+	require.NoError(t, err)
+	r := resolver.(*PlaybackInfoResolver)
+
+	notFoundTruth, notFoundErr := r.GetMediaTruth(context.Background(), "missing-ref")
+	require.ErrorIs(t, notFoundErr, playback.ErrNotFound)
+	assert.Equal(t, playback.StateFailed, notFoundTruth.State)
+	assert.Equal(t, "mp4", notFoundTruth.Container)
+	assert.Equal(t, 120.0, notFoundTruth.Duration)
+	assert.Equal(t, 1920, notFoundTruth.Width)
+	assert.Equal(t, 1080, notFoundTruth.Height)
+
+	upstreamTruth, upstreamErr := r.GetMediaTruth(context.Background(), "upstream-ref")
+	require.ErrorIs(t, upstreamErr, playback.ErrUpstream)
+	assert.Equal(t, playback.StateFailed, upstreamTruth.State)
+	assert.Equal(t, "ts", upstreamTruth.Container)
+	assert.Equal(t, "h264", upstreamTruth.VideoCodec)
+	assert.Equal(t, "mp2", upstreamTruth.AudioCodec)
+	assert.Equal(t, 61.0, upstreamTruth.Duration)
+}
+
+func TestResolver_ProbeFailure_PersistsState(t *testing.T) {
 	cfg := &config.AppConfig{}
 
 	// Use a channel to synchronize probe execution
@@ -226,11 +420,12 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 		PathResolver: &mockPathResolver{path: "/tmp/fake"},
 	}
 
-	tp, err := NewTruthProvider(cfg, mgr, opts)
+	resolver, err := NewResolver(cfg, mgr, opts)
 	require.NoError(t, err)
+	r := resolver.(*PlaybackInfoResolver)
 
 	// 1. First Call: Should return Preparing and trigger probe
-	got, err := tp.GetMediaTruth(context.Background(), "ref")
+	got, err := r.GetMediaTruth(context.Background(), "ref")
 	require.NoError(t, err)
 	assert.Equal(t, playback.StatePreparing, got.State)
 
@@ -260,11 +455,11 @@ drain:
 		}
 	}
 
-	got2, err2 := tp.GetMediaTruth(context.Background(), "ref")
+	got2, err2 := r.GetMediaTruth(context.Background(), "ref")
 	// Expect Terminal Error
 	assert.Error(t, err2)
 	assert.True(t, errors.Is(err2, playback.ErrUpstream), "expected ErrUpstream for failed artifact")
-	assert.Equal(t, playback.MediaTruth{}, got2)
+	assert.Equal(t, playback.StateFailed, got2.State)
 
 	// Ensure no probe triggered
 	select {

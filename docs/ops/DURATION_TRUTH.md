@@ -33,6 +33,30 @@ Hard guards:
 - overflow/extreme values are clamped (`duration_inconsistent_clamped`)
 - unknown duration emits `duration_unknown_denied_seek`
 
+## Preparing Probe States
+
+When recording truth is not yet fully available, API returns `503 recordings/preparing` with explicit probe progress:
+
+- `probeState=queued`
+  - Probe scheduling accepted and queued.
+  - Typical `Retry-After`: short (for example 5s).
+- `probeState=in_flight`
+  - Probe already running or inside TTL suppression window.
+  - Typical `Retry-After`: short (for example 5s).
+- `probeState=blocked`
+  - Probe cannot run now.
+  - `blockedReason=probe_disabled`: remote probe policy/config disabled.
+  - `blockedReason=probe_backoff`: temporary backoff after recent hard probe failure.
+  - `blockedReason=remote_probe_failed`: explicit remote probe hard-failure state.
+  - Typical `Retry-After`: longer (for example 30s).
+
+Observability contract:
+
+- JSON problem extensions include `probeState`, optional `blockedReason`, and `retryAfterSeconds`.
+- Response header includes `Retry-After`.
+- Metrics include `xg2g_recordings_preparing_total{probe_state,blocked_reason}`.
+- Structured logs include `probe_state`, `blocked_reason` (if set), and `retry_after_seconds`.
+
 ## Backend Wiring
 
 - Domain model and reason SSOT:

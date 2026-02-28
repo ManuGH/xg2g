@@ -429,6 +429,23 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		// 6. Response
 		logger.Info().Msg("intent accepted")
 		RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "accepted")
+		if deps.playbackSLO != nil {
+			modeLabel := playbackModeLabelFromIntentPlaybackMode(req.Params["playback_mode"])
+			deps.playbackSLO.Start(playbackSessionMeta{
+				SessionID:  sessionID,
+				Schema:     playbackSchemaLiveLabel,
+				Mode:       modeLabel,
+				ServiceRef: req.ServiceRef,
+			})
+			log.L().Debug().
+				Str("event", "playback.slo.start").
+				Str("request_id", requestID(r.Context())).
+				Str("session_id", sessionID).
+				Str("schema", playbackSchemaLiveLabel).
+				Str("mode", modeLabel).
+				Str("service_ref", req.ServiceRef).
+				Msg("live playback start tracked")
+		}
 		writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
 			SessionID:     sessionID,
 			Status:        "accepted",
@@ -452,6 +469,26 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		}
 		RecordV3Publish("session.stop", "ok")
 		RecordV3Intent(string(model.IntentTypeStreamStop), "any", "accepted")
+		if deps.playbackSLO != nil {
+			outcome := deps.playbackSLO.MarkOutcome(playbackSessionMeta{
+				SessionID: sessionID,
+				Schema:    playbackSchemaLiveLabel,
+			}, "aborted")
+			if outcome.TTFFObserved {
+				evt := log.L().Info().
+					Str("event", "playback.slo.ttff").
+					Str("request_id", requestID(r.Context())).
+					Str("session_id", sessionID).
+					Str("schema", outcome.Schema).
+					Str("mode", outcome.Mode).
+					Str("outcome", outcome.Outcome).
+					Float64("ttff_seconds", outcome.TTFFSeconds)
+				if outcome.ServiceRef != "" {
+					evt = evt.Str("service_ref", outcome.ServiceRef)
+				}
+				evt.Msg("live playback ttff outcome observed")
+			}
+		}
 
 		writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
 			SessionID:     sessionID,

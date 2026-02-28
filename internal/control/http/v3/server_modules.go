@@ -37,6 +37,7 @@ type sessionsModuleDeps struct {
 	receiver       receiverControlFactory
 	admission      *admission.Controller
 	admissionState AdmissionState
+	playbackSLO    *playbackSessionTracker
 }
 
 func (s *Server) sessionsModuleDeps() sessionsModuleDeps {
@@ -55,6 +56,7 @@ func (s *Server) sessionsModuleDeps() sessionsModuleDeps {
 		receiver:       s.owi,
 		admission:      s.admission,
 		admissionState: s.admissionState,
+		playbackSLO:    s.playbackSLO,
 	}
 }
 
@@ -66,6 +68,7 @@ type recordingsModuleDeps struct {
 	pathMapper        *recinfra.PathMapper
 	vodManager        *vod.Manager
 	resumeStore       resume.Store
+	playbackSLO       *playbackSessionTracker
 }
 
 func (s *Server) recordingsModuleDeps() recordingsModuleDeps {
@@ -78,6 +81,7 @@ func (s *Server) recordingsModuleDeps() recordingsModuleDeps {
 		pathMapper:        s.recordingPathMapper,
 		vodManager:        s.vodManager,
 		resumeStore:       s.resumeStore,
+		playbackSLO:       s.playbackSLO,
 	}
 }
 

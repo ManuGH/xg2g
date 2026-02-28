@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/control/clientplayback"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -40,10 +41,14 @@ func (s *Server) PostItemsPlaybackInfo(w http.ResponseWriter, r *http.Request, i
 		case recordings.ClassNotFound:
 			writeProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", "NOT_FOUND", msg, nil)
 		case recordings.ClassPreparing:
+			const retryAfterSeconds = 5
 			w.Header().Set("Retry-After", "5")
-			writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", "PREPARING", msg, nil)
+			writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", msg, map[string]any{
+				"retryAfterSeconds": retryAfterSeconds,
+				"probeState":        string(playback.ProbeStateInFlight),
+			})
 		case recordings.ClassUpstream:
-			writeProblem(w, r, http.StatusBadGateway, "recordings/upstream", "Upstream Error", "UPSTREAM_ERROR", msg, nil)
+			writeProblem(w, r, http.StatusServiceUnavailable, "recordings/upstream_unavailable", "Upstream Unavailable", "UPSTREAM_UNAVAILABLE", msg, nil)
 		default:
 			log.L().Error().Err(err).Str("id", itemId).Msg("client playbackinfo resolution failed")
 			writeProblem(w, r, http.StatusInternalServerError, "recordings/internal", "Internal Error", "INTERNAL_ERROR", "An unexpected error occurred", nil)

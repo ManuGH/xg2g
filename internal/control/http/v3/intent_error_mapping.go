@@ -4,7 +4,11 @@
 
 package v3
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/ManuGH/xg2g/internal/metrics"
+)
 
 type IntentErrorKind uint8
 
@@ -48,5 +52,6 @@ func respondIntentFailure(w http.ResponseWriter, r *http.Request, kind IntentErr
 	if !ok {
 		spec = intentErrorMap[IntentErrInternal]
 	}
+	metrics.IncPlaybackError(playbackSchemaLiveLabel, playbackStageIntentLabel, spec.apiErr.Code)
 	RespondError(w, r, spec.status, spec.apiErr, details...)
 }
