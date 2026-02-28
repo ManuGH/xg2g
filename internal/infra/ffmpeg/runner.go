@@ -178,14 +178,14 @@ func (h *handle) monitor(stderr io.Reader) {
 		if wdErr != nil {
 			h.logger.Error().Err(wdErr).Int("state", int(h.wd.State())).Msg("watchdog triggered failure")
 			h.terminateProcess(2*time.Second, 5*time.Second)
-			_ = <-procErrCh
+			<-procErrCh
 			resultErr = wdErr
 			break
 		}
 		resultErr = <-procErrCh
 	case <-runCtx.Done():
 		h.terminateProcess(2*time.Second, 5*time.Second)
-		_ = <-procErrCh
+		<-procErrCh
 		resultErr = runCtx.Err()
 	}
 

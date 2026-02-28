@@ -117,7 +117,7 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 
 	store := s.authSessionStoreOrDefault()
 	if existingCookie, err := r.Cookie(sessionCookieName); err == nil {
-		store.DeleteSession(existingCookie.Value)
+		s.deleteAuthSession(existingCookie.Value)
 	}
 
 	sessionID, err := store.CreateSession(reqToken, s.authSessionTTLOrDefault())
