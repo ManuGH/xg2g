@@ -35,12 +35,17 @@ func (s *trackingResumeStore) Close() error {
 }
 
 type trackingScanStore struct {
-	closed atomic.Int32
+	closed  atomic.Int32
+	stopped atomic.Int32
 }
 
 func (s *trackingScanStore) Close() error {
 	s.closed.Add(1)
 	return nil
+}
+
+func (s *trackingScanStore) Stop() {
+	s.stopped.Add(1)
 }
 
 func TestManager_Start_ShutdownClosesRuntimeStoresWhenEngineDisabled(t *testing.T) {
@@ -76,5 +81,6 @@ func TestManager_Start_ShutdownClosesRuntimeStoresWhenEngineDisabled(t *testing.
 
 	assert.Equal(t, int32(1), v3Store.closed.Load())
 	assert.Equal(t, int32(1), resumeStore.closed.Load())
+	assert.Equal(t, int32(1), scanStore.stopped.Load())
 	assert.Equal(t, int32(1), scanStore.closed.Load())
 }

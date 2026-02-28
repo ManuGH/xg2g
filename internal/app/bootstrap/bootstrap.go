@@ -388,6 +388,10 @@ func (c *Container) Start(ctx context.Context) error {
 	}
 
 	c.startOnce.Do(func() {
+		if c.scanManager != nil {
+			c.scanManager.AttachLifecycle(ctx)
+		}
+
 		go c.Server.StartRecordingCacheEvicter(ctx)
 
 		if c.verificationWork != nil {
