@@ -358,6 +358,32 @@ func TestMiddlewareChain(t *testing.T) {
 	assert.GreaterOrEqual(t, len(reqID), 8)
 }
 
+func TestResumeEndpoint_UsesCentralCORSMiddleware(t *testing.T) {
+	server := mustNewServer(t, config.AppConfig{
+		APIToken:       "write-token",
+		APITokenScopes: []string{string(v3.ScopeV3Write)},
+		AllowedOrigins: []string{"http://allowed.example"},
+		DataDir:        t.TempDir(),
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}, config.NewManager(""))
+	handler := server.Handler()
+
+	noOriginReq := httptest.NewRequest(http.MethodOptions, "/api/v3/recordings/some-id/resume", nil)
+	noOriginRes := httptest.NewRecorder()
+	handler.ServeHTTP(noOriginRes, noOriginReq)
+	assert.Equal(t, http.StatusNoContent, noOriginRes.Code)
+	assert.Empty(t, noOriginRes.Header().Get("Access-Control-Allow-Origin"))
+
+	allowedOriginReq := httptest.NewRequest(http.MethodOptions, "/api/v3/recordings/some-id/resume", nil)
+	allowedOriginReq.Header.Set("Origin", "http://allowed.example")
+	allowedOriginRes := httptest.NewRecorder()
+	handler.ServeHTTP(allowedOriginRes, allowedOriginReq)
+	assert.Equal(t, http.StatusNoContent, allowedOriginRes.Code)
+	assert.Equal(t, "http://allowed.example", allowedOriginRes.Header().Get("Access-Control-Allow-Origin"))
+}
+
 func TestAdvancedPathTraversal(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "TestAdvancedPathTraversal*")
 	require.NoError(t, err)
