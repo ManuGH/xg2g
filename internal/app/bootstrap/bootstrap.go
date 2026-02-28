@@ -54,145 +54,37 @@ type Container struct {
 	runtimeHooksOnce sync.Once
 }
 
+type wireBootstrapState struct {
+	cfg                 config.AppConfig
+	logger              zerolog.Logger
+	effectiveConfigPath string
+	serverCfg           config.ServerConfig
+}
+
 // WireServices builds the production dependency graph and returns a runnable container.
 func WireServices(ctx context.Context, version, commit, buildDate, explicitConfigPath string) (*Container, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("wire services context is nil")
 	}
 
-	xglog.Configure(xglog.Config{
-		Level:   "info",
-		Service: "xg2g",
-		Version: version,
-	})
-	logger := xglog.WithComponent("bootstrap")
-
-	effectiveConfigPath, explicitMode, err := resolveConfigPath(strings.TrimSpace(explicitConfigPath))
+	state, err := prepareWireBootstrapState(ctx, version, explicitConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve config path: %w", err)
+		return nil, err
 	}
 
-	loader := config.NewLoader(effectiveConfigPath, version)
-	cfg, err := loader.Load()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	cfg := state.cfg
+	logger := state.logger
+	effectiveConfigPath := state.effectiveConfigPath
+	serverCfg := state.serverCfg
+
+	if err := ensureWireTLSCertificates(&cfg, logger); err != nil {
+		return nil, err
+	}
+	if err := logWireStartup(logger, cfg, version, commit, buildDate, serverCfg.ListenAddr); err != nil {
+		return nil, err
 	}
 
-	xglog.Configure(xglog.Config{
-		Level:   cfg.LogLevel,
-		Service: cfg.LogService,
-		Version: cfg.Version,
-	})
-	logger = xglog.WithComponent("bootstrap")
-
-	if explicitMode {
-		logger.Info().
-			Str("event", "config.loaded").
-			Str("source", "file").
-			Str("path", effectiveConfigPath).
-			Msg("loaded configuration from file")
-	} else if effectiveConfigPath != "" {
-		logger.Info().
-			Str("event", "config.loaded").
-			Str("source", "file(auto)").
-			Str("path", effectiveConfigPath).
-			Msg("loaded configuration from file")
-	} else {
-		logger.Info().
-			Str("event", "config.loaded").
-			Str("source", "env+defaults").
-			Msg("loaded configuration from environment and defaults")
-	}
-
-	if configBytes, marshalErr := json.Marshal(cfg); marshalErr == nil {
-		hash := sha256.Sum256(configBytes)
-		logger.Info().
-			Str("event", "config.snapshot").
-			Str("sha256", fmt.Sprintf("%x", hash)).
-			Msg("configuration snapshot fingerprint")
-	}
-
-	if cfg.Engine.Enabled && !cfg.ConfigStrict {
-		logger.Warn().
-			Str("event", "config.strict.disabled").
-			Msg("v3 strict validation disabled via XG2G_V3_CONFIG_STRICT override")
-	}
-
-	if err := health.PerformStartupChecks(ctx, cfg); err != nil {
-		return nil, fmt.Errorf("startup checks failed: %w", err)
-	}
-
-	serverCfg := config.ParseServerConfigForApp(cfg)
-
-	bindHost := strings.TrimSpace(config.ParseString("XG2G_BIND_INTERFACE", ""))
-	if bindHost != "" {
-		newListen, err := config.BindListenAddr(serverCfg.ListenAddr, bindHost)
-		if err != nil {
-			return nil, fmt.Errorf("invalid XG2G_BIND_INTERFACE for API listen: %w", err)
-		}
-		serverCfg.ListenAddr = newListen
-	}
-
-	if cfg.TLSCert != "" || cfg.TLSKey != "" {
-		if cfg.TLSCert == "" || cfg.TLSKey == "" {
-			return nil, fmt.Errorf("both XG2G_TLS_CERT and XG2G_TLS_KEY must be set together")
-		}
-		logger.Info().Str("cert", cfg.TLSCert).Str("key", cfg.TLSKey).Msg("using user-provided TLS certificates")
-	} else if cfg.TLSEnabled {
-		tlsCfg := xgtls.Config{CertPath: cfg.TLSCert, KeyPath: cfg.TLSKey, Logger: logger}
-		certPath, keyPath, err := xgtls.EnsureCertificates(tlsCfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to ensure TLS certificates: %w", err)
-		}
-		cfg.TLSCert = certPath
-		cfg.TLSKey = keyPath
-	}
-
-	logger.Info().
-		Str("event", "startup").
-		Str("version", version).
-		Str("commit", commit).
-		Str("build_date", buildDate).
-		Str("addr", serverCfg.ListenAddr).
-		Msg("starting xg2g")
-	logger.Info().Msgf("→ Receiver: %s (auth: %v)", maskURL(cfg.Enigma2.BaseURL), cfg.Enigma2.Username != "")
-	logger.Info().Msgf("→ Bouquet: %s", cfg.Bouquet)
-	if cfg.Enigma2.UseWebIFStreams {
-		if cfg.Enigma2.StreamPort > 0 {
-			logger.Info().Msgf("→ Stream: Direct port %d (V3 bypasses /web/stream.m3u)", cfg.Enigma2.StreamPort)
-		} else {
-			logger.Info().Msg("→ Stream: OpenWebIF /web/stream.m3u (receiver decides port)")
-		}
-	} else {
-		logger.Info().Msgf("→ Stream port: %d (direct TS)", cfg.Enigma2.StreamPort)
-	}
-	logger.Info().Msgf("→ EPG: %s (%d days)", cfg.XMLTVPath, cfg.EPGDays)
-	if strings.TrimSpace(cfg.APIToken) != "" {
-		logger.Info().Str("event", "auth.configured").Msg("→ API token: configured")
-	} else if len(cfg.APITokens) > 0 {
-		logger.Info().Str("event", "auth.configured").Msg("→ API tokens: configured")
-	} else {
-		return nil, fmt.Errorf("no API tokens configured: set XG2G_API_TOKEN or XG2G_API_TOKENS")
-	}
-	if cfg.TLSCert != "" && cfg.TLSKey != "" {
-		logger.Info().Msgf("→ TLS: enabled (cert: %s, key: %s)", cfg.TLSCert, cfg.TLSKey)
-	}
-	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
-
-	configMgrPath := effectiveConfigPath
-	if configMgrPath == "" {
-		configMgrPath = filepath.Join(cfg.DataDir, "config.yaml")
-	}
-	configMgr := config.NewManager(configMgrPath)
-	cfgHolder := config.NewConfigHolder(cfg, config.NewLoader(configMgrPath, version), configMgrPath)
-
-	var snap config.Snapshot
-	if current := cfgHolder.Current(); current != nil {
-		snap = *current
-	} else {
-		snap = config.BuildSnapshot(cfg, config.DefaultEnv())
-	}
-	cfg = snap.App
+	configMgr, cfgHolder, snap, cfg := buildWireConfigState(cfg, version, effectiveConfigPath)
 
 	apiDeps := buildAPIConstructorDeps(cfg, snap, logger)
 	s, err := api.NewWithDeps(cfg, configMgr, apiDeps)
@@ -280,14 +172,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		s.SetVerificationStore(verifyStore)
 	}
 
-	metricsAddr := ""
-	if cfg.MetricsEnabled {
-		metricsAddr = strings.TrimSpace(cfg.MetricsAddr)
-		if metricsAddr == "" {
-			// Bind to 0.0.0.0 only if behind authenticated reverse proxy.
-			metricsAddr = "127.0.0.1:9090"
-		}
-	}
+	metricsAddr := resolveMetricsAddr(cfg)
 
 	deps := daemon.Deps{
 		Logger:          logger,
@@ -373,6 +258,182 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		scanManager:      v3Scan,
 		verificationWork: verifyWorker,
 	}, nil
+}
+
+func prepareWireBootstrapState(ctx context.Context, version, explicitConfigPath string) (wireBootstrapState, error) {
+	xglog.Configure(xglog.Config{
+		Level:   "info",
+		Service: "xg2g",
+		Version: version,
+	})
+	logger := xglog.WithComponent("bootstrap")
+
+	effectiveConfigPath, explicitMode, err := resolveConfigPath(strings.TrimSpace(explicitConfigPath))
+	if err != nil {
+		return wireBootstrapState{}, fmt.Errorf("resolve config path: %w", err)
+	}
+
+	loader := config.NewLoader(effectiveConfigPath, version)
+	cfg, err := loader.Load()
+	if err != nil {
+		return wireBootstrapState{}, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	xglog.Configure(xglog.Config{
+		Level:   cfg.LogLevel,
+		Service: cfg.LogService,
+		Version: cfg.Version,
+	})
+	logger = xglog.WithComponent("bootstrap")
+
+	logLoadedConfigSource(logger, effectiveConfigPath, explicitMode)
+	logConfigFingerprint(logger, cfg)
+
+	if cfg.Engine.Enabled && !cfg.ConfigStrict {
+		logger.Warn().
+			Str("event", "config.strict.disabled").
+			Msg("v3 strict validation disabled via XG2G_V3_CONFIG_STRICT override")
+	}
+
+	if err := health.PerformStartupChecks(ctx, cfg); err != nil {
+		return wireBootstrapState{}, fmt.Errorf("startup checks failed: %w", err)
+	}
+
+	serverCfg := config.ParseServerConfigForApp(cfg)
+	bindHost := strings.TrimSpace(config.ParseString("XG2G_BIND_INTERFACE", ""))
+	if bindHost != "" {
+		newListen, bindErr := config.BindListenAddr(serverCfg.ListenAddr, bindHost)
+		if bindErr != nil {
+			return wireBootstrapState{}, fmt.Errorf("invalid XG2G_BIND_INTERFACE for API listen: %w", bindErr)
+		}
+		serverCfg.ListenAddr = newListen
+	}
+
+	return wireBootstrapState{
+		cfg:                 cfg,
+		logger:              logger,
+		effectiveConfigPath: effectiveConfigPath,
+		serverCfg:           serverCfg,
+	}, nil
+}
+
+func logLoadedConfigSource(logger zerolog.Logger, effectiveConfigPath string, explicitMode bool) {
+	if explicitMode {
+		logger.Info().
+			Str("event", "config.loaded").
+			Str("source", "file").
+			Str("path", effectiveConfigPath).
+			Msg("loaded configuration from file")
+		return
+	}
+	if effectiveConfigPath != "" {
+		logger.Info().
+			Str("event", "config.loaded").
+			Str("source", "file(auto)").
+			Str("path", effectiveConfigPath).
+			Msg("loaded configuration from file")
+		return
+	}
+	logger.Info().
+		Str("event", "config.loaded").
+		Str("source", "env+defaults").
+		Msg("loaded configuration from environment and defaults")
+}
+
+func logConfigFingerprint(logger zerolog.Logger, cfg config.AppConfig) {
+	configBytes, marshalErr := json.Marshal(cfg)
+	if marshalErr != nil {
+		return
+	}
+	hash := sha256.Sum256(configBytes)
+	logger.Info().
+		Str("event", "config.snapshot").
+		Str("sha256", fmt.Sprintf("%x", hash)).
+		Msg("configuration snapshot fingerprint")
+}
+
+func ensureWireTLSCertificates(cfg *config.AppConfig, logger zerolog.Logger) error {
+	if cfg.TLSCert != "" || cfg.TLSKey != "" {
+		if cfg.TLSCert == "" || cfg.TLSKey == "" {
+			return fmt.Errorf("both XG2G_TLS_CERT and XG2G_TLS_KEY must be set together")
+		}
+		logger.Info().Str("cert", cfg.TLSCert).Str("key", cfg.TLSKey).Msg("using user-provided TLS certificates")
+		return nil
+	}
+	if !cfg.TLSEnabled {
+		return nil
+	}
+
+	tlsCfg := xgtls.Config{CertPath: cfg.TLSCert, KeyPath: cfg.TLSKey, Logger: logger}
+	certPath, keyPath, err := xgtls.EnsureCertificates(tlsCfg)
+	if err != nil {
+		return fmt.Errorf("failed to ensure TLS certificates: %w", err)
+	}
+	cfg.TLSCert = certPath
+	cfg.TLSKey = keyPath
+	return nil
+}
+
+func logWireStartup(logger zerolog.Logger, cfg config.AppConfig, version, commit, buildDate, listenAddr string) error {
+	logger.Info().
+		Str("event", "startup").
+		Str("version", version).
+		Str("commit", commit).
+		Str("build_date", buildDate).
+		Str("addr", listenAddr).
+		Msg("starting xg2g")
+	logger.Info().Msgf("→ Receiver: %s (auth: %v)", maskURL(cfg.Enigma2.BaseURL), cfg.Enigma2.Username != "")
+	logger.Info().Msgf("→ Bouquet: %s", cfg.Bouquet)
+	if cfg.Enigma2.UseWebIFStreams {
+		if cfg.Enigma2.StreamPort > 0 {
+			logger.Info().Msgf("→ Stream: Direct port %d (V3 bypasses /web/stream.m3u)", cfg.Enigma2.StreamPort)
+		} else {
+			logger.Info().Msg("→ Stream: OpenWebIF /web/stream.m3u (receiver decides port)")
+		}
+	} else {
+		logger.Info().Msgf("→ Stream port: %d (direct TS)", cfg.Enigma2.StreamPort)
+	}
+	logger.Info().Msgf("→ EPG: %s (%d days)", cfg.XMLTVPath, cfg.EPGDays)
+	if strings.TrimSpace(cfg.APIToken) != "" {
+		logger.Info().Str("event", "auth.configured").Msg("→ API token: configured")
+	} else if len(cfg.APITokens) > 0 {
+		logger.Info().Str("event", "auth.configured").Msg("→ API tokens: configured")
+	} else {
+		return fmt.Errorf("no API tokens configured: set XG2G_API_TOKEN or XG2G_API_TOKENS")
+	}
+	if cfg.TLSCert != "" && cfg.TLSKey != "" {
+		logger.Info().Msgf("→ TLS: enabled (cert: %s, key: %s)", cfg.TLSCert, cfg.TLSKey)
+	}
+	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
+	return nil
+}
+
+func buildWireConfigState(cfg config.AppConfig, version, effectiveConfigPath string) (configMgr *config.Manager, cfgHolder *config.ConfigHolder, snap config.Snapshot, resolved config.AppConfig) {
+	configMgrPath := effectiveConfigPath
+	if configMgrPath == "" {
+		configMgrPath = filepath.Join(cfg.DataDir, "config.yaml")
+	}
+	configMgr = config.NewManager(configMgrPath)
+	cfgHolder = config.NewConfigHolder(cfg, config.NewLoader(configMgrPath, version), configMgrPath)
+
+	if current := cfgHolder.Current(); current != nil {
+		snap = *current
+	} else {
+		snap = config.BuildSnapshot(cfg, config.DefaultEnv())
+	}
+	return configMgr, cfgHolder, snap, snap.App
+}
+
+func resolveMetricsAddr(cfg config.AppConfig) string {
+	if !cfg.MetricsEnabled {
+		return ""
+	}
+	metricsAddr := strings.TrimSpace(cfg.MetricsAddr)
+	if metricsAddr == "" {
+		// Bind to 0.0.0.0 only if behind authenticated reverse proxy.
+		return "127.0.0.1:9090"
+	}
+	return metricsAddr
 }
 
 // Start launches bootstrap-owned background workers.
