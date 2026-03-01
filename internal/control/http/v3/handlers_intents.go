@@ -5,38 +5,23 @@
 package v3
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/auth"
-	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
+	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
-	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
-	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 // Responsibility: Handles Intent creation (Start/Stop stream signals).
 // Non-goals: Providing stream data or session status.
-
-const (
-	admissionLeaseTTL      = 30 * time.Second
-	admissionRetryAfterSec = 1
-)
 
 type intentDispatchState struct {
 	deps          sessionsModuleDeps
@@ -45,7 +30,6 @@ type intentDispatchState struct {
 	sessionID     string
 	correlationID string
 	mode          string
-	logger        zerolog.Logger
 }
 
 type intentHandlerFunc func(*Server, http.ResponseWriter, *http.Request, *intentDispatchState)
@@ -61,10 +45,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
 	deps := s.sessionsModuleDeps()
-	bus := deps.bus
-	store := deps.store
-
-	if bus == nil || store == nil {
+	if deps.bus == nil || deps.store == nil {
 		// V3 Worker not running
 		respondIntentFailure(w, r, IntentErrV3Unavailable)
 		return
@@ -106,12 +87,6 @@ func (s *Server) prepareIntentDispatchState(w http.ResponseWriter, r *http.Reque
 		return nil, false
 	}
 
-	logger := log.WithComponentFromContext(r.Context(), "api")
-	correlationProvided := correlationID != ""
-	if correlationProvided {
-		logger = logger.With().Str("correlationId", correlationID).Logger()
-	}
-
 	intentType := req.Type
 	if intentType == "" {
 		intentType = model.IntentTypeStreamStart
@@ -151,10 +126,6 @@ func (s *Server) prepareIntentDispatchState(w http.ResponseWriter, r *http.Reque
 		return nil, false
 	}
 
-	if !correlationProvided && correlationID != "" {
-		logger = logger.With().Str("correlationId", correlationID).Logger()
-	}
-
 	mode := model.ModeLive
 	modeRecording := normalize.Token(model.ModeRecording)
 	modeLive := normalize.Token(model.ModeLive)
@@ -176,317 +147,48 @@ func (s *Server) prepareIntentDispatchState(w http.ResponseWriter, r *http.Reque
 		sessionID:     sessionID,
 		correlationID: correlationID,
 		mode:          mode,
-		logger:        logger,
 	}, true
 }
 
 func (s *Server) handleV3IntentStart(w http.ResponseWriter, r *http.Request, state *intentDispatchState) {
 	deps := state.deps
-	cfg := deps.cfg
-	bus := deps.bus
-	store := deps.store
 	req := state.req
-	sessionID := state.sessionID
-	correlationID := state.correlationID
-	mode := state.mode
-	logger := state.logger
-
-	// Smart Profile Lookup
-	var cap *scan.Capability
-	if deps.channelScanner != nil {
-		if c, found := deps.channelScanner.GetCapability(req.ServiceRef); found {
-			cap = &c
-		}
-	}
-
-	hasGPU := hardware.IsVAAPIReady()
-	av1OK := hardware.IsVAAPIEncoderReady("av1_vaapi")
-	hevcOK := hardware.IsVAAPIEncoderReady("hevc_vaapi")
-	h264OK := hardware.IsVAAPIEncoderReady("h264_vaapi")
-
-	// Parse hwaccel parameter (v3.1+)
-	hwaccelMode := profiles.HWAccelAuto // Default
-	if hwaccel := normalize.Token(req.Params["hwaccel"]); hwaccel != "" {
-		switch hwaccel {
-		case "force":
-			hwaccelMode = profiles.HWAccelForce
-		case "off":
-			hwaccelMode = profiles.HWAccelOff
-		case "auto":
-			hwaccelMode = profiles.HWAccelAuto
-		default:
-			// Strict validation: unknown hwaccel → 400 Bad Request
-			RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "invalid_hwaccel")
-			respondIntentFailure(w, r, IntentErrInvalidInput,
-				fmt.Sprintf("invalid hwaccel value: %q (must be auto, force, or off)", hwaccel))
-			return
-		}
-	}
-
-	// Hard-fail if force requested but GPU not verified
-	if hwaccelMode == profiles.HWAccelForce && !hasGPU {
-		reason := "no /dev/dri/renderD128"
-		if hardware.HasVAAPI() {
-			reason = "VAAPI preflight encode test failed"
-		}
-		RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "hwaccel_unavailable")
-		respondIntentFailure(w, r, IntentErrInvalidInput,
-			fmt.Sprintf("hwaccel=force requested but GPU not available (%s)", reason))
-		return
-	}
-
-	// Resolve Profile ID.
-	// SSOT path: when playback_mode is provided by live playback decision endpoint,
-	// backend maps mode -> profile deterministically and ignores client profile hints.
-	reqProfileID := "universal"
-	requestedPlaybackMode := normalize.Token(req.Params["playback_mode"])
-	if requestedPlaybackMode != "" {
-		playbackDecisionToken, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(req.Params)
-		if tokenErr != nil {
-			metrics.IncLiveIntentsPlaybackKey(keyLabel, resultLabel)
-			respondIntentFailure(w, r, IntentErrInvalidInput, tokenErr.Error())
-			return
-		}
-		principalID := ""
-		if p := auth.PrincipalFromContext(r.Context()); p != nil {
-			principalID = p.ID
-		}
-		if !s.verifyLivePlaybackDecision(playbackDecisionToken, principalID, req.ServiceRef, requestedPlaybackMode) {
-			metrics.IncLiveIntentsPlaybackKey(keyLabel, "rejected_invalid")
-			respondIntentFailure(w, r, IntentErrInvalidInput, "playback_mode is not attested by /live/stream-info")
-			return
-		}
-		metrics.IncLiveIntentsPlaybackKey(keyLabel, resultLabel)
-		mappedProfile, mapErr := mapPlaybackModeToProfile(requestedPlaybackMode)
-		if mapErr != nil {
-			respondIntentFailure(w, r, IntentErrInvalidInput, mapErr.Error())
-			return
-		}
-		reqProfileID = mappedProfile
-	} else if p := normalize.Token(req.Params["profile"]); p != "" {
-		// Legacy fallback path.
-		reqProfileID = p
-	} else if picked := pickProfileForCodecs(req.Params["codecs"], av1OK, hevcOK, h264OK, hwaccelMode); picked != "" {
-		// Legacy fallback path.
-		reqProfileID = picked
-	}
-
-	// Bucket: 0 for Live, StartTime/1000 for VOD (1 second resolution).
-	bucket := "0"
-	if req.StartMs != nil && *req.StartMs > 0 {
-		bucket = fmt.Sprintf("%d", *req.StartMs/1000)
-	}
-
-	// Compute Idempotency Key (Server-Side) after final profile selection.
-	idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, req.ServiceRef, reqProfileID, bucket)
-
-	// Resolve() uses a single hasGPU boolean to decide whether VAAPI is eligible.
-	// For codec-specific profiles (AV1/HEVC/H264), we only pass hasGPU=true when
-	// the corresponding encoder was verified by VAAPI preflight.
-	resolveHasGPU := hasGPU
-	switch reqProfileID {
-	case profiles.ProfileAV1HW:
-		resolveHasGPU = av1OK
-	case profiles.ProfileSafariHEVCHW:
-		resolveHasGPU = hevcOK
-	case profiles.ProfileH264FMP4:
-		resolveHasGPU = h264OK
-	}
-	profileUserAgent := r.UserAgent()
-	if requestedPlaybackMode != "" {
-		// Explicit playback_mode must not be altered by UA heuristics.
-		profileUserAgent = ""
-	}
-	profileSpec := profiles.Resolve(reqProfileID, profileUserAgent, int(cfg.HLS.DVRWindow.Seconds()), cap, resolveHasGPU, hwaccelMode)
 
 	// 5.0 Preflight Source Check (fail-closed)
 	if enforcePreflight(r.Context(), w, r, deps, req.ServiceRef) {
 		return
 	}
 
-	// 5.1 Admission Control Gate (Slice 2)
-	admissionState := CollectRuntimeState(r.Context(), deps.admissionState)
-	wantsTranscode := profileSpec.TranscodeVideo // Profile knows if transcode is needed
-
-	if deps.admission == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "admission/unavailable", "Admission Unavailable", "ADMISSION_UNAVAILABLE", "admission controller unavailable", nil)
-		return
+	principalID := ""
+	if p := auth.PrincipalFromContext(r.Context()); p != nil {
+		principalID = p.ID
+	}
+	logger := log.WithComponentFromContext(r.Context(), "api")
+	if state.correlationID != "" {
+		logger = logger.With().Str("correlationId", state.correlationID).Logger()
 	}
 
-	decision := deps.admission.Check(r.Context(), admission.Request{WantsTranscode: wantsTranscode}, admissionState)
-	if !decision.Allow {
-		// Record reject metric (Slice 2)
-		if decision.Problem != nil {
-			metrics.RecordReject(decision.Problem.Code, "live") // Simplified priority for now
-		}
-
-		// Add Retry-After if applicable
-		if decision.RetryAfterSeconds != nil {
-			w.Header().Set("Retry-After", fmt.Sprintf("%d", *decision.RetryAfterSeconds))
-		} else if decision.Problem != nil && (decision.Problem.Code == admission.CodeNoTuners || decision.Problem.Code == admission.CodeSessionsFull) {
-			// Deterministic overrides if controller didn't spec it (though controller should?)
-			// For Slice 2, let's stick to Problem.
-			w.Header().Set("Retry-After", "5") // Safe default for capacity
-		}
-
-		// Log rejection
-		log.L().Info().
-			Str("serviceRef", req.ServiceRef).
-			Str("code", decision.Problem.Code).
-			Msg("admission rejected")
-
-		RecordV3Intent(string(model.IntentTypeStreamStart), "admission", decision.Problem.Code)
-		admission.WriteProblem(w, r, decision.Problem)
-		return
-	}
-
-	// Record admit metric (Phase 5.3)
-	metrics.RecordAdmit("live") // Simplified for Slice 2
-
-	var hwaccelEffective, hwaccelReason, encoderBackend string
-
-	if profileSpec.TranscodeVideo {
-		if profileSpec.HWAccel == "vaapi" {
-			hwaccelEffective = "gpu"
-			encoderBackend = "vaapi"
-			if hwaccelMode == profiles.HWAccelForce {
-				hwaccelReason = "forced"
-			} else {
-				hwaccelReason = "auto_has_gpu"
-			}
-		} else {
-			hwaccelEffective = "cpu"
-			encoderBackend = profileSpec.VideoCodec // libx264, hevc, etc
-			if hwaccelMode == profiles.HWAccelOff {
-				hwaccelReason = "user_disabled"
-			} else if !hasGPU {
-				hwaccelReason = "no_gpu_available"
-			} else {
-				hwaccelReason = "profile_cpu_only"
-			}
-		}
-	} else {
-		// Passthrough (no transcoding)
-		hwaccelEffective = "off"
-		hwaccelReason = "passthrough"
-		encoderBackend = "none"
-	}
-
-	logger.Info().
-		Str("ua", r.UserAgent()).
-		Str("profile", profileSpec.Name).
-		Int("dvr_window_sec", profileSpec.DVRWindowSec).
-		Str("idem_key", idempotencyKey).
-		Bool("gpu_available", hasGPU).
-		Str("hwaccel_requested", string(hwaccelMode)).
-		Str("hwaccel_effective", hwaccelEffective).
-		Str("hwaccel_reason", hwaccelReason).
-		Str("encoder_backend", encoderBackend).
-		Str("video_codec", profileSpec.VideoCodec).
-		Str("container", profileSpec.Container).
-		Bool("llhls", profileSpec.LLHLS).
-		Msg("intent profile resolved")
-
-	if len(cfg.Engine.TunerSlots) == 0 {
-		RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "no_slots")
-		w.Header().Set("Retry-After", "10")
-		respondIntentFailure(w, r, IntentErrNoTunerSlots, "no tuner slots configured")
-		return
-	}
-
-	phaseLabel := "phase2"
-
-	// 4. Persistence (Atomic Idempotency)
-	// We use PutSessionWithIdempotency to guarantee single-winner for parallel events.
-	requestParams := map[string]string{
-		"profile": reqProfileID,
-		"bucket":  bucket,
-	}
-	if raw := req.Params["codecs"]; raw != "" {
-		requestParams["codecs"] = raw
-	}
-	if correlationID != "" {
-		requestParams["correlationId"] = correlationID
-	}
-	if mode != "" {
-		requestParams[model.CtxKeyMode] = mode
-	}
-
-	// Create Session Record (Starting state)
-	session := lifecycle.NewSessionRecord(time.Now())
-	session.SessionID = sessionID
-	session.ServiceRef = req.ServiceRef
-	session.Profile = profileSpec
-	session.CorrelationID = correlationID
-	// ADR-009: Session Lease (config-driven, CTO Patch 1 compliant)
-	session.LeaseExpiresAtUnix = time.Now().Add(cfg.Sessions.LeaseTTL).Unix()
-	session.HeartbeatInterval = int(cfg.Sessions.HeartbeatInterval.Seconds())
-	session.ContextData = requestParams // Store context params
-
-	// Atomic Write
-	existingID, exists, err := store.PutSessionWithIdempotency(r.Context(), session, idempotencyKey, admissionLeaseTTL)
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to persist intent")
-		RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
-		respondIntentFailure(w, r, IntentErrStoreUnavailable, "failed to persist intent")
-		return
-	}
-
-	if exists {
-		// Idempotent Replay
-		RecordV3Replay(string(model.IntentTypeStreamStart))
-		RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "replay")
-
-		logger.Info().Str("existing_sid", existingID).Msg("idempotent replay detected")
-
-		// Fetch existing session to get its correlation ID (Hygiene #2)
-		existingSession, getErr := store.GetSession(r.Context(), existingID)
-		replayCorrelation := correlationID // Default to current if fetch fails
-		if getErr == nil && existingSession != nil && existingSession.CorrelationID != "" {
-			replayCorrelation = existingSession.CorrelationID
-		} else if getErr == nil && existingSession != nil && existingSession.ContextData != nil {
-			if cid := existingSession.ContextData["correlationId"]; cid != "" {
-				replayCorrelation = cid
-			}
-		}
-
-		writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
-			SessionID:     existingID,
-			Status:        "idempotent_replay",
-			CorrelationID: replayCorrelation,
-		})
-		return
-	}
-
-	// 5. Publish Event (Only if new)
-	evt := model.StartSessionEvent{
-		Type:          model.EventStartSession,
-		SessionID:     sessionID,
+	result, intentErr := s.intentProcessor().ProcessIntent(r.Context(), v3intents.Intent{
+		Type:          state.intentType,
+		SessionID:     state.sessionID,
 		ServiceRef:    req.ServiceRef,
-		ProfileID:     reqProfileID,
-		CorrelationID: correlationID,
-		RequestedAtUN: time.Now().Unix(),
-	}
-	if req.StartMs != nil {
-		evt.StartMs = *req.StartMs
-	}
-
-	if err := bus.Publish(r.Context(), string(model.EventStartSession), evt); err != nil {
-		logger.Error().Err(err).Msg("failed to publish start event")
-		RecordV3Publish("session.start", "error")
-		RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "publish_error")
-		respondIntentFailure(w, r, IntentErrPublishUnavailable, "failed to publish event")
+		Params:        req.Params,
+		StartMs:       req.StartMs,
+		CorrelationID: state.correlationID,
+		Mode:          state.mode,
+		UserAgent:     r.UserAgent(),
+		PrincipalID:   principalID,
+		Logger:        logger,
+	})
+	if intentErr != nil {
+		s.writeIntentServiceError(w, r, intentErr)
 		return
 	}
-	RecordV3Publish("session.start", "ok")
 
-	// 6. Response
-	logger.Info().Msg("intent accepted")
-	RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "accepted")
-	if deps.playbackSLO != nil {
+	if deps.playbackSLO != nil && result.Status == "accepted" {
 		modeLabel := playbackModeLabelFromIntentPlaybackMode(req.Params["playback_mode"])
 		deps.playbackSLO.Start(playbackSessionMeta{
-			SessionID:  sessionID,
+			SessionID:  result.SessionID,
 			Schema:     playbackSchemaLiveLabel,
 			Mode:       modeLabel,
 			ServiceRef: req.ServiceRef,
@@ -494,52 +196,48 @@ func (s *Server) handleV3IntentStart(w http.ResponseWriter, r *http.Request, sta
 		log.L().Debug().
 			Str("event", "playback.slo.start").
 			Str("request_id", requestID(r.Context())).
-			Str("session_id", sessionID).
+			Str("session_id", result.SessionID).
 			Str("schema", playbackSchemaLiveLabel).
 			Str("mode", modeLabel).
 			Str("service_ref", req.ServiceRef).
 			Msg("live playback start tracked")
 	}
+
 	writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
-		SessionID:     sessionID,
-		Status:        "accepted",
-		CorrelationID: correlationID,
+		SessionID:     result.SessionID,
+		Status:        result.Status,
+		CorrelationID: result.CorrelationID,
 	})
 }
 
 func (s *Server) handleV3IntentStop(w http.ResponseWriter, r *http.Request, state *intentDispatchState) {
 	deps := state.deps
-	bus := deps.bus
-	sessionID := state.sessionID
-	correlationID := state.correlationID
-	logger := state.logger
-
-	event := model.StopSessionEvent{
-		Type:          model.EventStopSession,
-		SessionID:     sessionID,
-		Reason:        model.RClientStop,
-		CorrelationID: correlationID,
-		RequestedAtUN: time.Now().Unix(),
+	logger := log.WithComponentFromContext(r.Context(), "api")
+	if state.correlationID != "" {
+		logger = logger.With().Str("correlationId", state.correlationID).Logger()
 	}
-	if err := bus.Publish(r.Context(), string(model.EventStopSession), event); err != nil {
-		logger.Error().Err(err).Msg("failed to publish stop event")
-		RecordV3Publish("session.stop", "error")
-		RecordV3Intent(string(model.IntentTypeStreamStop), "any", "publish_error")
-		respondIntentFailure(w, r, IntentErrPublishUnavailable, "failed to dispatch intent")
+
+	result, intentErr := s.intentProcessor().ProcessIntent(r.Context(), v3intents.Intent{
+		Type:          state.intentType,
+		SessionID:     state.sessionID,
+		CorrelationID: state.correlationID,
+		Logger:        logger,
+	})
+	if intentErr != nil {
+		s.writeIntentServiceError(w, r, intentErr)
 		return
 	}
-	RecordV3Publish("session.stop", "ok")
-	RecordV3Intent(string(model.IntentTypeStreamStop), "any", "accepted")
-	if deps.playbackSLO != nil {
+
+	if deps.playbackSLO != nil && result.Status == "accepted" {
 		outcome := deps.playbackSLO.MarkOutcome(playbackSessionMeta{
-			SessionID: sessionID,
+			SessionID: result.SessionID,
 			Schema:    playbackSchemaLiveLabel,
 		}, "aborted")
 		if outcome.TTFFObserved {
 			evt := log.L().Info().
 				Str("event", "playback.slo.ttff").
 				Str("request_id", requestID(r.Context())).
-				Str("session_id", sessionID).
+				Str("session_id", result.SessionID).
 				Str("schema", outcome.Schema).
 				Str("mode", outcome.Mode).
 				Str("outcome", outcome.Outcome).
@@ -552,49 +250,47 @@ func (s *Server) handleV3IntentStop(w http.ResponseWriter, r *http.Request, stat
 	}
 
 	writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
-		SessionID:     sessionID,
-		Status:        "accepted",
-		CorrelationID: correlationID,
+		SessionID:     result.SessionID,
+		Status:        result.Status,
+		CorrelationID: result.CorrelationID,
 	})
 }
 
-// ComputeIdemKey generates a deterministic SHA256 idempotency key.
-// It uses the canonical payload: "v1:<type>:<ref>:<profile>:<bucket>"
-// Secret is no longer used (Server-Side generation is inherently protected).
-func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) string {
-	payload := fmt.Sprintf("v1:%s:%s:%s:%s", intentType, ref, profile, bucket)
-	hash := sha256.Sum256([]byte(payload))
-	return hex.EncodeToString(hash[:])
-}
-
-func mapPlaybackModeToProfile(mode string) (string, error) {
-	switch mode {
-	case "native_hls", "hlsjs", "direct_mp4":
-		return "high", nil
-	case "transcode":
-		return profiles.ProfileH264FMP4, nil
-	case "deny":
-		return "", fmt.Errorf("playback_mode=deny cannot start a live session")
-	default:
-		return "", fmt.Errorf("unsupported playback_mode: %q", mode)
+func (s *Server) writeIntentServiceError(w http.ResponseWriter, r *http.Request, err *v3intents.Error) {
+	if err == nil {
+		respondIntentFailure(w, r, IntentErrInternal)
+		return
 	}
-}
 
-func resolvePlaybackDecisionToken(params map[string]string) (token, keyLabel, resultLabel string, err error) {
-	playbackDecisionToken := strings.TrimSpace(params["playback_decision_token"])
-	playbackDecisionID := strings.TrimSpace(params["playback_decision_id"])
-
-	switch {
-	case playbackDecisionToken == "" && playbackDecisionID == "":
-		return "", "none", "rejected_missing", fmt.Errorf("playback_decision_id or playback_decision_token is required when playback_mode is provided")
-	case playbackDecisionToken != "" && playbackDecisionID != "":
-		if playbackDecisionToken != playbackDecisionID {
-			return "", "both", "mismatch", fmt.Errorf("playback_decision_id and playback_decision_token mismatch")
+	switch err.Kind {
+	case v3intents.ErrorInvalidInput:
+		respondIntentFailure(w, r, IntentErrInvalidInput, err.Message)
+	case v3intents.ErrorAdmissionUnavailable:
+		writeProblem(w, r, http.StatusServiceUnavailable, "admission/unavailable", "Admission Unavailable", "ADMISSION_UNAVAILABLE", "admission controller unavailable", nil)
+	case v3intents.ErrorAdmissionRejected:
+		if err.RetryAfter != "" {
+			w.Header().Set("Retry-After", err.RetryAfter)
 		}
-		return playbackDecisionToken, "both", "equal", nil
-	case playbackDecisionToken != "":
-		return playbackDecisionToken, "playback_decision_token", "accepted", nil
+		if err.AdmissionProblem != nil {
+			admission.WriteProblem(w, r, err.AdmissionProblem)
+			return
+		}
+		respondIntentFailure(w, r, IntentErrAdmissionUnknown, "admission rejected")
+	case v3intents.ErrorNoTunerSlots:
+		if err.RetryAfter != "" {
+			w.Header().Set("Retry-After", err.RetryAfter)
+		}
+		respondIntentFailure(w, r, IntentErrNoTunerSlots, err.Message)
+	case v3intents.ErrorStoreUnavailable:
+		respondIntentFailure(w, r, IntentErrStoreUnavailable, err.Message)
+	case v3intents.ErrorPublishUnavailable:
+		respondIntentFailure(w, r, IntentErrPublishUnavailable, err.Message)
 	default:
-		return playbackDecisionID, "playback_decision_id", "accepted", nil
+		respondIntentFailure(w, r, IntentErrInternal)
 	}
+}
+
+// ComputeIdemKey generates a deterministic SHA256 idempotency key.
+func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) string {
+	return v3intents.ComputeIdemKey(intentType, ref, profile, bucket)
 }

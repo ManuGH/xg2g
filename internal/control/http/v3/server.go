@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
+	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -79,6 +80,7 @@ type Server struct {
 	liveDecisionSigningKey []byte
 	liveDecisionTTL        time.Duration
 	playbackSLO            *playbackSessionTracker
+	intentService          *v3intents.Service
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -145,6 +147,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		authSessionTTL:         defaultAuthSessionTTL,
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
+	s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
 	s.epgSource = &epgAdapter{s}
 	return s
 }
