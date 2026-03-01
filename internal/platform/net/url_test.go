@@ -68,7 +68,7 @@ func TestNormalizeAuthority(t *testing.T) {
 }
 
 func TestSanitizeURL_RemovesCredentialsAndQuery(t *testing.T) {
-	input := "http://user:pass@example.com:8080/stream/path?token=abc123"
+	input := "http://user:pass@example.com:8080/stream/path?query=abc123"
 	got := SanitizeURL(input)
 
 	if strings.Contains(got, "user") || strings.Contains(got, "pass") || strings.Contains(got, "@") {
