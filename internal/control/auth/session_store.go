@@ -21,7 +21,7 @@ var (
 type SessionTokenStore interface {
 	CreateSession(token string, ttl time.Duration) (string, error)
 	ResolveSessionToken(sessionID string) (string, bool)
-	DeleteSession(sessionID string)
+	InvalidateSession(sessionID string)
 }
 
 type sessionEntry struct {
@@ -77,14 +77,14 @@ func (s *InMemorySessionTokenStore) ResolveSessionToken(sessionID string) (strin
 	}
 
 	if time.Now().After(entry.expiresAt) {
-		s.DeleteSession(sessionID)
+		s.InvalidateSession(sessionID)
 		return "", false
 	}
 
 	return entry.token, true
 }
 
-func (s *InMemorySessionTokenStore) DeleteSession(sessionID string) {
+func (s *InMemorySessionTokenStore) InvalidateSession(sessionID string) {
 	if sessionID == "" {
 		return
 	}

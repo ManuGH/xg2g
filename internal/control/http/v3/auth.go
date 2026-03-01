@@ -163,5 +163,5 @@ func (s *Server) resolveSessionToken(sessionID string) (string, bool) {
 }
 
 func (s *Server) deleteAuthSession(sessionID string) {
-	s.authSessionStoreOrDefault().DeleteSession(sessionID)
+	s.authSessionStoreOrDefault().InvalidateSession(sessionID)
 }

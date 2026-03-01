@@ -27,7 +27,7 @@ func TestInMemorySessionTokenStore_CreateResolveDelete(t *testing.T) {
 		t.Fatalf("ResolveSessionToken() = %q, want %q", token, "token-123")
 	}
 
-	store.DeleteSession(sessionID)
+	store.InvalidateSession(sessionID)
 	if _, ok := store.ResolveSessionToken(sessionID); ok {
 		t.Fatal("deleted session must not resolve")
 	}
