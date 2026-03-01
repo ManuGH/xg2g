@@ -80,6 +80,14 @@ type recordingsModuleDeps struct {
 	playbackSLO       *playbackSessionTracker
 }
 
+// RecordingsDeps defines the server methods required by recordings handlers.
+// *Server satisfies this implicitly and keeps the dependency boundary explicit.
+type RecordingsDeps interface {
+	recordingsModuleDeps() recordingsModuleDeps
+}
+
+var _ RecordingsDeps = (*Server)(nil)
+
 func (s *Server) recordingsModuleDeps() recordingsModuleDeps {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
