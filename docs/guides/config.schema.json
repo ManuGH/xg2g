@@ -52,7 +52,7 @@
           "type": "array"
         },
         "disableLegacyTokenSources": {
-          "default": false,
+          "default": true,
           "type": "boolean"
         },
         "listenAddr": {

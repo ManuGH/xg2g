@@ -5,6 +5,7 @@
 package net
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -63,5 +64,20 @@ func TestNormalizeAuthority(t *testing.T) {
 				t.Errorf("NormalizeAuthority(%q) port = %q, want %q", tt.input, p, tt.wantPort)
 			}
 		}
+	}
+}
+
+func TestSanitizeURL_RemovesCredentialsAndQuery(t *testing.T) {
+	input := "http://user:pass@example.com:8080/stream/path?query=abc123"
+	got := SanitizeURL(input)
+
+	if strings.Contains(got, "user") || strings.Contains(got, "pass") || strings.Contains(got, "@") {
+		t.Fatalf("SanitizeURL leaked credentials: %q", got)
+	}
+	if strings.Contains(got, "?") {
+		t.Fatalf("SanitizeURL leaked query string: %q", got)
+	}
+	if got != "http://example.com:8080/stream/path" {
+		t.Fatalf("SanitizeURL returned unexpected value: %q", got)
 	}
 }

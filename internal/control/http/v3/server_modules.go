@@ -40,6 +40,15 @@ type sessionsModuleDeps struct {
 	playbackSLO    *playbackSessionTracker
 }
 
+// IntentDeps defines the server methods required by intent handlers.
+// *Server satisfies this implicitly and keeps the dependency boundary explicit.
+type IntentDeps interface {
+	sessionsModuleDeps() sessionsModuleDeps
+	verifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode string) bool
+}
+
+var _ IntentDeps = (*Server)(nil)
+
 func (s *Server) sessionsModuleDeps() sessionsModuleDeps {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -70,6 +79,14 @@ type recordingsModuleDeps struct {
 	resumeStore       resume.Store
 	playbackSLO       *playbackSessionTracker
 }
+
+// RecordingsDeps defines the server methods required by recordings handlers.
+// *Server satisfies this implicitly and keeps the dependency boundary explicit.
+type RecordingsDeps interface {
+	recordingsModuleDeps() recordingsModuleDeps
+}
+
+var _ RecordingsDeps = (*Server)(nil)
 
 func (s *Server) recordingsModuleDeps() recordingsModuleDeps {
 	s.mu.RLock()

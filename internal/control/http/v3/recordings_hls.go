@@ -75,9 +75,22 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 	w.Header().Set("X-Playback-Session-Id", "rec:"+recordingId)
 	w.Header().Set("Content-Length", strconv.Itoa(len(artifact.Data)))
 	w.WriteHeader(http.StatusOK)
+	sessionID := "rec:" + recordingId
 	if !isHead {
 		if artifact.Data != nil {
-			_, _ = w.Write(artifact.Data)
+			if _, err := w.Write(artifact.Data); err != nil {
+				s.handleRecordingCopyError(
+					nil,
+					r,
+					deps,
+					playbackStagePlaylistLabel,
+					playbackModeHLSLabel,
+					sessionID,
+					recordingId,
+					err,
+				)
+				return
+			}
 		} else if artifact.AbsPath != "" {
 			f, err := os.Open(artifact.AbsPath)
 			if err == nil {
@@ -87,13 +100,25 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 						log.L().Debug().Err(err).Msg("failed to close playlist file")
 					}
 				}()
-				_, _ = io.Copy(w, f)
+				if _, err := io.Copy(w, f); err != nil {
+					s.handleRecordingCopyError(
+						nil,
+						r,
+						deps,
+						playbackStagePlaylistLabel,
+						playbackModeHLSLabel,
+						sessionID,
+						recordingId,
+						err,
+					)
+					return
+				}
 			}
 		}
 	}
 	if !isHead && deps.playbackSLO != nil {
 		obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
-			SessionID:   "rec:" + recordingId,
+			SessionID:   sessionID,
 			Schema:      playbackSchemaRecordingLabel,
 			Mode:        playbackModeHLSLabel,
 			RecordingID: recordingId,
@@ -102,7 +127,7 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 			log.L().Info().
 				Str("event", "playback.slo.ttff").
 				Str("request_id", requestID(r.Context())).
-				Str("session_id", "rec:"+recordingId).
+				Str("session_id", sessionID).
 				Str("schema", obs.Schema).
 				Str("mode", obs.Mode).
 				Str("outcome", "ok").
@@ -114,7 +139,7 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 			log.L().Warn().
 				Str("event", "playback.slo.rebuffer").
 				Str("request_id", requestID(r.Context())).
-				Str("session_id", "rec:"+recordingId).
+				Str("session_id", sessionID).
 				Str("schema", obs.Schema).
 				Str("mode", obs.Mode).
 				Str("severity", obs.RebufferSeverity).
@@ -192,11 +217,24 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 	if rangeHeader == "" {
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		w.WriteHeader(http.StatusOK)
+		sessionID := "rec:" + recordingId
 		if !isHead {
-			_, _ = io.Copy(w, f)
+			if _, err := io.Copy(w, f); err != nil {
+				s.handleRecordingCopyError(
+					nil,
+					r,
+					deps,
+					playbackStageSegmentLabel,
+					playbackModeHLSLabel,
+					sessionID,
+					recordingId,
+					err,
+				)
+				return
+			}
 			if deps.playbackSLO != nil {
 				obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
-					SessionID:   "rec:" + recordingId,
+					SessionID:   sessionID,
 					Schema:      playbackSchemaRecordingLabel,
 					Mode:        playbackModeHLSLabel,
 					RecordingID: recordingId,
@@ -205,7 +243,7 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 					log.L().Info().
 						Str("event", "playback.slo.ttff").
 						Str("request_id", requestID(r.Context())).
-						Str("session_id", "rec:"+recordingId).
+						Str("session_id", sessionID).
 						Str("schema", obs.Schema).
 						Str("mode", obs.Mode).
 						Str("outcome", "ok").
@@ -217,7 +255,7 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 					log.L().Warn().
 						Str("event", "playback.slo.rebuffer").
 						Str("request_id", requestID(r.Context())).
-						Str("session_id", "rec:"+recordingId).
+						Str("session_id", sessionID).
 						Str("schema", obs.Schema).
 						Str("mode", obs.Mode).
 						Str("severity", obs.RebufferSeverity).
@@ -241,16 +279,29 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 	w.Header().Set("Content-Range", xg2ghttp.FormatContentRange(rng, size))
 	w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
 	w.WriteHeader(http.StatusPartialContent)
+	sessionID := "rec:" + recordingId
 
 	if !isHead {
 		if _, err := f.Seek(rng.Start, io.SeekStart); err != nil {
 			metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageSegmentLabel, "INTERNAL_ERROR")
 			return
 		}
-		_, _ = io.CopyN(w, f, contentLength)
+		if _, err := io.CopyN(w, f, contentLength); err != nil {
+			s.handleRecordingCopyError(
+				nil,
+				r,
+				deps,
+				playbackStageSegmentLabel,
+				playbackModeHLSLabel,
+				sessionID,
+				recordingId,
+				err,
+			)
+			return
+		}
 		if deps.playbackSLO != nil {
 			obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
-				SessionID:   "rec:" + recordingId,
+				SessionID:   sessionID,
 				Schema:      playbackSchemaRecordingLabel,
 				Mode:        playbackModeHLSLabel,
 				RecordingID: recordingId,
@@ -259,7 +310,7 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 				log.L().Info().
 					Str("event", "playback.slo.ttff").
 					Str("request_id", requestID(r.Context())).
-					Str("session_id", "rec:"+recordingId).
+					Str("session_id", sessionID).
 					Str("schema", obs.Schema).
 					Str("mode", obs.Mode).
 					Str("outcome", "ok").
@@ -271,7 +322,7 @@ func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordi
 				log.L().Warn().
 					Str("event", "playback.slo.rebuffer").
 					Str("request_id", requestID(r.Context())).
-					Str("session_id", "rec:"+recordingId).
+					Str("session_id", sessionID).
 					Str("schema", obs.Schema).
 					Str("mode", obs.Mode).
 					Str("severity", obs.RebufferSeverity).

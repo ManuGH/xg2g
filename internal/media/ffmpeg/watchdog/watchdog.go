@@ -147,8 +147,8 @@ func (w *Watchdog) recordHeartbeat() {
 }
 
 func (w *Watchdog) check() error {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
 	now := w.clock.Now()
 	elapsed := now.Sub(w.lastHeartbeat)

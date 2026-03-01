@@ -28,6 +28,9 @@ type v3WorkerRuntimeDeps struct {
 func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error {
 	cfg := m.deps.Config
 	m.logV3WorkerStart(cfg)
+	if scanLifecycle, ok := m.deps.ScanManager.(interface{ AttachLifecycle(context.Context) }); ok {
+		scanLifecycle.AttachLifecycle(ctx)
+	}
 
 	runtimeDeps, err := m.snapshotV3WorkerDeps()
 	if err != nil {
@@ -83,6 +86,12 @@ func (m *manager) registerV3RuntimeCloseHooks() {
 		m.RegisterShutdownHook("scan_store_close", func(ctx context.Context) error {
 			return m.deps.ScanManager.Close()
 		})
+		if stoppable, ok := m.deps.ScanManager.(interface{ Stop() }); ok {
+			m.RegisterShutdownHook("scan_manager_stop", func(ctx context.Context) error {
+				stoppable.Stop()
+				return nil
+			})
+		}
 	}
 }
 

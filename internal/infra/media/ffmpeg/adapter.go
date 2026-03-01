@@ -209,6 +209,8 @@ func (a *LocalAdapter) testVaapiEncoder(encoder string) error {
 
 // VaapiEncoderVerified returns true if the given encoder passed preflight.
 func (a *LocalAdapter) VaapiEncoderVerified(encoder string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.vaapiEncoders[encoder]
 }
 
@@ -296,11 +298,11 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 		delete(a.activeProcs, handle)
 		a.mu.Unlock()
 	}()
+	defer func() {
+		_ = stderr.Close()
+	}()
 
 	wd := watchdog.New(a.StartTimeout, a.StallTimeout)
-
-	// Forward lines to RingBuffer/Log and Watchdog
-	scanner := bufio.NewScanner(stderr)
 
 	if parentCtx == nil {
 		parentCtx = context.Background()
@@ -313,33 +315,116 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 		wdErrCh <- wd.Run(wdCtx)
 	}()
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		wd.ParseLine(line)
+	scanDone := make(chan struct{})
+	go func() {
+		defer close(scanDone)
+		scanner := bufio.NewScanner(stderr)
+		vaapiRuntimeFailureSeen := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !vaapiRuntimeFailureSeen && isVAAPIRuntimeErrorLine(line) {
+				vaapiRuntimeFailureSeen = true
+				a.recordVAAPIRuntimeFailure(sessionID, line)
+			}
+			wd.ParseLine(line)
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			a.Logger.Warn().Err(scanErr).Str("sessionId", sessionID).Msg("ffmpeg stderr scan failed")
+		}
+	}()
 
-		// Map back to session metrics if needed, but primarily for stall detection
+	procErrCh := make(chan error, 1)
+	go func() {
+		procErrCh <- cmd.Wait()
+	}()
 
-	}
-	if scanErr := scanner.Err(); scanErr != nil {
-		a.Logger.Warn().Err(scanErr).Str("sessionId", sessionID).Msg("ffmpeg stderr scan failed")
-	}
-
-	// Wait for process or watchdog
-	procErr := cmd.Wait()
-	wdCancel()
+	var procErr error
+	watchdogConsumed := false
 
 	select {
+	case procErr = <-procErrCh:
+		// Process exited naturally or with external error.
 	case wdErr := <-wdErrCh:
+		watchdogConsumed = true
 		if wdErr != nil {
 			a.Logger.Error().Err(wdErr).Str("sessionId", sessionID).Msg("watchdog triggered process termination")
-			// We don't have an easy way to signal the domain here other than the process exiting.
-			// But since we are monitoring STDEER and it closed, cmd.Wait() will return.
+			a.terminateProcess(cmd, sessionID)
 		}
-	default:
+		procErr = <-procErrCh
+	case <-parentCtx.Done():
+		a.terminateProcess(cmd, sessionID)
+		procErr = <-procErrCh
 	}
+
+	wdCancel()
+	if !watchdogConsumed {
+		if wdErr := <-wdErrCh; wdErr != nil {
+			a.Logger.Error().Err(wdErr).Str("sessionId", sessionID).Msg("watchdog reported failure")
+		}
+	}
+
+	<-scanDone
 
 	if procErr != nil {
 		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
+	}
+}
+
+func isVAAPIRuntimeErrorLine(line string) bool {
+	s := strings.ToLower(strings.TrimSpace(line))
+	if s == "" {
+		return false
+	}
+	hasGPUContext := strings.Contains(s, "vaapi") || strings.Contains(s, "hwaccel") || strings.Contains(s, "renderd128") || strings.Contains(s, "drm")
+	if !hasGPUContext {
+		return false
+	}
+	return strings.Contains(s, "error") ||
+		strings.Contains(s, "failed") ||
+		strings.Contains(s, "cannot") ||
+		strings.Contains(s, "not support") ||
+		strings.Contains(s, "no such device") ||
+		strings.Contains(s, "invalid argument")
+}
+
+func (a *LocalAdapter) recordVAAPIRuntimeFailure(sessionID, line string) {
+	if strings.TrimSpace(a.VaapiDevice) == "" {
+		return
+	}
+
+	failures, demoted := hardware.RecordVAAPIRuntimeFailure()
+	if demoted {
+		a.mu.Lock()
+		a.vaapiEncoders = map[string]bool{}
+		a.mu.Unlock()
+		a.Logger.Error().
+			Str("sessionId", sessionID).
+			Int("failure_count", failures).
+			Str("threshold_action", "gpu_demoted_cpu_fallback").
+			Str("ffmpeg_error", strings.TrimSpace(line)).
+			Msg("vaapi runtime failures reached threshold; demoting GPU")
+		return
+	}
+
+	if failures > 0 {
+		a.Logger.Warn().
+			Str("sessionId", sessionID).
+			Int("failure_count", failures).
+			Str("ffmpeg_error", strings.TrimSpace(line)).
+			Msg("vaapi runtime failure observed")
+	}
+}
+
+func (a *LocalAdapter) terminateProcess(cmd *exec.Cmd, sessionID string) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	if err := procgroup.KillGroup(cmd.Process.Pid, 2*time.Second, a.KillTimeout); err != nil {
+		a.Logger.Warn().
+			Err(err).
+			Str("sessionId", sessionID).
+			Msg("failed to terminate process group gracefully, sending direct kill")
+		_ = cmd.Process.Kill()
 	}
 }
 

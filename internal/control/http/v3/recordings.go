@@ -271,7 +271,19 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		w.WriteHeader(http.StatusOK)
 		if !isHead {
-			_, _ = io.Copy(w, f)
+			if _, err := io.Copy(w, f); err != nil {
+				s.handleRecordingCopyError(
+					nil,
+					r,
+					deps,
+					playbackStageStreamLabel,
+					playbackModeMP4Label,
+					sessionID,
+					recordingId,
+					err,
+				)
+				return
+			}
 			if deps.playbackSLO != nil {
 				obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
 					SessionID:   sessionID,
@@ -330,7 +342,19 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 			// Too late for WriteHeader, but we can't do much here.
 			return
 		}
-		_, _ = io.CopyN(w, f, contentLength)
+		if _, err := io.CopyN(w, f, contentLength); err != nil {
+			s.handleRecordingCopyError(
+				nil,
+				r,
+				deps,
+				playbackStageStreamLabel,
+				playbackModeMP4Label,
+				sessionID,
+				recordingId,
+				err,
+			)
+			return
+		}
 		if deps.playbackSLO != nil {
 			obs := deps.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
 				SessionID:   sessionID,

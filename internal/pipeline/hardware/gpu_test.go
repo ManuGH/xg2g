@@ -1,12 +1,18 @@
 package hardware
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+)
 
 func resetVaapiState(t *testing.T) {
 	t.Helper()
 	vaapiMu.Lock()
 	vaapiChecked = false
 	vaapiPassed = false
+	vaapiRuntimeFailures = 0
 	vaapiMu.Unlock()
 
 	vaapiEncMu.Lock()
@@ -18,6 +24,7 @@ func resetVaapiState(t *testing.T) {
 		vaapiMu.Lock()
 		vaapiChecked = false
 		vaapiPassed = false
+		vaapiRuntimeFailures = 0
 		vaapiMu.Unlock()
 
 		vaapiEncMu.Lock()
@@ -80,5 +87,68 @@ func TestIsVAAPIEncoderReady_AfterSet(t *testing.T) {
 	}
 	if !IsVAAPIEncoderReady("av1_vaapi") {
 		t.Fatal("expected av1_vaapi to be ready")
+	}
+}
+
+func TestRecordVAAPIRuntimeFailure_DemotesAfterThreshold(t *testing.T) {
+	resetVaapiState(t)
+
+	SetVAAPIPreflightResult(true)
+	SetVAAPIEncoderPreflight(map[string]bool{
+		"h264_vaapi": true,
+	})
+
+	for i := 1; i < vaapiRuntimeFailureThreshold; i++ {
+		failures, demoted := RecordVAAPIRuntimeFailure()
+		if failures != i {
+			t.Fatalf("expected failures=%d, got %d", i, failures)
+		}
+		if demoted {
+			t.Fatalf("unexpected demotion at failures=%d", failures)
+		}
+		if !IsVAAPIReady() {
+			t.Fatalf("gpu must stay ready before threshold, failures=%d", failures)
+		}
+	}
+
+	failures, demoted := RecordVAAPIRuntimeFailure()
+	if failures != vaapiRuntimeFailureThreshold {
+		t.Fatalf("expected failures=%d, got %d", vaapiRuntimeFailureThreshold, failures)
+	}
+	if !demoted {
+		t.Fatal("expected VAAPI demotion at threshold")
+	}
+	if IsVAAPIReady() {
+		t.Fatal("VAAPI must be not-ready after runtime demotion")
+	}
+	if IsVAAPIEncoderReady("h264_vaapi") {
+		t.Fatal("encoder readiness must be cleared after runtime demotion")
+	}
+}
+
+func TestRuntimeVAAPIDemotion_FallbacksToCPUProfile(t *testing.T) {
+	resetVaapiState(t)
+
+	SetVAAPIPreflightResult(true)
+	SetVAAPIEncoderPreflight(map[string]bool{
+		"h264_vaapi": true,
+	})
+
+	capInterlaced := &scan.Capability{Interlaced: true}
+	specGPU := profiles.Resolve("safari", "Safari/17.0", 0, capInterlaced, IsVAAPIEncoderReady("h264_vaapi"), profiles.HWAccelAuto)
+	if specGPU.HWAccel != "vaapi" {
+		t.Fatalf("expected GPU profile before runtime failure, got hwaccel=%q", specGPU.HWAccel)
+	}
+
+	for i := 0; i < vaapiRuntimeFailureThreshold; i++ {
+		_, _ = RecordVAAPIRuntimeFailure()
+	}
+
+	specCPU := profiles.Resolve("safari", "Safari/17.0", 0, capInterlaced, IsVAAPIEncoderReady("h264_vaapi"), profiles.HWAccelAuto)
+	if specCPU.HWAccel != "" {
+		t.Fatalf("expected CPU fallback profile after runtime demotion, got hwaccel=%q", specCPU.HWAccel)
+	}
+	if specCPU.VideoCodec != "libx264" {
+		t.Fatalf("expected CPU fallback codec libx264, got %q", specCPU.VideoCodec)
 	}
 }

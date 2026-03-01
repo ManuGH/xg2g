@@ -44,7 +44,7 @@ func SecurityHeaders(csp string, trustedProxies []*net.IPNet) func(http.Handler)
 			}
 
 			if isHTTPS {
-				w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains")
+				w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 			}
 
 			// Content Security Policy (CSP)

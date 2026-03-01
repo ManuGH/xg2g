@@ -78,6 +78,7 @@ func (e *Executor) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error)
 		ring:     NewRingBuffer(100),
 		wd:       watchdog.New(e.StartTimeout, e.StallTimeout),
 		logger:   e.Logger,
+		ctx:      ctx,
 	}
 
 	// Start monitor
@@ -93,6 +94,7 @@ type handle struct {
 	ring     *RingBuffer
 	wd       *watchdog.Watchdog
 	logger   zerolog.Logger
+	ctx      context.Context
 	mu       sync.Mutex
 }
 
@@ -125,7 +127,11 @@ func (h *handle) monitor(stderr io.Reader) {
 	defer close(h.progress)
 
 	// Start watchdog in background
-	wdCtx, wdCancel := context.WithCancel(context.Background())
+	runCtx := h.ctx
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
+	wdCtx, wdCancel := context.WithCancel(runCtx)
 	defer wdCancel()
 
 	wdErrCh := make(chan error, 1)
@@ -133,39 +139,80 @@ func (h *handle) monitor(stderr io.Reader) {
 		wdErrCh <- h.wd.Run(wdCtx)
 	}()
 
-	// Scanning stderr for progress
-	scanner := bufio.NewScanner(stderr)
+	scanDone := make(chan struct{})
+	go func() {
+		defer close(scanDone)
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			h.ring.Add(line)
+			h.wd.ParseLine(line)
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		h.ring.Add(line)
-		h.wd.ParseLine(line)
+			// Heuristic: If line contains frame= or size=, emit heartbeat for legacy consumers
+			if strings.Contains(line, "frame=") || strings.Contains(line, "size=") || strings.Contains(line, "time=") {
+				select {
+				case h.progress <- vod.ProgressEvent{At: time.Now()}:
+				default:
+					// Dropped heartbeat is fine
+				}
+			}
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			h.logger.Warn().Err(scanErr).Msg("ffmpeg stderr scan failed")
+		}
+	}()
 
-		// Heuristic: If line contains frame= or size=, emit heartbeat for legacy consumers
-		if strings.Contains(line, "frame=") || strings.Contains(line, "size=") || strings.Contains(line, "time=") {
-			select {
-			case h.progress <- vod.ProgressEvent{At: time.Now()}:
-			default:
-				// Dropped heartbeat is fine
+	procErrCh := make(chan error, 1)
+	go func() {
+		procErrCh <- h.cmd.Wait()
+	}()
+
+	var resultErr error
+	watchdogConsumed := false
+
+	select {
+	case waitErr := <-procErrCh:
+		resultErr = waitErr
+	case wdErr := <-wdErrCh:
+		watchdogConsumed = true
+		if wdErr != nil {
+			h.logger.Error().Err(wdErr).Int("state", int(h.wd.State())).Msg("watchdog triggered failure")
+			h.terminateProcess(2*time.Second, 5*time.Second)
+			<-procErrCh
+			resultErr = wdErr
+			break
+		}
+		resultErr = <-procErrCh
+	case <-runCtx.Done():
+		h.terminateProcess(2*time.Second, 5*time.Second)
+		<-procErrCh
+		resultErr = runCtx.Err()
+	}
+
+	wdCancel()
+	if !watchdogConsumed {
+		if wdErr := <-wdErrCh; wdErr != nil {
+			h.logger.Error().Err(wdErr).Int("state", int(h.wd.State())).Msg("watchdog reported failure")
+			if resultErr == nil {
+				resultErr = wdErr
 			}
 		}
 	}
 
-	// Wait for process or watchdog
-	waitErr := h.cmd.Wait()
-	wdCancel() // Stop watchdog if process exited first
+	<-scanDone
+	h.done <- resultErr
+}
 
-	select {
-	case wdErr := <-wdErrCh:
-		if wdErr != nil {
-			h.logger.Error().Err(wdErr).Int("state", int(h.wd.State())).Msg("watchdog triggered failure")
-			h.done <- wdErr
-			return
-		}
-	default:
+func (h *handle) terminateProcess(grace, kill time.Duration) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.cmd == nil || h.cmd.Process == nil {
+		return
 	}
-
-	h.done <- waitErr
+	if err := procgroup.KillGroup(h.cmd.Process.Pid, grace, kill); err != nil {
+		h.logger.Warn().Err(err).Msg("failed to terminate process group gracefully, sending direct kill")
+		_ = h.cmd.Process.Kill()
+	}
 }
 
 // RingBuffer simple implementation
