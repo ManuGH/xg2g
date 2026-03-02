@@ -832,7 +832,7 @@ function V3Player(props: V3PlayerProps) {
       });
 
       hls.on(Hls.Events.FRAG_LOADED, (_e, data: FragLoadedData) => {
-        debugLog('[V3Player] HLS Frag Loaded', { sn: data.frag.sn, dur: data.frag.duration });
+        debugLog('[V3Player] HLS Frag Loaded', { sn: data.frag.sn });
 
         // Ensure stats are current
         const currentLevel = hls.currentLevel;
@@ -842,7 +842,6 @@ function V3Player(props: V3PlayerProps) {
 
         setStats(prev => ({
           ...prev,
-          buffer: Math.round(data.frag.duration * 100) / 100,
           levelIndex: hls.currentLevel // Force sync
         }));
       });
