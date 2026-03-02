@@ -480,6 +480,7 @@ function V3Player(props: V3PlayerProps) {
 
     if (!sessionIdRef.current) return;
     try {
+      // raw-fetch-justified: feedback endpoint requires direct fire-and-forget POST with shared auth headers.
       await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -561,6 +562,7 @@ function V3Player(props: V3PlayerProps) {
     if (!force && stopSentRef.current === idToStop) return;
     stopSentRef.current = idToStop;
     try {
+      // raw-fetch-justified: stop intent must be sent best-effort during teardown without SDK-level retries.
       await fetch(`${apiBase}/intents`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -1346,6 +1348,7 @@ function V3Player(props: V3PlayerProps) {
         const forceNativeMobile = shouldForceNativeMobileHls(videoRef.current);
 
         const requestCaps = await gatherPlaybackCapabilities();
+        // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
         const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
           method: 'POST',
           headers: authHeaders(true),
@@ -1493,6 +1496,7 @@ function V3Player(props: V3PlayerProps) {
           intentParams.capHash = capHash;
         }
 
+        // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
         const res = await fetch(`${apiBase}/intents`, {
           method: 'POST',
           headers: authHeaders(true),
@@ -1724,6 +1728,7 @@ function V3Player(props: V3PlayerProps) {
 
     const timerId = setInterval(async () => {
       try {
+        // raw-fetch-justified: heartbeat loop uses timer-driven low-overhead POST with direct lease expiry parsing.
         const res = await fetch(`${apiBase}/sessions/${sessionId}/heartbeat`, {
           method: 'POST',
           headers: authHeaders(true)
