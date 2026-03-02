@@ -39,7 +39,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b # v6
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
           cache: true
 
       - name: Initialize CodeQL
@@ -57,6 +57,7 @@ jobs:
       - name: Build Go
         if: matrix.language == 'go'
         run: |
+          cd backend
           go build -tags=nogpu ./...
 
       - name: Perform CodeQL Analysis

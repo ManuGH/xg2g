@@ -1,4 +1,4 @@
-# GENERATED FILE - DO NOT EDIT. Source: templates/docker-compose.yml.tmpl
+# GENERATED FILE - DO NOT EDIT. Source: backend/templates/docker-compose.yml.tmpl
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:v3.1.8

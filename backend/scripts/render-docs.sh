@@ -5,7 +5,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-VERSION="$(cat "${REPO_ROOT}/VERSION" | tr -d '[:space:]')"
+BACKEND_ROOT="${REPO_ROOT}/backend"
+
+# VERSION moved from repo root to backend/ in the monorepo layout.
+VERSION_FILE="${REPO_ROOT}/VERSION"
+if [[ ! -f "${VERSION_FILE}" ]]; then
+    VERSION_FILE="${BACKEND_ROOT}/VERSION"
+fi
+VERSION="$(cat "${VERSION_FILE}" | tr -d '[:space:]')"
 
 echo "🛠️  Rendering docs for version: ${VERSION}"
 
@@ -43,22 +50,22 @@ render() {
 }
 
 # 1. README.md
-render "${REPO_ROOT}/templates/README.md.tmpl" "${REPO_ROOT}/README.md" "md"
+render "${BACKEND_ROOT}/templates/README.md.tmpl" "${REPO_ROOT}/README.md" "md"
 
 # 2. systemd Unit
-render "${REPO_ROOT}/templates/docs/ops/xg2g.service.tmpl" "${REPO_ROOT}/docs/ops/xg2g.service" "shell"
+render "${BACKEND_ROOT}/templates/docs/ops/xg2g.service.tmpl" "${REPO_ROOT}/docs/ops/xg2g.service" "shell"
 
 # 3. docker-compose.yml
-render "${REPO_ROOT}/templates/docker-compose.yml.tmpl" "${REPO_ROOT}/docker-compose.yml" "shell"
+render "${BACKEND_ROOT}/templates/docker-compose.yml.tmpl" "${REPO_ROOT}/docker-compose.yml" "shell"
 
 # 4. Deployment Runtime Contract
-render "${REPO_ROOT}/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl" "${REPO_ROOT}/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md" "md"
+render "${BACKEND_ROOT}/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl" "${REPO_ROOT}/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md" "md"
 
 # 5. Operations Model
-render "${REPO_ROOT}/templates/docs/ops/OPERATIONS_MODEL.md.tmpl" "${REPO_ROOT}/docs/ops/OPERATIONS_MODEL.md" "md"
+render "${BACKEND_ROOT}/templates/docs/ops/OPERATIONS_MODEL.md.tmpl" "${REPO_ROOT}/docs/ops/OPERATIONS_MODEL.md" "md"
 
 # 6. Continuous Verifier Units
-render "${REPO_ROOT}/templates/docs/ops/xg2g-verifier.service.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "shell"
-render "${REPO_ROOT}/templates/docs/ops/xg2g-verifier.timer.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "shell"
+render "${BACKEND_ROOT}/templates/docs/ops/xg2g-verifier.service.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "shell"
+render "${BACKEND_ROOT}/templates/docs/ops/xg2g-verifier.timer.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "shell"
 
 echo "✨ Documentation rendering complete (idempotent)."

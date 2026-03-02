@@ -1,4 +1,4 @@
-# GENERATED FILE - DO NOT EDIT. Source: templates/docs/ops/xg2g-verifier.service.tmpl
+# GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/xg2g-verifier.service.tmpl
 [Unit]
 Description=xg2g Runtime Verifier (Repo Truth vs Runtime Truth)
 Wants=network-online.target

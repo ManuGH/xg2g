@@ -5,14 +5,15 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = ROOT / "backend"
 REGISTRY_PATH = ROOT / "docs/deprecations.json"
 POLICY_PATH = ROOT / "docs/DEPRECATION_POLICY.md"
-CONFIG_PATH = ROOT / "internal/config/deprecation.go"
-AUTH_TOKEN_PATH = ROOT / "internal/auth/token.go"
+CONFIG_PATH = BACKEND_ROOT / "internal/config/deprecation.go"
+AUTH_TOKEN_PATH = BACKEND_ROOT / "internal/auth/token.go"
 # Deprecated configuration usage should be annotated with a deprecation_id.
 # The registry is the single source of truth for operator-facing settings.
-CONFIG_DEPRECATED_SETTINGS_PATH = ROOT / "internal/config/registry.go"
+CONFIG_DEPRECATED_SETTINGS_PATH = BACKEND_ROOT / "internal/config/registry.go"
 
 SEMVER_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 HEADER_RE = re.compile(r"^##\s+")

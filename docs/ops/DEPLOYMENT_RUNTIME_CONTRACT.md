@@ -1,4 +1,4 @@
-<!-- GENERATED FILE - DO NOT EDIT. Source: templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl -->
+<!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl -->
 # GPU/CPU Runtime Contract
 
 **Verification**: Run `scripts/verify-runtime.sh` after build to ensure canonical contract compliance.

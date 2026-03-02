@@ -32,16 +32,17 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b # Latest stable
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
 
       - name: Install gosec (pinned)
         run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
 
       - name: Run gosec security scan
         run: |
+          cd backend
           gosec \
             -fmt=sarif \
-            -out=gosec.sarif \
+            -out=../gosec.sarif \
             -severity=high \
             -tags=nogpu \
             -exclude-generated \

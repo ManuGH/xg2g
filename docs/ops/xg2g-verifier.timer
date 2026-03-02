@@ -1,4 +1,4 @@
-# GENERATED FILE - DO NOT EDIT. Source: templates/docs/ops/xg2g-verifier.timer.tmpl
+# GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/xg2g-verifier.timer.tmpl
 [Unit]
 Description=Periodic xg2g Runtime Verifier
 

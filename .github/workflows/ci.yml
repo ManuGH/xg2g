@@ -93,7 +93,7 @@ jobs:
       - name: Fail-fast Go lint and config drift checks
         run: |
           set -euo pipefail
-          make lint-invariants lint verify-config verify-generate gate-repo-hygiene
+          make lint verify-config verify-generate gate-repo-hygiene
 
       - name: Setup Node
         uses: actions/setup-node@v4

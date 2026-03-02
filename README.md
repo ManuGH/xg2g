@@ -1,8 +1,9 @@
-<!-- GENERATED FILE - DO NOT EDIT. Source: templates/README.md.tmpl -->
+<!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/README.md.tmpl -->
 # xg2g - Next Gen to Go
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
 [![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+[![Release](https://img.shields.io/github/v/release/ManuGH/xg2g)](https://github.com/ManuGH/xg2g/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC-blue)](LICENSE)
 

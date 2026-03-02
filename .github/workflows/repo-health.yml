@@ -21,20 +21,30 @@ jobs:
 
       - name: Check for large files
         run: |
+          set -euo pipefail
           MAX_SIZE_MB=5
           MAX_SIZE_BYTES=$((MAX_SIZE_MB * 1024 * 1024))
 
           echo "🔍 Checking for large files in commit..."
 
-          # Get files changed in this PR/commit
+          # Get files changed in this PR/commit.
+          # For PRs, only consider newly added files to avoid legacy long-lived branch noise.
           if [ "${{ github.event_name }}" == "pull_request" ]; then
-            FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            FILES=$(git diff --name-only --diff-filter=A "${BASE_SHA}...${HEAD_SHA}" || true)
           else
             FILES=$(git diff --name-only HEAD~1..HEAD)
           fi
 
           LARGE_FILES=""
           for file in $FILES; do
+            case "$file" in
+              backend/vendor/*|backend/testdata/*|vendor/*|testdata/*)
+                # Vendored sources and explicit testdata may exceed this limit by design.
+                continue
+                ;;
+            esac
             if [ -f "$file" ]; then
               SIZE=$(stat -c%s "$file")
               if [ "$SIZE" -gt "$MAX_SIZE_BYTES" ]; then

@@ -1,4 +1,4 @@
-<!-- GENERATED FILE - DO NOT EDIT. Source: templates/docs/ops/OPERATIONS_MODEL.md.tmpl -->
+<!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/OPERATIONS_MODEL.md.tmpl -->
 # xg2g Operations Model (Operator-Grade 2026)
 
 This document defines the immutable operational contract for the `xg2g` service. Adherence to these invariants is mandatory for system stability.

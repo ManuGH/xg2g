@@ -47,6 +47,17 @@ jobs:
           cache: true
           cache-dependency-path: backend/go.sum
 
+      - name: Install ffmpeg
+        run: |
+          set -euo pipefail
+          if command -v ffmpeg >/dev/null 2>&1; then
+            echo "ffmpeg already installed"
+          else
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+
       - name: Run coverage
         id: coverage
         run: |
