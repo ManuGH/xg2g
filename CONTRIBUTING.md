@@ -7,8 +7,7 @@ Welcome! This guide will help you get started with contributing to xg2g.
 - Questions and ideas: GitHub Issues with label `question`
 - Feature proposals: GitHub Issues with label `enhancement`
 - Bugs and feature requests: GitHub Issues
-- Security reports: GitHub Security Advisories
-  (`https://github.com/ManuGH/xg2g/security/advisories/new`)
+- Security reports: [GitHub Security Advisories](https://github.com/ManuGH/xg2g/security/advisories/new)
 
 If you want to start with a small task, look for issues labeled:
 
