@@ -79,6 +79,8 @@ Tier-1 compliant with Apple HLS Guidelines.
 - 📋 [ADRs](docs/ADR/) - Design decisions and trade-offs
 - 🔍 [Repository Audit](docs/arch/AUDIT_REPO_STRUCTURE.md) - Repository
   structure orientation
+- 🌐 [API Reference (GitHub Pages)](https://manugh.github.io/xg2g/) - Generated
+  from [backend/api/openapi.yaml](backend/api/openapi.yaml)
 - ⚙️ [Configuration Guide](docs/guides/CONFIGURATION.md)
 - 🏗️ [Development Guide](docs/guides/DEVELOPMENT.md)
 - 🧭 [Workflow Guide](WORKFLOW.md) - Branching, testing, and deployment flow

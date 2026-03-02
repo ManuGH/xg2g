@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>xg2g API Reference</title>
+    <meta
+      name="description"
+      content="xg2g OpenAPI reference for the v3 API, published via GitHub Pages."
+    />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: #f5f8fb;
+        color: #1a2433;
+      }
+
+      .topbar {
+        background: linear-gradient(120deg, #1b4f72 0%, #21618c 60%, #2e86c1 100%);
+        color: #fff;
+        padding: 20px 24px;
+      }
+
+      .topbar h1 {
+        margin: 0 0 8px;
+        font-size: 1.5rem;
+        line-height: 1.2;
+      }
+
+      .topbar p {
+        margin: 0;
+        opacity: 0.92;
+      }
+
+      .topbar a {
+        color: #d6ecff;
+      }
+
+      .topbar a:hover {
+        color: #fff;
+      }
+
+      main {
+        min-height: calc(100vh - 96px);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>xg2g API Reference</h1>
+      <p>
+        OpenAPI v3 documentation for <code>/api/v3</code>. Source:
+        <a href="https://github.com/ManuGH/xg2g/blob/main/backend/api/openapi.yaml"
+          >backend/api/openapi.yaml</a
+        >
+      </p>
+    </header>
+    <main>
+      <redoc spec-url="./openapi.yaml" hide-download-button></redoc>
+    </main>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+  </body>
+</html>
