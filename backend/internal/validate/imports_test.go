@@ -17,7 +17,10 @@ import (
 // TestLayeringRules enforces architectural layering rules.
 // See docs/arch/PACKAGE_LAYOUT.md for policy details.
 func TestLayeringRules(t *testing.T) {
-	projectRoot := findProjectRoot(t)
+	projectRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("failed to resolve project root: %v", err)
+	}
 
 	violations := []string{}
 
@@ -91,7 +94,10 @@ func TestLayeringRules(t *testing.T) {
 
 // TestDeprecatedPackages ensures deprecated packages are not growing.
 func TestDeprecatedPackages(t *testing.T) {
-	projectRoot := findProjectRoot(t)
+	projectRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("failed to resolve project root: %v", err)
+	}
 
 	violations := []string{}
 
@@ -114,7 +120,10 @@ func TestDeprecatedPackages(t *testing.T) {
 
 // TestNoUtilsPackages prevents creation of "utils hell" packages.
 func TestNoUtilsPackages(t *testing.T) {
-	projectRoot := findProjectRoot(t)
+	projectRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("failed to resolve project root: %v", err)
+	}
 
 	forbiddenDirs := []string{
 		"internal/utils",
@@ -222,25 +231,4 @@ func extractImports(filePath string) ([]string, error) {
 		imports = append(imports, importPath)
 	}
 	return imports, nil
-}
-
-func findProjectRoot(t *testing.T) string {
-	t.Helper()
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
-	}
-
-	// Walk up until we find go.mod
-	dir := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("Could not find project root (no go.mod found)")
-		}
-		dir = parent
-	}
 }

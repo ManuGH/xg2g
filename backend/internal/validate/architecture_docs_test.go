@@ -10,8 +10,11 @@ import (
 // TestArchitectureDoc_NoStaleLayeringClaims prevents reintroducing resolved
 // architecture violations into the canonical architecture documentation.
 func TestArchitectureDoc_NoStaleLayeringClaims(t *testing.T) {
-	projectRoot := findProjectRoot(t)
-	docPath := filepath.Join(projectRoot, "docs", "arch", "ARCHITECTURE.md")
+	repoRoot, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatalf("failed to resolve repo root: %v", err)
+	}
+	docPath := filepath.Join(repoRoot, "docs", "arch", "ARCHITECTURE.md")
 
 	raw, err := os.ReadFile(docPath)
 	if err != nil {

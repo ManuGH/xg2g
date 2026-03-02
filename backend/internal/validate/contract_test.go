@@ -12,8 +12,6 @@ import (
 // TestContractDriftGate prevents regression of known drifted field names/tags.
 // See ADR-003 for context.
 func TestContractDriftGate(t *testing.T) {
-	projectRoot := findProjectRoot(t)
-
 	// List of forbidden patterns that indicate contract drift
 	forbiddenPatterns := []string{
 		`json:"stream_url"`,
@@ -23,17 +21,20 @@ func TestContractDriftGate(t *testing.T) {
 		`json:"duration_source"`,
 	}
 
-	// Directories to scan (control layer where DTOs are mapped)
+	// Directories to scan (relative to internal/validate)
 	scanDirs := []string{
-		"internal/control/http/v3",
-		"internal/api", // Legacy layer included for coverage
+		"../control/http/v3",
+		"../api", // Legacy layer included for coverage
 	}
 
 	violations := []string{}
 
-	for _, dir := range scanDirs {
-		fullDir := filepath.Join(projectRoot, dir)
-		err := filepath.Walk(fullDir, func(path string, info os.FileInfo, err error) error {
+	for _, relDir := range scanDirs {
+		fullDir, err := filepath.Abs(relDir)
+		if err != nil {
+			t.Fatalf("Failed to resolve absolute path for %s: %v", relDir, err)
+		}
+		err = filepath.Walk(fullDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
@@ -58,8 +59,8 @@ func TestContractDriftGate(t *testing.T) {
 				line := scanner.Text()
 				for _, pattern := range forbiddenPatterns {
 					if strings.Contains(line, pattern) {
-						relPath, _ := filepath.Rel(projectRoot, path)
-						violations = append(violations, fmt.Sprintf("%s:%d: found forbidden pattern %q", relPath, lineNum, pattern))
+						relPath, _ := filepath.Rel(fullDir, path)
+						violations = append(violations, fmt.Sprintf("%s:%d: found forbidden pattern %q", filepath.Join(relDir, relPath), lineNum, pattern))
 					}
 				}
 				lineNum++
@@ -68,7 +69,7 @@ func TestContractDriftGate(t *testing.T) {
 		})
 
 		if err != nil && !os.IsNotExist(err) {
-			t.Errorf("Failed to scan %s: %v", dir, err)
+			t.Errorf("Failed to scan %s: %v", relDir, err)
 		}
 	}
 
