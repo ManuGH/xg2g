@@ -133,3 +133,34 @@ func TestWatchdog_ParserRobustness(t *testing.T) {
 	w.ParseLine("total_size=50")
 	assert.Equal(t, int64(100), w.lastTotalSize, "Should not record non-monotonic size")
 }
+
+func TestWatchdog_CheckStateReadConcurrency(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	w := New(1*time.Millisecond, 1*time.Millisecond)
+	w.clock = clock
+
+	w.mu.Lock()
+	w.state = StateStarting
+	w.lastHeartbeat = clock.now.Add(-2 * time.Millisecond)
+	w.mu.Unlock()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			_ = w.check()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			_ = w.State()
+		}
+	}()
+
+	wg.Wait()
+	assert.Equal(t, StateTimedOut, w.State())
+}

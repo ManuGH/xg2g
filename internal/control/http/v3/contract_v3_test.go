@@ -108,6 +108,25 @@ func validateOpenAPIResponse(t *testing.T, doc *openapi3.T, req *http.Request, r
 	require.NoError(t, openapi3filter.ValidateResponse(context.Background(), input), "openapi response validation")
 }
 
+func issueSessionCookie(t *testing.T, handler http.Handler, token string) *http.Cookie {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/auth/session", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "xg2g_session" {
+			return c
+		}
+	}
+
+	t.Fatal("xg2g_session cookie missing")
+	return nil
+}
+
 type admissionHarnessMode int
 
 const (
@@ -495,6 +514,7 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 	handler := NewRouter(s, RouterOptions{
 		BaseURL: V3BaseURL,
 	})
+	sessionCookie := issueSessionCookie(t, handler, "test-token")
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -506,7 +526,7 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 	require.Equal(t, "READY", state)
 
 	reqPlaylist := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/index.m3u8", nil)
-	reqPlaylist.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
+	reqPlaylist.AddCookie(sessionCookie)
 	rrPlaylist := httptest.NewRecorder()
 	handler.ServeHTTP(rrPlaylist, reqPlaylist)
 
@@ -514,7 +534,7 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 	segmentURI := firstSegmentURI(t, rrPlaylist.Body.Bytes())
 
 	reqSeg := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/"+segmentURI, nil)
-	reqSeg.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
+	reqSeg.AddCookie(sessionCookie)
 	rrSeg := httptest.NewRecorder()
 	handler.ServeHTTP(rrSeg, reqSeg)
 
@@ -539,10 +559,11 @@ func TestV3Contract_HLS(t *testing.T) {
 	handler := NewRouter(s, RouterOptions{
 		BaseURL: V3BaseURL,
 	})
+	sessionCookie := issueSessionCookie(t, handler, "test-token")
 	doc := loadOpenAPIDoc(t)
 
 	reqPlaylist := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/index.m3u8", nil)
-	reqPlaylist.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
+	reqPlaylist.AddCookie(sessionCookie)
 	rrPlaylist := httptest.NewRecorder()
 	handler.ServeHTTP(rrPlaylist, reqPlaylist)
 
@@ -558,7 +579,7 @@ func TestV3Contract_HLS(t *testing.T) {
 	})
 
 	reqTS := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/seg_000000.ts", nil)
-	reqTS.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
+	reqTS.AddCookie(sessionCookie)
 	rrTS := httptest.NewRecorder()
 	handler.ServeHTTP(rrTS, reqTS)
 
@@ -573,7 +594,7 @@ func TestV3Contract_HLS(t *testing.T) {
 	})
 
 	reqInit := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/init.mp4", nil)
-	reqInit.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
+	reqInit.AddCookie(sessionCookie)
 	rrInit := httptest.NewRecorder()
 	handler.ServeHTTP(rrInit, reqInit)
 
@@ -589,7 +610,7 @@ func TestV3Contract_HLS(t *testing.T) {
 	})
 
 	reqM4s := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/seg_000001.m4s", nil)
-	reqM4s.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
+	reqM4s.AddCookie(sessionCookie)
 	rrM4s := httptest.NewRecorder()
 	handler.ServeHTTP(rrM4s, reqM4s)
 
@@ -624,10 +645,11 @@ func TestV3Contract_HLSRange(t *testing.T) {
 	handler := NewRouter(s, RouterOptions{
 		BaseURL: V3BaseURL,
 	})
+	sessionCookie := issueSessionCookie(t, handler, "test-token")
 
 	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/init.mp4", nil)
 	req.Header.Set("Range", "bytes=0-1")
-	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
+	req.AddCookie(sessionCookie)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 

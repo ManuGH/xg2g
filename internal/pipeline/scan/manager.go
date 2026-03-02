@@ -3,6 +3,7 @@ package scan
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,6 +55,12 @@ type Manager struct {
 
 	mu     sync.RWMutex
 	status ScanStatus
+
+	lifecycleMu sync.Mutex
+	runtimeCtx  context.Context
+	cancel      context.CancelFunc
+	bgWG        sync.WaitGroup
+	scanFn      func(context.Context) error
 }
 
 func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client) *Manager {
@@ -85,10 +92,43 @@ func (m *Manager) GetStatus() ScanStatus {
 
 // Close releases the underlying capability store resources.
 func (m *Manager) Close() error {
+	m.Stop()
 	if m == nil || m.store == nil {
 		return nil
 	}
 	return m.store.Close()
+}
+
+// AttachLifecycle binds background scans to a parent context (daemon runtime).
+func (m *Manager) AttachLifecycle(parent context.Context) {
+	if m == nil || parent == nil {
+		return
+	}
+
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
+
+	if m.cancel != nil {
+		m.cancel()
+	}
+
+	m.runtimeCtx, m.cancel = context.WithCancel(parent)
+}
+
+// Stop cancels all background scans and waits for active goroutines to finish.
+func (m *Manager) Stop() {
+	if m == nil {
+		return
+	}
+
+	m.lifecycleMu.Lock()
+	cancel := m.cancel
+	m.lifecycleMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	m.bgWG.Wait()
 }
 
 // ExtractServiceRef extracts the service reference from a stream URL
@@ -127,7 +167,7 @@ func (m *Manager) RunScan(ctx context.Context) error {
 		return nil
 	}
 	defer m.isScanning.Store(false)
-	return m.scanInternal(ctx)
+	return m.executeScan(ctx)
 }
 
 // RunBackground triggers scan in background. Returns true if started, false if already running.
@@ -136,15 +176,36 @@ func (m *Manager) RunBackground() bool {
 		return false
 	}
 
+	baseCtx := m.backgroundContext()
+	m.bgWG.Add(1)
 	go func() {
+		defer m.bgWG.Done()
 		defer m.isScanning.Store(false)
-		ctx, cancel := context.WithTimeout(context.Background(), backgroundScanTimeout)
+		ctx, cancel := context.WithTimeout(baseCtx, backgroundScanTimeout)
 		defer cancel()
-		if err := m.scanInternal(ctx); err != nil {
+		if err := m.executeScan(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.L().Error().Err(err).Msg("scan: background scan failed")
 		}
 	}()
 	return true
+}
+
+func (m *Manager) backgroundContext() context.Context {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
+
+	if m.runtimeCtx == nil {
+		m.runtimeCtx, m.cancel = context.WithCancel(context.TODO())
+		log.L().Warn().Msg("scan: lifecycle context not attached; using detached TODO context")
+	}
+	return m.runtimeCtx
+}
+
+func (m *Manager) executeScan(ctx context.Context) error {
+	if m.scanFn != nil {
+		return m.scanFn(ctx)
+	}
+	return m.scanInternal(ctx)
 }
 
 func (m *Manager) scanInternal(ctx context.Context) error {

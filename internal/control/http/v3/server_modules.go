@@ -37,7 +37,17 @@ type sessionsModuleDeps struct {
 	receiver       receiverControlFactory
 	admission      *admission.Controller
 	admissionState AdmissionState
+	playbackSLO    *playbackSessionTracker
 }
+
+// IntentDeps defines the server methods required by intent handlers.
+// *Server satisfies this implicitly and keeps the dependency boundary explicit.
+type IntentDeps interface {
+	sessionsModuleDeps() sessionsModuleDeps
+	verifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode string) bool
+}
+
+var _ IntentDeps = (*Server)(nil)
 
 func (s *Server) sessionsModuleDeps() sessionsModuleDeps {
 	s.mu.RLock()
@@ -55,6 +65,7 @@ func (s *Server) sessionsModuleDeps() sessionsModuleDeps {
 		receiver:       s.owi,
 		admission:      s.admission,
 		admissionState: s.admissionState,
+		playbackSLO:    s.playbackSLO,
 	}
 }
 
@@ -66,7 +77,16 @@ type recordingsModuleDeps struct {
 	pathMapper        *recinfra.PathMapper
 	vodManager        *vod.Manager
 	resumeStore       resume.Store
+	playbackSLO       *playbackSessionTracker
 }
+
+// RecordingsDeps defines the server methods required by recordings handlers.
+// *Server satisfies this implicitly and keeps the dependency boundary explicit.
+type RecordingsDeps interface {
+	recordingsModuleDeps() recordingsModuleDeps
+}
+
+var _ RecordingsDeps = (*Server)(nil)
 
 func (s *Server) recordingsModuleDeps() recordingsModuleDeps {
 	s.mu.RLock()
@@ -78,6 +98,7 @@ func (s *Server) recordingsModuleDeps() recordingsModuleDeps {
 		pathMapper:        s.recordingPathMapper,
 		vodManager:        s.vodManager,
 		resumeStore:       s.resumeStore,
+		playbackSLO:       s.playbackSLO,
 	}
 }
 

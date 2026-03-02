@@ -59,7 +59,7 @@ func DoRequest(t *testing.T, baseURL string, opts RequestOptions) *http.Response
 
 	// Set authentication token if provided
 	if opts.Token != "" {
-		req.Header.Set("X-API-Token", opts.Token)
+		req.Header.Set("Authorization", "Bearer "+opts.Token)
 	}
 
 	// Set extra headers
