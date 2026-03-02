@@ -47,8 +47,20 @@ function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
   if (!videoEl) return false;
   try {
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    return hasNativeHls && isIOS;
+    if (!hasNativeHls) return false;
+
+    // Feature detection for mobile WebKit controls (no UA sniffing).
+    const webkitVideo = videoEl as unknown as {
+      webkitEnterFullscreen?: unknown;
+      webkitSupportsPresentationMode?: unknown;
+      webkitSetPresentationMode?: unknown;
+    };
+    const hasWebKitFullscreen = typeof webkitVideo.webkitEnterFullscreen === 'function';
+    const hasWebKitPresentationMode =
+      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
+      typeof webkitVideo.webkitSetPresentationMode === 'function';
+
+    return hasWebKitFullscreen || hasWebKitPresentationMode;
   } catch {
     return false;
   }
