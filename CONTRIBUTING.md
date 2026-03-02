@@ -4,7 +4,7 @@ Welcome! This guide will help you get started with contributing to xg2g.
 
 ## Community Channels
 
-- Questions and ideas: GitHub Issues with label `question`
+- Questions and ideas: [GitHub Discussions](https://github.com/ManuGH/xg2g/discussions)
 - Feature proposals: GitHub Issues with label `enhancement`
 - Bugs and feature requests: GitHub Issues
 - Security reports: [GitHub Security Advisories](https://github.com/ManuGH/xg2g/security/advisories/new)
