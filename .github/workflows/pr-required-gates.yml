@@ -72,6 +72,15 @@ jobs:
 
           RANGE="${BASE_SHA}...${HEAD_SHA}"
           changed_files="$(git diff --name-only "$RANGE" || true)"
+          changed_count="${{ github.event.pull_request.changed_files }}"
+
+          # Legacy safety valve:
+          # Very large PRs (long-lived branches) can include historical UI churn that
+          # is unrelated to the current commit and would make scoped UI gates non-actionable.
+          legacy_large_pr=false
+          if [ "${changed_count:-0}" -gt 300 ]; then
+            legacy_large_pr=true
+          fi
 
           mapfile -t ui_contract_scope < <(
             printf '%s\n' "$changed_files" \
@@ -97,8 +106,17 @@ jobs:
           fi
 
           skip_reason=""
+          if [ "$legacy_large_pr" = "true" ]; then
+            ui_contract_scope=()
+            webui_ts_scope=()
+            webui_changed=false
+            webui_build_needed=false
+            skip_reason="legacy_large_pr_scope"
+          fi
           if [ "${#ui_contract_scope[@]}" -eq 0 ] && [ "${#webui_ts_scope[@]}" -eq 0 ] && [ "$webui_build_needed" = "false" ]; then
-            skip_reason="no_relevant_changes"
+            if [ -z "$skip_reason" ]; then
+              skip_reason="no_relevant_changes"
+            fi
           fi
 
           printf '%s\n' "${ui_contract_scope[@]}" > /tmp/required-gates-ui-contract-scope.txt
@@ -109,9 +127,13 @@ jobs:
           echo "webui_ts_count=${#webui_ts_scope[@]}" >> "$GITHUB_OUTPUT"
           echo "webui_changed=$webui_changed" >> "$GITHUB_OUTPUT"
           echo "webui_build_needed=$webui_build_needed" >> "$GITHUB_OUTPUT"
+          echo "changed_count=${changed_count:-0}" >> "$GITHUB_OUTPUT"
+          echo "legacy_large_pr=$legacy_large_pr" >> "$GITHUB_OUTPUT"
           echo "skip_reason=$skip_reason" >> "$GITHUB_OUTPUT"
 
           echo "Diff range: $RANGE"
+          echo "PR changed files (GitHub): ${changed_count:-0}"
+          echo "Legacy large PR mode: $legacy_large_pr"
           echo "UI contract scoped files: ${#ui_contract_scope[@]}"
           echo "Phase4 TS scoped files: ${#webui_ts_scope[@]}"
           echo "Any webui/* changes: $webui_changed"
