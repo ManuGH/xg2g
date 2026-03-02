@@ -101,6 +101,7 @@
 - Regenerate hard-mode artifacts
 - Bump VERSION to v3.1.8 and render docs
 - Refresh embedded dist and config surfaces
+- Major restructuring and release automation (Phases 1-3)
 
 ### Refactor
 
@@ -122,6 +123,7 @@
 - Add SSRF bypass coverage for IPv6 and normalization
 - Prevent 410 Gone retry loop in V3Player (#199)
 - Retry on 503 during session readiness (#200)
+- Fix validate tests paths for new monorepo layout
 
 ### Breaking
 
