@@ -26,8 +26,8 @@ jobs:
 
           # Scan non-test code in internal/ and cmd/ for the banned patterns.
           # We exclude internal/config (authorized).
-          VIOLATIONS=$(grep -RIn --include='*.go' --exclude='*_test.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' internal/ cmd/ \
-            | grep -vE '^internal/config/' \
+          VIOLATIONS=$(grep -RIn --include='*.go' --exclude='*_test.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' backend/internal/ backend/cmd/ \
+            | grep -vE '^backend/internal/config/' \
             || true)
             
           if [ -n "$VIOLATIONS" ]; then
@@ -48,19 +48,19 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Check Deprecation Registry
-        run: python3 scripts/check_deprecations.py
+        run: python3 backend/scripts/check_deprecations.py
 
   webui-lint:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: webui
+        working-directory: frontend/webui
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238
         with:
           node-version: 22
           cache: "npm"
-          cache-dependency-path: webui/package-lock.json
+          cache-dependency-path: frontend/webui/package-lock.json
       - run: npm ci
       - run: npm run lint

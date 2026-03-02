@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
-          ./scripts/ci/check-empty-delta.sh "origin/${{ github.base_ref }}"
+          ./backend/scripts/ci/check-empty-delta.sh "origin/${{ github.base_ref }}"
 
       - name: Resolve PR scopes
         id: scope
@@ -75,24 +75,24 @@ jobs:
 
           mapfile -t ui_contract_scope < <(
             printf '%s\n' "$changed_files" \
-              | grep -E '^webui/src/.*\.(tsx|css)$' \
-              | sed -e 's#^webui/src/##' \
+              | grep -E '^frontend/webui/src/.*\.(tsx|css)$' \
+              | sed -e 's#^frontend/webui/src/##' \
               | sort -u
           )
 
           mapfile -t webui_ts_scope < <(
             printf '%s\n' "$changed_files" \
-              | grep -E '^webui/(src|tests)/.*\.(ts|tsx)$' \
+              | grep -E '^frontend/webui/(src|tests)/.*\.(ts|tsx)$' \
               | sort -u
           )
 
           webui_changed=false
-          if printf '%s\n' "$changed_files" | grep -q '^webui/'; then
+          if printf '%s\n' "$changed_files" | grep -q '^frontend/webui/'; then
             webui_changed=true
           fi
 
           webui_build_needed=false
-          if printf '%s\n' "$changed_files" | grep -Eq '^(webui/|api/openapi\.yaml$|internal/api/)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(frontend/webui/|backend/api/openapi\.yaml$|backend/internal/api/)'; then
             webui_build_needed=true
           fi
 
@@ -129,9 +129,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x ./scripts/check-ui-contract.sh
+          chmod +x ./backend/scripts/check-ui-contract.sh
           mapfile -t scope_files < /tmp/required-gates-ui-contract-scope.txt
-          ./scripts/check-ui-contract.sh "${scope_files[@]}"
+          ./backend/scripts/check-ui-contract.sh "${scope_files[@]}"
 
       - name: UI Contract (no scope)
         if: steps.scope.outputs.ui_contract_count == '0'
@@ -156,7 +156,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: webui/package-lock.json
+          cache-dependency-path: frontend/webui/package-lock.json
 
       - name: Phase4 - Wrapper boundary imports (diff-scoped)
         if: steps.scope.outputs.webui_ts_count != '0'
@@ -166,7 +166,7 @@ jobs:
           mapfile -t ts_files < /tmp/required-gates-webui-ts-scope.txt
           mapfile -t scoped_files < <(
             printf '%s\n' "${ts_files[@]}" \
-              | sed -e 's#^webui/##' \
+              | sed -e 's#^frontend/webui/##' \
               | grep -E '\.(ts|tsx|js|jsx)$' \
               | grep -v '^src/client-ts/' \
               || true
@@ -177,13 +177,13 @@ jobs:
             exit 0
           fi
 
-          bash webui/scripts/verify-client-wrapper-boundary.sh "${scoped_files[@]}"
+          bash frontend/webui/scripts/verify-client-wrapper-boundary.sh "${scoped_files[@]}"
 
       - name: Phase4 - TypeScript build
         if: steps.scope.outputs.webui_build_needed == 'true'
         run: |
           set -euo pipefail
-          cd webui
+          cd frontend/webui
           npm ci
           npm run build
 

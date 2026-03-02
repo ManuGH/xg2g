@@ -17,17 +17,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Build FFmpeg
 WORKDIR /build
-COPY scripts/build-ffmpeg.sh .
+COPY backend/scripts/build-ffmpeg.sh .
 ENV TARGET_DIR=/opt/ffmpeg
 RUN ./build-ffmpeg.sh
 
 # Stage 2: Build WebUI
 FROM node:22-slim AS webui-builder
-WORKDIR /webui
-COPY webui/package*.json ./
+WORKDIR /frontend/webui
+COPY frontend/webui/package*.json ./
 RUN npm ci
-COPY webui/ ./
-COPY contracts/version_matrix.json ../contracts/version_matrix.json
+COPY frontend/webui/ ./
+COPY backend/contracts/version_matrix.json ../../backend/contracts/version_matrix.json
 RUN npm run build
 
 # Stage 3: Build xg2g application
@@ -35,17 +35,17 @@ RUN npm run build
 FROM golang:1.25.7 AS app-builder
 
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
+COPY backend/go.mod backend/go.sum ./
+RUN cd . && go mod download
 
-COPY . .
+COPY . /app
 # Copy built WebUI assets to the correct location for Go embedding
-COPY --from=webui-builder /webui/dist ./internal/control/http/dist
+COPY --from=webui-builder /frontend/webui/dist /app/backend/internal/control/http/dist
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags="-s -w" -o /xg2g ./cmd/daemon
+    cd /app/backend && go build -ldflags="-s -w" -o /xg2g ./cmd/daemon
 
 # Stage 3: Final runtime image
 FROM debian:trixie-slim AS runtime
@@ -85,8 +85,8 @@ RUN mkdir -p /var/lib/xg2g/recordings /var/lib/xg2g/tmp /var/lib/xg2g/sessions /
 COPY --from=ffmpeg-builder --chown=root:root /opt/ffmpeg /opt/ffmpeg
 
 # Install FFmpeg wrappers (scoped LD_LIBRARY_PATH, no global leak)
-COPY --chown=root:root scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
-COPY --chown=root:root scripts/ffprobe-wrapper.sh /usr/local/bin/ffprobe
+COPY --chown=root:root backend/scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
+COPY --chown=root:root backend/scripts/ffprobe-wrapper.sh /usr/local/bin/ffprobe
 RUN chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
 
 # Copy xg2g binary

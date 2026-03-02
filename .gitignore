@@ -5,8 +5,13 @@
 artifacts/
 tmp/
 logs/
+!logs/.gitkeep
+!logs/test_artifacts/.gitkeep
 
 # Standard Go/Build Artifacts
+build-ffmpeg.sh
+ffmpeg-wrapper.sh
+ffprobe-wrapper.sh
 bin/
 pkg/
 *.exe
@@ -57,17 +62,17 @@ config.yml
 node_modules/
 .node_modules_partial_*/
 webui/dist/
-webui/node_modules/
-internal/control/http/ui/
-internal/control/http/dist/
-!internal/control/http/dist/.gitkeep
+frontend/webui/dist/
+frontend/webui/node_modules/
+backend/internal/control/http/dist/
+!backend/internal/control/http/dist/.gitkeep
 dist/
 
 # Allow placeholder files needed for `go:embed` compilation/tests when WebUI isn't built.
-!internal/control/http/dist/
-!internal/control/http/dist/assets/
-!internal/control/http/dist/.gitkeep
-!internal/control/http/dist/assets/.gitkeep
+!backend/internal/control/http/dist/
+!backend/internal/control/http/dist/assets/
+!backend/internal/control/http/dist/.gitkeep
+!backend/internal/control/http/dist/assets/.gitkeep
 
 # ==============================================================================
 # Project Specific
@@ -83,14 +88,14 @@ xg2g-main.zip
 # OpenAPI Generated Files (Single Source: api/openapi.yaml)
 api/openapi-v2-legacy.yaml
 api/openapi-v3.yaml
-internal/control/http/v3/openapi.yaml
+backend/internal/control/http/v3/openapi.yaml
 
 # Keep test golden files
-!internal/epg/testdata/*.golden.xml
-!internal/epg/testdata/xmltv.golden.xml
-!internal/epg/testdata/multi_channel.golden.xml
-!internal/epg/testdata/empty.golden.xml
-!testdata/contract/
+!backend/internal/epg/testdata/*.golden.xml
+!backend/internal/epg/testdata/xmltv.golden.xml
+!backend/internal/epg/testdata/multi_channel.golden.xml
+!backend/internal/epg/testdata/empty.golden.xml
+!backend/testdata/contract/
 
 # ==============================================================================
 # IDE & System

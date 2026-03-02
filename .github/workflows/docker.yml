@@ -21,11 +21,11 @@ jobs:
       packages: write # for pushing to GHCR
       id-token: write # for cosign keyless signing
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # Latest stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
 
-      - uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b  # Latest stable
+      - uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b # Latest stable
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
           check-latest: true
           cache: true
         env:
@@ -33,6 +33,7 @@ jobs:
 
       - name: Verify modules
         run: |
+          cd backend
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
@@ -42,7 +43,7 @@ jobs:
           # Pure Go build (CGO disabled)
           echo "✅ Docker build will handle full compilation"
           # Verify Go syntax
-          go build -v -trimpath -mod=vendor -buildvcs=false -ldflags "-X main.Version=${BUILD_REF}" -o /dev/null ./cmd/daemon
+          cd backend && go build -v -trimpath -mod=vendor -buildvcs=false -ldflags "-X main.Version=${BUILD_REF}" -o /dev/null ./cmd/daemon
 
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
