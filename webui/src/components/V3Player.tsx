@@ -2224,8 +2224,8 @@ function V3Player(props: V3PlayerProps) {
         : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
       : '';
 
-  const windowDuration = Math.max(0, seekableEnd - seekableStart);
-  const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart));
+  const windowDuration = Math.max(0, seekableEnd - seekableStart); // visual-clamp-only
+  const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart)); // visual-clamp-only
   const hasSeekWindow = canSeek && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
