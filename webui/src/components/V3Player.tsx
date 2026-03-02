@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
 import { createSession, postRecordingPlaybackInfo } from '../client-ts';
-import { getApiBaseUrl, setClientAuthToken } from '../client-ts/wrapper';
+import { getApiBaseUrl, setClientAuthToken } from '../lib/clientWrapper';
 import { telemetry } from '../services/TelemetryService';
 import type {
   V3PlayerProps,

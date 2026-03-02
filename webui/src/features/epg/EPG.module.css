@@ -22,7 +22,6 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  box-shadow: var(--shadow-card);
 }
 
 .toolbarLeft h3 {
@@ -64,7 +63,6 @@
   background: var(--bg-hover);
   border-color: var(--border-elevated);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-card);
 }
 
 .toolbarRight button:disabled {
@@ -106,7 +104,8 @@
 
 .controls select:focus-visible {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 2px var(--accent-action-subtle);
+  outline: 2px solid var(--accent-action-subtle);
+  outline-offset: 0;
 }
 
 /* --- Search Bar --- */
@@ -132,7 +131,8 @@
 .searchLeft:focus-within {
   background: var(--bg-hover);
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 1px var(--border-focus), var(--shadow-card);
+  outline: 1px solid var(--border-focus);
+  outline-offset: 0;
 }
 
 .searchIcon {
@@ -160,13 +160,11 @@
   font-weight: 600;
   cursor: pointer;
   transition: all var(--motion-standard) var(--ease-standard);
-  box-shadow: var(--shadow-accent-action);
 }
 
 .searchRight button:hover:not(:disabled) {
   transform: translateY(-1px);
   background: var(--accent-action-hover);
-  box-shadow: var(--shadow-accent-action);
 }
 
 /* --- Channel Cards --- */
@@ -183,7 +181,6 @@
   background: var(--bg-hover);
   border-color: var(--border-elevated);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-hover);
 }
 
 .cardError {
@@ -496,6 +493,4 @@
 .pillActive {
   background: var(--accent-action);
   color: var(--text-primary);
-  box-shadow: var(--shadow-accent-action);
 }
-

@@ -1,10 +1,8 @@
 import type { PlaybackInfoMode } from '../client-ts';
 
 export const SERVER_PLAYBACK_MODES = [
-  'native_hls',
-  'hlsjs',
+  'hls',
   'direct_mp4',
-  'transcode',
   'deny'
 ] as const satisfies readonly PlaybackInfoMode[];
 
@@ -25,10 +23,7 @@ export function parseServerPlaybackMode(value: unknown): ServerPlaybackMode | nu
 
 export function mapServerModeToLiveEngine(mode: ServerPlaybackMode): LivePlaybackEngine | null {
   switch (mode) {
-    case 'native_hls':
-      return 'native';
-    case 'hlsjs':
-    case 'transcode':
+    case 'hls':
       return 'hlsjs';
     case 'direct_mp4':
     case 'deny':
@@ -57,6 +52,11 @@ export function resolveAvailableLiveEngineFromMode(
   value: unknown,
   availability: LiveEngineAvailability
 ): LivePlaybackEngine | null {
+  if (value === 'hls') {
+    if (availability.hlsjs) return 'hlsjs';
+    if (availability.native) return 'native';
+    return null;
+  }
   const engine = resolveLiveEngineFromMode(value);
   if (!engine) return null;
   return isLiveEngineAvailable(engine, availability) ? engine : null;
