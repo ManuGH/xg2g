@@ -4,6 +4,10 @@ info:
   description: |
     API for xg2g (Enigma2 to Plex/Jellyfin Proxy).
 
+    **Authentication**:
+    All endpoints support both **Bearer Token** (`Authorization: Bearer <token>`) and **Cookie** (`xg2g_session=<token>`) authentication.
+    Streaming and media requests specifically support unified authentication since v3.1.5.
+
     **License**: PolyForm Noncommercial License 1.0.0.
     Commercial usage is restricted. See repository documentation for details.
   version: 3.0.0
@@ -76,7 +80,25 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: Additional parameters
+          description: |
+            Additional parameters.
+            Live playback attestation keys:
+            - canonical: playback_decision_token
+            - deprecated alias: playback_decision_id (temporary compatibility)
+            Conflict rule:
+            - if both keys are present and values differ, request is rejected with HTTP 400 (code INVALID_INPUT)
+
+    LivePlaybackInfoRequest:
+      type: object
+      required: [serviceRef, capabilities]
+      additionalProperties: false
+      properties:
+        serviceRef:
+          type: string
+          description: Live service reference to evaluate.
+          example: "1:0:1:445D:453:1:C00000:0:0:0:"
+        capabilities:
+          $ref: "#/components/schemas/PlaybackCapabilities"
 
     SessionResponse:
       type: object
@@ -165,26 +187,6 @@ components:
           type: string
           description: Playback URL for the HLS playlist.
           format: uri
-        # ADR-009: Session Lease Semantics
-        lease_expires_at:
-          type: string
-          format: date-time
-          description: ISO 8601 timestamp when session lease expires (backend-controlled)
-        heartbeat_interval:
-          type: integer
-          description: Recommended heartbeat interval in seconds
-        last_heartbeat:
-          type: string
-          format: date-time
-          description: Last heartbeat timestamp (optional)
-        stop_reason:
-          type: string
-          description: Reason for session termination
-          enum:
-            - USER_STOPPED
-            - LEASE_EXPIRED
-            - FAILED
-            - CLEANUP
 
     Service:
       type: object
@@ -205,6 +207,12 @@ components:
         serviceRef:
           type: string
           description: Service reference for streaming (extracted from M3U URL)
+        resolution:
+          type: string
+          description: Video resolution (e.g. 1920x1080)
+        codec:
+          type: string
+          description: Video codec (e.g. h264)
 
     SessionRecord:
       type: object
@@ -517,9 +525,17 @@ components:
           description: Streaming delivery policy (only 'universal' is supported)
           default: universal
 
-    FeatureFlags:
+
+    VerificationConfig:
       type: object
-      properties: {}
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        interval:
+          type: string
+          description: Drift verification interval (e.g. "1m")
+          default: "1m"
 
     SeriesRuleRunReport:
       type: object
@@ -681,8 +697,11 @@ components:
           $ref: "#/components/schemas/EPGConfig"
         picons:
           $ref: "#/components/schemas/PiconsConfig"
-        featureFlags:
-          $ref: "#/components/schemas/FeatureFlags"
+        verification:
+          $ref: "#/components/schemas/VerificationConfig"
+        logLevel:
+          type: string
+          description: Log level to set (debug, info, warn, error)
 
     AppConfig:
       type: object
@@ -705,8 +724,8 @@ components:
           $ref: "#/components/schemas/PiconsConfig"
         streaming:
           $ref: "#/components/schemas/StreamingConfig"
-        featureFlags:
-          $ref: "#/components/schemas/FeatureFlags"
+        verification:
+          $ref: "#/components/schemas/VerificationConfig"
 
     Bouquet:
       type: object
@@ -813,11 +832,14 @@ components:
         sessionId:
           type: string
           description: Unique ID for the stream session. Mandatory in P3-1.
+        playbackDecisionToken:
+          type: string
+          description: Signed short-lived attestation token required when submitting live playback_mode to /intents.
         mode:
           $ref: "#/components/schemas/PlaybackInfoMode"
         url:
           type: string
-          description: Relative URL for the selected playback strategy. Optional for deny or decision-led cases.
+          description: Relative URL selected by backend playback decision (manifest or media URL). Optional for deny.
         seekable:
           type: boolean
           description: Whether the stream is seekable. Omitted if unknown. Deprecated in favor of isSeekable.
@@ -840,9 +862,21 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: Duration in seconds. Omitted if unknown or preparing.
+          description: Deprecated compatibility field. Prefer durationMs. Omitted if unknown or preparing.
+        durationMs:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Authoritative finite duration in milliseconds. Omitted if unknown.
         durationSource:
           $ref: "#/components/schemas/PlaybackInfoDurationSource"
+        durationConfidence:
+          $ref: "#/components/schemas/PlaybackInfoDurationConfidence"
+        durationReasons:
+          type: array
+          description: Machine-readable duration provenance/fallback reasons.
+          items:
+            $ref: "#/components/schemas/PlaybackInfoDurationReason"
         resume:
           $ref: "#/components/schemas/ResumeSummary"
         container:
@@ -862,22 +896,46 @@ components:
 
     PlaybackInfoMode:
       type: string
-      enum: [hls, direct_mp4, deny]
-      description: Selected playback strategy output mode.
+      enum: [native_hls, hlsjs, direct_mp4, transcode, deny]
+      description: Backend-selected playback execution mode.
 
     PlaybackInfoDurationSource:
       type: string
-      enum: [store, cache, probe]
-      description: Source of the reported duration, when durationSeconds is present.
+      enum: [source_metadata, ffprobe, container, heuristic, unknown]
+      description: Source of the reported duration, when durationMs is present.
+
+    PlaybackInfoDurationConfidence:
+      type: string
+      enum: [high, medium, low]
+      description: Confidence of the resolved duration.
+
+    PlaybackInfoDurationReason:
+      type: string
+      enum:
+        - duration_from_source_metadata
+        - duration_from_ffprobe
+        - duration_from_container
+        - duration_from_heuristic
+        - duration_primary_missing
+        - duration_probe_failed
+        - duration_container_missing
+        - duration_inconsistent_clamped
+        - duration_unknown_denied_seek
+        - resume_clamped_to_duration
+      description: Frozen duration reason vocabulary.
 
     PlaybackInfoReason:
       type: string
       enum:
         - directplay_match
-        - transcode_audio
-        - transcode_video
-        - transcode_all
-        - container_mismatch
+        - directstream_match
+        - policy_denies_transcode
+        - container_not_supported_by_client
+        - video_codec_not_supported_by_client
+        - audio_codec_not_supported_by_client
+        - hls_not_supported_by_client
+        - no_compatible_playback_path
+        - decision_ambiguous
         - unknown
       description: Reason for the playback decision.
 
@@ -928,6 +986,13 @@ components:
           type: boolean
           description: Whether client supports HLS playlists
           example: true
+        hlsEngines:
+          type: array
+          items:
+            type: string
+            enum: [native, hlsjs]
+          description: Available HLS playback engines measured by the client runtime.
+          example: ["hlsjs"]
         supportsRange:
           type: boolean
           description: Whether client supports HTTP range requests
@@ -952,8 +1017,6 @@ components:
           constraints,
           reasons,
           trace,
-          selectedOutputUrl,
-          selectedOutputKind,
         ]
       additionalProperties: false
       description: Complete playback decision from backend (P4-1)
@@ -964,12 +1027,14 @@ components:
           description: Playback mode decision
         selectedOutputUrl:
           type: string
-          format: uri
-          description: The explicitly selected playback URL (backend-driven).
+          format: uri-reference
+          nullable: true
+          description: The explicitly selected playback URL (backend-driven). Omitted for deny.
         selectedOutputKind:
           type: string
           enum: [file, hls]
-          description: The explicitly selected playback kind.
+          nullable: true
+          description: The explicitly selected playback kind. Omitted for deny.
         selected:
           type: object
           required: [container, videoCodec, audioCodec]
@@ -1386,6 +1451,9 @@ paths:
   /system/health:
     get:
       summary: Get system health
+      operationId: getSystemHealth
+      tags:
+        - system
       responses:
         "200":
           description: Health status
@@ -1398,6 +1466,8 @@ paths:
     get:
       summary: Get minimal system health
       operationId: getSystemHealthz
+      tags:
+        - system
       security: []
       responses:
         "200":
@@ -1416,6 +1486,9 @@ paths:
   /system/config:
     get:
       summary: Get system configuration
+      operationId: getSystemConfig
+      tags:
+        - system
       security:
         - BearerAuth: [v3:admin]
       responses:
@@ -1427,6 +1500,9 @@ paths:
                 $ref: "#/components/schemas/AppConfig"
     put:
       summary: Update system configuration
+      operationId: putSystemConfig
+      tags:
+        - system
       security:
         - BearerAuth: [v3:admin]
       requestBody:
@@ -1498,6 +1574,9 @@ paths:
   /system/refresh:
     post:
       summary: Trigger data refresh (EPG/Channels)
+      operationId: postSystemRefresh
+      tags:
+        - system
       security:
         - BearerAuth: [v3:write]
       responses:
@@ -1598,6 +1677,9 @@ paths:
   /services:
     get:
       summary: List all services (channels)
+      operationId: getServices
+      tags:
+        - services
       parameters:
         - in: query
           name: bouquet
@@ -1617,6 +1699,9 @@ paths:
   /services/{id}/toggle:
     post:
       summary: Toggle service enabled state
+      operationId: postServicesIdToggle
+      tags:
+        - services
       security:
         - BearerAuth: [v3:write]
       parameters:
@@ -1643,6 +1728,9 @@ paths:
   /streams:
     get:
       summary: List active streams
+      operationId: getStreams
+      tags:
+        - streams
       security:
         - BearerAuth: [v3:admin]
       responses:
@@ -1715,6 +1803,9 @@ paths:
   /recordings/{recordingId}/status:
     get:
       summary: Get recording build status
+      operationId: getRecordingsRecordingIdStatus
+      tags:
+        - recordings
       parameters:
         - in: path
           name: recordingId
@@ -2346,6 +2437,8 @@ paths:
       security:
         - BearerAuth: [v3:write]
       operationId: deleteStreamsId
+      tags:
+        - streams
       parameters:
         - in: path
           name: id
@@ -2387,6 +2480,8 @@ paths:
       security:
         - BearerAuth: [v3:admin]
       operationId: getLogs
+      tags:
+        - system
       responses:
         "200":
           description: Recent log entries
@@ -2535,6 +2630,8 @@ paths:
     post:
       summary: Trigger a background scan of all channels for capabilities
       operationId: TriggerSystemScan
+      tags:
+        - system
       security:
         - BearerAuth: []
       responses:
@@ -2569,6 +2666,8 @@ paths:
     get:
       summary: Get status of the capability scan
       operationId: GetSystemScanStatus
+      tags:
+        - system
       security:
         - BearerAuth: []
       responses:
@@ -2593,6 +2692,11 @@ paths:
   /intents:
     post:
       summary: Create stream intent (start or stop session)
+      description: |
+        For live stream.start requests, playback decision attestation is required when `params.playback_mode` is set.
+        Canonical key is `params.playback_decision_token`.
+        Deprecated alias `params.playback_decision_id` is accepted temporarily for compatibility.
+        If both keys are sent with different values, request is rejected with HTTP 400 (`INVALID_INPUT`).
       operationId: createIntent
       tags:
         - v3
@@ -2643,6 +2747,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
+
+  /live/stream-info:
+    post:
+      summary: Get live playback decision with client capabilities (SSOT)
+      operationId: postLivePlaybackInfo
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LivePlaybackInfoRequest"
+      responses:
+        "200":
+          description: Live playback decision and info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackInfo"
+        "400":
+          description: Invalid request or capabilities
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemCapabilitiesInvalid"
+        "412":
+          description: Capabilities missing (required for v3.1+)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemCapabilitiesMissing"
+        "422":
+          description: Decision ambiguous
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDecisionAmbiguous"
 
   /sessions:
     get:
@@ -2728,52 +2872,6 @@ paths:
                 $ref: "#/components/schemas/APIError"
         "404":
           description: Session not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIError"
-
-  /sessions/{sessionID}/heartbeat:
-    post:
-      summary: Extend session lease
-      description: |
-        Renews session lease if not expired. Best-effort operation controlled by backend.
-        Idempotent within heartbeat_interval.
-      operationId: sessionHeartbeat
-      tags:
-        - v3
-      security:
-        - BearerAuth: [v3:write]
-      parameters:
-        - name: sessionID
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Session identifier
-      responses:
-        "200":
-          description: Lease extended successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  session_id:
-                    type: string
-                  lease_expires_at:
-                    type: string
-                    format: date-time
-                  acknowledged:
-                    type: boolean
-        "404":
-          description: Session not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIError"
-        "410":
-          description: Session lease already expired
           content:
             application/json:
               schema:

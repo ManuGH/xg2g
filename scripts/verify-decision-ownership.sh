@@ -75,7 +75,7 @@ for FILE in $FILES; do
             HITS_TOTAL=$((HITS_TOTAL + 1))
             LINE=$(echo "$match" | cut -d: -f1)
             SNIPPET=$(echo "$match" | cut -d: -f2-)
-            
+
             if [ "$IS_EXCLUDED" = true ]; then
                 HITS_EXCLUDED=$((HITS_EXCLUDED + 1))
             else

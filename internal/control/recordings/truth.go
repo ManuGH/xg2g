@@ -51,7 +51,7 @@ type TruthOutcome struct {
 	Reasons    []ReasonCode
 	Truth      *playback.MediaTruth // nil unless Status == Ready
 	RetryAfter int
-	ProbeState string
+	ProbeState playback.ProbeState
 }
 
 func (o TruthOutcome) ToMediaTruth() playback.MediaTruth {
@@ -225,7 +225,7 @@ func (t *truthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 				return TruthOutcome{
 					Status:     TruthStatusPreparing,
 					Reasons:    []ReasonCode{ReasonProbeDisabled},
-					ProbeState: string(ProbeStateBlocked),
+					ProbeState: playback.ProbeStateBlocked,
 					RetryAfter: playback.RetryAfterPreparingDefault, // SSOT status window
 				}
 			}
@@ -234,7 +234,7 @@ func (t *truthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 			return TruthOutcome{
 				Status:     TruthStatusPreparing,
 				Reasons:    []ReasonCode{ReasonProbeQueued},
-				ProbeState: string(ProbeStateQueued),
+				ProbeState: playback.ProbeStateQueued,
 				RetryAfter: 5, // Fast retry for queued items
 			}
 		}

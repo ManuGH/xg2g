@@ -21,9 +21,9 @@ render() {
     local src="$1"
     local dst="$2"
     local mode="$3" # "md" or "shell"
-    
+
     local rel_src="${src#$REPO_ROOT/}"
-    
+
     # Standard Header
     local header=""
     if [[ "$mode" == "md" ]]; then
@@ -31,14 +31,14 @@ render() {
     else
         header="# GENERATED FILE - DO NOT EDIT. Source: ${rel_src}\n"
     fi
-    
+
     printf "$header" > "$dst"
-    
+
     # Replace placeholders and append
     sed -e "s/{{VERSION}}/${VERSION}/g" \
         -e "s/{{DIGEST}}/${DIGEST_VAL}/g" \
         "$src" >> "$dst"
-        
+
     echo "✅ Rendered: ${dst}"
 }
 

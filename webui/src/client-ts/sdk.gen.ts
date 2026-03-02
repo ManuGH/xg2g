@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddTimerData, AddTimerErrors, AddTimerResponses, CreateIntentData, CreateIntentErrors, CreateIntentResponses, CreateSeriesRuleData, CreateSeriesRuleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DeleteRecordingData, DeleteRecordingErrors, DeleteRecordingResponses, DeleteSeriesRuleData, DeleteSeriesRuleErrors, DeleteSeriesRuleResponses, DeleteStreamsIdData, DeleteStreamsIdErrors, DeleteStreamsIdResponses, DeleteTimerData, DeleteTimerErrors, DeleteTimerResponses, GetDvrCapabilitiesData, GetDvrCapabilitiesResponses, GetDvrStatusData, GetDvrStatusResponses, GetEpgData, GetEpgResponses, GetLogsData, GetLogsResponses, GetReceiverCurrentData, GetReceiverCurrentErrors, GetReceiverCurrentResponses, GetRecordingHlsCustomSegmentData, GetRecordingHlsCustomSegmentErrors, GetRecordingHlsCustomSegmentHeadData, GetRecordingHlsCustomSegmentHeadErrors, GetRecordingHlsCustomSegmentHeadResponses, GetRecordingHlsCustomSegmentResponses, GetRecordingHlsPlaylistData, GetRecordingHlsPlaylistErrors, GetRecordingHlsPlaylistHeadData, GetRecordingHlsPlaylistHeadErrors, GetRecordingHlsPlaylistHeadResponses, GetRecordingHlsPlaylistResponses, GetRecordingHlsTimeshiftData, GetRecordingHlsTimeshiftErrors, GetRecordingHlsTimeshiftHeadData, GetRecordingHlsTimeshiftHeadErrors, GetRecordingHlsTimeshiftHeadResponses, GetRecordingHlsTimeshiftResponses, GetRecordingPlaybackInfoData, GetRecordingPlaybackInfoErrors, GetRecordingPlaybackInfoResponses, GetRecordingsByRecordingIdStatusData, GetRecordingsByRecordingIdStatusErrors, GetRecordingsByRecordingIdStatusResponses, GetRecordingsData, GetRecordingsResponses, GetSeriesRulesData, GetSeriesRulesResponses, GetServicesBouquetsData, GetServicesBouquetsResponses, GetServicesData, GetServicesResponses, GetSessionStateData, GetSessionStateErrors, GetSessionStateResponses, GetStreamsData, GetStreamsResponses, GetSystemConfigData, GetSystemConfigResponses, GetSystemHealthData, GetSystemHealthResponses, GetSystemHealthzData, GetSystemHealthzResponses, GetSystemInfoData, GetSystemInfoResponses, GetSystemScanStatusData, GetSystemScanStatusErrors, GetSystemScanStatusResponses, GetTimerData, GetTimerErrors, GetTimerResponses, GetTimersData, GetTimersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, PostRecordingPlaybackInfoData, PostRecordingPlaybackInfoErrors, PostRecordingPlaybackInfoResponses, PostServicesByIdToggleData, PostServicesByIdToggleErrors, PostServicesByIdToggleResponses, PostServicesNowNextData, PostServicesNowNextErrors, PostServicesNowNextResponses, PostSystemRefreshData, PostSystemRefreshErrors, PostSystemRefreshResponses, PreviewConflictsData, PreviewConflictsResponses, ProbeRecordingMp4Data, ProbeRecordingMp4Errors, ProbeRecordingMp4Responses, PutSystemConfigData, PutSystemConfigErrors, PutSystemConfigResponses, ReportPlaybackFeedbackData, ReportPlaybackFeedbackErrors, ReportPlaybackFeedbackResponses, RunAllSeriesRulesData, RunAllSeriesRulesResponses, RunSeriesRuleData, RunSeriesRuleErrors, RunSeriesRuleResponses, ServeHlsData, ServeHlsErrors, ServeHlsHeadData, ServeHlsHeadErrors, ServeHlsHeadResponses, ServeHlsResponses, StreamRecordingDirectData, StreamRecordingDirectErrors, StreamRecordingDirectResponses, TriggerSystemScanData, TriggerSystemScanErrors, TriggerSystemScanResponses, UpdateSeriesRuleData, UpdateSeriesRuleErrors, UpdateSeriesRuleResponses, UpdateTimerData, UpdateTimerErrors, UpdateTimerResponses } from './types.gen';
+import type { AddTimerData, AddTimerErrors, AddTimerResponses, CreateIntentData, CreateIntentErrors, CreateIntentResponses, CreateSeriesRuleData, CreateSeriesRuleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DeleteRecordingData, DeleteRecordingErrors, DeleteRecordingResponses, DeleteSeriesRuleData, DeleteSeriesRuleErrors, DeleteSeriesRuleResponses, DeleteStreamsIdData, DeleteStreamsIdErrors, DeleteStreamsIdResponses, DeleteTimerData, DeleteTimerErrors, DeleteTimerResponses, GetDvrCapabilitiesData, GetDvrCapabilitiesResponses, GetDvrStatusData, GetDvrStatusResponses, GetEpgData, GetEpgResponses, GetLogsData, GetLogsResponses, GetReceiverCurrentData, GetReceiverCurrentErrors, GetReceiverCurrentResponses, GetRecordingHlsCustomSegmentData, GetRecordingHlsCustomSegmentErrors, GetRecordingHlsCustomSegmentHeadData, GetRecordingHlsCustomSegmentHeadErrors, GetRecordingHlsCustomSegmentHeadResponses, GetRecordingHlsCustomSegmentResponses, GetRecordingHlsPlaylistData, GetRecordingHlsPlaylistErrors, GetRecordingHlsPlaylistHeadData, GetRecordingHlsPlaylistHeadErrors, GetRecordingHlsPlaylistHeadResponses, GetRecordingHlsPlaylistResponses, GetRecordingHlsTimeshiftData, GetRecordingHlsTimeshiftErrors, GetRecordingHlsTimeshiftHeadData, GetRecordingHlsTimeshiftHeadErrors, GetRecordingHlsTimeshiftHeadResponses, GetRecordingHlsTimeshiftResponses, GetRecordingPlaybackInfoData, GetRecordingPlaybackInfoErrors, GetRecordingPlaybackInfoResponses, GetRecordingsData, GetRecordingsRecordingIdStatusData, GetRecordingsRecordingIdStatusErrors, GetRecordingsRecordingIdStatusResponses, GetRecordingsResponses, GetSeriesRulesData, GetSeriesRulesResponses, GetServicesBouquetsData, GetServicesBouquetsResponses, GetServicesData, GetServicesResponses, GetSessionStateData, GetSessionStateErrors, GetSessionStateResponses, GetStreamsData, GetStreamsResponses, GetSystemConfigData, GetSystemConfigResponses, GetSystemHealthData, GetSystemHealthResponses, GetSystemHealthzData, GetSystemHealthzResponses, GetSystemInfoData, GetSystemInfoResponses, GetSystemScanStatusData, GetSystemScanStatusErrors, GetSystemScanStatusResponses, GetTimerData, GetTimerErrors, GetTimerResponses, GetTimersData, GetTimersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, PostLivePlaybackInfoData, PostLivePlaybackInfoErrors, PostLivePlaybackInfoResponses, PostRecordingPlaybackInfoData, PostRecordingPlaybackInfoErrors, PostRecordingPlaybackInfoResponses, PostServicesIdToggleData, PostServicesIdToggleErrors, PostServicesIdToggleResponses, PostServicesNowNextData, PostServicesNowNextErrors, PostServicesNowNextResponses, PostSystemRefreshData, PostSystemRefreshErrors, PostSystemRefreshResponses, PreviewConflictsData, PreviewConflictsResponses, ProbeRecordingMp4Data, ProbeRecordingMp4Errors, ProbeRecordingMp4Responses, PutSystemConfigData, PutSystemConfigErrors, PutSystemConfigResponses, ReportPlaybackFeedbackData, ReportPlaybackFeedbackErrors, ReportPlaybackFeedbackResponses, RunAllSeriesRulesData, RunAllSeriesRulesResponses, RunSeriesRuleData, RunSeriesRuleErrors, RunSeriesRuleResponses, ServeHlsData, ServeHlsErrors, ServeHlsHeadData, ServeHlsHeadErrors, ServeHlsHeadResponses, ServeHlsResponses, StreamRecordingDirectData, StreamRecordingDirectErrors, StreamRecordingDirectResponses, TriggerSystemScanData, TriggerSystemScanErrors, TriggerSystemScanResponses, UpdateSeriesRuleData, UpdateSeriesRuleErrors, UpdateSeriesRuleResponses, UpdateTimerData, UpdateTimerErrors, UpdateTimerResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -126,7 +126,7 @@ export const getServices = <ThrowOnError extends boolean = false>(options?: Opti
 /**
  * Toggle service enabled state
  */
-export const postServicesByIdToggle = <ThrowOnError extends boolean = false>(options: Options<PostServicesByIdToggleData, ThrowOnError>) => (options.client ?? client).post<PostServicesByIdToggleResponses, PostServicesByIdToggleErrors, ThrowOnError>({
+export const postServicesIdToggle = <ThrowOnError extends boolean = false>(options: Options<PostServicesIdToggleData, ThrowOnError>) => (options.client ?? client).post<PostServicesIdToggleResponses, PostServicesIdToggleErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/services/{id}/toggle',
     ...options,
@@ -168,7 +168,7 @@ export const deleteRecording = <ThrowOnError extends boolean = false>(options: O
 /**
  * Get recording build status
  */
-export const getRecordingsByRecordingIdStatus = <ThrowOnError extends boolean = false>(options: Options<GetRecordingsByRecordingIdStatusData, ThrowOnError>) => (options.client ?? client).get<GetRecordingsByRecordingIdStatusResponses, GetRecordingsByRecordingIdStatusErrors, ThrowOnError>({
+export const getRecordingsRecordingIdStatus = <ThrowOnError extends boolean = false>(options: Options<GetRecordingsRecordingIdStatusData, ThrowOnError>) => (options.client ?? client).get<GetRecordingsRecordingIdStatusResponses, GetRecordingsRecordingIdStatusErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/recordings/{recordingId}/status',
     ...options
@@ -476,10 +476,29 @@ export const triggerSystemScan = <ThrowOnError extends boolean = false>(options?
 
 /**
  * Create stream intent (start or stop session)
+ *
+ * For live stream.start requests, playback decision attestation is required when `params.playback_mode` is set.
+ * Canonical key is `params.playback_decision_token`.
+ * Deprecated alias `params.playback_decision_id` is accepted temporarily for compatibility.
+ * If both keys are sent with different values, request is rejected with HTTP 400 (`INVALID_INPUT`).
+ *
  */
 export const createIntent = <ThrowOnError extends boolean = false>(options: Options<CreateIntentData, ThrowOnError>) => (options.client ?? client).post<CreateIntentResponses, CreateIntentErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/intents',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Get live playback decision with client capabilities (SSOT)
+ */
+export const postLivePlaybackInfo = <ThrowOnError extends boolean = false>(options: Options<PostLivePlaybackInfoData, ThrowOnError>) => (options.client ?? client).post<PostLivePlaybackInfoResponses, PostLivePlaybackInfoErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/live/stream-info',
     ...options,
     headers: {
         'Content-Type': 'application/json',

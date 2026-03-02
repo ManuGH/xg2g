@@ -170,7 +170,7 @@ func TestTruthProvider_ImpossibleProbe_BlockedPreparing(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, res.Status)
 
 			if tt.name == "Blocked: No Local Path + No Probe Configured" {
-				assert.Equal(t, string(ProbeStateBlocked), res.ProbeState)
+				assert.Equal(t, playback.ProbeStateBlocked, res.ProbeState)
 				assert.Equal(t, 30, res.RetryAfter, "Stable operator-grade backoff for disabled probes")
 			}
 		})

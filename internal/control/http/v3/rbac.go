@@ -142,7 +142,8 @@ func (s *Server) RequestScopes(r *http.Request) (scopeSet, bool) {
 	}
 
 	// Fallback for cases where authMiddleware might not have run (should not happen in protected routes)
-	token := extractToken(r)
+	cfg := s.GetConfig()
+	token, _ := s.extractTokenDetailedWithLegacyPolicy(r, !cfg.APIDisableLegacyTokenSources)
 	if token != "" {
 		p, ok := s.TokenPrincipal(token)
 		if ok {

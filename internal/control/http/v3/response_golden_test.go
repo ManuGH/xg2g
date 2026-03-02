@@ -21,7 +21,7 @@ func TestV3_ResponseGolden(t *testing.T) {
 		info := PlaybackInfo{
 			RequestId: reqID,
 			SessionId: sessionID,
-			Mode:      PlaybackInfoModeHls,
+			Mode:      PlaybackInfoModeHlsjs,
 			Url:       strPtr("/api/v3/recordings/test/playlist.m3u8"),
 			Resume: &ResumeSummary{
 				PosSeconds:      120, // int64

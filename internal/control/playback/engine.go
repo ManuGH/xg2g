@@ -48,9 +48,9 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 	if isUnknownToken(truth.Container) ||
 		isUnknownToken(truth.VideoCodec) ||
 		isUnknownToken(truth.AudioCodec) {
-		return PlaybackPlan{
+		return decorateDurationTruth(PlaybackPlan{
 			DecisionReason: ReasonProbeFailed,
-		}, ErrDecisionAmbiguous
+		}, truth), ErrDecisionAmbiguous
 	}
 
 	// --- Phase 1: Select Protocol --- //
@@ -95,7 +95,7 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 
 	// G7/G8: Codec Incompatible -> Transcode
 	if !videoCompatible {
-		return PlaybackPlan{
+		return decorateDurationTruth(PlaybackPlan{
 			Mode:           ModeTranscode,
 			Protocol:       protocol,
 			DecisionReason: ReasonTranscodeVideo,
@@ -104,11 +104,11 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 			VideoCodec:     truth.VideoCodec,
 			AudioCodec:     truth.AudioCodec,
 			Duration:       truth.Duration,
-		}, nil
+		}, truth), nil
 	}
 
 	if !audioCompatible {
-		return PlaybackPlan{
+		return decorateDurationTruth(PlaybackPlan{
 			Mode:           ModeTranscode,
 			Protocol:       protocol,
 			DecisionReason: ReasonTranscodeAudio,
@@ -117,12 +117,12 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 			VideoCodec:     truth.VideoCodec,
 			AudioCodec:     truth.AudioCodec,
 			Duration:       truth.Duration,
-		}, nil
+		}, truth), nil
 	}
 
 	// G6: Codecs OK, Container Incompatible -> DirectStream
 	if !containerCompatible {
-		return PlaybackPlan{
+		return decorateDurationTruth(PlaybackPlan{
 			Mode:           ModeDirectStream,
 			Protocol:       protocol,
 			DecisionReason: ReasonDirectStreamMatch,
@@ -131,7 +131,7 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 			VideoCodec:     truth.VideoCodec,
 			AudioCodec:     truth.AudioCodec,
 			Duration:       truth.Duration,
-		}, nil
+		}, truth), nil
 	}
 
 	// G4/G5: Everything Compatible -> DirectPlay
@@ -151,7 +151,7 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 		AudioCodec:     truth.AudioCodec,
 		Duration:       truth.Duration,
 	}
-	return plan, nil
+	return decorateDurationTruth(plan, truth), nil
 }
 
 func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (PlaybackPlan, error) {
@@ -191,4 +191,15 @@ func isMP4Container(c string) bool {
 func isUnknownToken(s string) bool {
 	norm := normalize.Token(s)
 	return norm == "" || norm == "unknown"
+}
+
+func decorateDurationTruth(plan PlaybackPlan, truth MediaTruth) PlaybackPlan {
+	plan.DurationSource = truth.DurationSource
+	plan.DurationConfidence = truth.DurationConfidence
+	if len(truth.DurationReasons) > 0 {
+		plan.DurationReasons = append([]string{}, truth.DurationReasons...)
+	} else {
+		plan.DurationReasons = []string{}
+	}
+	return plan
 }

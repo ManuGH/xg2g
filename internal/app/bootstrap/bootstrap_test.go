@@ -118,6 +118,9 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 			cfg.TLSKey = keyPath
 		}
 	}
+	if cfg.TLSEnabled && !cfg.ForceHTTPS {
+		cfg.ForceHTTPS = true
+	}
 
 	// 7. Initialize API Server (The "Big Ball of Mud" Factory - wrapped here)
 	s, err := api.New(cfg, configMgr, api.WithRootContext(ctx))
@@ -141,9 +144,12 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 	// Side-effect removed from constructor. Moved to Start()
 
 	// 10. Daemon Manager & App
-	metricsAddr := ":9090"
-	if cfg.MetricsEnabled && cfg.MetricsAddr != "" {
-		metricsAddr = cfg.MetricsAddr
+	metricsAddr := ""
+	if cfg.MetricsEnabled {
+		metricsAddr = "127.0.0.1:9090"
+		if cfg.MetricsAddr != "" {
+			metricsAddr = cfg.MetricsAddr
+		}
 	}
 
 	deps := daemon.Deps{

@@ -107,7 +107,7 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 		res := PlaybackInfoResult{}
 		if truth, _ := r.truth.GetMediaTruth(ctx, serviceRef); truth.Status != "" {
 			res.TruthStatus = string(truth.Status)
-			res.ProbeState = truth.ProbeState
+			res.ProbeState = string(truth.ProbeState)
 			res.RetryAfter = truth.RetryAfter
 			for _, rc := range truth.Reasons {
 				res.TruthReasons = append(res.TruthReasons, string(rc))
@@ -167,7 +167,7 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 	// Capture truth for status/reasons metadata
 	if truth, err := r.truth.GetMediaTruth(ctx, serviceRef); err == nil {
 		res.TruthStatus = string(truth.Status)
-		res.ProbeState = truth.ProbeState
+		res.ProbeState = string(truth.ProbeState)
 		res.RetryAfter = truth.RetryAfter
 		for _, rc := range truth.Reasons {
 			res.TruthReasons = append(res.TruthReasons, string(rc))
@@ -179,13 +179,10 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 		res.DurationSeconds = i64(int64(plan.Duration))
 		res.MediaInfo.Duration = plan.Duration
 
-		// Map Source for legacy observability (best effort)
-		if meta, ok := r.vodManager.GetMetadata(serviceRef); ok {
-			if float64(meta.Duration) != plan.Duration {
-				ds := DurationSourceStore
-				res.DurationSource = &ds
-			} else {
-				ds := DurationSourceCache
+		// Preserve canonical duration provenance when available.
+		if plan.DurationSource != "" {
+			ds := DurationSource(plan.DurationSource)
+			if ds.Valid() {
 				res.DurationSource = &ds
 			}
 		}
@@ -209,7 +206,7 @@ func (r *PlaybackInfoResolver) resolvePreparing(ctx context.Context, serviceRef 
 			// Status field removed as it doesn't exist in playback.MediaInfo
 		},
 		TruthStatus: string(truth.Status),
-		ProbeState:  truth.ProbeState,
+		ProbeState:  string(truth.ProbeState),
 		RetryAfter:  truth.RetryAfter,
 	}
 
@@ -239,7 +236,7 @@ func (r *PlaybackInfoResolver) GetMediaTruth(ctx context.Context, serviceRef str
 			// Trigger idempotent orchestration
 			_, source, localPath, _ := r.truth.ResolveSource(ctx, serviceRef)
 			state, retryAfter := r.probeMgr.ensureProbed(ctx, serviceRef, source, localPath)
-			truth.ProbeState = string(state)
+			truth.ProbeState = playback.ProbeState(state)
 			truth.RetryAfter = retryAfter
 		}
 	}

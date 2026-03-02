@@ -1,61 +1,42 @@
 import React from 'react';
 import { render, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 import V3Player from '../../src/components/V3Player';
+import { suppressExpectedConsoleNoise } from '../helpers/consoleNoise';
+import { findFetchCall, mockLiveFlowFetch } from '../helpers/liveFlow';
 
 describe('V3Player Intent Keys Contract', () => {
   const originalFetch = globalThis.fetch;
+  let restoreConsoleNoise: (() => void) | null = null;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('/live/stream-info')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: { get: () => 'application/json' },
-          text: async () => JSON.stringify({
-            mode: 'hlsjs',
-            requestId: 'req-intent-keys-1',
-            playbackDecisionToken: 'token-intent-keys-1',
-            decision: { reasons: ['direct_stream_match'] },
-          })
-        });
-      }
-      if (url.includes('/intents')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: { get: () => null },
-          json: async () => ({ sessionId: 'sess-intent-keys-1' })
-        });
-      }
-      if (url.includes('/sessions/sess-intent-keys-1') && !url.includes('/heartbeat')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: { get: () => null },
-          json: async () => ({ state: 'READY', playbackUrl: '/live.m3u8', heartbeat_interval: 1 })
-        });
-      }
-      if (url.includes('/heartbeat')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: { get: () => null },
-          json: async () => ({ lease_expires_at: 'next' })
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        headers: { get: () => null },
-        json: async () => ({})
-      });
+  beforeAll(() => {
+    restoreConsoleNoise = suppressExpectedConsoleNoise({
+      error: [/HLS playback engine not available/i],
+      warn: [/Failed to stop v3 session/i, /Failed to parse URL from \/api\/v3\/intents/i]
     });
   });
 
-  afterEach(() => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
+      if (contentType === 'application/vnd.apple.mpegurl') {
+        return 'probably';
+      }
+      return '';
+    });
+
+    mockLiveFlowFetch({
+      mode: 'native_hls',
+      requestId: 'req-intent-keys-1',
+      playbackDecisionToken: 'token-intent-keys-1',
+      sessionId: 'sess-intent-keys-1',
+      playbackUrl: '/live.m3u8'
+    });
+  });
+
+  afterAll(() => {
+    restoreConsoleNoise?.();
+    restoreConsoleNoise = null;
     globalThis.fetch = originalFetch;
   });
 
@@ -63,13 +44,20 @@ describe('V3Player Intent Keys Contract', () => {
     render(<V3Player autoStart={true} channel={{ id: 'ch-keys-1', serviceRef: '1:0:1:AA:BB:CC:0:0:0:0:' } as any} />);
 
     await waitFor(() => {
-      expect((globalThis.fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes('/intents'))).toBe(true);
+      expect(findFetchCall((globalThis.fetch as any), '/live/stream-info')).toBeDefined();
+      expect(findFetchCall((globalThis.fetch as any), '/intents')).toBeDefined();
     });
 
-    const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
+    const calls = (globalThis.fetch as any).mock.calls as any[];
+    const streamInfoIndex = calls.findIndex((c: any[]) => String(c[0]).includes('/live/stream-info'));
+    const intentsIndex = calls.findIndex((c: any[]) => String(c[0]).includes('/intents'));
+    expect(streamInfoIndex).toBeGreaterThanOrEqual(0);
+    expect(intentsIndex).toBeGreaterThan(streamInfoIndex);
+
+    const intentCall = findFetchCall((globalThis.fetch as any), '/intents');
     expect(intentCall).toBeDefined();
 
-    const body = JSON.parse(String(intentCall[1]?.body ?? '{}'));
+    const body = JSON.parse(String(intentCall?.[1]?.body ?? '{}'));
     expect(body.params.playback_decision_token).toBe('token-intent-keys-1');
     expect(body.params.playback_decision_id).toBeUndefined();
   });

@@ -158,7 +158,7 @@ dataDir: ` + tmpDir + `
 api:
   listenAddr: ":0"
   token: "test-token"
-  tokenScopes: ["v3:read"] 
+  tokenScopes: ["v3:read"]
 engine:
   tunerSlots: [0]
 enigma2:
@@ -241,22 +241,25 @@ enigma2:
 
 	// Strict Decode
 	var dto struct {
-		URL              string    `json:"url"`
-		Mode             string    `json:"mode"`
-		DurationSeconds  *int64    `json:"durationSeconds,omitempty"`
-		Reason           *string   `json:"reason,omitempty"`
-		Seekable         *bool     `json:"seekable,omitempty"`   // deprecated alias
-		IsSeekable       *bool     `json:"isSeekable,omitempty"` // canonical (P3-4)
-		Container        *string   `json:"container,omitempty"`
-		VideoCodec       *string   `json:"videoCodec,omitempty"`
-		AudioCodec       *string   `json:"audioCodec,omitempty"`
-		RequestId        string    `json:"requestId"`                    // traceability
-		SessionId        string    `json:"sessionId"`                    // traceability
-		DurationSource   *string   `json:"durationSource,omitempty"`     // P3-4 truth
-		StartUnix        *int64    `json:"startUnix,omitempty"`          // P3-4 truth (live)
-		LiveEdgeUnix     *int64    `json:"live_edge_unix,omitempty"`     // P3-4 truth (live)
-		DvrWindowSeconds *int64    `json:"dvr_window_seconds,omitempty"` // P3-4 truth
-		Resume           *struct { // P3-4 resume state
+		URL                string    `json:"url"`
+		Mode               string    `json:"mode"`
+		DurationSeconds    *int64    `json:"durationSeconds,omitempty"`
+		DurationMs         *int64    `json:"durationMs,omitempty"`
+		Reason             *string   `json:"reason,omitempty"`
+		Seekable           *bool     `json:"seekable,omitempty"`   // deprecated alias
+		IsSeekable         *bool     `json:"isSeekable,omitempty"` // canonical (P3-4)
+		Container          *string   `json:"container,omitempty"`
+		VideoCodec         *string   `json:"videoCodec,omitempty"`
+		AudioCodec         *string   `json:"audioCodec,omitempty"`
+		RequestId          string    `json:"requestId"`                    // traceability
+		SessionId          string    `json:"sessionId"`                    // traceability
+		DurationSource     *string   `json:"durationSource,omitempty"`     // P3-4 truth
+		DurationReasons    []string  `json:"durationReasons,omitempty"`    // P3-4 truth reasons
+		DurationConfidence *string   `json:"durationConfidence,omitempty"` // P3-4 truth confidence
+		StartUnix          *int64    `json:"startUnix,omitempty"`          // P3-4 truth (live)
+		LiveEdgeUnix       *int64    `json:"live_edge_unix,omitempty"`     // P3-4 truth (live)
+		DvrWindowSeconds   *int64    `json:"dvr_window_seconds,omitempty"` // P3-4 truth
+		Resume             *struct { // P3-4 resume state
 			PosSeconds      float32 `json:"posSeconds"`
 			DurationSeconds *int64  `json:"durationSeconds,omitempty"`
 			Finished        *bool   `json:"finished,omitempty"`

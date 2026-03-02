@@ -1,8 +1,9 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as sdk from '../src/client-ts';
+import { suppressExpectedConsoleNoise } from './helpers/consoleNoise';
 
 vi.mock('../src/client-ts', async () => {
   const actual = await vi.importActual<any>('../src/client-ts');
@@ -13,16 +14,36 @@ vi.mock('../src/client-ts', async () => {
 });
 
 describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
+  let restoreConsoleNoise: (() => void) | null = null;
+
+  beforeAll(() => {
+    restoreConsoleNoise = suppressExpectedConsoleNoise({
+      // jsdom test environment does not provide a usable HLS playback engine.
+      error: [/HLS playback engine not available/i]
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    restoreConsoleNoise?.();
+    restoreConsoleNoise = null;
+  });
+
   it('fails loudly if decision exists but selectedOutputUrl is missing (governance violation)', async () => {
-    // Backend returns a mode, but misses the mandatory explicit selection.
+    // Mock a response that has forbidden 'outputs' but missing 'selectedOutputUrl'
     const mockInfo: any = {
-      mode: 'transcode',
+      mode: 'hlsjs',
       decision: {
+        mode: 'direct_play',
         outputs: [{ kind: 'file', url: '/forbidden/path.mp4' }]
+        // missing selectedOutputUrl
       },
       requestId: 'req-bad-contract'
     };
@@ -32,6 +53,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     render(<V3Player autoStart={true} recordingId="rec-1" />);
 
     await waitFor(async () => {
+      // Backend must fail closed if selected output URL is missing.
       const errorToast = await screen.findByRole('alert');
       expect(errorToast.textContent).toContain('Backend decision missing selectedOutputUrl');
     });
@@ -40,8 +62,9 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
   it('prefers normative selectedOutputUrl over legacy url', async () => {
     const mockInfo: any = {
       url: '/legacy/url.m3u8',
-      mode: 'hlsjs',
+      mode: 'transcode',
       decision: {
+        mode: 'transcode',
         selectedOutputUrl: '/normative/url.m3u8',
         selectedOutputKind: 'hls'
       },

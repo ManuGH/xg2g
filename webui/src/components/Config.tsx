@@ -148,6 +148,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
         headers.Authorization = `Bearer ${token}`;
       }
 
+      // raw-fetch-justified: internal setup bootstrap endpoint is not part of typed public SDK surface.
       const response = await fetch('/internal/setup/validate', {
         method: 'POST',
         headers,
@@ -171,7 +172,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
 
         // Auto-populate bouquets if empty
         if ((!config.bouquets || config.bouquets.length === 0) && result.bouquets?.length > 0) {
-          // Optional: Auto-select favorites or first bouquet? 
+          // Optional: Auto-select favorites or first bouquet?
           // For now, let user choose, but show them available.
         }
       } else {
@@ -221,8 +222,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
         ...(config.openWebIF ? { openWebIF: config.openWebIF } : {}),
         ...(config.bouquets ? { bouquets: config.bouquets } : {}),
         ...(config.epg ? { epg: config.epg } : {}),
-        ...(config.picons !== undefined ? { picons: config.picons } : {}),
-        ...(config.featureFlags ? { featureFlags: config.featureFlags } : {})
+        ...(config.picons !== undefined ? { picons: config.picons } : {})
       };
 
       const result = await putSystemConfig({ body: payload });

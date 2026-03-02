@@ -21,12 +21,13 @@ describe('Telemetry Contract Consumption', () => {
     telemetry.clear();
   });
 
-  it('emits "normative" event when Decision is consumed', async () => {
+  it('emits "backend" event when PlaybackInfo decision is consumed', async () => {
     (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       data: {
-        mode: 'transcode',
+        mode: 'direct_mp4',
         decision: {
           selectedOutputUrl: 'http://normative.url',
+          mode: 'direct_play',
           selectedOutputKind: 'file'
         },
         requestId: 'req-norm-1'
@@ -41,15 +42,15 @@ describe('Telemetry Contract Consumption', () => {
       const consumed = events.find(e => e.type === 'ui.contract.consumed');
       expect(consumed).toBeDefined();
       expect(consumed?.payload.mode).toBe('backend');
+      expect(consumed?.payload.fields).toContain('mode');
       expect(consumed?.payload.fields).toContain('decision.selectedOutputUrl');
     });
   });
 
-  it('emits ui.failclosed when backend returns unsupported legacy mode', async () => {
+  it('emits failclosed when backend omits decision selection', async () => {
     (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       data: {
-        url: 'http://legacy.url',
-        mode: 'hls',
+        mode: 'hlsjs',
         requestId: 'req-leg-1'
       },
       response: { status: 200 }
@@ -61,7 +62,6 @@ describe('Telemetry Contract Consumption', () => {
       const events = telemetry.getEvents();
       const fail = events.find(e => e.type === 'ui.failclosed');
       expect(fail).toBeDefined();
-      expect(fail?.payload.context).toBe('V3Player.mode.invalid');
     });
   });
 });

@@ -1,6 +1,6 @@
 
 import { describe, it, expect } from 'vitest';
-import { resolvePlaybackInfoPolicy } from '../../src/contracts/PolicyEngine';
+import { resolvePlaybackInfoPolicy } from './helpers/PolicyEngine';
 
 describe('PolicyEngine (V3Player.PlaybackInfo)', () => {
 

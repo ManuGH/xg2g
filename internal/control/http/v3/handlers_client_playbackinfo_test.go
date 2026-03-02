@@ -199,3 +199,29 @@ func TestClientPlaybackInfo_StrictFailClosed(t *testing.T) {
 		assert.Equal(t, float64(100_000_000), ticks)
 	})
 }
+
+func TestClientPlaybackInfo_PreparingErrorContract(t *testing.T) {
+	svc := new(mockRecSvc2)
+	svc.On("ResolvePlayback", mock.Anything, "rec1", "generic").Return(
+		recservice.PlaybackResolution{},
+		recservice.ErrPreparing{RecordingID: "rec1"},
+	)
+
+	reqBody, _ := json.Marshal(clientplayback.PlaybackInfoRequest{})
+	s := &Server{recordingsService: svc}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/Items/rec1/PlaybackInfo", bytes.NewReader(reqBody))
+
+	s.PostItemsPlaybackInfo(w, r, "rec1")
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "5", w.Header().Get("Retry-After"))
+
+	var prob map[string]any
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &prob))
+	assert.Equal(t, "/problems/recordings/preparing", prob["type"])
+	assert.Equal(t, "RECORDING_PREPARING", prob["code"])
+	assert.Equal(t, "recording preparing: rec1", prob["detail"])
+	assert.Equal(t, "in_flight", prob["probeState"])
+	assert.EqualValues(t, 5, prob["retryAfterSeconds"])
+}

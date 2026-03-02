@@ -346,7 +346,7 @@ func TestMiddlewareChain(t *testing.T) {
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
 	require.NoError(t, err)
-	req.Header.Set("X-API-Token", "test-token")
+	req.Header.Set("Authorization", "Bearer test-token")
 	req.RemoteAddr = "192.0.2.1"
 
 	rr := httptest.NewRecorder()
@@ -356,6 +356,32 @@ func TestMiddlewareChain(t *testing.T) {
 	require.NotEmpty(t, reqID, "X-Request-ID header should be set")
 	// Basic shape check (UUID-like); don't strictly parse to keep test simple
 	assert.GreaterOrEqual(t, len(reqID), 8)
+}
+
+func TestResumeEndpoint_UsesCentralCORSMiddleware(t *testing.T) {
+	server := mustNewServer(t, config.AppConfig{
+		APIToken:       "write-token",
+		APITokenScopes: []string{string(v3.ScopeV3Write)},
+		AllowedOrigins: []string{"http://allowed.example"},
+		DataDir:        t.TempDir(),
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}, config.NewManager(""))
+	handler := server.Handler()
+
+	noOriginReq := httptest.NewRequest(http.MethodOptions, "/api/v3/recordings/some-id/resume", nil)
+	noOriginRes := httptest.NewRecorder()
+	handler.ServeHTTP(noOriginRes, noOriginReq)
+	assert.Equal(t, http.StatusNoContent, noOriginRes.Code)
+	assert.Empty(t, noOriginRes.Header().Get("Access-Control-Allow-Origin"))
+
+	allowedOriginReq := httptest.NewRequest(http.MethodOptions, "/api/v3/recordings/some-id/resume", nil)
+	allowedOriginReq.Header.Set("Origin", "http://allowed.example")
+	allowedOriginRes := httptest.NewRecorder()
+	handler.ServeHTTP(allowedOriginRes, allowedOriginReq)
+	assert.Equal(t, http.StatusNoContent, allowedOriginRes.Code)
+	assert.Equal(t, "http://allowed.example", allowedOriginRes.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func TestAdvancedPathTraversal(t *testing.T) {

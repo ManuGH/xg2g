@@ -30,4 +30,3 @@ func TestRouteRegistrar_AddPanicsWhenScopePolicyMissing(t *testing.T) {
 
 	register.add(http.MethodGet, "/__test__", "UnknownPolicyOperation", func(http.ResponseWriter, *http.Request) {})
 }
-

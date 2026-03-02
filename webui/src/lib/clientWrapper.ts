@@ -1,5 +1,5 @@
-import { client } from './client.gen';
-import type { ApiError, ProblemDetails } from './types.gen';
+import { client } from '../client-ts/client.gen';
+import type { ApiError, ProblemDetails } from '../client-ts/types.gen';
 
 export type MappedApiError = {
   status?: number;

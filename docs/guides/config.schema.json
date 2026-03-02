@@ -52,7 +52,7 @@
           "type": "array"
         },
         "disableLegacyTokenSources": {
-          "default": false,
+          "default": true,
           "type": "boolean"
         },
         "listenAddr": {
@@ -64,6 +64,22 @@
             "0.0.0.0:9090"
           ],
           "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
+          "type": "string"
+        },
+        "playbackDecisionKeyId": {
+          "type": "string"
+        },
+        "playbackDecisionPreviousKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "playbackDecisionRotationWindow": {
+          "default": "10m",
+          "type": "string"
+        },
+        "playbackDecisionSecret": {
           "type": "string"
         },
         "token": {

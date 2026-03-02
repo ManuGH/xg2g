@@ -62,7 +62,10 @@ func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, err
 	}
 
 	// Debug logging to verify streamPort configuration
-	log.Info().Int("streamPort", c.StreamPort).Str("baseURL", c.BaseURL).Msg("ResolveStreamURL called")
+	log.Info().
+		Int("streamPort", c.StreamPort).
+		Str("baseURL", net.SanitizeURL(c.BaseURL)).
+		Msg("ResolveStreamURL called")
 
 	// If explicitly configured to use WebIF streams, always use /web/stream.m3u.
 	// This lets the receiver decide the correct stream URL (and often fixes metadata/SPS/PPS issues).
@@ -86,7 +89,9 @@ func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, err
 		}
 
 		directURL := u.String()
-		log.Info().Str("direct_url", directURL).Msg("Using direct stream URL (bypassing /web/stream.m3u)")
+		log.Info().
+			Str("direct_url", net.SanitizeURL(directURL)).
+			Msg("Using direct stream URL (bypassing /web/stream.m3u)")
 		return directURL, nil
 	}
 
@@ -132,7 +137,10 @@ webStream:
 					}
 				}
 			}
-			log.Info().Str("resolved_url", resolved).Str("sref", sref).Msg("Stream URL resolved")
+			log.Info().
+				Str("resolved_url", net.SanitizeURL(resolved)).
+				Str("sref", sref).
+				Msg("Stream URL resolved")
 			return resolved, nil
 		}
 	}

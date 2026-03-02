@@ -2,8 +2,12 @@
 # Generated from internal/config/registry.go. Do not edit by hand.
 api:
   allowedOrigins: []
-  disableLegacyTokenSources: false
+  disableLegacyTokenSources: true
   listenAddr: :8088
+  playbackDecisionKeyId: ""
+  playbackDecisionPreviousKeys: []
+  playbackDecisionRotationWindow: 10m
+  playbackDecisionSecret: ""
   token: ""
   tokenScopes:
     - v3:read

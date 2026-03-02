@@ -47,7 +47,7 @@ const CheckCircleIcon = ({ className }: { className?: string }) => (
 interface PlayingState {
   recordingId: string;
   title: string;
-  duration: number;
+  durationSeconds: number;
 }
 
 // mapRecordingToChip - CTO Contract: Deterministic mapping
@@ -155,7 +155,7 @@ export default function RecordingsList() {
     setPlaying({
       recordingId: item.recordingId,
       title: item.title || 'Recording',
-      duration: item.durationSeconds ?? 0
+      durationSeconds: item.durationSeconds ?? 0
     });
   };
 
@@ -391,7 +391,7 @@ export default function RecordingsList() {
             token={auth?.token || undefined}
             autoStart={true}
             onClose={() => setPlaying(null)}
-            duration={playing.duration}
+            duration={playing.durationSeconds}
           />
         </Suspense>
       )}

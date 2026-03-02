@@ -6,8 +6,15 @@ import (
 	"strings"
 )
 
+// OpenWebIF timer endpoints return localized free-text messages for logical failures
+// (result=false) without a stable machine-readable error code.
 var timerConflictTokens = []string{"conflict", "overlap", "konflikt", "ueberschneidung", "überschneidung"}
 var timerNotFoundTokens = []string{"not found", "nicht gefunden", "404"}
+
+var (
+	ErrTimerConflict = errors.New("timer conflict")
+	ErrTimerNotFound = errors.New("timer not found")
+)
 
 func timerOperationError(operation, message string) error {
 	normalized := strings.TrimSpace(message)
@@ -16,10 +23,10 @@ func timerOperationError(operation, message string) error {
 
 	switch {
 	case timerMessageHasAnyToken(normalized, timerConflictTokens):
-		sentinel = ErrConflict
+		sentinel = ErrTimerConflict
 		status = http.StatusConflict
 	case timerMessageHasAnyToken(normalized, timerNotFoundTokens):
-		sentinel = ErrNotFound
+		sentinel = ErrTimerNotFound
 		status = http.StatusNotFound
 	}
 
@@ -35,34 +42,28 @@ func IsTimerConflict(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, ErrConflict) {
+	if errors.Is(err, ErrTimerConflict) || errors.Is(err, ErrConflict) {
 		return true
 	}
 	var owiErr *OWIError
 	if errors.As(err, &owiErr) {
-		if owiErr.Status == http.StatusConflict {
-			return true
-		}
-		return timerMessageHasAnyToken(owiErr.Body, timerConflictTokens)
+		return owiErr.Status == http.StatusConflict
 	}
-	return timerMessageHasAnyToken(err.Error(), timerConflictTokens)
+	return false
 }
 
 func IsTimerNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, ErrNotFound) {
+	if errors.Is(err, ErrTimerNotFound) || errors.Is(err, ErrNotFound) {
 		return true
 	}
 	var owiErr *OWIError
 	if errors.As(err, &owiErr) {
-		if owiErr.Status == http.StatusNotFound {
-			return true
-		}
-		return timerMessageHasAnyToken(owiErr.Body, timerNotFoundTokens)
+		return owiErr.Status == http.StatusNotFound
 	}
-	return timerMessageHasAnyToken(err.Error(), timerNotFoundTokens)
+	return false
 }
 
 func timerMessageHasAnyToken(message string, tokens []string) bool {

@@ -31,7 +31,8 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "tests/helpers/**/*"
   ],
   "exclude": [
     "node_modules",

@@ -107,6 +107,10 @@ func (l *Loader) mergeEnvAPI(cfg *AppConfig) {
 		cfg.APITokens = tokens
 	}
 	cfg.APIDisableLegacyTokenSources = l.envBool("XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES", cfg.APIDisableLegacyTokenSources)
+	cfg.PlaybackDecisionSecret = l.envString("XG2G_PLAYBACK_DECISION_SECRET", cfg.PlaybackDecisionSecret)
+	cfg.PlaybackDecisionKeyID = l.envString("XG2G_PLAYBACK_DECISION_KID", cfg.PlaybackDecisionKeyID)
+	cfg.PlaybackDecisionPreviousKeys = parseCommaSeparated(l.envString("XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS", ""), cfg.PlaybackDecisionPreviousKeys)
+	cfg.PlaybackDecisionRotationWindow = l.envDuration("XG2G_PLAYBACK_DECISION_ROTATION_WINDOW", cfg.PlaybackDecisionRotationWindow)
 	cfg.APIListenAddr = l.envString("XG2G_LISTEN", cfg.APIListenAddr)
 
 	// CORS: ENV overrides YAML if set

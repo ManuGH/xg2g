@@ -12,6 +12,7 @@ func Clone(in AppConfig) AppConfig {
 	out.AllowedOrigins = cloneStringSlice(in.AllowedOrigins)
 	out.RateLimitWhitelist = cloneStringSlice(in.RateLimitWhitelist)
 	out.APITokenScopes = cloneStringSlice(in.APITokenScopes)
+	out.PlaybackDecisionPreviousKeys = cloneStringSlice(in.PlaybackDecisionPreviousKeys)
 	out.RecordingPathMappings = cloneRecordingPathMappings(in.RecordingPathMappings)
 
 	// --- Maps (preserve nil) ---

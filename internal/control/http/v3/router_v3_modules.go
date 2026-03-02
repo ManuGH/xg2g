@@ -7,12 +7,14 @@ package v3
 // sessionsModuleRoutes groups all session-lifecycle/public stream routes.
 type sessionsModuleRoutes interface {
 	intentRoutes
+	livePlaybackRoutes
 	sessionRoutes
 	streamRoutes
 }
 
 func registerSessionsModuleRoutes(register routeRegistrar, handler sessionsModuleRoutes) {
 	registerIntentRoutes(register, handler)
+	registerLivePlaybackRoutes(register, handler)
 	registerSessionRoutes(register, handler)
 	registerStreamRoutes(register, handler)
 }

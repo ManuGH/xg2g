@@ -25,8 +25,10 @@ const (
 )
 
 const (
-	// RetryAfterPreparingDefault is the wait time for preparing/blocked states.
+	// RetryAfterPreparingDefault is the wait time for preparing states.
 	RetryAfterPreparingDefault = 30
+	// RetryAfterPreparingBlockedDefault is the wait time for blocked states.
+	RetryAfterPreparingBlockedDefault = 30
 )
 
 // PlaybackMode defines the calculated strategy.
@@ -92,6 +94,10 @@ type PlaybackPlan struct {
 	DecisionReason ReasonCode
 	TruthReason    string
 	Duration       float64
+	// Duration truth metadata (optional)
+	DurationSource     string
+	DurationConfidence string
+	DurationReasons    []string
 }
 
 // MediaInfo represents pure facts about the recording (used inside PlaybackInfoResult domain).
@@ -110,16 +116,39 @@ type MediaTruth struct {
 	Status     MediaStatus
 	Reasons    []ReasonCode
 	RetryAfter int
-	ProbeState string
-	Container  string
-	VideoCodec string
-	AudioCodec string
-	Duration   float64
-	Width      int
-	Height     int
-	FPS        float64
-	Interlaced bool
+	ProbeState ProbeState
+	// Reserved for blocked probe states.
+	ProbeBlockedReason ProbeBlockedReason
+	Container          string
+	VideoCodec         string
+	AudioCodec         string
+	Duration           float64
+	// Duration truth metadata (optional)
+	DurationSource     string
+	DurationConfidence string
+	DurationReasons    []string
+	Width              int
+	Height             int
+	FPS                float64
+	Interlaced         bool
 }
+
+type ProbeState string
+
+const (
+	ProbeStateUnknown  ProbeState = ""
+	ProbeStateQueued   ProbeState = "queued"
+	ProbeStateInFlight ProbeState = "in_flight"
+	ProbeStateBlocked  ProbeState = "blocked"
+)
+
+type ProbeBlockedReason string
+
+const (
+	ProbeBlockedReasonNone     ProbeBlockedReason = ""
+	ProbeBlockedReasonDisabled ProbeBlockedReason = "probe_disabled"
+	ProbeBlockedReasonBackoff  ProbeBlockedReason = "probe_backoff"
+)
 
 // PlaybackCapabilities represents the core capability set for playback decisions.
 // This struct is intended to be the domain truth, mapped to/from OpenAPI or shims.

@@ -17,6 +17,9 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
+	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -45,35 +48,44 @@ type Server struct {
 	snap      config.Snapshot
 	status    jobs.Status
 	startTime time.Time
+	// Opaque auth session store for xg2g_session cookies.
+	authSessionStore ctrlauth.SessionTokenStore
+	authSessionTTL   time.Duration
 
 	// Security
 	JWTSecret []byte // HMAC-SHA256 key for playbackDecisionToken (SSOT)
 
 	// Core Components
-	v3Bus               bus.Bus
-	v3Store             SessionStateStore
-	resumeStore         resume.Store
-	v3Scan              ChannelScanner
-	owiFactory          receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
-	recordingPathMapper *recinfra.PathMapper
-	channelManager      *channels.Manager
-	seriesManager       *dvr.Manager
-	seriesEngine        *dvr.SeriesEngine
-	vodManager          *vod.Manager
-	resolver            recservice.Resolver // Strict V4 Resolver (Domain)
-	artifacts           artifacts.Resolver
-	epgCache            *epg.TV // EPG Cache reference
-	owiClient           *openwebif.Client
-	owiEpoch            uint64
-	configManager       *config.Manager
-	configMu            sync.Mutex // Serializes configuration updates
-	epgCacheTime        time.Time
-	epgCacheMTime       time.Time
-	epgSfg              singleflight.Group
-	receiverSfg         singleflight.Group
-	libraryService      *library.Service // Media library per ADR-ENG-002
-	admission           *admission.Controller
-	admissionState      AdmissionState
+	v3Bus                  bus.Bus
+	v3Store                SessionStateStore
+	resumeStore            resume.Store
+	v3Scan                 ChannelScanner
+	owiFactory             receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
+	recordingPathMapper    *recinfra.PathMapper
+	channelManager         *channels.Manager
+	seriesManager          *dvr.Manager
+	seriesEngine           *dvr.SeriesEngine
+	vodManager             *vod.Manager
+	resolver               recservice.Resolver // Strict V4 Resolver (Domain)
+	artifacts              artifacts.Resolver
+	epgCache               *epg.TV // EPG Cache reference
+	owiClient              *openwebif.Client
+	owiEpoch               uint64
+	configManager          *config.Manager
+	configMu               sync.Mutex // Serializes configuration updates
+	epgCacheTime           time.Time
+	epgCacheMTime          time.Time
+	epgSfg                 singleflight.Group
+	receiverSfg            singleflight.Group
+	libraryService         *library.Service // Media library per ADR-ENG-002
+	admission              *admission.Controller
+	admissionState         AdmissionState
+	liveDecisionKeyring    liveDecisionKeyring
+	liveDecisionSigningKey []byte
+	liveDecisionTTL        time.Duration
+	playbackSLO            *playbackSessionTracker
+	intentService          *v3intents.Service
+	recordingsV3Service    *v3recordings.Service
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -121,17 +133,27 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 			log.L().Info().Int("roots", len(libraryRoots)).Msg("library service initialized")
 		}
 	}
+	liveDecisionKeyring := resolveLiveDecisionKeyring(cfg, time.Now().UTC())
+	_, signingKey, _ := liveDecisionKeyring.signingKey()
 
 	s := &Server{
-		cfg:            cfg,
-		configManager:  cfgMgr,
-		startTime:      time.Now(),
-		libraryService: librarySvc,
-		storageMonitor: NewStorageMonitor(),
-		admission: admission.NewController(cfg),
+		cfg:                    cfg,
+		configManager:          cfgMgr,
+		startTime:              time.Now(),
+		libraryService:         librarySvc,
+		storageMonitor:         NewStorageMonitor(),
+		admission:              admission.NewController(cfg),
+		liveDecisionKeyring:    liveDecisionKeyring,
+		liveDecisionSigningKey: signingKey,
+		liveDecisionTTL:        defaultLivePlaybackDecisionTTL,
+		playbackSLO:            newPlaybackSessionTracker(defaultPlaybackSLOSessionTTL),
+		authSessionStore:       ctrlauth.NewInMemorySessionTokenStore(),
+		authSessionTTL:         defaultAuthSessionTTL,
 		// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
+	s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
+	s.recordingsV3Service = v3recordings.NewService(&serverRecordingsDeps{s: s})
 	s.epgSource = &epgAdapter{s}
 	return s
 }
@@ -255,6 +277,13 @@ func (s *Server) SetRecordingsService(svc recservice.Service) {
 	s.recordingsService = svc
 }
 
+// SetArtifactsResolver overrides the recordings artifact resolver (tests).
+func (s *Server) SetArtifactsResolver(res artifacts.Resolver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.artifacts = res
+}
+
 // SetAdmission sets the resource monitor for admission control.
 // SetAdmission sets the controller for admission control.
 func (s *Server) SetAdmission(ctrl *admission.Controller) {
@@ -270,9 +299,11 @@ func (s *Server) SetJWTSecret(secret []byte) {
 	defer s.mu.Unlock()
 	if len(secret) == 0 {
 		s.JWTSecret = nil
+		s.liveDecisionSigningKey = nil
 		return
 	}
 	s.JWTSecret = append([]byte(nil), secret...)
+	s.liveDecisionSigningKey = append([]byte(nil), secret...)
 }
 
 // SetShutdownHandler sets the function to call for graceful shutdown.
