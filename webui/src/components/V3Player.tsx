@@ -144,17 +144,33 @@ class PlayerError extends Error {
 }
 
 async function readResponseBody(res: Response): Promise<{ json: any | null; text: string | null }> {
+  const maybeRes = res as unknown as { text?: () => Promise<string>; json?: () => Promise<any> };
   try {
-    const text = await res.text();
-    if (!text) return { json: null, text: '' };
-    try {
-      return { json: JSON.parse(text), text };
-    } catch {
-      return { json: null, text };
+    if (typeof maybeRes.text === 'function') {
+      const text = await maybeRes.text();
+      if (!text) return { json: null, text: '' };
+      try {
+        return { json: JSON.parse(text), text };
+      } catch {
+        return { json: null, text };
+      }
     }
   } catch {
-    return { json: null, text: null };
+    // fall through to json fallback
   }
+
+  try {
+    if (typeof maybeRes.json === 'function') {
+      const json = await maybeRes.json();
+      return {
+        json,
+        text: json == null ? '' : JSON.stringify(json)
+      };
+    }
+  } catch {
+    // ignore and fall through
+  }
+  return { json: null, text: null };
 }
 
 function extractCapHashFromDecisionToken(token: string): string | null {
@@ -261,7 +277,8 @@ function V3Player(props: V3PlayerProps) {
     recordingId: activeRecordingId || undefined,
     duration: durationSeconds,
     videoElement: videoRef.current,
-    isPlaying
+    isPlaying,
+    isSeekable: canSeek
   });
 
   const sleep = (ms: number): Promise<void> =>
@@ -299,8 +316,6 @@ function V3Player(props: V3PlayerProps) {
     } else if (video.seekable && video.seekable.length > 0) {
       start = video.seekable.start(0);
       end = video.seekable.end(video.seekable.length - 1);
-    } else if (Number.isFinite(video.duration) && video.duration > 0) {
-      end = video.duration;
     } else if (durationSeconds && durationSeconds > 0) {
       end = durationSeconds;
     }
@@ -1155,17 +1170,24 @@ function V3Player(props: V3PlayerProps) {
         setVodStreamMode(mode as any);
 
         // Truth Consumption
-        if (pInfo.durationSeconds && pInfo.durationSeconds > 0) {
-          setDurationSeconds(pInfo.durationSeconds);
+        const playbackDurationSeconds =
+          typeof pInfo.durationSeconds === 'number' && pInfo.durationSeconds > 0
+            ? pInfo.durationSeconds
+            : typeof pInfo.durationMs === 'number' && pInfo.durationMs > 0
+              ? pInfo.durationMs / 1000
+              : null;
+        if (playbackDurationSeconds && playbackDurationSeconds > 0) {
+          setDurationSeconds(playbackDurationSeconds);
         }
 
         if (pInfo.requestId) setTraceId(pInfo.requestId);
-        if (pInfo.isSeekable !== undefined) setCanSeek(pInfo.isSeekable);
+        const recordingIsSeekable = pInfo.isSeekable !== undefined ? Boolean(pInfo.isSeekable) : true;
+        setCanSeek(recordingIsSeekable);
         if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
 
         // Resume State
-        if (pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
-          const d = pInfo.resume.durationSeconds || (pInfo.durationSeconds || 0);
+        if (recordingIsSeekable && pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
+          const d = pInfo.resume.durationSeconds || (playbackDurationSeconds || 0);
           if (!d || pInfo.resume.posSeconds < d - 10) {
             setResumeState({
               posSeconds: pInfo.resume.posSeconds,
@@ -1337,12 +1359,24 @@ function V3Player(props: V3PlayerProps) {
             setError(t('player.authFailed'));
             return;
           }
+          const code = typeof liveInfo?.code === 'string' && liveInfo.code ? liveInfo.code : null;
+          const title = typeof liveInfo?.title === 'string' && liveInfo.title ? liveInfo.title : null;
+          const type = typeof liveInfo?.type === 'string' && liveInfo.type ? liveInfo.type : null;
+
+          const summaryParts = [code, title, type].filter((part): part is string => Boolean(part));
+          const message = summaryParts.length > 0
+            ? summaryParts.join(' · ')
+            : `${t('player.apiError')}: ${liveResponse.status}`;
+
           const detailParts: string[] = [];
-          if (typeof liveInfo?.code === 'string' && liveInfo.code) detailParts.push(`code=${liveInfo.code}`);
           if (typeof liveInfo?.detail === 'string' && liveInfo.detail) detailParts.push(liveInfo.detail);
           if (liveRequestId) detailParts.push(`requestId=${liveRequestId}`);
-          const detailSuffix = detailParts.length > 0 ? ` (${detailParts.join(' · ')})` : '';
-          throw new Error(`${t('player.apiError')}: ${liveResponse.status}${detailSuffix}`);
+
+          const err = new Error(message);
+          if (detailParts.length > 0) {
+            (err as any).details = detailParts.join(' · ');
+          }
+          throw err;
         }
 
         if (!liveInfo?.mode) {
