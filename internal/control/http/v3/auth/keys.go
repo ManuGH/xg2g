@@ -1,10 +1,5 @@
 package auth
 
-import (
-	"os"
-	"strings"
-)
-
 // testDecisionSecret is a well-known key used ONLY by tests.
 // It is never used in production; the server requires an explicit secret at startup.
 //
@@ -17,14 +12,4 @@ func TestSecret() []byte {
 	out := make([]byte, len(testDecisionSecret))
 	copy(out, testDecisionSecret)
 	return out
-}
-
-// DecisionSecretFromEnv reads the decision secret from the XG2G_DECISION_SECRET
-// environment variable. Returns nil if unset, empty, or whitespace-only.
-func DecisionSecretFromEnv() []byte {
-	v := strings.TrimSpace(os.Getenv("XG2G_DECISION_SECRET"))
-	if v == "" {
-		return nil
-	}
-	return []byte(v)
 }

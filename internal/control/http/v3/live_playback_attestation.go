@@ -28,6 +28,7 @@ type livePlaybackDecisionClaims struct {
 	ExpiresAt  int64  `json:"exp"`
 }
 
+//nolint:unused // Used by tests to mint deterministic attestation tokens.
 func (s *Server) attestLivePlaybackDecision(requestID, principal, serviceRef, mode string) string {
 	requestID = strings.TrimSpace(requestID)
 	principal = strings.TrimSpace(principal)
@@ -146,6 +147,7 @@ func liveDecisionSignatureWithKey(encodedPayload string, signingKey []byte) []by
 	return mac.Sum(nil)
 }
 
+//nolint:unused // Used by test-only token minting helpers.
 func (s *Server) resolveLiveDecisionSigner() (kid string, key []byte, ok bool) {
 	if len(s.JWTSecret) > 0 {
 		return "", s.JWTSecret, true

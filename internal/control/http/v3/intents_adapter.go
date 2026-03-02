@@ -79,12 +79,3 @@ func (d *serverIntentDeps) RecordPublish(eventType, outcome string) {
 func (d *serverIntentDeps) RecordReplay(intentType string) {
 	RecordV3Replay(intentType)
 }
-
-func (s *Server) intentProcessor() *v3intents.Service {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.intentService == nil {
-		s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
-	}
-	return s.intentService
-}

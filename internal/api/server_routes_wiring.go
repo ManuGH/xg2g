@@ -111,7 +111,11 @@ func (s *Server) servePiconLogo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			log.L().Warn().Err(closeErr).Str("path", absPath).Msg("failed to close picon file")
+		}
+	}()
 
 	info, err := f.Stat()
 	if err != nil || info.IsDir() {

@@ -14,7 +14,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
-	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
@@ -49,7 +48,7 @@ func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) e
 
 	// [SECURITY] Wire decision secret — hard fail if missing.
 	// Without a secret, live-stream JWT tokens cannot be signed or verified.
-	secret := v3auth.DecisionSecretFromEnv()
+	secret := config.DecisionSecretFromEnv()
 	if secret == nil {
 		return fmt.Errorf("XG2G_DECISION_SECRET is required but not set (live stream security prerequisite)")
 	}

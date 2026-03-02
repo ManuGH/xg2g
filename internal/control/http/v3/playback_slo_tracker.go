@@ -282,36 +282,6 @@ func normalizePlaybackMode(mode string) string {
 	}
 }
 
-func playbackModeLabelFromPlaybackInfoMode(mode PlaybackInfoMode) string {
-	switch mode {
-	case PlaybackInfoModeDirectMp4:
-		return playbackModeMP4Label
-	case PlaybackInfoModeNativeHls:
-		return playbackModeNativeHLSLabel
-	case PlaybackInfoModeHlsjs:
-		return playbackModeHLSJSLabel
-	case PlaybackInfoModeTranscode:
-		return playbackModeHLSLabel
-	default:
-		return playbackModeUnknownLabel
-	}
-}
-
-func playbackModeLabelFromIntentPlaybackMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "direct_mp4":
-		return playbackModeMP4Label
-	case "native_hls":
-		return playbackModeNativeHLSLabel
-	case "hlsjs":
-		return playbackModeHLSJSLabel
-	case "transcode":
-		return playbackModeHLSLabel
-	default:
-		return playbackModeUnknownLabel
-	}
-}
-
 func playbackStageLabelFromLiveFilename(filename string) string {
 	name := strings.ToLower(strings.TrimSpace(filename))
 	if strings.HasSuffix(name, ".m3u8") {

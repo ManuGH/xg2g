@@ -3,10 +3,11 @@ package scan
 import (
 	"bufio"
 	"context"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -426,7 +427,15 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 
 		// 3. Apply Delay with Jitter (±20%)
 		if delay > 0 {
-			jitter := time.Duration(rand.Int63n(int64(delay/5))) - (delay / 10)
+			jitter := time.Duration(0)
+			if jitterRange := int64(delay / 5); jitterRange > 0 {
+				jitterN, err := cryptoRandInt63n(jitterRange)
+				if err != nil {
+					log.L().Warn().Err(err).Msg("scan: jitter entropy unavailable, continuing without jitter")
+				} else {
+					jitter = time.Duration(jitterN) - (delay / 10)
+				}
+			}
 			if err := sleepCtx(ctx, delay+jitter); err != nil {
 				return err
 			}
@@ -444,6 +453,17 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func cryptoRandInt63n(maxExclusive int64) (int64, error) {
+	if maxExclusive <= 0 {
+		return 0, nil
+	}
+	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(maxExclusive))
+	if err != nil {
+		return 0, err
+	}
+	return n.Int64(), nil
 }
 
 // resolveStreamURL follows M3U playlists to find the actual stream URL.
