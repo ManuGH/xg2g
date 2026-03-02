@@ -1,7 +1,7 @@
 # GENERATED FILE - DO NOT EDIT. Source: templates/docker-compose.yml.tmpl
 services:
   xg2g:
-    image: ghcr.io/manugh/xg2g:3.1.7
+    image: ghcr.io/manugh/xg2g:v3.1.1
     container_name: xg2g
     restart: unless-stopped
     ports:

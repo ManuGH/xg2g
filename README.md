@@ -26,7 +26,7 @@ docker run -d --name xg2g --net=host \
   -e XG2G_E2_HOST="http://192.168.1.10" \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
-  ghcr.io/manugh/xg2g:3.1.7
+  ghcr.io/manugh/xg2g:v3.1.1
 ```
 
 Open [http://localhost:8088/ui/](http://localhost:8088/ui/)
