@@ -2,6 +2,18 @@
 
 Welcome! This guide will help you get started with contributing to xg2g.
 
+## Community Channels
+
+- Questions and ideas: [GitHub Discussions](https://github.com/ManuGH/xg2g/discussions)
+- Feature proposals: GitHub Issues with label `enhancement`
+- Bugs and feature requests: GitHub Issues
+- Security reports: [GitHub Security Advisories](https://github.com/ManuGH/xg2g/security/advisories/new)
+
+If you want to start with a small task, look for issues labeled:
+
+- `good first issue`
+- `help wanted`
+
 ## Quick Start (5 Minutes)
 
 1.  **Clone the repository**:
@@ -38,7 +50,7 @@ The project is organized into a monorepo with a clear separation between backend
 ## Development Workflow
 
 ### Backend (Go)
-The backend is located in [backend/](file:///root/xg2g/backend/).
+The backend is located in [backend/](backend/).
 To run the daemon directly:
 ```bash
 cd backend
@@ -50,7 +62,7 @@ make dev
 ```
 
 ### Frontend (WebUI)
-Located in [frontend/webui/](file:///root/xg2g/frontend/webui/).
+Located in [frontend/webui/](frontend/webui/).
 ```bash
 cd frontend/webui
 npm ci
@@ -85,6 +97,10 @@ Before submitting a Pull Request, please ensure:
 - [ ] Documentation is updated (if applicable).
 - [ ] No regression markers (`FIXME`, `TODO`) left in production code.
 - [ ] Commit messages follow the project convention.
+
+## Code of Conduct
+
+Please read and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 By contributing, you agree that your contributions will be licensed under the project's [LICENSE](LICENSE).
