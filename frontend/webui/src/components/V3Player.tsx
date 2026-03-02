@@ -47,8 +47,20 @@ function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
   if (!videoEl) return false;
   try {
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    return hasNativeHls && isIOS;
+    if (!hasNativeHls) return false;
+
+    // Feature detection for mobile WebKit controls (no UA sniffing).
+    const webkitVideo = videoEl as unknown as {
+      webkitEnterFullscreen?: unknown;
+      webkitSupportsPresentationMode?: unknown;
+      webkitSetPresentationMode?: unknown;
+    };
+    const hasWebKitFullscreen = typeof webkitVideo.webkitEnterFullscreen === 'function';
+    const hasWebKitPresentationMode =
+      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
+      typeof webkitVideo.webkitSetPresentationMode === 'function';
+
+    return hasWebKitFullscreen || hasWebKitPresentationMode;
   } catch {
     return false;
   }
@@ -468,6 +480,7 @@ function V3Player(props: V3PlayerProps) {
 
     if (!sessionIdRef.current) return;
     try {
+      // raw-fetch-justified: feedback endpoint requires direct fire-and-forget POST with shared auth headers.
       await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -549,6 +562,7 @@ function V3Player(props: V3PlayerProps) {
     if (!force && stopSentRef.current === idToStop) return;
     stopSentRef.current = idToStop;
     try {
+      // raw-fetch-justified: stop intent must be sent best-effort during teardown without SDK-level retries.
       await fetch(`${apiBase}/intents`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -1334,6 +1348,7 @@ function V3Player(props: V3PlayerProps) {
         const forceNativeMobile = shouldForceNativeMobileHls(videoRef.current);
 
         const requestCaps = await gatherPlaybackCapabilities();
+        // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
         const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
           method: 'POST',
           headers: authHeaders(true),
@@ -1481,6 +1496,7 @@ function V3Player(props: V3PlayerProps) {
           intentParams.capHash = capHash;
         }
 
+        // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
         const res = await fetch(`${apiBase}/intents`, {
           method: 'POST',
           headers: authHeaders(true),
@@ -1712,6 +1728,7 @@ function V3Player(props: V3PlayerProps) {
 
     const timerId = setInterval(async () => {
       try {
+        // raw-fetch-justified: heartbeat loop uses timer-driven low-overhead POST with direct lease expiry parsing.
         const res = await fetch(`${apiBase}/sessions/${sessionId}/heartbeat`, {
           method: 'POST',
           headers: authHeaders(true)
@@ -2212,8 +2229,8 @@ function V3Player(props: V3PlayerProps) {
         : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
       : '';
 
-  const windowDuration = Math.max(0, seekableEnd - seekableStart);
-  const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart));
+  const windowDuration = Math.max(0, seekableEnd - seekableStart); // visual-clamp-only
+  const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart)); // visual-clamp-only
   const hasSeekWindow = canSeek && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
