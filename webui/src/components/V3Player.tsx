@@ -1473,6 +1473,7 @@ function V3Player(props: V3PlayerProps) {
         });
 
         const intentParams: Record<string, string> = {
+          playback_mode: liveMode,
           // Keep canonical contract key for downstream compatibility checks.
           playback_decision_token: liveDecisionToken
         };
