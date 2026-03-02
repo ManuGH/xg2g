@@ -146,6 +146,19 @@ export const getStreams = <ThrowOnError extends boolean = false>(options?: Optio
 });
 
 /**
+ * Get playback decision and token for a live stream
+ */
+export const postLivePlaybackInfo = <ThrowOnError extends boolean = false>(options: Options<PostLivePlaybackInfoData, ThrowOnError>) => (options.client ?? client).post<PostLivePlaybackInfoResponses, PostLivePlaybackInfoErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/live/stream-info',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Browse recordings
  */
 export const getRecordings = <ThrowOnError extends boolean = false>(options?: Options<GetRecordingsData, ThrowOnError>) => (options?.client ?? client).get<GetRecordingsResponses, unknown, ThrowOnError>({
@@ -476,29 +489,10 @@ export const triggerSystemScan = <ThrowOnError extends boolean = false>(options?
 
 /**
  * Create stream intent (start or stop session)
- *
- * For live stream.start requests, playback decision attestation is required when `params.playback_mode` is set.
- * Canonical key is `params.playback_decision_token`.
- * Deprecated alias `params.playback_decision_id` is accepted temporarily for compatibility.
- * If both keys are sent with different values, request is rejected with HTTP 400 (`INVALID_INPUT`).
- *
  */
 export const createIntent = <ThrowOnError extends boolean = false>(options: Options<CreateIntentData, ThrowOnError>) => (options.client ?? client).post<CreateIntentResponses, CreateIntentErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/intents',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Get live playback decision with client capabilities (SSOT)
- */
-export const postLivePlaybackInfo = <ThrowOnError extends boolean = false>(options: Options<PostLivePlaybackInfoData, ThrowOnError>) => (options.client ?? client).post<PostLivePlaybackInfoResponses, PostLivePlaybackInfoErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/live/stream-info',
     ...options,
     headers: {
         'Content-Type': 'application/json',

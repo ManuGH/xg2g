@@ -30,6 +30,10 @@ export type IntentRequest = {
      */
     serviceRef?: string;
     /**
+     * Required for stream.start. A secure cryptographically bound JWT token verifying the backend decision policy.
+     */
+    playbackDecisionToken?: string;
+    /**
      * Hardware acceleration override (v3.1+).
      * - auto: Server decides based on GPU availability
      * - force: Force GPU encoding (fails if no GPU)
@@ -50,25 +54,11 @@ export type IntentRequest = {
      */
     idempotencyKey?: string;
     /**
-     * Additional parameters.
-     * Live playback attestation keys:
-     * - canonical: playback_decision_token
-     * - deprecated alias: playback_decision_id (temporary compatibility)
-     * Conflict rule:
-     * - if both keys are present and values differ, request is rejected with HTTP 400 (code INVALID_INPUT)
-     *
+     * Additional parameters
      */
     params?: {
         [key: string]: string;
     };
-};
-
-export type LivePlaybackInfoRequest = {
-    /**
-     * Live service reference to evaluate.
-     */
-    serviceRef: string;
-    capabilities: PlaybackCapabilities;
 };
 
 export type SessionResponse = {
@@ -563,13 +553,13 @@ export type PlaybackInfo = {
      * Unique ID for the stream session. Mandatory in P3-1.
      */
     sessionId: string;
-    /**
-     * Signed short-lived attestation token required when submitting live playback_mode to /intents.
-     */
-    playbackDecisionToken?: string;
     mode: PlaybackInfoMode;
     /**
-     * Relative URL selected by backend playback decision (manifest or media URL). Optional for deny.
+     * Machine-readable constant explaining why this mode was chosen (e.g. 'CAPABILITY_H264_UNSUPPORTED').
+     */
+    decisionReason?: string;
+    /**
+     * Relative URL for the selected playback strategy. Optional for deny or decision-led cases.
      */
     url?: string;
     /**
@@ -593,20 +583,15 @@ export type PlaybackInfo = {
      */
     startUnix?: number;
     /**
-     * Deprecated compatibility field. Prefer durationMs. Omitted if unknown or preparing.
+     * Duration in seconds. Omitted if unknown or preparing.
      */
     durationSeconds?: number;
-    /**
-     * Authoritative finite duration in milliseconds. Omitted if unknown.
-     */
-    durationMs?: number;
     durationSource?: PlaybackInfoDurationSource;
-    durationConfidence?: PlaybackInfoDurationConfidence;
-    /**
-     * Machine-readable duration provenance/fallback reasons.
-     */
-    durationReasons?: Array<PlaybackInfoDurationReason>;
     resume?: ResumeSummary;
+    /**
+     * Attestation token for live playback intent creation
+     */
+    playbackDecisionToken?: string;
     /**
      * Truthful container name if known (e.g., ts, mp4, mkv).
      */
@@ -624,29 +609,19 @@ export type PlaybackInfo = {
 };
 
 /**
- * Backend-selected playback execution mode.
+ * Selected playback strategy output mode.
  */
-export type PlaybackInfoMode = 'native_hls' | 'hlsjs' | 'direct_mp4' | 'transcode' | 'deny';
+export type PlaybackInfoMode = 'hls' | 'direct_mp4' | 'deny';
 
 /**
- * Source of the reported duration, when durationMs is present.
+ * Source of the reported duration, when durationSeconds is present.
  */
-export type PlaybackInfoDurationSource = 'source_metadata' | 'ffprobe' | 'container' | 'heuristic' | 'unknown';
-
-/**
- * Confidence of the resolved duration.
- */
-export type PlaybackInfoDurationConfidence = 'high' | 'medium' | 'low';
-
-/**
- * Frozen duration reason vocabulary.
- */
-export type PlaybackInfoDurationReason = 'duration_from_source_metadata' | 'duration_from_ffprobe' | 'duration_from_container' | 'duration_from_heuristic' | 'duration_primary_missing' | 'duration_probe_failed' | 'duration_container_missing' | 'duration_inconsistent_clamped' | 'duration_unknown_denied_seek' | 'resume_clamped_to_duration';
+export type PlaybackInfoDurationSource = 'store' | 'cache' | 'probe';
 
 /**
  * Reason for the playback decision.
  */
-export type PlaybackInfoReason = 'directplay_match' | 'directstream_match' | 'policy_denies_transcode' | 'container_not_supported_by_client' | 'video_codec_not_supported_by_client' | 'audio_codec_not_supported_by_client' | 'hls_not_supported_by_client' | 'no_compatible_playback_path' | 'decision_ambiguous' | 'unknown';
+export type PlaybackInfoReason = 'directplay_match' | 'transcode_audio' | 'transcode_video' | 'transcode_all' | 'container_mismatch' | 'unknown';
 
 /**
  * Client capabilities for playback decision (P4-1)
@@ -681,10 +656,6 @@ export type PlaybackCapabilities = {
      */
     supportsHls?: boolean;
     /**
-     * Available HLS playback engines measured by the client runtime.
-     */
-    hlsEngines?: Array<'native' | 'hlsjs'>;
-    /**
      * Whether client supports HTTP range requests
      */
     supportsRange?: boolean;
@@ -707,13 +678,13 @@ export type PlaybackDecision = {
      */
     mode: 'direct_play' | 'direct_stream' | 'transcode' | 'deny';
     /**
-     * The explicitly selected playback URL (backend-driven). Omitted for deny.
+     * The explicitly selected playback URL (backend-driven).
      */
-    selectedOutputUrl?: string | null;
+    selectedOutputUrl: string;
     /**
-     * The explicitly selected playback kind. Omitted for deny.
+     * The explicitly selected playback kind.
      */
-    selectedOutputKind?: 'file' | 'hls';
+    selectedOutputKind: 'file' | 'hls';
     /**
      * Selected output format
      */
@@ -1291,6 +1262,52 @@ export type GetStreamsResponses = {
 };
 
 export type GetStreamsResponse = GetStreamsResponses[keyof GetStreamsResponses];
+
+export type PostLivePlaybackInfoData = {
+    /**
+     * Client capabilities and service reference for decision making
+     */
+    body: {
+        /**
+         * The Enigma2 service reference
+         */
+        serviceRef: string;
+        capabilities: PlaybackCapabilities;
+    };
+    path?: never;
+    query?: never;
+    url: '/live/stream-info';
+};
+
+export type PostLivePlaybackInfoErrors = {
+    /**
+     * Invalid capabilities or service reference
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Attestation unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type PostLivePlaybackInfoError = PostLivePlaybackInfoErrors[keyof PostLivePlaybackInfoErrors];
+
+export type PostLivePlaybackInfoResponses = {
+    /**
+     * Playback decision and info
+     */
+    200: PlaybackInfo;
+};
+
+export type PostLivePlaybackInfoResponse = PostLivePlaybackInfoResponses[keyof PostLivePlaybackInfoResponses];
 
 export type GetRecordingsData = {
     body?: never;
@@ -2211,39 +2228,6 @@ export type CreateIntentResponses = {
 };
 
 export type CreateIntentResponse = CreateIntentResponses[keyof CreateIntentResponses];
-
-export type PostLivePlaybackInfoData = {
-    body: LivePlaybackInfoRequest;
-    path?: never;
-    query?: never;
-    url: '/live/stream-info';
-};
-
-export type PostLivePlaybackInfoErrors = {
-    /**
-     * Invalid request or capabilities
-     */
-    400: ProblemCapabilitiesInvalid;
-    /**
-     * Capabilities missing (required for v3.1+)
-     */
-    412: ProblemCapabilitiesMissing;
-    /**
-     * Decision ambiguous
-     */
-    422: ProblemDecisionAmbiguous;
-};
-
-export type PostLivePlaybackInfoError = PostLivePlaybackInfoErrors[keyof PostLivePlaybackInfoErrors];
-
-export type PostLivePlaybackInfoResponses = {
-    /**
-     * Live playback decision and info
-     */
-    200: PlaybackInfo;
-};
-
-export type PostLivePlaybackInfoResponse = PostLivePlaybackInfoResponses[keyof PostLivePlaybackInfoResponses];
 
 export type ListSessionsData = {
     body?: never;
