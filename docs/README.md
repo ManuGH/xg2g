@@ -11,6 +11,12 @@ and decision logic is the **Spec Index**:
 
 👉 **[SPEC_INDEX.md](decision/SPEC_INDEX.md)**
 
+## 🌐 API Reference
+
+- Published API docs (GitHub Pages): **[xg2g API Reference](https://manugh.github.io/xg2g/)**
+- In-repo Redoc entrypoint: [docs/api/index.html](api/index.html)
+- OpenAPI source of truth: [backend/api/openapi.yaml](../backend/api/openapi.yaml)
+
 ---
 
 ## 📚 Documentation Structure
