@@ -1,5 +1,15 @@
 # v3 API Change Log
 
+## [Unreleased]
+
+### Changed
+
+- Recordings: `PREPARING` for impossible probe stabilized (`blocked/probe_disabled` instead of false upstream escalation).
+- Recordings: probe orchestration is anchored in the resolver; truth classification remains side-effect free.
+- PlaybackInfo Contract: `Retry-After` now distinguishes `preparing` (`5s`) from `blocked` (`30s`).
+- Error paths: terminal errors retain `MediaTruth` context for handlers/observability.
+- Regression protection: added tests for Option-A semantics, orchestration boundary, and terminal truth payload propagation.
+
 ## [v3.1.0] - 2026-01-22
 
 ### ⚠️ BREAKING CHANGES

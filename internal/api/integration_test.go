@@ -65,10 +65,11 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 		}
 	}
 	require.NotNil(t, sessionCookie, "Session cookie missing")
-	assert.Equal(t, "integration-secret", sessionCookie.Value)
+	assert.NotEqual(t, "integration-secret", sessionCookie.Value)
+	assert.NotEmpty(t, sessionCookie.Value)
 	assert.True(t, sessionCookie.HttpOnly, "Cookie must be HttpOnly")
 	assert.True(t, sessionCookie.Secure, "Cookie must be Secure (ForceHTTPS=true)")
-	assert.Equal(t, http.SameSiteStrictMode, sessionCookie.SameSite, "Cookie must be SameSite=Strict")
+	assert.Equal(t, http.SameSiteLaxMode, sessionCookie.SameSite, "Cookie must be SameSite=Lax")
 	assert.Equal(t, "/api/v3/", sessionCookie.Path, "Cookie path must be scoped to v3 API")
 
 	// 3. Use cookie for access

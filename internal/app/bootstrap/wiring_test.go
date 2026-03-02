@@ -83,3 +83,67 @@ enigma2:
 	// Check Config Injection
 	assert.Equal(t, tmpDir, container.Config.DataDir, "Config DataDir mismatch")
 }
+
+func TestWiring_MetricsDefaultBindsLocalhost(t *testing.T) {
+	t.Setenv("XG2G_INITIAL_REFRESH", "false")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+
+	tmpDir, err := os.MkdirTemp("", "xg2g-metrics-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	content := `
+version: v3
+dataDir: ` + tmpDir + `
+api:
+  listenAddr: ":0"
+engine:
+  tunerSlots: [0]
+enigma2:
+  baseUrl: http://mock-receiver
+metrics:
+  enabled: true
+`
+	err = os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	container, err := WireServices(ctx, "test-v3", "test-commit", "now", configPath)
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1:9090", container.Deps.MetricsAddr)
+}
+
+func TestWiring_TLSEnabledForcesHTTPSByDefault(t *testing.T) {
+	t.Setenv("XG2G_INITIAL_REFRESH", "false")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+
+	tmpDir, err := os.MkdirTemp("", "xg2g-tls-forcehttps-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	content := `
+version: v3
+dataDir: ` + tmpDir + `
+api:
+  listenAddr: ":0"
+engine:
+  tunerSlots: [0]
+enigma2:
+  baseUrl: http://mock-receiver
+tls:
+  enabled: true
+`
+	err = os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	container, err := WireServices(ctx, "test-v3", "test-commit", "now", configPath)
+	require.NoError(t, err)
+	require.True(t, container.Config.ForceHTTPS)
+}

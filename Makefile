@@ -1066,12 +1066,17 @@ bootstrap-python-tools:
 .PHONY: gate-v3-contract
 gate-v3-contract: bootstrap-python-tools ## Verify v3 contract hygiene, casing, and shadowing
 	@echo "--- gate-v3-contract ---"
+	@$(MAKE) verify-v3-fanout
 	@$(GO) test -v ./internal/control/http/v3 -run TestContractHygiene
 	@./scripts/verify-openapi-lint.sh
 	@$(PYTHON_TOOLS) ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
 	@$(PYTHON_TOOLS) ./scripts/lib/openapi_v3_scope.py api/openapi.yaml scripts/openapi-legacy-allowlist.json
 	@./scripts/verify-v3-shadowing.sh
 	@go test -v -count=1 ./internal/control/http/v3 -run "(TestV3_ResponseGolden|TestProblemDetails_Compliance|TestPlaybackInfo_SchemaCompliance)"
+
+.PHONY: verify-v3-fanout
+verify-v3-fanout: ## Verify v3 package fan-out does not regress
+	@./scripts/check-fanout.sh
 
 quality-gates: quality-gates-online ## Validate all online quality gates (coverage, lint, security)
 
@@ -1081,11 +1086,11 @@ quality-gates-offline: ## Offline-only gates (no network, no codegen)
 	@$(GO) vet ./...
 	@echo "✅ Offline gates passed"
 
-quality-gates-online: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-hermetic-codegen gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
+quality-gates-online: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-hermetic-codegen verify-v3-fanout gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: verify-config verify-generate verify-openapi-hard-mode gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint schema-validate test-v3-idempotency test ## Enforced PR baseline (guardrails + schema + idempotency/race)
+ci-pr: verify-config verify-generate verify-openapi-hard-mode verify-v3-fanout gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint schema-validate test-v3-idempotency test ## Enforced PR baseline (guardrails + schema + idempotency/race)
 	@echo "✅ CI PR gate passed"
 
 ci-nightly: quality-gates-online contract-matrix test-race test-fuzz smoke-test ## Deep, expensive gates for nightly/dispatch

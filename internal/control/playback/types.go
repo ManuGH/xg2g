@@ -102,11 +102,40 @@ type MediaTruth struct {
 	DurationSource     string
 	DurationConfidence string
 	DurationReasons    []string
+	ProbeState         ProbeState
+	ProbeBlockedReason ProbeBlockedReason
+	RetryAfterSeconds  int
 	Width              int
 	Height             int
 	FPS                float64
 	Interlaced         bool
 }
+
+type ProbeState string
+
+const (
+	ProbeStateUnknown  ProbeState = ""
+	ProbeStateQueued   ProbeState = "queued"
+	ProbeStateInFlight ProbeState = "in_flight"
+	ProbeStateBlocked  ProbeState = "blocked"
+)
+
+type ProbeBlockedReason string
+
+const (
+	ProbeBlockedReasonNone     ProbeBlockedReason = ""
+	ProbeBlockedReasonDisabled ProbeBlockedReason = "probe_disabled"
+	ProbeBlockedReasonBackoff  ProbeBlockedReason = "probe_backoff"
+	// ProbeBlockedReasonRemoteProbeFailed is reserved for explicit hard remote probe failures.
+	ProbeBlockedReasonRemoteProbeFailed ProbeBlockedReason = "remote_probe_failed"
+)
+
+const (
+	// RetryAfterPreparingDefault is the default poll interval for active/queued preparing states.
+	RetryAfterPreparingDefault = 5
+	// RetryAfterPreparingBlockedDefault is the default poll interval for blocked preparing states.
+	RetryAfterPreparingBlockedDefault = 30
+)
 
 // PlaybackCapabilities represents the core capability set for playback decisions.
 // This struct is intended to be the domain truth, mapped to/from OpenAPI or shims.

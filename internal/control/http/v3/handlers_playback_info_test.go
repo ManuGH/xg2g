@@ -84,7 +84,7 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		{
 			name:       "UpstreamError",
 			mockErr:    recservice.ErrUpstream{Op: "probe", Cause: errors.New("timeout")},
-			wantStatus: http.StatusBadGateway,
+			wantStatus: http.StatusServiceUnavailable,
 		},
 	}
 	for _, tt := range tests {
