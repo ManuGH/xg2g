@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and Ideas
+    url: https://github.com/ManuGH/xg2g/issues/new?labels=question
+    about: Use a `question` issue for Q&A and architecture ideas.
+  - name: Security Report (Private)
+    url: https://github.com/ManuGH/xg2g/security/advisories/new
+    about: Report security vulnerabilities privately.
