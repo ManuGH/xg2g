@@ -1,5 +1,7 @@
 # xg2g Documentation Portal
 
+[![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+
 Welcome to the normative documentation for xg2g.
 To ensure consistency and "Operator-Grade" quality,
 all documentation follows a strict hierarchy.
