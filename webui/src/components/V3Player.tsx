@@ -43,6 +43,17 @@ type PreferredCodec = 'av1' | 'hevc' | 'h264';
 let cachedPreferredCodecs: PreferredCodec[] | null = null;
 const HEARTBEAT_INTERVAL_FALLBACK_SECONDS = 10;
 
+function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
+  if (!videoEl) return false;
+  try {
+    const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    return hasNativeHls && isIOS;
+  } catch {
+    return false;
+  }
+}
+
 async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): Promise<PreferredCodec[]> {
   if (cachedPreferredCodecs) return cachedPreferredCodecs;
 
@@ -742,9 +753,17 @@ function V3Player(props: V3PlayerProps) {
 
     lastDecodedRef.current = 0; // Reset native FPS counter on new stream
 
+    const forceNativeMobile = shouldForceNativeMobileHls(video);
     const canPlayNative = !!video.canPlayType('application/vnd.apple.mpegurl');
-    const preferNative = engine === 'native' || (engine === 'auto' && canPlayNative && !Hls.isSupported());
-    const canUseHlsJs = engine === 'hlsjs' || engine === 'auto';
+    const preferNative =
+      forceNativeMobile ||
+      engine === 'native' ||
+      (engine === 'auto' && canPlayNative && !Hls.isSupported());
+    const canUseHlsJs = (engine === 'hlsjs' || engine === 'auto') && !forceNativeMobile;
+
+    if (forceNativeMobile && engine === 'hlsjs') {
+      debugLog('[V3Player] Overriding hls.js engine to native HLS on mobile WebKit');
+    }
 
     if (!preferNative && canUseHlsJs && Hls.isSupported()) {
       if (hlsRef.current) {
@@ -973,19 +992,18 @@ function V3Player(props: V3PlayerProps) {
       }
     })();
 
+    const forceNativeMobile = shouldForceNativeMobileHls(video as VideoElementRef);
+
     const hlsEngines: Array<'native' | 'hlsjs'> = [];
     if (supportsNativeHls) {
       hlsEngines.push('native');
     }
-    if (Hls.isSupported()) {
+    if (Hls.isSupported() && !forceNativeMobile) {
       hlsEngines.push('hlsjs');
     }
 
     const container = ['mp4'];
-    if (supportsNativeHls) {
-      container.push('mpegts', 'ts');
-    }
-    if (Hls.isSupported()) {
+    if (Hls.isSupported() && !forceNativeMobile) {
       container.push('fmp4');
     }
 
@@ -1182,6 +1200,7 @@ function V3Player(props: V3PlayerProps) {
       }
 
       if (mode === 'native_hls' || mode === 'hlsjs' || mode === 'transcode') {
+        const forceNativeMobile = shouldForceNativeMobileHls(videoRef.current);
         const controller = new AbortController();
         abortController = controller;
         vodFetchRef.current = controller;
@@ -1210,7 +1229,7 @@ function V3Player(props: V3PlayerProps) {
 
           if (activeRecordingRef.current !== id) return;
           setStatus('buffering');
-          const engine: 'native' | 'hlsjs' = mode === 'native_hls' ? 'native' : 'hlsjs';
+          const engine: 'native' | 'hlsjs' = mode === 'native_hls' || forceNativeMobile ? 'native' : 'hlsjs';
           playHls(streamUrl, engine);
         } finally {
           if (vodFetchRef.current === controller) vodFetchRef.current = null;
@@ -1291,6 +1310,7 @@ function V3Player(props: V3PlayerProps) {
         // SSOT: live playback mode is decided by backend from measured capabilities.
         let liveMode: 'native_hls' | 'hlsjs' | 'direct_mp4' | 'transcode' | 'deny' = 'deny';
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
+        const forceNativeMobile = shouldForceNativeMobileHls(videoRef.current);
 
         const requestCaps = await gatherPlaybackCapabilities();
         const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
@@ -1333,30 +1353,42 @@ function V3Player(props: V3PlayerProps) {
           throw new Error('Backend live decision missing mode');
         }
 
-        const beMode = liveInfo.mode;
-        if (beMode === 'hls' || beMode === 'direct_stream') {
-          if (Hls.isSupported()) {
-            liveEngine = 'hlsjs';
-            liveMode = 'hlsjs';
-          } else {
-            liveEngine = 'native';
+        const beMode = String(liveInfo.mode);
+        switch (beMode) {
+          case 'native_hls':
             liveMode = 'native_hls';
-          }
-        } else if (beMode === 'transcode') {
-          liveMode = 'transcode';
-          liveEngine = Hls.isSupported() ? 'hlsjs' : 'native';
-        } else if (beMode === 'direct_mp4') {
-          liveMode = 'direct_mp4';
-        } else if (beMode === 'deny') {
-          liveMode = 'deny';
-        }
-
-        if (!['native_hls', 'hlsjs', 'direct_mp4', 'transcode', 'deny'].includes(liveMode)) {
-          telemetry.emit('ui.failclosed', {
-            context: 'V3Player.live.mode.invalid',
-            reason: String(beMode) || String(liveMode)
-          });
-          throw new Error(`Unsupported backend live playback mode: ${beMode}`);
+            liveEngine = 'native';
+            break;
+          case 'hlsjs':
+          case 'hls':
+          case 'direct_stream':
+            if (forceNativeMobile) {
+              liveEngine = 'native';
+              liveMode = 'native_hls';
+            } else if (Hls.isSupported()) {
+              liveEngine = 'hlsjs';
+              liveMode = 'hlsjs';
+            } else {
+              liveEngine = 'native';
+              liveMode = 'native_hls';
+            }
+            break;
+          case 'transcode':
+            liveMode = 'transcode';
+            liveEngine = forceNativeMobile ? 'native' : (Hls.isSupported() ? 'hlsjs' : 'native');
+            break;
+          case 'direct_mp4':
+            liveMode = 'direct_mp4';
+            break;
+          case 'deny':
+            liveMode = 'deny';
+            break;
+          default:
+            telemetry.emit('ui.failclosed', {
+              context: 'V3Player.live.mode.invalid',
+              reason: beMode || String(liveMode)
+            });
+            throw new Error(`Unsupported backend live playback mode: ${beMode}`);
         }
 
         if (!liveInfo.requestId) {
@@ -1389,6 +1421,8 @@ function V3Player(props: V3PlayerProps) {
 
         if (liveMode === 'native_hls') {
           liveEngine = 'native';
+        } else if (liveMode === 'transcode' && forceNativeMobile) {
+          liveEngine = 'native';
         } else if (liveMode === 'hlsjs' || liveMode === 'transcode') {
           liveEngine = 'hlsjs';
         } else {
@@ -1404,7 +1438,10 @@ function V3Player(props: V3PlayerProps) {
           fields: ['mode']
         });
 
-        const intentParams: Record<string, string> = {};
+        const intentParams: Record<string, string> = {
+          // Keep canonical contract key for downstream compatibility checks.
+          playback_decision_token: liveDecisionToken
+        };
         const capHash = extractCapHashFromDecisionToken(liveDecisionToken);
         if (capHash) {
           intentParams.capHash = capHash;
@@ -1745,26 +1782,16 @@ function V3Player(props: V3PlayerProps) {
         return;
       }
 
-      // Distinguish real user pause from transient startup/network pauses on live playback.
-      if (!userPauseIntentRef.current && playbackMode === 'LIVE' && sessionIdRef.current) {
-        let buffHealth = 0;
-        if (videoEl.buffered.length > 0) {
-          for (let i = 0; i < videoEl.buffered.length; i++) {
-            if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) {
-              buffHealth = videoEl.buffered.end(i) - videoEl.currentTime;
-              break;
-            }
-          }
-        }
-
-        if (videoEl.readyState < 3 || buffHealth < 0.5) {
-          debugLog('[V3Player] Event: pause classified as buffering', {
-            readyState: videoEl.readyState,
-            buff: buffHealth.toFixed(1)
-          });
-          setStatus(prev => (prev === 'error' ? prev : 'buffering'));
-          return;
-        }
+      // Distinguish real user pause from transient startup/network/WebKit quirks
+      if (!userPauseIntentRef.current && sessionIdRef.current) {
+        debugLog('[V3Player] Browser paused without user intent. Attempting auto-resume.');
+        videoEl.play().catch(e => {
+          debugWarn('[V3Player] Auto-resume blocked by browser', e);
+          setStatus(prev => (prev === 'error' ? prev : 'paused'));
+        });
+        // Set buffering while we attempt to spin back up
+        setStatus(prev => (prev === 'error' ? prev : 'buffering'));
+        return;
       }
 
       setStatus(prev => (prev === 'error' ? prev : 'paused'));
@@ -2287,7 +2314,7 @@ function V3Player(props: V3PlayerProps) {
           )}
           {showErrorDetails && errorDetails && (
             <div className={styles.errorDetailsContent}>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{errorDetails}</pre>
+              <pre className={styles.errorDetailsPre}>{errorDetails}</pre>
               <br />
               {t('common.session')}: {sessionIdRef.current || t('common.notAvailable')}
             </div>

@@ -13,6 +13,7 @@ import (
 )
 
 func TestNewWithDeps_UsesInjectedConstructorDeps(t *testing.T) {
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-api-tests")
 	cfg := config.AppConfig{
 		DataDir: t.TempDir(),
 	}

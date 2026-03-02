@@ -10,6 +10,7 @@
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
 	security security-scan security-audit security-vulncheck \
 	quality-gates quality-gates-offline quality-gates-online ci-pr ci-nightly pre-commit install dev-tools check-tools generate-config verify-config \
+	verify-bin verify-config-yaml verify-app-config \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg \
@@ -780,6 +781,20 @@ dev-tools: ## Install all development tools
 	@echo "Installing go-licenses..."
 	@$(GO) install github.com/google/go-licenses@v1.6.0
 	@echo "✅ Development tools installed"
+
+## Debug / inspection tools (cmd/tools) — run from repo root so relative paths resolve.
+## Note: verify-config is a CI gate (configgen); these tools inspect raw YAML/binary config.
+verify-bin: ## Print configured FFmpeg binary path (reads data/config.yaml)
+	@echo "--- verify-bin: cmd/tools/verify-bin ---"
+	@$(GO) run ./cmd/tools/verify-bin
+
+verify-config-yaml: ## Parse config.yaml and print Timeouts fields
+	@echo "--- verify-config-yaml: cmd/tools/verify-config ---"
+	@$(GO) run ./cmd/tools/verify-config
+
+verify-app-config: ## Load data/config.yaml via production loader and print key fields
+	@echo "--- verify-app-config: cmd/tools/verify-app-config ---"
+	@$(GO) run ./cmd/tools/verify-app-config
 
 check-tools: ## Verify development tools are installed
 	@echo "Checking development tools..."

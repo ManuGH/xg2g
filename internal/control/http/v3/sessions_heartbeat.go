@@ -11,6 +11,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // SessionHeartbeat handles POST /api/v3/sessions/{id}/heartbeat (ADR-009)
@@ -18,11 +19,14 @@ import (
 // Idempotent: multiple heartbeats within interval = no-op.
 func (s *Server) SessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID string) {
 	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		s.handleSessionHeartbeat(w, r, sessionID)
 	})).ServeHTTP(w, r)
 }
 
 func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID string) {
+	log.L().Info().Str("sessionId", sessionID).Msg("Session heartbeat received")
+
 	ctx := r.Context()
 	logger := log.WithComponentFromContext(ctx, "api")
 
@@ -40,21 +44,33 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 	}
 
 	session, err := store.GetSession(ctx, sessionID)
-	if err != nil || session == nil {
-		RespondError(w, r, http.StatusNotFound, &APIError{
-			Code:    "SESSION.NOT_FOUND",
-			Message: "Session not found",
-		})
+	if err != nil {
+		logger.Error().Err(err).Str("sessionId", sessionID).Msg("heartbeat: store error")
+		writeProblem(w, r, http.StatusInternalServerError, "sessions/store_error", "Session Store Error", "STORE_ERROR", err.Error(), nil)
+		return
+	}
+	if session == nil {
+		writeProblem(w, r, http.StatusNotFound, "sessions/not_found", "Session Not Found", "SESSION.NOT_FOUND", "The requested session does not exist.", map[string]any{"sessionId": sessionID})
+		return
+	}
+
+	// 1.5 Check if terminal
+	if session.State.IsTerminal() {
+		logger.Debug().Str("sessionId", sessionID).Str("state", string(session.State)).Msg("heartbeat rejected: session terminal")
+		metrics.IncSessionHeartbeatTerminal()
+		extra := map[string]any{
+			"sessionId": sessionID,
+			"state":     string(session.State),
+			"reason":    string(session.Reason),
+		}
+		writeProblem(w, r, http.StatusGone, "sessions/terminal", "Session is no longer active", "SESSION.TERMINAL", "The session has reached a terminal state and cannot be heartbeated.", extra)
 		return
 	}
 
 	// 2. Check if already expired
 	now := time.Now().Unix()
 	if now > session.LeaseExpiresAtUnix {
-		RespondError(w, r, http.StatusGone, &APIError{
-			Code:    "SESSION.EXPIRED",
-			Message: "Session lease has expired",
-		})
+		writeProblem(w, r, http.StatusGone, "sessions/expired", "Session lease has expired", "SESSION.EXPIRED", "The session lease has expired and cannot be renewed.", map[string]any{"sessionId": sessionID})
 		return
 	}
 
@@ -89,7 +105,7 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 
 	if err != nil {
 		logger.Error().Err(err).Str("sessionId", sessionID).Msg("failed to extend lease")
-		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer)
+		writeProblem(w, r, http.StatusInternalServerError, "sessions/update_error", "Internal Server Error", "SESSION.UPDATE_ERROR", "Failed to update session lease.", nil)
 		return
 	}
 

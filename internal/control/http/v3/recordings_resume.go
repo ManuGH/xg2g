@@ -18,6 +18,27 @@ type ResumeRequest struct {
 	Finished bool    `json:"finished,omitempty"`
 }
 
+// setCORSIfAllowed sets CORS headers only if the request Origin matches the
+// configured AllowedOrigins. If no origins are configured or the origin
+// doesn't match, no CORS headers are emitted (browser blocks the request).
+func (s *Server) setCORSIfAllowed(w http.ResponseWriter, origin string) bool {
+	if origin == "" {
+		return false
+	}
+	cfg := s.GetConfig()
+	allowed := cfg.AllowedOrigins
+	for _, ao := range allowed {
+		if ao == "*" || ao == origin {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Vary", "Origin")
+			return true
+		}
+	}
+	// Origin not in allowlist: no CORS headers (browser will block)
+	return false
+}
+
 // HandleRecordingResumeOptions handles OPTIONS /api/v3/recordings/{recordingId}/resume
 func (s *Server) HandleRecordingResumeOptions(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
@@ -26,23 +47,20 @@ func (s *Server) HandleRecordingResumeOptions(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	w.Header().Set("Access-Control-Allow-Origin", origin)
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	if !s.setCORSIfAllowed(w, origin) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token, Authorization, Cookie")
 	w.Header().Set("Access-Control-Max-Age", "86400")
-	w.Header().Set("Vary", "Origin")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // HandleRecordingResume handles PUT /api/v3/recordings/{recordingId}/resume
 func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if origin != "" {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Vary", "Origin")
-	}
+	s.setCORSIfAllowed(w, r.Header.Get("Origin"))
+
 	deps := s.recordingsModuleDeps()
 	resumeStore := deps.resumeStore
 

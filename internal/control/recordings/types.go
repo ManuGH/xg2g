@@ -117,6 +117,12 @@ type PlaybackInfoResult struct {
 	Container       *string
 	VideoCodec      *string
 	AudioCodec      *string
+
+	// Orchestration & Status metadata (Option A)
+	TruthStatus  string
+	TruthReasons []string
+	ProbeState   string
+	RetryAfter   int
 }
 
 type ResolveCode string

@@ -33,6 +33,9 @@ func TestStatusContract(t *testing.T) {
 		DataDir:       t.TempDir(), // Sandbox
 	}
 
+	// Ensure decision secret is available (hard-fail prerequisite).
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-api-tests")
+
 	// Initialize minimal API server setup
 	mgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	s, err := api.New(cfg, mgr)

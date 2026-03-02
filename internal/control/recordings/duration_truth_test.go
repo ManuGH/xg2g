@@ -85,7 +85,7 @@ func setupService(t *testing.T) (Service, *MockOWIClient, *vod.Manager, *MockPro
 
 	// Mock resolver
 	mr := &mockResolver{}
-	svc, err := NewService(cfg, mgr, mr, owi, nil, nil, nil)
+	svc, err := NewService(cfg, mgr, mr, owi, nil)
 	if err != nil {
 		t.Fatalf("NewService failed: %v", err)
 	}
@@ -101,9 +101,6 @@ func (m *mockResolver) Resolve(ctx context.Context, ref string, intent PlaybackI
 func (m *mockResolver) GetMediaTruth(ctx context.Context, id string) (playback.MediaTruth, error) {
 	return playback.MediaTruth{}, nil
 }
-
-func (m *mockResolver) TruthProvider() *TruthProvider { return nil }
-func (m *mockResolver) ProbeManager() *ProbeManager   { return nil }
 
 // Table A Tests (Read Path)
 

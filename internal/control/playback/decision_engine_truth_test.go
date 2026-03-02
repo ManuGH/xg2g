@@ -10,11 +10,11 @@ import (
 
 // --- Definitions (Mocked for Tests) ---
 
-type MockTruthProvider struct {
+type MocktruthProvider struct {
 	mock.Mock
 }
 
-func (m *MockTruthProvider) GetMediaTruth(ctx context.Context, id string) (MediaTruth, error) {
+func (m *MocktruthProvider) GetMediaTruth(ctx context.Context, id string) (MediaTruth, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0).(MediaTruth), args.Error(1)
 }
@@ -30,8 +30,8 @@ func (m *MockProfileResolver) Resolve(ctx context.Context, headers map[string]st
 
 // --- Setup ---
 
-func setupEngine(t *testing.T) (*DecisionEngine, *MockTruthProvider, *MockProfileResolver) {
-	truth := new(MockTruthProvider)
+func setupEngine(t *testing.T) (*DecisionEngine, *MocktruthProvider, *MockProfileResolver) {
+	truth := new(MocktruthProvider)
 	profile := new(MockProfileResolver)
 	engine := NewDecisionEngine(truth, profile)
 	return engine, truth, profile

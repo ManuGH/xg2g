@@ -102,6 +102,20 @@ func WithV3ServerFactory(f func(config.AppConfig, *config.Manager, context.Cance
 	}
 }
 
+// WithRootContext sets the server root context before subsystem wiring.
+// Use this at construction time so lifecycle-bound components are created with the final context.
+func WithRootContext(ctx context.Context) ServerOption {
+	return func(s *Server) {
+		if ctx == nil {
+			return
+		}
+		if s.rootCancel != nil {
+			s.rootCancel()
+		}
+		s.rootCtx, s.rootCancel = context.WithCancel(ctx)
+	}
+}
+
 // ConfigHolder interface allows hot configuration reloading without import cycles.
 // Implemented by config.ConfigHolder.
 type ConfigHolder interface {

@@ -24,6 +24,7 @@ import (
 func TestVODPlayback_Path_Wiring_ScopeEnforcement(t *testing.T) {
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 	tmpDir, err := os.MkdirTemp("", "xg2g-vod-scope-*")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
@@ -58,14 +59,14 @@ enigma2:
 	container, err := WireServices(ctx, "test-v3", "test-commit", "now", configPath)
 	require.NoError(t, err)
 
-	// Inject Mock Resolver that Fails Test if called
-	mock := &mockResolver{
-		ResolveFunc: func(ctx context.Context, recordingID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
-			assert.Fail(t, "Resolver MUST NOT be called when auth/scope fails")
-			return recservice.PlaybackInfoResult{}, nil
+	// Inject Mock Service that Fails Test if called
+	mock := &mockRecordingsService{
+		resolvePlayback: func(ctx context.Context, recID, profile string) (recservice.PlaybackResolution, error) {
+			assert.Fail(t, "Service MUST NOT be called when auth/scope fails")
+			return recservice.PlaybackResolution{}, nil
 		},
 	}
-	container.Server.WireV3Overrides(api.V3Overrides{Resolver: mock})
+	container.Server.WireV3Overrides(api.V3Overrides{RecordingsService: mock})
 
 	err = container.Start(ctx)
 	require.NoError(t, err)

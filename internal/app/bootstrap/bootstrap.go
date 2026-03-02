@@ -195,12 +195,9 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	cfg = snap.App
 
 	apiDeps := buildAPIConstructorDeps(cfg, snap, logger)
-	s, err := api.NewWithDeps(cfg, configMgr, apiDeps)
+	s, err := api.NewWithDeps(cfg, configMgr, apiDeps, api.WithRootContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("initialize api server: %w", err)
-	}
-	if err := s.SetRootContext(ctx); err != nil {
-		return nil, fmt.Errorf("set api root context: %w", err)
 	}
 	s.StartMonitors()
 	s.SetConfigHolder(cfgHolder)
@@ -247,6 +244,18 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
 
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
+	v3Scan.ActivePlaybackFn = func(ctx context.Context) (bool, error) {
+		sessions, err := v3Store.ListSessions(ctx)
+		if err != nil {
+			return false, err
+		}
+		for _, s := range sessions {
+			if !s.State.IsTerminal() {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
 	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger)
 
 	s.WireV3Runtime(v3.Dependencies{

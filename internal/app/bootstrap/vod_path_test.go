@@ -34,9 +34,6 @@ func (m *mockResolver) GetMediaTruth(ctx context.Context, id string) (playback.M
 	return playback.MediaTruth{}, nil
 }
 
-func (m *mockResolver) TruthProvider() *recservice.TruthProvider { return nil }
-func (m *mockResolver) ProbeManager() *recservice.ProbeManager   { return nil }
-
 // TestVODPlayback_Path_Wiring_ErrorPath verifies that the VOD failure path is wired correctly.
 // Requirements:
 // 1. Stack serves /api/v3/vod/{id}
@@ -47,6 +44,7 @@ func TestVODPlayback_Path_Wiring_ErrorPath(t *testing.T) {
 	// 1. Setup minimal test config (Option A: Real components, temp dir)
 	t.Setenv("XG2G_INITIAL_REFRESH", "false") // Disable background refresh to prevent test hangs/noise
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-vod-error-*")
 	require.NoError(t, err)
@@ -130,7 +128,7 @@ enigma2:
 	require.NoError(t, err, "Must decode RFC7807 body")
 
 	// Assertions
-	assert.Equal(t, "recordings/not-found", problem.Type)
+	assert.Equal(t, "/problems/recordings/not-found", problem.Type)
 	assert.Equal(t, "Not Found", problem.Title)
 	assert.Equal(t, http.StatusNotFound, problem.Status)
 	assert.Equal(t, reqID, problem.RequestID, "Problem JSON request_id matches header")
@@ -146,6 +144,7 @@ func TestVODPlayback_Path_Wiring_SuccessPath(t *testing.T) {
 	// 1. Setup minimal test config
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-vod-success-*")
 	require.NoError(t, err)
@@ -262,7 +261,8 @@ enigma2:
 			DurationSeconds *int64  `json:"durationSeconds,omitempty"`
 			Finished        *bool   `json:"finished,omitempty"`
 		} `json:"resume,omitempty"`
-		Decision interface{} `json:"decision,omitempty"`
+		Decision       interface{} `json:"decision,omitempty"`
+		DecisionReason *string     `json:"decisionReason,omitempty"`
 	}
 
 	// Enforce strict JSON

@@ -32,6 +32,7 @@ func (m *mockProber) Probe(ctx context.Context, path string) (*vod.StreamInfo, e
 
 func TestVODPlayback_DurationTruth(t *testing.T) {
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-vod-duration-*")
 	require.NoError(t, err)
@@ -107,15 +108,16 @@ enigma2:
 		w := httptest.NewRecorder()
 		v3Handler.ServeHTTP(w, req)
 
-		// Accept both 200 (if probe completes immediately) or 503 (preparing)
-		// Modern async probing may return 503 with Retry-After
-		if w.Code == http.StatusServiceUnavailable {
-			// 503 = Preparing, verify it returns eventually
-			require.Equal(t, "application/problem+json", w.Header().Get("Content-Type"))
-			// Retry the request (probe should complete)
-			time.Sleep(100 * time.Millisecond)
-			w = httptest.NewRecorder()
-			v3Handler.ServeHTTP(w, req)
+		for i := 0; i < 20; i++ {
+			if w.Code == http.StatusServiceUnavailable {
+				// 503 = Preparing, verify it returns eventually
+				require.Equal(t, "application/problem+json", w.Header().Get("Content-Type"))
+				time.Sleep(100 * time.Millisecond)
+				w = httptest.NewRecorder()
+				v3Handler.ServeHTTP(w, req)
+			} else {
+				break
+			}
 		}
 
 		if w.Code != http.StatusOK {

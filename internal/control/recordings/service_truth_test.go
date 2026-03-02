@@ -6,6 +6,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	"github.com/ManuGH/xg2g/internal/control/vod"
 )
 
 // MockResolverForTruth implements Resolver interface for testing truth propagation.
@@ -18,13 +19,13 @@ func (m *MockResolverForTruth) Resolve(ctx context.Context, serviceRef string, i
 	return m.Result, m.Err
 }
 
-func (m *MockResolverForTruth) GetMediaTruth(ctx context.Context, id string) (playback.MediaTruth, error) {
+func (m *MockResolverForTruth) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
 	// Not used in this specific test, but required by interface
 	return playback.MediaTruth{}, nil
 }
 
-func (m *MockResolverForTruth) TruthProvider() *TruthProvider { return nil }
-func (m *MockResolverForTruth) ProbeManager() *ProbeManager   { return nil }
+func (m *MockResolverForTruth) truthProvider() *truthProvider { return nil }
+func (m *MockResolverForTruth) ProbeManager() *probeManager   { return nil }
 
 // TestResolvePlayback_TruthPropagation ensures that truthful fields (Container, Codecs)
 // are correctly mapped from the Resolver result to the Service Resolution.
@@ -56,14 +57,12 @@ func TestResolvePlayback_TruthPropagation(t *testing.T) {
 	// We need a dummy config and nil managers since we only exercise the resolver path
 	cfg := &config.AppConfig{}
 
-	// Construct service manually to inject mock
-	svc := &service{
-		cfg:      cfg,
-		resolver: mockResolver,
-		// managers can be nil as ResolvePlayback -> GetPlaybackInfo -> resolver.Resolve
-		// DOES NOT touch vodManager if resolver handles it.
-		// Wait, GetPlaybackInfo calls DecodeRecordingID.
+	// Construct service via NewService to ensure DI bridge is tested
+	svcInt, err := NewService(cfg, &vod.Manager{}, mockResolver, nil, nil)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
 	}
+	svc := svcInt.(*service)
 
 	// Act
 	// We use a valid ID format to pass DecodeRecordingID check

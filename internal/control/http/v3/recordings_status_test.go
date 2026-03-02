@@ -15,7 +15,7 @@ import (
 
 func TestRecordingsStatusHTTP_IdleOmitsError(t *testing.T) {
 	srv, _ := newStatusTestServer(t)
-	serviceRef := "1:0:0:0:0:0:0:0:0:/media/test.ts"
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/test.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/status", nil)
@@ -34,7 +34,7 @@ func TestRecordingsStatusHTTP_IdleOmitsError(t *testing.T) {
 
 func TestRecordingsStatusHTTP_MetaFailedIncludesError(t *testing.T) {
 	srv, vodMgr := newStatusTestServer(t)
-	serviceRef := "1:0:0:0:0:0:0:0:0:/media/test.ts"
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/test.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -66,12 +66,19 @@ func newStatusTestServer(t *testing.T) (*Server, *vod.Manager) {
 	require.NoError(t, err)
 	dummyRes, err := recservice.NewResolver(&cfg, vodMgr, recservice.ResolverOptions{})
 	require.NoError(t, err)
-	recSvc, err := recservice.NewService(&cfg, vodMgr, dummyRes, nil, nil, dummyRes.TruthProvider(), dummyRes.ProbeManager())
+
+	svc, err := recservice.NewService(
+		&cfg,
+		vodMgr,
+		dummyRes,
+		nil,
+		nil,
+	)
 	require.NoError(t, err)
 
 	srv.SetDependencies(Dependencies{
 		VODManager:        vodMgr,
-		RecordingsService: recSvc,
+		RecordingsService: svc,
 	})
 
 	return srv, vodMgr

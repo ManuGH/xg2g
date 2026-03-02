@@ -54,6 +54,7 @@ func TestAdmissionIntegration(t *testing.T) {
 
 	setupServer := func(state *MockAdmissionState) *Server {
 		s := NewServer(cfg, nil, func() {})
+		s.SetJWTSecret(jwtTestSecret)
 		s.v3Bus = memBus
 		s.v3Store = store
 		s.admissionState = state

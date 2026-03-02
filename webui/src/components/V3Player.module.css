@@ -214,6 +214,12 @@
   overflow-y: auto;
 }
 
+.errorDetailsPre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .closeButton {
   position: absolute;
   top: 24px;
@@ -392,7 +398,6 @@
   background: var(--bg-overlay);
   border: 1px solid var(--border-elevated);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-hover);
   padding: 18px;
   display: flex;
   flex-direction: column;
@@ -426,4 +431,3 @@
     width: calc(100% - 32px);
   }
 }
-

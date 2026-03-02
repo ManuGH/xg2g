@@ -42,7 +42,7 @@ func (s *Server) WireV3Overrides(overrides V3Overrides) {
 		if isNilInterface(overrides.RecordingsService) {
 			owiAdapter := v3.NewOWIAdapter(owiClient)
 			resumeAdapter := v3.NewResumeAdapter(resumeStore)
-			recSvc, err := recservice.NewService(&cfg, vodManager, overrides.Resolver, owiAdapter, resumeAdapter, overrides.Resolver.TruthProvider(), overrides.Resolver.ProbeManager())
+			recSvc, err := recservice.NewService(&cfg, s.vodManager, overrides.Resolver, owiAdapter, resumeAdapter)
 			if err != nil {
 				log.L().Error().Err(err).Msg("failed to re-initialize recordings service")
 			} else {

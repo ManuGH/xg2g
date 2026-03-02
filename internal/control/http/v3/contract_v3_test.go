@@ -148,6 +148,7 @@ func newV3TestServerWithAdmission(t *testing.T, hlsRoot string, mode admissionHa
 		},
 	}
 	s := NewServer(cfg, nil, nil)
+	s.SetJWTSecret(jwtTestSecret)
 	st := v3store.NewMemoryStore()
 	// Inject dependencies
 	b := v3bus.NewMemoryBus()

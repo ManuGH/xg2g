@@ -48,7 +48,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 
 	s := &Server{
 		cfg:       cfg,
-		JWTSecret: auth.DefaultDecisionSecret,
+		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
 		Bus:               &dummyBus{},
@@ -63,7 +63,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 	// rules. As soon as it fails, it will write the problem. If it passes validation,
 	// it drops down to the mock logic (which might panic or fail, but we only care about 401/403 gates).
 
-	jwtSecret := auth.DefaultDecisionSecret
+	jwtSecret := auth.TestSecret()
 	validRef := "1:0:19:283D:3FB:1:C00000:0:0:0:"
 	normValidRef := normalize.ServiceRef(validRef)
 	now := time.Now().Unix()
@@ -104,7 +104,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 				return startStreamReqWithToken(validRef, &tok)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedCode:   "TOKEN_INVALID",
+			expectedCode:   "TOKEN_EXPIRED",
 		},
 		{
 			name: "Algorithm None (Manipulated) -> 401 Unauthorized",
@@ -114,7 +114,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 				return startStreamReqWithToken(validRef, &tok)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedCode:   "TOKEN_INVALID",
+			expectedCode:   "TOKEN_INVALID_SIG",
 		},
 		{
 			name: "Mismatched Issuer -> 401 Unauthorized",
@@ -125,7 +125,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 				return startStreamReqWithToken(validRef, &tok)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedCode:   "TOKEN_INVALID",
+			expectedCode:   "TOKEN_ISS_MISMATCH",
 		},
 		{
 			name: "ServiceRef Match Fails (Sub Claim) -> 403 Forbidden",
@@ -190,7 +190,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 				return startStreamReqWithToken(validRef, &garbage)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedCode:   "TOKEN_INVALID",
+			expectedCode:   "TOKEN_INVALID_SIG",
 		},
 		{
 			name: "Missing Alg In Header -> 401 Unauthorized",
@@ -201,7 +201,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 				return startStreamReqWithToken(validRef, &tok)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedCode:   "TOKEN_INVALID",
+			expectedCode:   "TOKEN_INVALID_SIG",
 		},
 		{
 			name: "Token With Trailing Whitespace -> 401 Unauthorized",
@@ -211,7 +211,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 				return startStreamReqWithToken(validRef, &tok)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedCode:   "TOKEN_INVALID",
+			expectedCode:   "TOKEN_INVALID_SIG",
 		},
 		{
 			name: "Token Signed With Wrong Secret -> 401 Unauthorized",
@@ -221,7 +221,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 				return startStreamReqWithToken(validRef, &tok)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedCode:   "TOKEN_INVALID",
+			expectedCode:   "TOKEN_INVALID_SIG",
 		},
 
 		// ---- Gate A: E2E Cross-Ref Claim Mismatch ----

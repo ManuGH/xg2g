@@ -25,6 +25,7 @@ func TestWiring_BootsMinimalStack(t *testing.T) {
 	// 1. Setup minimal test config
 	t.Setenv("XG2G_INITIAL_REFRESH", "false") // Disable background refresh to prevent network hangs
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-wiring-*")
 	require.NoError(t, err)

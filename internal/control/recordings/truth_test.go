@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -21,7 +22,7 @@ import (
 )
 
 // TestPR42_SourceResolutionAndKeyHygiene covers PR4.2 requirements.
-// Adapted for TruthProvider.
+// Adapted for truthProvider.
 func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 	cfg := &config.AppConfig{
 		Enigma2: config.Enigma2Settings{
@@ -34,13 +35,13 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 	// Use mocks consistent with package
 	mgr, err := vod.NewManager(&dummyRunner{}, &MockProber{}, nil)
 	require.NoError(t, err)
-	tp, err := NewTruthProvider(cfg, mgr, ResolverOptions{})
+	tp, err := newTruthProvider(cfg, mgr, ResolverOptions{})
 	require.NoError(t, err)
 
 	t.Run("Receiver URL escaping uses RawPath correctly", func(t *testing.T) {
 		serviceRef := "1:0:1:1:1:1:1:0:0:0:/media/hdd/movie/My Recording.ts"
 
-		kind, source, _, err := tp.resolveSource(context.Background(), serviceRef)
+		kind, source, _, err := tp.ResolveSource(context.Background(), serviceRef)
 		require.NoError(t, err)
 		assert.Equal(t, "receiver", kind)
 
@@ -72,7 +73,7 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 
 		serviceRef := "1:0:1:0:0:0:0:0:0:0:/media/hdd/movie/test.ts"
 
-		kind, source, _, err := tp.resolveSource(context.Background(), serviceRef)
+		kind, source, _, err := tp.ResolveSource(context.Background(), serviceRef)
 		require.NoError(t, err)
 		assert.Equal(t, "local", kind)
 
@@ -98,7 +99,7 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 
 		serviceRef := "1:0:1:0:0:0:0:0:0:0:/media/hdd/movie/My Recording.ts"
 
-		kind, source, _, err := tp.resolveSource(context.Background(), serviceRef)
+		kind, source, _, err := tp.ResolveSource(context.Background(), serviceRef)
 		require.NoError(t, err)
 		assert.Equal(t, "local", kind)
 
@@ -118,7 +119,9 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 	})
 }
 
-func TestTruthProvider_ImpossibleProbe_FailsFast(t *testing.T) {
+func TestTruthProvider_ImpossibleProbe_BlockedPreparing(t *testing.T) {
+	// Option A Semantics: Impossible probes (no local path + no probe configured)
+	// should remain in PREPARING (Blocked) state, not terminal errors.
 	cfg := &config.AppConfig{
 		Enigma2: config.Enigma2Settings{BaseURL: "http://test:80"},
 	}
@@ -131,68 +134,44 @@ func TestTruthProvider_ImpossibleProbe_FailsFast(t *testing.T) {
 		name        string
 		localPath   string
 		probe       func(context.Context, string) error
-		wantError   error
-		wantState   string
+		wantStatus  playback.MediaStatus
 		expectProbe bool
 	}{
 		{
-			name:        "Impossible: No Local Path + No Probe Configured",
+			name:        "Blocked: No Local Path + No Probe Configured",
 			localPath:   "",
 			probe:       nil,
-			wantError:   playback.ErrUpstream,
+			wantStatus:  playback.MediaStatusPreparing,
 			expectProbe: false,
-		},
-		{
-			name:      "Impossible: No Local Path + Remote Probe Unsupported",
-			localPath: "",
-			probe: func(ctx context.Context, s string) error {
-				return ErrRemoteProbeUnsupported // Simulate remote not supported
-			},
-			wantError:   ErrRemoteProbeUnsupported, // Should be passed through
-			expectProbe: false,                     // Should fail fast before async
 		},
 		{
 			name:        "Possible: Local Path Exists",
 			localPath:   "/tmp/exists",
-			probe:       nil, // Mocked existence check in code won't actually check FS in this unit test logic unless we mock PathResolver
-			wantError:   nil,
-			wantState:   string(playback.MediaStatusPreparing),
+			probe:       nil,
+			wantStatus:  playback.MediaStatusPreparing,
 			expectProbe: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup PathResolver
-			opts := ResolverOptions{ProbeFn: tt.probe}
+			tp, _ := newTruthProvider(cfg, mgr, ResolverOptions{})
+			tp.probeConfigured = (tt.probe != nil || tt.name == "Possible: Local Path Exists")
+
+			// Mock PathResolver if localPath provided
 			if tt.localPath != "" {
-				opts.PathResolver = &mockPathResolver{path: tt.localPath}
+				mpr := new(mockPathResolverMock)
+				mpr.On("ResolveRecordingPath", "ref").Return(tt.localPath, "root", "rel", nil)
+				tp.pathResolver = mpr
 			}
 
-			tp, err := NewTruthProvider(cfg, mgr, opts)
-			require.NoError(t, err)
+			res, err := tp.GetMediaTruth(context.Background(), "ref")
+			assert.NoError(t, err, "Impossible probe must not return a terminal error (Option A)")
+			assert.Equal(t, tt.wantStatus, res.Status)
 
-			// We must ensure the file exists for the "local path" logic to work if it checks FS?
-			// The logic in GetMediaTruth is:
-			// if t.pathResolver != nil { resolved = ... }
-			// fallback to file:// ...
-			// The simplified test here assumes pathResolver works.
-
-			got, err := tp.GetMediaTruth(context.Background(), "ref")
-
-			if tt.wantError != nil {
-				// We expect an error
-				// Check strict equality or error wrapping depending on implementation
-				// ErrRemoteProbeUnsupported is specific. ErrUpstream is generic.
-				if errors.Is(tt.wantError, ErrRemoteProbeUnsupported) {
-					assert.True(t, errors.Is(err, ErrRemoteProbeUnsupported), "expected ErrRemoteProbeUnsupported, got %v", err)
-				} else {
-					assert.Error(t, err)
-					assert.True(t, errors.Is(err, tt.wantError), "expected error %v, got %v", tt.wantError, err)
-				}
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, playback.MediaStatus(tt.wantState), got.Status)
+			if tt.name == "Blocked: No Local Path + No Probe Configured" {
+				assert.Equal(t, string(ProbeStateBlocked), res.ProbeState)
+				assert.Equal(t, 30, res.RetryAfter, "Stable operator-grade backoff for disabled probes")
 			}
 		})
 	}
@@ -226,13 +205,13 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 		PathResolver: &mockPathResolver{path: "/tmp/fake"},
 	}
 
-	tp, err := NewTruthProvider(cfg, mgr, opts)
+	res, err := NewResolver(cfg, mgr, opts)
 	require.NoError(t, err)
 
 	// 1. First Call: Should return Preparing and trigger probe
-	got, err := tp.GetMediaTruth(context.Background(), "ref")
-	require.NoError(t, err)
-	assert.Equal(t, playback.MediaStatusPreparing, got.Status)
+	got, err := res.Resolve(context.Background(), "ref", IntentStream, ProfileGeneric)
+	assert.Error(t, err)
+	assert.Equal(t, string(playback.MediaStatusPreparing), got.TruthStatus)
 
 	// Wait for async probe to error out and persist FAILED state.
 	// We rely on Eventually because we don't have a callback hook in this simple mock.
@@ -260,11 +239,14 @@ drain:
 		}
 	}
 
-	got2, err2 := tp.GetMediaTruth(context.Background(), "ref")
+	got2, err2 := res.Resolve(context.Background(), "ref", IntentStream, ProfileGeneric)
 	// Expect Terminal Error
 	assert.Error(t, err2)
 	assert.True(t, errors.Is(err2, playback.ErrUpstream), "expected ErrUpstream for failed artifact")
-	assert.Equal(t, playback.MediaTruth{}, got2)
+	assert.Equal(t, PlaybackInfoResult{
+		TruthStatus:  string(playback.MediaStatusUpstreamUnavailable),
+		TruthReasons: []string{"probe_failed"},
+	}, got2)
 
 	// Ensure no probe triggered
 	select {
@@ -275,7 +257,16 @@ drain:
 	}
 }
 
-// Mocks for TruthProvider Test
+// Mocks for truthProvider Test
+
+type mockPathResolverMock struct {
+	mock.Mock
+}
+
+func (m *mockPathResolverMock) ResolveRecordingPath(ref string) (string, string, string, error) {
+	args := m.Called(ref)
+	return args.String(0), args.String(1), args.String(2), args.Error(3)
+}
 
 type mockPathResolver struct {
 	path string

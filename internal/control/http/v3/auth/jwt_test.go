@@ -4,11 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
 
-var secret = DefaultDecisionSecret
+var secret = TestSecret()
 
 func TestGenerateAndVerifyStrict(t *testing.T) {
 	now := time.Now().Unix()
@@ -155,6 +156,29 @@ func TestVerifyStrict_Failures(t *testing.T) {
 
 			if !errors.Is(err, tt.expectedErr) {
 				t.Errorf("expected err %v, got %v", tt.expectedErr, err)
+			}
+		})
+	}
+}
+
+func TestClassifyError_WrappedErrors(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode string
+	}{
+		{"direct sentinel", ErrTokenExpired, "TOKEN_EXPIRED"},
+		{"wrapped sentinel", fmt.Errorf("layer: %w", ErrTokenExpired), "TOKEN_EXPIRED"},
+		{"double-wrapped", fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", ErrMismatchIss)), "TOKEN_ISS_MISMATCH"},
+		{"unknown error", fmt.Errorf("something unexpected"), "TOKEN_ERROR"},
+		{"wrapped malformed", fmt.Errorf("decode: %w", ErrTokenMalformed), "TOKEN_MALFORMED"},
+		{"wrapped ttl", fmt.Errorf("policy: %w", ErrTokenTTLTooLong), "TOKEN_TTL_EXCEEDED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ClassifyError(tt.err)
+			if got != tt.wantCode {
+				t.Errorf("ClassifyError(%v) = %q, want %q", tt.err, got, tt.wantCode)
 			}
 		})
 	}

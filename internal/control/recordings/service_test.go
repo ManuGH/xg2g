@@ -40,20 +40,20 @@ func (m *MockResolverForService) GetMediaTruth(ctx context.Context, recordingID 
 	return args.Get(0).(playback.MediaTruth), args.Error(1)
 }
 
-func (m *MockResolverForService) TruthProvider() *TruthProvider {
+func (m *MockResolverForService) truthProvider() *truthProvider {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*TruthProvider)
+	return args.Get(0).(*truthProvider)
 }
 
-func (m *MockResolverForService) ProbeManager() *ProbeManager {
+func (m *MockResolverForService) ProbeManager() *probeManager {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*ProbeManager)
+	return args.Get(0).(*probeManager)
 }
 
 type MockRunnerForService struct {
@@ -103,16 +103,11 @@ func setupServiceTest(t *testing.T) (*service, *MockOWIClient, *MockResumeStore,
 		t.Fatalf("NewManager failed: %v", err)
 	}
 
-	s := &service{
-		cfg:         cfg,
-		owiClient:   owi,
-		resumeStore: res,
-		resolver:    slv,
-		vodManager:  vm,
-		truth:       nil, // Can be injected as needed in specific tests
-		probeMgr:    nil,
+	s, err := NewService(cfg, vm, slv, owi, res)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
 	}
-	return s, owi, res, slv, vm
+	return s.(*service), owi, res, slv, vm
 }
 
 const validTestRef = "1:0:1:0:0:0:0:0:0:0:/media/hdd/movie/test.ts"

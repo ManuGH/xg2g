@@ -8,7 +8,7 @@ import (
 
 // --- Interfaces ---
 
-type MediaTruthProvider interface {
+type MediatruthProvider interface {
 	GetMediaTruth(ctx context.Context, id string) (MediaTruth, error)
 }
 
@@ -19,11 +19,11 @@ type ClientProfileResolver interface {
 // --- Engine ---
 
 type DecisionEngine struct {
-	truth   MediaTruthProvider
+	truth   MediatruthProvider
 	profile ClientProfileResolver
 }
 
-func NewDecisionEngine(truth MediaTruthProvider, profile ClientProfileResolver) *DecisionEngine {
+func NewDecisionEngine(truth MediatruthProvider, profile ClientProfileResolver) *DecisionEngine {
 	return &DecisionEngine{
 		truth:   truth,
 		profile: profile,

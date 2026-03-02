@@ -1388,14 +1388,14 @@ type CurrentInfo struct {
 	Info   struct {
 		ServiceRef  string `json:"serviceref"`
 		ServiceName string `json:"name"`
-		VideoPID    int    `json:"vpid,omitempty"`
-		AudioPID    int    `json:"apid,omitempty"`
-		PMTPID      int    `json:"pmtpid,omitempty"`
-		PCRPID      int    `json:"pcrpid,omitempty"`
-		TXT         int    `json:"txtpid,omitempty"`
-		TSID        int    `json:"tsid,omitempty"`
-		ONID        int    `json:"onid,omitempty"`
-		SID         int    `json:"sid,omitempty"`
+		VideoPID    any    `json:"vpid,omitempty"`   // Can be int or "N/A"
+		AudioPID    any    `json:"apid,omitempty"`   // Can be int or "N/A"
+		PMTPID      any    `json:"pmtpid,omitempty"` // Can be int or "N/A"
+		PCRPID      any    `json:"pcrpid,omitempty"` // Can be int or "N/A"
+		TXT         any    `json:"txtpid,omitempty"` // Can be int or "N/A"
+		TSID        any    `json:"tsid,omitempty"`   // Can be int or "N/A"
+		ONID        any    `json:"onid,omitempty"`   // Can be int or "N/A"
+		SID         any    `json:"sid,omitempty"`    // Can be int or "N/A"
 	} `json:"info"`
 	Now struct {
 		EventTitle               string `json:"title"`

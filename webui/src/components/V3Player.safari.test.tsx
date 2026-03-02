@@ -32,12 +32,21 @@ vi.mock('hls.js', () => {
 
 describe('V3Player Safari Logic', () => {
   let userAgentGetter: any;
+  let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     userAgentGetter = vi.spyOn(window.navigator, 'userAgent', 'get');
+    webkitEnterFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
   });
 
   afterEach(() => {
+    if (webkitEnterFullscreenDescriptor) {
+      Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
+    }
     vi.restoreAllMocks();
   });
 
@@ -79,5 +88,25 @@ describe('V3Player Safari Logic', () => {
 
     // HLS.js SHOULD be instantiated
     expect(Hls).toHaveBeenCalled();
+  });
+
+  it('should prefer native HLS on mobile WebKit video elements', () => {
+    userAgentGetter.mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
+      configurable: true,
+      value: vi.fn()
+    });
+
+    const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation(function (this: HTMLMediaElement, type: string) {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      return originalCanPlayType.call(this, type);
+    });
+
+    render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+
+    // Mobile WebKit path should avoid hls.js and use native HLS.
+    expect(Hls).not.toHaveBeenCalled();
   });
 });

@@ -121,7 +121,6 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	if schemaType == "live" {
 		truth = assumeLiveTruth(recordingId)
 	} else {
-		// 2a. Get Media Truth (Structural Only)
 		truth, err = svc.GetMediaTruth(r.Context(), recordingId)
 		if err != nil {
 			s.mapPlaybackError(w, r, recordingId, err)
@@ -366,9 +365,11 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	audioCodec := rawTruth.AudioCodec
 	// Note: DurationSource is dropped as we move to structural truth (implied "probe" or "truth")
 
+	s.mu.RLock()
+	jwtSecret := append([]byte(nil), s.JWTSecret...)
+	s.mu.RUnlock()
 	var pdt *string
-	if schemaType == "live" && dec.Mode != decision.ModeDeny {
-		jwtSecret := s.JWTSecret
+	if schemaType == "live" && dec.Mode != decision.ModeDeny && len(jwtSecret) > 0 {
 		now := time.Now().Unix()
 		var capHash string
 		if caps != nil {

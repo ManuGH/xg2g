@@ -43,6 +43,7 @@ const (
 	ReasonUpstreamFailure     ReasonCode = "upstream_failure"
 	ReasonReceiverUnreachable ReasonCode = "receiver_unreachable"
 	ReasonProbeFailed         ReasonCode = "probe_failed"
+	ReasonProbeUnsupported    ReasonCode = "probe_unsupported"
 )
 
 type TruthOutcome struct {
@@ -87,9 +88,9 @@ type PathResolver interface {
 	ResolveRecordingPath(serviceRef string) (localPath, rootID, relPath string, err error)
 }
 
-// TruthProvider manages the central "Version of Truth" for recordings.
+// truthProvider manages the central "Version of Truth" for recordings.
 // It coordinates metadata cache, duration store, and active probing.
-type TruthProvider struct {
+type truthProvider struct {
 	cfg             *config.AppConfig
 	vodManager      MetadataManager
 	durationStore   DurationStore
@@ -97,16 +98,16 @@ type TruthProvider struct {
 	probeConfigured bool
 }
 
-// NewTruthProvider creates a new TruthProvider with strict invariant enforcement.
-func NewTruthProvider(cfg *config.AppConfig, manager MetadataManager, opts ResolverOptions) (*TruthProvider, error) {
+// newTruthProvider creates a new truthProvider with strict invariant enforcement.
+func newTruthProvider(cfg *config.AppConfig, manager MetadataManager, opts ResolverOptions) (*truthProvider, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("NewTruthProvider: cfg is nil")
+		return nil, fmt.Errorf("newTruthProvider: cfg is nil")
 	}
 	if manager == nil {
-		return nil, fmt.Errorf("NewTruthProvider: manager is nil")
+		return nil, fmt.Errorf("newTruthProvider: manager is nil")
 	}
 
-	return &TruthProvider{
+	return &truthProvider{
 		cfg:             cfg,
 		vodManager:      manager,
 		durationStore:   opts.DurationStore,
@@ -115,23 +116,49 @@ func NewTruthProvider(cfg *config.AppConfig, manager MetadataManager, opts Resol
 	}, nil
 }
 
-// GetMediaTruth implements playback.MediaTruthProvider.
+// GetMediaTruth implements playback.MediatruthProvider.
 // It centralizes the precedence logic: Job > Store > Cache > Probe.
-func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error) {
+// Orchestration side effects are intentionally handled by Resolver (Option A boundary).
+func (t *truthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error) {
+	// 1. Get Pure Truth Outcome (Gate R1)
 	outcome := t.GetMediaTruthOutcome(ctx, serviceRef)
-	return outcome.ToMediaTruth(), nil
+
+	mt := outcome.ToMediaTruth()
+
+	// Policy Boundary: Status → (MediaTruth, er)
+	switch outcome.Status {
+	case TruthStatusReady:
+		return mt, nil
+	case TruthStatusPreparing:
+		// Option A: Preparing is always retryable (nil error)
+		return mt, nil
+	case TruthStatusNotFound:
+		return mt, ErrNotFound{RecordingID: serviceRef}
+	case TruthStatusUpstreamUnavailable:
+		// Check for specific failure signals
+		for _, r := range outcome.Reasons {
+			if r == ReasonProbeFailed {
+				return mt, ErrUpstream{Op: "probe", Cause: fmt.Errorf("probe failed permanently: %w", playback.ErrUpstream)}
+			}
+		}
+		// Generic Upstream
+		return mt, ErrUpstream{Op: "upstream", Cause: playback.ErrUpstream}
+	default:
+		return mt, ErrUpstream{Op: "unknown", Cause: fmt.Errorf("unknown truth status: %s", outcome.Status)}
+	}
 }
 
 // GetMediaTruthOutcome evaluates the current state of truth without side effects (R1).
-func (t *TruthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef string) TruthOutcome {
-	kind, source, _, err := t.resolveSource(ctx, serviceRef)
+func (t *truthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef string) TruthOutcome {
+	kind, source, localPath, err := t.ResolveSource(ctx, serviceRef)
 	if err != nil {
-		log.Warn().Err(err).Str("sref", serviceRef).Msg("GetMediaTruthOutcome: resolveSource failed")
+		log.Warn().Err(err).Str("sref", serviceRef).Msg("GetMediaTruthOutcome: ResolveSource failed")
 		if errors.As(err, &ErrNotFound{}) {
 			return TruthOutcome{Status: TruthStatusNotFound, Reasons: []ReasonCode{ReasonNotFound}}
 		}
 		return TruthOutcome{Status: TruthStatusUpstreamUnavailable, Reasons: []ReasonCode{ReasonUpstreamFailure}}
 	}
+
 	log.Debug().Str("sref", serviceRef).Str("kind", kind).Str("source", source).Msg("GetMediaTruthOutcome: source resolved")
 
 	// 0. Job State Gate (Active Build?)
@@ -145,7 +172,6 @@ func (t *TruthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 	}
 
 	// 1. Resolve Local Path
-	var localPath string
 	var rootID, relPath string
 	if t.pathResolver != nil {
 		resolvedPath, rID, rRel, pathErr := t.pathResolver.ResolveRecordingPath(serviceRef)
@@ -178,16 +204,38 @@ func (t *TruthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 
 	// Gate: Terminal Failure preventing re-probe
 	if metaOk && meta.State == vod.ArtifactStateFailed {
-		return TruthOutcome{Status: TruthStatusUpstreamUnavailable, Reasons: []ReasonCode{ReasonProbeFailed}}
+		if strings.Contains(meta.Error, "remote probe cannot determine codecs") {
+			return TruthOutcome{
+				Status:  TruthStatusUpstreamUnavailable,
+				Reasons: []ReasonCode{ReasonProbeUnsupported},
+			}
+		}
+		return TruthOutcome{
+			Status:  TruthStatusUpstreamUnavailable,
+			Reasons: []ReasonCode{ReasonProbeFailed},
+		}
 	}
 
-	// Gate: Impossible Probe (Fail Fast)
-	// If we have no known artifacts/playlist and no way to get them, fail now.
+	// Gate: Impossible Probe (Blocked Preparing - Option A)
+	// If we have no known artifacts/playlist and no way to get them, return Preparing (Blocked).
 	if !metaOk || (!meta.HasArtifact() && !meta.HasPlaylist()) {
 		if localPath == "" {
 			if !t.probeConfigured {
-				// No local path + No probe configured = Cannot ever succeed
-				return TruthOutcome{Status: TruthStatusPreparing, Reasons: []ReasonCode{ReasonProbeDisabled}}
+				// No local path + No probe configured = Blocked Preparing (Option A)
+				return TruthOutcome{
+					Status:     TruthStatusPreparing,
+					Reasons:    []ReasonCode{ReasonProbeDisabled},
+					ProbeState: string(ProbeStateBlocked),
+					RetryAfter: playback.RetryAfterPreparingDefault, // SSOT status window
+				}
+			}
+			// Remote source + Probe configured, but we have no metadata to guide us (Gate R6).
+			// We return Preparing (Queued) to signal that it's worth triggering a probe.
+			return TruthOutcome{
+				Status:     TruthStatusPreparing,
+				Reasons:    []ReasonCode{ReasonProbeQueued},
+				ProbeState: string(ProbeStateQueued),
+				RetryAfter: 5, // Fast retry for queued items
 			}
 		}
 	}
@@ -235,17 +283,26 @@ func (t *TruthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 	}
 }
 
-// resolveSource determines protocol and address
-func (t *TruthProvider) resolveSource(ctx context.Context, serviceRef string) (kind, source, name string, err error) {
+// ResolveSource determines protocol and address
+func (t *truthProvider) ResolveSource(ctx context.Context, serviceRef string) (kind, source, localPath string, err error) {
 	receiverPath := internalrecordings.ExtractPathFromServiceRef(serviceRef)
 	policy := t.cfg.RecordingPlaybackPolicy
 	allowLocal := policy != config.PlaybackPolicyReceiverOnly
 	allowReceiver := policy != config.PlaybackPolicyLocalOnly
 
 	if allowLocal {
-		mapper := internalrecordings.NewPathMapper(t.cfg.RecordingPathMappings)
-		if localPath, ok := mapper.ResolveLocalExisting(receiverPath); ok {
-			return "local", (&url.URL{Scheme: "file", Path: localPath}).String(), filepath.Base(localPath), nil
+		if t.pathResolver != nil {
+			if resolvedPath, _, _, err := t.pathResolver.ResolveRecordingPath(serviceRef); err == nil {
+				// Canonicalize path for stable URL and singleflight key
+				cleanPath := filepath.Clean(resolvedPath)
+				return "local", (&url.URL{Scheme: "file", Path: cleanPath}).String(), cleanPath, nil
+			}
+		} else {
+			mapper := internalrecordings.NewPathMapper(t.cfg.RecordingPathMappings)
+			if localPath, ok := mapper.ResolveLocalExisting(receiverPath); ok {
+				cleanPath := filepath.Clean(localPath)
+				return "local", (&url.URL{Scheme: "file", Path: cleanPath}).String(), cleanPath, nil
+			}
 		}
 	}
 	if allowReceiver {
@@ -330,6 +387,9 @@ func (r *LibraryPathResolver) ResolveRecordingPath(serviceRef string) (string, s
 }
 
 func matchLibraryRoot(localPath string, roots []library.RootConfig) (string, string, bool) {
+	// Security: filepath.Clean is applied here to canonicalize ALREADY RESOLVED local paths.
+	// This prevents thundering herd / singleflight key drift.
+	// It must NOT be used on unvalidated user input to prevent traversal bypass.
 	localPath = filepath.Clean(localPath)
 	if rp, err := filepath.EvalSymlinks(localPath); err == nil {
 		localPath = filepath.Clean(rp)

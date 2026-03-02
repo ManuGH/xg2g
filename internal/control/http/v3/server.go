@@ -17,7 +17,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -129,8 +128,8 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		startTime:      time.Now(),
 		libraryService: librarySvc,
 		storageMonitor: NewStorageMonitor(),
-		admission:      admission.NewController(cfg),
-		JWTSecret:      auth.DefaultDecisionSecret,
+		admission: admission.NewController(cfg),
+		// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
 	s.epgSource = &epgAdapter{s}
@@ -262,6 +261,18 @@ func (s *Server) SetAdmission(ctrl *admission.Controller) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.admission = ctrl
+}
+
+// SetJWTSecret configures the HMAC-SHA256 signing key for playback decision tokens.
+// Must be called before serving requests. Returns a defensive copy.
+func (s *Server) SetJWTSecret(secret []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(secret) == 0 {
+		s.JWTSecret = nil
+		return
+	}
+	s.JWTSecret = append([]byte(nil), secret...)
 }
 
 // SetShutdownHandler sets the function to call for graceful shutdown.

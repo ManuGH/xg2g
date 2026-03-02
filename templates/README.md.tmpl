@@ -72,13 +72,17 @@ Tier-1 compliant with Apple HLS Guidelines.
 
 ## Documentation
 
+- 🚀 [Start Here (10 Minutes)](NEW_HERE.md) - First-commit onboarding path
 - 📘 [Architecture Overview](docs/arch/ARCHITECTURE.md) - Complete system
   explanation
 - 📋 [ADRs](docs/ADR/) - Design decisions and trade-offs
-- 🔍 [Repository Audit](docs/arch/AUDIT_REPO_STRUCTURE.md) - Structure
-  findings
+- 🔍 [Repository Audit](docs/arch/AUDIT_REPO_STRUCTURE.md) - Repository
+  structure orientation
 - ⚙️ [Configuration Guide](docs/guides/CONFIGURATION.md)
 - 🏗️ [Development Guide](docs/guides/DEVELOPMENT.md)
+- 🧭 [Workflow Guide](WORKFLOW.md) - Branching, testing, and deployment flow
+- 🩺 [CI Failure Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) - Triage guide for
+  failing gates
 
 ## FFmpeg
 
@@ -95,6 +99,20 @@ To use your local build:
 export XG2G_FFMPEG_BIN="/opt/ffmpeg/bin/ffmpeg"
 export LD_LIBRARY_PATH="/opt/ffmpeg/lib"
 ```
+
+## Development Tools
+
+Ad-hoc inspection scripts live in `cmd/tools/` and are run directly — no installation needed:
+
+```bash
+make verify-bin          # print configured FFmpeg binary path (reads data/config.yaml)
+make verify-config-yaml  # parse config.yaml and print Timeouts fields
+make verify-app-config   # load data/config.yaml via production loader and print key fields
+```
+
+Or invoke directly: `go run ./cmd/tools/verify-bin` (from repo root).
+
+> **Note:** `make verify-config` is a CI gate (configgen diff check) — unrelated to the above.
 
 ## Offline Testing
 

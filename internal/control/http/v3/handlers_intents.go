@@ -141,25 +141,18 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		jwtSecret := s.JWTSecret
+		s.mu.RLock()
+		jwtSecret := append([]byte(nil), s.JWTSecret...)
+		s.mu.RUnlock()
+		if len(jwtSecret) == 0 {
+			writeProblem(w, r, http.StatusServiceUnavailable, "intent/security-unavailable", "Security Unavailable", "SECURITY_UNAVAILABLE", "Decision token verification is not configured", nil)
+			return
+		}
 
 		claims, err := auth.VerifyStrict(*req.PlaybackDecisionToken, jwtSecret, "xg2g/v3/intents", "xg2g")
 		if err != nil {
-			var statusCode int
-			var code, detail string
-			switch err {
-			case auth.ErrTokenMissing, auth.ErrTokenMalformed, auth.ErrInvalidAlg, auth.ErrInvalidSig, auth.ErrTokenExpired, auth.ErrTokenNotActive, auth.ErrMissingIAT, auth.ErrMissingExp, auth.ErrMissingNbf, auth.ErrMismatchIss, auth.ErrMismatchAud:
-				// [401] Token is completely cryptographically invalid or has expired / malformed structural bindings
-				statusCode = http.StatusUnauthorized
-				code = "TOKEN_INVALID"
-				detail = err.Error()
-			default:
-				// [401] Fallback for unexpected JWT library parsing issues
-				statusCode = http.StatusUnauthorized
-				code = "TOKEN_ERROR"
-				detail = "Invalid authorization token"
-			}
-			writeProblem(w, r, statusCode, "intent/unauthorized", "Unauthorized Intent", code, detail, nil)
+			code := auth.ClassifyError(err)
+			writeProblem(w, r, http.StatusUnauthorized, "intent/unauthorized", "Unauthorized Intent", code, err.Error(), nil)
 			return
 		}
 		// [OBSERVABILITY] Re-attach the Decision Trace ID for telemetry correlation
@@ -175,7 +168,11 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if raw := normalize.Token(req.Params["mode"]); raw != "" && raw != claims.Mode {
+		var reqMode string
+		if req.Params != nil {
+			reqMode = req.Params["mode"]
+		}
+		if raw := normalize.Token(reqMode); raw != "" && raw != claims.Mode {
 			// They requested hlsjs, but the token was generated for direct_stream
 			writeProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", "CLAIM_MISMATCH", "Token is not authorized for this playback mode", nil)
 			return

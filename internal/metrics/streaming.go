@@ -96,6 +96,26 @@ var (
 		Help:    "Duration of TS preflight check",
 		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 5},
 	}, []string{"port_type"})
+
+	// --- Phase 2: Production-Grade Hardening Metrics ---
+
+	// SessionHeartbeatTerminalTotal tracks rejected heartbeats for terminal sessions
+	SessionHeartbeatTerminalTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_session_heartbeat_terminal_total",
+		Help: "Total number of heartbeats rejected because session was terminal",
+	})
+
+	// ScanProbeTimeoutTotal tracks ffprobe timeouts during background scan
+	ScanProbeTimeoutTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_scan_probe_timeout_total",
+		Help: "Total number of ffprobe timeouts during background scan",
+	})
+
+	// ScanInflightProbes tracks active probes during scan
+	ScanInflightProbes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "xg2g_scan_inflight_probes",
+		Help: "Number of active ffprobe processes during scan (should be 0 or 1)",
+	})
 )
 
 // ObservePreflightLatency records the preflight latency.
@@ -153,4 +173,19 @@ func IncEnigma2InvariantViolation() {
 // IncFFmpegExit increments the ffmpeg exit counter
 func IncFFmpegExit(profile, code, reason string) {
 	FFmpegExitTotal.WithLabelValues(profile, code, reason).Inc()
+}
+
+// IncSessionHeartbeatTerminal increments the terminal heartbeat rejection counter
+func IncSessionHeartbeatTerminal() {
+	SessionHeartbeatTerminalTotal.Inc()
+}
+
+// IncScanProbeTimeout increments the scan timeout counter
+func IncScanProbeTimeout() {
+	ScanProbeTimeoutTotal.Inc()
+}
+
+// SetScanInflightProbes sets the inflight scan probe gauge
+func SetScanInflightProbes(val float64) {
+	ScanInflightProbes.Set(val)
 }

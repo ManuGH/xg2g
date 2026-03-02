@@ -24,7 +24,7 @@ func (siw *ServerInterfaceWrapper) SessionHeartbeat(w http.ResponseWriter, r *ht
 
 	heartbeatHandler, ok := siw.Handler.(sessionHeartbeatServer)
 	if !ok {
-		http.Error(w, http.StatusText(http.StatusNotImplemented), http.StatusNotImplemented)
+		writeProblem(w, r, http.StatusNotImplemented, "/problems/system/not_implemented", "Not Implemented", "NOT_IMPLEMENTED", "SessionHeartbeat is not implemented", nil)
 		return
 	}
 

@@ -30,6 +30,41 @@ var (
 	ErrTokenTTLTooLong = errors.New("token ttl exceeds maximum allowed policy duration (120s)")
 )
 
+// ClassifyError maps a JWT verification error to a machine-readable code.
+// Uses errors.Is for future-proof wrapped-error support.
+func ClassifyError(err error) string {
+	switch {
+	case errors.Is(err, ErrTokenMissing):
+		return "TOKEN_MISSING"
+	case errors.Is(err, ErrTokenMalformed):
+		return "TOKEN_MALFORMED"
+	case errors.Is(err, ErrInvalidAlg):
+		return "TOKEN_INVALID_ALG"
+	case errors.Is(err, ErrInvalidSig):
+		return "TOKEN_INVALID_SIG"
+	case errors.Is(err, ErrTokenExpired):
+		return "TOKEN_EXPIRED"
+	case errors.Is(err, ErrTokenNotActive):
+		return "TOKEN_NOT_ACTIVE"
+	case errors.Is(err, ErrMissingIAT), errors.Is(err, ErrMissingExp), errors.Is(err, ErrMissingNbf):
+		return "TOKEN_MISSING_CLAIM"
+	case errors.Is(err, ErrMismatchIss):
+		return "TOKEN_ISS_MISMATCH"
+	case errors.Is(err, ErrMismatchAud):
+		return "TOKEN_AUD_MISMATCH"
+	case errors.Is(err, ErrMismatchSub):
+		return "TOKEN_SUB_MISMATCH"
+	case errors.Is(err, ErrMismatchMode):
+		return "TOKEN_MODE_MISMATCH"
+	case errors.Is(err, ErrMismatchCapHash):
+		return "TOKEN_CAP_MISMATCH"
+	case errors.Is(err, ErrTokenTTLTooLong):
+		return "TOKEN_TTL_EXCEEDED"
+	default:
+		return "TOKEN_ERROR"
+	}
+}
+
 type TokenClaims struct {
 	Iss     string `json:"iss"`
 	Aud     string `json:"aud"`

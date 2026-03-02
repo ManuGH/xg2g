@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
@@ -46,24 +47,33 @@ func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) e
 	// Ensure runtime values are visible before the first request.
 	s.v3Handler.UpdateConfig(cfg, s.snap)
 
-	// 1. Build Probe Manager (Gate R2)
-	probeMgr := recservice.NewProbeManager(s.vodManager, func(ctx context.Context, serviceRef, sourceURL string) error {
-		// SSRF Guard: sourceURL is already derived from validated IDs in TruthProvider.
-		// We call the synchronous Probe method here.
-		info, err := s.vodManager.Probe(ctx, sourceURL)
-		if err != nil {
-			return err
-		}
-		// Success! Mark it probed in VOD manager.
-		s.vodManager.MarkProbed(serviceRef, sourceURL, info, nil)
-		return nil
-	})
+	// [SECURITY] Wire decision secret — hard fail if missing.
+	// Without a secret, live-stream JWT tokens cannot be signed or verified.
+	secret := v3auth.DecisionSecretFromEnv()
+	if secret == nil {
+		return fmt.Errorf("XG2G_DECISION_SECRET is required but not set (live stream security prerequisite)")
+	}
+	s.v3Handler.SetJWTSecret(secret)
 
 	var resolverOpts recservice.ResolverOptions
-	resolverOpts.ProbeManager = probeMgr
+	var persistor recservice.DurationPersistor
+
+	resolverOpts.ProbeRootContext = s.rootCtx
+	resolverOpts.ProbeFn = func(ctx context.Context, serviceRef, sourceURL string) (*vod.StreamInfo, error) {
+		// SSRF Guard: sourceURL is already derived from validated IDs in truthProvider.
+		// We call the synchronous Probe method here.
+		return s.vodManager.Probe(ctx, sourceURL)
+	}
+
 	if libSvc := s.v3Handler.LibraryService(); libSvc != nil {
-		resolverOpts.DurationStore = recservice.NewLibraryDurationStore(libSvc.GetStore())
-		resolverOpts.PathResolver = recservice.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs())
+		ds := recservice.NewLibraryDurationStore(libSvc.GetStore())
+		pr := recservice.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs())
+		resolverOpts.DurationStore = ds
+		resolverOpts.PathResolver = pr
+
+		// Option A Orchestrator Boundary: Persist dynamic truth async.
+		persistor = durationPersistorAdapter{store: ds, pr: pr}
+		resolverOpts.DurationPersistor = persistor
 	}
 	v4Resolver, err := recservice.NewResolver(&cfg, s.vodManager, resolverOpts)
 	if err != nil {
@@ -79,7 +89,7 @@ func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) e
 	owiAdapter := v3.NewOWIAdapter(s.owiClient)
 	resumeAdapter := v3.NewResumeAdapter(s.v3RuntimeDeps.ResumeStore)
 
-	recSvc, err := recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter, v4Resolver.TruthProvider(), v4Resolver.ProbeManager())
+	recSvc, err := recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter)
 	if err != nil {
 		return fmt.Errorf("initialize recordings service: %w", err)
 	}
@@ -189,4 +199,17 @@ func (s *Server) registerHealthCheckers(cfg config.AppConfig) {
 		defer s.mu.RUnlock()
 		return s.status.EPGProgrammes > 0, s.status.LastRun
 	}))
+}
+
+type durationPersistorAdapter struct {
+	store recservice.DurationStore
+	pr    recservice.PathResolver
+}
+
+func (d durationPersistorAdapter) PersistDuration(ctx context.Context, serviceRef string, duration int64) error {
+	_, rootID, relPath, err := d.pr.ResolveRecordingPath(serviceRef)
+	if err != nil {
+		return err
+	}
+	return d.store.SetDuration(ctx, rootID, relPath, duration)
 }

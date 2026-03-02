@@ -24,6 +24,11 @@ const (
 	MediaStatusUpstreamUnavailable MediaStatus = "upstream_unavailable"
 )
 
+const (
+	// RetryAfterPreparingDefault is the wait time for preparing/blocked states.
+	RetryAfterPreparingDefault = 30
+)
+
 // PlaybackMode defines the calculated strategy.
 type PlaybackMode string
 
@@ -32,6 +37,7 @@ const (
 	ModeDirectStream PlaybackMode = "direct_stream" // Remux container only (no re-encode)
 	ModeTranscode    PlaybackMode = "transcoder"    // Re-encode required
 	ModeError        PlaybackMode = "error"         // Hard failure (e.g. not found)
+	ModeDeny         PlaybackMode = "deny"          // Access forbidden or preparing
 )
 
 // Protocol defines the transport protocol.
@@ -66,6 +72,7 @@ const (
 	ReasonSafariDirectMP4   ReasonCode = "safari_direct_mp4"
 	ReasonChromeDirectMP4   ReasonCode = "chrome_direct_mp4"
 	ReasonUnknownContainer  ReasonCode = "unknown_container"
+	ReasonPreparing         ReasonCode = "preparing"
 )
 
 // --- Structs ---

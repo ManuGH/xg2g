@@ -3,8 +3,10 @@ package scan
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +18,7 @@ import (
 	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 )
 
@@ -54,6 +57,10 @@ type Manager struct {
 
 	mu     sync.RWMutex
 	status ScanStatus
+
+	// Phase 2: Production-Grade Robustness
+	ActivePlaybackFn        func(ctx context.Context) (bool, error)
+	consecutiveFailureCount int32
 }
 
 func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client) *Manager {
@@ -66,10 +73,11 @@ func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client)
 		store:      store,
 		m3uPath:    m3uPath,
 		e2Client:   e2Client,
-		ProbeDelay: 1000 * time.Millisecond,
+		ProbeDelay: 5000 * time.Millisecond,
 		status: ScanStatus{
 			State: "idle",
 		},
+		ActivePlaybackFn: func(ctx context.Context) (bool, error) { return false, nil },
 	}
 }
 
@@ -250,12 +258,17 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		// Probe with strict timeout (prevent hanging on zombie streams)
 		probeCtx, probeCancel := context.WithTimeout(ctx, 8*time.Second)
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
+		metrics.SetScanInflightProbes(1)
 		res, err := infra.Probe(probeCtx, probeURL)
+		metrics.SetScanInflightProbes(0)
 		probeCancel() // Start fresh context for fallback if needed
 
 		// Fallback Logic: If probe fails and we have a resolved URL (or even if not), try 8001
 		// This handles the case where "official" stream URL (17999) is closed but 8001 works.
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				metrics.IncScanProbeTimeout()
+			}
 			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: initial probe failed, attempting port 8001 fallback")
 
 			fallbackURL, buildErr := buildFallbackURL(probeURL, sRef)
@@ -292,6 +305,10 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 				log.L().Warn().Err(errOrig).Str("sref", sRef).Msg("scan: final fallback failed")
 			}
 		}
+		fromStore := false
+		if cap, found := m.store.Get(sRef); found && cap.Resolution != "" {
+			fromStore = true
+		}
 
 		scanned++
 		m.mu.Lock()
@@ -300,9 +317,11 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 
 		if err != nil {
 			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: probe failed")
-			// We don't abort loop on probe failure, just continue
-			// But check rate limiting before continue? Yes
+			if !fromStore {
+				atomic.AddInt32(&m.consecutiveFailureCount, 1)
+			}
 		} else {
+			atomic.StoreInt32(&m.consecutiveFailureCount, 0)
 			cap := Capability{
 				ServiceRef: sRef,
 				Interlaced: res.Video.Interlaced,
@@ -324,15 +343,37 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 			m.mu.Unlock()
 		}
 
-		// Rate limit
-		if m.ProbeDelay > 0 {
-			if err := sleepCtx(ctx, m.ProbeDelay); err != nil {
-				// If sleep is interrupted by context, we should stop scanning
+		// Phase 2: Production-Grade Rate Limiting
+		delay := m.ProbeDelay
+
+		// 1. Playback Awareness: Throttle if playback active
+		if active, pbErr := m.ActivePlaybackFn(ctx); pbErr == nil && active {
+			delay = 10 * time.Second
+			log.L().Debug().Msg("scan: playback active detected, throttling scan delay to 10s")
+		}
+
+		// 2. Adaptive Backoff: Increase delay on consecutive failures
+		failCount := atomic.LoadInt32(&m.consecutiveFailureCount)
+		if failCount > 0 {
+			multiplier := 1 << (failCount - 1)
+			backoff := time.Duration(multiplier) * time.Second
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+			if backoff > delay {
+				delay = backoff
+			}
+			log.L().Debug().Int32("consecutive_failures", failCount).Dur("adaptive_delay", delay).Msg("scan: applying adaptive backoff")
+		}
+
+		// 3. Apply Delay with Jitter (±20%)
+		if delay > 0 {
+			jitter := time.Duration(rand.Int63n(int64(delay/5))) - (delay / 10)
+			if err := sleepCtx(ctx, delay+jitter); err != nil {
 				return err
 			}
 		}
 	}
-
 	return nil
 }
 

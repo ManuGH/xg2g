@@ -5,11 +5,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCORS_OriginReflection_WithCredentials(t *testing.T) {
-	s := &Server{}
+func TestCORS_AllowlistEnforcement(t *testing.T) {
+	s := &Server{
+		cfg: config.AppConfig{
+			AllowedOrigins: []string{"https://trusted.example.com", "https://also-trusted.dev"},
+		},
+	}
 
 	tests := []struct {
 		name              string
@@ -17,31 +22,34 @@ func TestCORS_OriginReflection_WithCredentials(t *testing.T) {
 		expectACAO        string // Access-Control-Allow-Origin
 		expectCredentials string // Access-Control-Allow-Credentials
 		expectVary        string
-		expectNoWildcard  bool // ACAO must NOT be "*" when credentials are sent
 	}{
 		{
-			name:              "Specific Origin reflected with Credentials",
-			origin:            "https://example.invalid",
-			expectACAO:        "https://example.invalid",
+			name:              "Allowed origin reflected with credentials",
+			origin:            "https://trusted.example.com",
+			expectACAO:        "https://trusted.example.com",
 			expectCredentials: "true",
 			expectVary:        "Origin",
-			expectNoWildcard:  true,
 		},
 		{
-			name:              "Different Origin reflected correctly",
-			origin:            "https://other.example.com",
-			expectACAO:        "https://other.example.com",
+			name:              "Second allowed origin also reflected",
+			origin:            "https://also-trusted.dev",
+			expectACAO:        "https://also-trusted.dev",
 			expectCredentials: "true",
 			expectVary:        "Origin",
-			expectNoWildcard:  true,
 		},
 		{
-			name:              "No Origin = no CORS headers",
+			name:              "Disallowed origin gets no CORS headers (browser blocks)",
+			origin:            "https://evil.attacker.com",
+			expectACAO:        "",
+			expectCredentials: "",
+			expectVary:        "",
+		},
+		{
+			name:              "No origin = no CORS headers (same-origin)",
 			origin:            "",
 			expectACAO:        "",
 			expectCredentials: "",
 			expectVary:        "",
-			expectNoWildcard:  true,
 		},
 	}
 
@@ -55,16 +63,25 @@ func TestCORS_OriginReflection_WithCredentials(t *testing.T) {
 			s.HandleRecordingResumeOptions(w, req)
 
 			res := w.Result()
-			assert.Equal(t, tt.expectACAO, res.Header.Get("Access-Control-Allow-Origin"),
-				"ACAO must reflect the request Origin, never *")
+			assert.Equal(t, tt.expectACAO, res.Header.Get("Access-Control-Allow-Origin"))
 			assert.Equal(t, tt.expectCredentials, res.Header.Get("Access-Control-Allow-Credentials"))
-			assert.Equal(t, tt.expectVary, res.Header.Get("Vary"),
-				"Vary: Origin is required to prevent cache-based origin leaks")
-
-			if tt.expectNoWildcard {
-				assert.NotEqual(t, "*", res.Header.Get("Access-Control-Allow-Origin"),
-					"ACAO must NEVER be * when Credentials is true (Fetch spec violation)")
+			if tt.expectVary != "" {
+				assert.Equal(t, tt.expectVary, res.Header.Get("Vary"))
 			}
+			assert.NotEqual(t, "*", res.Header.Get("Access-Control-Allow-Origin"),
+				"ACAO must NEVER be * when Credentials is true (Fetch spec violation)")
 		})
 	}
+
+	t.Run("No AllowedOrigins configured = default deny", func(t *testing.T) {
+		emptyServer := &Server{cfg: config.AppConfig{}}
+		req := httptest.NewRequest(http.MethodOptions, "/api/v3/recordings/test/resume", nil)
+		req.Header.Set("Origin", "https://any-origin.com")
+		w := httptest.NewRecorder()
+		emptyServer.HandleRecordingResumeOptions(w, req)
+
+		res := w.Result()
+		assert.Equal(t, "", res.Header.Get("Access-Control-Allow-Origin"),
+			"Empty AllowedOrigins must deny all cross-origin requests")
+	})
 }

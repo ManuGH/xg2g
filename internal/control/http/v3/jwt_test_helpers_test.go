@@ -15,7 +15,7 @@ import (
 )
 
 // jwtTestSecret references the SSOT default; never duplicate the literal.
-var jwtTestSecret = auth.DefaultDecisionSecret
+var jwtTestSecret = auth.TestSecret()
 
 // intentReqWithValidJWT builds a POST /intents request with a valid JWT
 // that passes the security gate. Parameters are exposed so callers can

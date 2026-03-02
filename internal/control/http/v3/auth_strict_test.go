@@ -369,6 +369,7 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	xlog.Configure(xlog.Config{Level: "error", Output: io.Discard})
 
 	srv := NewServer(cfg, cfgMgr, nil)
+	srv.SetJWTSecret(jwtTestSecret)
 	var b bus.Bus
 	if spyBus != nil {
 		b = spyBus

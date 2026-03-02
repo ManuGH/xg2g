@@ -12,7 +12,9 @@ import (
 // correctly handles the Filesize input, specifically protecting against the case where
 // a missing (nil/zero) filesize leads to a 'Small' (failed) classification.
 func TestService_ClassifyFilePresence_Regression(t *testing.T) {
-	s := &service{}
+	s := &service{
+		resolver: &mockResolver{},
+	}
 
 	tests := []struct {
 		name     string

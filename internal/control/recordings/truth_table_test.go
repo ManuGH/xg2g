@@ -126,7 +126,6 @@ func TestDurationTruth_Read_StoreWins(t *testing.T) {
 func TestDurationTruth_Read_ProbeFallback(t *testing.T) {
 	ds := new(mockDurationStore)
 	ds.On("GetDuration", mock.Anything, "1", "movie.ts").Return(int64(0), false, nil)
-	ds.On("SetDuration", mock.Anything, "1", "movie.ts", int64(3600)).Return(nil)
 
 	mgr := new(mockMetadataManager)
 
@@ -198,9 +197,10 @@ type TruthTestCase struct {
 	CacheMeta     vod.Metadata
 	CacheExists   bool
 
-	ProbeResult    *vod.StreamInfo
-	ProbeErr       error
-	ProbeRemoteErr error
+	ProbeResult       *vod.StreamInfo
+	ProbeErr          error
+	ProbeRemoteResult *vod.StreamInfo
+	ProbeRemoteErr    error
 
 	ExpRes   recordings.PlaybackInfoResult
 	ExpErr   error
@@ -303,29 +303,25 @@ func TestMediaTruth(t *testing.T) {
 			ExpErrIs:    recordings.ErrPreparing{RecordingID: "service:ref"},
 		},
 		{
-			// Remote Probe -> FAIL FAST (Gate 2)
-			Name:           "Remote Probe Unsupported (No Codecs)",
+			// Remote Probe -> Blocked Preparing (Option A)
+			Name:           "Remote Probe Disabled (Blocked Preparing)",
 			ServiceRef:     "1:0:0:0:0:0:0:0:0:0:/local/x",
 			CacheMeta:      vod.Metadata{},
-			ExpectProbe:    false, // No probe triggered (fail fast)
-			ExpectAsync:    false, // Sync error
-			ProbeRemoteErr: recordings.ErrRemoteProbeUnsupported,
-			// Resolver maps ErrRemoteProbeUnsupported -> ErrUpstream{Op: "probe_remote_unsupported"}
-			ExpErrIs: recordings.ErrUpstream{Op: "probe_remote_unsupported", Cause: recordings.ErrRemoteProbeUnsupported},
+			ExpectProbe:    false, // No probe triggered (blocked)
+			ExpectAsync:    false, // Sync answer (blocked)
+			ProbeRemoteErr: nil,   // Not even attempted
+			// Resolver maps Preparing -> ErrPreparing
+			ExpErrIs: recordings.ErrPreparing{RecordingID: "1:0:0:0:0:0:0:0:0:0:/local/x"},
 		},
 		{
-			// Remote Probe Failure -> FAIL FAST (Gate 2)
-			Name:        "Remote Probe Failure (Upstream)",
+			// Remote Probe Failure -> Blocked Preparing (Option A)
+			Name:        "Remote Probe Failure (Blocked Preparing)",
 			CacheMeta:   vod.Metadata{},
 			ExpectProbe: false,
 			ExpectAsync: false,
 			ProbeErr:    errors.New("conn refused"),
-			// Since we use logic: if !probeConfigured -> ErrUpstream.
-			// Here probe IS configured (test harness sets it).
-			// So it hits "Gate 2": if localPath=="" && probeConfigured -> ErrRemoteProbeUnsupported.
-			// It implies any "Remote Probe" attempt without local path is unsupported currently.
-			// So expected error is ErrRemoteProbeUnsupported (mapped to Upstream)
-			ExpErrIs: recordings.ErrUpstream{Op: "probe_remote_unsupported", Cause: recordings.ErrRemoteProbeUnsupported},
+			// In Option A, even if configured, if it's remote it blocks as Preparing
+			ExpErrIs: recordings.ErrPreparing{RecordingID: "service:ref"},
 		},
 		{
 			Name:        "Store Get Error (No Overwrite)",
@@ -385,13 +381,6 @@ func TestMediaTruth(t *testing.T) {
 				ds.On("GetDuration", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), false, tc.StoreErr)
 			} else {
 				ds.On("GetDuration", mock.Anything, mock.Anything, mock.Anything).Return(tc.StoreDuration, tc.StoreDuration > 0, nil)
-			}
-
-			// If probe succeeds and store was empty/error, expect SetDuration
-			if tc.ProbeResult != nil && tc.ProbeResult.Video.Duration > 0 && tc.StoreDuration == 0 && tc.StoreErr == nil {
-				ds.On("SetDuration", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(func(dur int64) bool {
-					return dur == int64(tc.ProbeResult.Video.Duration)
-				})).Return(nil)
 			}
 
 			mgr := new(mockMetadataManager)
@@ -461,21 +450,23 @@ func TestMediaTruth(t *testing.T) {
 					mgr.On("MarkFailed", svcRef, mock.MatchedBy(func(reason string) bool {
 						return reason != ""
 					})).Return().Maybe()
-				} else {
-					// Expect MarkProbed for success or other meta updates
-					mgr.On("MarkProbed", svcRef, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 				}
 			}
 
+			// Always allow MarkProbed as orchestration might trigger probes unexpectedly (best effort)
+			mgr.On("MarkProbed", svcRef, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mgr.On("MarkFailed", svcRef, mock.Anything).Return().Maybe()
+
+			probeFn := func(ctx context.Context, sref, u string) (*vod.StreamInfo, error) {
+				if tc.ExpectAsync {
+					probeOnce.Do(func() { close(probeDone) })
+				}
+				return tc.ProbeRemoteResult, tc.ProbeRemoteErr
+			}
 			r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 				DurationStore: ds,
 				PathResolver:  pr,
-				ProbeFn: func(ctx context.Context, u string) error {
-					if tc.ExpectAsync {
-						probeOnce.Do(func() { close(probeDone) })
-					}
-					return tc.ProbeRemoteErr
-				},
+				ProbeFn:       probeFn,
 			})
 			require.NoError(t, err)
 
@@ -543,6 +534,7 @@ func TestAsyncProbe_NoHiddenWork(t *testing.T) {
 		close(probeCalled)
 		<-probeUnblocked // Block until test releases
 	}).Return(&vod.StreamInfo{Container: "mp4", Video: vod.VideoStreamInfo{CodecName: "h264"}, Audio: vod.AudioStreamInfo{CodecName: "aac"}}, nil)
+	mgr.On("MarkProbed", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
 
 	mgr.On("MarkProbed", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
 
@@ -551,7 +543,6 @@ func TestAsyncProbe_NoHiddenWork(t *testing.T) {
 
 	ds := new(mockDurationStore)
 	ds.On("GetDuration", mock.Anything, "1", "x").Return(int64(0), false, nil)
-	ds.On("SetDuration", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 		DurationStore: ds,
@@ -610,8 +601,6 @@ func TestAsyncProbe_Singleflight(t *testing.T) {
 
 	ds := new(mockDurationStore)
 	ds.On("GetDuration", mock.Anything, "1", "x").Return(int64(0), false, nil)
-	// Relax SetDuration: it might or might not happen depending on code path/timing in background
-	ds.On("SetDuration", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 		DurationStore: ds,
