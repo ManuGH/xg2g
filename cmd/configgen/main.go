@@ -649,6 +649,14 @@ func trackedFiles(root string) ([]string, error) {
 }
 
 func shouldScanFile(path string) bool {
+	normalized := filepath.ToSlash(path)
+	// Generated UI bundles can contain incidental "XG2G_" substrings and cause
+	// nondeterministic inventory drift across environments. Keep inventory focused
+	// on source/config surfaces, not compiled embed artifacts.
+	if strings.HasPrefix(normalized, "internal/control/http/dist/assets/") {
+		return false
+	}
+
 	base := filepath.Base(path)
 	if base == "Dockerfile" || strings.HasPrefix(base, "Dockerfile.") {
 		return true
