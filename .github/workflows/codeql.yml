@@ -37,13 +37,13 @@ jobs:
 
       # Setup Go
       - name: Setup Go
-        uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b # v6
+        uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # v6
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e
+        uses: github/codeql-action/init@c793b717bc78562f491db7b0e93a3a178b099162
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -60,6 +60,6 @@ jobs:
           go build -tags=nogpu ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@89a39a4e59826350b863aa6b6252a07ad50cf83e
+        uses: github/codeql-action/analyze@c793b717bc78562f491db7b0e93a3a178b099162
         with:
           category: "/language:${{ matrix.language }}"
