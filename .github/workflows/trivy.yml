@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
 
       - name: Run Trivy filesystem scan (SARIF)
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
         with:
           scan-type: fs
           scan-ref: .
@@ -55,14 +55,14 @@ jobs:
 
       - name: Upload filesystem scan to GitHub Security
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-        uses: github/codeql-action/upload-sarif@89a39a4e59826350b863aa6b6252a07ad50cf83e # v3.27.9
+        uses: github/codeql-action/upload-sarif@c793b717bc78562f491db7b0e93a3a178b099162 # v3.27.9
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-filesystem
 
       - name: Enforce filesystem vulnerability threshold
         if: (github.event_name == 'workflow_dispatch' && inputs.enforce == 'true') || vars.TRIVY_ENFORCE == 'true'
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
         with:
           scan-type: fs
           scan-ref: .
@@ -106,7 +106,7 @@ jobs:
           provenance: false
 
       - name: Run Trivy image scan (SARIF)
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
         with:
           image-ref: xg2g:${{ github.sha }}
           format: sarif
@@ -118,14 +118,14 @@ jobs:
 
       - name: Upload image scan to GitHub Security
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-        uses: github/codeql-action/upload-sarif@89a39a4e59826350b863aa6b6252a07ad50cf83e # v3.27.9
+        uses: github/codeql-action/upload-sarif@c793b717bc78562f491db7b0e93a3a178b099162 # v3.27.9
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
 
       - name: Enforce image vulnerability threshold
         if: (github.event_name == 'workflow_dispatch' && inputs.enforce == 'true') || vars.TRIVY_ENFORCE == 'true'
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
         with:
           image-ref: xg2g:${{ github.sha }}
           format: table
