@@ -1,7 +1,9 @@
-<!-- GENERATED FILE - DO NOT EDIT. Source: templates/README.md.tmpl -->
+<!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/README.md.tmpl -->
 # xg2g - Next Gen to Go
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
+[![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+[![Release](https://img.shields.io/github/v/release/ManuGH/xg2g)](https://github.com/ManuGH/xg2g/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC-blue)](LICENSE)
 
@@ -26,7 +28,7 @@ docker run -d --name xg2g --net=host \
   -e XG2G_E2_HOST="http://192.168.1.10" \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
-  ghcr.io/manugh/xg2g:3.1.7
+  ghcr.io/manugh/xg2g:v3.1.8
 ```
 
 Open [http://localhost:8088/ui/](http://localhost:8088/ui/)
@@ -73,13 +75,19 @@ Tier-1 compliant with Apple HLS Guidelines.
 
 ## Documentation
 
+- 🚀 [Start Here (10 Minutes)](NEW_HERE.md) - First-commit onboarding path
 - 📘 [Architecture Overview](docs/arch/ARCHITECTURE.md) - Complete system
   explanation
 - 📋 [ADRs](docs/ADR/) - Design decisions and trade-offs
-- 🔍 [Repository Audit](docs/arch/AUDIT_REPO_STRUCTURE.md) - Structure
-  findings
+- 🔍 [Repository Audit](docs/arch/AUDIT_REPO_STRUCTURE.md) - Repository
+  structure orientation
+- 🌐 [API Reference (GitHub Pages)](https://manugh.github.io/xg2g/) - Generated
+  from [backend/api/openapi.yaml](backend/api/openapi.yaml)
 - ⚙️ [Configuration Guide](docs/guides/CONFIGURATION.md)
 - 🏗️ [Development Guide](docs/guides/DEVELOPMENT.md)
+- 🧭 [Workflow Guide](WORKFLOW.md) - Branching, testing, and deployment flow
+- 🩺 [CI Failure Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) - Triage guide for
+  failing gates
 
 ## FFmpeg
 
@@ -96,6 +104,20 @@ To use your local build:
 export XG2G_FFMPEG_BIN="/opt/ffmpeg/bin/ffmpeg"
 export LD_LIBRARY_PATH="/opt/ffmpeg/lib"
 ```
+
+## Development Tools
+
+Ad-hoc inspection scripts live in `cmd/tools/` and are run directly — no installation needed:
+
+```bash
+make verify-bin          # print configured FFmpeg binary path (reads data/config.yaml)
+make verify-config-yaml  # parse config.yaml and print Timeouts fields
+make verify-app-config   # load data/config.yaml via production loader and print key fields
+```
+
+Or invoke directly: `go run ./cmd/tools/verify-bin` (from repo root).
+
+> **Note:** `make verify-config` is a CI gate (configgen diff check) — unrelated to the above.
 
 ## Offline Testing
 

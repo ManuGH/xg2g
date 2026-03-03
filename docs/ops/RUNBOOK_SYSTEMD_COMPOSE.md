@@ -97,7 +97,10 @@ journalctl -u xg2g -f
 ```
 
 **Common Issues**:
-* **Start Fails immediately**: Check `systemctl status xg2g`. Ensure canonical `XG2G_E2_HOST` (legacy fallback: `XG2G_OWI_BASE`) and `XG2G_API_TOKEN` are set in `/etc/xg2g/xg2g.env`. If both base URL vars are set, they must match exactly.
+* **Start Fails immediately**: Check `systemctl status xg2g`. Ensure all required env vars are set in `/etc/xg2g/xg2g.env`:
+  - `XG2G_E2_HOST` (legacy fallback: `XG2G_OWI_BASE`) — receiver base URL; both vars must match if set.
+  - `XG2G_API_TOKEN` — control plane bearer token.
+  - `XG2G_DECISION_SECRET` — live stream JWT signing key, min 32 bytes. See `docs/ops/SECURITY.md` for generation and rotation procedure.
 * **Crash Loop**: If running manually via `docker compose` without the systemd safety checks, the container may restart indefinitely on missing config. Use `systemctl start` for fail-closed protection.
 
 ### Service Smoke Matrix

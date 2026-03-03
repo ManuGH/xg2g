@@ -71,7 +71,7 @@ jobs:
           ignore-unfixed: false
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/init@c793b717bc78562f491db7b0e93a3a178b099162
+        uses: github/codeql-action/upload-sarif@c793b717bc78562f491db7b0e93a3a178b099162
         if: always()
         with:
           sarif_file: "trivy-results.sarif"
@@ -189,7 +189,7 @@ jobs:
           scanners: "secret,misconfig"
 
       - name: Upload filesystem scan to GitHub Security
-        uses: github/codeql-action/init@c793b717bc78562f491db7b0e93a3a178b099162 # v3.27.9
+        uses: github/codeql-action/upload-sarif@c793b717bc78562f491db7b0e93a3a178b099162 # v3.27.9
         if: always()
         with:
           sarif_file: "trivy-fs-results.sarif"

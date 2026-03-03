@@ -1,0 +1,6 @@
+# Minimal override to enable VAAPI (host /dev/dri) without changing env_file/volumes.
+# Usage (dev): docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.hwaccel.yml up -d --build
+services:
+  xg2g:
+    devices:
+      - /dev/dri:/dev/dri

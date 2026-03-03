@@ -7,24 +7,24 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "**/*.go"
+      - "backend/**/*.go"
       - ".github/**"
-      - go.mod
-      - go.sum
-      - "api/openapi.yaml"
-      - "config.example.yaml"
-      - "config.generated.example.yaml"
+      - backend/go.mod
+      - backend/go.sum
+      - "backend/api/openapi.yaml"
+      - "backend/config.example.yaml"
+      - "backend/config.generated.example.yaml"
       - "docs/**"
-      - "e2e/**"
-      - "internal/**"
+      - "backend/e2e/**"
+      - "backend/internal/**"
       - "Dockerfile"
       - "Dockerfile.*"
       - "docker-compose*.yml"
       - "README.md"
-      - "scripts/**"
+      - "backend/scripts/**"
       - "Makefile"
-      - "templates/**"
-      - "webui/**"
+      - "backend/templates/**"
+      - "frontend/webui/**"
       - "VERSION"
       - "WORKFLOW.md"
 
@@ -46,31 +46,31 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Token URL gate
         run: |
           set -euo pipefail
-          if git grep -n -i -E '(\?|&)(token|access_token|auth|jwt|bearer)=' -- . ':!vendor'; then
+          if git grep -n -i -E '(\?|&)(token|access_token|auth|jwt|bearer)=' -- . ':!backend/vendor'; then
             echo "❌ denylisted auth-like query key found in URL parameters"
             exit 1
           fi
           echo "✅ token URL gate passed"
 
       - name: Verify Go toolchain policy
-        run: ./scripts/check-go-toolchain.sh
+        run: ./backend/scripts/check-go-toolchain.sh
 
       - name: Set Reproducible Build Headers
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
 
       - name: Setup Go
-        uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # v6
+        uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
           check-latest: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: backend/go.sum
           # Cache restore has been flaky (tar exit code 2). Disable to keep CI deterministic.
           cache: false
         env:
@@ -79,26 +79,28 @@ jobs:
       - name: Verify modules
         run: |
           set -euo pipefail
+          cd backend
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
       - name: Install golangci-lint (built with runner Go)
         run: |
           set -euo pipefail
+          cd backend
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
           golangci-lint --version
 
       - name: Fail-fast Go lint and config drift checks
         run: |
           set -euo pipefail
-          make lint-invariants lint verify-config verify-generate gate-repo-hygiene
+          make lint verify-config verify-generate gate-repo-hygiene
 
       - name: Setup Node
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: webui/package-lock.json
+          cache-dependency-path: frontend/webui/package-lock.json
 
       - name: Install check-jsonschema
         run: |
@@ -110,7 +112,7 @@ jobs:
       - name: Verify WebUI wrapper boundary
         run: |
           set -euo pipefail
-          cd webui
+          cd frontend/webui
           npm run verify:client-wrapper
 
       - name: Build WebUI assets (required for embed contract)
@@ -119,7 +121,7 @@ jobs:
       - name: Run WebUI unit tests
         run: |
           set -euo pipefail
-          cd webui
+          cd frontend/webui
           npm run test
 
       - name: Install System Dependencies

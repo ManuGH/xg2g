@@ -1,0 +1,188 @@
+package playback
+
+import "errors"
+
+// --- Errors ---
+
+var (
+	ErrForbidden         = errors.New("forbidden")
+	ErrNotFound          = errors.New("not found")
+	ErrPreparing         = errors.New("preparing")
+	ErrUpstream          = errors.New("upstream failed")
+	ErrUnsupported       = errors.New("unsupported")
+	ErrDecisionAmbiguous = errors.New("decision_ambiguous")
+)
+
+// --- Enums ---
+
+type MediaStatus string
+
+const (
+	MediaStatusReady               MediaStatus = "ready"
+	MediaStatusPreparing           MediaStatus = "preparing"
+	MediaStatusNotFound            MediaStatus = "not_found"
+	MediaStatusUpstreamUnavailable MediaStatus = "upstream_unavailable"
+)
+
+const (
+	// RetryAfterPreparingDefault is the wait time for preparing states.
+	RetryAfterPreparingDefault = 30
+	// RetryAfterPreparingBlockedDefault is the wait time for blocked states.
+	RetryAfterPreparingBlockedDefault = 30
+)
+
+// PlaybackMode defines the calculated strategy.
+type PlaybackMode string
+
+const (
+	ModeDirectPlay   PlaybackMode = "direct_play"   // Client plays strict format directly
+	ModeDirectStream PlaybackMode = "direct_stream" // Remux container only (no re-encode)
+	ModeTranscode    PlaybackMode = "transcoder"    // Re-encode required
+	ModeError        PlaybackMode = "error"         // Hard failure (e.g. not found)
+	ModeDeny         PlaybackMode = "deny"          // Access forbidden or preparing
+)
+
+// Protocol defines the transport protocol.
+type Protocol string
+
+const (
+	ProtocolHLS Protocol = "hls"
+	ProtocolMP4 Protocol = "mp4"
+)
+
+// ArtifactKind defines what kind of file/stream we point to.
+type ArtifactKind string
+
+const (
+	ArtifactMP4  ArtifactKind = "mp4" // Single static file (e.g. stream.mp4)
+	ArtifactHLS  ArtifactKind = "hls" // M3U8 Playlist (e.g. playlist.m3u8)
+	ArtifactNone ArtifactKind = ""    // For errors
+)
+
+// ReasonCode defines strictly why a decision was made.
+type ReasonCode string
+
+const (
+	ReasonDirectPlayMatch   ReasonCode = "directplay_supported"
+	ReasonDirectStreamMatch ReasonCode = "directstream_remux"
+	ReasonTranscodeVideo    ReasonCode = "transcode_video"
+	ReasonTranscodeAudio    ReasonCode = "transcode_audio"
+	ReasonTranscodeRequired ReasonCode = "transcode_required"
+	ReasonProbeFailed       ReasonCode = "probe_failed"
+	ReasonForceHLS          ReasonCode = "force_hls"
+	ReasonSafariTSNeedsHLS  ReasonCode = "safari_ts_needs_hls"
+	ReasonSafariDirectMP4   ReasonCode = "safari_direct_mp4"
+	ReasonChromeDirectMP4   ReasonCode = "chrome_direct_mp4"
+	ReasonUnknownContainer  ReasonCode = "unknown_container"
+	ReasonPreparing         ReasonCode = "preparing"
+)
+
+// --- Structs ---
+
+type ResolveRequest struct {
+	RecordingID  string
+	ProtocolHint string            // "hls", "mp4", ""
+	Headers      map[string]string // For ProfileResolver
+}
+
+type PlaybackPlan struct {
+	Mode           PlaybackMode
+	Protocol       Protocol
+	Container      string
+	VideoCodec     string
+	AudioCodec     string
+	DecisionReason ReasonCode
+	TruthReason    string
+	Duration       float64
+	// Duration truth metadata (optional)
+	DurationSource     string
+	DurationConfidence string
+	DurationReasons    []string
+}
+
+// MediaInfo represents pure facts about the recording (used inside PlaybackInfoResult domain).
+// Note: PIDE uses MediaTruth internally, but Resolver exposes MediaInfo for DTO.
+type MediaInfo struct {
+	Container             string
+	VideoCodec            string
+	AudioCodec            string
+	Duration              float64
+	AbsPath               string
+	IsMP4FastPathEligible bool
+}
+
+// MediaTruth represents the source of truth for the media.
+type MediaTruth struct {
+	Status     MediaStatus
+	Reasons    []ReasonCode
+	RetryAfter int
+	ProbeState ProbeState
+	// Reserved for blocked probe states.
+	ProbeBlockedReason ProbeBlockedReason
+	Container          string
+	VideoCodec         string
+	AudioCodec         string
+	Duration           float64
+	// Duration truth metadata (optional)
+	DurationSource     string
+	DurationConfidence string
+	DurationReasons    []string
+	Width              int
+	Height             int
+	FPS                float64
+	Interlaced         bool
+}
+
+type ProbeState string
+
+const (
+	ProbeStateUnknown  ProbeState = ""
+	ProbeStateQueued   ProbeState = "queued"
+	ProbeStateInFlight ProbeState = "in_flight"
+	ProbeStateBlocked  ProbeState = "blocked"
+)
+
+type ProbeBlockedReason string
+
+const (
+	ProbeBlockedReasonNone     ProbeBlockedReason = ""
+	ProbeBlockedReasonDisabled ProbeBlockedReason = "probe_disabled"
+	ProbeBlockedReasonBackoff  ProbeBlockedReason = "probe_backoff"
+)
+
+// PlaybackCapabilities represents the core capability set for playback decisions.
+// This struct is intended to be the domain truth, mapped to/from OpenAPI or shims.
+type PlaybackCapabilities struct {
+	CapabilitiesVersion int      `json:"capabilitiesVersion"`
+	Containers          []string `json:"containers"`
+	VideoCodecs         []string `json:"videoCodecs"`
+	AudioCodecs         []string `json:"audioCodecs"`
+	SupportsHLS         bool     `json:"supportsHls"`
+
+	// DeviceType is optional but helpful for identity-bound profiles
+	DeviceType string `json:"deviceType,omitempty"`
+
+	// Allowed constraints ONLY (per ADR P7):
+	AllowTranscode *bool     `json:"allowTranscode,omitempty"`
+	MaxVideo       *MaxVideo `json:"maxVideo,omitempty"`
+}
+
+type MaxVideo struct {
+	Width  int     `json:"width"`
+	Height int     `json:"height"`
+	FPS    float64 `json:"fps"`
+}
+
+const (
+	// Deprecated
+	StateReady     = "READY"
+	StatePreparing = "PREPARING"
+	StateFailed    = "FAILED"
+)
+
+// Decision represents the output of the engine.
+type Decision struct {
+	Mode     PlaybackMode
+	Artifact ArtifactKind
+	Reason   ReasonCode
+}

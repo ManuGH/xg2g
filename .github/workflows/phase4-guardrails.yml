@@ -5,14 +5,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "webui/**"
-      - "scripts/**"
+      - "frontend/webui/**"
+      - "backend/scripts/**"
       - ".github/workflows/phase4-guardrails.yml"
   pull_request:
     branches: [main]
     paths:
-      - "webui/**"
-      - "scripts/**"
+      - "frontend/webui/**"
+      - "backend/scripts/**"
       - ".github/workflows/phase4-guardrails.yml"
 
 concurrency:
@@ -51,11 +51,11 @@ jobs:
       - name: Check generated client wrapper boundary
         run: |
           set -euo pipefail
-          bash webui/scripts/verify-client-wrapper-boundary.sh
+          bash frontend/webui/scripts/verify-client-wrapper-boundary.sh
 
       - name: TypeScript Check
         run: |
-          cd webui
+          cd frontend/webui
           npm ci
           npm run build
           echo "✅ TypeScript compilation successful"

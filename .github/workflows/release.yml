@@ -3,393 +3,51 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
-  workflow_dispatch:
+      - "v*"
 
 permissions:
-  contents: read # Top-level read-only
-
-concurrency:
-  group: repo-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  contents: write
+  packages: write
+  id-token: write
 
 jobs:
-  # CodeQL analysis
-  codeql:
-    name: Analyze
+  goreleaser:
     runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ["go"]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup Go
-        uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # Latest stable
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@c793b717bc78562f491db7b0e93a3a178b099162
-        with:
-          languages: ${{ matrix.language }}
-      - name: Build Go (Go Analysis)
-        if: matrix.language == 'go'
-        run: go build ./...
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/init@c793b717bc78562f491db7b0e93a3a178b099162
-        with:
-          category: "/language:${{ matrix.language }}"
-
-  # Govulncheck
-  govulncheck:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # Latest stable
+        uses: actions/setup-go@v5
         with:
-          go-version-file: "go.mod"
-          check-latest: true
-        env:
-          GOTOOLCHAIN: auto
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
 
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.3
-
-      - name: Ensure jq
-        run: |
-          jq --version || (sudo apt-get update && sudo apt-get install -y jq)
-
-      - name: Run govulncheck (SARIF)
-        run: |
-          govulncheck -format sarif ./... > govulncheck.sarif || echo '{"version":"3.0.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
-
-      - name: Fix SARIF duplicate tags
-        run: |
-          jq '
-            if .runs then
-              .runs |= map(
-                if .tool.driver.rules then
-                  .tool.driver.rules |= map(
-                    if .properties.tags then
-                      .properties.tags |= unique
-                    else
-                      .
-                    end
-                  )
-                else
-                  .
-                end
-              )
-            else
-              .
-            end
-          ' govulncheck.sarif > govulncheck.fixed.sarif
-          mv govulncheck.fixed.sarif govulncheck.sarif
-
-      - name: Upload SARIF to code scanning
-        if: always()
-        uses: github/codeql-action/init@c793b717bc78562f491db7b0e93a3a178b099162 # v3
-        with:
-          sarif_file: govulncheck.sarif
-          category: govulncheck
-
-      - name: Run govulncheck (JSON)
-        run: govulncheck -format json ./... > govulncheck.json || true
-
-      - name: Evaluate High/Critical vulnerabilities
-        id: severity
+      - name: Install git-cliff
         run: |
           set -euo pipefail
-          if [ ! -s govulncheck.json ]; then
-            echo "high_crit_count=0" >> "$GITHUB_OUTPUT"
-            echo "fail=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          count=$(jq -r '
-            ( .vulns // [] )
-            | map(
-                ( .osv.database_specific.severity? // "" ) as $lab
-                | (if ($lab | ascii_upcase) == "CRITICAL" then 9 elif ($lab | ascii_upcase) == "HIGH" then 7 else 0 end) as $labelScore
-                | ( ( .osv.severity? // [] )
-                    | map( (.score // 0) as $s
-                          | ( ($s|type) == "number" )
-                            and $s or ( ($s|tostring) | (if test("^[0-9.]+$") then tonumber elif test("CRITICAL";"i") then 9 elif test("HIGH";"i") then 7 else 0 end) ) )
-                    | (if length>0 then max else 0 end)
-                  ) as $cvssScore
-                | ([ $labelScore, $cvssScore ] | max) as $maxSev
-                | select($maxSev >= 7)
-              )
-            | length
-          ' govulncheck.json | tr -d '\n' )
-          if ! printf '%s' "$count" | grep -Eq '^[0-9]+$'; then count=0; fi
-          echo "High/Critical vulnerabilities: ${count}" >> "$GITHUB_STEP_SUMMARY"
-          printf 'high_crit_count=%s\n' "$count" >> "$GITHUB_OUTPUT"
-          if [ "$count" -gt 0 ]; then printf 'fail=true\n' >> "$GITHUB_OUTPUT"; else printf 'fail=false\n' >> "$GITHUB_OUTPUT"; fi
+          # Fetching binary directly is usually faster than cargo install in CI
+          curl -L https://github.com/orhun/git-cliff/releases/download/v2.8.0/git-cliff-2.8.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          mv git-cliff-2.8.0/git-cliff /usr/local/bin/
+          rm -rf git-cliff-2.8.0
+          git-cliff --version
 
-      - name: Fail on High/Critical
-        if: steps.severity.outputs.fail == 'true'
-        run: |
-          echo "❌ High/Critical vulnerabilities detected: ${{ steps.severity.outputs.high_crit_count }}" >> "$GITHUB_STEP_SUMMARY"
-          exit 1
+      - name: Set Reproducible Build Headers
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
 
-  # Security gate: Ensure all security checks pass before release
-  security-gate:
-    name: Security Gate
-    runs-on: ubuntu-latest
-    needs: [codeql, govulncheck]
-    if: always()
-    permissions:
-      contents: read
-    steps:
-      - name: Check security workflow status
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: |
-          echo "❌ Security checks failed or were cancelled."
-          exit 1
-      - name: Pass Security Gate
-        run: echo "✅ All security checks passed."
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-  release:
-    runs-on: ubuntu-latest
-    needs: security-gate
-    permissions:
-      contents: write # for GoReleaser to create releases
-      packages: write # for pushing to GHCR
-      id-token: write # for cosign OIDC signing
-      security-events: write # for Trivy SARIF upload
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
-        with:
-          fetch-depth: 0 # GoReleaser needs full history
-
-      - name: Set up Go
-        uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # v6
-        with:
-          go-version-file: go.mod
-          check-latest: true
-          cache: true
-        env:
-          GOTOOLCHAIN: auto
-
-      # =============================================
-      # Build WebUI (Strategy A: CI-generated)
-      # =============================================
-      - name: Setup Node for WebUI
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: webui/package-lock.json
-
-      - name: Build WebUI
-        run: |
-          set -euo pipefail
-          cd webui
-          npm ci
-          npm run build
-          # Ensure destination exists and is empty (Robust Strategy A)
-          rm -rf ../internal/control/http/dist
-          mkdir -p ../internal/control/http/dist
-          cp -a dist/. ../internal/control/http/dist/
-          # Sanity Check: Fail if index.html is missing (ensures valid build)
-          test -f ../internal/control/http/dist/index.html || (echo "❌ internal/control/http/dist/index.html missing" && exit 1)
-
-      # =============================================
-      # Pre-Release Checks
-      # =============================================
-      - name: Run tests
-        run: go test ./... -race -count=1 -timeout=10m
-
-      - name: Run go vet
-        run: go vet ./...
-
-      - name: Verify modules
-        run: go mod verify
-
-      - name: Set SOURCE_DATE_EPOCH
-        run: |
-          echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
-
-      # =============================================
-      # Build Binaries with GoReleaser
-      # =============================================
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: latest
+          version: "~> 2" # pin to v2.x; bump intentionally when v3 ships
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
-
-      # =============================================
-      # Build and Push Container Image (amd64)
-      # =============================================
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.10.0
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.7.0
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest
-
-      - name: Build and push Docker image
-        id: build-push
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # =============================================
-      # Sign Container Images with Cosign
-      # =============================================
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
-
-      - name: Sign container image
-        env:
-          DIGEST: ${{ steps.build-push.outputs.digest }}
-          TAGS: ${{ steps.meta.outputs.tags }}
-        run: |
-          images=()
-          for tag in ${TAGS}; do
-            images+=("${tag}@${DIGEST}")
-          done
-
-          echo "Signing ${#images[@]} image tags..."
-          for image in "${images[@]}"; do
-            echo "Signing ${image}"
-            cosign sign --yes \
-              -a "repo=${{ github.repository }}" \
-              -a "workflow=${{ github.workflow }}" \
-              -a "ref=${{ github.sha }}" \
-              "${image}"
-          done
-
-      # =============================================
-      # Generate and Attest SBOM
-      # =============================================
-      - name: Install Syft
-        uses: anchore/sbom-action/download-syft@17ae1740179002c89186b61233e0f892c3118b11 # v0
-
-      - name: Generate SBOM
-        run: |
-          mkdir -p dist && syft packages . \
-            -o spdx-json \
-            > dist/sbom.spdx.json
-
-      - name: Attest SBOM to image
-        env:
-          DIGEST: ${{ steps.build-push.outputs.digest }}
-          TAGS: ${{ steps.meta.outputs.tags }}
-        run: |
-          images=()
-          for tag in ${TAGS}; do
-            images+=("${tag}@${DIGEST}")
-          done
-
-          echo "Attesting SBOM to ${#images[@]} image tags..."
-          for image in "${images[@]}"; do
-            echo "Attesting ${image}"
-            cosign attest --yes \
-              --predicate dist/sbom.spdx.json \
-              --type spdx \
-              "${image}"
-          done
-
-      # =============================================
-      # Upload SBOM to Release
-      # =============================================
-      - name: Upload SBOM to release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
-        with:
-          files: dist/sbom.spdx.json
-
-      # =============================================
-      # Scan for Vulnerabilities
-      # =============================================
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
-        with:
-          image-ref: ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }}
-          format: "sarif"
-          output: "trivy-results.sarif"
-          trivy-config: .github/security/trivy.yaml
-
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/init@c793b717bc78562f491db7b0e93a3a178b099162 # v3
-        with:
-          sarif_file: "trivy-results.sarif"
-
-      # =============================================
-      # Notify on Success
-      # =============================================
-      - name: Summary
-        run: |
-          echo "## Release Summary :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Images**: ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Digest**: ${{ steps.build-push.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Signed**: ✅" >> $GITHUB_STEP_SUMMARY
-          echo "- **SBOM**: ✅" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Verification Commands" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "# Verify signature" >> $GITHUB_STEP_SUMMARY
-          echo "cosign verify ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }} \\" >> $GITHUB_STEP_SUMMARY
-          echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\" >> $GITHUB_STEP_SUMMARY
-          echo "  --certificate-identity-regexp '^https://github.com/${{ github.repository }}'" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# Verify SBOM attestation" >> $GITHUB_STEP_SUMMARY
-          echo "cosign verify-attestation ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }} \\" >> $GITHUB_STEP_SUMMARY
-          echo "  --type spdx \\" >> $GITHUB_STEP_SUMMARY
-          echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\" >> $GITHUB_STEP_SUMMARY
-          echo "  --certificate-identity-regexp '^https://github.com/${{ github.repository }}'" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY

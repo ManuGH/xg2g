@@ -1,5 +1,7 @@
 # xg2g Documentation Portal
 
+[![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+
 Welcome to the normative documentation for xg2g.
 To ensure consistency and "Operator-Grade" quality,
 all documentation follows a strict hierarchy.
@@ -10,6 +12,12 @@ The single source of truth for the system's design
 and decision logic is the **Spec Index**:
 
 👉 **[SPEC_INDEX.md](decision/SPEC_INDEX.md)**
+
+## 🌐 API Reference
+
+- Published API docs (GitHub Pages): **[xg2g API Reference](https://manugh.github.io/xg2g/)**
+- In-repo Redoc entrypoint: [docs/api/index.html](api/index.html)
+- OpenAPI source of truth: [backend/api/openapi.yaml](../backend/api/openapi.yaml)
 
 ---
 

@@ -1,36 +1,39 @@
 # Pull Request
 
-## Description
+## Summary
 
-Briefly describe the objective and technical approach.
+Describe what changed and why.
 
 ## Scope
 
 - In scope:
-- Non-goals:
+- Out of scope:
 
-## Observability
+## Risk and Rollout
 
-- SLO/alert signal metric:
-- Supporting metrics/logs/traces:
-
-## Change Type
-
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation / Refactoring
+- Risk level: low / medium / high
+- Rollout or migration notes:
+- Fallback plan:
 
 ## Verification
 
-- [ ] `make test` passed
-- [ ] `make lint` passed
-- [ ] Manual verification evidence (logs/screenshots) attached
+Commands and evidence used to verify this change:
 
-## Documentation
+```bash
+# example:
+make test
+make lint
+```
 
-- [ ] Modified [REFERENCE.md](docs/guides/REFERENCE.md) (if changed config)
-- [ ] Updated [ARCHITECTURE.md](ARCHITECTURE.md) (if changed design)
+- Manual checks (if applicable):
+- Logs/screenshots (if applicable):
+
+## Checklist
+
+- [ ] Tests added/updated for changed behavior
+- [ ] Documentation updated (if needed)
+- [ ] No secrets or credentials introduced
+- [ ] Backward compatibility considered (or break documented)
 
 ## Related Issues
 

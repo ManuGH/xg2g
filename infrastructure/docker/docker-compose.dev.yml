@@ -1,0 +1,9 @@
+services:
+  xg2g:
+    # Local development: build from the current workspace (prod compose is image-only).
+    build: .
+    image: xg2g:dev
+    env_file:
+      - ${XG2G_ENV_FILE:-./.env}
+    volumes:
+      - ${XG2G_DATA_DIR:-./data}:/var/lib/xg2g

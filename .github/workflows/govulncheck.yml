@@ -22,6 +22,9 @@ jobs:
     permissions:
       contents: read
       security-events: write # for SARIF upload
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
@@ -29,15 +32,13 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # Latest stable
         with:
-          go-version-file: "go.mod"
+          go-version-file: "backend/go.mod"
           check-latest: true
         env:
           GOTOOLCHAIN: auto
 
-      - name: Install govulncheck
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1
-        with:
-          repo-checkout: false
+      - name: Install govulncheck (pinned)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: Ensure jq (for severity evaluation)
         run: |
@@ -72,10 +73,10 @@ jobs:
           mv govulncheck.fixed.sarif govulncheck.sarif
 
       - name: Upload SARIF to code scanning
-        if: always()
+        if: always() && hashFiles('backend/govulncheck.sarif') != ''
         uses: github/codeql-action/upload-sarif@c793b717bc78562f491db7b0e93a3a178b099162
         with:
-          sarif_file: govulncheck.sarif
+          sarif_file: backend/govulncheck.sarif
           category: govulncheck
 
       - name: Run govulncheck (JSON)

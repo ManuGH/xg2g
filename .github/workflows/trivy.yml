@@ -1,0 +1,138 @@
+name: Security - Trivy
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforce:
+        description: "Fail workflow on CRITICAL/HIGH findings"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "11 4 * * 1" # weekly
+
+concurrency:
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TRIVY_SEVERITY: CRITICAL,HIGH
+
+jobs:
+  trivy-fs:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
+
+      - name: Run Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: ${{ env.TRIVY_SEVERITY }}
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
+          ignore-unfixed: false
+          exit-code: "0"
+
+      - name: Upload filesystem scan to GitHub Security
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: github/codeql-action/upload-sarif@c793b717bc78562f491db7b0e93a3a178b099162 # v3.27.9
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+      - name: Enforce filesystem vulnerability threshold
+        if: (github.event_name == 'workflow_dispatch' && inputs.enforce == 'true') || vars.TRIVY_ENFORCE == 'true'
+        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: ${{ env.TRIVY_SEVERITY }}
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Enforcement disabled (filesystem)
+        if: (github.event_name != 'workflow_dispatch' || inputs.enforce != 'true') && vars.TRIVY_ENFORCE != 'true'
+        run: echo "Trivy filesystem enforcement is disabled (set repo variable TRIVY_ENFORCE=true)." >> "$GITHUB_STEP_SUMMARY"
+
+  trivy-image:
+    name: Trivy Image Scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build production image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        env:
+          SOURCE_DATE_EPOCH: "0"
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: xg2g:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Run Trivy image scan (SARIF)
+        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
+        with:
+          image-ref: xg2g:${{ github.sha }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: ${{ env.TRIVY_SEVERITY }}
+          vuln-type: os,library
+          ignore-unfixed: false
+          exit-code: "0"
+
+      - name: Upload image scan to GitHub Security
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: github/codeql-action/upload-sarif@c793b717bc78562f491db7b0e93a3a178b099162 # v3.27.9
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Enforce image vulnerability threshold
+        if: (github.event_name == 'workflow_dispatch' && inputs.enforce == 'true') || vars.TRIVY_ENFORCE == 'true'
+        uses: aquasecurity/trivy-action@97e0b3872f55f89b95b2f65b3dbab56962816478 # 0.34.2
+        with:
+          image-ref: xg2g:${{ github.sha }}
+          format: table
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Enforcement disabled (image)
+        if: (github.event_name != 'workflow_dispatch' || inputs.enforce != 'true') && vars.TRIVY_ENFORCE != 'true'
+        run: echo "Trivy image enforcement is disabled (set repo variable TRIVY_ENFORCE=true)." >> "$GITHUB_STEP_SUMMARY"

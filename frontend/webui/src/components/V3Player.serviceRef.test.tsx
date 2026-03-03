@@ -1,0 +1,271 @@
+/// <reference types="@testing-library/jest-dom" />
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import V3Player from './V3Player';
+import type { V3PlayerProps } from '../types/v3-player';
+
+vi.mock('hls.js', () => {
+  const HlsMock = vi.fn().mockImplementation(function (this: any) {
+    return {
+      on: vi.fn(),
+      loadSource: vi.fn(),
+      attachMedia: vi.fn(),
+      destroy: vi.fn(),
+      recoverMediaError: vi.fn(),
+      startLoad: vi.fn(),
+      currentLevel: -1,
+      levels: [],
+    };
+  });
+
+  (HlsMock as any).isSupported = vi.fn().mockReturnValue(true);
+  (HlsMock as any).Events = {
+    LEVEL_SWITCHED: 'hlsLevelSwitched',
+    MANIFEST_PARSED: 'hlsManifestParsed',
+    LEVEL_LOADED: 'hlsLevelLoaded',
+    FRAG_LOADED: 'hlsFragLoaded',
+    ERROR: 'hlsError'
+  };
+  (HlsMock as any).ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' };
+  (HlsMock as any).ErrorDetails = { MANIFEST_LOAD_ERROR: 'manifestLoadError' };
+
+  return { default: HlsMock };
+});
+
+vi.mock('../client-ts', () => ({
+  createSession: vi.fn(),
+  postRecordingPlaybackInfo: vi.fn(),
+}));
+
+describe('V3Player ServiceRef Input', () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'direct_stream',
+            requestId: 'live-decision-1',
+            playbackDecisionToken: 'live-token-1',
+            decision: { reasons: ['direct_stream_match'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          status: 409,
+          ok: false,
+          headers: { get: vi.fn().mockReturnValue(null) },
+          json: vi.fn().mockResolvedValue({ code: 'LEASE_BUSY', requestId: 'test' })
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+  });
+
+  afterEach(() => {
+    (globalThis as any).fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('uses edited serviceRef when starting a live stream via Enter', async () => {
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    render(<V3Player {...props} />);
+
+    const input = screen.getByRole('textbox');
+    const newRef = '1:0:1:1234:567:89AB:0:0:0:0:';
+    fireEvent.change(input, { target: { value: newRef } });
+
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe(newRef);
+    });
+
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalled();
+    });
+
+    const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
+    expect(intentCall).toBeDefined();
+    const [url, options] = intentCall;
+    expect(String(url)).toContain('/intents');
+    const body = JSON.parse(options.body);
+    expect(body.serviceRef).toBe(newRef);
+    expect(body.playbackDecisionToken).toBe('live-token-1');
+    expect(body.params?.playback_decision_id).toBeUndefined();
+  });
+
+  it('uses edited serviceRef when starting a live stream via Start button', async () => {
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    render(<V3Player {...props} />);
+
+    const input = screen.getByRole('textbox');
+    const newRef = '1:0:1:9999:888:77AA:0:0:0:0:';
+    fireEvent.change(input, { target: { value: newRef } });
+
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe(newRef);
+    });
+
+    const startButton = screen.getByRole('button', { name: /common\.startStream/i });
+    fireEvent.click(startButton);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalled();
+    });
+
+    const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
+    expect(intentCall).toBeDefined();
+    const [url, options] = intentCall;
+    expect(String(url)).toContain('/intents');
+    const body = JSON.parse(options.body);
+    expect(body.serviceRef).toBe(newRef);
+    expect(body.playbackDecisionToken).toBe('live-token-1');
+    expect(body.params?.playback_decision_id).toBeUndefined();
+  });
+
+  it('does not call live APIs when serviceRef is empty after trimming', async () => {
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    render(<V3Player {...props} />);
+
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '   ' } });
+
+    const startButton = screen.getByRole('button', { name: /common\.startStream/i });
+    fireEvent.click(startButton);
+
+    await screen.findByText(/player\.serviceRefRequired/i);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('surfaces problem details from /intents 400 responses', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'direct_stream',
+            requestId: 'live-decision-2',
+            playbackDecisionToken: 'live-token-2',
+            decision: { reasons: ['direct_stream_match'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          status: 400,
+          ok: false,
+          headers: { get: vi.fn().mockReturnValue('application/problem+json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            title: 'Invalid Request',
+            code: 'INVALID_INPUT',
+            detail: 'serviceRef is required',
+            requestId: 'req-400-1',
+          })),
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    render(<V3Player {...props} />);
+
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '1:0:1:123:456:789:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+
+    await screen.findByText(/Invalid Request/i);
+    fireEvent.click(screen.getByRole('button', { name: /common\.showDetails/i }));
+    await screen.findByText(/INVALID_INPUT/i);
+    await screen.findByText(/req-400-1/i);
+  });
+
+  it('classifies live pause without user intent as buffering', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'hls',
+            requestId: 'live-decision-3',
+            playbackDecisionToken: 'live-token-3',
+            decision: { reasons: ['hls'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            sessionId: 'sid-live-1',
+            requestId: 'intent-req-1'
+          })
+        });
+      }
+      if (url.includes('/sessions/sid-live-1')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            id: 'sid-live-1',
+            state: 'READY',
+            mode: 'LIVE',
+            playbackUrl: 'http://example.com/live.m3u8',
+            heartbeat_interval: 600
+          })
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { container, unmount } = render(<V3Player {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /player\.statsLabel/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+    });
+
+    const video = container.querySelector('video');
+    expect(video).toBeTruthy();
+    fireEvent.pause(video as HTMLVideoElement);
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering/i);
+    });
+    expect(screen.getByRole('status')).not.toHaveTextContent(/paused/i);
+    unmount();
+  });
+});

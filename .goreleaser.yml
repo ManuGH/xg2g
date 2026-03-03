@@ -1,155 +1,96 @@
+# .goreleaser.yml
 version: 2
+project_name: xg2g
 
 before:
   hooks:
-    - go mod tidy
-    - go mod verify
+    - make ui-build
+    - bash -c 'cd backend && go mod tidy'
+    - cp backend/scripts/build-ffmpeg.sh .
+    - cp backend/scripts/ffmpeg-wrapper.sh .
+    - cp backend/scripts/ffprobe-wrapper.sh .
 
 builds:
   - id: xg2g
-    main: ./cmd/daemon
-    binary: xg2g
+    main: ./backend/cmd/daemon
     env:
       - CGO_ENABLED=0
-      - TZ=UTC
-      - SOURCE_DATE_EPOCH={{ .Env.SOURCE_DATE_EPOCH }}
-      - GOFLAGS=-trimpath -buildvcs=false -mod=readonly
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/ManuGH/xg2g/internal/version.Version={{.Version}} -X github.com/ManuGH/xg2g/internal/version.Commit={{.FullCommit}} -X github.com/ManuGH/xg2g/internal/version.Date={{.Date}}
     goos:
       - linux
+      - darwin
+      - windows
     goarch:
       - amd64
       - arm64
-    mod_timestamp: "{{ .CommitDate }}"
-    ldflags:
-      - -s -w -buildid=
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.buildDate={{.CommitDate}}
-    flags:
-      - -trimpath
-    gcflags:
-      - all=-trimpath={{.ProjectDir}}
-    asmflags:
-      - all=-trimpath={{.ProjectDir}}
+    ignore:
+      - goos: windows
+        goarch: arm64
 
 archives:
-  - id: xg2g
-    format_overrides:
-      - goos: windows
-        format: zip
+  - id: core
+    formats: [tar.gz]
     name_template: >-
-      {{ .ProjectName }}_
-      {{- .Version }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     files:
       - README.md
       - LICENSE
-      - docs/README.md
-      - docs/ARCHITECTURE.md
-      - docs/guides/**/*
+      - backend/VERSION
+      - docs/**
 
 checksum:
   name_template: "checksums.txt"
-  algorithm: sha256
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"
 
 changelog:
-  use: github
   sort: asc
   filters:
     exclude:
       - "^docs:"
       - "^test:"
-      - "^chore:"
-      - "^ci:"
-  groups:
-    - title: "Features"
-      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
-      order: 0
-    - title: "Bug Fixes"
-      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
-      order: 1
-    - title: "Performance Improvements"
-      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
-      order: 2
-    - title: "Refactors"
-      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
-      order: 3
-    - title: "Other Changes"
-      order: 999
+
+dockers:
+  - image_templates:
+      - "ghcr.io/manugh/xg2g:{{ .Version }}-amd64"
+    dockerfile: infrastructure/docker/Dockerfile.release
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.source={{ .GitURL }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+    extra_files:
+      - build-ffmpeg.sh
+      - ffmpeg-wrapper.sh
+      - ffprobe-wrapper.sh
+  - image_templates:
+      - "ghcr.io/manugh/xg2g:{{ .Version }}-arm64"
+    dockerfile: infrastructure/docker/Dockerfile.release
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source={{ .GitURL }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+    extra_files:
+      - build-ffmpeg.sh
+      - ffmpeg-wrapper.sh
+      - ffprobe-wrapper.sh
+
+docker_manifests:
+  - name_template: "ghcr.io/manugh/xg2g:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/manugh/xg2g:{{ .Version }}-amd64"
+      - "ghcr.io/manugh/xg2g:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/manugh/xg2g:latest"
+    image_templates:
+      - "ghcr.io/manugh/xg2g:{{ .Version }}-amd64"
+      - "ghcr.io/manugh/xg2g:{{ .Version }}-arm64"
 
 release:
   github:
     owner: ManuGH
     name: xg2g
-  header: |
-    ## xg2g {{ .Tag }}
-
-    ### 📦 Installation
-
-    **Docker (Recommended):**
-    ```bash
-    docker pull ghcr.io/manugh/xg2g:{{ .Tag }}
-    ```
-
-    **Binary:**
-    Download the appropriate binary for your platform from the assets below.
-
-    **Supported Platforms:**
-    - Linux (amd64, arm64)
-
-    > **Note:** The release binaries are **Pure Go** (CGO disabled). For audio repair and transcoding, use the **Docker image** which includes FFmpeg CLI.
-
-    ### 🔐 Verification
-
-    All binaries and container images are signed with Cosign. Verify signatures:
-    ```bash
-    # Verify container signature
-    cosign verify ghcr.io/manugh/xg2g:{{ .Tag }} \
-      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-      --certificate-identity-regexp '^https://github.com/ManuGH/xg2g'
-    ```
-  footer: |
-    ---
-
-    ### 🛡️ Test Governance
-
-    - **Standard**: [docs/TESTING.md](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/TESTING.md)
-    - **Checklist**: [.github/release_checklist.md](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/.github/release_checklist.md)
-
-    **Confidence Level:**
-    - Binary (amd64/arm64): 🟢 High
-    - Docker (amd64): 🟢 High
-    - Docker (arm64): 🔴 Not Supported / Not Tested
-
-    ---
-
-    ### 🛡️ Test Governance
-
-    - **Standard**: [docs/TESTING.md](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/TESTING.md)
-    - **Checklist**: [.github/release_checklist.md](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/.github/release_checklist.md)
-
-    **Confidence Level:**
-    - Binary (amd64/arm64): 🟢 High
-    - Docker (amd64): 🟢 High
-    - Docker (arm64): 🔴 Not Supported / Not Tested
-
-    ---
-
-    ### 📚 Documentation
-
-    - [Documentation](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/README.md)
-    - [Architecture](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/ARCHITECTURE.md)
-    - [Guides](https://github.com/ManuGH/xg2g/tree/{{ .Tag }}/docs/guides)
-
-    ---
-
-    **Full Changelog**: https://github.com/ManuGH/xg2g/compare/{{ .PreviousTag }}...{{ .Tag }}
-
-    🤖 Built with [Claude Code](https://claude.com/claude-code)

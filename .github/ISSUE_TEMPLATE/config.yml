@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and Ideas
+    url: https://github.com/ManuGH/xg2g/discussions
+    about: Use Discussions for Q&A, architecture ideas, and show-and-tell.
+  - name: Security Report (Private)
+    url: https://github.com/ManuGH/xg2g/security/advisories/new
+    about: Report security vulnerabilities privately.

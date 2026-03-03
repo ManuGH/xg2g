@@ -14,7 +14,7 @@ Preflight is a fast, deterministic gate performed before starting an FFmpeg tran
 
 ## 2a. Configuration
 
-Configurable parameters to tune preflight behavior for different environments (e.g. slow ECM, remote WAN).
+Configurable parameters to tune preflight behavior for different environments (e.g. slow relay startup, remote WAN).
 
 | Config Key | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -29,7 +29,7 @@ When preflight fails, look for the `preflight_reason` field in the logs:
 | `http_status_503` | Tuner or stream relay unavailable (often due to tuner contention). | Check tuner availability on the receiver. |
 | `http_status_401`/`403` | Authentication failure (wrong credentials or IP rejection). | Verify `enigma2.username`/`password` and receiver access. |
 | `sync_miss` | Stream connected but didn't return valid TS data (e.g., "Service not found"). | Verify the Service Reference is correct. |
-| `timeout` | Stream didn't return enough data within 1s. | Treat as receiver-side issue (relay/ECM/whitelist/contended). |
+| `timeout` | Stream didn't return enough data within 1s. | Treat as receiver-side issue (relay/policy/whitelist/contended). |
 | `short_read` | Connection closed before 3 sync packets were read. | Check for intermittent network issues. |
 
 ## 3. Decision Path: timeout + 0 bytes on 17999
@@ -45,9 +45,9 @@ Receiver readiness gate checklist:
 
 1. **Exclusive client**: ensure no VLC or other StreamRelay client is connected.
 2. **Whitelist / policy**: StreamRelay can restrict by ServiceRef (`/etc/enigma2/whitelist_streamrelay`) and/or by client access (IP/ACL). Check both.
-3. **ECM/CA readiness**: verify in `/web/tunerstat` that the tuned service is locked and decrypted.
+3. **Service readiness**: verify in `/web/tunerstat` that the tuned service is locked and delivering data.
 
-If this gate fails, the root cause is receiver-side (StreamRelay, ECM, whitelist, tuner availability).
+If this gate fails, the root cause is receiver-side (StreamRelay, policy, whitelist, tuner availability).
 
 ## 4. Fallback Configuration
 
@@ -116,7 +116,7 @@ Interpretation:
 
 - **both > 0 bytes**: 17999 is likely not exclusive.
 - **one is 0 bytes or significantly smaller**: 17999 behaves as exclusive (admission control required).
-- **both 0 bytes**: receiver/relay not delivering TS (readiness/ECM/policy issue).
+- **both 0 bytes**: receiver/relay not delivering TS (readiness/policy issue).
 
 ### Common Root Causes for 17999 Issues
 

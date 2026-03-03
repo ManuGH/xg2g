@@ -1,0 +1,110 @@
+name: Coverage
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**/*.go"
+      - "backend/go.mod"
+      - "backend/go.sum"
+      - "mk/**"
+      - ".github/workflows/coverage.yml"
+      - "Makefile"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**/*.go"
+      - "backend/go.mod"
+      - "backend/go.sum"
+      - "mk/**"
+      - ".github/workflows/coverage.yml"
+      - "Makefile"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-coverage:
+    name: Go Coverage Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GOTOOLCHAIN: auto
+      TZ: UTC
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # v6
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Install ffmpeg
+        run: |
+          set -euo pipefail
+          if command -v ffmpeg >/dev/null 2>&1; then
+            echo "ffmpeg already installed"
+          else
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+
+      - name: Run coverage
+        id: coverage
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cd backend
+          go test ./... -count=1 -timeout=20m \
+            -covermode=atomic \
+            -coverprofile=../artifacts/coverage.out \
+            -coverpkg=./...
+          go tool cover -func=../artifacts/coverage.out | tee ../artifacts/coverage.txt
+          go tool cover -html=../artifacts/coverage.out -o ../artifacts/coverage.html
+
+          total="$(go tool cover -func=../artifacts/coverage.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
+          if [[ -z "${total}" ]]; then
+            echo "failed to extract total coverage" >&2
+            exit 1
+          fi
+          echo "total=${total}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Coverage Report"
+            echo
+            echo "- Total Go coverage: **${total}%**"
+            echo "- Artifact: \`coverage-report\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce coverage threshold
+        if: vars.COVERAGE_MIN != ''
+        run: |
+          set -euo pipefail
+          total="${{ steps.coverage.outputs.total }}"
+          minimum="${{ vars.COVERAGE_MIN }}"
+          awk -v t="${total}" -v m="${minimum}" 'BEGIN {
+            if ((t + 0) < (m + 0)) {
+              printf("coverage gate failed: total %.2f%% < minimum %.2f%%\n", t, m)
+              exit 1
+            }
+          }'
+          echo "Coverage gate passed: ${total}% >= ${minimum}%"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4.4.3
+        if: always()
+        with:
+          name: coverage-report
+          path: |
+            artifacts/coverage.out
+            artifacts/coverage.txt
+            artifacts/coverage.html
+          retention-days: 14
