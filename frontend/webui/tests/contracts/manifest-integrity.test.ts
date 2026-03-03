@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 describe('UI Consumption Manifest Integrity', () => {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const manifestPath = path.resolve(__dirname, '../../../contracts/ui_consumption.manifest.json');
+  const manifestPath = path.resolve(__dirname, '../../../../backend/contracts/ui_consumption.manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 
   it('contains no duplicate endpoint+fieldPath pairs', () => {

@@ -1,4 +1,4 @@
-import matrixData from '../../../../contracts/version_matrix.json';
+import matrixData from '../../../../../backend/contracts/version_matrix.json';
 
 export interface PolicyRule {
   requireNormativeWhenPresent?: boolean;
