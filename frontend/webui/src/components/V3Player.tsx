@@ -1,34 +1,24 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
-import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
 import { postRecordingPlaybackInfo } from '../client-ts';
 import { getApiBaseUrl } from '../lib/clientWrapper';
 import { telemetry } from '../services/TelemetryService';
 import type {
   V3PlayerProps,
+  PlayerStats,
   PlayerStatus,
   V3SessionResponse,
   HlsInstanceRef,
   VideoElementRef
 } from '../types/v3-player';
 import { useLiveSessionController } from '../features/player/useLiveSessionController';
+import { usePlaybackEngine } from '../features/player/usePlaybackEngine';
 import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
 import { debugError, debugLog, debugWarn } from '../utils/logging';
 import styles from './V3Player.module.css';
-
-interface PlayerStats {
-  bandwidth: number;
-  resolution: string;
-  fps: number;
-  droppedFrames: number;
-  buffer: number; // Segment duration
-  bufferHealth: number; // Buffer ahead in seconds
-  latency: number | null; // Live latency
-  levelIndex: number;
-}
 
 interface ApiErrorResponse {
   code?: string;
@@ -335,6 +325,27 @@ function V3Player(props: V3PlayerProps) {
     createPlayerError: (message, details) => new PlayerError(message, details)
   });
 
+  const {
+    resetPlaybackEngine,
+    playHls,
+    playDirectMp4,
+    waitForDirectStream
+  } = usePlaybackEngine({
+    videoRef,
+    hlsRef,
+    sessionIdRef,
+    isTeardownRef,
+    lastDecodedRef,
+    t,
+    reportError,
+    shouldForceNativeMobileHls,
+    setStats,
+    setStatus,
+    setError,
+    setErrorDetails,
+    setShowErrorDetails
+  });
+
 
   const formatClock = useCallback((value: number): string => {
     if (!Number.isFinite(value) || value < 0) return '--:--';
@@ -526,25 +537,6 @@ function V3Player(props: V3PlayerProps) {
 
   // --- Core Helpers & Wrappers (Memoized) ---
 
-  const resetPlaybackEngine = useCallback(() => {
-    isTeardownRef.current = true;
-    try {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.removeAttribute('src'); // Cleanest reset for Safari
-        videoRef.current.load(); // Reset media element to initial state
-      }
-    } finally {
-      // Small tick to ensure event loop cleanup clears any pending errors
-      // User recommendation: 250-500ms window to catch trailing async errors
-      setTimeout(() => { isTeardownRef.current = false; }, 50);
-    }
-  }, []);
-
   const clearRecordingTimeout = useCallback(() => {
     if (recordingTimeoutRef.current !== null) {
       window.clearTimeout(recordingTimeoutRef.current);
@@ -566,259 +558,6 @@ function V3Player(props: V3PlayerProps) {
       vodFetchRef.current = null;
     }
   }, []);
-
-  const updateStats = useCallback((hls: Hls) => {
-    if (!hls) return;
-    // Handle Auto (-1) or manual level
-    const idx = hls.currentLevel === -1 ? 0 : hls.currentLevel; // Fallback to 0 for stats
-    const level = hls.levels ? hls.levels[idx] : undefined;
-
-    if (level) {
-      setStats(prev => {
-        let newBandwidth = prev.bandwidth;
-        let newRes = prev.resolution;
-
-        if (level.bitrate) newBandwidth = Math.round(level.bitrate / 1024);
-        if (level.width && level.height) {
-          newRes = `${level.width}x${level.height}`;
-        }
-
-        return {
-          ...prev,
-          bandwidth: newBandwidth,
-          resolution: newRes,
-          levelIndex: hls.currentLevel, // Keep actual -1 for display truth
-        };
-      });
-    } else {
-      setStats(prev => ({
-        ...prev,
-        levelIndex: hls.currentLevel,
-      }));
-    }
-  }, []);
-
-  const playHls = useCallback((url: string, engine: 'auto' | 'native' | 'hlsjs' = 'auto') => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    lastDecodedRef.current = 0; // Reset native FPS counter on new stream
-
-    const forceNativeMobile = shouldForceNativeMobileHls(video);
-    const canPlayNative = !!video.canPlayType('application/vnd.apple.mpegurl');
-    const preferNative =
-      forceNativeMobile ||
-      engine === 'native' ||
-      (engine === 'auto' && canPlayNative && !Hls.isSupported());
-    const canUseHlsJs = (engine === 'hlsjs' || engine === 'auto') && !forceNativeMobile;
-
-    if (forceNativeMobile && engine === 'hlsjs') {
-      debugLog('[V3Player] Overriding hls.js engine to native HLS on mobile WebKit');
-    }
-
-    if (!preferNative && canUseHlsJs && Hls.isSupported()) {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
-      const hls = new Hls({
-        debug: false,
-        enableWorker: true,
-        lowLatencyMode: false,
-        backBufferLength: 300,
-        maxBufferLength: 60,
-        capLevelToPlayerSize: true // Optimize for windowed mode
-      });
-      hlsRef.current = hls;
-
-      hls.on(Hls.Events.LEVEL_SWITCHED, () => updateStats(hls));
-      hls.on(Hls.Events.MANIFEST_PARSED, (_e, data: ManifestParsedData) => {
-        debugLog('[V3Player] HLS Manifest Parsed', { levels: data.levels.length });
-
-        // Phase 12 Fix: Ensure we start on a valid level (Auto)
-        if (hls.currentLevel === -1 && data.levels.length > 0) {
-          hls.startLevel = -1; // Explicitly set Auto start
-        }
-
-        updateStats(hls);
-        if (data.levels && data.levels.length > 0) {
-          const first = data.levels[0];
-          if (first) {
-            setStats(prev => ({ ...prev, fps: first.frameRate || 0 }));
-          }
-        }
-        videoRef.current?.play().catch(e => {
-          debugWarn("[V3Player] Autoplay failed", e);
-          setStatus('ready'); // Force ready so user can click play
-        });
-      });
-
-      // Phase 5 Fix: Consume backend READY signal to force UI state
-      hls.on(Hls.Events.LEVEL_LOADED, (_e, data: LevelLoadedData) => {
-        // Check custom header from backend (injected in hls_contract.go)
-        // hls.js exposes response headers via stats or network details depending on version/loader
-        // For standard fetch loader, we might not get headers easily in event data.
-        // Fallback: If we have levels, duration OR valid live fragments, we are effectively ready.
-        // For LIVE, totalduration can be 0 or small window, so check fragments length.
-        const hasContent = data.details.totalduration > 0 || (data.details.fragments && data.details.fragments.length > 0);
-
-        if (hasContent && status === 'buffering') {
-          debugLog('[V3Player] Level Loaded with content, forcing READY state');
-          setStatus('ready');
-        }
-      });
-
-      hls.on(Hls.Events.FRAG_LOADED, (_e, data: FragLoadedData) => {
-        debugLog('[V3Player] HLS Frag Loaded', { sn: data.frag.sn });
-
-        // Ensure stats are current
-        const currentLevel = hls.currentLevel;
-        if (currentLevel >= 0) {
-          updateStats(hls);
-        }
-
-        setStats(prev => ({
-          ...prev,
-          levelIndex: hls.currentLevel // Force sync
-        }));
-      });
-
-      hls.loadSource(url);
-      hls.attachMedia(video);
-
-      let mediaRecoveryAttempted = false;
-      let networkRetryCount = 0;
-      const MAX_NETWORK_RETRIES = 6;
-      const NETWORK_BACKOFF_CAP_MS = 30_000;
-
-      hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
-        if (data.fatal) {
-          // Report fatal error to backend
-          if (sessionIdRef.current) {
-            const code = data.type === Hls.ErrorTypes.MEDIA_ERROR ? 3 : 0;
-            void reportError('error', code, `${data.type}: ${data.details}`);
-          }
-
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              if (networkRetryCount < MAX_NETWORK_RETRIES) {
-                const backoffMs = Math.min(1000 * Math.pow(2, networkRetryCount), NETWORK_BACKOFF_CAP_MS);
-                networkRetryCount++;
-                debugWarn(`[V3Player] NETWORK_ERROR recovery attempt ${networkRetryCount}/${MAX_NETWORK_RETRIES}, backoff ${backoffMs}ms`);
-                setStatus('recovering');
-                setTimeout(() => hls.startLoad(), backoffMs);
-              } else {
-                debugError(`[V3Player] NETWORK_ERROR: max retries (${MAX_NETWORK_RETRIES}) exhausted`);
-                hlsRef.current?.destroy();
-                setStatus('error');
-                setError(t('player.networkError'));
-                setErrorDetails(`${data.details} (${MAX_NETWORK_RETRIES} retries exhausted)`);
-              }
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              if (!mediaRecoveryAttempted) {
-                mediaRecoveryAttempted = true;
-                debugWarn('[V3Player] MEDIA_ERROR: attempting single recovery');
-                setStatus('recovering');
-                hls.recoverMediaError();
-              } else {
-                debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
-                hlsRef.current?.destroy();
-                setStatus('error');
-                setError(`${t('player.hlsError')}: ${data.type}`);
-                setErrorDetails(`${data.details} (media recovery failed)`);
-              }
-              break;
-            default:
-              hlsRef.current?.destroy();
-              setStatus('error');
-              setError(`${t('player.hlsError')}: ${data.type}`);
-              setErrorDetails(JSON.stringify(data, null, 2));
-              break;
-          }
-        } else {
-          // Non-fatal: reset network retry counter on successful recovery
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            // Non-fatal network errors indicate partial recovery
-          }
-        }
-      });
-
-      // Reset counters when playback resumes successfully
-      hls.on(Hls.Events.FRAG_LOADED, () => {
-        networkRetryCount = 0;
-      });
-    } else if (canPlayNative && (engine === 'native' || engine === 'auto')) {
-      // Native HLS execution path selected by backend or fallback auto.
-      video.src = url;
-      video.addEventListener('loadedmetadata', () => {
-        video.play().catch(e => debugWarn("[V3Player] Native play blocked", e));
-      }, { once: true });
-    } else if (engine === 'auto') {
-      // Best-effort fallback for non-PlaybackInfo flows (e.g. tests/live bootstrap in minimal runtimes).
-      video.src = url;
-      video.addEventListener('loadedmetadata', () => {
-        video.play().catch(e => debugWarn("[V3Player] Auto fallback play blocked", e));
-      }, { once: true });
-    } else {
-      throw new Error('HLS playback engine not available');
-    }
-  }, [t, updateStats, reportError]);
-
-  const playDirectMp4 = useCallback((url: string) => {
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
-    const video = videoRef.current;
-    if (!video) return;
-
-    lastDecodedRef.current = 0; // Reset native FPS counter on new stream
-
-    // Reset stats for direct play
-    setStats(prev => ({ ...prev, bandwidth: 0, resolution: 'Original (Direct)', fps: 0, levelIndex: -1 }));
-
-    // Log for verification
-    debugLog('[V3Player] Switching to Direct MP4 Mode:', url);
-
-    // Native playback
-    video.src = url;
-    video.load();
-    video.play().catch(e => debugWarn("Autoplay failed", e));
-  }, []);
-
-  const waitForDirectStream = useCallback(async (url: string): Promise<void> => {
-    const maxRetries = 100; // 5 minutes max wait
-    let retries = 0;
-
-    while (retries < maxRetries) {
-      if (isTeardownRef.current) throw new Error('Playback cancelled');
-
-      try {
-        // Use standard fetch to check status without downloading body
-        // Disable cache to avoid false positives/negatives on 503s
-        const res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-
-        if (res.ok || res.status === 206) {
-          return; // Ready!
-        }
-
-        if (res.status === 503) {
-          // Fixed backoff (1s) ignoring Retry-After headers on probes
-          await new Promise(r => setTimeout(r, 1000));
-          // Continue loop (implicit)
-        } else {
-          throw new Error(`Unexpected status: ${res.status}`);
-        }
-      } catch (e) {
-        debugWarn('[V3Player] Probe failed', e);
-        throw new Error(t('player.networkError'));
-      }
-
-      retries++;
-    }
-    debugWarn('[V3Player] Direct Stream Timeout after', maxRetries, 'attempts');
-    throw new Error(t('player.timeout'));
-  }, [t]);
 
   const gatherPlaybackCapabilities = useCallback(async () => {
     const video = videoRef.current as HTMLVideoElement | null;
@@ -1535,135 +1274,6 @@ function V3Player(props: V3PlayerProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleFullscreen, togglePlayPause, togglePiP, toggleMute, seekBy]);
-
-  // Video Event Listeners
-  useEffect(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-
-    const onWaiting = () => {
-      // Phase 15 Fix: Ignore waiting if we have forward buffer (micro-stalls)
-      let buffHealth = 0;
-      if (videoEl.buffered.length > 0) {
-        for (let i = 0; i < videoEl.buffered.length; i++) {
-          if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) {
-            buffHealth = videoEl.buffered.end(i) - videoEl.currentTime;
-            break;
-          }
-        }
-      }
-
-      if (videoEl.readyState >= 3 && buffHealth > 0.5) {
-        debugLog('[V3Player] Event: waiting (ignored, buffer=' + buffHealth.toFixed(1) + 's)');
-        return;
-      }
-
-      debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: buffHealth.toFixed(1) });
-      setStatus('buffering');
-    };
-
-    const onStalled = () => {
-      // Stalled means network fetch stopped, but if we have buffer, we are fine.
-      let buffHealth = 0;
-      if (videoEl.buffered.length > 0) {
-        for (let i = 0; i < videoEl.buffered.length; i++) {
-          if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) {
-            buffHealth = videoEl.buffered.end(i) - videoEl.currentTime;
-            break;
-          }
-        }
-      }
-
-      if (buffHealth > 1.0) {
-        debugLog('[V3Player] Event: stalled (ignored, buffer=' + buffHealth.toFixed(1) + 's)');
-        return;
-      }
-
-      debugLog('[V3Player] Event: stalled -> buffering');
-      setStatus('buffering');
-    };
-    const onSeeking = () => {
-      debugLog('[V3Player] Event: seeking -> buffering');
-      setStatus('buffering');
-    };
-
-    const onPlaying = () => {
-      debugLog('[V3Player] Event: playing -> playing');
-      userPauseIntentRef.current = false;
-      setStatus('playing');
-      setError(null);
-      setErrorDetails(null);
-      setShowErrorDetails(false);
-    };
-
-    const onPause = () => {
-      if (isTeardownRef.current) {
-        return;
-      }
-
-      setStatus(prev => (prev === 'error' ? prev : 'paused'));
-    };
-
-    const onSeeked = () => {
-      setStatus(prev => (prev === 'error' ? prev : (videoEl.paused ? 'paused' : 'playing')));
-    };
-
-    const onError = () => {
-      // Ignore errors during teardown or if src is empty (Error 4 noise)
-      // Ignore errors during teardown or if src is empty (Error 4 noise)
-      if (isTeardownRef.current) return;
-      // Strict check: if currentSrc is empty or "about:blank", it's cleanup noise
-      if (!videoEl.currentSrc || videoEl.currentSrc === 'about:blank' || !videoEl.getAttribute('src')) return;
-
-      const err = videoEl.error;
-      const diagnostics = {
-        code: err?.code,
-        message: err?.message,
-        currentSrc: videoEl.currentSrc,
-        readyState: videoEl.readyState,
-        networkState: videoEl.networkState,
-        buffered: Array.from({ length: videoEl.buffered.length }, (_, i) => ({
-          start: videoEl.buffered.start(i),
-          end: videoEl.buffered.end(i)
-        })),
-        videoWidth: videoEl.videoWidth,
-        videoHeight: videoEl.videoHeight,
-        paused: videoEl.paused,
-        hlsJsActive: !!hlsRef.current
-      };
-
-      debugError('[V3Player] Video Element Error:', diagnostics);
-
-      // Report to backend (triggers fallback if code=3)
-      if (err && sessionIdRef.current) {
-        // Run in background
-        const safeCode = typeof err.code === 'number' ? err.code : 0;
-        void reportError('error', safeCode, err.message || JSON.stringify(diagnostics));
-      }
-
-      setStatus('error');
-      // Append video error to any existing error for full context
-      setError(prev => `Video Error: ${err?.code} (${err?.message}) | State: ${videoEl.readyState}/${videoEl.networkState} | Prev: ${prev}`);
-    };
-
-    videoEl.addEventListener('waiting', onWaiting);
-    videoEl.addEventListener('stalled', onStalled);
-    videoEl.addEventListener('seeking', onSeeking);
-    videoEl.addEventListener('seeked', onSeeked);
-    videoEl.addEventListener('playing', onPlaying);
-    videoEl.addEventListener('pause', onPause);
-    videoEl.addEventListener('error', onError);
-
-    return () => {
-      videoEl.removeEventListener('waiting', onWaiting);
-      videoEl.removeEventListener('stalled', onStalled);
-      videoEl.removeEventListener('seeking', onSeeking);
-      videoEl.removeEventListener('seeked', onSeeked);
-      videoEl.removeEventListener('playing', onPlaying);
-      videoEl.removeEventListener('pause', onPause);
-      videoEl.removeEventListener('error', onError);
-    };
-  }, [reportError, playbackMode]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
