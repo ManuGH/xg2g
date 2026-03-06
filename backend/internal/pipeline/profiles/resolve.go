@@ -169,7 +169,17 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.Container = "fmp4"
 		spec.AudioBitrateK = envIntBounded("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", 192, 96, 384)
 
-		useGPU := shouldUseGPU(hasGPU, hwaccelMode)
+		// Dirty DVB sources have shown unstable VAAPI startup and timestamp behavior in practice.
+		// Keep safari_dirty on CPU by default; allow explicit GPU opt-in or forced HW mode.
+		useGPU := false
+		switch hwaccelMode {
+		case HWAccelForce:
+			useGPU = hasGPU
+		case HWAccelOff:
+			useGPU = false
+		default:
+			useGPU = hasGPU && envBool("XG2G_SAFARI_DIRTY_USE_GPU", false)
+		}
 		if useGPU {
 			spec.HWAccel = "vaapi"
 			spec.VideoCodec = "h264"
