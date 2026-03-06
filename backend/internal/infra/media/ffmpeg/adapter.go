@@ -88,6 +88,7 @@ type LocalAdapter struct {
 	FPSProbeSize        string
 	FPSProbeRetryAn     string
 	FPSProbeRetrySize   string
+	SkipFPSProbeOnCache bool
 	VaapiDevice         string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
 	vaapiEncoders       map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
 	vaapiDeviceChecked  bool            // device-level preflight ran
@@ -187,6 +188,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	if fpsProbeRetrySize == "" {
 		fpsProbeRetrySize = "20M"
 	}
+	skipFPSProbeOnCache := envBool("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", false)
 	fpsCacheTTL := 24 * time.Hour
 	if raw := strings.TrimSpace(os.Getenv("XG2G_FPS_CACHE_TTL")); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
@@ -244,6 +246,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FPSProbeSize:        fpsProbeSize,
 		FPSProbeRetryAn:     fpsProbeRetryAnalyze,
 		FPSProbeRetrySize:   fpsProbeRetrySize,
+		SkipFPSProbeOnCache: skipFPSProbeOnCache,
 		VaapiDevice:         strings.TrimSpace(vaapiDevice),
 		lastKnownFPS:        make(map[string]fpsCacheEntry),
 		FPSCacheTTL:         fpsCacheTTL,
@@ -1303,35 +1306,84 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	}
 
 	sourceKey := fpsCacheKey(spec.Source, input.inputURL)
-	detected, basis, err := a.probeFPS(ctx, input.inputURL)
-	if err == nil && detected >= a.FPSMin && detected <= a.FPSMax {
-		fps = detected
-		if sourceKey != "" {
-			a.setLastKnownFPS(sourceKey, detected)
-		}
-		a.Logger.Debug().
-			Str("sessionId", spec.SessionID).
-			Int("fps", fps).
-			Str("fps_basis", basis).
-			Str("url", sanitizeURLForLog(input.inputURL)).
-			Msg("detected input fps")
-	} else {
-		if err == nil {
-			err = fmt.Errorf("detected fps out of range: %d", detected)
-		}
-		if sourceKey != "" {
-			if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
+	skipProbe := false
+	if sourceKey != "" {
+		if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
+			a.Logger.Info().
+				Str("session_id", spec.SessionID).
+				Str("startup_phase", "fps_cache_available").
+				Str("source_key", sourceKey).
+				Int("cached_fps", cachedFPS).
+				Msg("fps cache available before probe")
+			if a.SkipFPSProbeOnCache {
 				fps = cachedFPS
-				a.Logger.Warn().
-					Str("sessionId", spec.SessionID).
-					Err(err).
-					Int("cached_fps", cachedFPS).
-					Str("fps_basis", "last_known_source").
+				skipProbe = true
+				a.Logger.Info().
+					Str("session_id", spec.SessionID).
+					Str("startup_phase", "fps_probe_skipped").
 					Str("source_key", sourceKey).
-					Int("fps_min", a.FPSMin).
-					Int("fps_max", a.FPSMax).
-					Str("url", sanitizeURLForLog(input.inputURL)).
-					Msg("fps detection failed, using last known source fps")
+					Int("cached_fps", cachedFPS).
+					Msg("skipping fps probe because cached fps is available")
+			}
+		}
+	}
+	if !skipProbe {
+		a.Logger.Info().
+			Str("session_id", spec.SessionID).
+			Str("startup_phase", "fps_probe_started").
+			Str("source_key", sourceKey).
+			Str("input_url", sanitizeURLForLog(input.inputURL)).
+			Msg("fps probe started")
+		detected, basis, err := a.probeFPS(ctx, input.inputURL)
+		probeEvt := a.Logger.Info().
+			Str("session_id", spec.SessionID).
+			Str("startup_phase", "fps_probe_finished").
+			Str("source_key", sourceKey).
+			Str("input_url", sanitizeURLForLog(input.inputURL))
+		if err != nil {
+			probeEvt = probeEvt.Err(err)
+		} else {
+			probeEvt = probeEvt.Int("detected_fps", detected).Str("fps_basis", basis)
+		}
+		probeEvt.Msg("fps probe finished")
+		if err == nil && detected >= a.FPSMin && detected <= a.FPSMax {
+			fps = detected
+			if sourceKey != "" {
+				a.setLastKnownFPS(sourceKey, detected)
+			}
+			a.Logger.Debug().
+				Str("sessionId", spec.SessionID).
+				Int("fps", fps).
+				Str("fps_basis", basis).
+				Str("url", sanitizeURLForLog(input.inputURL)).
+				Msg("detected input fps")
+		} else {
+			if err == nil {
+				err = fmt.Errorf("detected fps out of range: %d", detected)
+			}
+			if sourceKey != "" {
+				if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
+					fps = cachedFPS
+					a.Logger.Warn().
+						Str("sessionId", spec.SessionID).
+						Err(err).
+						Int("cached_fps", cachedFPS).
+						Str("fps_basis", "last_known_source").
+						Str("source_key", sourceKey).
+						Int("fps_min", a.FPSMin).
+						Int("fps_max", a.FPSMax).
+						Str("url", sanitizeURLForLog(input.inputURL)).
+						Msg("fps detection failed, using last known source fps")
+				} else {
+					a.Logger.Warn().
+						Str("sessionId", spec.SessionID).
+						Err(err).
+						Int("fallback_fps", fps).
+						Int("fps_min", a.FPSMin).
+						Int("fps_max", a.FPSMax).
+						Str("url", sanitizeURLForLog(input.inputURL)).
+						Msg("fps detection failed, using fallback")
+				}
 			} else {
 				a.Logger.Warn().
 					Str("sessionId", spec.SessionID).
@@ -1342,15 +1394,6 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 					Str("url", sanitizeURLForLog(input.inputURL)).
 					Msg("fps detection failed, using fallback")
 			}
-		} else {
-			a.Logger.Warn().
-				Str("sessionId", spec.SessionID).
-				Err(err).
-				Int("fallback_fps", fps).
-				Int("fps_min", a.FPSMin).
-				Int("fps_max", a.FPSMax).
-				Str("url", sanitizeURLForLog(input.inputURL)).
-				Msg("fps detection failed, using fallback")
 		}
 	}
 

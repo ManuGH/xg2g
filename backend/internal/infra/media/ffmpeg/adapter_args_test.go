@@ -572,6 +572,7 @@ func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {
 }
 
 func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
+	t.Setenv("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", "true")
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 2, 0, 0, "",
@@ -614,6 +615,7 @@ func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
 	x264Params2, ok := valueAfter(args2, "-x264-params")
 	require.True(t, ok, "x264 params should be present in second run")
 	assert.Contains(t, x264Params2, "keyint=96:min-keyint=96:scenecut=0")
+	assert.Equal(t, 1, probeCalls, "second run should reuse cached fps without probing again")
 }
 
 func TestBuildArgs_IgnoresOutOfRangeLastKnownFPS(t *testing.T) {
@@ -702,4 +704,43 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 	forceKeyFrames, ok := valueAfter(args, "-force_key_frames")
 	require.True(t, ok)
 	assert.Equal(t, "expr:gte(t,n_forced*2)", forceKeyFrames)
+}
+
+func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
+	t.Setenv("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", "true")
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	probeCalls := 0
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		probeCalls++
+		return 0, "", errors.New("probe should not be called")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "fps-cache-skip",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			VideoCRF:       20,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, "http://example.com/live-skip"), 50)
+	args, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live-skip")
+	require.NoError(t, err)
+	assert.Zero(t, probeCalls, "cached fps should skip the probe entirely")
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok)
+	assert.Contains(t, x264Params, "keyint=300:min-keyint=300:scenecut=0")
 }
