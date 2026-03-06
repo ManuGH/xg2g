@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,6 +46,7 @@ const (
 
 // vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
 var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi"}
+var ffmpegURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
 
 type fpsCacheEntry struct {
 	FPS       int
@@ -486,7 +488,7 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 					Msg("ffmpeg first segment write observed")
 			}
 		}
-		a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", line).Msg("ffmpeg output")
+		a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizeFFmpegLogLine(line)).Msg("ffmpeg output")
 		wd.ParseLine(line)
 
 		// Map back to session metrics if needed, but primarily for stall detection
@@ -1034,6 +1036,10 @@ func sanitizeURLForLog(rawURL string) string {
 	}
 	u.User = nil
 	return u.String()
+}
+
+func sanitizeFFmpegLogLine(line string) string {
+	return ffmpegURLPattern.ReplaceAllStringFunc(line, sanitizeURLForLog)
 }
 
 func (a *LocalAdapter) injectCredentialsIfAllowed(streamURL string) string {
