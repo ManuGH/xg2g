@@ -67,6 +67,7 @@ var runtimeEnvKeys = []string{
 	"XG2G_VAAPI_DEVICE",
 	"XG2G_SAFARI_DIRTY_DEFAULT",
 	"XG2G_RESILIENT_INGEST",
+	"XG2G_FPS_CACHE_TTL",
 }
 
 // KnownRuntimeEnvKeys returns all env keys read by ReadEnv.
