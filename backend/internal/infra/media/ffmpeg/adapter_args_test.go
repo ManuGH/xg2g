@@ -573,6 +573,7 @@ func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {
 
 func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
 	t.Setenv("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", "true")
+	t.Setenv("XG2G_SKIP_FPS_PROBE_WARMUP", "0s")
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 2, 0, 0, "",
@@ -708,6 +709,7 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 
 func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
 	t.Setenv("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", "true")
+	t.Setenv("XG2G_SKIP_FPS_PROBE_WARMUP", "0s")
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",

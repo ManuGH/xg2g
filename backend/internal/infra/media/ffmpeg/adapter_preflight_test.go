@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/rs/zerolog"
 )
@@ -188,5 +189,113 @@ func TestPreflight_HttpClientWiring(t *testing.T) {
 	}
 	if !result.ok {
 		t.Fatalf("expected preflight ok, got false")
+	}
+}
+
+func TestBuildArgs_WarmsStreamBeforeSkippingFPSProbe(t *testing.T) {
+	t.Setenv("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", "true")
+	t.Setenv("XG2G_SKIP_FPS_PROBE_WARMUP", "50ms")
+
+	buf := make([]byte, 188*3)
+	buf[0] = 0x47
+	buf[188] = 0x47
+	buf[376] = 0x47
+
+	warmupHits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		warmupHits++
+		_, _ = w.Write(buf)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	streamURL := srv.URL + "/1:0:19:132F:3EF:1:C00000:0:0:0"
+
+	adapter := NewLocalAdapter("", "", t.TempDir(), nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "")
+	probeCalls := 0
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		probeCalls++
+		return 0, "", errors.New("probe should not be called")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "warmup-skip-1",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			VideoCRF:       20,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   streamURL,
+			Type: ports.SourceURL,
+		},
+	}
+
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+	args, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	if err != nil {
+		t.Fatalf("expected buildArgs success, got error: %v", err)
+	}
+	if probeCalls != 0 {
+		t.Fatalf("expected probe to be skipped after warmup, got %d calls", probeCalls)
+	}
+	if warmupHits != 1 {
+		t.Fatalf("expected exactly one warmup request, got %d", warmupHits)
+	}
+	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=300:min-keyint=300:scenecut=0") {
+		t.Fatalf("expected cached 50fps GOP params, got %q", x264Params)
+	}
+}
+
+func TestBuildArgs_WarmupFailureFallsBackToFPSProbe(t *testing.T) {
+	t.Setenv("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", "true")
+	t.Setenv("XG2G_SKIP_FPS_PROBE_WARMUP", "50ms")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	streamURL := srv.URL + "/1:0:19:132F:3EF:1:C00000:0:0:0"
+
+	adapter := NewLocalAdapter("", "", t.TempDir(), nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "")
+	probeCalls := 0
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		probeCalls++
+		return 50, "r_frame_rate", nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "warmup-fallback-1",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			VideoCRF:       20,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   streamURL,
+			Type: ports.SourceURL,
+		},
+	}
+
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+	args, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	if err != nil {
+		t.Fatalf("expected buildArgs success, got error: %v", err)
+	}
+	if probeCalls != 1 {
+		t.Fatalf("expected warmup failure to fall back to fps probe, got %d calls", probeCalls)
+	}
+	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=300:min-keyint=300:scenecut=0") {
+		t.Fatalf("expected probed 50fps GOP params, got %q", x264Params)
 	}
 }

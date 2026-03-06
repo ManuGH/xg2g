@@ -91,6 +91,7 @@ type LocalAdapter struct {
 	FPSProbeRetryAn     string
 	FPSProbeRetrySize   string
 	SkipFPSProbeOnCache bool
+	SkipFPSProbeWarmup  time.Duration
 	VaapiDevice         string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
 	vaapiEncoders       map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
 	vaapiDeviceChecked  bool            // device-level preflight ran
@@ -191,6 +192,12 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		fpsProbeRetrySize = "20M"
 	}
 	skipFPSProbeOnCache := envBool("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", false)
+	skipFPSProbeWarmup := 500 * time.Millisecond
+	if raw := strings.TrimSpace(os.Getenv("XG2G_SKIP_FPS_PROBE_WARMUP")); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed >= 0 {
+			skipFPSProbeWarmup = parsed
+		}
+	}
 	fpsCacheTTL := 24 * time.Hour
 	if raw := strings.TrimSpace(os.Getenv("XG2G_FPS_CACHE_TTL")); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
@@ -249,6 +256,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FPSProbeRetryAn:     fpsProbeRetryAnalyze,
 		FPSProbeRetrySize:   fpsProbeRetrySize,
 		SkipFPSProbeOnCache: skipFPSProbeOnCache,
+		SkipFPSProbeWarmup:  skipFPSProbeWarmup,
 		VaapiDevice:         strings.TrimSpace(vaapiDevice),
 		lastKnownFPS:        make(map[string]fpsCacheEntry),
 		FPSCacheTTL:         fpsCacheTTL,
@@ -946,21 +954,10 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	reqURL := *parsed
-	user := reqURL.User
-	reqURL.User = nil
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
+	req, _, err := buildAuthenticatedRequest(ctx, http.MethodGet, rawURL)
 	if err != nil {
 		result.reason = "request_build_failed"
 		return result, err
-	}
-	if user != nil {
-		username := user.Username()
-		password, _ := user.Password()
-		if username != "" || password != "" {
-			req.SetBasicAuth(username, password)
-		}
 	}
 
 	client := a.httpClient
@@ -1024,6 +1021,106 @@ func preflightReason(result preflightResult, err error) string {
 		return "request_failed"
 	}
 	return "unknown"
+}
+
+type streamWarmupResult struct {
+	bytes      int
+	httpStatus int
+	latencyMs  int64
+}
+
+func buildAuthenticatedRequest(ctx context.Context, method, rawURL string) (*http.Request, *url.URL, error) {
+	if strings.TrimSpace(rawURL) == "" {
+		return nil, nil, fmt.Errorf("request url empty")
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	reqURL := *parsed
+	user := reqURL.User
+	reqURL.User = nil
+
+	req, err := http.NewRequestWithContext(ctx, method, reqURL.String(), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if user != nil {
+		username := user.Username()
+		password, _ := user.Password()
+		if username != "" || password != "" {
+			req.SetBasicAuth(username, password)
+		}
+	}
+
+	return req, parsed, nil
+}
+
+func isHTTPInputURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
+}
+
+func (a *LocalAdapter) warmupInputStream(ctx context.Context, rawURL string, duration time.Duration) (result streamWarmupResult, err error) {
+	start := time.Now()
+	defer func() {
+		result.latencyMs = time.Since(start).Milliseconds()
+	}()
+
+	if duration <= 0 {
+		return result, nil
+	}
+
+	warmupCtx, cancel := context.WithTimeout(ctx, duration)
+	defer cancel()
+
+	req, _, err := buildAuthenticatedRequest(warmupCtx, http.MethodGet, rawURL)
+	if err != nil {
+		return result, err
+	}
+
+	client := a.httpClient
+	if client == nil {
+		client = &http.Client{
+			Timeout: duration,
+			Transport: &http.Transport{
+				ResponseHeaderTimeout: duration,
+			},
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		if warmupCtx.Err() != nil {
+			return result, nil
+		}
+		return result, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	result.httpStatus = resp.StatusCode
+	if resp.StatusCode != http.StatusOK {
+		return result, fmt.Errorf("warmup http status %d", resp.StatusCode)
+	}
+
+	n, copyErr := io.CopyBuffer(io.Discard, resp.Body, make([]byte, 32*1024))
+	result.bytes = int(n)
+	if copyErr != nil {
+		if result.bytes > 0 {
+			return result, nil
+		}
+		if warmupCtx.Err() != nil || errors.Is(copyErr, context.DeadlineExceeded) || errors.Is(copyErr, context.Canceled) {
+			return result, nil
+		}
+		return result, copyErr
+	}
+
+	return result, nil
 }
 
 func hasTSSync(buf []byte) bool {
@@ -1367,14 +1464,47 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 				Int("cached_fps", cachedFPS).
 				Msg("fps cache available before probe")
 			if a.SkipFPSProbeOnCache {
-				fps = cachedFPS
-				skipProbe = true
-				a.Logger.Info().
-					Str("session_id", spec.SessionID).
-					Str("startup_phase", "fps_probe_skipped").
-					Str("source_key", sourceKey).
-					Int("cached_fps", cachedFPS).
-					Msg("skipping fps probe because cached fps is available")
+				warmupSucceeded := true
+				if a.SkipFPSProbeWarmup > 0 && isHTTPInputURL(input.inputURL) {
+					a.Logger.Info().
+						Str("session_id", spec.SessionID).
+						Str("startup_phase", "fps_probe_warmup_started").
+						Str("source_key", sourceKey).
+						Str("input_url", sanitizeURLForLog(input.inputURL)).
+						Dur("warmup_duration", a.SkipFPSProbeWarmup).
+						Msg("starting cache-hit stream warmup")
+					warmupResult, warmupErr := a.warmupInputStream(ctx, input.inputURL, a.SkipFPSProbeWarmup)
+					warmupEvt := a.Logger.Info().
+						Str("session_id", spec.SessionID).
+						Str("startup_phase", "fps_probe_warmup_finished").
+						Str("source_key", sourceKey).
+						Str("input_url", sanitizeURLForLog(input.inputURL)).
+						Int("warmup_bytes", warmupResult.bytes).
+						Int("http_status", warmupResult.httpStatus).
+						Int64("latency_ms", warmupResult.latencyMs)
+					if warmupErr != nil {
+						warmupEvt = warmupEvt.Err(warmupErr)
+						warmupSucceeded = false
+					}
+					warmupEvt.Msg("cache-hit stream warmup finished")
+				}
+				if warmupSucceeded {
+					fps = cachedFPS
+					skipProbe = true
+					a.Logger.Info().
+						Str("session_id", spec.SessionID).
+						Str("startup_phase", "fps_probe_skipped").
+						Str("source_key", sourceKey).
+						Int("cached_fps", cachedFPS).
+						Msg("skipping fps probe because cached fps is available")
+				} else {
+					a.Logger.Warn().
+						Str("session_id", spec.SessionID).
+						Str("startup_phase", "fps_probe_skip_aborted").
+						Str("source_key", sourceKey).
+						Int("cached_fps", cachedFPS).
+						Msg("cache-hit stream warmup failed, falling back to fps probe")
+				}
 			}
 		}
 	}
