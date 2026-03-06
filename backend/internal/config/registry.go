@@ -111,7 +111,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "enigma2.backoff", Env: "XG2G_E2_BACKOFF", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
 		{Path: "enigma2.maxBackoff", Env: "XG2G_E2_MAX_BACKOFF", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
 		{Path: "enigma2.streamPort", Env: "XG2G_E2_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
-		{Path: "enigma2.useWebIFStreams", Env: "XG2G_E2_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
+		{Path: "enigma2.useWebIFStreams", Env: "XG2G_E2_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: false},
 		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusActive, Default: true},
 		{Path: "enigma2.authMode", Env: "XG2G_E2_AUTH_MODE", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
 		{Path: "enigma2.rateLimit", Env: "XG2G_E2_RATE_LIMIT", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
