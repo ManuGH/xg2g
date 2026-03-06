@@ -582,3 +582,55 @@ func TestBuildArgs_IgnoresOutOfRangeLastKnownFPS(t *testing.T) {
 	require.True(t, ok, "x264 params should be present")
 	assert.Contains(t, x264Params, "keyint=150:min-keyint=150:scenecut=0")
 }
+
+func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 45*time.Minute, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		return 50, "r_frame_rate", nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-dirty-startup",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_dirty",
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			Deinterlace:    true,
+			VideoCRF:       18,
+			Preset:         "fast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live")
+	require.NoError(t, err)
+
+	hlsTime, ok := valueAfter(args, "-hls_time")
+	require.True(t, ok)
+	assert.Equal(t, "2", hlsTime)
+
+	hlsInitTime, ok := valueAfter(args, "-hls_init_time")
+	require.True(t, ok)
+	assert.Equal(t, "1", hlsInitTime)
+
+	hlsListSize, ok := valueAfter(args, "-hls_list_size")
+	require.True(t, ok)
+	assert.Equal(t, "1350", hlsListSize)
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok)
+	assert.Contains(t, x264Params, "keyint=100:min-keyint=100:scenecut=0")
+
+	forceKeyFrames, ok := valueAfter(args, "-force_key_frames")
+	require.True(t, ok)
+	assert.Equal(t, "expr:gte(t,n_forced*2)", forceKeyFrames)
+}

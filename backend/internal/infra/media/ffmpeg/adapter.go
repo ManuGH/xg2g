@@ -36,6 +36,11 @@ import (
 const (
 	preflightMinBytes = 188 * 3
 	preflightTimeout  = 2 * time.Second
+	// safariDirtyHLSTimeSec reduces first-frame latency for dirty live sources while
+	// preserving stable 2-second GOP/segment alignment.
+	safariDirtyHLSTimeSec = 2
+	// safariDirtyHLSInitTimeSec allows a shorter startup segment before steady-state.
+	safariDirtyHLSInitTimeSec = 1
 )
 
 // vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
@@ -1146,6 +1151,14 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 
 func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec, input inputPlan, codec codecPlan) (outputPlan, error) {
 	segmentDurationSec := a.SegmentSeconds
+	initSegmentDurationSec := 0
+	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && segmentDurationSec > safariDirtyHLSTimeSec {
+		segmentDurationSec = safariDirtyHLSTimeSec
+		initSegmentDurationSec = safariDirtyHLSInitTimeSec
+		if initSegmentDurationSec > segmentDurationSec {
+			initSegmentDurationSec = segmentDurationSec
+		}
+	}
 	if segmentDurationSec <= 0 {
 		return outputPlan{}, fmt.Errorf("invalid hls segment seconds: %d", segmentDurationSec)
 	}
@@ -1255,6 +1268,9 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		"-hls_segment_type", "mpegts",
 		"-hls_segment_filename", filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.ts"),
 	)
+	if initSegmentDurationSec > 0 {
+		out.args = append(out.args, "-hls_init_time", strconv.Itoa(initSegmentDurationSec))
+	}
 
 	outputPath := filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "index.m3u8")
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
