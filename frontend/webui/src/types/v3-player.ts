@@ -16,6 +16,17 @@ export type PlayerStatus =
   | 'stopped'
   | 'paused';
 
+export interface PlayerStats {
+  bandwidth: number;
+  resolution: string;
+  fps: number;
+  droppedFrames: number;
+  buffer: number;
+  bufferHealth: number;
+  latency: number | null;
+  levelIndex: number;
+}
+
 export interface Channel {
   id?: string;
   serviceRef?: string;
