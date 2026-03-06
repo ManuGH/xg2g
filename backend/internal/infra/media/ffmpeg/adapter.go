@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -41,26 +42,49 @@ var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi"}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
-	BinPath            string
-	FFprobeBin         string
-	HLSRoot            string
-	AnalyzeDuration    string
-	ProbeSize          string
-	DVRWindow          time.Duration
-	KillTimeout        time.Duration
-	httpClient         *http.Client
-	Logger             zerolog.Logger
-	E2                 *enigma2.Client // Dependency for Tuner operations
-	FallbackTo8001     bool
-	PreflightTimeout   time.Duration
-	SegmentSeconds     int
-	StartTimeout       time.Duration
-	StallTimeout       time.Duration
-	VaapiDevice        string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
-	vaapiEncoders      map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
-	vaapiDeviceChecked bool            // device-level preflight ran
-	vaapiDeviceErr     error           // device-level preflight error
-	mu                 sync.Mutex
+	BinPath             string
+	FFprobeBin          string
+	HLSRoot             string
+	AnalyzeDuration     string
+	ProbeSize           string
+	IngestFFlags        string
+	IngestErrDetect     string
+	IngestMaxErrorRate  string
+	IngestFlags2        string
+	DVRWindow           time.Duration
+	KillTimeout         time.Duration
+	httpClient          *http.Client
+	Logger              zerolog.Logger
+	E2                  *enigma2.Client // Dependency for Tuner operations
+	FallbackTo8001      bool
+	PreflightTimeout    time.Duration
+	SegmentSeconds      int
+	StartTimeout        time.Duration
+	StallTimeout        time.Duration
+	FPSProbeTimeout     time.Duration
+	FPSMin              int
+	FPSMax              int
+	FPSFallback         int
+	FPSFallbackInter    int
+	SafariDirtyFilter   string
+	SafariDirtyX264Tune string
+	FPSProbeFFlags      string
+	FPSProbeErrDetect   string
+	FPSProbeAnalyze     string
+	FPSProbeSize        string
+	FPSProbeRetryAn     string
+	FPSProbeRetrySize   string
+	VaapiDevice         string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
+	vaapiEncoders       map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
+	vaapiDeviceChecked  bool            // device-level preflight ran
+	vaapiDeviceErr      error           // device-level preflight error
+	// fpsProbeFn is test-only hook; nil in production.
+	fpsProbeFn func(context.Context, string) (int, string, error)
+	// lastKnownFPS caches successful FPS probes by source key so probe failures (e.g. signal:killed)
+	// can reuse the previous good value for the same sender/source.
+	lastKnownFPS map[string]int
+	fpsCacheMu   sync.RWMutex
+	mu           sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
 }
@@ -81,6 +105,66 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	if segmentSeconds <= 0 {
 		segmentSeconds = config.DefaultHLSSegmentSeconds
 	}
+	fpsProbeTimeoutMs := envIntBounded("XG2G_FPS_PROBE_TIMEOUT_MS", 1500, 300, 5000)
+	fpsMin := envIntBounded("XG2G_FPS_MIN", 15, 10, 240)
+	fpsMax := envIntBounded("XG2G_FPS_MAX", 120, fpsMin, 240)
+	fpsFallback := envIntBounded("XG2G_FPS_FALLBACK", 25, 10, 120)
+	fpsFallbackInter := envIntBounded("XG2G_FPS_FALLBACK_INTERLACED", 50, 10, 120)
+	resilientIngest := envBool("XG2G_RESILIENT_INGEST", true)
+	safariDirtyFilter := strings.TrimSpace(os.Getenv("XG2G_SAFARI_DIRTY_DEINTERLACE_FILTER"))
+	if safariDirtyFilter == "" {
+		safariDirtyFilter = "bwdif=mode=send_field:parity=auto:deint=all"
+	}
+	safariDirtyTune := strings.TrimSpace(os.Getenv("XG2G_SAFARI_DIRTY_X264_TUNE"))
+	ingestFFlags := strings.TrimSpace(os.Getenv("XG2G_INGEST_FFLAGS"))
+	if ingestFFlags == "" {
+		if resilientIngest {
+			ingestFFlags = "+genpts+discardcorrupt+flush_packets"
+		} else {
+			ingestFFlags = "+genpts"
+		}
+	}
+	ingestErrDetect := strings.TrimSpace(os.Getenv("XG2G_INGEST_ERR_DETECT"))
+	if ingestErrDetect == "" && resilientIngest {
+		ingestErrDetect = "ignore_err"
+	}
+	ingestMaxErrorRate := strings.TrimSpace(os.Getenv("XG2G_INGEST_MAX_ERROR_RATE"))
+	if ingestMaxErrorRate == "" && resilientIngest {
+		ingestMaxErrorRate = "1.0"
+	}
+	ingestFlags2 := strings.TrimSpace(os.Getenv("XG2G_INGEST_FLAGS2"))
+	if ingestFlags2 == "" && resilientIngest {
+		ingestFlags2 = "+showall+export_mvs"
+	}
+	fpsProbeFFlags := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_FFLAGS"))
+	if fpsProbeFFlags == "" {
+		if resilientIngest {
+			fpsProbeFFlags = "+genpts+discardcorrupt+igndts"
+		} else {
+			fpsProbeFFlags = "+genpts+igndts"
+		}
+	}
+	fpsProbeErrDetect := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_ERR_DETECT"))
+	if fpsProbeErrDetect == "" && resilientIngest {
+		fpsProbeErrDetect = "ignore_err"
+	}
+	fpsProbeAnalyze := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_ANALYZE_DURATION"))
+	if fpsProbeAnalyze == "" {
+		fpsProbeAnalyze = analyzeDuration
+	}
+	fpsProbeSize := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_SIZE"))
+	if fpsProbeSize == "" {
+		fpsProbeSize = probeSize
+	}
+	fpsProbeRetryAnalyze := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_RETRY_ANALYZE_DURATION"))
+	if fpsProbeRetryAnalyze == "" {
+		fpsProbeRetryAnalyze = "10000000"
+	}
+	fpsProbeRetrySize := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_RETRY_SIZE"))
+	if fpsProbeRetrySize == "" {
+		fpsProbeRetrySize = "20M"
+	}
+
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,
 		Transport: &http.Transport{
@@ -96,23 +180,41 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		},
 	}
 	return &LocalAdapter{
-		BinPath:          binPath,
-		FFprobeBin:       strings.TrimSpace(ffprobeBin),
-		HLSRoot:          hlsRoot,
-		AnalyzeDuration:  analyzeDuration,
-		ProbeSize:        probeSize,
-		DVRWindow:        dvrWindow,
-		KillTimeout:      killTimeout,
-		PreflightTimeout: preflightTimeout,
-		SegmentSeconds:   segmentSeconds,
-		httpClient:       httpClient,
-		E2:               e2,
-		Logger:           logger,
-		FallbackTo8001:   fallbackTo8001,
-		StartTimeout:     startTimeout,
-		StallTimeout:     stallTimeout,
-		VaapiDevice:      strings.TrimSpace(vaapiDevice),
-		activeProcs:      make(map[ports.RunHandle]*exec.Cmd),
+		BinPath:             binPath,
+		FFprobeBin:          strings.TrimSpace(ffprobeBin),
+		HLSRoot:             hlsRoot,
+		AnalyzeDuration:     analyzeDuration,
+		ProbeSize:           probeSize,
+		IngestFFlags:        ingestFFlags,
+		IngestErrDetect:     ingestErrDetect,
+		IngestMaxErrorRate:  ingestMaxErrorRate,
+		IngestFlags2:        ingestFlags2,
+		DVRWindow:           dvrWindow,
+		KillTimeout:         killTimeout,
+		PreflightTimeout:    preflightTimeout,
+		SegmentSeconds:      segmentSeconds,
+		httpClient:          httpClient,
+		E2:                  e2,
+		Logger:              logger,
+		FallbackTo8001:      fallbackTo8001,
+		StartTimeout:        startTimeout,
+		StallTimeout:        stallTimeout,
+		FPSProbeTimeout:     time.Duration(fpsProbeTimeoutMs) * time.Millisecond,
+		FPSMin:              fpsMin,
+		FPSMax:              fpsMax,
+		FPSFallback:         fpsFallback,
+		FPSFallbackInter:    fpsFallbackInter,
+		SafariDirtyFilter:   safariDirtyFilter,
+		SafariDirtyX264Tune: safariDirtyTune,
+		FPSProbeFFlags:      fpsProbeFFlags,
+		FPSProbeErrDetect:   fpsProbeErrDetect,
+		FPSProbeAnalyze:     fpsProbeAnalyze,
+		FPSProbeSize:        fpsProbeSize,
+		FPSProbeRetryAn:     fpsProbeRetryAnalyze,
+		FPSProbeRetrySize:   fpsProbeRetrySize,
+		VaapiDevice:         strings.TrimSpace(vaapiDevice),
+		lastKnownFPS:        make(map[string]int),
+		activeProcs:         make(map[ports.RunHandle]*exec.Cmd),
 	}
 }
 
@@ -851,12 +953,18 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 }
 
 func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputPlan, error) {
-	fflags := "+genpts+discardcorrupt+flush_packets"
-	baseInputArgs := []string{
-		"-err_detect", "ignore_err",
-		"-max_error_rate", "1.0",
-		"-ignore_unknown",
+	fflags := strings.TrimSpace(a.IngestFFlags)
+	if fflags == "" {
+		fflags = "+genpts+discardcorrupt+flush_packets"
 	}
+	baseInputArgs := make([]string, 0, 20)
+	if v := strings.TrimSpace(a.IngestErrDetect); v != "" {
+		baseInputArgs = append(baseInputArgs, "-err_detect", v)
+	}
+	if v := strings.TrimSpace(a.IngestMaxErrorRate); v != "" {
+		baseInputArgs = append(baseInputArgs, "-max_error_rate", v)
+	}
+	baseInputArgs = append(baseInputArgs, "-ignore_unknown")
 	if spec.Source.Type != ports.SourceFile {
 		if !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
@@ -875,10 +983,12 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 
 		baseInputArgs = append(baseInputArgs,
 			"-avoid_negative_ts", "make_zero",
-			"-flags2", "+showall+export_mvs",
 			"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
 			"-headers", headers,
 		)
+		if v := strings.TrimSpace(a.IngestFlags2); v != "" {
+			baseInputArgs = append(baseInputArgs, "-flags2", v)
+		}
 	}
 	baseInputArgs = append([]string{"-fflags", fflags}, baseInputArgs...)
 	if a.AnalyzeDuration != "" {
@@ -927,16 +1037,70 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	if segmentDurationSec <= 0 {
 		return outputPlan{}, fmt.Errorf("invalid hls segment seconds: %d", segmentDurationSec)
 	}
-	fps := 30
-	if spec.Source.Type == ports.SourceTuner || isStreamRelayURL(input.inputURL) {
+	fps := a.FPSFallback
+	if fps <= 0 {
+		fps = 25
+	}
+	if (spec.Source.Type != ports.SourceTuner && !isStreamRelayURL(input.inputURL)) && !spec.Profile.Deinterlace {
+		fps = 30
+	}
+	if spec.Profile.Deinterlace || strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") {
+		fps = a.FPSFallbackInter
+	}
+	if fps <= 0 {
 		fps = 25
 	}
 
-	if detected, err := a.detectFPS(ctx, input.inputURL); err == nil && detected >= 15 && detected <= 120 {
+	sourceKey := fpsCacheKey(spec.Source, input.inputURL)
+	detected, basis, err := a.probeFPS(ctx, input.inputURL)
+	if err == nil && detected >= a.FPSMin && detected <= a.FPSMax {
 		fps = detected
-		a.Logger.Debug().Str("sessionId", spec.SessionID).Int("fps", fps).Str("url", sanitizeURLForLog(input.inputURL)).Msg("detected input fps")
+		if sourceKey != "" {
+			a.setLastKnownFPS(sourceKey, detected)
+		}
+		a.Logger.Debug().
+			Str("sessionId", spec.SessionID).
+			Int("fps", fps).
+			Str("fps_basis", basis).
+			Str("url", sanitizeURLForLog(input.inputURL)).
+			Msg("detected input fps")
 	} else {
-		a.Logger.Warn().Str("sessionId", spec.SessionID).Err(err).Int("fallback_fps", fps).Str("url", sanitizeURLForLog(input.inputURL)).Msg("fps detection failed, using fallback")
+		if err == nil {
+			err = fmt.Errorf("detected fps out of range: %d", detected)
+		}
+		if sourceKey != "" {
+			if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
+				fps = cachedFPS
+				a.Logger.Warn().
+					Str("sessionId", spec.SessionID).
+					Err(err).
+					Int("cached_fps", cachedFPS).
+					Str("fps_basis", "last_known_source").
+					Str("source_key", sourceKey).
+					Int("fps_min", a.FPSMin).
+					Int("fps_max", a.FPSMax).
+					Str("url", sanitizeURLForLog(input.inputURL)).
+					Msg("fps detection failed, using last known source fps")
+			} else {
+				a.Logger.Warn().
+					Str("sessionId", spec.SessionID).
+					Err(err).
+					Int("fallback_fps", fps).
+					Int("fps_min", a.FPSMin).
+					Int("fps_max", a.FPSMax).
+					Str("url", sanitizeURLForLog(input.inputURL)).
+					Msg("fps detection failed, using fallback")
+			}
+		} else {
+			a.Logger.Warn().
+				Str("sessionId", spec.SessionID).
+				Err(err).
+				Int("fallback_fps", fps).
+				Int("fps_min", a.FPSMin).
+				Int("fps_max", a.FPSMax).
+				Str("url", sanitizeURLForLog(input.inputURL)).
+				Msg("fps detection failed, using fallback")
+		}
 	}
 
 	gop := fps * segmentDurationSec
@@ -1086,13 +1250,23 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 		Bool("legacy_defaults", legacy).
 		Msg("pipeline video: cpu")
 
+	deinterlaceFilter := "yadif"
+	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
+		deinterlaceFilter = strings.TrimSpace(a.SafariDirtyFilter)
+	}
 	if deinterlace {
-		args = append(args, "-vf", "yadif")
+		args = append(args, "-vf", deinterlaceFilter)
 	}
 
 	args = append(args, "-c:v", codec)
 	args = append(args, "-preset", preset)
-	args = append(args, "-tune", "zerolatency")
+	tune := "zerolatency"
+	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") {
+		tune = strings.TrimSpace(a.SafariDirtyX264Tune)
+	}
+	if tune != "" {
+		args = append(args, "-tune", tune)
+	}
 	args = append(args, "-crf", strconv.Itoa(crf))
 
 	if !legacy && prof.VideoMaxRateK > 0 {
@@ -1161,9 +1335,123 @@ func normalizeRequestedCodec(codec string) string {
 	}
 }
 
-func (a *LocalAdapter) detectFPS(ctx context.Context, inputURL string) (int, error) {
-	// 1.5s rigid timeout for probe to avoid delaying startup
-	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+func fpsCacheKey(source ports.StreamSource, inputURL string) string {
+	id := strings.TrimSpace(source.ID)
+	if id == "" {
+		id = strings.TrimSpace(inputURL)
+	}
+	if id == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:%s", strings.ToLower(string(source.Type)), sanitizeURLForLog(id))
+}
+
+func shouldRetryFPSProbe(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "signal: killed") || strings.Contains(msg, "deadline exceeded")
+}
+
+func decorateProbeError(err error, stderr string) error {
+	if err == nil {
+		return nil
+	}
+	clean := trimForLog(stderr, 512)
+	if clean == "" {
+		return err
+	}
+	return fmt.Errorf("%w (stderr: %s)", err, clean)
+}
+
+func trimForLog(raw string, max int) string {
+	flat := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if flat == "" || max <= 0 || len(flat) <= max {
+		return flat
+	}
+	return flat[:max] + "..."
+}
+
+func (a *LocalAdapter) setLastKnownFPS(sourceKey string, fps int) {
+	if sourceKey == "" || fps <= 0 {
+		return
+	}
+	a.fpsCacheMu.Lock()
+	a.lastKnownFPS[sourceKey] = fps
+	a.fpsCacheMu.Unlock()
+}
+
+func (a *LocalAdapter) getLastKnownFPS(sourceKey string) (int, bool) {
+	if sourceKey == "" {
+		return 0, false
+	}
+	a.fpsCacheMu.RLock()
+	fps, ok := a.lastKnownFPS[sourceKey]
+	a.fpsCacheMu.RUnlock()
+	return fps, ok
+}
+
+func (a *LocalAdapter) probeFPS(ctx context.Context, inputURL string) (int, string, error) {
+	if a.fpsProbeFn != nil {
+		return a.fpsProbeFn(ctx, inputURL)
+	}
+	return a.detectFPS(ctx, inputURL)
+}
+
+func (a *LocalAdapter) buildFPSProbeArgs(inputURL string, retry bool) []string {
+	analyzeDuration := strings.TrimSpace(a.FPSProbeAnalyze)
+	if analyzeDuration == "" {
+		analyzeDuration = strings.TrimSpace(a.AnalyzeDuration)
+	}
+	probeSize := strings.TrimSpace(a.FPSProbeSize)
+	if probeSize == "" {
+		probeSize = strings.TrimSpace(a.ProbeSize)
+	}
+	if retry {
+		if v := strings.TrimSpace(a.FPSProbeRetryAn); v != "" {
+			analyzeDuration = v
+		}
+		if v := strings.TrimSpace(a.FPSProbeRetrySize); v != "" {
+			probeSize = v
+		}
+	}
+
+	args := []string{
+		"-v", "error",
+	}
+	if v := strings.TrimSpace(a.FPSProbeFFlags); v != "" {
+		args = append(args, "-fflags", v)
+	}
+	if v := strings.TrimSpace(a.FPSProbeErrDetect); v != "" {
+		args = append(args, "-err_detect", v)
+	}
+	if v := strings.TrimSpace(a.IngestMaxErrorRate); v != "" {
+		args = append(args, "-max_error_rate", v)
+	}
+	if analyzeDuration != "" {
+		args = append(args, "-analyzeduration", analyzeDuration)
+	}
+	if probeSize != "" {
+		args = append(args, "-probesize", probeSize)
+	}
+	args = append(args,
+		"-select_streams", "v:0",
+		"-show_entries", "stream=r_frame_rate,avg_frame_rate,field_order",
+		"-of", "default=noprint_wrappers=1",
+		inputURL,
+	)
+	return args
+}
+
+func (a *LocalAdapter) runFPSProbe(ctx context.Context, inputURL string, timeout time.Duration, retry bool) (string, error) {
+	if timeout <= 0 {
+		timeout = 1500 * time.Millisecond
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	ffprobeBin := a.FFprobeBin
@@ -1171,26 +1459,50 @@ func (a *LocalAdapter) detectFPS(ctx context.Context, inputURL string) (int, err
 		ffprobeBin = "ffprobe" // PATH fallback (last resort)
 	}
 
-	// #nosec G204 -- binPath is trusted
-	cmd := exec.CommandContext(ctx, ffprobeBin,
-		"-v", "error",
-		"-select_streams", "v:0",
-		"-show_entries", "stream=r_frame_rate",
-		"-of", "default=noprint_wrappers=1:nokey=1",
-		inputURL,
-	)
+	args := a.buildFPSProbeArgs(inputURL, retry)
 
+	// #nosec G204 -- ffprobe bin path is trusted
+	cmd := exec.CommandContext(probeCtx, ffprobeBin, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, err
+		return "", decorateProbeError(err, stderr.String())
 	}
 
 	output := strings.TrimSpace(string(out))
 	if output == "" {
-		return 0, fmt.Errorf("empty output")
+		return "", fmt.Errorf("empty output")
+	}
+	return output, nil
+}
+
+func (a *LocalAdapter) detectFPS(ctx context.Context, inputURL string) (int, string, error) {
+	timeout := a.FPSProbeTimeout
+	if timeout <= 0 {
+		timeout = 1500 * time.Millisecond
 	}
 
-	return parseFPS(output)
+	output, err := a.runFPSProbe(ctx, inputURL, timeout, false)
+	if err != nil {
+		if !shouldRetryFPSProbe(err) {
+			return 0, "", err
+		}
+		retryTimeout := timeout * 2
+		if retryTimeout < 2500*time.Millisecond {
+			retryTimeout = 2500 * time.Millisecond
+		}
+		if retryTimeout > 8*time.Second {
+			retryTimeout = 8 * time.Second
+		}
+		retryOutput, retryErr := a.runFPSProbe(ctx, inputURL, retryTimeout, true)
+		if retryErr != nil {
+			return 0, "", fmt.Errorf("ffprobe failed after retry (primary=%v, retry=%w)", err, retryErr)
+		}
+		output = retryOutput
+	}
+
+	return parseFPSProbeOutput(output)
 }
 
 func parseFPS(output string) (int, error) {
@@ -1211,4 +1523,103 @@ func parseFPS(output string) (int, error) {
 	}
 
 	return 0, fmt.Errorf("unrecognized fps format: %s", output)
+}
+
+func parseFPSProbeOutput(output string) (int, string, error) {
+	var (
+		rFPS       int
+		avgFPS     int
+		fieldOrder string
+	)
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		kv := strings.SplitN(line, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(kv[0])
+		val := strings.TrimSpace(kv[1])
+		switch key {
+		case "r_frame_rate":
+			if parsed, err := parseFPS(val); err == nil && parsed > 0 {
+				rFPS = parsed
+			}
+		case "avg_frame_rate":
+			if parsed, err := parseFPS(val); err == nil && parsed > 0 {
+				avgFPS = parsed
+			}
+		case "field_order":
+			fieldOrder = strings.ToLower(val)
+		}
+	}
+
+	fps, basis, ok := chooseBestFPS(rFPS, avgFPS, fieldOrder)
+	if !ok {
+		return 0, "", fmt.Errorf("no usable fps values (r_frame_rate=%d avg_frame_rate=%d field_order=%s)", rFPS, avgFPS, fieldOrder)
+	}
+	return fps, basis, nil
+}
+
+func chooseBestFPS(rFPS, avgFPS int, fieldOrder string) (int, string, bool) {
+	if rFPS <= 0 && avgFPS <= 0 {
+		return 0, "", false
+	}
+	if rFPS > 0 && avgFPS > 0 {
+		// Broadcast/interlaced inputs often expose 50/1 r_frame_rate with 25/1 avg_frame_rate.
+		// Prefer temporal field rate to preserve motion.
+		if rFPS >= (avgFPS*2 - 1) {
+			return rFPS, "r_frame_rate_field_rate", true
+		}
+		if isInterlacedFieldOrder(fieldOrder) && rFPS > avgFPS {
+			return rFPS, "r_frame_rate_interlaced", true
+		}
+		return avgFPS, "avg_frame_rate", true
+	}
+	if rFPS > 0 {
+		return rFPS, "r_frame_rate", true
+	}
+	return avgFPS, "avg_frame_rate", true
+}
+
+func isInterlacedFieldOrder(fieldOrder string) bool {
+	switch strings.ToLower(strings.TrimSpace(fieldOrder)) {
+	case "tt", "bb", "tb", "bt":
+		return true
+	default:
+		return false
+	}
+}
+
+func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return defaultValue
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultValue
+	}
+	if n < minValue {
+		return minValue
+	}
+	if n > maxValue {
+		return maxValue
+	}
+	return n
+}
+
+func envBool(key string, defaultValue bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return defaultValue
+	}
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		return defaultValue
+	}
+	return b
 }

@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -20,6 +21,14 @@ func indexOf(args []string, target string) int {
 		}
 	}
 	return -1
+}
+
+func valueAfter(args []string, flag string) (string, bool) {
+	idx := indexOf(args, flag)
+	if idx < 0 || idx+1 >= len(args) {
+		return "", false
+	}
+	return args[idx+1], true
 }
 
 func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
@@ -302,6 +311,128 @@ func TestBuildArgs_CPUProfileDriven(t *testing.T) {
 	assert.NotContains(t, args, "-vaapi_device")
 }
 
+func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "ingest-flags",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "libx264",
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	iIdx := indexOf(args, "-i")
+	require.True(t, iIdx > 0)
+
+	fflagsIdx := indexOf(args, "-fflags")
+	require.True(t, fflagsIdx >= 0 && fflagsIdx < iIdx, "fflags must be before -i")
+	fflags, ok := valueAfter(args, "-fflags")
+	require.True(t, ok)
+	assert.Contains(t, fflags, "+genpts")
+	assert.Contains(t, fflags, "+discardcorrupt")
+	assert.Contains(t, fflags, "+igndts")
+
+	errDetectIdx := indexOf(args, "-err_detect")
+	require.True(t, errDetectIdx >= 0 && errDetectIdx < iIdx, "err_detect must be before -i")
+	errDetect, ok := valueAfter(args, "-err_detect")
+	require.True(t, ok)
+	assert.Equal(t, "ignore_err", errDetect)
+
+	analyzeIdx := indexOf(args, "-analyzeduration")
+	require.True(t, analyzeIdx >= 0 && analyzeIdx < iIdx, "analyzeduration must be before -i")
+	analyze, ok := valueAfter(args, "-analyzeduration")
+	require.True(t, ok)
+	assert.Equal(t, "2000000", analyze)
+
+	probeIdx := indexOf(args, "-probesize")
+	require.True(t, probeIdx >= 0 && probeIdx < iIdx, "probesize must be before -i")
+	probe, ok := valueAfter(args, "-probesize")
+	require.True(t, ok)
+	assert.Equal(t, "5M", probe)
+}
+
+func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	args := adapter.buildFPSProbeArgs("http://example.com/stream", false)
+	fflags, ok := valueAfter(args, "-fflags")
+	require.True(t, ok)
+	assert.Equal(t, "+genpts+discardcorrupt+igndts", fflags)
+
+	errDetect, ok := valueAfter(args, "-err_detect")
+	require.True(t, ok)
+	assert.Equal(t, "ignore_err", errDetect)
+
+	analyze, ok := valueAfter(args, "-analyzeduration")
+	require.True(t, ok)
+	assert.Equal(t, "2000000", analyze)
+
+	probe, ok := valueAfter(args, "-probesize")
+	require.True(t, ok)
+	assert.Equal(t, "5M", probe)
+
+	retryArgs := adapter.buildFPSProbeArgs("http://example.com/stream", true)
+	retryAnalyze, ok := valueAfter(retryArgs, "-analyzeduration")
+	require.True(t, ok)
+	assert.Equal(t, "10000000", retryAnalyze)
+
+	retryProbe, ok := valueAfter(retryArgs, "-probesize")
+	require.True(t, ok)
+	assert.Equal(t, "20M", retryProbe)
+}
+
+func TestBuildArgs_ResilientIngestToggleOff(t *testing.T) {
+	t.Setenv("XG2G_RESILIENT_INGEST", "false")
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "ingest-toggle-off",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "libx264",
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	fflags, ok := valueAfter(args, "-fflags")
+	require.True(t, ok)
+	assert.Contains(t, fflags, "+genpts")
+	assert.Contains(t, fflags, "+igndts")
+	assert.NotContains(t, fflags, "discardcorrupt")
+	assert.Equal(t, -1, indexOf(args, "-err_detect"))
+
+	probeArgs := adapter.buildFPSProbeArgs("http://example.com/stream", false)
+	probeFFlags, ok := valueAfter(probeArgs, "-fflags")
+	require.True(t, ok)
+	assert.Equal(t, "+genpts+igndts", probeFFlags)
+	assert.Equal(t, -1, indexOf(probeArgs, "-err_detect"))
+}
+
 func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
@@ -333,4 +464,121 @@ func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
 	assert.Contains(t, args, "hevc_vaapi", "av1_hw should fall back to a verified HW codec")
 	assert.NotContains(t, args, "av1_vaapi", "must not emit av1_vaapi when av1 preflight failed")
 	assert.Equal(t, "av1", spec.Profile.VideoCodec, "adapter must not mutate profile codec semantics")
+}
+
+func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		return 0, "", errors.New("signal: killed")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "fps-cache-fallback",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			Deinterlace:    false,
+			VideoCRF:       20,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, "http://example.com/live"), 50)
+	args, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live")
+	require.NoError(t, err)
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok, "x264 params should be present")
+	assert.Contains(t, x264Params, "keyint=300:min-keyint=300:scenecut=0")
+}
+
+func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 2, 0, 0, "",
+	)
+	probeCalls := 0
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		probeCalls++
+		if probeCalls == 1 {
+			return 48, "r_frame_rate", nil
+		}
+		return 0, "", errors.New("signal: killed")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "fps-cache-reuse",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			Deinterlace:    false,
+			VideoCRF:       20,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:6F:D:85:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	args1, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live2")
+	require.NoError(t, err)
+	x264Params1, ok := valueAfter(args1, "-x264-params")
+	require.True(t, ok, "x264 params should be present in first run")
+	assert.Contains(t, x264Params1, "keyint=96:min-keyint=96:scenecut=0")
+
+	args2, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live2")
+	require.NoError(t, err)
+	x264Params2, ok := valueAfter(args2, "-x264-params")
+	require.True(t, ok, "x264 params should be present in second run")
+	assert.Contains(t, x264Params2, "keyint=96:min-keyint=96:scenecut=0")
+}
+
+func TestBuildArgs_IgnoresOutOfRangeLastKnownFPS(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		return 0, "", errors.New("signal: killed")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "fps-cache-range",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			Deinterlace:    false,
+			VideoCRF:       20,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:13E:6:85:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, "http://example.com/live3"), 240) // out of range for default FPSMax=120
+	args, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live3")
+	require.NoError(t, err)
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok, "x264 params should be present")
+	assert.Contains(t, x264Params, "keyint=150:min-keyint=150:scenecut=0")
 }
