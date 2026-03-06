@@ -52,7 +52,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 				Capabilities: Capabilities{SupportsRange: &trueVal},
 				Source:       Source{Container: "avi"}, // LIE: Not MP4/MOV
 			},
-			ExpectedErr: "invariant #9 violation: direct_play requires mp4/mov container",
+			ExpectedErr: "invariant #9 violation: direct_play requires mp4/mov/ts container",
 		},
 		{
 			Name: "Invariant #10: Transcode with Wrong Kind",
