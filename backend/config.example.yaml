@@ -37,9 +37,9 @@ enigma2:
   # 8001 = Non-transcoded (Direct)
   # 8002 = Transcoded (if supported by receiver)
   streamPort: 8001
-  # Use /web/stream.m3u logic? (Recommended: true)
-  # If true, asks receiver to generate stream URL (handles 17999 transcoding automatically).
-  useWebIFStreams: true
+  # Deprecated: force /web/stream.m3u resolution (fallback/debug only).
+  # Recommended: false (use direct resolver path by default).
+  useWebIFStreams: false
 
 # Legacy YAML alias (compat path still required by schema contract):
 openWebIF:
@@ -47,7 +47,7 @@ openWebIF:
   timeout: "10s"
   retries: 2
   streamPort: 8001
-  useWebIFStreams: true
+  useWebIFStreams: false
 # ------------------------------------------------------------------------------
 # Enigma2 Advanced Options [OPTIONAL]
 # ------------------------------------------------------------------------------
@@ -241,7 +241,7 @@ picons:
 #   XG2G_E2_BACKOFF              - Initial backoff (Go duration, e.g. 200ms)
 #   XG2G_E2_MAX_BACKOFF          - Maximum backoff (Go duration, e.g. 30s)
 #   XG2G_E2_STREAM_PORT          - Deprecated direct stream port override
-#   XG2G_E2_USE_WEBIF_STREAMS    - Use /web/stream.m3u URLs (true/false)
+#   XG2G_E2_USE_WEBIF_STREAMS    - Deprecated: force /web/stream.m3u URLs (true/false)
 #   XG2G_E2_RESPONSE_HEADER_TIMEOUT - HTTP response header timeout (Go duration)
 #   XG2G_E2_TUNE_TIMEOUT         - Tune timeout (Go duration)
 #   XG2G_E2_AUTH_MODE            - inherit|none|explicit
@@ -296,7 +296,7 @@ picons:
 #   XG2G_E2_PASS                 - Enigma2 password
 #   XG2G_E2_TIMEOUT              - Enigma2 HTTP timeout (e.g., 10s)
 #   XG2G_E2_RETRIES              - Enigma2 retry attempts
-#   XG2G_E2_USE_WEBIF_STREAMS    - Use /web/stream.m3u8 when available (true/false)
+#   XG2G_E2_USE_WEBIF_STREAMS    - Deprecated: force /web/stream.m3u when enabled
 #
 # ==============================================================================
 # Usage Examples
@@ -326,8 +326,8 @@ picons:
 # - For EPG issues, check Enigma2 supports EPG API:
 #     curl http://192.168.1.100/api/epgservice?sRef=REFERENCE
 #
-# - Streams: In der Regel `useWebIFStreams: true` verwenden, damit die Box intern
-#   Direct vs. Relay entscheidet (8001/17999 sind dann intern und für xg2g egal).
+# - Streams: `useWebIFStreams: false` ist der empfohlene Default.
+#   `true` nur als Fallback/Debug-Option nutzen.
 #
 # - Enable debug logging for detailed information:
 #     XG2G_LOG_LEVEL=debug ./xg2g-daemon --config config.yaml
