@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,13 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/metrics"
 )
+
+const (
+	preflightMinBytes = 188 * 3
+	preflightTimeout  = 2 * time.Second
+)
+
+var ffmpegURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
 
 type preflightResult struct {
 	ok           bool
@@ -243,6 +251,95 @@ func preflightReason(result preflightResult, err error) string {
 		return "request_failed"
 	}
 	return "unknown"
+}
+
+func hasTSSync(buf []byte) bool {
+	if len(buf) < preflightMinBytes {
+		return false
+	}
+	return buf[0] == 0x47 && buf[188] == 0x47 && buf[376] == 0x47
+}
+
+func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {
+	u, err := url.Parse(resolvedURL)
+	if err != nil {
+		return "", err
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("missing host in resolved url")
+	}
+	scheme := u.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	u.Scheme = scheme
+	u.Host = fmt.Sprintf("%s:%d", host, 8001)
+	u.Path = "/" + serviceRef
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.User = nil
+	return u.String(), nil
+}
+
+func isStreamRelayURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	port := u.Port()
+	if port == "" {
+		port = defaultPortForScheme(u.Scheme)
+	}
+	return port == "17999"
+}
+
+func defaultPortForScheme(scheme string) string {
+	if strings.EqualFold(scheme, "https") {
+		return "443"
+	}
+	return "80"
+}
+
+func sanitizeURLForLog(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	u.User = nil
+	return u.String()
+}
+
+func sanitizeFFmpegLogLine(line string) string {
+	return ffmpegURLPattern.ReplaceAllStringFunc(line, sanitizeURLForLog)
+}
+
+func (a *LocalAdapter) injectCredentialsIfAllowed(streamURL string) string {
+	if a.E2 == nil {
+		return streamURL
+	}
+	if a.E2.Username == "" && a.E2.Password == "" {
+		return streamURL
+	}
+
+	u, err := url.Parse(streamURL)
+	if err != nil {
+		return streamURL
+	}
+
+	port := u.Port()
+	if port == "" {
+		port = defaultPortForScheme(u.Scheme)
+	}
+
+	if port == "80" || port == "443" || port == "8001" || port == "8002" {
+		if a.E2.Username != "" {
+			u.User = url.UserPassword(a.E2.Username, a.E2.Password)
+		}
+		return u.String()
+	}
+
+	return streamURL
 }
 
 type streamWarmupResult struct {
