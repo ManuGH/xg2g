@@ -2,18 +2,17 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
-import { createSession, postRecordingPlaybackInfo } from '../client-ts';
-import { getApiBaseUrl, setClientAuthToken } from '../lib/clientWrapper';
+import { postRecordingPlaybackInfo } from '../client-ts';
+import { getApiBaseUrl } from '../lib/clientWrapper';
 import { telemetry } from '../services/TelemetryService';
 import type {
   V3PlayerProps,
   PlayerStatus,
-  SessionCookieState,
   V3SessionResponse,
-  V3SessionStatusResponse,
   HlsInstanceRef,
   VideoElementRef
 } from '../types/v3-player';
+import { useLiveSessionController } from '../features/player/useLiveSessionController';
 import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
@@ -41,7 +40,26 @@ interface ApiErrorResponse {
 type PreferredCodec = 'av1' | 'hevc' | 'h264';
 
 let cachedPreferredCodecs: PreferredCodec[] | null = null;
-const HEARTBEAT_INTERVAL_FALLBACK_SECONDS = 10;
+
+function hasTouchInput(): boolean {
+  try {
+    return typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+function canUseDesktopWebKitFullscreen(videoEl?: VideoElementRef): boolean {
+  if (!videoEl) return false;
+  try {
+    const webkitVideo = videoEl as unknown as {
+      webkitEnterFullscreen?: unknown;
+    };
+    return typeof webkitVideo.webkitEnterFullscreen === 'function' && !hasTouchInput();
+  } catch {
+    return false;
+  }
+}
 
 function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
   if (!videoEl) return false;
@@ -60,7 +78,9 @@ function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
       typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
       typeof webkitVideo.webkitSetPresentationMode === 'function';
 
-    return hasWebKitFullscreen || hasWebKitPresentationMode;
+    // Desktop Safari can expose some WebKit fullscreen APIs.
+    // Restrict native-mobile forcing to touch devices to keep desktop behavior stable.
+    return (hasWebKitFullscreen || hasWebKitPresentationMode) && hasTouchInput();
   } catch {
     return false;
   }
@@ -217,7 +237,6 @@ function V3Player(props: V3PlayerProps) {
   // Traceability State
   const [traceId, setTraceId] = useState<string>('-');
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<PlayerStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
@@ -227,9 +246,6 @@ function V3Player(props: V3PlayerProps) {
   const videoRef = useRef<VideoElementRef>(null);
   const hlsRef = useRef<HlsInstanceRef>(null);
   const mounted = useRef<boolean>(false);
-  const sessionIdRef = useRef<string | null>(null);
-  const stopSentRef = useRef<string | null>(null);
-  const sessionCookieRef = useRef<SessionCookieState>({ token: null, pending: null });
   const vodRetryRef = useRef<number | null>(null);
   const recordingTimeoutRef = useRef<number | null>(null);
   const vodFetchRef = useRef<AbortController | null>(null);
@@ -258,11 +274,6 @@ function V3Player(props: V3PlayerProps) {
   const [canSeek, setCanSeek] = useState(true);
   const [startUnix, setStartUnix] = useState<number | null>(null);
   const [] = useState<number | null>(null);
-  // unused: liveEdgeUnix used for calculation but not directly in render yet, keeping state for completeness
-  // ADR-009: Session Lease Semantics
-  const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null); // seconds from backend
-  // @ts-expect-error - TS6133: leaseExpiresAt used via setter, not directly read
-  const [leaseExpiresAt, setLeaseExpiresAt] = useState<string | null>(null); // ISO 8601
 
   // PREPARING state for VOD remux UX
   const [volume, setVolume] = useState(1); // 0.0 to 1.0
@@ -300,6 +311,29 @@ function V3Player(props: V3PlayerProps) {
   const apiBase = useMemo(() => {
     return getApiBaseUrl();
   }, []);
+
+  const {
+    sessionId,
+    sessionIdRef,
+    authHeaders,
+    reportError,
+    ensureSessionCookie,
+    setActiveSessionId,
+    clearSessionLeaseState,
+    sendStopIntent,
+    waitForSessionReady
+  } = useLiveSessionController({
+    token,
+    apiBase,
+    t,
+    videoRef,
+    setPlaybackMode,
+    setDurationSeconds,
+    setStatus,
+    setError,
+    readResponseBody,
+    createPlayerError: (message, details) => new PlayerError(message, details)
+  });
 
 
   const formatClock = useCallback((value: number): string => {
@@ -382,15 +416,38 @@ function V3Player(props: V3PlayerProps) {
 
   const toggleFullscreen = useCallback(async () => {
     const video = videoRef.current;
-    if (video?.webkitEnterFullscreen) {
-      video.webkitEnterFullscreen();
-      return;
-    }
+    const container = containerRef.current;
 
     if (!document.fullscreenElement) {
+      if (video && canUseDesktopWebKitFullscreen(video)) {
+        try {
+          // Native Apple fullscreen on macOS Safari (AirPlay/native controls).
+          video.controls = true;
+          video.webkitEnterFullscreen?.();
+          return;
+        } catch (err) {
+          debugWarn("WebKit fullscreen failed", err);
+        }
+      }
+
+      if (container?.requestFullscreen) {
+        try {
+          // Cross-browser fullscreen fallback for non-WebKit desktops.
+          await container.requestFullscreen();
+          return;
+        } catch (err) {
+          debugWarn("Container fullscreen failed", err);
+        }
+      }
+
+      if (video?.webkitEnterFullscreen) {
+        video.webkitEnterFullscreen();
+        return;
+      }
+
       try {
-        // Use container fullscreen to preserve custom controls on Safari
-        await containerRef.current?.requestFullscreen();
+        // Last fallback (no-op on platforms without requestFullscreen support).
+        await container?.requestFullscreen?.();
       } catch (err) {
         debugWarn("Fullscreen failed", err);
       }
@@ -401,11 +458,12 @@ function V3Player(props: V3PlayerProps) {
 
   const enterDVRMode = useCallback(() => {
     const video = videoRef.current;
-    if (video && video.webkitEnterFullscreen) {
+    if (video && video.webkitEnterFullscreen && shouldForceNativeMobileHls(video as VideoElementRef)) {
+      video.controls = true;
       video.webkitEnterFullscreen();
     } else {
-      // Fallback for non-Safari (just toggle FS)
-      toggleFullscreen();
+      // On desktop Safari/non-WebKit use element fullscreen to keep custom controls.
+      void toggleFullscreen();
     }
   }, [toggleFullscreen]);
 
@@ -468,54 +526,6 @@ function V3Player(props: V3PlayerProps) {
 
   // --- Core Helpers & Wrappers (Memoized) ---
 
-  const authHeaders = useCallback((contentType: boolean = false): HeadersInit => {
-    const h: Record<string, string> = {};
-    if (contentType) h['Content-Type'] = 'application/json';
-    if (token) h.Authorization = `Bearer ${token}`;
-    return h;
-  }, [token]);
-
-  const reportError = useCallback(async (event: 'error' | 'warning', code: number, msg?: string) => {
-    // ADR-00X: Auto-switch logic removed (universal policy only)
-
-    if (!sessionIdRef.current) return;
-    try {
-      // raw-fetch-justified: feedback endpoint requires direct fire-and-forget POST with shared auth headers.
-      await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
-        method: 'POST',
-        headers: authHeaders(true),
-        body: JSON.stringify({
-          event,
-          code,
-          message: msg
-        })
-      });
-    } catch (e) {
-      debugWarn('Failed to send feedback', e);
-    }
-  }, [apiBase, authHeaders]);
-
-  const ensureSessionCookie = useCallback(async (): Promise<void> => {
-    if (!token) return;
-    if (sessionCookieRef.current.token === token) return;
-    if (sessionCookieRef.current.pending) return sessionCookieRef.current.pending;
-
-    const pending = (async () => {
-      try {
-        setClientAuthToken(token);
-        await createSession();
-        sessionCookieRef.current.token = token;
-      } catch (err) {
-        debugWarn('Failed to create session cookie', err);
-      } finally {
-        sessionCookieRef.current.pending = null;
-      }
-    })();
-
-    sessionCookieRef.current.pending = pending;
-    return pending;
-  }, [token]);
-
   const resetPlaybackEngine = useCallback(() => {
     isTeardownRef.current = true;
     try {
@@ -556,194 +566,6 @@ function V3Player(props: V3PlayerProps) {
       vodFetchRef.current = null;
     }
   }, []);
-
-  const sendStopIntent = useCallback(async (idToStop: string | null, force: boolean = false): Promise<void> => {
-    if (!idToStop) return;
-    if (!force && stopSentRef.current === idToStop) return;
-    stopSentRef.current = idToStop;
-    try {
-      // raw-fetch-justified: stop intent must be sent best-effort during teardown without SDK-level retries.
-      await fetch(`${apiBase}/intents`, {
-        method: 'POST',
-        headers: authHeaders(true),
-        body: JSON.stringify({
-          type: 'stream.stop',
-          sessionId: idToStop
-        })
-      });
-    } catch (err) {
-      debugWarn('Failed to stop v3 session', err);
-    }
-  }, [apiBase, authHeaders]);
-
-  const applySessionInfo = useCallback((session: V3SessionStatusResponse) => {
-    if (session.mode) {
-      setPlaybackMode(session.mode === 'LIVE' ? 'LIVE' : 'VOD');
-    }
-    if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
-      setDurationSeconds(session.durationSeconds);
-    }
-    // ADR-009: Parse lease fields from session response
-    const heartbeatSeconds =
-      typeof session.heartbeat_interval === 'number'
-        ? session.heartbeat_interval
-        : typeof (session as any).heartbeatInterval === 'number'
-          ? (session as any).heartbeatInterval
-          : null;
-    if (typeof heartbeatSeconds === 'number' && heartbeatSeconds > 0) {
-      setHeartbeatInterval(heartbeatSeconds);
-    } else {
-      // Backward-compat fallback: older session responses may omit heartbeat interval fields.
-      setHeartbeatInterval(prev => (typeof prev === 'number' && prev > 0 ? prev : HEARTBEAT_INTERVAL_FALLBACK_SECONDS));
-    }
-
-    const leaseExpiresAtValue =
-      session.lease_expires_at ||
-      (session as any).leaseExpiresAt ||
-      (typeof (session as any).leaseExpiresAtUnix === 'number'
-        ? new Date((session as any).leaseExpiresAtUnix * 1000).toISOString()
-        : null);
-    if (leaseExpiresAtValue) {
-      setLeaseExpiresAt(leaseExpiresAtValue);
-    }
-  }, []);
-
-  const waitForSessionReady = useCallback(async (sid: string, maxAttempts = 180): Promise<V3SessionStatusResponse> => {
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        const res = await fetch(`${apiBase}/sessions/${sid}`, {
-          headers: authHeaders()
-        });
-
-        // Handle Auth failure explicitly
-        if (res.status === 401 || res.status === 403) {
-          throw new PlayerError(t('player.authFailed'), {
-            url: res.url,
-            status: res.status,
-            requestId: res.headers.get('X-Request-ID') || undefined
-          });
-        }
-
-        if (res.status === 404) {
-          await sleep(100); // Fast retry for session creation
-          continue;
-        }
-
-        // CTO Contract (Phase 5.3): terminal sessions return 410 Gone with a problem+json body.
-        if (res.status === 410) {
-          const { json, text } = await readResponseBody(res);
-          const requestId =
-            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
-            res.headers.get('X-Request-ID') ||
-            undefined;
-
-          const reason = (json && typeof json === 'object' ? (json.reason ?? json.state ?? json.code) : undefined) as
-            | string
-            | undefined;
-          const reasonDetail =
-            (json && typeof json === 'object' ? (json.reason_detail ?? json.reasonDetail ?? json.detail) : undefined) as
-            | string
-            | undefined;
-
-          const combined = `${reason ?? 'GONE'}${reasonDetail ? `: ${reasonDetail}` : ''}`;
-          const details = {
-            url: res.url,
-            status: res.status,
-            requestId,
-            code: json?.code,
-            title: json?.title,
-            detail: json?.detail,
-            session: json?.session,
-            state: json?.state,
-            reason: json?.reason,
-            reason_detail: json?.reason_detail,
-            body: json ?? text
-          };
-
-          telemetry.emit('ui.error', {
-            status: 410,
-            code: 'SESSION_GONE',
-            reason: reason ?? null,
-            reason_detail: reasonDetail ?? null,
-            requestId
-          });
-
-          if (String(reason).includes('LEASE_BUSY') || String(reasonDetail).includes('LEASE_BUSY')) {
-            throw new PlayerError(t('player.leaseBusy'), details);
-          }
-          throw new PlayerError(`${t('player.sessionFailed')}: ${combined}`, details);
-        }
-
-        if (!res.ok) {
-          const { json, text } = await readResponseBody(res);
-          const requestId =
-            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
-            res.headers.get('X-Request-ID') ||
-            undefined;
-          throw new PlayerError(`${t('player.failedToFetchSession')} (HTTP ${res.status})`, {
-            url: res.url,
-            status: res.status,
-            requestId,
-            code: json?.code,
-            title: json?.title,
-            detail: json?.detail,
-            body: json ?? text
-          });
-        }
-
-        const session: V3SessionStatusResponse = await res.json();
-        applySessionInfo(session);
-        const sState = session.state;
-
-        if (sState === 'FAILED' || sState === 'STOPPED' || sState === 'CANCELLED' || sState === 'STOPPING') {
-          const reason = session.reason || sState;
-          const detail = session.reasonDetail ? `: ${session.reasonDetail}` : '';
-
-          // Lease busy -> show the dedicated message (same UX as 409 on /intents)
-          if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
-            throw new Error(t('player.leaseBusy'));
-          }
-
-          throw new Error(`${t('player.sessionFailed')}: ${reason}${detail}`);
-        }
-
-        if (sState === 'READY' || sState === 'DRAINING') {
-          setStatus('ready');
-          return session;
-        }
-
-        if (sState === 'PRIMING') {
-          setStatus('priming');
-        } else {
-          setStatus('starting');
-        }
-
-        await sleep(100); // Fast polling for low-latency startup
-      } catch (err) {
-        const e = err as any;
-        const msg = e?.message || '';
-        const status = e?.details?.status as number | undefined;
-        // If it's a terminal, user-facing error, abort immediately
-        if (msg === t('player.leaseBusy') || msg.startsWith(t('player.sessionFailed')) || msg === t('player.authFailed')) {
-          throw err;
-        }
-
-        // Non-retryable client errors (except 404 handled above, and 429 which can be transient).
-        if (typeof status === 'number' && status >= 400 && status < 500 && status !== 404 && status !== 429) {
-          throw err;
-        }
-
-        if (i === maxAttempts - 1) {
-          if (err instanceof PlayerError) {
-            throw new PlayerError(`${t('player.readinessCheckFailed')}: ${msg}`, e?.details);
-          }
-          throw new Error(`${t('player.readinessCheckFailed')}: ${msg}`);
-        }
-        await sleep(500);
-      }
-    }
-    throw new Error(t('player.sessionNotReadyInTime'));
-  }, [apiBase, authHeaders, t, applySessionInfo]);
 
   const updateStats = useCallback((hls: Hls) => {
     if (!hls) return;
@@ -1030,7 +852,7 @@ function V3Player(props: V3PlayerProps) {
       hlsEngines.push('hlsjs');
     }
 
-    const container = ['mp4'];
+    const container = ['mp4', 'ts'];
     if (Hls.isSupported() && !forceNativeMobile) {
       container.push('fmp4');
     }
@@ -1058,6 +880,7 @@ function V3Player(props: V3PlayerProps) {
     setVodStreamMode(null);
     clearVodRetry();
     clearVodFetch();
+    clearSessionLeaseState();
     resetPlaybackEngine();
     setStatus('building');
     setError(null);
@@ -1278,7 +1101,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie, gatherPlaybackCapabilities]);
+  }, [apiBase, authHeaders, clearSessionLeaseState, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie, gatherPlaybackCapabilities]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -1304,8 +1127,7 @@ function V3Player(props: V3PlayerProps) {
         setVodStreamMode(null);
         clearVodRetry();
         clearVodFetch();
-        sessionIdRef.current = null;
-        stopSentRef.current = null;
+        clearSessionLeaseState();
         setDurationSeconds(duration && duration > 0 ? duration : null);
 
         setPlaybackMode(duration && duration > 0 ? 'VOD' : 'LIVE');
@@ -1320,8 +1142,7 @@ function V3Player(props: V3PlayerProps) {
       setVodStreamMode(null);
       clearVodRetry();
       clearVodFetch();
-      sessionIdRef.current = null;
-      stopSentRef.current = null;
+      clearSessionLeaseState();
       setDurationSeconds(duration && duration > 0 ? duration : null);
 
       const ref = (refToUse || sRef || '').trim();
@@ -1605,8 +1426,7 @@ function V3Player(props: V3PlayerProps) {
         const data: V3SessionResponse = await res.json();
         newSessionId = data.sessionId;
         if (data.requestId) setTraceId(data.requestId);
-        sessionIdRef.current = newSessionId;
-        setSessionId(newSessionId);
+        setActiveSessionId(newSessionId);
         const session = await waitForSessionReady(newSessionId);
 
         setStatus('ready');
@@ -1620,6 +1440,7 @@ function V3Player(props: V3PlayerProps) {
         if (newSessionId) {
           await sendStopIntent(newSessionId);
         }
+        clearSessionLeaseState();
         debugError(err);
         const e = err as any;
         setError(e?.message || String(err));
@@ -1637,7 +1458,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, t, duration, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, clearSessionLeaseState, t, duration, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, setActiveSessionId]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -1653,9 +1474,7 @@ function V3Player(props: V3PlayerProps) {
     if (sessionId) {
       await sendStopIntent(sessionId);
     }
-    sessionIdRef.current = null;
-    stopSentRef.current = null;
-    setSessionId(null);
+    clearSessionLeaseState();
     setPlaybackMode('UNKNOWN');
     setSeekableStart(0);
     setSeekableEnd(0);
@@ -1663,7 +1482,7 @@ function V3Player(props: V3PlayerProps) {
     setStatus('stopped');
     setVodStreamMode(null);
     if (onClose && !skipClose) onClose();
-  }, [clearVodFetch, clearVodRetry, onClose, sendStopIntent, sessionId]);
+  }, [clearSessionLeaseState, clearVodFetch, clearVodRetry, onClose, sendStopIntent, sessionId]);
 
   const handleRetry = useCallback(async () => {
     try {
@@ -1716,57 +1535,6 @@ function V3Player(props: V3PlayerProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleFullscreen, togglePlayPause, togglePiP, toggleMute, seekBy]);
-
-  // ADR-009: Session Heartbeat Loop
-  useEffect(() => {
-    if (!sessionId || !heartbeatInterval) {
-      return;
-    }
-
-    const intervalMs = heartbeatInterval * 1000;
-    debugLog('[V3Player][Heartbeat] Starting heartbeat loop:', { sessionId, intervalMs });
-
-    const timerId = setInterval(async () => {
-      try {
-        // raw-fetch-justified: heartbeat loop uses timer-driven low-overhead POST with direct lease expiry parsing.
-        const res = await fetch(`${apiBase}/sessions/${sessionId}/heartbeat`, {
-          method: 'POST',
-          headers: authHeaders(true)
-        });
-
-        if (res.status === 200) {
-          const data = await res.json();
-          setLeaseExpiresAt(data.lease_expires_at);
-          debugLog('[V3Player][Heartbeat] Lease extended:', data.lease_expires_at);
-        } else if (res.status === 410) {
-          // Terminal: Session lease expired
-          debugError('[V3Player][Heartbeat] Session expired (410)');
-          clearInterval(timerId);
-          setStatus('error');
-          setError(t('player.sessionExpired') || 'Session expired. Please restart.');
-          if (videoRef.current) {
-            videoRef.current.pause();
-          }
-        } else if (res.status === 404) {
-          debugWarn('[V3Player][Heartbeat] Session not found (404)');
-          clearInterval(timerId);
-          setStatus('error');
-          setError(t('player.sessionNotFound') || 'Session no longer exists.');
-          if (videoRef.current) {
-            videoRef.current.pause();
-          }
-        }
-      } catch (error) {
-        debugError('[V3Player][Heartbeat] Network error:', error);
-        // Allow retry on next interval (no infinite loops)
-      }
-    }, intervalMs);
-
-    return () => {
-      debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
-      clearInterval(timerId);
-    };
-  }, [sessionId, heartbeatInterval, apiBase, authHeaders, t]);
 
   // Video Event Listeners
   useEffect(() => {
@@ -1830,18 +1598,6 @@ function V3Player(props: V3PlayerProps) {
 
     const onPause = () => {
       if (isTeardownRef.current) {
-        return;
-      }
-
-      // Distinguish real user pause from transient startup/network/WebKit quirks
-      if (!userPauseIntentRef.current && sessionIdRef.current) {
-        debugLog('[V3Player] Browser paused without user intent. Attempting auto-resume.');
-        videoEl.play().catch(e => {
-          debugWarn('[V3Player] Auto-resume blocked by browser', e);
-          setStatus(prev => (prev === 'error' ? prev : 'paused'));
-        });
-        // Set buffering while we attempt to spin back up
-        setStatus(prev => (prev === 'error' ? prev : 'buffering'));
         return;
       }
 
@@ -2097,9 +1853,14 @@ function V3Player(props: V3PlayerProps) {
     const video = videoRef.current;
     const supportsWebkitFullscreen = !!video?.webkitEnterFullscreen;
 
-    const onWebkitFullscreenChange = () => {
-      // ADR-00X: Fullscreen profile switching removed (universal policy only)
-      // Safari native fullscreen no longer triggers profile changes
+    const onWebkitBeginFullscreen = () => {
+      setIsFullscreen(true);
+    };
+    const onWebkitEndFullscreen = () => {
+      setIsFullscreen(false);
+      if (video) {
+        video.controls = false;
+      }
     };
 
     document.addEventListener('fullscreenchange', onFsChange);
@@ -2108,8 +1869,8 @@ function V3Player(props: V3PlayerProps) {
       video.addEventListener('leavepictureinpicture', onPipChange);
 
       if (supportsWebkitFullscreen) {
-        video.addEventListener('webkitbeginfullscreen', onWebkitFullscreenChange);
-        video.addEventListener('webkitendfullscreen', onWebkitFullscreenChange);
+        video.addEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
+        video.addEventListener('webkitendfullscreen', onWebkitEndFullscreen);
       }
     }
 
@@ -2120,8 +1881,8 @@ function V3Player(props: V3PlayerProps) {
         video.removeEventListener('leavepictureinpicture', onPipChange);
 
         if (supportsWebkitFullscreen) {
-          video.removeEventListener('webkitbeginfullscreen', onWebkitFullscreenChange);
-          video.removeEventListener('webkitendfullscreen', onWebkitFullscreenChange);
+          video.removeEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
+          video.removeEventListener('webkitendfullscreen', onWebkitEndFullscreen);
         }
       }
     };
@@ -2184,18 +1945,6 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [autoStart, src, recordingId, sRef, startStream]);
 
-  // Session ID Ref sync
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-
-  // Token update effect
-  useEffect(() => {
-    setClientAuthToken(token);
-    sessionCookieRef.current.token = null;
-    sessionCookieRef.current.pending = null;
-  }, [token]);
-
   useEffect(() => {
     if (duration && duration > 0) {
       setDurationSeconds(duration);
@@ -2234,6 +1983,7 @@ function V3Player(props: V3PlayerProps) {
   const hasSeekWindow = canSeek && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
+  const showDvrModeButton = shouldForceNativeMobileHls(videoRef.current);
 
   // P3-4: Absolute Timeline Formatting
   const startTimeDisplay = startUnix
@@ -2468,7 +2218,7 @@ function V3Player(props: V3PlayerProps) {
         )}
 
         {/* DVR Mode Button (Safari Only / Fallback) */}
-        {!!videoRef.current?.webkitEnterFullscreen && (
+        {showDvrModeButton && (
           <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
             📺 DVR
           </Button>

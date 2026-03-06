@@ -1,0 +1,380 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
+import type { TFunction } from 'i18next';
+import { createSession } from '../../client-ts';
+import { setClientAuthToken } from '../../lib/clientWrapper';
+import { telemetry } from '../../services/TelemetryService';
+import type { PlayerStatus, SessionCookieState, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
+import { debugError, debugLog, debugWarn } from '../../utils/logging';
+
+const HEARTBEAT_INTERVAL_FALLBACK_SECONDS = 10;
+const SESSION_READY_TIMEOUT_MS = 60_000;
+const SESSION_READY_POLL_MS = 250;
+const SESSION_READY_MAX_ATTEMPTS = Math.ceil(SESSION_READY_TIMEOUT_MS / SESSION_READY_POLL_MS);
+
+type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
+type ErrorBodyReader = (res: Response) => Promise<{ json: any | null; text: string | null }>;
+type PlayerErrorFactory = (message: string, details?: unknown) => Error;
+
+interface UseLiveSessionControllerProps {
+  token?: string;
+  apiBase: string;
+  t: TFunction;
+  videoRef: RefObject<VideoElementRef>;
+  setPlaybackMode: Dispatch<SetStateAction<PlaybackMode>>;
+  setDurationSeconds: Dispatch<SetStateAction<number | null>>;
+  setStatus: Dispatch<SetStateAction<PlayerStatus>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+  readResponseBody: ErrorBodyReader;
+  createPlayerError: PlayerErrorFactory;
+}
+
+interface LiveSessionController {
+  sessionId: string | null;
+  sessionIdRef: MutableRefObject<string | null>;
+  authHeaders: (contentType?: boolean) => HeadersInit;
+  reportError: (event: 'error' | 'warning', code: number, msg?: string) => Promise<void>;
+  ensureSessionCookie: () => Promise<void>;
+  setActiveSessionId: (sessionId: string | null) => void;
+  clearSessionLeaseState: () => void;
+  sendStopIntent: (sessionId: string | null, force?: boolean) => Promise<void>;
+  waitForSessionReady: (sessionId: string, maxAttempts?: number) => Promise<V3SessionStatusResponse>;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function useLiveSessionController({
+  token,
+  apiBase,
+  t,
+  videoRef,
+  setPlaybackMode,
+  setDurationSeconds,
+  setStatus,
+  setError,
+  readResponseBody,
+  createPlayerError
+}: UseLiveSessionControllerProps): LiveSessionController {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null);
+  const [, setLeaseExpiresAt] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const stopSentRef = useRef<string | null>(null);
+  const sessionCookieRef = useRef<SessionCookieState>({ token: null, pending: null });
+
+  const authHeaders = useCallback((contentType: boolean = false): HeadersInit => {
+    const headers: Record<string, string> = {};
+    if (contentType) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }, [token]);
+
+  const reportError = useCallback(async (event: 'error' | 'warning', code: number, msg?: string) => {
+    if (!sessionIdRef.current) return;
+    try {
+      await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
+        method: 'POST',
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          event,
+          code,
+          message: msg
+        })
+      });
+    } catch (err) {
+      debugWarn('Failed to send feedback', err);
+    }
+  }, [apiBase, authHeaders]);
+
+  const ensureSessionCookie = useCallback(async (): Promise<void> => {
+    if (!token) return;
+    if (sessionCookieRef.current.token === token) return;
+    if (sessionCookieRef.current.pending) return sessionCookieRef.current.pending;
+
+    const pending = (async () => {
+      try {
+        setClientAuthToken(token);
+        await createSession();
+        sessionCookieRef.current.token = token;
+      } catch (err) {
+        debugWarn('Failed to create session cookie', err);
+      } finally {
+        sessionCookieRef.current.pending = null;
+      }
+    })();
+
+    sessionCookieRef.current.pending = pending;
+    return pending;
+  }, [token]);
+
+  const setActiveSessionId = useCallback((nextSessionId: string | null) => {
+    sessionIdRef.current = nextSessionId;
+    setSessionId(nextSessionId);
+  }, []);
+
+  const clearSessionLeaseState = useCallback(() => {
+    sessionIdRef.current = null;
+    stopSentRef.current = null;
+    setSessionId(null);
+    setHeartbeatInterval(null);
+    setLeaseExpiresAt(null);
+  }, []);
+
+  const sendStopIntent = useCallback(async (idToStop: string | null, force: boolean = false): Promise<void> => {
+    if (!idToStop) return;
+    if (!force && stopSentRef.current === idToStop) return;
+    stopSentRef.current = idToStop;
+    try {
+      await fetch(`${apiBase}/intents`, {
+        method: 'POST',
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          type: 'stream.stop',
+          sessionId: idToStop
+        })
+      });
+    } catch (err) {
+      debugWarn('Failed to stop v3 session', err);
+    }
+  }, [apiBase, authHeaders]);
+
+  const applySessionInfo = useCallback((session: V3SessionStatusResponse) => {
+    if (session.mode) {
+      setPlaybackMode(session.mode === 'LIVE' ? 'LIVE' : 'VOD');
+    }
+    if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
+      setDurationSeconds(session.durationSeconds);
+    }
+
+    const heartbeatSeconds =
+      typeof session.heartbeat_interval === 'number'
+        ? session.heartbeat_interval
+        : typeof (session as any).heartbeatInterval === 'number'
+          ? (session as any).heartbeatInterval
+          : null;
+    if (typeof heartbeatSeconds === 'number' && heartbeatSeconds > 0) {
+      setHeartbeatInterval(heartbeatSeconds);
+    } else {
+      setHeartbeatInterval((prev) => (
+        typeof prev === 'number' && prev > 0 ? prev : HEARTBEAT_INTERVAL_FALLBACK_SECONDS
+      ));
+    }
+
+    const leaseExpiresAtValue =
+      session.lease_expires_at ||
+      (session as any).leaseExpiresAt ||
+      (typeof (session as any).leaseExpiresAtUnix === 'number'
+        ? new Date((session as any).leaseExpiresAtUnix * 1000).toISOString()
+        : null);
+    if (leaseExpiresAtValue) {
+      setLeaseExpiresAt(leaseExpiresAtValue);
+    }
+  }, [setDurationSeconds, setPlaybackMode]);
+
+  const waitForSessionReady = useCallback(async (
+    trackedSessionId: string,
+    maxAttempts = SESSION_READY_MAX_ATTEMPTS
+  ): Promise<V3SessionStatusResponse> => {
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const res = await fetch(`${apiBase}/sessions/${trackedSessionId}`, {
+          headers: authHeaders()
+        });
+
+        if (res.status === 401 || res.status === 403) {
+          throw createPlayerError(t('player.authFailed'), {
+            url: res.url,
+            status: res.status,
+            requestId: res.headers.get('X-Request-ID') || undefined
+          });
+        }
+
+        if (res.status === 404) {
+          await sleep(SESSION_READY_POLL_MS);
+          continue;
+        }
+
+        if (res.status === 410) {
+          const { json, text } = await readResponseBody(res);
+          const requestId =
+            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
+            res.headers.get('X-Request-ID') ||
+            undefined;
+          const reason = (json && typeof json === 'object' ? (json.reason ?? json.state ?? json.code) : undefined) as
+            | string
+            | undefined;
+          const reasonDetail =
+            (json && typeof json === 'object' ? (json.reason_detail ?? json.reasonDetail ?? json.detail) : undefined) as
+            | string
+            | undefined;
+          const combined = `${reason ?? 'GONE'}${reasonDetail ? `: ${reasonDetail}` : ''}`;
+          const details = {
+            url: res.url,
+            status: res.status,
+            requestId,
+            code: json?.code,
+            title: json?.title,
+            detail: json?.detail,
+            session: json?.session,
+            state: json?.state,
+            reason: json?.reason,
+            reason_detail: json?.reason_detail,
+            body: json ?? text
+          };
+
+          telemetry.emit('ui.error', {
+            status: 410,
+            code: 'SESSION_GONE',
+            reason: reason ?? null,
+            reason_detail: reasonDetail ?? null,
+            requestId
+          });
+
+          if (String(reason).includes('LEASE_BUSY') || String(reasonDetail).includes('LEASE_BUSY')) {
+            throw createPlayerError(t('player.leaseBusy'), details);
+          }
+          throw createPlayerError(`${t('player.sessionFailed')}: ${combined}`, details);
+        }
+
+        if (!res.ok) {
+          const { json, text } = await readResponseBody(res);
+          const requestId =
+            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
+            res.headers.get('X-Request-ID') ||
+            undefined;
+          throw createPlayerError(`${t('player.failedToFetchSession')} (HTTP ${res.status})`, {
+            url: res.url,
+            status: res.status,
+            requestId,
+            code: json?.code,
+            title: json?.title,
+            detail: json?.detail,
+            body: json ?? text
+          });
+        }
+
+        const session: V3SessionStatusResponse = await res.json();
+        applySessionInfo(session);
+        const state = session.state;
+        if (state === 'FAILED' || state === 'STOPPED' || state === 'CANCELLED' || state === 'STOPPING') {
+          const reason = session.reason || state;
+          const detail = session.reasonDetail ? `: ${session.reasonDetail}` : '';
+          if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
+            throw new Error(t('player.leaseBusy'));
+          }
+          throw new Error(`${t('player.sessionFailed')}: ${reason}${detail}`);
+        }
+        if ((state === 'READY' || state === 'DRAINING') && session.playbackUrl) {
+          return session;
+        }
+        if (state === 'PRIMING') {
+          setStatus('priming');
+        } else {
+          setStatus('starting');
+        }
+        await sleep(SESSION_READY_POLL_MS);
+      } catch (err) {
+        const e = err as any;
+        const msg = e?.message || '';
+        const status = e?.details?.status as number | undefined;
+        if (msg === t('player.leaseBusy') || msg.startsWith(t('player.sessionFailed')) || msg === t('player.authFailed')) {
+          throw err;
+        }
+        if (typeof status === 'number' && status >= 400 && status < 500 && status !== 404 && status !== 429) {
+          throw err;
+        }
+        if (i === maxAttempts - 1) {
+          const details = {
+            ...(e?.details && typeof e.details === 'object' ? e.details : {}),
+            sessionId: trackedSessionId,
+            waitedMs: maxAttempts * SESSION_READY_POLL_MS,
+            pollMs: SESSION_READY_POLL_MS
+          };
+          throw createPlayerError(`${t('player.readinessCheckFailed')}: ${msg}`, details);
+        }
+        await sleep(500);
+      }
+    }
+
+    throw createPlayerError(t('player.sessionNotReadyInTime'), {
+      sessionId: trackedSessionId,
+      waitedMs: maxAttempts * SESSION_READY_POLL_MS,
+      pollMs: SESSION_READY_POLL_MS
+    });
+  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, readResponseBody, t]);
+
+  useEffect(() => {
+    if (!sessionId || !heartbeatInterval) {
+      return;
+    }
+
+    const trackedSessionId = sessionId;
+    const intervalMs = heartbeatInterval * 1000;
+    debugLog('[V3Player][Heartbeat] Starting heartbeat loop:', { sessionId: trackedSessionId, intervalMs });
+
+    const timerId = window.setInterval(async () => {
+      try {
+        const res = await fetch(`${apiBase}/sessions/${trackedSessionId}/heartbeat`, {
+          method: 'POST',
+          headers: authHeaders(true)
+        });
+
+        if (sessionIdRef.current !== trackedSessionId) {
+          return;
+        }
+
+        if (res.status === 200) {
+          const data = await res.json();
+          if (sessionIdRef.current !== trackedSessionId) {
+            return;
+          }
+          setLeaseExpiresAt(data.lease_expires_at);
+          debugLog('[V3Player][Heartbeat] Lease extended:', data.lease_expires_at);
+        } else if (res.status === 410) {
+          debugError('[V3Player][Heartbeat] Session expired (410)');
+          window.clearInterval(timerId);
+          setStatus('error');
+          setError(t('player.sessionExpired') || 'Session expired. Please restart.');
+          if (videoRef.current) {
+            videoRef.current.pause();
+          }
+        } else if (res.status === 404) {
+          debugWarn('[V3Player][Heartbeat] Session not found (404)');
+          window.clearInterval(timerId);
+          setStatus('error');
+          setError(t('player.sessionNotFound') || 'Session no longer exists.');
+          if (videoRef.current) {
+            videoRef.current.pause();
+          }
+        }
+      } catch (err) {
+        debugError('[V3Player][Heartbeat] Network error:', err);
+      }
+    }, intervalMs);
+
+    return () => {
+      debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
+      window.clearInterval(timerId);
+    };
+  }, [apiBase, authHeaders, heartbeatInterval, sessionId, setError, setStatus, t, videoRef]);
+
+  useEffect(() => {
+    setClientAuthToken(token);
+    sessionCookieRef.current.token = null;
+    sessionCookieRef.current.pending = null;
+  }, [token]);
+
+  return {
+    sessionId,
+    sessionIdRef,
+    authHeaders,
+    reportError,
+    ensureSessionCookie,
+    setActiveSessionId,
+    clearSessionLeaseState,
+    sendStopIntent,
+    waitForSessionReady
+  };
+}
