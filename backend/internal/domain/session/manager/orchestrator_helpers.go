@@ -246,6 +246,16 @@ func (o *Orchestrator) startPipeline(
 
 	// Profiles: map currentProfileSpec to Quality?
 	// For now, Adapter builder handles details (or ignores quality spec).
+	startupLogger := log.WithContext(hbCtx, log.WithComponent("worker")).
+		With().
+		Str("sid", e.SessionID).
+		Logger()
+	startupLogger.Info().
+		Str("session_id", e.SessionID).
+		Str("startup_phase", "pipeline_start_requested").
+		Str("source_type", string(spec.Source.Type)).
+		Str("source_id", spec.Source.ID).
+		Msg("pipeline start requested")
 
 	handle, err := o.Pipeline.Start(hbCtx, spec)
 	if err != nil {
@@ -265,6 +275,11 @@ func (o *Orchestrator) startPipeline(
 		}
 		return "", newReasonError(model.RPipelineStartFailed, "pipeline start failed", err)
 	}
+	startupLogger.Info().
+		Str("session_id", e.SessionID).
+		Str("startup_phase", "pipeline_start_returned").
+		Str("run_handle", string(handle)).
+		Msg("pipeline start returned")
 
 	return handle, nil
 }

@@ -276,6 +276,12 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 
 	logger := log.WithContext(ctx, log.WithComponent("worker"))
 	logger = logger.With().Str("sid", e.SessionID).Logger()
+	logger.Info().
+		Str("session_id", e.SessionID).
+		Str("service_ref", e.ServiceRef).
+		Str("profile", e.ProfileID).
+		Str("startup_phase", "session_start").
+		Msg("session startup started")
 
 	sessionCtx := &sessionContext{
 		Mode:       model.ModeLive,
@@ -298,6 +304,12 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	if err != nil {
 		return err
 	}
+	logger.Info().
+		Str("session_id", e.SessionID).
+		Str("startup_phase", "session_context_built").
+		Str("mode", string(sessionCtx.Mode)).
+		Str("service_ref", sessionCtx.ServiceRef).
+		Msg("session context built")
 
 	if sessionCtx.Mode == model.ModeRecording {
 		sourceType := ""
@@ -314,6 +326,11 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	if err != nil {
 		return err
 	}
+	logger.Info().
+		Str("session_id", e.SessionID).
+		Str("startup_phase", "leases_acquired").
+		Int("tuner_slot", leases.Slot).
+		Msg("session leases acquired")
 	defer leases.ReleaseDedup()
 	defer leases.HBCancel()
 	defer o.unregisterActive(e.SessionID)
@@ -327,6 +344,11 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	if err := o.transitionStarting(ctx, e, sessionCtx, leases.Slot); err != nil {
 		return err
 	}
+	logger.Info().
+		Str("session_id", e.SessionID).
+		Str("startup_phase", "transition_starting_done").
+		Int("tuner_slot", leases.Slot).
+		Msg("session transitioned to STARTING")
 
 	if sess, err := o.Store.GetSession(ctx, e.SessionID); err == nil && sess != nil {
 		session = sess
@@ -373,6 +395,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	logger.Info().
 		Str("session_id", e.SessionID).
 		Str("profile", finalProfile.Name).
+		Str("startup_phase", "ready").
 		Int64("elapsed_ms", playlistReadyDuration.Milliseconds()).
 		Msg("playlist ready - transitioning to READY state")
 
