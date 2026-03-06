@@ -363,8 +363,8 @@ func TestMediaTruth(t *testing.T) {
 					VideoCodec: "h264",
 					AudioCodec: "aac",
 				},
-				Reason: string(playback.ReasonDirectPlayMatch), // Direct play from source path (no artifact/playlist required)
-				// Key check: It returns a valid result (not error/missing) but NOT direct play OR HLS if implied by artifact
+				Reason: string(playback.ReasonDirectStreamMatch), // TS source path => direct stream/remux fallback
+				// Key check: It returns a valid result (not error/missing) but NOT artifact-based playback
 			},
 		},
 	}
