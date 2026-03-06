@@ -30,6 +30,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 )
@@ -1220,6 +1221,7 @@ type inputPlan struct {
 type codecPlan struct {
 	resolvedCodec string
 	useVAAPI      bool
+	fullVAAPI     bool
 	preInputArgs  []string
 }
 
@@ -1254,12 +1256,12 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 }
 
 func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
-	useHWPath := spec.Profile.HWAccel == "vaapi"
+	useHWPath := profiles.IsGPUBackedProfile(spec.Profile.HWAccel)
 	if isPreferHWProfile(spec.Profile.Name) {
 		useHWPath = true
 	}
 
-	hardVAAPIRequest := spec.Profile.HWAccel == "vaapi" && !isPreferHWProfile(spec.Profile.Name)
+	hardVAAPIRequest := profiles.IsGPUBackedProfile(spec.Profile.HWAccel) && !isPreferHWProfile(spec.Profile.Name)
 	decisionIn := codecdecision.Input{
 		Profile:        spec.Profile.Name,
 		RequestedCodec: spec.Profile.VideoCodec,
@@ -1308,6 +1310,7 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 	if hardVAAPIRequest {
 		useVAAPI = true
 	}
+	fullVAAPI := profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
 
 	preInputArgs := make([]string, 0, 6)
 	if useVAAPI {
@@ -1321,16 +1324,19 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		if !a.VaapiEncoderVerified(reqEncoder) {
 			return codecPlan{}, fmt.Errorf("vaapi encoder %s not verified by preflight (device=%s, deviceErr=%v)", reqEncoder, a.VaapiDevice, a.vaapiDeviceErr)
 		}
-		preInputArgs = append(preInputArgs,
-			"-vaapi_device", a.VaapiDevice,
-			"-hwaccel", "vaapi",
-			"-hwaccel_output_format", "vaapi",
-		)
+		preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
+		if fullVAAPI {
+			preInputArgs = append(preInputArgs,
+				"-hwaccel", "vaapi",
+				"-hwaccel_output_format", "vaapi",
+			)
+		}
 	}
 
 	return codecPlan{
 		resolvedCodec: resolvedCodec,
 		useVAAPI:      useVAAPI,
+		fullVAAPI:     fullVAAPI,
 		preInputArgs:  preInputArgs,
 	}, nil
 }
@@ -1594,7 +1600,11 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	)
 
 	if codec.useVAAPI {
-		out.args = a.buildVaapiVideoArgs(out.args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+		if codec.fullVAAPI {
+			out.args = a.buildVaapiVideoArgs(out.args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+		} else {
+			out.args = a.buildVaapiEncodeOnlyVideoArgs(out.args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+		}
 	} else {
 		out.args = a.buildCPUVideoArgs(out.args, spec, codec.resolvedCodec, gop, segmentDurationSec)
 	}
@@ -1688,6 +1698,54 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	return args
 }
 
+func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
+	prof := spec.Profile
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("transcode.mode", "vaapi_encode_only").
+		Str("vaapi.device", a.VaapiDevice).
+		Str("video.codec", outputCodec).
+		Int("video.maxRateK", prof.VideoMaxRateK).
+		Int("video.bufSizeK", prof.VideoBufSizeK).
+		Bool("deinterlace", prof.Deinterlace).
+		Msg("pipeline video: vaapi encode only")
+
+	filter := "format=nv12,hwupload"
+	if prof.Deinterlace {
+		filter = a.deinterlaceFilterForProfile(spec) + "," + filter
+	}
+	args = append(args, "-vf", filter)
+
+	encoder := "h264_vaapi"
+	switch outputCodec {
+	case "hevc":
+		encoder = "hevc_vaapi"
+	case "av1":
+		encoder = "av1_vaapi"
+	}
+	args = append(args, "-c:v", encoder)
+
+	if prof.VideoMaxRateK > 0 {
+		args = append(args,
+			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+		)
+		if prof.VideoBufSizeK > 0 {
+			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+	} else {
+		args = append(args, "-global_quality", "23")
+	}
+
+	args = append(args,
+		"-g", strconv.Itoa(gop),
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
+		"-flags", "+cgop",
+		"-profile:v", "main",
+	)
+	return args
+}
+
 // buildCPUVideoArgs constructs video encoding arguments for the CPU transcode path.
 // Handles both explicit ProfileSpec values and zero-valued ProfileSpec.
 // When ProfileSpec is zero-valued (VideoCodec="" + TranscodeVideo=false), applies
@@ -1733,10 +1791,7 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 		Bool("legacy_defaults", legacy).
 		Msg("pipeline video: cpu")
 
-	deinterlaceFilter := "yadif"
-	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
-		deinterlaceFilter = strings.TrimSpace(a.SafariDirtyFilter)
-	}
+	deinterlaceFilter := a.deinterlaceFilterForProfile(spec)
 	if deinterlace {
 		args = append(args, "-vf", deinterlaceFilter)
 	}
@@ -1770,6 +1825,14 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 		"-profile:v", "main",
 	)
 	return args
+}
+
+func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string {
+	deinterlaceFilter := "yadif"
+	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
+		deinterlaceFilter = strings.TrimSpace(a.SafariDirtyFilter)
+	}
+	return deinterlaceFilter
 }
 
 func (a *LocalAdapter) supportedHWCodecs() []string {

@@ -169,7 +169,7 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 
 	var hwaccelEffective, hwaccelReason, encoderBackend string
 	if profileSpec.TranscodeVideo {
-		if profileSpec.HWAccel == "vaapi" {
+		if profiles.IsGPUBackedProfile(profileSpec.HWAccel) {
 			hwaccelEffective = "gpu"
 			encoderBackend = "vaapi"
 			if hwaccelMode == profiles.HWAccelForce {

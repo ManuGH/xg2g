@@ -134,7 +134,7 @@ type ProfileSpec struct {
 	VOD            bool   `json:"vod,omitempty"`
 	TranscodeVideo bool   `json:"transcodeVideo"`
 	VideoCodec     string `json:"videoCodec,omitempty"` // "h264" (default) or "hevc"
-	HWAccel        string `json:"hwAccel,omitempty"`    // "vaapi", "qsv", "nvenc", etc.
+	HWAccel        string `json:"hwAccel,omitempty"`    // "vaapi", "vaapi_encode_only", "qsv", "nvenc", etc.
 	Deinterlace    bool   `json:"deinterlace,omitempty"`
 	VideoCRF       int    `json:"videoCrf,omitempty"`
 	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`

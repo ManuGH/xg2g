@@ -62,6 +62,15 @@ const (
 	HWAccelOff   HWAccelMode = "off"   // Force CPU
 )
 
+const (
+	profileHWAccelVAAPI           = "vaapi"
+	profileHWAccelVAAPIEncodeOnly = "vaapi_encode_only"
+
+	safariDirtyHWModeNone       = "none"
+	safariDirtyHWModeEncodeOnly = "encode_only"
+	safariDirtyHWModeFull       = "full"
+)
+
 // shouldUseGPU determines whether to use GPU acceleration based on availability and user override
 func shouldUseGPU(hasGPU bool, mode HWAccelMode) bool {
 	switch mode {
@@ -73,6 +82,46 @@ func shouldUseGPU(hasGPU bool, mode HWAccelMode) bool {
 		return hasGPU // Auto: use GPU if available
 	default:
 		return hasGPU
+	}
+}
+
+// IsGPUBackedProfile reports whether the resolved profile uses VAAPI anywhere in the pipeline.
+func IsGPUBackedProfile(hwaccel string) bool {
+	switch strings.TrimSpace(hwaccel) {
+	case profileHWAccelVAAPI, profileHWAccelVAAPIEncodeOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsFullVAAPIProfile reports whether both decode and encode use the VAAPI path.
+func IsFullVAAPIProfile(hwaccel string) bool {
+	return strings.TrimSpace(hwaccel) == profileHWAccelVAAPI
+}
+
+func resolveSafariDirtyHWMode(hasGPU bool, hwaccelMode HWAccelMode) string {
+	switch hwaccelMode {
+	case HWAccelOff:
+		return safariDirtyHWModeNone
+	case HWAccelForce:
+		return safariDirtyHWModeFull
+	}
+
+	mode := normalize.Token(os.Getenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE"))
+	switch mode {
+	case safariDirtyHWModeNone, safariDirtyHWModeEncodeOnly, safariDirtyHWModeFull:
+		if hasGPU {
+			return mode
+		}
+		return safariDirtyHWModeNone
+	case "":
+		if hasGPU && envBool("XG2G_SAFARI_DIRTY_USE_GPU", false) {
+			return safariDirtyHWModeFull
+		}
+		return safariDirtyHWModeNone
+	default:
+		return safariDirtyHWModeNone
 	}
 }
 
@@ -169,23 +218,22 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.Container = "fmp4"
 		spec.AudioBitrateK = envIntBounded("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", 192, 96, 384)
 
-		// Dirty DVB sources have shown unstable VAAPI startup and timestamp behavior in practice.
-		// Keep safari_dirty on CPU by default; allow explicit GPU opt-in or forced HW mode.
-		useGPU := false
-		switch hwaccelMode {
-		case HWAccelForce:
-			useGPU = hasGPU
-		case HWAccelOff:
-			useGPU = false
-		default:
-			useGPU = hasGPU && envBool("XG2G_SAFARI_DIRTY_USE_GPU", false)
-		}
-		if useGPU {
-			spec.HWAccel = "vaapi"
+		// Dirty DVB sources need finer-grained control than a simple CPU/GPU split.
+		// none        -> CPU decode + CPU deinterlace + CPU encode
+		// encode_only -> CPU decode + CPU deinterlace + VAAPI encode
+		// full        -> full VAAPI decode/deinterlace/encode path
+		switch resolveSafariDirtyHWMode(hasGPU, hwaccelMode) {
+		case safariDirtyHWModeFull:
+			spec.HWAccel = profileHWAccelVAAPI
 			spec.VideoCodec = "h264"
 			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
 			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 40000, 8000, 120000)
-		} else {
+		case safariDirtyHWModeEncodeOnly:
+			spec.HWAccel = profileHWAccelVAAPIEncodeOnly
+			spec.VideoCodec = "h264"
+			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
+			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 40000, 8000, 120000)
+		default:
 			spec.VideoCodec = "libx264"
 			spec.VideoCRF = envIntBounded("XG2G_SAFARI_DIRTY_CRF", 16, 12, 30)
 			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 14000, 4000, 60000)
