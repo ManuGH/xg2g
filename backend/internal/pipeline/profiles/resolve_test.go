@@ -72,12 +72,18 @@ func TestResolve_SafariDirtyExplicit(t *testing.T) {
 	assert.Equal(t, 14000, specCPU.VideoMaxRateK)
 	assert.Equal(t, 28000, specCPU.VideoBufSizeK)
 
-	specGPU := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
-	assert.Equal(t, "safari_dirty", specGPU.Name)
-	assert.Equal(t, "vaapi", specGPU.HWAccel)
-	assert.Equal(t, "h264", specGPU.VideoCodec)
-	assert.Equal(t, 20000, specGPU.VideoMaxRateK)
-	assert.Equal(t, 40000, specGPU.VideoBufSizeK)
+	specAutoGPU := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	assert.Equal(t, "safari_dirty", specAutoGPU.Name)
+	assert.Equal(t, "", specAutoGPU.HWAccel, "auto mode should stay on CPU unless safari_dirty GPU is explicitly enabled")
+	assert.Equal(t, "libx264", specAutoGPU.VideoCodec)
+
+	t.Setenv("XG2G_SAFARI_DIRTY_USE_GPU", "true")
+	specGPUOptIn := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	assert.Equal(t, "safari_dirty", specGPUOptIn.Name)
+	assert.Equal(t, "vaapi", specGPUOptIn.HWAccel)
+	assert.Equal(t, "h264", specGPUOptIn.VideoCodec)
+	assert.Equal(t, 20000, specGPUOptIn.VideoMaxRateK)
+	assert.Equal(t, 40000, specGPUOptIn.VideoBufSizeK)
 }
 
 func TestResolve_SafariDirtyDefaultEnv(t *testing.T) {
