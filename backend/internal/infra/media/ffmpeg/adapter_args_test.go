@@ -159,6 +159,59 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 	assert.NotContains(t, args, "-pix_fmt")
 }
 
+func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_DIRTY_DEINTERLACE_FILTER", "bwdif=mode=send_frame:parity=auto:deint=all")
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "vaapi-encode-only",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_dirty",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi_encode_only",
+			VideoCodec:     "h264",
+			Deinterlace:    true,
+			VideoMaxRateK:  20000,
+			VideoBufSizeK:  40000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	iIdx := indexOf(args, "-i")
+	require.True(t, iIdx > 0)
+	vaapiDevIdx := indexOf(args, "-vaapi_device")
+	require.True(t, vaapiDevIdx >= 0 && vaapiDevIdx < iIdx, "encode-only mode still needs a VAAPI device for hwupload")
+	assert.Equal(t, "/dev/dri/renderD128", args[vaapiDevIdx+1])
+
+	assert.NotContains(t, args, "-hwaccel", "encode-only mode must not enable VAAPI decode")
+	assert.NotContains(t, args, "-hwaccel_output_format", "encode-only mode must not request VAAPI decode surfaces")
+
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "bwdif=mode=send_frame:parity=auto:deint=all")
+	assert.Contains(t, vf, "format=nv12,hwupload")
+
+	assert.Contains(t, args, "h264_vaapi")
+	assert.Contains(t, args, "-b:v")
+	assert.Contains(t, args, "20000k")
+	assert.NotContains(t, args, "-crf")
+	assert.NotContains(t, args, "-preset")
+}
+
 func TestBuildArgs_VaapiHEVC(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),

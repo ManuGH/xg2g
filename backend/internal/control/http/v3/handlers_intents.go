@@ -326,7 +326,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		var hwaccelEffective, hwaccelReason, encoderBackend string
 
 		if profileSpec.TranscodeVideo {
-			if profileSpec.HWAccel == "vaapi" {
+			if profiles.IsGPUBackedProfile(profileSpec.HWAccel) {
 				hwaccelEffective = "gpu"
 				encoderBackend = "vaapi"
 				if hwaccelMode == profiles.HWAccelForce {

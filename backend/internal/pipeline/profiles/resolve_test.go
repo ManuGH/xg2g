@@ -86,6 +86,35 @@ func TestResolve_SafariDirtyExplicit(t *testing.T) {
 	assert.Equal(t, 40000, specGPUOptIn.VideoBufSizeK)
 }
 
+func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
+	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
+	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "encode_only")
+	specEncodeOnly := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	assert.Equal(t, "vaapi_encode_only", specEncodeOnly.HWAccel)
+	assert.Equal(t, "h264", specEncodeOnly.VideoCodec)
+	assert.Equal(t, 20000, specEncodeOnly.VideoMaxRateK)
+	assert.Equal(t, 40000, specEncodeOnly.VideoBufSizeK)
+
+	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "full")
+	specFull := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	assert.Equal(t, "vaapi", specFull.HWAccel)
+	assert.Equal(t, "h264", specFull.VideoCodec)
+
+	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "invalid")
+	specInvalid := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	assert.Empty(t, specInvalid.HWAccel)
+	assert.Equal(t, "libx264", specInvalid.VideoCodec)
+
+	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "encode_only")
+	specForced := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelForce)
+	assert.Equal(t, "vaapi", specForced.HWAccel, "hwaccel=force should request the full VAAPI path")
+
+	specDisabled := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelOff)
+	assert.Empty(t, specDisabled.HWAccel, "hwaccel=off should disable safari_dirty GPU modes")
+	assert.Equal(t, "libx264", specDisabled.VideoCodec)
+}
+
 func TestResolve_SafariDirtyDefaultEnv(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_DIRTY_DEFAULT", "true")
 
