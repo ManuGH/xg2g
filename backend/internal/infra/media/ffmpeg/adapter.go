@@ -58,6 +58,9 @@ type LocalAdapter struct {
 	HLSRoot             string
 	AnalyzeDuration     string
 	ProbeSize           string
+	LiveAnalyzeDuration string
+	LiveProbeSize       string
+	LiveNoBuffer        bool
 	IngestFFlags        string
 	IngestErrDetect     string
 	IngestMaxErrorRate  string
@@ -110,6 +113,15 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	if probeSize == "" {
 		probeSize = "5M" // 5MB for live streams
 	}
+	liveAnalyzeDuration := strings.TrimSpace(os.Getenv("XG2G_LIVE_ANALYZE_DURATION"))
+	if liveAnalyzeDuration == "" {
+		liveAnalyzeDuration = "1000000" // 1s for low-latency live ingest
+	}
+	liveProbeSize := strings.TrimSpace(os.Getenv("XG2G_LIVE_PROBE_SIZE"))
+	if liveProbeSize == "" {
+		liveProbeSize = "1M" // 1MB for low-latency live ingest
+	}
+	liveNoBuffer := envBool("XG2G_LIVE_NOBUFFER", false)
 	if killTimeout <= 0 {
 		killTimeout = 5 * time.Second
 	}
@@ -202,6 +214,9 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		HLSRoot:             hlsRoot,
 		AnalyzeDuration:     analyzeDuration,
 		ProbeSize:           probeSize,
+		LiveAnalyzeDuration: liveAnalyzeDuration,
+		LiveProbeSize:       liveProbeSize,
+		LiveNoBuffer:        liveNoBuffer,
 		IngestFFlags:        ingestFFlags,
 		IngestErrDetect:     ingestErrDetect,
 		IngestMaxErrorRate:  ingestMaxErrorRate,
@@ -397,6 +412,11 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 
 	// 6. Monitor Process
 	pid := cmd.Process.Pid
+	a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "ffmpeg_started").
+		Int("pid", pid).
+		Msg("ffmpeg process started")
 	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
 	a.mu.Lock()
 	a.activeProcs[handle] = cmd
@@ -426,6 +446,9 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 
 	// Forward lines to RingBuffer/Log and Watchdog
 	scanner := bufio.NewScanner(stderr)
+	scanner.Split(scanFFmpegLogTokens)
+	firstFrameLogged := false
+	firstSegmentLogged := false
 
 	if parentCtx == nil {
 		parentCtx = context.Background()
@@ -440,6 +463,26 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if !firstFrameLogged {
+			if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
+				firstFrameLogged = true
+				a.Logger.Info().
+					Str("session_id", sessionID).
+					Str("startup_phase", "first_frame").
+					Int("frame", frame).
+					Msg("ffmpeg first frame observed")
+			}
+		}
+		if !firstSegmentLogged {
+			if segmentPath, ok := extractStartupSegmentPath(line); ok {
+				firstSegmentLogged = true
+				a.Logger.Info().
+					Str("session_id", sessionID).
+					Str("startup_phase", "first_segment_write").
+					Str("segment_path", segmentPath).
+					Msg("ffmpeg first segment write observed")
+			}
+		}
 		a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", line).Msg("ffmpeg output")
 		wd.ParseLine(line)
 
@@ -467,6 +510,78 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 	if procErr != nil {
 		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
 	}
+}
+
+func scanFFmpegLogTokens(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if len(data) == 0 {
+		if atEOF {
+			return 0, nil, nil
+		}
+		return 0, nil, nil
+	}
+	for i, b := range data {
+		if b != '\n' && b != '\r' {
+			continue
+		}
+		advance = i + 1
+		if b == '\r' && advance < len(data) && data[advance] == '\n' {
+			advance++
+		}
+		return advance, bytes.TrimRight(data[:i], "\r\n"), nil
+	}
+	if atEOF {
+		return len(data), bytes.TrimRight(data, "\r\n"), nil
+	}
+	return 0, nil, nil
+}
+
+func parseFFmpegFrameCount(line string) (int, bool) {
+	idx := strings.Index(line, "frame=")
+	if idx < 0 {
+		return 0, false
+	}
+	rest := strings.TrimLeft(line[idx+len("frame="):], " ")
+	if rest == "" {
+		return 0, false
+	}
+	count := 0
+	digits := 0
+	for digits < len(rest) {
+		ch := rest[digits]
+		if ch < '0' || ch > '9' {
+			break
+		}
+		count = count*10 + int(ch-'0')
+		digits++
+	}
+	if digits == 0 {
+		return 0, false
+	}
+	return count, true
+}
+
+func extractStartupSegmentPath(line string) (string, bool) {
+	if !strings.Contains(line, "Opening ") || !strings.Contains(line, " for writing") {
+		return "", false
+	}
+	start := strings.IndexAny(line, `'"`)
+	if start < 0 || start+1 >= len(line) {
+		return "", false
+	}
+	quote := line[start]
+	endRel := strings.IndexByte(line[start+1:], quote)
+	if endRel < 0 {
+		return "", false
+	}
+	path := line[start+1 : start+1+endRel]
+	base := filepath.Base(path)
+	if !strings.HasPrefix(base, "seg_") {
+		return "", false
+	}
+	if strings.HasSuffix(base, ".m4s") || strings.HasSuffix(base, ".ts") {
+		return path, true
+	}
+	return "", false
 }
 
 func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string) {
@@ -1074,6 +1189,8 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 	if fflags == "" {
 		fflags = "+genpts+discardcorrupt+flush_packets"
 	}
+	analyzeDuration := strings.TrimSpace(a.AnalyzeDuration)
+	probeSize := strings.TrimSpace(a.ProbeSize)
 	baseInputArgs := make([]string, 0, 20)
 	if v := strings.TrimSpace(a.IngestErrDetect); v != "" {
 		baseInputArgs = append(baseInputArgs, "-err_detect", v)
@@ -1083,8 +1200,17 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 	}
 	baseInputArgs = append(baseInputArgs, "-ignore_unknown")
 	if spec.Source.Type != ports.SourceFile {
+		if liveAnalyze := strings.TrimSpace(a.LiveAnalyzeDuration); liveAnalyze != "" {
+			analyzeDuration = liveAnalyze
+		}
+		if liveProbe := strings.TrimSpace(a.LiveProbeSize); liveProbe != "" {
+			probeSize = liveProbe
+		}
 		if !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
+		}
+		if a.LiveNoBuffer && !strings.Contains(fflags, "nobuffer") {
+			fflags += "+nobuffer"
 		}
 
 		headers := "Icy-MetaData: 1\r\n"
@@ -1108,11 +1234,11 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		}
 	}
 	baseInputArgs = append([]string{"-fflags", fflags}, baseInputArgs...)
-	if a.AnalyzeDuration != "" {
-		baseInputArgs = append(baseInputArgs, "-analyzeduration", a.AnalyzeDuration)
+	if analyzeDuration != "" {
+		baseInputArgs = append(baseInputArgs, "-analyzeduration", analyzeDuration)
 	}
-	if a.ProbeSize != "" {
-		baseInputArgs = append(baseInputArgs, "-probesize", a.ProbeSize)
+	if probeSize != "" {
+		baseInputArgs = append(baseInputArgs, "-probesize", probeSize)
 	}
 
 	netInputArgs := append([]string{}, baseInputArgs...)

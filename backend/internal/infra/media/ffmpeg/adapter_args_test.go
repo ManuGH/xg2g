@@ -354,13 +354,14 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 	require.True(t, analyzeIdx >= 0 && analyzeIdx < iIdx, "analyzeduration must be before -i")
 	analyze, ok := valueAfter(args, "-analyzeduration")
 	require.True(t, ok)
-	assert.Equal(t, "2000000", analyze)
+	assert.Equal(t, "1000000", analyze)
 
 	probeIdx := indexOf(args, "-probesize")
 	require.True(t, probeIdx >= 0 && probeIdx < iIdx, "probesize must be before -i")
 	probe, ok := valueAfter(args, "-probesize")
 	require.True(t, ok)
-	assert.Equal(t, "5M", probe)
+	assert.Equal(t, "1M", probe)
+	assert.NotContains(t, fflags, "nobuffer")
 }
 
 func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
@@ -431,6 +432,74 @@ func TestBuildArgs_ResilientIngestToggleOff(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "+genpts+igndts", probeFFlags)
 	assert.Equal(t, -1, indexOf(probeArgs, "-err_detect"))
+}
+
+func TestBuildArgs_LiveInputOverridesDoNotAffectFileOrFPSProbe(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	fileSpec := ports.StreamSpec{
+		SessionID: "file-input",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "libx264",
+		},
+		Source: ports.StreamSource{
+			ID:   "/tmp/example.ts",
+			Type: ports.SourceFile,
+		},
+	}
+
+	fileArgs, err := adapter.buildArgs(context.Background(), fileSpec, fileSpec.Source.ID)
+	require.NoError(t, err)
+	analyze, ok := valueAfter(fileArgs, "-analyzeduration")
+	require.True(t, ok)
+	assert.Equal(t, "2000000", analyze)
+	probe, ok := valueAfter(fileArgs, "-probesize")
+	require.True(t, ok)
+	assert.Equal(t, "5M", probe)
+	fflags, ok := valueAfter(fileArgs, "-fflags")
+	require.True(t, ok)
+	assert.NotContains(t, fflags, "nobuffer")
+
+	probeArgs := adapter.buildFPSProbeArgs("http://example.com/stream", false)
+	probeAnalyze, ok := valueAfter(probeArgs, "-analyzeduration")
+	require.True(t, ok)
+	assert.Equal(t, "2000000", probeAnalyze)
+	probeSize, ok := valueAfter(probeArgs, "-probesize")
+	require.True(t, ok)
+	assert.Equal(t, "5M", probeSize)
+}
+
+func TestBuildArgs_LiveInputNoBufferOptIn(t *testing.T) {
+	t.Setenv("XG2G_LIVE_NOBUFFER", "true")
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "live-nobuffer",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "libx264",
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	fflags, ok := valueAfter(args, "-fflags")
+	require.True(t, ok)
+	assert.Contains(t, fflags, "+nobuffer")
 }
 
 func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
