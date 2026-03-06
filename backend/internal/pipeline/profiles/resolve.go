@@ -5,6 +5,8 @@
 package profiles
 
 import (
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -18,6 +20,7 @@ const (
 	ProfileLow            = "low"
 	ProfileDVR            = "dvr"
 	ProfileSafari         = "safari"
+	ProfileSafariDirty    = "safari_dirty"
 	ProfileSafariDVR      = "safari_dvr"
 	ProfileSafariHEVC     = "safari_hevc"
 	ProfileSafariHEVCHW   = "safari_hevc_hw"    // GPU-accelerated HEVC
@@ -41,6 +44,7 @@ var aliasMap = map[string]string{
 	"low":               ProfileLow,
 	"dvr":               ProfileDVR,
 	"safari":            ProfileSafari,
+	"safari_dirty":      ProfileSafariDirty,
 	"safari_dvr":        ProfileSafariDVR,
 	"safari_hevc":       ProfileSafariHEVC,
 	"safari_hevc_hw":    ProfileSafariHEVCHW,
@@ -92,6 +96,9 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		} else {
 			canonical = ProfileHigh
 		}
+	}
+	if canonical == ProfileSafari && envBool("XG2G_SAFARI_DIRTY_DEFAULT", false) {
+		canonical = ProfileSafariDirty
 	}
 
 	// REMOVED: Server-side Safari profile override
@@ -149,6 +156,31 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 				spec.VideoBufSizeK = 16000
 				spec.Preset = "veryfast"
 			}
+		}
+
+		spec.LLHLS = false
+		if dvrWindowSec > 0 {
+			spec.DVRWindowSec = dvrWindowSec
+		}
+	case ProfileSafariDirty:
+		// Quality-first profile for dirty DVB inputs.
+		spec.TranscodeVideo = true
+		spec.Deinterlace = true
+		spec.Container = "fmp4"
+		spec.AudioBitrateK = envIntBounded("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", 192, 96, 384)
+
+		useGPU := shouldUseGPU(hasGPU, hwaccelMode)
+		if useGPU {
+			spec.HWAccel = "vaapi"
+			spec.VideoCodec = "h264"
+			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
+			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 40000, 8000, 120000)
+		} else {
+			spec.VideoCodec = "libx264"
+			spec.VideoCRF = envIntBounded("XG2G_SAFARI_DIRTY_CRF", 16, 12, 30)
+			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 14000, 4000, 60000)
+			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 28000, 8000, 120000)
+			spec.Preset = envPreset("XG2G_SAFARI_DIRTY_PRESET", "fast")
 		}
 
 		spec.LLHLS = false
@@ -303,4 +335,47 @@ func isSafariUA(ua string) bool {
 		!strings.Contains(ua, "crios") &&
 		!strings.Contains(ua, "fxios") &&
 		!strings.Contains(ua, "edgios")
+}
+
+func envBool(key string, defaultValue bool) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return defaultValue
+	}
+}
+
+func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return defaultValue
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultValue
+	}
+	if n < minValue {
+		return minValue
+	}
+	if n > maxValue {
+		return maxValue
+	}
+	return n
+}
+
+func envPreset(key, defaultValue string) string {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if raw == "" {
+		return defaultValue
+	}
+	switch raw {
+	case "slow", "medium", "fast", "veryfast", "faster", "superfast", "ultrafast":
+		return raw
+	default:
+		return defaultValue
+	}
 }
