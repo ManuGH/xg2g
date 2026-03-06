@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,11 @@ const (
 
 // vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
 var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi"}
+
+type fpsCacheEntry struct {
+	FPS       int
+	LearnedAt time.Time
+}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
@@ -80,9 +86,9 @@ type LocalAdapter struct {
 	vaapiDeviceErr      error           // device-level preflight error
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
-	// lastKnownFPS caches successful FPS probes by source key so probe failures (e.g. signal:killed)
-	// can reuse the previous good value for the same sender/source.
-	lastKnownFPS map[string]int
+	// lastKnownFPS caches learned FPS by service_ref to survive probe failures.
+	lastKnownFPS map[string]fpsCacheEntry
+	FPSCacheTTL  time.Duration
 	fpsCacheMu   sync.RWMutex
 	mu           sync.Mutex
 	// activeProcs maps run handles to running commands
@@ -164,6 +170,12 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	if fpsProbeRetrySize == "" {
 		fpsProbeRetrySize = "20M"
 	}
+	fpsCacheTTL := 24 * time.Hour
+	if raw := strings.TrimSpace(os.Getenv("XG2G_FPS_CACHE_TTL")); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
+			fpsCacheTTL = parsed
+		}
+	}
 
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,
@@ -213,7 +225,8 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FPSProbeRetryAn:     fpsProbeRetryAnalyze,
 		FPSProbeRetrySize:   fpsProbeRetrySize,
 		VaapiDevice:         strings.TrimSpace(vaapiDevice),
-		lastKnownFPS:        make(map[string]int),
+		lastKnownFPS:        make(map[string]fpsCacheEntry),
+		FPSCacheTTL:         fpsCacheTTL,
 		activeProcs:         make(map[ports.RunHandle]*exec.Cmd),
 	}
 }
@@ -352,6 +365,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	case ports.SourceURL:
 		inputURL = spec.Source.ID
 	}
+	sourceKey := fpsCacheKey(spec.Source, inputURL)
 
 	// 1. Generate Arguments from Spec
 	args, err := a.buildArgs(ctx, spec, inputURL)
@@ -385,6 +399,10 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 
 	// Start watchdog monitor
 	go a.monitorProcess(ctx, handle, cmd, stderr, spec.SessionID)
+	if sourceKey != "" {
+		// Learn FPS from actual encoder output stream for future sessions of the same service_ref.
+		go a.learnFPSFromOutput(sourceKey, spec.SessionID)
+	}
 
 	// Metrics: Record pipeline spawn with cause="admitted" only AFTER successful start.
 	// We use engine="ffmpeg" as per truth.
@@ -444,6 +462,100 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 	if procErr != nil {
 		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
 	}
+}
+
+func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string) {
+	if sourceKey == "" || sessionID == "" {
+		return
+	}
+	sessionDir := filepath.Join(a.HLSRoot, "sessions", sessionID)
+	deadline := time.Now().Add(25 * time.Second)
+	for time.Now().Before(deadline) {
+		segment, ok := findFirstOutputSegment(sessionDir)
+		if ok {
+			fps, basis, err := a.probeOutputFPS(segment)
+			if err != nil {
+				a.Logger.Debug().
+					Str("sessionId", sessionID).
+					Str("source_key", sourceKey).
+					Str("segment", segment).
+					Err(err).
+					Msg("failed to learn fps from output segment")
+				return
+			}
+			if fps < a.FPSMin || fps > a.FPSMax {
+				a.Logger.Debug().
+					Str("sessionId", sessionID).
+					Str("source_key", sourceKey).
+					Str("segment", segment).
+					Int("fps", fps).
+					Int("fps_min", a.FPSMin).
+					Int("fps_max", a.FPSMax).
+					Msg("ignored learned fps from output segment (out of range)")
+				return
+			}
+			a.setLastKnownFPS(sourceKey, fps)
+			a.Logger.Info().
+				Str("sessionId", sessionID).
+				Str("source_key", sourceKey).
+				Str("segment", segment).
+				Int("fps", fps).
+				Str("fps_basis", "encoder_output_"+basis).
+				Msg("learned fps from encoder output")
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func findFirstOutputSegment(sessionDir string) (string, bool) {
+	patterns := []string{"seg_*.m4s", "seg_*.ts", "*.m4s", "*.ts"}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(sessionDir, pattern))
+		if err != nil || len(matches) == 0 {
+			continue
+		}
+		sort.Strings(matches)
+		for _, filePath := range matches {
+			info, err := os.Stat(filePath)
+			if err != nil || info.Size() <= 0 {
+				continue
+			}
+			return filePath, true
+		}
+	}
+	return "", false
+}
+
+func (a *LocalAdapter) probeOutputFPS(segmentPath string) (int, string, error) {
+	probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ffprobeBin := a.FFprobeBin
+	if strings.TrimSpace(ffprobeBin) == "" {
+		ffprobeBin = "ffprobe"
+	}
+
+	args := []string{
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=r_frame_rate,avg_frame_rate",
+		"-of", "default=noprint_wrappers=1",
+		segmentPath,
+	}
+	// #nosec G204 -- ffprobe bin path is trusted
+	cmd := exec.CommandContext(probeCtx, ffprobeBin, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, "", decorateProbeError(err, stderr.String())
+	}
+	output := strings.TrimSpace(string(out))
+	if output == "" {
+		return 0, "", fmt.Errorf("empty output")
+	}
+	return parseFPSProbeOutput(output)
 }
 
 // Stop terminates the process.
@@ -1336,14 +1448,49 @@ func normalizeRequestedCodec(codec string) string {
 }
 
 func fpsCacheKey(source ports.StreamSource, inputURL string) string {
-	id := strings.TrimSpace(source.ID)
-	if id == "" {
-		id = strings.TrimSpace(inputURL)
+	if source.Type == ports.SourceTuner {
+		if ref := normalizeServiceRef(source.ID); ref != "" {
+			return "service_ref:" + ref
+		}
 	}
-	if id == "" {
+	if ref := extractServiceRefFromURL(inputURL); ref != "" {
+		return "service_ref:" + ref
+	}
+	return ""
+}
+
+func normalizeServiceRef(raw string) string {
+	ref := strings.TrimSpace(raw)
+	ref = strings.Trim(ref, "/")
+	if ref == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s:%s", strings.ToLower(string(source.Type)), sanitizeURLForLog(id))
+	if !isLikelyServiceRef(ref) {
+		return ""
+	}
+	return ref
+}
+
+func extractServiceRefFromURL(inputURL string) string {
+	u, err := url.Parse(strings.TrimSpace(inputURL))
+	if err != nil {
+		return ""
+	}
+	if ref := normalizeServiceRef(u.Query().Get("ref")); ref != "" {
+		return ref
+	}
+	path := strings.Trim(u.Path, "/")
+	if path == "" {
+		return ""
+	}
+	if decoded, err := url.PathUnescape(path); err == nil {
+		path = decoded
+	}
+	return normalizeServiceRef(path)
+}
+
+func isLikelyServiceRef(value string) bool {
+	return strings.Count(value, ":") >= 5
 }
 
 func shouldRetryFPSProbe(err error) bool {
@@ -1381,7 +1528,10 @@ func (a *LocalAdapter) setLastKnownFPS(sourceKey string, fps int) {
 		return
 	}
 	a.fpsCacheMu.Lock()
-	a.lastKnownFPS[sourceKey] = fps
+	a.lastKnownFPS[sourceKey] = fpsCacheEntry{
+		FPS:       fps,
+		LearnedAt: time.Now(),
+	}
 	a.fpsCacheMu.Unlock()
 }
 
@@ -1389,10 +1539,23 @@ func (a *LocalAdapter) getLastKnownFPS(sourceKey string) (int, bool) {
 	if sourceKey == "" {
 		return 0, false
 	}
-	a.fpsCacheMu.RLock()
-	fps, ok := a.lastKnownFPS[sourceKey]
-	a.fpsCacheMu.RUnlock()
-	return fps, ok
+	ttl := a.FPSCacheTTL
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	now := time.Now()
+
+	a.fpsCacheMu.Lock()
+	defer a.fpsCacheMu.Unlock()
+	entry, ok := a.lastKnownFPS[sourceKey]
+	if !ok {
+		return 0, false
+	}
+	if entry.LearnedAt.IsZero() || now.Sub(entry.LearnedAt) > ttl {
+		delete(a.lastKnownFPS, sourceKey)
+		return 0, false
+	}
+	return entry.FPS, true
 }
 
 func (a *LocalAdapter) probeFPS(ctx context.Context, inputURL string) (int, string, error) {
@@ -1428,9 +1591,6 @@ func (a *LocalAdapter) buildFPSProbeArgs(inputURL string, retry bool) []string {
 	}
 	if v := strings.TrimSpace(a.FPSProbeErrDetect); v != "" {
 		args = append(args, "-err_detect", v)
-	}
-	if v := strings.TrimSpace(a.IngestMaxErrorRate); v != "" {
-		args = append(args, "-max_error_rate", v)
 	}
 	if analyzeDuration != "" {
 		args = append(args, "-analyzeduration", analyzeDuration)

@@ -4,7 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/rs/zerolog"
 )
 
 func TestParseFPS(t *testing.T) {
@@ -132,5 +137,58 @@ func TestShouldRetryFPSProbe(t *testing.T) {
 				t.Fatalf("shouldRetryFPSProbe(%v) = %v; want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFPSCacheKey_UsesServiceRef(t *testing.T) {
+	t.Run("tuner_source_id", func(t *testing.T) {
+		got := fpsCacheKey(ports.StreamSource{
+			Type: ports.SourceTuner,
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+		}, "")
+		if got != "service_ref:1:0:19:132F:3EF:1:C00000:0:0:0" {
+			t.Fatalf("unexpected key: %s", got)
+		}
+	})
+
+	t.Run("url_path_with_service_ref", func(t *testing.T) {
+		got := fpsCacheKey(ports.StreamSource{
+			Type: ports.SourceURL,
+			ID:   "http://example.invalid/live",
+		}, "http://10.0.0.1:8001/1:0:19:6F:D:85:C00000:0:0:0")
+		if got != "service_ref:1:0:19:6F:D:85:C00000:0:0:0" {
+			t.Fatalf("unexpected key: %s", got)
+		}
+	})
+}
+
+func TestGetLastKnownFPS_ExpiresByTTL(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.FPSCacheTTL = 24 * time.Hour
+
+	key := "service_ref:1:0:19:132F:3EF:1:C00000:0:0:0"
+	adapter.fpsCacheMu.Lock()
+	adapter.lastKnownFPS[key] = fpsCacheEntry{
+		FPS:       50,
+		LearnedAt: time.Now().Add(-25 * time.Hour),
+	}
+	adapter.fpsCacheMu.Unlock()
+
+	if _, ok := adapter.getLastKnownFPS(key); ok {
+		t.Fatalf("expected expired entry to be ignored")
+	}
+}
+
+func TestNewLocalAdapter_FPSCacheTTLFromEnv(t *testing.T) {
+	t.Setenv("XG2G_FPS_CACHE_TTL", "6h")
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	if adapter.FPSCacheTTL != 6*time.Hour {
+		t.Fatalf("FPSCacheTTL=%v want=%v", adapter.FPSCacheTTL, 6*time.Hour)
 	}
 }
