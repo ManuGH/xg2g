@@ -2,7 +2,7 @@
 # Quality Assurance Targets
 # ===================================================================================================
 
-.PHONY: lint lint-fix test test-race test-cover cover test-all test-integration smoke-test codex security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online ci-pr ci-nightly bootstrap-python-tools
+.PHONY: lint lint-fix test test-race test-cover cover test-all test-integration smoke-test codex security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test ci-pr ci-nightly bootstrap-python-tools
 
 lint: ## Run golangci-lint with all checks
 	@echo "Running golangci-lint..."
@@ -16,6 +16,19 @@ lint-fix: ## Run golangci-lint with automatic fixes
 	@echo "Running golangci-lint fix..."
 	@cd $(BACKEND_DIR) && $(GOLANGCI_LINT) run --fix ./...
 	@echo "✅ Linting fixes applied"
+
+lint-invariants: ## Run repository lint invariants enforced in CI
+	@echo "Running lint invariants..."
+	@echo "Scanning for direct environment access outside internal/config..."
+	@VIOLATIONS=$$(grep -RIn --include='*.go' --exclude='*_test.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' $(BACKEND_DIR)/internal/ $(BACKEND_DIR)/cmd/ | grep -vE '^$(BACKEND_DIR)/internal/config/' || true); \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo "❌ Direct environment access detected outside authorized packages:"; \
+		echo "$$VIOLATIONS"; \
+		exit 1; \
+	fi
+	@$(PYTHON) $(BACKEND_DIR)/scripts/check_deprecations.py
+	@cd $(FRONTEND_DIR)/webui && npm run lint
+	@echo "✅ Lint invariants passed"
 
 test: ## Run all unit tests
 	@echo "Running unit tests..."
@@ -46,6 +59,16 @@ smoke-test: ## Run E2E smoke test (Builds & Runs daemon)
 	@echo "Running E2E smoke test..."
 	@XG2G_SMOKE_BIN=$$(pwd)/$(BUILD_DIR)/xg2g-smoke cd $(BACKEND_DIR) && $(GO) test -v -tags=smoke,nogpu -timeout=30s ./test/smoke/...
 	@echo "✅ Smoke test passed"
+
+verify-client-wrapper: ## Verify WebUI generated client boundary rules
+	@echo "Verifying WebUI client wrapper boundary..."
+	@cd $(FRONTEND_DIR)/webui && npm run verify:client-wrapper
+	@echo "✅ WebUI client wrapper boundary passed"
+
+webui-test: ## Run WebUI unit tests
+	@echo "Running WebUI unit tests..."
+	@cd $(FRONTEND_DIR)/webui && npm run test
+	@echo "✅ WebUI unit tests passed"
 
 codex: quality-gates ## Run Codex review bundle (lint + race/coverage + govulncheck)
 	@echo "✅ Codex review bundle completed"
@@ -88,6 +111,12 @@ quality-gates-offline: ## Offline-only gates (no network, no codegen)
 quality-gates-online: verify-config verify-docs-compiled verify-generate verify-v3-fanout gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
+
+ci-pr: lint verify-config verify-generate gate-repo-hygiene verify-client-wrapper ui-build webui-test smoke-test ## Run the local PR validation bundle used by CI
+	@echo "✅ PR gate bundle passed"
+
+ci-nightly: quality-gates-online webui-test smoke-test ## Run the nightly validation bundle used by CI
+	@echo "✅ Nightly gate bundle passed"
 
 # Deterministic Python toolchain for governance scripts.
 .PHONY: bootstrap-python-tools
