@@ -6,7 +6,6 @@ import { getApiBaseUrl } from '../lib/clientWrapper';
 import { telemetry } from '../services/TelemetryService';
 import type {
   V3PlayerProps,
-  PlayerStats,
   PlayerStatus,
   V3SessionResponse,
   HlsInstanceRef,
@@ -14,6 +13,7 @@ import type {
 } from '../types/v3-player';
 import { useLiveSessionController } from '../features/player/useLiveSessionController';
 import { usePlaybackEngine } from '../features/player/usePlaybackEngine';
+import { usePlayerChrome } from '../features/player/usePlayerChrome';
 import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
@@ -246,53 +246,22 @@ function V3Player(props: V3PlayerProps) {
   const isTeardownRef = useRef<boolean>(false);
   const userPauseIntentRef = useRef<boolean>(false);
 
-  // UX Features State
-  const [showStats, setShowStats] = useState(false);
-  const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0); // Local tracking for UI updates
-  const [seekableStart, setSeekableStart] = useState(0);
-  const [seekableEnd, setSeekableEnd] = useState(0);
   const [durationSeconds, setDurationSeconds] = useState<number | null>(
     duration && duration > 0 ? duration : null
   );
   const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
   const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>(null);
-  const [isPip, setIsPip] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
 
   // P3-4: Truth State
   const [canSeek, setCanSeek] = useState(true);
   const [startUnix, setStartUnix] = useState<number | null>(null);
   const [] = useState<number | null>(null);
 
-  // PREPARING state for VOD remux UX
-  const [volume, setVolume] = useState(1); // 0.0 to 1.0
-  const [isMuted, setIsMuted] = useState(false);
-  const lastNonZeroVolumeRef = useRef<number>(1);
   const lastDecodedRef = useRef<number>(0);
-  const [stats, setStats] = useState<PlayerStats>({
-    bandwidth: 0,
-    resolution: '-',
-    fps: 0,
-    droppedFrames: 0,
-    buffer: 0,
-    bufferHealth: 0,
-    latency: null,
-    levelIndex: -1
-  });
 
   // Resume State
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
-
-  // Resume Hook
-  useResume({
-    recordingId: activeRecordingId || undefined,
-    duration: durationSeconds,
-    videoElement: videoRef.current,
-    isPlaying,
-    isSeekable: canSeek
-  });
 
   const sleep = (ms: number): Promise<void> =>
     new Promise(resolve => setTimeout(resolve, ms));
@@ -326,6 +295,63 @@ function V3Player(props: V3PlayerProps) {
   });
 
   const {
+    showStats,
+    seekableStart,
+    seekableEnd,
+    isPip,
+    isFullscreen,
+    isPlaying,
+    isIdle,
+    volume,
+    isMuted,
+    stats,
+    setStats,
+    windowDuration,
+    relativePosition,
+    hasSeekWindow,
+    isLiveMode,
+    isAtLiveEdge,
+    showDvrModeButton,
+    startTimeDisplay,
+    endTimeDisplay,
+    formatClock,
+    seekTo,
+    seekBy,
+    seekWhenReady,
+    togglePlayPause,
+    enterDVRMode,
+    togglePiP,
+    toggleMute,
+    handleVolumeChange,
+    applyAutoplayMute,
+    toggleStats,
+    resetChromeState
+  } = usePlayerChrome({
+    autoStart,
+    containerRef,
+    videoRef,
+    hlsRef,
+    userPauseIntentRef,
+    lastDecodedRef,
+    playbackMode,
+    durationSeconds,
+    canSeek,
+    startUnix,
+    setStatus,
+    shouldForceNativeMobileHls,
+    canUseDesktopWebKitFullscreen
+  });
+
+  // Resume Hook
+  useResume({
+    recordingId: activeRecordingId || undefined,
+    duration: durationSeconds,
+    videoElement: videoRef.current,
+    isPlaying,
+    isSeekable: canSeek
+  });
+
+  const {
     resetPlaybackEngine,
     playHls,
     playDirectMp4,
@@ -345,195 +371,6 @@ function V3Player(props: V3PlayerProps) {
     setErrorDetails,
     setShowErrorDetails
   });
-
-
-  const formatClock = useCallback((value: number): string => {
-    if (!Number.isFinite(value) || value < 0) return '--:--';
-    const totalSeconds = Math.floor(value);
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = totalSeconds % 60;
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-  }, []);
-
-  const formatTimeOfDay = useCallback((unixSeconds: number): string => {
-    if (!unixSeconds || unixSeconds <= 0) return '--:--:--';
-    const date = new Date(unixSeconds * 1000);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  }, []);
-
-  const refreshSeekableState = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    let start = 0;
-    let end = 0;
-    if (playbackMode === 'VOD' && durationSeconds && durationSeconds > 0) {
-      end = durationSeconds;
-    } else if (video.seekable && video.seekable.length > 0) {
-      start = video.seekable.start(0);
-      end = video.seekable.end(video.seekable.length - 1);
-    } else if (durationSeconds && durationSeconds > 0) {
-      end = durationSeconds;
-    }
-    setSeekableStart(start);
-    setSeekableEnd(end);
-    setCurrentPlaybackTime(video.currentTime);
-  }, [durationSeconds, playbackMode]);
-
-  const seekTo = useCallback((targetSeconds: number) => {
-    const video = videoRef.current;
-    if (!video || !Number.isFinite(targetSeconds)) return;
-    let clamped = Math.max(0, targetSeconds);
-    if (seekableEnd > seekableStart) {
-      clamped = Math.min(Math.max(targetSeconds, seekableStart), seekableEnd);
-    }
-    video.currentTime = clamped;
-  }, [seekableEnd, seekableStart]);
-
-  const seekBy = useCallback((deltaSeconds: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    seekTo(video.currentTime + deltaSeconds);
-  }, [seekTo]);
-
-  const seekWhenReady = useCallback((target: number) => {
-    const v = videoRef.current;
-    if (!v) return;
-
-    const doSeek = () => {
-      seekTo(target);
-      v.play().catch(e => debugWarn("Seek play failed", e));
-    };
-
-    if (v.readyState >= 1) { // HAVE_METADATA
-      doSeek();
-    } else {
-      v.addEventListener('loadedmetadata', doSeek, { once: true });
-    }
-  }, [seekTo]);
-
-  // --- UI Helpers (Memoized) ---
-  const togglePlayPause = useCallback(() => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      userPauseIntentRef.current = false;
-      videoRef.current.play().catch(e => debugWarn("Play failed", e));
-    } else {
-      userPauseIntentRef.current = true;
-      videoRef.current.pause();
-    }
-  }, []);
-
-  const toggleFullscreen = useCallback(async () => {
-    const video = videoRef.current;
-    const container = containerRef.current;
-
-    if (!document.fullscreenElement) {
-      if (video && canUseDesktopWebKitFullscreen(video)) {
-        try {
-          // Native Apple fullscreen on macOS Safari (AirPlay/native controls).
-          video.controls = true;
-          video.webkitEnterFullscreen?.();
-          return;
-        } catch (err) {
-          debugWarn("WebKit fullscreen failed", err);
-        }
-      }
-
-      if (container?.requestFullscreen) {
-        try {
-          // Cross-browser fullscreen fallback for non-WebKit desktops.
-          await container.requestFullscreen();
-          return;
-        } catch (err) {
-          debugWarn("Container fullscreen failed", err);
-        }
-      }
-
-      if (video?.webkitEnterFullscreen) {
-        video.webkitEnterFullscreen();
-        return;
-      }
-
-      try {
-        // Last fallback (no-op on platforms without requestFullscreen support).
-        await container?.requestFullscreen?.();
-      } catch (err) {
-        debugWarn("Fullscreen failed", err);
-      }
-    } else {
-      await document.exitFullscreen();
-    }
-  }, []);
-
-  const enterDVRMode = useCallback(() => {
-    const video = videoRef.current;
-    if (video && video.webkitEnterFullscreen && shouldForceNativeMobileHls(video as VideoElementRef)) {
-      video.controls = true;
-      video.webkitEnterFullscreen();
-    } else {
-      // On desktop Safari/non-WebKit use element fullscreen to keep custom controls.
-      void toggleFullscreen();
-    }
-  }, [toggleFullscreen]);
-
-  const togglePiP = useCallback(async () => {
-    if (!videoRef.current) return;
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-        setIsPip(false);
-      } else {
-        await videoRef.current.requestPictureInPicture();
-        setIsPip(true);
-      }
-    } catch (err) {
-      debugWarn("PiP failed", err);
-    }
-  }, []);
-
-  const toggleMute = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (!video.muted) {
-      if (video.volume > 0) {
-        lastNonZeroVolumeRef.current = video.volume;
-      }
-      video.muted = true;
-      setIsMuted(true);
-      return;
-    }
-
-    const restoreVolume = lastNonZeroVolumeRef.current > 0 ? lastNonZeroVolumeRef.current : video.volume;
-    if (restoreVolume > 0 && video.volume !== restoreVolume) {
-      video.volume = restoreVolume;
-      setVolume(restoreVolume);
-    }
-    video.muted = false;
-    setIsMuted(false);
-  }, []);
-
-  const handleVolumeChange = useCallback((newVolume: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.volume = newVolume;
-    setVolume(newVolume);
-    if (newVolume > 0) {
-      lastNonZeroVolumeRef.current = newVolume;
-    }
-    const shouldMute = newVolume === 0;
-    video.muted = shouldMute;
-    setIsMuted(shouldMute);
-  }, []);
-
-  const applyAutoplayMute = useCallback(() => {
-    if (!autoStart) return;
-    const video = videoRef.current;
-    if (!video) return;
-    video.muted = true;
-    setIsMuted(true);
-  }, [autoStart]);
 
   // --- Core Helpers & Wrappers (Memoized) ---
 
@@ -1215,13 +1052,11 @@ function V3Player(props: V3PlayerProps) {
     }
     clearSessionLeaseState();
     setPlaybackMode('UNKNOWN');
-    setSeekableStart(0);
-    setSeekableEnd(0);
-    setCurrentPlaybackTime(0);
+    resetChromeState();
     setStatus('stopped');
     setVodStreamMode(null);
     if (onClose && !skipClose) onClose();
-  }, [clearSessionLeaseState, clearVodFetch, clearVodRetry, onClose, sendStopIntent, sessionId]);
+  }, [clearSessionLeaseState, clearVodFetch, clearVodRetry, onClose, resetChromeState, sendStopIntent, sessionId]);
 
   const handleRetry = useCallback(async () => {
     try {
@@ -1231,311 +1066,7 @@ function V3Player(props: V3PlayerProps) {
       void startStream();
     }
   }, [stopStream, startStream]);
-
-
-
   // --- Effects ---
-
-  // Keyboard Shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
-      if (isInput) return;
-
-      switch (e.key.toLowerCase()) {
-        case 'f':
-          toggleFullscreen();
-          break;
-        case 'm':
-          e.preventDefault();
-          toggleMute();
-          break;
-        case ' ':
-        case 'k':
-          e.preventDefault();
-          togglePlayPause();
-          break;
-        case 'i':
-          setShowStats(prev => !prev);
-          break;
-        case 'p':
-          togglePiP();
-          break;
-        case 'arrowleft':
-          seekBy(-15);
-          break;
-        case 'arrowright':
-          seekBy(15);
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleFullscreen, togglePlayPause, togglePiP, toggleMute, seekBy]);
-
-  useEffect(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-
-    const handleTimeUpdate = () => refreshSeekableState();
-
-    videoEl.addEventListener('timeupdate', handleTimeUpdate);
-    videoEl.addEventListener('loadedmetadata', handleTimeUpdate);
-    videoEl.addEventListener('durationchange', handleTimeUpdate);
-    videoEl.addEventListener('progress', handleTimeUpdate);
-    videoEl.addEventListener('seeking', handleTimeUpdate);
-
-    refreshSeekableState();
-
-    return () => {
-      videoEl.removeEventListener('timeupdate', handleTimeUpdate);
-      videoEl.removeEventListener('loadedmetadata', handleTimeUpdate);
-      videoEl.removeEventListener('durationchange', handleTimeUpdate);
-      videoEl.removeEventListener('progress', handleTimeUpdate);
-      videoEl.removeEventListener('seeking', handleTimeUpdate);
-    };
-  }, [refreshSeekableState]);
-
-  // Stats Polling
-  useEffect(() => {
-    if (!showStats) return;
-    const interval = setInterval(() => {
-      if (!videoRef.current) return;
-      const v = videoRef.current;
-
-      let dropped = 0;
-      let decoded = lastDecodedRef.current;
-      // Webkit non-standard extension
-      interface WebkitVideoElement extends HTMLVideoElement {
-        webkitDroppedFrameCount?: number;
-        webkitDecodedFrameCount?: number;
-      }
-
-      if (v.getVideoPlaybackQuality) {
-        const q = v.getVideoPlaybackQuality();
-        dropped = q.droppedVideoFrames;
-        decoded = q.totalVideoFrames;
-      } else if ('webkitDroppedFrameCount' in v) {
-        dropped = (v as WebkitVideoElement).webkitDroppedFrameCount || 0;
-        decoded = (v as WebkitVideoElement).webkitDecodedFrameCount || lastDecodedRef.current;
-      }
-
-      const currentFps = Math.max(0, decoded - lastDecodedRef.current);
-      lastDecodedRef.current = decoded;
-
-      let buffHealth = 0;
-      if (v.buffered.length > 0) {
-        for (let i = 0; i < v.buffered.length; i++) {
-          const start = v.buffered.start(i);
-          const end = v.buffered.end(i);
-          if (v.currentTime >= start && v.currentTime <= end) {
-            buffHealth = end - v.currentTime;
-            break;
-          }
-        }
-        if (buffHealth === 0 && v.buffered.length > 0) {
-          const lastEnd = v.buffered.end(v.buffered.length - 1);
-          if (lastEnd > v.currentTime) {
-            buffHealth = lastEnd - v.currentTime;
-          }
-        }
-      }
-      buffHealth = Math.max(0, buffHealth);
-
-      let lat: number | null = null;
-      const isLive = playbackMode === 'LIVE';
-
-      if (isLive && hlsRef.current) {
-        if (hlsRef.current.latency !== undefined && hlsRef.current.latency !== null) {
-          lat = hlsRef.current.latency;
-        } else if (hlsRef.current.liveSyncPosition) {
-          lat = hlsRef.current.liveSyncPosition - v.currentTime;
-        }
-        if (lat !== null) lat = Math.max(0, lat);
-      }
-
-      setStats(prev => {
-        let newRes = prev.resolution;
-        let newFps = prev.fps;
-        let newBandwidth = prev.bandwidth;
-        let newSegDur = prev.buffer;
-
-        // Native fallback or update if video dimensions exist
-        if (v.videoWidth && v.videoHeight) {
-          const vidRes = `${v.videoWidth}x${v.videoHeight}`;
-          if (prev.resolution === '-' || prev.resolution === 'Original (Direct)') {
-            newRes = vidRes;
-          } else if (prev.resolution !== vidRes && prev.resolution !== '-') {
-            newRes = vidRes;
-          }
-        }
-
-        if (!hlsRef.current && v.src) {
-          newFps = currentFps;
-        } else if (hlsRef.current) {
-          if (currentFps > 0) {
-            newFps = currentFps;
-          } else if (prev.fps === 0 && hlsRef.current.levels && hlsRef.current.currentLevel >= 0) {
-            const lvl = hlsRef.current.levels[hlsRef.current.currentLevel];
-            if (lvl && lvl.frameRate) newFps = lvl.frameRate;
-          }
-
-          // Aggressively sync bandwidth if zero, desyncs happen on Auto StartLevel
-          if (newBandwidth === 0 && hlsRef.current.levels) {
-            const idx = hlsRef.current.currentLevel === -1 ? 0 : hlsRef.current.currentLevel;
-            const lvl = hlsRef.current.levels[idx];
-            if (lvl && lvl.bitrate) {
-              newBandwidth = Math.round(lvl.bitrate / 1024);
-              if (newRes === '-') newRes = lvl.width ? `${lvl.width}x${lvl.height}` : '-';
-            }
-          }
-        }
-
-        return {
-          ...prev,
-          resolution: newRes,
-          fps: newFps,
-          bandwidth: newBandwidth,
-          buffer: newSegDur,
-          droppedFrames: dropped,
-          bufferHealth: parseFloat(buffHealth.toFixed(1)),
-          latency: lat !== null ? parseFloat(lat.toFixed(2)) : null
-        };
-      });
-
-      // Phase 13 Fix: Failsafe state transition
-      // If we have data and are playing, but UI says buffering, force it.
-      // Use functional update to access fresh state vs closure capture
-      setStatus(prevStatus => {
-        if (v.readyState >= 3 && !v.paused && (prevStatus === 'buffering' || prevStatus === 'starting' || prevStatus === 'priming')) {
-          debugLog('[V3Player] Monitor: readyState=' + v.readyState + ', forcing PLAYING');
-          return 'playing';
-        }
-        if (v.readyState >= 3 && v.paused && (prevStatus === 'buffering' || prevStatus === 'starting')) {
-          debugLog('[V3Player] Monitor: readyState=' + v.readyState + ' (paused), forcing READY');
-          return 'ready';
-        }
-        return prevStatus;
-      });
-
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [showStats, playbackMode]);
-
-  // Track play/pause state for VOD controls
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-
-    video.addEventListener('play', handlePlay);
-    video.addEventListener('pause', handlePause);
-
-    // Initialize state
-    setIsPlaying(!video.paused);
-
-    return () => {
-      video.removeEventListener('play', handlePlay);
-      video.removeEventListener('pause', handlePause);
-    };
-  }, []);
-
-  // Initialize volume from video element
-  useEffect(() => {
-    if (videoRef.current) {
-      setVolume(videoRef.current.volume);
-      setIsMuted(videoRef.current.muted);
-      if (videoRef.current.volume > 0) {
-        lastNonZeroVolumeRef.current = videoRef.current.volume;
-      }
-    }
-  }, []);
-
-  // Fullscreen/PiP Listeners
-  useEffect(() => {
-    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
-    const onPipChange = () => setIsPip(!!document.pictureInPictureElement);
-
-    const video = videoRef.current;
-    const supportsWebkitFullscreen = !!video?.webkitEnterFullscreen;
-
-    const onWebkitBeginFullscreen = () => {
-      setIsFullscreen(true);
-    };
-    const onWebkitEndFullscreen = () => {
-      setIsFullscreen(false);
-      if (video) {
-        video.controls = false;
-      }
-    };
-
-    document.addEventListener('fullscreenchange', onFsChange);
-    if (video) {
-      video.addEventListener('enterpictureinpicture', onPipChange);
-      video.addEventListener('leavepictureinpicture', onPipChange);
-
-      if (supportsWebkitFullscreen) {
-        video.addEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
-        video.addEventListener('webkitendfullscreen', onWebkitEndFullscreen);
-      }
-    }
-
-    return () => {
-      document.removeEventListener('fullscreenchange', onFsChange);
-      if (video) {
-        video.removeEventListener('enterpictureinpicture', onPipChange);
-        video.removeEventListener('leavepictureinpicture', onPipChange);
-
-        if (supportsWebkitFullscreen) {
-          video.removeEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
-          video.removeEventListener('webkitendfullscreen', onWebkitEndFullscreen);
-        }
-      }
-    };
-  }, []);
-
-  // Idle Detection (Autohide UI)
-  const [isIdle, setIsIdle] = useState(false);
-  const idleTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    // If no container, we can't listen.
-    if (!container) return;
-
-    const resetIdle = () => {
-      setIsIdle(false);
-      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-      idleTimerRef.current = window.setTimeout(() => setIsIdle(true), 3000);
-    };
-
-    // Initial start
-    resetIdle();
-
-    const onMove = () => resetIdle();
-    const onClick = () => resetIdle();
-    const onKey = () => resetIdle();
-
-    container.addEventListener('mousemove', onMove);
-    container.addEventListener('click', onClick);
-    container.addEventListener('keydown', onKey);
-    // Also listen to touch for mobile
-    container.addEventListener('touchstart', onClick);
-
-    return () => {
-      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-      container.removeEventListener('mousemove', onMove);
-      container.removeEventListener('click', onClick);
-      container.removeEventListener('keydown', onKey);
-      container.removeEventListener('touchstart', onClick);
-    };
-  }, []);
-
-
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
@@ -1587,22 +1118,6 @@ function V3Player(props: V3PlayerProps) {
         ? t('player.preparingDirectPlay') // Show explicit preparing for VOD buffering
         : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
       : '';
-
-  const windowDuration = Math.max(0, seekableEnd - seekableStart); // visual-clamp-only
-  const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart)); // visual-clamp-only
-  const hasSeekWindow = canSeek && windowDuration > 0;
-  const isLiveMode = playbackMode === 'LIVE';
-  const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
-  const showDvrModeButton = shouldForceNativeMobileHls(videoRef.current);
-
-  // P3-4: Absolute Timeline Formatting
-  const startTimeDisplay = startUnix
-    ? formatTimeOfDay(startUnix + relativePosition)
-    : formatClock(relativePosition);
-
-  const endTimeDisplay = startUnix
-    ? formatTimeOfDay(startUnix + windowDuration)
-    : formatClock(windowDuration);
 
   return (
     <div
@@ -1868,7 +1383,7 @@ function V3Player(props: V3PlayerProps) {
           variant="ghost"
           size="sm"
           active={showStats}
-          onClick={() => setShowStats(!showStats)}
+          onClick={toggleStats}
           title={t('player.statsTitle')}
         >
           📊 {t('player.statsLabel')}
