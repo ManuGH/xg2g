@@ -1,6 +1,6 @@
 // Application Context - Centralized State Management with TypeScript
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { getServices, getServicesBouquets, getSystemConfig } from '../client-ts';
 import { setClientAuthToken } from '../lib/clientWrapper';
@@ -44,13 +44,13 @@ export function AppProvider({ children }: AppProviderProps) {
   const [initializing, setInitializing] = useState<boolean>(true);
   const [dataLoaded, setDataLoaded] = useState<boolean>(false);
 
-  // Initialize client with stored token on mount (Address Phase 1/13 Refactor gap)
-  useCallback(() => {
+  // Initialize client with stored token after mount to avoid render-time side effects.
+  useEffect(() => {
     const storedToken = getStoredToken();
     if (storedToken) {
       setClientAuthToken(storedToken);
     }
-  }, [])();
+  }, []);
 
   // Actions
   const setToken = useCallback((newToken: string) => {
