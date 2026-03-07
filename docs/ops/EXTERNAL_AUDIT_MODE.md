@@ -29,7 +29,7 @@ Auditor receives:
 
 ## 3) Offline Verification (auditor checklist)
 Offline means no internet access (no go get, no npm install, no remote fetch).
-make ci-pr is Go-only and does not require Node.
+`make ci-pr` is no longer Go-only; it includes WebUI verification and requires Node plus dependencies.
 
 ### A) Integrity
 - Unzip and confirm tree structure is intact
@@ -37,11 +37,11 @@ make ci-pr is Go-only and does not require Node.
 
 ### B) Deterministic gates (offline safe)
 Run:
-- `make ci-pr`
+- `make quality-gates-offline`
 
 Expected:
-- builds/tests succeed under the pinned toolchain policy
-- no drift / no uncommitted generation required
+- backend tests/vet succeed under the pinned toolchain policy
+- no offline-safe invariant regressions are detected
 
 ### C) Optional deep verification (if time)
 Run:
@@ -56,7 +56,7 @@ Auditor should record:
   - `go version`
   - `go env | grep -E '(GOTOOLCHAIN|GOFLAGS|GOVCS|GOPROXY|GOSUMDB)'`
 - command transcript:
-  - `make ci-pr` output
+  - `make quality-gates-offline` output
 - deterministic state:
   - `git diff --exit-code` (in a git checkout), or
   - file hashes of key generated artifacts (if applicable)
@@ -72,7 +72,7 @@ Auditor should record:
 
 ## 6) Recommended audit flow (minimal)
 1. Produce ZIP from a clean `main` HEAD.
-2. Auditor runs `make ci-pr` offline.
+2. Auditor runs `make quality-gates-offline` offline.
 3. Auditor reports:
    - PASS/FAIL
    - tool versions
