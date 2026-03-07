@@ -68,7 +68,8 @@ func TestV3OrchestratorFactoryBuild_ConfiguresWorker(t *testing.T) {
 			TunerSlots:  []int{1, 2, 3},
 		},
 		HLS: config.HLSConfig{
-			Root: "/tmp/hls",
+			Root:          "/tmp/hls",
+			ReadySegments: 3,
 		},
 		Network: config.NetworkConfig{
 			Outbound: config.OutboundConfig{
@@ -105,6 +106,9 @@ func TestV3OrchestratorFactoryBuild_ConfiguresWorker(t *testing.T) {
 	}
 	if orch.HLSRoot != cfg.HLS.Root {
 		t.Fatalf("HLSRoot = %q, want %q", orch.HLSRoot, cfg.HLS.Root)
+	}
+	if orch.LiveReadySegments != cfg.HLS.ReadySegments {
+		t.Fatalf("LiveReadySegments = %d, want %d", orch.LiveReadySegments, cfg.HLS.ReadySegments)
 	}
 	if orch.Sweeper.IdleTimeout != cfg.Engine.IdleTimeout {
 		t.Fatalf("Sweeper.IdleTimeout = %v, want %v", orch.Sweeper.IdleTimeout, cfg.Engine.IdleTimeout)

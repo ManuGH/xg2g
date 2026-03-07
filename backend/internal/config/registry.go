@@ -46,6 +46,9 @@ const (
 	// DefaultHLSSegmentSeconds is the standard-profile segment length used
 	// across config defaults and pipeline fallbacks.
 	DefaultHLSSegmentSeconds = 6
+	// DefaultHLSReadySegments is the minimum number of live segments that must
+	// exist before a session is marked READY.
+	DefaultHLSReadySegments = 3
 )
 
 // ConfigEntry defines a single configuration option's metadata.
@@ -165,6 +168,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "hls.root", Env: "XG2G_HLS_ROOT", FieldPath: "HLS.Root", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "hls.dvrWindow", Env: "XG2G_HLS_DVR_WINDOW", FieldPath: "HLS.DVRWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 45 * time.Minute},                        // Fix B key
 		{Path: "hls.segmentSeconds", Env: "XG2G_HLS_SEGMENT_SECONDS", FieldPath: "HLS.SegmentSeconds", Profile: ProfileAdvanced, Status: StatusActive, Default: DefaultHLSSegmentSeconds}, // Best Practice 2026 Standard Profile (was 4, which failed validation)
+		{Path: "hls.readySegments", Env: "XG2G_HLS_READY_SEGMENTS", FieldPath: "HLS.ReadySegments", Profile: ProfileAdvanced, Status: StatusActive, Default: DefaultHLSReadySegments},
 
 		// --- FFMPEG ---
 		{Path: "ffmpeg.bin", Env: "XG2G_FFMPEG_BIN", FieldPath: "FFmpeg.Bin", Profile: ProfileAdvanced, Status: StatusActive, Default: "ffmpeg"},

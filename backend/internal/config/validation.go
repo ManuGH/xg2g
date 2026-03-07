@@ -284,6 +284,9 @@ func validateEngineAndResilience(v *validate.Validator, cfg AppConfig) {
 		default:
 			v.AddError("HLS.SegmentSeconds", "must be 1 (Low Latency) or 6 (Standard Profile)", cfg.HLS.SegmentSeconds)
 		}
+		if cfg.HLS.ReadySegments < 1 {
+			v.AddError("HLS.ReadySegments", "must be >= 1", cfg.HLS.ReadySegments)
+		}
 
 		if cfg.Engine.IdleTimeout < 0 {
 			v.AddError("Engine.IdleTimeout", "must be >= 0", cfg.Engine.IdleTimeout)
