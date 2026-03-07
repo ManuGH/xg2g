@@ -1,4 +1,8 @@
 # Multi-Stage Dockerfile for xg2g with embedded FFmpeg 7.1.3
+ARG BUILD_VERSION=v3.3.0
+ARG BUILD_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
 # Stage 1: Build FFmpeg pinned version
 FROM debian:trixie-slim AS ffmpeg-builder
 
@@ -33,6 +37,9 @@ RUN npm run build
 # Stage 3: Build xg2g application
 # Keep in sync with go.mod (currently requires Go 1.25.7).
 FROM golang:1.25.7 AS app-builder
+ARG BUILD_VERSION
+ARG BUILD_COMMIT
+ARG BUILD_DATE
 
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
@@ -45,10 +52,11 @@ COPY --from=webui-builder /frontend/webui/dist /app/backend/internal/control/htt
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    cd /app/backend && go build -ldflags="-s -w" -o /xg2g ./cmd/daemon
+    cd /app/backend && go build -buildvcs=false -ldflags="-s -w -X main.version=${BUILD_VERSION} -X main.commit=${BUILD_COMMIT} -X main.buildDate=${BUILD_DATE}" -o /xg2g ./cmd/daemon
 
 # Stage 3: Final runtime image
 FROM debian:trixie-slim AS runtime
+ARG BUILD_VERSION
 
 # Set production environment defaults
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -110,7 +118,7 @@ LABEL org.opencontainers.image.title="xg2g" \
     org.opencontainers.image.description="Enterprise-grade Enigma2 to HDHomeRun proxy and DVR" \
     org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0" \
     org.opencontainers.image.vendor="ManuGH" \
-    org.opencontainers.image.version="3.1.7" \
+    org.opencontainers.image.version="${BUILD_VERSION}" \
     org.opencontainers.image.source="https://github.com/ManuGH/xg2g"
 
 # Entrypoint configuration
