@@ -107,11 +107,9 @@ jobs:
 
           skip_reason=""
           if [ "$legacy_large_pr" = "true" ]; then
+            # Keep the large-PR escape hatch limited to the UI contract diff scope.
+            # Type/build/wrapper gates must still run for broad frontend changes.
             ui_contract_scope=()
-            webui_ts_scope=()
-            webui_changed=false
-            webui_build_needed=false
-            skip_reason="legacy_large_pr_scope"
           fi
           if [ "${#ui_contract_scope[@]}" -eq 0 ] && [ "${#webui_ts_scope[@]}" -eq 0 ] && [ "$webui_build_needed" = "false" ]; then
             if [ -z "$skip_reason" ]; then
@@ -157,7 +155,12 @@ jobs:
 
       - name: UI Contract (no scope)
         if: steps.scope.outputs.ui_contract_count == '0'
-        run: echo "No webui/src *.tsx/*.css changes; UI contract gate passes by scope."
+        run: |
+          if [ "${{ steps.scope.outputs.legacy_large_pr }}" = "true" ]; then
+            echo "UI contract diff scope skipped for large PR; build/type/wrapper gates remain enforced."
+          else
+            echo "No webui/src *.tsx/*.css changes; UI contract gate passes by scope."
+          fi
 
       - name: Phase4 - Reject new JSX
         shell: bash
