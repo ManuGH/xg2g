@@ -590,6 +590,10 @@
           "default": "45m",
           "type": "string"
         },
+        "readySegments": {
+          "default": 3,
+          "type": "integer"
+        },
         "root": {
           "type": "string"
         },
