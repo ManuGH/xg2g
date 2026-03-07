@@ -55,51 +55,22 @@ func resolveStreamLine(baseURL, line, sref string) (string, bool) {
 	return "", false
 }
 
-func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, error) {
-	// Bypass if sRef is already a direct URL (HTTP/HTTPS) as used by recordings
-	if _, ok := net.ParseDirectHTTPURL(sref); ok {
-		return sref, nil
+func (c *Client) buildDirectStreamURL(sref string) (string, error) {
+	u, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid base URL: %w", err)
 	}
 
-	// Debug logging to verify streamPort configuration
-	log.Info().
-		Int("streamPort", c.StreamPort).
-		Str("baseURL", net.SanitizeURL(c.BaseURL)).
-		Msg("ResolveStreamURL called")
-
-	// If explicitly configured to use WebIF streams, always use /web/stream.m3u.
-	// This lets the receiver decide the correct stream URL (and often fixes metadata/SPS/PPS issues).
-	if c.UseWebIFStreams {
-		log.Info().Msg("useWebIFStreams enabled, using /web/stream.m3u")
-		goto webStream
+	u.Host = fmt.Sprintf("%s:%d", u.Hostname(), c.StreamPort)
+	u.Path = "/" + strings.ToUpper(sref)
+	if c.Username != "" {
+		u.User = url.UserPassword(c.Username, c.Password)
 	}
 
-	// If streamPort is configured, build direct URL instead of querying /web/stream.m3u
-	// This bypasses optional middleware issues and ensures predictable stream source
-	if c.StreamPort > 0 {
-		u, err := url.Parse(c.BaseURL)
-		if err != nil {
-			return "", fmt.Errorf("invalid base URL: %w", err)
-		}
+	return u.String(), nil
+}
 
-		u.Host = fmt.Sprintf("%s:%d", u.Hostname(), c.StreamPort)
-		u.Path = "/" + strings.ToUpper(sref)
-		if c.Username != "" {
-			u.User = url.UserPassword(c.Username, c.Password)
-		}
-
-		directURL := u.String()
-		log.Info().
-			Str("direct_url", net.SanitizeURL(directURL)).
-			Msg("Using direct stream URL (bypassing /web/stream.m3u)")
-		return directURL, nil
-	}
-
-	log.Info().Msg("streamPort not configured, using /web/stream.m3u")
-
-	// Legacy path: Request the M3U playlist from the receiver to let it decide the correct stream URL (port, transcoding, etc).
-	// Endpoint: /web/stream.m3u?ref=... (Using "ref" ensures full URL is returned on some OWI versions)
-webStream:
+func (c *Client) resolveViaWebStream(ctx context.Context, sref string) (string, error) {
 	params := url.Values{}
 	params.Set("ref", strings.ToUpper(sref))
 	params.Set("name", "Stream")
@@ -123,24 +94,16 @@ webStream:
 		return "", fmt.Errorf("%w: stream api returned status %d", ErrUpstreamUnavailable, resp.StatusCode)
 	}
 
-	// Parse M3U line by line to find the stream URL
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if resolved, ok := resolveStreamLine(c.BaseURL, line, sref); ok {
-			// Inject credentials if the URL belongs to the same host
 			if c.Username != "" {
-				if ru, err := url.Parse(resolved); err == nil {
-					if strings.EqualFold(ru.Hostname(), u.Hostname()) {
-						ru.User = url.UserPassword(c.Username, c.Password)
-						resolved = ru.String()
-					}
+				if ru, err := url.Parse(resolved); err == nil && strings.EqualFold(ru.Hostname(), u.Hostname()) {
+					ru.User = url.UserPassword(c.Username, c.Password)
+					resolved = ru.String()
 				}
 			}
-			log.Info().
-				Str("resolved_url", net.SanitizeURL(resolved)).
-				Str("sref", sref).
-				Msg("Stream URL resolved")
 			return resolved, nil
 		}
 	}
@@ -150,4 +113,69 @@ webStream:
 	}
 
 	return "", fmt.Errorf("no stream url found in playlist")
+}
+
+func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, error) {
+	// Bypass if sRef is already a direct URL (HTTP/HTTPS) as used by recordings
+	if _, ok := net.ParseDirectHTTPURL(sref); ok {
+		return sref, nil
+	}
+
+	// Debug logging to verify streamPort configuration
+	log.Info().
+		Int("streamPort", c.StreamPort).
+		Str("baseURL", net.SanitizeURL(c.BaseURL)).
+		Msg("ResolveStreamURL called")
+
+	// If explicitly configured to use WebIF streams, always use /web/stream.m3u.
+	// This lets the receiver decide the correct stream URL (and often fixes metadata/SPS/PPS issues).
+	if c.UseWebIFStreams {
+		log.Info().Msg("useWebIFStreams enabled, using /web/stream.m3u")
+		resolved, err := c.resolveViaWebStream(ctx, sref)
+		if err != nil {
+			return "", err
+		}
+		log.Info().
+			Str("resolved_url", net.SanitizeURL(resolved)).
+			Str("sref", sref).
+			Msg("Stream URL resolved")
+		return resolved, nil
+	}
+
+	// If streamPort is configured, still ask OpenWebIF first so the receiver can
+	// perform its normal stream-resolution side effects before we fall back to a
+	// locally constructed direct URL.
+	if c.StreamPort > 0 {
+		resolved, err := c.resolveViaWebStream(ctx, sref)
+		if err == nil {
+			log.Info().
+				Str("resolved_url", net.SanitizeURL(resolved)).
+				Str("sref", sref).
+				Msg("Stream URL resolved via OpenWebIF")
+			return resolved, nil
+		}
+
+		directURL, directErr := c.buildDirectStreamURL(sref)
+		if directErr != nil {
+			return "", directErr
+		}
+
+		log.Warn().
+			Err(err).
+			Str("direct_url", net.SanitizeURL(directURL)).
+			Msg("OpenWebIF stream resolution failed, falling back to direct stream URL")
+		return directURL, nil
+	}
+
+	log.Info().Msg("streamPort not configured, using /web/stream.m3u")
+
+	resolved, err := c.resolveViaWebStream(ctx, sref)
+	if err != nil {
+		return "", err
+	}
+	log.Info().
+		Str("resolved_url", net.SanitizeURL(resolved)).
+		Str("sref", sref).
+		Msg("Stream URL resolved")
+	return resolved, nil
 }

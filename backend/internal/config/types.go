@@ -503,6 +503,7 @@ type HLSConfig struct {
 	Root           string        `yaml:"root"`
 	DVRWindow      time.Duration `yaml:"dvrWindow"`
 	SegmentSeconds int           `yaml:"segmentSeconds"` // Best Practice 2026: 6s
+	ReadySegments  int           `yaml:"readySegments"`
 }
 
 // StoreConfig holds the state store settings

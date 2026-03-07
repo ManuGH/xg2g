@@ -50,6 +50,7 @@ func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orchest
 		Owner:               workerOwner,
 		TunerSlots:          cfg.Engine.TunerSlots,
 		HLSRoot:             cfg.HLS.Root,
+		LiveReadySegments:   cfg.HLS.ReadySegments,
 		PipelineStopTimeout: 5 * time.Second,
 		StartConcurrency:    10,
 		StopConcurrency:     10,

@@ -27,12 +27,13 @@ type Orchestrator struct {
 	Store store.StateStore
 	Bus   ports.Bus
 
-	LeaseTTL       time.Duration
-	HeartbeatEvery time.Duration
-	Owner          string // Stable worker identity
-	TunerSlots     []int  // Available hardware slots
-	HLSRoot        string // Root directory for HLS segments
-	Sweeper        SweeperConfig
+	LeaseTTL          time.Duration
+	HeartbeatEvery    time.Duration
+	Owner             string // Stable worker identity
+	TunerSlots        []int  // Available hardware slots
+	HLSRoot           string // Root directory for HLS segments
+	LiveReadySegments int    // Minimum number of live HLS segments required before READY
+	Sweeper           SweeperConfig
 
 	Pipeline        ports.MediaPipeline
 	Platform        ports.Platform         // OS/FS operations

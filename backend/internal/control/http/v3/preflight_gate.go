@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
@@ -48,11 +49,10 @@ func resolvePreflightSourceURL(ctx context.Context, deps sessionsModuleDeps, ser
 	}
 
 	if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
-		normalized, err := platformnet.ValidateOutboundURL(ctx, u.String(), outboundPolicyFromConfig(cfg))
-		if err != nil {
+		if err := validatePreflightOutboundURL(ctx, u.String(), outboundPolicyFromConfig(cfg)); err != nil {
 			return "", err
 		}
-		return normalized, nil
+		return u.String(), nil
 	}
 
 	if deps.receiver == nil {
@@ -70,7 +70,23 @@ func resolvePreflightSourceURL(ctx context.Context, deps sessionsModuleDeps, ser
 	// Defense in depth: validate receiver-derived URLs against outbound policy.
 	// Even though Enigma2.BaseURL is admin-controlled, we apply the same SSRF
 	// protection (scheme/host/port allowlist + DNS rebinding block) for consistency.
-	return platformnet.ValidateOutboundURL(ctx, rawURL, outboundPolicyFromConfig(cfg))
+	if err := validatePreflightOutboundURL(ctx, rawURL, outboundPolicyFromConfig(cfg)); err != nil {
+		return "", err
+	}
+	return rawURL, nil
+}
+
+func validatePreflightOutboundURL(ctx context.Context, rawURL string, policy platformnet.OutboundPolicy) error {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return err
+	}
+
+	validateURL := *parsed
+	validateURL.User = nil
+
+	_, err = platformnet.ValidateOutboundURL(ctx, validateURL.String(), policy)
+	return err
 }
 
 func rejectPreflight(w http.ResponseWriter, r *http.Request, outcome preflight.PreflightOutcome, err error) bool {
