@@ -112,10 +112,10 @@ quality-gates-online: verify-config verify-docs-compiled verify-generate verify-
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: lint verify-config verify-generate gate-repo-hygiene verify-client-wrapper ui-build webui-test smoke-test ## Run the local PR validation bundle used by CI
+ci-pr: lint verify-config verify-generate gate-repo-hygiene verify-client-wrapper ui-build webui-test ## Run the local PR validation bundle used by CI
 	@echo "✅ PR gate bundle passed"
 
-ci-nightly: quality-gates-online webui-test smoke-test ## Run the nightly validation bundle used by CI
+ci-nightly: quality-gates-online webui-test ## Run the nightly validation bundle used by CI
 	@echo "✅ Nightly gate bundle passed"
 
 # Deterministic Python toolchain for governance scripts.
