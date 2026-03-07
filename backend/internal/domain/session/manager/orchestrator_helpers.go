@@ -436,29 +436,52 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
 		return false, nil
 	}
-	segmentURI := firstSegmentFromPlaylist(content)
+	segmentURIs := playlistSegments(content)
 	if vodMode {
-		if lastSegment := lastSegmentFromPlaylist(content); lastSegment != "" {
-			segmentURI = lastSegment
+		if len(segmentURIs) == 0 {
+			return false, nil
 		}
-	}
-	if segmentURI == "" {
+		lastSegment := segmentURIs[len(segmentURIs)-1]
+		segmentPath := filepath.Join(filepath.Dir(playlistPath), lastSegment)
+		segInfo, segErr := os.Stat(segmentPath)
+		if segErr == nil && segInfo.Size() > 0 {
+			if !*ttfpRecorded {
+				observeTTFP(profileID, startTime)
+				*ttfpRecorded = true
+			}
+			return true, nil
+		}
 		return false, nil
 	}
-	segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
-	segInfo, segErr := os.Stat(segmentPath)
-	if segErr == nil && segInfo.Size() > 0 {
-		if !*ttfpRecorded {
-			observeTTFP(profileID, startTime)
-			*ttfpRecorded = true
-		}
-		return true, nil
+
+	requiredSegments := o.liveReadySegments()
+	if len(segmentURIs) < requiredSegments {
+		return false, nil
 	}
-	return false, nil
+	for _, segmentURI := range segmentURIs[:requiredSegments] {
+		segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
+		segInfo, segErr := os.Stat(segmentPath)
+		if segErr != nil || segInfo.Size() == 0 {
+			return false, nil
+		}
+	}
+	if !*ttfpRecorded {
+		observeTTFP(profileID, startTime)
+		*ttfpRecorded = true
+	}
+	return true, nil
 }
 
-func firstSegmentFromPlaylist(content []byte) string {
+func (o *Orchestrator) liveReadySegments() int {
+	if o.LiveReadySegments > 0 {
+		return o.LiveReadySegments
+	}
+	return 3
+}
+
+func playlistSegments(content []byte) []string {
 	scanner := bufio.NewScanner(bytes.NewReader(content))
+	segments := make([]string, 0, 8)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -467,25 +490,9 @@ func firstSegmentFromPlaylist(content []byte) string {
 		if strings.Contains(line, "..") || filepath.IsAbs(line) {
 			continue
 		}
-		return line
+		segments = append(segments, line)
 	}
-	return ""
-}
-
-func lastSegmentFromPlaylist(content []byte) string {
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	var last string
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.Contains(line, "..") || filepath.IsAbs(line) {
-			continue
-		}
-		last = line
-	}
-	return last
+	return segments
 }
 
 func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSessionEvent, sessionCtx *sessionContext, slot int) error {
