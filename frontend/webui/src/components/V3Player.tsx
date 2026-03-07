@@ -255,7 +255,6 @@ function V3Player(props: V3PlayerProps) {
   // P3-4: Truth State
   const [canSeek, setCanSeek] = useState(true);
   const [startUnix, setStartUnix] = useState<number | null>(null);
-  const [] = useState<number | null>(null);
 
   const lastDecodedRef = useRef<number>(0);
 
@@ -270,6 +269,7 @@ function V3Player(props: V3PlayerProps) {
   const apiBase = useMemo(() => {
     return getApiBaseUrl();
   }, []);
+  const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
 
   const {
     sessionId,
@@ -396,6 +396,21 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
+  const clearPlaybackSelection = useCallback(() => {
+    activeRecordingRef.current = null;
+    setActiveRecordingId(null);
+    setVodStreamMode(null);
+  }, []);
+
+  const prepareFreshPlayback = useCallback((mode: 'LIVE' | 'VOD') => {
+    clearPlaybackSelection();
+    clearVodRetry();
+    clearVodFetch();
+    clearSessionLeaseState();
+    setDurationSeconds(requestedDuration);
+    setPlaybackMode(mode);
+  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, requestedDuration]);
+
   const gatherPlaybackCapabilities = useCallback(async () => {
     const video = videoRef.current as HTMLVideoElement | null;
     const preferredCodecs = await detectPreferredCodecs(video);
@@ -451,9 +466,9 @@ function V3Player(props: V3PlayerProps) {
   }, []);
 
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
+    clearPlaybackSelection();
     activeRecordingRef.current = id;
     setActiveRecordingId(id);
-    setVodStreamMode(null);
     clearVodRetry();
     clearVodFetch();
     clearSessionLeaseState();
@@ -677,7 +692,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, clearSessionLeaseState, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie, gatherPlaybackCapabilities]);
+  }, [apiBase, authHeaders, clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie, gatherPlaybackCapabilities]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -697,29 +712,13 @@ function V3Player(props: V3PlayerProps) {
 
       if (src) {
         debugLog('[V3Player] startStream: src path', { hasSrc: true });
-        // Reset state for local/src playback
-        activeRecordingRef.current = null;
-        setActiveRecordingId(null);
-        setVodStreamMode(null);
-        clearVodRetry();
-        clearVodFetch();
-        clearSessionLeaseState();
-        setDurationSeconds(duration && duration > 0 ? duration : null);
-
-        setPlaybackMode(duration && duration > 0 ? 'VOD' : 'LIVE');
+        prepareFreshPlayback(requestedDuration ? 'VOD' : 'LIVE');
         setStatus('buffering');
         playHls(src);
         return;
       }
 
-      // Reset state for new live session
-      activeRecordingRef.current = null;
-      setActiveRecordingId(null);
-      setVodStreamMode(null);
-      clearVodRetry();
-      clearVodFetch();
-      clearSessionLeaseState();
-      setDurationSeconds(duration && duration > 0 ? duration : null);
+      prepareFreshPlayback('LIVE');
 
       const ref = (refToUse || sRef || '').trim();
       if (!ref) {
@@ -734,7 +733,6 @@ function V3Player(props: V3PlayerProps) {
       setError(null);
       setErrorDetails(null);
       setShowErrorDetails(false);
-      setPlaybackMode('LIVE');
 
       try {
         await ensureSessionCookie();
@@ -1034,19 +1032,14 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, clearSessionLeaseState, t, duration, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, setActiveSessionId]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, setActiveSessionId, prepareFreshPlayback, requestedDuration]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
-    if (hlsRef.current) hlsRef.current.destroy();
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.src = '';
-    }
+    resetPlaybackEngine();
     clearVodRetry();
     clearVodFetch();
-    activeRecordingRef.current = null;
-    setActiveRecordingId(null);
+    clearPlaybackSelection();
     if (sessionId) {
       await sendStopIntent(sessionId);
     }
@@ -1054,9 +1047,8 @@ function V3Player(props: V3PlayerProps) {
     setPlaybackMode('UNKNOWN');
     resetChromeState();
     setStatus('stopped');
-    setVodStreamMode(null);
     if (onClose && !skipClose) onClose();
-  }, [clearSessionLeaseState, clearVodFetch, clearVodRetry, onClose, resetChromeState, sendStopIntent, sessionId]);
+  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, onClose, resetChromeState, resetPlaybackEngine, sendStopIntent, sessionId]);
 
   const handleRetry = useCallback(async () => {
     try {
@@ -1087,10 +1079,10 @@ function V3Player(props: V3PlayerProps) {
   }, [autoStart, src, recordingId, sRef, startStream]);
 
   useEffect(() => {
-    if (duration && duration > 0) {
-      setDurationSeconds(duration);
+    if (requestedDuration) {
+      setDurationSeconds(requestedDuration);
     }
-  }, [duration]);
+  }, [requestedDuration]);
 
   // Cleanup effect
   useEffect(() => {
@@ -1103,10 +1095,10 @@ function V3Player(props: V3PlayerProps) {
       }
       clearVodRetry();
       clearVodFetch();
-      activeRecordingRef.current = null;
+      clearPlaybackSelection();
       sendStopIntent(sessionIdRef.current, true);
     };
-  }, [clearVodFetch, clearVodRetry, sendStopIntent]);
+  }, [clearPlaybackSelection, clearVodFetch, clearVodRetry, sendStopIntent]);
 
   // Overlay styles
   // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css
