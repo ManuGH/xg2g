@@ -199,7 +199,7 @@ describe('V3Player ServiceRef Input', () => {
     await screen.findByText(/req-400-1/i);
   });
 
-  it('classifies live pause without user intent as buffering', async () => {
+  it('keeps live pause without user intent in paused state', async () => {
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/live/stream-info')) {
         return Promise.resolve({
@@ -263,9 +263,234 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.pause(video as HTMLVideoElement);
 
     await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/paused/i);
+    });
+    expect(screen.getByRole('status')).not.toHaveTextContent(/buffering/i);
+    unmount();
+  });
+
+  it('keeps pause in native WebKit fullscreen instead of auto-resume buffering', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'hls',
+            requestId: 'live-decision-4',
+            playbackDecisionToken: 'live-token-4',
+            decision: { reasons: ['hls'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            sessionId: 'sid-live-2',
+            requestId: 'intent-req-2'
+          })
+        });
+      }
+      if (url.includes('/sessions/sid-live-2')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            id: 'sid-live-2',
+            state: 'READY',
+            mode: 'LIVE',
+            playbackUrl: 'http://example.com/live2.m3u8',
+            heartbeat_interval: 600
+          })
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { container, unmount } = render(<V3Player {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /player\.statsLabel/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:123:222:33AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement | null;
+    expect(video).toBeTruthy();
+    Object.defineProperty(video as HTMLVideoElement, 'webkitDisplayingFullscreen', {
+      configurable: true,
+      value: true
+    });
+
+    fireEvent.pause(video as HTMLVideoElement);
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/paused/i);
+    });
+    expect(screen.getByRole('status')).not.toHaveTextContent(/buffering/i);
+    unmount();
+  });
+
+  it('recovers live playback state through waiting and playing events', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'hls',
+            requestId: 'live-decision-5',
+            playbackDecisionToken: 'live-token-5',
+            decision: { reasons: ['hls'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            sessionId: 'sid-live-3',
+            requestId: 'intent-req-3'
+          })
+        });
+      }
+      if (url.includes('/sessions/sid-live-3')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            id: 'sid-live-3',
+            state: 'READY',
+            mode: 'LIVE',
+            playbackUrl: 'http://example.com/live3.m3u8',
+            heartbeat_interval: 600
+          })
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { container, unmount } = render(<V3Player {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /player\.statsLabel/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:321:222:33AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement | null;
+    expect(video).toBeTruthy();
+
+    fireEvent.waiting(video as HTMLVideoElement);
+    await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(/buffering/i);
     });
-    expect(screen.getByRole('status')).not.toHaveTextContent(/paused/i);
+
+    fireEvent.playing(video as HTMLVideoElement);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
+
+    unmount();
+  });
+
+  it('recovers live playback state through stalled and playing events', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'hls',
+            requestId: 'live-decision-6',
+            playbackDecisionToken: 'live-token-6',
+            decision: { reasons: ['hls'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            sessionId: 'sid-live-4',
+            requestId: 'intent-req-4'
+          })
+        });
+      }
+      if (url.includes('/sessions/sid-live-4')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            id: 'sid-live-4',
+            state: 'READY',
+            mode: 'LIVE',
+            playbackUrl: 'http://example.com/live4.m3u8',
+            heartbeat_interval: 600
+          })
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { container, unmount } = render(<V3Player {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /player\.statsLabel/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:654:222:33AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement | null;
+    expect(video).toBeTruthy();
+
+    fireEvent.stalled(video as HTMLVideoElement);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering/i);
+    });
+
+    fireEvent.playing(video as HTMLVideoElement);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
+
     unmount();
   });
 });
