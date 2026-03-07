@@ -277,12 +277,16 @@ func validateEngineAndResilience(v *validate.Validator, cfg AppConfig) {
 			if cfg.HLS.DVRWindow < 10*time.Second {
 				v.AddError("HLS.DVRWindow", "must be >= 10s for low latency", cfg.HLS.DVRWindow)
 			}
+		case QuickStartHLSSegmentSeconds:
+			if cfg.HLS.DVRWindow < 20*time.Second {
+				v.AddError("HLS.DVRWindow", "must be >= 20s for quick-start profile", cfg.HLS.DVRWindow)
+			}
 		case DefaultHLSSegmentSeconds:
 			if cfg.HLS.DVRWindow < 1*time.Minute {
 				v.AddError("HLS.DVRWindow", "must be >= 1m for standard profile", cfg.HLS.DVRWindow)
 			}
 		default:
-			v.AddError("HLS.SegmentSeconds", "must be 1 (Low Latency) or 6 (Standard Profile)", cfg.HLS.SegmentSeconds)
+			v.AddError("HLS.SegmentSeconds", "must be 1 (Low Latency), 2 (Quick Start), or 6 (Standard Profile)", cfg.HLS.SegmentSeconds)
 		}
 		if cfg.HLS.ReadySegments < 1 {
 			v.AddError("HLS.ReadySegments", "must be >= 1", cfg.HLS.ReadySegments)
