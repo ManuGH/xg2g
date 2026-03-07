@@ -92,7 +92,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `enigma2.streamPort` | `XG2G_E2_STREAM_PORT` | `8001` | Deprecated | Advanced |
 | `enigma2.timeout` | `XG2G_E2_TIMEOUT` | `10s` | Active | Advanced |
 | `enigma2.tuneTimeout` | `XG2G_E2_TUNE_TIMEOUT` | `10s` | Active | Advanced |
-| `enigma2.useWebIFStreams` | `XG2G_E2_USE_WEBIF_STREAMS` | `true` | Active | Advanced |
+| `enigma2.useWebIFStreams` | `XG2G_E2_USE_WEBIF_STREAMS` | `false` | Deprecated | Advanced |
 | `enigma2.userAgent` | `XG2G_E2_USER_AGENT` | - | Active | Advanced |
 | `enigma2.username` | `XG2G_E2_USER` | - | Active | Simple |
 

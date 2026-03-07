@@ -45,7 +45,7 @@ enigma2:
   streamPort: 8001
   timeout: 10s
   tuneTimeout: 10s
-  useWebIFStreams: true
+  useWebIFStreams: false
   userAgent: ""
   username: ""
 openWebIF:
@@ -56,7 +56,7 @@ openWebIF:
   retries: 2
   streamPort: 8001
   timeout: 10s
-  useWebIFStreams: true
+  useWebIFStreams: false
   username: ""
 epg:
   days: 14
