@@ -88,3 +88,14 @@ func TestValidate_V3StrictRejectsInvalidWorkerMode(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Engine.Mode")
 }
+
+func TestValidate_AllowsQuickStartHLSSegments(t *testing.T) {
+	cfg := baseV3Config(t)
+	cfg.Engine.Enabled = true
+	cfg.HLS.SegmentSeconds = QuickStartHLSSegmentSeconds
+	cfg.HLS.DVRWindow = 30 * time.Second
+	cfg.HLS.ReadySegments = 3
+
+	err := Validate(cfg)
+	require.NoError(t, err)
+}

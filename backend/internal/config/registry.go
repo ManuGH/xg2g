@@ -46,6 +46,9 @@ const (
 	// DefaultHLSSegmentSeconds is the standard-profile segment length used
 	// across config defaults and pipeline fallbacks.
 	DefaultHLSSegmentSeconds = 6
+	// QuickStartHLSSegmentSeconds is the fast-start profile segment length used
+	// by Safari-oriented live startup tuning.
+	QuickStartHLSSegmentSeconds = 2
 	// DefaultHLSReadySegments is the minimum number of live segments that must
 	// exist before a session is marked READY.
 	DefaultHLSReadySegments = 3
