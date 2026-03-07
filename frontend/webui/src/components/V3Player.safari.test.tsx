@@ -33,11 +33,13 @@ vi.mock('hls.js', () => {
 describe('V3Player Safari Logic', () => {
   let userAgentGetter: any;
   let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
+  let maxTouchPointsDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
     userAgentGetter = vi.spyOn(window.navigator, 'userAgent', 'get');
     webkitEnterFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
+    maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
   });
 
   afterEach(() => {
@@ -46,6 +48,9 @@ describe('V3Player Safari Logic', () => {
     } else {
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
+    }
+    if (maxTouchPointsDescriptor) {
+      Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
     }
     vi.restoreAllMocks();
   });
@@ -90,12 +95,39 @@ describe('V3Player Safari Logic', () => {
     expect(Hls).toHaveBeenCalled();
   });
 
+  it('should keep desktop Safari on HLS.js even when webkitEnterFullscreen exists', () => {
+    userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15');
+
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
+      configurable: true,
+      value: vi.fn()
+    });
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0
+    });
+
+    const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation(function (this: HTMLMediaElement, type: string) {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      return originalCanPlayType.call(this, type);
+    });
+
+    render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+
+    expect(Hls).toHaveBeenCalled();
+  });
+
   it('should prefer native HLS on mobile WebKit video elements', () => {
     userAgentGetter.mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
 
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
       configurable: true,
       value: vi.fn()
+    });
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5
     });
 
     const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
