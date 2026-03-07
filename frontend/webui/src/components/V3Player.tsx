@@ -346,7 +346,7 @@ function V3Player(props: V3PlayerProps) {
   useResume({
     recordingId: activeRecordingId || undefined,
     duration: durationSeconds,
-    videoElement: videoRef.current,
+    videoRef,
     isPlaying,
     isSeekable: canSeek
   });
