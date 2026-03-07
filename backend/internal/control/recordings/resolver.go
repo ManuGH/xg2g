@@ -91,9 +91,24 @@ func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOp
 // Resolve delegates to the Decision Engine and maps the result to the domain DTO.
 func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error) {
 	// Construct PIDE Request
+	protocolHint := ""
+	if intent == "download" || intent == "direct" {
+		protocolHint = "mp4"
+	} else if intent == "hls" {
+		protocolHint = "hls"
+	} else {
+		// V3Player live stream-info endpoint doesn't send "intent".
+		// But earlier, the frontend says: "aber das ist ja ned fertige datei oder so wie bei plex oder" -> It expects direct play of VOD.
+		// Let's pass "mp4" hint for "stream" intent on VOD if it's a file?
+		// Engine will automatically fallback/transcode if unsupported.
+		// Let's use "mp4" if they want plex-like direct streaming.
+		protocolHint = "mp4"
+	}
+
 	req := playback.ResolveRequest{
-		RecordingID: serviceRef,
-		Headers:     map[string]string{"X-Playback-Profile": string(profile)},
+		RecordingID:  serviceRef,
+		ProtocolHint: protocolHint,
+		Headers:      map[string]string{"X-Playback-Profile": string(profile)},
 	}
 
 	plan, err := r.engine.Resolve(ctx, req)

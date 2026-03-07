@@ -10,14 +10,13 @@ func computePredicates(source Source, caps Capabilities, policy Policy) Predicat
 	canVideo := contains(caps.VideoCodecs, source.VideoCodec)
 	canAudio := contains(caps.AudioCodecs, source.AudioCodec)
 
-	// Direct play: client can play source container+codecs directly via static MP4
-	// Strict: Container MUST be mp4/mov/m4v (Protocol Limitation)
+	// Direct play: client can play source container+codecs directly via static MP4/TS
 	// AND Client MUST support Range requests (for seeking/progressive)
 	// FIX R2-001: Normalize container to match contains() behavior
 	containerNorm := robustNorm(source.Container)
-	isMP4 := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v"
+	isDirectPlayableContainer := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v" || containerNorm == "mpegts" || containerNorm == "ts"
 	hasRange := caps.SupportsRange != nil && *caps.SupportsRange
-	directPlayPossible := canContainer && canVideo && canAudio && isMP4 && hasRange
+	directPlayPossible := canContainer && canVideo && canAudio && isDirectPlayableContainer && hasRange
 
 	// Direct stream: no re-encode, but may remux/package to HLS
 	// Requires: HLS support + compatible codecs (container may differ)

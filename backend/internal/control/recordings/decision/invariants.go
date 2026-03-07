@@ -34,8 +34,8 @@ func validateOutputInvariants(dec *Decision, input DecisionInput) error {
 		}
 
 		// Container/Codec safety Check (Redundant to predicates but vital for Invariant)
-		if !isMP4Container(input.Source.Container) {
-			return ErrInvariantViolation{Invariant: "#9", Detail: fmt.Sprintf("direct_play requires mp4/mov container, got '%s'", input.Source.Container)}
+		if !isDirectPlayableContainer(input.Source.Container) {
+			return ErrInvariantViolation{Invariant: "#9", Detail: fmt.Sprintf("direct_play requires mp4/mov/ts container, got '%s'", input.Source.Container)}
 		}
 
 		// Note: We don't re-implement full codec matching logic here (complexity/drift risk),
@@ -93,9 +93,9 @@ func normalizeDecision(dec *Decision) {
 
 // Helpers for Invariants
 // FIX R2-001: Normalize container to match predicates logic
-func isMP4Container(c string) bool {
+func isDirectPlayableContainer(c string) bool {
 	norm := robustNorm(c)
-	return norm == "mp4" || norm == "mov" || norm == "m4v"
+	return norm == "mp4" || norm == "mov" || norm == "m4v" || norm == "mpegts" || norm == "ts"
 }
 
 // contains is already defined in predicates.go
