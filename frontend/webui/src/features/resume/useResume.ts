@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, type RefObject } from 'react';
 import { saveResume } from './api';
 import { debugWarn, formatError } from '../../utils/logging';
 
@@ -8,12 +8,12 @@ const JUMP_THRESHOLD = 30;
 interface UseResumeProps {
   recordingId?: string;
   duration?: number | null;
-  videoElement: HTMLVideoElement | null;
+  videoRef: RefObject<HTMLVideoElement | null>;
   isPlaying: boolean;
   isSeekable?: boolean;
 }
 
-export function useResume({ recordingId, duration, videoElement, isPlaying, isSeekable = true }: UseResumeProps) {
+export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekable = true }: UseResumeProps) {
   const lastSavedTime = useRef<number>(0);
   const saveTimerRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
@@ -24,6 +24,7 @@ export function useResume({ recordingId, duration, videoElement, isPlaying, isSe
   }, [recordingId]);
 
   const save = useCallback(async (forceFinished: boolean = false) => {
+    const videoElement = videoRef.current;
     if (!recordingId || !videoElement) return;
     if (!isSeekable) return;
 
@@ -52,7 +53,7 @@ export function useResume({ recordingId, duration, videoElement, isPlaying, isSe
     } catch (err) {
       debugWarn('[useResume] Failed to save resume state', formatError(err));
     }
-  }, [recordingId, videoElement, duration, isSeekable]);
+  }, [recordingId, videoRef, duration, isSeekable]);
 
   // Periodic Save
   useEffect(() => {
@@ -78,6 +79,7 @@ export function useResume({ recordingId, duration, videoElement, isPlaying, isSe
 
   // Event Listeners (Pause, Ended, Seeking)
   useEffect(() => {
+    const videoElement = videoRef.current;
     if (!videoElement || !recordingId || !isSeekable) return;
 
     const handlePause = () => save();
@@ -105,5 +107,5 @@ export function useResume({ recordingId, duration, videoElement, isPlaying, isSe
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [videoElement, recordingId, isSeekable, save]);
+  }, [videoRef, recordingId, isSeekable, save]);
 }
