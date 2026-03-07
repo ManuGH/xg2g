@@ -5,10 +5,10 @@
 package profiles
 
 import (
-	"os"
 	"strconv"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
@@ -108,7 +108,7 @@ func resolveSafariDirtyHWMode(hasGPU bool, hwaccelMode HWAccelMode) string {
 		return safariDirtyHWModeFull
 	}
 
-	mode := normalize.Token(os.Getenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE"))
+	mode := normalize.Token(config.ParseString("XG2G_SAFARI_DIRTY_HWACCEL_MODE", ""))
 	switch mode {
 	case safariDirtyHWModeNone, safariDirtyHWModeEncodeOnly, safariDirtyHWModeFull:
 		if hasGPU {
@@ -396,7 +396,7 @@ func isSafariUA(ua string) bool {
 }
 
 func envBool(key string, defaultValue bool) bool {
-	raw := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	raw := strings.TrimSpace(strings.ToLower(config.ParseString(key, "")))
 	switch raw {
 	case "1", "true", "yes", "on":
 		return true
@@ -408,7 +408,7 @@ func envBool(key string, defaultValue bool) bool {
 }
 
 func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
-	raw := strings.TrimSpace(os.Getenv(key))
+	raw := strings.TrimSpace(config.ParseString(key, ""))
 	if raw == "" {
 		return defaultValue
 	}
@@ -426,7 +426,7 @@ func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
 }
 
 func envPreset(key, defaultValue string) string {
-	raw := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	raw := strings.ToLower(strings.TrimSpace(config.ParseString(key, "")))
 	if raw == "" {
 		return defaultValue
 	}

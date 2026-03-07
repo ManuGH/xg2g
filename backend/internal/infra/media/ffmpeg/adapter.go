@@ -103,11 +103,11 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	if probeSize == "" {
 		probeSize = "5M" // 5MB for live streams
 	}
-	liveAnalyzeDuration := strings.TrimSpace(os.Getenv("XG2G_LIVE_ANALYZE_DURATION"))
+	liveAnalyzeDuration := strings.TrimSpace(config.ParseString("XG2G_LIVE_ANALYZE_DURATION", ""))
 	if liveAnalyzeDuration == "" {
 		liveAnalyzeDuration = "1000000" // 1s for low-latency live ingest
 	}
-	liveProbeSize := strings.TrimSpace(os.Getenv("XG2G_LIVE_PROBE_SIZE"))
+	liveProbeSize := strings.TrimSpace(config.ParseString("XG2G_LIVE_PROBE_SIZE", ""))
 	if liveProbeSize == "" {
 		liveProbeSize = "1M" // 1MB for low-latency live ingest
 	}
@@ -124,12 +124,12 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	fpsFallback := envIntBounded("XG2G_FPS_FALLBACK", 25, 10, 120)
 	fpsFallbackInter := envIntBounded("XG2G_FPS_FALLBACK_INTERLACED", 50, 10, 120)
 	resilientIngest := envBool("XG2G_RESILIENT_INGEST", true)
-	safariDirtyFilter := strings.TrimSpace(os.Getenv("XG2G_SAFARI_DIRTY_DEINTERLACE_FILTER"))
+	safariDirtyFilter := strings.TrimSpace(config.ParseString("XG2G_SAFARI_DIRTY_DEINTERLACE_FILTER", ""))
 	if safariDirtyFilter == "" {
 		safariDirtyFilter = "bwdif=mode=send_field:parity=auto:deint=all"
 	}
-	safariDirtyTune := strings.TrimSpace(os.Getenv("XG2G_SAFARI_DIRTY_X264_TUNE"))
-	ingestFFlags := strings.TrimSpace(os.Getenv("XG2G_INGEST_FFLAGS"))
+	safariDirtyTune := strings.TrimSpace(config.ParseString("XG2G_SAFARI_DIRTY_X264_TUNE", ""))
+	ingestFFlags := strings.TrimSpace(config.ParseString("XG2G_INGEST_FFLAGS", ""))
 	if ingestFFlags == "" {
 		if resilientIngest {
 			ingestFFlags = "+genpts+discardcorrupt+flush_packets"
@@ -137,19 +137,19 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 			ingestFFlags = "+genpts"
 		}
 	}
-	ingestErrDetect := strings.TrimSpace(os.Getenv("XG2G_INGEST_ERR_DETECT"))
+	ingestErrDetect := strings.TrimSpace(config.ParseString("XG2G_INGEST_ERR_DETECT", ""))
 	if ingestErrDetect == "" && resilientIngest {
 		ingestErrDetect = "ignore_err"
 	}
-	ingestMaxErrorRate := strings.TrimSpace(os.Getenv("XG2G_INGEST_MAX_ERROR_RATE"))
+	ingestMaxErrorRate := strings.TrimSpace(config.ParseString("XG2G_INGEST_MAX_ERROR_RATE", ""))
 	if ingestMaxErrorRate == "" && resilientIngest {
 		ingestMaxErrorRate = "1.0"
 	}
-	ingestFlags2 := strings.TrimSpace(os.Getenv("XG2G_INGEST_FLAGS2"))
+	ingestFlags2 := strings.TrimSpace(config.ParseString("XG2G_INGEST_FLAGS2", ""))
 	if ingestFlags2 == "" && resilientIngest {
 		ingestFlags2 = "+showall+export_mvs"
 	}
-	fpsProbeFFlags := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_FFLAGS"))
+	fpsProbeFFlags := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_FFLAGS", ""))
 	if fpsProbeFFlags == "" {
 		if resilientIngest {
 			fpsProbeFFlags = "+genpts+discardcorrupt+igndts"
@@ -157,38 +157,34 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 			fpsProbeFFlags = "+genpts+igndts"
 		}
 	}
-	fpsProbeErrDetect := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_ERR_DETECT"))
+	fpsProbeErrDetect := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_ERR_DETECT", ""))
 	if fpsProbeErrDetect == "" && resilientIngest {
 		fpsProbeErrDetect = "ignore_err"
 	}
-	fpsProbeAnalyze := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_ANALYZE_DURATION"))
+	fpsProbeAnalyze := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_ANALYZE_DURATION", ""))
 	if fpsProbeAnalyze == "" {
 		fpsProbeAnalyze = analyzeDuration
 	}
-	fpsProbeSize := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_SIZE"))
+	fpsProbeSize := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_SIZE", ""))
 	if fpsProbeSize == "" {
 		fpsProbeSize = probeSize
 	}
-	fpsProbeRetryAnalyze := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_RETRY_ANALYZE_DURATION"))
+	fpsProbeRetryAnalyze := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_RETRY_ANALYZE_DURATION", ""))
 	if fpsProbeRetryAnalyze == "" {
 		fpsProbeRetryAnalyze = "10000000"
 	}
-	fpsProbeRetrySize := strings.TrimSpace(os.Getenv("XG2G_FPS_PROBE_RETRY_SIZE"))
+	fpsProbeRetrySize := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_RETRY_SIZE", ""))
 	if fpsProbeRetrySize == "" {
 		fpsProbeRetrySize = "20M"
 	}
 	skipFPSProbeOnCache := envBool("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", false)
-	skipFPSProbeWarmup := 500 * time.Millisecond
-	if raw := strings.TrimSpace(os.Getenv("XG2G_SKIP_FPS_PROBE_WARMUP")); raw != "" {
-		if parsed, err := time.ParseDuration(raw); err == nil && parsed >= 0 {
-			skipFPSProbeWarmup = parsed
-		}
+	skipFPSProbeWarmup := config.ParseDuration("XG2G_SKIP_FPS_PROBE_WARMUP", 500*time.Millisecond)
+	if skipFPSProbeWarmup < 0 {
+		skipFPSProbeWarmup = 500 * time.Millisecond
 	}
-	fpsCacheTTL := 24 * time.Hour
-	if raw := strings.TrimSpace(os.Getenv("XG2G_FPS_CACHE_TTL")); raw != "" {
-		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
-			fpsCacheTTL = parsed
-		}
+	fpsCacheTTL := config.ParseDuration("XG2G_FPS_CACHE_TTL", 24*time.Hour)
+	if fpsCacheTTL <= 0 {
+		fpsCacheTTL = 24 * time.Hour
 	}
 
 	httpClient := &http.Client{
@@ -658,7 +654,7 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 }
 
 func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
-	raw := strings.TrimSpace(os.Getenv(key))
+	raw := strings.TrimSpace(config.ParseString(key, ""))
 	if raw == "" {
 		return defaultValue
 	}
@@ -676,13 +672,5 @@ func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
 }
 
 func envBool(key string, defaultValue bool) bool {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return defaultValue
-	}
-	b, err := strconv.ParseBool(raw)
-	if err != nil {
-		return defaultValue
-	}
-	return b
+	return config.ParseBool(key, defaultValue)
 }
