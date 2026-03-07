@@ -26,14 +26,15 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Verify Go toolchain policy
-        run: ./scripts/check-go-toolchain.sh
+        run: ./backend/scripts/check-go-toolchain.sh
 
       - name: Setup Go
         uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # v6
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
           check-latest: true
           cache: true
+          cache-dependency-path: backend/go.sum
         env:
           GOTOOLCHAIN: auto
 
@@ -48,18 +49,10 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: webui/package-lock.json
+          cache-dependency-path: frontend/webui/package-lock.json
 
       - name: Build WebUI assets (required for embed contract)
-        run: |
-          set -euo pipefail
-          cd webui
-          npm ci
-          npx vite build
-          cd ..
-          rm -rf internal/control/http/dist
-          mkdir -p internal/control/http/dist
-          cp -R webui/dist/. internal/control/http/dist/
+        run: make ui-build
 
       - name: Install ffmpeg
         run: |
@@ -91,12 +84,12 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: webui/package-lock.json
+          cache-dependency-path: frontend/webui/package-lock.json
 
       - name: Lint OpenAPI (nightly)
         run: |
           set -euo pipefail
-          npx --yes @redocly/cli@1.31.0 lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
+          npx --yes @redocly/cli@1.31.0 lint backend/api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
 
       - name: Lint Markdown (nightly)
         run: |
