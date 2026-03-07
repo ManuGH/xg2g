@@ -401,7 +401,7 @@
           "type": "string"
         },
         "useWebIFStreams": {
-          "default": true,
+          "default": false,
           "type": "boolean"
         },
         "userAgent": {
@@ -814,7 +814,7 @@
           "type": "string"
         },
         "useWebIFStreams": {
-          "default": true,
+          "default": false,
           "deprecated": true,
           "type": "boolean"
         },
