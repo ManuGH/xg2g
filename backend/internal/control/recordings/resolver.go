@@ -92,11 +92,12 @@ func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOp
 func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error) {
 	// Construct PIDE Request
 	protocolHint := ""
-	if intent == "download" || intent == "direct" {
+	switch intent {
+	case "download", "direct":
 		protocolHint = "mp4"
-	} else if intent == "hls" {
+	case "hls":
 		protocolHint = "hls"
-	} else {
+	default:
 		// V3Player live stream-info endpoint doesn't send "intent".
 		// But earlier, the frontend says: "aber das ist ja ned fertige datei oder so wie bei plex oder" -> It expects direct play of VOD.
 		// Let's pass "mp4" hint for "stream" intent on VOD if it's a file?
