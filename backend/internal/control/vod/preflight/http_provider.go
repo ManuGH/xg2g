@@ -52,15 +52,16 @@ func (p *HTTPPreflightProvider) Check(ctx context.Context, src SourceRef) (Prefl
 		defer cancel()
 	}
 
-	validatedURL, err := platformnet.ValidateOutboundURL(ctx, src.URL, p.outboundPolicy)
+	validatedURL, err := platformnet.ParseValidatedOutboundURL(ctx, src.URL, p.outboundPolicy)
 	if err != nil {
 		return PreflightResult{Outcome: PreflightInternal}, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validatedURL, nil)
-	if err != nil {
-		return PreflightResult{Outcome: PreflightInternal}, err
-	}
+	req := (&http.Request{
+		Method: http.MethodGet,
+		URL:    validatedURL,
+		Header: make(http.Header),
+	}).WithContext(ctx)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
