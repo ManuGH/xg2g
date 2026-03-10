@@ -71,7 +71,13 @@ func TestStopDuringStart(t *testing.T) {
 	assert.Equal(t, model.RClientStop, s.Reason)
 	assert.Equal(t, model.DNone, s.ReasonDetailCode)
 
-	<-pipe.StopCalled()
+	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	select {
+	case <-pipe.StopCalled():
+	case <-waitCtx.Done():
+		t.Fatalf("timed out waiting for pipeline stop: %v", waitCtx.Err())
+	}
 	assert.Equal(t, int32(1), pipe.StopCount())
 
 	_, ok, err = st.GetLease(ctx, model.LeaseKeyTunerSlot(0))

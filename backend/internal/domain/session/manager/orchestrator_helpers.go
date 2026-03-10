@@ -541,6 +541,16 @@ func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSession
 	return err
 }
 
+func (o *Orchestrator) stopPipelineHandle(ctx context.Context, handle ports.RunHandle) {
+	if handle == "" {
+		return
+	}
+
+	stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), o.PipelineStopTimeout)
+	defer stopCancel()
+	_ = o.Pipeline.Stop(stopCtx, handle)
+}
+
 func (o *Orchestrator) runExecutionLoop(
 	ctx context.Context,
 	hbCtx context.Context,
@@ -574,6 +584,12 @@ func (o *Orchestrator) runExecutionLoop(
 	if err != nil {
 		return "", model.ProfileSpec{}, err
 	}
+	stopHandleOnExit := true
+	defer func() {
+		if stopHandleOnExit {
+			o.stopPipelineHandle(ctx, handle)
+		}
+	}()
 
 	o.recordTransition(model.SessionStarting, model.SessionPriming)
 	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
@@ -617,13 +633,9 @@ func (o *Orchestrator) runExecutionLoop(
 	}
 
 	if playlistReadyResult {
+		stopHandleOnExit = false
 		return handle, currentProfileSpec, nil
 	}
-
-	// Failure Handling
-	stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), o.PipelineStopTimeout)
-	_ = o.Pipeline.Stop(stopCtx, handle)
-	stopCancel()
 
 	return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
 }

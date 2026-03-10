@@ -248,7 +248,7 @@ func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
 }
 
 func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEvent) (retErr error) {
-	correlationID, session, ctx, err := o.resolveSession(ctx, e)
+	_, session, ctx, err := o.resolveSession(ctx, e)
 	if err != nil {
 		return err
 	}
@@ -365,16 +365,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}
 
 	defer func() {
-		stopBaseCtx := context.WithoutCancel(ctx)
-		if correlationID != "" {
-			stopBaseCtx = log.ContextWithCorrelationID(stopBaseCtx, correlationID)
-		}
-		stopCtx, cancel := context.WithTimeout(stopBaseCtx, o.PipelineStopTimeout)
-		defer cancel()
-		// Use Port Stop
-		if runHandle != "" {
-			_ = o.Pipeline.Stop(stopCtx, runHandle)
-		}
+		o.stopPipelineHandle(ctx, runHandle)
 	}()
 
 	playlistReadyDuration := time.Since(startTime)
