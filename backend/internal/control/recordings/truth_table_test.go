@@ -580,13 +580,15 @@ func TestAsyncProbe_Singleflight(t *testing.T) {
 
 	// We expect Probe to be called EXACTLY ONCE despite multiple concurrent requests
 	probeCalled := make(chan struct{})
+	probeUnblocked := make(chan struct{})
+	var probeOnce sync.Once
 	mgr.On("Probe", mock.Anything, "/local/x").Return(&vod.StreamInfo{
 		Container: "mp4",
 		Video:     vod.VideoStreamInfo{CodecName: "h264"},
 		Audio:     vod.AudioStreamInfo{CodecName: "aac"},
 	}, nil).Once().Run(func(args mock.Arguments) {
-		close(probeCalled)
-		time.Sleep(10 * time.Millisecond)
+		probeOnce.Do(func() { close(probeCalled) })
+		<-probeUnblocked
 	})
 
 	// We expect UpdateMetadata to happen eventually, but not blocking.
@@ -629,6 +631,9 @@ func TestAsyncProbe_Singleflight(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("Probe should have been called")
 	}
+
+	// Release the single in-flight probe only after all concurrent callers returned.
+	close(probeUnblocked)
 
 	// Ensure side effect happened (wait for update)
 	select {
