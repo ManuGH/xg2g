@@ -33,10 +33,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
           check-latest: true
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: backend/go.sum
         env:
           GOTOOLCHAIN: auto
 
@@ -45,7 +45,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: webui/package-lock.json
+          cache-dependency-path: frontend/webui/package-lock.json
 
       - name: Build WebUI assets (embed prereq)
         run: |
@@ -62,6 +62,7 @@ jobs:
       - name: Run race suite
         run: |
           set -euo pipefail
+          cd backend
           go test -race -count=1 -timeout=20m ./... 2>&1 | tee nightly-race.log
 
       - name: Upload race logs on failure
@@ -85,16 +86,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
           check-latest: true
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: backend/go.sum
         env:
           GOTOOLCHAIN: auto
 
       - name: Run integration and invariants (fail-fast)
         run: |
           set -euo pipefail
+          cd backend
           go test -count=1 -failfast -timeout=20m ./test/integration/... ./test/invariants/... 2>&1 | tee nightly-integration.log
 
       - name: Upload integration logs on failure
@@ -118,16 +120,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
           check-latest: true
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: backend/go.sum
         env:
           GOTOOLCHAIN: auto
 
       - name: Install security tools
         run: |
           set -euo pipefail
+          cd backend
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
 
@@ -135,6 +138,7 @@ jobs:
         run: |
           set +e
           set -u -o pipefail
+          cd backend
           govulncheck -tags=nogpu -format json ./... > govulncheck.json 2> govulncheck.stderr
           GOVULN_EXIT=$?
           gosec \
@@ -180,10 +184,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a
         with:
-          go-version-file: go.mod
+          go-version-file: backend/go.mod
           check-latest: true
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: backend/go.sum
         env:
           GOTOOLCHAIN: auto
 
@@ -192,22 +196,22 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: webui/package-lock.json
+          cache-dependency-path: frontend/webui/package-lock.json
 
       - name: Run governance deep checks
         run: |
           set -euo pipefail
 
-          NEW_JSX=$(find webui/src -type f -name '*.jsx' || true)
+          NEW_JSX=$(find frontend/webui/src -type f -name '*.jsx' || true)
           if [ -n "$NEW_JSX" ]; then
             echo "❌ New .jsx files detected:"
             echo "$NEW_JSX"
             exit 1
           fi
 
-          bash webui/scripts/verify-client-wrapper-boundary.sh
+          bash frontend/webui/scripts/verify-client-wrapper-boundary.sh
 
-          cd webui
+          cd frontend/webui
           npm ci
           npm run build
 
@@ -246,10 +250,10 @@ jobs:
             echo ""
             echo "| Job | Command | Result | Exit |"
             echo "|---|---|---:|---:|"
-            echo "| nightly-race | \`go test -race -count=1 ./...\` | $RACE_RESULT | $RACE_EXIT |"
-            echo "| nightly-integration | \`go test -count=1 -failfast ./test/integration/... ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
-            echo "| weekly-security-deep | \`govulncheck -tags=nogpu ./... && gosec -severity=high ... ./...\` | $SECURITY_RESULT | $SECURITY_EXIT |"
-            echo "| weekly-governance-deep | \`jsx + wrapper-boundary guards + (cd webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
+            echo "| nightly-race | \`cd backend && go test -race -count=1 ./...\` | $RACE_RESULT | $RACE_EXIT |"
+            echo "| nightly-integration | \`cd backend && go test -count=1 -failfast ./test/integration/... ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
+            echo "| weekly-security-deep | \`cd backend && govulncheck -tags=nogpu ./... && gosec -severity=high ... ./...\` | $SECURITY_RESULT | $SECURITY_EXIT |"
+            echo "| weekly-governance-deep | \`jsx + wrapper-boundary guards + (cd frontend/webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deep-alert-on-failure:
