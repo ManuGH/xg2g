@@ -3,10 +3,15 @@ package preflight
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"testing"
 	"time"
+
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 type errorRoundTripper struct {
@@ -24,12 +29,21 @@ func (ctxWaitRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	return nil, req.Context().Err()
 }
 
+type countingRoundTripper struct {
+	calls int
+}
+
+func (c *countingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	c.calls++
+	return nil, errors.New("unexpected network call")
+}
+
 func TestHTTPPreflightProvider_Unreachable(t *testing.T) {
 	provider := NewHTTPPreflightProvider(&http.Client{
 		Transport: errorRoundTripper{err: errors.New("dial error")},
-	}, 0)
+	}, 0, testOutboundPolicy(t, "http://127.0.0.1"))
 
-	res, err := provider.Check(context.Background(), SourceRef{URL: "http://example.invalid"})
+	res, err := provider.Check(context.Background(), SourceRef{URL: "http://127.0.0.1"})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -44,12 +58,12 @@ func TestHTTPPreflightProvider_Unreachable(t *testing.T) {
 func TestHTTPPreflightProvider_Timeout(t *testing.T) {
 	provider := NewHTTPPreflightProvider(&http.Client{
 		Transport: ctxWaitRoundTripper{},
-	}, 0)
+	}, 0, testOutboundPolicy(t, "http://127.0.0.1"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	res, err := provider.Check(ctx, SourceRef{URL: "http://example.invalid"})
+	res, err := provider.Check(ctx, SourceRef{URL: "http://127.0.0.1"})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -64,12 +78,12 @@ func TestHTTPPreflightProvider_Timeout(t *testing.T) {
 func TestHTTPPreflightProvider_CanceledContext(t *testing.T) {
 	provider := NewHTTPPreflightProvider(&http.Client{
 		Transport: ctxWaitRoundTripper{},
-	}, 0)
+	}, 0, testOutboundPolicy(t, "http://127.0.0.1"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	res, err := provider.Check(ctx, SourceRef{URL: "http://example.invalid"})
+	res, err := provider.Check(ctx, SourceRef{URL: "http://127.0.0.1"})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -105,7 +119,7 @@ func TestHTTPPreflightProvider_StatusMapping(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			provider := NewHTTPPreflightProvider(srv.Client(), 0)
+			provider := NewHTTPPreflightProvider(srv.Client(), 0, testOutboundPolicy(t, srv.URL))
 			res, err := provider.Check(context.Background(), SourceRef{URL: srv.URL})
 			if err != nil {
 				t.Fatalf("expected nil error, got %v", err)
@@ -133,7 +147,7 @@ func TestHTTPPreflightProvider_NoRedirect(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	provider := NewHTTPPreflightProvider(srv.Client(), 0)
+	provider := NewHTTPPreflightProvider(srv.Client(), 0, testOutboundPolicy(t, srv.URL))
 	res, err := provider.Check(context.Background(), SourceRef{URL: srv.URL})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -147,4 +161,78 @@ func TestHTTPPreflightProvider_NoRedirect(t *testing.T) {
 	if res.HTTPStatus != http.StatusFound {
 		t.Fatalf("expected status %d, got %d", http.StatusFound, res.HTTPStatus)
 	}
+}
+
+func TestHTTPPreflightProvider_RejectsDisallowedURLBeforeRequest(t *testing.T) {
+	transport := &countingRoundTripper{}
+	provider := NewHTTPPreflightProvider(&http.Client{
+		Transport: transport,
+	}, 0, platformnet.OutboundPolicy{
+		Enabled: true,
+		Allow: platformnet.OutboundAllowlist{
+			Hosts:   []string{"example.com"},
+			Ports:   []int{443},
+			Schemes: []string{"https"},
+		},
+	})
+
+	res, err := provider.Check(context.Background(), SourceRef{URL: "http://127.0.0.1"})
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if res.Outcome != PreflightInternal {
+		t.Fatalf("expected outcome %q, got %q", PreflightInternal, res.Outcome)
+	}
+	if transport.calls != 0 {
+		t.Fatalf("expected no network call, got %d", transport.calls)
+	}
+}
+
+func testOutboundPolicy(t *testing.T, rawURL string) platformnet.OutboundPolicy {
+	t.Helper()
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse test url: %v", err)
+	}
+	host := u.Hostname()
+
+	port := 0
+	switch u.Scheme {
+	case "http":
+		port = 80
+	case "https":
+		port = 443
+	}
+	if u.Port() != "" {
+		var parseErr error
+		port, parseErr = parsePort(u.Port())
+		if parseErr != nil {
+			t.Fatalf("parse port: %v", parseErr)
+		}
+	}
+
+	return platformnet.OutboundPolicy{
+		Enabled: true,
+		Allow: platformnet.OutboundAllowlist{
+			Hosts:   []string{host},
+			CIDRs:   testAllowedCIDRs(host),
+			Ports:   []int{port},
+			Schemes: []string{u.Scheme},
+		},
+	}
+}
+
+func parsePort(raw string) (int, error) {
+	if raw == "" {
+		return 0, errors.New("empty port")
+	}
+	return strconv.Atoi(raw)
+}
+
+func testAllowedCIDRs(host string) []string {
+	if ip := net.ParseIP(host); ip != nil {
+		return []string{ip.String()}
+	}
+	return nil
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/platform/httpx"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
 
@@ -37,8 +38,21 @@ func (s *Server) initPlaybackSubsystem(cfg config.AppConfig) error {
 		return fmt.Errorf("initialize vod manager: %w", err)
 	}
 	s.vodManager = vodMgr
-	s.preflightProvider = preflight.NewHTTPPreflightProvider(nil, cfg.Enigma2.PreflightTimeout)
+	s.preflightProvider = preflight.NewHTTPPreflightProvider(nil, cfg.Enigma2.PreflightTimeout, preflightOutboundPolicyFromConfig(cfg))
 	return nil
+}
+
+func preflightOutboundPolicyFromConfig(cfg config.AppConfig) platformnet.OutboundPolicy {
+	allow := cfg.Network.Outbound.Allow
+	return platformnet.OutboundPolicy{
+		Enabled: cfg.Network.Outbound.Enabled,
+		Allow: platformnet.OutboundAllowlist{
+			Hosts:   append([]string(nil), allow.Hosts...),
+			CIDRs:   append([]string(nil), allow.CIDRs...),
+			Ports:   append([]int(nil), allow.Ports...),
+			Schemes: append([]string(nil), allow.Schemes...),
+		},
+	}
 }
 
 func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) error {

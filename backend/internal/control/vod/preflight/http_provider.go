@@ -8,16 +8,19 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 // HTTPPreflightProvider checks source availability using HTTP requests.
 // Timeout is enforced via context.WithTimeout; http.Client.Timeout is left unset.
 type HTTPPreflightProvider struct {
-	client  *http.Client
-	timeout time.Duration
+	client         *http.Client
+	timeout        time.Duration
+	outboundPolicy platformnet.OutboundPolicy
 }
 
-func NewHTTPPreflightProvider(client *http.Client, timeout time.Duration) *HTTPPreflightProvider {
+func NewHTTPPreflightProvider(client *http.Client, timeout time.Duration, outboundPolicy platformnet.OutboundPolicy) *HTTPPreflightProvider {
 	if client == nil {
 		client = &http.Client{}
 	} else {
@@ -29,8 +32,9 @@ func NewHTTPPreflightProvider(client *http.Client, timeout time.Duration) *HTTPP
 		return http.ErrUseLastResponse
 	}
 	return &HTTPPreflightProvider{
-		client:  client,
-		timeout: timeout,
+		client:         client,
+		timeout:        timeout,
+		outboundPolicy: cloneOutboundPolicy(outboundPolicy),
 	}
 }
 
@@ -48,10 +52,12 @@ func (p *HTTPPreflightProvider) Check(ctx context.Context, src SourceRef) (Prefl
 		defer cancel()
 	}
 
-	// Invariant: src.URL is validated upstream by ValidateOutboundURL in preflight_gate.go.
-	// SSRF protection: scheme/host/port allowlist + DNS rebinding block.
-	// See: internal/platform/net/outbound.go, internal/control/http/v3/preflight_gate.go
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.URL, nil)
+	validatedURL, err := platformnet.ValidateOutboundURL(ctx, src.URL, p.outboundPolicy)
+	if err != nil {
+		return PreflightResult{Outcome: PreflightInternal}, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validatedURL, nil)
 	if err != nil {
 		return PreflightResult{Outcome: PreflightInternal}, err
 	}
@@ -87,4 +93,16 @@ func (p *HTTPPreflightProvider) Check(ctx context.Context, src SourceRef) (Prefl
 		result.Outcome = PreflightInternal
 	}
 	return result, nil
+}
+
+func cloneOutboundPolicy(policy platformnet.OutboundPolicy) platformnet.OutboundPolicy {
+	return platformnet.OutboundPolicy{
+		Enabled: policy.Enabled,
+		Allow: platformnet.OutboundAllowlist{
+			Hosts:   append([]string(nil), policy.Allow.Hosts...),
+			CIDRs:   append([]string(nil), policy.Allow.CIDRs...),
+			Ports:   append([]int(nil), policy.Allow.Ports...),
+			Schemes: append([]string(nil), policy.Allow.Schemes...),
+		},
+	}
 }
