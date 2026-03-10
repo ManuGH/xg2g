@@ -75,7 +75,7 @@ Tier-1 compliant with Apple HLS Guidelines.
 
 ## Documentation
 
-- 🚀 [Start Here (10 Minutes)](NEW_HERE.md) - First-commit onboarding path
+- 🚀 [Start Here (10 Minutes)](backend/NEW_HERE.md) - First-commit onboarding path
 - 📘 [Architecture Overview](docs/arch/ARCHITECTURE.md) - Complete system
   explanation
 - 📋 [ADRs](docs/ADR/) - Design decisions and trade-offs
@@ -85,7 +85,7 @@ Tier-1 compliant with Apple HLS Guidelines.
   from [backend/api/openapi.yaml](backend/api/openapi.yaml)
 - ⚙️ [Configuration Guide](docs/guides/CONFIGURATION.md)
 - 🏗️ [Development Guide](docs/guides/DEVELOPMENT.md)
-- 🧭 [Workflow Guide](WORKFLOW.md) - Branching, testing, and deployment flow
+- 🧭 [Workflow Guide](backend/WORKFLOW.md) - Branching, testing, and deployment flow
 - 🩺 [CI Failure Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) - Triage guide for
   failing gates
 
