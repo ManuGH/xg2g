@@ -165,3 +165,22 @@ func TestValidateOutboundURL(t *testing.T) {
 		})
 	}
 }
+
+func TestParseValidatedOutboundURL(t *testing.T) {
+	policy := OutboundPolicy{
+		Enabled: true,
+		Allow: OutboundAllowlist{
+			Hosts:   []string{"192.0.2.10"},
+			Ports:   []int{80},
+			Schemes: []string{"http"},
+		},
+	}
+
+	u, err := ParseValidatedOutboundURL(context.Background(), "http://192.0.2.10./stream.ts?profile=main", policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := u.String(), "http://192.0.2.10/stream.ts?profile=main"; got != want {
+		t.Fatalf("expected normalized url %q, got %q", want, got)
+	}
+}

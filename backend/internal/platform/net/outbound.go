@@ -75,69 +75,69 @@ func NormalizeHost(raw string) (string, error) {
 	return strings.ToLower(ascii), nil
 }
 
-// ValidateOutboundURL verifies a URL against the outbound policy and returns a normalized URL string.
-func ValidateOutboundURL(ctx context.Context, raw string, policy OutboundPolicy) (string, error) {
+// ParseValidatedOutboundURL verifies a URL against the outbound policy and returns a normalized URL.
+func ParseValidatedOutboundURL(ctx context.Context, raw string, policy OutboundPolicy) (*url.URL, error) {
 	if !policy.Enabled {
-		return "", ErrOutboundDisabled
+		return nil, ErrOutboundDisabled
 	}
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return "", fmt.Errorf("outbound url empty")
+		return nil, fmt.Errorf("outbound url empty")
 	}
 	u, err := url.Parse(trimmed)
 	if err != nil {
-		return "", fmt.Errorf("invalid url: %w", err)
+		return nil, fmt.Errorf("invalid url: %w", err)
 	}
 	if u.Scheme == "" {
-		return "", fmt.Errorf("missing url scheme")
+		return nil, fmt.Errorf("missing url scheme")
 	}
 	if u.Host == "" {
-		return "", fmt.Errorf("missing url host")
+		return nil, fmt.Errorf("missing url host")
 	}
 	if u.User != nil {
-		return "", fmt.Errorf("userinfo not allowed")
+		return nil, fmt.Errorf("userinfo not allowed")
 	}
 	if u.Fragment != "" {
-		return "", fmt.Errorf("fragments not allowed")
+		return nil, fmt.Errorf("fragments not allowed")
 	}
 
 	scheme := strings.ToLower(u.Scheme)
 	if !schemeAllowed(policy.Allow.Schemes, scheme) {
-		return "", fmt.Errorf("scheme %q not allowed", scheme)
+		return nil, fmt.Errorf("scheme %q not allowed", scheme)
 	}
 
 	port, err := urlPort(u, scheme)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if !portAllowed(policy.Allow.Ports, port) {
-		return "", fmt.Errorf("port %d not allowed", port)
+		return nil, fmt.Errorf("port %d not allowed", port)
 	}
 
 	host, err := NormalizeHost(u.Hostname())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	allowedHosts, err := normalizeHostAllowlist(policy.Allow.Hosts)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	allowedCIDRs, err := parseCIDRAllowlist(policy.Allow.CIDRs)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	ips, err := resolveHostIPs(ctx, host)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	_, hostAllowed := allowedHosts[host]
 	ipAllowed := false
 	for _, ip := range ips {
 		if isBlockedIP(ip) && !ipInCIDRs(ip, allowedCIDRs) {
-			return "", fmt.Errorf("blocked ip %s", ip.String())
+			return nil, fmt.Errorf("blocked ip %s", ip.String())
 		}
 		if ipInCIDRs(ip, allowedCIDRs) {
 			ipAllowed = true
@@ -145,10 +145,21 @@ func ValidateOutboundURL(ctx context.Context, raw string, policy OutboundPolicy)
 	}
 
 	if !hostAllowed && !ipAllowed {
-		return "", ErrOutboundNotAllowed
+		return nil, ErrOutboundNotAllowed
 	}
 
-	u.Host = joinHostPort(host, u.Port())
+	normalized := *u
+	normalized.Scheme = scheme
+	normalized.Host = joinHostPort(host, u.Port())
+	return &normalized, nil
+}
+
+// ValidateOutboundURL verifies a URL against the outbound policy and returns a normalized URL string.
+func ValidateOutboundURL(ctx context.Context, raw string, policy OutboundPolicy) (string, error) {
+	u, err := ParseValidatedOutboundURL(ctx, raw, policy)
+	if err != nil {
+		return "", err
+	}
 	return u.String(), nil
 }
 
