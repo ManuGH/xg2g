@@ -14,7 +14,7 @@ type preflightReceiverAdapter struct {
 	*openwebif.Client
 }
 
-func TestResolvePreflightSourceURL_AllowsReceiverURLWithUserinfo(t *testing.T) {
+func TestResolvePreflightSource_UsesReceiverAuthWithoutEmbeddingUserinfo(t *testing.T) {
 	cfg := config.AppConfig{}
 	cfg.Enigma2.BaseURL = "http://10.10.55.64"
 	cfg.Enigma2.StreamPort = 17999
@@ -38,7 +38,9 @@ func TestResolvePreflightSourceURL_AllowsReceiverURLWithUserinfo(t *testing.T) {
 		},
 	}
 
-	got, err := resolvePreflightSourceURL(context.Background(), deps, "1:0:19:11:6:85:C00000:0:0:0:")
+	got, err := resolvePreflightSource(context.Background(), deps, "1:0:19:11:6:85:C00000:0:0:0:")
 	require.NoError(t, err)
-	require.Equal(t, "http://root:Kiddy99@10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0:", got)
+	require.Equal(t, "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0:", got.URL)
+	require.Equal(t, "root", got.Username)
+	require.Equal(t, "Kiddy99", got.Password)
 }

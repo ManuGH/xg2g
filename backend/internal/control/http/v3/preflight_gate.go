@@ -23,12 +23,12 @@ func enforcePreflight(ctx context.Context, w http.ResponseWriter, r *http.Reques
 		return false
 	}
 
-	sourceURL, err := resolvePreflightSourceURL(ctx, deps, serviceRef)
+	sourceRef, err := resolvePreflightSource(ctx, deps, serviceRef)
 	if err != nil {
 		return rejectPreflight(w, r, preflight.PreflightInternal, err)
 	}
 
-	res, err := provider.Check(ctx, preflight.SourceRef{URL: sourceURL})
+	res, err := provider.Check(ctx, sourceRef)
 	outcome := res.Outcome
 	if err != nil || outcome == "" {
 		return rejectPreflight(w, r, preflight.PreflightInternal, err)
@@ -39,41 +39,71 @@ func enforcePreflight(ctx context.Context, w http.ResponseWriter, r *http.Reques
 	return rejectPreflight(w, r, outcome, err)
 }
 
-func resolvePreflightSourceURL(ctx context.Context, deps sessionsModuleDeps, serviceRef string) (string, error) {
+func resolvePreflightSource(ctx context.Context, deps sessionsModuleDeps, serviceRef string) (preflight.SourceRef, error) {
 	cfg := deps.cfg
 	snap := deps.snap
 
 	serviceRef = strings.TrimSpace(serviceRef)
 	if serviceRef == "" {
-		return "", fmt.Errorf("serviceRef empty")
+		return preflight.SourceRef{}, fmt.Errorf("serviceRef empty")
 	}
 
 	if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
-		if err := validatePreflightOutboundURL(ctx, u.String(), outboundPolicyFromConfig(cfg)); err != nil {
-			return "", err
+		src, err := buildPreflightSourceRef(u.String())
+		if err != nil {
+			return preflight.SourceRef{}, err
 		}
-		return u.String(), nil
+		if err := validatePreflightOutboundURL(ctx, src.URL, outboundPolicyFromConfig(cfg)); err != nil {
+			return preflight.SourceRef{}, err
+		}
+		return src, nil
 	}
 
 	if deps.receiver == nil {
-		return "", fmt.Errorf("receiver control factory unavailable")
+		return preflight.SourceRef{}, fmt.Errorf("receiver control factory unavailable")
 	}
 	receiver := deps.receiver(cfg, snap)
 	streamer, ok := receiver.(streamURLProvider)
 	if !ok {
-		return "", fmt.Errorf("stream url provider unavailable")
+		return preflight.SourceRef{}, fmt.Errorf("stream url provider unavailable")
 	}
 	rawURL, err := streamer.StreamURL(ctx, serviceRef, "")
 	if err != nil {
-		return "", err
+		return preflight.SourceRef{}, err
+	}
+	src, err := buildPreflightSourceRef(rawURL)
+	if err != nil {
+		return preflight.SourceRef{}, err
+	}
+	if src.Username == "" && strings.TrimSpace(cfg.Enigma2.Username) != "" {
+		src.Username = cfg.Enigma2.Username
+		src.Password = cfg.Enigma2.Password
 	}
 	// Defense in depth: validate receiver-derived URLs against outbound policy.
 	// Even though Enigma2.BaseURL is admin-controlled, we apply the same SSRF
 	// protection (scheme/host/port allowlist + DNS rebinding block) for consistency.
-	if err := validatePreflightOutboundURL(ctx, rawURL, outboundPolicyFromConfig(cfg)); err != nil {
-		return "", err
+	if err := validatePreflightOutboundURL(ctx, src.URL, outboundPolicyFromConfig(cfg)); err != nil {
+		return preflight.SourceRef{}, err
 	}
-	return rawURL, nil
+	return src, nil
+}
+
+func buildPreflightSourceRef(rawURL string) (preflight.SourceRef, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return preflight.SourceRef{}, err
+	}
+
+	src := preflight.SourceRef{}
+	if parsed.User != nil {
+		src.Username = parsed.User.Username()
+		src.Password, _ = parsed.User.Password()
+	}
+
+	sanitizedURL := *parsed
+	sanitizedURL.User = nil
+	src.URL = sanitizedURL.String()
+	return src, nil
 }
 
 func validatePreflightOutboundURL(ctx context.Context, rawURL string, policy platformnet.OutboundPolicy) error {

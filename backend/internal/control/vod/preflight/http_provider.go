@@ -56,12 +56,14 @@ func (p *HTTPPreflightProvider) Check(ctx context.Context, src SourceRef) (Prefl
 	if err != nil {
 		return PreflightResult{Outcome: PreflightInternal}, err
 	}
-
 	req := (&http.Request{
 		Method: http.MethodGet,
 		URL:    validatedURL,
 		Header: make(http.Header),
 	}).WithContext(ctx)
+	if src.Username != "" {
+		req.SetBasicAuth(src.Username, src.Password)
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {
