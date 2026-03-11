@@ -19,7 +19,7 @@ import styles from './EditTimerDialog.module.css';
 interface EditTimerDialogProps {
   timer: Timer;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   capabilities?: DvrCapabilities;
 }
 
@@ -166,7 +166,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
         path: { timerId: timer.timerId },
         body
       });
-      onSave(); // Trigger parent refresh
+      await onSave(); // Trigger parent refresh
       onClose();
     } catch (err: any) {
       debugError('Save failed', formatError(err));

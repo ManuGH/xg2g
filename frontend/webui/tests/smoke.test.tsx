@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Settings from '../src/components/Settings';
 import { describe, it, expect, vi } from 'vitest';
 
@@ -29,8 +30,27 @@ vi.mock('../src/client-ts', () => ({
 }));
 
 describe('Frontend Smoke Tests', () => {
+  const renderSettings = () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+        mutations: {
+          retry: false,
+        },
+      },
+    });
+
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <Settings />
+      </QueryClientProvider>
+    );
+  };
+
   it('Settings page loads and shows Universal Policy (read-only) from API', async () => {
-    render(<Settings />);
+    renderSettings();
 
     // P0: Universal Policy Check
     // Expect strict read-only display
@@ -40,22 +60,22 @@ describe('Frontend Smoke Tests', () => {
     await waitFor(() => {
       // We look for the value constructed from API data
       // Inputs are checked by display value
-      expect(screen.getByDisplayValue(/Universal \(H.264\/AAC\/fMP4\)/i)).toBeInTheDocument();
+      expect(screen.getByDisplayValue(/settings\.streaming\.policy\.universal/i)).toBeInTheDocument();
 
       // Removed fragile "ADR-00X" assertion as per review
-      expect(screen.getByText(/Strict Universal-Only/i)).toBeInTheDocument();
+      expect(screen.getByText(/settings\.streaming\.policy\.hint/i)).toBeInTheDocument();
     });
 
     // Verify input is disabled (read-only)
-    const input = screen.getByDisplayValue(/Universal/i);
+    const input = screen.getByDisplayValue(/settings\.streaming\.policy\.universal/i);
     expect(input).toBeDisabled();
   });
 
   it('No profile dropdown exists (Thin Client Contract)', async () => {
-    render(<Settings />);
+    renderSettings();
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue(/Universal/i)).toBeInTheDocument();
+      expect(screen.getByDisplayValue(/settings\.streaming\.policy\.universal/i)).toBeInTheDocument();
     });
 
     // Query for legacy elements that SHOULD NOT be there

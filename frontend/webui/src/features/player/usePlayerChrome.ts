@@ -530,7 +530,9 @@ export function usePlayerChrome({
       (allowNativeFullscreen && !!video?.webkitEnterFullscreen) ||
       !!container?.requestFullscreen ||
       (typeof document !== 'undefined' && document.fullscreenEnabled === true);
-    const volumeAvailable = !shouldForceNativeMobileHls(video);
+    // Keep the full WebUI chrome on WebKit when hls.js/MMS is active.
+    // Native-mobile HLS is the only path that still needs platform controls.
+    const volumeAvailable = !(allowNativeFullscreen && shouldForceNativeMobileHls(video));
 
     setCanTogglePiP(pipAvailable);
     setCanToggleFullscreen(fullscreenAvailable);

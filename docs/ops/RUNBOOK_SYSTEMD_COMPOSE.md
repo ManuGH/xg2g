@@ -103,5 +103,31 @@ journalctl -u xg2g -f
   - `XG2G_DECISION_SECRET` — live stream JWT signing key, min 32 bytes. See `docs/ops/SECURITY.md` for generation and rotation procedure.
 * **Crash Loop**: If running manually via `docker compose` without the systemd safety checks, the container may restart indefinitely on missing config. Use `systemctl start` for fail-closed protection.
 
+### AI / Incident Triage Order
+When a future AI or operator debugs a failed `systemctl start xg2g` or `systemctl restart xg2g`, use this order and do not assume repo docs match the live host:
+
+1. Capture the exact failing phase:
+   ```bash
+   systemctl status xg2g.service --no-pager -l
+   journalctl -xeu xg2g.service --no-pager -n 120
+   ```
+2. Compare the three live sources of truth:
+   - `/etc/systemd/system/xg2g.service`
+   - `/srv/xg2g/docker-compose.yml`
+   - `/etc/xg2g/xg2g.env`
+3. Only after that, compare against the checked-in template `docs/ops/xg2g.service`.
+
+Use these symptom mappings:
+
+- `ExecStartPre` shows `No such image`: the installed systemd unit is probably checking a stale hardcoded image tag. Treat `services.xg2g.image` in `/srv/xg2g/docker-compose.yml` as image truth.
+- Container logs show `XG2G_DECISION_SECRET is required but not set`: the live env file is missing a mandatory JWT signing secret. Fix `/etc/xg2g/xg2g.env` first; the service should fail before container startup once the live unit is in sync with the checked-in template.
+- `ExecStartPost` fails with `Container is unhealthy`: inspect Docker health details directly:
+  ```bash
+  docker inspect -f '{{json .State.Health}}' xg2g
+  docker logs --since 5m xg2g
+  ```
+
+Important nuance: `/readyz` may already be healthy while Docker health is still red. One confirmed failure mode is a metrics-only health mismatch where readiness is `200` but the Docker healthcheck still fails because `http://localhost:9091/metrics` is unreachable.
+
 ### Service Smoke Matrix
 See `docs/ops/SERVICE_SMOKE.md` for the CTO-grade start/stop matrix (negative + positive + idempotent).

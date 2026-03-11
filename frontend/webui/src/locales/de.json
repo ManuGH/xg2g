@@ -248,6 +248,11 @@
     "saved": "Einstellungen automatisch gespeichert",
     "streaming": {
       "title": "Streaming",
+      "policy": {
+        "label": "Auslieferungsprofil",
+        "universal": "Universal (H.264/AAC/fMP4)",
+        "hint": "Strikt universeller Auslieferungspfad."
+      },
       "profile": {
         "label": "Stream-Encoding-Profil",
         "hint": "Auto wird empfohlen. Safari HEVC (GPU) nur zum Testen auf unterstützten Geräten.",
@@ -293,11 +298,16 @@
         "stats": {
           "total": "Kanäle Gesamt",
           "scanned": "Gescannt",
+          "updated": "Aktualisiert",
           "interlaced": "Interlaced"
         },
         "timestamps": {
           "started": "Gestartet",
           "finished": "Beendet"
+        },
+        "errors": {
+          "loadStatus": "Scan-Status konnte nicht geladen werden.",
+          "start": "Scan konnte nicht gestartet werden."
         }
       }
     },
@@ -368,30 +378,67 @@
   "system": {
     "pageTitle": "System-Informationen",
     "receiverTitle": "Receiver-Informationen",
+    "subtitle": "Hardware, Tuner, Speicher und Laufzeit des Receivers auf einen Blick.",
+    "sectionOverview": "Überblick",
+    "sectionLive": "Signal",
+    "sectionConnectivity": "Konnektivität",
+    "sectionStorage": "Speicher",
+    "sectionHealth": "Gesundheit",
     "hardware": "Hardware",
     "brandModel": "Marke & Modell",
+    "chipset": "Chipsatz",
     "software": "Software",
     "distribution": "Distribution",
     "version": "Version",
     "kernel": "Kernel",
     "webif": "WebIF",
     "tuners": "Tuner",
+    "tunersDetected": "{{count}} erkannt",
+    "tunerStatus": {
+      "live": "Live",
+      "recording": "Aufnahme",
+      "streaming": "Streaming",
+      "idle": "Leerlauf",
+      "unknown": "Unbekannt"
+    },
     "network": "Netzwerk",
+    "interfaces": "{{count}} Interfaces",
+    "ipv4": "IPv4",
+    "ipv6": "IPv6",
     "storage": "Speicher & Aufnahmen",
+    "storageLocations": "{{count}} Orte",
     "drives": "Laufwerke",
     "internal": "Intern",
+    "nas": "NAS",
     "paths": "Aufnahme-Pfade",
     "healthLabel": "Gesundheit",
     "check": "Prüfung",
+    "runtime": "Laufzeit",
+    "uptime": "Uptime",
+    "memory": "Arbeitsspeicher",
+    "memoryUsed": "belegt",
+    "memoryLevel": {
+      "normal": "Normal",
+      "warning": "Erhöht",
+      "critical": "Hoch"
+    },
+    "noInformation": "Keine Informationen verfügbar.",
+    "loadError": "System-Informationen konnten nicht geladen werden: {{error}}",
     "free": "Frei",
     "total": "Gesamt",
     "usage": "Nutzung",
+    "access": {
+      "none": "—",
+      "ro": "RO",
+      "rw": "RW"
+    },
     "status": {
       "mounted": "Verbunden",
       "unmounted": "Nicht eingehängt",
       "timeout": "Hängt (Timeout)",
       "error": "Fehler",
-      "unknown": "Unbekannt"
+      "unknown": "Unbekannt",
+      "skipped": "Übersprungen"
     }
   },
   "auth": {

@@ -27,7 +27,8 @@ This document governs the surface area of backend responses consumed by the WebU
 | `mode` | Legacy | `V3Player` | Fallback for P3-x (hls, direct_mp4) |
 | `requestId` | Telemetry | `V3Player` | Diagnostic trace display |
 | `isSeekable` | Normative | `V3Player` | Controls UI seek bar gating |
-| `durationSeconds` | Normative | `V3Player` | Timeline bounds |
+| `durationMs` | Normative | `V3Player` | Authoritative VOD duration truth |
+| `durationSeconds` | Legacy | `V3Player` | Derived compatibility field only |
 | `resume` | Normative | `V3Player` | Populates resume overlay state |
 
 ### `POST /api/v3/intents`

@@ -583,6 +583,10 @@ export type PlaybackInfo = {
      */
     startUnix?: number;
     /**
+     * Authoritative finite duration in milliseconds. Omitted if unknown or preparing.
+     */
+    durationMs?: number;
+    /**
      * Duration in seconds. Omitted if unknown or preparing.
      */
     durationSeconds?: number;

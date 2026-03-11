@@ -136,14 +136,18 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.queryByRole('button', { name: /player\.dvrMode/i })).not.toBeInTheDocument();
   });
 
-  it('hides unsupported volume and PiP controls on mobile WebKit', async () => {
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+  it('keeps volume controls visible on mobile WebKit when the hls.js path is active', async () => {
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true
+    } as V3PlayerProps;
     render(<V3Player {...props} />);
 
     await waitFor(() => {
-      expect(screen.queryByTitle('player.mute')).not.toBeInTheDocument();
+      expect(Hls).toHaveBeenCalled();
     });
 
+    expect(screen.getByRole('slider')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /player\.pipLabel/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });

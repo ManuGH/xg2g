@@ -6,13 +6,13 @@
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
 import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
-import { getRecordings, deleteRecording, type RecordingResponse, type RecordingItem } from '../client-ts';
+import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
 import { useTranslation } from 'react-i18next';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
 import { useUiOverlay } from '../context/UiOverlayContext';
+import { useDeleteRecordingsMutation, useRecordings } from '../hooks/useServerQueries';
 import { Button, Card, CardBody, StatusChip, type ChipState } from './ui';
-import { debugError, formatError } from '../utils/logging';
 import styles from './Recordings.module.css';
 
 const V3Player = lazy(() => import('./V3Player'));
@@ -89,50 +89,41 @@ export default function RecordingsList() {
   // State
   const [root, setRoot] = useState<string>(''); // Selected Root ID
   const [path, setPath] = useState<string>(''); // Current relative path
-  const [data, setData] = useState<RecordingResponse | null>(null); // Full API response
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<PlayingState | null>(null);
 
   // Bulk Delete State
   const [selectionMode, setSelectionMode] = useState<boolean>(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
 
   const initialLoad = useRef<boolean>(true);
-
-  // Fetch Data
-  const fetchData = async (r: string, p: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await getRecordings({ query: { root: r, path: p } });
-      const res = response.data;
-      if (!res) throw new Error('No data received');
-
-      setData(res);
-
-      if (initialLoad.current) {
-        initialLoad.current = false;
-        if (res.currentRoot && res.currentRoot !== r) {
-          setRoot(res.currentRoot);
-        }
-        if (res.currentPath !== undefined && res.currentPath !== p) {
-          setPath(res.currentPath);
-        }
-      }
-    } catch (err: any) {
-      debugError(formatError(err));
-      setError(err.body?.detail || err.statusText || 'Failed to load recordings');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data = null,
+    error,
+    isPending,
+    isFetching,
+    refetch: refetchRecordings
+  } = useRecordings(root, path);
+  const deleteRecordingsMutation = useDeleteRecordingsMutation();
+  const deleteLoading = deleteRecordingsMutation.isPending;
+  const loading = isPending || (isFetching && !data);
+  const errorMessage = error instanceof Error ? error.message : error ? 'Failed to load recordings' : null;
 
   useEffect(() => {
-    fetchData(root, path);
     setSelectedIds(new Set());
   }, [root, path]);
+
+  useEffect(() => {
+    if (!data || !initialLoad.current) return;
+
+    initialLoad.current = false;
+
+    if (data.currentRoot && data.currentRoot !== root) {
+      setRoot(data.currentRoot);
+    }
+    if (data.currentPath !== undefined && data.currentPath !== path) {
+      setPath(data.currentPath);
+    }
+  }, [data, path, root]);
 
   // Handlers
   const handleRootChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -191,19 +182,11 @@ export default function RecordingsList() {
     });
     if (!ok) return;
 
-    setDeleteLoading(true);
-    try {
-      const ids = Array.from(selectedIds);
-      await Promise.allSettled(
-        ids.map(id => deleteRecording({ path: { recordingId: id } }))
-      );
-      await fetchData(root, path);
-      setSelectionMode(false);
-      setSelectedIds(new Set());
-      toast({ kind: 'success', message: `Deleted ${ids.length} recording(s)` });
-    } finally {
-      setDeleteLoading(false);
-    }
+    const ids = Array.from(selectedIds);
+    await deleteRecordingsMutation.mutateAsync(ids);
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    toast({ kind: 'success', message: `Deleted ${ids.length} recording(s)` });
   };
 
   const formatTime = (ts?: number) => {
@@ -219,7 +202,7 @@ export default function RecordingsList() {
     );
   }
 
-  if (error) {
+  if (errorMessage) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
         <Card>
@@ -227,8 +210,8 @@ export default function RecordingsList() {
             <div className={styles.errorAlert}>
               <h3>Error Loading Recordings</h3>
               <StatusChip state="error" label="ERROR" />
-              <p>{error}</p>
-              <Button variant="secondary" onClick={() => fetchData(root, path)}>Retry</Button>
+              <p>{errorMessage}</p>
+              <Button variant="secondary" onClick={() => void refetchRecordings()}>Retry</Button>
             </div>
           </CardBody>
         </Card>

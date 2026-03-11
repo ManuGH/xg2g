@@ -1,103 +1,131 @@
 .page {
-  padding: 20px;
-  max-width: 1600px;
-  margin: 0 auto;
-  overflow-y: auto;
-  height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 8px 0 24px;
 }
 
-.page h1 {
-  font-size: 22px;
-  font-weight: 700;
-  margin-bottom: 16px;
-  color: var(--text-primary);
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.kicker {
+  margin: 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.subtitle {
+  margin: 10px 0 0;
+  max-width: 64ch;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  grid-auto-rows: minmax(auto, 1fr);
-}
-
-.cardWide {
-  grid-column: span 2;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
 }
 
 .card {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-base);
-  border-radius: 12px;
-  padding: 14px 16px;
-  backdrop-filter: blur(10px);
-  transition: all var(--motion-standard) var(--ease-standard);
+  grid-column: span 4;
 }
 
-.card:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-elevated);
-  transform: translateY(-2px);
+.cardWide {
+  grid-column: span 8;
 }
 
-.card h2 {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  margin-bottom: 10px;
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-base);
+}
+
+.cardEyebrow {
+  margin: 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+}
+
+.cardTitle {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-h2);
 }
 
 .row {
   display: flex;
   justify-content: space-between;
-  padding: 8px 0;
   gap: 16px;
   align-items: flex-start;
 }
 
 .label {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  font-weight: 500;
   flex-shrink: 0;
-  min-width: 90px;
+  min-width: 96px;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
 }
 
 .value {
-  font-size: 12px;
+  min-width: 0;
+  max-width: 100%;
   color: var(--text-primary);
+  font-size: var(--text-sm);
   font-weight: 600;
   text-align: right;
   word-break: break-word;
   overflow-wrap: break-word;
-  max-width: 100%;
-  min-width: 0;
 }
 
 .small {
-  font-size: 10px;
   font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .section {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border-base);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-base);
 }
 
-.section:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+.section h3 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .loading,
 .error {
-  text-align: center;
-  padding: 40px;
-  font-size: 14px;
+  padding: 40px 0;
   color: var(--text-secondary);
+  text-align: center;
 }
 
 .error {
@@ -106,253 +134,189 @@
 
 .tunerGrid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin-top: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .tunerItem {
-  background: var(--bg-elevated);
+  padding: 16px;
   border: 1px solid var(--border-base);
-  border-radius: 8px;
-  padding: 12px 14px;
-  transition: all var(--motion-standard) var(--ease-standard);
-}
-
-.tunerItem:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-elevated);
-  transform: translateY(-1px);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-soft);
 }
 
 .tunerHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .tunerNumber {
-  font-size: 11px;
-  font-weight: 600;
   color: var(--text-tertiary);
-  letter-spacing: 0.5px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
 }
 
 .tunerType {
-  font-size: 11px;
   color: var(--text-secondary);
-  font-weight: 500;
-  text-align: center;
-  padding: 3px 0;
-}
-
-.tunerStatusBadge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 12px;
-  letter-spacing: 0.5px;
-}
-
-.statusLive,
-.statusRecording {
-  background: var(--accent-live-subtle);
-  color: var(--accent-live);
-  border: 1px solid var(--accent-live);
-}
-
-.statusStreaming {
-  background: var(--status-info-subtle);
-  color: var(--status-info);
-  border: 1px solid var(--status-info-border);
-}
-
-.statusIdle {
-  background: var(--status-neutral-subtle);
-  color: var(--text-tertiary);
-  border: 1px solid var(--status-neutral-border);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .ramSummary {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-top: 6px;
+  gap: 14px;
 }
 
 .ramConsumption {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ramUsed {
-  font-weight: 700;
-  font-size: 26px;
-  color: var(--status-info);
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  line-height: 1;
 }
 
 .ramLabel {
-  font-size: 13px;
   color: var(--text-secondary);
-  font-weight: 500;
+  font-size: var(--text-sm);
 }
 
 .ramBarContainer {
   width: 100%;
   height: 10px;
-  background: var(--bg-hover);
-  border-radius: 5px;
   overflow: hidden;
-  position: relative;
-}
-
-.ramBarFill {
-  height: 100%;
-  border-radius: 5px;
-  transition: width 0.5s ease, background 0.3s ease;
-}
-
-.ramNormal {
-  background: var(--status-success);
-}
-
-.ramWarning {
-  background: var(--status-warning);
-}
-
-.ramCritical {
-  background: var(--status-error);
-  box-shadow: var(--shadow-status-error);
-  animation: statusPulse 2s ease-in-out infinite;
+  border: 1px solid var(--border-base);
+  border-radius: 999px;
+  background: var(--surface-muted);
 }
 
 .ramStats {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
 .ramStat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  flex: 1;
+  gap: 4px;
 }
 
 .ramStatLabel {
-  font-size: 10px;
   color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
 }
 
 .ramStatValue {
-  font-size: 12px;
   color: var(--text-primary);
-  font-weight: 700;
   font-family: var(--font-mono);
+  font-size: var(--text-mono-base);
 }
 
 .storageStatusHeader {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 2px;
+  gap: 8px;
   min-width: 0;
 }
 
 .statusDot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
   flex-shrink: 0;
-  margin-right: 4px;
+  border-radius: 999px;
 }
 
 .dotOk {
-  background-color: var(--status-success);
+  background: var(--status-success);
   box-shadow: var(--shadow-status-success);
 }
 
 .dotError {
-  background-color: var(--status-error);
+  background: var(--status-error);
   box-shadow: var(--shadow-status-error);
 }
 
 .dotTimeout {
-  background-color: var(--status-warning);
+  background: var(--status-warning);
   box-shadow: var(--shadow-status-warning);
 }
 
 .dotUnknown {
-  background-color: var(--text-disabled);
+  background: var(--text-disabled);
 }
 
 .tag {
-  font-size: 9px;
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .tagNas {
-  background: var(--status-info-subtle);
   color: var(--status-info);
+  background: var(--status-info-subtle);
   border: 1px solid var(--status-info-border);
 }
 
 .tagIntern {
-  background: var(--status-neutral-subtle);
   color: var(--text-secondary);
+  background: var(--status-neutral-subtle);
   border: 1px solid var(--status-neutral-border);
 }
 
 .storageSubinfo {
-  margin-top: 4px;
-  padding-left: 12px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap: 6px;
+  margin-top: 6px;
+  padding-left: 16px;
 }
 
 .storageStateRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 100%;
   gap: 8px;
 }
 
 .accessBadge {
-  font-size: 9px;
-  font-weight: 800;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: var(--status-neutral-subtle);
-  color: var(--text-tertiary);
   flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  background: var(--status-neutral-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
 }
 
 .accessRw {
-  background: var(--status-success-subtle);
   color: var(--status-success);
+  background: var(--status-success-subtle);
 }
 
 .accessRo {
-  background: var(--status-warning-subtle);
   color: var(--status-warning);
+  background: var(--status-warning-subtle);
 }
 
 .statusText {
-  font-size: 10px;
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -369,9 +333,8 @@
 }
 
 .checkedAt {
-  font-size: 0.65rem;
   color: var(--text-tertiary);
-  margin-top: 2px;
+  font-size: var(--text-xs);
 }
 
 .mono {
@@ -389,3 +352,36 @@
   white-space: nowrap;
 }
 
+@media (max-width: 1200px) {
+  .card,
+  .cardWide {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card,
+  .cardWide {
+    grid-column: span 1;
+  }
+
+  .cardHeader,
+  .row,
+  .storageStateRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .value {
+    text-align: left;
+  }
+
+  .tunerGrid,
+  .ramStats {
+    grid-template-columns: 1fr;
+  }
+}

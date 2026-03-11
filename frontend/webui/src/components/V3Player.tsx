@@ -39,6 +39,16 @@ interface ApiErrorResponse {
   details?: unknown;
 }
 
+function resolvePlaybackDurationSeconds(playbackInfo: PlaybackInfo): number | null {
+  if (typeof playbackInfo.durationMs === 'number' && playbackInfo.durationMs > 0) {
+    return playbackInfo.durationMs / 1000;
+  }
+  if (typeof playbackInfo.durationSeconds === 'number' && playbackInfo.durationSeconds > 0) {
+    return playbackInfo.durationSeconds;
+  }
+  return null;
+}
+
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
   const { token, autoStart, onClose, duration } = props;
@@ -491,7 +501,7 @@ function V3Player(props: V3PlayerProps) {
         setVodStreamMode(mode as any);
 
         // Truth Consumption
-        const playbackDurationSeconds = pInfo.durationSeconds;
+        const playbackDurationSeconds = resolvePlaybackDurationSeconds(pInfo);
         if (playbackDurationSeconds && playbackDurationSeconds > 0) {
           setDurationSeconds(playbackDurationSeconds);
         }

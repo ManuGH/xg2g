@@ -248,6 +248,11 @@
     "saved": "Settings saved automatically",
     "streaming": {
       "title": "Streaming",
+      "policy": {
+        "label": "Delivery Policy",
+        "universal": "Universal (H.264/AAC/fMP4)",
+        "hint": "Strict universal-only delivery path."
+      },
       "profile": {
         "label": "Stream Encoding Profile",
         "hint": "Auto is recommended. Use Safari HEVC (GPU) only for testing on supported devices.",
@@ -293,11 +298,16 @@
         "stats": {
           "total": "Total Channels",
           "scanned": "Scanned",
+          "updated": "Updated",
           "interlaced": "Interlaced"
         },
         "timestamps": {
           "started": "Started",
           "finished": "Finished"
+        },
+        "errors": {
+          "loadStatus": "Scan status could not be loaded.",
+          "start": "Scan could not be started."
         }
       }
     },
@@ -368,30 +378,67 @@
   "system": {
     "pageTitle": "System Information",
     "receiverTitle": "Receiver Information",
+    "subtitle": "Hardware, tuners, storage and runtime from the receiver at a glance.",
+    "sectionOverview": "Overview",
+    "sectionLive": "Signal",
+    "sectionConnectivity": "Connectivity",
+    "sectionStorage": "Storage",
+    "sectionHealth": "Health",
     "hardware": "Hardware",
     "brandModel": "Brand & Model",
+    "chipset": "Chipset",
     "software": "Software",
     "distribution": "Distribution",
     "version": "Version",
     "kernel": "Kernel",
     "webif": "WebIF",
     "tuners": "Tuners",
+    "tunersDetected": "{{count}} detected",
+    "tunerStatus": {
+      "live": "Live",
+      "recording": "Recording",
+      "streaming": "Streaming",
+      "idle": "Idle",
+      "unknown": "Unknown"
+    },
     "network": "Network",
+    "interfaces": "{{count}} interfaces",
+    "ipv4": "IPv4",
+    "ipv6": "IPv6",
     "storage": "Storage & Recordings",
+    "storageLocations": "{{count}} locations",
     "drives": "Drives",
     "internal": "Internal",
+    "nas": "NAS",
     "paths": "Recording Paths",
     "healthLabel": "Health",
     "check": "Check",
+    "runtime": "Runtime",
+    "uptime": "Uptime",
+    "memory": "Memory",
+    "memoryUsed": "used",
+    "memoryLevel": {
+      "normal": "Normal",
+      "warning": "Watch",
+      "critical": "High"
+    },
+    "noInformation": "No information available.",
+    "loadError": "System information could not be loaded: {{error}}",
     "free": "Free",
     "total": "Total",
     "usage": "Usage",
+    "access": {
+      "none": "—",
+      "ro": "RO",
+      "rw": "RW"
+    },
     "status": {
       "mounted": "Connected",
       "unmounted": "Not mounted",
       "timeout": "Hanging (Timeout)",
       "error": "Error",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "skipped": "Skipped"
     }
   },
   "auth": {

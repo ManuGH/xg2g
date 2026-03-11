@@ -2,11 +2,12 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useState, useEffect } from 'react';
-import { getTimers, deleteTimer, getDvrCapabilities, type Timer, type DvrCapabilities } from '../client-ts';
+import { useState } from 'react';
+import type { Timer } from '../client-ts';
 import EditTimerDialog from './EditTimerDialog';
-import { debugError, debugWarn, formatError } from '../utils/logging';
+import { debugWarn } from '../utils/logging';
 import { useUiOverlay } from '../context/UiOverlayContext';
+import { useDeleteTimerMutation, useDvrCapabilities, useTimers } from '../hooks/useServerQueries';
 import { Button } from './ui';
 import styles from './Timers.module.css';
 
@@ -24,50 +25,18 @@ function formatDateTime(ts: number | undefined): string {
 
 export default function Timers() {
   const { confirm, toast } = useUiOverlay();
-  const [timers, setTimers] = useState<Timer[]>([]);
-  const [capabilities, setCapabilities] = useState<DvrCapabilities | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Edit State
   const [editingTimer, setEditingTimer] = useState<Timer | null>(null);
-
-  const fetchTimers = async (): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await getTimers();
-
-      if (result.error) {
-        setError("Failed to load timers. Ensure backend is running and authenticated.");
-      } else if (result.data) {
-        setTimers(result.data.items || []);
-      }
-    } catch (err) {
-      debugError('Failed to load timers:', formatError(err));
-      setError("Failed to load timers. Ensure backend is running and authenticated.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchCapabilities = async (): Promise<void> => {
-    try {
-      const result = await getDvrCapabilities();
-
-      if (result.data) {
-        setCapabilities(result.data);
-      }
-    } catch (err) {
-      debugWarn('Failed to fetch capabilities', formatError(err));
-    }
-  };
-
-  useEffect(() => {
-    fetchTimers();
-    fetchCapabilities();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const {
+    data: timers = [],
+    error,
+    isPending,
+    isFetching,
+    refetch: refetchTimers
+  } = useTimers();
+  const { data: capabilities = null } = useDvrCapabilities();
+  const deleteTimerMutation = useDeleteTimerMutation();
+  const loading = isPending || isFetching;
+  const errorMessage = error ? 'Failed to load timers. Ensure backend is running and authenticated.' : null;
 
   const handleDelete = async (timer: Timer): Promise<void> => {
     const ok = await confirm({
@@ -80,14 +49,8 @@ export default function Timers() {
     if (!ok) return;
 
     try {
-      // Use timerId for v2 delete
       if (timer.timerId) {
-        const result = await deleteTimer({ path: { timerId: timer.timerId } });
-
-        if (result.error) {
-          throw new Error('Failed to delete timer');
-        }
-        fetchTimers();
+        await deleteTimerMutation.mutateAsync(timer.timerId);
       } else {
         debugWarn('No timerId found');
       }
@@ -104,17 +67,17 @@ export default function Timers() {
         <Button
           variant="secondary"
           size="sm"
-          onClick={fetchTimers}
-          disabled={loading}
+          onClick={() => void refetchTimers()}
+          disabled={loading || deleteTimerMutation.isPending}
         >
           Refresh
         </Button>
       </div>
 
       {loading && <div className={styles.loading}>Loading...</div>}
-      {error && <div className={styles.errorBanner} role="alert">{error}</div>}
+      {errorMessage && <div className={styles.errorBanner} role="alert">{errorMessage}</div>}
 
-      {!loading && !error && timers.length === 0 && (
+      {!loading && !errorMessage && timers.length === 0 && (
         <div className={styles.empty}>No timers scheduled.</div>
       )}
 
@@ -148,6 +111,7 @@ export default function Timers() {
                 variant="danger"
                 size="sm"
                 onClick={() => handleDelete(t)}
+                disabled={deleteTimerMutation.isPending}
               >
                 Delete
               </Button>
@@ -161,7 +125,9 @@ export default function Timers() {
           timer={editingTimer}
           capabilities={capabilities || undefined}
           onClose={() => setEditingTimer(null)}
-          onSave={fetchTimers}
+          onSave={async () => {
+            await refetchTimers();
+          }}
         />
       )}
     </div>

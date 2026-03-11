@@ -7,8 +7,8 @@ Last updated: 2026-02-27
 Hard proof that Safari playback is capability-driven and fail-closed:
 
 - no UA-sniffing policy in WebUI
-- native HLS preferred when available
-- hls.js used only when explicitly supported (MSE/MMS path)
+- hls.js preferred when explicitly supported (MSE/MMS path)
+- native HLS used as fallback when hls.js is unavailable
 - autoplay/gesture behavior tested and documented for Live + VOD
 
 ## Source-of-Truth Rules
@@ -21,10 +21,10 @@ Hard proof that Safari playback is capability-driven and fail-closed:
 
 | Platform | Native HLS (`video.canPlayType`) | hls.js path (`Hls.isSupported`) | Policy |
 | --- | --- | --- | --- |
-| iOS Safari (< 17.1) | Usually yes | No/unsupported | Prefer `native_hls`; fail-closed if backend requests hls.js-only mode |
-| iOS Safari (17.1+) | Yes | Possible via MMS/MSE depending on runtime | Prefer `native_hls`; allow `hlsjs` only when `Hls.isSupported()` is true |
+| iOS Safari (< 17.1) | Usually yes | No/unsupported | Use `native_hls`; fail-closed if backend requires unavailable hls.js path |
+| iOS Safari (17.1+) | Yes | Possible via MMS/MSE depending on runtime | Prefer `hlsjs` when `Hls.isSupported()` is true, otherwise fall back to `native_hls` |
 | iOS WKWebView | Runtime-dependent | Runtime-dependent | Same capability-driven rule; no UA branch |
-| macOS Safari | Yes | Runtime-dependent | Prefer backend mode; `hlsjs` requires explicit support |
+| macOS Safari | Yes | Runtime-dependent | Prefer `hlsjs` when supported, otherwise use `native_hls` |
 | Chromium/Firefox baseline | Usually no native m3u8 | Usually yes (MSE) | `hlsjs` path valid when supported |
 
 ## Failure Taxonomy
@@ -98,5 +98,5 @@ Runbook:
 
 ## Notes
 
-- Native HLS remains first preference for iOS due to platform integration and stability.
-- hls.js-on-iOS is treated as opportunistic capability, never as a UA-forced path.
+- WebUI prefers the hls.js/MMS path on Safari whenever the runtime exposes it.
+- Native HLS remains the fallback path for Safari runtimes that do not expose hls.js support.
