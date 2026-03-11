@@ -99,6 +99,16 @@ func TestCanonicalServiceRef(t *testing.T) {
 			in:   "  1:0:1:ABCD:1:1:0:0:0:0:  ",
 			want: "1:0:1:ABCD:1:1:0:0:0:0",
 		},
+		{
+			name: "dvb refs are uppercased",
+			in:   "1:0:1:ef11:abcd:1:c00000:0:0:0:",
+			want: "1:0:1:EF11:ABCD:1:C00000:0:0:0",
+		},
+		{
+			name: "url refs keep case",
+			in:   "http://example.com/AbCd/stream.ts:",
+			want: "http://example.com/AbCd/stream.ts",
+		},
 	}
 
 	for _, tt := range tests {

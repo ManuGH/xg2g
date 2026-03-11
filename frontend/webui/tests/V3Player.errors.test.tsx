@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as sdk from '../src/client-ts';
@@ -278,6 +278,157 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     }
   });
 
+  it('reattaches playback after decode error once backend fallback returns the same session to READY', async () => {
+    let sessionStatusCalls = 0;
+    const mockChannel = { id: 'ch-decode', serviceRef: '1:0:1:decode...' };
+    const playbackUrl = `${window.location.origin}/api/v3/sessions/sess-decode/hls/index.m3u8`;
+
+    const response = (
+      status: number,
+      body: Record<string, unknown> = {},
+      headers: Record<string, string> = {}
+    ) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      url: `${window.location.origin}/api/v3/sessions/sess-decode`,
+      headers: {
+        get: (key: string) => headers[key] ?? headers[key.toLowerCase()] ?? null
+      },
+      json: async () => body,
+      text: async () => JSON.stringify(body)
+    });
+
+    vi.useFakeTimers();
+
+    try {
+      (globalThis.fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+        if (url.includes('/live/stream-info')) {
+          return Promise.resolve(
+            response(200, {
+              mode: 'native_hls',
+              requestId: 'live-decision-errors-decode',
+              playbackDecisionToken: 'live-token-errors-decode',
+              decision: { reasons: ['direct_stream_match'] }
+            })
+          );
+        }
+
+        if (url.includes('/intents')) {
+          const parsed = init?.body ? JSON.parse(String(init.body)) : {};
+          if (parsed?.type === 'stream.start') {
+            return Promise.resolve(response(200, { sessionId: 'sess-decode' }));
+          }
+          return Promise.resolve(response(200, {}));
+        }
+
+        if (url.includes('/sessions/sess-decode/feedback')) {
+          return Promise.resolve(response(202, {}));
+        }
+
+        if (url.includes('/sessions/sess-decode') && !url.includes('/heartbeat')) {
+          sessionStatusCalls++;
+          if (sessionStatusCalls === 1) {
+            return Promise.resolve(
+              response(200, {
+                state: 'READY',
+                playbackUrl,
+                heartbeat_interval: 1
+              })
+            );
+          }
+          if (sessionStatusCalls === 2) {
+            return Promise.resolve(response(200, { state: 'STARTING' }));
+          }
+          return Promise.resolve(
+            response(200, {
+              state: 'READY',
+              playbackUrl,
+              heartbeat_interval: 1
+            })
+          );
+        }
+
+        if (url.includes('/heartbeat')) {
+          return Promise.resolve(response(200, { lease_expires_at: 'later' }));
+        }
+
+        return Promise.resolve(response(200, {}));
+      });
+
+      render(<V3Player autoStart={true} channel={mockChannel as any} />);
+
+      await act(async () => {
+        await flushMicrotasks();
+        await flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+      });
+
+      const video = document.querySelector('video') as HTMLVideoElement | null;
+      expect(video).not.toBeNull();
+      if (!video) return;
+
+      Object.defineProperty(video, 'buffered', {
+        configurable: true,
+        value: {
+          length: 0,
+          start: () => 0,
+          end: () => 0
+        }
+      });
+      Object.defineProperty(video, 'currentSrc', {
+        configurable: true,
+        get: () => playbackUrl
+      });
+      Object.defineProperty(video, 'error', {
+        configurable: true,
+        get: () => ({
+          code: 3,
+          message: 'decode failed'
+        })
+      });
+
+      fireEvent.loadedMetadata(video);
+      const playMock = vi.mocked(HTMLMediaElement.prototype.play as any);
+      const playsBeforeRecovery = playMock.mock.calls.length;
+
+      fireEvent.error(video);
+
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      expect(
+        (globalThis.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/sessions/sess-decode/feedback'))
+      ).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(750);
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+        await flushMicrotasks();
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+        await flushMicrotasks();
+      });
+
+      fireEvent.loadedMetadata(video);
+
+      expect(sessionStatusCalls).toBeGreaterThanOrEqual(3);
+      expect(playMock.mock.calls.length).toBeGreaterThan(playsBeforeRecovery);
+      expect(screen.queryByText(/Video Error:/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/player\.sessionExpired/i)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('tears down on 410 GONE (Session Expired) during heartbeat', async () => {
     let heartbeatCount = 0;
 
@@ -330,6 +481,9 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
       const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]));
       expect(calls.some((u: string) => u.includes('/sessions/sess-123') && !u.includes('/heartbeat'))).toBe(true);
 
+      fireEvent.click(screen.getByText(/player.statsLabel/i));
+      expect(screen.getByText('sess-123')).toBeInTheDocument();
+
       // Trigger first heartbeat (success) + flush the async interval callback.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1100);
@@ -344,6 +498,8 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
 
       // With fake timers enabled, avoid waitFor here (it schedules timeouts).
       expect(screen.getByText(/player.sessionExpired/i)).toBeInTheDocument();
+      expect(screen.queryByText('sess-123')).not.toBeInTheDocument();
+      expect(screen.getByText('Session').closest('div')).toHaveTextContent('Session-');
     } finally {
       vi.useRealTimers();
     }

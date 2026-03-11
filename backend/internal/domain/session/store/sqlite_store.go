@@ -408,6 +408,18 @@ func (s *SqliteStore) GetIdempotency(ctx context.Context, key string) (string, b
 	return sessionID, true, nil
 }
 
+func (s *SqliteStore) DeleteIdempotencyIfMatch(ctx context.Context, idemKey, sessionID string) (bool, error) {
+	res, err := s.DB.ExecContext(ctx, "DELETE FROM idempotency WHERE key = ? AND session_id = ?", idemKey, sessionID)
+	if err != nil {
+		return false, err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
 func (s *SqliteStore) TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {

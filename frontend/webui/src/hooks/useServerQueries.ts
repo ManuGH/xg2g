@@ -39,6 +39,40 @@ export const queryKeys = {
 };
 
 /**
+ * Typed result unwrapper for generated API client results.
+ *
+ * Replaces per-hook `@ts-ignore` patterns with a single, type-safe helper.
+ * Dispatches 'auth-required' for 401 responses to trigger the auth overlay.
+ */
+function unwrapQueryResult<T>(
+  result: { data?: T; error?: unknown; response?: { status?: number } },
+  { silent = false }: { silent?: boolean } = {}
+): T {
+  if (result.error) {
+    const status = (result.response as { status?: number } | undefined)?.status;
+    if (status === 401) {
+      window.dispatchEvent(new Event('auth-required'));
+      throw new Error('Authentication required');
+    }
+
+    // Extract message from error object (may be ApiError or ProblemDetails)
+    const errObj = result.error as Record<string, unknown> | undefined;
+    const message =
+      (errObj && typeof errObj.message === 'string' ? errObj.message : null) ??
+      (errObj && typeof errObj.title === 'string' ? errObj.title : null) ??
+      'Request failed';
+
+    if (silent) {
+      return undefined as unknown as T;
+    }
+
+    throw new Error(message);
+  }
+
+  return result.data as T;
+}
+
+/**
  * useSystemHealth - System Health Status
  *
  * Polling: 10s (Dashboard Banner, Receiver/EPG Status)
@@ -49,18 +83,7 @@ export function useSystemHealth() {
     queryKey: queryKeys.health,
     queryFn: async () => {
       const result = await getSystemHealth();
-
-      if (result.error) {
-        // @ts-ignore - response.status check ist valid zur Runtime
-        if (result.response?.status === 401) {
-          window.dispatchEvent(new Event('auth-required'));
-          throw new Error('Authentication required');
-        }
-        // @ts-ignore - error.message kann zur Runtime existieren
-        throw new Error(result.error.message || 'Failed to fetch health');
-      }
-
-      return result.data as SystemHealth;
+      return unwrapQueryResult<SystemHealth>(result);
     },
     refetchInterval: 10_000, // 10s polling
     staleTime: 8_000, // 8s frisch
@@ -78,13 +101,7 @@ export function useReceiverCurrent() {
     queryKey: queryKeys.receiverCurrent,
     queryFn: async () => {
       const result = await getReceiverCurrent();
-
-      if (result.error) {
-        // Silent fail - UI zeigt "unavailable"
-        return null;
-      }
-
-      return result.data as CurrentServiceInfo | null;
+      return unwrapQueryResult<CurrentServiceInfo | null>(result, { silent: true }) ?? null;
     },
     refetchInterval: 10_000, // 10s polling
     staleTime: 8_000,
@@ -102,13 +119,7 @@ export function useStreams() {
     queryKey: queryKeys.streams,
     queryFn: async () => {
       const result = await getStreams();
-
-      if (result.error) {
-        // Silent fail - UI zeigt [] (keine streams)
-        return [];
-      }
-
-      return (result.data || []) as StreamSession[];
+      return unwrapQueryResult<StreamSession[]>(result, { silent: true }) ?? [];
     },
     refetchInterval: 5_000, // 5s polling
     staleTime: 4_000,
@@ -126,12 +137,7 @@ export function useDvrStatus() {
     queryKey: queryKeys.dvrStatus,
     queryFn: async () => {
       const result = await getDvrStatus();
-
-      if (result.error) {
-        return null;
-      }
-
-      return result.data as { isRecording?: boolean; serviceName?: string } | null;
+      return unwrapQueryResult<{ isRecording?: boolean; serviceName?: string } | null>(result, { silent: true }) ?? null;
     },
     refetchInterval: 30_000, // 30s polling
     staleTime: 25_000,
@@ -149,12 +155,8 @@ export function useLogs(limit: number = 5) {
     queryKey: queryKeys.logs(limit),
     queryFn: async () => {
       const result = await getLogs();
-
-      if (result.error) {
-        throw new Error('Failed to load logs');
-      }
-
-      return ((result.data || []) as LogEntry[]).slice(0, limit);
+      const logs = unwrapQueryResult<LogEntry[]>(result);
+      return (logs || []).slice(0, limit);
     },
     refetchInterval: false, // kein auto-refetch
     staleTime: 30_000,

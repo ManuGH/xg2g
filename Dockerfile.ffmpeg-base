@@ -1,0 +1,56 @@
+# Reusable FFmpeg runtime base image for local and CI iteration.
+# Build once, then point Dockerfile's FFMPEG_BASE_IMAGE at the resulting tag.
+
+FROM debian:trixie-slim AS ffmpeg-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    ca-certificates \
+    yasm \
+    nasm \
+    pkg-config \
+    libx264-dev \
+    libx265-dev \
+    libva-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY backend/scripts/build-ffmpeg.sh .
+ENV TARGET_DIR=/opt/ffmpeg
+RUN ./build-ffmpeg.sh
+
+FROM debian:trixie-slim AS ffmpeg-runtime-base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    XG2G_LOG_FORMAT=json \
+    XG2G_LISTEN=":8088" \
+    FFMPEG_HOME="/opt/ffmpeg" \
+    XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg" \
+    XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    intel-media-va-driver \
+    mesa-va-drivers \
+    libva-drm2 \
+    libva2 \
+    libx264-164 \
+    libx265-215 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 10001 xg2g && \
+    useradd -u 10001 -g xg2g -m -s /sbin/nologin xg2g && \
+    (getent group video || groupadd -g 44 video) && \
+    usermod -aG video xg2g && \
+    mkdir -p /var/lib/xg2g/recordings /var/lib/xg2g/tmp /var/lib/xg2g/sessions /etc/xg2g && \
+    chown -R 10001:10001 /var/lib/xg2g /etc/xg2g
+
+COPY --from=ffmpeg-builder --chown=root:root /opt/ffmpeg /opt/ffmpeg
+COPY --chown=root:root backend/scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
+COPY --chown=root:root backend/scripts/ffprobe-wrapper.sh /usr/local/bin/ffprobe
+RUN chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
+
+LABEL org.opencontainers.image.title="xg2g-ffmpeg-base" \
+    org.opencontainers.image.description="Reusable FFmpeg runtime base for xg2g container builds" \
+    org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"

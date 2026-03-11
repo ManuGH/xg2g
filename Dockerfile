@@ -2,6 +2,7 @@
 ARG BUILD_VERSION=v3.3.0
 ARG BUILD_COMMIT=unknown
 ARG BUILD_DATE=unknown
+ARG FFMPEG_BASE_IMAGE=ffmpeg-runtime-base-internal
 
 # Stage 1: Build FFmpeg pinned version
 FROM debian:trixie-slim AS ffmpeg-builder
@@ -24,6 +25,44 @@ WORKDIR /build
 COPY backend/scripts/build-ffmpeg.sh .
 ENV TARGET_DIR=/opt/ffmpeg
 RUN ./build-ffmpeg.sh
+
+# Stage 1b: Runtime base with FFmpeg and VAAPI dependencies.
+FROM debian:trixie-slim AS ffmpeg-runtime-base-internal
+
+# Set production runtime defaults shared by release and local base images.
+ENV DEBIAN_FRONTEND=noninteractive \
+    XG2G_LOG_FORMAT=json \
+    XG2G_LISTEN=":8088" \
+    FFMPEG_HOME="/opt/ffmpeg" \
+    XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg" \
+    XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"
+
+# Install minimal runtime dependencies for FFmpeg and VAAPI.
+# Include both Intel (iHD) and AMD/older-Intel (Mesa radeonsi/i965) VA-API drivers
+# so the image works regardless of GPU vendor.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    intel-media-va-driver \
+    mesa-va-drivers \
+    libva-drm2 \
+    libva2 \
+    libx264-164 \
+    libx265-215 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create runtime user and writable directories in the reusable base layer.
+RUN groupadd -g 10001 xg2g && \
+    useradd -u 10001 -g xg2g -m -s /sbin/nologin xg2g && \
+    (getent group video || groupadd -g 44 video) && \
+    usermod -aG video xg2g && \
+    mkdir -p /var/lib/xg2g/recordings /var/lib/xg2g/tmp /var/lib/xg2g/sessions /etc/xg2g && \
+    chown -R 10001:10001 /var/lib/xg2g /etc/xg2g
+
+# Copy FFmpeg and wrappers into the reusable runtime base.
+COPY --from=ffmpeg-builder --chown=root:root /opt/ffmpeg /opt/ffmpeg
+COPY --chown=root:root backend/scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
+COPY --chown=root:root backend/scripts/ffprobe-wrapper.sh /usr/local/bin/ffprobe
+RUN chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
 
 # Stage 2: Build WebUI
 FROM node:22-slim AS webui-builder
@@ -54,51 +93,15 @@ ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     cd /app/backend && go build -buildvcs=false -ldflags="-s -w -X main.version=${BUILD_VERSION} -X main.commit=${BUILD_COMMIT} -X main.buildDate=${BUILD_DATE}" -o /xg2g ./cmd/daemon
 
-# Stage 3: Final runtime image
-FROM debian:trixie-slim AS runtime
+# Stage 4: Final runtime image.
+# By default this inherits the internal FFmpeg base stage.
+# Local/CI fast paths can override FFMPEG_BASE_IMAGE with a prebuilt base image tag.
+ARG FFMPEG_BASE_IMAGE=ffmpeg-runtime-base-internal
+FROM ${FFMPEG_BASE_IMAGE} AS runtime
 ARG BUILD_VERSION
 
-# Set production environment defaults
-ENV DEBIAN_FRONTEND=noninteractive \
-    XG2G_LOG_FORMAT=json \
-    FFMPEG_HOME="/opt/ffmpeg" \
-    XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg" \
-    XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"
-
-# Install minimal runtime dependencies for FFmpeg and VAAPI
-# Include both Intel (iHD) and AMD/older-Intel (Mesa radeonsi/i965) VA-API drivers
-# so the image works regardless of GPU vendor.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    intel-media-va-driver \
-    mesa-va-drivers \
-    libva-drm2 \
-    libva2 \
-    libx264-164 \
-    libx265-215 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user (UID 10001 for cloud-native compatibility)
-# Add to video group if it exists for VAAPI device access
-RUN groupadd -g 10001 xg2g && \
-    useradd -u 10001 -g xg2g -m -s /sbin/nologin xg2g && \
-    (getent group video || groupadd -g 44 video) && \
-    usermod -aG video xg2g
-
-# Create necessary directories and set ownership
-RUN mkdir -p /var/lib/xg2g/recordings /var/lib/xg2g/tmp /var/lib/xg2g/sessions /etc/xg2g && \
-    chown -R xg2g:xg2g /var/lib/xg2g /etc/xg2g
-
-# Copy FFmpeg from builder
-COPY --from=ffmpeg-builder --chown=root:root /opt/ffmpeg /opt/ffmpeg
-
-# Install FFmpeg wrappers (scoped LD_LIBRARY_PATH, no global leak)
-COPY --chown=root:root backend/scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
-COPY --chown=root:root backend/scripts/ffprobe-wrapper.sh /usr/local/bin/ffprobe
-RUN chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
-
 # Copy xg2g binary
-COPY --from=app-builder --chown=xg2g:xg2g /xg2g /usr/local/bin/xg2g
+COPY --from=app-builder --chown=10001:10001 /xg2g /usr/local/bin/xg2g
 
 # Switch to non-root user
 USER 10001:10001

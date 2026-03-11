@@ -15,16 +15,16 @@ export function getStoredToken(): string {
   const session = getStorage('session');
   const local = getStorage('local');
 
-  const sessionToken = session?.getItem(TOKEN_KEY);
-  if (sessionToken) {
-    return sessionToken;
+  const localToken = local?.getItem(TOKEN_KEY);
+  if (localToken) {
+    return localToken;
   }
 
-  const legacyToken = local?.getItem(TOKEN_KEY);
-  if (legacyToken) {
-    session?.setItem(TOKEN_KEY, legacyToken);
-    local?.removeItem(TOKEN_KEY);
-    return legacyToken;
+  const legacySessionToken = session?.getItem(TOKEN_KEY);
+  if (legacySessionToken) {
+    local?.setItem(TOKEN_KEY, legacySessionToken);
+    session?.removeItem(TOKEN_KEY);
+    return legacySessionToken;
   }
 
   return '';
@@ -35,11 +35,11 @@ export function setStoredToken(token: string): void {
   const local = getStorage('local');
 
   if (token) {
-    session?.setItem(TOKEN_KEY, token);
+    local?.setItem(TOKEN_KEY, token);
   } else {
-    session?.removeItem(TOKEN_KEY);
+    local?.removeItem(TOKEN_KEY);
   }
-  local?.removeItem(TOKEN_KEY);
+  session?.removeItem(TOKEN_KEY);
 }
 
 export function clearStoredToken(): void {

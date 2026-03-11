@@ -11,19 +11,19 @@ df -h /root /tmp
 ## Preview Cleanup (Safe)
 
 ```bash
-scripts/ops/cleanup-workspace.sh
+backend/scripts/ops/cleanup-workspace.sh
 ```
 
 ## Apply Cleanup
 
 ```bash
-scripts/ops/cleanup-workspace.sh --apply
+backend/scripts/ops/cleanup-workspace.sh --apply
 ```
 
 ## Aggressive Cleanup (`/tmp/xg2g-*` stale dirs)
 
 ```bash
-scripts/ops/cleanup-workspace.sh --apply --aggressive
+backend/scripts/ops/cleanup-workspace.sh --apply --aggressive
 ```
 
 ## Notes
@@ -32,4 +32,3 @@ scripts/ops/cleanup-workspace.sh --apply --aggressive
 - Dirty worktrees are skipped and must be handled manually.
 - Root log artifacts (`build.log`, `full_v3_test*.log`, etc.) are removed.
 - Hygiene gate blocks committed `.worktrees/` paths and transient log artifacts.
-

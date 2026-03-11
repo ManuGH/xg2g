@@ -5,6 +5,7 @@
 package v3
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,11 +20,17 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
 // Responsibility: Handles Session status, debugging, and client feedback/reporting.
 // Non-goals: Initializing streams (see intents).
+
+const (
+	fallbackRestartPollInterval = 50 * time.Millisecond
+	fallbackRestartTimeout      = 5 * time.Second
+)
 
 // handleV3SessionsDebug dumps all sessions from the store (Admin only).
 // Authorization: Requires v3:admin scope (enforced by route middleware).
@@ -234,16 +241,22 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 			return nil
 		}
 
-		// Force switch to Repair Profile (CPU Transcode, Safe Settings)
-		s.Profile.Name = profiles.ProfileRepair
-		s.Profile.TranscodeVideo = true
-		s.Profile.Deinterlace = false // Keep simple
-		s.Profile.HWAccel = ""        // Force CPU
-		s.Profile.VideoCodec = "libx264"
-		s.Profile.VideoCRF = 24
-		s.Profile.VideoMaxWidth = 1280
-		s.Profile.Preset = "veryfast"
-		s.Profile.Container = "fmp4" // Ensure FMP4 for Safari
+		switch s.Profile.Name {
+		case profiles.ProfileSafari:
+			// First recovery step for Safari is the stricter dirty-stream profile.
+			s.Profile = profiles.Resolve(profiles.ProfileSafariDirty, "", s.Profile.DVRWindowSec, nil, false, profiles.HWAccelOff)
+		default:
+			// Escalate all other failures, including safari_dirty re-failures, to repair.
+			s.Profile.Name = profiles.ProfileRepair
+			s.Profile.TranscodeVideo = true
+			s.Profile.Deinterlace = false // Keep simple
+			s.Profile.HWAccel = ""        // Force CPU
+			s.Profile.VideoCodec = "libx264"
+			s.Profile.VideoCRF = 24
+			s.Profile.VideoMaxWidth = 1280
+			s.Profile.Preset = "veryfast"
+			s.Profile.Container = "fmp4" // Ensure FMP4 for Safari
+		}
 
 		s.FallbackReason = fmt.Sprintf("client_report:code=%d", derefInt(req.Code))
 		s.FallbackAtUnix = time.Now().Unix()
@@ -279,20 +292,72 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 		log.L().Error().Err(err).Msg("failed to publish stop event during fallback")
 	}
 
-	// Start new session
-	startEvt := model.StartSessionEvent{
-		Type:          model.EventStartSession,
-		SessionID:     sess.SessionID,
-		ServiceRef:    sess.ServiceRef,
-		CorrelationID: sess.CorrelationID,
-		RequestedAtUN: time.Now().Unix(),
-	}
-
-	if err := bus.Publish(ctx, string(model.EventStartSession), startEvt); err != nil {
-		log.L().Error().Err(err).Msg("failed to publish restart event during fallback")
-	}
+	s.scheduleFallbackRestart(bus, store, sess)
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateStore, sess *model.SessionRecord) {
+	if eventBus == nil || store == nil || sess == nil {
+		return
+	}
+
+	sessionID := sess.SessionID
+	serviceRef := sess.ServiceRef
+	correlationID := sess.CorrelationID
+	restartCtx := s.runtimeContextOrBackground()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(restartCtx, fallbackRestartTimeout)
+		defer cancel()
+
+		if err := waitForTerminalSession(ctx, store, sessionID); err != nil {
+			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to observe terminal state before fallback restart")
+			return
+		}
+
+		startEvt := model.StartSessionEvent{
+			Type:          model.EventStartSession,
+			SessionID:     sessionID,
+			ServiceRef:    serviceRef,
+			CorrelationID: correlationID,
+			RequestedAtUN: time.Now().Unix(),
+		}
+
+		if err := eventBus.Publish(ctx, string(model.EventStartSession), startEvt); err != nil {
+			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to publish restart event during fallback")
+		}
+	}()
+}
+
+func waitForTerminalSession(ctx context.Context, store SessionStateStore, sessionID string) error {
+	ticker := time.NewTicker(fallbackRestartPollInterval)
+	defer ticker.Stop()
+
+	for {
+		sess, err := store.GetSession(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+		if sess == nil || sess.State.IsTerminal() {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Server) runtimeContextOrBackground() context.Context {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.runtimeCtx != nil {
+		return s.runtimeCtx
+	}
+	return context.Background()
 }
 
 func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) (string, *float64, *float64, *float64, *float64) {

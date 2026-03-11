@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/read"
@@ -87,6 +88,12 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
 	// Reverse to show most recent first (Presentation Logic)
 	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
 		entries[i], entries[j] = entries[j], entries[i]
+	}
+
+	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+		if limit, parseErr := strconv.Atoi(rawLimit); parseErr == nil && limit > 0 && limit < len(entries) {
+			entries = entries[:limit]
+		}
 	}
 
 	var resp []LogEntry

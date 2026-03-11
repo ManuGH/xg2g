@@ -30,6 +30,14 @@ type epgResult struct {
 	err       error
 }
 
+type epgFetchClient interface {
+	Bouquets(ctx context.Context) (map[string]string, error)
+	GetBouquetEPG(ctx context.Context, bouquetRef string, days int) ([]openwebif.EPGEvent, error)
+	GetEPG(ctx context.Context, sRef string, days int) ([]openwebif.EPGEvent, error)
+}
+
+const minBouquetFutureCoverage = 6 * time.Hour
+
 // epgAggregator handles common EPG event aggregation logic.
 // It builds service reference maps, matches events to channels,
 // and converts them to XMLTV programmes.
@@ -140,7 +148,7 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 
 // collectEPGProgrammes is the main entry point for EPG collection.
 // It routes to either bouquet-based or per-service fetching based on cfg.EPGSource
-func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
+func collectEPGProgrammes(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Route to appropriate EPG collection strategy
@@ -155,7 +163,7 @@ func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items [
 }
 
 // collectEPGFromBouquet fetches EPG for all channels by iterating over their bouquets
-func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
+func collectEPGFromBouquet(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Identify all unique bouquets from the items
@@ -228,6 +236,19 @@ func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items 
 
 	logger.Info().Int("total_raw_events", len(allEvents)).Msg("Received EPG events from all bouquets")
 
+	now := time.Now().UTC()
+	ok, latestEnd := bouquetEPGCoversFutureWindow(allEvents, now, minBouquetFutureCoverage)
+	if !ok {
+		logEvt := logger.Warn().
+			Int("total_raw_events", len(allEvents)).
+			Dur("required_future_coverage", minBouquetFutureCoverage)
+		if !latestEnd.IsZero() {
+			logEvt = logEvt.Time("latest_end", latestEnd)
+		}
+		logEvt.Msg("Bouquet EPG coverage too short, falling back to per-service")
+		return collectEPGPerService(ctx, client, items, cfg)
+	}
+
 	// Use aggregator to match events to channels and convert to programmes
 	aggregator := newEPGAggregator(ctx, items)
 	srefMap := aggregator.buildSRefMap()
@@ -237,7 +258,7 @@ func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items 
 }
 
 // collectEPGPerService fetches EPG data using per-service requests with bounded concurrency
-func collectEPGPerService(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
+func collectEPGPerService(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Clamp concurrency to sane bounds [1,10]
@@ -318,7 +339,7 @@ func collectEPGPerService(ctx context.Context, client *openwebif.Client, items [
 }
 
 // fetchEPGWithRetry attempts to fetch EPG data with exponential backoff retry
-func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, sRef string, cfg config.AppConfig) ([]openwebif.EPGEvent, error) {
+func fetchEPGWithRetry(ctx context.Context, client epgFetchClient, sRef string, cfg config.AppConfig) ([]openwebif.EPGEvent, error) {
 	if sRef == "" {
 		return nil, fmt.Errorf("invalid empty sRef")
 	}
@@ -343,6 +364,35 @@ func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, sRef strin
 	}
 
 	return nil, fmt.Errorf("EPG request failed after %d retries: %w", cfg.EPGRetries, lastErr)
+}
+
+func bouquetEPGCoversFutureWindow(events []openwebif.EPGEvent, now time.Time, minFutureCoverage time.Duration) (bool, time.Time) {
+	if len(events) == 0 {
+		return false, time.Time{}
+	}
+
+	now = now.UTC()
+	var latestEndUnix int64
+	for _, event := range events {
+		endUnix := event.Begin + int64(event.Duration)
+		if endUnix > latestEndUnix {
+			latestEndUnix = endUnix
+		}
+	}
+
+	if latestEndUnix == 0 {
+		return false, time.Time{}
+	}
+
+	latestEnd := time.Unix(latestEndUnix, 0).UTC()
+	if !latestEnd.After(now) {
+		return false, latestEnd
+	}
+	if minFutureCoverage > 0 && latestEnd.Before(now.Add(minFutureCoverage)) {
+		return false, latestEnd
+	}
+
+	return true, latestEnd
 }
 
 // extractSRefFromStreamURL extracts service reference from stream URL

@@ -2473,6 +2473,14 @@ paths:
       operationId: getLogs
       tags:
         - system
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Maximum number of most-recent log entries to return.
       responses:
         "200":
           description: Recent log entries

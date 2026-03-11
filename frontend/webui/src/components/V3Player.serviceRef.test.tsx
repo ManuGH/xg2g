@@ -136,6 +136,192 @@ describe('V3Player ServiceRef Input', () => {
     expect(body.params?.playback_decision_id).toBeUndefined();
   });
 
+  it('prefers hlsjs for desktop Safari live playback when hls.js is available', async () => {
+    const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    const webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      'webkitSupportsPresentationMode'
+    );
+
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn()
+    });
+
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation(function (this: HTMLMediaElement, type: string) {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      return '';
+    });
+
+    try {
+      const props = { autoStart: false } as unknown as V3PlayerProps;
+      render(<V3Player {...props} />);
+
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: '1:0:1:7777:888:999:0:0:0:0:' } });
+      fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+
+      await waitFor(() => {
+        expect(globalThis.fetch).toHaveBeenCalled();
+      });
+
+      const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
+      expect(intentCall).toBeDefined();
+      const [, options] = intentCall;
+      const body = JSON.parse(options.body);
+      expect(body.params?.playback_mode).toBe('hlsjs');
+    } finally {
+      if (webkitSupportsPresentationModeDescriptor) {
+        Object.defineProperty(
+          HTMLVideoElement.prototype,
+          'webkitSupportsPresentationMode',
+          webkitSupportsPresentationModeDescriptor
+        );
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
+      }
+
+      if (maxTouchPointsDescriptor) {
+        Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+      }
+    }
+  });
+
+  it('tears down the previous native live stream before starting the next one', async () => {
+    const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    const webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      'webkitSupportsPresentationMode'
+    );
+    const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
+    const playMock = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const pauseMock = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn()
+    });
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation(function (this: HTMLMediaElement, type: string) {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      return originalCanPlayType.call(this, type);
+    });
+
+    let streamStartCount = 0;
+    const response = (status: number, body: Record<string, unknown> = {}) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
+      json: vi.fn().mockResolvedValue(body),
+      text: vi.fn().mockResolvedValue(JSON.stringify(body))
+    });
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(response(200, {
+          mode: 'native_hls',
+          requestId: `live-decision-${streamStartCount + 1}`,
+          playbackDecisionToken: `live-token-${streamStartCount + 1}`,
+          decision: { reasons: ['native_hls'] }
+        }));
+      }
+      if (url.includes('/intents')) {
+        const parsed = init?.body ? JSON.parse(String(init.body)) : {};
+        if (parsed?.type === 'stream.start') {
+          streamStartCount += 1;
+          return Promise.resolve(response(200, { sessionId: `sid-live-${streamStartCount}` }));
+        }
+        return Promise.resolve(response(200, {}));
+      }
+      if (url.includes('/sessions/sid-live-1') && !url.includes('/heartbeat')) {
+        return Promise.resolve(response(200, {
+          id: 'sid-live-1',
+          state: 'READY',
+          mode: 'LIVE',
+          playbackUrl: 'http://example.com/live-1.m3u8',
+          heartbeat_interval: 600
+        }));
+      }
+      if (url.includes('/sessions/sid-live-2') && !url.includes('/heartbeat')) {
+        return Promise.resolve(response(200, {
+          id: 'sid-live-2',
+          state: 'READY',
+          mode: 'LIVE',
+          playbackUrl: 'http://example.com/live-2.m3u8',
+          heartbeat_interval: 600
+        }));
+      }
+      return Promise.resolve(response(200, {}));
+    });
+
+    try {
+      const props = { autoStart: false } as unknown as V3PlayerProps;
+      const { container } = render(<V3Player {...props} />);
+
+      const input = screen.getByRole('textbox');
+      const startButton = screen.getByRole('button', { name: /common\.startStream/i });
+
+      fireEvent.change(input, { target: { value: '1:0:1:1111:222:333:0:0:0:0:' } });
+      fireEvent.click(startButton);
+
+      await waitFor(() => {
+        expect(
+          (globalThis.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/sessions/sid-live-1'))
+        ).toBe(true);
+      });
+
+      const pausesBeforeRestart = pauseMock.mock.calls.length;
+      fireEvent.change(input, { target: { value: '1:0:1:4444:555:666:0:0:0:0:' } });
+      fireEvent.click(startButton);
+
+      await waitFor(() => {
+        const stopCalls = (globalThis.fetch as any).mock.calls.filter((call: any[]) => {
+          if (!String(call[0]).includes('/intents')) return false;
+          const body = JSON.parse(String(call[1]?.body ?? '{}'));
+          return body.type === 'stream.stop' && body.sessionId === 'sid-live-1';
+        });
+        expect(stopCalls.length).toBeGreaterThan(0);
+      });
+      await waitFor(() => {
+        expect(
+          (globalThis.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/sessions/sid-live-2'))
+        ).toBe(true);
+      });
+
+      expect(pauseMock.mock.calls.length).toBeGreaterThan(pausesBeforeRestart);
+
+      const video = container.querySelector('video') as HTMLVideoElement | null;
+      expect(video).toBeTruthy();
+      if (!video) return;
+
+      fireEvent.loadedMetadata(video);
+      expect(playMock).toHaveBeenCalledTimes(1);
+    } finally {
+      if (webkitSupportsPresentationModeDescriptor) {
+        Object.defineProperty(
+          HTMLVideoElement.prototype,
+          'webkitSupportsPresentationMode',
+          webkitSupportsPresentationModeDescriptor
+        );
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
+      }
+
+      if (maxTouchPointsDescriptor) {
+        Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+      }
+    }
+  });
+
   it('does not call live APIs when serviceRef is empty after trimming', async () => {
     const props = { autoStart: false } as unknown as V3PlayerProps;
     render(<V3Player {...props} />);

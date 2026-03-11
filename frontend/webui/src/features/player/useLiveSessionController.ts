@@ -335,6 +335,8 @@ export function useLiveSessionController({
         } else if (res.status === 410) {
           debugError('[V3Player][Heartbeat] Session expired (410)');
           window.clearInterval(timerId);
+          clearSessionLeaseState();
+          setPlaybackMode('UNKNOWN');
           setStatus('error');
           setError(t('player.sessionExpired') || 'Session expired. Please restart.');
           if (videoRef.current) {
@@ -343,6 +345,8 @@ export function useLiveSessionController({
         } else if (res.status === 404) {
           debugWarn('[V3Player][Heartbeat] Session not found (404)');
           window.clearInterval(timerId);
+          clearSessionLeaseState();
+          setPlaybackMode('UNKNOWN');
           setStatus('error');
           setError(t('player.sessionNotFound') || 'Session no longer exists.');
           if (videoRef.current) {
@@ -358,7 +362,7 @@ export function useLiveSessionController({
       debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
       window.clearInterval(timerId);
     };
-  }, [apiBase, authHeaders, heartbeatInterval, sessionId, setError, setStatus, t, videoRef]);
+  }, [apiBase, authHeaders, clearSessionLeaseState, heartbeatInterval, sessionId, setError, setPlaybackMode, setStatus, t, videoRef]);
 
   useEffect(() => {
     setClientAuthToken(token);

@@ -18,6 +18,7 @@ import (
 )
 
 const admissionLeaseTTL = 30 * time.Second
+const startReplayRecoveryAttempts = 3
 
 // Service handles intent processing independent of HTTP transport.
 type Service struct {
@@ -89,14 +90,10 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	reqProfileID := "universal"
 	requestedPlaybackMode := normalize.Token(intent.Params["playback_mode"])
 	if requestedPlaybackMode != "" {
-		playbackDecisionToken, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.Params)
+		_, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.Params)
 		if tokenErr != nil {
 			s.deps.IncLivePlaybackKey(keyLabel, resultLabel)
 			return nil, &Error{Kind: ErrorInvalidInput, Message: tokenErr.Error()}
-		}
-		if !s.deps.VerifyLivePlaybackDecision(playbackDecisionToken, intent.PrincipalID, intent.ServiceRef, requestedPlaybackMode) {
-			s.deps.IncLivePlaybackKey(keyLabel, "rejected_invalid")
-			return nil, &Error{Kind: ErrorInvalidInput, Message: "playback_mode is not attested by /live/stream-info"}
 		}
 		s.deps.IncLivePlaybackKey(keyLabel, resultLabel)
 		mappedProfile, mapErr := mapPlaybackModeToProfile(requestedPlaybackMode)
@@ -238,33 +235,44 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
 	session.ContextData = requestParams
 
-	existingID, exists, err := store.PutSessionWithIdempotency(ctx, session, idempotencyKey, admissionLeaseTTL)
-	if err != nil {
-		intent.Logger.Error().Err(err).Msg("failed to persist intent")
-		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
-		return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to persist intent", Cause: err}
-	}
-
-	if exists {
-		s.deps.RecordReplay(string(model.IntentTypeStreamStart))
-		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "replay")
-		intent.Logger.Info().Str("existing_sid", existingID).Msg("idempotent replay detected")
-
-		replayCorrelation := intent.CorrelationID
-		existingSession, getErr := store.GetSession(ctx, existingID)
-		if getErr == nil && existingSession != nil && existingSession.CorrelationID != "" {
-			replayCorrelation = existingSession.CorrelationID
-		} else if getErr == nil && existingSession != nil && existingSession.ContextData != nil {
-			if cid := existingSession.ContextData["correlationId"]; cid != "" {
-				replayCorrelation = cid
-			}
+	persisted := false
+	for attempt := 0; attempt < startReplayRecoveryAttempts; attempt++ {
+		existingID, exists, err := store.PutSessionWithIdempotency(ctx, session, idempotencyKey, admissionLeaseTTL)
+		if err != nil {
+			intent.Logger.Error().Err(err).Msg("failed to persist intent")
+			s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+			return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to persist intent", Cause: err}
+		}
+		if !exists {
+			persisted = true
+			break
 		}
 
-		return &Result{
-			SessionID:     existingID,
-			Status:        "idempotent_replay",
-			CorrelationID: replayCorrelation,
-		}, nil
+		replay, retry, replayErr := resolveStartReplay(ctx, store, idempotencyKey, existingID, intent.CorrelationID)
+		if replayErr != nil {
+			intent.Logger.Error().Err(replayErr).Str("existing_sid", existingID).Msg("failed to reconcile stale idempotent replay")
+			s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+			return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to reconcile idempotent replay", Cause: replayErr}
+		}
+		if replay != nil {
+			s.deps.RecordReplay(string(model.IntentTypeStreamStart))
+			s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "replay")
+			intent.Logger.Info().Str("existing_sid", existingID).Msg("idempotent replay detected")
+			return &Result{
+				SessionID:     existingID,
+				Status:        "idempotent_replay",
+				CorrelationID: replay.correlationID,
+			}, nil
+		}
+		if retry {
+			intent.Logger.Warn().Str("existing_sid", existingID).Int("attempt", attempt+1).Msg("discarded stale idempotent replay for terminal session")
+		}
+	}
+	if !persisted {
+		err := fmt.Errorf("stale idempotency mapping persisted after %d attempts", startReplayRecoveryAttempts)
+		intent.Logger.Error().Err(err).Str("idem_key", idempotencyKey).Msg("failed to refresh stale idempotency mapping")
+		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+		return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to refresh stale intent mapping", Cause: err}
 	}
 
 	evt := model.StartSessionEvent{
@@ -331,7 +339,12 @@ func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) st
 
 func mapPlaybackModeToProfile(mode string) (string, error) {
 	switch mode {
-	case "native_hls", "hlsjs", "direct_mp4":
+	case "native_hls":
+		// native_hls should use the normal Safari profile first:
+		// progressive inputs stay remux/copy, interlaced or unknown inputs transcode.
+		// More aggressive recovery (safari_dirty / repair) is handled after runtime errors.
+		return profiles.ProfileSafari, nil
+	case "hlsjs", "direct_mp4":
 		return "high", nil
 	case "transcode":
 		return profiles.ProfileH264FMP4, nil

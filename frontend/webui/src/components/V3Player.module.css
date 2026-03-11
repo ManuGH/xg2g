@@ -15,7 +15,10 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: var(--bg-overlay);
+  background:
+    radial-gradient(circle at 18% 20%, rgba(74, 144, 245, 0.12), transparent 24%),
+    radial-gradient(circle at 82% 18%, rgba(245, 159, 10, 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(7, 10, 17, 0.94), rgba(7, 10, 17, 0.86));
   z-index: 9999;
   justify-content: center;
   align-items: center;
@@ -27,8 +30,7 @@
   left: 0;
   right: 0;
   margin: 0;
-  padding: 24px;
-  background: var(--bg-overlay);
+  padding: 32px 24px calc(24px + var(--sab));
   display: flex;
   gap: 16px;
   z-index: 50;
@@ -39,6 +41,20 @@
     opacity var(--motion-standard) var(--ease-standard),
     transform var(--motion-standard) var(--ease-standard);
   transform: translateY(8px);
+}
+
+.controlsHeader::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(7, 10, 17, 0.16) 22%, rgba(7, 10, 17, 0.72) 100%);
+  pointer-events: none;
+}
+
+.controlsHeader > * {
+  position: relative;
+  z-index: 1;
 }
 
 .container:hover:not(.userIdle) .controlsHeader,
@@ -64,7 +80,9 @@
 .videoWrapper {
   width: 100%;
   height: 100%;
-  background: var(--bg-base);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.03), transparent 30%),
+    var(--bg-base);
   position: relative;
   display: flex;
   align-items: center;
@@ -86,8 +104,17 @@
   z-index: 40;
   pointer-events: none;
   font-family: var(--font-heading);
-  font-size: var(--text-h1);
+  font-size: clamp(1.1rem, 1.7vw, 1.5rem);
   color: var(--text-primary);
+  padding: 12px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    rgba(11, 16, 26, 0.5);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
   opacity: 0;
   transition: opacity var(--motion-standard);
 }
@@ -107,6 +134,16 @@
   flex-direction: column;
   align-items: center;
   gap: 16px;
+  min-width: min(360px, calc(100% - 32px));
+  padding: 18px 20px;
+  border-radius: 24px;
+  border: 1px solid var(--border-elevated);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    rgba(11, 16, 26, 0.62);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: var(--shadow-shell);
 }
 
 .spinner {
@@ -125,7 +162,7 @@
   top: 24px;
   right: 72px;
   z-index: 60;
-  width: 300px;
+  width: min(340px, calc(100vw - 40px));
 }
 
 .statsGrid {
@@ -167,16 +204,21 @@
   bottom: 100px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-elevated);
-  border: 1px solid var(--status-error);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    rgba(35, 14, 18, 0.84);
+  border: 1px solid rgba(248, 113, 113, 0.36);
   padding: 16px 24px;
-  border-radius: var(--radius-md);
+  border-radius: 22px;
   z-index: 100;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-width: 320px;
   max-width: 90vw;
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: var(--shadow-shell);
 }
 
 .errorMain {
@@ -224,25 +266,36 @@
   position: absolute;
   top: 24px;
   right: 24px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-base);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    var(--surface-shell);
+  border: 1px solid var(--border-elevated);
   color: var(--text-primary);
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 200;
   font-size: 18px;
-  transition: all var(--motion-standard);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  transition:
+    background var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
 }
 
 .closeButton:hover {
-  background: var(--status-error);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
+    rgba(113, 29, 38, 0.88);
   color: var(--text-primary);
-  transform: rotate(90deg);
+  border-color: rgba(248, 113, 113, 0.36);
+  transform: translateY(-1px);
 }
 
 .vodControls {
@@ -250,11 +303,16 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  background: var(--bg-elevated);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    var(--surface-panel);
   padding: 12px 20px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-base);
+  border-radius: 24px;
+  border: 1px solid var(--border-elevated);
   min-width: 300px;
+  backdrop-filter: blur(22px) saturate(155%);
+  -webkit-backdrop-filter: blur(22px) saturate(155%);
+  box-shadow: var(--shadow-card);
 }
 
 .seekControls {
@@ -265,6 +323,14 @@
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+.seekButtons > * {
+  min-width: 0;
+}
+
+.playPauseButton {
+  flex-shrink: 0;
 }
 
 .seekSliderGroup {
@@ -294,11 +360,11 @@
 
 .vodSlider {
   flex: 1;
-  height: 4px;
+  height: 6px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--border-base);
-  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
   outline: none;
   cursor: pointer;
 }
@@ -306,11 +372,13 @@
 .vodSlider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--accent-action);
+  width: 16px;
+  height: 16px;
+  background: linear-gradient(180deg, #ffffff, #d5def6);
   border-radius: 50%;
   cursor: pointer;
+  border: 2px solid var(--accent-action);
+  box-shadow: 0 4px 14px rgba(74, 144, 245, 0.32);
   transition: transform var(--motion-standard);
 }
 
@@ -322,59 +390,85 @@
   width: min(520px, 100%);
 }
 
+.utilityControls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .volumeControl {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-base);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    var(--surface-panel-soft);
+  border-radius: 18px;
+  border: 1px solid var(--border-elevated);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
 }
 
 .volumeButton {
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 18px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color var(--motion-standard);
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 14px;
+  transition:
+    color var(--motion-standard) var(--ease-standard),
+    background var(--motion-standard) var(--ease-standard);
 }
 
 .volumeButton:hover {
   color: var(--accent-action);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .volumeSlider {
   width: 80px;
-  height: 4px;
+  height: 6px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--border-base);
-  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
   outline: none;
 }
 
 .volumeSlider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
-  background: var(--text-secondary);
+  width: 14px;
+  height: 14px;
+  background: #f5f5f7;
+  border: 2px solid rgba(74, 144, 245, 0.52);
   border-radius: 50%;
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(74, 144, 245, 0.24);
 }
 
 .liveButton {
-  background: var(--bg-elevated);
-  border: 1px solid var(--accent-live);
+  min-height: 44px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    rgba(245, 159, 10, 0.08);
+  border: 1px solid rgba(245, 159, 10, 0.46);
   color: var(--text-primary);
-  padding: 4px 12px;
-  border-radius: var(--radius-sm);
+  padding: 0 14px;
+  border-radius: 14px;
   cursor: pointer;
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
 }
 
 .liveButtonActive {
@@ -385,7 +479,7 @@
 .resumeOverlay {
   position: absolute;
   inset: 0;
-  background: var(--overlay-backdrop);
+  background: linear-gradient(180deg, rgba(7, 10, 17, 0.5), rgba(7, 10, 17, 0.72));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -395,13 +489,18 @@
 
 .resumeContent {
   width: min(520px, 100%);
-  background: var(--bg-overlay);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    var(--surface-shell-strong);
   border: 1px solid var(--border-elevated);
-  border-radius: var(--radius-lg);
-  padding: 18px;
+  border-radius: 28px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--shadow-shell);
 }
 
 .resumeContent h3 {
@@ -420,14 +519,84 @@
 /* Mobile Adjustments */
 @media (max-width: 768px) {
   .controlsHeader {
-    padding: 16px;
+    padding: 16px 16px calc(16px + var(--sab));
     opacity: 1;
     transform: none;
+    gap: 12px;
+    align-items: stretch;
   }
 
   .statsOverlay {
     right: 16px;
-    top: 72px;
+    top: 88px;
     width: calc(100% - 32px);
+  }
+
+  .overlayTitle {
+    top: calc(16px + var(--sat));
+    left: 16px;
+    right: 72px;
+    padding: 10px 14px;
+    font-size: 1rem;
+  }
+
+  .closeButton {
+    top: calc(16px + var(--sat));
+    right: 16px;
+  }
+
+  .vodControls,
+  .seekControls {
+    min-width: 0;
+    width: 100%;
+    padding: 14px;
+    gap: 12px;
+    border-radius: 22px;
+  }
+
+  .seekControls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .seekButtons {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .seekButtons > * {
+    flex: 1 1 0;
+  }
+
+  .playPauseButton {
+    align-self: center;
+  }
+
+  .seekSliderGroup {
+    min-width: 0;
+  }
+
+  .vodTime,
+  .vodTimeTotal {
+    min-width: 48px;
+    font-size: 11px;
+  }
+
+  .utilityControls {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .volumeControl {
+    flex: 1 1 100%;
+    min-width: 0;
+    padding: 8px 12px;
+  }
+
+  .volumeSlider {
+    width: 100%;
+    min-width: 72px;
   }
 }

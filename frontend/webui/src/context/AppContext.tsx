@@ -3,13 +3,21 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { getServices, getServicesBouquets, getSystemConfig } from '../client-ts';
-import { setClientAuthToken } from '../lib/clientWrapper';
+import { ClientRequestError, mapApiError, setClientAuthToken } from '../lib/clientWrapper';
 import type { AppContextType, AppView } from '../types/app-context';
 import type { Service, Bouquet } from '../client-ts';
 import { debugError, debugLog, formatError } from '../utils/logging';
 import { clearStoredToken, getStoredToken, setStoredToken } from '../utils/tokenStorage';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+function throwOnClientError(result: { error?: unknown; response?: { status?: number } }): void {
+  if (!result.error) {
+    return;
+  }
+
+  throw new ClientRequestError(mapApiError(result.error, result.response?.status));
+}
 
 export function useAppContext(): AppContextType {
   const context = useContext(AppContext);
@@ -70,6 +78,7 @@ export function AppProvider({ children }: AppProviderProps) {
       const response = await getServices(
         bouquetName ? { query: { bouquet: bouquetName } } : undefined
       );
+      throwOnClientError(response);
       const data = response.data || [];
       setChannels(data);
       setSelectedBouquet(bouquetName);
@@ -90,6 +99,7 @@ export function AppProvider({ children }: AppProviderProps) {
     try {
       debugLog('[DEBUG] Fetching bouquets...');
       const response = await getServicesBouquets();
+      throwOnClientError(response);
       const bouquetData = response.data || [];
       setBouquets(bouquetData);
       debugLog('[DEBUG] Bouquets loaded. Count:', bouquetData.length);
@@ -112,6 +122,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const checkConfigAndLoad = useCallback(async (): Promise<void> => {
     try {
       const response = await getSystemConfig();
+      throwOnClientError(response);
       const config = response.data;
       debugLog('[DEBUG] System config loaded');
 
@@ -124,11 +135,11 @@ export function AppProvider({ children }: AppProviderProps) {
       await loadBouquetsAndChannels();
     } catch (err) {
       debugError('[DEBUG] Failed to check config:', formatError(err));
-      debugLog('[DEBUG] Config check failed. Defaulting to Setup Mode.');
-      setView('settings');
-
       if ((err as { status?: number }).status === 401) {
         setShowAuth(true);
+      } else {
+        debugLog('[DEBUG] Config check failed. Defaulting to Setup Mode.');
+        setView('settings');
       }
     } finally {
       setInitializing(false);

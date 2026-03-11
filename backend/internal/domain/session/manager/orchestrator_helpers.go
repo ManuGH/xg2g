@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/rs/zerolog"
 )
@@ -41,6 +42,13 @@ type finalOutcome struct {
 	Reason      model.ReasonCode
 	DetailDebug string
 }
+
+const (
+	defaultPlaylistReadyTimeout         = 60 * time.Second
+	defaultSafariPlaylistReadyTimeout   = 30 * time.Second
+	defaultRecoveryPlaylistReadyTimeout = 20 * time.Second
+	defaultVODPlaylistReadyTimeout      = 2 * time.Minute
+)
 
 func (o *Orchestrator) resolveSession(ctx context.Context, e model.StartSessionEvent) (string, *model.SessionRecord, context.Context, error) {
 	correlationID := e.CorrelationID
@@ -292,18 +300,11 @@ func (o *Orchestrator) waitForReady(
 	handle ports.RunHandle,
 	playlistPath string,
 	vodMode bool,
-	repairAttempted bool,
 	startTime time.Time,
 	logger zerolog.Logger,
 	ttfpRecorded *bool,
 ) (ready bool, reason model.ReasonCode, detail string) {
-	playlistReadyTimeout := 60 * time.Second
-	if repairAttempted {
-		playlistReadyTimeout = 20 * time.Second
-	}
-	if vodMode {
-		playlistReadyTimeout = 2 * time.Minute
-	}
+	playlistReadyTimeout := o.playlistReadyTimeout(currentProfileSpec, vodMode)
 	playlistPollInterval := 200 * time.Millisecond
 	playlistDeadline := time.Now().Add(playlistReadyTimeout)
 	ticker := time.NewTicker(playlistPollInterval)
@@ -313,7 +314,7 @@ func (o *Orchestrator) waitForReady(
 		Str("session_id", e.SessionID).
 		Str("service_ref", e.ServiceRef).
 		Str("profile", currentProfileSpec.Name).
-		Bool("repair_mode", repairAttempted).
+		Bool("recovery_mode", isStartupRecoveryProfile(currentProfileSpec.Name)).
 		Dur("timeout", playlistReadyTimeout).
 		Msg("waiting for playlist to become ready")
 
@@ -340,6 +341,38 @@ func (o *Orchestrator) waitForReady(
 		case <-ticker.C:
 			// continue
 		}
+	}
+}
+
+func (o *Orchestrator) playlistReadyTimeout(currentProfileSpec model.ProfileSpec, vodMode bool) time.Duration {
+	if vodMode {
+		return defaultVODPlaylistReadyTimeout
+	}
+	if isStartupRecoveryProfile(currentProfileSpec.Name) {
+		return defaultIfZero(o.RecoveryPlaylistReadyTimeout, defaultRecoveryPlaylistReadyTimeout)
+	}
+	if strings.EqualFold(strings.TrimSpace(currentProfileSpec.Name), profiles.ProfileSafari) {
+		return defaultIfZero(o.SafariPlaylistReadyTimeout, defaultSafariPlaylistReadyTimeout)
+	}
+	return defaultIfZero(o.PlaylistReadyTimeout, defaultPlaylistReadyTimeout)
+}
+
+func defaultIfZero(v, fallback time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return fallback
+}
+
+func isStartupRecoveryProfile(profileName string) bool {
+	normalized := strings.TrimSpace(profileName)
+	switch {
+	case strings.EqualFold(normalized, profiles.ProfileSafariDirty):
+		return true
+	case strings.EqualFold(normalized, profiles.ProfileRepair):
+		return true
+	default:
+		return false
 	}
 }
 
@@ -498,7 +531,13 @@ func playlistSegments(content []byte) []string {
 func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSessionEvent, sessionCtx *sessionContext, slot int) error {
 	o.recordTransition(model.SessionUnknown, model.SessionStarting)
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
-		if r.State.IsTerminal() || r.State == model.SessionStopping {
+		if r.State.IsTerminal() {
+			if !canRestartTerminalFallback(r) {
+				return fmt.Errorf("session state %s, aborting start", r.State)
+			}
+			resetForFallbackRestart(r, time.Now())
+		}
+		if r.State == model.SessionStopping {
 			return fmt.Errorf("session state %s, aborting start", r.State)
 		}
 		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvStartRequested}, nil, false, time.Now())
@@ -518,6 +557,36 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 		return err
 	}
 	return nil
+}
+
+func canRestartTerminalFallback(r *model.SessionRecord) bool {
+	if r == nil {
+		return false
+	}
+	return r.FallbackReason != "" || r.FallbackAtUnix > 0
+}
+
+func resetForFallbackRestart(r *model.SessionRecord, now time.Time) {
+	baseline := lifecycle.NewSessionRecord(now)
+	createdAtUnix := r.CreatedAtUnix
+
+	r.State = baseline.State
+	r.PipelineState = baseline.PipelineState
+	r.Reason = baseline.Reason
+	r.ReasonDetailCode = baseline.ReasonDetailCode
+	r.ReasonDetailDebug = ""
+	r.UpdatedAtUnix = baseline.UpdatedAtUnix
+	if createdAtUnix > 0 {
+		r.CreatedAtUnix = createdAtUnix
+	} else {
+		r.CreatedAtUnix = baseline.CreatedAtUnix
+	}
+	r.LastAccessUnix = 0
+	r.LastHeartbeatUnix = 0
+	r.StopReason = ""
+	r.LatestSegmentAt = time.Time{}
+	r.LastPlaylistAccessAt = time.Time{}
+	r.PlaylistPublishedAt = time.Time{}
 }
 
 func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSessionEvent) error {
@@ -550,6 +619,7 @@ func (o *Orchestrator) stopPipelineHandle(ctx context.Context, handle ports.RunH
 	defer stopCancel()
 	_ = o.Pipeline.Stop(stopCtx, handle)
 }
+
 
 func (o *Orchestrator) runExecutionLoop(
 	ctx context.Context,
@@ -639,7 +709,6 @@ func (o *Orchestrator) runExecutionLoop(
 
 	return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
 }
-
 func (o *Orchestrator) finalizeDeferred(
 	ctx context.Context,
 	event model.StartSessionEvent,
@@ -656,10 +725,6 @@ func (o *Orchestrator) finalizeDeferred(
 	errForOutcome := cause.Error
 	if errForOutcome == nil && cause.ContextCancelled {
 		errForOutcome = context.Canceled
-	}
-	reason, _, detailDebug := lifecycle.ClassifyReason(errForOutcome)
-	if reason == model.RLeaseBusy && detailDebug == DedupLeaseHeldDetail {
-		return
 	}
 	var outcome finalOutcome
 

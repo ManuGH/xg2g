@@ -19,7 +19,7 @@ systemctl enable --now xg2g
 Production compose is deterministic. For local development, apply the override:
 `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
 
-Drift guard: `scripts/verify-systemd-unit.sh` must pass before release.
+Drift guard: `backend/scripts/verify-systemd-unit.sh` must pass before release.
 Canonical unit is `docs/ops/xg2g.service`; no repo-root `xg2g.service` is permitted.
 
 Host verification (deploy-time, fail-closed):

@@ -36,9 +36,9 @@ Operational playbooks, incident management, and deployment invariants.
 
 High-level architectural diagrams and service boundary definitions.
 
-### [archive/](archive/)
+### [dev/](dev/)
 
-Legacy documentation and superseded ADRs. Reference only.
+Developer setup notes and local workflow guidance.
 
 ---
 

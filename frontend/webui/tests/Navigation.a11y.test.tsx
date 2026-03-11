@@ -20,4 +20,13 @@ describe('Navigation semantics', () => {
     fireEvent.click(screen.getByRole('button', { name: /nav\.dashboard/i }));
     expect(onViewChange).toHaveBeenCalledWith('dashboard');
   });
+
+  it('renders a logout action when provided', () => {
+    const onLogout = vi.fn();
+
+    render(<Navigation activeView="epg" onViewChange={vi.fn()} onLogout={onLogout} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /nav\.logout/i }));
+    expect(onLogout).toHaveBeenCalledTimes(1);
+  });
 });

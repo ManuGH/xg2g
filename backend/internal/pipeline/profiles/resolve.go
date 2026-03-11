@@ -146,9 +146,6 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			canonical = ProfileHigh
 		}
 	}
-	if canonical == ProfileSafari && envBool("XG2G_SAFARI_DIRTY_DEFAULT", false) {
-		canonical = ProfileSafariDirty
-	}
 
 	// REMOVED: Server-side Safari profile override
 	// Frontend now controls profile switching explicitly based on fullscreen state

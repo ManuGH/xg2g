@@ -2,12 +2,21 @@
 // Zero React dependencies, zero legacy client imports
 
 import { getEpg, getServices, getServicesBouquets, getTimers } from '../../client-ts';
+import { ClientRequestError, mapApiError } from '../../lib/clientWrapper';
 import type { EpgEvent, EpgChannel, EpgBouquet, Timer } from './types';
 import { debugError } from '../../utils/logging';
 
 // ============================================================================
 // API Fetch Functions (client-ts SDK only)
 // ============================================================================
+
+function throwOnClientError(result: { error?: unknown; response?: { status?: number } }): void {
+  if (!result.error) {
+    return;
+  }
+
+  throw new ClientRequestError(mapApiError(result.error, result.response?.status));
+}
 
 /**
  * Fetch all bouquets from the API
@@ -16,11 +25,11 @@ import { debugError } from '../../utils/logging';
 export async function fetchBouquets(): Promise<EpgBouquet[]> {
   const result = await getServicesBouquets();
 
-  if (result.error || !result.data) {
-    throw new Error('Failed to fetch bouquets');
+  if (result.error) {
+    throwOnClientError(result);
   }
 
-  return result.data.map(mapSdkBouquet);
+  return (result.data || []).map(mapSdkBouquet);
 }
 
 /**
@@ -32,8 +41,8 @@ export async function fetchChannels(bouquetName?: string): Promise<EpgChannel[]>
     query: bouquetName ? { bouquet: bouquetName } : undefined
   });
 
-  if (result.error || !result.data) {
-    throw new Error('Failed to fetch channels');
+  if (result.error) {
+    throwOnClientError(result);
   }
 
   return (result.data || []).map(mapSdkChannel);
@@ -60,12 +69,16 @@ export async function fetchEpgEvents(params: {
     signal: params.signal
   });
 
-  if (result.error || !result.data) {
-    throw new Error('Failed to fetch EPG events');
+  if (result.error) {
+    throwOnClientError(result);
   }
 
 
   const data = result.data;
+  if (data == null) {
+    return [];
+  }
+
   // API returns direct array for EPG, unlike TimerList.
   // We handle both legacy object-wrapped and new direct array for robustness,
   // but typed strictly to avoid unchecked casting.

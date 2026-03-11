@@ -39,9 +39,28 @@ interface ChannelHeaderProps {
 function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
   const { t } = useTranslation();
   const logo = channel?.logoUrl || channel?.logoUrl || channel?.logo;
+  const isPlayable = Boolean(onPlay);
+
+  const triggerPlay = (): void => {
+    if (onPlay) {
+      onPlay(channel);
+    }
+  };
 
   return (
-    <div className={styles.channel}>
+    <div
+      className={[styles.channel, isPlayable ? styles.channelPlayable : null].filter(Boolean).join(' ')}
+      onClick={isPlayable ? triggerPlay : undefined}
+      onKeyDown={isPlayable ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          triggerPlay();
+        }
+      } : undefined}
+      role={isPlayable ? 'button' : undefined}
+      tabIndex={isPlayable ? 0 : undefined}
+      aria-label={isPlayable ? t('epg.playStream') : undefined}
+    >
       <div className={styles.logo}>
         {logo ? (
           <img
@@ -66,7 +85,7 @@ function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
           className={styles.play}
           onClick={(e) => {
             e.stopPropagation();
-            onPlay(channel);
+            triggerPlay();
           }}
           title={t('epg.playStream')}
           size="sm"

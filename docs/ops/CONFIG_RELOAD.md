@@ -57,7 +57,7 @@ This ensures that the audit trail is preserved even if the central logging syste
 
 ## Governance Gates
 
-1. **AST Gate**: `scripts/verify-hot-reload-governance.go` verifies the `registry.go` annotations.
+1. **AST Gate**: `backend/scripts/verify-hot-reload-governance.go` verifies the `registry.go` annotations.
 2. **Semantic Normalization**: `config.Diff` canonicalizes slices (`nil` is treated as `[]string{}`) and CSV strings, preventing spurious restarts for empty fields.
 3. **Status Precision**:
     - `400 Bad Request`: Input validation or invalid level string.

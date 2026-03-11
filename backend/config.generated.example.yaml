@@ -3,7 +3,7 @@
 api:
   allowedOrigins: []
   disableLegacyTokenSources: true
-  listenAddr: :8088
+  listenAddr: 127.0.0.1:8088
   playbackDecisionKeyId: ""
   playbackDecisionPreviousKeys: []
   playbackDecisionRotationWindow: 10m

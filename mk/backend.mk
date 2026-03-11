@@ -2,7 +2,7 @@
 # Backend Targets
 # ===================================================================================================
 
-.PHONY: backend-build backend-run generate-config verify-config generate verify-generate ui-build backend-dev dev
+.PHONY: backend-build backend-run generate-config verify-config generate verify-generate ui-build backend-dev backend-dev-ui webui-dev dev-ui dev
 
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
@@ -44,13 +44,37 @@ generate-config: ## Generate config surfaces from registry
 
 backend-dev: ## Run daemon locally for development (once)
 	@echo "Starting xg2g in development mode..."
+	@mkdir -p $(BUILD_DIR)
 	@cd $(BACKEND_DIR) && \
-	if [ ! -f .env ]; then \
-		cp .env.example .env; \
+	if [ ! -f ../.env ]; then \
+		cp ../.env.example ../.env; \
 	fi && \
-	set -a; . ./.env; set +a; \
+	set -a; . ../.env; set +a; \
 	$(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o ../$(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
 	../$(BUILD_DIR)/$(BINARY_NAME)
+
+backend-dev-ui: ## Run daemon locally with dev-tagged UI proxy on http://localhost:8080/ui/
+	@echo "Starting xg2g backend with dev UI proxy on http://localhost:8080/ui/ ..."
+	@mkdir -p $(BUILD_DIR)
+	@cd $(BACKEND_DIR) && \
+	if [ ! -f ../.env ]; then \
+		cp ../.env.example ../.env; \
+	fi && \
+	set -a; . ../.env; set +a; \
+	export XG2G_LISTEN="$${XG2G_LISTEN:-:8080}"; \
+	export XG2G_UI_DEV_PROXY_URL="$${XG2G_UI_DEV_PROXY_URL:-http://127.0.0.1:5173}"; \
+	$(GO) build -tags=dev $(BUILD_FLAGS) $(LDFLAGS) -o ../$(BUILD_DIR)/$(BINARY_NAME)-dev ./cmd/daemon && \
+	../$(BUILD_DIR)/$(BINARY_NAME)-dev
+
+webui-dev: ## Start the Vite dev server for fast WebUI iteration
+	@cd $(FRONTEND_DIR)/webui && \
+	if [ ! -d node_modules ]; then \
+		npm ci; \
+	fi && \
+	npm run dev
+
+dev-ui: ## Run Vite in the background and the dev-tagged backend in the foreground
+	@./run_ui_dev.sh
 
 dev: ## Run development loop
 	@./run_dev.sh

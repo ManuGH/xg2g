@@ -8,7 +8,16 @@
     "files": "Files",
     "logs": "Logs",
     "playerSettings": "Settings",
+    "system": "System",
+    "logout": "Logout",
+    "more": "More",
     "config": "Setup",
+    "sectionControl": "Control",
+    "sectionBrowse": "Browse",
+    "sectionSystem": "System",
+    "controlSurfaces": "Control surfaces",
+    "sheetEyebrow": "Navigation",
+    "sheetTitle": "Control surfaces",
     "cards": {
       "boxStreaming": {
         "title": "Receiver Connection",
@@ -19,6 +28,14 @@
         "outputLabel": "Connected Devices"
       }
     }
+  },
+  "app": {
+    "initializing": "Initializing..."
+  },
+  "auth": {
+    "requiredTitle": "Authentication Required",
+    "tokenPlaceholder": "Enter API Token",
+    "authenticate": "Authenticate"
   },
   "common": {
     "language": "Language",
@@ -68,6 +85,8 @@
     "seekForward60s": "Forward 60s",
     "seekForward15m": "Forward 15m",
     "goLive": "Go live",
+    "fullscreenLabel": "Fullscreen",
+    "exitFullscreenLabel": "Exit fullscreen",
     "unmute": "Unmute",
     "mute": "Mute",
     "pipTitle": "Picture-in-Picture (p)",
@@ -117,6 +136,75 @@
     "streamUrlMissing": "Stream URL missing",
     "sessionExpired": "Session expired. Please restart.",
     "sessionNotFound": "Session no longer exists."
+  },
+  "dashboard": {
+    "heroStreamingMoment": "Streaming moment",
+    "heroControlDeck": "Control deck",
+    "heroStreamingSummary": "Streaming {{count}} active session(s) from the receiver bridge.",
+    "heroStandbySummary": "Wake the receiver to recover live context and channel metadata.",
+    "heroNextUp": "Next on the receiver: {{title}}",
+    "heroDefaultSummary": "Launch live TV, timers, recordings, and diagnostics from a single control surface.",
+    "connectedDevices": "Connected devices",
+    "liveViewerSessions": "live viewer sessions",
+    "readyForFirstSession": "ready for the first session",
+    "receiverLink": "Receiver link",
+    "healthy": "Healthy",
+    "standby": "Standby",
+    "lastSync": "Last sync {{time}}",
+    "recorder": "Recorder",
+    "active": "Active",
+    "idle": "Idle",
+    "noActiveRecordingTask": "No active recording task",
+    "metricStreaming": "Streaming",
+    "metricReceiver": "Receiver",
+    "metricEpg": "EPG",
+    "metricRecorder": "Recorder",
+    "liveTraffic": "Live traffic",
+    "activePlaybackSessions": "active playback sessions across the bridge",
+    "noActiveSessions": "no active sessions right now",
+    "allChannelsHaveData": "all channels currently have data",
+    "channelsMissingGuideData": "channels still missing guide data",
+    "online": "Online",
+    "synced": "Synced",
+    "recorderIdle": "Recorder idle",
+    "recordingActive": "Recording active",
+    "recorderUnknown": "Recorder unknown",
+    "systemHealthy": "System healthy",
+    "healthUnknown": "Health unknown",
+    "systemDegraded": "System degraded",
+    "guideSynced": "Guide synced",
+    "guidePartial": "Guide partial",
+    "guideOffline": "Guide offline",
+    "diagnostics": "Diagnostics",
+    "activeStreams": "Active streams",
+    "sessions": "{{count}} sessions",
+    "noSessions": "No sessions",
+    "noActiveStreams": "No active streams",
+    "startPlaybackHint": "Start playback from TV/EPG or Recordings and the session diagnostics will appear here.",
+    "signal": "Signal",
+    "receiverAndGuideHealth": "Receiver and guide health",
+    "receiverLabel": "Receiver",
+    "connected": "Connected",
+    "lastSyncLabel": "Last sync",
+    "guideGaps": "Guide gaps",
+    "none": "None",
+    "missing": "{{count}} missing",
+    "versionLabel": "Version",
+    "feed": "Feed",
+    "recentLogs": "Recent logs",
+    "noRecentLogs": "No recent log events.",
+    "loadingLogs": "Loading logs...",
+    "onReceiverNow": "On receiver now",
+    "receiverContext": "Receiver context",
+    "readyForPlayback": "Ready for live playback and control actions.",
+    "upNext": "Up next: {{title}}",
+    "timeNever": "Never",
+    "timeJustNow": "Just now",
+    "timeMinutesAgo": "{{count}}m ago",
+    "timeHoursAgo": "{{count}}h ago",
+    "logLevelError": "Error",
+    "logLevelWarn": "Warn",
+    "logLevelInfo": "Info"
   },
   "epg": {
     "pageTitle": "EPG Overview ({{count}})",
@@ -305,5 +393,10 @@
       "error": "Error",
       "unknown": "Unknown"
     }
+  },
+  "auth": {
+    "title": "Authentication Required",
+    "placeholder": "Enter API Token",
+    "submit": "Authenticate"
   }
 }

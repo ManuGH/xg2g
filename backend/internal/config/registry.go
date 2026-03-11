@@ -127,7 +127,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "enigma2.probeSize", Env: "XG2G_E2_PROBE_SIZE", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "5M"},
 		{Path: "enigma2.preflightTimeout", Env: "XG2G_E2_PREFLIGHT_TIMEOUT", FieldPath: "Enigma2.PreflightTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		// --- API ---
-		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: ":8088"},
+		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: "127.0.0.1:8088"},
 		{Path: "server.readTimeout", Env: "XG2G_SERVER_READ_TIMEOUT", FieldPath: "Server.ReadTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
 		{Path: "server.writeTimeout", Env: "XG2G_SERVER_WRITE_TIMEOUT", FieldPath: "Server.WriteTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 0 * time.Second},
 		{Path: "server.idleTimeout", Env: "XG2G_SERVER_IDLE_TIMEOUT", FieldPath: "Server.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 120 * time.Second},

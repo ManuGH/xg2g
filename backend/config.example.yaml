@@ -137,7 +137,7 @@ api:
 
   # API server listen address
   # ENV: XG2G_LISTEN
-  listenAddr: ":8088"
+  listenAddr: "127.0.0.1:8088"
 
 # Network Policy Configuration
 network: {}
@@ -202,7 +202,7 @@ picons:
 #   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"sports.tv\" ORDER BY bouquet"
 # api:
 #   token: "your-secure-token-here"
-#   listenAddr: ":8088"
+#   listenAddr: "127.0.0.1:8088"
 # metrics:
 #   enabled: true
 #   listenAddr: ":9091"

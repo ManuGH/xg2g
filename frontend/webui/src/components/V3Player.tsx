@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
-import { postRecordingPlaybackInfo } from '../client-ts';
+import {
+  postRecordingPlaybackInfo,
+  type PlaybackInfo
+} from '../client-ts';
 import { getApiBaseUrl } from '../lib/clientWrapper';
 import { telemetry } from '../services/TelemetryService';
 import type {
@@ -18,6 +21,15 @@ import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
 import { debugError, debugLog, debugWarn } from '../utils/logging';
+import { detectPreferredCodecs } from '../utils/codecDetection';
+import {
+  PlayerError,
+  readResponseBody,
+  extractCapHashFromDecisionToken,
+  canUseDesktopWebKitFullscreen,
+  shouldForceNativeMobileHls,
+  shouldPreferNativeWebKitHls
+} from '../utils/playerHelpers';
 import styles from './V3Player.module.css';
 
 interface ApiErrorResponse {
@@ -25,192 +37,6 @@ interface ApiErrorResponse {
   message?: string;
   requestId?: string;
   details?: unknown;
-}
-
-type PreferredCodec = 'av1' | 'hevc' | 'h264';
-
-let cachedPreferredCodecs: PreferredCodec[] | null = null;
-
-function hasTouchInput(): boolean {
-  try {
-    return typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints || 0) > 0;
-  } catch {
-    return false;
-  }
-}
-
-function canUseDesktopWebKitFullscreen(videoEl?: VideoElementRef): boolean {
-  if (!videoEl) return false;
-  try {
-    const webkitVideo = videoEl as unknown as {
-      webkitEnterFullscreen?: unknown;
-    };
-    return typeof webkitVideo.webkitEnterFullscreen === 'function' && !hasTouchInput();
-  } catch {
-    return false;
-  }
-}
-
-function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
-  if (!videoEl) return false;
-  try {
-    const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
-    if (!hasNativeHls) return false;
-
-    // Feature detection for mobile WebKit controls (no UA sniffing).
-    const webkitVideo = videoEl as unknown as {
-      webkitEnterFullscreen?: unknown;
-      webkitSupportsPresentationMode?: unknown;
-      webkitSetPresentationMode?: unknown;
-    };
-    const hasWebKitFullscreen = typeof webkitVideo.webkitEnterFullscreen === 'function';
-    const hasWebKitPresentationMode =
-      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
-      typeof webkitVideo.webkitSetPresentationMode === 'function';
-
-    // Desktop Safari can expose some WebKit fullscreen APIs.
-    // Restrict native-mobile forcing to touch devices to keep desktop behavior stable.
-    return (hasWebKitFullscreen || hasWebKitPresentationMode) && hasTouchInput();
-  } catch {
-    return false;
-  }
-}
-
-async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): Promise<PreferredCodec[]> {
-  if (cachedPreferredCodecs) return cachedPreferredCodecs;
-
-  const supports = async (contentType: string): Promise<boolean> => {
-    try {
-      const mc = (navigator as any)?.mediaCapabilities;
-      if (mc?.decodingInfo) {
-        const baseVideo = {
-          contentType,
-          width: 1920,
-          height: 1080,
-          bitrate: 5_000_000,
-          framerate: 30
-        };
-
-        try {
-          const info = await mc.decodingInfo({ type: 'media-source', video: baseVideo });
-          if (info?.supported) return true;
-        } catch {
-          // Some platforms only accept type='file'; try fallback below.
-        }
-
-        try {
-          const info = await mc.decodingInfo({ type: 'file', video: baseVideo });
-          if (info?.supported) return true;
-        } catch {
-          // ignore
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    try {
-      if (typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(contentType)) return true;
-    } catch {
-      // ignore
-    }
-
-    try {
-      const v = videoEl || (typeof document !== 'undefined' ? document.createElement('video') : null);
-      if (v && v.canPlayType(contentType) !== '') return true;
-    } catch {
-      // ignore
-    }
-
-    return false;
-  };
-
-  const supportsAny = async (contentTypes: string[]): Promise<boolean> => {
-    const results = await Promise.all(contentTypes.map((ct) => supports(ct)));
-    return results.some(Boolean);
-  };
-
-  const av1Types = ['video/mp4; codecs="av01.0.05M.08"'];
-  const hevcTypes = [
-    'video/mp4; codecs="hvc1.1.6.L120.90"',
-    'video/mp4; codecs="hev1.1.6.L120.90"'
-  ];
-  const h264Types = ['video/mp4; codecs="avc1.42E01E"'];
-
-  const out: PreferredCodec[] = [];
-
-  if (await supportsAny(av1Types)) out.push('av1');
-  if (await supportsAny(hevcTypes)) out.push('hevc');
-
-  // Always include H.264 as a safe fallback.
-  // If the platform surprisingly doesn't report support, keep it anyway: server will still fall back if needed.
-  if (out.length === 0) {
-    // Still probe H.264 once, but don't block the fallback list on it.
-    await supportsAny(h264Types);
-  }
-  out.push('h264');
-
-  cachedPreferredCodecs = out;
-  return out;
-}
-
-class PlayerError extends Error {
-  details?: unknown;
-
-  constructor(message: string, details?: unknown) {
-    super(message);
-    this.name = 'PlayerError';
-    this.details = details;
-    Object.setPrototypeOf(this, PlayerError.prototype);
-  }
-}
-
-async function readResponseBody(res: Response): Promise<{ json: any | null; text: string | null }> {
-  const maybeRes = res as unknown as { text?: () => Promise<string>; json?: () => Promise<any> };
-  try {
-    if (typeof maybeRes.text === 'function') {
-      const text = await maybeRes.text();
-      if (!text) return { json: null, text: '' };
-      try {
-        return { json: JSON.parse(text), text };
-      } catch {
-        return { json: null, text };
-      }
-    }
-  } catch {
-    // fall through to json fallback
-  }
-
-  try {
-    if (typeof maybeRes.json === 'function') {
-      const json = await maybeRes.json();
-      return {
-        json,
-        text: json == null ? '' : JSON.stringify(json)
-      };
-    }
-  } catch {
-    // ignore and fall through
-  }
-  return { json: null, text: null };
-}
-
-function extractCapHashFromDecisionToken(token: string): string | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length < 2) return null;
-    const payloadB64 = parts[1];
-    if (!payloadB64) return null;
-    const normalized = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    const payload = JSON.parse(atob(padded));
-    if (payload && typeof payload.capHash === 'string' && payload.capHash) {
-      return payload.capHash;
-    }
-  } catch {
-    // Decision token parsing is best-effort; server enforces token validity.
-  }
-  return null;
 }
 
 function V3Player(props: V3PlayerProps) {
@@ -251,6 +77,7 @@ function V3Player(props: V3PlayerProps) {
   );
   const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
   const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>(null);
+  const [activeHlsEngine, setActiveHlsEngine] = useState<'native' | 'hlsjs' | null>(null);
 
   // P3-4: Truth State
   const [canSeek, setCanSeek] = useState(true);
@@ -262,8 +89,17 @@ function V3Player(props: V3PlayerProps) {
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
 
-  const sleep = (ms: number): Promise<void> =>
-    new Promise(resolve => setTimeout(resolve, ms));
+  const sleep = useCallback((ms: number): Promise<void> => (
+    new Promise(resolve => setTimeout(resolve, ms))
+  ), []);
+
+  const resolvePreferredHlsEngine = useCallback((): 'native' | 'hlsjs' => {
+    const hlsJsSupported = Hls.isSupported();
+    if (shouldPreferNativeWebKitHls(videoRef.current, hlsJsSupported)) {
+      return 'native';
+    }
+    return hlsJsSupported ? 'hlsjs' : 'native';
+  }, [videoRef]);
 
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
@@ -272,7 +108,6 @@ function V3Player(props: V3PlayerProps) {
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
 
   const {
-    sessionId,
     sessionIdRef,
     authHeaders,
     reportError,
@@ -299,11 +134,14 @@ function V3Player(props: V3PlayerProps) {
     seekableStart,
     seekableEnd,
     isPip,
+    canTogglePiP,
     isFullscreen,
+    canToggleFullscreen,
     isPlaying,
     isIdle,
     volume,
     isMuted,
+    canAdjustVolume,
     stats,
     setStats,
     windowDuration,
@@ -319,6 +157,7 @@ function V3Player(props: V3PlayerProps) {
     seekBy,
     seekWhenReady,
     togglePlayPause,
+    toggleFullscreen,
     enterDVRMode,
     togglePiP,
     toggleMute,
@@ -338,6 +177,7 @@ function V3Player(props: V3PlayerProps) {
     canSeek,
     startUnix,
     setStatus,
+    allowNativeFullscreen: activeHlsEngine === 'native',
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen
   });
@@ -364,7 +204,8 @@ function V3Player(props: V3PlayerProps) {
     lastDecodedRef,
     t,
     reportError,
-    shouldForceNativeMobileHls,
+    waitForSessionReady,
+    shouldPreferNativeHls: shouldPreferNativeWebKitHls,
     setStats,
     setStatus,
     setError,
@@ -400,20 +241,66 @@ function V3Player(props: V3PlayerProps) {
     activeRecordingRef.current = null;
     setActiveRecordingId(null);
     setVodStreamMode(null);
+    setActiveHlsEngine(null);
   }, []);
 
-  const prepareFreshPlayback = useCallback((mode: 'LIVE' | 'VOD') => {
+  const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
     clearVodRetry();
     clearVodFetch();
     clearSessionLeaseState();
+    resetChromeState();
+  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
+
+  const hasActivePlayback = useCallback((): boolean => {
+    const videoEl = videoRef.current;
+    return Boolean(
+      sessionIdRef.current ||
+      activeRecordingRef.current ||
+      hlsRef.current ||
+      videoEl?.currentSrc ||
+      videoEl?.getAttribute('src')
+    );
+  }, [hlsRef, sessionIdRef, videoRef]);
+
+  const teardownActivePlayback = useCallback(async (): Promise<void> => {
+    const activeSessionId = sessionIdRef.current;
+    const hadActivePlayback = hasActivePlayback();
+
+    clearPlaybackSelection();
+    clearVodRetry();
+    clearVodFetch();
+    if (hadActivePlayback) {
+      resetPlaybackEngine();
+      await sleep(75);
+    }
+    if (activeSessionId) {
+      await sendStopIntent(activeSessionId);
+    }
+    clearSessionLeaseState();
+    resetChromeState();
+  }, [
+    clearPlaybackSelection,
+    clearSessionLeaseState,
+    clearVodFetch,
+    clearVodRetry,
+    hasActivePlayback,
+    resetChromeState,
+    resetPlaybackEngine,
+    sendStopIntent,
+    sessionIdRef,
+    sleep,
+  ]);
+
+  const prepareFreshPlayback = useCallback((mode: 'LIVE' | 'VOD') => {
     setDurationSeconds(requestedDuration);
     setPlaybackMode(mode);
-  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, requestedDuration]);
+  }, [requestedDuration]);
 
   const gatherPlaybackCapabilities = useCallback(async () => {
     const video = videoRef.current as HTMLVideoElement | null;
     const preferredCodecs = await detectPreferredCodecs(video);
+    const hlsJsSupported = Hls.isSupported();
 
     const supportsNativeHls = (() => {
       if (!video) return false;
@@ -433,18 +320,18 @@ function V3Player(props: V3PlayerProps) {
       }
     })();
 
-    const forceNativeMobile = shouldForceNativeMobileHls(video as VideoElementRef);
+    const preferNativeHls = shouldPreferNativeWebKitHls(video as VideoElementRef, hlsJsSupported);
 
     const hlsEngines: Array<'native' | 'hlsjs'> = [];
     if (supportsNativeHls) {
       hlsEngines.push('native');
     }
-    if (Hls.isSupported() && !forceNativeMobile) {
+    if (hlsJsSupported && !preferNativeHls) {
       hlsEngines.push('hlsjs');
     }
 
     const container = ['mp4', 'ts'];
-    if (Hls.isSupported() && !forceNativeMobile) {
+    if (hlsJsSupported && !preferNativeHls) {
       container.push('fmp4');
     }
 
@@ -466,17 +353,18 @@ function V3Player(props: V3PlayerProps) {
   }, []);
 
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
-    clearPlaybackSelection();
+    if (hasActivePlayback()) {
+      await teardownActivePlayback();
+    } else {
+      clearPlaybackState();
+    }
     activeRecordingRef.current = id;
     setActiveRecordingId(id);
-    clearVodRetry();
-    clearVodFetch();
-    clearSessionLeaseState();
-    resetPlaybackEngine();
     setStatus('building');
     setError(null);
     setErrorDetails(null);
     setShowErrorDetails(false);
+    setTraceId('-');
     setPlaybackMode('VOD');
 
     let abortController: AbortController | null = null;
@@ -491,7 +379,7 @@ function V3Player(props: V3PlayerProps) {
       try {
         const maxMetaRetries = 20;
         const requestCaps = await gatherPlaybackCapabilities();
-        let pInfo: any | undefined;
+        let pInfo: PlaybackInfo | undefined;
 
         for (let i = 0; i < maxMetaRetries; i++) {
           if (activeRecordingRef.current !== id) return;
@@ -556,7 +444,13 @@ function V3Player(props: V3PlayerProps) {
           });
           throw new Error('Backend decision missing mode');
         }
-        mode = pInfo.mode;
+        // Map backend 'hls' to local preferred HLS engine if needed
+        const rawMode = pInfo.mode;
+        if (rawMode === 'hls') {
+          mode = resolvePreferredHlsEngine() === 'native' ? 'native_hls' : 'hlsjs';
+        } else {
+          mode = rawMode as any; // fall back to other modes or deny
+        }
 
         if (!['native_hls', 'hlsjs', 'direct_mp4', 'transcode', 'deny'].includes(mode)) {
           telemetry.emit('ui.failclosed', {
@@ -568,7 +462,7 @@ function V3Player(props: V3PlayerProps) {
         if (mode === 'deny') {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.mode.deny',
-            reason: pInfo.reason || pInfo.decision?.reasons?.[0] || 'unknown'
+            reason: pInfo.decisionReason || pInfo.decision?.reasons?.[0] || 'unknown'
           });
           throw new Error(t('player.playbackDenied'));
         }
@@ -597,12 +491,7 @@ function V3Player(props: V3PlayerProps) {
         setVodStreamMode(mode as any);
 
         // Truth Consumption
-        const playbackDurationSeconds =
-          typeof pInfo.durationSeconds === 'number' && pInfo.durationSeconds > 0
-            ? pInfo.durationSeconds
-            : typeof pInfo.durationMs === 'number' && pInfo.durationMs > 0
-              ? pInfo.durationMs / 1000
-              : null;
+        const playbackDurationSeconds = pInfo.durationSeconds;
         if (playbackDurationSeconds && playbackDurationSeconds > 0) {
           setDurationSeconds(playbackDurationSeconds);
         }
@@ -624,10 +513,10 @@ function V3Player(props: V3PlayerProps) {
             setShowResumeOverlay(true);
           }
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (activeRecordingRef.current !== id) return;
         setStatus('error');
-        setError(e.message || t('player.serverError'));
+        setError(e instanceof Error ? e.message : t('player.serverError'));
         return;
       }
 
@@ -638,6 +527,7 @@ function V3Player(props: V3PlayerProps) {
           await waitForDirectStream(streamUrl);
           if (activeRecordingRef.current !== id) return;
           setStatus('buffering');
+          setActiveHlsEngine(null);
           playDirectMp4(streamUrl);
           return;
         } catch (err) {
@@ -649,7 +539,6 @@ function V3Player(props: V3PlayerProps) {
       }
 
       if (mode === 'native_hls' || mode === 'hlsjs' || mode === 'transcode') {
-        const forceNativeMobile = shouldForceNativeMobileHls(videoRef.current);
         const controller = new AbortController();
         abortController = controller;
         vodFetchRef.current = controller;
@@ -678,21 +567,22 @@ function V3Player(props: V3PlayerProps) {
 
           if (activeRecordingRef.current !== id) return;
           setStatus('buffering');
-          const engine: 'native' | 'hlsjs' = mode === 'native_hls' || forceNativeMobile ? 'native' : 'hlsjs';
+          const engine: 'native' | 'hlsjs' = mode === 'native_hls' ? 'native' : resolvePreferredHlsEngine();
           playHls(streamUrl, engine);
+          setActiveHlsEngine(engine);
         } finally {
           if (vodFetchRef.current === controller) vodFetchRef.current = null;
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (activeRecordingRef.current !== id) return;
       debugError(err);
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
       setStatus('error');
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie, gatherPlaybackCapabilities]);
+  }, [apiBase, authHeaders, clearPlaybackState, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, playDirectMp4, playHls, resolvePreferredHlsEngine, sleep, t, teardownActivePlayback, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -712,13 +602,19 @@ function V3Player(props: V3PlayerProps) {
 
       if (src) {
         debugLog('[V3Player] startStream: src path', { hasSrc: true });
+        if (hasActivePlayback()) {
+          await teardownActivePlayback();
+        } else {
+          clearPlaybackState();
+        }
         prepareFreshPlayback(requestedDuration ? 'VOD' : 'LIVE');
         setStatus('buffering');
-        playHls(src);
+        setTraceId('-');
+        const srcEngine = resolvePreferredHlsEngine();
+        playHls(src, srcEngine);
+        setActiveHlsEngine(srcEngine);
         return;
       }
-
-      prepareFreshPlayback('LIVE');
 
       const ref = (refToUse || sRef || '').trim();
       if (!ref) {
@@ -728,11 +624,18 @@ function V3Player(props: V3PlayerProps) {
         setShowErrorDetails(false);
         return;
       }
+      if (hasActivePlayback()) {
+        await teardownActivePlayback();
+      } else {
+        clearPlaybackState();
+      }
+      prepareFreshPlayback('LIVE');
       let newSessionId: string | null = null;
       setStatus('starting');
       setError(null);
       setErrorDetails(null);
       setShowErrorDetails(false);
+      setTraceId('-');
 
       try {
         await ensureSessionCookie();
@@ -740,7 +643,7 @@ function V3Player(props: V3PlayerProps) {
         // SSOT: live playback mode is decided by backend from measured capabilities.
         let liveMode: 'native_hls' | 'hlsjs' | 'direct_mp4' | 'transcode' | 'deny' = 'deny';
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
-        const forceNativeMobile = shouldForceNativeMobileHls(videoRef.current);
+        const preferredHlsEngine = resolvePreferredHlsEngine();
 
         const requestCaps = await gatherPlaybackCapabilities();
         // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
@@ -753,7 +656,8 @@ function V3Player(props: V3PlayerProps) {
           })
         });
         const { json: liveInfoJson } = await readResponseBody(liveResponse);
-        const liveInfo = liveInfoJson as any;
+        const liveInfo = liveInfoJson as PlaybackInfo;
+        const liveError = (!liveResponse.ok) ? liveInfoJson as any : null;
         const liveRequestId =
           (typeof liveInfo?.requestId === 'string' ? liveInfo.requestId : undefined) ||
           liveResponse.headers.get('X-Request-ID') ||
@@ -768,9 +672,9 @@ function V3Player(props: V3PlayerProps) {
             setError(t('player.authFailed'));
             return;
           }
-          const code = typeof liveInfo?.code === 'string' && liveInfo.code ? liveInfo.code : null;
-          const title = typeof liveInfo?.title === 'string' && liveInfo.title ? liveInfo.title : null;
-          const type = typeof liveInfo?.type === 'string' && liveInfo.type ? liveInfo.type : null;
+          const code = typeof liveError?.code === 'string' && liveError.code ? liveError.code : null;
+          const title = typeof liveError?.title === 'string' && liveError.title ? liveError.title : null;
+          const type = typeof liveError?.type === 'string' && liveError.type ? liveError.type : null;
 
           const summaryParts = [code, title, type].filter((part): part is string => Boolean(part));
           const message = summaryParts.length > 0
@@ -778,12 +682,12 @@ function V3Player(props: V3PlayerProps) {
             : `${t('player.apiError')}: ${liveResponse.status}`;
 
           const detailParts: string[] = [];
-          if (typeof liveInfo?.detail === 'string' && liveInfo.detail) detailParts.push(liveInfo.detail);
+          if (typeof liveError?.detail === 'string' && liveError.detail) detailParts.push(liveError.detail);
           if (liveRequestId) detailParts.push(`requestId=${liveRequestId}`);
 
           const err = new Error(message);
           if (detailParts.length > 0) {
-            (err as any).details = detailParts.join(' · ');
+            (err as Error & { details: string }).details = detailParts.join(' · ');
           }
           throw err;
         }
@@ -805,20 +709,12 @@ function V3Player(props: V3PlayerProps) {
           case 'hlsjs':
           case 'hls':
           case 'direct_stream':
-            if (forceNativeMobile) {
-              liveEngine = 'native';
-              liveMode = 'native_hls';
-            } else if (Hls.isSupported()) {
-              liveEngine = 'hlsjs';
-              liveMode = 'hlsjs';
-            } else {
-              liveEngine = 'native';
-              liveMode = 'native_hls';
-            }
+            liveEngine = preferredHlsEngine;
+            liveMode = liveEngine === 'native' ? 'native_hls' : 'hlsjs';
             break;
           case 'transcode':
             liveMode = 'transcode';
-            liveEngine = forceNativeMobile ? 'native' : (Hls.isSupported() ? 'hlsjs' : 'native');
+            liveEngine = preferredHlsEngine;
             break;
           case 'direct_mp4':
             liveMode = 'direct_mp4';
@@ -864,10 +760,10 @@ function V3Player(props: V3PlayerProps) {
 
         if (liveMode === 'native_hls') {
           liveEngine = 'native';
-        } else if (liveMode === 'transcode' && forceNativeMobile) {
-          liveEngine = 'native';
-        } else if (liveMode === 'hlsjs' || liveMode === 'transcode') {
+        } else if (liveMode === 'hlsjs') {
           liveEngine = 'hlsjs';
+        } else if (liveMode === 'transcode') {
+          liveEngine = resolvePreferredHlsEngine();
         } else {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.live.mode.unsupported',
@@ -1009,6 +905,7 @@ function V3Player(props: V3PlayerProps) {
           throw new Error(t('player.streamUrlMissing'));
         }
         playHls(streamUrl, liveEngine);
+        setActiveHlsEngine(liveEngine);
 
       } catch (err) {
         if (newSessionId) {
@@ -1032,23 +929,16 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, setActiveSessionId, prepareFreshPlayback, requestedDuration]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, ensureSessionCookie, waitForSessionReady, hasActivePlayback, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, setActiveSessionId, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
-    resetPlaybackEngine();
-    clearVodRetry();
-    clearVodFetch();
-    clearPlaybackSelection();
-    if (sessionId) {
-      await sendStopIntent(sessionId);
-    }
-    clearSessionLeaseState();
+    await teardownActivePlayback();
     setPlaybackMode('UNKNOWN');
-    resetChromeState();
     setStatus('stopped');
+    setTraceId('-');
     if (onClose && !skipClose) onClose();
-  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, onClose, resetChromeState, resetPlaybackEngine, sendStopIntent, sessionId]);
+  }, [onClose, setPlaybackMode, teardownActivePlayback]);
 
   const handleRetry = useCallback(async () => {
     try {
@@ -1259,6 +1149,7 @@ function V3Player(props: V3PlayerProps) {
             <Button
               variant="primary"
               size="icon"
+              className={styles.playPauseButton}
               onClick={togglePlayPause}
               title={isPlaying ? t('player.pause') : t('player.play')}
               aria-label={isPlaying ? t('player.pause') : t('player.play')}
@@ -1335,57 +1226,78 @@ function V3Player(props: V3PlayerProps) {
         )}
 
         {/* DVR Mode Button (Safari Only / Fallback) */}
-        {showDvrModeButton && (
+        {showDvrModeButton && !canToggleFullscreen && (
           <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
             📺 DVR
           </Button>
         )}
 
-        {/* Volume Control */}
-        <div className={styles.volumeControl}>
-          <button
-            className={styles.volumeButton}
-            onClick={toggleMute}
-            title={isMuted ? t('player.unmute') : t('player.mute')}
+        <div className={styles.utilityControls}>
+          {canToggleFullscreen && (
+            <Button
+              variant="ghost"
+              size="sm"
+              active={isFullscreen}
+              onClick={() => void toggleFullscreen()}
+              title={isFullscreen
+                ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
+                : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+            >
+              ⛶ {isFullscreen
+                ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
+                : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+            </Button>
+          )}
+
+          {canAdjustVolume && (
+            <div className={styles.volumeControl}>
+              <button
+                className={styles.volumeButton}
+                onClick={toggleMute}
+                title={isMuted ? t('player.unmute') : t('player.mute')}
+              >
+                {isMuted ? '🔇' : volume > 0.5 ? '🔊' : volume > 0 ? '🔉' : '🔈'}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                className={styles.volumeSlider}
+                value={isMuted ? 0 : volume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+              />
+            </div>
+          )}
+
+          {canTogglePiP && (
+            <Button
+              variant="ghost"
+              size="sm"
+              active={isPip}
+              onClick={() => void togglePiP()}
+              title={t('player.pipTitle')}
+            >
+              📺 {t('player.pipLabel')}
+            </Button>
+          )}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            active={showStats}
+            onClick={toggleStats}
+            title={t('player.statsTitle')}
           >
-            {isMuted ? '🔇' : volume > 0.5 ? '🔊' : volume > 0 ? '🔉' : '🔈'}
-          </button>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            className={styles.volumeSlider}
-            value={isMuted ? 0 : volume}
-            onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-          />
-        </div>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          active={isPip}
-          onClick={togglePiP}
-          title={t('player.pipTitle')}
-        >
-          📺 {t('player.pipLabel')}
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          active={showStats}
-          onClick={toggleStats}
-          title={t('player.statsTitle')}
-        >
-          📊 {t('player.statsLabel')}
-        </Button>
-
-        {!onClose && (
-          <Button variant="danger" onClick={() => void stopStream()}>
-            ⏹ {t('common.stop')}
+            📊 {t('player.statsLabel')}
           </Button>
-        )}
+
+          {!onClose && (
+            <Button variant="danger" onClick={() => void stopStream()}>
+              ⏹ {t('common.stop')}
+            </Button>
+          )}
+        </div>
       </div>
       {/* Resume Overlay */}
       {showResumeOverlay && resumeState && (

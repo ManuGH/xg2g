@@ -33,7 +33,7 @@ This document tracks known issues that are not blockers for release but require 
 
 - **Status**: Completed on 2026-02-19.
 - **Result**: Added `templates/docs/ops/xg2g-verifier.service.tmpl` and `templates/docs/ops/xg2g-verifier.timer.tmpl`; renderer now emits both units.
-- **Follow-up**: Keep unit content aligned with `scripts/verify-runtime.sh` contract changes.
+- **Follow-up**: Keep unit content aligned with `backend/scripts/verify-runtime.sh` contract changes.
 
 ### 3. Remux Stub Cleanup
 
@@ -44,7 +44,7 @@ This document tracks known issues that are not blockers for release but require 
 ### 4. WebUI Generated Client Wrapper Discipline
 
 - **Status**: Completed on 2026-02-19.
-- **Result**: Added `webui/src/client-ts/wrapper.ts`, removed direct `client-ts/*.gen` imports in product code, and added typed RFC7807 mapping tests (`webui/src/client-ts/wrapper.test.ts`).
+- **Result**: Added `frontend/webui/src/client-ts/wrapper.ts`, removed direct `client-ts/*.gen` imports in product code, and added typed RFC7807 mapping tests (`frontend/webui/src/client-ts/wrapper.test.ts`).
 - **Follow-up**: Preserve the wrapper boundary for all new API call sites and keep error mapping contract tests in CI.
 
 ### 5. Go Toolchain Directive Normalization
@@ -56,5 +56,5 @@ This document tracks known issues that are not blockers for release but require 
 ### 6. CI Wrapper Boundary Drift
 
 - **Status**: Completed on 2026-02-19.
-- **Result**: Centralized boundary check in `webui/scripts/verify-client-wrapper-boundary.sh` and reused it across PR/CI/nightly workflows to avoid regex drift.
+- **Result**: Centralized boundary check in `frontend/webui/scripts/verify-client-wrapper-boundary.sh` and reused it across PR/CI/nightly workflows to avoid regex drift.
 - **Follow-up**: Keep all future WebUI API-boundary checks delegated to this script (single source of truth).

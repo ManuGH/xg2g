@@ -771,9 +771,9 @@ PASS  # All tests green
 1. [docs/arch/ARCHITECTURE.md](ARCHITECTURE.md) (this doc) – System overview
 2. [docs/arch/ENIGMA2_STREAMING_TOPOLOGY.md](ENIGMA2_STREAMING_TOPOLOGY.md) – Production Enigma2 integration
 3. [docs/arch/PACKAGE_LAYOUT.md](PACKAGE_LAYOUT.md) – Layering rules
-4. [internal/app/bootstrap/bootstrap.go](../../internal/app/bootstrap/bootstrap.go) – Wiring truth
-5. [api/openapi.yaml](../../api/openapi.yaml) – API contract
-6. [internal/validate/imports_test.go](../../internal/validate/imports_test.go) – Layering enforcement
+4. [backend/internal/app/bootstrap/bootstrap.go](../../backend/internal/app/bootstrap/bootstrap.go) – Wiring truth
+5. [backend/api/openapi.yaml](../../backend/api/openapi.yaml) – API contract
+6. [backend/internal/validate/imports_test.go](../../backend/internal/validate/imports_test.go) – Layering enforcement
 
 ---
 

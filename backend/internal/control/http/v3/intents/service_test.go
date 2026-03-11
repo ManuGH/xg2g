@@ -16,11 +16,23 @@ type mockSessionStore struct {
 	putExistingID string
 	putExists     bool
 	putErr        error
+	putSequence   []putSessionResult
 	putCalls      int
 	putSession    *model.SessionRecord
 	putIdemKey    string
 	putTTL        time.Duration
+	deleteCalls   int
+	deleteKey     string
+	deleteSID     string
+	deleteOk      bool
+	deleteErr     error
 	sessions      map[string]*model.SessionRecord
+}
+
+type putSessionResult struct {
+	existingID string
+	exists     bool
+	err        error
 }
 
 func (m *mockSessionStore) GetSession(_ context.Context, id string) (*model.SessionRecord, error) {
@@ -35,10 +47,25 @@ func (m *mockSessionStore) PutSessionWithIdempotency(_ context.Context, s *model
 	m.putSession = s
 	m.putIdemKey = idemKey
 	m.putTTL = ttl
+	if len(m.putSequence) > 0 {
+		next := m.putSequence[0]
+		m.putSequence = m.putSequence[1:]
+		return next.existingID, next.exists, next.err
+	}
 	if m.putErr != nil {
 		return "", false, m.putErr
 	}
 	return m.putExistingID, m.putExists, nil
+}
+
+func (m *mockSessionStore) DeleteIdempotencyIfMatch(_ context.Context, idemKey, sessionID string) (bool, error) {
+	m.deleteCalls++
+	m.deleteKey = idemKey
+	m.deleteSID = sessionID
+	if m.deleteErr != nil {
+		return false, m.deleteErr
+	}
+	return m.deleteOk, nil
 }
 
 type publishCall struct {
@@ -281,6 +308,54 @@ func TestService_ProcessIntent_StartReplayReturnsExistingSession(t *testing.T) {
 	}
 	if len(deps.bus.calls) != 0 {
 		t.Fatalf("expected no event publish on replay, got %d", len(deps.bus.calls))
+	}
+}
+
+func TestService_ProcessIntent_StartTerminalReplayCreatesFreshSession(t *testing.T) {
+	deps := newMockDeps()
+	deps.store.putSequence = []putSessionResult{
+		{existingID: "stale-sid", exists: true},
+		{exists: false},
+	}
+	deps.store.deleteOk = true
+	deps.store.sessions = map[string]*model.SessionRecord{
+		"stale-sid": {
+			SessionID:     "stale-sid",
+			State:         model.SessionFailed,
+			CorrelationID: "corr-stale",
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "fresh-sid",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "high"},
+		CorrelationID: "corr-new",
+		Mode:          model.ModeLive,
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if res.SessionID != "fresh-sid" {
+		t.Fatalf("expected fresh session ID, got %q", res.SessionID)
+	}
+	if deps.store.deleteCalls != 1 {
+		t.Fatalf("expected stale idempotency cleanup once, got %d", deps.store.deleteCalls)
+	}
+	if deps.store.deleteSID != "stale-sid" {
+		t.Fatalf("expected stale session ID cleanup, got %q", deps.store.deleteSID)
+	}
+	if deps.store.putCalls != 2 {
+		t.Fatalf("expected retry after stale replay, got %d store calls", deps.store.putCalls)
+	}
+	if len(deps.bus.calls) != 1 {
+		t.Fatalf("expected one publish after stale replay cleanup, got %d", len(deps.bus.calls))
 	}
 }
 

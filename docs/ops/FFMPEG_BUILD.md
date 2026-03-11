@@ -82,7 +82,7 @@ docker run --rm <image> ldd /opt/ffmpeg/bin/ffmpeg | grep libavcodec
 **Test** (wrapper with missing binary):
 
 ```bash
-FFMPEG_HOME=/nonexistent ./scripts/ffmpeg-wrapper.sh -version
+FFMPEG_HOME=/nonexistent ./backend/scripts/ffmpeg-wrapper.sh -version
 # Expected:
 # ERROR: FFmpeg binary not found or not executable: /nonexistent/bin/ffmpeg
 # Set FFMPEG_HOME or FFMPEG_BIN to the correct location
@@ -109,21 +109,21 @@ Run these commands to verify production readiness:
 
 ```bash
 # Local: Wrapper functionality
-FFMPEG_HOME=/opt/ffmpeg ./scripts/ffmpeg-wrapper.sh -version | head -1
+FFMPEG_HOME=/opt/ffmpeg ./backend/scripts/ffmpeg-wrapper.sh -version | head -1
 # Expected: ffmpeg version 7.1.3
 
 # Local: Error handling
-FFMPEG_HOME=/nonexistent ./scripts/ffmpeg-wrapper.sh -version 2>&1 | head -2
+FFMPEG_HOME=/nonexistent ./backend/scripts/ffmpeg-wrapper.sh -version 2>&1 | head -2
 # Expected: ERROR: FFmpeg binary not found...
 
 # Container: After docker build
-docker run --rm xg2g:3.1.5 which ffmpeg
+docker run --rm <image> which ffmpeg
 # Expected: /usr/local/bin/ffmpeg
 
-docker run --rm xg2g:3.1.5 ffmpeg -version | head -1
+docker run --rm <image> ffmpeg -version | head -1
 # Expected: ffmpeg version 7.1.3
 
-docker run --rm xg2g:3.1.5 sh -c 'echo $XG2G_FFMPEG_BIN'
+docker run --rm <image> sh -c 'echo $XG2G_FFMPEG_BIN'
 # Expected: /usr/local/bin/ffmpeg
 ```
 
@@ -166,8 +166,8 @@ make setup  # Builds to /opt/ffmpeg (or set TARGET_DIR)
 ### Use Wrappers (Recommended)
 
 ```bash
-export XG2G_FFMPEG_BIN=$(pwd)/scripts/ffmpeg-wrapper.sh
-export XG2G_FFPROBE_BIN=$(pwd)/scripts/ffprobe-wrapper.sh
+export XG2G_FFMPEG_BIN=$(pwd)/backend/scripts/ffmpeg-wrapper.sh
+export XG2G_FFPROBE_BIN=$(pwd)/backend/scripts/ffprobe-wrapper.sh
 export FFMPEG_HOME=/opt/ffmpeg  # If built to custom location
 ```
 
@@ -220,7 +220,7 @@ export LD_LIBRARY_PATH=/opt/ffmpeg/lib
 
 ### Updating FFmpeg Version
 
-1. Update `FFMPEG_VERSION` in `scripts/build-ffmpeg.sh`
+1. Update `FFMPEG_VERSION` in `backend/scripts/build-ffmpeg.sh`
 2. Update checksum `EXPECTED_SHA256`
 3. Test locally: `make setup`
 4. Update this doc with new version

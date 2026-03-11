@@ -1,6 +1,6 @@
 // verify-app-config loads data/config.yaml via the production config loader
 // and prints the key timeout and FFmpeg fields.
-// Usage: go run ./cmd/tools/verify-app-config (from repo root)
+// Usage: go run ./backend/cmd/tools/verify-app-config (from repo root)
 package main
 
 import (

@@ -28,6 +28,13 @@ export interface EpgProps {
   onPlay?: (channel: EpgChannel) => void;
 }
 
+function getEpgErrorKey(status?: number, fallbackKey: string = 'epg.loadError'): string {
+  if (status === 403) {
+    return 'player.forbidden';
+  }
+  return fallbackKey;
+}
+
 export default function EPG({
   channels,
   bouquets = [],
@@ -156,7 +163,11 @@ export default function EPG({
     } catch (err: any) {
       if (err.name === 'AbortError') return;
       debugError('EPG load failed:', formatError(err));
-      dispatch({ type: 'LOAD_ERROR', payload: { error: 'epg.loadError' } });
+      if (err.status === 401) {
+        window.dispatchEvent(new Event('auth-required'));
+        return;
+      }
+      dispatch({ type: 'LOAD_ERROR', payload: { error: getEpgErrorKey(err.status) } });
     }
   }, [state.filters.timeRange, state.filters.bouquetId]);
 
@@ -185,7 +196,14 @@ export default function EPG({
       dispatch({ type: 'SEARCH_SUCCESS', payload: { events } });
     } catch (err: any) {
       debugError(formatError(err));
-      dispatch({ type: 'SEARCH_ERROR', payload: { error: 'epg.searchError' } });
+      if (err.status === 401) {
+        window.dispatchEvent(new Event('auth-required'));
+        return;
+      }
+      dispatch({
+        type: 'SEARCH_ERROR',
+        payload: { error: getEpgErrorKey(err.status, 'epg.searchError') }
+      });
     }
   }, [state.filters.query, state.filters.bouquetId]);
 

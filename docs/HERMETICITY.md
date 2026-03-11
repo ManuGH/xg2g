@@ -69,7 +69,7 @@ Generated code (deterministic output)
 
 ### CTO Gate: Contract Enforcement
 
-**Script**: [`scripts/ci/ctogate_hermetic_codegen.sh`](../../scripts/ci/ctogate_hermetic_codegen.sh)
+**Script**: [`backend/scripts/ci/ctogate_hermetic_codegen.sh`](../backend/scripts/ci/ctogate_hermetic_codegen.sh)
 
 - **Allow-list**: Codegen steps must use `make generate` only
 - **Global forbid**: Blocks direct `oapi-codegen`, `go install`, `curl`/`wget` invocations
@@ -101,9 +101,9 @@ Sequence:
 
 **Result**: Proof that no escape hatches exist.
 
-### Makefile Invariants
+### Workflow Guard
 
-**Target**: `make verify-hermetic-codegen`
+**Command**: `./backend/scripts/ci/ctogate_hermetic_codegen.sh .github/workflows/ci.yml`
 
 Checks (behavior-based, not string-based):
 
@@ -112,7 +112,7 @@ Checks (behavior-based, not string-based):
 3. `vendor/github.com/oapi-codegen/` directory exists
 4. `tools.go` imports the generator
 
-**Integrated**: Runs as part of `make quality-gates`
+**Usage**: Run this guard whenever workflow changes could affect code generation policy.
 
 ## Verification Commands
 
@@ -128,8 +128,8 @@ GOPROXY=off GOSUMDB=off GOVCS=*:off GOTOOLCHAIN=local \
 make generate
 git diff --exit-code -- internal/api internal/control/http/v3
 
-# Verify hermetic invariants
-make verify-hermetic-codegen
+# Verify hermetic workflow guard
+./backend/scripts/ci/ctogate_hermetic_codegen.sh .github/workflows/ci.yml
 ```
 
 ### CI Proof

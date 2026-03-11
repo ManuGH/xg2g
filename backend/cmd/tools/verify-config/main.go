@@ -1,5 +1,5 @@
 // verify-config parses config.yaml and prints the Timeouts fields.
-// Usage: go run ./cmd/tools/verify-config (from repo root)
+// Usage: go run ./backend/cmd/tools/verify-config (from repo root)
 package main
 
 import (

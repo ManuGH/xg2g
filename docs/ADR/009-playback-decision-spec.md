@@ -73,5 +73,5 @@ To guarantee $f(Input) \to Output$ is bit-identical:
 
 ## Invariants
 
-1. **Input Freeze**: Use `scripts/gate_decision_drift.sh` to prevent `DecisionInput` changes.
+1. **Input Freeze**: `backend/internal/control/recordings/decision/drift_test.go` prevents unreviewed `DecisionInput` schema changes.
 2. **Reason Boundedness**: All `ReasonCode` values must be in `reasons.go` whitelist.

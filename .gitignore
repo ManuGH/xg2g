@@ -5,6 +5,7 @@
 artifacts/
 tmp/
 logs/
+.runtime-bin/
 !logs/.gitkeep
 !logs/test_artifacts/.gitkeep
 

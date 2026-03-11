@@ -78,6 +78,31 @@ func (m *MemoryStore) GetIdempotency(ctx context.Context, idemKey string) (strin
 	return st.sessionID, true, nil
 }
 
+func (m *MemoryStore) DeleteIdempotencyIfMatch(ctx context.Context, idemKey, sessionID string) (bool, error) {
+	if idemKey == "" {
+		return false, nil
+	}
+
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	st, ok := m.idem[idemKey]
+	if !ok {
+		return false, nil
+	}
+	if now.After(st.exp) {
+		delete(m.idem, idemKey)
+		return false, nil
+	}
+	if st.sessionID != sessionID {
+		return false, nil
+	}
+
+	delete(m.idem, idemKey)
+	return true, nil
+}
+
 func (m *MemoryStore) TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error) {
 	now := time.Now()
 	deadline := now.Add(ttl)

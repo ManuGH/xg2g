@@ -385,6 +385,9 @@ func (s *Server) UpdateConfig(cfg config.AppConfig, snap config.Snapshot) {
 	s.cfg = cfg
 	s.snap = snap
 	s.owiEpoch++ // Invalidate cached OWI client
+	if state, ok := s.admissionState.(*storeAdmissionState); ok {
+		state.SetTunerCount(len(cfg.Engine.TunerSlots))
+	}
 }
 
 // UpdateStatus updates the internal status snapshot.
@@ -549,10 +552,7 @@ func (s *Server) SetDependencies(deps Dependencies) {
 	}
 
 	// Initialize Admission State Source (Store-backed)
-	s.admissionState = &storeAdmissionState{
-		store:      s.v3Store,
-		tunerCount: len(s.cfg.Engine.TunerSlots),
-	}
+	s.admissionState = newStoreAdmissionState(s.v3Store, len(s.cfg.Engine.TunerSlots))
 }
 
 // GetConfig returns a copy of the current config.

@@ -11,12 +11,34 @@ Web frontend for xg2g (`/ui/`) built with React + TypeScript + Vite.
 ## Quick Start
 
 ```bash
-cd webui
+cd frontend/webui
 npm ci
 npm run dev
 ```
 
 Open: `http://localhost:5173/ui/`
+
+## Fast Local UI Iteration
+
+For backend + UI development without rebuilding the production container image:
+
+```bash
+make backend-dev-ui   # backend on http://localhost:8080 with -tags=dev
+make webui-dev        # Vite with HMR on http://localhost:5173
+```
+
+Then open `http://localhost:8080/ui/`.
+
+One-command variant:
+
+```bash
+make dev-ui
+```
+
+Useful overrides:
+
+- `XG2G_UI_DEV_PROXY_URL` overrides the Vite target for the dev-tagged backend
+- `XG2G_UI_DEV_DIR` serves a local built `dist/` directory instead of proxying Vite
 
 ## Core Scripts
 

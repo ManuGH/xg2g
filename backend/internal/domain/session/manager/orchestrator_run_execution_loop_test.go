@@ -7,6 +7,7 @@ package manager
 import (
 	"context"
 	"errors"
+
 	"testing"
 	"time"
 
@@ -77,3 +78,4 @@ func TestRunExecutionLoop_StopsPipelineWhenPrimingTransitionFails(t *testing.T) 
 		t.Fatalf("timed out waiting for pipeline stop after priming failure: %v", waitCtx.Err())
 	}
 }
+

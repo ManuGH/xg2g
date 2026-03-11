@@ -70,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4.4.3
         with:
           name: nightly-race-logs
-          path: nightly-race.log
+          path: backend/nightly-race.log
           if-no-files-found: ignore
           retention-days: 14
 
@@ -104,7 +104,7 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4.4.3
         with:
           name: nightly-integration-logs
-          path: nightly-integration.log
+          path: backend/nightly-integration.log
           if-no-files-found: ignore
           retention-days: 14
 
@@ -165,10 +165,10 @@ jobs:
         with:
           name: weekly-security-reports
           path: |
-            govulncheck.json
-            govulncheck.stderr
-            gosec.sarif
-            gosec.stderr
+            backend/govulncheck.json
+            backend/govulncheck.stderr
+            backend/gosec.sarif
+            backend/gosec.stderr
           if-no-files-found: ignore
           retention-days: 14
 

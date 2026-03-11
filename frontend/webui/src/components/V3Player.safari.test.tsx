@@ -33,12 +33,15 @@ vi.mock('hls.js', () => {
 describe('V3Player Safari Logic', () => {
   let userAgentGetter: any;
   let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
+  let webkitSupportsPresentationModeDescriptor: PropertyDescriptor | undefined;
   let maxTouchPointsDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    (Hls as any).isSupported.mockReturnValue(true);
     userAgentGetter = vi.spyOn(window.navigator, 'userAgent', 'get');
     webkitEnterFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
+    webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode');
     maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
   });
 
@@ -49,15 +52,29 @@ describe('V3Player Safari Logic', () => {
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
     }
+    if (webkitSupportsPresentationModeDescriptor) {
+      Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', webkitSupportsPresentationModeDescriptor);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
+    }
     if (maxTouchPointsDescriptor) {
       Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
     }
     vi.restoreAllMocks();
   });
 
-  it('initializes HLS.js in auto mode when HLS.js is supported', () => {
+  it('initializes hls.js on desktop Safari when modern WebKit MSE support is available', () => {
     // Simulate Safari
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15');
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn()
+    });
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0
+    });
 
     // Mock video element support
     const originalCreateElement = document.createElement;
@@ -71,7 +88,6 @@ describe('V3Player Safari Logic', () => {
 
     render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
-    // Auto mode prefers HLS.js when available.
     expect(Hls).toHaveBeenCalled();
   });
 
@@ -95,7 +111,7 @@ describe('V3Player Safari Logic', () => {
     expect(Hls).toHaveBeenCalled();
   });
 
-  it('should keep desktop Safari on HLS.js even when webkitEnterFullscreen exists', () => {
+  it('falls back to native HLS on desktop Safari when hls.js is unsupported', () => {
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15');
 
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
@@ -112,13 +128,14 @@ describe('V3Player Safari Logic', () => {
       if (type === 'application/vnd.apple.mpegurl') return 'probably';
       return originalCanPlayType.call(this, type);
     });
+    (Hls as any).isSupported.mockReturnValue(false);
 
     render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
-    expect(Hls).toHaveBeenCalled();
+    expect(Hls).not.toHaveBeenCalled();
   });
 
-  it('should prefer native HLS on mobile WebKit video elements', () => {
+  it('initializes hls.js on mobile WebKit when modern WebKit MSE support is available', () => {
     userAgentGetter.mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
 
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
@@ -138,7 +155,6 @@ describe('V3Player Safari Logic', () => {
 
     render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
-    // Mobile WebKit path should avoid hls.js and use native HLS.
-    expect(Hls).not.toHaveBeenCalled();
+    expect(Hls).toHaveBeenCalled();
   });
 });

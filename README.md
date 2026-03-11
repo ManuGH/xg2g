@@ -75,7 +75,7 @@ Tier-1 compliant with Apple HLS Guidelines.
 
 ## Documentation
 
-- 🚀 [Start Here (10 Minutes)](NEW_HERE.md) - First-commit onboarding path
+- 🚀 [Start Here (10 Minutes)](backend/NEW_HERE.md) - First-commit onboarding path
 - 📘 [Architecture Overview](docs/arch/ARCHITECTURE.md) - Complete system
   explanation
 - 📋 [ADRs](docs/ADR/) - Design decisions and trade-offs
@@ -85,7 +85,7 @@ Tier-1 compliant with Apple HLS Guidelines.
   from [backend/api/openapi.yaml](backend/api/openapi.yaml)
 - ⚙️ [Configuration Guide](docs/guides/CONFIGURATION.md)
 - 🏗️ [Development Guide](docs/guides/DEVELOPMENT.md)
-- 🧭 [Workflow Guide](WORKFLOW.md) - Branching, testing, and deployment flow
+- 🧰 [Developer Setup](docs/dev/SETUP.md) - Local toolchain and setup flow
 - 🩺 [CI Failure Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) - Triage guide for
   failing gates
 
@@ -107,15 +107,14 @@ export LD_LIBRARY_PATH="/opt/ffmpeg/lib"
 
 ## Development Tools
 
-Ad-hoc inspection scripts live in `cmd/tools/` and are run directly — no installation needed:
+Ad-hoc inspection helpers live in `backend/cmd/tools/` and are run directly
+from the repo root:
 
 ```bash
-make verify-bin          # print configured FFmpeg binary path (reads data/config.yaml)
-make verify-config-yaml  # parse config.yaml and print Timeouts fields
-make verify-app-config   # load data/config.yaml via production loader and print key fields
+go run ./backend/cmd/tools/verify-bin         # print configured FFmpeg binary path (reads data/config.yaml)
+go run ./backend/cmd/tools/verify-config      # parse ./config.yaml and print timeout fields
+go run ./backend/cmd/tools/verify-app-config  # load data/config.yaml via production loader
 ```
-
-Or invoke directly: `go run ./cmd/tools/verify-bin` (from repo root).
 
 > **Note:** `make verify-config` is a CI gate (configgen diff check) — unrelated to the above.
 
@@ -123,7 +122,7 @@ Or invoke directly: `go run ./cmd/tools/verify-bin` (from repo root).
 
 This repository supports deterministic offline testing (air-gap capable).
 
-See: OFFLINE_TEST.md
+See: [docs/ops/EXTERNAL_AUDIT_MODE.md](docs/ops/EXTERNAL_AUDIT_MODE.md)
 
 Quick check:
 

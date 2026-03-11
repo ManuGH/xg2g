@@ -198,6 +198,16 @@
   border-bottom: 1px solid var(--border-base);
 }
 
+.channelPlayable {
+  cursor: pointer;
+}
+
+.channelPlayable:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 6px;
+  border-radius: 10px;
+}
+
 .logo {
   width: 60px;
   height: 40px;

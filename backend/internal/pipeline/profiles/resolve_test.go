@@ -115,14 +115,6 @@ func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 	assert.Equal(t, "libx264", specDisabled.VideoCodec)
 }
 
-func TestResolve_SafariDirtyDefaultEnv(t *testing.T) {
-	t.Setenv("XG2G_SAFARI_DIRTY_DEFAULT", "true")
-
-	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-	spec := Resolve("auto", safariUA, 0, nil, false, HWAccelAuto)
-	assert.Equal(t, "safari_dirty", spec.Name)
-}
-
 func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_DIRTY_CRF", "15")
 	t.Setenv("XG2G_SAFARI_DIRTY_PRESET", "medium")

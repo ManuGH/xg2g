@@ -2,7 +2,7 @@
 # Docker Operations
 # ===================================================================================================
 
-.PHONY: docker docker-build docker-security docker-tag docker-push docker-clean
+.PHONY: docker docker-build docker-security docker-tag docker-push docker-clean docker-ffmpeg-base docker-dev-fast
 
 docker: ## Build Docker image
 	@echo "Building Docker image..."
@@ -47,3 +47,25 @@ docker-clean: ## Remove Docker build cache
 	@docker system prune -f
 	@docker buildx prune -f
 	@echo "✅ Docker cache cleaned"
+
+docker-ffmpeg-base: ## Build reusable FFmpeg runtime base image
+	@echo "🏗️  Building reusable FFmpeg base image $(FFMPEG_BASE_TAG)..."
+	@docker build \
+		-f Dockerfile.ffmpeg-base \
+		-t $(FFMPEG_BASE_TAG) \
+		-t $(FFMPEG_BASE_IMAGE):latest \
+		.
+	@echo "✅ FFmpeg base image built: $(FFMPEG_BASE_TAG)"
+
+docker-dev-fast: ## Rebuild dev container using cached FFmpeg base
+	@echo "🚀 Rebuilding xg2g dev container with cached FFmpeg base $(FFMPEG_BASE_TAG)..."
+	@if ! docker image inspect $(FFMPEG_BASE_TAG) >/dev/null 2>&1; then \
+		echo "❌ Missing FFmpeg base image $(FFMPEG_BASE_TAG). Run 'make docker-ffmpeg-base' first."; \
+		exit 1; \
+	fi
+	@docker build \
+		--build-arg FFMPEG_BASE_IMAGE=$(FFMPEG_BASE_TAG) \
+		-t $(DOCKER_IMAGE):dev \
+		.
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate xg2g
+	@echo "✅ Dev container rebuilt with cached FFmpeg base"

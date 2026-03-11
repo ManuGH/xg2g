@@ -1982,7 +1982,12 @@ export type ReportPlaybackFeedbackResponses = {
 export type GetLogsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Maximum number of most-recent log entries to return.
+         */
+        limit?: number;
+    };
     url: '/logs';
 };
 

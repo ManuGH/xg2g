@@ -225,3 +225,18 @@ func TestClientPlaybackInfo_PreparingErrorContract(t *testing.T) {
 	assert.Equal(t, "in_flight", prob["probeState"])
 	assert.EqualValues(t, 5, prob["retryAfterSeconds"])
 }
+
+func TestClientPlaybackInfo_InvalidJSONReturnsBadRequest(t *testing.T) {
+	s := &Server{}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/Items/rec1/PlaybackInfo", bytes.NewBufferString("{"))
+
+	s.PostItemsPlaybackInfo(w, r, "rec1")
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var prob map[string]any
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &prob))
+	assert.Equal(t, "/problems/recordings/invalid", prob["type"])
+	assert.Equal(t, "INVALID_INPUT", prob["code"])
+}

@@ -94,4 +94,4 @@ jobs:
       - name: Lint Markdown (nightly)
         run: |
           set -euo pipefail
-          npx --yes markdownlint-cli2@0.14.0 "docs/**/*.md" ".github/**/*.md" "*.md"
+          npx --yes markdownlint-cli2@0.14.0 "docs/**/*.md" ".github/**/*.md" "*.md" "!CHANGELOG.md"

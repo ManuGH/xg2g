@@ -5,63 +5,81 @@
 package http
 
 import (
-	"embed"
-	"io/fs"
+	"fmt"
 	"net/http"
 	"strings"
 )
 
-//go:embed all:dist
-var uiFS embed.FS
-
-// UIConfig configures the UI handler
+// UIConfig configures the UI handler.
 type UIConfig struct {
 	CSP string
 }
 
-// UIHandler serves the embedded Web UI (SPA) with correct caching + CSP.
-// It is self-contained: embed + serving live together in control.
-func UIHandler(cfg UIConfig) http.Handler {
-	// Subdirectory "dist" matches the build output
-	subFS, err := fs.Sub(uiFS, "dist")
-	uiAvailable := false
-	var fileServer http.Handler
-	if err == nil {
-		if _, statErr := fs.Stat(subFS, "index.html"); statErr == nil {
-			uiAvailable = true
-			fileServer = http.FileServer(http.FS(subFS))
-		}
+type uiCacheMode int
+
+const (
+	uiCacheModeProd uiCacheMode = iota
+	uiCacheModeDev
+)
+
+func isUIHTMLRoute(path string) bool {
+	return path == "/" || path == "/index.html" || path == "" || !strings.Contains(path, ".")
+}
+
+func setUIHeaders(w http.ResponseWriter, path, csp string, mode uiCacheMode) {
+	if csp != "" {
+		w.Header().Set("Content-Security-Policy", csp)
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Explicitly attach CSP so the main UI HTML allows blob: media (Safari HLS)
-		w.Header().Set("Content-Security-Policy", cfg.CSP)
-
-		// Assets (js, css, images) should be cached (hashed)
-		// Index.html should NOT be cached to ensure updates
-		path := r.URL.Path
-		if path == "/" || path == "/index.html" || path == "" || !strings.Contains(path, ".") {
+	switch mode {
+	case uiCacheModeDev:
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+	default:
+		if isUIHTMLRoute(path) {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			w.Header().Set("Pragma", "no-cache")
 			w.Header().Set("Expires", "0")
-		} else {
-			// Hashed assets can be cached forever
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		}
-
-		if uiAvailable {
-			fileServer.ServeHTTP(w, r)
 			return
 		}
 
-		// Fallback: allow running API-only binaries/tests without building the WebUI bundle.
-		// Keep it a 200 so callers (and tests) can still validate caching/CSP behavior.
-		if path == "/" || path == "/index.html" || path == "" || !strings.Contains(path, ".") {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write([]byte("<!doctype html><html><head><meta charset=\"utf-8\"><title>xg2g</title></head><body><h1>xg2g UI not built</h1></body></html>"))
-			return
-		}
+		// Hashed assets can be cached aggressively in production.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+}
 
-		http.NotFound(w, r)
-	})
+func writeUIHTMLResponse(w http.ResponseWriter, status int, title, message string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = fmt.Fprintf(
+		w,
+		"<!doctype html><html><head><meta charset=\"utf-8\"><title>xg2g</title></head><body><h1>%s</h1><p>%s</p></body></html>",
+		title,
+		message,
+	)
+}
+
+func withAdditionalConnectSrc(csp string, extras ...string) string {
+	if strings.TrimSpace(csp) == "" {
+		return csp
+	}
+
+	directives := strings.Split(csp, ";")
+	for i, directive := range directives {
+		trimmed := strings.TrimSpace(directive)
+		if !strings.HasPrefix(trimmed, "connect-src") {
+			continue
+		}
+		for _, extra := range extras {
+			if strings.Contains(trimmed, extra) {
+				continue
+			}
+			trimmed += " " + extra
+		}
+		directives[i] = trimmed
+		return strings.Join(directives, "; ")
+	}
+
+	return strings.TrimSpace(csp) + "; connect-src " + strings.Join(extras, " ")
 }

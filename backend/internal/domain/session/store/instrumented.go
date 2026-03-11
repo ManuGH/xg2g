@@ -112,6 +112,16 @@ func (i *instrumentedStore) GetIdempotency(ctx context.Context, key string) (sid
 	return i.inner.GetIdempotency(ctx, key)
 }
 
+func (i *instrumentedStore) DeleteIdempotencyIfMatch(ctx context.Context, key, sessionID string) (deleted bool, err error) {
+	cleaner, ok := i.inner.(IdempotencyCleaner)
+	if !ok {
+		return false, nil
+	}
+	start := time.Now()
+	defer func() { i.observe("delete_idem_match", start, err) }()
+	return cleaner.DeleteIdempotencyIfMatch(ctx, key, sessionID)
+}
+
 func (i *instrumentedStore) TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (l Lease, ok bool, err error) {
 	start := time.Now()
 	defer func() { i.observe("try_lease", start, err) }()

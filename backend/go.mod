@@ -2,7 +2,7 @@ module github.com/ManuGH/xg2g
 
 go 1.25
 
-toolchain go1.25.7
+toolchain go1.25.8
 
 require (
 	github.com/alicebob/miniredis/v2 v2.36.1

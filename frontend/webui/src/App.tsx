@@ -3,8 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useEffect, lazy, Suspense, useMemo } from 'react';
-
-
+import { useTranslation } from 'react-i18next';
 import './App.css';
 import { useAppContext } from './context/AppContext';
 import Navigation from './components/Navigation';
@@ -26,6 +25,7 @@ const Settings = lazy(() => import('./components/Settings'));
 const SystemInfo = lazy(() => import('./features/system/SystemInfo').then(m => ({ default: m.SystemInfo })));
 
 function App() {
+  const { t } = useTranslation();
   const ctx = useAppContext();
   const {
     view,
@@ -71,7 +71,13 @@ function App() {
     const token = formData.get('token') as string;
     setToken(token);
     setShowAuth(false);
-    window.location.reload();
+    checkConfigAndLoad();
+  };
+
+  const handleLogout = () => {
+    setPlayingChannel(null);
+    setToken('');
+    setShowAuth(true);
   };
 
   const memoizedBouquets = useMemo(() => (channels.bouquets || []).map(b => ({
@@ -83,7 +89,7 @@ function App() {
     return (
       <div className="app-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <div className="loading-spinner"></div>
-        <p style={{ marginLeft: '10px' }}>Initializing...</p>
+        <p style={{ marginLeft: '10px' }}>{t('app.initializing', { defaultValue: 'Initializing...' })}</p>
       </div>
     );
   }
@@ -93,16 +99,16 @@ function App() {
       {showAuth && (
         <div className="auth-overlay">
           <div className="auth-modal">
-            <h2>Authentication Required</h2>
+            <h2>{t('auth.requiredTitle', { defaultValue: 'Authentication Required' })}</h2>
             <form onSubmit={handleAuthSubmit}>
               <input
                 type="password"
                 name="token"
-                placeholder="Enter API Token"
+                placeholder={t('auth.tokenPlaceholder', { defaultValue: 'Enter API Token' })}
                 autoFocus
                 required
               />
-              <Button type="submit">Authenticate</Button>
+              <Button type="submit">{t('auth.authenticate', { defaultValue: 'Authenticate' })}</Button>
             </form>
           </div>
         </div>
@@ -119,7 +125,11 @@ function App() {
         </Suspense>
       )}
 
-      <Navigation activeView={view} onViewChange={ctx.setView} />
+      <Navigation
+        activeView={view}
+        onViewChange={ctx.setView}
+        onLogout={auth.isAuthenticated ? handleLogout : undefined}
+      />
 
       <main className="content-area">
         <Suspense fallback={<div className="loading-spinner" style={{ margin: '50px auto' }}></div>}>

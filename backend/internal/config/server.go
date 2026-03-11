@@ -93,7 +93,7 @@ const (
 	defaultIdleTimeout     = 120 * time.Second
 	defaultMaxHeaderBytes  = 1 << 20 // 1 MB
 	defaultShutdownTimeout = 15 * time.Second
-	fallbackListenAddr     = ":8088"
+	fallbackListenAddr     = "127.0.0.1:8088"
 )
 
 // ParseServerConfig reads server configuration from environment variables.
