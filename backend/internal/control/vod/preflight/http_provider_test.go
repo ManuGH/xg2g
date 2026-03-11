@@ -236,3 +236,30 @@ func testAllowedCIDRs(host string) []string {
 	}
 	return nil
 }
+
+func TestHTTPPreflightProvider_SetsBasicAuthFromSourceRef(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok {
+			t.Fatal("expected basic auth on preflight request")
+		}
+		if username != "root" || password != "secret" {
+			t.Fatalf("unexpected basic auth credentials: %q / %q", username, password)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	provider := NewHTTPPreflightProvider(srv.Client(), 0, testOutboundPolicy(t, srv.URL))
+	res, err := provider.Check(context.Background(), SourceRef{
+		URL:      srv.URL + "/stream?" + url.Values{"ref": []string{"1:0:1:"}}.Encode(),
+		Username: "root",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if res.Outcome != PreflightOK {
+		t.Fatalf("expected outcome %q, got %q", PreflightOK, res.Outcome)
+	}
+}

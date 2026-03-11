@@ -1274,7 +1274,7 @@ func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error
 		return u, nil
 	}
 
-	return buildDirectTSStreamURL(parsed, ref, c.port, c.username, c.password)
+	return buildDirectTSStreamURL(parsed, ref, c.port)
 }
 
 func parseOpenWebIFBaseURL(rawBase string) (*url.URL, error) {
@@ -1312,7 +1312,9 @@ func buildWebIFStreamURL(parsed *url.URL, ref, name, username, password string) 
 		Path:     "/web/stream.m3u",
 		RawQuery: q.Encode(),
 	}
-	setStreamURLUser(u, username, password)
+	if username != "" {
+		u.User = url.UserPassword(username, password)
+	}
 	return u.String(), nil
 }
 
@@ -1335,7 +1337,7 @@ func buildDirectStreamOverrideURL(rawStreamBase, ref string) (string, bool) {
 	return u.String(), true
 }
 
-func buildDirectTSStreamURL(parsed *url.URL, ref string, streamPort int, username, password string) (string, error) {
+func buildDirectTSStreamURL(parsed *url.URL, ref string, streamPort int) (string, error) {
 	host, err := resolveDirectTSHost(parsed, streamPort)
 	if err != nil {
 		return "", err
@@ -1346,14 +1348,7 @@ func buildDirectTSStreamURL(parsed *url.URL, ref string, streamPort int, usernam
 		Host:   host,
 		Path:   "/" + ref,
 	}
-	setStreamURLUser(u, username, password)
 	return u.String(), nil
-}
-
-func setStreamURLUser(u *url.URL, username, password string) {
-	if username != "" {
-		u.User = url.UserPassword(username, password)
-	}
 }
 
 func resolveDirectTSHost(parsed *url.URL, streamPort int) (string, error) {

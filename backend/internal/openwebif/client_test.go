@@ -191,7 +191,7 @@ func TestStreamURLInvalidStreamBaseOverrideFallsBack(t *testing.T) {
 	}
 }
 
-func TestStreamURLDirectIncludesCredentials(t *testing.T) {
+func TestStreamURLDirectDoesNotIncludeCredentials(t *testing.T) {
 	ref := "1:0:19:1334:3EF:1:C00000:0:0:0:"
 	client := NewWithPort("http://receiver.local", 19000, Options{
 		Username: "root",
@@ -208,15 +208,8 @@ func TestStreamURLDirectIncludesCredentials(t *testing.T) {
 		t.Fatalf("failed to parse URL %q: %v", got, err)
 	}
 
-	if parsed.User == nil {
-		t.Fatal("expected direct stream URL to include userinfo")
-	}
-	if parsed.User.Username() != "root" {
-		t.Fatalf("username: want %q, got %q", "root", parsed.User.Username())
-	}
-	password, ok := parsed.User.Password()
-	if !ok || password != "secret" {
-		t.Fatalf("password: want %q, got %q (ok=%v)", "secret", password, ok)
+	if parsed.User != nil {
+		t.Fatalf("expected direct stream URL without userinfo, got %q", got)
 	}
 }
 
