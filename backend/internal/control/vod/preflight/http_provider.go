@@ -61,6 +61,7 @@ func (p *HTTPPreflightProvider) Check(ctx context.Context, src SourceRef) (Prefl
 		URL:    validatedURL,
 		Header: make(http.Header),
 	}).WithContext(ctx)
+
 	if src.Username != "" {
 		req.SetBasicAuth(src.Username, src.Password)
 	}
