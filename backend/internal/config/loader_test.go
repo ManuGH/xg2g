@@ -98,6 +98,33 @@ picons:
 	}
 }
 
+func TestLoadFromYAMLHLSReadySegments(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+openWebIF:
+  baseUrl: http://custom.local
+hls:
+  readySegments: 5
+`
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	loader := NewLoader(configPath, "1.0.0")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.HLS.ReadySegments != 5 {
+		t.Fatalf("expected HLS.ReadySegments=5, got %d", cfg.HLS.ReadySegments)
+	}
+}
+
 func TestENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
