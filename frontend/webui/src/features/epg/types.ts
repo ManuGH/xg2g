@@ -1,5 +1,7 @@
 // EPG Feature Types - Pure TypeScript, no React dependencies
 
+import type { AppError } from '../../types/errors';
+
 export type EpgLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
 // Constants
@@ -51,8 +53,8 @@ export interface EpgState {
   // UI State
   loadState: EpgLoadState;
   searchLoadState: EpgLoadState;
-  error: string | null;
-  searchError: string | null;
+  error: AppError | null;
+  searchError: AppError | null;
 
   // Expansion state
   expandedChannels: Set<string>;
@@ -79,10 +81,10 @@ export interface TimersData {
 export type EpgAction =
   | { type: 'LOAD_START' }
   | { type: 'LOAD_SUCCESS'; payload: { events: EpgEvent[] } }
-  | { type: 'LOAD_ERROR'; payload: { error: string } }
+  | { type: 'LOAD_ERROR'; payload: { error: AppError } }
   | { type: 'SEARCH_START' }
   | { type: 'SEARCH_SUCCESS'; payload: { events: EpgEvent[] } }
-  | { type: 'SEARCH_ERROR'; payload: { error: string } }
+  | { type: 'SEARCH_ERROR'; payload: { error: AppError } }
   | { type: 'SEARCH_CLEAR' }
   | { type: 'SET_FILTER'; payload: Partial<EpgFilters> }
   | { type: 'SET_CHANNELS'; payload: { channels: EpgChannel[] } }

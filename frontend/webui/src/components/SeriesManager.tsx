@@ -7,13 +7,13 @@ import {
   getSeriesRules,
   deleteSeriesRule,
   createSeriesRule,
-  // updateSeriesRule, // Missing in SDK
+  updateSeriesRule,
   runSeriesRule,
   getServices,
   type SeriesRule,
   type Service,
   type SeriesRuleWritable,
-  // type SeriesRuleUpdate // Missing in SDK
+  type SeriesRuleUpdate
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
 import { useUiOverlay } from '../context/UiOverlayContext';
@@ -53,10 +53,6 @@ const DaySelector = ({ value, onChange }: DaySelectorProps) => {
     </div>
   );
 };
-
-// Use definition from SDK which is intersection (SeriesRule & SeriesRuleWritable) or separate?
-// Looking at types.gen.ts, SeriesRuleWritable has the editable fields.
-// For the form state, we need a shape that matches what we edit.
 
 interface RuleFormState {
   id?: string;
@@ -139,10 +135,8 @@ function SeriesManager() {
     });
     if (!ok) return;
     try {
-      // Fix: id/ruleId key name depends on SDK. 
-      // User says: "DeleteSeriesRuleData: path: { id: string }"
       await deleteSeriesRule({ path: { id } });
-      loadRules();
+      await loadRules();
     } catch (err: any) {
       toast({ kind: 'error', message: 'Failed to delete rule', details: err.message || 'Unknown error' });
     }
@@ -157,15 +151,7 @@ function SeriesManager() {
         return;
       }
 
-      // Prepare payload
       if (currentRule.id) {
-        toast({
-          kind: 'warning',
-          message: 'Update not implemented in this version (SDK mismatch). Please delete and recreate.',
-        });
-        return;
-        /*
-        // Update existing rule
         const updatePayload: SeriesRuleUpdate = {
           enabled: currentRule.enabled,
           keyword: currentRule.keyword,
@@ -179,7 +165,6 @@ function SeriesManager() {
           path: { id: currentRule.id },
           body: updatePayload
         });
-        */
       } else {
         // UI-INV-SERIES-001: Omit empty filters to avoid unnecessary state synthesis.
         const createPayload: SeriesRuleWritable = {
@@ -194,7 +179,7 @@ function SeriesManager() {
         await createSeriesRule({ body: createPayload });
       }
       setIsEditing(false);
-      loadRules();
+      await loadRules();
     } catch (err: any) {
       toast({ kind: 'error', message: 'Failed to save rule', details: err.message || 'Unknown error' });
     }
@@ -203,7 +188,6 @@ function SeriesManager() {
   const handleRunNow = async (id: string) => {
     setReportLoading(id);
     try {
-      // Fix: Params are path + query
       const response = await runSeriesRule({
         path: { id },
         query: { trigger: 'manual' }
@@ -216,7 +200,7 @@ function SeriesManager() {
           details: `Matched: ${report.summary?.epgItemsMatched ?? 0} | Created: ${report.summary?.timersCreated ?? 0} | Errors: ${report.summary?.timersErrored ?? 0}`,
         });
       }
-      loadRules();
+      await loadRules();
     } catch (err: any) {
       toast({ kind: 'error', message: 'Run failed', details: err.message || 'Unknown error' });
     } finally {

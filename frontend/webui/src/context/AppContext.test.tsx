@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { useEffect } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppProvider, useAppContext } from './AppContext';
 
@@ -7,12 +9,10 @@ const {
   setClientAuthToken,
   getServices,
   getServicesBouquets,
-  getSystemConfig,
 } = vi.hoisted(() => ({
   setClientAuthToken: vi.fn(),
   getServices: vi.fn(),
   getServicesBouquets: vi.fn(),
-  getSystemConfig: vi.fn(),
 }));
 
 vi.mock('../lib/clientWrapper', async () => {
@@ -26,7 +26,6 @@ vi.mock('../lib/clientWrapper', async () => {
 vi.mock('../client-ts', () => ({
   getServices,
   getServicesBouquets,
-  getSystemConfig,
 }));
 
 vi.mock('../utils/tokenStorage', () => ({
@@ -35,24 +34,58 @@ vi.mock('../utils/tokenStorage', () => ({
   setStoredToken: vi.fn()
 }));
 
-function ConfigLoadProbe() {
-  const { checkConfigAndLoad, showAuth, view } = useAppContext();
-
-  useEffect(() => {
-    void checkConfigAndLoad();
-  }, [checkConfigAndLoad]);
-
-  return <div data-testid="config-load-state">{showAuth ? 'auth' : 'no-auth'}:{view}</div>;
-}
-
 function ChannelLoadProbe() {
-  const { loadChannels, showAuth } = useAppContext();
+  const { loadChannels } = useAppContext();
 
   useEffect(() => {
     void loadChannels('Premium');
   }, [loadChannels]);
 
-  return <div data-testid="channel-load-state">{showAuth ? 'auth' : 'no-auth'}</div>;
+  return <div data-testid="channel-load-state">ready</div>;
+}
+
+function HydrationProbe() {
+  const { channels, dataLoaded, loadBouquetsAndChannels } = useAppContext();
+
+  useEffect(() => {
+    void loadBouquetsAndChannels();
+  }, [loadBouquetsAndChannels]);
+
+  return (
+    <div data-testid="hydration-state">
+      {channels.bouquets.length}:{channels.channels.length}:{dataLoaded ? 'loaded' : 'idle'}
+    </div>
+  );
+}
+
+function ResetOnLogoutProbe() {
+  const { channels, dataLoaded, loadBouquetsAndChannels, setToken } = useAppContext();
+
+  useEffect(() => {
+    void loadBouquetsAndChannels();
+  }, [loadBouquetsAndChannels]);
+
+  useEffect(() => {
+    if (dataLoaded) {
+      setToken('');
+    }
+  }, [dataLoaded, setToken]);
+
+  return (
+    <div data-testid="reset-state">
+      {channels.bouquets.length}:{channels.channels.length}:{dataLoaded ? 'loaded' : 'idle'}
+    </div>
+  );
+}
+
+function renderWithRouter(children: ReactNode) {
+  return render(
+    <MemoryRouter initialEntries={['/epg']}>
+      <AppProvider>
+        {children}
+      </AppProvider>
+    </MemoryRouter>
+  );
 }
 
 describe('AppProvider', () => {
@@ -68,11 +101,7 @@ describe('AppProvider', () => {
       return <div>probe</div>;
     }
 
-    render(
-      <AppProvider>
-        <RenderProbe />
-      </AppProvider>
-    );
+    renderWithRouter(<RenderProbe />);
 
     expect(callsDuringRender).toBe(0);
     await waitFor(() => {
@@ -80,30 +109,10 @@ describe('AppProvider', () => {
     });
   });
 
-  it('shows auth instead of switching to setup when config loading gets a 401 response', async () => {
-    (getSystemConfig as any).mockResolvedValue({
-      data: undefined,
-      error: {
-        status: 401,
-        code: 'UNAUTHORIZED',
-        title: 'Authentication required',
-        requestId: 'req-401',
-      },
-      response: { status: 401 },
-    });
+  it('dispatches auth-required when channel loading returns a 401 response', async () => {
+    const authRequired = vi.fn();
+    window.addEventListener('auth-required', authRequired);
 
-    render(
-      <AppProvider>
-        <ConfigLoadProbe />
-      </AppProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('config-load-state')).toHaveTextContent('auth:epg');
-    });
-  });
-
-  it('shows auth when channel loading returns a 401 response', async () => {
     (getServices as any).mockResolvedValue({
       data: undefined,
       error: {
@@ -115,14 +124,57 @@ describe('AppProvider', () => {
       response: { status: 401 },
     });
 
-    render(
-      <AppProvider>
-        <ChannelLoadProbe />
-      </AppProvider>
-    );
+    renderWithRouter(<ChannelLoadProbe />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('channel-load-state')).toHaveTextContent('auth');
+      expect(authRequired).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('channel-load-state')).toHaveTextContent('ready');
+    });
+
+    window.removeEventListener('auth-required', authRequired);
+  });
+
+  it('hydrates bouquets and channels without going through the bootstrap gate', async () => {
+    (getServicesBouquets as any).mockResolvedValue({
+      data: [{ name: 'Favorites', services: 2 }],
+      error: undefined,
+      response: { status: 200 },
+    });
+    (getServices as any).mockResolvedValue({
+      data: [{ servicereference: '1:0:1', name: 'Das Erste HD' }],
+      error: undefined,
+      response: { status: 200 },
+    });
+
+    renderWithRouter(<HydrationProbe />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('hydration-state')).toHaveTextContent('1:1:loaded');
+    });
+  });
+
+  it('clears hydrated channel state when the token is removed', async () => {
+    (getServicesBouquets as any).mockResolvedValue({
+      data: [{ name: 'Favorites', services: 2 }],
+      error: undefined,
+      response: { status: 200 },
+    });
+    (getServices as any).mockResolvedValue({
+      data: [{ servicereference: '1:0:1', name: 'Das Erste HD' }],
+      error: undefined,
+      response: { status: 200 },
+    });
+
+    renderWithRouter(<ResetOnLogoutProbe />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('reset-state')).toHaveTextContent('1:1:loaded');
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('reset-state')).toHaveTextContent('0:0:idle');
+    });
+    await waitFor(() => {
+      expect(setClientAuthToken).toHaveBeenCalledWith('');
     });
   });
 });

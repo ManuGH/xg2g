@@ -5,12 +5,14 @@
 
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import './i18n';
 import './index.css';
 import App from './App.tsx';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AppProvider } from './context/AppContext.tsx';
 import { UiOverlayProvider } from './context/UiOverlayContext.tsx';
+import { ROUTE_MAP } from './routes.ts';
 
 // TanStack Query Client Configuration
 // Phase 1: Server-State Layer (2026 State-of-the-Art)
@@ -26,13 +28,19 @@ const queryClient = new QueryClient({
 });
 
 createRoot(document.getElementById('root')!).render(
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <UiOverlayProvider>
-        <AppProvider>
-          <App />
-        </AppProvider>
-      </UiOverlayProvider>
-    </QueryClientProvider>
-  </ErrorBoundary>,
+  <BrowserRouter>
+    <ErrorBoundary
+      fallbackTitle="xg2g could not be loaded"
+      fallbackDetail="Try again to restore the interface."
+      homeHref={ROUTE_MAP.dashboard}
+    >
+      <QueryClientProvider client={queryClient}>
+        <UiOverlayProvider>
+          <AppProvider>
+            <App />
+          </AppProvider>
+        </UiOverlayProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
+  </BrowserRouter>,
 );

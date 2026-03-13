@@ -9,31 +9,25 @@
 }
 
 .desktopNav {
-  width: var(--nav-rail-width);
+  width: var(--nav-shell-width);
   height: 100%;
   padding: 14px 12px;
   border-radius: 32px;
   border: 1px solid var(--border-elevated);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 18%),
-    var(--surface-shell);
-  box-shadow: var(--shadow-shell);
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  background: var(--surface-shell-strong);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   gap: 18px;
   overflow: hidden;
   transition:
-    width var(--motion-slow) var(--ease-standard),
     border-color var(--motion-standard) var(--ease-standard),
     background var(--motion-standard) var(--ease-standard);
   pointer-events: auto;
 }
 
-.desktopShell:hover .desktopNav,
+.desktopNav:hover,
 .desktopNav:focus-within {
-  width: var(--nav-rail-expanded);
   border-color: var(--border-strong);
 }
 
@@ -50,14 +44,11 @@
   width: 48px;
   height: 48px;
   border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
-    var(--accent-action-subtle);
-  border: 1px solid rgba(74, 144, 245, 0.22);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-base);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
 
@@ -65,29 +56,15 @@
   width: 12px;
   height: 12px;
   border-radius: 999px;
-  background: var(--accent-live);
-  box-shadow: 0 0 0 6px rgba(245, 159, 10, 0.12);
+  background: var(--text-secondary);
 }
 
 .brandCopy,
 .sectionTitle,
 .itemText {
   min-width: 0;
-  opacity: 0;
-  transform: translateX(-8px);
-  transition:
-    opacity var(--motion-standard) var(--ease-standard),
-    transform var(--motion-standard) var(--ease-standard);
-}
-
-.desktopShell:hover .brandCopy,
-.desktopShell:hover .sectionTitle,
-.desktopShell:hover .itemText,
-.desktopNav:focus-within .brandCopy,
-.desktopNav:focus-within .sectionTitle,
-.desktopNav:focus-within .itemText {
   opacity: 1;
-  transform: translateX(0);
+  transform: none;
 }
 
 .brandTitle {
@@ -150,38 +127,33 @@
   transition:
     background var(--motion-standard) var(--ease-standard),
     border-color var(--motion-standard) var(--ease-standard),
-    color var(--motion-standard) var(--ease-standard),
-    transform var(--motion-standard) var(--ease-standard);
+    color var(--motion-standard) var(--ease-standard);
 }
 
 .navItem:hover {
   background: var(--surface-muted);
   border-color: var(--border-base);
   color: var(--text-primary);
-  transform: translateY(-1px);
 }
 
 .navItem[aria-current="page"] {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
-    var(--surface-panel);
+  background: var(--bg-elevated);
   border-color: var(--border-elevated);
   color: var(--text-primary);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .navItem[aria-current="page"] .iconShell {
-  background: var(--accent-action-subtle);
+  background: var(--surface-muted);
   color: var(--accent-action);
-  border-color: rgba(74, 144, 245, 0.24);
+  border-color: var(--border-base);
 }
 
 .iconShell {
   width: 40px;
   height: 40px;
   border-radius: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-base);
+  background: var(--surface-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -241,12 +213,8 @@
     padding: 8px;
     border-radius: 28px;
     border: 1px solid var(--border-elevated);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent),
-      var(--surface-shell-strong);
-    box-shadow: var(--shadow-shell);
-    backdrop-filter: blur(28px) saturate(180%);
-    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    background: var(--surface-shell-strong);
+    box-shadow: var(--shadow-card);
     display: flex;
     gap: 8px;
     pointer-events: auto;
@@ -281,9 +249,7 @@
   .sheetBackdrop {
     position: fixed;
     inset: 0;
-    background: rgba(7, 10, 17, 0.4);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: var(--overlay-backdrop);
     border: none;
     padding: 0;
     margin: 0;
@@ -298,12 +264,8 @@
     padding: 18px;
     border-radius: 28px;
     border: 1px solid var(--border-elevated);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent),
-      var(--surface-shell-strong);
-    box-shadow: var(--shadow-shell);
-    backdrop-filter: blur(28px) saturate(180%);
-    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    background: var(--surface-shell-strong);
+    box-shadow: var(--shadow-card);
     pointer-events: auto;
   }
 
@@ -333,7 +295,7 @@
   .sheetClose,
   .sheetAction {
     border: 1px solid var(--border-base);
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--surface-muted);
     color: var(--text-primary);
     border-radius: 16px;
     min-height: 44px;
@@ -353,7 +315,7 @@
     min-height: 72px;
     padding: 12px;
     border-radius: 20px;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--surface-muted);
   }
 
   .sheetItem .itemText {

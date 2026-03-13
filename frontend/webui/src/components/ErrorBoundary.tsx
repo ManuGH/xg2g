@@ -1,18 +1,59 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-import React, { type ReactNode, type ErrorInfo } from 'react';
+import React, { type ErrorInfo, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toAppError } from '../lib/appErrors';
 import { debugError } from '../utils/logging';
+import ErrorPanel from './ErrorPanel';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  fallbackTitle?: string;
+  fallbackDetail?: string;
+  homeHref?: string;
+  resetKey?: string;
+  titleAs?: 'h2' | 'h3';
 }
 
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+}
+
+function ErrorBoundaryFallback({
+  error,
+  errorInfo,
+  onRetry,
+  homeHref,
+  fallbackTitle,
+  fallbackDetail,
+  titleAs,
+}: {
+  error: Error | null;
+  errorInfo: ErrorInfo | null;
+  onRetry: () => void;
+  homeHref?: string;
+  fallbackTitle?: string;
+  fallbackDetail?: string;
+  titleAs?: 'h2' | 'h3';
+}) {
+  const { t } = useTranslation();
+  const appError = toAppError(error, {
+    fallbackTitle: fallbackTitle ?? t('errors.sectionLoadTitle', { defaultValue: 'This area could not be loaded' }),
+    fallbackDetail: fallbackDetail ?? t('errors.sectionLoadDetail', { defaultValue: 'Try again or return to the dashboard.' }),
+  });
+
+  return (
+    <ErrorPanel error={appError} onRetry={onRetry} homeHref={homeHref} titleAs={titleAs}>
+      {import.meta.env.DEV && (error || errorInfo) ? (
+        <details>
+          <summary>{t('errors.devDetails', { defaultValue: 'Developer details' })}</summary>
+          <pre>
+            {[error?.toString(), errorInfo?.componentStack].filter(Boolean).join('\n\n')}
+          </pre>
+        </details>
+      ) : null}
+    </ErrorPanel>
+  );
 }
 
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -22,51 +63,36 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    // Update state so the next render will show the fallback UI.
     return { hasError: true, error, errorInfo: null };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    // You can also log the error to an error reporting service
     debugError('Uncaught error:', error, errorInfo);
     this.setState({ errorInfo });
   }
 
+  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.handleReset();
+    }
+  }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
+
   render(): ReactNode {
     if (this.state.hasError) {
-      // You can render any custom fallback UI
       return (
-        <div
-          style={{
-            padding: '20px',
-            color: 'var(--status-error)',
-            background: 'var(--status-error-subtle)',
-            border: '1px solid var(--status-error-border)',
-            borderRadius: '8px',
-            margin: '20px',
-          }}
-        >
-          <h2>Something went wrong.</h2>
-          <details style={{ whiteSpace: 'pre-wrap', marginTop: '10px' }}>
-            {this.state.error && this.state.error.toString()}
-            <br />
-            {this.state.errorInfo && this.state.errorInfo.componentStack}
-          </details>
-          <button
-            onClick={() => window.location.reload()}
-            style={{
-              marginTop: '20px',
-              padding: '8px 16px',
-              background: 'var(--bg-hover)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-base)',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
-          >
-            Reload Page
-          </button>
-        </div>
+        <ErrorBoundaryFallback
+          error={this.state.error}
+          errorInfo={this.state.errorInfo}
+          onRetry={this.handleReset}
+          homeHref={this.props.homeHref}
+          fallbackTitle={this.props.fallbackTitle}
+          fallbackDetail={this.props.fallbackDetail}
+          titleAs={this.props.titleAs}
+        />
       );
     }
 

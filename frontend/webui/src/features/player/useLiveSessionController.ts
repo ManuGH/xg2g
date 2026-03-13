@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'reac
 import type { TFunction } from 'i18next';
 import { createSession } from '../../client-ts';
 import { setClientAuthToken } from '../../lib/clientWrapper';
+import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import { telemetry } from '../../services/TelemetryService';
 import type { PlayerStatus, SessionCookieState, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
@@ -183,10 +184,18 @@ export function useLiveSessionController({
           headers: authHeaders()
         });
 
-        if (res.status === 401 || res.status === 403) {
+        if (notifyAuthRequiredIfUnauthorizedResponse(res, 'useLiveSessionController.waitForSessionReady')) {
           throw createPlayerError(t('player.authFailed'), {
             url: res.url,
-            status: res.status,
+            status: 401,
+            requestId: res.headers.get('X-Request-ID') || undefined
+          });
+        }
+
+        if (res.status === 403) {
+          throw createPlayerError(t('player.forbidden'), {
+            url: res.url,
+            status: 403,
             requestId: res.headers.get('X-Request-ID') || undefined
           });
         }
@@ -325,7 +334,27 @@ export function useLiveSessionController({
           return;
         }
 
-        if (res.status === 200) {
+        if (notifyAuthRequiredIfUnauthorizedResponse(res, 'useLiveSessionController.heartbeat')) {
+          debugWarn('[V3Player][Heartbeat] Session unauthorized (401)');
+          window.clearInterval(timerId);
+          clearSessionLeaseState();
+          setPlaybackMode('UNKNOWN');
+          setStatus('error');
+          setError(t('player.authFailed'));
+          if (videoRef.current) {
+            videoRef.current.pause();
+          }
+        } else if (res.status === 403) {
+          debugWarn('[V3Player][Heartbeat] Session forbidden (403)');
+          window.clearInterval(timerId);
+          clearSessionLeaseState();
+          setPlaybackMode('UNKNOWN');
+          setStatus('error');
+          setError(t('player.forbidden'));
+          if (videoRef.current) {
+            videoRef.current.pause();
+          }
+        } else if (res.status === 200) {
           const data = await res.json();
           if (sessionIdRef.current !== trackedSessionId) {
             return;

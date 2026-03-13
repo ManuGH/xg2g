@@ -1,7 +1,7 @@
 /* App shell - keep global footprint minimal */
 
 .app-container {
-  margin-left: calc(var(--nav-rail-width) + 24px);
+  margin-left: calc(var(--nav-shell-width) + 24px);
   min-height: 100vh;
   padding: 24px 28px 40px 0;
 }
@@ -9,58 +9,6 @@
 .content-area {
   max-width: var(--content-max-width);
   margin: 0 auto;
-}
-
-.auth-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2200;
-  background: var(--overlay-backdrop-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
-}
-
-.auth-modal {
-  width: min(520px, 100%);
-  background: var(--surface-shell-strong);
-  border: 1px solid var(--border-elevated);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-shell);
-  padding: 22px;
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.auth-modal h2 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--text-h1);
-}
-
-.auth-modal form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.auth-modal input {
-  background: var(--bg-input);
-  border: 1px solid var(--border-base);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  padding: 12px 14px;
-  font-family: var(--font-body);
-  font-size: var(--text-base);
-}
-
-.auth-modal input:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 3px;
 }
 
 @media (max-width: 768px) {

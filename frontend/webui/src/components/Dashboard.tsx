@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { ChipState } from './ui/StatusChip';
 import {
@@ -7,8 +8,11 @@ import {
   useStreams,
   useDvrStatus
 } from '../hooks/useServerQueries';
-import { useAppContext } from '../context/AppContext';
+import { toAppError } from '../lib/appErrors';
+import { ROUTE_MAP } from '../routes';
 import { Button, Card, StatusChip } from './ui';
+import ErrorPanel from './ErrorPanel';
+import LoadingSkeleton from './LoadingSkeleton';
 import StreamsList from './StreamsList';
 import styles from './Dashboard.module.css';
 
@@ -16,14 +20,32 @@ type HeroTone = 'streaming' | 'control' | 'standby';
 
 export default function Dashboard() {
   const { t } = useTranslation();
-  const { setView } = useAppContext();
+  const navigate = useNavigate();
   const { data: health, error, isLoading, refetch } = useSystemHealth();
   const { data: receiver } = useReceiverCurrent();
   const { data: streams = [] } = useStreams();
   const { data: recording } = useDvrStatus();
 
-  if (error) return <div className={styles.errorText}>Error: {(error as Error).message}</div>;
-  if (isLoading || !health) return <div className={styles.loadingState}>{t('common.loading')}</div>;
+  if (error) {
+    return (
+      <div className={`${styles.page} animate-enter`.trim()}>
+        <ErrorPanel
+          error={toAppError(error, {
+            fallbackTitle: t('dashboard.loadErrorTitle', { defaultValue: 'Unable to load system health' }),
+            fallbackDetail: t('dashboard.loadErrorDetail', { defaultValue: 'Try again to refresh the current receiver and guide status.' }),
+          })}
+          onRetry={() => { void refetch(); }}
+        />
+      </div>
+    );
+  }
+  if (isLoading || !health) {
+    return (
+      <div className={`${styles.page} animate-enter`.trim()}>
+        <LoadingSkeleton variant="section" label={t('common.loading', { defaultValue: 'Loading...' })} />
+      </div>
+    );
+  }
 
   const streamCount = streams.length;
   const receiverUnavailable = receiver?.status === 'unavailable';
@@ -120,11 +142,11 @@ export default function Dashboard() {
             ) : null}
 
             <div className={styles.heroActions}>
-              <Button onClick={() => setView('epg')}>{t('nav.epg')}</Button>
-              <Button variant="secondary" onClick={() => setView('recordings')}>
+              <Button onClick={() => navigate(ROUTE_MAP.epg)}>{t('nav.epg')}</Button>
+              <Button variant="secondary" onClick={() => navigate(ROUTE_MAP.recordings)}>
                 {t('nav.recordings')}
               </Button>
-              <Button variant="ghost" onClick={() => setView('timers')}>
+              <Button variant="ghost" onClick={() => navigate(ROUTE_MAP.timers)}>
                 {t('nav.timers')}
               </Button>
             </div>

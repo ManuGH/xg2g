@@ -77,6 +77,29 @@ describe('RecordingsList', () => {
     vi.clearAllMocks();
   });
 
+  it('refetches recordings on explicit refresh', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a',
+        currentPath: '',
+        roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: [],
+      },
+    });
+
+    renderWithQueryClient();
+
+    await screen.findByText('No recordings found in this location.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      expect(getRecordings).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('refetches recordings when navigating into a directory', async () => {
     getRecordings
       .mockResolvedValueOnce({
@@ -172,5 +195,70 @@ describe('RecordingsList', () => {
     });
 
     expect(toast).toHaveBeenCalledWith({ kind: 'success', message: 'Deleted 1 recording(s)' });
+  });
+
+  it('sorts and filters the visible recordings locally', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a',
+        currentPath: '',
+        roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: [
+          {
+            recordingId: 'rec-older',
+            title: 'Older Recording',
+            beginUnixSeconds: 1700000000,
+            length: '45m',
+            description: 'Older item',
+          },
+          {
+            recordingId: 'rec-active',
+            title: 'Active Recording',
+            beginUnixSeconds: 1710000000,
+            length: '30m',
+            description: 'Still recording',
+            status: 'recording',
+          },
+          {
+            recordingId: 'rec-newest',
+            title: 'Newest Recording',
+            beginUnixSeconds: 1720000000,
+            length: '90m',
+            description: 'Newest item',
+          },
+        ],
+      },
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText('Newest Recording')).toBeInTheDocument();
+
+    const getTitles = () =>
+      screen.getAllByTestId('recording-title').map((title) => title.textContent);
+
+    expect(getTitles()).toEqual([
+      'Newest Recording',
+      'Active Recording',
+      'Older Recording',
+    ]);
+
+    fireEvent.change(screen.getByTestId('recordings-sort-select'), {
+      target: { value: 'oldest' },
+    });
+
+    expect(getTitles()).toEqual([
+      'Older Recording',
+      'Active Recording',
+      'Newest Recording',
+    ]);
+
+    fireEvent.change(screen.getByTestId('recordings-filter-select'), {
+      target: { value: 'active' },
+    });
+
+    expect(getTitles()).toEqual(['Active Recording']);
   });
 });

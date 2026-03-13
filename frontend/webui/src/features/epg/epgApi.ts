@@ -2,21 +2,9 @@
 // Zero React dependencies, zero legacy client imports
 
 import { getEpg, getServices, getServicesBouquets, getTimers } from '../../client-ts';
-import { ClientRequestError, mapApiError } from '../../lib/clientWrapper';
+import { throwOnClientResultError, unwrapClientResultOrThrow } from '../../lib/clientWrapper';
 import type { EpgEvent, EpgChannel, EpgBouquet, Timer } from './types';
 import { debugError } from '../../utils/logging';
-
-// ============================================================================
-// API Fetch Functions (client-ts SDK only)
-// ============================================================================
-
-function throwOnClientError(result: { error?: unknown; response?: { status?: number } }): void {
-  if (!result.error) {
-    return;
-  }
-
-  throw new ClientRequestError(mapApiError(result.error, result.response?.status));
-}
 
 /**
  * Fetch all bouquets from the API
@@ -24,10 +12,7 @@ function throwOnClientError(result: { error?: unknown; response?: { status?: num
  */
 export async function fetchBouquets(): Promise<EpgBouquet[]> {
   const result = await getServicesBouquets();
-
-  if (result.error) {
-    throwOnClientError(result);
-  }
+  throwOnClientResultError(result, { source: 'EPG.fetchBouquets' });
 
   return (result.data || []).map(mapSdkBouquet);
 }
@@ -40,10 +25,7 @@ export async function fetchChannels(bouquetName?: string): Promise<EpgChannel[]>
   const result = await getServices({
     query: bouquetName ? { bouquet: bouquetName } : undefined
   });
-
-  if (result.error) {
-    throwOnClientError(result);
-  }
+  throwOnClientResultError(result, { source: 'EPG.fetchChannels' });
 
   return (result.data || []).map(mapSdkChannel);
 }
@@ -68,10 +50,7 @@ export async function fetchEpgEvents(params: {
     },
     signal: params.signal
   });
-
-  if (result.error) {
-    throwOnClientError(result);
-  }
+  throwOnClientResultError(result, { source: 'EPG.fetchEpgEvents' });
 
 
   const data = result.data;
@@ -97,12 +76,11 @@ export async function fetchEpgEvents(params: {
  */
 export async function fetchTimers(): Promise<Timer[]> {
   const result = await getTimers();
-
-  if (result.error || !result.data) {
-    return [];
-  }
-
-  return result.data.items || [];
+  const data = unwrapClientResultOrThrow<{ items?: Timer[] }>(result, {
+    source: 'EPG.fetchTimers',
+    silent: true
+  });
+  return data?.items || [];
 }
 
 // ============================================================================

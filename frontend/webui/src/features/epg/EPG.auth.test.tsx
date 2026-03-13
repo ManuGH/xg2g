@@ -1,5 +1,6 @@
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ClientRequestError } from '../../lib/clientWrapper';
 import type { EpgEvent, Timer } from './types';
 
 const {
@@ -8,17 +9,19 @@ const {
   addTimer,
   confirm,
   toast,
+  t,
 } = vi.hoisted(() => ({
   fetchEpgEvents: vi.fn<(...args: any[]) => Promise<EpgEvent[]>>(),
   fetchTimers: vi.fn<() => Promise<Timer[]>>(),
   addTimer: vi.fn(),
   confirm: vi.fn(),
   toast: vi.fn(),
+  t: (key: string) => key,
 }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t,
   }),
 }));
 
@@ -49,32 +52,48 @@ vi.mock('./components/EpgChannelList', () => ({
 import EPG from './EPG';
 
 describe('EPG auth handling', () => {
+  beforeEach(() => {
+    vi.stubGlobal('setInterval', vi.fn(() => 0 as unknown as ReturnType<typeof setInterval>));
+    vi.stubGlobal('clearInterval', vi.fn());
+  });
+
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it('dispatches auth-required when the initial EPG load returns 401', async () => {
+  it('does not render a local error panel when the initial EPG load returns 401', async () => {
     fetchTimers.mockResolvedValue([]);
-    fetchEpgEvents.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }));
-
-    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    fetchEpgEvents.mockRejectedValue(
+      new ClientRequestError({
+        status: 401,
+        title: 'Unauthorized',
+        detail: 'Token expired',
+      })
+    );
 
     render(<EPG channels={[]} />);
 
     await waitFor(() => {
-      expect(dispatchSpy).toHaveBeenCalled();
+      expect(screen.getByRole('status', { name: 'epg.loading' })).toBeInTheDocument();
     });
 
-    expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'auth-required')).toBe(true);
-    dispatchSpy.mockRestore();
+    expect(screen.queryByRole('heading', { name: 'epg.loadError' })).not.toBeInTheDocument();
   });
 
   it('shows a forbidden error when the EPG endpoint returns 403', async () => {
     fetchTimers.mockResolvedValue([]);
-    fetchEpgEvents.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
+    fetchEpgEvents.mockRejectedValue(
+      new ClientRequestError({
+        status: 403,
+        title: 'Forbidden',
+        detail: 'Missing scope',
+      })
+    );
 
-    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    const authRequiredHandler = vi.fn();
+    window.addEventListener('auth-required', authRequiredHandler);
 
     render(<EPG channels={[]} />);
 
@@ -82,7 +101,7 @@ describe('EPG auth handling', () => {
       expect(screen.getByText('player.forbidden')).toBeInTheDocument();
     });
 
-    expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'auth-required')).toBe(false);
-    dispatchSpy.mockRestore();
+    expect(authRequiredHandler).not.toHaveBeenCalled();
+    window.removeEventListener('auth-required', authRequiredHandler);
   });
 });

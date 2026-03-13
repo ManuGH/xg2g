@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import {
@@ -30,6 +31,9 @@ import {
   shouldForceNativeMobileHls,
   shouldPreferNativeWebKitHls
 } from '../utils/playerHelpers';
+import { normalizePlayerError } from '../lib/appErrors';
+import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
+import type { AppError } from '../types/errors';
 import styles from './V3Player.module.css';
 
 interface ApiErrorResponse {
@@ -64,8 +68,7 @@ function V3Player(props: V3PlayerProps) {
   const [traceId, setTraceId] = useState<string>('-');
 
   const [status, setStatus] = useState<PlayerStatus>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -98,6 +101,51 @@ function V3Player(props: V3PlayerProps) {
   // Resume State
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
+
+  const setPlayerError = useCallback((nextError: AppError | null) => {
+    setError(nextError);
+  }, []);
+
+  const clearPlayerError = useCallback(() => {
+    setError(null);
+    setShowErrorDetails(false);
+  }, []);
+
+  const setLegacyError = useCallback<Dispatch<SetStateAction<string | null>>>((next) => {
+    setError((current) => {
+      const currentTitle = current?.title ?? null;
+      const resolvedTitle = typeof next === 'function' ? next(currentTitle) : next;
+      if (!resolvedTitle) {
+        return null;
+      }
+      return {
+        title: resolvedTitle,
+        detail: current?.detail,
+        status: current?.status,
+        retryable: current?.retryable ?? true,
+      };
+    });
+  }, []);
+
+  const setLegacyErrorDetails = useCallback<Dispatch<SetStateAction<string | null>>>((next) => {
+    setError((current) => {
+      if (!current) {
+        return current;
+      }
+      const currentDetail = current.detail ?? null;
+      const resolvedDetail = typeof next === 'function' ? next(currentDetail) : next;
+      return {
+        ...current,
+        detail: resolvedDetail ?? undefined,
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!error?.detail) {
+      setShowErrorDetails(false);
+    }
+  }, [error?.detail]);
 
   const sleep = useCallback((ms: number): Promise<void> => (
     new Promise(resolve => setTimeout(resolve, ms))
@@ -134,7 +182,7 @@ function V3Player(props: V3PlayerProps) {
     setPlaybackMode,
     setDurationSeconds,
     setStatus,
-    setError,
+    setError: setLegacyError,
     readResponseBody,
     createPlayerError: (message, details) => new PlayerError(message, details)
   });
@@ -218,8 +266,8 @@ function V3Player(props: V3PlayerProps) {
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
     setStats,
     setStatus,
-    setError,
-    setErrorDetails,
+    setError: setLegacyError,
+    setErrorDetails: setLegacyErrorDetails,
     setShowErrorDetails
   });
 
@@ -371,9 +419,7 @@ function V3Player(props: V3PlayerProps) {
     activeRecordingRef.current = id;
     setActiveRecordingId(id);
     setStatus('building');
-    setError(null);
-    setErrorDetails(null);
-    setShowErrorDetails(false);
+    clearPlayerError();
     setTraceId('-');
     setPlaybackMode('VOD');
 
@@ -400,10 +446,24 @@ function V3Player(props: V3PlayerProps) {
           });
 
           if (error) {
-            if (response.status === 401 || response.status === 403) {
+            if (notifyAuthRequiredIfUnauthorizedResponse(response, 'V3Player.recordingPlaybackInfo')) {
+              telemetry.emit('ui.error', { status: 401, code: 'AUTH_DENIED' });
+              setStatus('error');
+              setPlayerError({
+                title: t('player.authFailed'),
+                status: 401,
+                retryable: false,
+              });
+              return;
+            }
+            if (response.status === 403) {
               telemetry.emit('ui.error', { status: response.status, code: 'AUTH_DENIED' });
               setStatus('error');
-              setError(t('player.authFailed'));
+              setPlayerError({
+                title: t('player.forbidden'),
+                status: 403,
+                retryable: false,
+              });
               return;
             }
             if (response.status === 410) {
@@ -416,7 +476,11 @@ function V3Player(props: V3PlayerProps) {
               const retryHint = retryAfter > 0 ? ` ${t('player.retryAfter', { seconds: retryAfter })}` : '';
               telemetry.emit('ui.error', { status: 409, code: 'LEASE_BUSY', retry_after: retryAfter });
               setStatus('error');
-              setError(`${t('player.leaseBusy')}${retryHint}`);
+              setPlayerError({
+                title: `${t('player.leaseBusy')}${retryHint}`,
+                status: 409,
+                retryable: true,
+              });
               return;
             }
             if (response.status === 503) {
@@ -425,7 +489,7 @@ function V3Player(props: V3PlayerProps) {
                 const seconds = parseInt(retryAfter, 10);
                 telemetry.emit('ui.error', { status: 503, code: 'UNAVAILABLE', retry_after: seconds });
                 setStatus('building');
-                setErrorDetails(`${t('player.preparing')} (${seconds}s)`);
+                setLegacyErrorDetails(`${t('player.preparing')} (${seconds}s)`);
                 await sleep(seconds * 1000);
                 continue;
               } else {
@@ -526,7 +590,9 @@ function V3Player(props: V3PlayerProps) {
       } catch (e: unknown) {
         if (activeRecordingRef.current !== id) return;
         setStatus('error');
-        setError(e instanceof Error ? e.message : t('player.serverError'));
+        setPlayerError(normalizePlayerError(e, {
+          fallbackTitle: t('player.serverError'),
+        }));
         return;
       }
 
@@ -543,7 +609,10 @@ function V3Player(props: V3PlayerProps) {
         } catch (err) {
           if (activeRecordingRef.current !== id) return;
           setStatus('error');
-          setError(t('player.timeout'));
+          setPlayerError({
+            title: t('player.timeout'),
+            retryable: true,
+          });
           return;
         }
       }
@@ -587,12 +656,14 @@ function V3Player(props: V3PlayerProps) {
     } catch (err: unknown) {
       if (activeRecordingRef.current !== id) return;
       debugError(err);
-      setError(err instanceof Error ? err.message : String(err));
+      setPlayerError(normalizePlayerError(err, {
+        fallbackTitle: t('player.serverError'),
+      }));
       setStatus('error');
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, clearPlaybackState, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, playDirectMp4, playHls, resolvePreferredHlsEngine, sleep, t, teardownActivePlayback, waitForDirectStream]);
+  }, [apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, playDirectMp4, playHls, resolvePreferredHlsEngine, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -629,9 +700,10 @@ function V3Player(props: V3PlayerProps) {
       const ref = (refToUse || sRef || '').trim();
       if (!ref) {
         setStatus('error');
-        setError(t('player.serviceRefRequired'));
-        setErrorDetails(null);
-        setShowErrorDetails(false);
+        setPlayerError({
+          title: t('player.serviceRefRequired'),
+          retryable: false,
+        });
         return;
       }
       if (hasActivePlayback()) {
@@ -642,9 +714,7 @@ function V3Player(props: V3PlayerProps) {
       prepareFreshPlayback('LIVE');
       let newSessionId: string | null = null;
       setStatus('starting');
-      setError(null);
-      setErrorDetails(null);
-      setShowErrorDetails(false);
+      clearPlayerError();
       setTraceId('-');
 
       try {
@@ -677,29 +747,40 @@ function V3Player(props: V3PlayerProps) {
         }
 
         if (!liveResponse.ok) {
-          if (liveResponse.status === 401 || liveResponse.status === 403) {
+          if (notifyAuthRequiredIfUnauthorizedResponse(liveResponse, 'V3Player.liveStreamInfo')) {
             setStatus('error');
-            setError(t('player.authFailed'));
+            setPlayerError(normalizePlayerError(liveError ?? {
+              status: 401,
+              title: t('player.authFailed'),
+              requestId: liveRequestId,
+            }, {
+              fallbackTitle: t('player.authFailed'),
+              status: 401,
+              retryable: false,
+            }));
             return;
           }
-          const code = typeof liveError?.code === 'string' && liveError.code ? liveError.code : null;
-          const title = typeof liveError?.title === 'string' && liveError.title ? liveError.title : null;
-          const type = typeof liveError?.type === 'string' && liveError.type ? liveError.type : null;
-
-          const summaryParts = [code, title, type].filter((part): part is string => Boolean(part));
-          const message = summaryParts.length > 0
-            ? summaryParts.join(' · ')
-            : `${t('player.apiError')}: ${liveResponse.status}`;
-
-          const detailParts: string[] = [];
-          if (typeof liveError?.detail === 'string' && liveError.detail) detailParts.push(liveError.detail);
-          if (liveRequestId) detailParts.push(`requestId=${liveRequestId}`);
-
-          const err = new Error(message);
-          if (detailParts.length > 0) {
-            (err as Error & { details: string }).details = detailParts.join(' · ');
+          if (liveResponse.status === 403) {
+            setStatus('error');
+            setPlayerError(normalizePlayerError(liveError ?? {
+              status: 403,
+              title: t('player.forbidden'),
+              requestId: liveRequestId,
+            }, {
+              fallbackTitle: t('player.forbidden'),
+              status: 403,
+              retryable: false,
+            }));
+            return;
           }
-          throw err;
+          throw normalizePlayerError(liveError ?? {
+            status: liveResponse.status,
+            title: `${t('player.apiError')}: ${liveResponse.status}`,
+            requestId: liveRequestId,
+          }, {
+            fallbackTitle: `${t('player.apiError')}: ${liveResponse.status}`,
+            status: liveResponse.status,
+          });
         }
 
         if (!liveInfo?.mode) {
@@ -755,7 +836,10 @@ function V3Player(props: V3PlayerProps) {
             reason: liveInfo.reason || liveInfo.decision?.reasons?.[0] || 'unknown'
           });
           setStatus('error');
-          setError(t('player.playbackDenied'));
+          setPlayerError({
+            title: t('player.playbackDenied'),
+            retryable: false,
+          });
           return;
         }
 
@@ -810,20 +894,15 @@ function V3Player(props: V3PlayerProps) {
         });
 
         if (res.status === 401 || res.status === 403) {
-          // [RFC7807] Extract structured problem+json for actionable UI messages
-          let errorTitle = res.status === 401 ? t('player.authFailed') : t('player.forbidden');
-          let errorDetail: string | null = null;
+          const isUnauthorized = notifyAuthRequiredIfUnauthorizedResponse(res, 'V3Player.startIntent');
+          let errorTitle = isUnauthorized ? t('player.authFailed') : t('player.forbidden');
+          let problemBody: unknown = null;
           try {
             const ct = res.headers.get('content-type') || '';
             if (ct.includes('application/problem+json') || ct.includes('application/json')) {
               const problem = await res.json();
-              // RFC7807: title is the human-readable summary, code is machine-readable
               if (problem.title) errorTitle = problem.title;
-              const detailParts: string[] = [];
-              if (problem.code) detailParts.push(`code=${problem.code}`);
-              if (problem.detail) detailParts.push(problem.detail);
-              if (problem.requestId) detailParts.push(`requestId=${problem.requestId}`);
-              if (detailParts.length > 0) errorDetail = detailParts.join(' · ');
+              problemBody = problem;
 
               telemetry.emit('ui.auth_error', {
                 status: res.status,
@@ -836,8 +915,14 @@ function V3Player(props: V3PlayerProps) {
             // Body parse failed – fall through with generic message
           }
           setStatus('error');
-          setError(errorTitle);
-          setErrorDetails(errorDetail);
+          setPlayerError(normalizePlayerError(problemBody ?? {
+            status: res.status,
+            title: errorTitle,
+          }, {
+            fallbackTitle: errorTitle,
+            status: res.status,
+            retryable: false,
+          }));
           return;
         }
 
@@ -852,19 +937,19 @@ function V3Player(props: V3PlayerProps) {
             apiErr = null;
           }
           setStatus('error');
-          setError(`${t('player.leaseBusy')}${retryHint}`);
-          if (apiErr?.code || apiErr?.requestId) {
-            const parts = [];
-            if (apiErr.code) parts.push(`code=${apiErr.code}`);
-            if (apiErr.requestId) parts.push(`requestId=${apiErr.requestId}`);
-            setErrorDetails(parts.join(' '));
-          } else {
-            setErrorDetails(null);
-          }
+          setPlayerError(normalizePlayerError(apiErr ?? {
+            status: 409,
+            title: `${t('player.leaseBusy')}${retryHint}`,
+          }, {
+            fallbackTitle: `${t('player.leaseBusy')}${retryHint}`,
+            status: 409,
+            retryable: true,
+          }));
           return;
         }
         if (!res.ok) {
           let errorMsg = `${t('player.apiError')}: ${res.status}`;
+          let errorPayload: unknown = null;
           let errorDetails: string | null = null;
           try {
             const { json, text } = await readResponseBody(res);
@@ -892,15 +977,26 @@ function V3Player(props: V3PlayerProps) {
               if (detailParts.length > 0) {
                 errorDetails = detailParts.join(' · ');
               }
+              errorPayload = {
+                ...json,
+                status: res.status,
+                requestId: responseRequestId,
+              };
             } else if (text) {
               errorDetails = text;
             }
           } catch (e) {
             debugWarn("Failed to parse error response", e);
           }
-          const err = new Error(errorMsg);
-          (err as any).details = errorDetails || undefined;
-          throw err;
+          throw normalizePlayerError(errorPayload ?? {
+            status: res.status,
+            title: errorMsg,
+            details: errorDetails,
+          }, {
+            fallbackTitle: errorMsg,
+            fallbackDetail: errorDetails ?? undefined,
+            status: res.status,
+          });
         }
 
         const data: V3SessionResponse = await res.json();
@@ -923,23 +1019,15 @@ function V3Player(props: V3PlayerProps) {
         }
         clearSessionLeaseState();
         debugError(err);
-        const e = err as any;
-        setError(e?.message || String(err));
-        if (e?.details) {
-          try {
-            setErrorDetails(typeof e.details === 'string' ? e.details : JSON.stringify(e.details, null, 2));
-          } catch {
-            setErrorDetails(String(e.details));
-          }
-        } else {
-          setErrorDetails(e?.stack || null);
-        }
+        setPlayerError(normalizePlayerError(err, {
+          fallbackTitle: t('player.serverError'),
+        }));
         setStatus('error');
       }
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, ensureSessionCookie, waitForSessionReady, hasActivePlayback, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, setActiveSessionId, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -1119,10 +1207,12 @@ function V3Player(props: V3PlayerProps) {
       {error && (
         <div className={styles.errorToast} aria-live="polite" role="alert">
           <div className={styles.errorMain}>
-            <span className={styles.errorText}>⚠ {error}</span>
-            <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
+            <span className={styles.errorText}>⚠ {error.title}</span>
+            {error.retryable ? (
+              <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
+            ) : null}
           </div>
-          {errorDetails && (
+          {error.detail && (
             <button
               onClick={() => setShowErrorDetails(!showErrorDetails)}
               className={styles.errorDetailsButton}
@@ -1130,9 +1220,9 @@ function V3Player(props: V3PlayerProps) {
               {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
             </button>
           )}
-          {showErrorDetails && errorDetails && (
+          {showErrorDetails && error.detail && (
             <div className={styles.errorDetailsContent}>
-              <pre className={styles.errorDetailsPre}>{errorDetails}</pre>
+              <pre className={styles.errorDetailsPre}>{error.detail}</pre>
               <br />
               {t('common.session')}: {sessionIdRef.current || t('common.notAvailable')}
             </div>

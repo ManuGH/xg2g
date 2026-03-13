@@ -2,14 +2,13 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useEffect, lazy, Suspense, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { lazy, Suspense, useMemo } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import './App.css';
 import { useAppContext } from './context/AppContext';
-import Navigation from './components/Navigation';
-import { Button } from './components/ui';
-import { debugLog, redactToken } from './utils/logging';
-import { getStoredToken } from './utils/tokenStorage';
+import AppShell from './AppShell';
+import BootstrapGate from './components/BootstrapGate';
+import { ROUTE_MAP } from './routes';
 
 // Lazy load feature views (Phase 4: Bundle optimization)
 // V3Player is lazy loaded because it includes heavy HLS.js dependency
@@ -25,59 +24,18 @@ const Settings = lazy(() => import('./components/Settings'));
 const SystemInfo = lazy(() => import('./features/system/SystemInfo').then(m => ({ default: m.SystemInfo })));
 
 function App() {
-  const { t } = useTranslation();
   const ctx = useAppContext();
   const {
-    view,
     auth,
-    showAuth,
-    setShowAuth,
     setToken,
     channels,
     playback,
-    initializing,
-    dataLoaded,
-    checkConfigAndLoad,
     setPlayingChannel
   } = ctx;
-
-  useEffect(() => {
-    debugLog('[DEBUG] App mounted. showingAuth:', showAuth);
-    const handleAuth = () => {
-      debugLog('[DEBUG] auth-required event received');
-      setShowAuth(true);
-    };
-    window.addEventListener('auth-required', handleAuth);
-
-    // Initialize client with token if available
-    const storedToken = getStoredToken();
-    const storedCredential = redactToken(storedToken);
-    debugLog('[DEBUG] Stored credential:', storedCredential);
-    if (storedToken) {
-      setToken(storedToken);
-    }
-
-    // Check config first, then load data if configured
-    if (!dataLoaded) {
-      checkConfigAndLoad();
-    }
-
-    return () => window.removeEventListener('auth-required', handleAuth);
-  }, []); // Run once on mount
-
-  const handleAuthSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const token = formData.get('token') as string;
-    setToken(token);
-    setShowAuth(false);
-    checkConfigAndLoad();
-  };
 
   const handleLogout = () => {
     setPlayingChannel(null);
     setToken('');
-    setShowAuth(true);
   };
 
   const memoizedBouquets = useMemo(() => (channels.bouquets || []).map(b => ({
@@ -85,35 +43,8 @@ function App() {
     services: b.services ?? 0
   })), [channels.bouquets]);
 
-  if (initializing) {
-    return (
-      <div className="app-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div className="loading-spinner"></div>
-        <p style={{ marginLeft: '10px' }}>{t('app.initializing', { defaultValue: 'Initializing...' })}</p>
-      </div>
-    );
-  }
-
   return (
     <div className="app-container">
-      {showAuth && (
-        <div className="auth-overlay">
-          <div className="auth-modal">
-            <h2>{t('auth.requiredTitle', { defaultValue: 'Authentication Required' })}</h2>
-            <form onSubmit={handleAuthSubmit}>
-              <input
-                type="password"
-                name="token"
-                placeholder={t('auth.tokenPlaceholder', { defaultValue: 'Enter API Token' })}
-                autoFocus
-                required
-              />
-              <Button type="submit">{t('auth.authenticate', { defaultValue: 'Authenticate' })}</Button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {playback.playingChannel && (
         <Suspense fallback={<div className="loading-spinner"></div>}>
           <V3Player
@@ -125,36 +56,34 @@ function App() {
         </Suspense>
       )}
 
-      <Navigation
-        activeView={view}
-        onViewChange={ctx.setView}
-        onLogout={auth.isAuthenticated ? handleLogout : undefined}
-      />
-
-      <main className="content-area">
-        <Suspense fallback={<div className="loading-spinner" style={{ margin: '50px auto' }}></div>}>
-          {view === 'dashboard' && <Dashboard />}
-
-          {view === 'epg' && (
-            <EPG
-              channels={channels.channels}
-              bouquets={memoizedBouquets}
-              selectedBouquet={channels.selectedBouquet}
-              onSelectBouquet={ctx.loadChannels}
-              onPlay={ctx.handlePlay}
+      <Routes>
+        <Route element={<BootstrapGate />}>
+          <Route element={<AppShell onLogout={auth.isAuthenticated ? handleLogout : undefined} />}>
+            <Route path={ROUTE_MAP.dashboard} element={<Dashboard />} />
+            <Route
+              path={ROUTE_MAP.epg}
+              element={(
+                <EPG
+                  channels={channels.channels}
+                  bouquets={memoizedBouquets}
+                  selectedBouquet={channels.selectedBouquet}
+                  onSelectBouquet={ctx.loadChannels}
+                  onPlay={ctx.handlePlay}
+                />
+              )}
             />
-          )}
-
-          {view === 'files' && <Files />}
-          {view === 'recordings' && <RecordingsList />}
-          {view === 'logs' && <Logs />}
-
-          {view === 'timers' && <Timers />}
-          {view === 'series' && <SeriesManager />}
-          {view === 'settings' && <Settings />}
-          {view === 'system' && <SystemInfo />}
-        </Suspense>
-      </main>
+            <Route path={ROUTE_MAP.files} element={<Files />} />
+            <Route path={ROUTE_MAP.recordings} element={<RecordingsList />} />
+            <Route path={ROUTE_MAP.logs} element={<Logs />} />
+            <Route path={ROUTE_MAP.timers} element={<Timers />} />
+            <Route path={ROUTE_MAP.series} element={<SeriesManager />} />
+            <Route path={ROUTE_MAP.settings} element={<Settings />} />
+            <Route path={ROUTE_MAP.system} element={<SystemInfo />} />
+            <Route path="/" element={<Navigate to={ROUTE_MAP.epg} replace />} />
+            <Route path="*" element={<Navigate to={ROUTE_MAP.epg} replace />} />
+          </Route>
+        </Route>
+      </Routes>
     </div>
   );
 }

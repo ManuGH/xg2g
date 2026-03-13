@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { type AppView } from '../types/app-context';
+import { ROUTE_MAP, normalizePathname, type AppView } from '../routes';
 import styles from './Navigation.module.css';
 
 type NavSection = 'quick' | 'main' | 'footer';
 type IconName = AppView | 'more' | 'logout';
 
 interface NavigationProps {
-  activeView: AppView;
-  onViewChange: (view: AppView) => void;
   onLogout?: () => void;
 }
 
@@ -18,7 +17,7 @@ interface NavItem {
   section: NavSection;
 }
 
-const mobilePrimaryViews: AppView[] = ['dashboard', 'epg', 'recordings', 'timers'];
+const mobilePrimaryViews: AppView[] = ['dashboard', 'epg', 'recordings', 'settings'];
 
 function NavIcon({ name, className = '' }: { name: IconName; className?: string }) {
   const commonProps = {
@@ -111,9 +110,17 @@ function NavIcon({ name, className = '' }: { name: IconName; className?: string 
   }
 }
 
-export default function Navigation({ activeView, onViewChange, onLogout }: NavigationProps) {
+export default function Navigation({ onLogout }: NavigationProps) {
   const { t } = useTranslation();
+  const { pathname } = useLocation();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const showMoreMenuRef = useRef(false);
+  const previousShowMoreMenuRef = useRef(false);
+  const restoreFocusRef = useRef(false);
+  const sheetTitleId = useId();
+  const sheetId = useId();
   const sectionLabels: Record<NavSection, string> = {
     quick: t('nav.sectionControl', { defaultValue: 'Control' }),
     main: t('nav.sectionBrowse', { defaultValue: 'Browse' }),
@@ -132,25 +139,77 @@ export default function Navigation({ activeView, onViewChange, onLogout }: Navig
     { id: 'system', label: t('nav.system', { defaultValue: 'System' }), section: 'footer' }
   ], [t]);
 
-  useEffect(() => {
+  const closeMoreMenu = useCallback((restoreFocus: boolean) => {
+    restoreFocusRef.current = restoreFocus;
     setShowMoreMenu(false);
-  }, [activeView]);
+  }, []);
+
+  useEffect(() => {
+    showMoreMenuRef.current = showMoreMenu;
+  }, [showMoreMenu]);
+
+  useEffect(() => {
+    if (showMoreMenuRef.current) {
+      closeMoreMenu(false);
+    }
+  }, [closeMoreMenu, pathname]);
+
+  useEffect(() => {
+    if (!showMoreMenu) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMoreMenu(true);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [closeMoreMenu, showMoreMenu]);
+
+  useEffect(() => {
+    if (!showMoreMenu) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showMoreMenu]);
+
+  useEffect(() => {
+    const wasOpen = previousShowMoreMenuRef.current;
+
+    if (showMoreMenu) {
+      closeButtonRef.current?.focus();
+    } else if (wasOpen && restoreFocusRef.current) {
+      moreButtonRef.current?.focus();
+      restoreFocusRef.current = false;
+    }
+
+    previousShowMoreMenuRef.current = showMoreMenu;
+  }, [showMoreMenu]);
 
   const primaryMobileItems = navItems.filter((item) => mobilePrimaryViews.includes(item.id));
   const overflowItems = navItems.filter((item) => !mobilePrimaryViews.includes(item.id));
-  const overflowActive = overflowItems.some((item) => item.id === activeView);
+  const activePath = normalizePathname(pathname);
+  const overflowActive = overflowItems.some((item) => ROUTE_MAP[item.id] === activePath);
 
   const renderNavItem = (item: NavItem, appearance: 'desktop' | 'mobile' | 'sheet') => (
-    <button
+    <NavLink
       key={`${appearance}-${item.id}`}
-      type="button"
+      to={ROUTE_MAP[item.id]}
       className={[
         styles.navItem,
         appearance === 'mobile' ? styles.mobileItem : null,
         appearance === 'sheet' ? styles.sheetItem : null
       ].filter(Boolean).join(' ')}
-      aria-current={activeView === item.id ? 'page' : undefined}
-      onClick={() => onViewChange(item.id)}
     >
       <span className={styles.iconShell}>
         <NavIcon name={item.id} className={styles.icon} />
@@ -160,8 +219,8 @@ export default function Navigation({ activeView, onViewChange, onLogout }: Navig
         {appearance === 'sheet' && (
           <span className={styles.sheetMeta}>{sectionLabels[item.section]}</span>
         )}
-        </span>
-    </button>
+      </span>
+    </NavLink>
   );
 
   return (
@@ -223,11 +282,21 @@ export default function Navigation({ activeView, onViewChange, onLogout }: Navig
         >
           {primaryMobileItems.map((item) => renderNavItem(item, 'mobile'))}
           <button
+            ref={moreButtonRef}
             type="button"
             className={[styles.navItem, styles.mobileItem].join(' ')}
-            aria-current={overflowActive || showMoreMenu ? 'page' : undefined}
+            aria-current={overflowActive ? 'page' : undefined}
             aria-expanded={showMoreMenu ? 'true' : 'false'}
-            onClick={() => setShowMoreMenu((prev) => !prev)}
+            aria-haspopup="dialog"
+            aria-controls={sheetId}
+            onClick={() => {
+              if (showMoreMenu) {
+                restoreFocusRef.current = false;
+                setShowMoreMenu(false);
+                return;
+              }
+              setShowMoreMenu(true);
+            }}
           >
             <span className={styles.iconShell}>
               <NavIcon name="more" className={styles.icon} />
@@ -244,18 +313,25 @@ export default function Navigation({ activeView, onViewChange, onLogout }: Navig
               type="button"
               className={styles.sheetBackdrop}
               aria-label={t('nav.closeNavigationLabel', { defaultValue: 'Close navigation' })}
-              onClick={() => setShowMoreMenu(false)}
+              onClick={() => closeMoreMenu(true)}
             />
-            <div className={styles.mobileSheet}>
+            <div
+              id={sheetId}
+              className={styles.mobileSheet}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={sheetTitleId}
+            >
               <div className={styles.sheetHeader}>
                 <div>
                   <p className={styles.sheetEyebrow}>{t('nav.sheetEyebrow', { defaultValue: 'Navigation' })}</p>
-                  <h2 className={styles.sheetTitle}>{t('nav.sheetTitle', { defaultValue: 'Control surfaces' })}</h2>
+                  <h2 id={sheetTitleId} className={styles.sheetTitle}>{t('nav.sheetTitle', { defaultValue: 'Control surfaces' })}</h2>
                 </div>
                 <button
+                  ref={closeButtonRef}
                   type="button"
                   className={styles.sheetClose}
-                  onClick={() => setShowMoreMenu(false)}
+                  onClick={() => closeMoreMenu(true)}
                 >
                   {t('common.close')}
                 </button>
@@ -267,7 +343,14 @@ export default function Navigation({ activeView, onViewChange, onLogout }: Navig
 
               {onLogout && (
                 <div className={styles.sheetFooter}>
-                  <button type="button" className={styles.sheetAction} onClick={onLogout}>
+                  <button
+                    type="button"
+                    className={styles.sheetAction}
+                    onClick={() => {
+                      closeMoreMenu(false);
+                      onLogout();
+                    }}
+                  >
                     <NavIcon name="logout" className={styles.icon} />
                     <span>{t('nav.logout')}</span>
                   </button>

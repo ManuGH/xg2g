@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import type { Timer } from '../client-ts';
 import EditTimerDialog from './EditTimerDialog';
+import { useAppContext } from '../context/AppContext';
 import { debugWarn } from '../utils/logging';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useDeleteTimerMutation, useDvrCapabilities, useTimers } from '../hooks/useServerQueries';
@@ -24,8 +25,10 @@ function formatDateTime(ts: number | undefined): string {
 }
 
 export default function Timers() {
+  const { channels } = useAppContext();
   const { confirm, toast } = useUiOverlay();
   const [editingTimer, setEditingTimer] = useState<Timer | null>(null);
+  const [isCreatingTimer, setIsCreatingTimer] = useState<boolean>(false);
   const {
     data: timers = [],
     error,
@@ -64,14 +67,22 @@ export default function Timers() {
     <div className={`${styles.view} animate-enter`.trim()}>
       <div className={styles.toolbar}>
         <h2>Scheduled Recordings</h2>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void refetchTimers()}
-          disabled={loading || deleteTimerMutation.isPending}
-        >
-          Refresh
-        </Button>
+        <div className={styles.actions}>
+          <Button
+            size="sm"
+            onClick={() => setIsCreatingTimer(true)}
+          >
+            New Timer
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void refetchTimers()}
+            disabled={loading || deleteTimerMutation.isPending}
+          >
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {loading && <div className={styles.loading}>Loading...</div>}
@@ -124,7 +135,19 @@ export default function Timers() {
         <EditTimerDialog
           timer={editingTimer}
           capabilities={capabilities || undefined}
+          availableServices={channels.channels}
           onClose={() => setEditingTimer(null)}
+          onSave={async () => {
+            await refetchTimers();
+          }}
+        />
+      )}
+
+      {isCreatingTimer && (
+        <EditTimerDialog
+          capabilities={capabilities || undefined}
+          availableServices={channels.channels}
+          onClose={() => setIsCreatingTimer(false)}
           onSave={async () => {
             await refetchTimers();
           }}

@@ -336,6 +336,121 @@ describe('V3Player ServiceRef Input', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it('dispatches auth-required when /intents returns 401', async () => {
+    const authRequiredHandler = vi.fn();
+    window.addEventListener('auth-required', authRequiredHandler);
+
+    try {
+      (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: vi.fn().mockReturnValue('application/json') },
+            text: vi.fn().mockResolvedValue(JSON.stringify({
+              mode: 'direct_stream',
+              requestId: 'live-decision-auth-1',
+              playbackDecisionToken: 'live-token-auth-1',
+              decision: { reasons: ['direct_stream_match'] },
+            }))
+          });
+        }
+        if (url.includes('/intents')) {
+          return Promise.resolve({
+            status: 401,
+            ok: false,
+            headers: {
+              get: vi.fn((name: string | null) => name === 'content-type' ? 'application/problem+json' : null)
+            },
+            json: vi.fn().mockResolvedValue({
+              title: 'Authentication required',
+              code: 'AUTH_REQUIRED',
+              detail: 'Token expired',
+              requestId: 'req-401-1',
+            }),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          ok: true,
+          headers: { get: vi.fn().mockReturnValue(null) },
+          json: vi.fn().mockResolvedValue({})
+        });
+      });
+
+      const props = { autoStart: false } as unknown as V3PlayerProps;
+      render(<V3Player {...props} />);
+
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: '1:0:1:123:456:789:0:0:0:0:' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+
+      await waitFor(() => {
+        expect(authRequiredHandler).toHaveBeenCalledTimes(1);
+      });
+      await screen.findByText(/Authentication required|player\.authFailed/i);
+    } finally {
+      window.removeEventListener('auth-required', authRequiredHandler);
+    }
+  });
+
+  it('keeps 403 intent failures local without dispatching auth-required', async () => {
+    const authRequiredHandler = vi.fn();
+    window.addEventListener('auth-required', authRequiredHandler);
+
+    try {
+      (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: vi.fn().mockReturnValue('application/json') },
+            text: vi.fn().mockResolvedValue(JSON.stringify({
+              mode: 'direct_stream',
+              requestId: 'live-decision-auth-2',
+              playbackDecisionToken: 'live-token-auth-2',
+              decision: { reasons: ['direct_stream_match'] },
+            }))
+          });
+        }
+        if (url.includes('/intents')) {
+          return Promise.resolve({
+            status: 403,
+            ok: false,
+            headers: {
+              get: vi.fn((name: string | null) => name === 'content-type' ? 'application/problem+json' : null)
+            },
+            json: vi.fn().mockResolvedValue({
+              code: 'FORBIDDEN',
+              detail: 'Missing scope',
+              requestId: 'req-403-1',
+            }),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          ok: true,
+          headers: { get: vi.fn().mockReturnValue(null) },
+          json: vi.fn().mockResolvedValue({})
+        });
+      });
+
+      const props = { autoStart: false } as unknown as V3PlayerProps;
+      render(<V3Player {...props} />);
+
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: '1:0:1:123:456:789:0:0:0:0:' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+
+      await screen.findByText(/player\.forbidden/i);
+      expect(authRequiredHandler).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('auth-required', authRequiredHandler);
+    }
+  });
+
   it('surfaces problem details from /intents 400 responses', async () => {
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/live/stream-info')) {

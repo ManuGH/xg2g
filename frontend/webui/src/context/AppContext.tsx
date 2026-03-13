@@ -2,22 +2,14 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
-import { getServices, getServicesBouquets, getSystemConfig } from '../client-ts';
-import { ClientRequestError, mapApiError, setClientAuthToken } from '../lib/clientWrapper';
-import type { AppContextType, AppView } from '../types/app-context';
+import { getServices, getServicesBouquets } from '../client-ts';
+import { setClientAuthToken, throwOnClientResultError } from '../lib/clientWrapper';
+import type { AppContextType } from '../types/app-context';
 import type { Service, Bouquet } from '../client-ts';
 import { debugError, debugLog, formatError } from '../utils/logging';
 import { clearStoredToken, getStoredToken, setStoredToken } from '../utils/tokenStorage';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-
-function throwOnClientError(result: { error?: unknown; response?: { status?: number } }): void {
-  if (!result.error) {
-    return;
-  }
-
-  throw new ClientRequestError(mapApiError(result.error, result.response?.status));
-}
 
 export function useAppContext(): AppContextType {
   const context = useContext(AppContext);
@@ -32,12 +24,8 @@ interface AppProviderProps {
 }
 
 export function AppProvider({ children }: AppProviderProps) {
-  // Navigation State
-  const [view, setView] = useState<AppView>('epg');
-
   // Auth State
   const [token, setTokenState] = useState<string>(getStoredToken());
-  const [showAuth, setShowAuth] = useState<boolean>(false);
 
   // Channel State
   const [bouquets, setBouquets] = useState<Bouquet[]>([]);
@@ -49,7 +37,6 @@ export function AppProvider({ children }: AppProviderProps) {
   const [playingChannel, setPlayingChannel] = useState<Service | null>(null);
 
   // UI State
-  const [initializing, setInitializing] = useState<boolean>(true);
   const [dataLoaded, setDataLoaded] = useState<boolean>(false);
 
   // Initialize client with stored token after mount to avoid render-time side effects.
@@ -69,82 +56,59 @@ export function AppProvider({ children }: AppProviderProps) {
       clearStoredToken();
     }
     setClientAuthToken(newToken);
+    setBouquets([]);
+    setSelectedBouquet('');
+    setChannels([]);
+    setLoading(false);
+    setDataLoaded(false);
+  }, []);
+
+  const fetchChannels = useCallback(async (bouquetName: string): Promise<Service[]> => {
+    debugLog('[DEBUG] Fetching channels for:', bouquetName);
+    const response = await getServices(
+      bouquetName ? { query: { bouquet: bouquetName } } : undefined
+    );
+    throwOnClientResultError(response, { source: 'AppContext.fetchChannels' });
+    return response.data || [];
   }, []);
 
   const loadChannels = useCallback(async (bouquetName: string): Promise<void> => {
     setLoading(true);
     try {
-      debugLog('[DEBUG] Fetching channels for:', bouquetName);
-      const response = await getServices(
-        bouquetName ? { query: { bouquet: bouquetName } } : undefined
-      );
-      throwOnClientError(response);
-      const data = response.data || [];
+      const data = await fetchChannels(bouquetName);
       setChannels(data);
       setSelectedBouquet(bouquetName);
       debugLog('[DEBUG] Channels loaded. Count:', data.length);
     } catch (err) {
       debugError('[DEBUG] Failed to load channels:', formatError(err));
-      if ((err as { status?: number }).status === 401) {
-        debugLog('[DEBUG] 401 detected in loadChannels -> showing auth');
-        setShowAuth(true);
-      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchChannels]);
 
   const loadBouquetsAndChannels = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
       debugLog('[DEBUG] Fetching bouquets...');
       const response = await getServicesBouquets();
-      throwOnClientError(response);
+      throwOnClientResultError(response, { source: 'AppContext.loadBouquetsAndChannels' });
       const bouquetData = response.data || [];
       setBouquets(bouquetData);
       debugLog('[DEBUG] Bouquets loaded. Count:', bouquetData.length);
 
-      await loadChannels(selectedBouquet);
+      const channelData = await fetchChannels(selectedBouquet);
+      setChannels(channelData);
+      setSelectedBouquet(selectedBouquet);
+      debugLog('[DEBUG] Channels loaded. Count:', channelData.length);
       setDataLoaded(true);
     } catch (err) {
       debugError('[DEBUG] Failed to load initial data:', formatError(err));
       const apiErr = err as { status?: number };
       debugLog('[DEBUG] Error status:', apiErr.status ?? 'unknown');
-      if ((err as { status?: number }).status === 401) {
-        debugLog('[DEBUG] 401 detected in loadBouquetsAndChannels -> showing auth');
-        setShowAuth(true);
-      }
     } finally {
       setLoading(false);
     }
-  }, [selectedBouquet, loadChannels]);
-
-  const checkConfigAndLoad = useCallback(async (): Promise<void> => {
-    try {
-      const response = await getSystemConfig();
-      throwOnClientError(response);
-      const config = response.data;
-      debugLog('[DEBUG] System config loaded');
-
-      if (!config?.openWebIF?.baseUrl) {
-        debugLog('[DEBUG] No Base URL configured. Switching to Setup Mode.');
-        setView('settings');
-        return;
-      }
-
-      await loadBouquetsAndChannels();
-    } catch (err) {
-      debugError('[DEBUG] Failed to check config:', formatError(err));
-      if ((err as { status?: number }).status === 401) {
-        setShowAuth(true);
-      } else {
-        debugLog('[DEBUG] Config check failed. Defaulting to Setup Mode.');
-        setView('settings');
-      }
-    } finally {
-      setInitializing(false);
-    }
-  }, [loadBouquetsAndChannels]);
+  }, [fetchChannels, selectedBouquet]);
 
   const handlePlay = useCallback((channel: Service) => {
     flushSync(() => setPlayingChannel(channel));
@@ -152,7 +116,6 @@ export function AppProvider({ children }: AppProviderProps) {
 
   const contextValue: AppContextType = {
     // State
-    view,
     auth: {
       token,
       isAuthenticated: !!token
@@ -166,14 +129,10 @@ export function AppProvider({ children }: AppProviderProps) {
     playback: {
       playingChannel
     },
-    showAuth,
-    initializing,
     dataLoaded,
 
     // Actions
-    setView,
     setToken,
-    setShowAuth,
     setBouquets,
     setSelectedBouquet,
     setChannels,
@@ -181,9 +140,6 @@ export function AppProvider({ children }: AppProviderProps) {
     loadChannels,
     setPlayingChannel,
     handlePlay,
-    setInitializing,
-    setDataLoaded,
-    checkConfigAndLoad,
     loadBouquetsAndChannels
   };
 

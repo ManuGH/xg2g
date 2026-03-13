@@ -12,7 +12,10 @@ import { useTranslation } from 'react-i18next';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useDeleteRecordingsMutation, useRecordings } from '../hooks/useServerQueries';
+import { toAppError } from '../lib/appErrors';
 import { Button, Card, CardBody, StatusChip, type ChipState } from './ui';
+import ErrorPanel from './ErrorPanel';
+import LoadingSkeleton from './LoadingSkeleton';
 import styles from './Recordings.module.css';
 
 const V3Player = lazy(() => import('./V3Player'));
@@ -49,6 +52,9 @@ interface PlayingState {
   title: string;
   durationSeconds: number;
 }
+
+type RecordingsFilter = 'all' | 'active' | 'resume' | 'unwatched';
+type RecordingsSort = 'newest' | 'oldest';
 
 // mapRecordingToChip - CTO Contract: Deterministic mapping
 function mapRecordingToChip(item: RecordingItem): { state: ChipState; label: string } {
@@ -90,6 +96,8 @@ export default function RecordingsList() {
   const [root, setRoot] = useState<string>(''); // Selected Root ID
   const [path, setPath] = useState<string>(''); // Current relative path
   const [playing, setPlaying] = useState<PlayingState | null>(null);
+  const [filterMode, setFilterMode] = useState<RecordingsFilter>('all');
+  const [sortMode, setSortMode] = useState<RecordingsSort>('newest');
 
   // Bulk Delete State
   const [selectionMode, setSelectionMode] = useState<boolean>(false);
@@ -106,7 +114,12 @@ export default function RecordingsList() {
   const deleteRecordingsMutation = useDeleteRecordingsMutation();
   const deleteLoading = deleteRecordingsMutation.isPending;
   const loading = isPending || (isFetching && !data);
-  const errorMessage = error instanceof Error ? error.message : error ? 'Failed to load recordings' : null;
+  const pageError = error
+    ? toAppError(error, {
+      fallbackTitle: 'Unable to load recordings',
+      fallbackDetail: 'Try again to refresh the current recordings listing.',
+    })
+    : null;
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -189,32 +202,35 @@ export default function RecordingsList() {
     toast({ kind: 'success', message: `Deleted ${ids.length} recording(s)` });
   };
 
+  const handleRefresh = () => {
+    void refetchRecordings();
+  };
+
   const formatTime = (ts?: number) => {
     if (!ts) return '';
     return new Date(ts * 1000).toLocaleString();
   };
 
+  const visibleRecordings = [...(data?.recordings || [])]
+    .filter((recording) => matchesRecordingsFilter(recording as RecordingItem, filterMode))
+    .sort((left, right) => {
+      const leftBegin = left.beginUnixSeconds || 0;
+      const rightBegin = right.beginUnixSeconds || 0;
+      return sortMode === 'oldest' ? leftBegin - rightBegin : rightBegin - leftBegin;
+    });
+
   if (loading && !data) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
-        <Card><CardBody>Loading recordings...</CardBody></Card>
+        <LoadingSkeleton variant="page" label="Loading recordings..." />
       </div>
     );
   }
 
-  if (errorMessage) {
+  if (pageError && !data) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
-        <Card>
-          <CardBody>
-            <div className={styles.errorAlert}>
-              <h3>Error Loading Recordings</h3>
-              <StatusChip state="error" label="ERROR" />
-              <p>{errorMessage}</p>
-              <Button variant="secondary" onClick={() => void refetchRecordings()}>Retry</Button>
-            </div>
-          </CardBody>
-        </Card>
+        <ErrorPanel error={pageError} onRetry={handleRefresh} titleAs="h3" />
       </div>
     );
   }
@@ -243,6 +259,14 @@ export default function RecordingsList() {
         </div>
 
         <div className={styles.toolbarActions}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading || deleteLoading}
+          >
+            Refresh
+          </Button>
           {selectionMode ? (
             <>
               <Button
@@ -265,6 +289,38 @@ export default function RecordingsList() {
               <TrashIcon className={styles.iconSm} />
             </button>
           )}
+        </div>
+
+        <div className={styles.workflowControls}>
+          <div className={styles.toolbarGroup}>
+            <label className={styles.infoLabel} htmlFor="recordings-filter-select">View:</label>
+            <select
+              id="recordings-filter-select"
+              data-testid="recordings-filter-select"
+              value={filterMode}
+              onChange={(e) => setFilterMode(e.target.value as RecordingsFilter)}
+              disabled={deleteLoading}
+            >
+              <option value="all">All recordings</option>
+              <option value="active">Active only</option>
+              <option value="resume">Resume only</option>
+              <option value="unwatched">Unwatched only</option>
+            </select>
+          </div>
+
+          <div className={styles.toolbarGroup}>
+            <label className={styles.infoLabel} htmlFor="recordings-sort-select">Sort:</label>
+            <select
+              id="recordings-sort-select"
+              data-testid="recordings-sort-select"
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as RecordingsSort)}
+              disabled={deleteLoading}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -290,7 +346,7 @@ export default function RecordingsList() {
         ))}
 
         {/* Recordings */}
-        {data?.recordings?.map((rec, i) => {
+        {visibleRecordings.map((rec, i) => {
           const isSelected = rec.recordingId ? selectedIds.has(rec.recordingId) : false;
           const { state, label } = mapRecordingToChip(rec);
 
@@ -307,7 +363,7 @@ export default function RecordingsList() {
                   <FileIcon className={styles.fileIcon} />
                 </div>
                 <div className={styles.itemDetails}>
-                  <div className={styles.itemName}>{rec.title}</div>
+                  <div className={styles.itemName} data-testid="recording-title">{rec.title}</div>
                   <div className={`${styles.itemMetaRow} tabular`.trim()}>
                     <span className={styles.metaDate}>{formatTime(rec.beginUnixSeconds)}</span>
                     <span className={styles.metaLength}>{rec.length}</span>
@@ -355,9 +411,13 @@ export default function RecordingsList() {
         })}
 
         {/* Empty State */}
-        {(!data?.directories?.length && !data?.recordings?.length) && (
+        {(!data?.directories?.length && !visibleRecordings.length) && (
           <div className={styles.emptyState}>
-            <p>No recordings found in this location.</p>
+            <p>
+              {filterMode === 'all'
+                ? 'No recordings found in this location.'
+                : 'No recordings match the current view.'}
+            </p>
           </div>
         )}
       </div>
@@ -366,7 +426,7 @@ export default function RecordingsList() {
       {playing && (
         <Suspense fallback={
           <div className={styles.playerFallback}>
-            <Card><CardBody>Loading Player...</CardBody></Card>
+            <LoadingSkeleton variant="section" label="Loading player..." />
           </div>
         }>
           <V3Player
@@ -380,4 +440,33 @@ export default function RecordingsList() {
       )}
     </div>
   );
+}
+
+function matchesRecordingsFilter(recording: RecordingItem, filterMode: RecordingsFilter): boolean {
+  if (filterMode === 'all') {
+    return true;
+  }
+
+  const status = mapRecordingToChip(recording);
+  const resume = recording.resume;
+  const hasResumeProgress = !!(resume && isResumeEligible({
+    ...resume,
+    posSeconds: resume.posSeconds || 0,
+    durationSeconds: resume.durationSeconds || 0,
+    finished: resume.finished || false,
+  }, recording.durationSeconds));
+
+  if (filterMode === 'active') {
+    return status.state === 'recording';
+  }
+
+  if (filterMode === 'resume') {
+    return hasResumeProgress;
+  }
+
+  if (filterMode === 'unwatched') {
+    return status.label === 'NEW';
+  }
+
+  return true;
 }

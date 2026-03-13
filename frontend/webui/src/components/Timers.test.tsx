@@ -8,12 +8,16 @@ const {
   deleteTimer,
   confirm,
   toast,
+  editTimerDialog,
 } = vi.hoisted(() => ({
   getTimers: vi.fn(),
   getDvrCapabilities: vi.fn(),
   deleteTimer: vi.fn(),
   confirm: vi.fn(),
   toast: vi.fn(),
+  editTimerDialog: vi.fn(({ timer }: { timer?: { timerId?: string } }) => (
+    <div data-testid={timer ? 'timer-edit-dialog' : 'timer-create-dialog'} />
+  )),
 }));
 
 vi.mock('../client-ts', () => ({
@@ -29,8 +33,19 @@ vi.mock('../context/UiOverlayContext', () => ({
   }),
 }));
 
+vi.mock('../context/AppContext', () => ({
+  useAppContext: () => ({
+    channels: {
+      channels: [
+        { serviceRef: '1:0:1:bbc', id: '1:0:1:bbc', name: 'BBC One' },
+        { serviceRef: '1:0:1:ard', id: '1:0:1:ard', name: 'Das Erste' },
+      ],
+    },
+  }),
+}));
+
 vi.mock('./EditTimerDialog', () => ({
-  default: () => null,
+  default: editTimerDialog,
 }));
 
 import Timers from './Timers';
@@ -128,5 +143,27 @@ describe('Timers', () => {
 
     expect(getTimers).toHaveBeenCalledTimes(2);
     expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('opens the timer dialog in create mode from the toolbar', async () => {
+    getTimers.mockResolvedValue({ data: { items: [] } });
+    getDvrCapabilities.mockResolvedValue({ data: null });
+
+    renderWithQueryClient();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'New Timer' }));
+
+    expect(await screen.findByTestId('timer-create-dialog')).toBeInTheDocument();
+    expect(editTimerDialog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        availableServices: expect.arrayContaining([
+          expect.objectContaining({ name: 'BBC One' }),
+          expect.objectContaining({ name: 'Das Erste' }),
+        ]),
+        onClose: expect.any(Function),
+        onSave: expect.any(Function),
+      }),
+      undefined,
+    );
   });
 });

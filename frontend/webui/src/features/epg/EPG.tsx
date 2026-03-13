@@ -12,9 +12,14 @@ import type { EpgChannel, EpgBouquet, Timer, EpgEvent } from './types';
 import { EPG_MAX_HORIZON_HOURS } from './types';
 import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
+import ErrorPanel from '../../components/ErrorPanel';
+import LoadingSkeleton from '../../components/LoadingSkeleton';
+import { toAppError } from '../../lib/appErrors';
+import { isUnauthorizedError } from '../../lib/sessionEvents';
 import { normalizeEpgText } from '../../utils/text';
 import { debugError, debugLog, formatError } from '../../utils/logging';
 import { useUiOverlay } from '../../context/UiOverlayContext';
+import type { AppError } from '../../types/errors';
 import styles from './EPG.module.css';
 
 const RECORD_SUPPORTED = true; // Feature flag
@@ -33,6 +38,28 @@ function getEpgErrorKey(status?: number, fallbackKey: string = 'epg.loadError'):
     return 'player.forbidden';
   }
   return fallbackKey;
+}
+
+function createEpgError(
+  error: unknown,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  fallbackKey: 'epg.loadError' | 'epg.searchError'
+): AppError {
+  const status =
+    typeof error === 'object' && error !== null && 'status' in error && typeof (error as { status?: unknown }).status === 'number'
+      ? (error as { status: number }).status
+      : undefined;
+
+  if (status === 403) {
+    return toAppError(error, {
+      fallbackTitle: t(getEpgErrorKey(status, fallbackKey)),
+      retryable: false,
+    });
+  }
+
+  return toAppError(error, {
+    fallbackTitle: t(fallbackKey),
+  });
 }
 
 export default function EPG({
@@ -163,13 +190,15 @@ export default function EPG({
     } catch (err: any) {
       if (err.name === 'AbortError') return;
       debugError('EPG load failed:', formatError(err));
-      if (err.status === 401) {
-        window.dispatchEvent(new Event('auth-required'));
+      if (isUnauthorizedError(err)) {
         return;
       }
-      dispatch({ type: 'LOAD_ERROR', payload: { error: getEpgErrorKey(err.status) } });
+      dispatch({
+        type: 'LOAD_ERROR',
+        payload: { error: createEpgError(err, t, 'epg.loadError') }
+      });
     }
-  }, [state.filters.timeRange, state.filters.bouquetId]);
+  }, [state.filters.timeRange, state.filters.bouquetId, t]);
 
   // Initial load + auto-refresh every 5 minutes
   useEffect(() => {
@@ -196,16 +225,15 @@ export default function EPG({
       dispatch({ type: 'SEARCH_SUCCESS', payload: { events } });
     } catch (err: any) {
       debugError(formatError(err));
-      if (err.status === 401) {
-        window.dispatchEvent(new Event('auth-required'));
+      if (isUnauthorizedError(err)) {
         return;
       }
       dispatch({
         type: 'SEARCH_ERROR',
-        payload: { error: getEpgErrorKey(err.status, 'epg.searchError') }
+        payload: { error: createEpgError(err, t, 'epg.searchError') }
       });
     }
-  }, [state.filters.query, state.filters.bouquetId]);
+  }, [state.filters.query, state.filters.bouquetId, t]);
 
   // Clear search when query is emptied
   useEffect(() => {
@@ -295,7 +323,21 @@ export default function EPG({
       />
 
       {/* Search Error */}
-      {state.searchError && <div className={[styles.card, styles.cardError].join(' ')}>{t(state.searchError)}</div>}
+      {state.searchError && (
+        <ErrorPanel
+          error={state.searchError}
+          onRetry={() => { void runSearch(); }}
+          titleAs="h3"
+        />
+      )}
+
+      {/* Search Loading */}
+      {state.searchLoadState === 'loading' && state.filters.query?.trim() && (
+        <LoadingSkeleton
+          variant="section"
+          label={t('common.loading', { defaultValue: 'Loading...' })}
+        />
+      )}
 
       {/* Search No Results */}
       {state.searchLoadState === 'ready' &&
@@ -335,8 +377,19 @@ export default function EPG({
       )}
 
       {/* Main View Loading/Error */}
-      {state.loadState === 'loading' && <div className={styles.card}>{t('epg.loading')}</div>}
-      {state.error && <div className={[styles.card, styles.cardError].join(' ')}>{t(state.error)}</div>}
+      {state.loadState === 'loading' && (
+        <LoadingSkeleton
+          variant="section"
+          label={t('epg.loading')}
+        />
+      )}
+      {state.error && (
+        <ErrorPanel
+          error={state.error}
+          onRetry={() => { void loadEpgEvents(); }}
+          titleAs="h3"
+        />
+      )}
 
       {/* Main Channel List */}
       {showMainList && (

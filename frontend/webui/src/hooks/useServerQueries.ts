@@ -41,11 +41,13 @@ import {
   type RecordingResponse,
   type ScanStatus
 } from '../client-ts';
+import { throwOnClientResultError, unwrapClientResultOrThrow } from '../lib/clientWrapper';
 
 /**
  * Query Keys (versioniert, strukturiert)
  */
 export const queryKeys = {
+  bootstrapConfig: ['v3', 'bootstrap', 'config'] as const,
   systemConfig: ['v3', 'system', 'config'] as const,
   health: ['v3', 'system', 'health'] as const,
   systemInfo: ['v3', 'system', 'info'] as const,
@@ -59,38 +61,10 @@ export const queryKeys = {
   logs: (limit?: number) => ['v3', 'logs', { limit }] as const,
 };
 
-/**
- * Typed result unwrapper for generated API client results.
- *
- * Replaces per-hook `@ts-ignore` patterns with a single, type-safe helper.
- * Dispatches 'auth-required' for 401 responses to trigger the auth overlay.
- */
-function unwrapQueryResult<T>(
-  result: { data?: T; error?: unknown; response?: { status?: number } },
-  { silent = false }: { silent?: boolean } = {}
-): T {
-  if (result.error) {
-    const status = (result.response as { status?: number } | undefined)?.status;
-    if (status === 401) {
-      window.dispatchEvent(new Event('auth-required'));
-      throw new Error('Authentication required');
-    }
-
-    // Extract message from error object (may be ApiError or ProblemDetails)
-    const errObj = result.error as Record<string, unknown> | undefined;
-    const message =
-      (errObj && typeof errObj.message === 'string' ? errObj.message : null) ??
-      (errObj && typeof errObj.title === 'string' ? errObj.title : null) ??
-      'Request failed';
-
-    if (silent) {
-      return undefined as unknown as T;
-    }
-
-    throw new Error(message);
-  }
-
-  return result.data as T;
+export async function fetchSystemConfigStrict(): Promise<AppConfig | null> {
+  const result = await getSystemConfig();
+  throwOnClientResultError(result, { source: 'useBootstrapConfig' });
+  return result.data ?? null;
 }
 
 /**
@@ -104,9 +78,22 @@ export function useSystemConfig() {
     queryKey: queryKeys.systemConfig,
     queryFn: async () => {
       const result = await getSystemConfig();
-      return unwrapQueryResult<AppConfig | null>(result, { silent: true }) ?? null;
+      return unwrapClientResultOrThrow<AppConfig | null>(result, {
+        source: 'useSystemConfig',
+        silent: true
+      }) ?? null;
     },
     staleTime: 30_000,
+  });
+}
+
+export function useBootstrapConfig(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.bootstrapConfig,
+    queryFn: fetchSystemConfigStrict,
+    enabled,
+    retry: false,
+    staleTime: 0,
   });
 }
 
@@ -121,7 +108,7 @@ export function useSystemHealth() {
     queryKey: queryKeys.health,
     queryFn: async () => {
       const result = await getSystemHealth();
-      return unwrapQueryResult<SystemHealth>(result);
+      return unwrapClientResultOrThrow<SystemHealth>(result, { source: 'useSystemHealth' });
     },
     refetchInterval: 10_000, // 10s polling
     staleTime: 8_000, // 8s frisch
@@ -139,7 +126,7 @@ export function useSystemInfo() {
     queryKey: queryKeys.systemInfo,
     queryFn: async () => {
       const result = await getSystemInfo();
-      return unwrapQueryResult<SystemInfoData>(result);
+      return unwrapClientResultOrThrow<SystemInfoData>(result, { source: 'useSystemInfo' });
     },
     refetchInterval: 10_000,
     staleTime: 8_000,
@@ -157,7 +144,7 @@ export function useSystemScanStatus() {
     queryKey: queryKeys.systemScanStatus,
     queryFn: async () => {
       const result = await getSystemScanStatus();
-      return unwrapQueryResult<ScanStatus>(result);
+      return unwrapClientResultOrThrow<ScanStatus>(result, { source: 'useSystemScanStatus' });
     },
     refetchInterval: 2_000,
     staleTime: 1_000,
@@ -173,7 +160,7 @@ export function useTriggerSystemScanMutation() {
   return useMutation({
     mutationFn: async () => {
       const result = await triggerSystemScan();
-      return unwrapQueryResult<{ status?: string }>(result);
+      return unwrapClientResultOrThrow<{ status?: string }>(result, { source: 'useTriggerSystemScanMutation' });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.systemScanStatus });
@@ -192,7 +179,10 @@ export function useReceiverCurrent() {
     queryKey: queryKeys.receiverCurrent,
     queryFn: async () => {
       const result = await getReceiverCurrent();
-      return unwrapQueryResult<CurrentServiceInfo | null>(result, { silent: true }) ?? null;
+      return unwrapClientResultOrThrow<CurrentServiceInfo | null>(result, {
+        source: 'useReceiverCurrent',
+        silent: true
+      }) ?? null;
     },
     refetchInterval: 10_000, // 10s polling
     staleTime: 8_000,
@@ -210,7 +200,10 @@ export function useStreams() {
     queryKey: queryKeys.streams,
     queryFn: async () => {
       const result = await getStreams();
-      return unwrapQueryResult<StreamSession[]>(result, { silent: true }) ?? [];
+      return unwrapClientResultOrThrow<StreamSession[]>(result, {
+        source: 'useStreams',
+        silent: true
+      }) ?? [];
     },
     refetchInterval: 5_000, // 5s polling
     staleTime: 4_000,
@@ -228,7 +221,10 @@ export function useDvrStatus() {
     queryKey: queryKeys.dvrStatus,
     queryFn: async () => {
       const result = await getDvrStatus();
-      return unwrapQueryResult<{ isRecording?: boolean; serviceName?: string } | null>(result, { silent: true }) ?? null;
+      return unwrapClientResultOrThrow<{ isRecording?: boolean; serviceName?: string } | null>(result, {
+        source: 'useDvrStatus',
+        silent: true
+      }) ?? null;
     },
     refetchInterval: 30_000, // 30s polling
     staleTime: 25_000,
@@ -246,7 +242,10 @@ export function useDvrCapabilities() {
     queryKey: queryKeys.dvrCapabilities,
     queryFn: async () => {
       const result = await getDvrCapabilities();
-      return unwrapQueryResult<DvrCapabilities | null>(result, { silent: true }) ?? null;
+      return unwrapClientResultOrThrow<DvrCapabilities | null>(result, {
+        source: 'useDvrCapabilities',
+        silent: true
+      }) ?? null;
     },
     staleTime: 5 * 60_000,
   });
@@ -263,7 +262,7 @@ export function useTimers() {
     queryKey: queryKeys.timers,
     queryFn: async () => {
       const result = await getTimers();
-      const data = unwrapQueryResult<TimerList>(result);
+      const data = unwrapClientResultOrThrow<TimerList>(result, { source: 'useTimers' });
       return data.items ?? [];
     },
     staleTime: 10_000,
@@ -279,7 +278,7 @@ export function useDeleteTimerMutation() {
   return useMutation({
     mutationFn: async (timerId: string) => {
       const result = await deleteTimer({ path: { timerId } });
-      unwrapQueryResult<void>(result);
+      unwrapClientResultOrThrow<void>(result, { source: 'useDeleteTimerMutation' });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.timers });
@@ -298,7 +297,7 @@ export function useRecordings(root: string, path: string) {
     queryKey: queryKeys.recordings(root, path),
     queryFn: async () => {
       const result = await getRecordings({ query: { root, path } });
-      return unwrapQueryResult<RecordingResponse>(result);
+      return unwrapClientResultOrThrow<RecordingResponse>(result, { source: 'useRecordings' });
     },
     placeholderData: previousData => previousData,
     staleTime: 10_000,
@@ -316,7 +315,7 @@ export function useDeleteRecordingsMutation() {
       await Promise.all(
         recordingIds.map(async (recordingId) => {
           const result = await deleteRecording({ path: { recordingId } });
-          unwrapQueryResult<void>(result);
+          unwrapClientResultOrThrow<void>(result, { source: 'useDeleteRecordingsMutation' });
         })
       );
     },
@@ -337,7 +336,7 @@ export function useLogs(limit: number = 5) {
     queryKey: queryKeys.logs(limit),
     queryFn: async () => {
       const result = await getLogs();
-      const logs = unwrapQueryResult<LogEntry[]>(result);
+      const logs = unwrapClientResultOrThrow<LogEntry[]>(result, { source: 'useLogs' });
       return (logs || []).slice(0, limit);
     },
     refetchInterval: false, // kein auto-refetch

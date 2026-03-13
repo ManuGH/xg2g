@@ -1,4 +1,5 @@
 import type { ProblemDetails } from '../client-ts';
+import { requestAuthRequired } from './sessionEvents';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -8,6 +9,18 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function headerValue(headers: Headers, key: string): string | null {
   return headers.get(key) ?? headers.get(key.toLowerCase());
+}
+
+export function notifyAuthRequiredIfUnauthorizedResponse(res: Response, source?: string): boolean {
+  if (res.status !== 401) {
+    return false;
+  }
+
+  requestAuthRequired({
+    source,
+    status: 401,
+  });
+  return true;
 }
 
 function toOptionalString(value: unknown): string | undefined {

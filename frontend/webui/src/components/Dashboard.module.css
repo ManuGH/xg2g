@@ -18,23 +18,14 @@
   overflow: hidden;
   border-radius: 24px;
   border: 1px solid var(--border-elevated);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 26%),
-    var(--surface-panel);
+  background: var(--surface-panel);
   box-shadow: var(--shadow-card);
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
 }
 
 .heroCard::before,
 .streamSurface::before,
 .signalSurface::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(140deg, rgba(255, 255, 255, 0.08), transparent 40%);
-  opacity: 0.7;
+  content: none;
 }
 
 .heroCard {
@@ -46,25 +37,15 @@
 }
 
 .heroStreaming {
-  background:
-    radial-gradient(circle at 78% 18%, rgba(74, 144, 245, 0.18), transparent 24%),
-    radial-gradient(circle at 18% 84%, rgba(245, 159, 10, 0.14), transparent 22%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 26%),
-    var(--surface-panel-strong);
+  background: var(--surface-panel-strong);
 }
 
 .heroControl {
-  background:
-    radial-gradient(circle at 82% 18%, rgba(74, 144, 245, 0.14), transparent 22%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 26%),
-    var(--surface-panel);
+  background: var(--surface-panel);
 }
 
 .heroStandby {
-  background:
-    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.06), transparent 18%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 26%),
-    var(--surface-panel-soft);
+  background: var(--surface-panel-soft);
 }
 
 .heroTop {
@@ -139,7 +120,7 @@
   padding: 18px 20px;
   border-radius: 22px;
   border: 1px solid var(--border-base);
-  background: rgba(7, 10, 17, 0.22);
+  background: var(--bg-input);
 }
 
 .timelineHeader {

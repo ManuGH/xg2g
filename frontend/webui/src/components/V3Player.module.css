@@ -374,7 +374,7 @@
   appearance: none;
   width: 16px;
   height: 16px;
-  background: linear-gradient(180deg, #ffffff, #d5def6);
+  background: linear-gradient(180deg, var(--text-primary), var(--surface-highlight));
   border-radius: 50%;
   cursor: pointer;
   border: 2px solid var(--accent-action);
@@ -450,7 +450,7 @@
   appearance: none;
   width: 14px;
   height: 14px;
-  background: #f5f5f7;
+  background: var(--text-primary);
   border: 2px solid rgba(74, 144, 245, 0.52);
   border-radius: 50%;
   cursor: pointer;
