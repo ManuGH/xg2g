@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 8px 0 24px;
+  padding: 6px 0 24px;
 }
 
 .loadingState,
@@ -12,13 +12,11 @@
 }
 
 .heroCard,
-.metricCard,
 .streamSurface,
-.signalSurface,
-.feedSurface {
+.signalSurface {
   position: relative;
   overflow: hidden;
-  border-radius: 28px;
+  border-radius: 24px;
   border: 1px solid var(--border-elevated);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 26%),
@@ -29,10 +27,8 @@
 }
 
 .heroCard::before,
-.metricCard::before,
 .streamSurface::before,
-.signalSurface::before,
-.feedSurface::before {
+.signalSurface::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -42,8 +38,11 @@
 }
 
 .heroCard {
-  padding: 28px;
-  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 26px;
+  min-height: 0;
 }
 
 .heroStreaming {
@@ -73,7 +72,7 @@
   z-index: 1;
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 24px;
   align-items: flex-start;
 }
 
@@ -97,19 +96,19 @@
 .heroTitle {
   margin: 0;
   font-family: var(--font-heading);
-  font-size: clamp(2.25rem, 4vw, 3.8rem);
-  line-height: 0.95;
+  font-size: clamp(1.8rem, 3vw, 2.9rem);
+  line-height: 1;
   letter-spacing: -0.04em;
   color: var(--text-primary);
   max-width: 12ch;
 }
 
 .heroSummary {
-  margin: 16px 0 0;
-  max-width: 62ch;
+  margin: 14px 0 0;
+  max-width: 58ch;
   color: var(--text-secondary);
-  font-size: 1rem;
-  line-height: 1.65;
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 .heroToolbar {
@@ -125,28 +124,20 @@
 .heroBody {
   position: relative;
   z-index: 1;
-  margin-top: 28px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 0.9fr);
-  gap: 20px;
+  display: block;
 }
 
 .heroMain {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-}
-
-.heroChipRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  gap: 16px;
+  max-width: 760px;
 }
 
 .heroTimeline,
 .heroContextCard {
-  padding: 18px;
-  border-radius: 24px;
+  padding: 18px 20px;
+  border-radius: 22px;
   border: 1px solid var(--border-base);
   background: rgba(7, 10, 17, 0.22);
 }
@@ -190,7 +181,7 @@
   display: block;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: 1.25rem;
+  font-size: clamp(1.05rem, 1.4vw, 1.15rem);
   font-weight: 600;
 }
 
@@ -200,86 +191,20 @@
   flex-wrap: wrap;
 }
 
-.heroAside {
-  display: grid;
-  gap: 12px;
-}
-
-.heroFact {
-  padding: 16px 18px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.factValue {
-  display: block;
-  color: var(--text-primary);
-  font-family: var(--font-heading);
-  font-size: 1.45rem;
-  font-weight: 700;
-}
-
-.factDetail {
-  display: block;
-  margin-top: 8px;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.45;
-}
-
-.metricGrid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.metricCard {
-  padding: 20px;
-}
-
-.metricAction {
-  border-color: rgba(74, 144, 245, 0.24);
-}
-
-.metricLive {
-  border-color: rgba(245, 159, 10, 0.3);
-}
-
-.metricHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.metricValue {
-  margin-top: 18px;
-  color: var(--text-primary);
-  font-family: var(--font-heading);
-  font-size: clamp(1.8rem, 3vw, 2.8rem);
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.metricDetail {
-  margin: 10px 0 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.55;
-}
-
 .diagnosticsGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.9fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 18px;
   align-items: start;
 }
 
 .streamSurface,
-.signalSurface,
-.feedSurface {
-  padding: 20px;
+.signalSurface {
+  padding: 18px;
+}
+
+.signalSurface {
+  height: fit-content;
 }
 
 .panelHeader {
@@ -289,13 +214,13 @@
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .panelTitle {
   margin: 0;
   font-family: var(--font-heading);
-  font-size: var(--text-h1);
+  font-size: clamp(1.05rem, 1.4vw, 1.3rem);
   color: var(--text-primary);
 }
 
@@ -304,9 +229,7 @@
   z-index: 1;
 }
 
-.emptyState,
-.emptyStateCompact,
-.loadingInline {
+.emptyState {
   padding: 20px 0;
   color: var(--text-secondary);
 }
@@ -315,7 +238,7 @@
   margin: 0 0 6px;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: var(--text-h2);
+  font-size: clamp(1.2rem, 1.8vw, 1.45rem);
 }
 
 .emptyText {
@@ -324,14 +247,9 @@
   line-height: 1.6;
 }
 
-.sideStack {
-  display: grid;
-  gap: 16px;
-}
-
 .statusList {
   display: grid;
-  gap: 12px;
+  gap: 0;
 }
 
 .statusRow {
@@ -339,10 +257,8 @@
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .statusLabel {
@@ -356,45 +272,9 @@
   text-align: right;
 }
 
-.feedList {
-  display: grid;
-  gap: 10px;
-}
-
-.feedItem {
-  padding: 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.feedItemTop {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-}
-
-.feedTime {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-}
-
-.feedMessage {
-  margin: 10px 0 0;
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-}
-
 @media (max-width: 1180px) {
-  .heroBody,
   .diagnosticsGrid {
     grid-template-columns: 1fr;
-  }
-
-  .metricGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -405,10 +285,8 @@
   }
 
   .heroCard,
-  .metricCard,
   .streamSurface,
-  .signalSurface,
-  .feedSurface {
+  .signalSurface {
     border-radius: 24px;
   }
 
@@ -423,7 +301,7 @@
 
   .heroTitle {
     max-width: none;
-    font-size: clamp(2rem, 10vw, 2.9rem);
+    font-size: clamp(1.65rem, 7vw, 2.2rem);
   }
 
   .heroToolbar,
@@ -435,14 +313,9 @@
     justify-content: flex-start;
   }
 
-  .metricGrid {
-    grid-template-columns: 1fr;
-  }
-
   .panelHeader,
   .timelineHeader,
-  .statusRow,
-  .feedItemTop {
+  .statusRow {
     flex-direction: column;
     align-items: flex-start;
   }

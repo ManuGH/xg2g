@@ -129,5 +129,23 @@ Use these symptom mappings:
 
 Important nuance: `/readyz` may already be healthy while Docker health is still red. One confirmed failure mode is a metrics-only health mismatch where readiness is `200` but the Docker healthcheck still fails because `http://localhost:9091/metrics` is unreachable.
 
+Observed live-host delta on March 11, 2026:
+- `/srv/xg2g/docker-compose.yml` required `xg2g healthcheck --mode ready --require-metrics --metrics-port 9091`
+- `/etc/xg2g/xg2g.env` did not define `XG2G_METRICS_LISTEN`
+- Result: `xg2g healthcheck --mode ready` succeeded, but `xg2g healthcheck --mode ready --require-metrics --metrics-port 9091` failed with `connect: connection refused`
+
+If you see that exact mismatch, fix the live env first by setting:
+
+```bash
+XG2G_METRICS_LISTEN=:9091
+```
+
+Then recreate the container and re-check:
+
+```bash
+docker inspect -f '{{json .State.Health}}' xg2g
+systemctl status xg2g.service --no-pager -l
+```
+
 ### Service Smoke Matrix
 See `docs/ops/SERVICE_SMOKE.md` for the CTO-grade start/stop matrix (negative + positive + idempotent).

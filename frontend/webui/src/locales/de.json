@@ -141,7 +141,7 @@
     "heroStreamingMoment": "Streaming aktiv",
     "heroControlDeck": "Steuerzentrale",
     "heroStreamingSummary": "{{count}} aktive Sitzung(en) über die Receiver-Bridge.",
-    "heroStandbySummary": "Receiver aufwecken, um Live-Kontext und Kanal-Metadaten wiederherzustellen.",
+    "heroStandbySummary": "Aufwecken, um Kanal- und Sendungsdaten wieder zu laden.",
     "heroNextUp": "Als Nächstes auf dem Receiver: {{title}}",
     "heroDefaultSummary": "Live-TV, Timer, Aufnahmen und Diagnose über eine einzige Steuerfläche starten.",
     "connectedDevices": "Verbundene Geräte",

@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import Dashboard from './Dashboard';
 
 const translations: Record<string, string> = {
@@ -14,36 +14,16 @@ const translations: Record<string, string> = {
   'dashboard.heroDefaultSummary': 'Default summary',
   'dashboard.connectedDevices': 'Connected devices',
   'dashboard.readyForFirstSession': 'ready',
-  'dashboard.receiverLink': 'Receiver link',
   'dashboard.healthy': 'Healthy',
   'dashboard.lastSync': 'Last sync {{time}}',
   'dashboard.recorder': 'Recorder',
   'dashboard.idle': 'Idle',
   'dashboard.noActiveRecordingTask': 'No recording',
-  'dashboard.metricStreaming': 'Streaming',
-  'dashboard.noActiveSessions': 'No active sessions',
-  'dashboard.liveTraffic': 'Live traffic',
-  'dashboard.metricReceiver': 'Receiver',
-  'dashboard.online': 'Online',
-  'dashboard.metricEpg': 'EPG',
-  'dashboard.synced': 'Synced',
-  'dashboard.allChannelsHaveData': 'all channels have data',
-  'dashboard.metricRecorder': 'Recorder',
-  'dashboard.uptimeLabel': 'Uptime {{time}}',
-  'dashboard.receiverOnline': 'Receiver online',
-  'dashboard.recorderUnknown': 'Recorder unknown',
   'dashboard.systemHealthy': 'System healthy',
   'dashboard.healthUnknown': 'Health unknown',
   'dashboard.systemDegraded': 'System degraded',
-  'dashboard.guideSynced': 'Guide synced',
-  'dashboard.guidePartial': 'Guide partial',
-  'dashboard.guideOffline': 'Guide offline',
-  'dashboard.activeSessions': '{{count}} active sessions',
-  'dashboard.noActiveSessionsChip': 'No active sessions',
   'dashboard.signal': 'Signal',
   'dashboard.receiverAndGuideHealth': 'Receiver and guide health',
-  'dashboard.receiverLabel': 'Receiver',
-  'dashboard.connected': 'Connected',
   'dashboard.lastSyncLabel': 'Last sync',
   'dashboard.guideGaps': 'Guide gaps',
   'dashboard.none': 'None',
@@ -55,16 +35,13 @@ const translations: Record<string, string> = {
   'dashboard.noSessions': 'No sessions',
   'dashboard.noActiveStreams': 'No active streams',
   'dashboard.startPlaybackHint': 'Start playback',
-  'dashboard.feed': 'Feed',
-  'dashboard.recentLogs': 'Recent logs',
-  'dashboard.loadingLogs': 'Loading logs',
-  'dashboard.noRecentLogs': 'No recent logs',
   'dashboard.onReceiverNow': 'On receiver now',
   'dashboard.receiverContext': 'Receiver context',
   'dashboard.readyForPlayback': 'Ready for playback',
   'dashboard.timeNever': 'Never',
   'dashboard.timeJustNow': 'Just now',
-  'dashboard.logLevelError': 'Fehlerpegel'
+  'dashboard.timeMinutesAgo': '{{count}}m ago',
+  'dashboard.timeHoursAgo': '{{count}}h ago'
 };
 
 vi.mock('react-i18next', () => ({
@@ -99,12 +76,7 @@ vi.mock('../hooks/useServerQueries', () => ({
     }
   }),
   useStreams: () => ({ data: [] }),
-  useDvrStatus: () => ({ data: null }),
-  useLogs: () => ({
-    data: [{ level: 'error', message: 'Something happened', time: '2026-03-11T10:00:00Z' }],
-    isLoading: false,
-    error: null
-  })
+  useDvrStatus: () => ({ data: null })
 }));
 
 vi.mock('../context/AppContext', () => ({
@@ -114,9 +86,11 @@ vi.mock('../context/AppContext', () => ({
 }));
 
 describe('Dashboard', () => {
-  it('renders translated log level labels in the feed', () => {
+  it('renders a compact dashboard without duplicate health or log panels', () => {
     render(<Dashboard />);
 
-    screen.getByText('Fehlerpegel');
+    expect(screen.getAllByText('System healthy')).toHaveLength(1);
+    expect(screen.queryByText('Recent logs')).toBeNull();
+    screen.getByText('Receiver and guide health');
   });
 });

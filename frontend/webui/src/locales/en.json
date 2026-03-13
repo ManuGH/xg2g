@@ -141,7 +141,7 @@
     "heroStreamingMoment": "Streaming moment",
     "heroControlDeck": "Control deck",
     "heroStreamingSummary": "Streaming {{count}} active session(s) from the receiver bridge.",
-    "heroStandbySummary": "Wake the receiver to recover live context and channel metadata.",
+    "heroStandbySummary": "Wake it to restore channel and programme metadata.",
     "heroNextUp": "Next on the receiver: {{title}}",
     "heroDefaultSummary": "Launch live TV, timers, recordings, and diagnostics from a single control surface.",
     "connectedDevices": "Connected devices",
