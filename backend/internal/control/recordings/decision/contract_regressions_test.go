@@ -62,6 +62,13 @@ func TestCapabilitiesVersionStrict(t *testing.T) {
 	input = baseDecisionInput()
 	input.Capabilities.Version = 2
 	_, _, prob = Decide(ctx, input, "test")
+	if prob != nil {
+		t.Fatalf("expected capabilities_version=2 to pass, got %v", prob)
+	}
+
+	input = baseDecisionInput()
+	input.Capabilities.Version = 3
+	_, _, prob = Decide(ctx, input, "test")
 	if prob == nil || prob.Status != 400 {
 		t.Fatalf("expected 400 for invalid capabilities_version, got %v", prob)
 	}

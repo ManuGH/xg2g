@@ -561,7 +561,7 @@ type PlaybackCapabilities struct {
 	// AudioCodecs Supported audio codecs
 	AudioCodecs []string `json:"audioCodecs"`
 
-	// CapabilitiesVersion Capabilities contract version (current: 1)
+	// CapabilitiesVersion Capabilities contract version (current: 2)
 	CapabilitiesVersion int `json:"capabilitiesVersion"`
 
 	// Container Supported container formats
