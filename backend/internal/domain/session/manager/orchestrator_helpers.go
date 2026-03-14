@@ -533,12 +533,12 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() {
 			if !canRestartTerminalFallback(r) {
-				return fmt.Errorf("session state %s, aborting start", r.State)
+				return fmt.Errorf("session state %s, aborting start: %w", r.State, ErrSessionCanceled)
 			}
 			resetForFallbackRestart(r, time.Now())
 		}
 		if r.State == model.SessionStopping {
-			return fmt.Errorf("session state %s, aborting start", r.State)
+			return fmt.Errorf("session state %s, aborting start: %w", r.State, ErrSessionCanceled)
 		}
 		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvStartRequested}, nil, false, time.Now())
 		if err != nil {
@@ -620,7 +620,6 @@ func (o *Orchestrator) stopPipelineHandle(ctx context.Context, handle ports.RunH
 	_ = o.Pipeline.Stop(stopCtx, handle)
 }
 
-
 func (o *Orchestrator) runExecutionLoop(
 	ctx context.Context,
 	hbCtx context.Context,
@@ -637,7 +636,6 @@ func (o *Orchestrator) runExecutionLoop(
 		initialProfileSpec.VOD = true
 	}
 	currentProfileSpec := initialProfileSpec
-	repairAttempted := false
 	ttfpRecorded := false
 
 	var handle ports.RunHandle
@@ -664,7 +662,7 @@ func (o *Orchestrator) runExecutionLoop(
 	o.recordTransition(model.SessionStarting, model.SessionPriming)
 	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() || r.State == model.SessionStopping {
-			return fmt.Errorf("session state %s, aborting priming", r.State)
+			return fmt.Errorf("session state %s, aborting priming: %w", r.State, ErrSessionCanceled)
 		}
 		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvPrimingStarted}, nil, false, time.Now())
 		if err != nil {
@@ -690,7 +688,7 @@ func (o *Orchestrator) runExecutionLoop(
 
 		playlistReadyResult, waitReason, waitDetail = o.waitForReady(
 			ctx, hbCtx, e, currentProfileSpec, handle,
-			playlistPath, sessionCtx.IsVOD, repairAttempted,
+			playlistPath, sessionCtx.IsVOD,
 			startTime, logger, &ttfpRecorded,
 		)
 
