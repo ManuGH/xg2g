@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 )
 
@@ -38,29 +40,152 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 		"-i", inputPath,
 	}
 
-	switch spec.Profile {
-	case vod.ProfileHigh:
-		args = append(args, "-c:v", "libx264", "-preset", "slow", "-crf", "18")
-		args = append(args, "-c:a", "aac", "-b:a", "192k")
-	case vod.ProfileLow:
-		args = append(args, "-c:v", "libx264", "-preset", "fast", "-crf", "23")
-		args = append(args, "-c:a", "aac", "-b:a", "128k")
-	default: // ProfileDefault (Copy if possible)
-		args = append(args, "-c:v", "copy", "-c:a", "copy")
+	if spec.TargetProfile != nil {
+		targetArgs, err := mapTargetProfileToArgs(*spec.TargetProfile)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, targetArgs...)
+	} else {
+		args = append(args, mapLegacyProfileToArgs(spec.Profile)...)
 	}
 
 	// Map only video and audio streams (exclude subtitles/teletext)
 	args = append(args, "-map", "0:v", "-map", "0:a")
 
-	// HLS output format with proper settings
-	args = append(args,
-		"-f", "hls",
-		"-hls_time", "6",
-		"-hls_list_size", "0",
-		"-hls_segment_filename", filepath.Join(spec.WorkDir, "seg_%05d.ts"),
-	)
-
-	// Output to temp
-	args = append(args, outputPath)
+	args = append(args, hlsOutputArgs(spec.WorkDir, outputPath, spec.TargetProfile)...)
 	return args, nil
+}
+
+func mapLegacyProfileToArgs(profile vod.Profile) []string {
+	switch profile {
+	case vod.ProfileHigh:
+		return []string{"-c:v", "libx264", "-preset", "slow", "-crf", "18", "-c:a", "aac", "-b:a", "192k"}
+	case vod.ProfileLow:
+		return []string{"-c:v", "libx264", "-preset", "fast", "-crf", "23", "-c:a", "aac", "-b:a", "128k"}
+	default:
+		return []string{"-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"}
+	}
+}
+
+func mapTargetProfileToArgs(target playbackprofile.TargetPlaybackProfile) ([]string, error) {
+	target = playbackprofile.CanonicalizeTarget(target)
+	if !target.HLS.Enabled {
+		return nil, fmt.Errorf("vod: target profile must enable hls for recording builds")
+	}
+
+	videoArgs, err := videoTargetArgs(target.Video)
+	if err != nil {
+		return nil, err
+	}
+	audioArgs, err := audioTargetArgs(target.Audio)
+	if err != nil {
+		return nil, err
+	}
+
+	args := make([]string, 0, len(videoArgs)+len(audioArgs))
+	args = append(args, videoArgs...)
+	args = append(args, audioArgs...)
+	return args, nil
+}
+
+func videoTargetArgs(video playbackprofile.VideoTarget) ([]string, error) {
+	switch video.Mode {
+	case "", playbackprofile.MediaModeCopy:
+		return []string{"-c:v", "copy"}, nil
+	case playbackprofile.MediaModeTranscode:
+		encoder, err := ffmpegVideoEncoder(video.Codec)
+		if err != nil {
+			return nil, err
+		}
+		args := []string{"-c:v", encoder}
+		if video.BitrateKbps > 0 {
+			return append(args, "-b:v", strconv.Itoa(video.BitrateKbps)+"k"), nil
+		}
+		return append(args, "-preset", "fast", "-crf", "23"), nil
+	default:
+		return nil, fmt.Errorf("vod: unsupported video mode %q", video.Mode)
+	}
+}
+
+func audioTargetArgs(audio playbackprofile.AudioTarget) ([]string, error) {
+	switch audio.Mode {
+	case "", playbackprofile.MediaModeCopy:
+		return []string{"-c:a", "copy"}, nil
+	case playbackprofile.MediaModeTranscode:
+		encoder, err := ffmpegAudioEncoder(audio.Codec)
+		if err != nil {
+			return nil, err
+		}
+		args := []string{"-c:a", encoder}
+		if audio.BitrateKbps > 0 {
+			args = append(args, "-b:a", strconv.Itoa(audio.BitrateKbps)+"k")
+		}
+		if audio.Channels > 0 {
+			args = append(args, "-ac", strconv.Itoa(audio.Channels))
+		}
+		if audio.SampleRate > 0 {
+			args = append(args, "-ar", strconv.Itoa(audio.SampleRate))
+		}
+		return args, nil
+	default:
+		return nil, fmt.Errorf("vod: unsupported audio mode %q", audio.Mode)
+	}
+}
+
+func ffmpegVideoEncoder(codec string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "", "h264":
+		return "libx264", nil
+	case "hevc", "h265":
+		return "libx265", nil
+	default:
+		return "", fmt.Errorf("vod: unsupported target video codec %q", codec)
+	}
+}
+
+func ffmpegAudioEncoder(codec string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "", "aac":
+		return "aac", nil
+	case "ac3":
+		return "ac3", nil
+	case "mp3":
+		return "libmp3lame", nil
+	default:
+		return "", fmt.Errorf("vod: unsupported target audio codec %q", codec)
+	}
+}
+
+func hlsOutputArgs(workDir, outputPath string, target *playbackprofile.TargetPlaybackProfile) []string {
+	segmentSeconds := 6
+	segmentContainer := "mpegts"
+	if target != nil {
+		canonical := playbackprofile.CanonicalizeTarget(*target)
+		if canonical.HLS.SegmentSeconds > 0 {
+			segmentSeconds = canonical.HLS.SegmentSeconds
+		}
+		if canonical.HLS.SegmentContainer != "" {
+			segmentContainer = canonical.HLS.SegmentContainer
+		}
+	}
+
+	args := []string{
+		"-f", "hls",
+		"-hls_time", strconv.Itoa(segmentSeconds),
+		"-hls_list_size", "0",
+	}
+
+	switch segmentContainer {
+	case "fmp4", "mp4":
+		args = append(args,
+			"-hls_segment_type", "fmp4",
+			"-hls_fmp4_init_filename", "init.mp4",
+			"-hls_segment_filename", filepath.Join(workDir, "seg_%05d.m4s"),
+		)
+	default:
+		args = append(args, "-hls_segment_filename", filepath.Join(workDir, "seg_%05d.ts"))
+	}
+
+	return append(args, outputPath)
 }

@@ -3,6 +3,7 @@ package decision
 import (
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -59,9 +60,20 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 			Dec: &Decision{
 				Mode:               ModeTranscode,
 				SelectedOutputKind: "file", // LIE: Transcode is always HLS
+				TargetProfile:      nil,
 			},
 			Input:       DecisionInput{},
 			ExpectedErr: "invariant #10 violation: transcode requires kind='hls'",
+		},
+		{
+			Name: "Invariant #10: Transcode without Target Profile",
+			Dec: &Decision{
+				Mode:               ModeTranscode,
+				SelectedOutputKind: "hls",
+				TargetProfile:      nil,
+			},
+			Input:       DecisionInput{},
+			ExpectedErr: "invariant #10 violation: transcode requires a target profile",
 		},
 		{
 			Name: "Invariant #11: Deny with Output URL",
@@ -93,6 +105,17 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 			},
 			Input:       DecisionInput{},
 			ExpectedErr: "invariant #11 violation: deny mode must have zero outputs",
+		},
+		{
+			Name: "Invariant #11: Deny with Target Profile",
+			Dec: &Decision{
+				Mode: ModeDeny,
+				TargetProfile: &playbackprofile.TargetPlaybackProfile{
+					Container: "mpegts",
+				},
+			},
+			Input:       DecisionInput{},
+			ExpectedErr: "invariant #11 violation: deny mode must not carry a target profile",
 		},
 	}
 

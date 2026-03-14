@@ -570,6 +570,9 @@ type PlaybackCapabilities struct {
 	// DeviceType Client device category for policy decisions
 	DeviceType *string `json:"deviceType,omitempty"`
 
+	// HlsEngines Supported HLS playback engines (e.g. native, hlsjs)
+	HlsEngines *[]string `json:"hlsEngines,omitempty"`
+
 	// MaxVideo Optional resolution/FPS constraints
 	MaxVideo *struct {
 		Fps    *int `json:"fps,omitempty"`
@@ -582,6 +585,9 @@ type PlaybackCapabilities struct {
 
 	// SupportsRange Whether client supports HTTP range requests
 	SupportsRange *bool `json:"supportsRange,omitempty"`
+
+	// PreferredHlsEngine Preferred HLS playback engine for this client (e.g. native, hlsjs)
+	PreferredHlsEngine *string `json:"preferredHlsEngine,omitempty"`
 
 	// VideoCodecs Supported video codecs
 	VideoCodecs []string `json:"videoCodecs"`
@@ -613,6 +619,12 @@ type PlaybackDecision struct {
 
 	// SelectedOutputUrl The explicitly selected playback URL (backend-driven).
 	SelectedOutputUrl string `json:"selectedOutputUrl"`
+
+	// TargetProfile Resolved output target profile summary for observability/debugging.
+	TargetProfile *PlaybackTargetProfile `json:"targetProfile,omitempty"`
+
+	// TargetProfileHash Stable hash of the resolved target playback profile.
+	TargetProfileHash *string `json:"targetProfileHash,omitempty"`
 
 	// Trace Traceability information
 	Trace PlaybackTrace `json:"trace"`
@@ -738,8 +750,45 @@ type PlaybackOutputHlsKind string
 // PlaybackTrace Traceability information
 type PlaybackTrace struct {
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
-	RequestId string  `json:"requestId"`
-	SessionId *string `json:"sessionId"`
+	RequestId         string  `json:"requestId"`
+	RequestProfile    *string `json:"requestProfile,omitempty"`
+	SessionId         *string `json:"sessionId"`
+	TargetProfileHash *string `json:"targetProfileHash,omitempty"`
+}
+
+// PlaybackTargetProfile defines model for PlaybackTargetProfile.
+type PlaybackTargetProfile struct {
+	Audio     PlaybackTargetAudio `json:"audio"`
+	Container string              `json:"container"`
+	Hls       PlaybackTargetHls   `json:"hls"`
+	HwAccel   string              `json:"hwAccel"`
+	Packaging string              `json:"packaging"`
+	Video     PlaybackTargetVideo `json:"video"`
+}
+
+// PlaybackTargetAudio defines model for PlaybackTargetAudio.
+type PlaybackTargetAudio struct {
+	BitrateKbps int    `json:"bitrateKbps"`
+	Channels    int    `json:"channels"`
+	Codec       string `json:"codec"`
+	Mode        string `json:"mode"`
+	SampleRate  int    `json:"sampleRate"`
+}
+
+// PlaybackTargetHls defines model for PlaybackTargetHls.
+type PlaybackTargetHls struct {
+	Enabled          bool   `json:"enabled"`
+	SegmentContainer string `json:"segmentContainer"`
+	SegmentSeconds   int    `json:"segmentSeconds"`
+}
+
+// PlaybackTargetVideo defines model for PlaybackTargetVideo.
+type PlaybackTargetVideo struct {
+	Codec  string  `json:"codec"`
+	Fps    float64 `json:"fps"`
+	Height int     `json:"height"`
+	Mode   string  `json:"mode"`
+	Width  int     `json:"width"`
 }
 
 // ProblemCapabilitiesInvalid defines model for ProblemCapabilitiesInvalid.

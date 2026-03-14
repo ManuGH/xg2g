@@ -20,11 +20,13 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -201,6 +203,15 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 		writeProblem(w, r, prob.Status, prob.Type, prob.Title, prob.Code, prob.Detail, nil)
 		return
 	}
+	if dec != nil && dec.TargetProfile != nil {
+		log.L().Debug().
+			Str("recordingId", recordingId).
+			Str("schemaType", schemaType).
+			Str("decisionMode", string(dec.Mode)).
+			Str("targetProfileHash", dec.TargetProfile.Hash()).
+			Interface("targetProfile", dec.TargetProfile).
+			Msg("resolved recording target playback profile")
+	}
 
 	// 6. Truth Extraction (PR-P3-4 Legacy Path)
 	// Segment truth is used for DVR/VOD seekability and duration info, but NOT for mode decision.
@@ -224,7 +235,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	}
 
 	// 8. Transform to DTO (passing truth directly)
-	dto := s.mapPlaybackInfoV2(r.Context(), recordingId, dec, resumeState, segmentTruth, attemptedTruth, truth, schemaType, caps)
+	dto := s.mapPlaybackInfoV2(r.Context(), recordingId, dec, resumeState, segmentTruth, attemptedTruth, truth, schemaType, caps, string(detectClientProfile(r)))
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(dto)
@@ -257,7 +268,7 @@ func (s *Server) mapPlaybackError(w http.ResponseWriter, r *http.Request, id str
 	}
 }
 
-func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities) PlaybackInfo {
+func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, requestProfile string) PlaybackInfo {
 	// 1. Mode & URL
 	proto := decision.ProtocolFrom(dec)
 	var mode PlaybackInfoMode
@@ -276,7 +287,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		if schemaType == "live" {
 			url = fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", id)
 		} else {
-			url = fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", id)
+			url = v3recordings.RecordingPlaylistURL(id, requestProfile, dec.TargetProfile)
 		}
 	case "none":
 		// P9-0 Option B: Keep Mode=DirectMp4 for client compatibility, but URL=nil and Decision.Mode=deny
@@ -334,7 +345,16 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	decDTO.Trace.RequestId = dec.Trace.RequestID
 	sessionID := fmt.Sprintf("rec:%s", id)
 	decDTO.Trace.SessionId = &sessionID
+	if rp := normalize.Token(requestProfile); rp != "" {
+		decDTO.Trace.RequestProfile = &rp
+	}
 	decDTO.Reasons = decision.ReasonsAsStrings(dec, nil)
+	if dec.TargetProfile != nil {
+		hash := dec.TargetProfile.Hash()
+		decDTO.TargetProfileHash = &hash
+		decDTO.Trace.TargetProfileHash = &hash
+		decDTO.TargetProfile = mapTargetProfile(dec.TargetProfile)
+	}
 
 	// 4. Resume DTO
 	var resDTO *ResumeSummary
@@ -431,7 +451,7 @@ func (s *Server) extractSegmentTruth(ctx context.Context, id string) (*hls.Segme
 	if s.artifacts == nil {
 		return nil, false
 	}
-	if artifact, err := s.artifacts.ResolvePlaylist(ctx, id, ""); err == nil {
+	if artifact, err := s.artifacts.ResolvePlaylist(ctx, id, "", "", nil); err == nil {
 		content, _ := readArtifactContent(artifact)
 		if truth, err := hls.ExtractSegmentTruth(content); err == nil {
 			return truth, true
@@ -466,6 +486,37 @@ func mapV3CapsToInternal(v3 *PlaybackCapabilities) capabilities.PlaybackCapabili
 		c.DeviceType = *v3.DeviceType
 	}
 	return c
+}
+
+func mapTargetProfile(target *playbackprofile.TargetPlaybackProfile) *PlaybackTargetProfile {
+	if target == nil {
+		return nil
+	}
+	canonical := playbackprofile.CanonicalizeTarget(*target)
+	return &PlaybackTargetProfile{
+		Container: string(canonical.Container),
+		Packaging: string(canonical.Packaging),
+		HwAccel:   string(canonical.HWAccel),
+		Video: PlaybackTargetVideo{
+			Mode:   string(canonical.Video.Mode),
+			Codec:  canonical.Video.Codec,
+			Width:  canonical.Video.Width,
+			Height: canonical.Video.Height,
+			Fps:    canonical.Video.FPS,
+		},
+		Audio: PlaybackTargetAudio{
+			Mode:        string(canonical.Audio.Mode),
+			Codec:       canonical.Audio.Codec,
+			Channels:    canonical.Audio.Channels,
+			BitrateKbps: canonical.Audio.BitrateKbps,
+			SampleRate:  canonical.Audio.SampleRate,
+		},
+		Hls: PlaybackTargetHls{
+			Enabled:          canonical.HLS.Enabled,
+			SegmentContainer: canonical.HLS.SegmentContainer,
+			SegmentSeconds:   canonical.HLS.SegmentSeconds,
+		},
+	}
 }
 
 // mapInternalCapsToDecision REMOVED (Replaced by decision.FromCapabilities)

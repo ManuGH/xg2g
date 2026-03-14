@@ -17,8 +17,37 @@ import (
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
+
+func genericRecordingVariantHash() string {
+	target := playbackprofile.CanonicalizeTarget(playbackprofile.TargetPlaybackProfile{
+		Container: "mpegts",
+		Packaging: playbackprofile.PackagingTS,
+		Video: playbackprofile.VideoTarget{
+			Mode: playbackprofile.MediaModeCopy,
+		},
+		Audio: playbackprofile.AudioTarget{
+			Mode:        playbackprofile.MediaModeTranscode,
+			Codec:       "aac",
+			Channels:    2,
+			BitrateKbps: 192,
+			SampleRate:  48000,
+		},
+		HLS: playbackprofile.HLSTarget{
+			Enabled:          true,
+			SegmentContainer: "mpegts",
+			SegmentSeconds:   6,
+		},
+		HWAccel: playbackprofile.HWAccelNone,
+	})
+	return target.Hash()
+}
+
+func genericRecordingMetaID(serviceRef string) string {
+	return serviceRef + "#variant:" + genericRecordingVariantHash()
+}
 
 type blockingHandle struct {
 	progress chan vod.ProgressEvent
@@ -160,14 +189,16 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 	defer vodMgr.Shutdown()
 	srv.SetDependencies(Dependencies{VODManager: vodMgr})
 
-	cacheDir := filepath.Join(hlsRoot, "recordings", v3recordings.RecordingCacheKey(serviceRef))
+	metaID := genericRecordingMetaID(serviceRef)
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(hlsRoot, serviceRef, genericRecordingVariantHash())
+	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(cacheDir, 0750))
 
 	playlistPath := filepath.Join(cacheDir, "index.m3u8")
 	playlist := "#EXTM3U\n#EXT-X-ENDLIST\nseg_0001.ts\n"
 	require.NoError(t, os.WriteFile(playlistPath, []byte(playlist), 0600))
 
-	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
+	vodMgr.SeedMetadata(metaID, vod.Metadata{
 		State:        vod.ArtifactStateFailed,
 		PlaylistPath: playlistPath,
 		Error:        "boom",
@@ -206,7 +237,8 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 	defer vodMgr.Shutdown()
 	srv.SetDependencies(Dependencies{VODManager: vodMgr, PathMapper: mapper})
 
-	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
+	metaID := genericRecordingMetaID(serviceRef)
+	vodMgr.SeedMetadata(metaID, vod.Metadata{
 		State: vod.ArtifactStateFailed,
 	})
 
@@ -216,11 +248,11 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
 
 	require.Eventually(t, func() bool {
-		meta, ok := vodMgr.GetMetadata(serviceRef)
+		meta, ok := vodMgr.GetMetadata(metaID)
 		return ok && meta.State == vod.ArtifactStateReady && meta.PlaylistPath != ""
 	}, 2*time.Second, 10*time.Millisecond)
 
-	cacheDir, err := v3recordings.RecordingCacheDir(cfg.HLS.Root, serviceRef)
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, serviceRef, genericRecordingVariantHash())
 	require.NoError(t, err)
 
 	_ = cacheDir
@@ -253,7 +285,7 @@ func TestGetRecordingHLSPlaylist_FailedStampedeTriggersSingleBuild(t *testing.T)
 	defer vodMgr.Shutdown()
 	srv.SetDependencies(Dependencies{PathMapper: mapper, VODManager: vodMgr})
 
-	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
+	vodMgr.SeedMetadata(genericRecordingMetaID(serviceRef), vod.Metadata{
 		State: vod.ArtifactStateFailed,
 	})
 
@@ -308,7 +340,8 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 	srv := NewServer(cfg, nil, nil)
 	srv.SetDependencies(Dependencies{VODManager: vodMgr, PathMapper: mapper})
 
-	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
+	metaID := genericRecordingMetaID(serviceRef)
+	vodMgr.SeedMetadata(metaID, vod.Metadata{
 		State: vod.ArtifactStateFailed,
 		Error: "MKDIR_FAIL", // Non-recoverable without action
 	})
@@ -331,7 +364,7 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 	// We wait for a terminal state (READY or FAILED) to ensure the VOD manager
 	// has released all resources and updated the metadata store.
 	require.Eventually(t, func() bool {
-		m, ok := vodMgr.GetMetadata(serviceRef)
+		m, ok := vodMgr.GetMetadata(metaID)
 		return ok && (m.State == vod.ArtifactStateReady || m.State == vod.ArtifactStateFailed)
 	}, 2*time.Second, 10*time.Millisecond, "HLS build lifecycle did not reach terminal state (READY/FAILED) within timeout")
 }
@@ -366,10 +399,11 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 	defer vodMgr.Shutdown()
 	srv.SetDependencies(Dependencies{VODManager: vodMgr, PathMapper: pathMapper})
 
-	cacheDir, err := v3recordings.RecordingCacheDir(cfg.HLS.Root, serviceRef)
+	metaID := genericRecordingMetaID(serviceRef)
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, serviceRef, genericRecordingVariantHash())
 	require.NoError(t, err)
 
-	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
+	vodMgr.SeedMetadata(metaID, vod.Metadata{
 		State:        vod.ArtifactStateReady,
 		PlaylistPath: filepath.Join(cacheDir, "index.m3u8"),
 	})
@@ -385,7 +419,7 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond, "expected reconcile build to start")
 
 	require.Eventually(t, func() bool {
-		meta, ok := vodMgr.GetMetadata(serviceRef)
+		meta, ok := vodMgr.GetMetadata(metaID)
 		return ok && meta.State == vod.ArtifactStateReady && meta.PlaylistPath != ""
 	}, 3*time.Second, 10*time.Millisecond, "expected reconcile to repopulate READY metadata")
 
@@ -395,4 +429,41 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 		srv.GetRecordingHLSPlaylist(rr2, req2, recordingID)
 		return rr2.Code == http.StatusOK
 	}, 3*time.Second, 20*time.Millisecond, "expected playlist to become available after reconcile")
+}
+
+func TestGetRecordingHLSPlaylist_MissingMetadata_ReusesExistingPlaylist(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:/media/nfs/monk.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+	cfg := config.AppConfig{
+		HLS: config.HLSConfig{
+			Root: t.TempDir(),
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil)
+	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
+	require.NoError(t, err)
+	defer vodMgr.Shutdown()
+	srv.SetDependencies(Dependencies{VODManager: vodMgr})
+
+	metaID := genericRecordingMetaID(serviceRef)
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, serviceRef, genericRecordingVariantHash())
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(cacheDir, 0750))
+
+	playlistPath := filepath.Join(cacheDir, "index.m3u8")
+	playlist := "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-ENDLIST\nseg_0001.ts\n"
+	require.NoError(t, os.WriteFile(playlistPath, []byte(playlist), 0600))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", nil)
+	rr := httptest.NewRecorder()
+	srv.GetRecordingHLSPlaylist(rr, req, recordingID)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Contains(t, rr.Body.String(), "#EXT-X-PLAYLIST-TYPE:VOD")
+
+	meta, ok := vodMgr.GetMetadata(metaID)
+	require.True(t, ok, "expected resolver to reconstruct metadata from the existing playlist")
+	require.Equal(t, vod.ArtifactStateReady, meta.State)
+	require.Equal(t, playlistPath, meta.PlaylistPath)
 }

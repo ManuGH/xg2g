@@ -52,6 +52,9 @@ func TestUIHandler_DevProxyRewritesToUIBasePath(t *testing.T) {
 	if !strings.Contains(csp, "ws:") || !strings.Contains(csp, "wss:") {
 		t.Fatalf("expected websocket-capable CSP in dev mode, got %q", csp)
 	}
+	if !strings.Contains(csp, "script-src 'self' 'unsafe-inline'") {
+		t.Fatalf("expected Vite-compatible script-src in dev mode, got %q", csp)
+	}
 }
 
 func TestUIHandler_DevStaticDirServesIndex(t *testing.T) {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as sdk from '../src/client-ts';
@@ -55,7 +55,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     await waitFor(async () => {
       // Backend must fail closed if selected output URL is missing.
       const errorToast = await screen.findByRole('alert');
-      expect(errorToast.textContent).toContain('Backend decision missing selectedOutputUrl');
+      expect(errorToast.textContent).toContain('player.serverError');
     });
   });
 
@@ -91,5 +91,107 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
       const legacyCall = fetchSpy.mock.calls.find((call: any[]) => call[0].toString().includes('/legacy/url.m3u8'));
       expect(legacyCall).toBeUndefined();
     });
+  });
+
+  it('does not advertise ac3 for recording playback capability probes', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
+      if (contentType === 'application/vnd.apple.mpegurl') {
+        return 'probably';
+      }
+      if (contentType === 'audio/mp4; codecs="ac-3"') {
+        return 'probably';
+      }
+      return '';
+    });
+
+    const mockInfo: any = {
+      mode: 'transcode',
+      decision: {
+        mode: 'transcode',
+        selectedOutputUrl: '/recordings/rec-audio/index.m3u8',
+        selectedOutputKind: 'hls'
+      },
+      requestId: 'req-recording-audio-contract'
+    };
+
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
+
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Map(),
+      json: async () => ({})
+    } as any);
+
+    render(<V3Player autoStart={true} recordingId="rec-audio" />);
+
+    await waitFor(() => {
+      expect(sdk.postRecordingPlaybackInfo as any).toHaveBeenCalled();
+    });
+
+    const request = (sdk.postRecordingPlaybackInfo as any).mock.calls[0]?.[0];
+    expect(request?.body?.capabilitiesVersion).toBe(2);
+    expect(request?.body?.audioCodecs).toEqual(['aac', 'mp3']);
+    expect(request?.body?.hlsEngines).toContain('native');
+    expect(request?.body?.preferredHlsEngine).toBe('native');
+
+    await waitFor(() => {
+      const playlistProbe = fetchSpy.mock.calls.find((call: any[]) =>
+        call[0].toString().includes('/recordings/rec-audio/index.m3u8')
+      );
+      expect(playlistProbe).toBeDefined();
+    });
+  });
+
+  it('surfaces target profile observability in the stats overlay', async () => {
+    const mockInfo: any = {
+      mode: 'transcode',
+      requestId: 'req-observe-1',
+      decision: {
+        mode: 'transcode',
+        selectedOutputUrl: '/recordings/rec-observe/index.m3u8?profile=generic',
+        selectedOutputKind: 'hls',
+        targetProfileHash: 'hash-observe-1',
+        targetProfile: {
+          container: 'mpegts',
+          packaging: 'ts',
+          hwAccel: 'none',
+          video: { mode: 'copy', codec: 'h264', width: 0, height: 0, fps: 0 },
+          audio: { mode: 'transcode', codec: 'aac', channels: 2, bitrateKbps: 256, sampleRate: 48000 },
+          hls: { enabled: true, segmentContainer: 'mpegts', segmentSeconds: 6 }
+        },
+        trace: {
+          requestId: 'req-observe-1',
+          requestProfile: 'generic',
+          targetProfileHash: 'hash-observe-1'
+        }
+      }
+    };
+
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
+
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Map(),
+      json: async () => ({})
+    } as any);
+
+    render(<V3Player autoStart={true} recordingId="rec-observe" />);
+
+    await waitFor(() => {
+      expect(sdk.postRecordingPlaybackInfo as any).toHaveBeenCalled();
+    });
+
+    const statsButton = screen.getAllByRole('button').find((button) =>
+      button.textContent?.includes('📊')
+    );
+    expect(statsButton).toBeDefined();
+    fireEvent.click(statsButton!);
+
+    expect(await screen.findByText('hash-observe-1')).toBeInTheDocument();
+    expect(screen.getByText(/generic/)).toBeInTheDocument();
+    expect(screen.getByText(/ts · v:copy\/h264 · a:transcode\/aac\/2ch@256k/i)).toBeInTheDocument();
+    expect(screen.getByText('CPU')).toBeInTheDocument();
   });
 });

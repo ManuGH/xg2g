@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import {
   postRecordingPlaybackInfo,
-  type PlaybackInfo
+  type PlaybackCapabilities as PlaybackCapabilitiesContract,
+  type PlaybackInfo,
+  type PlaybackTargetProfile,
 } from '../client-ts';
 import { getApiBaseUrl } from '../lib/clientWrapper';
 import { telemetry } from '../services/TelemetryService';
@@ -43,6 +45,86 @@ interface ApiErrorResponse {
   details?: unknown;
 }
 
+type CapabilitySnapshot = Pick<
+  PlaybackCapabilitiesContract,
+  | 'capabilitiesVersion'
+  | 'container'
+  | 'videoCodecs'
+  | 'audioCodecs'
+  | 'deviceType'
+  | 'supportsHls'
+  | 'supportsRange'
+  | 'allowTranscode'
+> & {
+  hlsEngines?: string[];
+  preferredHlsEngine?: string;
+};
+
+type PlaybackObservability = {
+  clientPath: string | null;
+  requestProfile: string | null;
+  targetProfileHash: string | null;
+  targetProfile: PlaybackTargetProfile | null;
+  selectedOutputKind: string | null;
+};
+
+function formatClientPath(snapshot: CapabilitySnapshot | null): string {
+  if (!snapshot) return '-';
+  const preferred = snapshot.preferredHlsEngine ?? '-';
+  const engines = snapshot.hlsEngines?.length ? snapshot.hlsEngines.join('/') : null;
+  return engines ? `${preferred} (${engines})` : preferred;
+}
+
+function formatTargetProfileSummary(target: PlaybackTargetProfile | null): string {
+  if (!target) return '-';
+
+  const videoMode = target.video?.mode || '-';
+  const videoCodec = target.video?.codec ? `/${target.video.codec}` : '';
+  const audioMode = target.audio?.mode || '-';
+  const audioCodec = target.audio?.codec ? `/${target.audio.codec}` : '';
+  const audioChannels = target.audio?.channels ? `/${target.audio.channels}ch` : '';
+  const audioBitrate = target.audio?.bitrateKbps ? `@${target.audio.bitrateKbps}k` : '';
+  const packaging = target.packaging || target.container || '-';
+
+  return [
+    packaging,
+    `v:${videoMode}${videoCodec}`,
+    `a:${audioMode}${audioCodec}${audioChannels}${audioBitrate}`
+  ].join(' · ');
+}
+
+function formatExecutionLabel(target: PlaybackTargetProfile | null): string {
+  if (!target?.hwAccel || target.hwAccel === 'none') {
+    return 'CPU';
+  }
+  return target.hwAccel.toUpperCase();
+}
+
+function extractPlaybackObservability(
+  info: PlaybackInfo,
+  clientPath: string | null
+): PlaybackObservability | null {
+  const decision = info.decision;
+  if (!decision) {
+    if (!clientPath) return null;
+    return {
+      clientPath,
+      requestProfile: null,
+      targetProfileHash: null,
+      targetProfile: null,
+      selectedOutputKind: null,
+    };
+  }
+
+  return {
+    clientPath,
+    requestProfile: decision.trace?.requestProfile ?? null,
+    targetProfileHash: decision.targetProfileHash ?? decision.trace?.targetProfileHash ?? null,
+    targetProfile: decision.targetProfile ?? null,
+    selectedOutputKind: decision.selectedOutputKind ?? null,
+  };
+}
+
 function resolvePlaybackDurationSeconds(playbackInfo: PlaybackInfo): number | null {
   if (typeof playbackInfo.durationMs === 'number' && playbackInfo.durationMs > 0) {
     return playbackInfo.durationMs / 1000;
@@ -70,6 +152,8 @@ function V3Player(props: V3PlayerProps) {
   const [status, setStatus] = useState<PlayerStatus>('idle');
   const [error, setError] = useState<AppError | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [capabilitySnapshot, setCapabilitySnapshot] = useState<CapabilitySnapshot | null>(null);
+  const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoElementRef>(null);
@@ -300,6 +384,8 @@ function V3Player(props: V3PlayerProps) {
     setActiveRecordingId(null);
     setVodStreamMode(null);
     setActiveHlsEngine(null);
+    setCapabilitySnapshot(null);
+    setPlaybackObservability(null);
   }, []);
 
   const clearPlaybackState = useCallback(() => {
@@ -355,7 +441,7 @@ function V3Player(props: V3PlayerProps) {
     setPlaybackMode(mode);
   }, [requestedDuration]);
 
-  const gatherPlaybackCapabilities = useCallback(async () => {
+  const gatherPlaybackCapabilities = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
     const preferredCodecs = await detectPreferredCodecs(video);
     const hlsJsSupported = Hls.isSupported();
@@ -394,20 +480,24 @@ function V3Player(props: V3PlayerProps) {
     }
 
     const audioCodecs = ['aac', 'mp3'];
-    if (supportsAc3) {
+    if (scope === 'live' && supportsAc3) {
       audioCodecs.push('ac3');
     }
 
-    return {
-      capabilitiesVersion: 1,
+    const capabilities: CapabilitySnapshot = {
+      capabilitiesVersion: 2,
       container: Array.from(new Set(container)),
       videoCodecs: Array.from(new Set(preferredCodecs)),
       audioCodecs: Array.from(new Set(audioCodecs)),
+      hlsEngines: hlsEngines.length > 0 ? Array.from(new Set(hlsEngines)) : undefined,
+      preferredHlsEngine: hlsEngines.length > 0 ? hlsEngines[0] : undefined,
       supportsHls: hlsEngines.length > 0,
       supportsRange: true,
       allowTranscode: true,
       deviceType: 'web'
     };
+
+    return capabilities;
   }, []);
 
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
@@ -434,7 +524,8 @@ function V3Player(props: V3PlayerProps) {
 
       try {
         const maxMetaRetries = 20;
-        const requestCaps = await gatherPlaybackCapabilities();
+        const requestCaps = await gatherPlaybackCapabilities('recording');
+        setCapabilitySnapshot(requestCaps);
         let pInfo: PlaybackInfo | undefined;
 
         for (let i = 0; i < maxMetaRetries; i++) {
@@ -571,6 +662,10 @@ function V3Player(props: V3PlayerProps) {
         }
 
         if (pInfo.requestId) setTraceId(pInfo.requestId);
+        setPlaybackObservability(extractPlaybackObservability(
+          pInfo,
+          requestCaps.preferredHlsEngine ?? null
+        ));
         const recordingIsSeekable = pInfo.isSeekable !== undefined ? Boolean(pInfo.isSeekable) : true;
         setCanSeek(recordingIsSeekable);
         if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
@@ -725,7 +820,8 @@ function V3Player(props: V3PlayerProps) {
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
         const preferredHlsEngine = resolvePreferredHlsEngine();
 
-        const requestCaps = await gatherPlaybackCapabilities();
+        const requestCaps = await gatherPlaybackCapabilities('live');
+        setCapabilitySnapshot(requestCaps);
         // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
         const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
           method: 'POST',
@@ -829,6 +925,10 @@ function V3Player(props: V3PlayerProps) {
           throw new Error('Backend live decision missing requestId');
         }
         setTraceId(liveInfo.requestId);
+        setPlaybackObservability(extractPlaybackObservability(
+          liveInfo,
+          requestCaps.preferredHlsEngine ?? null
+        ));
 
         if (liveMode === 'deny') {
           telemetry.emit('ui.failclosed', {
@@ -1141,6 +1241,30 @@ function V3Player(props: V3PlayerProps) {
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('common.requestId', { defaultValue: 'Request ID' })}</span>
                 <span className={styles.statsValue}>{traceId}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.clientPath', { defaultValue: 'Client Path' })}</span>
+                <span className={styles.statsValue}>{formatClientPath(capabilitySnapshot)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.requestProfile', { defaultValue: 'Request Profile' })}</span>
+                <span className={styles.statsValue}>{playbackObservability?.requestProfile || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.outputProfile', { defaultValue: 'Output Profile' })}</span>
+                <span className={styles.statsValue}>{formatTargetProfileSummary(playbackObservability?.targetProfile ?? null)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.profileHash', { defaultValue: 'Profile Hash' })}</span>
+                <span className={styles.statsValue}>{playbackObservability?.targetProfileHash || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.execution', { defaultValue: 'Execution' })}</span>
+                <span className={styles.statsValue}>{formatExecutionLabel(playbackObservability?.targetProfile ?? null)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.outputKind', { defaultValue: 'Output Kind' })}</span>
+                <span className={styles.statsValue}>{playbackObservability?.selectedOutputKind || '-'}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.resolution')}</span>

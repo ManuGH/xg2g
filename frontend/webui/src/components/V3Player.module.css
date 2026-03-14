@@ -162,7 +162,7 @@
   top: 24px;
   right: 72px;
   z-index: 60;
-  width: min(340px, calc(100vw - 40px));
+  width: min(460px, calc(100vw - 40px));
 }
 
 .statsGrid {
@@ -174,7 +174,7 @@
 .statsRow {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding: 4px 0;
   border-bottom: 1px solid var(--border-base);
   gap: 12px;
@@ -197,6 +197,8 @@
   font-size: var(--text-mono-sm);
   font-feature-settings: 'tnum' 1;
   text-align: right;
+  max-width: 220px;
+  word-break: break-word;
 }
 
 .errorToast {

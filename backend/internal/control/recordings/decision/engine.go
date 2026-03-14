@@ -144,6 +144,7 @@ func evaluateDecision(pred Predicates, caps Capabilities, policy Policy) (Mode, 
 // buildDecision constructs the final Decision response.
 func buildDecision(mode Mode, pred Predicates, input DecisionInput, reasons []ReasonCode, rules []string) *Decision {
 	outputs := buildOutputs(mode, input.Source)
+	targetProfile := buildTargetProfile(mode, pred, input)
 
 	var selURL, selKind string
 	if len(outputs) > 0 {
@@ -163,11 +164,12 @@ func buildDecision(mode Mode, pred Predicates, input DecisionInput, reasons []Re
 	}
 
 	decision := &Decision{
-		Mode:        mode,
-		Selected:    buildSelected(mode, input.Source),
-		Outputs:     outputs,
-		Constraints: []string{}, // Always empty array (no constraints in P4-2)
-		Reasons:     reasons,
+		Mode:          mode,
+		Selected:      buildSelected(mode, input.Source),
+		Outputs:       outputs,
+		TargetProfile: targetProfile,
+		Constraints:   []string{}, // Always empty array (no constraints in P4-2)
+		Reasons:       reasons,
 		Trace: Trace{
 			RequestID: input.RequestID,
 			RuleHits:  rules,

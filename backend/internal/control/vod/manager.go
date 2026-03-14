@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	xlog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/singleflight"
@@ -607,6 +608,26 @@ func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, f
 // jobID identifies the build workspace (e.g., cacheDir), metaID identifies the recording (serviceRef).
 // finalPath: the final destination for atomic publish.
 func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, profile Profile) (*BuildMonitor, error) {
+	return m.startBuildWithSpec(ctx, jobID, metaID, finalPath, Spec{
+		Input:      input,
+		WorkDir:    workDir,
+		OutputTemp: outputTemp,
+		Profile:    profile,
+	})
+}
+
+// StartBuildWithTargetProfile initiates a VOD build with a concrete playback target profile.
+func (m *Manager) StartBuildWithTargetProfile(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, profile Profile, targetProfile *playbackprofile.TargetPlaybackProfile) (*BuildMonitor, error) {
+	return m.startBuildWithSpec(ctx, jobID, metaID, finalPath, Spec{
+		Input:         input,
+		WorkDir:       workDir,
+		OutputTemp:    outputTemp,
+		Profile:       profile,
+		TargetProfile: cloneTargetProfile(targetProfile),
+	})
+}
+
+func (m *Manager) startBuildWithSpec(ctx context.Context, jobID, metaID, finalPath string, spec Spec) (*BuildMonitor, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -615,15 +636,6 @@ func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir,
 	}
 	if h, exists := m.jobs[jobID]; exists {
 		return h, nil
-	}
-
-	// StartBuild may receive non-local sources (e.g. callback/mock flows).
-	// Filesystem-boundary validation remains enforced in probe/stat paths.
-	spec := Spec{
-		Input:      input,
-		WorkDir:    workDir,
-		OutputTemp: outputTemp,
-		Profile:    profile,
 	}
 
 	mon := NewBuildMonitor(BuildMonitorConfig{
@@ -692,17 +704,41 @@ func (m *Manager) Get(ctx context.Context, id string) (*JobStatus, bool) {
 
 // EnsureSpec validates context and prepares a Spec, serving as a gateway.
 func (m *Manager) EnsureSpec(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, profile Profile) (Spec, error) {
-	_, err := m.StartBuild(ctx, jobID, metaID, input, workDir, outputTemp, finalPath, profile)
-	if err != nil {
-		return Spec{}, err
-	}
-	// Return the Spec that was used/created
-	return Spec{
+	spec := Spec{
 		Input:      input,
 		WorkDir:    workDir,
 		OutputTemp: outputTemp,
 		Profile:    profile,
-	}, nil
+	}
+	_, err := m.startBuildWithSpec(ctx, jobID, metaID, finalPath, spec)
+	if err != nil {
+		return Spec{}, err
+	}
+	return spec, nil
+}
+
+// EnsureSpecWithTargetProfile validates context and prepares a Spec with a concrete target playback profile.
+func (m *Manager) EnsureSpecWithTargetProfile(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, profile Profile, targetProfile *playbackprofile.TargetPlaybackProfile) (Spec, error) {
+	spec := Spec{
+		Input:         input,
+		WorkDir:       workDir,
+		OutputTemp:    outputTemp,
+		Profile:       profile,
+		TargetProfile: cloneTargetProfile(targetProfile),
+	}
+	_, err := m.startBuildWithSpec(ctx, jobID, metaID, finalPath, spec)
+	if err != nil {
+		return Spec{}, err
+	}
+	return spec, nil
+}
+
+func cloneTargetProfile(target *playbackprofile.TargetPlaybackProfile) *playbackprofile.TargetPlaybackProfile {
+	if target == nil {
+		return nil
+	}
+	cloned := playbackprofile.CanonicalizeTarget(*target)
+	return &cloned
 }
 
 // Prober interface to be injected into API if needed, or Manager exposes Probe?

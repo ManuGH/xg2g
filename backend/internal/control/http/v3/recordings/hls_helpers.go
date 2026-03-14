@@ -67,24 +67,30 @@ func RecordingLivePlaylistReady(cacheDir string) (string, bool) {
 }
 
 func RewritePlaylistType(content, playlistType string) string {
-	if playlistType == "" {
-		return content
-	}
+	return RewritePlaylist(content, playlistType, "")
+}
+
+// RewritePlaylist applies playlist-type normalization and appends the variant query to media URIs.
+func RewritePlaylist(content, playlistType, variant string) string {
 	lines := strings.Split(content, "\n")
 	newLines := make([]string, 0, len(lines)+1)
 	inserted := false
+	shouldInsertType := playlistType != ""
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
-		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") {
+		if shouldInsertType && strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") {
 			continue
 		}
+		if variant != "" && line != "" && !strings.HasPrefix(line, "#") {
+			line = appendVariantQuery(line, variant)
+		}
 		newLines = append(newLines, line)
-		if line == "#EXTM3U" && !inserted {
+		if shouldInsertType && line == "#EXTM3U" && !inserted {
 			newLines = append(newLines, "#EXT-X-PLAYLIST-TYPE:"+playlistType)
 			inserted = true
 		}
 	}
-	if !inserted {
+	if shouldInsertType && !inserted {
 		newLines = append([]string{"#EXT-X-PLAYLIST-TYPE:" + playlistType}, newLines...)
 	}
 
@@ -103,4 +109,14 @@ func RewritePlaylistType(content, playlistType string) string {
 	}
 
 	return strings.Join(newLines, "\n")
+}
+
+func appendVariantQuery(uri, variant string) string {
+	if variant == "" || strings.Contains(uri, "variant=") {
+		return uri
+	}
+	if strings.Contains(uri, "?") {
+		return uri + "&variant=" + variant
+	}
+	return uri + "?variant=" + variant
 }

@@ -1,0 +1,41 @@
+package capabilities
+
+import "testing"
+
+func TestToClientPlaybackProfile_MapsLegacyCapabilities(t *testing.T) {
+	allow := false
+	supportsRange := true
+	in := PlaybackCapabilities{
+		CapabilitiesVersion: 1,
+		Containers:          []string{" ts ", "mp4", "ts"},
+		VideoCodecs:         []string{" h264 ", "hevc"},
+		AudioCodecs:         []string{" ac3 ", "aac"},
+		SupportsHLS:         true,
+		DeviceType:          " Safari ",
+		AllowTranscode:      &allow,
+		SupportsRange:       &supportsRange,
+		MaxVideo: &MaxVideo{
+			Width:  1920,
+			Height: 1080,
+			Fps:    60,
+		},
+	}
+
+	got := ToClientPlaybackProfile(in)
+
+	if got.DeviceType != "safari" {
+		t.Fatalf("expected normalized device type, got %q", got.DeviceType)
+	}
+	if !got.SupportsHLS || !got.SupportsRange {
+		t.Fatalf("expected supports flags to be preserved: %#v", got)
+	}
+	if got.AllowTranscode == nil || *got.AllowTranscode {
+		t.Fatalf("expected allowTranscode=false to be preserved: %#v", got.AllowTranscode)
+	}
+	if len(got.Containers) != 2 || got.Containers[0] != "mp4" || got.Containers[1] != "ts" {
+		t.Fatalf("unexpected canonical containers: %#v", got.Containers)
+	}
+	if got.MaxVideo == nil || got.MaxVideo.Width != 1920 || got.MaxVideo.Height != 1080 || got.MaxVideo.FPS != 60 {
+		t.Fatalf("unexpected maxVideo mapping: %#v", got.MaxVideo)
+	}
+}

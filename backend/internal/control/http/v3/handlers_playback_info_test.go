@@ -6,10 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -54,6 +56,24 @@ func createTestServerDTO(svc recservice.Service) *Server {
 	cfg.HLS.Root = "/tmp/hls"
 	s := &Server{cfg: cfg, recordingsService: svc}
 	return s
+}
+
+func requireVariantAwareRecordingURL(t *testing.T, rawURL, recordingID string) {
+	t.Helper()
+
+	parsed, err := url.Parse(rawURL)
+	require.NoError(t, err)
+	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", parsed.Path)
+
+	query := parsed.Query()
+	assert.Equal(t, "generic", query.Get("profile"))
+	assert.NotEmpty(t, query.Get("variant"))
+	assert.NotEmpty(t, query.Get("target"))
+
+	target, err := v3recordings.DecodeTargetProfileQuery(query.Get("target"))
+	require.NoError(t, err)
+	require.NotNil(t, target)
+	assert.Equal(t, query.Get("variant"), v3recordings.TargetVariantHash(target))
 }
 
 func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
@@ -172,7 +192,7 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		// Expect HLS because VP9 is not in web_conservative (H264)
 		assert.Equal(t, PlaybackInfoModeHls, dto.Mode)
 		require.NotNil(t, dto.Url)
-		assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", *dto.Url)
+		requireVariantAwareRecordingURL(t, *dto.Url, recordingID)
 		assert.NotEmpty(t, dto.RequestId)
 		assert.NotEmpty(t, dto.SessionId)
 	})
@@ -235,7 +255,7 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 	// 1. Mode uses HLS when DirectStream is selected
 	assert.Equal(t, "hls", raw["mode"])
 	// 2. URL points at HLS playlist
-	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", raw["url"])
+	requireVariantAwareRecordingURL(t, raw["url"].(string), recordingID)
 
 	// 3. Decision sub-object is TRUTHFUL
 	dec, ok := raw["decision"].(map[string]interface{})
@@ -243,6 +263,12 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 	assert.Equal(t, "direct_stream", dec["mode"])
 	assert.Equal(t, "hls", dec["selectedOutputKind"])
 	assert.NotEmpty(t, dec["outputs"])
+	assert.NotEmpty(t, dec["targetProfileHash"])
+
+	trace, ok := dec["trace"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "generic", trace["requestProfile"])
+	assert.Equal(t, dec["targetProfileHash"], trace["targetProfileHash"])
 }
 
 func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {

@@ -632,7 +632,7 @@ export type PlaybackInfoReason = 'directplay_match' | 'transcode_audio' | 'trans
  */
 export type PlaybackCapabilities = {
     /**
-     * Capabilities contract version (current: 1)
+     * Capabilities contract version (current: 2)
      */
     capabilitiesVersion: number;
     /**
@@ -667,6 +667,14 @@ export type PlaybackCapabilities = {
      * Client device category for policy decisions
      */
     deviceType?: string;
+    /**
+     * Supported HLS playback engines (e.g. native, hlsjs)
+     */
+    hlsEngines?: Array<string>;
+    /**
+     * Preferred HLS playback engine for this client (e.g. native, hlsjs)
+     */
+    preferredHlsEngine?: string;
     /**
      * Whether client allows transcoding (force bypass)
      */
@@ -709,6 +717,14 @@ export type PlaybackDecision = {
      * Machine-readable decision reason codes
      */
     reasons: Array<string>;
+    /**
+     * Resolved output target profile summary for observability/debugging.
+     */
+    targetProfile?: PlaybackTargetProfile | null;
+    /**
+     * Stable hash of the resolved target playback profile.
+     */
+    targetProfileHash?: string | null;
     trace: PlaybackTrace;
 };
 
@@ -720,7 +736,40 @@ export type PlaybackTrace = {
      * Correlation ID (UUID or prefixed string like req_abc123)
      */
     requestId: string;
+    requestProfile?: string | null;
     sessionId?: string | null;
+    targetProfileHash?: string | null;
+};
+
+export type PlaybackTargetProfile = {
+    container: string;
+    packaging: string;
+    hwAccel: string;
+    video: PlaybackTargetVideo;
+    audio: PlaybackTargetAudio;
+    hls: PlaybackTargetHls;
+};
+
+export type PlaybackTargetVideo = {
+    mode: string;
+    codec: string;
+    width: number;
+    height: number;
+    fps: number;
+};
+
+export type PlaybackTargetAudio = {
+    mode: string;
+    codec: string;
+    channels: number;
+    bitrateKbps: number;
+    sampleRate: number;
+};
+
+export type PlaybackTargetHls = {
+    enabled: boolean;
+    segmentContainer: string;
+    segmentSeconds: number;
 };
 
 /**

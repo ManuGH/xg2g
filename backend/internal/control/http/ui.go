@@ -60,7 +60,7 @@ func writeUIHTMLResponse(w http.ResponseWriter, status int, title, message strin
 	)
 }
 
-func withAdditionalConnectSrc(csp string, extras ...string) string {
+func withAdditionalDirectiveValues(csp, directiveName string, extras ...string) string {
 	if strings.TrimSpace(csp) == "" {
 		return csp
 	}
@@ -68,7 +68,7 @@ func withAdditionalConnectSrc(csp string, extras ...string) string {
 	directives := strings.Split(csp, ";")
 	for i, directive := range directives {
 		trimmed := strings.TrimSpace(directive)
-		if !strings.HasPrefix(trimmed, "connect-src") {
+		if !strings.HasPrefix(trimmed, directiveName) {
 			continue
 		}
 		for _, extra := range extras {
@@ -81,5 +81,21 @@ func withAdditionalConnectSrc(csp string, extras ...string) string {
 		return strings.Join(directives, "; ")
 	}
 
-	return strings.TrimSpace(csp) + "; connect-src " + strings.Join(extras, " ")
+	return strings.TrimSpace(csp) + "; " + directiveName + " " + strings.Join(extras, " ")
+}
+
+func withAdditionalConnectSrc(csp string, extras ...string) string {
+	return withAdditionalDirectiveValues(csp, "connect-src", extras...)
+}
+
+func withAdditionalScriptSrc(csp string, extras ...string) string {
+	directives := strings.Split(csp, ";")
+	for _, directive := range directives {
+		if strings.HasPrefix(strings.TrimSpace(directive), "script-src") {
+			return withAdditionalDirectiveValues(csp, "script-src", extras...)
+		}
+	}
+
+	values := append([]string{"'self'"}, extras...)
+	return withAdditionalDirectiveValues(csp, "script-src", values...)
 }

@@ -1,5 +1,7 @@
 package decision
 
+import "github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+
 // Mode represents the playback mode decision.
 type Mode string
 
@@ -56,14 +58,15 @@ type Policy struct {
 
 // Decision represents a successful playback decision (HTTP 200).
 type Decision struct {
-	Mode               Mode            `json:"mode"`
-	Selected           SelectedFormats `json:"selected"`
-	Outputs            []Output        `json:"outputs"`
-	Constraints        []string        `json:"constraints"`
-	Reasons            []ReasonCode    `json:"reasons"`
-	Trace              Trace           `json:"trace"`
-	SelectedOutputURL  string          `json:"selectedOutputUrl"`
-	SelectedOutputKind string          `json:"selectedOutputKind"`
+	Mode               Mode                                   `json:"mode"`
+	Selected           SelectedFormats                        `json:"selected"`
+	Outputs            []Output                               `json:"outputs"`
+	TargetProfile      *playbackprofile.TargetPlaybackProfile `json:"targetProfile,omitempty"`
+	Constraints        []string                               `json:"constraints"`
+	Reasons            []ReasonCode                           `json:"reasons"`
+	Trace              Trace                                  `json:"trace"`
+	SelectedOutputURL  string                                 `json:"selectedOutputUrl"`
+	SelectedOutputKind string                                 `json:"selectedOutputKind"`
 }
 
 // SelectedFormats indicates the chosen container/codecs.

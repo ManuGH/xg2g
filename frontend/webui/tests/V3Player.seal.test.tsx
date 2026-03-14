@@ -86,4 +86,33 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
     expect(intentsBody.params.playback_decision_token).toBe('live-token-seal-1');
     expect(intentsBody.params.playback_decision_id).toBeUndefined();
   });
+
+  it('preserves ac3 in live capability probes when the browser reports support', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
+      if (contentType === 'application/vnd.apple.mpegurl') {
+        return 'probably';
+      }
+      if (contentType === 'audio/mp4; codecs="ac-3"') {
+        return 'probably';
+      }
+      return '';
+    });
+
+    const mockChannel = {
+      id: '1:0:1:AC3LIVE',
+      serviceRef: '1:0:1:AC3LIVE',
+      name: 'AC3 Test Channel'
+    };
+
+    render(<V3Player autoStart={true} channel={mockChannel} />);
+
+    await waitFor(() => expect(findFetchCall((global.fetch as any), '/live/stream-info')).toBeDefined());
+
+    const streamInfoCall = findFetchCall((global.fetch as any), '/live/stream-info');
+    const streamInfoBody = JSON.parse(String(streamInfoCall?.[1]?.body ?? '{}'));
+    expect(streamInfoBody.capabilities.capabilitiesVersion).toBe(2);
+    expect(streamInfoBody.capabilities.audioCodecs).toContain('ac3');
+    expect(streamInfoBody.capabilities.hlsEngines).toContain('native');
+    expect(streamInfoBody.capabilities.preferredHlsEngine).toBe('native');
+  });
 });

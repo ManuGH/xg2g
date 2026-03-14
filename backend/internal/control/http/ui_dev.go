@@ -21,6 +21,7 @@ const defaultUIDevProxyURL = "http://127.0.0.1:5173"
 // It prefers a live Vite dev server for HMR and can optionally serve a local dist directory.
 func UIHandler(cfg UIConfig) http.Handler {
 	devCSP := withAdditionalConnectSrc(cfg.CSP, "ws:", "wss:")
+	devCSP = withAdditionalScriptSrc(devCSP, "'unsafe-inline'")
 
 	if dir := strings.TrimSpace(os.Getenv("XG2G_UI_DEV_DIR")); dir != "" {
 		return newUIDevStaticHandler(dir, devCSP)
