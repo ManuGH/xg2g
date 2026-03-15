@@ -1,6 +1,6 @@
 module github.com/ManuGH/xg2g
 
-go 1.25
+go 1.25.3.3
 
 toolchain go1.25.8
 
