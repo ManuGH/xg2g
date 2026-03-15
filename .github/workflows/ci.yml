@@ -59,8 +59,6 @@ jobs:
           fi
           echo "✅ token URL gate passed"
 
-      - name: Verify Go toolchain policy
-        run: ./backend/scripts/check-go-toolchain.sh
 
       - name: Set Reproducible Build Headers
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
@@ -75,6 +73,9 @@ jobs:
           cache: false
         env:
           GOTOOLCHAIN: auto
+
+      - name: Verify Go toolchain policy
+        run: ./backend/scripts/check-go-toolchain.sh
 
       - name: Verify modules
         run: |

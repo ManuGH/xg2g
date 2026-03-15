@@ -25,8 +25,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      - name: Verify Go toolchain policy
-        run: ./backend/scripts/check-go-toolchain.sh
 
       - name: Setup Go
         uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # v6
@@ -37,6 +35,9 @@ jobs:
           cache-dependency-path: backend/go.sum
         env:
           GOTOOLCHAIN: auto
+
+      - name: Verify Go toolchain policy
+        run: ./backend/scripts/check-go-toolchain.sh
 
       - name: Install golangci-lint (built with runner Go)
         run: |
