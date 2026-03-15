@@ -459,12 +459,6 @@ func ensureSessionPlaybackTrace(session *model.SessionRecord) *model.PlaybackTra
 	return session.PlaybackTrace
 }
 
-func ensurePlaybackOperatorTrace(trace *model.PlaybackTrace) *model.PlaybackOperatorTrace {
-	if trace.Operator == nil {
-		trace.Operator = &model.PlaybackOperatorTrace{}
-	}
-	return trace.Operator
-}
 
 func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hlsRoot string) *PlaybackTrace {
 	if session == nil {

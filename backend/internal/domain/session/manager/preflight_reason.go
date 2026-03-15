@@ -12,10 +12,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 )
 
-func preflightStartReasonError(err error) (error, *ports.PreflightError, bool) {
+func preflightStartReasonError(err error) (*ports.PreflightError, bool, error) {
 	var pErr *ports.PreflightError
 	if !errors.As(err, &pErr) {
-		return nil, nil, false
+		return nil, false, nil
 	}
 
 	result := pErr.StructuredResult()
@@ -23,11 +23,11 @@ func preflightStartReasonError(err error) (error, *ports.PreflightError, bool) {
 
 	switch result.Reason {
 	case ports.PreflightReasonTimeout:
-		return newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, detail, err), pErr, true
+		return pErr, true, newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, detail, err)
 	case ports.PreflightReasonInvalidTS, ports.PreflightReasonNoVideo, ports.PreflightReasonCorruptInput:
-		return newReasonError(model.RUpstreamCorrupt, detail, err), pErr, true
+		return pErr, true, newReasonError(model.RUpstreamCorrupt, detail, err)
 	default:
-		return newReasonError(model.RTuneFailed, detail, err), pErr, true
+		return pErr, true, newReasonError(model.RTuneFailed, detail, err)
 	}
 }
 

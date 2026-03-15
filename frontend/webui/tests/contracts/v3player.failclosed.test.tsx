@@ -1,5 +1,4 @@
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import V3Player from '../../src/components/V3Player';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as sdk from '../../src/client-ts';
@@ -87,7 +86,7 @@ describe('V3Player Contract Enforcement (Fail-Closed)', () => {
     render(<V3Player autoStart={true} recordingId="rec-contra-3" />);
 
     await waitFor(() => {
-      expect(screen.getByText(/player.playbackDenied/i)).toBeInTheDocument();
+      expect(screen.getByText(/Playback denied/i)).toBeInTheDocument();
       expect(screen.queryByText(/Backend decision missing selectedOutputUrl/i)).not.toBeInTheDocument();
     });
   });
@@ -138,7 +137,7 @@ describe('V3Player Contract Enforcement (Fail-Closed)', () => {
       render(<V3Player autoStart={true} channel={{ id: 'ch-live-1', serviceRef: '1:0:1:AA:BB:CC:0:0:0:0:' } as any} />);
 
       await waitFor(() => {
-        expect(screen.getByText(/player.playbackDenied/i)).toBeInTheDocument();
+        expect(screen.getByText(/Playback denied/i)).toBeInTheDocument();
       });
 
       const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]));

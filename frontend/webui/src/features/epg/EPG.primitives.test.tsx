@@ -9,20 +9,12 @@ const {
   addTimer,
   confirm,
   toast,
-  t,
 } = vi.hoisted(() => ({
   fetchEpgEvents: vi.fn<(...args: any[]) => Promise<EpgEvent[]>>(),
   fetchTimers: vi.fn<() => Promise<Timer[]>>(),
   addTimer: vi.fn(),
   confirm: vi.fn(),
   toast: vi.fn(),
-  t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
-}));
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t,
-  }),
 }));
 
 vi.mock('./epgApi', () => ({
@@ -76,7 +68,7 @@ describe('EPG shared primitives', () => {
 
     render(<EPG channels={[]} />);
 
-    expect(screen.getByRole('status', { name: 'epg.loading' })).toHaveAttribute(
+    expect(screen.getByRole('status', { name: /Loading EPG/i })).toHaveAttribute(
       'data-loading-variant',
       'section'
     );
@@ -84,7 +76,7 @@ describe('EPG shared primitives', () => {
     deferred.resolve([]);
 
     await waitFor(() => {
-      expect(screen.queryByRole('status', { name: 'epg.loading' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('status', { name: /Loading EPG/i })).not.toBeInTheDocument();
     });
   });
 
@@ -96,12 +88,12 @@ describe('EPG shared primitives', () => {
 
     render(<EPG channels={[]} />);
 
-    fireEvent.change(screen.getByPlaceholderText('epg.searchServices'), {
+    fireEvent.change(screen.getByPlaceholderText(/Search Services/i), {
       target: { value: 'news' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'epg.search' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    expect(await screen.findByRole('status', { name: 'Loading...' })).toHaveAttribute(
+    expect(await screen.findByRole('status', { name: /Loading/i })).toHaveAttribute(
       'data-loading-variant',
       'section'
     );
@@ -109,7 +101,7 @@ describe('EPG shared primitives', () => {
     deferred.resolve([]);
 
     await waitFor(() => {
-      expect(screen.queryByRole('status', { name: 'common.loading' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('status', { name: /Loading/i })).not.toBeInTheDocument();
     });
   });
 
@@ -125,7 +117,7 @@ describe('EPG shared primitives', () => {
 
     render(<EPG channels={[]} />);
 
-    expect(await screen.findByRole('heading', { name: 'epg.loadError' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Service unavailable' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
     await waitFor(() => {

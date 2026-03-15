@@ -44,7 +44,7 @@ func TestPreflightStartReasonError(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err, _, ok := preflightStartReasonError(tc.preflightErr)
+			_, ok, err := preflightStartReasonError(tc.preflightErr)
 			if !ok {
 				t.Fatal("expected structured preflight mapping")
 			}

@@ -105,10 +105,10 @@ export function toAppError(error: unknown, options: AppErrorOptions = {}): AppEr
       : mapApiError(error);
 
   const statusCopy = typeof mapped.status === 'number' ? getStatusCopy(mapped.status) : null;
-  const title = options.fallbackTitle ?? statusCopy?.title ?? mapped.title ?? 'Something went wrong';
+  const title = mapped.title ?? statusCopy?.title ?? options.fallbackTitle ?? 'Something went wrong';
   const detail =
-    options.fallbackDetail ??
     mapped.detail ??
+    options.fallbackDetail ??
     (mapped.title && mapped.title !== title ? mapped.title : undefined) ??
     statusCopy?.detail;
   const retryable =

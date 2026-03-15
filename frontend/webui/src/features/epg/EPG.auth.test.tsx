@@ -9,20 +9,12 @@ const {
   addTimer,
   confirm,
   toast,
-  t,
 } = vi.hoisted(() => ({
   fetchEpgEvents: vi.fn<(...args: any[]) => Promise<EpgEvent[]>>(),
   fetchTimers: vi.fn<() => Promise<Timer[]>>(),
   addTimer: vi.fn(),
   confirm: vi.fn(),
   toast: vi.fn(),
-  t: (key: string) => key,
-}));
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t,
-  }),
 }));
 
 vi.mock('./epgApi', () => ({
@@ -76,10 +68,10 @@ describe('EPG auth handling', () => {
     render(<EPG channels={[]} />);
 
     await waitFor(() => {
-      expect(screen.getByRole('status', { name: 'epg.loading' })).toBeInTheDocument();
+      expect(screen.getByRole('status', { name: /Loading EPG/i })).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole('heading', { name: 'epg.loadError' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'EPG could not be loaded.' })).not.toBeInTheDocument();
   });
 
   it('shows a forbidden error when the EPG endpoint returns 403', async () => {
@@ -98,7 +90,7 @@ describe('EPG auth handling', () => {
     render(<EPG channels={[]} />);
 
     await waitFor(() => {
-      expect(screen.getByText('player.forbidden')).toBeInTheDocument();
+      expect(screen.getByText('Forbidden')).toBeInTheDocument();
     });
 
     expect(authRequiredHandler).not.toHaveBeenCalled();

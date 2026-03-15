@@ -288,7 +288,7 @@ func (o *Orchestrator) startPipeline(
 			return "", newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, "", err)
 		}
 		if errors.Is(err, ports.ErrNoValidTS) {
-			mappedErr, pErr, ok := preflightStartReasonError(err)
+			pErr, ok, mappedErr := preflightStartReasonError(err)
 			if ok {
 				result := pErr.StructuredResult()
 				o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(_ *model.SessionRecord, trace *model.PlaybackTrace) {
@@ -805,9 +805,8 @@ func (o *Orchestrator) finalizeDeferred(
 ) {
 	session := *sessionPtr
 	cause := detectTerminationCause(ctx, *retErr)
-	errForOutcome := cause.Error
-	if errForOutcome == nil && cause.ContextCancelled {
-		errForOutcome = context.Canceled
+	if cause.Error == nil && cause.ContextCancelled {
+		cause.Error = context.Canceled
 	}
 	var outcome finalOutcome
 	var traceSnapshot *model.PlaybackTrace

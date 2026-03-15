@@ -34,16 +34,6 @@ vi.mock('../context/UiOverlayContext', () => ({
   }),
 }));
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: Record<string, unknown>) => {
-      if (key === 'recordings.deleteSelected' && typeof options?.count === 'number') {
-        return `recordings.deleteSelected:${String(options.count)}`;
-      }
-      return key;
-    },
-  }),
-}));
 
 vi.mock('../features/resume/RecordingResumeBar', () => ({
   __esModule: true,
@@ -182,9 +172,9 @@ describe('RecordingsList', () => {
 
     expect(await screen.findByText('Movie Night')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTitle('recordings.selectionMode'));
+    fireEvent.click(screen.getByTitle('Selection Mode'));
     fireEvent.click(screen.getByText('Movie Night'));
-    fireEvent.click(screen.getByRole('button', { name: 'recordings.deleteSelected:1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Selected (1)' }));
 
     await waitFor(() => {
       expect(deleteRecording).toHaveBeenCalledWith({ path: { recordingId: 'rec-1' } });

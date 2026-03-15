@@ -5,7 +5,7 @@ import { isUnauthorizedStatus, requestAuthRequired } from './sessionEvents';
 export type MappedApiError = {
   status?: number;
   code?: string;
-  title: string;
+  title?: string;
   detail?: string;
   requestId?: string;
 };
@@ -18,13 +18,13 @@ export class ClientRequestError extends Error {
   readonly title: string;
 
   constructor(mapped: MappedApiError) {
-    super(mapped.detail ?? mapped.title);
+    super(mapped.detail ?? mapped.title ?? 'Request failed');
     this.name = 'ClientRequestError';
     this.status = mapped.status;
     this.code = mapped.code;
     this.requestId = mapped.requestId;
     this.detail = mapped.detail;
-    this.title = mapped.title;
+    this.title = mapped.title ?? 'Request failed';
   }
 }
 
@@ -109,15 +109,14 @@ export function mapApiError(error: unknown, fallbackStatus?: number): MappedApiE
     return {
       status: readNumber(error, 'status') ?? fallbackStatus,
       code: readString(error, 'code'),
-      title: readString(error, 'title') ?? readString(error, 'message') ?? 'Request failed',
+      title: readString(error, 'title') ?? readString(error, 'message'),
       detail: readString(error, 'detail'),
       requestId: readString(error, 'requestId')
     };
   }
 
   return {
-    status: fallbackStatus,
-    title: 'Request failed'
+    status: fallbackStatus
   };
 }
 

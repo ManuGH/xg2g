@@ -532,7 +532,7 @@ func (a *LocalAdapter) writeFirstFrameMarker(sessionID string) {
 	if markerPath == "" {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(markerPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(markerPath), 0o750); err != nil {
 		a.Logger.Warn().
 			Err(err).
 			Str("session_id", sessionID).

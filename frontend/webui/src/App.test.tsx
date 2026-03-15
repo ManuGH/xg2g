@@ -5,12 +5,6 @@ import { beforeEach, describe, it, vi } from 'vitest';
 
 const mockUseAppContext = vi.fn();
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
-  }),
-}));
-
 vi.mock('./context/AppContext', () => ({
   useAppContext: () => mockUseAppContext(),
 }));

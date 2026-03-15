@@ -3,11 +3,6 @@ import { Link, MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-ro
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ErrorBoundary from './ErrorBoundary';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
-  }),
-}));
 
 vi.mock('../utils/logging', () => ({
   debugError: vi.fn(),
@@ -64,7 +59,7 @@ describe('ErrorBoundary', () => {
       </MemoryRouter>
     );
 
-    screen.getByRole('heading', { name: 'This area could not be loaded' });
+    screen.getByRole('heading', { name: 'boom' });
 
     shouldThrow = false;
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
@@ -86,7 +81,7 @@ describe('ErrorBoundary', () => {
       </MemoryRouter>
     );
 
-    screen.getByRole('heading', { name: 'This area could not be loaded' });
+    screen.getByRole('heading', { name: 'boom' });
 
     fireEvent.click(screen.getByRole('link', { name: 'Go safe' }));
 

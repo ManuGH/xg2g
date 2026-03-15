@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 import V3Player from '../../src/components/V3Player';
 import * as sdk from '../../src/client-ts';
@@ -74,6 +74,9 @@ describe('V3Player RFC7807 Contract', () => {
 
     await waitFor(() => {
       const alert = screen.getByRole('alert');
+      const detailsBtn = screen.getByText(/Show Details/i);
+      fireEvent.click(detailsBtn);
+
       expect(alert.textContent).toMatch(/PLAYBACK_DENIED/i);
       expect(alert.textContent).toMatch(/Backend denied playback/i);
       expect(alert.textContent).toMatch(/\/problems\/playback\/denied/i);

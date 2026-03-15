@@ -10,11 +10,6 @@ vi.mock('../../client-ts', () => ({
   getSystemInfo,
 }));
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
-}));
 
 import { SystemInfo } from './SystemInfo';
 

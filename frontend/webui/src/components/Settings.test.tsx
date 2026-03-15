@@ -18,11 +18,6 @@ vi.mock('../client-ts', () => ({
   triggerSystemScan,
 }));
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
-}));
 
 vi.mock('./Config', () => ({
   __esModule: true,
@@ -74,8 +69,8 @@ describe('Settings', () => {
 
     renderWithQueryClient();
 
-    expect(await screen.findByDisplayValue('settings.streaming.policy.universal')).toBeInTheDocument();
-    expect(screen.getByText('settings.streaming.scan.status.idle')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('Universal (H.264/AAC/fMP4)')).toBeInTheDocument();
+    expect(screen.getByText('Idle')).toBeInTheDocument();
     expect(getSystemConfig).toHaveBeenCalledTimes(1);
     expect(getSystemScanStatus).toHaveBeenCalledTimes(1);
   });
@@ -104,7 +99,7 @@ describe('Settings', () => {
 
     renderWithQueryClient();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'settings.streaming.scan.start' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start Scan' }));
 
     await waitFor(() => {
       expect(triggerSystemScan).toHaveBeenCalledTimes(1);
@@ -112,7 +107,7 @@ describe('Settings', () => {
 
     await waitFor(() => {
       expect(getSystemScanStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
-      expect(screen.getByRole('button', { name: 'settings.streaming.scan.status.running' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Running...' })).toBeDisabled();
     });
   });
 });

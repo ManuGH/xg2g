@@ -2,11 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import LoadingSkeleton from './LoadingSkeleton';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (_key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? 'Loading…',
-  }),
-}));
 
 describe('LoadingSkeleton', () => {
   it('renders the gate variant as a fullscreen loading status', () => {

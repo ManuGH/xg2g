@@ -6,11 +6,6 @@ import AppShell from './AppShell';
 
 const mockUseAppContext = vi.fn();
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (_key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? 'Loading…',
-  }),
-}));
 
 vi.mock('./context/AppContext', () => ({
   useAppContext: () => mockUseAppContext(),
@@ -58,13 +53,13 @@ describe('AppShell', () => {
 
     renderShell();
 
-    expect(screen.getByRole('status', { name: 'Loading…' })).toHaveAttribute('data-loading-variant', 'page');
+    expect(screen.getByRole('status', { name: 'Loading...' })).toHaveAttribute('data-loading-variant', 'page');
     expect(screen.getByTestId('navigation-stub')).toBeInTheDocument();
   });
 
   it('shows the page skeleton for lazy route suspense fallback', () => {
     renderShell(['/epg'], <PendingRoute />);
 
-    expect(screen.getByRole('status', { name: 'Loading…' })).toHaveAttribute('data-loading-variant', 'page');
+    expect(screen.getByRole('status', { name: 'Loading...' })).toHaveAttribute('data-loading-variant', 'page');
   });
 });

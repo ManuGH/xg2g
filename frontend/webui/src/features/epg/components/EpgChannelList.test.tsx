@@ -2,11 +2,6 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EpgChannelList } from './EpgChannelList';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
-}));
 
 describe('EpgChannelList playback affordance', () => {
   it('starts playback when the channel header is clicked', () => {
@@ -27,7 +22,7 @@ describe('EpgChannelList playback affordance', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'epg.playStream' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play Stream' }));
 
     expect(onPlay).toHaveBeenCalledTimes(1);
     expect(onPlay).toHaveBeenCalledWith(
@@ -53,7 +48,7 @@ describe('EpgChannelList playback affordance', () => {
       />
     );
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'epg.playStream' }), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Play Stream' }), { key: 'Enter' });
 
     expect(onPlay).toHaveBeenCalledTimes(1);
   });

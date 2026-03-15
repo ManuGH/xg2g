@@ -119,7 +119,7 @@ describe('V3Player ServiceRef Input', () => {
       expect((input as HTMLInputElement).value).toBe(newRef);
     });
 
-    const startButton = screen.getByRole('button', { name: /common\.startStream/i });
+    const startButton = screen.getByRole('button', { name: /Start Stream/i });
     fireEvent.click(startButton);
 
     await waitFor(() => {
@@ -163,7 +163,7 @@ describe('V3Player ServiceRef Input', () => {
 
       const input = screen.getByRole('textbox');
       fireEvent.change(input, { target: { value: '1:0:1:7777:888:999:0:0:0:0:' } });
-      fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
       await waitFor(() => {
         expect(globalThis.fetch).toHaveBeenCalled();
@@ -267,7 +267,7 @@ describe('V3Player ServiceRef Input', () => {
       const { container } = render(<V3Player {...props} />);
 
       const input = screen.getByRole('textbox');
-      const startButton = screen.getByRole('button', { name: /common\.startStream/i });
+      const startButton = screen.getByRole('button', { name: /Start Stream/i });
 
       fireEvent.change(input, { target: { value: '1:0:1:1111:222:333:0:0:0:0:' } });
       fireEvent.click(startButton);
@@ -329,10 +329,10 @@ describe('V3Player ServiceRef Input', () => {
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: '   ' } });
 
-    const startButton = screen.getByRole('button', { name: /common\.startStream/i });
+    const startButton = screen.getByRole('button', { name: /Start Stream/i });
     fireEvent.click(startButton);
 
-    await screen.findByText(/player\.serviceRefRequired/i);
+    await screen.findByText(/Service Ref is required/i);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -384,12 +384,12 @@ describe('V3Player ServiceRef Input', () => {
       fireEvent.change(screen.getByRole('textbox'), {
         target: { value: '1:0:1:123:456:789:0:0:0:0:' }
       });
-      fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
       await waitFor(() => {
         expect(authRequiredHandler).toHaveBeenCalledTimes(1);
       });
-      await screen.findByText(/Authentication required|player\.authFailed/i);
+      await screen.findByText(/Authentication required/i);
     } finally {
       window.removeEventListener('auth-required', authRequiredHandler);
     }
@@ -442,9 +442,9 @@ describe('V3Player ServiceRef Input', () => {
       fireEvent.change(screen.getByRole('textbox'), {
         target: { value: '1:0:1:123:456:789:0:0:0:0:' }
       });
-      fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
-      await screen.findByText(/player\.forbidden/i);
+      await screen.findByText(/Access denied/i);
       expect(authRequiredHandler).not.toHaveBeenCalled();
     } finally {
       window.removeEventListener('auth-required', authRequiredHandler);
@@ -492,10 +492,10 @@ describe('V3Player ServiceRef Input', () => {
 
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: '1:0:1:123:456:789:0:0:0:0:' } });
-    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await screen.findByText(/Invalid Request/i);
-    fireEvent.click(screen.getByRole('button', { name: /common\.showDetails/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Show Details/i }));
     await screen.findByText(/INVALID_INPUT/i);
     await screen.findByText(/req-400-1/i);
   });
@@ -551,9 +551,9 @@ describe('V3Player ServiceRef Input', () => {
     const props = { autoStart: false } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /player\.statsLabel/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
-    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
@@ -621,9 +621,9 @@ describe('V3Player ServiceRef Input', () => {
     const props = { autoStart: false } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /player\.statsLabel/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:123:222:33AA:0:0:0:0:' } });
-    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
@@ -696,9 +696,9 @@ describe('V3Player ServiceRef Input', () => {
     const props = { autoStart: false } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /player\.statsLabel/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:321:222:33AA:0:0:0:0:' } });
-    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
@@ -771,9 +771,9 @@ describe('V3Player ServiceRef Input', () => {
     const props = { autoStart: false } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /player\.statsLabel/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:654:222:33AA:0:0:0:0:' } });
-    fireEvent.click(screen.getByRole('button', { name: /common\.startStream/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
