@@ -136,7 +136,7 @@ describe('V3Player ServiceRef Input', () => {
     expect(body.params?.playback_decision_id).toBeUndefined();
   });
 
-  it('prefers hlsjs for desktop Safari live playback when hls.js is available', async () => {
+  it('prefers native HLS for desktop Safari live playback when runtime capabilities prefer native', async () => {
     const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
     const webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(
       HTMLVideoElement.prototype,
@@ -169,11 +169,17 @@ describe('V3Player ServiceRef Input', () => {
         expect(globalThis.fetch).toHaveBeenCalled();
       });
 
+      const streamInfoCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/live/stream-info'));
+      expect(streamInfoCall).toBeDefined();
+      const [, streamInfoOptions] = streamInfoCall;
+      const streamInfoBody = JSON.parse(streamInfoOptions.body);
+      expect(streamInfoBody.capabilities?.preferredHlsEngine).toBe('native');
+
       const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
       expect(intentCall).toBeDefined();
       const [, options] = intentCall;
       const body = JSON.parse(options.body);
-      expect(body.params?.playback_mode).toBe('hlsjs');
+      expect(body.params?.playback_mode).toBe('native_hls');
     } finally {
       if (webkitSupportsPresentationModeDescriptor) {
         Object.defineProperty(

@@ -392,6 +392,15 @@ function V3Player(props: V3PlayerProps) {
     return hlsJsSupported ? 'hlsjs' : 'native';
   }, [videoRef]);
 
+  const resolvePreferredHlsEngineForCapabilities = useCallback((
+    capabilities?: Pick<CapabilitySnapshot, 'preferredHlsEngine'> | null
+  ): 'native' | 'hlsjs' => {
+    if (capabilities?.preferredHlsEngine === 'native' || capabilities?.preferredHlsEngine === 'hlsjs') {
+      return capabilities.preferredHlsEngine;
+    }
+    return resolvePreferredHlsEngine();
+  }, [resolvePreferredHlsEngine]);
+
   const mergeSessionPlaybackTrace = useCallback((nextTrace: PlaybackTraceContract | null) => {
     if (!nextTrace) {
       return;
@@ -658,6 +667,7 @@ function V3Player(props: V3PlayerProps) {
     setPlaybackMode('VOD');
 
     let abortController: AbortController | null = null;
+    let requestCaps: CapabilitySnapshot | null = null;
 
     try {
       await ensureSessionCookie();
@@ -668,7 +678,7 @@ function V3Player(props: V3PlayerProps) {
 
       try {
         const maxMetaRetries = 20;
-        const requestCaps = await gatherPlaybackCapabilities('recording');
+        requestCaps = await gatherPlaybackCapabilities('recording');
         setCapabilitySnapshot(requestCaps);
         let pInfo: PlaybackInfo | undefined;
 
@@ -756,7 +766,7 @@ function V3Player(props: V3PlayerProps) {
         // Map backend 'hls' to local preferred HLS engine if needed
         const rawMode = pInfo.mode;
         if (rawMode === 'hls') {
-          mode = resolvePreferredHlsEngine() === 'native' ? 'native_hls' : 'hlsjs';
+          mode = resolvePreferredHlsEngineForCapabilities(requestCaps) === 'native' ? 'native_hls' : 'hlsjs';
         } else {
           mode = rawMode as any; // fall back to other modes or deny
         }
@@ -886,7 +896,9 @@ function V3Player(props: V3PlayerProps) {
 
           if (activeRecordingRef.current !== id) return;
           setStatus('buffering');
-          const engine: 'native' | 'hlsjs' = mode === 'native_hls' ? 'native' : resolvePreferredHlsEngine();
+          const engine: 'native' | 'hlsjs' = mode === 'native_hls'
+            ? 'native'
+            : resolvePreferredHlsEngineForCapabilities(requestCaps);
           playHls(streamUrl, engine);
           setActiveHlsEngine(engine);
         } finally {
@@ -904,7 +916,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, playDirectMp4, playHls, resolvePreferredHlsEngine, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
+  }, [apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -964,9 +976,9 @@ function V3Player(props: V3PlayerProps) {
         // SSOT: live playback mode is decided by backend from measured capabilities.
         let liveMode: 'native_hls' | 'hlsjs' | 'direct_mp4' | 'transcode' | 'deny' = 'deny';
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
-        const preferredHlsEngine = resolvePreferredHlsEngine();
 
         const requestCaps = await gatherPlaybackCapabilities('live');
+        const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         setCapabilitySnapshot(requestCaps);
         // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
         const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
@@ -1103,7 +1115,7 @@ function V3Player(props: V3PlayerProps) {
         } else if (liveMode === 'hlsjs') {
           liveEngine = 'hlsjs';
         } else if (liveMode === 'transcode') {
-          liveEngine = resolvePreferredHlsEngine();
+          liveEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         } else {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.live.mode.unsupported',
@@ -1274,7 +1286,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
