@@ -325,7 +325,7 @@
 
 .closeButton:hover {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
+    linear-gradient(180deg, var(--surface-highlight), transparent),
     var(--status-error);
   color: var(--text-primary);
   border-color: var(--status-error-border);

@@ -69,25 +69,27 @@ func TestRunExecutionLoop_StopsPipelineWhenPrimingTransitionFails(t *testing.T) 
 		errCh <- err
 	}()
 
-	<-pipe.StartCalled()
-	pipe.AllowStart()
-
-	require.NoError(t, <-pipe.StartReturned())
 	require.ErrorIs(t, <-errCh, primingErr)
 
-	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
+	select {
+	case <-pipe.StartCalled():
+		t.Fatal("pipeline start should not be attempted when priming transition fails")
+	default:
+	}
+
 	select {
 	case <-pipe.StopCalled():
-	case <-waitCtx.Done():
-		t.Fatalf("timed out waiting for pipeline stop after priming failure: %v", waitCtx.Err())
+		t.Fatal("pipeline stop should not be attempted when pipeline start never happened")
+	default:
 	}
 }
 
 type startupRetryPipeline struct {
 	hlsRoot              string
 	secondStartCalled    chan struct{}
+	allowSecondStart     chan struct{}
 	allowSecondArtifacts chan struct{}
+	secondArtifactsReady chan struct{}
 	startCount           atomic.Int32
 	stopCount            atomic.Int32
 }
@@ -96,7 +98,9 @@ func newStartupRetryPipeline(hlsRoot string) *startupRetryPipeline {
 	return &startupRetryPipeline{
 		hlsRoot:              hlsRoot,
 		secondStartCalled:    make(chan struct{}),
+		allowSecondStart:     make(chan struct{}),
 		allowSecondArtifacts: make(chan struct{}),
+		secondArtifactsReady: make(chan struct{}),
 	}
 }
 
@@ -111,12 +115,14 @@ func (p *startupRetryPipeline) Start(ctx context.Context, spec ports.StreamSpec)
 		}
 	case 2:
 		close(p.secondStartCalled)
+		<-p.allowSecondStart
 		go func() {
 			select {
 			case <-ctx.Done():
 				return
 			case <-p.allowSecondArtifacts:
 				_ = p.writeReadyArtifacts(spec.SessionID, "fresh-second-attempt")
+				close(p.secondArtifactsReady)
 			}
 		}()
 	}
@@ -233,23 +239,34 @@ func TestRunExecutionLoop_RetriesEarlyUpstreamProcessExitOnceAndCleansStaleArtif
 
 	select {
 	case <-pipe.secondStartCalled:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for second startup attempt")
+	}
+
+	sessionDir := filepath.Join(hlsRoot, "sessions", sid)
+	for _, name := range []string{
+		"index.m3u8",
+		"seg_000000.ts",
+		"seg_000001.ts",
+		"seg_000002.ts",
+		model.SessionFirstFrameMarkerFilename,
+	} {
+		_, statErr := os.Stat(filepath.Join(sessionDir, name))
+		require.ErrorIs(t, statErr, os.ErrNotExist, "stale startup artifact %s should be cleaned before retry", name)
 	}
 
 	select {
 	case err := <-errCh:
-		t.Fatalf("runExecutionLoop returned before second attempt wrote fresh artifacts: %v", err)
-	case <-time.After(250 * time.Millisecond):
+		t.Fatalf("runExecutionLoop returned before second attempt was released: %v", err)
+	default:
 	}
 
+	close(pipe.allowSecondStart)
+
 	close(pipe.allowSecondArtifacts)
+	<-pipe.secondArtifactsReady
 
 	select {
 	case err := <-errCh:
 		require.NoError(t, err)
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for successful retry completion")
 	}
 
 	select {

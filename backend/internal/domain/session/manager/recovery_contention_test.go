@@ -56,7 +56,7 @@ func TestContention_Blocked(t *testing.T) {
 
 	sA, err := st.GetSession(ctx, sessA)
 	require.NoError(t, err)
-	assert.Equal(t, model.SessionStarting, sA.State)
+	assert.Equal(t, model.SessionPriming, sA.State)
 
 	sessB := "session-B"
 	refB := "ref:B" // Different service, should NOT block on dedup lease
