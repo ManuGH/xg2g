@@ -76,8 +76,10 @@ V1=""
 if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     clean_file="${file#frontend/webui/src/}"
+    matches=$(grep -oE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" || true)
     result=$(grep -InE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" | grep -vE 'transparent|inherit|currentColor|index.css:.*--' || true)
     if [ -n "$result" ]; then
+      echo "DEBUG: File $clean_file contains matches: $matches"
       V1="$V1$clean_file:$result"$'\n'
     fi
   done
