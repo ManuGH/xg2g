@@ -47,13 +47,13 @@ Useful overrides:
 - `npm run test` - run Vitest suite
 - `npm run lint` - ESLint + design + wrapper-boundary gates
 - `npm run verify:client-wrapper` - prevent direct generated-client imports outside `src/client-ts/`
-- `npm run generate-client` - regenerate typed API client from `../api/openapi.yaml`
+- `npm run generate-client` - regenerate typed API client from `../../backend/api/openapi.yaml`
 
 ## Design And Contracts
 
-- Design contract: `webui/DESIGN.md`
-- UI contract gate script: `../scripts/check-ui-contract.sh`
-- API contract source: `../api/openapi.yaml`
+- Design contract: `frontend/webui/DESIGN.md`
+- UI contract gate script: `../../backend/scripts/check-ui-contract.sh`
+- API contract source: `../../backend/api/openapi.yaml`
 
 ## Project Layout
 

@@ -58,13 +58,13 @@ make build
 The WebUI can run independently via Vite (fast reload) while the backend runs separately:
 
 ```bash
-cd webui
+cd frontend/webui
 npm install
 npm run dev
 ```
 
 - Dev server: `http://<host>:5173/ui/`
-- API is proxied to `http://localhost:8080` by default (see `webui/vite.config.js`).
+- API is proxied to `http://localhost:8080` by default (see `frontend/webui/vite.config.js`).
 - In dev, run the backend on **8080**. In compose/prod the backend is typically **8088**.
 - You can restart the WebUI without touching the backend.
 

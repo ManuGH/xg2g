@@ -1,28 +1,28 @@
 changelog:
   categories:
-    - title: 🚀 Features
+    - title: Features
       labels:
         - "feature"
         - "enhancement"
-    - title: 🐛 Bug Fixes
+    - title: Bug Fixes
       labels:
         - "bug"
         - "fix"
-    - title: 📚 Documentation
+    - title: Security
+      labels:
+        - "security"
+    - title: Performance
+      labels:
+        - "performance"
+    - title: Documentation
       labels:
         - "documentation"
         - "docs"
-    - title: 🔧 Maintenance
+    - title: CI and Maintenance
       labels:
         - "maintenance"
         - "chore"
         - "ci"
-    - title: 🔒 Security
-      labels:
-        - "security"
-    - title: ⚡ Performance
-      labels:
-        - "performance"
   exclude:
     labels:
       - "ignore-for-release"

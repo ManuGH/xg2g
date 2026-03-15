@@ -5,24 +5,24 @@ on:
   push:
     branches: [main]
     paths:
-      - "webui/src/components/**/*.tsx"
-      - "webui/src/components/**/*.module.css"
-      - "webui/src/features/**/*.tsx"
-      - "webui/src/features/**/*.module.css"
-      - "webui/src/**/*.tsx"
-      - "webui/src/**/*.css"
-      - "scripts/check-ui-contract.sh"
+      - "frontend/webui/src/components/**/*.tsx"
+      - "frontend/webui/src/components/**/*.module.css"
+      - "frontend/webui/src/features/**/*.tsx"
+      - "frontend/webui/src/features/**/*.module.css"
+      - "frontend/webui/src/**/*.tsx"
+      - "frontend/webui/src/**/*.css"
+      - "backend/scripts/check-ui-contract.sh"
       - ".github/workflows/ui-contract.yml"
   pull_request:
     branches: [main]
     paths:
-      - "webui/src/components/**/*.tsx"
-      - "webui/src/components/**/*.module.css"
-      - "webui/src/features/**/*.tsx"
-      - "webui/src/features/**/*.module.css"
-      - "webui/src/**/*.tsx"
-      - "webui/src/**/*.css"
-      - "scripts/check-ui-contract.sh"
+      - "frontend/webui/src/components/**/*.tsx"
+      - "frontend/webui/src/components/**/*.module.css"
+      - "frontend/webui/src/features/**/*.tsx"
+      - "frontend/webui/src/features/**/*.module.css"
+      - "frontend/webui/src/**/*.tsx"
+      - "frontend/webui/src/**/*.css"
+      - "backend/scripts/check-ui-contract.sh"
       - ".github/workflows/ui-contract.yml"
 
 permissions:
@@ -61,13 +61,13 @@ jobs:
           fi
 
           mapfile -t scope_files < <(printf '%s\n' "$changed_files" \
-            | grep -E '^webui/src/.*\.(tsx|css)$' \
-            | sed -e 's#^webui/src/##' \
+            | grep -E '^frontend/webui/src/.*\.(tsx|css)$' \
+            | sed -e 's#^frontend/webui/src/##' \
             | sort -u)
 
           if [ "${#scope_files[@]}" -eq 0 ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "No webui/src *.tsx/*.css changes detected"
+            echo "No frontend/webui/src *.tsx/*.css changes detected"
             exit 0
           fi
 
@@ -81,9 +81,9 @@ jobs:
         if: steps.scope.outputs.has_changes == 'true'
         run: |
           set -euo pipefail
-          chmod +x ./scripts/check-ui-contract.sh
+          chmod +x ./backend/scripts/check-ui-contract.sh
           mapfile -t scope_files < /tmp/ui-contract-scope.txt
-          ./scripts/check-ui-contract.sh "${scope_files[@]}"
+          ./backend/scripts/check-ui-contract.sh "${scope_files[@]}"
         working-directory: ${{ github.workspace }}
 
       - name: No UI contract scope changes

@@ -11,23 +11,23 @@ Die ZIP muss ermöglichen:
 Entscheidung (bindend)
 
 WebUI-Modell A (empfohlen):
-→ WebUI nicht offline bauen, webui/dist/ kommt fix in die ZIP
+→ WebUI nicht offline bauen, `frontend/webui/dist/` kommt fix in die ZIP
 
 ⸻
 
 1️⃣ Repository-Inhalt (MUSS in der ZIP enthalten sein)
 
 Go-Core (Pflicht)
-	•	go.mod
-	•	go.sum
-	•	vendor/ vollständig und aktuell
-	•	alle Go-Packages inkl. Tests
+	•	`backend/go.mod`
+	•	`backend/go.sum`
+	•	`backend/vendor/` vollständig und aktuell
+	•	alle Go-Packages inkl. Tests unter `backend/`
 	•	alle generierten Dateien bereits eingecheckt
 	•	OpenAPI Clients
 	•	mocks
 	•	embedded assets (//go:embed)
 	•	Makefile
-	•	alle lokal referenzierten Skripte (scripts/, hack/, etc.)
+	•	alle lokal referenzierten Skripte (`backend/scripts/`, `hack/`, etc.)
 
 ❌ Nicht erlaubt
 	•	Generatoren, die erst beim Testen Code erzeugen und dafür Netz brauchen
@@ -85,7 +85,7 @@ quality-gates-online
 Der Techniker muss eine dieser Optionen bewusst wählen:
 
 Option A – WebUI nicht offline bauen (empfohlen)
-	•	webui/dist/ ist in der ZIP enthalten
+	•	`frontend/webui/dist/` ist in der ZIP enthalten
 	•	Backend nutzt diese Assets
 	•	quality-gates-offline baut keine WebUI
 
@@ -102,16 +102,17 @@ Option B – WebUI offline bauen (nur wenn vorbereitet!)
 Erwartete Struktur
 
 repo-root/
-├─ go.mod
-├─ go.sum
-├─ vendor/
 ├─ Makefile
-├─ cmd/
-├─ internal/
-├─ pkg/
-├─ webui/
+├─ backend/
+│  ├─ go.mod
+│  ├─ go.sum
+│  ├─ vendor/
+│  ├─ cmd/
+│  ├─ internal/
+│  └─ scripts/
+├─ frontend/
+│  └─ webui/
 │  └─ dist/        # falls Option A
-├─ scripts/
 └─ README.md
 
 ZIP-Regeln

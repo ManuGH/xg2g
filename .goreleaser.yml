@@ -94,3 +94,31 @@ release:
   github:
     owner: ManuGH
     name: xg2g
+  mode: replace
+  name_template: "xg2g {{ .Tag }}"
+  header: |
+    xg2g {{ .Tag }} delivers browser-ready Enigma2 streaming with operator-grade security, observability, and release-backed artifacts.
+
+    ## Quick links
+
+    - Docker image: `ghcr.io/manugh/xg2g:{{ .Tag }}`
+    - Quickstart: https://github.com/ManuGH/xg2g?tab=readme-ov-file#quickstart
+    - API reference: https://manugh.github.io/xg2g/
+    - Deployment guide: https://github.com/ManuGH/xg2g/blob/main/docs/ops/DEPLOYMENT.md
+    - Security policy: https://github.com/ManuGH/xg2g/blob/main/SECURITY.md
+
+    ## What changed
+
+    The sections below are generated from commits since the previous release.
+  footer: |
+
+    ## Upgrade notes
+
+    Review the generated sections above for any migration steps, auth or configuration changes, and operational follow-ups before upgrading production systems.
+
+    ## Operator references
+
+    - Systemd + Compose runbook: https://github.com/ManuGH/xg2g/blob/main/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md
+    - Observability: https://github.com/ManuGH/xg2g/blob/main/docs/ops/OBSERVABILITY.md
+    - Safari/iOS playback audit: https://github.com/ManuGH/xg2g/blob/main/docs/ops/SAFARI_AUDIT.md
+    - Release template: https://github.com/ManuGH/xg2g/blob/main/docs/release/RELEASE_TEMPLATE.md

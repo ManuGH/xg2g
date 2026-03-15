@@ -296,7 +296,7 @@ Any "fix" that deviates from Port 8001 or the FBC allocation model **breaks comp
 
 **References:**
 
-- [Enigma2 OpenWebIF API Docs](https://dream.reichholf.net/wiki/Hauptseite)
-- [Enigma2 Community Forums](https://www.opena.tv/)
+- [Enigma2 OpenWebif API Wiki](https://github.com/E2OpenPlugins/e2openplugin-OpenWebif/wiki/OpenWebif-API-documentation)
+- [Enigma2 Community Forums](https://dreambox.de/board/)
 
 ---

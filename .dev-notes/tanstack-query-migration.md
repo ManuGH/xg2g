@@ -14,7 +14,7 @@ npm install @tanstack/react-query
 ```
 
 ### 2. QueryClient Setup ✅
-**Datei:** [webui/src/main.tsx](webui/src/main.tsx#L14-L25)
+**Datei:** [frontend/webui/src/main.tsx](../frontend/webui/src/main.tsx#L14-L25)
 
 ```typescript
 const queryClient = new QueryClient({
@@ -30,7 +30,7 @@ const queryClient = new QueryClient({
 ```
 
 ### 3. Server-State Query Hooks ✅
-**Datei:** [webui/src/hooks/useServerQueries.ts](webui/src/hooks/useServerQueries.ts)
+**Datei:** [frontend/webui/src/hooks/useServerQueries.ts](../frontend/webui/src/hooks/useServerQueries.ts)
 
 **Erstellt:**
 - `useSystemHealth()` - Polling: 10s (Health Status)
@@ -51,7 +51,7 @@ export const queryKeys = {
 ```
 
 ### 4. Dashboard Refactoring ✅
-**Datei:** [webui/src/components/Dashboard.tsx](webui/src/components/Dashboard.tsx)
+**Datei:** [frontend/webui/src/components/Dashboard.tsx](../frontend/webui/src/components/Dashboard.tsx)
 
 **Entfernt:**
 - ❌ 4x manuelle `setInterval` für Polling
@@ -169,10 +169,10 @@ curl -s http://localhost:8088/ui/ | grep index-CFzaXWYE
 
 | Datei                                      | Beschreibung                    |
 |--------------------------------------------|---------------------------------|
-| [webui/src/main.tsx](webui/src/main.tsx)  | QueryClient Setup               |
-| [webui/src/hooks/useServerQueries.ts](webui/src/hooks/useServerQueries.ts) | Query Hooks |
-| [webui/src/components/Dashboard.tsx](webui/src/components/Dashboard.tsx) | Refactored Component |
-| [webui/package.json](webui/package.json)   | Dependencies                    |
+| [frontend/webui/src/main.tsx](../frontend/webui/src/main.tsx)  | QueryClient Setup               |
+| [frontend/webui/src/hooks/useServerQueries.ts](../frontend/webui/src/hooks/useServerQueries.ts) | Query Hooks |
+| [frontend/webui/src/components/Dashboard.tsx](../frontend/webui/src/components/Dashboard.tsx) | Refactored Component |
+| [frontend/webui/package.json](../frontend/webui/package.json)   | Dependencies                    |
 
 ---
 

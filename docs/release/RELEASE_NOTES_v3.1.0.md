@@ -90,7 +90,7 @@ recording_playback:
       local_root: /mnt/recordings
 ```
 
-See [Configuration Guide](../guides/CONFIGURATION.md#recording-playback) for
+See [Configuration Guide](../guides/CONFIGURATION.md#recording_playback) for
 detailed setup instructions.
 
 ### migration_guide

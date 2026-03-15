@@ -33,7 +33,7 @@ mechanical provenance** at build time:
 #### A. Hermetic Tool Pinning
 
 All code generators (e.g., `oapi-codegen`) are strictly version-pinned in
-`internal/tools/tools.go` and vendored in `vendor/`. This prevents "silent
+`backend/tools.go` and vendored in `backend/vendor/`. This prevents "silent
 drift" or un-audited updates to the generator logic.
 > [!NOTE]
 > See [HERMETICITY.md](./HERMETICITY.md) for the mechanical

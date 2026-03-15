@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           rm -rf _site
           mkdir -p _site
-          cp docs/api/index.html _site/index.html
+          cp -R docs/api/. _site/
           cp backend/api/openapi.yaml _site/openapi.yaml
           touch _site/.nojekyll
 

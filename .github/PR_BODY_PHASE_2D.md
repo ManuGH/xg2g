@@ -12,13 +12,13 @@ This establishes the foundation for the Broadcast-Console design system (v2.0) w
 
 ### Core Primitives (New)
 
-**[Card Component](Card Component `webui/src/components/ui/Card.tsx`)**
+**[Card Component](../frontend/webui/src/components/ui/Card.tsx)**
 
 - 3 variants: `standard`, `live` (amber accent), `action` (blue accent)
 - Props: `variant`, `interactive` (adds hover lift)
 - Token-only styling, no hardcoded colors
 
-**[StatusChip Component](webui/src/components/ui/StatusChip.tsx)**
+**[StatusChip Component](../frontend/webui/src/components/ui/StatusChip.tsx)**
 
 - 6 semantic states: `idle`, `success`, `warning`, `error`, `live`, `recording`
 - Pulse animation ONLY for `live`, `recording`, `error` (CTO Stop Criterion #2)
@@ -26,14 +26,14 @@ This establishes the foundation for the Broadcast-Console design system (v2.0) w
 
 ### Dashboard Refactor
 
-**[Dashboard.tsx](Dashboard Component `webui/src/components/Dashboard.tsx`)** - 375 lines (+34)
+**[Dashboard.tsx](../frontend/webui/src/components/Dashboard.tsx)** - 375 lines (+34)
 
 - All cards replaced with `<Card>` primitive
 - All badges replaced with `<StatusChip>` primitive
 - Tabular numbers applied (`.tabular` class)
 - No inline color styles
 
-**[Dashboard.css](webui/src/components/Dashboard.css)** - 320 lines (-280)
+**[Dashboard.module.css](../frontend/webui/src/components/Dashboard.module.css)** - 320 lines (-280)
 
 - Stripped to layout-only (Grid/Flex/Spacing)
 - Zero `box-shadow`, zero gradients, zero `border-color` hardcoded
@@ -67,7 +67,7 @@ This establishes the foundation for the Broadcast-Console design system (v2.0) w
 ### Gate 1: Token Compliance (Dashboard Only)
 
 ```bash
-grep -RInE '#[0-9a-fA-F]{3,6}\b' webui/src/components/Dashboard.* \
+grep -RInE '#[0-9a-fA-F]{3,6}\b' frontend/webui/src/components/Dashboard.* \
   --exclude-dir=node_modules
 ```
 
@@ -76,7 +76,7 @@ grep -RInE '#[0-9a-fA-F]{3,6}\b' webui/src/components/Dashboard.* \
 ### Gate 2: Animation Budget (Dashboard Only)
 
 ```bash
-grep -RIn 'animation:.*infinite' webui/src/components/Dashboard.*
+grep -RIn 'animation:.*infinite' frontend/webui/src/components/Dashboard.*
 ```
 
 **Result:** ✅ 0 violations (no continuous animations in Dashboard)
@@ -84,7 +84,7 @@ grep -RIn 'animation:.*infinite' webui/src/components/Dashboard.*
 ### Gate 3: Shadow Discipline (Dashboard Only)
 
 ```bash
-grep -InE 'box-shadow:\s*[^v]' webui/src/components/Dashboard.css
+grep -InE 'box-shadow:\s*[^v]' frontend/webui/src/components/Dashboard.css
 ```
 
 **Result:** ✅ 0 violations (all shadows via primitives)
@@ -92,7 +92,7 @@ grep -InE 'box-shadow:\s*[^v]' webui/src/components/Dashboard.css
 ### Gate 4: Gradient Discipline (Dashboard Only)
 
 ```bash
-grep -InE '(linear-gradient|radial-gradient)' webui/src/components/Dashboard.css
+grep -InE '(linear-gradient|radial-gradient)' frontend/webui/src/components/Dashboard.css
 ```
 
 **Result:** ✅ 0 violations (solid colors only)
@@ -125,7 +125,7 @@ Automated mechanical gates:
 
 ### GitHub Action: `.github/workflows/ui-contract.yml`
 
-- Runs on all PRs touching `webui/src/components/Dashboard.*` or `webui/src/components/ui/*`
+- Runs on all PRs touching `frontend/webui/src/components/Dashboard.*` or `frontend/webui/src/components/ui/*`
 - Blocks merge if gates fail
 - Scoped to refactored files only (legacy files allowed to fail)
 

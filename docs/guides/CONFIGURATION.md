@@ -29,6 +29,13 @@ Generated artifacts:
 - `config.generated.example.yaml` is the canonical defaults projection (fully generated).
 - `config.example.yaml` is a curated operator tutorial and may be selective.
 
+## Bootstrap Security Note
+
+Live playback startup also requires `XG2G_DECISION_SECRET` in the process
+environment. This bootstrap secret is enforced during server wiring and is
+distinct from the advanced `api.playbackDecisionSecret`
+(`XG2G_PLAYBACK_DECISION_SECRET`) configuration surface listed below.
+
 <!-- BEGIN GENERATED CONFIG OPTIONS -->
 ## Registry Options (Generated)
 

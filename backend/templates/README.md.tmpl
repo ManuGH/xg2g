@@ -6,47 +6,89 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC-blue)](LICENSE)
 
-HLS streaming gateway for Enigma2 satellite/DVB-T2 receivers.
-Stream to Safari, iOS, Chrome, and any modern browser.
+<p align="center">
+  <img src="docs/assets/github/xg2g-github-hero.svg" alt="xg2g turns Enigma2 MPEG-TS into browser-ready HLS for Safari, iPhone, iPad, Chrome, and modern TVs." width="100%" />
+</p>
 
-## Why xg2g?
+Turn Enigma2 live TV into browser-ready playback that actually works on
+Safari, iPhone, iPad, Chrome, and modern TVs.
 
-| Your Problem | xg2g Solution |
+xg2g takes MPEG-TS from Enigma2 satellite and DVB-T2 receivers and prefers
+browser-safe HLS delivery when compatibility repair is needed, with
+observability, fail-closed auth, and operator-friendly health checks built in.
+
+**Start here:** [Quickstart](#quickstart) •
+[Live API Docs](https://manugh.github.io/xg2g/) •
+[Configuration](docs/guides/CONFIGURATION.md) •
+[Architecture](docs/arch/ARCHITECTURE.md) •
+[Releases](https://github.com/ManuGH/xg2g/releases) •
+[Discussions](https://github.com/ManuGH/xg2g/discussions)
+
+## What xg2g fixes
+
+| Your Problem | What Changes with xg2g |
 | :--- | :--- |
-| Enigma2 MPEG-TS doesn't work in Safari/iOS | ✅ Universal H.264/AAC/HLS |
-| Manual transcoding profiles per device | ✅ Server-enforced policy |
-| No observability in streaming stack | ✅ Metrics, logs, health probes |
-| Unstable DIY setups | ✅ Production-tested builds |
+| Enigma2 MPEG-TS does not play cleanly in Safari or iOS | Browser-ready HLS with H.264/AAC/fMP4 |
+| Every client wants a different stream profile | One server-enforced universal delivery policy |
+| DIY proxies hide failures until users complain | Health checks, logs, metrics, and clear startup gates |
+| Ad hoc setups drift over time | Versioned images, release automation, and CI-backed changes |
+
+## Compatibility at a glance
+
+| Input | Delivery | Good First Targets |
+| :--- | :--- | :--- |
+| Enigma2 live MPEG-TS | HLS with fMP4 segments | Safari, iPhone, iPad, Chrome, current desktop browsers |
+| Enigma2 recordings | Browser-ready playback via the same policy | Web UI, custom integrations, internal operator tools |
 
 ## Quickstart
 
-**Prerequisites:** Docker + Enigma2 receiver on your network
+**Prerequisites:** Docker, `openssl`, and an Enigma2 receiver reachable on your
+network
 
 ```bash
-docker run -d --name xg2g --net=host \
+docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \
   -e XG2G_E2_HOST="http://192.168.1.10" \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
+  -e XG2G_DECISION_SECRET="$(openssl rand -hex 32)" \
   ghcr.io/manugh/xg2g:{{VERSION}}
 ```
 
-Open [http://localhost:8088/ui/](http://localhost:8088/ui/)
+Check the service health:
+
+```bash
+curl -fsS http://localhost:8088/readyz
+```
+
+Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
+
+> `XG2G_DECISION_SECRET` is mandatory. xg2g refuses to start without a live
+> playback signing secret.
 
 **Next steps:**
 [Configuration](docs/guides/CONFIGURATION.md) •
+[Deployment](docs/ops/DEPLOYMENT.md) •
+[Security](SECURITY.md) •
 [Architecture](docs/arch/ARCHITECTURE.md) •
 [ADRs](docs/ADR/)
 
-## Features
+## How Playback Is Selected
 
-- 🎯 **Universal Delivery**: H.264/AAC/fMP4 for all devices
-- 📊 **Observability**: Prometheus, OpenTelemetry, structured logs
-- 🔒 **Security**: Fail-closed auth, scope enforcement
-- ⚡ **Quality**: CI gates, contract tests, smoke tests
+xg2g uses a backend-driven playback decision model. Depending on source truth,
+client capabilities, and operator policy, a session can take one of four paths:
 
-## The Universal Policy
+| Path | When xg2g uses it | Typical output |
+| :--- | :--- | :--- |
+| **DirectPlay** | Client can consume the selected output as-is | `direct_mp4` / direct file playback |
+| **DirectStream** | Codecs are compatible but delivery needs a container/protocol bridge | HLS without full re-encode |
+| **Transcode** | Codec, container, or client constraints require repair | Browser-safe HLS |
+| **Deny** | No safe compatible path is available | Fail-closed error response |
 
-xg2g enforces a strict **Universal Delivery Policy**:
+## Default `universal` Delivery Policy
+
+`streaming.delivery_policy=universal` is the current supported policy value.
+When xg2g needs a broad browser-compatibility path, it targets this default
+transcode/remux output:
 
 | Component | Specification |
 | :--- | :--- |
@@ -55,14 +97,25 @@ xg2g enforces a strict **Universal Delivery Policy**:
 | **Container** | fMP4 (Fragmented MP4) |
 | **Protocol** | HLS |
 
-Tier-1 compliant with Apple HLS Guidelines.
+This is the default compatibility target, not the only playback outcome.
+DirectPlay and DirectStream remain valid outputs when the decision engine says
+they are safe.
 
-**Non-Goals:**
+Tier-1 aligned with Apple HLS guidance for the compatibility path.
+
+**Non-Goals**
 
 - ❌ HEVC by default (compatibility first)
 - ❌ UI transcoding controls (fixed server policy)
 - ❌ Browser workarounds (Safari is the reference)
-- ❌ Direct copy (always remux to guarantee container)
+- ❌ Forcing every session through HLS remux/transcode when a direct path is valid
+
+## Built for operators
+
+- Structured logs, Prometheus metrics, OpenTelemetry hooks, and health probes
+- Fail-closed auth surfaces with token scopes and browser-safe session flow
+- Docker health checks and release artifacts ready for systemd + Compose setups
+- CI gates for lint, coverage, vulnerability scans, docs publishing, and release automation
 
 ## Status
 
@@ -74,19 +127,26 @@ Tier-1 compliant with Apple HLS Guidelines.
 
 ## Documentation
 
-- 🚀 [Start Here (10 Minutes)](backend/NEW_HERE.md) - First-commit onboarding path
-- 📘 [Architecture Overview](docs/arch/ARCHITECTURE.md) - Complete system
-  explanation
-- 📋 [ADRs](docs/ADR/) - Design decisions and trade-offs
-- 🔍 [Repository Audit](docs/arch/AUDIT_REPO_STRUCTURE.md) - Repository
-  structure orientation
-- 🌐 [API Reference (GitHub Pages)](https://manugh.github.io/xg2g/) - Generated
-  from [backend/api/openapi.yaml](backend/api/openapi.yaml)
-- ⚙️ [Configuration Guide](docs/guides/CONFIGURATION.md)
-- 🏗️ [Development Guide](docs/guides/DEVELOPMENT.md)
-- 🧰 [Developer Setup](docs/dev/SETUP.md) - Local toolchain and setup flow
-- 🩺 [CI Failure Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) - Triage guide for
-  failing gates
+**Evaluate xg2g**
+
+- [Start Here (10 Minutes)](backend/NEW_HERE.md)
+- [Architecture Overview](docs/arch/ARCHITECTURE.md)
+- [API Reference (GitHub Pages)](https://manugh.github.io/xg2g/)
+- [ADRs](docs/ADR/)
+
+**Operate xg2g**
+
+- [Configuration Guide](docs/guides/CONFIGURATION.md)
+- [Deployment Guide](docs/ops/DEPLOYMENT.md)
+- [Observability](docs/ops/OBSERVABILITY.md)
+- [Security Policy](SECURITY.md)
+
+**Build on xg2g**
+
+- [Development Guide](docs/guides/DEVELOPMENT.md)
+- [Developer Setup](docs/dev/SETUP.md)
+- [Contributing](CONTRIBUTING.md)
+- [CI Failure Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md)
 
 ## FFmpeg
 

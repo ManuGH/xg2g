@@ -109,10 +109,10 @@
 - Typed error mapping (RFC7807) getestet
 
 **Result**
-- Introduced wrapper module at `webui/src/client-ts/wrapper.ts`.
-- Product code now consumes generated client only via `webui/src/client-ts` exports or wrapper helpers.
-- Added typed RFC7807/API error mapping tests at `webui/src/client-ts/wrapper.test.ts`.
-- Added guard script `webui/scripts/verify-client-wrapper-boundary.sh` and wired it into `webui` lint workflow.
+- Introduced wrapper module at `frontend/webui/src/client-ts/wrapper.ts`.
+- Product code now consumes generated client only via `frontend/webui/src/client-ts` exports or wrapper helpers.
+- Added typed RFC7807/API error mapping tests at `frontend/webui/src/client-ts/wrapper.test.ts`.
+- Added guard script `frontend/webui/scripts/verify-client-wrapper-boundary.sh` and wired it into the WebUI lint workflow.
 
 **Verification Note**
 - Static scan in repo confirms no direct `client-ts/*.gen` imports outside wrapper/client-ts internals.
@@ -140,7 +140,7 @@
 - Diff-scoped PR gate and full CI gate both enforce no direct `client-ts/*.gen` imports outside wrapper.
 
 **Result**
-- Added/extended `webui/scripts/verify-client-wrapper-boundary.sh` with full-scan + diff-scoped modes.
+- Added/extended `frontend/webui/scripts/verify-client-wrapper-boundary.sh` with full-scan + diff-scoped modes.
 - Wired guard into:
   - `webui` lint workflow (`npm run verify:client-wrapper`)
   - `.github/workflows/ci.yml`

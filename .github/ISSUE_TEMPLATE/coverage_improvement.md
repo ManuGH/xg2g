@@ -45,8 +45,8 @@ labels: ["coverage-improvement", "testing"]
 
 ## Referenz
 
-- [Coverage Operations Runbook - Section 9](../../docs/COVERAGE_OPERATIONS.md#9-coverage-improvement-strategy-api--proxy)
-- [Current Coverage Baseline](../../docs/COVERAGE_OPERATIONS.md#91-quick-wins-1-2-prs)
+- [Coverage workflow](../workflows/coverage.yml)
+- [CI Failure Playbook](../../docs/ops/CI_FAILURE_PLAYBOOK.md)
 
 ## Implementierungsplan
 

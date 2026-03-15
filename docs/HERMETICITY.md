@@ -39,9 +39,9 @@ No warm cache masking missing vendored dependencies.
 
 All build-time tools hermetically vendored:
 
-- Tools declared in [`tools.go`](../../tools.go)
-- Vendored in `vendor/github.com/oapi-codegen/`
-- Verified via `vendor/modules.txt` (canonical source)
+- Tools declared in [`backend/tools.go`](../backend/tools.go)
+- Vendored in `backend/vendor/github.com/oapi-codegen/`
+- Verified via `backend/vendor/modules.txt` (canonical source)
 
 ### 5. No External Tool Installation
 
@@ -58,7 +58,7 @@ tools.go (build-time dependency declaration)
     ↓
 go mod vendor (hermetic vendoring)
     ↓
-vendor/modules.txt (canonical module list)
+backend/vendor/modules.txt (canonical module list)
     ↓
 Makefile: go run -mod=vendor (hermetic execution)
     ↓
@@ -94,7 +94,7 @@ GOCACHE=$(mktemp -d)
 
 Sequence:
 
-1. Clean build (preserves `vendor/`)
+1. Clean build (preserves `backend/vendor/`)
 2. Generate code with vendored tools
 3. Verify determinism (`git diff --exit-code`)
 4. Build binary offline
@@ -108,9 +108,9 @@ Sequence:
 Checks (behavior-based, not string-based):
 
 1. `make -n generate` uses `go run -mod=vendor`
-2. `vendor/modules.txt` lists `oapi-codegen`
-3. `vendor/github.com/oapi-codegen/` directory exists
-4. `tools.go` imports the generator
+2. `backend/vendor/modules.txt` lists `oapi-codegen`
+3. `backend/vendor/github.com/oapi-codegen/` directory exists
+4. `backend/tools.go` imports the generator
 
 **Usage**: Run this guard whenever workflow changes could affect code generation policy.
 
@@ -134,7 +134,7 @@ git diff --exit-code -- internal/api internal/control/http/v3
 
 ### CI Proof
 
-See [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) - step
+See [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) - step
 "Hermetic Build Proof (Adversarial-Grade)"
 
 Every push proves the guarantee under adversarial conditions.
@@ -215,7 +215,7 @@ This guarantee is **mechanically enforced**, not manually maintained:
 - **Adversarial proof** runs on every push
 - **Quality gates** enforce invariants before merge
 
-**Future-proof**: Adding new code generators requires updating `tools.go` + vendoring. The gates will catch violations.
+**Future-proof**: Adding new code generators requires updating `backend/tools.go` + vendoring. The gates will catch violations.
 
 ---
 
