@@ -445,6 +445,16 @@ func TestV3Contract_SessionState_TerminalOutcomeMatrix(t *testing.T) {
 			wantReason: string(model.RTuneTimeout),
 			wantDetail: "deadline exceeded",
 		},
+		{
+			name:        "failed_process_startup_detail_inferred_from_debug",
+			state:       model.SessionFailed,
+			reason:      model.RProcessEnded,
+			detailCode:  model.DNone,
+			detailDebug: "process died during startup: upstream stream ended prematurely",
+			wantState:   "FAILED",
+			wantReason:  string(model.RProcessEnded),
+			wantDetail:  "upstream stream ended prematurely",
+		},
 	}
 
 	for _, tc := range cases {

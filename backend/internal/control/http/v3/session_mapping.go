@@ -52,6 +52,16 @@ func mapDetailCode(code model.ReasonDetailCode) string {
 		return "sweeper_forced_stop_stuck"
 	case model.DInternalInvariantBreach:
 		return "internal invariant breach"
+	case model.DProcessEndedStartup:
+		return "process ended during startup"
+	case model.DProcessExitedUnexpectedly:
+		return "process exited unexpectedly"
+	case model.DUpstreamEndedPrematurely:
+		return "upstream stream ended prematurely"
+	case model.DUpstreamInputOpenFailed:
+		return "failed to open upstream input"
+	case model.DInvalidUpstreamInput:
+		return "invalid upstream input data"
 	default:
 		return ""
 	}

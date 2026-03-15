@@ -95,6 +95,8 @@ type LocalAdapter struct {
 	mu           sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
+	// processDetails keeps the last meaningful failure summary for a handle.
+	processDetails map[ports.RunHandle]string
 }
 
 // NewLocalAdapter creates a new adapter instance.
@@ -249,6 +251,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		lastKnownFPS:              make(map[string]fpsCacheEntry),
 		FPSCacheTTL:               fpsCacheTTL,
 		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
+		processDetails:            make(map[ports.RunHandle]string),
 	}
 }
 
@@ -441,6 +444,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
 	a.mu.Lock()
 	a.activeProcs[handle] = cmd
+	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
 	go a.monitorProcess(ctx, handle, cmd, stderr, spec.SessionID)
@@ -501,7 +505,11 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 					Msg("ffmpeg first segment write observed")
 			}
 		}
-		a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizeFFmpegLogLine(line)).Msg("ffmpeg output")
+		sanitizedLine := sanitizeFFmpegLogLine(line)
+		if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
+			a.recordProcessDetail(handle, detail)
+		}
+		a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
 		wd.ParseLine(line)
 	}
 	if scanErr := scanner.Err(); scanErr != nil {
@@ -520,8 +528,11 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 	}
 
 	if procErr != nil {
+		a.recordProcessDetail(handle, summarizeProcessExit(procErr))
 		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
+		return
 	}
+	a.clearProcessDetail(handle)
 }
 
 func (a *LocalAdapter) writeFirstFrameMarker(sessionID string) {
@@ -628,6 +639,7 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	if exists {
 		delete(a.activeProcs, handle)
 	}
+	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
 	if !exists {
@@ -649,7 +661,7 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 	if !exists {
 		return ports.HealthStatus{
 			Healthy:   false,
-			Message:   "process not found",
+			Message:   a.processStatusMessage(handle, "process not found"),
 			LastCheck: time.Now(),
 		}
 	}
@@ -659,7 +671,7 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 		a.mu.Unlock()
 		return ports.HealthStatus{
 			Healthy:   false,
-			Message:   "process not initialized",
+			Message:   a.processStatusMessage(handle, "process not initialized"),
 			LastCheck: time.Now(),
 		}
 	}
@@ -673,7 +685,7 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 		}
 		return ports.HealthStatus{
 			Healthy:   false,
-			Message:   msg,
+			Message:   a.processStatusMessage(handle, msg),
 			LastCheck: time.Now(),
 		}
 	}
@@ -705,4 +717,77 @@ func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
 
 func envBool(key string, defaultValue bool) bool {
 	return config.ParseBool(key, defaultValue)
+}
+
+func (a *LocalAdapter) recordProcessDetail(handle ports.RunHandle, detail string) {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	current := a.processDetails[handle]
+	if processDetailPriority(detail) >= processDetailPriority(current) {
+		a.processDetails[handle] = detail
+	}
+}
+
+func (a *LocalAdapter) clearProcessDetail(handle ports.RunHandle) {
+	a.mu.Lock()
+	delete(a.processDetails, handle)
+	a.mu.Unlock()
+}
+
+func (a *LocalAdapter) processStatusMessage(handle ports.RunHandle, fallback string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if detail := strings.TrimSpace(a.processDetails[handle]); detail != "" {
+		delete(a.processDetails, handle)
+		return detail
+	}
+	return fallback
+}
+
+func processDetailPriority(detail string) int {
+	switch detail {
+	case "upstream stream ended prematurely":
+		return 40
+	case "failed to open upstream input", "upstream input/output error":
+		return 30
+	case "invalid upstream input data":
+		return 20
+	case "process exited unexpectedly":
+		return 10
+	default:
+		return 0
+	}
+}
+
+func summarizeFFmpegFailureLine(line string) string {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	switch {
+	case strings.Contains(lower, "stream ends prematurely"):
+		return "upstream stream ended prematurely"
+	case strings.Contains(lower, "error opening input files"),
+		strings.Contains(lower, "error opening input file"),
+		strings.Contains(lower, "error opening input:"):
+		if strings.Contains(lower, "input/output error") {
+			return "upstream input/output error"
+		}
+		return "failed to open upstream input"
+	case strings.Contains(lower, "invalid data found when processing input"):
+		return "invalid upstream input data"
+	}
+	return ""
+}
+
+func summarizeProcessExit(procErr error) string {
+	if procErr == nil {
+		return ""
+	}
+	var exitErr *exec.ExitError
+	if errors.As(procErr, &exitErr) {
+		return fmt.Sprintf("process exit code %d", exitErr.ExitCode())
+	}
+	return "process exited unexpectedly"
 }

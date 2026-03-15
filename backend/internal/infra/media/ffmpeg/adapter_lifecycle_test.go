@@ -69,6 +69,52 @@ func TestMonitorProcess_RemovesHandleOnNaturalExit(t *testing.T) {
 	assert.False(t, exists)
 }
 
+func TestMonitorProcess_SurfacesMeaningfulExitDetail(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		5*time.Second,
+		"",
+	)
+
+	cmd := exec.Command("sh", "-c", "printf '[http @ 0x1] Stream ends prematurely at 0\\nError opening input files: Input/output error\\n' 1>&2; exit 1")
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+
+	handle := ports.RunHandle("session-1b-321")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-1b")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitorProcess did not finish in time")
+	}
+
+	status := adapter.Health(context.Background(), handle)
+	assert.False(t, status.Healthy)
+	assert.Equal(t, "upstream stream ended prematurely", status.Message)
+}
+
 func TestHealth_ExitedProcessInMapIsUnhealthyAndCleanedUp(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",

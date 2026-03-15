@@ -46,7 +46,7 @@ type finalOutcome struct {
 const (
 	defaultPlaylistReadyTimeout         = 60 * time.Second
 	defaultSafariPlaylistReadyTimeout   = 30 * time.Second
-	defaultRecoveryPlaylistReadyTimeout = 20 * time.Second
+	defaultRecoveryPlaylistReadyTimeout = 35 * time.Second
 	defaultVODPlaylistReadyTimeout      = 2 * time.Minute
 )
 

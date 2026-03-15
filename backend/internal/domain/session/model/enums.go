@@ -123,12 +123,17 @@ const (
 type ReasonDetailCode string
 
 const (
-	DNone                    ReasonDetailCode = "D_NONE"
-	DContextCanceled         ReasonDetailCode = "D_CONTEXT_CANCELED"
-	DDeadlineExceeded        ReasonDetailCode = "D_DEADLINE_EXCEEDED"
-	DRecordingComplete       ReasonDetailCode = "D_RECORDING_COMPLETE"
-	DSweeperForcedStopStuck  ReasonDetailCode = "D_SWEEPER_FORCED_STOP_STUCK"
-	DInternalInvariantBreach ReasonDetailCode = "D_INTERNAL_INVARIANT_BREACH"
+	DNone                      ReasonDetailCode = "D_NONE"
+	DContextCanceled           ReasonDetailCode = "D_CONTEXT_CANCELED"
+	DDeadlineExceeded          ReasonDetailCode = "D_DEADLINE_EXCEEDED"
+	DRecordingComplete         ReasonDetailCode = "D_RECORDING_COMPLETE"
+	DSweeperForcedStopStuck    ReasonDetailCode = "D_SWEEPER_FORCED_STOP_STUCK"
+	DInternalInvariantBreach   ReasonDetailCode = "D_INTERNAL_INVARIANT_BREACH"
+	DProcessEndedStartup       ReasonDetailCode = "D_PROCESS_ENDED_STARTUP"
+	DProcessExitedUnexpectedly ReasonDetailCode = "D_PROCESS_EXITED_UNEXPECTEDLY"
+	DUpstreamEndedPrematurely  ReasonDetailCode = "D_UPSTREAM_ENDED_PREMATURELY"
+	DUpstreamInputOpenFailed   ReasonDetailCode = "D_UPSTREAM_INPUT_OPEN_FAILED"
+	DInvalidUpstreamInput      ReasonDetailCode = "D_INVALID_UPSTREAM_INPUT"
 )
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).

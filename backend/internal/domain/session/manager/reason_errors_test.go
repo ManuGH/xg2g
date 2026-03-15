@@ -73,6 +73,13 @@ func TestClassifyReason(t *testing.T) {
 			wantDetail: "playlist not ready after 10s",
 		},
 		{
+			name:       "process ended during startup with upstream eof",
+			err:        newReasonError(model.RProcessEnded, "process died during startup: upstream stream ended prematurely", nil),
+			wantReason: model.RProcessEnded,
+			wantCode:   model.DUpstreamEndedPrematurely,
+			wantDetail: "process died during startup: upstream stream ended prematurely",
+		},
+		{
 			name:       "context canceled",
 			err:        context.Canceled,
 			wantReason: model.RCancelled,
@@ -122,8 +129,9 @@ func TestClassifyReason_ProcessExit(t *testing.T) {
 		t.Skip("no exec exit error available")
 	}
 
-	reason, _, detail := classifyReason(err)
+	reason, code, detail := classifyReason(err)
 	require.Equal(t, model.RProcessEnded, reason)
+	require.Equal(t, model.DProcessExitedUnexpectedly, code)
 	require.True(t, strings.Contains(detail, "process exit code 2"))
 }
 

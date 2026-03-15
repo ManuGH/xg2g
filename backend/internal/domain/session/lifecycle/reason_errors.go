@@ -14,10 +14,10 @@ import (
 )
 
 type reasonError struct {
-	reason model.ReasonCode
+	reason      model.ReasonCode
 	detailCode  model.ReasonDetailCode
 	detailDebug string
-	err    error
+	err         error
 }
 
 func (e *reasonError) Error() string {
@@ -75,7 +75,11 @@ func ClassifyReason(err error) (model.ReasonCode, model.ReasonDetailCode, string
 	}
 
 	if reason, detailCode, detailDebug, ok := ReasonFromError(err); ok {
-		return reason, detailCode, sanitizeDetail(detailDebug)
+		detailDebug = sanitizeDetail(detailDebug)
+		if detailCode == "" || detailCode == model.DNone {
+			detailCode = inferReasonDetailCode(reason, detailDebug)
+		}
+		return reason, detailCode, detailDebug
 	}
 
 	if errors.Is(err, context.Canceled) {
@@ -103,10 +107,12 @@ func ClassifyReason(err error) (model.ReasonCode, model.ReasonDetailCode, string
 
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return model.RProcessEnded, model.DNone, fmt.Sprintf("process exit code %d", exitErr.ExitCode())
+		detailDebug := fmt.Sprintf("process exit code %d", exitErr.ExitCode())
+		return model.RProcessEnded, inferReasonDetailCode(model.RProcessEnded, detailDebug), detailDebug
 	}
 
-	return model.RUnknown, model.DNone, sanitizeDetail(err.Error())
+	detailDebug := sanitizeDetail(err.Error())
+	return model.RUnknown, inferReasonDetailCode(model.RUnknown, detailDebug), detailDebug
 }
 
 func ReasonFromError(err error) (model.ReasonCode, model.ReasonDetailCode, string, bool) {
@@ -131,4 +137,37 @@ func sanitizeDetail(detail string) string {
 		return clean[:maxLen] + "..."
 	}
 	return clean
+}
+
+func inferReasonDetailCode(reason model.ReasonCode, detailDebug string) model.ReasonDetailCode {
+	if detailDebug == "" {
+		return model.DNone
+	}
+
+	lower := strings.ToLower(detailDebug)
+
+	switch {
+	case strings.Contains(lower, "upstream stream ended prematurely"):
+		return model.DUpstreamEndedPrematurely
+	case strings.Contains(lower, "failed to open upstream input"),
+		strings.Contains(lower, "upstream input/output error"):
+		return model.DUpstreamInputOpenFailed
+	case strings.Contains(lower, "invalid upstream input data"):
+		return model.DInvalidUpstreamInput
+	}
+
+	if reason == model.RProcessEnded {
+		switch {
+		case strings.Contains(lower, "process died during startup"):
+			return model.DProcessEndedStartup
+		case strings.Contains(lower, "process exit code"),
+			strings.Contains(lower, "process exited unexpectedly"),
+			strings.Contains(lower, "process exited"),
+			strings.Contains(lower, "process not running"),
+			strings.Contains(lower, "process not found"):
+			return model.DProcessExitedUnexpectedly
+		}
+	}
+
+	return model.DNone
 }

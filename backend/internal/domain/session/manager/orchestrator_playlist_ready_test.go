@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
 func TestCheckPlaylistReadyAt_LiveRequiresConfiguredSegmentCount(t *testing.T) {
@@ -147,5 +148,19 @@ seg_000002.m4s
 	}
 	if ready {
 		t.Fatal("expected fMP4 live playlist without init segment to stay not ready")
+	}
+}
+
+func TestPlaylistReadyTimeout_UsesExtendedTimeoutForRecoveryProfiles(t *testing.T) {
+	orch := &Orchestrator{}
+
+	timeout := orch.playlistReadyTimeout(model.ProfileSpec{Name: profiles.ProfileRepair}, false)
+	if timeout != defaultRecoveryPlaylistReadyTimeout {
+		t.Fatalf("expected repair profile timeout %v, got %v", defaultRecoveryPlaylistReadyTimeout, timeout)
+	}
+
+	timeout = orch.playlistReadyTimeout(model.ProfileSpec{Name: profiles.ProfileSafariDirty}, false)
+	if timeout != defaultRecoveryPlaylistReadyTimeout {
+		t.Fatalf("expected safari_dirty timeout %v, got %v", defaultRecoveryPlaylistReadyTimeout, timeout)
 	}
 }

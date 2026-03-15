@@ -2,7 +2,7 @@
 # xg2g Artifacts Policy - Clean by Construction
 # ==============================================================================
 # All ephemeral build/test outputs must be routed to these directories.
-artifacts/
+/artifacts/
 tmp/
 logs/
 .runtime-bin/
