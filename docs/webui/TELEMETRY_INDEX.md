@@ -1,6 +1,6 @@
 # Telemetry Traceability Index
 
-This document maps system states to the Normative Telemetry Events defined in `contracts/telemetry.schema.json`.
+This document maps system states to the Normative Telemetry Events defined in `backend/contracts/telemetry.schema.json`.
 
 ## Contract Consumption (`ui.contract.consumed`)
 

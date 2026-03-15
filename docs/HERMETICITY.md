@@ -39,9 +39,9 @@ No warm cache masking missing vendored dependencies.
 
 All build-time tools hermetically vendored:
 
-- Tools declared in [`tools.go`](../../tools.go)
-- Vendored in `vendor/github.com/oapi-codegen/`
-- Verified via `vendor/modules.txt` (canonical source)
+- Tools declared in [`backend/tools.go`](../backend/tools.go)
+- Vendored in `backend/vendor/github.com/oapi-codegen/`
+- Verified via `backend/vendor/modules.txt` (canonical source)
 
 ### 5. No External Tool Installation
 
@@ -69,7 +69,7 @@ Generated code (deterministic output)
 
 ### CTO Gate: Contract Enforcement
 
-**Script**: [`scripts/ci/ctogate_hermetic_codegen.sh`](../../scripts/ci/ctogate_hermetic_codegen.sh)
+**Script**: [`backend/scripts/ci/ctogate_hermetic_codegen.sh`](../backend/scripts/ci/ctogate_hermetic_codegen.sh)
 
 - **Allow-list**: Codegen steps must use `make generate` only
 - **Global forbid**: Blocks direct `oapi-codegen`, `go install`, `curl`/`wget` invocations
@@ -126,7 +126,7 @@ GOPROXY=off GOSUMDB=off GOVCS=*:off GOTOOLCHAIN=local \
 
 # Verify determinism
 make generate
-git diff --exit-code -- internal/api internal/control/http/v3
+git diff --exit-code -- backend/internal/api backend/internal/control/http/v3
 
 # Verify hermetic invariants
 make verify-hermetic-codegen
@@ -134,7 +134,7 @@ make verify-hermetic-codegen
 
 ### CI Proof
 
-See [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) - step
+See [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) - step
 "Hermetic Build Proof (Adversarial-Grade)"
 
 Every push proves the guarantee under adversarial conditions.
