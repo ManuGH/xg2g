@@ -72,6 +72,24 @@ func TestNormalizeInput_NormalizesRequestedIntent(t *testing.T) {
 	}
 }
 
+func TestNormalizeInput_NormalizesHostPressureBand(t *testing.T) {
+	t.Parallel()
+
+	input := DecisionInput{
+		Policy: Policy{
+			Host: HostPolicy{
+				PressureBand: playbackprofile.HostPressureBand(" CONSTRAINED "),
+			},
+		},
+		Capabilities: Capabilities{Version: 1},
+	}
+
+	normalized := NormalizeInput(input)
+	if normalized.Policy.Host.PressureBand != playbackprofile.HostPressureConstrained {
+		t.Fatalf("expected constrained host pressure band, got %q", normalized.Policy.Host.PressureBand)
+	}
+}
+
 // INV-NORM-003: Edge Trimming, Case Folding, and Ordering.
 // Normalization is NON-DESTRUCTIVE: preserves interior content byte-for-byte.
 // Only edges are trimmed, case is folded, slices are ordered/deduped.

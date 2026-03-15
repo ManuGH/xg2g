@@ -275,10 +275,9 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			} else {
 				// CPU Fallback (Safe Quality)
 				spec.VideoCodec = "libx264"
-				spec.VideoCRF = 18
+				applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
 				spec.VideoMaxRateK = 8000
 				spec.VideoBufSizeK = 16000
-				spec.Preset = "veryfast"
 			}
 		}
 
@@ -324,7 +323,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.TranscodeVideo = true
 		spec.Deinterlace = true
 		spec.LLHLS = true
-		spec.VideoCRF = 23
+		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
 		spec.AudioBitrateK = 192
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
@@ -350,10 +349,9 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			spec.VideoBufSizeK = 40000
 		} else {
 			spec.VideoCodec = "libx264"
-			spec.VideoCRF = 18
+			applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentRepair))
 			spec.VideoMaxRateK = 8000
 			spec.VideoBufSizeK = 16000
-			spec.Preset = "veryfast"
 		}
 
 		if dvrWindowSec > 0 {
@@ -362,7 +360,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 	case ProfileDVR:
 		spec.TranscodeVideo = true
 		spec.Deinterlace = true
-		spec.VideoCRF = 23
+		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}
@@ -445,7 +443,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		// RESCUE MODE: Force Transcode to repair timestamps/GOP
 		spec.TranscodeVideo = true
 		spec.Deinterlace = false // Keep simple unless needed
-		spec.VideoCRF = 24       // Slightly lower qual for speed?
+		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentRepair))
 		spec.VideoMaxWidth = 1280
 		spec.AudioBitrateK = 192 // Ensure audio is clean too
 	}
@@ -511,4 +509,9 @@ func envPreset(key, defaultValue string) string {
 	default:
 		return defaultValue
 	}
+}
+
+func applyH264VideoLadder(spec *model.ProfileSpec, rung playbackprofile.QualityRung) {
+	spec.VideoCRF = playbackprofile.VideoCRFForRung(rung)
+	spec.Preset = playbackprofile.VideoPresetForRung(rung)
 }

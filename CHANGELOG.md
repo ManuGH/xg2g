@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Release Notes
+
+- Playback decisions now follow an intent-based profile strategy with a quality ladder for audio and video.
+- The Web player now derives client capabilities via runtime browser probing instead of relying only on user-agent heuristics.
+- Operators can now override playback behavior per source, including forced intents, maximum quality rungs, and disabled client fallbacks.
+- The system now reacts to host pressure and can automatically downgrade profiles under load to keep playback serviceable.
+- Playback startup failures are now classified through structured input preflight diagnostics with clearer fallback behavior.
+- Playback telemetry now exposes quality rungs, host overrides, operator rules, target profiles, and preflight reasons across API and player traces.
+
+### Technical Notes
+
+- Decision, session trace, OpenAPI, and WebUI contracts were extended with a consistent playback observability model.
+- Profile resolution, canonicalization, and hash stability were expanded to support variant-aware caching and deterministic target profiles.
+- Client matrix fixtures, table-driven tests, and hysteresis-based host pressure handling now cover the new playback decision paths.
+- Configuration surfaces and ops documentation were extended for playback operator rules and the new diagnostic fields.
+
 ### Bug Fixes
 
 - Lock Duration preservation on probe failure

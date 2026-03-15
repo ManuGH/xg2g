@@ -31,6 +31,7 @@ func Decide(ctx context.Context, input DecisionInput, schemaType string) (int, *
 	// Phase 3: Decision table evaluation (first match wins)
 	// (Returns Mode and ReasonCodes per ADR-P8)
 	mode, reasons, rules := evaluateDecision(pred, input.Capabilities, input.Policy)
+	mode = applyOperatorModeOverride(mode, pred, input.Policy)
 
 	// Phase 4: Build decision response
 	decision := buildDecision(mode, pred, input, reasons, rules)
@@ -173,19 +174,40 @@ func buildDecision(mode Mode, pred Predicates, input DecisionInput, reasons []Re
 		Constraints:   []string{}, // Always empty array (no constraints in P4-2)
 		Reasons:       reasons,
 		Trace: Trace{
-			RequestID:       input.RequestID,
-			RequestedIntent: playbackprofile.PublicIntentName(targetProfile.requestedIntent),
-			ResolvedIntent:  playbackprofile.PublicIntentName(targetProfile.resolvedIntent),
-			QualityRung:     string(targetProfile.qualityRung),
-			DegradedFrom:    playbackprofile.PublicIntentName(targetProfile.degradedFrom),
-			RuleHits:        rules,
-			Why:             why,
+			RequestID:           input.RequestID,
+			RequestedIntent:     playbackprofile.PublicIntentName(targetProfile.requestedIntent),
+			ResolvedIntent:      playbackprofile.PublicIntentName(targetProfile.resolvedIntent),
+			QualityRung:         string(targetProfile.qualityRung),
+			AudioQualityRung:    string(targetProfile.audioQualityRung),
+			VideoQualityRung:    string(targetProfile.videoQualityRung),
+			DegradedFrom:        playbackprofile.PublicIntentName(targetProfile.degradedFrom),
+			ForcedIntent:        playbackprofile.PublicIntentName(targetProfile.forcedIntent),
+			MaxQualityRung:      string(targetProfile.maxQualityRung),
+			OverrideApplied:     targetProfile.operatorOverrideUsed,
+			HostPressureBand:    string(targetProfile.hostPressureBand),
+			HostOverrideApplied: targetProfile.hostOverrideApplied,
+			RuleHits:            rules,
+			Why:                 why,
 		},
 		SelectedOutputURL:  selURL,
 		SelectedOutputKind: selKind,
 	}
 
 	return decision
+}
+
+func applyOperatorModeOverride(mode Mode, pred Predicates, policy Policy) Mode {
+	forcedIntent := playbackprofile.NormalizeRequestedIntent(string(policy.Operator.ForceIntent))
+	if forcedIntent != playbackprofile.IntentRepair {
+		return mode
+	}
+	if mode == ModeDeny {
+		return mode
+	}
+	if pred.TranscodePossible {
+		return ModeTranscode
+	}
+	return mode
 }
 
 // buildSelected constructs the selected formats.

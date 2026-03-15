@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/validate"
 )
@@ -264,6 +265,51 @@ func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 				v.AddError("APITokens", "unknown scope", scope)
 			}
 		}
+	}
+
+	validatePlaybackOperatorRules(v, cfg.Playback.Operator.SourceRules)
+}
+
+func validatePlaybackOperatorRules(v *validate.Validator, rules []PlaybackOperatorRuleConfig) {
+	for i, rule := range rules {
+		prefix := "Playback.Operator.SourceRules"
+		if strings.TrimSpace(rule.Name) == "" {
+			v.AddError(prefix, "rule name must not be empty", i)
+		}
+
+		mode := normalizePlaybackOperatorRuleMode(rule.Mode)
+		if mode == "" {
+			v.AddError(prefix, "mode must be one of live, recording, any", rule.Mode)
+		}
+
+		hasExact := strings.TrimSpace(rule.ServiceRef) != ""
+		hasPrefix := strings.TrimSpace(rule.ServiceRefPrefix) != ""
+		if hasExact == hasPrefix {
+			v.AddError(prefix, "exactly one of service_ref or service_ref_prefix must be set", rule.Name)
+		}
+
+		if force := strings.TrimSpace(rule.ForceIntent); force != "" && playbackprofile.NormalizeRequestedIntent(force) == playbackprofile.IntentUnknown {
+			v.AddError(prefix, "force_intent must be one of direct, compatible, quality, repair", force)
+		}
+		if rung := strings.TrimSpace(rule.MaxQualityRung); rung != "" && playbackprofile.NormalizeQualityRung(rung) == playbackprofile.RungUnknown {
+			v.AddError(prefix, "max_quality_rung must be a known playback quality rung", rung)
+		}
+		if strings.TrimSpace(rule.ForceIntent) == "" && strings.TrimSpace(rule.MaxQualityRung) == "" && rule.DisableClientFallback == nil {
+			v.AddError(prefix, "rule must define at least one override field", rule.Name)
+		}
+	}
+}
+
+func normalizePlaybackOperatorRuleMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "any":
+		return "any"
+	case "live":
+		return "live"
+	case "recording":
+		return "recording"
+	default:
+		return ""
 	}
 }
 

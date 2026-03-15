@@ -10,11 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	admissionmonitor "github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -196,6 +198,46 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		assert.NotEmpty(t, dto.RequestId)
 		assert.NotEmpty(t, dto.SessionId)
 	})
+
+	t.Run("DTO_Mapping_ExposesExplicitVideoLadderForVideoTranscode", func(t *testing.T) {
+		serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/rec-video-ladder.ts"
+		recordingID := recservice.EncodeRecordingID(serviceRef)
+
+		svc := new(MockRecordingsService)
+		svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+			Duration:   1800,
+			Container:  "mp4",
+			VideoCodec: "vp9",
+			AudioCodec: "aac",
+		}, nil)
+
+		s := createTestServerDTO(svc)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
+
+		s.GetRecordingPlaybackInfo(w, r, recordingID)
+
+		require.Equal(t, http.StatusOK, w.Code)
+
+		var raw map[string]any
+		err := json.Unmarshal(w.Body.Bytes(), &raw)
+		require.NoError(t, err)
+
+		dec, ok := raw["decision"].(map[string]any)
+		require.True(t, ok)
+		trace, ok := dec["trace"].(map[string]any)
+		require.True(t, ok)
+		target, ok := dec["targetProfile"].(map[string]any)
+		require.True(t, ok)
+		video, ok := target["video"].(map[string]any)
+		require.True(t, ok)
+
+		assert.Equal(t, "compatible_video_h264_crf23_fast", trace["qualityRung"])
+		assert.Equal(t, "compatible_video_h264_crf23_fast", trace["videoQualityRung"])
+		assert.Nil(t, trace["audioQualityRung"])
+		assert.Equal(t, float64(23), video["crf"])
+		assert.Equal(t, "fast", video["preset"])
+	})
 }
 
 // Regression Test: ID Ownership
@@ -269,6 +311,127 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "compatible", trace["requestProfile"])
 	assert.Equal(t, dec["targetProfileHash"], trace["targetProfileHash"])
+	assert.Equal(t, "compatible", trace["resolvedIntent"])
+	assert.Equal(t, "compatible_hls_ts", trace["qualityRung"])
+}
+
+func TestGetRecordingPlaybackInfo_OperatorForceIntentThreadsIntoDecision(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/force-repair.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+		Container:  "mp4",
+		VideoCodec: "h264",
+		AudioCodec: "aac",
+	}, nil)
+
+	cfg := config.AppConfig{}
+	cfg.FFmpeg.Bin = "/usr/bin/ffmpeg"
+	cfg.HLS.Root = "/tmp/hls"
+	cfg.Playback.Operator.ForceIntent = "repair"
+	s := &Server{cfg: cfg, recordingsService: svc}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
+	s.GetRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "transcode", dec["mode"])
+}
+
+func TestGetRecordingPlaybackInfo_PerSourceOperatorForceIntentThreadsIntoDecision(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/source-force-repair.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+		Container:  "mp4",
+		VideoCodec: "h264",
+		AudioCodec: "aac",
+	}, nil)
+
+	cfg := config.AppConfig{}
+	cfg.FFmpeg.Bin = "/usr/bin/ffmpeg"
+	cfg.HLS.Root = "/tmp/hls"
+	cfg.Playback.Operator.SourceRules = []config.PlaybackOperatorRuleConfig{
+		{
+			Name:        "problem-recording-source",
+			Mode:        "recording",
+			ServiceRef:  serviceRef,
+			ForceIntent: "repair",
+		},
+	}
+	s := &Server{cfg: cfg, recordingsService: svc}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
+	s.GetRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "transcode", dec["mode"])
+
+	trace, ok := dec["trace"].(map[string]any)
+	require.True(t, ok)
+	operator, ok := trace["operator"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "repair", operator["forcedIntent"])
+	assert.Equal(t, "problem-recording-source", operator["ruleName"])
+	assert.Equal(t, "recording", operator["ruleScope"])
+	assert.Equal(t, true, operator["overrideApplied"])
+}
+
+func TestGetRecordingPlaybackInfo_HostPressureThreadsIntoDecisionTrace(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/host-pressure.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+		Container:  "mp4",
+		VideoCodec: "h264",
+		AudioCodec: "ac3",
+	}, nil)
+
+	s := createTestServerDTO(svc)
+	s.admissionState = &MockAdmissionState{Tuners: 2, Sessions: 0, Transcodes: 0}
+	s.hostPressureMonitor = admissionmonitor.NewResourceMonitor(8, 2, 1.5)
+	s.hostPressureTracker = hardware.NewPressureTracker()
+	for i := 0; i < 15; i++ {
+		s.hostPressureMonitor.ObserveCPULoad(999)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info?profile=quality", nil)
+	s.GetRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+	trace, ok := dec["trace"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "critical", trace["hostPressureBand"])
+	assert.Equal(t, true, trace["hostOverrideApplied"])
+	assert.Equal(t, "quality", trace["degradedFrom"])
+	assert.Equal(t, "compatible", trace["resolvedIntent"])
 }
 
 func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {
@@ -278,10 +441,15 @@ func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":1,
+			"capabilitiesVersion":2,
 			"container":["mpegts","ts"],
 			"videoCodecs":["h264"],
-			"audioCodecs":["aac"]
+			"audioCodecs":["aac"],
+			"hlsEngines":["native"],
+			"preferredHlsEngine":"native",
+			"runtimeProbeUsed":true,
+			"runtimeProbeVersion":1,
+			"clientFamilyFallback":"safari_native"
 		}
 	}`
 
@@ -293,6 +461,84 @@ func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {
 
 	assert.NotEqual(t, http.StatusBadRequest, w.Code, "valid live serviceRef should not fail as invalid recording id")
 	assert.NotContains(t, w.Body.String(), "Invalid recording ID format")
+}
+
+func TestPostLivePlaybackInfo_RuntimeProbeThreadsClientCapabilityTrace(t *testing.T) {
+	svc := new(MockRecordingsService)
+	s := createTestServerDTO(svc)
+
+	body := `{
+		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
+		"capabilities":{
+			"capabilitiesVersion":2,
+			"container":["mp4","ts"],
+			"videoCodecs":["hevc","h264"],
+			"audioCodecs":["aac","mp3","ac3"],
+			"supportsHls":true,
+			"supportsRange":true,
+			"deviceType":"web",
+			"hlsEngines":["native"],
+			"preferredHlsEngine":"native",
+			"runtimeProbeUsed":true,
+			"runtimeProbeVersion":1,
+			"clientFamilyFallback":"safari_native"
+		}
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info?profile=quality", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	s.PostLivePlaybackInfo(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+	trace, ok := dec["trace"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "runtime_plus_family", trace["clientCapsSource"])
+	assert.Equal(t, "safari_native", trace["clientFamily"])
+}
+
+func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testing.T) {
+	svc := new(MockRecordingsService)
+	s := createTestServerDTO(svc)
+
+	body := `{
+		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
+		"capabilities":{
+			"capabilitiesVersion":2,
+			"container":["mp4","ts"],
+			"videoCodecs":["h264"],
+			"audioCodecs":["aac","mp3"],
+			"deviceType":"web",
+			"clientFamilyFallback":"ios_safari_native"
+		}
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	s.PostLivePlaybackInfo(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+	trace, ok := dec["trace"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "family_fallback", trace["clientCapsSource"])
+	assert.Equal(t, "ios_safari_native", trace["clientFamily"])
 }
 
 func TestPostLivePlaybackInfo_InvalidServiceRef_RejectsNonLiveFormat(t *testing.T) {

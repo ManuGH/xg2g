@@ -567,14 +567,28 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 			model.CtxKeySourceType: "tuner",
 		},
 		PlaybackTrace: &model.PlaybackTrace{
-			RequestProfile:    "compatible",
-			RequestedIntent:   "quality",
-			ResolvedIntent:    "compatible",
-			QualityRung:       "compatible_audio_aac_256_stereo",
-			DegradedFrom:      "quality",
-			ClientPath:        "hlsjs",
-			InputKind:         "tuner",
-			TargetProfileHash: "trace-hash-1",
+			RequestProfile:      "compatible",
+			RequestedIntent:     "quality",
+			ResolvedIntent:      "compatible",
+			QualityRung:         "compatible_video_h264_crf23_fast",
+			AudioQualityRung:    "compatible_audio_aac_256_stereo",
+			VideoQualityRung:    "compatible_video_h264_crf23_fast",
+			DegradedFrom:        "quality",
+			HostPressureBand:    "constrained",
+			HostOverrideApplied: true,
+			ClientPath:          "hlsjs",
+			InputKind:           "tuner",
+			PreflightReason:     "invalid_ts",
+			PreflightDetail:     "sync_miss",
+			TargetProfileHash:   "trace-hash-1",
+			Operator: &model.PlaybackOperatorTrace{
+				ForcedIntent:           "repair",
+				MaxQualityRung:         "repair_audio_aac_192_stereo",
+				ClientFallbackDisabled: true,
+				RuleName:               "problem-channel",
+				RuleScope:              "live",
+				OverrideApplied:        true,
+			},
 			Source: &playbackprofile.SourceProfile{
 				Container:        "mpegts",
 				VideoCodec:       "h264",
@@ -589,8 +603,10 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 				Container: "mpegts",
 				Packaging: playbackprofile.PackagingTS,
 				Video: playbackprofile.VideoTarget{
-					Mode:  playbackprofile.MediaModeCopy,
-					Codec: "h264",
+					Mode:   playbackprofile.MediaModeTranscode,
+					Codec:  "h264",
+					CRF:    23,
+					Preset: "fast",
 				},
 				Audio: playbackprofile.AudioTarget{
 					Mode:        playbackprofile.MediaModeTranscode,
@@ -611,7 +627,7 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 				Container:  "mpegts",
 				Packaging:  "ts",
 				HWAccel:    "none",
-				VideoMode:  "copy",
+				VideoMode:  "transcode",
 				VideoCodec: "h264",
 				AudioMode:  "transcode",
 				AudioCodec: "aac",
@@ -648,13 +664,36 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.NotNil(t, resp.Trace.ResolvedIntent)
 	require.Equal(t, "compatible", *resp.Trace.ResolvedIntent)
 	require.NotNil(t, resp.Trace.QualityRung)
-	require.Equal(t, "compatible_audio_aac_256_stereo", *resp.Trace.QualityRung)
+	require.Equal(t, "compatible_video_h264_crf23_fast", *resp.Trace.QualityRung)
+	require.NotNil(t, resp.Trace.AudioQualityRung)
+	require.Equal(t, "compatible_audio_aac_256_stereo", *resp.Trace.AudioQualityRung)
+	require.NotNil(t, resp.Trace.VideoQualityRung)
+	require.Equal(t, "compatible_video_h264_crf23_fast", *resp.Trace.VideoQualityRung)
 	require.NotNil(t, resp.Trace.DegradedFrom)
 	require.Equal(t, "quality", *resp.Trace.DegradedFrom)
+	require.NotNil(t, resp.Trace.HostPressureBand)
+	require.Equal(t, "constrained", *resp.Trace.HostPressureBand)
+	require.NotNil(t, resp.Trace.HostOverrideApplied)
+	require.True(t, *resp.Trace.HostOverrideApplied)
+	require.NotNil(t, resp.Trace.Operator)
+	require.NotNil(t, resp.Trace.Operator.ForcedIntent)
+	require.Equal(t, "repair", *resp.Trace.Operator.ForcedIntent)
+	require.NotNil(t, resp.Trace.Operator.MaxQualityRung)
+	require.Equal(t, "repair_audio_aac_192_stereo", *resp.Trace.Operator.MaxQualityRung)
+	require.NotNil(t, resp.Trace.Operator.RuleName)
+	require.Equal(t, "problem-channel", *resp.Trace.Operator.RuleName)
+	require.NotNil(t, resp.Trace.Operator.RuleScope)
+	require.Equal(t, "live", *resp.Trace.Operator.RuleScope)
+	require.True(t, resp.Trace.Operator.ClientFallbackDisabled)
+	require.True(t, resp.Trace.Operator.OverrideApplied)
 	require.NotNil(t, resp.Trace.ClientPath)
 	require.Equal(t, "hlsjs", *resp.Trace.ClientPath)
 	require.NotNil(t, resp.Trace.InputKind)
 	require.Equal(t, "tuner", *resp.Trace.InputKind)
+	require.NotNil(t, resp.Trace.PreflightReason)
+	require.Equal(t, "invalid_ts", *resp.Trace.PreflightReason)
+	require.NotNil(t, resp.Trace.PreflightDetail)
+	require.Equal(t, "sync_miss", *resp.Trace.PreflightDetail)
 	require.NotNil(t, resp.Trace.Source)
 	require.Equal(t, "mpegts", resp.Trace.Source.Container)
 	require.Equal(t, "h264", resp.Trace.Source.VideoCodec)
@@ -666,6 +705,10 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.NotNil(t, resp.Trace.TargetProfile)
 	require.Equal(t, "mpegts", resp.Trace.TargetProfile.Container)
 	require.Equal(t, "ts", resp.Trace.TargetProfile.Packaging)
+	require.Equal(t, "transcode", resp.Trace.TargetProfile.Video.Mode)
+	require.Equal(t, "h264", resp.Trace.TargetProfile.Video.Codec)
+	require.Equal(t, 23, resp.Trace.TargetProfile.Video.Crf)
+	require.Equal(t, "fast", resp.Trace.TargetProfile.Video.Preset)
 	require.Equal(t, "transcode", resp.Trace.TargetProfile.Audio.Mode)
 	require.Equal(t, "aac", resp.Trace.TargetProfile.Audio.Codec)
 	require.Equal(t, 256, resp.Trace.TargetProfile.Audio.BitrateKbps)
@@ -673,7 +716,7 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.NotNil(t, resp.Trace.FfmpegPlan)
 	require.Equal(t, "transcode", resp.Trace.FfmpegPlan.AudioMode)
 	require.Equal(t, "aac", resp.Trace.FfmpegPlan.AudioCodec)
-	require.Equal(t, "copy", resp.Trace.FfmpegPlan.VideoMode)
+	require.Equal(t, "transcode", resp.Trace.FfmpegPlan.VideoMode)
 	require.Equal(t, "h264", resp.Trace.FfmpegPlan.VideoCodec)
 	require.NotNil(t, resp.Trace.FirstFrameAtMs)
 	require.Equal(t, 1700000000000, *resp.Trace.FirstFrameAtMs)
@@ -681,6 +724,51 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.Equal(t, 1, *resp.Trace.FallbackCount)
 	require.NotNil(t, resp.Trace.LastFallbackReason)
 	require.Equal(t, "client_report:code=3", *resp.Trace.LastFallbackReason)
+}
+
+func TestV3Contract_TerminalSessionGoneIncludesPreflightTrace(t *testing.T) {
+	s, st := newV3TestServer(t, t.TempDir())
+	sessionID := "550e8400-e29b-41d4-a716-446655440099"
+
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:         sessionID,
+		ServiceRef:        "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:           model.ProfileSpec{Name: "high"},
+		State:             model.SessionFailed,
+		Reason:            model.RUpstreamCorrupt,
+		ReasonDetailCode:  model.DNone,
+		ReasonDetailDebug: "preflight failed invalid_ts: sync_miss",
+		PlaybackTrace: &model.PlaybackTrace{
+			RequestProfile:  "compatible",
+			PreflightReason: "invalid_ts",
+			PreflightDetail: "sync_miss",
+			StopReason:      string(model.RUpstreamCorrupt),
+			StopClass:       model.PlaybackStopClassInput,
+		},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID, nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
+	})
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusGone, rr.Code)
+	validateOpenAPIResponse(t, loadOpenAPIDoc(t), req, rr, nil)
+
+	var problemBody map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &problemBody))
+	traceAny, ok := problemBody["trace"]
+	require.True(t, ok, "trace missing from terminal problem")
+	trace, ok := traceAny.(map[string]any)
+	require.True(t, ok, "trace should be an object")
+	require.Equal(t, "invalid_ts", trace["preflightReason"])
+	require.Equal(t, "sync_miss", trace["preflightDetail"])
+	require.Equal(t, string(model.RUpstreamCorrupt), trace["stopReason"])
+	require.Equal(t, string(model.PlaybackStopClassInput), trace["stopClass"])
 }
 
 func TestV3Contract_HLS(t *testing.T) {

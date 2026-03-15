@@ -31,11 +31,11 @@ func TestPreflightTS_SyncOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected preflight success, got error: %v", err)
 	}
-	if !result.ok {
-		t.Fatalf("expected preflight ok, got false (reason=%s)", result.reason)
+	if !result.OK {
+		t.Fatalf("expected preflight ok, got false (reason=%s)", result.Reason)
 	}
-	if result.bytes < 188*3 {
-		t.Fatalf("expected at least %d bytes, got %d", 188*3, result.bytes)
+	if result.Bytes < 188*3 {
+		t.Fatalf("expected at least %d bytes, got %d", 188*3, result.Bytes)
 	}
 }
 
@@ -52,8 +52,11 @@ func TestPreflightTS_SyncMiss(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected preflight error, got nil")
 	}
-	if result.reason != "sync_miss" {
-		t.Fatalf("expected sync_miss, got %q", result.reason)
+	if result.Reason != ports.PreflightReasonInvalidTS {
+		t.Fatalf("expected invalid_ts, got %q", result.Reason)
+	}
+	if result.Detail != "sync_miss" {
+		t.Fatalf("expected sync_miss detail, got %q", result.Detail)
 	}
 }
 
@@ -70,8 +73,30 @@ func TestPreflightTS_ShortRead(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected preflight error, got nil")
 	}
-	if result.reason != "short_read" {
-		t.Fatalf("expected short_read, got %q", result.reason)
+	if result.Reason != ports.PreflightReasonCorruptInput {
+		t.Fatalf("expected corrupt_input, got %q", result.Reason)
+	}
+	if result.Detail != "short_read" {
+		t.Fatalf("expected short_read detail, got %q", result.Detail)
+	}
+}
+
+func TestPreflightTS_HTTPUnauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "")
+	result, err := adapter.preflightTS(context.Background(), srv.URL)
+	if err == nil {
+		t.Fatalf("expected preflight error, got nil")
+	}
+	if result.Reason != ports.PreflightReasonUnauthorized {
+		t.Fatalf("expected unauthorized, got %q", result.Reason)
+	}
+	if result.Detail != "http_status_401" {
+		t.Fatalf("expected http_status_401 detail, got %q", result.Detail)
 	}
 }
 
@@ -79,9 +104,9 @@ func TestSelectStreamURL_FallbackOffFails(t *testing.T) {
 	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "")
 
 	calls := 0
-	preflight := func(ctx context.Context, rawURL string) (preflightResult, error) {
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
 		calls++
-		return preflightResult{ok: false, bytes: 0, reason: "sync_miss"}, errors.New("no ts")
+		return ports.NewPreflightResult("sync_miss", 0, 0, 0, 17999), errors.New("no ts")
 	}
 
 	_, err := adapter.selectStreamURLWithPreflight(
@@ -97,6 +122,13 @@ func TestSelectStreamURL_FallbackOffFails(t *testing.T) {
 	if !errors.Is(err, ports.ErrNoValidTS) {
 		t.Fatalf("expected ErrNoValidTS, got %v", err)
 	}
+	var pErr *ports.PreflightError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("expected PreflightError, got %T", err)
+	}
+	if got := pErr.StructuredResult().Reason; got != ports.PreflightReasonInvalidTS {
+		t.Fatalf("expected invalid_ts structured reason, got %q", got)
+	}
 	if calls != 1 {
 		t.Fatalf("expected 1 preflight call, got %d", calls)
 	}
@@ -106,9 +138,9 @@ func TestSelectStreamURL_NoFallbackWhenNotRelay(t *testing.T) {
 	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
 
 	calls := 0
-	preflight := func(ctx context.Context, rawURL string) (preflightResult, error) {
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
 		calls++
-		return preflightResult{ok: false, bytes: 0, reason: "sync_miss"}, errors.New("no ts")
+		return ports.NewPreflightResult("sync_miss", 0, 0, 0, 8001), errors.New("no ts")
 	}
 
 	_, err := adapter.selectStreamURLWithPreflight(
@@ -124,6 +156,13 @@ func TestSelectStreamURL_NoFallbackWhenNotRelay(t *testing.T) {
 	if !errors.Is(err, ports.ErrNoValidTS) {
 		t.Fatalf("expected ErrNoValidTS, got %v", err)
 	}
+	var pErr *ports.PreflightError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("expected PreflightError, got %T", err)
+	}
+	if got := pErr.StructuredResult().Reason; got != ports.PreflightReasonInvalidTS {
+		t.Fatalf("expected invalid_ts structured reason, got %q", got)
+	}
 	if calls != 1 {
 		t.Fatalf("expected 1 preflight call, got %d", calls)
 	}
@@ -137,12 +176,12 @@ func TestSelectStreamURL_FallbackTo8001(t *testing.T) {
 	expectedFallback := "http://127.0.0.1:8001/" + serviceRef
 
 	calls := 0
-	preflight := func(ctx context.Context, rawURL string) (preflightResult, error) {
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
 		calls++
 		if strings.Contains(rawURL, ":17999") {
-			return preflightResult{ok: false, bytes: 0, reason: "sync_miss"}, errors.New("no ts")
+			return ports.NewPreflightResult("sync_miss", 0, 0, 0, 17999), errors.New("no ts")
 		}
-		return preflightResult{ok: true, bytes: 188 * 3}, nil
+		return ports.NewSuccessfulPreflightResult(188*3, 0, 8001), nil
 	}
 
 	got, err := adapter.selectStreamURLWithPreflight(
@@ -160,6 +199,38 @@ func TestSelectStreamURL_FallbackTo8001(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("expected 2 preflight calls, got %d", calls)
+	}
+}
+
+func TestSelectStreamURL_FallbackFailedAllStructuredResult(t *testing.T) {
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
+
+	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
+	resolved := "http://127.0.0.1:17999/" + serviceRef
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
+		return ports.NewPreflightResult("sync_miss", 0, 0, 0, 17999), errors.New("no ts")
+	}
+
+	_, err := adapter.selectStreamURLWithPreflight(
+		context.Background(),
+		"sid-4",
+		serviceRef,
+		resolved,
+		preflight,
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var pErr *ports.PreflightError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("expected PreflightError, got %T", err)
+	}
+	result := pErr.StructuredResult()
+	if result.Reason != ports.PreflightReasonFallbackFailed {
+		t.Fatalf("expected fallback_failed, got %q", result.Reason)
+	}
+	if result.Detail != "fallback_failed_all" {
+		t.Fatalf("expected fallback_failed_all detail, got %q", result.Detail)
 	}
 }
 
@@ -187,7 +258,7 @@ func TestPreflight_HttpClientWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected preflight success, got error: %v", err)
 	}
-	if !result.ok {
+	if !result.OK {
 		t.Fatalf("expected preflight ok, got false")
 	}
 }

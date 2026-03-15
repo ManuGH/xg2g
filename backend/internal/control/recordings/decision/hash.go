@@ -49,6 +49,8 @@ func (i DecisionInput) CanonicalJSONForHash() ([]byte, error) {
 		},
 		Policy: canonicalPolicy{
 			AllowTranscode: i.Policy.AllowTranscode,
+			Operator:       canonicalizeOperatorPolicy(i.Policy.Operator),
+			Host:           canonicalizeHostPolicy(i.Policy.Host),
 		},
 		RequestedIntent: string(playbackprofile.NormalizeRequestedIntent(string(i.RequestedIntent))),
 		APIVersion:      robustNorm(i.APIVersion),
@@ -88,6 +90,8 @@ func (i DecisionInput) CanonicalJSON() ([]byte, error) {
 		},
 		Policy: canonicalPolicy{
 			AllowTranscode: i.Policy.AllowTranscode,
+			Operator:       canonicalizeOperatorPolicy(i.Policy.Operator),
+			Host:           canonicalizeHostPolicy(i.Policy.Host),
 		},
 		RequestedIntent: string(playbackprofile.NormalizeRequestedIntent(string(i.RequestedIntent))),
 		APIVersion:      robustNorm(i.APIVersion),
@@ -169,5 +173,36 @@ type canonicalCapabilities struct {
 }
 
 type canonicalPolicy struct {
-	AllowTranscode bool `json:"tx"`
+	AllowTranscode bool                     `json:"tx"`
+	Operator       *canonicalOperatorPolicy `json:"operator,omitempty"`
+	Host           *canonicalHostPolicy     `json:"host,omitempty"`
+}
+
+type canonicalOperatorPolicy struct {
+	ForceIntent    string `json:"forceIntent,omitempty"`
+	MaxQualityRung string `json:"maxQualityRung,omitempty"`
+}
+
+type canonicalHostPolicy struct {
+	PressureBand string `json:"pressureBand,omitempty"`
+}
+
+func canonicalizeOperatorPolicy(policy OperatorPolicy) *canonicalOperatorPolicy {
+	forceIntent := string(playbackprofile.NormalizeRequestedIntent(string(policy.ForceIntent)))
+	maxQualityRung := string(playbackprofile.NormalizeQualityRung(string(policy.MaxQualityRung)))
+	if forceIntent == "" && maxQualityRung == "" {
+		return nil
+	}
+	return &canonicalOperatorPolicy{
+		ForceIntent:    forceIntent,
+		MaxQualityRung: maxQualityRung,
+	}
+}
+
+func canonicalizeHostPolicy(policy HostPolicy) *canonicalHostPolicy {
+	pressureBand := string(playbackprofile.NormalizeHostPressureBand(string(policy.PressureBand)))
+	if pressureBand == "" {
+		return nil
+	}
+	return &canonicalHostPolicy{PressureBand: pressureBand}
 }

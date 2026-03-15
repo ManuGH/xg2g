@@ -210,6 +210,10 @@ func buildRegistry() (*Registry, error) {
 
 		// --- STREAMING (ADR-00X) ---
 		{Path: "streaming.delivery_policy", Env: "XG2G_STREAMING_POLICY", FieldPath: "Streaming.DeliveryPolicy", Profile: ProfileSimple, Status: StatusActive, Default: "universal"},
+		{Path: "playback.operator.force_intent", Env: "XG2G_PLAYBACK_FORCE_INTENT", FieldPath: "Playback.Operator.ForceIntent", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "playback.operator.max_quality_rung", Env: "XG2G_PLAYBACK_MAX_QUALITY_RUNG", FieldPath: "Playback.Operator.MaxQualityRung", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "playback.operator.disable_client_fallback", Env: "XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", FieldPath: "Playback.Operator.DisableClientFallback", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "playback.operator.source_rules", Env: "", FieldPath: "Playback.Operator.SourceRules", Profile: ProfileAdvanced, Status: StatusActive, Default: []PlaybackOperatorRuleConfig{}},
 
 		// --- VERIFICATION ---
 		{Path: "verification.enabled", Env: "XG2G_VERIFY_ENABLED", FieldPath: "Verification.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true},

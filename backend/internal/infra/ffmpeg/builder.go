@@ -102,7 +102,15 @@ func videoTargetArgs(video ports.VideoTarget) ([]string, error) {
 		if video.BitrateKbps > 0 {
 			return append(args, "-b:v", strconv.Itoa(video.BitrateKbps)+"k"), nil
 		}
-		return append(args, "-preset", "fast", "-crf", "23"), nil
+		preset := strings.ToLower(strings.TrimSpace(video.Preset))
+		if preset == "" {
+			preset = "fast"
+		}
+		crf := video.CRF
+		if crf <= 0 {
+			crf = 23
+		}
+		return append(args, "-preset", preset, "-crf", strconv.Itoa(crf)), nil
 	default:
 		return nil, fmt.Errorf("vod: unsupported video mode %q", video.Mode)
 	}

@@ -26,7 +26,10 @@ func genericRecordingVariantHash() string {
 		Container: "mpegts",
 		Packaging: playbackprofile.PackagingTS,
 		Video: playbackprofile.VideoTarget{
-			Mode: playbackprofile.MediaModeCopy,
+			Mode:   playbackprofile.MediaModeTranscode,
+			Codec:  "h264",
+			CRF:    playbackprofile.VideoCRFForRung(playbackprofile.RungCompatibleVideoH264CRF23),
+			Preset: playbackprofile.VideoPresetForRung(playbackprofile.RungCompatibleVideoH264CRF23),
 		},
 		Audio: playbackprofile.AudioTarget{
 			Mode:        playbackprofile.MediaModeTranscode,

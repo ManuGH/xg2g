@@ -39,6 +39,13 @@ func NormalizeInput(in DecisionInput) DecisionInput {
 		},
 		Policy: Policy{
 			AllowTranscode: in.Policy.AllowTranscode,
+			Operator: OperatorPolicy{
+				ForceIntent:    playbackprofile.NormalizeRequestedIntent(string(in.Policy.Operator.ForceIntent)),
+				MaxQualityRung: playbackprofile.NormalizeQualityRung(string(in.Policy.Operator.MaxQualityRung)),
+			},
+			Host: HostPolicy{
+				PressureBand: playbackprofile.NormalizeHostPressureBand(string(in.Policy.Host.PressureBand)),
+			},
 		},
 		RequestedIntent: playbackprofile.NormalizeRequestedIntent(string(in.RequestedIntent)),
 		APIVersion:      robustNorm(in.APIVersion), // Normalize for validation + hashing

@@ -902,8 +902,8 @@ components:
       properties:
         capabilitiesVersion:
           type: integer
-          description: "Capabilities contract version (current: 1)"
-          example: 1
+          description: "Capabilities contract version (current: 2)"
+          example: 2
         container:
           type: array
           items:
@@ -947,6 +947,28 @@ components:
           type: string
           description: Client device category for policy decisions
           example: "desktop"
+        hlsEngines:
+          type: array
+          items:
+            type: string
+          description: Supported HLS playback engines (e.g. native, hlsjs)
+          example: ["native", "hlsjs"]
+        preferredHlsEngine:
+          type: string
+          description: Preferred HLS playback engine for this client (e.g. native, hlsjs)
+          example: "native"
+        runtimeProbeUsed:
+          type: boolean
+          description: Whether the capability snapshot was gathered from runtime browser probes
+          example: true
+        runtimeProbeVersion:
+          type: integer
+          description: Version of the runtime playback probe contract
+          example: 1
+        clientFamilyFallback:
+          type: string
+          description: Browser-family fallback used when the server needs conservative capability defaults
+          example: "chromium_hlsjs"
         allowTranscode:
           type: boolean
           description: Whether client allows transcoding (force bypass)
@@ -1051,7 +1073,25 @@ components:
         qualityRung:
           type: string
           nullable: true
+        audioQualityRung:
+          type: string
+          nullable: true
+        videoQualityRung:
+          type: string
+          nullable: true
         degradedFrom:
+          type: string
+          nullable: true
+        hostPressureBand:
+          type: string
+          nullable: true
+        hostOverrideApplied:
+          type: boolean
+          nullable: true
+        clientCapsSource:
+          type: string
+          nullable: true
+        clientFamily:
           type: string
           nullable: true
         sessionId:
@@ -1065,6 +1105,12 @@ components:
         inputKind:
           type: string
           nullable: true
+        preflightReason:
+          type: string
+          nullable: true
+        preflightDetail:
+          type: string
+          nullable: true
         targetProfileHash:
           type: string
           nullable: true
@@ -1072,6 +1118,8 @@ components:
           $ref: "#/components/schemas/PlaybackTargetProfile"
         ffmpegPlan:
           $ref: "#/components/schemas/PlaybackTraceFfmpegPlan"
+        operator:
+          $ref: "#/components/schemas/PlaybackTraceOperator"
         firstFrameAtMs:
           type: integer
           nullable: true
@@ -1087,6 +1135,27 @@ components:
         stopClass:
           type: string
           nullable: true
+
+    PlaybackTraceOperator:
+      type: object
+      additionalProperties: false
+      properties:
+        forcedIntent:
+          type: string
+          nullable: true
+        maxQualityRung:
+          type: string
+          nullable: true
+        ruleName:
+          type: string
+          nullable: true
+        ruleScope:
+          type: string
+          nullable: true
+        clientFallbackDisabled:
+          type: boolean
+        overrideApplied:
+          type: boolean
 
     PlaybackTraceFfmpegPlan:
       type: object
@@ -1188,6 +1257,10 @@ components:
         mode:
           type: string
         codec:
+          type: string
+        crf:
+          type: integer
+        preset:
           type: string
         width:
           type: integer

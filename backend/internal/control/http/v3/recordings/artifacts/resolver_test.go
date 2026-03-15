@@ -138,7 +138,7 @@ func TestArtifactResolver_ResolvePlaylist_UsesConcreteTargetProfile(t *testing.T
 	if spec.TargetProfile == nil {
 		t.Fatal("expected concrete target profile in VOD spec")
 	}
-	if spec.TargetProfile.Video.Mode != "copy" || spec.TargetProfile.Audio.BitrateKbps != 256 {
+	if spec.TargetProfile.Video.Mode != "transcode" || spec.TargetProfile.Video.CRF != 23 || spec.TargetProfile.Video.Preset != "fast" || spec.TargetProfile.Audio.BitrateKbps != 256 {
 		t.Fatalf("unexpected target profile passed to runner: %#v", spec.TargetProfile)
 	}
 	if spec.TargetProfile.Packaging != playbackprofile.PackagingFMP4 || spec.TargetProfile.HLS.SegmentContainer != "fmp4" {

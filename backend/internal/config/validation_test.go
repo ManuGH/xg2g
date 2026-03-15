@@ -215,3 +215,111 @@ func TestValidate_OutboundPolicy(t *testing.T) {
 		}
 	})
 }
+
+func TestValidate_PlaybackOperatorSourceRules(t *testing.T) {
+	t.Run("valid exact rule", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Playback.Operator.SourceRules = []PlaybackOperatorRuleConfig{
+			{
+				Name:        "monk-live",
+				Mode:        "live",
+				ServiceRef:  "1:0:1:ABC",
+				ForceIntent: "repair",
+			},
+		}
+		if err := Validate(cfg); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+
+	t.Run("valid prefix rule with bool override", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		disabled := true
+		cfg.Playback.Operator.SourceRules = []PlaybackOperatorRuleConfig{
+			{
+				Name:                  "recordings-safe",
+				Mode:                  "recording",
+				ServiceRefPrefix:      "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/",
+				DisableClientFallback: &disabled,
+			},
+		}
+		if err := Validate(cfg); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+
+	t.Run("missing name fails", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Playback.Operator.SourceRules = []PlaybackOperatorRuleConfig{
+			{
+				Mode:        "live",
+				ServiceRef:  "1:0:1:ABC",
+				ForceIntent: "repair",
+			},
+		}
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected error for missing rule name")
+		}
+	})
+
+	t.Run("exact and prefix together fails", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Playback.Operator.SourceRules = []PlaybackOperatorRuleConfig{
+			{
+				Name:             "broken",
+				Mode:             "live",
+				ServiceRef:       "1:0:1:ABC",
+				ServiceRefPrefix: "1:0:1:",
+				ForceIntent:      "repair",
+			},
+		}
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected error for exact+prefix matcher")
+		}
+	})
+
+	t.Run("invalid mode fails", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Playback.Operator.SourceRules = []PlaybackOperatorRuleConfig{
+			{
+				Name:        "broken",
+				Mode:        "tv",
+				ServiceRef:  "1:0:1:ABC",
+				ForceIntent: "repair",
+			},
+		}
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected error for invalid mode")
+		}
+	})
+
+	t.Run("unknown override values fail", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Playback.Operator.SourceRules = []PlaybackOperatorRuleConfig{
+			{
+				Name:           "broken",
+				Mode:           "live",
+				ServiceRef:     "1:0:1:ABC",
+				ForceIntent:    "turbo",
+				MaxQualityRung: "ultra",
+			},
+		}
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected error for unknown override values")
+		}
+	})
+
+	t.Run("missing override fields fails", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Playback.Operator.SourceRules = []PlaybackOperatorRuleConfig{
+			{
+				Name:       "noop",
+				Mode:       "any",
+				ServiceRef: "1:0:1:ABC",
+			},
+		}
+		if err := Validate(cfg); err == nil {
+			t.Fatal("expected error for noop source rule")
+		}
+	})
+}

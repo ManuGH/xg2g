@@ -9,6 +9,7 @@ import {
   type PlaybackSourceProfile,
   type PlaybackTrace as PlaybackTraceContract,
   type PlaybackTraceFfmpegPlan,
+  type PlaybackTraceOperator,
   type PlaybackTargetProfile,
 } from '../client-ts';
 import { getApiBaseUrl } from '../lib/clientWrapper';
@@ -28,7 +29,6 @@ import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
 import { debugError, debugLog, debugWarn } from '../utils/logging';
-import { detectPreferredCodecs } from '../utils/codecDetection';
 import {
   PlayerError,
   readResponseBody,
@@ -37,6 +37,8 @@ import {
   shouldForceNativeMobileHls,
   shouldPreferNativeWebKitHls
 } from '../utils/playerHelpers';
+import { detectPlaybackClientFamily } from '../utils/playbackClientFamily';
+import { probeRuntimePlaybackCapabilities } from '../utils/playbackProbe';
 import { normalizePlayerError } from '../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
 import type { AppError } from '../types/errors';
@@ -59,6 +61,9 @@ type CapabilitySnapshot = Pick<
   | 'supportsHls'
   | 'supportsRange'
   | 'allowTranscode'
+  | 'runtimeProbeUsed'
+  | 'runtimeProbeVersion'
+  | 'clientFamilyFallback'
 > & {
   hlsEngines?: string[];
   preferredHlsEngine?: string;
@@ -70,9 +75,14 @@ type PlaybackObservability = {
   requestedIntent: string | null;
   resolvedIntent: string | null;
   qualityRung: string | null;
+  audioQualityRung: string | null;
+  videoQualityRung: string | null;
   degradedFrom: string | null;
+  hostPressureBand: string | null;
+  hostOverrideApplied: boolean;
   targetProfileHash: string | null;
   targetProfile: PlaybackTargetProfile | null;
+  operator: PlaybackTraceOperator | null;
   selectedOutputKind: string | null;
 };
 
@@ -125,6 +135,11 @@ function formatFallbackSummary(trace: PlaybackTraceContract | null | undefined):
 function formatStopSummary(trace: PlaybackTraceContract | null | undefined): string {
   if (!trace) return '-';
   return [trace.stopClass || null, trace.stopReason || null].filter(Boolean).join(' · ') || '-';
+}
+
+function formatHostPressureSummary(hostPressureBand: string | null, hostOverrideApplied: boolean): string {
+  if (!hostPressureBand) return '-';
+  return hostOverrideApplied ? `${hostPressureBand} · applied` : hostPressureBand;
 }
 
 function extractPlaybackTrace(value: unknown): PlaybackTraceContract | null {
@@ -184,11 +199,17 @@ function formatQualityRungLabel(rung: string | null): string {
   return rung.split('_').join(' ');
 }
 
+function formatBooleanLabel(value: boolean): string {
+  return value ? 'yes' : 'no';
+}
+
 function formatTargetProfileSummary(target: PlaybackTargetProfile | null): string {
   if (!target) return '-';
 
   const videoMode = target.video?.mode || '-';
   const videoCodec = target.video?.codec ? `/${target.video.codec}` : '';
+  const videoCRF = target.video?.crf ? `/crf${target.video.crf}` : '';
+  const videoPreset = target.video?.preset ? `/${target.video.preset}` : '';
   const audioMode = target.audio?.mode || '-';
   const audioCodec = target.audio?.codec ? `/${target.audio.codec}` : '';
   const audioChannels = target.audio?.channels ? `/${target.audio.channels}ch` : '';
@@ -197,7 +218,7 @@ function formatTargetProfileSummary(target: PlaybackTargetProfile | null): strin
 
   return [
     packaging,
-    `v:${videoMode}${videoCodec}`,
+    `v:${videoMode}${videoCodec}${videoCRF}${videoPreset}`,
     `a:${audioMode}${audioCodec}${audioChannels}${audioBitrate}`
   ].join(' · ');
 }
@@ -222,9 +243,14 @@ function extractPlaybackObservability(
       requestedIntent: null,
       resolvedIntent: null,
       qualityRung: null,
+      audioQualityRung: null,
+      videoQualityRung: null,
       degradedFrom: null,
+      hostPressureBand: null,
+      hostOverrideApplied: false,
       targetProfileHash: null,
       targetProfile: null,
+      operator: null,
       selectedOutputKind: null,
     };
   }
@@ -235,9 +261,14 @@ function extractPlaybackObservability(
     requestedIntent: decision.trace?.requestedIntent ?? null,
     resolvedIntent: decision.trace?.resolvedIntent ?? null,
     qualityRung: decision.trace?.qualityRung ?? null,
+    audioQualityRung: decision.trace?.audioQualityRung ?? null,
+    videoQualityRung: decision.trace?.videoQualityRung ?? null,
     degradedFrom: decision.trace?.degradedFrom ?? null,
+    hostPressureBand: decision.trace?.hostPressureBand ?? null,
+    hostOverrideApplied: decision.trace?.hostOverrideApplied ?? false,
     targetProfileHash: decision.targetProfileHash ?? decision.trace?.targetProfileHash ?? null,
     targetProfile: decision.targetProfile ?? null,
+    operator: decision.trace?.operator ?? null,
     selectedOutputKind: decision.selectedOutputKind ?? null,
   };
 }
@@ -591,58 +622,23 @@ function V3Player(props: V3PlayerProps) {
 
   const gatherPlaybackCapabilities = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
-    const preferredCodecs = await detectPreferredCodecs(video);
-    const hlsJsSupported = Hls.isSupported();
-
-    const supportsNativeHls = (() => {
-      if (!video) return false;
-      try {
-        return video.canPlayType('application/vnd.apple.mpegurl') !== '';
-      } catch {
-        return false;
-      }
-    })();
-
-    const supportsAc3 = (() => {
-      if (!video) return false;
-      try {
-        return video.canPlayType('audio/mp4; codecs="ac-3"') !== '';
-      } catch {
-        return false;
-      }
-    })();
-
-    const preferNativeHls = shouldPreferNativeWebKitHls(video as VideoElementRef, hlsJsSupported);
-
-    const hlsEngines: Array<'native' | 'hlsjs'> = [];
-    if (supportsNativeHls) {
-      hlsEngines.push('native');
-    }
-    if (hlsJsSupported && !preferNativeHls) {
-      hlsEngines.push('hlsjs');
-    }
-
-    const container = ['mp4', 'ts'];
-    if (hlsJsSupported && !preferNativeHls) {
-      container.push('fmp4');
-    }
-
-    const audioCodecs = ['aac', 'mp3'];
-    if (scope === 'live' && supportsAc3) {
-      audioCodecs.push('ac3');
-    }
+    const probe = await probeRuntimePlaybackCapabilities(video, scope);
+    const clientFamilyFallback = detectPlaybackClientFamily(video);
 
     const capabilities: CapabilitySnapshot = {
       capabilitiesVersion: 2,
-      container: Array.from(new Set(container)),
-      videoCodecs: Array.from(new Set(preferredCodecs)),
-      audioCodecs: Array.from(new Set(audioCodecs)),
-      hlsEngines: hlsEngines.length > 0 ? Array.from(new Set(hlsEngines)) : undefined,
-      preferredHlsEngine: hlsEngines.length > 0 ? hlsEngines[0] : undefined,
-      supportsHls: hlsEngines.length > 0,
-      supportsRange: true,
+      container: probe.containers,
+      videoCodecs: probe.videoCodecs,
+      audioCodecs: probe.audioCodecs,
+      hlsEngines: probe.hlsEngines.length > 0 ? probe.hlsEngines : undefined,
+      preferredHlsEngine: probe.preferredHlsEngine ?? undefined,
+      supportsHls: probe.hlsEngines.length > 0,
+      supportsRange: probe.supportsRange,
       allowTranscode: true,
-      deviceType: 'web'
+      deviceType: 'web',
+      runtimeProbeUsed: probe.usedRuntimeProbe,
+      runtimeProbeVersion: probe.version,
+      clientFamilyFallback,
     };
 
     return capabilities;
@@ -1370,6 +1366,14 @@ function V3Player(props: V3PlayerProps) {
     sessionPlaybackTrace?.qualityRung ??
     playbackObservability?.qualityRung ??
     null;
+  const effectiveAudioQualityRung =
+    sessionPlaybackTrace?.audioQualityRung ??
+    playbackObservability?.audioQualityRung ??
+    null;
+  const effectiveVideoQualityRung =
+    sessionPlaybackTrace?.videoQualityRung ??
+    playbackObservability?.videoQualityRung ??
+    null;
   const effectiveDegradedFrom =
     sessionPlaybackTrace?.degradedFrom ??
     playbackObservability?.degradedFrom ??
@@ -1382,11 +1386,30 @@ function V3Player(props: V3PlayerProps) {
     sessionPlaybackTrace?.targetProfileHash ??
     playbackObservability?.targetProfileHash ??
     null;
+  const effectiveOperator =
+    sessionPlaybackTrace?.operator ??
+    playbackObservability?.operator ??
+    null;
+  const effectiveHostPressureBand =
+    sessionPlaybackTrace?.hostPressureBand ??
+    playbackObservability?.hostPressureBand ??
+    null;
+  const effectiveHostOverrideApplied =
+    sessionPlaybackTrace?.hostOverrideApplied ??
+    playbackObservability?.hostOverrideApplied ??
+    false;
+  const effectiveForcedIntent = effectiveOperator?.forcedIntent ?? null;
+  const effectiveOperatorMaxQualityRung = effectiveOperator?.maxQualityRung ?? null;
+  const effectiveOperatorRuleName = effectiveOperator?.ruleName ?? null;
+  const effectiveOperatorRuleScope = effectiveOperator?.ruleScope ?? null;
+  const effectiveClientFallbackDisabled = effectiveOperator?.clientFallbackDisabled ?? false;
+  const effectiveOperatorOverrideApplied = effectiveOperator?.overrideApplied ?? false;
   const sourceProfileSummary = formatSourceProfileSummary(sessionPlaybackTrace?.source);
   const ffmpegPlanSummary = formatFfmpegPlanSummary(sessionPlaybackTrace?.ffmpegPlan);
   const firstFrameLabel = formatFirstFrameLabel(sessionPlaybackTrace?.firstFrameAtMs);
   const fallbackSummary = formatFallbackSummary(sessionPlaybackTrace);
   const stopSummary = formatStopSummary(sessionPlaybackTrace);
+  const hostPressureSummary = formatHostPressureSummary(effectiveHostPressureBand, effectiveHostOverrideApplied);
 
   return (
     <div
@@ -1452,8 +1475,48 @@ function V3Player(props: V3PlayerProps) {
                 <span className={styles.statsValue}>{formatQualityRungLabel(effectiveQualityRung)}</span>
               </div>
               <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.audioQualityRung', { defaultValue: 'Audio Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveAudioQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.videoQualityRung', { defaultValue: 'Video Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveVideoQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.degradedFrom', { defaultValue: 'Degraded From' })}</span>
                 <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveDegradedFrom)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.hostPressure', { defaultValue: 'Host Pressure' })}</span>
+                <span className={styles.statsValue}>{effectiveHostPressureBand || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.hostOverrideApplied', { defaultValue: 'Host Override Applied' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveHostOverrideApplied)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.forcedIntent', { defaultValue: 'Forced Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveForcedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorMaxQualityRung', { defaultValue: 'Operator Max Quality' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveOperatorMaxQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorRuleName', { defaultValue: 'Operator Rule' })}</span>
+                <span className={styles.statsValue}>{effectiveOperatorRuleName || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorRuleScope', { defaultValue: 'Operator Rule Scope' })}</span>
+                <span className={styles.statsValue}>{effectiveOperatorRuleScope || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.clientFallbackDisabled', { defaultValue: 'Client Fallback Disabled' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveClientFallbackDisabled)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorOverrideApplied', { defaultValue: 'Operator Override Applied' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveOperatorOverrideApplied)}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.sourceProfile', { defaultValue: 'Source Profile' })}</span>
@@ -1561,12 +1624,18 @@ function V3Player(props: V3PlayerProps) {
               <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
             ) : null}
           </div>
-          {(stopSummary !== '-' || fallbackSummary !== '-' || ffmpegPlanSummary !== '-') && (
+          {(stopSummary !== '-' || fallbackSummary !== '-' || ffmpegPlanSummary !== '-' || hostPressureSummary !== '-') && (
             <div className={styles.errorTelemetry}>
               {stopSummary !== '-' && (
                 <div className={styles.errorTelemetryRow}>
                   <span className={styles.errorTelemetryLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
                   <span className={styles.errorTelemetryValue}>{stopSummary}</span>
+                </div>
+              )}
+              {hostPressureSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.hostPressure', { defaultValue: 'Host Pressure' })}</span>
+                  <span className={styles.errorTelemetryValue}>{hostPressureSummary}</span>
                 </div>
               )}
               {fallbackSummary !== '-' && (

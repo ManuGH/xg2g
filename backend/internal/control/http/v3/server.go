@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	admissionmonitor "github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
@@ -35,6 +36,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
 	"golang.org/x/sync/singleflight"
@@ -80,6 +82,8 @@ type Server struct {
 	libraryService         *library.Service // Media library per ADR-ENG-002
 	admission              *admission.Controller
 	admissionState         AdmissionState
+	hostPressureMonitor    *admissionmonitor.ResourceMonitor
+	hostPressureTracker    *hardware.PressureTracker
 	liveDecisionKeyring    liveDecisionKeyring
 	liveDecisionSigningKey []byte
 	liveDecisionTTL        time.Duration
@@ -143,6 +147,8 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		libraryService:         librarySvc,
 		storageMonitor:         NewStorageMonitor(),
 		admission:              admission.NewController(cfg),
+		hostPressureMonitor:    admissionmonitor.NewResourceMonitor(cfg.Limits.MaxSessions, cfg.Limits.MaxTranscodes, 1.5),
+		hostPressureTracker:    hardware.NewPressureTracker(),
 		liveDecisionKeyring:    liveDecisionKeyring,
 		liveDecisionSigningKey: signingKey,
 		liveDecisionTTL:        defaultLivePlaybackDecisionTTL,
@@ -324,7 +330,10 @@ func (s *Server) SetRuntimeContext(ctx context.Context) error {
 		s.runtimeCancel()
 	}
 	s.runtimeCtx, s.runtimeCancel = context.WithCancel(ctx)
+	runtimeCtx := s.runtimeCtx
+	hostPressureMonitor := s.hostPressureMonitor
 	s.mu.Unlock()
+	admissionmonitor.StartCPUSampler(runtimeCtx, hostPressureMonitor, 0, nil)
 	return nil
 }
 

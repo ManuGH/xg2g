@@ -10,6 +10,8 @@ func TestHashTarget_SemanticNormalization(t *testing.T) {
 			Mode:        MediaMode("TRANSCODE"),
 			Codec:       "H264",
 			BitrateKbps: 4000,
+			CRF:         23,
+			Preset:      " FAST ",
 			Width:       1920,
 			Height:      1080,
 			FPS:         25,
@@ -35,6 +37,8 @@ func TestHashTarget_SemanticNormalization(t *testing.T) {
 			Mode:        MediaModeTranscode,
 			Codec:       "h264",
 			BitrateKbps: 4000,
+			CRF:         23,
+			Preset:      "fast",
 			Width:       1920,
 			Height:      1080,
 			FPS:         25,
@@ -64,8 +68,10 @@ func TestHashTarget_DetectsMeaningfulDifferences(t *testing.T) {
 		Container: "mpegts",
 		Packaging: PackagingTS,
 		Video: VideoTarget{
-			Mode:  MediaModeCopy,
-			Codec: "h264",
+			Mode:   MediaModeTranscode,
+			Codec:  "h264",
+			CRF:    23,
+			Preset: "fast",
 		},
 		Audio: AudioTarget{
 			Mode:        MediaModeTranscode,
@@ -78,9 +84,9 @@ func TestHashTarget_DetectsMeaningfulDifferences(t *testing.T) {
 	}
 
 	changed := base
-	changed.Audio.BitrateKbps = 320
+	changed.Video.CRF = 20
 
 	if HashTarget(base) == HashTarget(changed) {
-		t.Fatal("expected bitrate change to produce a distinct target hash")
+		t.Fatal("expected video ladder change to produce a distinct target hash")
 	}
 }

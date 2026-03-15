@@ -35,22 +35,38 @@ type FFmpegPlanTrace struct {
 	AudioCodec string `json:"audioCodec,omitempty"`
 }
 
+type PlaybackOperatorTrace struct {
+	ForcedIntent           string `json:"forcedIntent,omitempty"`
+	MaxQualityRung         string `json:"maxQualityRung,omitempty"`
+	ClientFallbackDisabled bool   `json:"clientFallbackDisabled,omitempty"`
+	RuleName               string `json:"ruleName,omitempty"`
+	RuleScope              string `json:"ruleScope,omitempty"`
+	OverrideApplied        bool   `json:"overrideApplied,omitempty"`
+}
+
 type PlaybackTrace struct {
-	Source            *playbackprofile.SourceProfile         `json:"source,omitempty"`
-	RequestProfile    string                                 `json:"requestProfile,omitempty"`
-	RequestedIntent   string                                 `json:"requestedIntent,omitempty"`
-	ResolvedIntent    string                                 `json:"resolvedIntent,omitempty"`
-	QualityRung       string                                 `json:"qualityRung,omitempty"`
-	DegradedFrom      string                                 `json:"degradedFrom,omitempty"`
-	ClientPath        string                                 `json:"clientPath,omitempty"`
-	InputKind         string                                 `json:"inputKind,omitempty"`
-	TargetProfileHash string                                 `json:"targetProfileHash,omitempty"`
-	TargetProfile     *playbackprofile.TargetPlaybackProfile `json:"targetProfile,omitempty"`
-	FFmpegPlan        *FFmpegPlanTrace                       `json:"ffmpegPlan,omitempty"`
-	FirstFrameAtUnix  int64                                  `json:"firstFrameAtUnix,omitempty"`
-	Fallbacks         []PlaybackFallbackTrace                `json:"fallbacks,omitempty"`
-	StopReason        string                                 `json:"stopReason,omitempty"`
-	StopClass         PlaybackStopClass                      `json:"stopClass,omitempty"`
+	Source              *playbackprofile.SourceProfile         `json:"source,omitempty"`
+	RequestProfile      string                                 `json:"requestProfile,omitempty"`
+	RequestedIntent     string                                 `json:"requestedIntent,omitempty"`
+	ResolvedIntent      string                                 `json:"resolvedIntent,omitempty"`
+	QualityRung         string                                 `json:"qualityRung,omitempty"`
+	AudioQualityRung    string                                 `json:"audioQualityRung,omitempty"`
+	VideoQualityRung    string                                 `json:"videoQualityRung,omitempty"`
+	DegradedFrom        string                                 `json:"degradedFrom,omitempty"`
+	ClientPath          string                                 `json:"clientPath,omitempty"`
+	InputKind           string                                 `json:"inputKind,omitempty"`
+	PreflightReason     string                                 `json:"preflightReason,omitempty"`
+	PreflightDetail     string                                 `json:"preflightDetail,omitempty"`
+	TargetProfileHash   string                                 `json:"targetProfileHash,omitempty"`
+	TargetProfile       *playbackprofile.TargetPlaybackProfile `json:"targetProfile,omitempty"`
+	FFmpegPlan          *FFmpegPlanTrace                       `json:"ffmpegPlan,omitempty"`
+	Operator            *PlaybackOperatorTrace                 `json:"operator,omitempty"`
+	HostPressureBand    string                                 `json:"hostPressureBand,omitempty"`
+	HostOverrideApplied bool                                   `json:"hostOverrideApplied,omitempty"`
+	FirstFrameAtUnix    int64                                  `json:"firstFrameAtUnix,omitempty"`
+	Fallbacks           []PlaybackFallbackTrace                `json:"fallbacks,omitempty"`
+	StopReason          string                                 `json:"stopReason,omitempty"`
+	StopClass           PlaybackStopClass                      `json:"stopClass,omitempty"`
 }
 
 func (t *PlaybackTrace) Clone() *PlaybackTrace {
@@ -70,6 +86,10 @@ func (t *PlaybackTrace) Clone() *PlaybackTrace {
 	if t.FFmpegPlan != nil {
 		plan := *t.FFmpegPlan
 		cp.FFmpegPlan = &plan
+	}
+	if t.Operator != nil {
+		operator := *t.Operator
+		cp.Operator = &operator
 	}
 	if len(t.Fallbacks) > 0 {
 		cp.Fallbacks = append([]PlaybackFallbackTrace(nil), t.Fallbacks...)

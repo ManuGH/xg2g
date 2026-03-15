@@ -49,6 +49,15 @@ type ClientPlaybackProfile = ports.ClientPlaybackProfile
 // ServerTranscodeCapabilities describes what the running xg2g host can execute.
 type ServerTranscodeCapabilities = ports.ServerTranscodeCapabilities
 
+// HostCPUSnapshot captures read-only runtime CPU load context for playback decisions.
+type HostCPUSnapshot = ports.HostCPUSnapshot
+
+// HostConcurrencySnapshot captures read-only runtime concurrency context for playback decisions.
+type HostConcurrencySnapshot = ports.HostConcurrencySnapshot
+
+// HostRuntimeSnapshot combines static executable capabilities and current runtime pressure inputs.
+type HostRuntimeSnapshot = ports.HostRuntimeSnapshot
+
 // VideoTarget describes the selected output video path.
 type VideoTarget = ports.VideoTarget
 

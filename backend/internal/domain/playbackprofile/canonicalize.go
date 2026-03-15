@@ -19,8 +19,12 @@ func CanonicalizeServerCapabilities(in ServerTranscodeCapabilities) ServerTransc
 	return ports.CanonicalizeServerCapabilities(in)
 }
 
+// CanonicalizeHostRuntime normalizes the host runtime snapshot for stable comparison.
+func CanonicalizeHostRuntime(in HostRuntimeSnapshot) HostRuntimeSnapshot {
+	return ports.CanonicalizeHostRuntime(in)
+}
+
 // CanonicalizeTarget normalizes the target output profile for hashing and cache identity.
 func CanonicalizeTarget(in TargetPlaybackProfile) TargetPlaybackProfile {
 	return ports.CanonicalizeTarget(in)
 }
-

@@ -69,6 +69,57 @@ func TestOrchestrator_Observability_TuneFailure(t *testing.T) {
 	assert.NotNil(t, s.PlaybackTrace.FFmpegPlan)
 }
 
+func TestOrchestrator_Observability_PreflightFailureMapsToInput(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+	memBus := NewStubBus()
+
+	failPipe := &FailingPipeline{
+		StartErr: ports.NewPreflightError(ports.NewPreflightResult("sync_miss", 0, 0, 0, 17999)),
+	}
+
+	orch := &Orchestrator{
+		Bus:            memBus,
+		Store:          st,
+		LeaseTTL:       24 * time.Hour,
+		HeartbeatEvery: 0,
+		Owner:          "test-worker-preflight",
+		TunerSlots:     []int{0},
+		Pipeline:       failPipe,
+		LeaseKeyFunc: func(e model.StartSessionEvent) string {
+			return model.LeaseKeyService(e.ServiceRef)
+		},
+	}
+
+	evt := model.StartSessionEvent{
+		SessionID:  "sess-preflight-1",
+		ServiceRef: "ref:preflight",
+		ProfileID:  "hd",
+	}
+
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  evt.SessionID,
+		ServiceRef: evt.ServiceRef,
+		State:      model.SessionNew,
+	}))
+
+	err := orch.handleStart(ctx, evt)
+
+	assert.ErrorIs(t, err, ErrPipelineFailure)
+	assert.True(t, failPipe.StartCalled())
+
+	s, storeErr := st.GetSession(ctx, evt.SessionID)
+	require.NoError(t, storeErr)
+	assert.Equal(t, model.SessionFailed, s.State)
+	assert.Equal(t, model.RUpstreamCorrupt, s.Reason)
+	assert.Equal(t, "preflight failed invalid_ts: sync_miss", s.ReasonDetailDebug)
+	require.NotNil(t, s.PlaybackTrace)
+	assert.Equal(t, "invalid_ts", s.PlaybackTrace.PreflightReason)
+	assert.Equal(t, "sync_miss", s.PlaybackTrace.PreflightDetail)
+	assert.Equal(t, string(model.PlaybackStopClassInput), string(s.PlaybackTrace.StopClass))
+	assert.Equal(t, string(model.RUpstreamCorrupt), s.PlaybackTrace.StopReason)
+}
+
 type FailingPipeline struct {
 	StartErr    error
 	startCalled atomic.Bool

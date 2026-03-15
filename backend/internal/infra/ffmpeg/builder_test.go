@@ -157,6 +157,56 @@ func TestMapProfileToArgs_TargetProfileCanTranscodeVideoAndCopyAudio(t *testing.
 	}
 }
 
+func TestMapProfileToArgs_TargetProfileUsesExplicitVideoLadderValues(t *testing.T) {
+	spec := vod.Spec{
+		Input:      "file:///tmp/input.ts",
+		WorkDir:    "/tmp/work",
+		OutputTemp: "index.live.m3u8",
+		TargetProfile: &playbackprofile.TargetPlaybackProfile{
+			Container: "mpegts",
+			Packaging: playbackprofile.PackagingTS,
+			Video: playbackprofile.VideoTarget{
+				Mode:   playbackprofile.MediaModeTranscode,
+				Codec:  "h264",
+				CRF:    20,
+				Preset: "slow",
+			},
+			Audio: playbackprofile.AudioTarget{
+				Mode:  playbackprofile.MediaModeCopy,
+				Codec: "aac",
+			},
+			HLS: playbackprofile.HLSTarget{
+				Enabled:          true,
+				SegmentContainer: "mpegts",
+			},
+		},
+	}
+
+	args, err := mapProfileToArgs(spec)
+	if err != nil {
+		t.Fatalf("mapProfileToArgs returned error: %v", err)
+	}
+
+	wantPairs := map[string]string{
+		"-c:v":    "libx264",
+		"-preset": "slow",
+		"-crf":    "20",
+		"-c:a":    "copy",
+	}
+	for flag, want := range wantPairs {
+		found := false
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] == flag && args[i+1] == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected %s %s in args, got %v", flag, want, args)
+		}
+	}
+}
+
 func TestMapProfileToArgs_TargetProfilePackagingFMP4DefaultsSegmentType(t *testing.T) {
 	spec := vod.Spec{
 		Input:      "file:///tmp/input.ts",

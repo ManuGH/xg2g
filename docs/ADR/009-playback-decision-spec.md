@@ -22,6 +22,9 @@ The decision is a pure function of `DecisionInput`. Any "unknown" or zero-value 
 | `Capabilities.VideoCodecs` | []string | Set of allowed | Implicit Deny if not present |
 | `Capabilities.AudioCodecs` | []string | Set of allowed | Implicit Deny if not present |
 | `Policy.AllowTranscode` | bool | Boolean | If false, Transcode -> Deny |
+| `Policy.Operator.ForceIntent` | enum | Optional operator override: `direct`, `compatible`, `quality`, `repair` | Unknown normalizes to empty; may force a more conservative path when technically possible |
+| `Policy.Operator.MaxQualityRung` | enum | Optional operator ceiling for the quality ladder | Unknown normalizes to empty; only clamps to known ladder rungs |
+| `Policy.Host.PressureBand` | enum | Internal host pressure hint: `normal`, `elevated`, `constrained`, `critical` | Unknown normalizes to empty; may only downgrade optional quality, never invent unsupported playback |
 | `RequestedIntent` | enum | Optional: `direct`, `compatible`, `quality`, `repair` | Unknown normalizes to empty; target-profile resolution may default empty to `compatible` |
 
 ### 2. Output Mode Lattice (Experience Order)

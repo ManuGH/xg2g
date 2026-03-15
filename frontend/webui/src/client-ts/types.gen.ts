@@ -677,6 +677,18 @@ export type PlaybackCapabilities = {
      */
     preferredHlsEngine?: string;
     /**
+     * Whether the capability snapshot was gathered from runtime browser probes.
+     */
+    runtimeProbeUsed?: boolean;
+    /**
+     * Version of the runtime playback probe contract.
+     */
+    runtimeProbeVersion?: number;
+    /**
+     * Browser-family fallback used when the server needs conservative capability defaults.
+     */
+    clientFamilyFallback?: string;
+    /**
      * Whether client allows transcoding (force bypass)
      */
     allowTranscode?: boolean;
@@ -741,19 +753,35 @@ export type PlaybackTrace = {
     requestedIntent?: string | null;
     resolvedIntent?: string | null;
     qualityRung?: string | null;
+    audioQualityRung?: string | null;
+    videoQualityRung?: string | null;
     degradedFrom?: string | null;
+    hostPressureBand?: string | null;
+    hostOverrideApplied?: boolean | null;
+    clientCapsSource?: string | null;
+    clientFamily?: string | null;
     sessionId?: string | null;
     source?: PlaybackSourceProfile | null;
     clientPath?: string | null;
     inputKind?: string | null;
     targetProfileHash?: string | null;
     targetProfile?: PlaybackTargetProfile | null;
+    operator?: PlaybackTraceOperator | null;
     ffmpegPlan?: PlaybackTraceFfmpegPlan | null;
     firstFrameAtMs?: number | null;
     fallbackCount?: number | null;
     lastFallbackReason?: string | null;
     stopReason?: string | null;
     stopClass?: string | null;
+};
+
+export type PlaybackTraceOperator = {
+    forcedIntent?: string | null;
+    maxQualityRung?: string | null;
+    ruleName?: string | null;
+    ruleScope?: string | null;
+    clientFallbackDisabled: boolean;
+    overrideApplied: boolean;
 };
 
 export type PlaybackSourceProfile = {
@@ -792,6 +820,8 @@ export type PlaybackTargetProfile = {
 export type PlaybackTargetVideo = {
     mode: string;
     codec: string;
+    crf: number;
+    preset: string;
     width: number;
     height: number;
     fps: number;

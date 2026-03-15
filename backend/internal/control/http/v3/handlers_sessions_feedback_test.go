@@ -273,3 +273,61 @@ func TestReportPlaybackFeedback_IgnoresFallbackBeforeFirstFrame(t *testing.T) {
 	require.Equal(t, "universal", updated.Profile.Name)
 	require.Empty(t, updated.FallbackReason)
 }
+
+func TestReportPlaybackFeedback_DisableClientFallbackSkipsRestart(t *testing.T) {
+	sid := uuid.NewString()
+	hlsRoot := t.TempDir()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-disabled-001",
+			Profile: model.ProfileSpec{
+				Name:      profiles.ProfileSafari,
+				Container: "fmp4",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				Operator: &model.PlaybackOperatorTrace{
+					ForcedIntent:           "repair",
+					MaxQualityRung:         "repair_audio_aac_192_stereo",
+					ClientFallbackDisabled: true,
+					OverrideApplied:        true,
+				},
+			},
+		},
+	}
+	eventBus := newFeedbackBus()
+
+	writeFirstFrameMarker(t, hlsRoot, sid)
+
+	s := &Server{
+		cfg:     config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}},
+		v3Store: store,
+		v3Bus:   eventBus,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"error","code":3,"message":"mediaError"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	select {
+	case evt := <-eventBus.ch:
+		t.Fatalf("unexpected fallback event while disabled: %s", evt.topic)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	updated, err := store.GetSession(context.Background(), sid)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, profiles.ProfileSafari, updated.Profile.Name)
+	require.NotNil(t, updated.PlaybackTrace)
+	require.NotNil(t, updated.PlaybackTrace.Operator)
+	require.True(t, updated.PlaybackTrace.Operator.ClientFallbackDisabled)
+	require.True(t, updated.PlaybackTrace.Operator.OverrideApplied)
+	require.Equal(t, "repair", updated.PlaybackTrace.Operator.ForcedIntent)
+	require.Equal(t, "repair_audio_aac_192_stereo", updated.PlaybackTrace.Operator.MaxQualityRung)
+}

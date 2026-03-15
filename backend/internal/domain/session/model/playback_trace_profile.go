@@ -43,9 +43,11 @@ func TraceTargetProfileFromProfile(profile ProfileSpec) *playbackprofile.TargetP
 		Container: container,
 		Packaging: packaging,
 		Video: playbackprofile.VideoTarget{
-			Mode:  videoMode,
-			Codec: videoCodec,
-			Width: profile.VideoMaxWidth,
+			Mode:   videoMode,
+			Codec:  videoCodec,
+			CRF:    traceVideoCRF(profile),
+			Preset: traceVideoPreset(profile),
+			Width:  profile.VideoMaxWidth,
 		},
 		Audio: playbackprofile.AudioTarget{
 			Mode:        playbackprofile.MediaModeTranscode,
@@ -59,6 +61,32 @@ func TraceTargetProfileFromProfile(profile ProfileSpec) *playbackprofile.TargetP
 			SegmentContainer: segmentContainer,
 		},
 		HWAccel: hwAccel,
+	}
+}
+
+func TraceVideoQualityRungFromProfile(profile ProfileSpec) string {
+	if !profile.TranscodeVideo {
+		return ""
+	}
+	if strings.TrimSpace(profile.HWAccel) != "" {
+		return ""
+	}
+	if traceResolvedVideoCodec(profile) != "h264" {
+		return ""
+	}
+
+	switch {
+	case profile.VideoCRF == playbackprofile.VideoCRFForRung(playbackprofile.RungQualityVideoH264CRF20) &&
+		strings.EqualFold(strings.TrimSpace(profile.Preset), playbackprofile.VideoPresetForRung(playbackprofile.RungQualityVideoH264CRF20)):
+		return string(playbackprofile.RungQualityVideoH264CRF20)
+	case profile.VideoCRF == playbackprofile.VideoCRFForRung(playbackprofile.RungRepairVideoH264CRF28) &&
+		strings.EqualFold(strings.TrimSpace(profile.Preset), playbackprofile.VideoPresetForRung(playbackprofile.RungRepairVideoH264CRF28)):
+		return string(playbackprofile.RungRepairVideoH264CRF28)
+	case profile.VideoCRF == playbackprofile.VideoCRFForRung(playbackprofile.RungCompatibleVideoH264CRF23) &&
+		strings.EqualFold(strings.TrimSpace(profile.Preset), playbackprofile.VideoPresetForRung(playbackprofile.RungCompatibleVideoH264CRF23)):
+		return string(playbackprofile.RungCompatibleVideoH264CRF23)
+	default:
+		return ""
 	}
 }
 
@@ -96,6 +124,46 @@ func TraceFFmpegPlanFromProfile(profile ProfileSpec, inputKind string, segmentSe
 		_ = segmentSeconds
 	}
 	return plan
+}
+
+func traceVideoCRF(profile ProfileSpec) int {
+	if !profile.TranscodeVideo {
+		return 0
+	}
+	if strings.TrimSpace(profile.HWAccel) != "" {
+		return 0
+	}
+	if traceResolvedVideoCodec(profile) != "h264" {
+		return 0
+	}
+	if profile.VideoCRF > 0 {
+		return profile.VideoCRF
+	}
+	return 0
+}
+
+func traceVideoPreset(profile ProfileSpec) string {
+	if !profile.TranscodeVideo {
+		return ""
+	}
+	if strings.TrimSpace(profile.HWAccel) != "" {
+		return ""
+	}
+	if traceResolvedVideoCodec(profile) != "h264" {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(profile.Preset))
+}
+
+func traceResolvedVideoCodec(profile ProfileSpec) string {
+	codec := normalizeTraceVideoCodec(profile.VideoCodec)
+	if codec != "" {
+		return codec
+	}
+	if profile.TranscodeVideo {
+		return "h264"
+	}
+	return ""
 }
 
 func TraceStopClassFromReason(reason ReasonCode) PlaybackStopClass {

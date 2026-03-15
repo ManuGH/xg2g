@@ -254,6 +254,13 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
+	if sess.PlaybackTrace != nil && sess.PlaybackTrace.Operator != nil && sess.PlaybackTrace.Operator.ClientFallbackDisabled {
+		log.L().Warn().
+			Str("sessionId", sessionId.String()).
+			Msg("ignoring playback feedback because client fallback is disabled by persisted operator override")
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
 
 	// Atomic Update via Store
 	var changed bool
@@ -452,6 +459,13 @@ func ensureSessionPlaybackTrace(session *model.SessionRecord) *model.PlaybackTra
 	return session.PlaybackTrace
 }
 
+func ensurePlaybackOperatorTrace(trace *model.PlaybackTrace) *model.PlaybackOperatorTrace {
+	if trace.Operator == nil {
+		trace.Operator = &model.PlaybackOperatorTrace{}
+	}
+	return trace.Operator
+}
+
 func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hlsRoot string) *PlaybackTrace {
 	if session == nil {
 		return nil
@@ -496,10 +510,26 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	if qualityRung != "" {
 		dto.QualityRung = &qualityRung
 	}
+	audioQualityRung := strings.TrimSpace(trace.AudioQualityRung)
+	if audioQualityRung != "" {
+		dto.AudioQualityRung = &audioQualityRung
+	}
+	videoQualityRung := strings.TrimSpace(trace.VideoQualityRung)
+	if videoQualityRung != "" {
+		dto.VideoQualityRung = &videoQualityRung
+	}
 
 	degradedFrom := strings.TrimSpace(trace.DegradedFrom)
 	if degradedFrom != "" {
 		dto.DegradedFrom = &degradedFrom
+	}
+	hostPressureBand := strings.TrimSpace(trace.HostPressureBand)
+	if hostPressureBand != "" {
+		dto.HostPressureBand = &hostPressureBand
+	}
+	if trace.HostOverrideApplied {
+		hostOverrideApplied := true
+		dto.HostOverrideApplied = &hostOverrideApplied
 	}
 
 	if trace.Source != nil {
@@ -521,6 +551,14 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	if inputKind != "" {
 		dto.InputKind = &inputKind
 	}
+	preflightReason := strings.TrimSpace(trace.PreflightReason)
+	if preflightReason != "" {
+		dto.PreflightReason = &preflightReason
+	}
+	preflightDetail := strings.TrimSpace(trace.PreflightDetail)
+	if preflightDetail != "" {
+		dto.PreflightDetail = &preflightDetail
+	}
 
 	target := trace.TargetProfile
 	if target != nil {
@@ -529,6 +567,26 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 		if hash != "" {
 			dto.TargetProfileHash = &hash
 		}
+	}
+
+	if trace.Operator != nil {
+		operator := PlaybackTraceOperator{
+			ClientFallbackDisabled: trace.Operator.ClientFallbackDisabled,
+			OverrideApplied:        trace.Operator.OverrideApplied,
+		}
+		if forcedIntent := strings.TrimSpace(trace.Operator.ForcedIntent); forcedIntent != "" {
+			operator.ForcedIntent = &forcedIntent
+		}
+		if maxQualityRung := strings.TrimSpace(trace.Operator.MaxQualityRung); maxQualityRung != "" {
+			operator.MaxQualityRung = &maxQualityRung
+		}
+		if ruleName := strings.TrimSpace(trace.Operator.RuleName); ruleName != "" {
+			operator.RuleName = &ruleName
+		}
+		if ruleScope := strings.TrimSpace(trace.Operator.RuleScope); ruleScope != "" {
+			operator.RuleScope = &ruleScope
+		}
+		dto.Operator = &operator
 	}
 
 	if trace.FFmpegPlan != nil {

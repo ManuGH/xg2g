@@ -54,7 +54,18 @@ type Capabilities struct {
 
 // Policy represents server policy constraints.
 type Policy struct {
-	AllowTranscode bool `json:"tx"`
+	AllowTranscode bool           `json:"tx"`
+	Operator       OperatorPolicy `json:"operator,omitempty"`
+	Host           HostPolicy     `json:"host,omitempty"`
+}
+
+type OperatorPolicy struct {
+	ForceIntent    playbackprofile.PlaybackIntent `json:"forceIntent,omitempty"`
+	MaxQualityRung playbackprofile.QualityRung    `json:"maxQualityRung,omitempty"`
+}
+
+type HostPolicy struct {
+	PressureBand playbackprofile.HostPressureBand `json:"pressureBand,omitempty"`
 }
 
 // Decision represents a successful playback decision (HTTP 200).
@@ -87,14 +98,21 @@ type Output struct {
 // Trace contains request tracing metadata.
 // Structured to ensure low-cardinality observability.
 type Trace struct {
-	RequestID       string   `json:"requestId"`
-	InputHash       string   `json:"inputHash"` // SHA-256 of canonical input
-	RequestedIntent string   `json:"requestedIntent,omitempty"`
-	ResolvedIntent  string   `json:"resolvedIntent,omitempty"`
-	QualityRung     string   `json:"qualityRung,omitempty"`
-	DegradedFrom    string   `json:"degradedFrom,omitempty"`
-	RuleHits        []string `json:"ruleHits"` // Ordered list of rules evaluated
-	Why             []Reason `json:"why"`      // Structured explanation
+	RequestID           string   `json:"requestId"`
+	InputHash           string   `json:"inputHash"` // SHA-256 of canonical input
+	RequestedIntent     string   `json:"requestedIntent,omitempty"`
+	ResolvedIntent      string   `json:"resolvedIntent,omitempty"`
+	QualityRung         string   `json:"qualityRung,omitempty"`
+	AudioQualityRung    string   `json:"audioQualityRung,omitempty"`
+	VideoQualityRung    string   `json:"videoQualityRung,omitempty"`
+	DegradedFrom        string   `json:"degradedFrom,omitempty"`
+	ForcedIntent        string   `json:"forcedIntent,omitempty"`
+	MaxQualityRung      string   `json:"maxQualityRung,omitempty"`
+	OverrideApplied     bool     `json:"overrideApplied,omitempty"`
+	HostPressureBand    string   `json:"hostPressureBand,omitempty"`
+	HostOverrideApplied bool     `json:"hostOverrideApplied,omitempty"`
+	RuleHits            []string `json:"ruleHits"` // Ordered list of rules evaluated
+	Why                 []Reason `json:"why"`      // Structured explanation
 }
 
 // Reason provides structured explanation for decisions.

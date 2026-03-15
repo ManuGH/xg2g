@@ -288,12 +288,16 @@ func (o *Orchestrator) startPipeline(
 			return "", newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, "", err)
 		}
 		if errors.Is(err, ports.ErrNoValidTS) {
-			detail := "preflight failed no valid ts"
-			var pErr *ports.PreflightError
-			if errors.As(err, &pErr) && pErr.Reason != "" {
-				detail = "preflight failed no valid ts: " + pErr.Reason
+			mappedErr, pErr, ok := preflightStartReasonError(err)
+			if ok {
+				result := pErr.StructuredResult()
+				o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(_ *model.SessionRecord, trace *model.PlaybackTrace) {
+					trace.PreflightReason = string(result.Reason)
+					trace.PreflightDetail = result.FailureDetail()
+				})
+				return "", mappedErr
 			}
-			return "", newReasonError(model.RPipelineStartFailed, detail, err)
+			return "", newReasonError(model.RPipelineStartFailed, "preflight failed no valid ts", err)
 		}
 		return "", newReasonError(model.RPipelineStartFailed, "pipeline start failed", err)
 	}

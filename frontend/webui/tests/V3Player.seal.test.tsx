@@ -114,6 +114,9 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
     expect(streamInfoBody.capabilities.audioCodecs).toContain('ac3');
     expect(streamInfoBody.capabilities.hlsEngines).toContain('native');
     expect(streamInfoBody.capabilities.preferredHlsEngine).toBe('native');
+    expect(streamInfoBody.capabilities.runtimeProbeUsed).toBe(true);
+    expect(streamInfoBody.capabilities.runtimeProbeVersion).toBe(1);
+    expect(streamInfoBody.capabilities.clientFamilyFallback).toBe('safari_native');
   });
 
   it('surfaces session trace telemetry in the live stats overlay', async () => {
@@ -140,15 +143,26 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
         requestProfile: 'compatible',
         requestedIntent: 'quality',
         resolvedIntent: 'compatible',
-        qualityRung: 'compatible_audio_aac_256_stereo',
+        qualityRung: 'compatible_video_h264_crf23_fast',
+        videoQualityRung: 'compatible_video_h264_crf23_fast',
         degradedFrom: 'quality',
+        hostPressureBand: 'constrained',
+        hostOverrideApplied: true,
+        operator: {
+          forcedIntent: 'repair',
+          maxQualityRung: 'repair_audio_aac_192_stereo',
+          ruleName: 'problem-channel',
+          ruleScope: 'live',
+          clientFallbackDisabled: true,
+          overrideApplied: true
+        },
         inputKind: 'tuner',
         targetProfileHash: 'trace-live-hash-1',
         targetProfile: {
           container: 'mpegts',
           packaging: 'ts',
           hwAccel: 'none',
-          video: { mode: 'copy', codec: 'h264', width: 1920, height: 1080, fps: 25 },
+          video: { mode: 'transcode', codec: 'h264', crf: 23, preset: 'fast', width: 1920, height: 1080, fps: 25 },
           audio: { mode: 'transcode', codec: 'aac', channels: 2, bitrateKbps: 256, sampleRate: 48000 },
           hls: { enabled: true, segmentContainer: 'mpegts', segmentSeconds: 6 }
         },
@@ -157,7 +171,7 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
           container: 'mpegts',
           packaging: 'ts',
           hwAccel: 'none',
-          videoMode: 'copy',
+          videoMode: 'transcode',
           videoCodec: 'h264',
           audioMode: 'transcode',
           audioCodec: 'aac'
@@ -187,10 +201,15 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
     expect(await screen.findByText(/mpegts · h264 · 1920x1080 · 25fps · a:aac\/2ch\/@256k/i)).toBeInTheDocument();
     expect(screen.getAllByText('quality').length).toBeGreaterThan(0);
     expect(screen.getAllByText('compatible').length).toBeGreaterThan(0);
-    expect(screen.getByText(/compatible audio aac 256 stereo/i)).toBeInTheDocument();
-    expect(screen.getByText(/tuner · ts · v:copy\/h264 · a:transcode\/aac · none/i)).toBeInTheDocument();
+    expect(screen.getAllByText('repair').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('constrained').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/compatible video h264 crf23 fast/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/repair audio aac 192 stereo/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/tuner · ts · v:transcode\/h264 · a:transcode\/aac · none/i)).toBeInTheDocument();
+    expect(screen.getByText(/ts · v:transcode\/h264\/crf23\/fast · a:transcode\/aac\/2ch@256k/i)).toBeInTheDocument();
     expect(screen.getByText('trace-live-hash-1')).toBeInTheDocument();
     expect(screen.getByText('1 · client_report:code=3')).toBeInTheDocument();
+    expect(screen.getAllByText('yes').length).toBeGreaterThanOrEqual(3);
   });
 
   it('surfaces terminal stop telemetry in the player error toast', async () => {

@@ -134,6 +134,9 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     expect(request?.body?.audioCodecs).toEqual(['aac', 'mp3']);
     expect(request?.body?.hlsEngines).toContain('native');
     expect(request?.body?.preferredHlsEngine).toBe('native');
+    expect(request?.body?.runtimeProbeUsed).toBe(true);
+    expect(request?.body?.runtimeProbeVersion).toBe(1);
+    expect(request?.body?.clientFamilyFallback).toBe('safari_native');
 
     await waitFor(() => {
       const playlistProbe = fetchSpy.mock.calls.find((call: any[]) =>
@@ -156,7 +159,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
           container: 'mpegts',
           packaging: 'ts',
           hwAccel: 'none',
-          video: { mode: 'copy', codec: 'h264', width: 0, height: 0, fps: 0 },
+          video: { mode: 'transcode', codec: 'h264', crf: 23, preset: 'fast', width: 0, height: 0, fps: 0 },
           audio: { mode: 'transcode', codec: 'aac', channels: 2, bitrateKbps: 256, sampleRate: 48000 },
           hls: { enabled: true, segmentContainer: 'mpegts', segmentSeconds: 6 }
         },
@@ -165,9 +168,21 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
           requestProfile: 'compatible',
           requestedIntent: 'quality',
           resolvedIntent: 'compatible',
-          qualityRung: 'compatible_audio_aac_256_stereo',
+          qualityRung: 'compatible_video_h264_crf23_fast',
+          audioQualityRung: 'compatible_audio_aac_256_stereo',
+          videoQualityRung: 'compatible_video_h264_crf23_fast',
           degradedFrom: 'quality',
-          targetProfileHash: 'hash-observe-1'
+          hostPressureBand: 'constrained',
+          hostOverrideApplied: true,
+          targetProfileHash: 'hash-observe-1',
+          operator: {
+            forcedIntent: 'repair',
+            maxQualityRung: 'repair_audio_aac_192_stereo',
+            ruleName: 'problem-recording-source',
+            ruleScope: 'recording',
+            clientFallbackDisabled: true,
+            overrideApplied: true
+          }
         }
       }
     };
@@ -196,9 +211,16 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     expect(await screen.findByText('hash-observe-1')).toBeInTheDocument();
     expect(screen.getAllByText('quality').length).toBeGreaterThan(0);
     expect(screen.getAllByText('compatible').length).toBeGreaterThan(0);
-    expect(screen.getByText(/compatible audio aac 256 stereo/i)).toBeInTheDocument();
-    expect(screen.getByText(/ts · v:copy\/h264 · a:transcode\/aac\/2ch@256k/i)).toBeInTheDocument();
+    expect(screen.getAllByText('repair').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('constrained').length).toBeGreaterThan(0);
+    expect(screen.getByText('problem-recording-source')).toBeInTheDocument();
+    expect(screen.getByText('recording')).toBeInTheDocument();
+    expect(screen.getAllByText(/compatible video h264 crf23 fast/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/compatible audio aac 256 stereo/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/repair audio aac 192 stereo/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/ts · v:transcode\/h264\/crf23\/fast · a:transcode\/aac\/2ch@256k/i)).toBeInTheDocument();
     expect(screen.getByText('CPU')).toBeInTheDocument();
+    expect(screen.getAllByText('yes').length).toBeGreaterThanOrEqual(3);
   });
 
   it('renders legacy request profile ids with the clearer public label', async () => {

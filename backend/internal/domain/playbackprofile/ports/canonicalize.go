@@ -93,6 +93,43 @@ func CanonicalizeServerCapabilities(in ServerTranscodeCapabilities) ServerTransc
 	return out
 }
 
+// CanonicalizeHostRuntime normalizes the host runtime snapshot for stable comparison.
+func CanonicalizeHostRuntime(in HostRuntimeSnapshot) HostRuntimeSnapshot {
+	out := in
+	out.Capabilities = CanonicalizeServerCapabilities(out.Capabilities)
+	if out.CPU.Load1m < 0 {
+		out.CPU.Load1m = 0
+	}
+	if out.CPU.CoreCount < 0 {
+		out.CPU.CoreCount = 0
+	}
+	if out.CPU.SampleCount < 0 {
+		out.CPU.SampleCount = 0
+	}
+	if out.CPU.WindowSeconds < 0 {
+		out.CPU.WindowSeconds = 0
+	}
+	if out.Concurrency.TunersAvailable < 0 {
+		out.Concurrency.TunersAvailable = 0
+	}
+	if out.Concurrency.SessionsActive < 0 {
+		out.Concurrency.SessionsActive = 0
+	}
+	if out.Concurrency.TranscodesActive < 0 {
+		out.Concurrency.TranscodesActive = 0
+	}
+	if out.Concurrency.ActiveVAAPITokens < 0 {
+		out.Concurrency.ActiveVAAPITokens = 0
+	}
+	if out.Concurrency.MaxSessions < 0 {
+		out.Concurrency.MaxSessions = 0
+	}
+	if out.Concurrency.MaxVAAPITokens < 0 {
+		out.Concurrency.MaxVAAPITokens = 0
+	}
+	return out
+}
+
 // CanonicalizeTarget normalizes the target output profile for hashing and cache identity.
 func CanonicalizeTarget(in TargetPlaybackProfile) TargetPlaybackProfile {
 	out := in
@@ -109,6 +146,10 @@ func CanonicalizeTarget(in TargetPlaybackProfile) TargetPlaybackProfile {
 	if out.Video.BitrateKbps < 0 {
 		out.Video.BitrateKbps = 0
 	}
+	if out.Video.CRF < 0 {
+		out.Video.CRF = 0
+	}
+	out.Video.Preset = normalize.Token(out.Video.Preset)
 	if out.Video.Width < 0 {
 		out.Video.Width = 0
 	}

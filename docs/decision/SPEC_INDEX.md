@@ -11,7 +11,7 @@ operational procedures.
     - [ADR-009.1: Container Neutrality Patch](../ADR/009.1-playback-decision-spec-patch.md)
     - [ADR-009.2: Hash & Unicode Normality](../ADR/009.2-hash-semantics.md)
 2. **Property Proofs**: Frozen mechanical invariants (`proof_test.go`).
-3. **Operation Policy**: [Client Profiles (Range/HLS Policy)](../ops/CLIENT_PROFILES.md).
+3. **Operation Policy**: [Browser Family Playback Matrix Policy](../ops/CLIENT_PROFILES.md).
 4. **Incident Playbook**: [Playback Triage](../ops/INCIDENT_PLAYBOOK_DECISION.md).
 5. **Storage Strategy**: [ADR-020: SQLite Truth](../ADR/ADR-020_STORAGE_STRATEGY.md)
    and [Storage Invariants](../ops/STORAGE_INVARIANTS.md).

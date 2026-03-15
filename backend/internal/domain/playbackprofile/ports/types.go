@@ -77,11 +77,38 @@ type ServerTranscodeCapabilities struct {
 	HardwareVideoCodec []string `json:"hardwareVideoCodecs"`
 }
 
+// HostCPUSnapshot captures read-only runtime CPU load context for playback decisions.
+type HostCPUSnapshot struct {
+	Load1m        float64 `json:"load1m,omitempty"`
+	CoreCount     int     `json:"coreCount,omitempty"`
+	SampleCount   int     `json:"sampleCount,omitempty"`
+	WindowSeconds int     `json:"windowSeconds,omitempty"`
+}
+
+// HostConcurrencySnapshot captures read-only runtime concurrency context for playback decisions.
+type HostConcurrencySnapshot struct {
+	TunersAvailable   int `json:"tunersAvailable,omitempty"`
+	SessionsActive    int `json:"sessionsActive,omitempty"`
+	TranscodesActive  int `json:"transcodesActive,omitempty"`
+	ActiveVAAPITokens int `json:"activeVaapiTokens,omitempty"`
+	MaxSessions       int `json:"maxSessions,omitempty"`
+	MaxVAAPITokens    int `json:"maxVaapiTokens,omitempty"`
+}
+
+// HostRuntimeSnapshot combines static executable capabilities and current runtime pressure inputs.
+type HostRuntimeSnapshot struct {
+	Capabilities ServerTranscodeCapabilities `json:"capabilities"`
+	CPU          HostCPUSnapshot             `json:"cpu"`
+	Concurrency  HostConcurrencySnapshot     `json:"concurrency"`
+}
+
 // VideoTarget describes the selected output video path.
 type VideoTarget struct {
 	Mode        MediaMode `json:"mode,omitempty"`
 	Codec       string    `json:"codec,omitempty"`
 	BitrateKbps int       `json:"bitrateKbps,omitempty"`
+	CRF         int       `json:"crf,omitempty"`
+	Preset      string    `json:"preset,omitempty"`
 	Width       int       `json:"width,omitempty"`
 	Height      int       `json:"height,omitempty"`
 	FPS         float64   `json:"fps,omitempty"`

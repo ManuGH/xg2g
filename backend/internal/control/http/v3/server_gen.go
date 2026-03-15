@@ -589,6 +589,15 @@ type PlaybackCapabilities struct {
 	// PreferredHlsEngine Preferred HLS playback engine for this client (e.g. native, hlsjs)
 	PreferredHlsEngine *string `json:"preferredHlsEngine,omitempty"`
 
+	// RuntimeProbeUsed Whether the capability snapshot was gathered from runtime browser probes.
+	RuntimeProbeUsed *bool `json:"runtimeProbeUsed,omitempty"`
+
+	// RuntimeProbeVersion Version of the runtime playback probe contract.
+	RuntimeProbeVersion *int `json:"runtimeProbeVersion,omitempty"`
+
+	// ClientFamilyFallback Browser-family fallback used when the server needs conservative capability defaults.
+	ClientFamilyFallback *string `json:"clientFamilyFallback,omitempty"`
+
 	// VideoCodecs Supported video codecs
 	VideoCodecs []string `json:"videoCodecs"`
 }
@@ -750,24 +759,43 @@ type PlaybackOutputHlsKind string
 // PlaybackTrace Traceability information
 type PlaybackTrace struct {
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
-	RequestId          string                   `json:"requestId"`
-	RequestProfile     *string                  `json:"requestProfile,omitempty"`
-	RequestedIntent    *string                  `json:"requestedIntent,omitempty"`
-	ResolvedIntent     *string                  `json:"resolvedIntent,omitempty"`
-	QualityRung        *string                  `json:"qualityRung,omitempty"`
-	DegradedFrom       *string                  `json:"degradedFrom,omitempty"`
-	SessionId          *string                  `json:"sessionId"`
-	Source             *PlaybackSourceProfile   `json:"source,omitempty"`
-	ClientPath         *string                  `json:"clientPath,omitempty"`
-	InputKind          *string                  `json:"inputKind,omitempty"`
-	TargetProfileHash  *string                  `json:"targetProfileHash,omitempty"`
-	TargetProfile      *PlaybackTargetProfile   `json:"targetProfile,omitempty"`
-	FfmpegPlan         *PlaybackTraceFfmpegPlan `json:"ffmpegPlan,omitempty"`
-	FirstFrameAtMs     *int                     `json:"firstFrameAtMs,omitempty"`
-	FallbackCount      *int                     `json:"fallbackCount,omitempty"`
-	LastFallbackReason *string                  `json:"lastFallbackReason,omitempty"`
-	StopReason         *string                  `json:"stopReason,omitempty"`
-	StopClass          *string                  `json:"stopClass,omitempty"`
+	RequestId           string                   `json:"requestId"`
+	RequestProfile      *string                  `json:"requestProfile,omitempty"`
+	RequestedIntent     *string                  `json:"requestedIntent,omitempty"`
+	ResolvedIntent      *string                  `json:"resolvedIntent,omitempty"`
+	QualityRung         *string                  `json:"qualityRung,omitempty"`
+	AudioQualityRung    *string                  `json:"audioQualityRung,omitempty"`
+	VideoQualityRung    *string                  `json:"videoQualityRung,omitempty"`
+	DegradedFrom        *string                  `json:"degradedFrom,omitempty"`
+	HostPressureBand    *string                  `json:"hostPressureBand,omitempty"`
+	HostOverrideApplied *bool                    `json:"hostOverrideApplied,omitempty"`
+	ClientCapsSource    *string                  `json:"clientCapsSource,omitempty"`
+	ClientFamily        *string                  `json:"clientFamily,omitempty"`
+	SessionId           *string                  `json:"sessionId"`
+	Source              *PlaybackSourceProfile   `json:"source,omitempty"`
+	ClientPath          *string                  `json:"clientPath,omitempty"`
+	InputKind           *string                  `json:"inputKind,omitempty"`
+	PreflightReason     *string                  `json:"preflightReason,omitempty"`
+	PreflightDetail     *string                  `json:"preflightDetail,omitempty"`
+	TargetProfileHash   *string                  `json:"targetProfileHash,omitempty"`
+	TargetProfile       *PlaybackTargetProfile   `json:"targetProfile,omitempty"`
+	FfmpegPlan          *PlaybackTraceFfmpegPlan `json:"ffmpegPlan,omitempty"`
+	Operator            *PlaybackTraceOperator   `json:"operator,omitempty"`
+	FirstFrameAtMs      *int                     `json:"firstFrameAtMs,omitempty"`
+	FallbackCount       *int                     `json:"fallbackCount,omitempty"`
+	LastFallbackReason  *string                  `json:"lastFallbackReason,omitempty"`
+	StopReason          *string                  `json:"stopReason,omitempty"`
+	StopClass           *string                  `json:"stopClass,omitempty"`
+}
+
+// PlaybackTraceOperator defines model for PlaybackTraceOperator.
+type PlaybackTraceOperator struct {
+	ClientFallbackDisabled bool    `json:"clientFallbackDisabled"`
+	ForcedIntent           *string `json:"forcedIntent,omitempty"`
+	MaxQualityRung         *string `json:"maxQualityRung,omitempty"`
+	RuleName               *string `json:"ruleName,omitempty"`
+	RuleScope              *string `json:"ruleScope,omitempty"`
+	OverrideApplied        bool    `json:"overrideApplied"`
 }
 
 // PlaybackTraceFfmpegPlan defines model for PlaybackTraceFfmpegPlan.
@@ -824,10 +852,12 @@ type PlaybackTargetHls struct {
 
 // PlaybackTargetVideo defines model for PlaybackTargetVideo.
 type PlaybackTargetVideo struct {
+	Crf    int     `json:"crf"`
 	Codec  string  `json:"codec"`
 	Fps    float64 `json:"fps"`
 	Height int     `json:"height"`
 	Mode   string  `json:"mode"`
+	Preset string  `json:"preset"`
 	Width  int     `json:"width"`
 }
 

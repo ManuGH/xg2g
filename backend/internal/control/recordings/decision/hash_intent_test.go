@@ -34,3 +34,32 @@ func TestComputeHash_RequestedIntentChangesSemanticHash(t *testing.T) {
 		t.Fatal("expected requested intent to affect semantic hash")
 	}
 }
+
+func TestComputeHash_HostPressureChangesSemanticHash(t *testing.T) {
+	base := DecisionInput{
+		Source: Source{
+			Container:  "mp4",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+		},
+		Capabilities: Capabilities{
+			Version:     1,
+			Containers:  []string{"mp4"},
+			VideoCodecs: []string{"h264"},
+			AudioCodecs: []string{"aac"},
+			SupportsHLS: true,
+		},
+		Policy:     Policy{AllowTranscode: true},
+		APIVersion: "v3",
+	}
+
+	normal := base
+	normal.Policy.Host.PressureBand = playbackprofile.HostPressureNormal
+
+	constrained := base
+	constrained.Policy.Host.PressureBand = playbackprofile.HostPressureConstrained
+
+	if normal.ComputeHash() == constrained.ComputeHash() {
+		t.Fatal("expected host pressure to affect semantic hash")
+	}
+}

@@ -13,9 +13,16 @@ type PlaybackCapabilities struct {
 	VideoCodecs         []string `json:"videoCodecs"`
 	AudioCodecs         []string `json:"audioCodecs"`
 	SupportsHLS         bool     `json:"supportsHls"`
+	SupportsHLSExplicit bool     `json:"supportsHlsExplicit,omitempty"`
 
 	// DeviceType is optional but helpful for identity-bound profiles
-	DeviceType string `json:"deviceType,omitempty"`
+	DeviceType           string   `json:"deviceType,omitempty"`
+	HLSEngines           []string `json:"hlsEngines,omitempty"`
+	PreferredHLSEngine   string   `json:"preferredHlsEngine,omitempty"`
+	RuntimeProbeUsed     bool     `json:"runtimeProbeUsed,omitempty"`
+	RuntimeProbeVersion  int      `json:"runtimeProbeVersion,omitempty"`
+	ClientFamilyFallback string   `json:"clientFamilyFallback,omitempty"`
+	ClientCapsSource     string   `json:"clientCapsSource,omitempty"`
 
 	// Allowed constraints ONLY (per ADR P7):
 	AllowTranscode *bool     `json:"allowTranscode,omitempty"`
@@ -41,6 +48,14 @@ func CanonicalizeCapabilities(in PlaybackCapabilities) PlaybackCapabilities {
 	out.Containers = canonicalStringSet(out.Containers)
 	out.VideoCodecs = canonicalStringSet(out.VideoCodecs)
 	out.AudioCodecs = canonicalStringSet(out.AudioCodecs)
+	out.HLSEngines = canonicalStringSet(out.HLSEngines)
+	out.DeviceType = strings.ToLower(strings.TrimSpace(out.DeviceType))
+	out.PreferredHLSEngine = strings.ToLower(strings.TrimSpace(out.PreferredHLSEngine))
+	out.ClientFamilyFallback = strings.ToLower(strings.TrimSpace(out.ClientFamilyFallback))
+	out.ClientCapsSource = strings.ToLower(strings.TrimSpace(out.ClientCapsSource))
+	if out.RuntimeProbeVersion < 0 {
+		out.RuntimeProbeVersion = 0
+	}
 
 	// Ensure non-nil slices for stable JSON + struct equality
 	if out.Containers == nil {
@@ -51,6 +66,9 @@ func CanonicalizeCapabilities(in PlaybackCapabilities) PlaybackCapabilities {
 	}
 	if out.AudioCodecs == nil {
 		out.AudioCodecs = []string{}
+	}
+	if out.HLSEngines == nil {
+		out.HLSEngines = []string{}
 	}
 
 	return out

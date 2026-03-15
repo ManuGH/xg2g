@@ -111,6 +111,12 @@ network:
     enabled: false
 picons:
   baseUrl: ""
+playback:
+  operator:
+    disable_client_fallback: false
+    force_intent: ""
+    max_quality_rung: ""
+    source_rules: []
 rateLimit:
   auth: 10
   burst: 20

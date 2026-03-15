@@ -6,13 +6,37 @@ import "github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 func ToClientPlaybackProfile(c PlaybackCapabilities) playbackprofile.ClientPlaybackProfile {
 	c = CanonicalizeCapabilities(c)
 
+	packaging := make([]string, 0, len(c.Containers))
+	containers := make([]string, 0, len(c.Containers))
+	for _, container := range c.Containers {
+		switch container {
+		case "ts", "mpegts":
+			containers = append(containers, "mpegts")
+			packaging = append(packaging, "ts")
+		case "fmp4":
+			packaging = append(packaging, "fmp4")
+		default:
+			containers = append(containers, container)
+		}
+	}
+
+	playbackEngine := ""
+	switch c.PreferredHLSEngine {
+	case "native":
+		playbackEngine = "native_hls"
+	case "hlsjs":
+		playbackEngine = "hls_js"
+	}
+
 	out := playbackprofile.ClientPlaybackProfile{
-		DeviceType:    c.DeviceType,
-		Containers:    c.Containers,
-		VideoCodecs:   c.VideoCodecs,
-		AudioCodecs:   c.AudioCodecs,
-		SupportsHLS:   c.SupportsHLS,
-		SupportsRange: c.SupportsRange != nil && *c.SupportsRange,
+		DeviceType:     c.DeviceType,
+		PlaybackEngine: playbackEngine,
+		Containers:     containers,
+		VideoCodecs:    c.VideoCodecs,
+		AudioCodecs:    c.AudioCodecs,
+		HLSPackaging:   packaging,
+		SupportsHLS:    c.SupportsHLS,
+		SupportsRange:  c.SupportsRange != nil && *c.SupportsRange,
 	}
 	if c.AllowTranscode != nil {
 		v := *c.AllowTranscode

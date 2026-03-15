@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -107,29 +108,50 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		reqProfileID = picked
 	}
 	publicRequestProfile := profiles.PublicProfileName(reqProfileID)
-	reqProfileID = profiles.NormalizeRequestedProfileID(reqProfileID)
+	operatorCfg := s.deps.PlaybackOperator()
+	effectiveProfileID, operatorSnapshot := profiles.ResolveRequestedProfileWithSourceOperatorOverride(reqProfileID, string(intent.Mode), intent.ServiceRef, operatorCfg)
+	effectiveProfileID = profiles.NormalizeRequestedProfileID(effectiveProfileID)
+	operatorActive := operatorSnapshot.ForcedIntent != playbackprofile.IntentUnknown || operatorSnapshot.MaxQualityRung != playbackprofile.RungUnknown
+	hostPressure := s.deps.HostPressure(ctx)
+	hostPressureBand := playbackprofile.NormalizeHostPressureBand(string(hostPressure.EffectiveBand))
+	hostOverrideApplied := false
 
 	bucket := "0"
 	if intent.StartMs != nil && *intent.StartMs > 0 {
 		bucket = fmt.Sprintf("%d", *intent.StartMs/1000)
 	}
-	idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, reqProfileID, bucket)
+	idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, effectiveProfileID, bucket)
 
-	resolveHasGPU := hasGPU
-	switch reqProfileID {
-	case profiles.ProfileAV1HW:
-		resolveHasGPU = av1OK
-	case profiles.ProfileSafariHEVCHW:
-		resolveHasGPU = hevcOK
-	case profiles.ProfileH264FMP4:
-		resolveHasGPU = h264OK
-	}
 	profileUserAgent := intent.UserAgent
 	if requestedPlaybackMode != "" {
 		profileUserAgent = ""
 	}
 
-	profileSpec := profiles.Resolve(reqProfileID, profileUserAgent, int(s.deps.DVRWindow().Seconds()), cap, resolveHasGPU, hwaccelMode)
+	resolveProfileSpec := func(profileID string) model.ProfileSpec {
+		resolveHasGPU := hasGPU
+		switch profileID {
+		case profiles.ProfileAV1HW:
+			resolveHasGPU = av1OK
+		case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
+			resolveHasGPU = hevcOK
+		case profiles.ProfileH264FMP4:
+			resolveHasGPU = h264OK
+		}
+		return profiles.Resolve(profileID, profileUserAgent, int(s.deps.DVRWindow().Seconds()), cap, resolveHasGPU, hwaccelMode)
+	}
+
+	profileSpec := resolveProfileSpec(effectiveProfileID)
+	if cappedSpec, changed := profiles.ApplyMaxQualityRung(profileSpec, operatorSnapshot.MaxQualityRung); changed {
+		profileSpec = cappedSpec
+		operatorSnapshot.OverrideApplied = true
+	}
+	if !operatorActive {
+		if downgradedProfileID, changed := profiles.ApplyHostPressureOverride(effectiveProfileID, hostPressureBand); changed {
+			effectiveProfileID = downgradedProfileID
+			profileSpec = resolveProfileSpec(effectiveProfileID)
+			hostOverrideApplied = true
+		}
+	}
 	resolvedIntent := profiles.PublicProfileName(profileSpec.Name)
 	degradedFrom := ""
 	if publicRequestProfile != "" && resolvedIntent != "" && publicRequestProfile != resolvedIntent {
@@ -202,12 +224,19 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		Str("ua", intent.UserAgent).
 		Str("profile", profileSpec.Name).
 		Str("profile_public", publicRequestProfile).
+		Str("profile_effective", effectiveProfileID).
 		Int("dvr_window_sec", profileSpec.DVRWindowSec).
 		Str("idem_key", idempotencyKey).
 		Bool("gpu_available", hasGPU).
 		Str("hwaccel_requested", string(hwaccelMode)).
 		Str("hwaccel_effective", hwaccelEffective).
 		Str("hwaccel_reason", hwaccelReason).
+		Str("operator_force_intent", playbackprofile.PublicIntentName(operatorSnapshot.ForcedIntent)).
+		Str("operator_max_quality_rung", string(operatorSnapshot.MaxQualityRung)).
+		Bool("operator_disable_client_fallback", operatorSnapshot.DisableClientFallback).
+		Bool("operator_override_applied", operatorSnapshot.OverrideApplied).
+		Str("host_pressure_band", string(hostPressureBand)).
+		Bool("host_override_applied", hostOverrideApplied).
 		Str("encoder_backend", encoderBackend).
 		Str("video_codec", profileSpec.VideoCodec).
 		Str("container", profileSpec.Container).
@@ -221,7 +250,7 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 
 	phaseLabel := "phase2"
 	requestParams := map[string]string{
-		"profile": reqProfileID,
+		"profile": effectiveProfileID,
 		"bucket":  bucket,
 	}
 	if requestedPlaybackMode != "" {
@@ -237,6 +266,20 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		requestParams[model.CtxKeyMode] = intent.Mode
 	}
 
+	var operatorTrace *model.PlaybackOperatorTrace
+	if operatorSnapshot.OverrideApplied || operatorSnapshot.ForcedIntent != playbackprofile.IntentUnknown || operatorSnapshot.MaxQualityRung != playbackprofile.RungUnknown || operatorSnapshot.DisableClientFallback {
+		operatorTrace = &model.PlaybackOperatorTrace{
+			ForcedIntent:           playbackprofile.PublicIntentName(operatorSnapshot.ForcedIntent),
+			MaxQualityRung:         string(operatorSnapshot.MaxQualityRung),
+			ClientFallbackDisabled: operatorSnapshot.DisableClientFallback,
+			RuleName:               operatorSnapshot.RuleName,
+			RuleScope:              operatorSnapshot.RuleScope,
+			OverrideApplied:        operatorSnapshot.OverrideApplied,
+		}
+	}
+
+	videoQualityRung := model.TraceVideoQualityRungFromProfile(profileSpec)
+
 	session := lifecycle.NewSessionRecord(time.Now())
 	session.SessionID = intent.SessionID
 	session.ServiceRef = intent.ServiceRef
@@ -246,11 +289,16 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
 	session.ContextData = requestParams
 	session.PlaybackTrace = &model.PlaybackTrace{
-		RequestProfile:  publicRequestProfile,
-		RequestedIntent: publicRequestProfile,
-		ResolvedIntent:  resolvedIntent,
-		DegradedFrom:    degradedFrom,
-		ClientPath:      requestedPlaybackMode,
+		RequestProfile:      publicRequestProfile,
+		RequestedIntent:     publicRequestProfile,
+		ResolvedIntent:      resolvedIntent,
+		QualityRung:         videoQualityRung,
+		VideoQualityRung:    videoQualityRung,
+		DegradedFrom:        degradedFrom,
+		ClientPath:          requestedPlaybackMode,
+		Operator:            operatorTrace,
+		HostPressureBand:    string(hostPressureBand),
+		HostOverrideApplied: hostOverrideApplied,
 	}
 
 	persisted := false
@@ -297,7 +345,7 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		Type:          model.EventStartSession,
 		SessionID:     intent.SessionID,
 		ServiceRef:    intent.ServiceRef,
-		ProfileID:     reqProfileID,
+		ProfileID:     effectiveProfileID,
 		CorrelationID: intent.CorrelationID,
 		RequestedAtUN: time.Now().Unix(),
 	}
