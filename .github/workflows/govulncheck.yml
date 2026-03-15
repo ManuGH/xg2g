@@ -46,7 +46,16 @@ jobs:
 
       - name: Run govulncheck (SARIF)
         run: |
-          govulncheck -tags=nogpu -format sarif ./... > govulncheck.sarif || echo '{"version":"3.0.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
+          # govulncheck exits with code 3 if vulnerabilities are found.
+          # We want the SARIF output even if it exits non-zero.
+          govulncheck -tags=nogpu -format sarif ./... > govulncheck.sarif || {
+            RET=$?
+            if [ $RET -ne 3 ]; then
+              echo "❌ govulncheck failed with unexpected exit code $RET"
+              exit $RET
+            fi
+            echo "✅ govulncheck found vulnerabilities (expected); SARIF generated."
+          }
 
       - name: Fix SARIF duplicate tags
         run: |
