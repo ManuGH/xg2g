@@ -6,20 +6,11 @@ package v3
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/go-chi/chi/v5"
 )
-
-type generatedRouterAdapter struct {
-	*Server
-}
-
-func (a generatedRouterAdapter) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
-	a.Server.GetLogs(w, r)
-}
 
 // NewHandler creates a V3 API handler with all required middleware wired in.
 // It enforces:
@@ -61,7 +52,7 @@ func newHandlerWithMiddlewares(svc *Server, _ config.AppConfig, extra []Middlewa
 
 	// 3. Create Handler
 	// Use handwritten router to inject scope policy and keep generated code transport-only.
-	h := NewRouter(generatedRouterAdapter{Server: svc}, RouterOptions{
+	h := NewRouter(svc, RouterOptions{
 		BaseURL:     V3BaseURL,
 		Middlewares: stack,
 		BaseRouter:  r,

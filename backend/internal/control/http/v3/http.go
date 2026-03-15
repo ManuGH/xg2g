@@ -76,7 +76,7 @@ func (s *Server) GetSystemHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetLogs implements ServerInterface
-func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
+func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
 	deps := s.systemModuleDeps()
 	ls := deps.logSource
 	entries, err := read.GetRecentLogs(ls)
@@ -90,7 +90,9 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
 		entries[i], entries[j] = entries[j], entries[i]
 	}
 
-	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+	if params.Limit != nil && *params.Limit > 0 && *params.Limit < len(entries) {
+		entries = entries[:*params.Limit]
+	} else if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
 		if limit, parseErr := strconv.Atoi(rawLimit); parseErr == nil && limit > 0 && limit < len(entries) {
 			entries = entries[:limit]
 		}

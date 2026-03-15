@@ -33,8 +33,9 @@ func TestGetLogsHonorsLimitQuery(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/logs?limit=2", nil)
 	w := httptest.NewRecorder()
+	limit := 2
 
-	srv.GetLogs(w, req)
+	srv.GetLogs(w, req, GetLogsParams{Limit: &limit})
 
 	resp := w.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)

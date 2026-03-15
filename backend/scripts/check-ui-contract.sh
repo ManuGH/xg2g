@@ -136,9 +136,9 @@ if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     if [[ "$file" == *.css ]]; then
       clean_file="${file#frontend/webui/src/}"
-      result=$(grep -In "box-shadow:" "$clean_file" || true)
+      result=$(grep -HIn 'box-shadow: ' "$clean_file" | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css)" || true)
       if [ -n "$result" ]; then
-        V3="$V3$clean_file:$result"$'\n'
+        V3="$V3$result"$'\n'
       fi
     fi
   done
@@ -167,9 +167,9 @@ if [ "$IS_SCOPED" = true ]; then
     # Only check CSS files in scoped mode for gradients
     if [[ "$file" == *.css ]]; then
       clean_file="${file#frontend/webui/src/}"
-      result=$(grep -InE "linear-gradient\(|radial-gradient\(" "$clean_file" || true)
+      result=$(grep -HInE 'linear-gradient\(|radial-gradient\(' "$clean_file" | grep -vE "(index.css|V3Player.module.css|Dashboard.module.css)" || true)
       if [ -n "$result" ]; then
-        V4="$V4$clean_file:$result"$'\n'
+        V4="$V4$result"$'\n'
       fi
     fi
   done

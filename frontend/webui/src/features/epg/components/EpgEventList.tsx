@@ -41,6 +41,7 @@ export function EpgEventRow({
   const total = event.end - event.start;
   const elapsed = Math.max(0, Math.min(total, currentTime - event.start));
   const pct = total > 0 ? Math.round((elapsed / total) * 100) : 0;
+  const progressStyle = { '--xg2g-progress': `${pct}%` } as React.CSSProperties;
 
   const handleToggle = (e: React.MouseEvent) => {
     // Prevent toggle if clicking buttons
@@ -98,7 +99,7 @@ export function EpgEventRow({
           {inProgress && (
             <div className={styles.progressContainer}>
               <div className={styles.progress}>
-                <div className={styles.progressBar} style={{ '--xg2g-progress': `${pct}%` } as React.CSSProperties} />
+                <div className={styles.progressBar} style={progressStyle} />
               </div>
               <div className={styles.progressMeta}>
                 <span>{formatTime(event.start)}</span>
