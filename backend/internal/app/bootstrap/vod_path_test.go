@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -274,7 +275,7 @@ enigma2:
 	err = dec.Decode(&dto)
 	require.NoError(t, err, "Must strictly decode PlaybackInfo")
 
-	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", dto.URL)
+	assert.True(t, strings.HasPrefix(dto.URL, "/api/v3/recordings/"+recordingID+"/playlist.m3u8"), "URL should have correct prefix: %s", dto.URL)
 	assert.Equal(t, "hls", dto.Mode)
 	require.NotNil(t, dto.DurationSeconds)
 	assert.Equal(t, int64(3600), *dto.DurationSeconds)

@@ -23,7 +23,7 @@ func TestGate_DecisionInput_Drift(t *testing.T) {
 
 	// 4. Compare with Golden Hash
 	// CURRENT GOLDEN HASH (Phase R4-D: Compact Canonical Tags)
-	const GOLDEN_HASH = "64958107062c49f128991d89820b7071c8f3952c24e8f1c727f4fc670f078f9e"
+	const GOLDEN_HASH = "4bfaefde120b085352f0c028e60cb839246e18a5ecb09239859716aa3b3bbf2c"
 
 	if hash != GOLDEN_HASH {
 		t.Errorf("🛑 STOP THE LINE 🛑\nDecisionInput schema drift detected!\n\nExpected Hash: %s\nActual Hash:   %s\n\nSchema Dump:\n%s\n\nTo fix:\n1. Revert changes to DecisionInput OR\n2. Update docs/ADR/009-playback-decision-spec.md to reflect changes AND\n3. Update GOLDEN_HASH in this test.", GOLDEN_HASH, hash, schema)

@@ -750,10 +750,50 @@ type PlaybackOutputHlsKind string
 // PlaybackTrace Traceability information
 type PlaybackTrace struct {
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
-	RequestId         string  `json:"requestId"`
-	RequestProfile    *string `json:"requestProfile,omitempty"`
-	SessionId         *string `json:"sessionId"`
-	TargetProfileHash *string `json:"targetProfileHash,omitempty"`
+	RequestId          string                   `json:"requestId"`
+	RequestProfile     *string                  `json:"requestProfile,omitempty"`
+	RequestedIntent    *string                  `json:"requestedIntent,omitempty"`
+	ResolvedIntent     *string                  `json:"resolvedIntent,omitempty"`
+	QualityRung        *string                  `json:"qualityRung,omitempty"`
+	DegradedFrom       *string                  `json:"degradedFrom,omitempty"`
+	SessionId          *string                  `json:"sessionId"`
+	Source             *PlaybackSourceProfile   `json:"source,omitempty"`
+	ClientPath         *string                  `json:"clientPath,omitempty"`
+	InputKind          *string                  `json:"inputKind,omitempty"`
+	TargetProfileHash  *string                  `json:"targetProfileHash,omitempty"`
+	TargetProfile      *PlaybackTargetProfile   `json:"targetProfile,omitempty"`
+	FfmpegPlan         *PlaybackTraceFfmpegPlan `json:"ffmpegPlan,omitempty"`
+	FirstFrameAtMs     *int                     `json:"firstFrameAtMs,omitempty"`
+	FallbackCount      *int                     `json:"fallbackCount,omitempty"`
+	LastFallbackReason *string                  `json:"lastFallbackReason,omitempty"`
+	StopReason         *string                  `json:"stopReason,omitempty"`
+	StopClass          *string                  `json:"stopClass,omitempty"`
+}
+
+// PlaybackTraceFfmpegPlan defines model for PlaybackTraceFfmpegPlan.
+type PlaybackTraceFfmpegPlan struct {
+	AudioCodec string `json:"audioCodec,omitempty"`
+	AudioMode  string `json:"audioMode,omitempty"`
+	Container  string `json:"container,omitempty"`
+	HwAccel    string `json:"hwAccel,omitempty"`
+	InputKind  string `json:"inputKind,omitempty"`
+	Packaging  string `json:"packaging,omitempty"`
+	VideoCodec string `json:"videoCodec,omitempty"`
+	VideoMode  string `json:"videoMode,omitempty"`
+}
+
+// PlaybackSourceProfile defines model for PlaybackSourceProfile.
+type PlaybackSourceProfile struct {
+	AudioBitrateKbps int     `json:"audioBitrateKbps,omitempty"`
+	AudioChannels    int     `json:"audioChannels,omitempty"`
+	AudioCodec       string  `json:"audioCodec,omitempty"`
+	BitrateKbps      int     `json:"bitrateKbps,omitempty"`
+	Container        string  `json:"container,omitempty"`
+	Fps              float64 `json:"fps,omitempty"`
+	Height           int     `json:"height,omitempty"`
+	Interlaced       bool    `json:"interlaced,omitempty"`
+	VideoCodec       string  `json:"videoCodec,omitempty"`
+	Width            int     `json:"width,omitempty"`
 }
 
 // PlaybackTargetProfile defines model for PlaybackTargetProfile.
@@ -1164,6 +1204,7 @@ type SessionResponse struct {
 	// State Session lifecycle state. STARTING guarantees a session ticket is allocated.
 	// READY/ACTIVE guarantees a playable HLS stream.
 	State       SessionResponseState `json:"state"`
+	Trace       *PlaybackTrace       `json:"trace,omitempty"`
 	UpdatedAtMs *int                 `json:"updatedAtMs,omitempty"`
 }
 

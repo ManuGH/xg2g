@@ -170,6 +170,12 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		if liveProbe := strings.TrimSpace(a.LiveProbeSize); liveProbe != "" {
 			probeSize = liveProbe
 		}
+		// Stream relay MPEG-TS often needs a much deeper initial probe before
+		// FFmpeg can resolve video dimensions and audio layout reliably.
+		if isStreamRelayURL(inputURL) {
+			analyzeDuration = "10000000"
+			probeSize = "20M"
+		}
 		if !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
 		}
@@ -484,6 +490,9 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 
 	outputPath := filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "index.m3u8")
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
+	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, spec.SessionID); markerPath != "" {
+		_ = os.Remove(markerPath)
+	}
 	a.Logger.Info().
 		Str("session_id", spec.SessionID).
 		Str("startup_phase", "output_dir_ready").

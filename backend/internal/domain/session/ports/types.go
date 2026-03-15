@@ -2,8 +2,6 @@ package ports
 
 import (
 	"time"
-
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
 // StreamMode defines the intent of the stream.
@@ -59,7 +57,27 @@ type StreamSpec struct {
 	Format    StreamFormat
 	Quality   QualityProfile
 	Source    StreamSource
-	Profile   model.ProfileSpec // Transcoding profile (GPU, codec, quality knobs)
+	Profile   ProfileSpec // Transcoding profile (GPU, codec, quality knobs)
+}
+
+// ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
+type ProfileSpec struct {
+	Name           string `json:"name"`
+	LLHLS          bool   `json:"llhls"`
+	DVRWindowSec   int    `json:"dvrWindowSec"`
+	VOD            bool   `json:"vod,omitempty"`
+	TranscodeVideo bool   `json:"transcodeVideo"`
+	VideoCodec     string `json:"videoCodec,omitempty"` // "h264" (default) or "hevc"
+	HWAccel        string `json:"hwAccel,omitempty"`    // "vaapi", "vaapi_encode_only", "qsv", "nvenc", etc.
+	Deinterlace    bool   `json:"deinterlace,omitempty"`
+	VideoCRF       int    `json:"videoCrf,omitempty"`
+	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`
+	VideoMaxRateK  int    `json:"videoMaxRateK,omitempty"`
+	VideoBufSizeK  int    `json:"videoBufSizeK,omitempty"`
+	BFrames        int    `json:"bframes,omitempty"`
+	AudioBitrateK  int    `json:"audioBitrateK,omitempty"`
+	Preset         string `json:"preset,omitempty"`
+	Container      string `json:"container,omitempty"` // "ts" (default) or "fmp4"
 }
 
 // RunHandle is an opaque token for a running pipeline.

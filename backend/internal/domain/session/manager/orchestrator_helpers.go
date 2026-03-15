@@ -258,6 +258,20 @@ func (o *Orchestrator) startPipeline(
 		With().
 		Str("sid", e.SessionID).
 		Logger()
+	o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(r *model.SessionRecord, trace *model.PlaybackTrace) {
+		if trace.RequestProfile == "" {
+			trace.RequestProfile = profiles.PublicProfileName(e.ProfileID)
+		}
+		if trace.ClientPath == "" && r.ContextData != nil {
+			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
+		}
+		trace.InputKind = string(spec.Source.Type)
+		trace.TargetProfile = model.TraceTargetProfileFromProfile(currentProfileSpec)
+		if trace.TargetProfile != nil {
+			trace.TargetProfileHash = trace.TargetProfile.Hash()
+		}
+		trace.FFmpegPlan = model.TraceFFmpegPlanFromProfile(currentProfileSpec, string(spec.Source.Type), 0)
+	})
 	startupLogger.Info().
 		Str("session_id", e.SessionID).
 		Str("startup_phase", "pipeline_start_requested").
@@ -469,6 +483,13 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
 		return false, nil
 	}
+	if initURI := playlistInitSegment(content); initURI != "" {
+		initPath := filepath.Join(filepath.Dir(playlistPath), initURI)
+		initInfo, initErr := os.Stat(initPath)
+		if initErr != nil || initInfo.Size() == 0 {
+			return false, nil
+		}
+	}
 	segmentURIs := playlistSegments(content)
 	if vodMode {
 		if len(segmentURIs) == 0 {
@@ -497,6 +518,11 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		if segErr != nil || segInfo.Size() == 0 {
 			return false, nil
 		}
+	}
+	markerPath := filepath.Join(filepath.Dir(playlistPath), model.SessionFirstFrameMarkerFilename)
+	markerInfo, markerErr := os.Stat(markerPath)
+	if markerErr != nil || markerInfo.Size() == 0 {
+		return false, nil
 	}
 	if !*ttfpRecorded {
 		observeTTFP(profileID, startTime)
@@ -528,6 +554,31 @@ func playlistSegments(content []byte) []string {
 	return segments
 }
 
+func playlistInitSegment(content []byte) string {
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "#EXT-X-MAP:") {
+			continue
+		}
+		uriIdx := strings.Index(line, `URI="`)
+		if uriIdx < 0 {
+			continue
+		}
+		rest := line[uriIdx+len(`URI="`):]
+		endIdx := strings.IndexByte(rest, '"')
+		if endIdx < 0 {
+			continue
+		}
+		uri := strings.TrimSpace(rest[:endIdx])
+		if uri == "" || strings.Contains(uri, "..") || filepath.IsAbs(uri) {
+			return ""
+		}
+		return uri
+	}
+	return ""
+}
+
 func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSessionEvent, sessionCtx *sessionContext, slot int) error {
 	o.recordTransition(model.SessionUnknown, model.SessionStarting)
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
@@ -547,8 +598,27 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 		if r.ContextData == nil {
 			r.ContextData = make(map[string]string)
 		}
+		inputKind := sessionInputKind(sessionCtx)
+		if inputKind != "" {
+			r.ContextData[model.CtxKeySourceType] = inputKind
+		}
+		if sessionCtx.ServiceRef != "" {
+			r.ContextData[model.CtxKeySource] = sessionCtx.ServiceRef
+		}
 		if sessionCtx.Mode == model.ModeLive && slot >= 0 {
 			r.ContextData[model.CtxKeyTunerSlot] = strconv.Itoa(slot)
+		}
+		trace := ensurePlaybackTrace(r)
+		if trace.RequestProfile == "" {
+			trace.RequestProfile = profiles.PublicProfileName(e.ProfileID)
+		}
+		if trace.ClientPath == "" {
+			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
+		}
+		trace.InputKind = inputKind
+		trace.TargetProfile = model.TraceTargetProfileFromProfile(r.Profile)
+		if trace.TargetProfile != nil {
+			trace.TargetProfileHash = trace.TargetProfile.Hash()
 		}
 		return nil
 	})
@@ -587,6 +657,12 @@ func resetForFallbackRestart(r *model.SessionRecord, now time.Time) {
 	r.LatestSegmentAt = time.Time{}
 	r.LastPlaylistAccessAt = time.Time{}
 	r.PlaylistPublishedAt = time.Time{}
+	if r.PlaybackTrace != nil {
+		r.PlaybackTrace.StopReason = ""
+		r.PlaybackTrace.StopClass = model.PlaybackStopClassNone
+		r.PlaybackTrace.FirstFrameAtUnix = 0
+		r.PlaybackTrace.FFmpegPlan = nil
+	}
 }
 
 func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSessionEvent) error {
@@ -603,8 +679,13 @@ func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSession
 		if err != nil {
 			return err
 		}
-		r.PlaylistPublishedAt = time.Now() // PR-P3-2: Truth for buffering/active derivation
-		r.LastAccessUnix = time.Now().Unix()
+		now := time.Now()
+		r.PlaylistPublishedAt = now // PR-P3-2: Truth for buffering/active derivation
+		r.LastAccessUnix = now.Unix()
+		trace := ensurePlaybackTrace(r)
+		if trace.FirstFrameAtUnix == 0 {
+			trace.FirstFrameAtUnix = firstFrameUnixFromArtifacts(o.HLSRoot, e.SessionID)
+		}
 		return nil
 	})
 	return err
@@ -725,6 +806,7 @@ func (o *Orchestrator) finalizeDeferred(
 		errForOutcome = context.Canceled
 	}
 	var outcome finalOutcome
+	var traceSnapshot *model.PlaybackTrace
 
 	// Use bounded timeout context for finalization instead of Background
 	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -754,6 +836,28 @@ func (o *Orchestrator) finalizeDeferred(
 		o.recordTransition(fromState, outcome.State)
 
 		r.UpdatedAtUnix = time.Now().Unix()
+		trace := ensurePlaybackTrace(r)
+		if trace.RequestProfile == "" {
+			trace.RequestProfile = profiles.PublicProfileName(event.ProfileID)
+		}
+		if trace.ClientPath == "" && r.ContextData != nil {
+			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
+		}
+		if trace.InputKind == "" {
+			trace.InputKind = sessionInputKindFromRecord(r)
+		}
+		if trace.TargetProfile == nil {
+			trace.TargetProfile = model.TraceTargetProfileFromProfile(r.Profile)
+		}
+		if trace.TargetProfile != nil && trace.TargetProfileHash == "" {
+			trace.TargetProfileHash = trace.TargetProfile.Hash()
+		}
+		if trace.FirstFrameAtUnix == 0 {
+			trace.FirstFrameAtUnix = firstFrameUnixFromArtifacts(o.HLSRoot, event.SessionID)
+		}
+		trace.StopReason = string(outcome.Reason)
+		trace.StopClass = model.TraceStopClassFromReason(outcome.Reason)
+		traceSnapshot = trace.Clone()
 		return nil
 	})
 	if err != nil {
@@ -774,6 +878,33 @@ func (o *Orchestrator) finalizeDeferred(
 		Str("sid", event.SessionID).
 		Str("reason", string(outcome.Reason)).
 		Str("profile", event.ProfileID)
+	if traceSnapshot != nil {
+		if traceSnapshot.RequestProfile != "" {
+			logEvt = logEvt.Str("request_profile", traceSnapshot.RequestProfile)
+		}
+		if traceSnapshot.ClientPath != "" {
+			logEvt = logEvt.Str("client_path", traceSnapshot.ClientPath)
+		}
+		if traceSnapshot.InputKind != "" {
+			logEvt = logEvt.Str("input_kind", traceSnapshot.InputKind)
+		}
+		if traceSnapshot.TargetProfileHash != "" {
+			logEvt = logEvt.Str("target_profile_hash", traceSnapshot.TargetProfileHash)
+		}
+		if traceSnapshot.FirstFrameAtUnix > 0 {
+			logEvt = logEvt.Int64("first_frame_at_unix", traceSnapshot.FirstFrameAtUnix)
+		}
+		if len(traceSnapshot.Fallbacks) > 0 {
+			logEvt = logEvt.Int("fallback_count", len(traceSnapshot.Fallbacks)).
+				Str("last_fallback_reason", traceSnapshot.Fallbacks[len(traceSnapshot.Fallbacks)-1].Reason)
+		}
+		if traceSnapshot.StopReason != "" {
+			logEvt = logEvt.Str("stop_reason", traceSnapshot.StopReason)
+		}
+		if traceSnapshot.StopClass != "" {
+			logEvt = logEvt.Str("stop_class", string(traceSnapshot.StopClass))
+		}
+	}
 
 	if outcome.DetailDebug != "" {
 		logEvt.Str("detail", outcome.DetailDebug)

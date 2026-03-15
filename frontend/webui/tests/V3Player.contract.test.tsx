@@ -149,7 +149,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
       requestId: 'req-observe-1',
       decision: {
         mode: 'transcode',
-        selectedOutputUrl: '/recordings/rec-observe/index.m3u8?profile=generic',
+        selectedOutputUrl: '/recordings/rec-observe/index.m3u8?profile=compatible',
         selectedOutputKind: 'hls',
         targetProfileHash: 'hash-observe-1',
         targetProfile: {
@@ -162,7 +162,11 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
         },
         trace: {
           requestId: 'req-observe-1',
-          requestProfile: 'generic',
+          requestProfile: 'compatible',
+          requestedIntent: 'quality',
+          resolvedIntent: 'compatible',
+          qualityRung: 'compatible_audio_aac_256_stereo',
+          degradedFrom: 'quality',
           targetProfileHash: 'hash-observe-1'
         }
       }
@@ -190,8 +194,61 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     fireEvent.click(statsButton!);
 
     expect(await screen.findByText('hash-observe-1')).toBeInTheDocument();
-    expect(screen.getByText(/generic/)).toBeInTheDocument();
+    expect(screen.getAllByText('quality').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('compatible').length).toBeGreaterThan(0);
+    expect(screen.getByText(/compatible audio aac 256 stereo/i)).toBeInTheDocument();
     expect(screen.getByText(/ts · v:copy\/h264 · a:transcode\/aac\/2ch@256k/i)).toBeInTheDocument();
     expect(screen.getByText('CPU')).toBeInTheDocument();
+  });
+
+  it('renders legacy request profile ids with the clearer public label', async () => {
+    const mockInfo: any = {
+      mode: 'transcode',
+      requestId: 'req-observe-2',
+      decision: {
+        mode: 'transcode',
+        selectedOutputUrl: '/recordings/rec-observe/index.m3u8?profile=high',
+        selectedOutputKind: 'hls',
+        targetProfileHash: 'hash-observe-2',
+        targetProfile: {
+          container: 'mpegts',
+          packaging: 'ts',
+          hwAccel: 'none',
+          video: { mode: 'copy', codec: 'h264', width: 0, height: 0, fps: 0 },
+          audio: { mode: 'copy', codec: 'aac', channels: 2, bitrateKbps: 0, sampleRate: 48000 },
+          hls: { enabled: true, segmentContainer: 'mpegts', segmentSeconds: 6 }
+        },
+        trace: {
+          requestId: 'req-observe-2',
+          requestProfile: 'high',
+          targetProfileHash: 'hash-observe-2'
+        }
+      }
+    };
+
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
+
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Map(),
+      json: async () => ({})
+    } as any);
+
+    render(<V3Player autoStart={true} recordingId="rec-observe" />);
+
+    await waitFor(() => {
+      expect(sdk.postRecordingPlaybackInfo as any).toHaveBeenCalled();
+    });
+
+    const statsButton = screen.getAllByRole('button').find((button) =>
+      button.textContent?.includes('📊')
+    );
+    expect(statsButton).toBeDefined();
+    fireEvent.click(statsButton!);
+
+    await waitFor(() => {
+      expect(screen.queryAllByText('compatible').length).toBeGreaterThan(0);
+    });
   });
 });

@@ -18,9 +18,27 @@
 						},
 						"selected_output_kind": "hls",
 						"selected_output_url": "placeholder://transcode.m3u8",
+						"targetProfile": {
+							"audio": {
+								"codec": "aac",
+								"mode": "copy"
+							},
+							"container": "mpegts",
+							"hls": {
+								"enabled": true,
+								"segmentContainer": "mpegts"
+							},
+							"hwaccel": "none",
+							"packaging": "ts",
+							"video": {
+								"codec": "h264",
+								"mode": "transcode"
+							}
+						},
 						"trace": {
 							"inputHash": "8b31fee5fefb74a59f36781cb5ea9067f2da1eef990abb2b19d4d9a642d8ef3f",
 							"requestId": "stub-request-id",
+							"resolvedIntent": "compatible",
 							"ruleHits": [
 								"rule_container",
 								"rule_video",

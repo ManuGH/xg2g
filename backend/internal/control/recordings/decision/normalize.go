@@ -3,6 +3,7 @@ package decision
 import (
 	"sort"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
@@ -39,8 +40,9 @@ func NormalizeInput(in DecisionInput) DecisionInput {
 		Policy: Policy{
 			AllowTranscode: in.Policy.AllowTranscode,
 		},
-		APIVersion: robustNorm(in.APIVersion), // Normalize for validation + hashing
-		RequestID:  in.RequestID,              // Keep as-is (tracing only)
+		RequestedIntent: playbackprofile.NormalizeRequestedIntent(string(in.RequestedIntent)),
+		APIVersion:      robustNorm(in.APIVersion), // Normalize for validation + hashing
+		RequestID:       in.RequestID,              // Keep as-is (tracing only)
 	}
 }
 

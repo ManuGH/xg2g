@@ -106,6 +106,7 @@ export type SessionResponse = {
      * Playback URL for the HLS playlist.
      */
     playbackUrl?: string;
+    trace?: PlaybackTrace;
 };
 
 export type Service = {
@@ -737,8 +738,46 @@ export type PlaybackTrace = {
      */
     requestId: string;
     requestProfile?: string | null;
+    requestedIntent?: string | null;
+    resolvedIntent?: string | null;
+    qualityRung?: string | null;
+    degradedFrom?: string | null;
     sessionId?: string | null;
+    source?: PlaybackSourceProfile | null;
+    clientPath?: string | null;
+    inputKind?: string | null;
     targetProfileHash?: string | null;
+    targetProfile?: PlaybackTargetProfile | null;
+    ffmpegPlan?: PlaybackTraceFfmpegPlan | null;
+    firstFrameAtMs?: number | null;
+    fallbackCount?: number | null;
+    lastFallbackReason?: string | null;
+    stopReason?: string | null;
+    stopClass?: string | null;
+};
+
+export type PlaybackSourceProfile = {
+    container?: string;
+    videoCodec?: string;
+    audioCodec?: string;
+    bitrateKbps?: number;
+    width?: number;
+    height?: number;
+    fps?: number;
+    interlaced?: boolean;
+    audioChannels?: number;
+    audioBitrateKbps?: number;
+};
+
+export type PlaybackTraceFfmpegPlan = {
+    inputKind?: string;
+    container?: string;
+    packaging?: string;
+    hwAccel?: string;
+    videoMode?: string;
+    videoCodec?: string;
+    audioMode?: string;
+    audioCodec?: string;
 };
 
 export type PlaybackTargetProfile = {

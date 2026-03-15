@@ -138,8 +138,11 @@ func TestArtifactResolver_ResolvePlaylist_UsesConcreteTargetProfile(t *testing.T
 	if spec.TargetProfile == nil {
 		t.Fatal("expected concrete target profile in VOD spec")
 	}
-	if spec.TargetProfile.Video.Mode != "transcode" || spec.TargetProfile.Audio.BitrateKbps != 128 {
+	if spec.TargetProfile.Video.Mode != "copy" || spec.TargetProfile.Audio.BitrateKbps != 256 {
 		t.Fatalf("unexpected target profile passed to runner: %#v", spec.TargetProfile)
+	}
+	if spec.TargetProfile.Packaging != playbackprofile.PackagingFMP4 || spec.TargetProfile.HLS.SegmentContainer != "fmp4" {
+		t.Fatalf("expected safari fallback to use fmp4 packaging, got %#v", spec.TargetProfile)
 	}
 }
 

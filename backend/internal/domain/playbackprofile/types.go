@@ -4,111 +4,59 @@
 
 package playbackprofile
 
+import (
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
+)
+
 // MediaMode describes how a specific media stream should be handled.
-type MediaMode string
+type MediaMode = ports.MediaMode
 
 const (
-	MediaModeUnknown   MediaMode = ""
-	MediaModeCopy      MediaMode = "copy"
-	MediaModeTranscode MediaMode = "transcode"
-	MediaModeDisabled  MediaMode = "disabled"
+	MediaModeUnknown   = ports.MediaModeUnknown
+	MediaModeCopy      = ports.MediaModeCopy
+	MediaModeTranscode = ports.MediaModeTranscode
+	MediaModeDisabled  = ports.MediaModeDisabled
 )
 
 // Packaging describes the outer transport/container packaging for playback.
-type Packaging string
+type Packaging = ports.Packaging
 
 const (
-	PackagingUnknown Packaging = ""
-	PackagingTS      Packaging = "ts"
-	PackagingFMP4    Packaging = "fmp4"
-	PackagingMP4     Packaging = "mp4"
+	PackagingUnknown = ports.PackagingUnknown
+	PackagingTS      = ports.PackagingTS
+	PackagingFMP4    = ports.PackagingFMP4
+	PackagingMP4     = ports.PackagingMP4
 )
 
 // HWAccel describes the acceleration path chosen for transcoding.
-type HWAccel string
+type HWAccel = ports.HWAccel
 
 const (
-	HWAccelUnknown HWAccel = ""
-	HWAccelNone    HWAccel = "none"
-	HWAccelVAAPI   HWAccel = "vaapi"
+	HWAccelUnknown = ports.HWAccelUnknown
+	HWAccelNone    = ports.HWAccelNone
+	HWAccelVAAPI   = ports.HWAccelVAAPI
 )
 
 // VideoConstraints captures upper bounds provided by the client.
-type VideoConstraints struct {
-	Width  int     `json:"width,omitempty"`
-	Height int     `json:"height,omitempty"`
-	FPS    float64 `json:"fps,omitempty"`
-}
+type VideoConstraints = ports.VideoConstraints
 
 // SourceProfile captures truthful source media properties.
-type SourceProfile struct {
-	Container        string  `json:"container,omitempty"`
-	VideoCodec       string  `json:"videoCodec,omitempty"`
-	AudioCodec       string  `json:"audioCodec,omitempty"`
-	BitrateKbps      int     `json:"bitrateKbps,omitempty"`
-	Width            int     `json:"width,omitempty"`
-	Height           int     `json:"height,omitempty"`
-	FPS              float64 `json:"fps,omitempty"`
-	Interlaced       bool    `json:"interlaced,omitempty"`
-	AudioChannels    int     `json:"audioChannels,omitempty"`
-	AudioBitrateKbps int     `json:"audioBitrateKbps,omitempty"`
-}
+type SourceProfile = ports.SourceProfile
 
 // ClientPlaybackProfile describes the effective playback path on the client.
-type ClientPlaybackProfile struct {
-	DeviceType     string            `json:"deviceType,omitempty"`
-	PlaybackEngine string            `json:"playbackEngine,omitempty"`
-	Containers     []string          `json:"containers"`
-	VideoCodecs    []string          `json:"videoCodecs"`
-	AudioCodecs    []string          `json:"audioCodecs"`
-	HLSPackaging   []string          `json:"hlsPackaging"`
-	SupportsHLS    bool              `json:"supportsHls"`
-	SupportsRange  bool              `json:"supportsRange"`
-	AllowTranscode *bool             `json:"allowTranscode,omitempty"`
-	MaxVideo       *VideoConstraints `json:"maxVideo,omitempty"`
-}
+type ClientPlaybackProfile = ports.ClientPlaybackProfile
 
 // ServerTranscodeCapabilities describes what the running xg2g host can execute.
-type ServerTranscodeCapabilities struct {
-	FFmpegAvailable    bool     `json:"ffmpegAvailable"`
-	HLSAvailable       bool     `json:"hlsAvailable"`
-	HasVAAPI           bool     `json:"hasVaapi"`
-	VAAPIReady         bool     `json:"vaapiReady"`
-	HardwareVideoCodec []string `json:"hardwareVideoCodecs"`
-}
+type ServerTranscodeCapabilities = ports.ServerTranscodeCapabilities
 
 // VideoTarget describes the selected output video path.
-type VideoTarget struct {
-	Mode        MediaMode `json:"mode,omitempty"`
-	Codec       string    `json:"codec,omitempty"`
-	BitrateKbps int       `json:"bitrateKbps,omitempty"`
-	Width       int       `json:"width,omitempty"`
-	Height      int       `json:"height,omitempty"`
-	FPS         float64   `json:"fps,omitempty"`
-}
+type VideoTarget = ports.VideoTarget
 
 // AudioTarget describes the selected output audio path.
-type AudioTarget struct {
-	Mode        MediaMode `json:"mode,omitempty"`
-	Codec       string    `json:"codec,omitempty"`
-	Channels    int       `json:"channels,omitempty"`
-	BitrateKbps int       `json:"bitrateKbps,omitempty"`
-	SampleRate  int       `json:"sampleRate,omitempty"`
-}
+type AudioTarget = ports.AudioTarget
 
 // HLSTarget carries HLS-specific delivery choices.
-type HLSTarget struct {
-	Enabled          bool   `json:"enabled"`
-	SegmentContainer string `json:"segmentContainer,omitempty"`
-	SegmentSeconds   int    `json:"segmentSeconds,omitempty"`
-}
+type HLSTarget = ports.HLSTarget
 
 // TargetPlaybackProfile is the concrete output profile later consumed by the builder and cache.
-type TargetPlaybackProfile struct {
-	Container string      `json:"container,omitempty"`
-	Packaging Packaging   `json:"packaging,omitempty"`
-	Video     VideoTarget `json:"video"`
-	Audio     AudioTarget `json:"audio"`
-	HLS       HLSTarget   `json:"hls"`
-	HWAccel   HWAccel     `json:"hwaccel,omitempty"`
-}
+type TargetPlaybackProfile = ports.TargetPlaybackProfile

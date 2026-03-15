@@ -61,6 +61,12 @@ func TestOrchestrator_Observability_TuneFailure(t *testing.T) {
 	assert.Equal(t, model.SessionFailed, s.State)
 	assert.Equal(t, model.RTuneTimeout, s.Reason)
 	assert.Equal(t, model.DDeadlineExceeded, s.ReasonDetailCode)
+	require.NotNil(t, s.PlaybackTrace)
+	assert.Equal(t, "compatible", s.PlaybackTrace.RequestProfile)
+	assert.Equal(t, string(model.PlaybackStopClassInput), string(s.PlaybackTrace.StopClass))
+	assert.Equal(t, string(model.RTuneTimeout), s.PlaybackTrace.StopReason)
+	assert.Equal(t, "tuner", s.PlaybackTrace.InputKind)
+	assert.NotNil(t, s.PlaybackTrace.FFmpegPlan)
 }
 
 type FailingPipeline struct {

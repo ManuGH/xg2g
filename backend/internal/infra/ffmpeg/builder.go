@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 )
 
@@ -68,8 +68,8 @@ func mapLegacyProfileToArgs(profile vod.Profile) []string {
 	}
 }
 
-func mapTargetProfileToArgs(target playbackprofile.TargetPlaybackProfile) ([]string, error) {
-	target = playbackprofile.CanonicalizeTarget(target)
+func mapTargetProfileToArgs(target ports.TargetPlaybackProfile) ([]string, error) {
+	target = ports.CanonicalizeTarget(target)
 	if !target.HLS.Enabled {
 		return nil, fmt.Errorf("vod: target profile must enable hls for recording builds")
 	}
@@ -89,11 +89,11 @@ func mapTargetProfileToArgs(target playbackprofile.TargetPlaybackProfile) ([]str
 	return args, nil
 }
 
-func videoTargetArgs(video playbackprofile.VideoTarget) ([]string, error) {
+func videoTargetArgs(video ports.VideoTarget) ([]string, error) {
 	switch video.Mode {
-	case "", playbackprofile.MediaModeCopy:
+	case "", ports.MediaModeCopy:
 		return []string{"-c:v", "copy"}, nil
-	case playbackprofile.MediaModeTranscode:
+	case ports.MediaModeTranscode:
 		encoder, err := ffmpegVideoEncoder(video.Codec)
 		if err != nil {
 			return nil, err
@@ -108,11 +108,11 @@ func videoTargetArgs(video playbackprofile.VideoTarget) ([]string, error) {
 	}
 }
 
-func audioTargetArgs(audio playbackprofile.AudioTarget) ([]string, error) {
+func audioTargetArgs(audio ports.AudioTarget) ([]string, error) {
 	switch audio.Mode {
-	case "", playbackprofile.MediaModeCopy:
+	case "", ports.MediaModeCopy:
 		return []string{"-c:a", "copy"}, nil
-	case playbackprofile.MediaModeTranscode:
+	case ports.MediaModeTranscode:
 		encoder, err := ffmpegAudioEncoder(audio.Codec)
 		if err != nil {
 			return nil, err
@@ -157,17 +157,15 @@ func ffmpegAudioEncoder(codec string) (string, error) {
 	}
 }
 
-func hlsOutputArgs(workDir, outputPath string, target *playbackprofile.TargetPlaybackProfile) []string {
+func hlsOutputArgs(workDir, outputPath string, target *ports.TargetPlaybackProfile) []string {
 	segmentSeconds := 6
 	segmentContainer := "mpegts"
 	if target != nil {
-		canonical := playbackprofile.CanonicalizeTarget(*target)
+		canonical := ports.CanonicalizeTarget(*target)
 		if canonical.HLS.SegmentSeconds > 0 {
 			segmentSeconds = canonical.HLS.SegmentSeconds
 		}
-		if canonical.HLS.SegmentContainer != "" {
-			segmentContainer = canonical.HLS.SegmentContainer
-		}
+		segmentContainer = resolveSegmentContainer(canonical)
 	}
 
 	args := []string{
@@ -188,4 +186,16 @@ func hlsOutputArgs(workDir, outputPath string, target *playbackprofile.TargetPla
 	}
 
 	return append(args, outputPath)
+}
+
+func resolveSegmentContainer(target ports.TargetPlaybackProfile) string {
+	if target.HLS.SegmentContainer != "" {
+		return target.HLS.SegmentContainer
+	}
+	switch target.Packaging {
+	case ports.PackagingFMP4, ports.PackagingMP4:
+		return "fmp4"
+	default:
+		return "mpegts"
+	}
 }

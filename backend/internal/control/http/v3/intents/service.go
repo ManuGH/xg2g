@@ -106,6 +106,8 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	} else if picked := pickProfileForCodecs(intent.Params["codecs"], av1OK, hevcOK, h264OK, hwaccelMode); picked != "" {
 		reqProfileID = picked
 	}
+	publicRequestProfile := profiles.PublicProfileName(reqProfileID)
+	reqProfileID = profiles.NormalizeRequestedProfileID(reqProfileID)
 
 	bucket := "0"
 	if intent.StartMs != nil && *intent.StartMs > 0 {
@@ -128,6 +130,11 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	}
 
 	profileSpec := profiles.Resolve(reqProfileID, profileUserAgent, int(s.deps.DVRWindow().Seconds()), cap, resolveHasGPU, hwaccelMode)
+	resolvedIntent := profiles.PublicProfileName(profileSpec.Name)
+	degradedFrom := ""
+	if publicRequestProfile != "" && resolvedIntent != "" && publicRequestProfile != resolvedIntent {
+		degradedFrom = publicRequestProfile
+	}
 
 	controller := s.deps.AdmissionController()
 	if controller == nil {
@@ -194,6 +201,7 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	intent.Logger.Info().
 		Str("ua", intent.UserAgent).
 		Str("profile", profileSpec.Name).
+		Str("profile_public", publicRequestProfile).
 		Int("dvr_window_sec", profileSpec.DVRWindowSec).
 		Str("idem_key", idempotencyKey).
 		Bool("gpu_available", hasGPU).
@@ -216,6 +224,9 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		"profile": reqProfileID,
 		"bucket":  bucket,
 	}
+	if requestedPlaybackMode != "" {
+		requestParams[model.CtxKeyClientPath] = requestedPlaybackMode
+	}
 	if raw := intent.Params["codecs"]; raw != "" {
 		requestParams["codecs"] = raw
 	}
@@ -234,6 +245,13 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	session.LeaseExpiresAtUnix = time.Now().Add(s.deps.SessionLeaseTTL()).Unix()
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
 	session.ContextData = requestParams
+	session.PlaybackTrace = &model.PlaybackTrace{
+		RequestProfile:  publicRequestProfile,
+		RequestedIntent: publicRequestProfile,
+		ResolvedIntent:  resolvedIntent,
+		DegradedFrom:    degradedFrom,
+		ClientPath:      requestedPlaybackMode,
+	}
 
 	persisted := false
 	for attempt := 0; attempt < startReplayRecoveryAttempts; attempt++ {
@@ -345,7 +363,7 @@ func mapPlaybackModeToProfile(mode string) (string, error) {
 		// More aggressive recovery (safari_dirty / repair) is handled after runtime errors.
 		return profiles.ProfileSafari, nil
 	case "hlsjs", "direct_mp4":
-		return "high", nil
+		return profiles.ProfileHigh, nil
 	case "transcode":
 		return profiles.ProfileH264FMP4, nil
 	case "deny":

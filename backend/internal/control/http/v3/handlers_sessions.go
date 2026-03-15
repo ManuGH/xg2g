@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -114,6 +115,7 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 
 	// CTO Contract (Phase 5.3): Terminal sessions return 410 Gone with JSON body
 	if session.State.IsTerminal() {
+		trace := mapSessionPlaybackTrace(requestID(r.Context()), session, deps.cfg.HLS.Root)
 		out := lifecycle.PublicOutcomeFromRecord(session)
 		state := string(mapSessionState(out.State))
 		reason, ok := mapSessionReason(out.Reason)
@@ -124,6 +126,9 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 		}
 		if ok {
 			extra["reason"] = string(reason)
+		}
+		if trace != nil {
+			extra["trace"] = trace
 		}
 		writeProblem(w, r, http.StatusGone,
 			"urn:xg2g:error:session:gone",
@@ -142,6 +147,7 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 		UpdatedAtMs:   toPtr(int(session.UpdatedAtUnix * 1000)),
 		RequestId:     requestID(r.Context()),
 		CorrelationId: &session.CorrelationID,
+		Trace:         mapSessionPlaybackTrace(requestID(r.Context()), session, deps.cfg.HLS.Root),
 	}
 
 	ensureTraceHeader(w, r.Context())
@@ -232,6 +238,22 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 		RespondError(w, r, http.StatusNotFound, &APIError{Code: "NOT_FOUND", Message: "session not found"})
 		return
 	}
+	if sess.State != model.SessionReady && sess.State != model.SessionDraining {
+		log.L().Warn().
+			Str("sessionId", sessionId.String()).
+			Str("state", string(sess.State)).
+			Msg("ignoring playback feedback before session reached serving state")
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	if !sessionHasFirstFrameArtifact(deps.cfg.HLS.Root, sess.SessionID) {
+		log.L().Warn().
+			Str("sessionId", sessionId.String()).
+			Str("state", string(sess.State)).
+			Msg("ignoring playback fallback request before first video frame was observed")
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
 
 	// Atomic Update via Store
 	var changed bool
@@ -239,6 +261,25 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 		// If we are already in Repair profile, nothing more to do
 		if s.Profile.Name == profiles.ProfileRepair {
 			return nil
+		}
+		now := time.Now()
+		trace := ensureSessionPlaybackTrace(s)
+		if trace.RequestProfile == "" {
+			trace.RequestProfile = profiles.PublicProfileName(s.Profile.Name)
+		}
+		if trace.ClientPath == "" && s.ContextData != nil {
+			trace.ClientPath = strings.TrimSpace(s.ContextData[model.CtxKeyClientPath])
+		}
+		if trace.InputKind == "" && s.ContextData != nil {
+			trace.InputKind = strings.TrimSpace(s.ContextData[model.CtxKeySourceType])
+		}
+		if trace.FirstFrameAtUnix == 0 {
+			trace.FirstFrameAtUnix = sessionFirstFrameUnix(deps.cfg.HLS.Root, s.SessionID)
+		}
+		fromTarget := model.TraceTargetProfileFromProfile(s.Profile)
+		fromHash := ""
+		if fromTarget != nil {
+			fromHash = fromTarget.Hash()
 		}
 
 		switch s.Profile.Name {
@@ -259,7 +300,23 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 		}
 
 		s.FallbackReason = fmt.Sprintf("client_report:code=%d", derefInt(req.Code))
-		s.FallbackAtUnix = time.Now().Unix()
+		s.FallbackAtUnix = now.Unix()
+		toTarget := model.TraceTargetProfileFromProfile(s.Profile)
+		toHash := ""
+		if toTarget != nil {
+			toHash = toTarget.Hash()
+		}
+		trace.TargetProfile = toTarget
+		trace.TargetProfileHash = toHash
+		trace.StopReason = ""
+		trace.StopClass = model.PlaybackStopClassNone
+		trace.Fallbacks = append(trace.Fallbacks, model.PlaybackFallbackTrace{
+			AtUnix:          now.Unix(),
+			Trigger:         "client_feedback",
+			Reason:          s.FallbackReason,
+			FromProfileHash: fromHash,
+			ToProfileHash:   toHash,
+		})
 		changed = true
 		return nil
 	})
@@ -320,6 +377,7 @@ func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateSto
 			Type:          model.EventStartSession,
 			SessionID:     sessionID,
 			ServiceRef:    serviceRef,
+			ProfileID:     sess.Profile.Name,
 			CorrelationID: correlationID,
 			RequestedAtUN: time.Now().Unix(),
 		}
@@ -358,6 +416,175 @@ func (s *Server) runtimeContextOrBackground() context.Context {
 		return s.runtimeCtx
 	}
 	return context.Background()
+}
+
+func sessionHasFirstFrameArtifact(hlsRoot, sessionID string) bool {
+	if !model.IsSafeSessionID(sessionID) {
+		return false
+	}
+	markerPath := model.SessionFirstFrameMarkerPath(hlsRoot, sessionID)
+	if markerPath == "" {
+		return false
+	}
+	info, err := os.Stat(markerPath)
+	return err == nil && !info.IsDir()
+}
+
+func sessionFirstFrameUnix(hlsRoot, sessionID string) int64 {
+	if !model.IsSafeSessionID(sessionID) {
+		return 0
+	}
+	markerPath := model.SessionFirstFrameMarkerPath(hlsRoot, sessionID)
+	if markerPath == "" {
+		return 0
+	}
+	info, err := os.Stat(markerPath)
+	if err != nil || info.IsDir() {
+		return 0
+	}
+	return info.ModTime().Unix()
+}
+
+func ensureSessionPlaybackTrace(session *model.SessionRecord) *model.PlaybackTrace {
+	if session.PlaybackTrace == nil {
+		session.PlaybackTrace = &model.PlaybackTrace{}
+	}
+	return session.PlaybackTrace
+}
+
+func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hlsRoot string) *PlaybackTrace {
+	if session == nil {
+		return nil
+	}
+	dto := &PlaybackTrace{
+		RequestId: requestID,
+	}
+	if sid := strings.TrimSpace(session.SessionID); sid != "" {
+		dto.SessionId = &sid
+	}
+
+	trace := session.PlaybackTrace
+	if trace == nil {
+		trace = &model.PlaybackTrace{}
+	}
+
+	requestProfile := strings.TrimSpace(trace.RequestProfile)
+	if requestProfile == "" {
+		requestProfile = profiles.PublicProfileName(session.Profile.Name)
+	}
+	if requestProfile != "" {
+		dto.RequestProfile = &requestProfile
+	}
+
+	requestedIntent := strings.TrimSpace(trace.RequestedIntent)
+	if requestedIntent == "" {
+		requestedIntent = requestProfile
+	}
+	if requestedIntent != "" {
+		dto.RequestedIntent = &requestedIntent
+	}
+
+	resolvedIntent := strings.TrimSpace(trace.ResolvedIntent)
+	if resolvedIntent == "" {
+		resolvedIntent = profiles.PublicProfileName(session.Profile.Name)
+	}
+	if resolvedIntent != "" {
+		dto.ResolvedIntent = &resolvedIntent
+	}
+
+	qualityRung := strings.TrimSpace(trace.QualityRung)
+	if qualityRung != "" {
+		dto.QualityRung = &qualityRung
+	}
+
+	degradedFrom := strings.TrimSpace(trace.DegradedFrom)
+	if degradedFrom != "" {
+		dto.DegradedFrom = &degradedFrom
+	}
+
+	if trace.Source != nil {
+		dto.Source = mapSourceProfile(trace.Source)
+	}
+
+	clientPath := strings.TrimSpace(trace.ClientPath)
+	if clientPath == "" && session.ContextData != nil {
+		clientPath = strings.TrimSpace(session.ContextData[model.CtxKeyClientPath])
+	}
+	if clientPath != "" {
+		dto.ClientPath = &clientPath
+	}
+
+	inputKind := strings.TrimSpace(trace.InputKind)
+	if inputKind == "" && session.ContextData != nil {
+		inputKind = strings.TrimSpace(session.ContextData[model.CtxKeySourceType])
+	}
+	if inputKind != "" {
+		dto.InputKind = &inputKind
+	}
+
+	target := trace.TargetProfile
+	if target != nil {
+		dto.TargetProfile = mapTargetProfile(target)
+		hash := strings.TrimSpace(trace.TargetProfileHash)
+		if hash != "" {
+			dto.TargetProfileHash = &hash
+		}
+	}
+
+	if trace.FFmpegPlan != nil {
+		dto.FfmpegPlan = &PlaybackTraceFfmpegPlan{
+			InputKind:  trace.FFmpegPlan.InputKind,
+			Container:  trace.FFmpegPlan.Container,
+			Packaging:  trace.FFmpegPlan.Packaging,
+			HwAccel:    trace.FFmpegPlan.HWAccel,
+			VideoMode:  trace.FFmpegPlan.VideoMode,
+			VideoCodec: trace.FFmpegPlan.VideoCodec,
+			AudioMode:  trace.FFmpegPlan.AudioMode,
+			AudioCodec: trace.FFmpegPlan.AudioCodec,
+		}
+	}
+
+	firstFrameAtUnix := trace.FirstFrameAtUnix
+	if firstFrameAtUnix == 0 {
+		firstFrameAtUnix = sessionFirstFrameUnix(hlsRoot, session.SessionID)
+	}
+	if firstFrameAtUnix > 0 {
+		firstFrameAtMs := int(firstFrameAtUnix * 1000)
+		dto.FirstFrameAtMs = &firstFrameAtMs
+	}
+
+	fallbackCount := len(trace.Fallbacks)
+	lastFallbackReason := ""
+	if fallbackCount > 0 {
+		lastFallbackReason = strings.TrimSpace(trace.Fallbacks[fallbackCount-1].Reason)
+	} else if strings.TrimSpace(session.FallbackReason) != "" {
+		fallbackCount = 1
+		lastFallbackReason = strings.TrimSpace(session.FallbackReason)
+	}
+	if fallbackCount > 0 {
+		dto.FallbackCount = &fallbackCount
+	}
+	if lastFallbackReason != "" {
+		dto.LastFallbackReason = &lastFallbackReason
+	}
+
+	stopReason := strings.TrimSpace(trace.StopReason)
+	if stopReason == "" && session.Reason != "" && session.State.IsTerminal() {
+		stopReason = string(session.Reason)
+	}
+	if stopReason != "" {
+		dto.StopReason = &stopReason
+	}
+
+	stopClass := strings.TrimSpace(string(trace.StopClass))
+	if stopClass == "" && session.State.IsTerminal() && session.Reason != "" {
+		stopClass = strings.TrimSpace(string(model.TraceStopClassFromReason(session.Reason)))
+	}
+	if stopClass != "" {
+		dto.StopClass = &stopClass
+	}
+
+	return dto
 }
 
 func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) (string, *float64, *float64, *float64, *float64) {

@@ -492,6 +492,44 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 	assert.NotContains(t, fflags, "nobuffer")
 }
 
+func TestBuildArgs_StreamRelayUsesRobustLiveProbe(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "streamrelay-ingest-flags",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: false,
+			VideoCodec:     "h264",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:")
+	require.NoError(t, err)
+
+	iIdx := indexOf(args, "-i")
+	require.True(t, iIdx > 0)
+
+	analyzeIdx := indexOf(args, "-analyzeduration")
+	require.True(t, analyzeIdx >= 0 && analyzeIdx < iIdx, "analyzeduration must be before -i")
+	analyze, ok := valueAfter(args, "-analyzeduration")
+	require.True(t, ok)
+	assert.Equal(t, "10000000", analyze)
+
+	probeIdx := indexOf(args, "-probesize")
+	require.True(t, probeIdx >= 0 && probeIdx < iIdx, "probesize must be before -i")
+	probe, ok := valueAfter(args, "-probesize")
+	require.True(t, ok)
+	assert.Equal(t, "20M", probe)
+}
+
 func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),

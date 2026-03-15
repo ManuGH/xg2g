@@ -283,9 +283,6 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 	finalPath := filepath.Join(cacheDir, "index.m3u8")
 
 	buildProfile := vod.ProfileDefault
-	if profile == "safari" {
-		buildProfile = vod.ProfileLow
-	}
 	if targetProfile == nil {
 		targetProfile = recordingTargetProfile(profile)
 	}

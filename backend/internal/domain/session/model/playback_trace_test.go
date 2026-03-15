@@ -1,0 +1,118 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+
+package model
+
+import (
+	"testing"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
+	trace := &PlaybackTrace{
+		Source: &playbackprofile.SourceProfile{
+			Container:     "mpegts",
+			VideoCodec:    "h264",
+			AudioCodec:    "aac",
+			AudioChannels: 2,
+		},
+		RequestProfile:    "compatible",
+		ClientPath:        "hlsjs",
+		InputKind:         "receiver",
+		TargetProfileHash: "hash-1",
+		TargetProfile: &playbackprofile.TargetPlaybackProfile{
+			Container: "mpegts",
+			Packaging: playbackprofile.PackagingTS,
+			Video: playbackprofile.VideoTarget{
+				Mode:  playbackprofile.MediaModeCopy,
+				Codec: "h264",
+			},
+			Audio: playbackprofile.AudioTarget{
+				Mode:        playbackprofile.MediaModeTranscode,
+				Codec:       "aac",
+				Channels:    2,
+				BitrateKbps: 256,
+			},
+		},
+		FFmpegPlan: &FFmpegPlanTrace{
+			InputKind: "receiver",
+			Container: "mpegts",
+			Packaging: "ts",
+			HWAccel:   "none",
+			VideoMode: "copy",
+			AudioMode: "transcode",
+		},
+		FirstFrameAtUnix: 123,
+		Fallbacks: []PlaybackFallbackTrace{{
+			AtUnix:          456,
+			Trigger:         "mediaError",
+			Reason:          "bufferAppendError",
+			FromProfileHash: "hash-1",
+			ToProfileHash:   "hash-2",
+		}},
+		StopReason: "playlist_not_ready",
+		StopClass:  PlaybackStopClassPackager,
+	}
+
+	cloned := trace.Clone()
+	require.NotNil(t, cloned)
+	require.NotSame(t, trace, cloned)
+	require.NotSame(t, trace.Source, cloned.Source)
+	require.NotSame(t, trace.TargetProfile, cloned.TargetProfile)
+	require.NotSame(t, trace.FFmpegPlan, cloned.FFmpegPlan)
+
+	cloned.Source.AudioCodec = "ac3"
+	cloned.TargetProfile.Audio.Codec = "mp3"
+	cloned.FFmpegPlan.AudioCodec = "mp3"
+	cloned.Fallbacks[0].Reason = "networkError"
+
+	assert.Equal(t, "aac", trace.Source.AudioCodec)
+	assert.Equal(t, "aac", trace.TargetProfile.Audio.Codec)
+	assert.Equal(t, "", trace.FFmpegPlan.AudioCodec)
+	assert.Equal(t, "bufferAppendError", trace.Fallbacks[0].Reason)
+}
+
+func TestPlaybackTraceClone_NilSafe(t *testing.T) {
+	var trace *PlaybackTrace
+	assert.Nil(t, trace.Clone())
+}
+
+func TestTraceTargetProfileFromProfile_DefaultsToCompatibleHLSOutput(t *testing.T) {
+	target := TraceTargetProfileFromProfile(ProfileSpec{Name: "compatible"})
+	require.NotNil(t, target)
+	assert.Equal(t, "mpegts", target.Container)
+	assert.Equal(t, playbackprofile.PackagingTS, target.Packaging)
+	assert.Equal(t, playbackprofile.MediaModeCopy, target.Video.Mode)
+	assert.Equal(t, playbackprofile.MediaModeTranscode, target.Audio.Mode)
+	assert.Equal(t, "aac", target.Audio.Codec)
+	assert.Equal(t, 192, target.Audio.BitrateKbps)
+}
+
+func TestTraceFFmpegPlanFromProfile_UsesFMP4AndVAAPIWhenConfigured(t *testing.T) {
+	plan := TraceFFmpegPlanFromProfile(ProfileSpec{
+		Name:           "safari",
+		Container:      "fmp4",
+		TranscodeVideo: true,
+		VideoCodec:     "h264_vaapi",
+		HWAccel:        "vaapi",
+		AudioBitrateK:  256,
+	}, "tuner", 6)
+	require.NotNil(t, plan)
+	assert.Equal(t, "tuner", plan.InputKind)
+	assert.Equal(t, "fmp4", plan.Container)
+	assert.Equal(t, "fmp4", plan.Packaging)
+	assert.Equal(t, "vaapi", plan.HWAccel)
+	assert.Equal(t, "transcode", plan.VideoMode)
+	assert.Equal(t, "h264", plan.VideoCodec)
+	assert.Equal(t, "transcode", plan.AudioMode)
+	assert.Equal(t, "aac", plan.AudioCodec)
+}
+
+func TestTraceStopClassFromReason_MapsLifecycleReasons(t *testing.T) {
+	assert.Equal(t, PlaybackStopClassInput, TraceStopClassFromReason(RTuneTimeout))
+	assert.Equal(t, PlaybackStopClassPackager, TraceStopClassFromReason(RPackagerFailed))
+	assert.Equal(t, PlaybackStopClassOperator, TraceStopClassFromReason(RClientStop))
+}

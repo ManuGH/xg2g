@@ -30,6 +30,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
@@ -179,8 +180,9 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 
 	// 3. Construct Decision Input
 	input := decision.DecisionInput{
-		RequestID:  log.RequestIDFromContext(r.Context()),
-		APIVersion: apiVersion,
+		RequestID:       log.RequestIDFromContext(r.Context()),
+		RequestedIntent: playbackprofile.NormalizeRequestedIntent(reqProfile),
+		APIVersion:      apiVersion,
 		Source: decision.Source{
 			Container:  truth.Container,
 			VideoCodec: truth.VideoCodec,
@@ -346,7 +348,27 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	sessionID := fmt.Sprintf("rec:%s", id)
 	decDTO.Trace.SessionId = &sessionID
 	if rp := normalize.Token(requestProfile); rp != "" {
-		decDTO.Trace.RequestProfile = &rp
+		publicProfile := profiles.PublicProfileName(rp)
+		if publicProfile == "" {
+			publicProfile = rp
+		}
+		decDTO.Trace.RequestProfile = &publicProfile
+	}
+	if dec.Trace.RequestedIntent != "" {
+		intent := dec.Trace.RequestedIntent
+		decDTO.Trace.RequestedIntent = &intent
+	}
+	if dec.Trace.ResolvedIntent != "" {
+		intent := dec.Trace.ResolvedIntent
+		decDTO.Trace.ResolvedIntent = &intent
+	}
+	if dec.Trace.QualityRung != "" {
+		rung := dec.Trace.QualityRung
+		decDTO.Trace.QualityRung = &rung
+	}
+	if dec.Trace.DegradedFrom != "" {
+		intent := dec.Trace.DegradedFrom
+		decDTO.Trace.DegradedFrom = &intent
 	}
 	decDTO.Reasons = decision.ReasonsAsStrings(dec, nil)
 	if dec.TargetProfile != nil {
@@ -516,6 +538,25 @@ func mapTargetProfile(target *playbackprofile.TargetPlaybackProfile) *PlaybackTa
 			SegmentContainer: canonical.HLS.SegmentContainer,
 			SegmentSeconds:   canonical.HLS.SegmentSeconds,
 		},
+	}
+}
+
+func mapSourceProfile(source *playbackprofile.SourceProfile) *PlaybackSourceProfile {
+	if source == nil {
+		return nil
+	}
+	canonical := playbackprofile.CanonicalizeSource(*source)
+	return &PlaybackSourceProfile{
+		Container:        canonical.Container,
+		VideoCodec:       canonical.VideoCodec,
+		AudioCodec:       canonical.AudioCodec,
+		BitrateKbps:      canonical.BitrateKbps,
+		Width:            canonical.Width,
+		Height:           canonical.Height,
+		Fps:              canonical.FPS,
+		Interlaced:       canonical.Interlaced,
+		AudioChannels:    canonical.AudioChannels,
+		AudioBitrateKbps: canonical.AudioBitrateKbps,
 	}
 }
 

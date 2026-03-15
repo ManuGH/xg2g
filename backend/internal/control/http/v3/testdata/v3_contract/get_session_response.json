@@ -6,6 +6,13 @@
   "reason": "R_NONE",
   "reasonDetail": "",
   "requestId": "",
+  "trace": {
+    "requestId": "",
+    "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+    "requestProfile": "compatible",
+    "requestedIntent": "compatible",
+    "resolvedIntent": "compatible"
+  },
   "correlationId": "corr-test-001",
   "updatedAtMs": 1700000000000,
   "mode": "LIVE",

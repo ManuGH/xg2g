@@ -2,6 +2,8 @@ package decision
 
 import (
 	"context"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // Decide is the pure decision engine entry point.
@@ -167,13 +169,17 @@ func buildDecision(mode Mode, pred Predicates, input DecisionInput, reasons []Re
 		Mode:          mode,
 		Selected:      buildSelected(mode, input.Source),
 		Outputs:       outputs,
-		TargetProfile: targetProfile,
+		TargetProfile: targetProfile.profile,
 		Constraints:   []string{}, // Always empty array (no constraints in P4-2)
 		Reasons:       reasons,
 		Trace: Trace{
-			RequestID: input.RequestID,
-			RuleHits:  rules,
-			Why:       why,
+			RequestID:       input.RequestID,
+			RequestedIntent: playbackprofile.PublicIntentName(targetProfile.requestedIntent),
+			ResolvedIntent:  playbackprofile.PublicIntentName(targetProfile.resolvedIntent),
+			QualityRung:     string(targetProfile.qualityRung),
+			DegradedFrom:    playbackprofile.PublicIntentName(targetProfile.degradedFrom),
+			RuleHits:        rules,
+			Why:             why,
 		},
 		SelectedOutputURL:  selURL,
 		SelectedOutputKind: selKind,

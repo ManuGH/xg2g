@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
@@ -29,6 +30,12 @@ const (
 	ProfileH264FMP4       = "h264_fmp4"         // Always transcode H.264 + fMP4 (optional VAAPI)
 	ProfileCopy           = "copy"
 	ProfileRepair         = "repair" // High + Transcode (Rescue Mode)
+
+	PublicProfileCompatible = string(playbackprofile.IntentCompatible)
+	PublicProfileBandwidth  = "bandwidth" // Deprecated legacy alias; quality ladder migration removes this later.
+	PublicProfileDirect     = string(playbackprofile.IntentDirect)
+	PublicProfileQuality    = string(playbackprofile.IntentQuality)
+	PublicProfileRepair     = string(playbackprofile.IntentRepair)
 )
 
 var aliasMap = map[string]string{
@@ -37,11 +44,14 @@ var aliasMap = map[string]string{
 	"auto":              ProfileAuto,
 	"hd":                ProfileHigh,
 	"high":              ProfileHigh,
+	"compatible":        ProfileHigh,
+	"quality":           ProfileHigh,
 	"web_opt":           ProfileHigh,
 	"standard":          ProfileHigh,
 	"live":              ProfileHigh,
 	"mobile":            ProfileLow,
 	"low":               ProfileLow,
+	"bandwidth":         ProfileLow,
 	"dvr":               ProfileDVR,
 	"safari":            ProfileSafari,
 	"safari_dirty":      ProfileSafariDirty,
@@ -52,6 +62,9 @@ var aliasMap = map[string]string{
 	"av1_hw":            ProfileAV1HW,
 	"h264_fmp4":         ProfileH264FMP4,
 	"copy":              ProfileCopy,
+	"direct":            ProfileCopy,
+	"passthrough":       ProfileCopy,
+	"repair":            ProfileRepair,
 }
 
 type HWAccelMode string
@@ -122,6 +135,71 @@ func resolveSafariDirtyHWMode(hasGPU bool, hwaccelMode HWAccelMode) string {
 		return safariDirtyHWModeNone
 	default:
 		return safariDirtyHWModeNone
+	}
+}
+
+// NormalizeRequestedProfileID maps known aliases to the stable internal profile IDs
+// without collapsing unknown inputs to auto.
+func NormalizeRequestedProfileID(requested string) string {
+	requested = normalize.Token(requested)
+	if canonical, ok := aliasMap[requested]; ok {
+		return canonical
+	}
+	return requested
+}
+
+// PublicProfileName returns a clearer public-facing label for legacy internal
+// profile identifiers while preserving unknown values as-is.
+func PublicProfileName(profile string) string {
+	switch playbackprofile.NormalizeRequestedIntent(profile) {
+	case playbackprofile.IntentDirect:
+		return PublicProfileDirect
+	case playbackprofile.IntentCompatible:
+		return PublicProfileCompatible
+	case playbackprofile.IntentQuality:
+		return PublicProfileQuality
+	case playbackprofile.IntentRepair:
+		return PublicProfileRepair
+	}
+
+	switch NormalizeRequestedProfileID(profile) {
+	case ProfileAuto:
+		return PublicProfileCompatible
+	case ProfileHigh:
+		return PublicProfileCompatible
+	case ProfileLow:
+		return PublicProfileBandwidth
+	case ProfileDVR:
+		return PublicProfileCompatible
+	case ProfileSafari:
+		return PublicProfileCompatible
+	case ProfileSafariDVR:
+		return PublicProfileCompatible
+	case ProfileSafariHEVC:
+		return PublicProfileQuality
+	case ProfileSafariHEVCHW:
+		return PublicProfileQuality
+	case ProfileSafariHEVCHWLL:
+		return PublicProfileQuality
+	case ProfileAV1HW:
+		return PublicProfileQuality
+	case ProfileH264FMP4:
+		return PublicProfileRepair
+	case ProfileCopy:
+		return PublicProfileDirect
+	case ProfileSafariDirty:
+		return PublicProfileRepair
+	case ProfileRepair:
+		return PublicProfileRepair
+	default:
+		switch normalize.Token(profile) {
+		case "generic":
+			return PublicProfileCompatible
+		case "universal":
+			return PublicProfileCompatible
+		default:
+			return normalize.Token(profile)
+		}
 	}
 }
 

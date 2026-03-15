@@ -162,7 +162,7 @@
   top: 24px;
   right: 72px;
   z-index: 60;
-  width: min(460px, calc(100vw - 40px));
+  width: min(560px, calc(100vw - 40px));
 }
 
 .statsGrid {
@@ -197,7 +197,7 @@
   font-size: var(--text-mono-sm);
   font-feature-settings: 'tnum' 1;
   text-align: right;
-  max-width: 220px;
+  max-width: 340px;
   word-break: break-word;
 }
 
@@ -244,6 +244,38 @@
   text-decoration: underline;
   cursor: pointer;
   padding: 0;
+}
+
+.errorTelemetry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.errorTelemetryRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.errorTelemetryLabel {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.errorTelemetryValue {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  text-align: right;
+  word-break: break-word;
+  max-width: 260px;
 }
 
 .errorDetailsContent {

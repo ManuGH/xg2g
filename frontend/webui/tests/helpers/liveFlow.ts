@@ -10,6 +10,9 @@ type LiveFlowOptions = {
   sessionId?: string;
   playbackUrl?: string;
   heartbeatInterval?: number;
+  sessionTrace?: unknown;
+  sessionRequestId?: string;
+  sessionState?: string;
 };
 
 function mockJsonResponse(url: string, status: number, body: unknown) {
@@ -33,6 +36,9 @@ export function mockLiveFlowFetch(options: LiveFlowOptions = {}): FetchMock {
   const sessionId = options.sessionId ?? 'sess-live-flow-1';
   const playbackUrl = options.playbackUrl ?? '/live.m3u8';
   const heartbeatInterval = options.heartbeatInterval ?? 1;
+  const sessionTrace = options.sessionTrace;
+  const sessionRequestId = options.sessionRequestId ?? `${requestId}-session`;
+  const sessionState = options.sessionState ?? 'READY';
 
   const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const url = String(input);
@@ -60,9 +66,11 @@ export function mockLiveFlowFetch(options: LiveFlowOptions = {}): FetchMock {
     if (url.includes(`/sessions/${sessionId}`) && !url.includes('/heartbeat') && !url.includes('/feedback')) {
       return Promise.resolve(
         mockJsonResponse(url, 200, {
-          state: 'READY',
+          state: sessionState,
+          requestId: sessionRequestId,
           playbackUrl,
           heartbeat_interval: heartbeatInterval,
+          trace: sessionTrace,
         }),
       );
     }

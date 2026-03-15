@@ -1,6 +1,10 @@
 package decision
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+)
 
 func TestDecide_DirectPlayEmitsCopyTargetProfile(t *testing.T) {
 	trueVal := true
@@ -114,5 +118,125 @@ func TestDecide_TranscodeAudioEmitsConcreteTargetProfile(t *testing.T) {
 	}
 	if dec.TargetProfile.Audio.BitrateKbps != 256 || dec.TargetProfile.Audio.Channels != 2 || dec.TargetProfile.Audio.SampleRate != 48000 {
 		t.Fatalf("expected concrete AAC stereo target, got %#v", dec.TargetProfile)
+	}
+	if dec.Trace.ResolvedIntent != string(playbackprofile.IntentCompatible) {
+		t.Fatalf("expected compatible resolved intent, got %#v", dec.Trace)
+	}
+	if dec.Trace.QualityRung != string(playbackprofile.RungCompatibleAudioAAC256Stereo) {
+		t.Fatalf("expected compatible ladder rung, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_TranscodeAudioQualityIntentUsesHigherAACBitrate(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentQuality,
+		Source: Source{
+			Container:  "mp4",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy:     Policy{AllowTranscode: true},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Audio.BitrateKbps != 320 {
+		t.Fatalf("expected quality audio bitrate, got %#v", dec.TargetProfile.Audio)
+	}
+	if dec.Trace.RequestedIntent != string(playbackprofile.IntentQuality) || dec.Trace.ResolvedIntent != string(playbackprofile.IntentQuality) {
+		t.Fatalf("expected quality intent trace, got %#v", dec.Trace)
+	}
+	if dec.Trace.QualityRung != string(playbackprofile.RungQualityAudioAAC320Stereo) {
+		t.Fatalf("expected quality ladder rung, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_TranscodeAudioRepairIntentUsesSaferAACBitrate(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentRepair,
+		Source: Source{
+			Container:  "mp4",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy:     Policy{AllowTranscode: true},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Audio.BitrateKbps != 192 {
+		t.Fatalf("expected repair audio bitrate, got %#v", dec.TargetProfile.Audio)
+	}
+	if dec.Trace.RequestedIntent != string(playbackprofile.IntentRepair) || dec.Trace.ResolvedIntent != string(playbackprofile.IntentRepair) {
+		t.Fatalf("expected repair intent trace, got %#v", dec.Trace)
+	}
+	if dec.Trace.QualityRung != string(playbackprofile.RungRepairAudioAAC192Stereo) {
+		t.Fatalf("expected repair ladder rung, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_TranscodeDirectIntentDegradesToCompatible(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentDirect,
+		Source: Source{
+			Container:  "mp4",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy:     Policy{AllowTranscode: true},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.Trace.RequestedIntent != string(playbackprofile.IntentDirect) {
+		t.Fatalf("expected direct requested intent, got %#v", dec.Trace)
+	}
+	if dec.Trace.ResolvedIntent != string(playbackprofile.IntentCompatible) {
+		t.Fatalf("expected compatible resolved intent, got %#v", dec.Trace)
+	}
+	if dec.Trace.DegradedFrom != string(playbackprofile.IntentDirect) {
+		t.Fatalf("expected degradedFrom=direct, got %#v", dec.Trace)
 	}
 }

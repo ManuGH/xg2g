@@ -15,11 +15,12 @@ const (
 // DecisionInput contains all data needed for the decision engine.
 // ADR-009.2: Uses compact tags by default, but supports verbose tags via UnmarshalJSON.
 type DecisionInput struct {
-	Source       Source       `json:"source"`
-	Capabilities Capabilities `json:"caps"`
-	Policy       Policy       `json:"policy"`
-	APIVersion   string       `json:"api"`
-	RequestID    string       `json:"rid,omitempty"`
+	Source          Source                         `json:"source"`
+	Capabilities    Capabilities                   `json:"caps"`
+	Policy          Policy                         `json:"policy"`
+	RequestedIntent playbackprofile.PlaybackIntent `json:"intent,omitempty"`
+	APIVersion      string                         `json:"api"`
+	RequestID       string                         `json:"rid,omitempty"`
 }
 
 // Source represents media truth (known container, codecs, etc.).
@@ -86,10 +87,14 @@ type Output struct {
 // Trace contains request tracing metadata.
 // Structured to ensure low-cardinality observability.
 type Trace struct {
-	RequestID string   `json:"requestId"`
-	InputHash string   `json:"inputHash"` // SHA-256 of canonical input
-	RuleHits  []string `json:"ruleHits"`  // Ordered list of rules evaluated
-	Why       []Reason `json:"why"`       // Structured explanation
+	RequestID       string   `json:"requestId"`
+	InputHash       string   `json:"inputHash"` // SHA-256 of canonical input
+	RequestedIntent string   `json:"requestedIntent,omitempty"`
+	ResolvedIntent  string   `json:"resolvedIntent,omitempty"`
+	QualityRung     string   `json:"qualityRung,omitempty"`
+	DegradedFrom    string   `json:"degradedFrom,omitempty"`
+	RuleHits        []string `json:"ruleHits"` // Ordered list of rules evaluated
+	Why             []Reason `json:"why"`      // Structured explanation
 }
 
 // Reason provides structured explanation for decisions.

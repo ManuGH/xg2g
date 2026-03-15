@@ -483,6 +483,7 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 		if !firstFrameLogged {
 			if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
 				firstFrameLogged = true
+				a.writeFirstFrameMarker(sessionID)
 				a.Logger.Info().
 					Str("session_id", sessionID).
 					Str("startup_phase", "first_frame").
@@ -520,6 +521,31 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 
 	if procErr != nil {
 		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
+	}
+}
+
+func (a *LocalAdapter) writeFirstFrameMarker(sessionID string) {
+	if !ports.IsSafeSessionID(sessionID) {
+		return
+	}
+	markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID)
+	if markerPath == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(markerPath), 0o755); err != nil {
+		a.Logger.Warn().
+			Err(err).
+			Str("session_id", sessionID).
+			Str("marker_path", markerPath).
+			Msg("failed to prepare first-frame marker directory")
+		return
+	}
+	if err := os.WriteFile(markerPath, []byte(time.Now().UTC().Format(time.RFC3339Nano)), 0o600); err != nil {
+		a.Logger.Warn().
+			Err(err).
+			Str("session_id", sessionID).
+			Str("marker_path", markerPath).
+			Msg("failed to write first-frame marker")
 	}
 }
 

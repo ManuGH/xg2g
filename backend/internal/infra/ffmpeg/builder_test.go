@@ -156,3 +156,63 @@ func TestMapProfileToArgs_TargetProfileCanTranscodeVideoAndCopyAudio(t *testing.
 		}
 	}
 }
+
+func TestMapProfileToArgs_TargetProfilePackagingFMP4DefaultsSegmentType(t *testing.T) {
+	spec := vod.Spec{
+		Input:      "file:///tmp/input.ts",
+		WorkDir:    "/tmp/work",
+		OutputTemp: "index.live.m3u8",
+		TargetProfile: &playbackprofile.TargetPlaybackProfile{
+			Container: "mp4",
+			Packaging: playbackprofile.PackagingFMP4,
+			Video: playbackprofile.VideoTarget{
+				Mode: playbackprofile.MediaModeCopy,
+			},
+			Audio: playbackprofile.AudioTarget{
+				Mode:        playbackprofile.MediaModeTranscode,
+				Codec:       "aac",
+				Channels:    2,
+				BitrateKbps: 256,
+				SampleRate:  48000,
+			},
+			HLS: playbackprofile.HLSTarget{
+				Enabled:        true,
+				SegmentSeconds: 4,
+			},
+		},
+	}
+
+	args, err := mapProfileToArgs(spec)
+	if err != nil {
+		t.Fatalf("mapProfileToArgs returned error: %v", err)
+	}
+
+	wantPairs := map[string]string{
+		"-hls_time":               "4",
+		"-hls_segment_type":       "fmp4",
+		"-hls_fmp4_init_filename": "init.mp4",
+	}
+	for flag, want := range wantPairs {
+		found := false
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] == flag && args[i+1] == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected %s %s in args, got %v", flag, want, args)
+		}
+	}
+
+	foundSegmentPattern := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-hls_segment_filename" && args[i+1] == filepath.Join(spec.WorkDir, "seg_%05d.m4s") {
+			foundSegmentPattern = true
+			break
+		}
+	}
+	if !foundSegmentPattern {
+		t.Fatalf("expected fmp4 segment filename pattern in args, got %v", args)
+	}
+}

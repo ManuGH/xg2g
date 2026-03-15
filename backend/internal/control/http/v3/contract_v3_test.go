@@ -28,6 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	v3store "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -549,6 +550,137 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rrSeg.Code)
 	require.NotEmpty(t, rrSeg.Body.Bytes())
+}
+
+func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
+	hlsRoot := t.TempDir()
+	s, st := newV3TestServer(t, hlsRoot)
+	sessionID := "550e8400-e29b-41d4-a716-446655440001"
+
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:  sessionID,
+		State:      model.SessionReady,
+		ServiceRef: "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:    model.ProfileSpec{Name: "high"},
+		ContextData: map[string]string{
+			model.CtxKeyClientPath: "hlsjs",
+			model.CtxKeySourceType: "tuner",
+		},
+		PlaybackTrace: &model.PlaybackTrace{
+			RequestProfile:    "compatible",
+			RequestedIntent:   "quality",
+			ResolvedIntent:    "compatible",
+			QualityRung:       "compatible_audio_aac_256_stereo",
+			DegradedFrom:      "quality",
+			ClientPath:        "hlsjs",
+			InputKind:         "tuner",
+			TargetProfileHash: "trace-hash-1",
+			Source: &playbackprofile.SourceProfile{
+				Container:        "mpegts",
+				VideoCodec:       "h264",
+				AudioCodec:       "aac",
+				Width:            1920,
+				Height:           1080,
+				FPS:              25,
+				AudioChannels:    2,
+				AudioBitrateKbps: 256,
+			},
+			TargetProfile: &playbackprofile.TargetPlaybackProfile{
+				Container: "mpegts",
+				Packaging: playbackprofile.PackagingTS,
+				Video: playbackprofile.VideoTarget{
+					Mode:  playbackprofile.MediaModeCopy,
+					Codec: "h264",
+				},
+				Audio: playbackprofile.AudioTarget{
+					Mode:        playbackprofile.MediaModeTranscode,
+					Codec:       "aac",
+					Channels:    2,
+					BitrateKbps: 256,
+					SampleRate:  48000,
+				},
+				HLS: playbackprofile.HLSTarget{
+					Enabled:          true,
+					SegmentContainer: "mpegts",
+					SegmentSeconds:   4,
+				},
+				HWAccel: playbackprofile.HWAccelNone,
+			},
+			FFmpegPlan: &model.FFmpegPlanTrace{
+				InputKind:  "tuner",
+				Container:  "mpegts",
+				Packaging:  "ts",
+				HWAccel:    "none",
+				VideoMode:  "copy",
+				VideoCodec: "h264",
+				AudioMode:  "transcode",
+				AudioCodec: "aac",
+			},
+			FirstFrameAtUnix: 1700000000,
+			Fallbacks: []model.PlaybackFallbackTrace{
+				{Reason: "client_report:code=3"},
+			},
+		},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID, nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+
+	rr := httptest.NewRecorder()
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
+	})
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	validateOpenAPIResponse(t, loadOpenAPIDoc(t), req, rr, nil)
+
+	var resp SessionResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.NotNil(t, resp.Trace)
+	require.NotNil(t, resp.Trace.SessionId)
+	require.Equal(t, sessionID, *resp.Trace.SessionId)
+	require.Equal(t, resp.RequestId, resp.Trace.RequestId)
+	require.NotNil(t, resp.Trace.RequestProfile)
+	require.Equal(t, "compatible", *resp.Trace.RequestProfile)
+	require.NotNil(t, resp.Trace.RequestedIntent)
+	require.Equal(t, "quality", *resp.Trace.RequestedIntent)
+	require.NotNil(t, resp.Trace.ResolvedIntent)
+	require.Equal(t, "compatible", *resp.Trace.ResolvedIntent)
+	require.NotNil(t, resp.Trace.QualityRung)
+	require.Equal(t, "compatible_audio_aac_256_stereo", *resp.Trace.QualityRung)
+	require.NotNil(t, resp.Trace.DegradedFrom)
+	require.Equal(t, "quality", *resp.Trace.DegradedFrom)
+	require.NotNil(t, resp.Trace.ClientPath)
+	require.Equal(t, "hlsjs", *resp.Trace.ClientPath)
+	require.NotNil(t, resp.Trace.InputKind)
+	require.Equal(t, "tuner", *resp.Trace.InputKind)
+	require.NotNil(t, resp.Trace.Source)
+	require.Equal(t, "mpegts", resp.Trace.Source.Container)
+	require.Equal(t, "h264", resp.Trace.Source.VideoCodec)
+	require.Equal(t, "aac", resp.Trace.Source.AudioCodec)
+	require.Equal(t, 1920, resp.Trace.Source.Width)
+	require.Equal(t, 1080, resp.Trace.Source.Height)
+	require.NotNil(t, resp.Trace.TargetProfileHash)
+	require.Equal(t, "trace-hash-1", *resp.Trace.TargetProfileHash)
+	require.NotNil(t, resp.Trace.TargetProfile)
+	require.Equal(t, "mpegts", resp.Trace.TargetProfile.Container)
+	require.Equal(t, "ts", resp.Trace.TargetProfile.Packaging)
+	require.Equal(t, "transcode", resp.Trace.TargetProfile.Audio.Mode)
+	require.Equal(t, "aac", resp.Trace.TargetProfile.Audio.Codec)
+	require.Equal(t, 256, resp.Trace.TargetProfile.Audio.BitrateKbps)
+	require.Equal(t, 2, resp.Trace.TargetProfile.Audio.Channels)
+	require.NotNil(t, resp.Trace.FfmpegPlan)
+	require.Equal(t, "transcode", resp.Trace.FfmpegPlan.AudioMode)
+	require.Equal(t, "aac", resp.Trace.FfmpegPlan.AudioCodec)
+	require.Equal(t, "copy", resp.Trace.FfmpegPlan.VideoMode)
+	require.Equal(t, "h264", resp.Trace.FfmpegPlan.VideoCodec)
+	require.NotNil(t, resp.Trace.FirstFrameAtMs)
+	require.Equal(t, 1700000000000, *resp.Trace.FirstFrameAtMs)
+	require.NotNil(t, resp.Trace.FallbackCount)
+	require.Equal(t, 1, *resp.Trace.FallbackCount)
+	require.NotNil(t, resp.Trace.LastFallbackReason)
+	require.Equal(t, "client_report:code=3", *resp.Trace.LastFallbackReason)
 }
 
 func TestV3Contract_HLS(t *testing.T) {

@@ -3,6 +3,8 @@ package decision
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // SchemaKey defines a mapping between compact and legacy root keys.
@@ -16,6 +18,7 @@ var rootKeys = []SchemaKey{
 	{"source", "Source"},
 	{"caps", "Capabilities"},
 	{"policy", "Policy"},
+	{"intent", "RequestedIntent"},
 	{"api", "APIVersion"},
 	{"rid", "RequestID"},
 }
@@ -270,15 +273,17 @@ func DecodeDecisionInput(data []byte) (DecisionInput, *Problem) {
 	}
 
 	var aux struct {
-		Source       Source       `json:"source"`
-		Capabilities Capabilities `json:"caps"`
-		Policy       Policy       `json:"policy"`
-		APIVersion   string       `json:"api"`
-		RequestID    string       `json:"rid"`
+		Source          Source                         `json:"source"`
+		Capabilities    Capabilities                   `json:"caps"`
+		Policy          Policy                         `json:"policy"`
+		RequestedIntent playbackprofile.PlaybackIntent `json:"intent"`
+		APIVersion      string                         `json:"api"`
+		RequestID       string                         `json:"rid"`
 
 		LegacySource       legacySource `json:"Source"`
 		LegacyCapabilities legacyCaps   `json:"Capabilities"`
 		LegacyPolicy       legacyPolicy `json:"Policy"`
+		LegacyIntent       string       `json:"RequestedIntent"`
 		LegacyAPIVersion   string       `json:"APIVersion"`
 		LegacyRequestID    string       `json:"RequestID"`
 	}
@@ -329,6 +334,12 @@ func DecodeDecisionInput(data []byte) (DecisionInput, *Problem) {
 		input.Policy = aux.Policy
 	} else if hasKey(raw, "Policy") {
 		input.Policy = Policy{AllowTranscode: aux.LegacyPolicy.AllowTranscode}
+	}
+
+	if hasKey(raw, "intent") {
+		input.RequestedIntent = aux.RequestedIntent
+	} else if hasKey(raw, "RequestedIntent") {
+		input.RequestedIntent = playbackprofile.NormalizeRequestedIntent(aux.LegacyIntent)
 	}
 
 	if hasKey(raw, "api") {

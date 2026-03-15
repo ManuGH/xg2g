@@ -131,3 +131,30 @@ func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	assert.Equal(t, 36000, spec.VideoBufSizeK)
 	assert.Equal(t, 224, spec.AudioBitrateK)
 }
+
+func TestNormalizeRequestedProfileID_MapsPublicAliases(t *testing.T) {
+	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("compatible"))
+	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("quality"))
+	assert.Equal(t, ProfileLow, NormalizeRequestedProfileID("bandwidth"))
+	assert.Equal(t, ProfileCopy, NormalizeRequestedProfileID("direct"))
+	assert.Equal(t, ProfileCopy, NormalizeRequestedProfileID("passthrough"))
+	assert.Equal(t, ProfileRepair, NormalizeRequestedProfileID("repair"))
+	assert.Equal(t, "generic", NormalizeRequestedProfileID("generic"))
+}
+
+func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileAuto))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileHigh))
+	assert.Equal(t, PublicProfileBandwidth, PublicProfileName(ProfileLow))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileSafari))
+	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileSafariDirty))
+	assert.Equal(t, PublicProfileQuality, PublicProfileName(ProfileSafariHEVCHW))
+	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileH264FMP4))
+	assert.Equal(t, PublicProfileDirect, PublicProfileName(ProfileCopy))
+	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileRepair))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName("auto"))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName("universal"))
+	assert.Equal(t, PublicProfileQuality, PublicProfileName("quality"))
+	assert.Equal(t, PublicProfileRepair, PublicProfileName("repair"))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName("generic"))
+}

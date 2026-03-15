@@ -274,6 +274,43 @@ func TestService_ProcessIntent_StartAcceptedPublishesEvent(t *testing.T) {
 	if deps.admitCalls != 1 {
 		t.Fatalf("expected admit metric to be recorded, got %d", deps.admitCalls)
 	}
+	if deps.store.putSession == nil || deps.store.putSession.PlaybackTrace == nil {
+		t.Fatal("expected playback trace to be persisted")
+	}
+	if deps.store.putSession.PlaybackTrace.RequestProfile != "compatible" {
+		t.Fatalf("expected compatible public request profile, got %q", deps.store.putSession.PlaybackTrace.RequestProfile)
+	}
+}
+
+func TestService_ProcessIntent_StartPreservesExplicitQualityIntentInTrace(t *testing.T) {
+	deps := newMockDeps()
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-quality",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "quality"},
+		CorrelationID: "corr-quality",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil || deps.store.putSession.PlaybackTrace == nil {
+		t.Fatal("expected playback trace to be persisted")
+	}
+	if deps.store.putSession.PlaybackTrace.RequestProfile != "quality" {
+		t.Fatalf("expected quality public request profile, got %q", deps.store.putSession.PlaybackTrace.RequestProfile)
+	}
+	if deps.store.putSession.Profile.Name != "high" {
+		t.Fatalf("expected legacy internal high profile bridge, got %q", deps.store.putSession.Profile.Name)
+	}
 }
 
 func TestService_ProcessIntent_StartReplayReturnsExistingSession(t *testing.T) {

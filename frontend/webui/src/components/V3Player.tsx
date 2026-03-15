@@ -6,6 +6,9 @@ import {
   postRecordingPlaybackInfo,
   type PlaybackCapabilities as PlaybackCapabilitiesContract,
   type PlaybackInfo,
+  type PlaybackSourceProfile,
+  type PlaybackTrace as PlaybackTraceContract,
+  type PlaybackTraceFfmpegPlan,
   type PlaybackTargetProfile,
 } from '../client-ts';
 import { getApiBaseUrl } from '../lib/clientWrapper';
@@ -14,6 +17,7 @@ import type {
   V3PlayerProps,
   PlayerStatus,
   V3SessionResponse,
+  V3SessionStatusResponse,
   HlsInstanceRef,
   VideoElementRef
 } from '../types/v3-player';
@@ -63,16 +67,121 @@ type CapabilitySnapshot = Pick<
 type PlaybackObservability = {
   clientPath: string | null;
   requestProfile: string | null;
+  requestedIntent: string | null;
+  resolvedIntent: string | null;
+  qualityRung: string | null;
+  degradedFrom: string | null;
   targetProfileHash: string | null;
   targetProfile: PlaybackTargetProfile | null;
   selectedOutputKind: string | null;
 };
+
+function formatSourceProfileSummary(source: PlaybackSourceProfile | null | undefined): string {
+  if (!source) return '-';
+
+  const resolution = source.width && source.height ? `${source.width}x${source.height}` : null;
+  const fps = source.fps ? `${source.fps}fps` : null;
+  const video = [source.container || null, source.videoCodec || null, resolution, fps].filter(Boolean).join(' · ');
+  const audio = [
+    source.audioCodec || null,
+    source.audioChannels ? `${source.audioChannels}ch` : null,
+    source.audioBitrateKbps ? `@${source.audioBitrateKbps}k` : null,
+  ].filter(Boolean).join('/');
+
+  return [video || '-', audio ? `a:${audio}` : null].filter(Boolean).join(' · ');
+}
+
+function formatFfmpegPlanSummary(plan: PlaybackTraceFfmpegPlan | null | undefined): string {
+  if (!plan) return '-';
+  const video = [plan.videoMode || null, plan.videoCodec || null].filter(Boolean).join('/');
+  const audio = [plan.audioMode || null, plan.audioCodec || null].filter(Boolean).join('/');
+  const execution = plan.hwAccel || 'none';
+  return [
+    plan.inputKind || null,
+    plan.packaging || plan.container || null,
+    video ? `v:${video}` : null,
+    audio ? `a:${audio}` : null,
+    execution,
+  ].filter(Boolean).join(' · ');
+}
+
+function formatFirstFrameLabel(firstFrameAtMs: number | null | undefined): string {
+  if (!firstFrameAtMs || firstFrameAtMs <= 0) return '-';
+  return new Date(firstFrameAtMs).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function formatFallbackSummary(trace: PlaybackTraceContract | null | undefined): string {
+  if (!trace) return '-';
+  const count = typeof trace.fallbackCount === 'number' ? trace.fallbackCount : 0;
+  const lastReason = trace.lastFallbackReason || null;
+  if (count <= 0 && !lastReason) return '-';
+  return [count > 0 ? String(count) : null, lastReason].filter(Boolean).join(' · ');
+}
+
+function formatStopSummary(trace: PlaybackTraceContract | null | undefined): string {
+  if (!trace) return '-';
+  return [trace.stopClass || null, trace.stopReason || null].filter(Boolean).join(' · ') || '-';
+}
+
+function extractPlaybackTrace(value: unknown): PlaybackTraceContract | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.requestId === 'string' && (
+    'sessionId' in record ||
+    'source' in record ||
+    'targetProfileHash' in record ||
+    'targetProfile' in record ||
+    'ffmpegPlan' in record ||
+    'stopReason' in record ||
+    'stopClass' in record
+  )) {
+    return record as unknown as PlaybackTraceContract;
+  }
+
+  if ('trace' in record) {
+    return extractPlaybackTrace(record.trace);
+  }
+  if ('body' in record) {
+    return extractPlaybackTrace(record.body);
+  }
+  if ('details' in record) {
+    return extractPlaybackTrace(record.details);
+  }
+
+  return null;
+}
 
 function formatClientPath(snapshot: CapabilitySnapshot | null): string {
   if (!snapshot) return '-';
   const preferred = snapshot.preferredHlsEngine ?? '-';
   const engines = snapshot.hlsEngines?.length ? snapshot.hlsEngines.join('/') : null;
   return engines ? `${preferred} (${engines})` : preferred;
+}
+
+function formatRequestProfileLabel(profile: string | null): string {
+  switch (profile) {
+    case 'generic':
+    case 'high':
+      return 'compatible';
+    case 'low':
+      return 'bandwidth';
+    case 'copy':
+      return 'direct';
+    default:
+      return profile || '-';
+  }
+}
+
+function formatQualityRungLabel(rung: string | null): string {
+  if (!rung) return '-';
+  return rung.split('_').join(' ');
 }
 
 function formatTargetProfileSummary(target: PlaybackTargetProfile | null): string {
@@ -110,6 +219,10 @@ function extractPlaybackObservability(
     return {
       clientPath,
       requestProfile: null,
+      requestedIntent: null,
+      resolvedIntent: null,
+      qualityRung: null,
+      degradedFrom: null,
       targetProfileHash: null,
       targetProfile: null,
       selectedOutputKind: null,
@@ -119,6 +232,10 @@ function extractPlaybackObservability(
   return {
     clientPath,
     requestProfile: decision.trace?.requestProfile ?? null,
+    requestedIntent: decision.trace?.requestedIntent ?? null,
+    resolvedIntent: decision.trace?.resolvedIntent ?? null,
+    qualityRung: decision.trace?.qualityRung ?? null,
+    degradedFrom: decision.trace?.degradedFrom ?? null,
     targetProfileHash: decision.targetProfileHash ?? decision.trace?.targetProfileHash ?? null,
     targetProfile: decision.targetProfile ?? null,
     selectedOutputKind: decision.selectedOutputKind ?? null,
@@ -154,6 +271,7 @@ function V3Player(props: V3PlayerProps) {
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [capabilitySnapshot, setCapabilitySnapshot] = useState<CapabilitySnapshot | null>(null);
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
+  const [sessionPlaybackTrace, setSessionPlaybackTrace] = useState<PlaybackTraceContract | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoElementRef>(null);
@@ -243,6 +361,34 @@ function V3Player(props: V3PlayerProps) {
     return hlsJsSupported ? 'hlsjs' : 'native';
   }, [videoRef]);
 
+  const mergeSessionPlaybackTrace = useCallback((nextTrace: PlaybackTraceContract | null) => {
+    if (!nextTrace) {
+      return;
+    }
+    setSessionPlaybackTrace((current) => ({
+      ...(current ?? {}),
+      ...nextTrace,
+      source: nextTrace.source ?? current?.source,
+      targetProfile: nextTrace.targetProfile ?? current?.targetProfile,
+      ffmpegPlan: nextTrace.ffmpegPlan ?? current?.ffmpegPlan,
+      fallbackCount: nextTrace.fallbackCount ?? current?.fallbackCount,
+      lastFallbackReason: nextTrace.lastFallbackReason ?? current?.lastFallbackReason,
+      stopReason: nextTrace.stopReason ?? current?.stopReason,
+      stopClass: nextTrace.stopClass ?? current?.stopClass,
+      firstFrameAtMs: nextTrace.firstFrameAtMs ?? current?.firstFrameAtMs,
+    }));
+    if (nextTrace.requestId) {
+      setTraceId(nextTrace.requestId);
+    }
+  }, []);
+
+  const handleSessionSnapshot = useCallback((session: V3SessionStatusResponse) => {
+    if (session.requestId) {
+      setTraceId(session.requestId);
+    }
+    mergeSessionPlaybackTrace(extractPlaybackTrace(session));
+  }, [mergeSessionPlaybackTrace]);
+
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
     return getApiBaseUrl();
@@ -268,7 +414,8 @@ function V3Player(props: V3PlayerProps) {
     setStatus,
     setError: setLegacyError,
     readResponseBody,
-    createPlayerError: (message, details) => new PlayerError(message, details)
+    createPlayerError: (message, details) => new PlayerError(message, details),
+    onSessionSnapshot: handleSessionSnapshot,
   });
 
   const {
@@ -386,6 +533,7 @@ function V3Player(props: V3PlayerProps) {
     setActiveHlsEngine(null);
     setCapabilitySnapshot(null);
     setPlaybackObservability(null);
+    setSessionPlaybackTrace(null);
   }, []);
 
   const clearPlaybackState = useCallback(() => {
@@ -685,6 +833,7 @@ function V3Player(props: V3PlayerProps) {
       } catch (e: unknown) {
         if (activeRecordingRef.current !== id) return;
         setStatus('error');
+        mergeSessionPlaybackTrace(extractPlaybackTrace(e));
         setPlayerError(normalizePlayerError(e, {
           fallbackTitle: t('player.serverError'),
         }));
@@ -751,6 +900,7 @@ function V3Player(props: V3PlayerProps) {
     } catch (err: unknown) {
       if (activeRecordingRef.current !== id) return;
       debugError(err);
+      mergeSessionPlaybackTrace(extractPlaybackTrace(err));
       setPlayerError(normalizePlayerError(err, {
         fallbackTitle: t('player.serverError'),
       }));
@@ -1119,6 +1269,7 @@ function V3Player(props: V3PlayerProps) {
         }
         clearSessionLeaseState();
         debugError(err);
+        mergeSessionPlaybackTrace(extractPlaybackTrace(err));
         setPlayerError(normalizePlayerError(err, {
           fallbackTitle: t('player.serverError'),
         }));
@@ -1199,6 +1350,44 @@ function V3Player(props: V3PlayerProps) {
         : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
       : '';
 
+  const effectiveClientPath =
+    sessionPlaybackTrace?.clientPath ||
+    playbackObservability?.clientPath ||
+    formatClientPath(capabilitySnapshot);
+  const effectiveRequestProfile =
+    sessionPlaybackTrace?.requestProfile ??
+    playbackObservability?.requestProfile ??
+    null;
+  const effectiveRequestedIntent =
+    sessionPlaybackTrace?.requestedIntent ??
+    playbackObservability?.requestedIntent ??
+    effectiveRequestProfile;
+  const effectiveResolvedIntent =
+    sessionPlaybackTrace?.resolvedIntent ??
+    playbackObservability?.resolvedIntent ??
+    null;
+  const effectiveQualityRung =
+    sessionPlaybackTrace?.qualityRung ??
+    playbackObservability?.qualityRung ??
+    null;
+  const effectiveDegradedFrom =
+    sessionPlaybackTrace?.degradedFrom ??
+    playbackObservability?.degradedFrom ??
+    null;
+  const effectiveTargetProfile =
+    sessionPlaybackTrace?.targetProfile ??
+    playbackObservability?.targetProfile ??
+    null;
+  const effectiveTargetProfileHash =
+    sessionPlaybackTrace?.targetProfileHash ??
+    playbackObservability?.targetProfileHash ??
+    null;
+  const sourceProfileSummary = formatSourceProfileSummary(sessionPlaybackTrace?.source);
+  const ffmpegPlanSummary = formatFfmpegPlanSummary(sessionPlaybackTrace?.ffmpegPlan);
+  const firstFrameLabel = formatFirstFrameLabel(sessionPlaybackTrace?.firstFrameAtMs);
+  const fallbackSummary = formatFallbackSummary(sessionPlaybackTrace);
+  const stopSummary = formatStopSummary(sessionPlaybackTrace);
+
   return (
     <div
       ref={containerRef}
@@ -1240,27 +1429,63 @@ function V3Player(props: V3PlayerProps) {
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('common.requestId', { defaultValue: 'Request ID' })}</span>
-                <span className={styles.statsValue}>{traceId}</span>
+                <span className={styles.statsValue}>{sessionPlaybackTrace?.requestId || traceId}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.clientPath', { defaultValue: 'Client Path' })}</span>
-                <span className={styles.statsValue}>{formatClientPath(capabilitySnapshot)}</span>
+                <span className={styles.statsValue}>{effectiveClientPath || '-'}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.requestProfile', { defaultValue: 'Request Profile' })}</span>
-                <span className={styles.statsValue}>{playbackObservability?.requestProfile || '-'}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveRequestProfile)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.requestedIntent', { defaultValue: 'Requested Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveRequestedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.resolvedIntent', { defaultValue: 'Resolved Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveResolvedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.qualityRung', { defaultValue: 'Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.degradedFrom', { defaultValue: 'Degraded From' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveDegradedFrom)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.sourceProfile', { defaultValue: 'Source Profile' })}</span>
+                <span className={styles.statsValue}>{sourceProfileSummary}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.outputProfile', { defaultValue: 'Output Profile' })}</span>
-                <span className={styles.statsValue}>{formatTargetProfileSummary(playbackObservability?.targetProfile ?? null)}</span>
+                <span className={styles.statsValue}>{formatTargetProfileSummary(effectiveTargetProfile)}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.profileHash', { defaultValue: 'Profile Hash' })}</span>
-                <span className={styles.statsValue}>{playbackObservability?.targetProfileHash || '-'}</span>
+                <span className={styles.statsValue}>{effectiveTargetProfileHash || '-'}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.execution', { defaultValue: 'Execution' })}</span>
-                <span className={styles.statsValue}>{formatExecutionLabel(playbackObservability?.targetProfile ?? null)}</span>
+                <span className={styles.statsValue}>{formatExecutionLabel(effectiveTargetProfile)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}</span>
+                <span className={styles.statsValue}>{ffmpegPlanSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.firstFrame', { defaultValue: 'First Frame' })}</span>
+                <span className={styles.statsValue}>{firstFrameLabel}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.fallbacks', { defaultValue: 'Fallbacks' })}</span>
+                <span className={styles.statsValue}>{fallbackSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
+                <span className={styles.statsValue}>{stopSummary}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.outputKind', { defaultValue: 'Output Kind' })}</span>
@@ -1336,6 +1561,28 @@ function V3Player(props: V3PlayerProps) {
               <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
             ) : null}
           </div>
+          {(stopSummary !== '-' || fallbackSummary !== '-' || ffmpegPlanSummary !== '-') && (
+            <div className={styles.errorTelemetry}>
+              {stopSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
+                  <span className={styles.errorTelemetryValue}>{stopSummary}</span>
+                </div>
+              )}
+              {fallbackSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.fallbacks', { defaultValue: 'Fallbacks' })}</span>
+                  <span className={styles.errorTelemetryValue}>{fallbackSummary}</span>
+                </div>
+              )}
+              {ffmpegPlanSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}</span>
+                  <span className={styles.errorTelemetryValue}>{ffmpegPlanSummary}</span>
+                </div>
+              )}
+            </div>
+          )}
           {error.detail && (
             <button
               onClick={() => setShowErrorDetails(!showErrorDetails)}

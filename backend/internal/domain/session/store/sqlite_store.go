@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	schemaVersion = 4 // Incremented for migration_history
+	schemaVersion = 5 // Incremented for playback trace persistence
 )
 
 // SqliteStore implements StateStore using SQLite.
@@ -90,7 +90,8 @@ func (s *SqliteStore) migrate() error {
 		latest_segment_at TEXT,
 		last_playlist_access_at TEXT,
 		playlist_published_at TEXT,
-		context_data_json TEXT
+		context_data_json TEXT,
+		playback_trace_json TEXT
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at_ms);
@@ -128,6 +129,9 @@ func (s *SqliteStore) migrate() error {
 		_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_code TEXT")
 		_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_debug TEXT")
 	}
+	if currentVersion < 5 {
+		_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN playback_trace_json TEXT")
+	}
 
 	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return err
@@ -141,6 +145,7 @@ func (s *SqliteStore) migrate() error {
 func (s *SqliteStore) PutSession(ctx context.Context, rec *model.SessionRecord) error {
 	profileJSON, _ := json.Marshal(rec.Profile)
 	contextJSON, _ := json.Marshal(rec.ContextData)
+	playbackTraceJSON, _ := json.Marshal(rec.PlaybackTrace)
 
 	query := `
 	INSERT INTO sessions (
@@ -148,8 +153,8 @@ func (s *SqliteStore) PutSession(ctx context.Context, rec *model.SessionRecord) 
 		fallback_reason, fallback_at_ms, correlation_id, created_at_ms, updated_at_ms,
 		last_access_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval,
 		last_heartbeat_ms, stop_reason, latest_segment_at, last_playlist_access_at,
-		playlist_published_at, context_data_json
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		playlist_published_at, context_data_json, playback_trace_json
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(session_id) DO UPDATE SET
 		service_ref = excluded.service_ref,
 		profile_json = excluded.profile_json,
@@ -172,7 +177,8 @@ func (s *SqliteStore) PutSession(ctx context.Context, rec *model.SessionRecord) 
 		latest_segment_at = excluded.latest_segment_at,
 		last_playlist_access_at = excluded.last_playlist_access_at,
 		playlist_published_at = excluded.playlist_published_at,
-		context_data_json = excluded.context_data_json
+		context_data_json = excluded.context_data_json,
+		playback_trace_json = excluded.playback_trace_json
 	`
 
 	_, err := s.DB.ExecContext(ctx, query,
@@ -180,7 +186,7 @@ func (s *SqliteStore) PutSession(ctx context.Context, rec *model.SessionRecord) 
 		rec.FallbackReason, s2ms(rec.FallbackAtUnix), rec.CorrelationID, s2ms(rec.CreatedAtUnix), s2ms(rec.UpdatedAtUnix),
 		s2ms(rec.LastAccessUnix), s2ms(rec.ExpiresAtUnix), s2ms(rec.LeaseExpiresAtUnix), rec.HeartbeatInterval,
 		s2ms(rec.LastHeartbeatUnix), rec.StopReason, timeToNullString(rec.LatestSegmentAt),
-		timeToNullString(rec.LastPlaylistAccessAt), timeToNullString(rec.PlaylistPublishedAt), contextJSON,
+		timeToNullString(rec.LastPlaylistAccessAt), timeToNullString(rec.PlaylistPublishedAt), contextJSON, playbackTraceJSON,
 	)
 	return err
 }
@@ -209,14 +215,15 @@ func (s *SqliteStore) PutSessionWithIdempotency(ctx context.Context, rec *model.
 	// 2. Put Session
 	profileJSON, _ := json.Marshal(rec.Profile)
 	contextJSON, _ := json.Marshal(rec.ContextData)
+	playbackTraceJSON, _ := json.Marshal(rec.PlaybackTrace)
 	query := `
 	INSERT INTO sessions (
 		session_id, service_ref, profile_json, state, pipeline_state, reason, reason_detail, reason_detail_code, reason_detail_debug,
 		fallback_reason, fallback_at_ms, correlation_id, created_at_ms, updated_at_ms,
 		last_access_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval,
 		last_heartbeat_ms, stop_reason, latest_segment_at, last_playlist_access_at,
-		playlist_published_at, context_data_json
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		playlist_published_at, context_data_json, playback_trace_json
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(session_id) DO UPDATE SET
 		service_ref = excluded.service_ref,
 		profile_json = excluded.profile_json,
@@ -239,7 +246,8 @@ func (s *SqliteStore) PutSessionWithIdempotency(ctx context.Context, rec *model.
 		latest_segment_at = excluded.latest_segment_at,
 		last_playlist_access_at = excluded.last_playlist_access_at,
 		playlist_published_at = excluded.playlist_published_at,
-		context_data_json = excluded.context_data_json
+		context_data_json = excluded.context_data_json,
+		playback_trace_json = excluded.playback_trace_json
 	`
 
 	_, err = tx.ExecContext(ctx, query,
@@ -247,7 +255,7 @@ func (s *SqliteStore) PutSessionWithIdempotency(ctx context.Context, rec *model.
 		rec.FallbackReason, s2ms(rec.FallbackAtUnix), rec.CorrelationID, s2ms(rec.CreatedAtUnix), s2ms(rec.UpdatedAtUnix),
 		s2ms(rec.LastAccessUnix), s2ms(rec.ExpiresAtUnix), s2ms(rec.LeaseExpiresAtUnix), rec.HeartbeatInterval,
 		s2ms(rec.LastHeartbeatUnix), rec.StopReason, timeToNullString(rec.LatestSegmentAt),
-		timeToNullString(rec.LastPlaylistAccessAt), timeToNullString(rec.PlaylistPublishedAt), contextJSON,
+		timeToNullString(rec.LastPlaylistAccessAt), timeToNullString(rec.PlaylistPublishedAt), contextJSON, playbackTraceJSON,
 	)
 	if err != nil {
 		return "", false, err
@@ -330,6 +338,7 @@ func (s *SqliteStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 
 	profileJSON, _ := json.Marshal(rec.Profile)
 	contextJSON, _ := json.Marshal(rec.ContextData)
+	playbackTraceJSON, _ := json.Marshal(rec.PlaybackTrace)
 
 	updateQuery := `
 		UPDATE sessions SET
@@ -337,7 +346,7 @@ func (s *SqliteStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 			reason_detail = ?, reason_detail_code = ?, reason_detail_debug = ?, fallback_reason = ?, fallback_at_ms = ?, correlation_id = ?,
 			updated_at_ms = ?, last_access_ms = ?, expires_at_ms = ?, lease_expires_at_ms = ?,
 			heartbeat_interval = ?, last_heartbeat_ms = ?, stop_reason = ?, latest_segment_at = ?,
-			last_playlist_access_at = ?, playlist_published_at = ?, context_data_json = ?
+			last_playlist_access_at = ?, playlist_published_at = ?, context_data_json = ?, playback_trace_json = ?
 		WHERE session_id = ?
 		`
 	_, err = tx.ExecContext(ctx, updateQuery,
@@ -345,7 +354,7 @@ func (s *SqliteStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 		rec.FallbackReason, s2ms(rec.FallbackAtUnix), rec.CorrelationID, s2ms(rec.UpdatedAtUnix),
 		s2ms(rec.LastAccessUnix), s2ms(rec.ExpiresAtUnix), s2ms(rec.LeaseExpiresAtUnix), rec.HeartbeatInterval,
 		s2ms(rec.LastHeartbeatUnix), rec.StopReason, timeToNullString(rec.LatestSegmentAt),
-		timeToNullString(rec.LastPlaylistAccessAt), timeToNullString(rec.PlaylistPublishedAt), contextJSON,
+		timeToNullString(rec.LastPlaylistAccessAt), timeToNullString(rec.PlaylistPublishedAt), contextJSON, playbackTraceJSON,
 		rec.SessionID,
 	)
 	if err != nil {
@@ -501,7 +510,7 @@ func scanSession(scanner interface {
 	Scan(dest ...interface{}) error
 }) (*model.SessionRecord, error) {
 	var rec model.SessionRecord
-	var profileJSON, contextJSON []byte
+	var profileJSON, contextJSON, playbackTraceJSON []byte
 	var fallbackAt, createdAt, updatedAt, lastAccess, expiresAt, leaseExpires, lastHB sql.NullInt64
 	var latestSeg, lastAccessAt, published sql.NullString
 	var reasonDetailLegacy, reasonDetailCode, reasonDetailDebug sql.NullString
@@ -511,7 +520,7 @@ func scanSession(scanner interface {
 		&reasonDetailLegacy, &reasonDetailCode, &reasonDetailDebug,
 		&rec.FallbackReason, &fallbackAt, &rec.CorrelationID, &createdAt, &updatedAt,
 		&lastAccess, &expiresAt, &leaseExpires, &rec.HeartbeatInterval,
-		&lastHB, &rec.StopReason, &latestSeg, &lastAccessAt, &published, &contextJSON,
+		&lastHB, &rec.StopReason, &latestSeg, &lastAccessAt, &published, &contextJSON, &playbackTraceJSON,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -522,6 +531,7 @@ func scanSession(scanner interface {
 
 	_ = json.Unmarshal(profileJSON, &rec.Profile)
 	_ = json.Unmarshal(contextJSON, &rec.ContextData)
+	_ = json.Unmarshal(playbackTraceJSON, &rec.PlaybackTrace)
 	rec.FallbackAtUnix = ms2s(fallbackAt)
 	rec.CreatedAtUnix = ms2s(createdAt)
 	rec.UpdatedAtUnix = ms2s(updatedAt)

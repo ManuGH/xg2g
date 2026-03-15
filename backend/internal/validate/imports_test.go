@@ -49,6 +49,7 @@ func TestLayeringRules(t *testing.T) {
 		"github.com/ManuGH/xg2g/internal/domain",
 		[]string{
 			"github.com/ManuGH/xg2g/internal/domain/session/ports",
+			"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports",
 			"github.com/ManuGH/xg2g/internal/domain/vod",
 		},
 		"Infra layer must not import domain logic (except domain/*/ports and domain/vod types)",

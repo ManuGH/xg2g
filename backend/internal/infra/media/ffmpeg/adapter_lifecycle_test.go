@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -141,4 +144,8 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(logs, `"startup_phase":"first_segment_write"`))
 	assert.Contains(t, logs, `"frame":1`)
 	assert.Contains(t, logs, `"segment_path":"/tmp/seg_000001.m4s"`)
+	markerPath := filepath.Join(adapter.HLSRoot, "sessions", "session-3", model.SessionFirstFrameMarkerFilename)
+	marker, err := os.ReadFile(markerPath)
+	require.NoError(t, err)
+	assert.NotEmpty(t, strings.TrimSpace(string(marker)))
 }

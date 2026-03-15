@@ -4,7 +4,11 @@
 
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+)
 
 // SessionState is the client-visible lifecycle for a session ticket.
 // It is intentionally coarse-grained and stable across profiles.
@@ -22,6 +26,7 @@ const (
 	CtxKeyRecordingID     = "recording_id"
 	CtxKeySourceType      = "source_type"
 	CtxKeySource          = "source"
+	CtxKeyClientPath      = "client_path"
 )
 
 const (
@@ -127,24 +132,7 @@ const (
 )
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
-type ProfileSpec struct {
-	Name           string `json:"name"`
-	LLHLS          bool   `json:"llhls"`
-	DVRWindowSec   int    `json:"dvrWindowSec"`
-	VOD            bool   `json:"vod,omitempty"`
-	TranscodeVideo bool   `json:"transcodeVideo"`
-	VideoCodec     string `json:"videoCodec,omitempty"` // "h264" (default) or "hevc"
-	HWAccel        string `json:"hwAccel,omitempty"`    // "vaapi", "vaapi_encode_only", "qsv", "nvenc", etc.
-	Deinterlace    bool   `json:"deinterlace,omitempty"`
-	VideoCRF       int    `json:"videoCrf,omitempty"`
-	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`
-	VideoMaxRateK  int    `json:"videoMaxRateK,omitempty"`
-	VideoBufSizeK  int    `json:"videoBufSizeK,omitempty"`
-	BFrames        int    `json:"bframes,omitempty"`
-	AudioBitrateK  int    `json:"audioBitrateK,omitempty"`
-	Preset         string `json:"preset,omitempty"`
-	Container      string `json:"container,omitempty"` // "ts" (default) or "fmp4"
-}
+type ProfileSpec = ports.ProfileSpec
 
 // SessionRecord is the state-store source of truth for client-visible state.
 type SessionRecord struct {
@@ -174,7 +162,8 @@ type SessionRecord struct {
 	LastPlaylistAccessAt time.Time `json:"lastPlaylistAccessAt,omitempty"`
 	PlaylistPublishedAt  time.Time `json:"playlistPublishedAt,omitempty"`
 
-	ContextData map[string]string `json:"contextData,omitempty"`
+	ContextData   map[string]string `json:"contextData,omitempty"`
+	PlaybackTrace *PlaybackTrace    `json:"playbackTrace,omitempty"`
 }
 
 // IntentType defines the type of intent (command).

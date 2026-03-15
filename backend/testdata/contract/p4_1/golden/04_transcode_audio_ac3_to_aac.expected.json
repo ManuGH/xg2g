@@ -18,9 +18,31 @@
 						},
 						"selected_output_kind": "hls",
 						"selected_output_url": "placeholder://transcode.m3u8",
+						"targetProfile": {
+							"audio": {
+								"bitrateKbps": 256,
+								"channels": 2,
+								"codec": "aac",
+								"mode": "transcode",
+								"sampleRate": 48000
+							},
+							"container": "mpegts",
+							"hls": {
+								"enabled": true,
+								"segmentContainer": "mpegts"
+							},
+							"hwaccel": "none",
+							"packaging": "ts",
+							"video": {
+								"codec": "h264",
+								"mode": "copy"
+							}
+						},
 						"trace": {
 							"inputHash": "29c6be0eff30d880c33a0e423e2c43720047cc263e5f798aeabb4d8a4c336e83",
+							"qualityRung": "compatible_audio_aac_256_stereo",
 							"requestId": "stub-request-id",
+							"resolvedIntent": "compatible",
 							"ruleHits": [
 								"rule_container",
 								"rule_video",

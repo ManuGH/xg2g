@@ -172,6 +172,8 @@ components:
           type: string
           description: Playback URL for the HLS playlist.
           format: uri
+        trace:
+          $ref: "#/components/schemas/PlaybackTrace"
 
     Service:
       type: object
@@ -1037,9 +1039,162 @@ components:
         requestId:
           type: string
           description: Correlation ID (UUID or prefixed string like req_abc123)
+        requestProfile:
+          type: string
+          nullable: true
+        requestedIntent:
+          type: string
+          nullable: true
+        resolvedIntent:
+          type: string
+          nullable: true
+        qualityRung:
+          type: string
+          nullable: true
+        degradedFrom:
+          type: string
+          nullable: true
         sessionId:
           type: string
           nullable: true
+        source:
+          $ref: "#/components/schemas/PlaybackSourceProfile"
+        clientPath:
+          type: string
+          nullable: true
+        inputKind:
+          type: string
+          nullable: true
+        targetProfileHash:
+          type: string
+          nullable: true
+        targetProfile:
+          $ref: "#/components/schemas/PlaybackTargetProfile"
+        ffmpegPlan:
+          $ref: "#/components/schemas/PlaybackTraceFfmpegPlan"
+        firstFrameAtMs:
+          type: integer
+          nullable: true
+        fallbackCount:
+          type: integer
+          nullable: true
+        lastFallbackReason:
+          type: string
+          nullable: true
+        stopReason:
+          type: string
+          nullable: true
+        stopClass:
+          type: string
+          nullable: true
+
+    PlaybackTraceFfmpegPlan:
+      type: object
+      additionalProperties: false
+      properties:
+        inputKind:
+          type: string
+        container:
+          type: string
+        packaging:
+          type: string
+        hwAccel:
+          type: string
+        videoMode:
+          type: string
+        videoCodec:
+          type: string
+        audioMode:
+          type: string
+        audioCodec:
+          type: string
+
+    PlaybackSourceProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        container:
+          type: string
+        videoCodec:
+          type: string
+        audioCodec:
+          type: string
+        bitrateKbps:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+        fps:
+          type: number
+        interlaced:
+          type: boolean
+        audioChannels:
+          type: integer
+        audioBitrateKbps:
+          type: integer
+
+    PlaybackTargetProfile:
+      type: object
+      required: [container, packaging, video, audio, hls, hwAccel]
+      additionalProperties: false
+      properties:
+        container:
+          type: string
+        packaging:
+          type: string
+        video:
+          $ref: "#/components/schemas/PlaybackTargetVideo"
+        audio:
+          $ref: "#/components/schemas/PlaybackTargetAudio"
+        hls:
+          $ref: "#/components/schemas/PlaybackTargetHls"
+        hwAccel:
+          type: string
+
+    PlaybackTargetAudio:
+      type: object
+      required: [mode, codec, channels, bitrateKbps, sampleRate]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+        codec:
+          type: string
+        channels:
+          type: integer
+        bitrateKbps:
+          type: integer
+        sampleRate:
+          type: integer
+
+    PlaybackTargetHls:
+      type: object
+      required: [enabled, segmentContainer, segmentSeconds]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        segmentContainer:
+          type: string
+        segmentSeconds:
+          type: integer
+
+    PlaybackTargetVideo:
+      type: object
+      required: [mode, codec, width, height, fps]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+        codec:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        fps:
+          type: number
 
     PlaybackOutput:
       description: Output URL for client playback

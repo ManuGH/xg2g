@@ -28,6 +28,7 @@ interface UseLiveSessionControllerProps {
   setError: Dispatch<SetStateAction<string | null>>;
   readResponseBody: ErrorBodyReader;
   createPlayerError: PlayerErrorFactory;
+  onSessionSnapshot?: (session: V3SessionStatusResponse) => void;
 }
 
 interface LiveSessionController {
@@ -56,7 +57,8 @@ export function useLiveSessionController({
   setStatus,
   setError,
   readResponseBody,
-  createPlayerError
+  createPlayerError,
+  onSessionSnapshot
 }: UseLiveSessionControllerProps): LiveSessionController {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null);
@@ -172,7 +174,8 @@ export function useLiveSessionController({
     if (leaseExpiresAtValue) {
       setLeaseExpiresAt(leaseExpiresAtValue);
     }
-  }, [setDurationSeconds, setPlaybackMode]);
+    onSessionSnapshot?.(session);
+  }, [onSessionSnapshot, setDurationSeconds, setPlaybackMode]);
 
   const waitForSessionReady = useCallback(async (
     trackedSessionId: string,
@@ -232,6 +235,19 @@ export function useLiveSessionController({
             reason_detail: json?.reason_detail,
             body: json ?? text
           };
+
+          onSessionSnapshot?.({
+            sessionId: typeof json?.session === 'string' ? json.session : trackedSessionId,
+            requestId,
+            state: typeof json?.state === 'string' ? json.state : 'FAILED',
+            reason: typeof json?.reason === 'string' ? json.reason : undefined,
+            reasonDetail: typeof json?.reason_detail === 'string'
+              ? json.reason_detail
+              : typeof json?.reasonDetail === 'string'
+                ? json.reasonDetail
+                : undefined,
+            trace: (json && typeof json === 'object' && 'trace' in json) ? (json.trace as V3SessionStatusResponse['trace']) : undefined,
+          });
 
           telemetry.emit('ui.error', {
             status: 410,
@@ -312,7 +328,7 @@ export function useLiveSessionController({
       waitedMs: maxAttempts * SESSION_READY_POLL_MS,
       pollMs: SESSION_READY_POLL_MS
     });
-  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, readResponseBody, t]);
+  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, onSessionSnapshot, readResponseBody, t]);
 
   useEffect(() => {
     if (!sessionId || !heartbeatInterval) {

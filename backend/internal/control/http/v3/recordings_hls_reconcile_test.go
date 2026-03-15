@@ -32,7 +32,7 @@ func genericRecordingVariantHash() string {
 			Mode:        playbackprofile.MediaModeTranscode,
 			Codec:       "aac",
 			Channels:    2,
-			BitrateKbps: 192,
+			BitrateKbps: 256,
 			SampleRate:  48000,
 		},
 		HLS: playbackprofile.HLSTarget{

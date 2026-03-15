@@ -267,7 +267,7 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 
 	trace, ok := dec["trace"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "generic", trace["requestProfile"])
+	assert.Equal(t, "compatible", trace["requestProfile"])
 	assert.Equal(t, dec["targetProfileHash"], trace["targetProfileHash"])
 }
 
