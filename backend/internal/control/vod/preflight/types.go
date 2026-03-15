@@ -17,7 +17,9 @@ const (
 )
 
 type SourceRef struct {
-	URL string
+	URL      string
+	Username string
+	Password string
 }
 
 // PreflightResult conveys the semantic outcome (Outcome) and any upstream HTTP status.

@@ -191,6 +191,28 @@ func TestStreamURLInvalidStreamBaseOverrideFallsBack(t *testing.T) {
 	}
 }
 
+func TestStreamURLDirectDoesNotIncludeCredentials(t *testing.T) {
+	ref := "1:0:19:1334:3EF:1:C00000:0:0:0:"
+	client := NewWithPort("http://receiver.local", 19000, Options{
+		Username: "root",
+		Password: "secret",
+	})
+
+	got, err := client.StreamURL(context.Background(), ref, "ignored-name")
+	if err != nil {
+		t.Fatalf("StreamURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("failed to parse URL %q: %v", got, err)
+	}
+
+	if parsed.User != nil {
+		t.Fatalf("expected direct stream URL without userinfo, got %q", got)
+	}
+}
+
 func TestAbout(t *testing.T) {
 	mock := NewMockServer()
 	defer mock.Close()
