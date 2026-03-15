@@ -418,8 +418,8 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	}
 	if dec.Trace.ForcedIntent != "" || dec.Trace.MaxQualityRung != "" || dec.Trace.OverrideApplied {
 		operator := PlaybackTraceOperator{
-			ClientFallbackDisabled: false,
-			OverrideApplied:        dec.Trace.OverrideApplied,
+			ClientFallbackDisabled: boolPtr(false),
+			OverrideApplied:        boolPtr(dec.Trace.OverrideApplied),
 		}
 		if dec.Trace.ForcedIntent != "" {
 			forcedIntent := dec.Trace.ForcedIntent
@@ -442,9 +442,8 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	decDTO.Reasons = decision.ReasonsAsStrings(dec, nil)
 	if dec.TargetProfile != nil {
 		hash := dec.TargetProfile.Hash()
-		decDTO.TargetProfileHash = &hash
 		decDTO.Trace.TargetProfileHash = &hash
-		decDTO.TargetProfile = mapTargetProfile(dec.TargetProfile)
+		decDTO.Trace.TargetProfile = mapTargetProfile(dec.TargetProfile)
 	}
 
 	// 4. Resume DTO
@@ -603,6 +602,16 @@ func mapTargetProfile(target *playbackprofile.TargetPlaybackProfile) *PlaybackTa
 		return nil
 	}
 	canonical := playbackprofile.CanonicalizeTarget(*target)
+	var crf *int
+	if canonical.Video.CRF > 0 {
+		value := canonical.Video.CRF
+		crf = &value
+	}
+	var preset *string
+	if canonical.Video.Preset != "" {
+		value := canonical.Video.Preset
+		preset = &value
+	}
 	return &PlaybackTargetProfile{
 		Container: string(canonical.Container),
 		Packaging: string(canonical.Packaging),
@@ -610,11 +619,11 @@ func mapTargetProfile(target *playbackprofile.TargetPlaybackProfile) *PlaybackTa
 		Video: PlaybackTargetVideo{
 			Mode:   string(canonical.Video.Mode),
 			Codec:  canonical.Video.Codec,
-			Crf:    canonical.Video.CRF,
-			Preset: canonical.Video.Preset,
+			Crf:    crf,
+			Preset: preset,
 			Width:  canonical.Video.Width,
 			Height: canonical.Video.Height,
-			Fps:    canonical.Video.FPS,
+			Fps:    float32(canonical.Video.FPS),
 		},
 		Audio: PlaybackTargetAudio{
 			Mode:        string(canonical.Audio.Mode),
@@ -636,17 +645,48 @@ func mapSourceProfile(source *playbackprofile.SourceProfile) *PlaybackSourceProf
 		return nil
 	}
 	canonical := playbackprofile.CanonicalizeSource(*source)
+	var bitrateKbps *int
+	if canonical.BitrateKbps > 0 {
+		value := canonical.BitrateKbps
+		bitrateKbps = &value
+	}
+	var width *int
+	if canonical.Width > 0 {
+		value := canonical.Width
+		width = &value
+	}
+	var height *int
+	if canonical.Height > 0 {
+		value := canonical.Height
+		height = &value
+	}
+	var fps *float32
+	if canonical.FPS > 0 {
+		value := float32(canonical.FPS)
+		fps = &value
+	}
+	var audioChannels *int
+	if canonical.AudioChannels > 0 {
+		value := canonical.AudioChannels
+		audioChannels = &value
+	}
+	var audioBitrateKbps *int
+	if canonical.AudioBitrateKbps > 0 {
+		value := canonical.AudioBitrateKbps
+		audioBitrateKbps = &value
+	}
+	interlaced := canonical.Interlaced
 	return &PlaybackSourceProfile{
-		Container:        canonical.Container,
-		VideoCodec:       canonical.VideoCodec,
-		AudioCodec:       canonical.AudioCodec,
-		BitrateKbps:      canonical.BitrateKbps,
-		Width:            canonical.Width,
-		Height:           canonical.Height,
-		Fps:              canonical.FPS,
-		Interlaced:       canonical.Interlaced,
-		AudioChannels:    canonical.AudioChannels,
-		AudioBitrateKbps: canonical.AudioBitrateKbps,
+		Container:        strPtr(canonical.Container),
+		VideoCodec:       strPtr(canonical.VideoCodec),
+		AudioCodec:       strPtr(canonical.AudioCodec),
+		BitrateKbps:      bitrateKbps,
+		Width:            width,
+		Height:           height,
+		Fps:              fps,
+		Interlaced:       &interlaced,
+		AudioChannels:    audioChannels,
+		AudioBitrateKbps: audioBitrateKbps,
 	}
 }
 

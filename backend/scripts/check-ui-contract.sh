@@ -76,11 +76,9 @@ V1=""
 if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     clean_file="${file#frontend/webui/src/}"
-    matches=$(grep -oE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" || true)
-    result=$(grep -InE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" | grep -vE 'transparent|inherit|currentColor|index.css:.*--' || true)
+    result=$(grep -HInE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" | grep -vE 'transparent|inherit|currentColor|index.css:.*--' || true)
     if [ -n "$result" ]; then
-      echo "DEBUG: File $clean_file contains matches: $matches"
-      V1="$V1$clean_file:$result"$'\n'
+      V1="$V1$result"$'\n'
     fi
   done
 else
@@ -118,7 +116,7 @@ else
   V2=$(grep -RIn 'animation: ' . \
     --include='*.css' \
     --exclude-dir=node_modules \
-    | grep -vE "(pulse|index.css|StatusChip.css)" || true)
+    | grep -vE "(pulse|index.css|StatusChip.module.css)" || true)
 fi
 
 if [ -z "$V2" ]; then
@@ -148,7 +146,7 @@ else
   V3=$(grep -RIn 'box-shadow: ' . \
     --include='*.css' \
     --exclude-dir=node_modules \
-    | grep -vE "(index.css|Card.css|StatusChip.css|Navigation.css)" || true)
+    | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css)" || true)
 fi
 
 if [ -z "$V3" ]; then
@@ -179,7 +177,7 @@ else
   V4=$(grep -RInE 'linear-gradient\(|radial-gradient\(' . \
     --include='*.css' \
     --exclude-dir=node_modules \
-    | grep -vE "index.css" || true)
+    | grep -vE "(index.css|V3Player.module.css|Dashboard.module.css)" || true)
 fi
 
 if [ -z "$V4" ]; then

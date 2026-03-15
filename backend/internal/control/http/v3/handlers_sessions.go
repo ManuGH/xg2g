@@ -459,7 +459,6 @@ func ensureSessionPlaybackTrace(session *model.SessionRecord) *model.PlaybackTra
 	return session.PlaybackTrace
 }
 
-
 func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hlsRoot string) *PlaybackTrace {
 	if session == nil {
 		return nil
@@ -565,8 +564,8 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 
 	if trace.Operator != nil {
 		operator := PlaybackTraceOperator{
-			ClientFallbackDisabled: trace.Operator.ClientFallbackDisabled,
-			OverrideApplied:        trace.Operator.OverrideApplied,
+			ClientFallbackDisabled: boolPtr(trace.Operator.ClientFallbackDisabled),
+			OverrideApplied:        boolPtr(trace.Operator.OverrideApplied),
 		}
 		if forcedIntent := strings.TrimSpace(trace.Operator.ForcedIntent); forcedIntent != "" {
 			operator.ForcedIntent = &forcedIntent
@@ -585,14 +584,14 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 
 	if trace.FFmpegPlan != nil {
 		dto.FfmpegPlan = &PlaybackTraceFfmpegPlan{
-			InputKind:  trace.FFmpegPlan.InputKind,
-			Container:  trace.FFmpegPlan.Container,
-			Packaging:  trace.FFmpegPlan.Packaging,
-			HwAccel:    trace.FFmpegPlan.HWAccel,
-			VideoMode:  trace.FFmpegPlan.VideoMode,
-			VideoCodec: trace.FFmpegPlan.VideoCodec,
-			AudioMode:  trace.FFmpegPlan.AudioMode,
-			AudioCodec: trace.FFmpegPlan.AudioCodec,
+			InputKind:  strPtr(trace.FFmpegPlan.InputKind),
+			Container:  strPtr(trace.FFmpegPlan.Container),
+			Packaging:  strPtr(trace.FFmpegPlan.Packaging),
+			HwAccel:    strPtr(trace.FFmpegPlan.HWAccel),
+			VideoMode:  strPtr(trace.FFmpegPlan.VideoMode),
+			VideoCodec: strPtr(trace.FFmpegPlan.VideoCodec),
+			AudioMode:  strPtr(trace.FFmpegPlan.AudioMode),
+			AudioCodec: strPtr(trace.FFmpegPlan.AudioCodec),
 		}
 	}
 

@@ -13,6 +13,14 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+type generatedRouterAdapter struct {
+	*Server
+}
+
+func (a generatedRouterAdapter) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
+	a.Server.GetLogs(w, r)
+}
+
 // NewHandler creates a V3 API handler with all required middleware wired in.
 // It enforces:
 // 1. Authentication (via authMiddleware)
@@ -53,7 +61,7 @@ func newHandlerWithMiddlewares(svc *Server, _ config.AppConfig, extra []Middlewa
 
 	// 3. Create Handler
 	// Use handwritten router to inject scope policy and keep generated code transport-only.
-	h := NewRouter(svc, RouterOptions{
+	h := NewRouter(generatedRouterAdapter{Server: svc}, RouterOptions{
 		BaseURL:     V3BaseURL,
 		Middlewares: stack,
 		BaseRouter:  r,

@@ -378,6 +378,7 @@
   height: 100%;
   background: var(--accent-action);
   border-radius: 3px;
+  width: var(--xg2g-progress, 0%);
 }
 
 .progressMeta {

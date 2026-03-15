@@ -281,7 +281,7 @@ a:hover {
 
 /* Utilities */
 .glass {
-  background: rgba(13, 14, 18, 0.75);
+  background: var(--bg-overlay);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-top: 0.5px solid var(--border-elevated);

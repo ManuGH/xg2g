@@ -98,7 +98,7 @@ export function EpgEventRow({
           {inProgress && (
             <div className={styles.progressContainer}>
               <div className={styles.progress}>
-                <div className={styles.progressBar} style={{ width: `${pct}%` }} />
+                <div className={styles.progressBar} style={{ '--xg2g-progress': `${pct}%` } as React.CSSProperties} />
               </div>
               <div className={styles.progressMeta}>
                 <span>{formatTime(event.start)}</span>
