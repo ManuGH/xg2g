@@ -36,14 +36,24 @@ echo ""
 cd "$WEBUI_SRC"
 
 if [ "$IS_SCOPED" = true ]; then
+  FILTERED_SCOPE=()
   for file in "${SCOPE_FILES[@]}"; do
     clean_file="${file#frontend/webui/src/}"
-
-    if [ ! -f "$clean_file" ]; then
+    if [ -f "$clean_file" ]; then
+      FILTERED_SCOPE+=("$file")
+    else
       echo "ℹ️  SKIP: Scoped file not found (deleted?): $file"
-      continue
     fi
+  done
+  SCOPE_FILES=("${FILTERED_SCOPE[@]}")
 
+  if [ ${#SCOPE_FILES[@]} -eq 0 ]; then
+    echo "✅ PASS: All scoped files were deletions, skipping further checks."
+    exit 0
+  fi
+
+  for file in "${SCOPE_FILES[@]}"; do
+    clean_file="${file#frontend/webui/src/}"
     case "$clean_file" in
       *.tsx|*.css) ;;
       *)

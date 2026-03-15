@@ -48,6 +48,7 @@ const (
 	defaultSafariPlaylistReadyTimeout   = 30 * time.Second
 	defaultRecoveryPlaylistReadyTimeout = 35 * time.Second
 	defaultVODPlaylistReadyTimeout      = 2 * time.Minute
+	defaultStartupProcessRetryLimit     = 1
 )
 
 func (o *Orchestrator) resolveSession(ctx context.Context, e model.StartSessionEvent) (string, *model.SessionRecord, context.Context, error) {
@@ -394,6 +395,27 @@ func isStartupRecoveryProfile(profileName string) bool {
 	}
 }
 
+func shouldRetryStartupWaitFailure(reason model.ReasonCode, detail string, attempt int) bool {
+	if attempt >= defaultStartupProcessRetryLimit {
+		return false
+	}
+	if reason != model.RProcessEnded {
+		return false
+	}
+
+	lower := strings.ToLower(strings.TrimSpace(detail))
+	switch {
+	case strings.Contains(lower, "upstream stream ended prematurely"):
+		return true
+	case strings.Contains(lower, "failed to open upstream input"):
+		return true
+	case strings.Contains(lower, "invalid upstream input data"):
+		return true
+	default:
+		return false
+	}
+}
+
 func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunHandle) error {
 	// Polling wait loop with exponential backoff (no max timeout for live sessions).
 	const initialInterval = 500 * time.Millisecond
@@ -727,25 +749,8 @@ func (o *Orchestrator) runExecutionLoop(
 	var failReason model.ReasonCode
 	var failDetail string
 
-	// Simplified Retry Logic (Step 4.2 Decoupling)
-	// We stripped classifyFailure (ffmpeg logs) so we treat all failures as "unknown" or "packager".
-	// For now, we abort after 1 attempt or blind retry.
-	// If fails, we just return error.
-
-	var err error
-	handle, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
-	if err != nil {
-		return "", model.ProfileSpec{}, err
-	}
-	stopHandleOnExit := true
-	defer func() {
-		if stopHandleOnExit {
-			o.stopPipelineHandle(ctx, handle)
-		}
-	}()
-
 	o.recordTransition(model.SessionStarting, model.SessionPriming)
-	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() || r.State == model.SessionStopping {
 			return fmt.Errorf("session state %s, aborting priming: %w", r.State, ErrSessionCanceled)
 		}
@@ -765,29 +770,59 @@ func (o *Orchestrator) runExecutionLoop(
 		})
 	}
 
-	playlistReadyResult := false
+	playlistPath := ""
 	if o.HLSRoot != "" {
-		playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
-		var waitReason model.ReasonCode
-		var waitDetail string
-
-		playlistReadyResult, waitReason, waitDetail = o.waitForReady(
-			ctx, hbCtx, e, currentProfileSpec, handle,
-			playlistPath, sessionCtx.IsVOD,
-			startTime, logger, &ttfpRecorded,
-		)
-
-		if !playlistReadyResult {
-			failReason = waitReason
-			failDetail = waitDetail
-		}
-	} else {
-		playlistReadyResult = true
+		playlistPath = filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
 	}
 
-	if playlistReadyResult {
-		stopHandleOnExit = false
-		return handle, currentProfileSpec, nil
+	for attempt := 0; attempt <= defaultStartupProcessRetryLimit; attempt++ {
+		handle, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
+		if err != nil {
+			return "", model.ProfileSpec{}, err
+		}
+
+		playlistReadyResult := false
+		if playlistPath != "" {
+			var waitReason model.ReasonCode
+			var waitDetail string
+
+			playlistReadyResult, waitReason, waitDetail = o.waitForReady(
+				ctx, hbCtx, e, currentProfileSpec, handle,
+				playlistPath, sessionCtx.IsVOD,
+				startTime, logger, &ttfpRecorded,
+			)
+
+			if !playlistReadyResult {
+				failReason = waitReason
+				failDetail = waitDetail
+			}
+		} else {
+			playlistReadyResult = true
+		}
+
+		if playlistReadyResult {
+			return handle, currentProfileSpec, nil
+		}
+
+		if shouldRetryStartupWaitFailure(failReason, failDetail, attempt) {
+			logger.Warn().
+				Str("session_id", e.SessionID).
+				Int("attempt", attempt+1).
+				Int("max_retries", defaultStartupProcessRetryLimit).
+				Str("reason", string(failReason)).
+				Str("detail", failDetail).
+				Msg("startup failed before ready; retrying once")
+
+			o.stopPipelineHandle(ctx, handle)
+			if o.HLSRoot != "" {
+				o.cleanupFiles(e.SessionID)
+			}
+			ttfpRecorded = false
+			continue
+		}
+
+		o.stopPipelineHandle(ctx, handle)
+		return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
 	}
 
 	return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
