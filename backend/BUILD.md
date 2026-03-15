@@ -6,7 +6,7 @@ This document captures the technical requirements and targets for building and d
 
 | Component | Policy / Requirement |
 | :--- | :--- |
-| **Go** | Source of Truth: `go.mod`. Required version: `1.25.6`. |
+| **Go** | Source of Truth: `backend/go.mod`. Required language version: `1.25`; pinned toolchain: `go1.25.7`. |
 | **FFmpeg** | Required for HLS/Transcoding. Version: `6.x` or `7.x`. |
 | **Docker** | Required for containerized build/deploy. Supports `buildx`. |
 | **Make** | Used as the orchestration layer for all dev tasks. |
@@ -17,11 +17,11 @@ Base command: `make [target]`
 
 | Target | Description |
 | :--- | :--- |
-| `build` | Compiles the `xg2g` binary to `./bin/` |
+| `build` | Compiles the offline-safe backend binary to `./bin/xg2g`. |
+| `ui-build` | Builds `frontend/webui/` and copies the bundle into `backend/internal/control/http/dist/`. |
 | `docker-build` | Builds the Docker image (AMD64) with `--load` |
 | `test` | Runs unit and fast integration tests |
-| `lint` | Executes `golangci-lint` and documentation linters |
-| `clean` | Purges `./bin/`, logs, and temporary test data |
+| `lint` | Executes `golangci-lint`, WebUI linting, and design contract checks |
 
 ## 3. Deployment Posture
 
@@ -31,4 +31,4 @@ Base command: `make [target]`
 - **Network**: Exposes HTTP service (default `:8088`).
 
 > [!IMPORTANT]
-> Always verify the `go.mod` version before local compilation to ensure toolchain alignment with CI.
+> Always verify `backend/go.mod` and the root `mk/variables.mk` toolchain pin before local compilation to stay aligned with CI.

@@ -16,8 +16,8 @@ authoritative.
 - Build, test, and release workflows are highly gate-driven (`Makefile`,
   `.github/workflows/`).
 - Runtime operations and governance policy are documented under `docs/ops/`.
-- WebUI is developed in `webui/` and embedded into `internal/control/http/dist`
-  for backend serving.
+- WebUI is developed in `frontend/webui/` and embedded into
+  `backend/internal/control/http/dist/` for backend serving.
 
 ## Source Of Truth Documents
 
@@ -28,7 +28,7 @@ authoritative.
 - Operator and governance posture:
   `docs/ops/EXTERNAL_AUDIT_MODE.md`
 - Development and contribution flow:
-  `WORKFLOW.md`
+  `backend/WORKFLOW.md`
 
 ## Scope Notes
 
