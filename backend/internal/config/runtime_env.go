@@ -106,6 +106,8 @@ func ReadEnv(getenv func(string) string) (Env, error) {
 		ProxyBaseURL:     getString(getenv, "XG2G_PROXY_BASE_URL", "http://localhost:18000"),
 		UseHashTvgID:     getBool(getenv, "XG2G_USE_HASH_TVGID", false),
 		FFmpegLogLevel:   getString(getenv, "XG2G_FFMPEG_LOGLEVEL", ""),
+		UIDevProxyURL:    getString(getenv, "XG2G_UI_DEV_PROXY_URL", ""),
+		UIDevDir:         getString(getenv, "XG2G_UI_DEV_DIR", ""),
 	}
 
 	rt.OpenWebIF = readOpenWebIFRuntime(getenv)

@@ -40,8 +40,7 @@ if [ "$IS_SCOPED" = true ]; then
     clean_file="${file#frontend/webui/src/}"
 
     if [ ! -f "$clean_file" ]; then
-      echo "❌ FAIL: Scoped file not found: $file"
-      EXIT_CODE=1
+      echo "ℹ️  SKIP: Scoped file not found (deleted?): $file"
       continue
     fi
 

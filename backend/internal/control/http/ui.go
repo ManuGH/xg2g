@@ -12,7 +12,9 @@ import (
 
 // UIConfig configures the UI handler.
 type UIConfig struct {
-	CSP string
+	CSP         string
+	DevProxyURL string
+	DevDir      string
 }
 
 type uiCacheMode int

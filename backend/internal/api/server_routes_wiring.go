@@ -76,7 +76,9 @@ func (s *Server) registerPublicRoutes(r chi.Router) {
 	r.Get("/readyz", systemhttp.NewReadyHandler(s.healthManager))
 
 	r.Handle("/ui/*", http.StripPrefix("/ui", controlhttp.UIHandler(controlhttp.UIConfig{
-		CSP: middleware.DefaultCSP,
+		CSP:         middleware.DefaultCSP,
+		DevProxyURL: s.snap.Runtime.UIDevProxyURL,
+		DevDir:      s.snap.Runtime.UIDevDir,
 	})))
 	r.Get("/ui", redirectTo("/ui/", http.StatusMovedPermanently))
 	r.Get("/", redirectTo("/ui/", http.StatusTemporaryRedirect))
