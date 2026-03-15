@@ -1,0 +1,5 @@
+# xg2g Trivy Ignore List
+# Whitelist intentional bootstrap credentials and known false positives
+
+# bootstrap cert/key pair (intentional for initial setup)
+backend/internal/app/bootstrap/certs/xg2g.key
