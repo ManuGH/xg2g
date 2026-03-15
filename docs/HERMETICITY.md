@@ -126,7 +126,7 @@ GOPROXY=off GOSUMDB=off GOVCS=*:off GOTOOLCHAIN=local \
 
 # Verify determinism
 make generate
-git diff --exit-code -- internal/api internal/control/http/v3
+git diff --exit-code -- backend/internal/api backend/internal/control/http/v3
 
 # Verify hermetic workflow guard
 ./backend/scripts/ci/ctogate_hermetic_codegen.sh .github/workflows/ci.yml

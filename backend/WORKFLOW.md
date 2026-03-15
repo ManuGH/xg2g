@@ -14,7 +14,7 @@ git checkout -b codex/<feature>
 
 ## Shared SMB Hygiene (Required)
 
-- Run once per clone: `make hooks` (installs `pre-commit` + `pre-push` hooks).
+- Run once per clone: `pip install pre-commit && pre-commit install --hook-type pre-commit --hook-type pre-push`.
 - The pre-push hook blocks:
   - direct pushes from `main`
   - branches not descending from `origin/main` (unrelated-history safety)
@@ -50,7 +50,7 @@ go test ./...
 go test ./...
 # build/run as needed
 make build
-./xg2g --config /path/to/config.yaml
+./bin/xg2g --config /path/to/config.yaml
 ```
 
 ### WebUI (Dev Mode)
