@@ -31,7 +31,6 @@ FROM debian:trixie-slim AS ffmpeg-runtime-base-internal
 
 # Set production runtime defaults shared by release and local base images.
 ENV DEBIAN_FRONTEND=noninteractive \
-    XG2G_LOG_FORMAT=json \
     XG2G_LISTEN=":8088" \
     FFMPEG_HOME="/opt/ffmpeg" \
     XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg" \

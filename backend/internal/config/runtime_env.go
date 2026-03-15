@@ -23,6 +23,7 @@ type Env struct {
 var runtimeEnvKeys = []string{
 	"XG2G_PLAYLIST_FILENAME",
 	"XG2G_PUBLIC_URL",
+	"XG2G_DECISION_SECRET",
 	"XG2G_X_TVG_URL",
 	"XG2G_USE_PROXY_URLS",
 	"XG2G_PROXY_BASE_URL",

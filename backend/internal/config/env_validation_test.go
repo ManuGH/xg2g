@@ -53,6 +53,7 @@ func TestValidateEnvUsage_RuntimeKeyAllowed(t *testing.T) {
 	values := map[string]string{
 		"XG2G_STORE_PATH":        t.TempDir(),
 		"XG2G_PLAYLIST_FILENAME": "playlist.custom.m3u8",
+		"XG2G_DECISION_SECRET":   "12345678901234567890123456789012",
 	}
 
 	loader := NewLoaderWithEnv(
@@ -63,6 +64,7 @@ func TestValidateEnvUsage_RuntimeKeyAllowed(t *testing.T) {
 			return []string{
 				"XG2G_STORE_PATH=" + values["XG2G_STORE_PATH"],
 				"XG2G_PLAYLIST_FILENAME=" + values["XG2G_PLAYLIST_FILENAME"],
+				"XG2G_DECISION_SECRET=" + values["XG2G_DECISION_SECRET"],
 			}
 		},
 	)
