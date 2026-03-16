@@ -39,6 +39,7 @@
 							}
 						},
 						"trace": {
+							"audioQualityRung": "compatible_audio_aac_256_stereo",
 							"inputHash": "29c6be0eff30d880c33a0e423e2c43720047cc263e5f798aeabb4d8a4c336e83",
 							"qualityRung": "compatible_audio_aac_256_stereo",
 							"requestId": "stub-request-id",

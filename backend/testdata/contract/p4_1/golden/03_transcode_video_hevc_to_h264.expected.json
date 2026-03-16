@@ -32,11 +32,14 @@
 							"packaging": "ts",
 							"video": {
 								"codec": "h264",
-								"mode": "transcode"
+								"crf": 23,
+								"mode": "transcode",
+								"preset": "fast"
 							}
 						},
 						"trace": {
 							"inputHash": "8b31fee5fefb74a59f36781cb5ea9067f2da1eef990abb2b19d4d9a642d8ef3f",
+							"qualityRung": "compatible_video_h264_crf23_fast",
 							"requestId": "stub-request-id",
 							"resolvedIntent": "compatible",
 							"ruleHits": [
@@ -50,7 +53,8 @@
 								{
 									"code": "video_codec_not_supported_by_client"
 								}
-							]
+							],
+							"videoQualityRung": "compatible_video_h264_crf23_fast"
 						}
 					},
 					"status": 200
