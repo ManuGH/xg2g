@@ -108,8 +108,8 @@ describe('Gate O Phase 2: Seek/Resume Proof', () => {
       resumePosSeconds: 42
     });
 
-    expect(screen.queryByText(/player\.resumeTitle/i)).not.toBeInTheDocument();
-    expect(screen.queryByTitle('player.seekBack15s')).not.toBeInTheDocument();
+    expect(screen.queryByText(/player\.resumeTitle|Resume Playback\?/i)).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/player\.seekBack15s|Back 15s/i)).not.toBeInTheDocument();
 
     Object.defineProperty(video, 'currentTime', {
       configurable: true,
@@ -131,9 +131,9 @@ describe('Gate O Phase 2: Seek/Resume Proof', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTitle('player.seekBack15s')).toBeInTheDocument();
+      expect(screen.getByTitle(/player\.seekBack15s|Back 15s/i)).toBeInTheDocument();
     });
-    expect(screen.queryByText(/player\.resumeTitle/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/player\.resumeTitle|Resume Playback\?/i)).not.toBeInTheDocument();
 
     Object.defineProperty(video, 'currentTime', {
       configurable: true,

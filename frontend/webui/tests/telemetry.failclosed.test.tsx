@@ -67,7 +67,7 @@ describe('Telemetry Fail-Closed', () => {
     render(<V3Player autoStart={true} recordingId="rec-deny-telemetry" />);
 
     await waitFor(() => {
-      expect(screen.getByText(/player.playbackDenied/i)).toBeInTheDocument();
+      expect(screen.getByText(/player\.playbackDenied|Playback denied/i)).toBeInTheDocument();
       const events = telemetry.getEvents();
       const denyEvent = events.find(e => e.type === 'ui.failclosed' && e.payload?.context === 'V3Player.mode.deny');
       expect(denyEvent).toBeDefined();

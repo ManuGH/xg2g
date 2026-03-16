@@ -12,9 +12,8 @@
 .modal {
   width: min(520px, 100%);
   background: var(--bg-elevated);
-  border: 1px solid var(--border-base);
+  border: 1px solid var(--border-elevated);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-card);
   padding: 22px;
   display: flex;
   flex-direction: column;

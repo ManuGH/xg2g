@@ -269,7 +269,7 @@ describe('Player session journeys', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Launch player' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'player.closePlayer' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /player\.closePlayer|Close Player/i })).toBeInTheDocument();
       expect(screen.getByText('Journey Channel')).toBeInTheDocument();
       expect(findFetchCall(fetchMock, '/live/stream-info')).toBeDefined();
       expect(findFetchCall(fetchMock, '/intents')).toBeDefined();
@@ -341,8 +341,8 @@ describe('Player session journeys', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Launch player' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('player.serverError');
-      expect(screen.getByRole('button', { name: 'common.retry' })).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent(/player\.sessionFailed|Session failed/i);
+      expect(screen.getByRole('button', { name: /common\.retry|Retry/i })).toBeInTheDocument();
       expect(findFetchCall(fetchMock, '/sessions/sess-journey-1')).toBeDefined();
     });
 

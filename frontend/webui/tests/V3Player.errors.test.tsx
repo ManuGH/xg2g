@@ -24,7 +24,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     restoreConsoleNoise = suppressExpectedConsoleNoise({
       // Expected negative-path diagnostics asserted by this suite.
       error: [
-        /PlayerError: player\.sessionFailed: SESSION_GONE: recording_deleted/i,
+        /PlayerError: (player\.sessionFailed|Session failed): SESSION_GONE: recording_deleted/i,
         /\[V3Player\]\[Heartbeat\] Session expired \(410\)/i
       ],
       warn: [
@@ -81,8 +81,8 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     render(<V3Player autoStart={true} recordingId="rec-1" />);
 
     await waitFor(() => {
-      expect(screen.getByText(/player.leaseBusy/i)).toBeInTheDocument();
-      expect(screen.getByText(/player.retryAfter/i)).toBeInTheDocument();
+      expect(screen.getByText(/player\.leaseBusy|All tuners are currently in use\./i)).toBeInTheDocument();
+      expect(screen.getByText(/player\.retryAfter|Try again in ~30s\./i)).toBeInTheDocument();
     });
   });
 
@@ -98,7 +98,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     render(<V3Player autoStart={true} recordingId="rec-1" />);
 
     await waitFor(() => {
-      expect(screen.getByText(/player.authFailed/i)).toBeInTheDocument();
+      expect(screen.getByText(/player\.authFailed|Authentication failed/i)).toBeInTheDocument();
     });
   });
 
@@ -167,7 +167,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
       });
 
       const alert = screen.getByRole('alert');
-      expect(alert).toHaveTextContent(/player\.sessionFailed/i);
+      expect(alert).toHaveTextContent(/player\.sessionFailed|Session failed/i);
       expect(readinessCalls).toBe(1);
 
       await act(async () => {
@@ -176,7 +176,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
       });
 
       expect(readinessCalls).toBe(1);
-      expect(screen.getByText(/common\.retry/i)).toBeInTheDocument();
+      expect(screen.getByText(/common\.retry|Retry/i)).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -265,8 +265,8 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
 
       expect(readinessCalls).toBe(2);
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-      expect(screen.queryByText(/player\.sessionFailed/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/player\.sessionExpired/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/player\.sessionFailed|Session failed/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/player\.sessionExpired|Session expired/i)).not.toBeInTheDocument();
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3000);
@@ -423,7 +423,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
       expect(sessionStatusCalls).toBeGreaterThanOrEqual(3);
       expect(playMock.mock.calls.length).toBeGreaterThan(playsBeforeRecovery);
       expect(screen.queryByText(/Video Error:/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/player\.sessionExpired/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/player\.sessionExpired|Session expired/i)).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -481,7 +481,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
       const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]));
       expect(calls.some((u: string) => u.includes('/sessions/sess-123') && !u.includes('/heartbeat'))).toBe(true);
 
-      fireEvent.click(screen.getByText(/player.statsLabel/i));
+      fireEvent.click(screen.getByText(/player\.statsLabel|Stats/i));
       expect(screen.getByText('sess-123')).toBeInTheDocument();
 
       // Trigger first heartbeat (success) + flush the async interval callback.
@@ -497,7 +497,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
       });
 
       // With fake timers enabled, avoid waitFor here (it schedules timeouts).
-      expect(screen.getByText(/player.sessionExpired/i)).toBeInTheDocument();
+      expect(screen.getByText(/player\.sessionExpired|Session expired/i)).toBeInTheDocument();
       expect(screen.queryByText('sess-123')).not.toBeInTheDocument();
       expect(screen.getByText('Session').closest('div')).toHaveTextContent('Session-');
     } finally {

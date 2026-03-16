@@ -28,7 +28,7 @@ describe('Navigation semantics', () => {
     const current = links.filter(link => link.getAttribute('aria-current') === 'page');
     expect(current).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('link', { name: /nav\.dashboard/i }));
+    fireEvent.click(screen.getByRole('link', { name: /nav\.dashboard|dashboard/i }));
     expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.dashboard);
   });
 
@@ -41,7 +41,7 @@ describe('Navigation semantics', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /nav\.logout/i }));
+    fireEvent.click(screen.getByRole('button', { name: /nav\.logout|logout/i }));
     expect(onLogout).toHaveBeenCalledTimes(1);
   });
 });

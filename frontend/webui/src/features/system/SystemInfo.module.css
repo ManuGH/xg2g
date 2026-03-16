@@ -239,17 +239,20 @@
 
 .dotOk {
   background: var(--status-success);
-  box-shadow: var(--shadow-status-success);
+  outline: 2px solid var(--status-success-border);
+  outline-offset: 2px;
 }
 
 .dotError {
   background: var(--status-error);
-  box-shadow: var(--shadow-status-error);
+  outline: 2px solid var(--status-error-border);
+  outline-offset: 2px;
 }
 
 .dotTimeout {
   background: var(--status-warning);
-  box-shadow: var(--shadow-status-warning);
+  outline: 2px solid var(--status-warning-border);
+  outline-offset: 2px;
 }
 
 .dotUnknown {

@@ -331,7 +331,6 @@ a:hover {
   border: 4px solid var(--accent-action-subtle);
   border-top-color: var(--accent-action);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
 }
 
 /* ========================================
@@ -379,18 +378,17 @@ a:hover {
 }
 
 .animate-enter {
-  animation: enterFade 200ms ease-out forwards;
+  opacity: 1;
 }
 
 .animate-skeleton {
-  animation: skeletonPulse 1.4s ease-in-out infinite;
+  opacity: 0.88;
 }
 
 .spinner-base {
   border: 4px solid var(--border-elevated);
   border-radius: 50%;
   border-top-color: var(--accent-action);
-  animation: spin 1s linear infinite;
 }
 
 /* ========================================

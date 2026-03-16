@@ -60,14 +60,14 @@ describe('Frontend Smoke Tests', () => {
     await waitFor(() => {
       // We look for the value constructed from API data
       // Inputs are checked by display value
-      expect(screen.getByDisplayValue(/settings\.streaming\.policy\.universal/i)).toBeInTheDocument();
+      expect(screen.getByDisplayValue(/settings\.streaming\.policy\.universal|Universal \(H\.264\/AAC\/fMP4\)/i)).toBeInTheDocument();
 
       // Removed fragile "ADR-00X" assertion as per review
-      expect(screen.getByText(/settings\.streaming\.policy\.hint/i)).toBeInTheDocument();
+      expect(screen.getByText(/settings\.streaming\.policy\.hint|Strict universal-only delivery path\./i)).toBeInTheDocument();
     });
 
     // Verify input is disabled (read-only)
-    const input = screen.getByDisplayValue(/settings\.streaming\.policy\.universal/i);
+    const input = screen.getByDisplayValue(/settings\.streaming\.policy\.universal|Universal \(H\.264\/AAC\/fMP4\)/i);
     expect(input).toBeDisabled();
   });
 
@@ -75,7 +75,7 @@ describe('Frontend Smoke Tests', () => {
     renderSettings();
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue(/settings\.streaming\.policy\.universal/i)).toBeInTheDocument();
+      expect(screen.getByDisplayValue(/settings\.streaming\.policy\.universal|Universal \(H\.264\/AAC\/fMP4\)/i)).toBeInTheDocument();
     });
 
     // Query for legacy elements that SHOULD NOT be there

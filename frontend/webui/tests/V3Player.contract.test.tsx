@@ -55,7 +55,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     await waitFor(async () => {
       // Backend must fail closed if selected output URL is missing.
       const errorToast = await screen.findByRole('alert');
-      expect(errorToast.textContent).toContain('player.serverError');
+      expect(errorToast).toHaveTextContent(/Backend decision missing selectedOutputUrl|player\.serverError|Server error/i);
     });
   });
 

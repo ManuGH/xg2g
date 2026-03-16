@@ -13,9 +13,8 @@
   height: 100%;
   padding: 14px 12px;
   border-radius: 32px;
-  border: 1px solid var(--border-elevated);
+  border: 1px solid var(--border-strong);
   background: var(--surface-shell-strong);
-  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -212,9 +211,8 @@
     margin: 0 12px calc(12px + var(--sab));
     padding: 8px;
     border-radius: 28px;
-    border: 1px solid var(--border-elevated);
+    border: 1px solid var(--border-strong);
     background: var(--surface-shell-strong);
-    box-shadow: var(--shadow-card);
     display: flex;
     gap: 8px;
     pointer-events: auto;
@@ -263,9 +261,8 @@
     bottom: calc(92px + var(--sab));
     padding: 18px;
     border-radius: 28px;
-    border: 1px solid var(--border-elevated);
+    border: 1px solid var(--border-strong);
     background: var(--surface-shell-strong);
-    box-shadow: var(--shadow-card);
     pointer-events: auto;
   }
 

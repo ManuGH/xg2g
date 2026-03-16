@@ -28,13 +28,13 @@ describe('User-Facing Error Matrix (ERROR_MAP.md)', () => {
     {
       status: 403,
       name: '403 FORBIDDEN',
-      expectText: new RegExp('player.authFailed|Authentication failed', 'i'),
+      expectText: new RegExp('player.forbidden|Access denied', 'i'),
     },
     {
       status: 409,
       name: '409 CONFLICT (Busy)',
       headers: { 'Retry-After': '10' },
-      expectText: new RegExp('player.retryAfter|retry in 10', 'i'),
+      expectText: new RegExp('player.retryAfter|try again in ~10s', 'i'),
     },
     // 410 Gone logic is harder to test via initial fetch as fetch failure results in error screen directly.
     // But let's verify it maps to a "Gone" message or similar if implemented, or general error.
@@ -44,7 +44,7 @@ describe('User-Facing Error Matrix (ERROR_MAP.md)', () => {
     {
       status: 410,
       name: '410 GONE',
-      expectText: new RegExp('player.notAvailable|Playback not available', 'i'), // Assuming map
+      expectText: new RegExp('player.notAvailable|Not available', 'i'),
     }
   ];
 

@@ -195,7 +195,7 @@ describe('Primary navigation and EPG journeys', () => {
     });
 
     const desktopNav = screen.getByRole('navigation', { name: 'Main navigation' });
-    fireEvent.click(within(desktopNav).getByRole('link', { name: 'nav.epg' }));
+    fireEvent.click(within(desktopNav).getByRole('link', { name: /nav\.epg|TV\/EPG/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId('epg-channel-list-main')).toBeInTheDocument();
@@ -215,7 +215,7 @@ describe('Primary navigation and EPG journeys', () => {
     await screen.findByText('Dashboard route ready');
 
     fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
-    fireEvent.click(screen.getByRole('link', { name: 'nav.timers' }));
+    fireEvent.click(screen.getByRole('link', { name: /nav\.timers|Timers/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Timers route ready')).toBeInTheDocument();
@@ -236,7 +236,7 @@ describe('Primary navigation and EPG journeys', () => {
     renderJourney(ROUTE_MAP.epg);
 
     await waitFor(() => {
-      expect(screen.getByText('player.forbidden')).toBeInTheDocument();
+      expect(screen.getByText(/player\.forbidden|Access denied|Forbidden/i)).toBeInTheDocument();
       expect(screen.getByTestId('journey-pathname')).toHaveTextContent(ROUTE_MAP.epg);
     });
 
