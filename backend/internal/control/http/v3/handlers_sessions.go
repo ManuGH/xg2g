@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -507,77 +506,4 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 
 	return dto
-}
-
-func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) (string, *float64, *float64, *float64, *float64) {
-	mode := model.ModeLive
-	if session.ContextData != nil {
-		if raw := strings.TrimSpace(session.ContextData[model.CtxKeyMode]); raw != "" {
-			mode = strings.ToUpper(raw)
-		}
-	}
-	if mode != model.ModeLive && mode != model.ModeRecording {
-		mode = model.ModeLive
-	}
-
-	if mode == model.ModeRecording {
-		durationSeconds := parseContextSeconds(session.ContextData, model.CtxKeyDurationSeconds)
-		if durationSeconds == nil {
-			return mode, nil, nil, nil, nil
-		}
-		zero := 0.0
-		return mode, durationSeconds, &zero, durationSeconds, nil
-	}
-
-	var durationSeconds *float64
-	if session.Profile.DVRWindowSec > 0 {
-		val := float64(session.Profile.DVRWindowSec)
-		durationSeconds = &val
-	}
-
-	nowUnix := session.LastAccessUnix
-	if nowUnix == 0 {
-		nowUnix = session.UpdatedAtUnix
-	}
-	if nowUnix == 0 {
-		nowUnix = now.Unix()
-	}
-
-	startUnix := session.CreatedAtUnix
-	if startUnix == 0 {
-		startUnix = session.UpdatedAtUnix
-	}
-	if startUnix == 0 {
-		startUnix = nowUnix
-	}
-
-	liveEdgeVal := float64(nowUnix - startUnix)
-	if liveEdgeVal < 0 {
-		liveEdgeVal = 0
-	}
-
-	seekableStart := liveEdgeVal
-	if durationSeconds != nil && *durationSeconds > 0 {
-		seekableStart = liveEdgeVal - *durationSeconds
-		if seekableStart < 0 {
-			seekableStart = 0
-		}
-	}
-
-	return mode, durationSeconds, &seekableStart, &liveEdgeVal, &liveEdgeVal
-}
-
-func parseContextSeconds(ctx map[string]string, key string) *float64 {
-	if ctx == nil {
-		return nil
-	}
-	raw := strings.TrimSpace(ctx[key])
-	if raw == "" {
-		return nil
-	}
-	val, err := strconv.ParseFloat(raw, 64)
-	if err != nil || val <= 0 {
-		return nil
-	}
-	return &val
 }

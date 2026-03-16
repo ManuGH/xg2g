@@ -226,10 +226,19 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 		"",
 	)
 
-	cmd := exec.Command("sh", "-c", "printf 'frame=    1 fps=0.0 q=0.0\\rframe=    2 fps=0.0 q=0.0\\rOpening '\\''/tmp/seg_000001.m4s'\\'' for writing\\nOpening '\\''/tmp/seg_000002.m4s'\\'' for writing\\n' 1>&2")
-	stderr, err := cmd.StderrPipe()
+	stderr, writer, err := os.Pipe()
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = stderr.Close()
+		_ = writer.Close()
+	})
+
+	cmd := exec.Command("sh", "-c", "sleep 0.1")
 	require.NoError(t, cmd.Start())
+	go func() {
+		defer writer.Close()
+		_, _ = io.WriteString(writer, "frame=    1 fps=0.0 q=0.0\rframe=    2 fps=0.0 q=0.0\rOpening '/tmp/seg_000001.m4s' for writing\nOpening '/tmp/seg_000002.m4s' for writing\n")
+	}()
 
 	handle := ports.RunHandle("session-3-789")
 	adapter.mu.Lock()
