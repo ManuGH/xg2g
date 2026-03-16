@@ -227,7 +227,7 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		require.True(t, ok)
 		trace, ok := dec["trace"].(map[string]any)
 		require.True(t, ok)
-		target, ok := dec["targetProfile"].(map[string]any)
+		target, ok := trace["targetProfile"].(map[string]any)
 		require.True(t, ok)
 		video, ok := target["video"].(map[string]any)
 		require.True(t, ok)
@@ -305,12 +305,11 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 	assert.Equal(t, "direct_stream", dec["mode"])
 	assert.Equal(t, "hls", dec["selectedOutputKind"])
 	assert.NotEmpty(t, dec["outputs"])
-	assert.NotEmpty(t, dec["targetProfileHash"])
 
 	trace, ok := dec["trace"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "compatible", trace["requestProfile"])
-	assert.Equal(t, dec["targetProfileHash"], trace["targetProfileHash"])
+	assert.NotEmpty(t, trace["targetProfileHash"])
 	assert.Equal(t, "compatible", trace["resolvedIntent"])
 	assert.Equal(t, "compatible_hls_ts", trace["qualityRung"])
 }

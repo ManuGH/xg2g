@@ -4,10 +4,7 @@
 
 package v3
 
-import (
-	"net/http"
-	"strconv"
-)
+import "net/http"
 
 func registerAuthRoutes(register routeRegistrar, handler authRoutes) {
 	register.add(http.MethodPost, "/auth/session", "CreateSession", handler.CreateSession)
@@ -27,15 +24,7 @@ func registerIntentRoutes(register routeRegistrar, handler intentRoutes) {
 }
 
 func registerLogRoutes(register routeRegistrar, handler logRoutes) {
-	register.add(http.MethodGet, "/logs", "GetLogs", func(w http.ResponseWriter, r *http.Request) {
-		var params GetLogsParams
-		if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
-			if limit, err := strconv.Atoi(rawLimit); err == nil {
-				params.Limit = &limit
-			}
-		}
-		handler.GetLogs(w, r, params)
-	})
+	register.add(http.MethodGet, "/logs", "GetLogs", handler.GetLogs)
 }
 
 func registerReceiverRoutes(register routeRegistrar, handler receiverRoutes) {

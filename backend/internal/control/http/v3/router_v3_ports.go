@@ -28,7 +28,7 @@ type livePlaybackRoutes interface {
 }
 
 type logRoutes interface {
-	GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams)
+	GetLogs(w http.ResponseWriter, r *http.Request)
 }
 
 type receiverRoutes interface {

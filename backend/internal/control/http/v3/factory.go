@@ -6,6 +6,7 @@ package v3
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
