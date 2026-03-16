@@ -5,6 +5,11 @@ set -euo pipefail
 # Baseline 79 reflects intentional v3 hardening imports:
 # - internal/control/http/v3/auth for strict decision-token verification
 # - internal/pipeline/hardware for hwaccel availability enforcement
+SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+
+cd "${REPO_ROOT}/backend"
+
 MAX_V3_FANOUT="${MAX_V3_FANOUT:-79}"
 ACTUAL_V3_FANOUT="$(go list -f '{{len .Imports}}' ./internal/control/http/v3)"
 

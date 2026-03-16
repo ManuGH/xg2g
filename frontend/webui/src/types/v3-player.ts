@@ -1,7 +1,7 @@
 // Type definitions for V3 Player component
 
 import type Hls from 'hls.js';
-import type { Service } from '../client-ts';
+import type { PlaybackTrace, Service } from '../client-ts';
 
 export type PlayerStatus =
   | 'idle'
@@ -86,6 +86,7 @@ export interface V3SessionStatusResponse {
   reason?: string;
   reasonDetail?: string;
   correlationId?: string;
+  trace?: PlaybackTrace;
   updatedAtMs?: number;
   mode?: 'LIVE' | 'RECORDING';
   durationSeconds?: number;

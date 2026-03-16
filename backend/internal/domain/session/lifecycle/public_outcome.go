@@ -19,6 +19,11 @@ type PublicOutcome struct {
 // PublicOutcomeFromRecord derives a canonical outcome for external surfaces.
 func PublicOutcomeFromRecord(r *model.SessionRecord) PublicOutcome {
 	code := r.ReasonDetailCode
+	if (code == "" || code == model.DNone) && r.ReasonDetailDebug != "" {
+		if inferred := inferReasonDetailCode(r.Reason, r.ReasonDetailDebug); inferred != model.DNone {
+			code = inferred
+		}
+	}
 	if code == "" {
 		code = model.DNone
 		if r.ReasonDetailDebug != "" {

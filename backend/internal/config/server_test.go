@@ -23,8 +23,8 @@ func TestParseServerConfig(t *testing.T) {
 			envVars: map[string]string{},
 			validate: func(t *testing.T, cfg ServerConfig) {
 				t.Helper()
-				if cfg.ListenAddr != ":8088" {
-					t.Errorf("ListenAddr = %v, want :8088", cfg.ListenAddr)
+				if cfg.ListenAddr != "127.0.0.1:8088" {
+					t.Errorf("ListenAddr = %v, want 127.0.0.1:8088", cfg.ListenAddr)
 				}
 				if cfg.ReadTimeout != 60*time.Second {
 					t.Errorf("ReadTimeout = %v, want 60s", cfg.ReadTimeout)
@@ -137,8 +137,8 @@ func TestParseServerConfigForApp(t *testing.T) {
 		t.Setenv("XG2G_LISTEN", "")
 		cfg := AppConfig{}
 		got := ParseServerConfigForApp(cfg)
-		if got.ListenAddr != ":8088" {
-			t.Fatalf("ListenAddr = %q, want %q", got.ListenAddr, ":8088")
+		if got.ListenAddr != "127.0.0.1:8088" {
+			t.Fatalf("ListenAddr = %q, want %q", got.ListenAddr, "127.0.0.1:8088")
 		}
 	})
 

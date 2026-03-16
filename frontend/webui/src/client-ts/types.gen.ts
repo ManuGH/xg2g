@@ -106,6 +106,7 @@ export type SessionResponse = {
      * Playback URL for the HLS playlist.
      */
     playbackUrl?: string;
+    trace?: PlaybackTrace;
 };
 
 export type Service = {
@@ -583,6 +584,10 @@ export type PlaybackInfo = {
      */
     startUnix?: number;
     /**
+     * Authoritative finite duration in milliseconds. Omitted if unknown or preparing.
+     */
+    durationMs?: number;
+    /**
      * Duration in seconds. Omitted if unknown or preparing.
      */
     durationSeconds?: number;
@@ -628,7 +633,7 @@ export type PlaybackInfoReason = 'directplay_match' | 'transcode_audio' | 'trans
  */
 export type PlaybackCapabilities = {
     /**
-     * Capabilities contract version (current: 1)
+     * Capabilities contract version (current: 2)
      */
     capabilitiesVersion: number;
     /**
@@ -663,6 +668,26 @@ export type PlaybackCapabilities = {
      * Client device category for policy decisions
      */
     deviceType?: string;
+    /**
+     * Supported HLS playback engines (e.g. native, hlsjs)
+     */
+    hlsEngines?: Array<string>;
+    /**
+     * Preferred HLS playback engine for this client (e.g. native, hlsjs)
+     */
+    preferredHlsEngine?: string;
+    /**
+     * Whether the capability snapshot was gathered from runtime browser probes.
+     */
+    runtimeProbeUsed?: boolean;
+    /**
+     * Version of the runtime playback probe contract.
+     */
+    runtimeProbeVersion?: number;
+    /**
+     * Browser-family fallback used when the server needs conservative capability defaults.
+     */
+    clientFamilyFallback?: string;
     /**
      * Whether client allows transcoding (force bypass)
      */
@@ -705,6 +730,14 @@ export type PlaybackDecision = {
      * Machine-readable decision reason codes
      */
     reasons: Array<string>;
+    /**
+     * Resolved output target profile summary for observability/debugging.
+     */
+    targetProfile?: PlaybackTargetProfile | null;
+    /**
+     * Stable hash of the resolved target playback profile.
+     */
+    targetProfileHash?: string | null;
     trace: PlaybackTrace;
 };
 
@@ -716,7 +749,96 @@ export type PlaybackTrace = {
      * Correlation ID (UUID or prefixed string like req_abc123)
      */
     requestId: string;
+    requestProfile?: string | null;
+    requestedIntent?: string | null;
+    resolvedIntent?: string | null;
+    qualityRung?: string | null;
+    audioQualityRung?: string | null;
+    videoQualityRung?: string | null;
+    degradedFrom?: string | null;
+    hostPressureBand?: string | null;
+    hostOverrideApplied?: boolean | null;
+    clientCapsSource?: string | null;
+    clientFamily?: string | null;
     sessionId?: string | null;
+    source?: PlaybackSourceProfile | null;
+    clientPath?: string | null;
+    inputKind?: string | null;
+    targetProfileHash?: string | null;
+    targetProfile?: PlaybackTargetProfile | null;
+    operator?: PlaybackTraceOperator | null;
+    ffmpegPlan?: PlaybackTraceFfmpegPlan | null;
+    firstFrameAtMs?: number | null;
+    fallbackCount?: number | null;
+    lastFallbackReason?: string | null;
+    stopReason?: string | null;
+    stopClass?: string | null;
+};
+
+export type PlaybackTraceOperator = {
+    forcedIntent?: string | null;
+    maxQualityRung?: string | null;
+    ruleName?: string | null;
+    ruleScope?: string | null;
+    clientFallbackDisabled: boolean;
+    overrideApplied: boolean;
+};
+
+export type PlaybackSourceProfile = {
+    container?: string;
+    videoCodec?: string;
+    audioCodec?: string;
+    bitrateKbps?: number;
+    width?: number;
+    height?: number;
+    fps?: number;
+    interlaced?: boolean;
+    audioChannels?: number;
+    audioBitrateKbps?: number;
+};
+
+export type PlaybackTraceFfmpegPlan = {
+    inputKind?: string;
+    container?: string;
+    packaging?: string;
+    hwAccel?: string;
+    videoMode?: string;
+    videoCodec?: string;
+    audioMode?: string;
+    audioCodec?: string;
+};
+
+export type PlaybackTargetProfile = {
+    container: string;
+    packaging: string;
+    hwAccel: string;
+    video: PlaybackTargetVideo;
+    audio: PlaybackTargetAudio;
+    hls: PlaybackTargetHls;
+};
+
+export type PlaybackTargetVideo = {
+    mode: string;
+    codec: string;
+    crf: number;
+    preset: string;
+    width: number;
+    height: number;
+    fps: number;
+};
+
+export type PlaybackTargetAudio = {
+    mode: string;
+    codec: string;
+    channels: number;
+    bitrateKbps: number;
+    sampleRate: number;
+};
+
+export type PlaybackTargetHls = {
+    enabled: boolean;
+    segmentContainer: string;
+    segmentSeconds: number;
 };
 
 /**
@@ -1982,7 +2104,12 @@ export type ReportPlaybackFeedbackResponses = {
 export type GetLogsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Maximum number of most-recent log entries to return.
+         */
+        limit?: number;
+    };
     url: '/logs';
 };
 

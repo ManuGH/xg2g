@@ -8,7 +8,16 @@
     "files": "Files",
     "logs": "Logs",
     "playerSettings": "Settings",
+    "system": "System",
+    "logout": "Logout",
+    "more": "More",
     "config": "Setup",
+    "sectionControl": "Control",
+    "sectionBrowse": "Browse",
+    "sectionSystem": "System",
+    "controlSurfaces": "Control surfaces",
+    "sheetEyebrow": "Navigation",
+    "sheetTitle": "Control surfaces",
     "cards": {
       "boxStreaming": {
         "title": "Receiver Connection",
@@ -19,6 +28,14 @@
         "outputLabel": "Connected Devices"
       }
     }
+  },
+  "app": {
+    "initializing": "Initializing..."
+  },
+  "auth": {
+    "requiredTitle": "Authentication Required",
+    "tokenPlaceholder": "Enter API Token",
+    "authenticate": "Authenticate"
   },
   "common": {
     "language": "Language",
@@ -68,6 +85,8 @@
     "seekForward60s": "Forward 60s",
     "seekForward15m": "Forward 15m",
     "goLive": "Go live",
+    "fullscreenLabel": "Fullscreen",
+    "exitFullscreenLabel": "Exit fullscreen",
     "unmute": "Unmute",
     "mute": "Mute",
     "pipTitle": "Picture-in-Picture (p)",
@@ -118,6 +137,75 @@
     "sessionExpired": "Session expired. Please restart.",
     "sessionNotFound": "Session no longer exists."
   },
+  "dashboard": {
+    "heroStreamingMoment": "Streaming moment",
+    "heroControlDeck": "Control deck",
+    "heroStreamingSummary": "Streaming {{count}} active session(s) from the receiver bridge.",
+    "heroStandbySummary": "Wake it to restore channel and programme metadata.",
+    "heroNextUp": "Next on the receiver: {{title}}",
+    "heroDefaultSummary": "Launch live TV, timers, recordings, and diagnostics from a single control surface.",
+    "connectedDevices": "Connected devices",
+    "liveViewerSessions": "live viewer sessions",
+    "readyForFirstSession": "ready for the first session",
+    "receiverLink": "Receiver link",
+    "healthy": "Healthy",
+    "standby": "Standby",
+    "lastSync": "Last sync {{time}}",
+    "recorder": "Recorder",
+    "active": "Active",
+    "idle": "Idle",
+    "noActiveRecordingTask": "No active recording task",
+    "metricStreaming": "Streaming",
+    "metricReceiver": "Receiver",
+    "metricEpg": "EPG",
+    "metricRecorder": "Recorder",
+    "liveTraffic": "Live traffic",
+    "activePlaybackSessions": "active playback sessions across the bridge",
+    "noActiveSessions": "no active sessions right now",
+    "allChannelsHaveData": "all channels currently have data",
+    "channelsMissingGuideData": "channels still missing guide data",
+    "online": "Online",
+    "synced": "Synced",
+    "recorderIdle": "Recorder idle",
+    "recordingActive": "Recording active",
+    "recorderUnknown": "Recorder unknown",
+    "systemHealthy": "System healthy",
+    "healthUnknown": "Health unknown",
+    "systemDegraded": "System degraded",
+    "guideSynced": "Guide synced",
+    "guidePartial": "Guide partial",
+    "guideOffline": "Guide offline",
+    "diagnostics": "Diagnostics",
+    "activeStreams": "Active streams",
+    "sessions": "{{count}} sessions",
+    "noSessions": "No sessions",
+    "noActiveStreams": "No active streams",
+    "startPlaybackHint": "Start playback from TV/EPG or Recordings and the session diagnostics will appear here.",
+    "signal": "Signal",
+    "receiverAndGuideHealth": "Receiver and guide health",
+    "receiverLabel": "Receiver",
+    "connected": "Connected",
+    "lastSyncLabel": "Last sync",
+    "guideGaps": "Guide gaps",
+    "none": "None",
+    "missing": "{{count}} missing",
+    "versionLabel": "Version",
+    "feed": "Feed",
+    "recentLogs": "Recent logs",
+    "noRecentLogs": "No recent log events.",
+    "loadingLogs": "Loading logs...",
+    "onReceiverNow": "On receiver now",
+    "receiverContext": "Receiver context",
+    "readyForPlayback": "Ready for live playback and control actions.",
+    "upNext": "Up next: {{title}}",
+    "timeNever": "Never",
+    "timeJustNow": "Just now",
+    "timeMinutesAgo": "{{count}}m ago",
+    "timeHoursAgo": "{{count}}h ago",
+    "logLevelError": "Error",
+    "logLevelWarn": "Warn",
+    "logLevelInfo": "Info"
+  },
   "epg": {
     "pageTitle": "EPG Overview ({{count}})",
     "timeRange": "Time Range",
@@ -160,6 +248,11 @@
     "saved": "Settings saved automatically",
     "streaming": {
       "title": "Streaming",
+      "policy": {
+        "label": "Delivery Policy",
+        "universal": "Universal (H.264/AAC/fMP4)",
+        "hint": "Strict universal-only delivery path."
+      },
       "profile": {
         "label": "Stream Encoding Profile",
         "hint": "Auto is recommended. Use Safari HEVC (GPU) only for testing on supported devices.",
@@ -205,11 +298,16 @@
         "stats": {
           "total": "Total Channels",
           "scanned": "Scanned",
+          "updated": "Updated",
           "interlaced": "Interlaced"
         },
         "timestamps": {
           "started": "Started",
           "finished": "Finished"
+        },
+        "errors": {
+          "loadStatus": "Scan status could not be loaded.",
+          "start": "Scan could not be started."
         }
       }
     },
@@ -280,30 +378,72 @@
   "system": {
     "pageTitle": "System Information",
     "receiverTitle": "Receiver Information",
+    "subtitle": "Hardware, tuners, storage and runtime from the receiver at a glance.",
+    "sectionOverview": "Overview",
+    "sectionLive": "Signal",
+    "sectionConnectivity": "Connectivity",
+    "sectionStorage": "Storage",
+    "sectionHealth": "Health",
     "hardware": "Hardware",
     "brandModel": "Brand & Model",
+    "chipset": "Chipset",
     "software": "Software",
     "distribution": "Distribution",
     "version": "Version",
     "kernel": "Kernel",
     "webif": "WebIF",
     "tuners": "Tuners",
+    "tunersDetected": "{{count}} detected",
+    "tunerStatus": {
+      "live": "Live",
+      "recording": "Recording",
+      "streaming": "Streaming",
+      "idle": "Idle",
+      "unknown": "Unknown"
+    },
     "network": "Network",
+    "interfaces": "{{count}} interfaces",
+    "ipv4": "IPv4",
+    "ipv6": "IPv6",
     "storage": "Storage & Recordings",
+    "storageLocations": "{{count}} locations",
     "drives": "Drives",
     "internal": "Internal",
+    "nas": "NAS",
     "paths": "Recording Paths",
     "healthLabel": "Health",
     "check": "Check",
+    "runtime": "Runtime",
+    "uptime": "Uptime",
+    "memory": "Memory",
+    "memoryUsed": "used",
+    "memoryLevel": {
+      "normal": "Normal",
+      "warning": "Watch",
+      "critical": "High"
+    },
+    "noInformation": "No information available.",
+    "loadError": "System information could not be loaded: {{error}}",
     "free": "Free",
     "total": "Total",
     "usage": "Usage",
+    "access": {
+      "none": "—",
+      "ro": "RO",
+      "rw": "RW"
+    },
     "status": {
       "mounted": "Connected",
       "unmounted": "Not mounted",
       "timeout": "Hanging (Timeout)",
       "error": "Error",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "skipped": "Skipped"
     }
+  },
+  "auth": {
+    "title": "Authentication Required",
+    "placeholder": "Enter API Token",
+    "submit": "Authenticate"
   }
 }

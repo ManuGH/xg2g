@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { client } from '../client-ts/client.gen';
-import { isApiError, isProblemDetails, mapApiError, putJsonOrThrow } from './clientWrapper';
+import { subscribeAuthRequired } from './sessionEvents';
+import {
+  ClientRequestError,
+  isApiError,
+  isProblemDetails,
+  mapApiError,
+  putJsonOrThrow,
+  throwOnClientResultError,
+  unwrapClientResultOrThrow
+} from './clientWrapper';
 
 describe('client-ts wrapper error mapping', () => {
   afterEach(() => {
@@ -81,6 +90,61 @@ describe('client-ts wrapper error mapping', () => {
         message: 'warming up'
       })
     );
+  });
+
+  it('dispatches auth-required details for 401 client results', () => {
+    const authRequired = vi.fn();
+    const unsubscribe = subscribeAuthRequired(authRequired);
+
+    try {
+      expect(() => {
+        throwOnClientResultError({
+          error: {
+            code: 'AUTH_REQUIRED',
+            message: 'Authentication required',
+            requestId: 'req-auth'
+          },
+          response: { status: 401 }
+        }, { source: 'useSystemHealth' });
+      }).toThrowError(ClientRequestError);
+
+      expect(authRequired).toHaveBeenCalledWith({
+        source: 'useSystemHealth',
+        status: 401,
+        code: 'AUTH_REQUIRED'
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('supports silent unwrap while still signaling session expiry on 401', () => {
+    const authRequired = vi.fn();
+    const unsubscribe = subscribeAuthRequired(authRequired);
+
+    try {
+      expect(
+        unwrapClientResultOrThrow({
+          error: {
+            code: 'AUTH_REQUIRED',
+            message: 'Authentication required',
+            requestId: 'req-auth-silent'
+          },
+          response: { status: 401 }
+        }, {
+          source: 'useSystemConfig',
+          silent: true
+        })
+      ).toBeUndefined();
+
+      expect(authRequired).toHaveBeenCalledWith({
+        source: 'useSystemConfig',
+        status: 401,
+        code: 'AUTH_REQUIRED'
+      });
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('returns without throwing when JSON PUT succeeds', async () => {

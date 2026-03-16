@@ -4,13 +4,17 @@
 
 import { useEffect, useState } from 'react';
 import { getLogs, type LogEntry } from '../client-ts';
+import { toAppError } from '../lib/appErrors';
+import { unwrapClientResultOrThrow } from '../lib/clientWrapper';
+import type { AppError } from '../types/errors';
 import { Button } from './ui';
+import ErrorPanel from './ErrorPanel';
 import styles from './Logs.module.css';
 
 export default function Logs() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
 
   const fetchLogs = async (): Promise<void> => {
     setLoading(true);
@@ -18,20 +22,10 @@ export default function Logs() {
 
     try {
       const result = await getLogs();
-
-      if (result.error) {
-        if (result.response?.status === 401) {
-          window.dispatchEvent(new Event('auth-required'));
-          setError('Authentication required. Please enter your API token.');
-        } else {
-          setError('Failed to fetch logs');
-        }
-      } else if (result.data) {
-        setLogs(result.data);
-      }
+      const data = unwrapClientResultOrThrow<LogEntry[]>(result, { source: 'Logs.fetchLogs' });
+      setLogs(data ?? []);
     } catch (err) {
-      const error = err as Error;
-      setError(error.message || 'Failed to fetch logs');
+      setError(toAppError(err, { fallbackTitle: 'Unable to load logs' }));
     } finally {
       setLoading(false);
     }
@@ -51,10 +45,10 @@ export default function Logs() {
         </Button>
       </div>
 
-      {error && <div className={`${styles.alert} ${styles.alertError}`.trim()} role="alert">Error: {error}</div>}
+      {error ? <ErrorPanel error={error} onRetry={fetchLogs} titleAs="h3" /> : null}
 
-      {logs.length === 0 && !loading ? (
-        <p className={styles.empty}>No logs available.</p>
+      {logs.length === 0 ? (
+        !loading && !error ? <p className={styles.empty}>No logs available.</p> : null
       ) : (
         <div className={styles.tableWrap}>
           <table className={styles.table}>

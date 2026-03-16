@@ -4,8 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
@@ -31,6 +33,10 @@ func (d *serverIntentDeps) SessionHeartbeatInterval() time.Duration {
 	return d.s.GetConfig().Sessions.HeartbeatInterval
 }
 
+func (d *serverIntentDeps) PlaybackOperator() config.PlaybackOperatorConfig {
+	return d.s.GetConfig().Playback.Operator
+}
+
 func (d *serverIntentDeps) SessionStore() v3intents.SessionStore {
 	return d.s.sessionsModuleDeps().store
 }
@@ -50,6 +56,10 @@ func (d *serverIntentDeps) AdmissionController() v3intents.AdmissionController {
 func (d *serverIntentDeps) AdmissionRuntimeState(ctx context.Context) admission.RuntimeState {
 	deps := d.s.sessionsModuleDeps()
 	return CollectRuntimeState(ctx, deps.admissionState)
+}
+
+func (d *serverIntentDeps) HostPressure(ctx context.Context) playbackprofile.HostPressureAssessment {
+	return d.s.currentHostPressure(ctx)
 }
 
 func (d *serverIntentDeps) VerifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode string) bool {

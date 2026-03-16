@@ -51,6 +51,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		return err
 	}
 	l.mergeFileResilience(dst, src)
+	l.mergeFilePlayback(dst, src)
 	l.mergeFileVOD(dst, src)
 
 	return nil
@@ -457,6 +458,24 @@ func (l *Loader) mergeFileResilience(dst *AppConfig, src *FileConfig) {
 		if src.Breaker.ConsecutiveThreshold > 0 {
 			dst.Breaker.ConsecutiveThreshold = src.Breaker.ConsecutiveThreshold
 		}
+	}
+}
+
+func (l *Loader) mergeFilePlayback(dst *AppConfig, src *FileConfig) {
+	if src.Playback == nil {
+		return
+	}
+	if src.Playback.Operator.ForceIntent != "" {
+		dst.Playback.Operator.ForceIntent = src.Playback.Operator.ForceIntent
+	}
+	if src.Playback.Operator.MaxQualityRung != "" {
+		dst.Playback.Operator.MaxQualityRung = src.Playback.Operator.MaxQualityRung
+	}
+	if src.Playback.Operator.DisableClientFallback != nil {
+		dst.Playback.Operator.DisableClientFallback = *src.Playback.Operator.DisableClientFallback
+	}
+	if len(src.Playback.Operator.SourceRules) > 0 {
+		dst.Playback.Operator.SourceRules = clonePlaybackOperatorRuleFilesToRuntime(src.Playback.Operator.SourceRules)
 	}
 }
 

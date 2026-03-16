@@ -22,6 +22,10 @@ The decision is a pure function of `DecisionInput`. Any "unknown" or zero-value 
 | `Capabilities.VideoCodecs` | []string | Set of allowed | Implicit Deny if not present |
 | `Capabilities.AudioCodecs` | []string | Set of allowed | Implicit Deny if not present |
 | `Policy.AllowTranscode` | bool | Boolean | If false, Transcode -> Deny |
+| `Policy.Operator.ForceIntent` | enum | Optional operator override: `direct`, `compatible`, `quality`, `repair` | Unknown normalizes to empty; may force a more conservative path when technically possible |
+| `Policy.Operator.MaxQualityRung` | enum | Optional operator ceiling for the quality ladder | Unknown normalizes to empty; only clamps to known ladder rungs |
+| `Policy.Host.PressureBand` | enum | Internal host pressure hint: `normal`, `elevated`, `constrained`, `critical` | Unknown normalizes to empty; may only downgrade optional quality, never invent unsupported playback |
+| `RequestedIntent` | enum | Optional: `direct`, `compatible`, `quality`, `repair` | Unknown normalizes to empty; target-profile resolution may default empty to `compatible` |
 
 ### 2. Output Mode Lattice (Experience Order)
 
@@ -68,10 +72,14 @@ To guarantee $f(Input) \to Output$ is bit-identical:
 - **Reason Sorting**: `Decision.Reasons` must be sorted alphabetically by `ReasonCode`.
 - **Trace**: Every decision must carry a `Trace` with:
   - `InputHash`: SHA-256 of canonical JSON input (excluding RequestID).
+  - `RequestedIntent`: Normalized requested intent, if present.
+  - `ResolvedIntent`: Effective intent chosen for target-profile resolution.
+  - `QualityRung`: Concrete ladder rung selected for the target profile.
+  - `DegradedFrom`: Requested intent when resolution had to step down.
   - `RuleHits`: Ordered list of rules evaluated/hit (Bounded enum).
   - `Why`: Structured explanation (e.g., `[{"code": "container_mismatched", "want": "mp4", "got": "mkv"}]`).
 
 ## Invariants
 
-1. **Input Freeze**: Use `scripts/gate_decision_drift.sh` to prevent `DecisionInput` changes.
+1. **Input Freeze**: `backend/internal/control/recordings/decision/drift_test.go` prevents unreviewed `DecisionInput` schema changes.
 2. **Reason Boundedness**: All `ReasonCode` values must be in `reasons.go` whitelist.

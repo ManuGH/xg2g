@@ -9,6 +9,7 @@ vi.mock('../src/client-ts', async () => {
   const actual = await vi.importActual<any>('../src/client-ts');
   return {
     ...actual,
+    addTimer: vi.fn(),
     updateTimer: vi.fn(),
     previewConflicts: vi.fn(),
   };
@@ -97,6 +98,40 @@ describe('EditTimerDialog Truth Sealing (UI-INV-TIMER-001)', () => {
       const call = (client.updateTimer as any).mock.calls[0][0];
       // Should NOT contain description because it was not edited
       expect(call.body).not.toHaveProperty('description');
+    });
+  });
+
+  it('creates a timer with required fields and omits optional defaults', async () => {
+    render(
+      <EditTimerDialog
+        availableServices={[
+          {
+            serviceRef: '1:0:1:service-1',
+            id: '1:0:1:service-1',
+            name: 'BBC One',
+          } as any,
+        ]}
+        onClose={mockOnClose}
+        onSave={mockOnSave}
+      />
+    );
+
+    const nameInput = screen.getByTestId('timer-edit-name');
+    fireEvent.change(nameInput, { target: { value: 'Morning News' } });
+
+    const saveBtn = screen.getByTestId('timer-edit-save');
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(client.addTimer).toHaveBeenCalledOnce();
+      const call = (client.addTimer as any).mock.calls[0][0];
+      expect(call.body.serviceRef).toBe('1:0:1:service-1');
+      expect(call.body.name).toBe('Morning News');
+      expect(call.body.begin).toEqual(expect.any(Number));
+      expect(call.body.end).toEqual(expect.any(Number));
+      expect(call.body.end).toBeGreaterThan(call.body.begin);
+      expect(call.body).not.toHaveProperty('description');
+      expect(call.body).not.toHaveProperty('enabled');
     });
   });
 });

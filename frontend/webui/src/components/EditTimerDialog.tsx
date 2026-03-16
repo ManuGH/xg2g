@@ -5,25 +5,29 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  addTimer,
   updateTimer,
   previewConflicts,
   type Timer,
   type DvrCapabilities,
   type TimerConflictPreviewResponse,
-  type TimerCreateRequest
+  type TimerCreateRequest,
+  type Service
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
 import { Button } from './ui';
 import styles from './EditTimerDialog.module.css';
 
 interface EditTimerDialogProps {
-  timer: Timer;
+  timer?: Timer;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   capabilities?: DvrCapabilities;
+  availableServices?: Service[];
 }
 
 interface FormData {
+  serviceRef: string;
   name: string;
   description: string;
   begin: number; // Unix timestamp
@@ -31,15 +35,37 @@ interface FormData {
   enabled: boolean;
 }
 
-export default function EditTimerDialog({ timer, onClose, onSave, capabilities }: EditTimerDialogProps) {
+function buildDefaultTimerWindow(nowMs: number): { begin: number; end: number } {
+  const start = new Date(nowMs + 60 * 60 * 1000);
+  start.setMinutes(start.getMinutes() < 30 ? 30 : 0, 0, 0);
+  if (start.getTime() <= nowMs) {
+    start.setHours(start.getHours() + 1);
+  }
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return {
+    begin: Math.floor(start.getTime() / 1000),
+    end: Math.floor(end.getTime() / 1000),
+  };
+}
+
+export default function EditTimerDialog({
+  timer,
+  onClose,
+  onSave,
+  capabilities,
+  availableServices = [],
+}: EditTimerDialogProps) {
   const { t } = useTranslation();
+  const defaultWindow = buildDefaultTimerWindow(Date.now());
+  const isCreateMode = !timer;
   const [formData, setFormData] = useState<FormData>({
-    name: timer.name || '',
+    serviceRef: timer?.serviceRef || availableServices[0]?.serviceRef || availableServices[0]?.id || '',
+    name: timer?.name || '',
     // UI-INV-TIMER-001: Preserve raw truth. Normalization happens ONLY for display if needed.
-    description: timer.description || '',
-    begin: timer.begin || 0,
-    end: timer.end || 0,
-    enabled: timer.state !== 'disabled',
+    description: timer?.description || '',
+    begin: timer?.begin || defaultWindow.begin,
+    end: timer?.end || defaultWindow.end,
+    enabled: timer ? timer.state !== 'disabled' : true,
   });
 
   const [conflict, setConflict] = useState<TimerConflictPreviewResponse | null>(null);
@@ -52,8 +78,8 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
   const handleChange = (field: keyof FormData, value: any) => {
     setFormData(prev => {
       const next = { ...prev, [field]: value };
-      // Trigger validation if time changes
-      if (field === 'begin' || field === 'end') {
+      // Trigger validation if scheduling dimensions change
+      if (field === 'serviceRef' || field === 'begin' || field === 'end') {
         debouncedValidate(next);
       }
       return next;
@@ -103,7 +129,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
 
       try {
         const proposed: TimerCreateRequest = {
-          serviceRef: timer.serviceRef,
+          serviceRef: data.serviceRef,
           name: data.name,
           begin: data.begin,
           end: data.end,
@@ -140,13 +166,42 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
   };
 
   const handleSave = async () => {
-    if (!timer.timerId) return;
-
     setSaving(true);
     setError(null);
     try {
+      if (!formData.serviceRef) {
+        setError(t('timers.validation.serviceRequired', 'Please select a channel.'));
+        return;
+      }
+
+      if (!formData.name.trim()) {
+        setError(t('timers.validation.nameRequired', 'Name is required.'));
+        return;
+      }
+
+      if (!formData.begin || !formData.end || formData.end <= formData.begin) {
+        setError(t('timers.validation.timeRangeInvalid', 'End time must be after start time.'));
+        return;
+      }
+
       // UI-INV-TIMER-001: Dirty-field write strategy (Seal Model B).
       // Only include fields that have definitively changed compared to props.
+      if (!timer?.timerId) {
+        const body: TimerCreateRequest = {
+          serviceRef: formData.serviceRef,
+          name: formData.name.trim(),
+          begin: formData.begin,
+          end: formData.end,
+          ...(formData.description.trim() ? { description: formData.description } : {}),
+          ...(!formData.enabled ? { enabled: false } : {}),
+        };
+
+        await addTimer({ body });
+        await onSave();
+        onClose();
+        return;
+      }
+
       const body: any = {};
 
       if (formData.name !== (timer.name || '')) body.name = formData.name;
@@ -166,7 +221,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
         path: { timerId: timer.timerId },
         body
       });
-      onSave(); // Trigger parent refresh
+      await onSave(); // Trigger parent refresh
       onClose();
     } catch (err: any) {
       debugError('Save failed', formatError(err));
@@ -196,7 +251,8 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
 
   // Capabilities Check
   const canEdit = capabilities?.timers?.edit !== false; // Default true if missing
-  const readOnlyMsg = !canEdit ? "Bearbeitung nicht unterstützt." : null;
+  const readOnlyMsg = !canEdit ? t('timers.readOnly', 'Timer changes are not supported.') : null;
+  const serviceOptions = availableServices.filter((service) => (service.serviceRef || service.id) && service.name);
 
   return (
     <div
@@ -207,11 +263,35 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
       }}
     >
       <div className={styles.card} role="dialog" aria-modal="true" aria-labelledby="timer-edit-title">
-        <h2 id="timer-edit-title" className={styles.title}>Edit Timer</h2>
+        <h2 id="timer-edit-title" className={styles.title}>
+          {isCreateMode ? t('timers.createTitle', 'New Timer') : t('timers.editTitle', 'Edit Timer')}
+        </h2>
 
         {readOnlyMsg && <div className={styles.readonlyMsg}>{readOnlyMsg}</div>}
 
         <div className={styles.form}>
+          <div className={styles.formGroup}>
+            <label className={styles.label}>Channel</label>
+            {isCreateMode ? (
+              <select
+                className={styles.inputField}
+                value={formData.serviceRef}
+                onChange={e => handleChange('serviceRef', e.target.value)}
+                disabled={!canEdit}
+                data-testid="timer-edit-service"
+              >
+                <option value="">Select a channel</option>
+                {serviceOptions.map((service) => (
+                  <option key={service.serviceRef || service.id} value={service.serviceRef || service.id}>
+                    {service.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className={styles.staticText}>{timer.serviceName || timer.serviceRef}</div>
+            )}
+          </div>
+
           <div className={styles.formGroup}>
             <label className={styles.label}>Name</label>
             <input
@@ -235,10 +315,6 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
           </div>
 
           <div className={styles.grid}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Ref</label>
-              <div className={styles.staticText}>{timer.serviceName || timer.serviceRef}</div>
-            </div>
             <div className={styles.formGroup}>
               <label className={styles.label}>Enabled</label>
               <input
@@ -305,7 +381,9 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
             disabled={!canEdit || saving || (conflict !== null && (conflict.conflicts?.length || 0) > 0)}
             data-testid="timer-edit-save"
           >
-            {saving ? 'Saving...' : 'Save'}
+            {saving
+              ? (isCreateMode ? 'Creating...' : 'Saving...')
+              : (isCreateMode ? 'Create' : 'Save')}
           </Button>
         </div>
       </div>

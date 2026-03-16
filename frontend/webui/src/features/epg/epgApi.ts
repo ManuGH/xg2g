@@ -2,12 +2,9 @@
 // Zero React dependencies, zero legacy client imports
 
 import { getEpg, getServices, getServicesBouquets, getTimers } from '../../client-ts';
+import { throwOnClientResultError, unwrapClientResultOrThrow } from '../../lib/clientWrapper';
 import type { EpgEvent, EpgChannel, EpgBouquet, Timer } from './types';
 import { debugError } from '../../utils/logging';
-
-// ============================================================================
-// API Fetch Functions (client-ts SDK only)
-// ============================================================================
 
 /**
  * Fetch all bouquets from the API
@@ -15,12 +12,9 @@ import { debugError } from '../../utils/logging';
  */
 export async function fetchBouquets(): Promise<EpgBouquet[]> {
   const result = await getServicesBouquets();
+  throwOnClientResultError(result, { source: 'EPG.fetchBouquets' });
 
-  if (result.error || !result.data) {
-    throw new Error('Failed to fetch bouquets');
-  }
-
-  return result.data.map(mapSdkBouquet);
+  return (result.data || []).map(mapSdkBouquet);
 }
 
 /**
@@ -31,10 +25,7 @@ export async function fetchChannels(bouquetName?: string): Promise<EpgChannel[]>
   const result = await getServices({
     query: bouquetName ? { bouquet: bouquetName } : undefined
   });
-
-  if (result.error || !result.data) {
-    throw new Error('Failed to fetch channels');
-  }
+  throwOnClientResultError(result, { source: 'EPG.fetchChannels' });
 
   return (result.data || []).map(mapSdkChannel);
 }
@@ -59,13 +50,14 @@ export async function fetchEpgEvents(params: {
     },
     signal: params.signal
   });
-
-  if (result.error || !result.data) {
-    throw new Error('Failed to fetch EPG events');
-  }
+  throwOnClientResultError(result, { source: 'EPG.fetchEpgEvents' });
 
 
   const data = result.data;
+  if (data == null) {
+    return [];
+  }
+
   // API returns direct array for EPG, unlike TimerList.
   // We handle both legacy object-wrapped and new direct array for robustness,
   // but typed strictly to avoid unchecked casting.
@@ -84,12 +76,11 @@ export async function fetchEpgEvents(params: {
  */
 export async function fetchTimers(): Promise<Timer[]> {
   const result = await getTimers();
-
-  if (result.error || !result.data) {
-    return [];
-  }
-
-  return result.data.items || [];
+  const data = unwrapClientResultOrThrow<{ items?: Timer[] }>(result, {
+    source: 'EPG.fetchTimers',
+    silent: true
+  });
+  return data?.items || [];
 }
 
 // ============================================================================

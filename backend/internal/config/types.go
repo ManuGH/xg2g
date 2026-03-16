@@ -53,6 +53,7 @@ type FileConfig struct {
 	Sessions     *SessionsConfig     `yaml:"sessions,omitempty"`
 	Store        *StoreConfig        `yaml:"store,omitempty"`
 	Streaming    *StreamingConfig    `yaml:"streaming,omitempty"`
+	Playback     *PlaybackFileConfig `yaml:"playback,omitempty"`
 	Limits       *LimitsConfig       `yaml:"limits,omitempty"`
 	Timeouts     *TimeoutsConfig     `yaml:"timeouts,omitempty"`
 	Breaker      *BreakerConfig      `yaml:"breaker,omitempty"`
@@ -246,6 +247,54 @@ type StreamingConfig struct {
 	DeliveryPolicy string `yaml:"delivery_policy" env:"XG2G_STREAMING_POLICY"`
 }
 
+// PlaybackOperatorFileConfig holds operator-side playback overrides in YAML.
+type PlaybackOperatorFileConfig struct {
+	ForceIntent           string                           `yaml:"force_intent,omitempty"`
+	MaxQualityRung        string                           `yaml:"max_quality_rung,omitempty"`
+	DisableClientFallback *bool                            `yaml:"disable_client_fallback,omitempty"`
+	SourceRules           []PlaybackOperatorRuleFileConfig `yaml:"source_rules,omitempty"`
+}
+
+// PlaybackOperatorRuleFileConfig defines an ordered per-source playback override rule in YAML.
+type PlaybackOperatorRuleFileConfig struct {
+	Name                  string `yaml:"name,omitempty"`
+	Mode                  string `yaml:"mode,omitempty"` // "live", "recording", "any"
+	ServiceRef            string `yaml:"service_ref,omitempty"`
+	ServiceRefPrefix      string `yaml:"service_ref_prefix,omitempty"`
+	ForceIntent           string `yaml:"force_intent,omitempty"`
+	MaxQualityRung        string `yaml:"max_quality_rung,omitempty"`
+	DisableClientFallback *bool  `yaml:"disable_client_fallback,omitempty"`
+}
+
+// PlaybackFileConfig holds playback runtime policy in YAML.
+type PlaybackFileConfig struct {
+	Operator PlaybackOperatorFileConfig `yaml:"operator,omitempty"`
+}
+
+// PlaybackOperatorConfig holds runtime operator-side playback overrides.
+type PlaybackOperatorConfig struct {
+	ForceIntent           string                       `yaml:"force_intent"`
+	MaxQualityRung        string                       `yaml:"max_quality_rung"`
+	DisableClientFallback bool                         `yaml:"disable_client_fallback"`
+	SourceRules           []PlaybackOperatorRuleConfig `yaml:"source_rules"`
+}
+
+// PlaybackOperatorRuleConfig defines an ordered per-source playback override rule at runtime.
+type PlaybackOperatorRuleConfig struct {
+	Name                  string `yaml:"name"`
+	Mode                  string `yaml:"mode"`
+	ServiceRef            string `yaml:"service_ref"`
+	ServiceRefPrefix      string `yaml:"service_ref_prefix"`
+	ForceIntent           string `yaml:"force_intent"`
+	MaxQualityRung        string `yaml:"max_quality_rung"`
+	DisableClientFallback *bool  `yaml:"disable_client_fallback,omitempty"`
+}
+
+// PlaybackConfig holds runtime playback policy settings.
+type PlaybackConfig struct {
+	Operator PlaybackOperatorConfig `yaml:"operator"`
+}
+
 // SessionsConfig holds session lease settings (ADR-009)
 type SessionsConfig struct {
 	LeaseTTL            time.Duration `yaml:"lease_ttl"`
@@ -363,6 +412,7 @@ type AppConfig struct {
 
 	// Streaming Configuration
 	Streaming StreamingConfig
+	Playback  PlaybackConfig
 
 	// ADR-009: Session Lease Configuration
 	Sessions SessionsConfig

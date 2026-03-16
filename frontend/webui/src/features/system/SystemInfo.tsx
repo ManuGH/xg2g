@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getSystemInfo } from '../../client-ts';
-import { debugError, formatError } from '../../utils/logging';
+import { type SystemInfoData as ApiSystemInfoData } from '../../client-ts';
+import { useSystemInfo } from '../../hooks/useServerQueries';
+import { Card, CardBody, StatusChip, type ChipState } from '../../components/ui';
 import styles from './SystemInfo.module.css';
 
-interface SystemInfoData {
+interface SystemInfoViewData {
   hardware: {
     brand: string;
     model: string;
@@ -42,7 +42,7 @@ interface SystemInfoData {
       capacity: string;
       mount: string;
       mountStatus: 'mounted' | 'unmounted' | 'unknown';
-      healthStatus: 'ok' | 'timeout' | 'error' | 'unknown';
+      healthStatus: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
       access: 'none' | 'ro' | 'rw';
       isNas: boolean;
       fsType?: string;
@@ -53,7 +53,7 @@ interface SystemInfoData {
       capacity: string;
       mount: string;
       mountStatus: 'mounted' | 'unmounted' | 'unknown';
-      healthStatus: 'ok' | 'timeout' | 'error' | 'unknown';
+      healthStatus: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
       access: 'none' | 'ro' | 'rw';
       isNas: boolean;
       fsType?: string;
@@ -72,46 +72,13 @@ interface SystemInfoData {
 
 export function SystemInfo() {
   const { t } = useTranslation();
-  const [info, setInfo] = useState<SystemInfoData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data,
+    error,
+    isPending,
+  } = useSystemInfo();
 
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchData = async () => {
-      try {
-        const { data, error: apiError } = await getSystemInfo();
-
-        if (!mounted) return;
-
-        if (apiError) {
-          throw new Error('Fehler beim Laden der System-Informationen');
-        }
-
-        if (data) {
-          setInfo(data as SystemInfoData);
-        }
-        setLoading(false);
-        setError(null);
-      } catch (err) {
-        if (!mounted) return;
-        debugError('Failed to load system info:', formatError(err));
-        setError((err as Error).message || 'Unbekannter Fehler');
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-    const interval = setInterval(fetchData, 10000);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  if (loading) {
+  if (isPending && !data) {
     return (
       <div className={styles.page}>
         <h1>{t('system.pageTitle')}</h1>
@@ -120,40 +87,59 @@ export function SystemInfo() {
     );
   }
 
-  if (error) {
+  if (error && !data) {
+    const errorMessage = error instanceof Error ? error.message : 'Unbekannter Fehler';
     return (
       <div className={styles.page}>
         <h1>{t('system.pageTitle')}</h1>
-        <div className={styles.error}>Error: {error}</div>
+        <div className={styles.error}>{t('system.loadError', { error: errorMessage })}</div>
       </div>
     );
   }
 
-  if (!info) return null;
+  if (!data) return null;
 
+  const info = normalizeSystemInfo(data);
   const ramLevel = getRamLevel(info.resource.memoryUsed, info.resource.memoryTotal);
 
   return (
     <div className={styles.page}>
-      <h1>{t('system.receiverTitle')}</h1>
+      <div className={styles.header}>
+        <div>
+          <p className={styles.kicker}>{t('nav.system')}</p>
+          <h1>{t('system.receiverTitle')}</h1>
+          <p className={styles.subtitle}>{t('system.subtitle')}</p>
+        </div>
+      </div>
 
       <div className={styles.grid}>
-        {/* Hardware Card */}
-        <div className={styles.card}>
-          <h2>📦 {t('system.hardware')}</h2>
+        <Card className={styles.card}>
+          <CardBody className={styles.cardBody}>
+            <div className={styles.cardHeader}>
+              <div>
+                <p className={styles.cardEyebrow}>{t('system.sectionOverview')}</p>
+                <h2 className={styles.cardTitle}>{t('system.hardware')}</h2>
+              </div>
+            </div>
           <div className={styles.row}>
             <span className={styles.label}>{t('system.brandModel')}:</span>
             <span className={styles.value}>{info.hardware.brand} {info.hardware.model}</span>
           </div>
           <div className={styles.row}>
-            <span className={styles.label}>Chipset:</span>
+            <span className={styles.label}>{t('system.chipset')}:</span>
             <span className={styles.value}>{info.hardware.chipsetDescription}</span>
           </div>
-        </div>
+          </CardBody>
+        </Card>
 
-        {/* Software Card */}
-        <div className={styles.card}>
-          <h2>💿 {t('system.software')}</h2>
+        <Card className={styles.card}>
+          <CardBody className={styles.cardBody}>
+            <div className={styles.cardHeader}>
+              <div>
+                <p className={styles.cardEyebrow}>{t('system.sectionOverview')}</p>
+                <h2 className={styles.cardTitle}>{t('system.software')}</h2>
+              </div>
+            </div>
           <div className={styles.row}>
             <span className={styles.label}>{t('system.distribution')}:</span>
             <span className={styles.value}>{info.software.imageDistro}</span>
@@ -170,44 +156,42 @@ export function SystemInfo() {
             <span className={styles.label}>{t('system.webif')}:</span>
             <span className={styles.value}>{info.software.webifVersion}</span>
           </div>
-        </div>
+          </CardBody>
+        </Card>
 
-        {/* Tuners Card */}
-        <div className={[styles.card, styles.cardWide].join(' ')}>
-          <h2>📡 {t('system.tuners')} ({info.tuners.length}x FBC)</h2>
+        <Card className={[styles.card, styles.cardWide].join(' ')}>
+          <CardBody className={styles.cardBody}>
+            <div className={styles.cardHeader}>
+              <div>
+                <p className={styles.cardEyebrow}>{t('system.sectionLive')}</p>
+                <h2 className={styles.cardTitle}>{t('system.tuners')}</h2>
+              </div>
+              <StatusChip state="idle" label={t('system.tunersDetected', { count: info.tuners.length })} />
+            </div>
           <div className={styles.tunerGrid}>
             {info.tuners.map((tuner, idx) => (
               <div key={idx} className={styles.tunerItem}>
                 <div className={styles.tunerHeader}>
                   <span className={styles.tunerNumber}>#{idx + 1}</span>
-                  <div
-                    className={[
-                      styles.tunerStatusBadge,
-                      tuner.status === 'live'
-                        ? styles.statusLive
-                        : tuner.status === 'recording'
-                          ? styles.statusRecording
-                          : tuner.status === 'streaming'
-                            ? styles.statusStreaming
-                            : styles.statusIdle,
-                    ].join(' ')}
-                  >
-                    {tuner.status === 'live' && '🟢 LIVE'}
-                    {tuner.status === 'recording' && '🔴 REC'}
-                    {tuner.status === 'streaming' && '🔵 STREAM'}
-                    {tuner.status === 'idle' && '⚪ IDLE'}
-                  </div>
+                  <StatusChip {...getTunerStatusChip(tuner.status, t)} />
                 </div>
                 <div className={styles.tunerType}>{tuner.type.replace('DVB-', '')}</div>
               </div>
             ))}
           </div>
-        </div>
+          </CardBody>
+        </Card>
 
-        {/* Network Card */}
         {info.network.interfaces.length > 0 && (
-          <div className={styles.card}>
-            <h2>🌐 {t('system.network')}</h2>
+          <Card className={styles.card}>
+            <CardBody className={styles.cardBody}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <p className={styles.cardEyebrow}>{t('system.sectionConnectivity')}</p>
+                  <h2 className={styles.cardTitle}>{t('system.network')}</h2>
+                </div>
+                <StatusChip state="idle" label={t('system.interfaces', { count: info.network.interfaces.length })} />
+              </div>
             {info.network.interfaces.map((iface, idx) => (
               <div key={idx} className={styles.section}>
                 <div className={styles.row}>
@@ -215,23 +199,33 @@ export function SystemInfo() {
                   <span className={styles.value}>{iface.type} ({iface.speed})</span>
                 </div>
                 <div className={styles.row}>
-                  <span className={styles.label}>IPv4:</span>
-                  <span className={styles.value}>{iface.ip || 'N/A'}</span>
+                  <span className={styles.label}>{t('system.ipv4')}:</span>
+                  <span className={styles.value}>{iface.ip || t('common.notAvailable')}</span>
                 </div>
                 {iface.ipv6 && (
                   <div className={styles.row}>
-                    <span className={styles.label}>IPv6:</span>
+                    <span className={styles.label}>{t('system.ipv6')}:</span>
                     <span className={[styles.value, styles.small].join(' ')}>{iface.ipv6}</span>
                   </div>
                 )}
               </div>
             ))}
-          </div>
+            </CardBody>
+          </Card>
         )}
 
-        {/* Storage Card */}
-        <div className={styles.card}>
-          <h2>💾 {t('system.storage')}</h2>
+        <Card className={styles.card}>
+          <CardBody className={styles.cardBody}>
+            <div className={styles.cardHeader}>
+              <div>
+                <p className={styles.cardEyebrow}>{t('system.sectionStorage')}</p>
+                <h2 className={styles.cardTitle}>{t('system.storage')}</h2>
+              </div>
+              <StatusChip
+                state="idle"
+                label={t('system.storageLocations', { count: info.storage.devices.length + info.storage.locations.length })}
+              />
+            </div>
           {info.storage.devices.length > 0 && (
             <div className={styles.section}>
               <h3>{t('system.drives')}</h3>
@@ -255,20 +249,20 @@ export function SystemInfo() {
                       {dev.model}:
                     </span>
                     <span className={[styles.tag, dev.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
-                      {dev.isNas ? 'NAS' : t('system.internal')}
+                      {dev.isNas ? t('system.nas') : t('system.internal')}
                       {dev.fsType && <small> ({dev.fsType})</small>}
                     </span>
                   </div>
                   <div className={styles.storageSubinfo}>
                     <div className={styles.storageStateRow}>
                       <span className={styles.value}>{dev.capacity || t('common.notAvailable')}</span>
-                      <span
-                        className={[
-                          styles.accessBadge,
-                          dev.access === 'rw' ? styles.accessRw : dev.access === 'ro' ? styles.accessRo : null,
-                        ].filter(Boolean).join(' ')}
-                      >
-                        {dev.access === 'none' ? '–' : dev.access.toUpperCase()}
+                    <span
+                      className={[
+                        styles.accessBadge,
+                        dev.access === 'rw' ? styles.accessRw : dev.access === 'ro' ? styles.accessRo : null,
+                      ].filter(Boolean).join(' ')}
+                    >
+                        {t(`system.access.${dev.access}`)}
                       </span>
                     </div>
                     {dev.checkedAt && (
@@ -302,7 +296,7 @@ export function SystemInfo() {
                       {loc.mount}
                     </span>
                     <span className={[styles.tag, loc.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
-                      {loc.isNas ? 'NAS' : t('system.internal')}
+                      {loc.isNas ? t('system.nas') : t('system.internal')}
                       {loc.fsType && <small> ({loc.fsType})</small>}
                     </span>
                   </div>
@@ -334,27 +328,40 @@ export function SystemInfo() {
           )}
           {info.storage.devices.length === 0 && info.storage.locations.length === 0 && (
             <div className={styles.row}>
-              <span className={[styles.value, styles.italic].join(' ')}>Keine Informationen verfügbar</span>
+              <span className={[styles.value, styles.italic].join(' ')}>{t('system.noInformation')}</span>
             </div>
           )}
-        </div>
+          </CardBody>
+        </Card>
 
-        {/* Runtime Card */}
-        <div className={styles.card}>
-          <h2>⏱️ Laufzeit</h2>
+        <Card className={styles.card}>
+          <CardBody className={styles.cardBody}>
+            <div className={styles.cardHeader}>
+              <div>
+                <p className={styles.cardEyebrow}>{t('system.sectionHealth')}</p>
+                <h2 className={styles.cardTitle}>{t('system.runtime')}</h2>
+              </div>
+            </div>
           <div className={styles.row}>
-            <span className={styles.label}>Uptime:</span>
+            <span className={styles.label}>{t('system.uptime')}:</span>
             <span className={styles.value}>{info.runtime.uptime}</span>
           </div>
-        </div>
+          </CardBody>
+        </Card>
 
-        {/* Resources Card */}
-        <div className={styles.card}>
-          <h2>📊 RAM</h2>
+        <Card className={styles.card}>
+          <CardBody className={styles.cardBody}>
+            <div className={styles.cardHeader}>
+              <div>
+                <p className={styles.cardEyebrow}>{t('system.sectionHealth')}</p>
+                <h2 className={styles.cardTitle}>{t('system.memory')}</h2>
+              </div>
+              <StatusChip state={getRamChipState(ramLevel)} label={t(`system.memoryLevel.${ramLevel}`)} />
+            </div>
           <div className={styles.ramSummary}>
             <div className={styles.ramConsumption}>
               <span className={styles.ramUsed}>{formatBytes(parseMemory(info.resource.memoryUsed))}</span>
-              <span className={styles.ramLabel}> verbraucht</span>
+              <span className={styles.ramLabel}>{t('system.memoryUsed')}</span>
             </div>
             <div className={styles.ramBarContainer}>
               <svg
@@ -389,7 +396,7 @@ export function SystemInfo() {
               </span>
               <span className={styles.ramStat}>
                 <span className={styles.ramStatLabel}>{t('system.total')}</span>
-                <span className={styles.ramStatValue}>{formatBytes(parseMemory(info.resource.memoryUsed) + parseMemory(info.resource.memoryAvailable))}</span>
+                <span className={styles.ramStatValue}>{formatBytes(parseMemory(info.resource.memoryTotal))}</span>
               </span>
               <span className={styles.ramStat}>
                 <span className={styles.ramStatLabel}>{t('system.usage')}</span>
@@ -397,10 +404,94 @@ export function SystemInfo() {
               </span>
             </div>
           </div>
-        </div>
+          </CardBody>
+        </Card>
       </div>
     </div>
   );
+}
+
+function getTunerStatusChip(status: string, t: (key: string, options?: Record<string, unknown>) => string): { state: ChipState; label: string } {
+  switch (status) {
+    case 'live':
+      return { state: 'live', label: t('system.tunerStatus.live') };
+    case 'recording':
+      return { state: 'recording', label: t('system.tunerStatus.recording') };
+    case 'streaming':
+      return { state: 'success', label: t('system.tunerStatus.streaming') };
+    case 'idle':
+      return { state: 'idle', label: t('system.tunerStatus.idle') };
+    default:
+      return { state: 'warning', label: t('system.tunerStatus.unknown') };
+  }
+}
+
+function normalizeSystemInfo(data: ApiSystemInfoData): SystemInfoViewData {
+  return {
+    hardware: {
+      brand: data.hardware?.brand ?? '',
+      model: data.hardware?.model ?? '',
+      chipset: data.hardware?.chipset ?? '',
+      chipsetDescription: data.hardware?.chipsetDescription ?? '',
+    },
+    software: {
+      oeVersion: data.software?.oeVersion ?? '',
+      imageDistro: data.software?.imageDistro ?? '',
+      imageVersion: data.software?.imageVersion ?? '',
+      enigmaVersion: data.software?.enigmaVersion ?? '',
+      kernelVersion: data.software?.kernelVersion ?? '',
+      driverDate: data.software?.driverDate ?? '',
+      webifVersion: data.software?.webifVersion ?? '',
+    },
+    tuners: (data.tuners ?? []).map((tuner) => ({
+      name: tuner.name ?? '',
+      type: tuner.type ?? '',
+      status: tuner.status ?? '',
+    })),
+    network: {
+      interfaces: (data.network?.interfaces ?? []).map((iface) => ({
+        name: iface.name ?? '',
+        type: iface.type ?? '',
+        speed: iface.speed ?? '',
+        mac: iface.mac ?? '',
+        ip: iface.ip ?? '',
+        ipv6: iface.ipv6 ?? '',
+        dhcp: iface.dhcp ?? false,
+      })),
+    },
+    storage: {
+      devices: (data.storage?.devices ?? []).map((device) => ({
+        model: device.model ?? '',
+        capacity: device.capacity ?? '',
+        mount: device.mount ?? '',
+        mountStatus: device.mountStatus ?? 'unknown',
+        healthStatus: device.healthStatus ?? 'unknown',
+        access: device.access ?? 'none',
+        isNas: device.isNas ?? false,
+        fsType: device.fsType,
+        checkedAt: device.checkedAt,
+      })),
+      locations: (data.storage?.locations ?? []).map((location) => ({
+        model: location.model ?? '',
+        capacity: location.capacity ?? '',
+        mount: location.mount ?? '',
+        mountStatus: location.mountStatus ?? 'unknown',
+        healthStatus: location.healthStatus ?? 'unknown',
+        access: location.access ?? 'none',
+        isNas: location.isNas ?? false,
+        fsType: location.fsType,
+        checkedAt: location.checkedAt,
+      })),
+    },
+    runtime: {
+      uptime: data.runtime?.uptime ?? '',
+    },
+    resource: {
+      memoryTotal: data.resource?.memoryTotal ?? '0 kB',
+      memoryAvailable: data.resource?.memoryAvailable ?? '0 kB',
+      memoryUsed: data.resource?.memoryUsed ?? '0 kB',
+    },
+  };
 }
 
 // Parse memory string like "757824 kB" to bytes
@@ -445,6 +536,17 @@ function calculateMemoryPercent(usedStr: string, totalStr: string): number {
 }
 
 type RamLevel = 'normal' | 'warning' | 'critical';
+
+function getRamChipState(level: RamLevel): ChipState {
+  switch (level) {
+    case 'critical':
+      return 'error';
+    case 'warning':
+      return 'warning';
+    default:
+      return 'success';
+  }
+}
 
 function getRamLevel(usedStr: string, totalStr: string): RamLevel {
   const percent = calculateMemoryPercent(usedStr, totalStr);

@@ -19,6 +19,7 @@ interface UsePlayerChromeProps {
   canSeek: boolean;
   startUnix: number | null;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
+  allowNativeFullscreen: boolean;
   shouldForceNativeMobileHls: ForceNativeFn;
   canUseDesktopWebKitFullscreen: DesktopFullscreenFn;
 }
@@ -29,11 +30,14 @@ interface PlayerChromeController {
   seekableStart: number;
   seekableEnd: number;
   isPip: boolean;
+  canTogglePiP: boolean;
   isFullscreen: boolean;
+  canToggleFullscreen: boolean;
   isPlaying: boolean;
   isIdle: boolean;
   volume: number;
   isMuted: boolean;
+  canAdjustVolume: boolean;
   stats: PlayerStats;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
   windowDuration: number;
@@ -82,6 +86,7 @@ export function usePlayerChrome({
   canSeek,
   startUnix,
   setStatus,
+  allowNativeFullscreen,
   shouldForceNativeMobileHls,
   canUseDesktopWebKitFullscreen
 }: UsePlayerChromeProps): PlayerChromeController {
@@ -90,11 +95,14 @@ export function usePlayerChrome({
   const [seekableStart, setSeekableStart] = useState(0);
   const [seekableEnd, setSeekableEnd] = useState(0);
   const [isPip, setIsPip] = useState(false);
+  const [canTogglePiP, setCanTogglePiP] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [canToggleFullscreen, setCanToggleFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [canAdjustVolume, setCanAdjustVolume] = useState(true);
   const [stats, setStats] = useState<PlayerStats>(initialStats);
   const lastNonZeroVolumeRef = useRef<number>(1);
   const idleTimerRef = useRef<number | null>(null);
@@ -187,7 +195,7 @@ export function usePlayerChrome({
     const container = containerRef.current;
 
     if (!document.fullscreenElement) {
-      if (video && canUseDesktopWebKitFullscreen(video)) {
+      if (allowNativeFullscreen && video && canUseDesktopWebKitFullscreen(video)) {
         try {
           video.controls = true;
           video.webkitEnterFullscreen?.();
@@ -206,7 +214,8 @@ export function usePlayerChrome({
         }
       }
 
-      if (video?.webkitEnterFullscreen) {
+      if (allowNativeFullscreen && video?.webkitEnterFullscreen) {
+        video.controls = true;
         video.webkitEnterFullscreen();
         return;
       }
@@ -220,21 +229,21 @@ export function usePlayerChrome({
     }
 
     await document.exitFullscreen();
-  }, [canUseDesktopWebKitFullscreen, containerRef, videoRef]);
+  }, [allowNativeFullscreen, canUseDesktopWebKitFullscreen, containerRef, videoRef]);
 
   const enterDVRMode = useCallback(() => {
     const video = videoRef.current;
-    if (video && video.webkitEnterFullscreen && shouldForceNativeMobileHls(video)) {
+    if (allowNativeFullscreen && video && video.webkitEnterFullscreen && shouldForceNativeMobileHls(video)) {
       video.controls = true;
       video.webkitEnterFullscreen();
       return;
     }
     void toggleFullscreen();
-  }, [shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
+  }, [allowNativeFullscreen, shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
 
   const togglePiP = useCallback(async () => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !document.pictureInPictureEnabled || typeof video.requestPictureInPicture !== 'function') return;
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
@@ -510,11 +519,32 @@ export function usePlayerChrome({
   }, [videoRef]);
 
   useEffect(() => {
+    const video = videoRef.current;
+    const container = containerRef.current;
+    const pipAvailable =
+      typeof document !== 'undefined' &&
+      !!document.pictureInPictureEnabled &&
+      !!video &&
+      typeof video.requestPictureInPicture === 'function';
+    const fullscreenAvailable =
+      (allowNativeFullscreen && !!video?.webkitEnterFullscreen) ||
+      !!container?.requestFullscreen ||
+      (typeof document !== 'undefined' && document.fullscreenEnabled === true);
+    // Keep the full WebUI chrome on WebKit when hls.js/MMS is active.
+    // Native-mobile HLS is the only path that still needs platform controls.
+    const volumeAvailable = !(allowNativeFullscreen && shouldForceNativeMobileHls(video));
+
+    setCanTogglePiP(pipAvailable);
+    setCanToggleFullscreen(fullscreenAvailable);
+    setCanAdjustVolume(volumeAvailable);
+  }, [allowNativeFullscreen, containerRef, shouldForceNativeMobileHls, videoRef]);
+
+  useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     const onPipChange = () => setIsPip(!!document.pictureInPictureElement);
 
     const video = videoRef.current;
-    const supportsWebkitFullscreen = !!video?.webkitEnterFullscreen;
+    const supportsWebkitFullscreen = allowNativeFullscreen && !!video?.webkitEnterFullscreen;
 
     const onWebkitBeginFullscreen = () => {
       setIsFullscreen(true);
@@ -549,7 +579,7 @@ export function usePlayerChrome({
         }
       }
     };
-  }, [videoRef]);
+  }, [allowNativeFullscreen, videoRef]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -589,7 +619,7 @@ export function usePlayerChrome({
   const hasSeekWindow = canSeek && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
-  const showDvrModeButton = shouldForceNativeMobileHls(videoRef.current);
+  const showDvrModeButton = allowNativeFullscreen && shouldForceNativeMobileHls(videoRef.current);
 
   const startTimeDisplay = startUnix
     ? formatTimeOfDay(startUnix + relativePosition)
@@ -605,11 +635,14 @@ export function usePlayerChrome({
     seekableStart,
     seekableEnd,
     isPip,
+    canTogglePiP,
     isFullscreen,
+    canToggleFullscreen,
     isPlaying,
     isIdle,
     volume,
     isMuted,
+    canAdjustVolume,
     stats,
     setStats,
     windowDuration,

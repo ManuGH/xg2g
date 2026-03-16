@@ -21,7 +21,7 @@ func ResolveCapabilities(
 ) capabilities.PlaybackCapabilities {
 	// 1. v3.1 Branch: If client caps are provided, use them immutably (except constraints)
 	if clientCaps != nil && clientCaps.CapabilitiesVersion > 0 {
-		return applyServerConstraints(*clientCaps)
+		return applyServerConstraints(capabilities.ResolveRuntimeProbeCapabilities(*clientCaps))
 	}
 
 	// 2. Manual Profile Selection

@@ -93,7 +93,7 @@ Findings from `rg "fetch\\(" frontend/webui/src`:
 
 `make gate-webui` now executes:
 
-1. `scripts/ci_gate_webui_audit.sh`
+1. `backend/scripts/ci_gate_webui_audit.sh`
 2. `npm --prefix frontend/webui run gate:no-appledouble`
 3. `npm --prefix frontend/webui run gate:no-duration-guessing`
 4. `npm --prefix frontend/webui run gate:no-client-decision-engine`

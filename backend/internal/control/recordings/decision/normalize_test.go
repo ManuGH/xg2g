@@ -3,6 +3,8 @@ package decision
 import (
 	"reflect"
 	"testing"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // INV-NORM-001: Normalization is idempotent.
@@ -47,6 +49,44 @@ func TestNormalizeInput_Determinism_INV_NORM_002(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNormalizeInput_NormalizesRequestedIntent(t *testing.T) {
+	t.Parallel()
+
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.PlaybackIntent(" HIGH "),
+		Source: Source{
+			Container:  "mp4",
+			VideoCodec: "h264",
+			AudioCodec: "aac",
+		},
+		Capabilities: Capabilities{Version: 1},
+		Policy:       Policy{},
+	}
+
+	normalized := NormalizeInput(input)
+	if normalized.RequestedIntent != playbackprofile.IntentCompatible {
+		t.Fatalf("expected compatible requested intent, got %q", normalized.RequestedIntent)
+	}
+}
+
+func TestNormalizeInput_NormalizesHostPressureBand(t *testing.T) {
+	t.Parallel()
+
+	input := DecisionInput{
+		Policy: Policy{
+			Host: HostPolicy{
+				PressureBand: playbackprofile.HostPressureBand(" CONSTRAINED "),
+			},
+		},
+		Capabilities: Capabilities{Version: 1},
+	}
+
+	normalized := NormalizeInput(input)
+	if normalized.Policy.Host.PressureBand != playbackprofile.HostPressureConstrained {
+		t.Fatalf("expected constrained host pressure band, got %q", normalized.Policy.Host.PressureBand)
 	}
 }
 

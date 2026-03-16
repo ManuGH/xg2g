@@ -2,11 +2,14 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getSystemScanStatus, triggerSystemScan, getSystemConfig } from '../client-ts';
-import type { ScanStatus, AppConfig } from '../client-ts';
 import Config, { isConfigured } from './Config';
+import {
+  useSystemConfig,
+  useSystemScanStatus,
+  useTriggerSystemScanMutation,
+} from '../hooks/useServerQueries';
 import { debugError, formatError } from '../utils/logging';
 import { Button } from './ui';
 import styles from './Settings.module.css';
@@ -16,58 +19,38 @@ function Settings() {
   // ADR-00X: Profile selection removed (universal policy only)
 
   // ADR-00X: Unused savedMessage state removed (was for profile save feedback)
-  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [config, setConfig] = useState<AppConfig | null>(null);
   const [showSetup, setShowSetup] = useState<boolean>(false);
+  const {
+    data: config = null,
+    refetch: refetchConfig,
+  } = useSystemConfig();
+  const {
+    data: scanStatus = null,
+    error: scanStatusError,
+    refetch: refetchScanStatus,
+  } = useSystemScanStatus();
+  const triggerScanMutation = useTriggerSystemScanMutation();
 
   const configured = isConfigured(config);
-
-  const fetchConfig = async () => {
-    try {
-      const { data } = await getSystemConfig();
-      if (data) setConfig(data);
-    } catch (err) {
-      debugError('Failed to load config', formatError(err));
-    }
-  };
-
-  // Poll scan status
-  useEffect(() => {
-    let intervalId: number | undefined;
-
-    const fetchStatus = async () => {
-      try {
-        const { data } = await getSystemScanStatus();
-        if (data) {
-          setScanStatus(data);
-          // We keep polling even in terminal states to catch re-scans or external triggers
-        }
-      } catch (err) {
-        // Only set error if we don't have stale data to show
-        if (!scanStatus) {
-          setScanError("Failed to load status");
-        }
-      }
-    };
-
-    fetchConfig();
-
-    fetchStatus();
-    intervalId = setInterval(fetchStatus, 2000) as unknown as number;
-    return () => clearInterval(intervalId);
-  }, []); // Eslint: we want this to run once on mount, but technically we might want to restart polling on manual trigger.
+  const scanStatusErrorMessage = !scanStatus
+    ? scanError ?? (
+      scanStatusError instanceof Error
+        ? scanStatusError.message
+        : scanStatusError
+          ? t('settings.streaming.scan.errors.loadStatus')
+          : null
+    )
+    : scanError;
 
   const handleStartScan = async () => {
     setScanError(null);
     try {
-      await triggerSystemScan();
-      // Force immediate update and restart polling logic if needed (simple re-fetch here)
-      const { data } = await getSystemScanStatus();
-      if (data) setScanStatus(data);
+      await triggerScanMutation.mutateAsync();
+      await refetchScanStatus();
     } catch (err) {
       debugError('Failed to start scan', formatError(err));
-      setScanError("Failed to start scan");
+      setScanError(err instanceof Error ? err.message : t('settings.streaming.scan.errors.start'));
     }
   };
 
@@ -87,7 +70,7 @@ function Settings() {
 
       <div className={styles.setup}>
         {!configured ? (
-          <Config onUpdate={fetchConfig} />
+          <Config onUpdate={() => { void refetchConfig(); }} />
         ) : (
           <div className={styles.section}>
             <div className={styles.accordionHeader}>
@@ -105,7 +88,7 @@ function Settings() {
             </div>
             {showSetup && (
               <div id="settings-setup-details" className="animate-enter">
-                <Config onUpdate={fetchConfig} showTitle={false} compact />
+                <Config onUpdate={() => { void refetchConfig(); }} showTitle={false} compact />
               </div>
             )}
           </div>
@@ -113,18 +96,20 @@ function Settings() {
       </div>
 
       <div className={styles.section}>
-        <h3>{t('settings.scan.title')}</h3>
-        <p className={styles.subtitle}>{t('settings.scan.description')}</p>
+        <h3>{t('settings.streaming.scan.title')}</h3>
+        <p className={styles.subtitle}>{t('settings.streaming.scan.description')}</p>
 
         <div className={styles.group}>
           <div className={styles.scanControls}>
             <Button
               onClick={handleStartScan}
-              disabled={scanStatus?.state === 'running'}
+              disabled={scanStatus?.state === 'running' || triggerScanMutation.isPending}
             >
-              {scanStatus?.state === 'running' ? t('settings.scan.status.running') : t('settings.scan.start')}
+              {scanStatus?.state === 'running' || triggerScanMutation.isPending
+                ? t('settings.streaming.scan.status.running')
+                : t('settings.streaming.scan.start')}
             </Button>
-            {scanError && <span className={styles.errorInline}>{scanError}</span>}
+            {scanStatusErrorMessage && <span className={styles.errorInline}>{scanStatusErrorMessage}</span>}
           </div>
 
           {scanStatus && (
@@ -132,7 +117,7 @@ function Settings() {
               <div className={styles.scanHeader}>
                 <div className={styles.scanBadge}>
                   <span className={styles.statusDot} data-state={scanStatus.state || undefined}></span>
-                  <span className={styles.statusText}>{t(`settings.scan.status.${scanStatus.state || 'idle'}`)}</span>
+                  <span className={styles.statusText}>{t(`settings.streaming.scan.status.${scanStatus.state || 'idle'}`)}</span>
                 </div>
                 {scanStatus.startedAt && scanStatus.startedAt > 0 && (
                   <div className={styles.scanTime}>
@@ -148,7 +133,7 @@ function Settings() {
                   viewBox="0 0 100 6"
                   preserveAspectRatio="none"
                   role="img"
-                  aria-label={t('settings.scan.stats.scanned')}
+                  aria-label={t('settings.streaming.scan.stats.scanned')}
                 >
                   <rect
                     x="0"
@@ -165,16 +150,16 @@ function Settings() {
               <div className={styles.statsRow}>
                 <div className={styles.statItem}>
                   <span className={`${styles.statValue} tabular`.trim()}>{scanStatus.scannedChannels} / {scanStatus.totalChannels}</span>
-                  <span className={styles.statLabel}>{t('settings.scan.stats.scanned')}</span>
+                  <span className={styles.statLabel}>{t('settings.streaming.scan.stats.scanned')}</span>
                 </div>
                 <div className={styles.statItem}>
                   <span className={`${styles.statValue} tabular`.trim()}>{scanStatus.updatedCount}</span>
-                  <span className={styles.statLabel}>{t('settings.scan.stats.updated')}</span>
+                  <span className={styles.statLabel}>{t('settings.streaming.scan.stats.updated')}</span>
                 </div>
                 {scanStatus.finishedAt && scanStatus.finishedAt > 0 && (
                   <div className={styles.statItem}>
                     <span className={styles.statValue}>{new Date(scanStatus.finishedAt * 1000).toLocaleTimeString()}</span>
-                    <span className={styles.statLabel}>Finished</span>
+                    <span className={styles.statLabel}>{t('settings.streaming.scan.timestamps.finished')}</span>
                   </div>
                 )}
               </div>
@@ -188,15 +173,19 @@ function Settings() {
 
         {/* Note: Profile selection removed in favor of Universal Policy */}
         <div className={styles.group}>
-          <label>{t('settings.streaming.policy') || 'Delivery Policy'}</label>
+          <label>{t('settings.streaming.policy.label')}</label>
           <div className={styles.inputRow}>
             <input
               type="text"
-              value={config?.streaming?.deliveryPolicy === 'universal' ? "Universal (H.264/AAC/fMP4)" : (config?.streaming?.deliveryPolicy || "Loading...")}
+              value={
+                config?.streaming?.deliveryPolicy === 'universal'
+                  ? t('settings.streaming.policy.universal')
+                  : (config?.streaming?.deliveryPolicy || t('common.loading'))
+              }
               disabled
               className={styles.inputReadonly}
             />
-            <span className={styles.hint}>Strict Universal-Only</span>
+            <span className={styles.hint}>{t('settings.streaming.policy.hint')}</span>
           </div>
         </div>
       </div>

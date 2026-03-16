@@ -36,6 +36,7 @@ func Clone(in AppConfig) AppConfig {
 	out.Network.Outbound.Allow.CIDRs = cloneStringSlice(in.Network.Outbound.Allow.CIDRs)
 	out.Network.Outbound.Allow.Schemes = cloneStringSlice(in.Network.Outbound.Allow.Schemes)
 	out.Network.Outbound.Allow.Ports = cloneIntSlice(in.Network.Outbound.Allow.Ports)
+	out.Playback.Operator.SourceRules = clonePlaybackOperatorRules(in.Playback.Operator.SourceRules)
 
 	return out
 }
@@ -99,5 +100,42 @@ func cloneRecordingPathMappings(in []RecordingPathMapping) []RecordingPathMappin
 	}
 	out := make([]RecordingPathMapping, len(in))
 	copy(out, in)
+	return out
+}
+
+func clonePlaybackOperatorRules(in []PlaybackOperatorRuleConfig) []PlaybackOperatorRuleConfig {
+	if in == nil {
+		return nil
+	}
+	out := make([]PlaybackOperatorRuleConfig, len(in))
+	for i := range in {
+		out[i] = in[i]
+		if in[i].DisableClientFallback != nil {
+			v := *in[i].DisableClientFallback
+			out[i].DisableClientFallback = &v
+		}
+	}
+	return out
+}
+
+func clonePlaybackOperatorRuleFilesToRuntime(in []PlaybackOperatorRuleFileConfig) []PlaybackOperatorRuleConfig {
+	if in == nil {
+		return nil
+	}
+	out := make([]PlaybackOperatorRuleConfig, len(in))
+	for i := range in {
+		out[i] = PlaybackOperatorRuleConfig{
+			Name:             in[i].Name,
+			Mode:             in[i].Mode,
+			ServiceRef:       in[i].ServiceRef,
+			ServiceRefPrefix: in[i].ServiceRefPrefix,
+			ForceIntent:      in[i].ForceIntent,
+			MaxQualityRung:   in[i].MaxQualityRung,
+		}
+		if in[i].DisableClientFallback != nil {
+			v := *in[i].DisableClientFallback
+			out[i].DisableClientFallback = &v
+		}
+	}
 	return out
 }

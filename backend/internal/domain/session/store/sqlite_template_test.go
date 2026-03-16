@@ -46,16 +46,16 @@ func TestSqliteStore_CRUD_Roundtrip_INV_SQLITE_001(t *testing.T) {
 
 	// 1. CREATE: Insert session
 	session := &model.SessionRecord{
-		SessionID:     "sess-crud-001",
-		ServiceRef:    "svc-test",
-		Profile:       model.ProfileSpec{Name: "test-profile"},
-		State:         model.SessionNew,
-		PipelineState: model.PipeInit,
-		Reason:        model.RNone,
-		CorrelationID: "corr-001",
-		CreatedAtUnix: 1000,
-		UpdatedAtUnix: 1000,
-		ExpiresAtUnix: 2000,
+		SessionID:          "sess-crud-001",
+		ServiceRef:         "svc-test",
+		Profile:            model.ProfileSpec{Name: "test-profile"},
+		State:              model.SessionNew,
+		PipelineState:      model.PipeInit,
+		Reason:             model.RNone,
+		CorrelationID:      "corr-001",
+		CreatedAtUnix:      1000,
+		UpdatedAtUnix:      1000,
+		ExpiresAtUnix:      2000,
 		LeaseExpiresAtUnix: 0,
 		HeartbeatInterval:  30,
 	}
@@ -311,8 +311,8 @@ func TestSqliteStore_SchemaVersion_INV_SQLITE_005(t *testing.T) {
 		t.Fatalf("PRAGMA user_version query failed: %v", err)
 	}
 
-	// Expected version: 4 (as per store implementation const schemaVersion = 4)
-	expectedVersion := 4
+	// Expected version: 5 (as per store implementation const schemaVersion = 5)
+	expectedVersion := 5
 	if version != expectedVersion {
 		t.Errorf("Schema version mismatch: got %d, want %d", version, expectedVersion)
 	}

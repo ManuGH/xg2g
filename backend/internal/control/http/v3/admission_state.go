@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"fmt"
+	"sync/atomic"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -17,12 +18,27 @@ type AdmissionState interface {
 	Snapshot(ctx context.Context) (admission.RuntimeState, error)
 }
 
+type admissionSessionStore interface {
+	ListSessions(ctx context.Context) ([]*model.SessionRecord, error)
+}
+
 // storeAdmissionState implements AdmissionStateSource using the system state store.
 type storeAdmissionState struct {
-	store interface {
-		ListSessions(ctx context.Context) ([]*model.SessionRecord, error)
+	store      admissionSessionStore
+	tunerCount atomic.Int64
+}
+
+func newStoreAdmissionState(store admissionSessionStore, tunerCount int) *storeAdmissionState {
+	state := &storeAdmissionState{store: store}
+	state.SetTunerCount(tunerCount)
+	return state
+}
+
+func (s *storeAdmissionState) SetTunerCount(tunerCount int) {
+	if tunerCount < 0 {
+		tunerCount = 0
 	}
-	tunerCount int
+	s.tunerCount.Store(int64(tunerCount))
 }
 
 func (s *storeAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeState, error) {
@@ -47,7 +63,7 @@ func (s *storeAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeSt
 		}
 	}
 
-	availTuners := s.tunerCount - activeCount
+	availTuners := int(s.tunerCount.Load()) - activeCount
 	if availTuners < 0 {
 		availTuners = 0
 	}

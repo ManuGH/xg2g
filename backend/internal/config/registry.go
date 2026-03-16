@@ -127,7 +127,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "enigma2.probeSize", Env: "XG2G_E2_PROBE_SIZE", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "5M"},
 		{Path: "enigma2.preflightTimeout", Env: "XG2G_E2_PREFLIGHT_TIMEOUT", FieldPath: "Enigma2.PreflightTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		// --- API ---
-		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: ":8088"},
+		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: "127.0.0.1:8088"},
 		{Path: "server.readTimeout", Env: "XG2G_SERVER_READ_TIMEOUT", FieldPath: "Server.ReadTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
 		{Path: "server.writeTimeout", Env: "XG2G_SERVER_WRITE_TIMEOUT", FieldPath: "Server.WriteTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 0 * time.Second},
 		{Path: "server.idleTimeout", Env: "XG2G_SERVER_IDLE_TIMEOUT", FieldPath: "Server.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 120 * time.Second},
@@ -210,6 +210,10 @@ func buildRegistry() (*Registry, error) {
 
 		// --- STREAMING (ADR-00X) ---
 		{Path: "streaming.delivery_policy", Env: "XG2G_STREAMING_POLICY", FieldPath: "Streaming.DeliveryPolicy", Profile: ProfileSimple, Status: StatusActive, Default: "universal"},
+		{Path: "playback.operator.force_intent", Env: "XG2G_PLAYBACK_FORCE_INTENT", FieldPath: "Playback.Operator.ForceIntent", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "playback.operator.max_quality_rung", Env: "XG2G_PLAYBACK_MAX_QUALITY_RUNG", FieldPath: "Playback.Operator.MaxQualityRung", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "playback.operator.disable_client_fallback", Env: "XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", FieldPath: "Playback.Operator.DisableClientFallback", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "playback.operator.source_rules", Env: "", FieldPath: "Playback.Operator.SourceRules", Profile: ProfileAdvanced, Status: StatusActive, Default: []PlaybackOperatorRuleConfig{}},
 
 		// --- VERIFICATION ---
 		{Path: "verification.enabled", Env: "XG2G_VERIFY_ENABLED", FieldPath: "Verification.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true},

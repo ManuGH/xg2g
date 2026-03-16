@@ -1,13 +1,24 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
-import { postRecordingPlaybackInfo } from '../client-ts';
+import {
+  postRecordingPlaybackInfo,
+  type PlaybackCapabilities as PlaybackCapabilitiesContract,
+  type PlaybackInfo,
+  type PlaybackSourceProfile,
+  type PlaybackTrace as PlaybackTraceContract,
+  type PlaybackTraceFfmpegPlan,
+  type PlaybackTraceOperator,
+  type PlaybackTargetProfile,
+} from '../client-ts';
 import { getApiBaseUrl } from '../lib/clientWrapper';
 import { telemetry } from '../services/TelemetryService';
 import type {
   V3PlayerProps,
   PlayerStatus,
   V3SessionResponse,
+  V3SessionStatusResponse,
   HlsInstanceRef,
   VideoElementRef
 } from '../types/v3-player';
@@ -18,6 +29,19 @@ import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
 import { debugError, debugLog, debugWarn } from '../utils/logging';
+import {
+  PlayerError,
+  readResponseBody,
+  extractCapHashFromDecisionToken,
+  canUseDesktopWebKitFullscreen,
+  shouldForceNativeMobileHls,
+  shouldPreferNativeWebKitHls
+} from '../utils/playerHelpers';
+import { detectPlaybackClientFamily } from '../utils/playbackClientFamily';
+import { probeRuntimePlaybackCapabilities } from '../utils/playbackProbe';
+import { normalizePlayerError } from '../lib/appErrors';
+import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
+import type { AppError } from '../types/errors';
 import styles from './V3Player.module.css';
 
 interface ApiErrorResponse {
@@ -27,188 +51,234 @@ interface ApiErrorResponse {
   details?: unknown;
 }
 
-type PreferredCodec = 'av1' | 'hevc' | 'h264';
+type CapabilitySnapshot = Pick<
+  PlaybackCapabilitiesContract,
+  | 'capabilitiesVersion'
+  | 'container'
+  | 'videoCodecs'
+  | 'audioCodecs'
+  | 'deviceType'
+  | 'supportsHls'
+  | 'supportsRange'
+  | 'allowTranscode'
+  | 'runtimeProbeUsed'
+  | 'runtimeProbeVersion'
+  | 'clientFamilyFallback'
+> & {
+  hlsEngines?: string[];
+  preferredHlsEngine?: string;
+};
 
-let cachedPreferredCodecs: PreferredCodec[] | null = null;
+type PlaybackObservability = {
+  clientPath: string | null;
+  requestProfile: string | null;
+  requestedIntent: string | null;
+  resolvedIntent: string | null;
+  qualityRung: string | null;
+  audioQualityRung: string | null;
+  videoQualityRung: string | null;
+  degradedFrom: string | null;
+  hostPressureBand: string | null;
+  hostOverrideApplied: boolean;
+  targetProfileHash: string | null;
+  targetProfile: PlaybackTargetProfile | null;
+  operator: PlaybackTraceOperator | null;
+  selectedOutputKind: string | null;
+};
 
-function hasTouchInput(): boolean {
-  try {
-    return typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints || 0) > 0;
-  } catch {
-    return false;
+function formatSourceProfileSummary(source: PlaybackSourceProfile | null | undefined): string {
+  if (!source) return '-';
+
+  const resolution = source.width && source.height ? `${source.width}x${source.height}` : null;
+  const fps = source.fps ? `${source.fps}fps` : null;
+  const video = [source.container || null, source.videoCodec || null, resolution, fps].filter(Boolean).join(' · ');
+  const audio = [
+    source.audioCodec || null,
+    source.audioChannels ? `${source.audioChannels}ch` : null,
+    source.audioBitrateKbps ? `@${source.audioBitrateKbps}k` : null,
+  ].filter(Boolean).join('/');
+
+  return [video || '-', audio ? `a:${audio}` : null].filter(Boolean).join(' · ');
+}
+
+function formatFfmpegPlanSummary(plan: PlaybackTraceFfmpegPlan | null | undefined): string {
+  if (!plan) return '-';
+  const video = [plan.videoMode || null, plan.videoCodec || null].filter(Boolean).join('/');
+  const audio = [plan.audioMode || null, plan.audioCodec || null].filter(Boolean).join('/');
+  const execution = plan.hwAccel || 'none';
+  return [
+    plan.inputKind || null,
+    plan.packaging || plan.container || null,
+    video ? `v:${video}` : null,
+    audio ? `a:${audio}` : null,
+    execution,
+  ].filter(Boolean).join(' · ');
+}
+
+function formatFirstFrameLabel(firstFrameAtMs: number | null | undefined): string {
+  if (!firstFrameAtMs || firstFrameAtMs <= 0) return '-';
+  return new Date(firstFrameAtMs).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function formatFallbackSummary(trace: PlaybackTraceContract | null | undefined): string {
+  if (!trace) return '-';
+  const count = typeof trace.fallbackCount === 'number' ? trace.fallbackCount : 0;
+  const lastReason = trace.lastFallbackReason || null;
+  if (count <= 0 && !lastReason) return '-';
+  return [count > 0 ? String(count) : null, lastReason].filter(Boolean).join(' · ');
+}
+
+function formatStopSummary(trace: PlaybackTraceContract | null | undefined): string {
+  if (!trace) return '-';
+  return [trace.stopClass || null, trace.stopReason || null].filter(Boolean).join(' · ') || '-';
+}
+
+function formatHostPressureSummary(hostPressureBand: string | null, hostOverrideApplied: boolean): string {
+  if (!hostPressureBand) return '-';
+  return hostOverrideApplied ? `${hostPressureBand} · applied` : hostPressureBand;
+}
+
+function extractPlaybackTrace(value: unknown): PlaybackTraceContract | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.requestId === 'string' && (
+    'sessionId' in record ||
+    'source' in record ||
+    'targetProfileHash' in record ||
+    'targetProfile' in record ||
+    'ffmpegPlan' in record ||
+    'stopReason' in record ||
+    'stopClass' in record
+  )) {
+    return record as unknown as PlaybackTraceContract;
+  }
+
+  if ('trace' in record) {
+    return extractPlaybackTrace(record.trace);
+  }
+  if ('body' in record) {
+    return extractPlaybackTrace(record.body);
+  }
+  if ('details' in record) {
+    return extractPlaybackTrace(record.details);
+  }
+
+  return null;
+}
+
+function formatClientPath(snapshot: CapabilitySnapshot | null): string {
+  if (!snapshot) return '-';
+  const preferred = snapshot.preferredHlsEngine ?? '-';
+  const engines = snapshot.hlsEngines?.length ? snapshot.hlsEngines.join('/') : null;
+  return engines ? `${preferred} (${engines})` : preferred;
+}
+
+function formatRequestProfileLabel(profile: string | null): string {
+  switch (profile) {
+    case 'generic':
+    case 'high':
+      return 'compatible';
+    case 'low':
+      return 'bandwidth';
+    case 'copy':
+      return 'direct';
+    default:
+      return profile || '-';
   }
 }
 
-function canUseDesktopWebKitFullscreen(videoEl?: VideoElementRef): boolean {
-  if (!videoEl) return false;
-  try {
-    const webkitVideo = videoEl as unknown as {
-      webkitEnterFullscreen?: unknown;
+function formatQualityRungLabel(rung: string | null): string {
+  if (!rung) return '-';
+  return rung.split('_').join(' ');
+}
+
+function formatBooleanLabel(value: boolean): string {
+  return value ? 'yes' : 'no';
+}
+
+function formatTargetProfileSummary(target: PlaybackTargetProfile | null): string {
+  if (!target) return '-';
+
+  const videoMode = target.video?.mode || '-';
+  const videoCodec = target.video?.codec ? `/${target.video.codec}` : '';
+  const videoCRF = target.video?.crf ? `/crf${target.video.crf}` : '';
+  const videoPreset = target.video?.preset ? `/${target.video.preset}` : '';
+  const audioMode = target.audio?.mode || '-';
+  const audioCodec = target.audio?.codec ? `/${target.audio.codec}` : '';
+  const audioChannels = target.audio?.channels ? `/${target.audio.channels}ch` : '';
+  const audioBitrate = target.audio?.bitrateKbps ? `@${target.audio.bitrateKbps}k` : '';
+  const packaging = target.packaging || target.container || '-';
+
+  return [
+    packaging,
+    `v:${videoMode}${videoCodec}${videoCRF}${videoPreset}`,
+    `a:${audioMode}${audioCodec}${audioChannels}${audioBitrate}`
+  ].join(' · ');
+}
+
+function formatExecutionLabel(target: PlaybackTargetProfile | null): string {
+  if (!target?.hwAccel || target.hwAccel === 'none') {
+    return 'CPU';
+  }
+  return target.hwAccel.toUpperCase();
+}
+
+function extractPlaybackObservability(
+  info: PlaybackInfo,
+  clientPath: string | null
+): PlaybackObservability | null {
+  const decision = info.decision;
+  if (!decision) {
+    if (!clientPath) return null;
+    return {
+      clientPath,
+      requestProfile: null,
+      requestedIntent: null,
+      resolvedIntent: null,
+      qualityRung: null,
+      audioQualityRung: null,
+      videoQualityRung: null,
+      degradedFrom: null,
+      hostPressureBand: null,
+      hostOverrideApplied: false,
+      targetProfileHash: null,
+      targetProfile: null,
+      operator: null,
+      selectedOutputKind: null,
     };
-    return typeof webkitVideo.webkitEnterFullscreen === 'function' && !hasTouchInput();
-  } catch {
-    return false;
   }
-}
 
-function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
-  if (!videoEl) return false;
-  try {
-    const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
-    if (!hasNativeHls) return false;
-
-    // Feature detection for mobile WebKit controls (no UA sniffing).
-    const webkitVideo = videoEl as unknown as {
-      webkitEnterFullscreen?: unknown;
-      webkitSupportsPresentationMode?: unknown;
-      webkitSetPresentationMode?: unknown;
-    };
-    const hasWebKitFullscreen = typeof webkitVideo.webkitEnterFullscreen === 'function';
-    const hasWebKitPresentationMode =
-      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
-      typeof webkitVideo.webkitSetPresentationMode === 'function';
-
-    // Desktop Safari can expose some WebKit fullscreen APIs.
-    // Restrict native-mobile forcing to touch devices to keep desktop behavior stable.
-    return (hasWebKitFullscreen || hasWebKitPresentationMode) && hasTouchInput();
-  } catch {
-    return false;
-  }
-}
-
-async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): Promise<PreferredCodec[]> {
-  if (cachedPreferredCodecs) return cachedPreferredCodecs;
-
-  const supports = async (contentType: string): Promise<boolean> => {
-    try {
-      const mc = (navigator as any)?.mediaCapabilities;
-      if (mc?.decodingInfo) {
-        const baseVideo = {
-          contentType,
-          width: 1920,
-          height: 1080,
-          bitrate: 5_000_000,
-          framerate: 30
-        };
-
-        try {
-          const info = await mc.decodingInfo({ type: 'media-source', video: baseVideo });
-          if (info?.supported) return true;
-        } catch {
-          // Some platforms only accept type='file'; try fallback below.
-        }
-
-        try {
-          const info = await mc.decodingInfo({ type: 'file', video: baseVideo });
-          if (info?.supported) return true;
-        } catch {
-          // ignore
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    try {
-      if (typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(contentType)) return true;
-    } catch {
-      // ignore
-    }
-
-    try {
-      const v = videoEl || (typeof document !== 'undefined' ? document.createElement('video') : null);
-      if (v && v.canPlayType(contentType) !== '') return true;
-    } catch {
-      // ignore
-    }
-
-    return false;
+  return {
+    clientPath,
+    requestProfile: decision.trace?.requestProfile ?? null,
+    requestedIntent: decision.trace?.requestedIntent ?? null,
+    resolvedIntent: decision.trace?.resolvedIntent ?? null,
+    qualityRung: decision.trace?.qualityRung ?? null,
+    audioQualityRung: decision.trace?.audioQualityRung ?? null,
+    videoQualityRung: decision.trace?.videoQualityRung ?? null,
+    degradedFrom: decision.trace?.degradedFrom ?? null,
+    hostPressureBand: decision.trace?.hostPressureBand ?? null,
+    hostOverrideApplied: decision.trace?.hostOverrideApplied ?? false,
+    targetProfileHash: decision.targetProfileHash ?? decision.trace?.targetProfileHash ?? null,
+    targetProfile: decision.targetProfile ?? null,
+    operator: decision.trace?.operator ?? null,
+    selectedOutputKind: decision.selectedOutputKind ?? null,
   };
-
-  const supportsAny = async (contentTypes: string[]): Promise<boolean> => {
-    const results = await Promise.all(contentTypes.map((ct) => supports(ct)));
-    return results.some(Boolean);
-  };
-
-  const av1Types = ['video/mp4; codecs="av01.0.05M.08"'];
-  const hevcTypes = [
-    'video/mp4; codecs="hvc1.1.6.L120.90"',
-    'video/mp4; codecs="hev1.1.6.L120.90"'
-  ];
-  const h264Types = ['video/mp4; codecs="avc1.42E01E"'];
-
-  const out: PreferredCodec[] = [];
-
-  if (await supportsAny(av1Types)) out.push('av1');
-  if (await supportsAny(hevcTypes)) out.push('hevc');
-
-  // Always include H.264 as a safe fallback.
-  // If the platform surprisingly doesn't report support, keep it anyway: server will still fall back if needed.
-  if (out.length === 0) {
-    // Still probe H.264 once, but don't block the fallback list on it.
-    await supportsAny(h264Types);
-  }
-  out.push('h264');
-
-  cachedPreferredCodecs = out;
-  return out;
 }
 
-class PlayerError extends Error {
-  details?: unknown;
-
-  constructor(message: string, details?: unknown) {
-    super(message);
-    this.name = 'PlayerError';
-    this.details = details;
-    Object.setPrototypeOf(this, PlayerError.prototype);
+function resolvePlaybackDurationSeconds(playbackInfo: PlaybackInfo): number | null {
+  if (typeof playbackInfo.durationMs === 'number' && playbackInfo.durationMs > 0) {
+    return playbackInfo.durationMs / 1000;
   }
-}
-
-async function readResponseBody(res: Response): Promise<{ json: any | null; text: string | null }> {
-  const maybeRes = res as unknown as { text?: () => Promise<string>; json?: () => Promise<any> };
-  try {
-    if (typeof maybeRes.text === 'function') {
-      const text = await maybeRes.text();
-      if (!text) return { json: null, text: '' };
-      try {
-        return { json: JSON.parse(text), text };
-      } catch {
-        return { json: null, text };
-      }
-    }
-  } catch {
-    // fall through to json fallback
-  }
-
-  try {
-    if (typeof maybeRes.json === 'function') {
-      const json = await maybeRes.json();
-      return {
-        json,
-        text: json == null ? '' : JSON.stringify(json)
-      };
-    }
-  } catch {
-    // ignore and fall through
-  }
-  return { json: null, text: null };
-}
-
-function extractCapHashFromDecisionToken(token: string): string | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length < 2) return null;
-    const payloadB64 = parts[1];
-    if (!payloadB64) return null;
-    const normalized = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    const payload = JSON.parse(atob(padded));
-    if (payload && typeof payload.capHash === 'string' && payload.capHash) {
-      return payload.capHash;
-    }
-  } catch {
-    // Decision token parsing is best-effort; server enforces token validity.
+  if (typeof playbackInfo.durationSeconds === 'number' && playbackInfo.durationSeconds > 0) {
+    return playbackInfo.durationSeconds;
   }
   return null;
 }
@@ -228,9 +298,11 @@ function V3Player(props: V3PlayerProps) {
   const [traceId, setTraceId] = useState<string>('-');
 
   const [status, setStatus] = useState<PlayerStatus>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [capabilitySnapshot, setCapabilitySnapshot] = useState<CapabilitySnapshot | null>(null);
+  const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
+  const [sessionPlaybackTrace, setSessionPlaybackTrace] = useState<PlaybackTraceContract | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoElementRef>(null);
@@ -251,6 +323,7 @@ function V3Player(props: V3PlayerProps) {
   );
   const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
   const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>(null);
+  const [activeHlsEngine, setActiveHlsEngine] = useState<'native' | 'hlsjs' | null>(null);
 
   // P3-4: Truth State
   const [canSeek, setCanSeek] = useState(true);
@@ -262,8 +335,99 @@ function V3Player(props: V3PlayerProps) {
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
 
-  const sleep = (ms: number): Promise<void> =>
-    new Promise(resolve => setTimeout(resolve, ms));
+  const setPlayerError = useCallback((nextError: AppError | null) => {
+    setError(nextError);
+  }, []);
+
+  const clearPlayerError = useCallback(() => {
+    setError(null);
+    setShowErrorDetails(false);
+  }, []);
+
+  const setLegacyError = useCallback<Dispatch<SetStateAction<string | null>>>((next) => {
+    setError((current) => {
+      const currentTitle = current?.title ?? null;
+      const resolvedTitle = typeof next === 'function' ? next(currentTitle) : next;
+      if (!resolvedTitle) {
+        return null;
+      }
+      return {
+        title: resolvedTitle,
+        detail: current?.detail,
+        status: current?.status,
+        retryable: current?.retryable ?? true,
+      };
+    });
+  }, []);
+
+  const setLegacyErrorDetails = useCallback<Dispatch<SetStateAction<string | null>>>((next) => {
+    setError((current) => {
+      if (!current) {
+        return current;
+      }
+      const currentDetail = current.detail ?? null;
+      const resolvedDetail = typeof next === 'function' ? next(currentDetail) : next;
+      return {
+        ...current,
+        detail: resolvedDetail ?? undefined,
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!error?.detail) {
+      setShowErrorDetails(false);
+    }
+  }, [error?.detail]);
+
+  const sleep = useCallback((ms: number): Promise<void> => (
+    new Promise(resolve => setTimeout(resolve, ms))
+  ), []);
+
+  const resolvePreferredHlsEngine = useCallback((): 'native' | 'hlsjs' => {
+    const hlsJsSupported = Hls.isSupported();
+    if (shouldPreferNativeWebKitHls(videoRef.current, hlsJsSupported)) {
+      return 'native';
+    }
+    return hlsJsSupported ? 'hlsjs' : 'native';
+  }, [videoRef]);
+
+  const resolvePreferredHlsEngineForCapabilities = useCallback((
+    capabilities?: Pick<CapabilitySnapshot, 'preferredHlsEngine'> | null
+  ): 'native' | 'hlsjs' => {
+    if (capabilities?.preferredHlsEngine === 'native' || capabilities?.preferredHlsEngine === 'hlsjs') {
+      return capabilities.preferredHlsEngine;
+    }
+    return resolvePreferredHlsEngine();
+  }, [resolvePreferredHlsEngine]);
+
+  const mergeSessionPlaybackTrace = useCallback((nextTrace: PlaybackTraceContract | null) => {
+    if (!nextTrace) {
+      return;
+    }
+    setSessionPlaybackTrace((current) => ({
+      ...(current ?? {}),
+      ...nextTrace,
+      source: nextTrace.source ?? current?.source,
+      targetProfile: nextTrace.targetProfile ?? current?.targetProfile,
+      ffmpegPlan: nextTrace.ffmpegPlan ?? current?.ffmpegPlan,
+      fallbackCount: nextTrace.fallbackCount ?? current?.fallbackCount,
+      lastFallbackReason: nextTrace.lastFallbackReason ?? current?.lastFallbackReason,
+      stopReason: nextTrace.stopReason ?? current?.stopReason,
+      stopClass: nextTrace.stopClass ?? current?.stopClass,
+      firstFrameAtMs: nextTrace.firstFrameAtMs ?? current?.firstFrameAtMs,
+    }));
+    if (nextTrace.requestId) {
+      setTraceId(nextTrace.requestId);
+    }
+  }, []);
+
+  const handleSessionSnapshot = useCallback((session: V3SessionStatusResponse) => {
+    if (session.requestId) {
+      setTraceId(session.requestId);
+    }
+    mergeSessionPlaybackTrace(extractPlaybackTrace(session));
+  }, [mergeSessionPlaybackTrace]);
 
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
@@ -272,7 +436,6 @@ function V3Player(props: V3PlayerProps) {
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
 
   const {
-    sessionId,
     sessionIdRef,
     authHeaders,
     reportError,
@@ -289,9 +452,10 @@ function V3Player(props: V3PlayerProps) {
     setPlaybackMode,
     setDurationSeconds,
     setStatus,
-    setError,
+    setError: setLegacyError,
     readResponseBody,
-    createPlayerError: (message, details) => new PlayerError(message, details)
+    createPlayerError: (message, details) => new PlayerError(message, details),
+    onSessionSnapshot: handleSessionSnapshot,
   });
 
   const {
@@ -299,11 +463,14 @@ function V3Player(props: V3PlayerProps) {
     seekableStart,
     seekableEnd,
     isPip,
+    canTogglePiP,
     isFullscreen,
+    canToggleFullscreen,
     isPlaying,
     isIdle,
     volume,
     isMuted,
+    canAdjustVolume,
     stats,
     setStats,
     windowDuration,
@@ -319,6 +486,7 @@ function V3Player(props: V3PlayerProps) {
     seekBy,
     seekWhenReady,
     togglePlayPause,
+    toggleFullscreen,
     enterDVRMode,
     togglePiP,
     toggleMute,
@@ -338,6 +506,7 @@ function V3Player(props: V3PlayerProps) {
     canSeek,
     startUnix,
     setStatus,
+    allowNativeFullscreen: activeHlsEngine === 'native',
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen
   });
@@ -364,11 +533,12 @@ function V3Player(props: V3PlayerProps) {
     lastDecodedRef,
     t,
     reportError,
-    shouldForceNativeMobileHls,
+    waitForSessionReady,
+    shouldPreferNativeHls: shouldPreferNativeWebKitHls,
     setStats,
     setStatus,
-    setError,
-    setErrorDetails,
+    setError: setLegacyError,
+    setErrorDetails: setLegacyErrorDetails,
     setShowErrorDetails
   });
 
@@ -400,86 +570,104 @@ function V3Player(props: V3PlayerProps) {
     activeRecordingRef.current = null;
     setActiveRecordingId(null);
     setVodStreamMode(null);
+    setActiveHlsEngine(null);
+    setCapabilitySnapshot(null);
+    setPlaybackObservability(null);
+    setSessionPlaybackTrace(null);
   }, []);
 
-  const prepareFreshPlayback = useCallback((mode: 'LIVE' | 'VOD') => {
+  const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
     clearVodRetry();
     clearVodFetch();
     clearSessionLeaseState();
+    resetChromeState();
+  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
+
+  const hasActivePlayback = useCallback((): boolean => {
+    const videoEl = videoRef.current;
+    return Boolean(
+      sessionIdRef.current ||
+      activeRecordingRef.current ||
+      hlsRef.current ||
+      videoEl?.currentSrc ||
+      videoEl?.getAttribute('src')
+    );
+  }, [hlsRef, sessionIdRef, videoRef]);
+
+  const teardownActivePlayback = useCallback(async (): Promise<void> => {
+    const activeSessionId = sessionIdRef.current;
+    const hadActivePlayback = hasActivePlayback();
+
+    clearPlaybackSelection();
+    clearVodRetry();
+    clearVodFetch();
+    if (hadActivePlayback) {
+      resetPlaybackEngine();
+      await sleep(75);
+    }
+    if (activeSessionId) {
+      await sendStopIntent(activeSessionId);
+    }
+    clearSessionLeaseState();
+    resetChromeState();
+  }, [
+    clearPlaybackSelection,
+    clearSessionLeaseState,
+    clearVodFetch,
+    clearVodRetry,
+    hasActivePlayback,
+    resetChromeState,
+    resetPlaybackEngine,
+    sendStopIntent,
+    sessionIdRef,
+    sleep,
+  ]);
+
+  const prepareFreshPlayback = useCallback((mode: 'LIVE' | 'VOD') => {
     setDurationSeconds(requestedDuration);
     setPlaybackMode(mode);
-  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, requestedDuration]);
+  }, [requestedDuration]);
 
-  const gatherPlaybackCapabilities = useCallback(async () => {
+  const gatherPlaybackCapabilities = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
-    const preferredCodecs = await detectPreferredCodecs(video);
+    const probe = await probeRuntimePlaybackCapabilities(video, scope);
+    const clientFamilyFallback = detectPlaybackClientFamily(video);
 
-    const supportsNativeHls = (() => {
-      if (!video) return false;
-      try {
-        return video.canPlayType('application/vnd.apple.mpegurl') !== '';
-      } catch {
-        return false;
-      }
-    })();
-
-    const supportsAc3 = (() => {
-      if (!video) return false;
-      try {
-        return video.canPlayType('audio/mp4; codecs="ac-3"') !== '';
-      } catch {
-        return false;
-      }
-    })();
-
-    const forceNativeMobile = shouldForceNativeMobileHls(video as VideoElementRef);
-
-    const hlsEngines: Array<'native' | 'hlsjs'> = [];
-    if (supportsNativeHls) {
-      hlsEngines.push('native');
-    }
-    if (Hls.isSupported() && !forceNativeMobile) {
-      hlsEngines.push('hlsjs');
-    }
-
-    const container = ['mp4', 'ts'];
-    if (Hls.isSupported() && !forceNativeMobile) {
-      container.push('fmp4');
-    }
-
-    const audioCodecs = ['aac', 'mp3'];
-    if (supportsAc3) {
-      audioCodecs.push('ac3');
-    }
-
-    return {
-      capabilitiesVersion: 1,
-      container: Array.from(new Set(container)),
-      videoCodecs: Array.from(new Set(preferredCodecs)),
-      audioCodecs: Array.from(new Set(audioCodecs)),
-      supportsHls: hlsEngines.length > 0,
-      supportsRange: true,
+    const capabilities: CapabilitySnapshot = {
+      capabilitiesVersion: 2,
+      container: probe.containers,
+      videoCodecs: probe.videoCodecs,
+      audioCodecs: probe.audioCodecs,
+      hlsEngines: probe.hlsEngines.length > 0 ? probe.hlsEngines : undefined,
+      preferredHlsEngine: probe.preferredHlsEngine ?? undefined,
+      supportsHls: probe.hlsEngines.length > 0,
+      supportsRange: probe.supportsRange,
       allowTranscode: true,
-      deviceType: 'web'
+      deviceType: 'web',
+      runtimeProbeUsed: probe.usedRuntimeProbe,
+      runtimeProbeVersion: probe.version,
+      clientFamilyFallback,
     };
+
+    return capabilities;
   }, []);
 
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
-    clearPlaybackSelection();
+    if (hasActivePlayback()) {
+      await teardownActivePlayback();
+    } else {
+      clearPlaybackState();
+    }
     activeRecordingRef.current = id;
     setActiveRecordingId(id);
-    clearVodRetry();
-    clearVodFetch();
-    clearSessionLeaseState();
-    resetPlaybackEngine();
     setStatus('building');
-    setError(null);
-    setErrorDetails(null);
-    setShowErrorDetails(false);
+    clearPlayerError();
+    setTraceId('-');
     setPlaybackMode('VOD');
 
     let abortController: AbortController | null = null;
+    let requestCaps: CapabilitySnapshot | null = null;
 
     try {
       await ensureSessionCookie();
@@ -490,8 +678,9 @@ function V3Player(props: V3PlayerProps) {
 
       try {
         const maxMetaRetries = 20;
-        const requestCaps = await gatherPlaybackCapabilities();
-        let pInfo: any | undefined;
+        requestCaps = await gatherPlaybackCapabilities('recording');
+        setCapabilitySnapshot(requestCaps);
+        let pInfo: PlaybackInfo | undefined;
 
         for (let i = 0; i < maxMetaRetries; i++) {
           if (activeRecordingRef.current !== id) return;
@@ -502,10 +691,24 @@ function V3Player(props: V3PlayerProps) {
           });
 
           if (error) {
-            if (response.status === 401 || response.status === 403) {
+            if (notifyAuthRequiredIfUnauthorizedResponse(response, 'V3Player.recordingPlaybackInfo')) {
+              telemetry.emit('ui.error', { status: 401, code: 'AUTH_DENIED' });
+              setStatus('error');
+              setPlayerError({
+                title: t('player.authFailed'),
+                status: 401,
+                retryable: false,
+              });
+              return;
+            }
+            if (response.status === 403) {
               telemetry.emit('ui.error', { status: response.status, code: 'AUTH_DENIED' });
               setStatus('error');
-              setError(t('player.authFailed'));
+              setPlayerError({
+                title: t('player.forbidden'),
+                status: 403,
+                retryable: false,
+              });
               return;
             }
             if (response.status === 410) {
@@ -518,7 +721,11 @@ function V3Player(props: V3PlayerProps) {
               const retryHint = retryAfter > 0 ? ` ${t('player.retryAfter', { seconds: retryAfter })}` : '';
               telemetry.emit('ui.error', { status: 409, code: 'LEASE_BUSY', retry_after: retryAfter });
               setStatus('error');
-              setError(`${t('player.leaseBusy')}${retryHint}`);
+              setPlayerError({
+                title: `${t('player.leaseBusy')}${retryHint}`,
+                status: 409,
+                retryable: true,
+              });
               return;
             }
             if (response.status === 503) {
@@ -527,7 +734,7 @@ function V3Player(props: V3PlayerProps) {
                 const seconds = parseInt(retryAfter, 10);
                 telemetry.emit('ui.error', { status: 503, code: 'UNAVAILABLE', retry_after: seconds });
                 setStatus('building');
-                setErrorDetails(`${t('player.preparing')} (${seconds}s)`);
+                setLegacyErrorDetails(`${t('player.preparing')} (${seconds}s)`);
                 await sleep(seconds * 1000);
                 continue;
               } else {
@@ -556,7 +763,13 @@ function V3Player(props: V3PlayerProps) {
           });
           throw new Error('Backend decision missing mode');
         }
-        mode = pInfo.mode;
+        // Map backend 'hls' to local preferred HLS engine if needed
+        const rawMode = pInfo.mode;
+        if (rawMode === 'hls') {
+          mode = resolvePreferredHlsEngineForCapabilities(requestCaps) === 'native' ? 'native_hls' : 'hlsjs';
+        } else {
+          mode = rawMode as any; // fall back to other modes or deny
+        }
 
         if (!['native_hls', 'hlsjs', 'direct_mp4', 'transcode', 'deny'].includes(mode)) {
           telemetry.emit('ui.failclosed', {
@@ -568,7 +781,7 @@ function V3Player(props: V3PlayerProps) {
         if (mode === 'deny') {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.mode.deny',
-            reason: pInfo.reason || pInfo.decision?.reasons?.[0] || 'unknown'
+            reason: pInfo.decisionReason || pInfo.decision?.reasons?.[0] || 'unknown'
           });
           throw new Error(t('player.playbackDenied'));
         }
@@ -597,17 +810,16 @@ function V3Player(props: V3PlayerProps) {
         setVodStreamMode(mode as any);
 
         // Truth Consumption
-        const playbackDurationSeconds =
-          typeof pInfo.durationSeconds === 'number' && pInfo.durationSeconds > 0
-            ? pInfo.durationSeconds
-            : typeof pInfo.durationMs === 'number' && pInfo.durationMs > 0
-              ? pInfo.durationMs / 1000
-              : null;
+        const playbackDurationSeconds = resolvePlaybackDurationSeconds(pInfo);
         if (playbackDurationSeconds && playbackDurationSeconds > 0) {
           setDurationSeconds(playbackDurationSeconds);
         }
 
         if (pInfo.requestId) setTraceId(pInfo.requestId);
+        setPlaybackObservability(extractPlaybackObservability(
+          pInfo,
+          requestCaps.preferredHlsEngine ?? null
+        ));
         const recordingIsSeekable = pInfo.isSeekable !== undefined ? Boolean(pInfo.isSeekable) : true;
         setCanSeek(recordingIsSeekable);
         if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
@@ -624,10 +836,13 @@ function V3Player(props: V3PlayerProps) {
             setShowResumeOverlay(true);
           }
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (activeRecordingRef.current !== id) return;
         setStatus('error');
-        setError(e.message || t('player.serverError'));
+        mergeSessionPlaybackTrace(extractPlaybackTrace(e));
+        setPlayerError(normalizePlayerError(e, {
+          fallbackTitle: t('player.serverError'),
+        }));
         return;
       }
 
@@ -638,18 +853,21 @@ function V3Player(props: V3PlayerProps) {
           await waitForDirectStream(streamUrl);
           if (activeRecordingRef.current !== id) return;
           setStatus('buffering');
+          setActiveHlsEngine(null);
           playDirectMp4(streamUrl);
           return;
         } catch (err) {
           if (activeRecordingRef.current !== id) return;
           setStatus('error');
-          setError(t('player.timeout'));
+          setPlayerError({
+            title: t('player.timeout'),
+            retryable: true,
+          });
           return;
         }
       }
 
       if (mode === 'native_hls' || mode === 'hlsjs' || mode === 'transcode') {
-        const forceNativeMobile = shouldForceNativeMobileHls(videoRef.current);
         const controller = new AbortController();
         abortController = controller;
         vodFetchRef.current = controller;
@@ -678,21 +896,27 @@ function V3Player(props: V3PlayerProps) {
 
           if (activeRecordingRef.current !== id) return;
           setStatus('buffering');
-          const engine: 'native' | 'hlsjs' = mode === 'native_hls' || forceNativeMobile ? 'native' : 'hlsjs';
+          const engine: 'native' | 'hlsjs' = mode === 'native_hls'
+            ? 'native'
+            : resolvePreferredHlsEngineForCapabilities(requestCaps);
           playHls(streamUrl, engine);
+          setActiveHlsEngine(engine);
         } finally {
           if (vodFetchRef.current === controller) vodFetchRef.current = null;
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (activeRecordingRef.current !== id) return;
       debugError(err);
-      setError(err.message);
+      mergeSessionPlaybackTrace(extractPlaybackTrace(err));
+      setPlayerError(normalizePlayerError(err, {
+        fallbackTitle: t('player.serverError'),
+      }));
       setStatus('error');
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie, gatherPlaybackCapabilities]);
+  }, [apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -712,27 +936,39 @@ function V3Player(props: V3PlayerProps) {
 
       if (src) {
         debugLog('[V3Player] startStream: src path', { hasSrc: true });
+        if (hasActivePlayback()) {
+          await teardownActivePlayback();
+        } else {
+          clearPlaybackState();
+        }
         prepareFreshPlayback(requestedDuration ? 'VOD' : 'LIVE');
         setStatus('buffering');
-        playHls(src);
+        setTraceId('-');
+        const srcEngine = resolvePreferredHlsEngine();
+        playHls(src, srcEngine);
+        setActiveHlsEngine(srcEngine);
         return;
       }
-
-      prepareFreshPlayback('LIVE');
 
       const ref = (refToUse || sRef || '').trim();
       if (!ref) {
         setStatus('error');
-        setError(t('player.serviceRefRequired'));
-        setErrorDetails(null);
-        setShowErrorDetails(false);
+        setPlayerError({
+          title: t('player.serviceRefRequired'),
+          retryable: false,
+        });
         return;
       }
+      if (hasActivePlayback()) {
+        await teardownActivePlayback();
+      } else {
+        clearPlaybackState();
+      }
+      prepareFreshPlayback('LIVE');
       let newSessionId: string | null = null;
       setStatus('starting');
-      setError(null);
-      setErrorDetails(null);
-      setShowErrorDetails(false);
+      clearPlayerError();
+      setTraceId('-');
 
       try {
         await ensureSessionCookie();
@@ -740,9 +976,10 @@ function V3Player(props: V3PlayerProps) {
         // SSOT: live playback mode is decided by backend from measured capabilities.
         let liveMode: 'native_hls' | 'hlsjs' | 'direct_mp4' | 'transcode' | 'deny' = 'deny';
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
-        const forceNativeMobile = shouldForceNativeMobileHls(videoRef.current);
 
-        const requestCaps = await gatherPlaybackCapabilities();
+        const requestCaps = await gatherPlaybackCapabilities('live');
+        const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
+        setCapabilitySnapshot(requestCaps);
         // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
         const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
           method: 'POST',
@@ -753,7 +990,8 @@ function V3Player(props: V3PlayerProps) {
           })
         });
         const { json: liveInfoJson } = await readResponseBody(liveResponse);
-        const liveInfo = liveInfoJson as any;
+        const liveInfo = liveInfoJson as PlaybackInfo;
+        const liveError = (!liveResponse.ok) ? liveInfoJson as any : null;
         const liveRequestId =
           (typeof liveInfo?.requestId === 'string' ? liveInfo.requestId : undefined) ||
           liveResponse.headers.get('X-Request-ID') ||
@@ -763,29 +1001,40 @@ function V3Player(props: V3PlayerProps) {
         }
 
         if (!liveResponse.ok) {
-          if (liveResponse.status === 401 || liveResponse.status === 403) {
+          if (notifyAuthRequiredIfUnauthorizedResponse(liveResponse, 'V3Player.liveStreamInfo')) {
             setStatus('error');
-            setError(t('player.authFailed'));
+            setPlayerError(normalizePlayerError(liveError ?? {
+              status: 401,
+              title: t('player.authFailed'),
+              requestId: liveRequestId,
+            }, {
+              fallbackTitle: t('player.authFailed'),
+              status: 401,
+              retryable: false,
+            }));
             return;
           }
-          const code = typeof liveInfo?.code === 'string' && liveInfo.code ? liveInfo.code : null;
-          const title = typeof liveInfo?.title === 'string' && liveInfo.title ? liveInfo.title : null;
-          const type = typeof liveInfo?.type === 'string' && liveInfo.type ? liveInfo.type : null;
-
-          const summaryParts = [code, title, type].filter((part): part is string => Boolean(part));
-          const message = summaryParts.length > 0
-            ? summaryParts.join(' · ')
-            : `${t('player.apiError')}: ${liveResponse.status}`;
-
-          const detailParts: string[] = [];
-          if (typeof liveInfo?.detail === 'string' && liveInfo.detail) detailParts.push(liveInfo.detail);
-          if (liveRequestId) detailParts.push(`requestId=${liveRequestId}`);
-
-          const err = new Error(message);
-          if (detailParts.length > 0) {
-            (err as any).details = detailParts.join(' · ');
+          if (liveResponse.status === 403) {
+            setStatus('error');
+            setPlayerError(normalizePlayerError(liveError ?? {
+              status: 403,
+              title: t('player.forbidden'),
+              requestId: liveRequestId,
+            }, {
+              fallbackTitle: t('player.forbidden'),
+              status: 403,
+              retryable: false,
+            }));
+            return;
           }
-          throw err;
+          throw normalizePlayerError(liveError ?? {
+            status: liveResponse.status,
+            title: `${t('player.apiError')}: ${liveResponse.status}`,
+            requestId: liveRequestId,
+          }, {
+            fallbackTitle: `${t('player.apiError')}: ${liveResponse.status}`,
+            status: liveResponse.status,
+          });
         }
 
         if (!liveInfo?.mode) {
@@ -805,20 +1054,12 @@ function V3Player(props: V3PlayerProps) {
           case 'hlsjs':
           case 'hls':
           case 'direct_stream':
-            if (forceNativeMobile) {
-              liveEngine = 'native';
-              liveMode = 'native_hls';
-            } else if (Hls.isSupported()) {
-              liveEngine = 'hlsjs';
-              liveMode = 'hlsjs';
-            } else {
-              liveEngine = 'native';
-              liveMode = 'native_hls';
-            }
+            liveEngine = preferredHlsEngine;
+            liveMode = liveEngine === 'native' ? 'native_hls' : 'hlsjs';
             break;
           case 'transcode':
             liveMode = 'transcode';
-            liveEngine = forceNativeMobile ? 'native' : (Hls.isSupported() ? 'hlsjs' : 'native');
+            liveEngine = preferredHlsEngine;
             break;
           case 'direct_mp4':
             liveMode = 'direct_mp4';
@@ -842,6 +1083,10 @@ function V3Player(props: V3PlayerProps) {
           throw new Error('Backend live decision missing requestId');
         }
         setTraceId(liveInfo.requestId);
+        setPlaybackObservability(extractPlaybackObservability(
+          liveInfo,
+          requestCaps.preferredHlsEngine ?? null
+        ));
 
         if (liveMode === 'deny') {
           telemetry.emit('ui.failclosed', {
@@ -849,7 +1094,10 @@ function V3Player(props: V3PlayerProps) {
             reason: liveInfo.reason || liveInfo.decision?.reasons?.[0] || 'unknown'
           });
           setStatus('error');
-          setError(t('player.playbackDenied'));
+          setPlayerError({
+            title: t('player.playbackDenied'),
+            retryable: false,
+          });
           return;
         }
 
@@ -864,10 +1112,10 @@ function V3Player(props: V3PlayerProps) {
 
         if (liveMode === 'native_hls') {
           liveEngine = 'native';
-        } else if (liveMode === 'transcode' && forceNativeMobile) {
-          liveEngine = 'native';
-        } else if (liveMode === 'hlsjs' || liveMode === 'transcode') {
+        } else if (liveMode === 'hlsjs') {
           liveEngine = 'hlsjs';
+        } else if (liveMode === 'transcode') {
+          liveEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         } else {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.live.mode.unsupported',
@@ -904,20 +1152,15 @@ function V3Player(props: V3PlayerProps) {
         });
 
         if (res.status === 401 || res.status === 403) {
-          // [RFC7807] Extract structured problem+json for actionable UI messages
-          let errorTitle = res.status === 401 ? t('player.authFailed') : t('player.forbidden');
-          let errorDetail: string | null = null;
+          const isUnauthorized = notifyAuthRequiredIfUnauthorizedResponse(res, 'V3Player.startIntent');
+          let errorTitle = isUnauthorized ? t('player.authFailed') : t('player.forbidden');
+          let problemBody: unknown = null;
           try {
             const ct = res.headers.get('content-type') || '';
             if (ct.includes('application/problem+json') || ct.includes('application/json')) {
               const problem = await res.json();
-              // RFC7807: title is the human-readable summary, code is machine-readable
               if (problem.title) errorTitle = problem.title;
-              const detailParts: string[] = [];
-              if (problem.code) detailParts.push(`code=${problem.code}`);
-              if (problem.detail) detailParts.push(problem.detail);
-              if (problem.requestId) detailParts.push(`requestId=${problem.requestId}`);
-              if (detailParts.length > 0) errorDetail = detailParts.join(' · ');
+              problemBody = problem;
 
               telemetry.emit('ui.auth_error', {
                 status: res.status,
@@ -930,8 +1173,14 @@ function V3Player(props: V3PlayerProps) {
             // Body parse failed – fall through with generic message
           }
           setStatus('error');
-          setError(errorTitle);
-          setErrorDetails(errorDetail);
+          setPlayerError(normalizePlayerError(problemBody ?? {
+            status: res.status,
+            title: errorTitle,
+          }, {
+            fallbackTitle: errorTitle,
+            status: res.status,
+            retryable: false,
+          }));
           return;
         }
 
@@ -946,19 +1195,19 @@ function V3Player(props: V3PlayerProps) {
             apiErr = null;
           }
           setStatus('error');
-          setError(`${t('player.leaseBusy')}${retryHint}`);
-          if (apiErr?.code || apiErr?.requestId) {
-            const parts = [];
-            if (apiErr.code) parts.push(`code=${apiErr.code}`);
-            if (apiErr.requestId) parts.push(`requestId=${apiErr.requestId}`);
-            setErrorDetails(parts.join(' '));
-          } else {
-            setErrorDetails(null);
-          }
+          setPlayerError(normalizePlayerError(apiErr ?? {
+            status: 409,
+            title: `${t('player.leaseBusy')}${retryHint}`,
+          }, {
+            fallbackTitle: `${t('player.leaseBusy')}${retryHint}`,
+            status: 409,
+            retryable: true,
+          }));
           return;
         }
         if (!res.ok) {
           let errorMsg = `${t('player.apiError')}: ${res.status}`;
+          let errorPayload: unknown = null;
           let errorDetails: string | null = null;
           try {
             const { json, text } = await readResponseBody(res);
@@ -986,15 +1235,26 @@ function V3Player(props: V3PlayerProps) {
               if (detailParts.length > 0) {
                 errorDetails = detailParts.join(' · ');
               }
+              errorPayload = {
+                ...json,
+                status: res.status,
+                requestId: responseRequestId,
+              };
             } else if (text) {
               errorDetails = text;
             }
           } catch (e) {
             debugWarn("Failed to parse error response", e);
           }
-          const err = new Error(errorMsg);
-          (err as any).details = errorDetails || undefined;
-          throw err;
+          throw normalizePlayerError(errorPayload ?? {
+            status: res.status,
+            title: errorMsg,
+            details: errorDetails,
+          }, {
+            fallbackTitle: errorMsg,
+            fallbackDetail: errorDetails ?? undefined,
+            status: res.status,
+          });
         }
 
         const data: V3SessionResponse = await res.json();
@@ -1009,6 +1269,7 @@ function V3Player(props: V3PlayerProps) {
           throw new Error(t('player.streamUrlMissing'));
         }
         playHls(streamUrl, liveEngine);
+        setActiveHlsEngine(liveEngine);
 
       } catch (err) {
         if (newSessionId) {
@@ -1016,39 +1277,25 @@ function V3Player(props: V3PlayerProps) {
         }
         clearSessionLeaseState();
         debugError(err);
-        const e = err as any;
-        setError(e?.message || String(err));
-        if (e?.details) {
-          try {
-            setErrorDetails(typeof e.details === 'string' ? e.details : JSON.stringify(e.details, null, 2));
-          } catch {
-            setErrorDetails(String(e.details));
-          }
-        } else {
-          setErrorDetails(e?.stack || null);
-        }
+        mergeSessionPlaybackTrace(extractPlaybackTrace(err));
+        setPlayerError(normalizePlayerError(err, {
+          fallbackTitle: t('player.serverError'),
+        }));
         setStatus('error');
       }
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, setActiveSessionId, prepareFreshPlayback, requestedDuration]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
-    resetPlaybackEngine();
-    clearVodRetry();
-    clearVodFetch();
-    clearPlaybackSelection();
-    if (sessionId) {
-      await sendStopIntent(sessionId);
-    }
-    clearSessionLeaseState();
+    await teardownActivePlayback();
     setPlaybackMode('UNKNOWN');
-    resetChromeState();
     setStatus('stopped');
+    setTraceId('-');
     if (onClose && !skipClose) onClose();
-  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, onClose, resetChromeState, resetPlaybackEngine, sendStopIntent, sessionId]);
+  }, [onClose, setPlaybackMode, teardownActivePlayback]);
 
   const handleRetry = useCallback(async () => {
     try {
@@ -1111,6 +1358,71 @@ function V3Player(props: V3PlayerProps) {
         : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
       : '';
 
+  const effectiveClientPath =
+    sessionPlaybackTrace?.clientPath ||
+    playbackObservability?.clientPath ||
+    formatClientPath(capabilitySnapshot);
+  const effectiveRequestProfile =
+    sessionPlaybackTrace?.requestProfile ??
+    playbackObservability?.requestProfile ??
+    null;
+  const effectiveRequestedIntent =
+    sessionPlaybackTrace?.requestedIntent ??
+    playbackObservability?.requestedIntent ??
+    effectiveRequestProfile;
+  const effectiveResolvedIntent =
+    sessionPlaybackTrace?.resolvedIntent ??
+    playbackObservability?.resolvedIntent ??
+    null;
+  const effectiveQualityRung =
+    sessionPlaybackTrace?.qualityRung ??
+    playbackObservability?.qualityRung ??
+    null;
+  const effectiveAudioQualityRung =
+    sessionPlaybackTrace?.audioQualityRung ??
+    playbackObservability?.audioQualityRung ??
+    null;
+  const effectiveVideoQualityRung =
+    sessionPlaybackTrace?.videoQualityRung ??
+    playbackObservability?.videoQualityRung ??
+    null;
+  const effectiveDegradedFrom =
+    sessionPlaybackTrace?.degradedFrom ??
+    playbackObservability?.degradedFrom ??
+    null;
+  const effectiveTargetProfile =
+    sessionPlaybackTrace?.targetProfile ??
+    playbackObservability?.targetProfile ??
+    null;
+  const effectiveTargetProfileHash =
+    sessionPlaybackTrace?.targetProfileHash ??
+    playbackObservability?.targetProfileHash ??
+    null;
+  const effectiveOperator =
+    sessionPlaybackTrace?.operator ??
+    playbackObservability?.operator ??
+    null;
+  const effectiveHostPressureBand =
+    sessionPlaybackTrace?.hostPressureBand ??
+    playbackObservability?.hostPressureBand ??
+    null;
+  const effectiveHostOverrideApplied =
+    sessionPlaybackTrace?.hostOverrideApplied ??
+    playbackObservability?.hostOverrideApplied ??
+    false;
+  const effectiveForcedIntent = effectiveOperator?.forcedIntent ?? null;
+  const effectiveOperatorMaxQualityRung = effectiveOperator?.maxQualityRung ?? null;
+  const effectiveOperatorRuleName = effectiveOperator?.ruleName ?? null;
+  const effectiveOperatorRuleScope = effectiveOperator?.ruleScope ?? null;
+  const effectiveClientFallbackDisabled = effectiveOperator?.clientFallbackDisabled ?? false;
+  const effectiveOperatorOverrideApplied = effectiveOperator?.overrideApplied ?? false;
+  const sourceProfileSummary = formatSourceProfileSummary(sessionPlaybackTrace?.source);
+  const ffmpegPlanSummary = formatFfmpegPlanSummary(sessionPlaybackTrace?.ffmpegPlan);
+  const firstFrameLabel = formatFirstFrameLabel(sessionPlaybackTrace?.firstFrameAtMs);
+  const fallbackSummary = formatFallbackSummary(sessionPlaybackTrace);
+  const stopSummary = formatStopSummary(sessionPlaybackTrace);
+  const hostPressureSummary = formatHostPressureSummary(effectiveHostPressureBand, effectiveHostOverrideApplied);
+
   return (
     <div
       ref={containerRef}
@@ -1152,7 +1464,107 @@ function V3Player(props: V3PlayerProps) {
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('common.requestId', { defaultValue: 'Request ID' })}</span>
-                <span className={styles.statsValue}>{traceId}</span>
+                <span className={styles.statsValue}>{sessionPlaybackTrace?.requestId || traceId}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.clientPath', { defaultValue: 'Client Path' })}</span>
+                <span className={styles.statsValue}>{effectiveClientPath || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.requestProfile', { defaultValue: 'Request Profile' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveRequestProfile)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.requestedIntent', { defaultValue: 'Requested Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveRequestedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.resolvedIntent', { defaultValue: 'Resolved Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveResolvedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.qualityRung', { defaultValue: 'Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.audioQualityRung', { defaultValue: 'Audio Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveAudioQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.videoQualityRung', { defaultValue: 'Video Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveVideoQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.degradedFrom', { defaultValue: 'Degraded From' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveDegradedFrom)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.hostPressure', { defaultValue: 'Host Pressure' })}</span>
+                <span className={styles.statsValue}>{effectiveHostPressureBand || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.hostOverrideApplied', { defaultValue: 'Host Override Applied' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveHostOverrideApplied)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.forcedIntent', { defaultValue: 'Forced Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveForcedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorMaxQualityRung', { defaultValue: 'Operator Max Quality' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveOperatorMaxQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorRuleName', { defaultValue: 'Operator Rule' })}</span>
+                <span className={styles.statsValue}>{effectiveOperatorRuleName || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorRuleScope', { defaultValue: 'Operator Rule Scope' })}</span>
+                <span className={styles.statsValue}>{effectiveOperatorRuleScope || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.clientFallbackDisabled', { defaultValue: 'Client Fallback Disabled' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveClientFallbackDisabled)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorOverrideApplied', { defaultValue: 'Operator Override Applied' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveOperatorOverrideApplied)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.sourceProfile', { defaultValue: 'Source Profile' })}</span>
+                <span className={styles.statsValue}>{sourceProfileSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.outputProfile', { defaultValue: 'Output Profile' })}</span>
+                <span className={styles.statsValue}>{formatTargetProfileSummary(effectiveTargetProfile)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.profileHash', { defaultValue: 'Profile Hash' })}</span>
+                <span className={styles.statsValue}>{effectiveTargetProfileHash || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.execution', { defaultValue: 'Execution' })}</span>
+                <span className={styles.statsValue}>{formatExecutionLabel(effectiveTargetProfile)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}</span>
+                <span className={styles.statsValue}>{ffmpegPlanSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.firstFrame', { defaultValue: 'First Frame' })}</span>
+                <span className={styles.statsValue}>{firstFrameLabel}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.fallbacks', { defaultValue: 'Fallbacks' })}</span>
+                <span className={styles.statsValue}>{fallbackSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
+                <span className={styles.statsValue}>{stopSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.outputKind', { defaultValue: 'Output Kind' })}</span>
+                <span className={styles.statsValue}>{playbackObservability?.selectedOutputKind || '-'}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.resolution')}</span>
@@ -1219,10 +1631,40 @@ function V3Player(props: V3PlayerProps) {
       {error && (
         <div className={styles.errorToast} aria-live="polite" role="alert">
           <div className={styles.errorMain}>
-            <span className={styles.errorText}>⚠ {error}</span>
-            <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
+            <span className={styles.errorText}>⚠ {error.title}</span>
+            {error.retryable ? (
+              <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
+            ) : null}
           </div>
-          {errorDetails && (
+          {(stopSummary !== '-' || fallbackSummary !== '-' || ffmpegPlanSummary !== '-' || hostPressureSummary !== '-') && (
+            <div className={styles.errorTelemetry}>
+              {stopSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
+                  <span className={styles.errorTelemetryValue}>{stopSummary}</span>
+                </div>
+              )}
+              {hostPressureSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.hostPressure', { defaultValue: 'Host Pressure' })}</span>
+                  <span className={styles.errorTelemetryValue}>{hostPressureSummary}</span>
+                </div>
+              )}
+              {fallbackSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.fallbacks', { defaultValue: 'Fallbacks' })}</span>
+                  <span className={styles.errorTelemetryValue}>{fallbackSummary}</span>
+                </div>
+              )}
+              {ffmpegPlanSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}</span>
+                  <span className={styles.errorTelemetryValue}>{ffmpegPlanSummary}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {error.detail && (
             <button
               onClick={() => setShowErrorDetails(!showErrorDetails)}
               className={styles.errorDetailsButton}
@@ -1230,9 +1672,9 @@ function V3Player(props: V3PlayerProps) {
               {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
             </button>
           )}
-          {showErrorDetails && errorDetails && (
+          {showErrorDetails && error.detail && (
             <div className={styles.errorDetailsContent}>
-              <pre className={styles.errorDetailsPre}>{errorDetails}</pre>
+              <pre className={styles.errorDetailsPre}>{error.detail}</pre>
               <br />
               {t('common.session')}: {sessionIdRef.current || t('common.notAvailable')}
             </div>
@@ -1259,6 +1701,7 @@ function V3Player(props: V3PlayerProps) {
             <Button
               variant="primary"
               size="icon"
+              className={styles.playPauseButton}
               onClick={togglePlayPause}
               title={isPlaying ? t('player.pause') : t('player.play')}
               aria-label={isPlaying ? t('player.pause') : t('player.play')}
@@ -1335,57 +1778,78 @@ function V3Player(props: V3PlayerProps) {
         )}
 
         {/* DVR Mode Button (Safari Only / Fallback) */}
-        {showDvrModeButton && (
+        {showDvrModeButton && !canToggleFullscreen && (
           <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
             📺 DVR
           </Button>
         )}
 
-        {/* Volume Control */}
-        <div className={styles.volumeControl}>
-          <button
-            className={styles.volumeButton}
-            onClick={toggleMute}
-            title={isMuted ? t('player.unmute') : t('player.mute')}
+        <div className={styles.utilityControls}>
+          {canToggleFullscreen && (
+            <Button
+              variant="ghost"
+              size="sm"
+              active={isFullscreen}
+              onClick={() => void toggleFullscreen()}
+              title={isFullscreen
+                ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
+                : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+            >
+              ⛶ {isFullscreen
+                ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
+                : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+            </Button>
+          )}
+
+          {canAdjustVolume && (
+            <div className={styles.volumeControl}>
+              <button
+                className={styles.volumeButton}
+                onClick={toggleMute}
+                title={isMuted ? t('player.unmute') : t('player.mute')}
+              >
+                {isMuted ? '🔇' : volume > 0.5 ? '🔊' : volume > 0 ? '🔉' : '🔈'}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                className={styles.volumeSlider}
+                value={isMuted ? 0 : volume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+              />
+            </div>
+          )}
+
+          {canTogglePiP && (
+            <Button
+              variant="ghost"
+              size="sm"
+              active={isPip}
+              onClick={() => void togglePiP()}
+              title={t('player.pipTitle')}
+            >
+              📺 {t('player.pipLabel')}
+            </Button>
+          )}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            active={showStats}
+            onClick={toggleStats}
+            title={t('player.statsTitle')}
           >
-            {isMuted ? '🔇' : volume > 0.5 ? '🔊' : volume > 0 ? '🔉' : '🔈'}
-          </button>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            className={styles.volumeSlider}
-            value={isMuted ? 0 : volume}
-            onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-          />
-        </div>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          active={isPip}
-          onClick={togglePiP}
-          title={t('player.pipTitle')}
-        >
-          📺 {t('player.pipLabel')}
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          active={showStats}
-          onClick={toggleStats}
-          title={t('player.statsTitle')}
-        >
-          📊 {t('player.statsLabel')}
-        </Button>
-
-        {!onClose && (
-          <Button variant="danger" onClick={() => void stopStream()}>
-            ⏹ {t('common.stop')}
+            📊 {t('player.statsLabel')}
           </Button>
-        )}
+
+          {!onClose && (
+            <Button variant="danger" onClick={() => void stopStream()}>
+              ⏹ {t('common.stop')}
+            </Button>
+          )}
+        </div>
       </div>
       {/* Resume Overlay */}
       {showResumeOverlay && resumeState && (

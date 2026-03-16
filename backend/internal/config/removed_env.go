@@ -17,6 +17,10 @@ type RemovedEnvKey struct {
 
 var removedEnvKeys = []RemovedEnvKey{
 	{
+		Key:     "XG2G_LOG_FORMAT",
+		Message: "Log format selection removed; structured JSON logging is always enabled. Setting is ignored.",
+	},
+	{
 		Key:     "XG2G_HTTP_ENABLE_HTTP2",
 		Message: "HTTP/2 toggle removed; HTTP/2 is always enabled. Setting is ignored.",
 	},

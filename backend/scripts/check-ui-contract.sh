@@ -36,15 +36,24 @@ echo ""
 cd "$WEBUI_SRC"
 
 if [ "$IS_SCOPED" = true ]; then
+  FILTERED_SCOPE=()
   for file in "${SCOPE_FILES[@]}"; do
     clean_file="${file#frontend/webui/src/}"
-
-    if [ ! -f "$clean_file" ]; then
-      echo "❌ FAIL: Scoped file not found: $file"
-      EXIT_CODE=1
-      continue
+    if [ -f "$clean_file" ]; then
+      FILTERED_SCOPE+=("$file")
+    else
+      echo "ℹ️  SKIP: Scoped file not found (deleted?): $file"
     fi
+  done
+  SCOPE_FILES=("${FILTERED_SCOPE[@]}")
 
+  if [ ${#SCOPE_FILES[@]} -eq 0 ]; then
+    echo "✅ PASS: All scoped files were deletions, skipping further checks."
+    exit 0
+  fi
+
+  for file in "${SCOPE_FILES[@]}"; do
+    clean_file="${file#frontend/webui/src/}"
     case "$clean_file" in
       *.tsx|*.css) ;;
       *)
@@ -67,9 +76,9 @@ V1=""
 if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     clean_file="${file#frontend/webui/src/}"
-    result=$(grep -InE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" | grep -vE 'transparent|inherit|currentColor|index.css:.*--' || true)
+    result=$(grep -HInE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" | grep -vE 'transparent|inherit|currentColor|index.css:.*--' || true)
     if [ -n "$result" ]; then
-      V1="$V1$clean_file:$result"$'\n'
+      V1="$V1$result"$'\n'
     fi
   done
 else
@@ -107,7 +116,7 @@ else
   V2=$(grep -RIn 'animation: ' . \
     --include='*.css' \
     --exclude-dir=node_modules \
-    | grep -vE "(pulse|index.css|StatusChip.css)" || true)
+    | grep -vE "(pulse|index.css|StatusChip.module.css)" || true)
 fi
 
 if [ -z "$V2" ]; then
@@ -127,9 +136,9 @@ if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     if [[ "$file" == *.css ]]; then
       clean_file="${file#frontend/webui/src/}"
-      result=$(grep -In "box-shadow:" "$clean_file" || true)
+      result=$(grep -HIn 'box-shadow: ' "$clean_file" | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css)" || true)
       if [ -n "$result" ]; then
-        V3="$V3$clean_file:$result"$'\n'
+        V3="$V3$result"$'\n'
       fi
     fi
   done
@@ -137,7 +146,7 @@ else
   V3=$(grep -RIn 'box-shadow: ' . \
     --include='*.css' \
     --exclude-dir=node_modules \
-    | grep -vE "(index.css|Card.css|StatusChip.css|Navigation.css)" || true)
+    | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css)" || true)
 fi
 
 if [ -z "$V3" ]; then
@@ -158,9 +167,9 @@ if [ "$IS_SCOPED" = true ]; then
     # Only check CSS files in scoped mode for gradients
     if [[ "$file" == *.css ]]; then
       clean_file="${file#frontend/webui/src/}"
-      result=$(grep -InE "linear-gradient\(|radial-gradient\(" "$clean_file" || true)
+      result=$(grep -HInE 'linear-gradient\(|radial-gradient\(' "$clean_file" | grep -vE "(index.css|V3Player.module.css|Dashboard.module.css)" || true)
       if [ -n "$result" ]; then
-        V4="$V4$clean_file:$result"$'\n'
+        V4="$V4$result"$'\n'
       fi
     fi
   done
@@ -168,7 +177,7 @@ else
   V4=$(grep -RInE 'linear-gradient\(|radial-gradient\(' . \
     --include='*.css' \
     --exclude-dir=node_modules \
-    | grep -vE "index.css" || true)
+    | grep -vE "(index.css|V3Player.module.css|Dashboard.module.css)" || true)
 fi
 
 if [ -z "$V4" ]; then

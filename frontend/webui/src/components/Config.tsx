@@ -5,6 +5,9 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemConfig, putSystemConfig, type AppConfig, type ConfigUpdate } from '../client-ts';
+import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
+import { isUnauthorizedError } from '../lib/sessionEvents';
+import { unwrapClientResultOrThrow } from '../lib/clientWrapper';
 import { debugError, formatError } from '../utils/logging';
 import { getStoredToken } from '../utils/tokenStorage';
 import { Button, StatusChip } from './ui';
@@ -66,32 +69,22 @@ function Config(props: ConfigProps = { showTitle: true }) {
     try {
       setLoading(true);
       const result = await getSystemConfig();
-      if (result.data) {
-        const data = result.data;
-        const normalized: AppConfig = {
-          ...data,
-          // Normalization for Settings list (NOT API DTO).
-          // Legacy check in case backend sends raw strings for config values.
-          bouquets: Array.isArray(data.bouquets) ? data.bouquets : []
-        };
-        setConfig(normalized);
-        setConfigured(isConfigured(normalized));
-        setError(null);
-        // Reset validation state on load
-        setConnectionStatus('untested');
-        setValidationResult(null);
-      } else if (result.error) {
-        // @ts-ignore - 'status' might not be on generic error, but likely is
-        if (result.response?.status === 401) {
-          window.dispatchEvent(new Event('auth-required'));
-          setError(t('setup.errors.authRequired'));
-        } else {
-          setError(t('setup.errors.loadFailed'));
-        }
-      }
-    } catch (err: any) {
+      const data = unwrapClientResultOrThrow<AppConfig | null>(result, { source: 'Config.loadConfig' });
+      const normalized: AppConfig = {
+        ...(data ?? {}),
+        // Normalization for Settings list (NOT API DTO).
+        // Legacy check in case backend sends raw strings for config values.
+        bouquets: Array.isArray(data?.bouquets) ? data.bouquets : []
+      };
+      setConfig(normalized);
+      setConfigured(isConfigured(normalized));
+      setError(null);
+      // Reset validation state on load
+      setConnectionStatus('untested');
+      setValidationResult(null);
+    } catch (err) {
       debugError('Failed to load config:', formatError(err));
-      setError(t('setup.errors.loadFailed'));
+      setError(isUnauthorizedError(err) ? t('setup.errors.authRequired') : t('setup.errors.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -158,6 +151,12 @@ function Config(props: ConfigProps = { showTitle: true }) {
           password: config.openWebIF?.password
         })
       });
+
+      if (notifyAuthRequiredIfUnauthorizedResponse(response, 'Config.validateConnection')) {
+        setConnectionStatus('invalid');
+        setError(t('setup.errors.authRequired'));
+        return;
+      }
 
       const result = await response.json();
 
@@ -226,26 +225,24 @@ function Config(props: ConfigProps = { showTitle: true }) {
       };
 
       const result = await putSystemConfig({ body: payload });
+      const data = unwrapClientResultOrThrow<{ restartRequired?: boolean }>(result, {
+        source: 'Config.handleSave'
+      });
 
-      if (result.data) {
-        if (result.data.restartRequired) {
-          setSuccessMsg(t('setup.messages.savedRestart'));
-          setRestarting(true);
-          checkHealthAndReload();
-        } else {
-          setSuccessMsg(t('setup.messages.saved'));
-          // UI-INV-003: re-fetch from backend and re-render the absolute truth
-          await loadConfig();
-          // Notify parent of update if callback provided
-          if (props.onUpdate) props.onUpdate();
-        }
+      if (data.restartRequired) {
+        setSuccessMsg(t('setup.messages.savedRestart'));
+        setRestarting(true);
+        checkHealthAndReload();
       } else {
-        setError(t('setup.errors.saveFailed'));
+        setSuccessMsg(t('setup.messages.saved'));
+        // UI-INV-003: re-fetch from backend and re-render the absolute truth
+        await loadConfig();
+        // Notify parent of update if callback provided
+        if (props.onUpdate) props.onUpdate();
       }
-
     } catch (err) {
       debugError('Failed to save config:', formatError(err));
-      setError(t('setup.errors.saveFailedLogs'));
+      setError(isUnauthorizedError(err) ? t('setup.errors.authRequired') : t('setup.errors.saveFailedLogs'));
     } finally {
       setSaving(false);
     }

@@ -1,5 +1,5 @@
 // verify-bin prints the configured FFmpeg binary path from data/config.yaml.
-// Usage: go run ./cmd/tools/verify-bin (from repo root)
+// Usage: go run ./backend/cmd/tools/verify-bin (from repo root)
 package main
 
 import (

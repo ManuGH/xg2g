@@ -29,6 +29,13 @@ Generated artifacts:
 - `config.generated.example.yaml` is the canonical defaults projection (fully generated).
 - `config.example.yaml` is a curated operator tutorial and may be selective.
 
+## Bootstrap Security Note
+
+Live playback startup also requires `XG2G_DECISION_SECRET` in the process
+environment. This bootstrap secret is enforced during server wiring and is
+distinct from the advanced `api.playbackDecisionSecret`
+(`XG2G_PLAYBACK_DECISION_SECRET`) configuration surface listed below.
+
 <!-- BEGIN GENERATED CONFIG OPTIONS -->
 ## Registry Options (Generated)
 
@@ -40,7 +47,7 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 | --- | --- | --- | --- | --- |
 | `api.allowedOrigins` | `XG2G_ALLOWED_ORIGINS` | - | Active | Advanced |
 | `api.disableLegacyTokenSources` | `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | `true` | Active | Advanced |
-| `api.listenAddr` | `XG2G_LISTEN` | `:8088` | Active | Simple |
+| `api.listenAddr` | `XG2G_LISTEN` | `127.0.0.1:8088` | Active | Simple |
 | `api.playbackDecisionKeyId` | `XG2G_PLAYBACK_DECISION_KID` | - | Active | Advanced |
 | `api.playbackDecisionPreviousKeys` | `XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS` | - | Active | Advanced |
 | `api.playbackDecisionRotationWindow` | `XG2G_PLAYBACK_DECISION_ROTATION_WINDOW` | `10m` | Active | Advanced |
@@ -178,6 +185,15 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `picons.baseUrl` | `XG2G_PICON_BASE` | - | Active | Simple |
+
+### playback
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `playback.operator.disable_client_fallback` | `XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK` | `false` | Active | Advanced |
+| `playback.operator.force_intent` | `XG2G_PLAYBACK_FORCE_INTENT` | `""` | Active | Advanced |
+| `playback.operator.max_quality_rung` | `XG2G_PLAYBACK_MAX_QUALITY_RUNG` | `""` | Active | Advanced |
+| `playback.operator.source_rules` | - | `[]` | Active | Advanced |
 
 ### rateLimit
 

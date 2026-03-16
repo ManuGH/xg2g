@@ -44,7 +44,7 @@ All SQLite instances MUST use:
 
 - **Invariant**: Only approved storage engines (SQLite) may be imported
   into the shipping dependency graph of module `internal/`.
-- **Enforcement**: Validated by `scripts/ci_gate_storage_purity.sh`.
+- **Enforcement**: Validated by `backend/scripts/ci_gate_storage_purity.sh`.
 
 ## 6. Recording Cache Bounds (VOD)
 

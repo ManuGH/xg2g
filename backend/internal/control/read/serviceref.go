@@ -8,7 +8,28 @@ import (
 // CanonicalServiceRef normalizes service references to one stable form.
 func CanonicalServiceRef(ref string) string {
 	ref = strings.TrimSpace(ref)
-	return strings.TrimRight(ref, ":")
+	ref = strings.TrimRight(ref, ":")
+	if isHexColonServiceRef(ref) {
+		return strings.ToUpper(ref)
+	}
+	return ref
+}
+
+func isHexColonServiceRef(ref string) bool {
+	if ref == "" || !strings.Contains(ref, ":") {
+		return false
+	}
+	for _, ch := range ref {
+		switch {
+		case ch == ':':
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ExtractServiceRef extracts a stable service reference from a stream URL.

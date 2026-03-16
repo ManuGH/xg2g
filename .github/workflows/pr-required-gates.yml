@@ -134,7 +134,7 @@ jobs:
           echo "Legacy large PR mode: $legacy_large_pr"
           echo "UI contract scoped files: ${#ui_contract_scope[@]}"
           echo "Phase4 TS scoped files: ${#webui_ts_scope[@]}"
-          echo "Any webui/* changes: $webui_changed"
+          echo "Any frontend/webui/* changes: $webui_changed"
           echo "WebUI build needed: $webui_build_needed"
           if [ -n "$skip_reason" ]; then
             echo "skip_reason=$skip_reason"
@@ -159,7 +159,7 @@ jobs:
           if [ "${{ steps.scope.outputs.legacy_large_pr }}" = "true" ]; then
             echo "UI contract diff scope skipped for large PR; build/type/wrapper gates remain enforced."
           else
-            echo "No webui/src *.tsx/*.css changes; UI contract gate passes by scope."
+            echo "No frontend/webui/src *.tsx/*.css changes; UI contract gate passes by scope."
           fi
 
       - name: Phase4 - Reject new JSX
@@ -214,4 +214,4 @@ jobs:
 
       - name: Phase4 (no webui scope)
         if: steps.scope.outputs.webui_build_needed != 'true'
-        run: echo "No webui/* changes; Phase4 build checks pass by scope."
+        run: echo "No frontend/webui/* changes; Phase4 build checks pass by scope."

@@ -3,6 +3,9 @@ package recordings
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRewritePlaylistType_DiscontinuityPreservation(t *testing.T) {
@@ -48,4 +51,30 @@ seg_00002.ts`
 	if count != 2 {
 		t.Errorf("Expected 2 #EXT-X-DISCONTINUITY tags, found %d", count)
 	}
+}
+
+func TestRewritePlaylist_AppendsVariantToMediaURIs(t *testing.T) {
+	input := `#EXTM3U
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:6.0,
+seg_00000.ts
+seg_00001.ts?foo=bar`
+
+	output := RewritePlaylist(input, "VOD", "abc123")
+
+	require.Contains(t, output, "#EXT-X-PLAYLIST-TYPE:VOD")
+	assert.Contains(t, output, "seg_00000.ts?variant=abc123")
+	assert.Contains(t, output, "seg_00001.ts?foo=bar&variant=abc123")
+	assert.NotContains(t, output, "init.mp4?variant=abc123")
+	assert.Contains(t, output, "#EXT-X-ENDLIST")
+}
+
+func TestRewritePlaylist_EmptyPlaylistTypeDoesNotInjectBlankHeader(t *testing.T) {
+	input := `#EXTM3U
+#EXTINF:6.0,
+seg_00000.ts`
+
+	output := RewritePlaylist(input, "", "")
+
+	assert.NotContains(t, output, "#EXT-X-PLAYLIST-TYPE:")
 }

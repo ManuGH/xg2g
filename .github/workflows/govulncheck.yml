@@ -37,8 +37,8 @@ jobs:
         env:
           GOTOOLCHAIN: auto
 
-      - name: Install govulncheck (pinned)
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - name: Install govulncheck (latest)
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Ensure jq (for severity evaluation)
         run: |
@@ -46,34 +46,52 @@ jobs:
 
       - name: Run govulncheck (SARIF)
         run: |
-          govulncheck -tags=nogpu -format sarif ./... > govulncheck.sarif || echo '{"version":"3.0.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
+          # govulncheck exits with code 3 if vulnerabilities are found.
+          # We want the SARIF output even if it exits non-zero.
+          # We use a temp file to avoid partial SARIF on disk if it fails early.
+          govulncheck -tags=nogpu -format sarif ./... > govulncheck.tmp.sarif || {
+            RET=$?
+            if [ $RET -ne 3 ]; then
+              echo "❌ govulncheck failed with unexpected exit code $RET"
+              cat govulncheck.tmp.sarif || true
+              exit $RET
+            fi
+            echo "✅ govulncheck found vulnerabilities (expected); SARIF generated."
+          }
+          mv govulncheck.tmp.sarif govulncheck.sarif
 
       - name: Fix SARIF duplicate tags
+        if: always() && hashFiles('backend/govulncheck.sarif') != ''
         run: |
           # Deduplicate tags in rules to fix GitHub SARIF validation
-          jq '
-            if .runs then
-              .runs |= map(
-                if .tool.driver.rules then
-                  .tool.driver.rules |= map(
-                    if .properties.tags then
-                      .properties.tags |= unique
-                    else
-                      .
-                    end
-                  )
-                else
-                  .
-                end
-              )
-            else
-              .
-            end
-          ' govulncheck.sarif > govulncheck.fixed.sarif
-          mv govulncheck.fixed.sarif govulncheck.sarif
+          # Only run if file is valid JSON and not empty
+          if [ -s govulncheck.sarif ] && jq '.' govulncheck.sarif >/dev/null 2>&1; then
+            jq '
+              if .runs then
+                .runs |= map(
+                  if .tool.driver.rules then
+                    .tool.driver.rules |= map(
+                      if .properties.tags then
+                        .properties.tags |= unique
+                      else
+                        .
+                      end
+                    )
+                  else
+                    .
+                  end
+                )
+              else
+                .
+              end
+            ' govulncheck.sarif > govulncheck.fixed.sarif
+            mv govulncheck.fixed.sarif govulncheck.sarif
+          else
+            echo "⚠️  govulncheck.sarif missing or invalid; skipping fix."
+          fi
 
       - name: Upload SARIF to code scanning
-        if: always() && hashFiles('backend/govulncheck.sarif') != ''
+        if: always() && hashFiles('backend/govulncheck.sarif') != '' && success()
         uses: github/codeql-action/upload-sarif@0d579ffd059c29b07949a3cce3983f0780820c98
         with:
           sarif_file: backend/govulncheck.sarif

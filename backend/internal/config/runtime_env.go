@@ -23,6 +23,7 @@ type Env struct {
 var runtimeEnvKeys = []string{
 	"XG2G_PLAYLIST_FILENAME",
 	"XG2G_PUBLIC_URL",
+	"XG2G_DECISION_SECRET",
 	"XG2G_X_TVG_URL",
 	"XG2G_USE_PROXY_URLS",
 	"XG2G_PROXY_BASE_URL",
@@ -65,7 +66,6 @@ var runtimeEnvKeys = []string{
 	"XG2G_FFMPEG_BIN",
 	"XG2G_VIDEO_CODEC",
 	"XG2G_VAAPI_DEVICE",
-	"XG2G_SAFARI_DIRTY_DEFAULT",
 	"XG2G_SAFARI_DIRTY_HWACCEL_MODE",
 	"XG2G_SAFARI_DIRTY_CRF",
 	"XG2G_SAFARI_DIRTY_PRESET",
@@ -106,6 +106,8 @@ func ReadEnv(getenv func(string) string) (Env, error) {
 		ProxyBaseURL:     getString(getenv, "XG2G_PROXY_BASE_URL", "http://localhost:18000"),
 		UseHashTvgID:     getBool(getenv, "XG2G_USE_HASH_TVGID", false),
 		FFmpegLogLevel:   getString(getenv, "XG2G_FFMPEG_LOGLEVEL", ""),
+		UIDevProxyURL:    getString(getenv, "XG2G_UI_DEV_PROXY_URL", ""),
+		UIDevDir:         getString(getenv, "XG2G_UI_DEV_DIR", ""),
 	}
 
 	rt.OpenWebIF = readOpenWebIFRuntime(getenv)

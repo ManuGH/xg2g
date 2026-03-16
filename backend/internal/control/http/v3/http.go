@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/read"
@@ -75,7 +76,7 @@ func (s *Server) GetSystemHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetLogs implements ServerInterface
-func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
+func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
 	deps := s.systemModuleDeps()
 	ls := deps.logSource
 	entries, err := read.GetRecentLogs(ls)
@@ -87,6 +88,14 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
 	// Reverse to show most recent first (Presentation Logic)
 	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
 		entries[i], entries[j] = entries[j], entries[i]
+	}
+
+	if params.Limit != nil && *params.Limit > 0 && *params.Limit < len(entries) {
+		entries = entries[:*params.Limit]
+	} else if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+		if limit, parseErr := strconv.Atoi(rawLimit); parseErr == nil && limit > 0 && limit < len(entries) {
+			entries = entries[:limit]
+		}
 	}
 
 	var resp []LogEntry

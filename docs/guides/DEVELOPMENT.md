@@ -21,6 +21,36 @@ It is critical to distinguish between development and production.
 - **Logs**: Captured in `logs/dev.log`.
 - **Usage**: Internal dev only; not valid for audit verification.
 
+### Fast UI Development
+
+For frontend-heavy work, use the dev-tagged backend instead of rebuilding the embedded production UI:
+
+```bash
+make backend-dev-ui
+make webui-dev
+```
+
+- Backend runs on `http://localhost:8080` with `-tags=dev`
+- `/ui/` is reverse-proxied to the Vite dev server for HMR
+- Production embed behavior stays unchanged for normal builds and containers
+
+Open:
+
+```bash
+http://localhost:8080/ui/
+```
+
+Single-command helper:
+
+```bash
+make dev-ui
+```
+
+Optional overrides:
+
+- `XG2G_UI_DEV_PROXY_URL=http://127.0.0.1:5173` points the dev backend at a specific Vite instance
+- `XG2G_UI_DEV_DIR=/abs/path/to/frontend/webui/dist` serves a local built bundle instead of Vite
+
 ### System / Production (Hardened Container)
 
 - **Standard**: **OCI Image is Source of Truth for Runtime.**
@@ -35,7 +65,7 @@ It is critical to distinguish between development and production.
 To stop the application and its dev-loop safely without killing SSH:
 
 ```bash
-./scripts/safe-shutdown.sh
+./backend/scripts/safe-shutdown.sh
 ```
 
 ### Production / System (Docker Compose)
@@ -60,6 +90,23 @@ Optional (VAAPI / Intel+AMD iGPU):
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.hwaccel.yml up -d
+```
+
+### Fast Container Rebuilds
+
+For container-based backend iteration, you can cache FFmpeg in a separate local base image and skip recompiling it on every rebuild:
+
+```bash
+make docker-ffmpeg-base
+make docker-dev-fast
+```
+
+`make docker-ffmpeg-base` builds `xg2g-ffmpeg:7.1.3` once from [Dockerfile.ffmpeg-base](../../Dockerfile.ffmpeg-base). `make docker-dev-fast` then rebuilds the app container with `XG2G_FFMPEG_BASE_IMAGE=xg2g-ffmpeg:7.1.3`, so the main [Dockerfile](../../Dockerfile) can reuse the cached FFmpeg runtime layer instead of rebuilding FFmpeg.
+
+If FFmpeg version or build flags change in `backend/scripts/build-ffmpeg.sh`, rebuild the base image first:
+
+```bash
+make docker-ffmpeg-base
 ```
 
 *Note: This script targets only `xg2g` and `run_dev.sh` processes.*

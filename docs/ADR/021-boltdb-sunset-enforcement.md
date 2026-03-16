@@ -16,7 +16,7 @@ ADR-020 established SQLite as "Single Durable Truth" and deprecated BoltDB/Badge
 
 **Current State (Broken):**
 ```
-CI gate: scripts/ci_gate_storage_purity.sh FAILS
+CI gate: backend/scripts/ci_gate_storage_purity.sh FAILS
 Violations:
   ❌ internal/domain/session/store/bolt_store.go (production code)
   ❌ internal/domain/session/store/badger_store.go (production code)
@@ -71,7 +71,7 @@ Legacy backends (BoltDB, BadgerDB) exist ONLY in migration tooling and MUST NOT 
 
 ### Gate 1: Import Purity (CI Enforcement)
 
-**File:** `scripts/ci_gate_storage_purity.sh`
+**File:** `backend/scripts/ci_gate_storage_purity.sh`
 
 **Rule:**
 Forbidden imports: `go.etcd.io/bbolt`, `github.com/dgraph-io/badger/v4`
@@ -302,7 +302,7 @@ Before upgrading to Phase 2.3+:
 
 - **ADR-020:** Storage Strategy 2026 (SQLite as Durable Truth)
 - **Migration Tool:** `cmd/xg2g-migrate/main.go`
-- **CI Gate:** `scripts/ci_gate_storage_purity.sh`
+- **CI Gate:** `backend/scripts/ci_gate_storage_purity.sh`
 - **Factory:** `internal/domain/session/store/factory.go`
 - **Storage Invariants:** `docs/ops/STORAGE_INVARIANTS.md`
 

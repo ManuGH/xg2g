@@ -35,6 +35,10 @@ LDFLAGS := -ldflags "-s -w -buildid= -X 'main.version=$(VERSION)' -X 'main.commi
 DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?=
 PLATFORMS := linux/amd64
+# Keep in sync with backend/scripts/build-ffmpeg.sh.
+FFMPEG_VERSION := 7.1.3
+FFMPEG_BASE_IMAGE ?= $(DOCKER_IMAGE)-ffmpeg
+FFMPEG_BASE_TAG := $(FFMPEG_BASE_IMAGE):$(FFMPEG_VERSION)
 
 # Coverage thresholds (Locked to Baseline per Governance Policy)
 COVERAGE_THRESHOLD := 43

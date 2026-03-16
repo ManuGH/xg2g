@@ -1,0 +1,94 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">xg2g GitHub hero</title>
+  <desc id="desc">Diagram showing Enigma2 MPEG-TS transformed by xg2g into browser-ready HLS for Safari, iPhone, iPad, Chrome, and operator tools.</desc>
+  <defs>
+    <linearGradient id="bg" x1="108" y1="80" x2="1070" y2="660" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7EA"/>
+      <stop offset="0.55" stop-color="#F7EFE4"/>
+      <stop offset="1" stop-color="#E9F2F8"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="318" y1="164" x2="844" y2="574" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17324D"/>
+      <stop offset="1" stop-color="#1E4B6E"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="248" y1="194" x2="1034" y2="434" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3AA3B"/>
+      <stop offset="1" stop-color="#E86A33"/>
+    </linearGradient>
+    <filter id="shadow" x="64" y="62" width="1072" height="596" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="22"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0901961 0 0 0 0 0.196078 0 0 0 0 0.301961 0 0 0 0.18 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_2"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_2" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="720" rx="28" fill="url(#bg)"/>
+  <circle cx="150" cy="104" r="84" fill="#F3AA3B" fill-opacity="0.13"/>
+  <circle cx="1054" cy="596" r="144" fill="#5CA5D8" fill-opacity="0.10"/>
+  <path d="M84 146C194 94 301 74 407 84C507 93 611 131 713 126C822 121 918 68 1045 88" stroke="#17324D" stroke-opacity="0.08" stroke-width="3"/>
+  <path d="M102 604C231 552 342 548 470 576C607 606 732 652 854 624C933 606 1006 554 1110 554" stroke="#E86A33" stroke-opacity="0.16" stroke-width="3"/>
+
+  <g filter="url(#shadow)">
+    <rect x="92" y="80" width="1016" height="540" rx="28" fill="#FFFFFF"/>
+  </g>
+
+  <rect x="124" y="110" width="952" height="92" rx="22" fill="#F7EFE4"/>
+  <text x="156" y="146" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="0.14em">BROWSER-READY ENIGMA2 STREAMING</text>
+  <text x="156" y="184" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="40" font-weight="700">From receiver MPEG-TS to HLS that actually plays</text>
+
+  <rect x="148" y="238" width="192" height="232" rx="26" fill="#FFF7EA" stroke="#17324D" stroke-opacity="0.12"/>
+  <text x="176" y="286" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="700">Source</text>
+  <text x="176" y="330" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="32" font-weight="700">Enigma2</text>
+  <text x="176" y="362" fill="#4C5B69" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="20">Satellite / DVB-T2</text>
+  <rect x="176" y="392" width="136" height="36" rx="18" fill="#17324D"/>
+  <text x="198" y="416" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="16" font-weight="700">MPEG-TS input</text>
+  <path d="M196 453H292" stroke="#E86A33" stroke-width="6" stroke-linecap="round"/>
+  <path d="M264 437L296 453L264 469" fill="#E86A33"/>
+
+  <rect x="364" y="214" width="452" height="278" rx="34" fill="url(#panel)"/>
+  <rect x="396" y="246" width="124" height="34" rx="17" fill="#2B8A74"/>
+  <text x="423" y="268" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="15" font-weight="700">Gateway</text>
+  <text x="398" y="340" fill="#FFFFFF" font-family="Georgia, Times New Roman, serif" font-size="64" font-weight="700">xg2g</text>
+  <text x="398" y="378" fill="#D6E4EE" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="22">Server-enforced delivery policy</text>
+  <rect x="398" y="410" width="112" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
+  <text x="426" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">H.264</text>
+  <rect x="524" y="410" width="98" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
+  <text x="558" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">AAC</text>
+  <rect x="636" y="410" width="108" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
+  <text x="666" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">fMP4</text>
+  <rect x="758" y="410" width="72" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
+  <text x="778" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">HLS</text>
+
+  <path d="M342 354H390" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
+  <path d="M364 338L396 354L364 370" fill="#E86A33"/>
+  <path d="M816 354H864" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
+  <path d="M836 338L868 354L836 370" fill="#E86A33"/>
+
+  <rect x="876" y="224" width="164" height="96" rx="24" fill="#F8FBFF" stroke="#17324D" stroke-opacity="0.10"/>
+  <text x="908" y="263" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="26" font-weight="700">Safari</text>
+  <text x="908" y="292" fill="#4C5B69" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18">macOS and iOS</text>
+
+  <rect x="876" y="336" width="164" height="96" rx="24" fill="#FFF7EA" stroke="#17324D" stroke-opacity="0.10"/>
+  <text x="908" y="375" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="26" font-weight="700">iPhone</text>
+  <text x="908" y="404" fill="#4C5B69" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18">iPad and AirPlay</text>
+
+  <rect x="876" y="448" width="164" height="96" rx="24" fill="#EEF6FB" stroke="#17324D" stroke-opacity="0.10"/>
+  <text x="908" y="487" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="26" font-weight="700">Chrome</text>
+  <text x="908" y="516" fill="#4C5B69" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18">Desktop and TVs</text>
+
+  <rect x="148" y="506" width="214" height="72" rx="22" fill="#17324D"/>
+  <text x="176" y="550" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="20" font-weight="700">UI + API control surface</text>
+
+  <rect x="388" y="520" width="202" height="58" rx="20" fill="#F7EFE4"/>
+  <text x="418" y="557" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="19" font-weight="700">Auth + scopes</text>
+
+  <rect x="610" y="520" width="202" height="58" rx="20" fill="#EEF6FB"/>
+  <text x="636" y="557" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="19" font-weight="700">Health + metrics</text>
+
+  <rect x="832" y="520" width="208" height="58" rx="20" fill="#FFF4DE"/>
+  <text x="862" y="557" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="19" font-weight="700">Release-ready builds</text>
+</svg>

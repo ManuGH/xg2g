@@ -35,6 +35,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvRateLimiting(cfg)
 	l.mergeEnvTrustedProxies(cfg)
 	l.mergeEnvStreaming(cfg)
+	l.mergeEnvPlayback(cfg)
 	l.mergeEnvVerification(cfg)
 }
 
@@ -260,6 +261,12 @@ func (l *Loader) mergeEnvTrustedProxies(cfg *AppConfig) {
 func (l *Loader) mergeEnvStreaming(cfg *AppConfig) {
 	// Streaming Config (Canonical)
 	cfg.Streaming.DeliveryPolicy = l.envString("XG2G_STREAMING_POLICY", cfg.Streaming.DeliveryPolicy)
+}
+
+func (l *Loader) mergeEnvPlayback(cfg *AppConfig) {
+	cfg.Playback.Operator.ForceIntent = l.envString("XG2G_PLAYBACK_FORCE_INTENT", cfg.Playback.Operator.ForceIntent)
+	cfg.Playback.Operator.MaxQualityRung = l.envString("XG2G_PLAYBACK_MAX_QUALITY_RUNG", cfg.Playback.Operator.MaxQualityRung)
+	cfg.Playback.Operator.DisableClientFallback = l.envBool("XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", cfg.Playback.Operator.DisableClientFallback)
 }
 
 func (l *Loader) mergeEnvVerification(cfg *AppConfig) {

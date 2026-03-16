@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
@@ -73,6 +74,71 @@ func TestSqliteStore_CrashSafeReopen(t *testing.T) {
 	got, err := s2.GetSession(ctx, "sess-crash")
 	if err != nil || got == nil || got.SessionID != "sess-crash" {
 		t.Errorf("recovery failed: %v", err)
+	}
+}
+
+func TestSqliteStore_PlaybackTraceRoundTrip(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_trace.db")
+	store, err := NewSqliteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	rec := &model.SessionRecord{
+		SessionID: "sess-trace",
+		State:     model.SessionReady,
+		PlaybackTrace: &model.PlaybackTrace{
+			RequestProfile:    "compatible",
+			ClientPath:        "hlsjs",
+			InputKind:         "receiver",
+			TargetProfileHash: "hash-trace",
+			TargetProfile: &playbackprofile.TargetPlaybackProfile{
+				Container: "mpegts",
+				Packaging: playbackprofile.PackagingTS,
+				Video: playbackprofile.VideoTarget{
+					Mode:  playbackprofile.MediaModeCopy,
+					Codec: "h264",
+				},
+				Audio: playbackprofile.AudioTarget{
+					Mode:        playbackprofile.MediaModeTranscode,
+					Codec:       "aac",
+					Channels:    2,
+					BitrateKbps: 256,
+				},
+			},
+			Fallbacks: []model.PlaybackFallbackTrace{{
+				AtUnix:          42,
+				Trigger:         "mediaError",
+				Reason:          "bufferAppendError",
+				FromProfileHash: "hash-old",
+				ToProfileHash:   "hash-new",
+			}},
+			StopClass:  model.PlaybackStopClassPackager,
+			StopReason: "playlist_not_ready",
+		},
+	}
+
+	if err := store.PutSession(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.GetSession(ctx, "sess-trace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.PlaybackTrace == nil {
+		t.Fatalf("expected playback trace roundtrip, got %#v", got)
+	}
+	if got.PlaybackTrace.TargetProfileHash != "hash-trace" {
+		t.Fatalf("unexpected target profile hash: %q", got.PlaybackTrace.TargetProfileHash)
+	}
+	if len(got.PlaybackTrace.Fallbacks) != 1 || got.PlaybackTrace.Fallbacks[0].Trigger != "mediaError" {
+		t.Fatalf("unexpected fallback trace: %#v", got.PlaybackTrace.Fallbacks)
+	}
+	if got.PlaybackTrace.StopClass != model.PlaybackStopClassPackager {
+		t.Fatalf("unexpected stop class: %q", got.PlaybackTrace.StopClass)
 	}
 }
 

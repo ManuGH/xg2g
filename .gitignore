@@ -2,9 +2,10 @@
 # xg2g Artifacts Policy - Clean by Construction
 # ==============================================================================
 # All ephemeral build/test outputs must be routed to these directories.
-artifacts/
+/artifacts/
 tmp/
 logs/
+.runtime-bin/
 !logs/.gitkeep
 !logs/test_artifacts/.gitkeep
 
@@ -78,6 +79,7 @@ dist/
 # Project Specific
 # ==============================================================================
 data/
+.dev/
 livetest-data/
 *.m3u
 *.xml

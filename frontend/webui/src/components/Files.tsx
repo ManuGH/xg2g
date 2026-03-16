@@ -4,40 +4,29 @@
 
 import { useEffect, useState } from 'react';
 import { getSystemHealth, postSystemRefresh, type SystemHealth } from '../client-ts';
+import { toAppError } from '../lib/appErrors';
+import { unwrapClientResultOrThrow } from '../lib/clientWrapper';
+import type { AppError } from '../types/errors';
 import { Button, ButtonLink } from './ui';
+import ErrorPanel from './ErrorPanel';
 import styles from './Files.module.css';
 
 function Files() {
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [regenerating, setRegenerating] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
 
   const fetchStatus = async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await getSystemHealth();
-      if (response.data) {
-        setHealth(response.data);
-        setError(null);
-      } else if (response.error) {
-        // @ts-ignore - response.error might be generic, status check is valid runtime
-        if (response.response?.status === 401) {
-          window.dispatchEvent(new Event('auth-required'));
-          setError('Authentication required. Please enter your API token.');
-        } else {
-          // @ts-ignore
-          setError(response.error.message || 'Failed to fetch health');
-        }
-      }
-    } catch (err: any) {
-      if (err.status === 401) {
-        window.dispatchEvent(new Event('auth-required'));
-        setError('Authentication required. Please enter your API token.');
-      } else {
-        setError(err.message || 'Failed to fetch status');
-      }
+      const data = unwrapClientResultOrThrow<SystemHealth>(response, { source: 'Files.fetchStatus' });
+      setHealth(data);
+      setError(null);
+    } catch (err) {
+      setError(toAppError(err, { fallbackTitle: 'Unable to load playlist status' }));
     } finally {
       setLoading(false);
     }
@@ -51,15 +40,11 @@ function Files() {
     setError(null);
     setRegenerating(true);
     try {
-      await postSystemRefresh();
+      const response = await postSystemRefresh();
+      unwrapClientResultOrThrow(response, { source: 'Files.handleRegenerate' });
       setTimeout(fetchStatus, 1000);
-    } catch (err: any) {
-      if (err.status === 401) {
-        window.dispatchEvent(new Event('auth-required'));
-        setError('Authentication required. Please enter your API token.');
-      } else {
-        setError(err.message || 'Failed to regenerate');
-      }
+    } catch (err) {
+      setError(toAppError(err, { fallbackTitle: 'Unable to regenerate playlist files' }));
     } finally {
       setRegenerating(false);
     }
@@ -68,16 +53,12 @@ function Files() {
   if (loading && !health) return <div className={styles.loading}>Loading...</div>;
   if (error) {
     return (
-      <div className={`${styles.alert} ${styles.alertError}`.trim()}>
-        <div>Error: {error}</div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={fetchStatus}
-          disabled={loading}
-        >
-          Retry
-        </Button>
+      <div className={`${styles.container} animate-enter`.trim()}>
+        <ErrorPanel
+          error={error}
+          onRetry={fetchStatus}
+          titleAs="h3"
+        />
       </div>
     );
   }

@@ -3,7 +3,7 @@
 api:
   allowedOrigins: []
   disableLegacyTokenSources: true
-  listenAddr: :8088
+  listenAddr: 127.0.0.1:8088
   playbackDecisionKeyId: ""
   playbackDecisionPreviousKeys: []
   playbackDecisionRotationWindow: 10m
@@ -111,6 +111,12 @@ network:
     enabled: false
 picons:
   baseUrl: ""
+playback:
+  operator:
+    disable_client_fallback: false
+    force_intent: ""
+    max_quality_rung: ""
+    source_rules: []
 rateLimit:
   auth: 10
   burst: 20

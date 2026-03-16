@@ -7,6 +7,8 @@ package vod
 import (
 	"context"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // Spec defines the immutable configuration for a VOD build job.
@@ -24,13 +26,16 @@ type Spec struct {
 
 	// Profile defines the transcoding/remuxing profile invariant.
 	Profile Profile
+
+	// TargetProfile, when set, is the concrete playback build target and overrides coarse profile defaults.
+	TargetProfile *playbackprofile.TargetPlaybackProfile
 }
 
 // Profile represents a strict configuration set for FFmpeg.
 type Profile int
 
 const (
-	// ProfileDefault preserves input characteristics where possible (copy).
+	// ProfileDefault preserves video where possible and normalizes audio to AAC.
 	ProfileDefault Profile = iota
 	// ProfileHigh enforces high quality transcoding constraints.
 	ProfileHigh

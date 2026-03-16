@@ -2,17 +2,17 @@
 
 This is the fastest path to understand and run xg2g as a new contributor.
 
-## 1. Read Order (3 files)
+## 1. Read Order (4 files)
 
 1. `README.md` - Product scope and quickstart
-2. `backend/WORKFLOW.md` - Branching and PR rules
+2. `docs/dev/SETUP.md` - Local setup and pinned tooling
 3. `docs/arch/PACKAGE_LAYOUT.md` - Where code belongs
+4. `docs/ops/CI_FAILURE_PLAYBOOK.md` - Required local/CI proof path
 
-## 2. First Local Check
+## 2. First Local Run
 
 ```bash
 make build
-go test ./...
 ```
 
 Optional WebUI dev loop:
@@ -33,7 +33,7 @@ If that is too heavy locally, use this narrower path first:
 
 ```bash
 make lint
-go test ./...
+cd backend && go test ./...
 cd frontend/webui && npm run test
 ```
 
@@ -43,7 +43,7 @@ cd frontend/webui && npm run test
 - Playback/session domain behavior: `backend/internal/control/` and `backend/internal/domain/`
 - App wiring/bootstrap: `backend/internal/app/bootstrap/`
 - Frontend: `frontend/webui/src/`
-- Contracts and invariants: `docs/ops/`, `docs/arch/`, `backend/contracts/`
+- Contracts and invariants: `docs/ops/`, `docs/arch/`, `contracts/`
 
 ## 5. If CI Fails
 

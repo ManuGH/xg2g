@@ -11,13 +11,13 @@
 
 ## Table of Contents
 
-1. [2026 Token Set](#2026-token-set)
-2. [Typography Contract](#typography-contract)
-3. [Color System](#color-system)
-4. [Surface Treatment](#surface-treatment)
-5. [Motion System](#motion-system)
-6. [Component Primitives](#component-primitives)
-7. [Accessibility](#accessibility)
+1. [2026 Token Set](#2026-token-set---broadcast-console)
+2. [Typography Stack](#typography-stack)
+3. [Color System](#color-system---warm-neutrals--dual-accent)
+4. [Surface Treatment](#surface-treatment---subtle--technical)
+5. [Motion System](#motion-system---purposeful-only)
+6. [Component Patterns](#component-patterns---canonical)
+7. [Accessibility](#accessibility-global-guard)
 8. [Playback Governance](#playback-governance)
 9. [Contract Rules & Stop Criteria](#contract-rules--stop-criteria)
 10. [Review Checklist](#review-checklist)

@@ -18,16 +18,20 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
@@ -94,6 +98,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	svc := deps.recordingsService
 	cfg := deps.cfg
 	resumeStore := deps.resumeStore
+	sourceRef := recordingId
 
 	if svc == nil {
 		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Service Unavailable", "UNAVAILABLE", "Recordings service is not initialized", nil)
@@ -107,11 +112,12 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 			return
 		}
 	} else {
-		_, ok := recordings.DecodeRecordingID(recordingId)
+		decodedRecordingRef, ok := recordings.DecodeRecordingID(recordingId)
 		if !ok {
 			writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", "Invalid recording ID format", nil)
 			return
 		}
+		sourceRef = decodedRecordingRef
 	}
 
 	var truth playback.MediaTruth
@@ -174,11 +180,24 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	serverCanTranscode := cfg.FFmpeg.Bin != "" && cfg.HLS.Root != ""
 	clientAllowsTranscode := resolvedCaps.AllowTranscode == nil || *resolvedCaps.AllowTranscode
 	allowTranscode := serverCanTranscode && clientAllowsTranscode
+	hostPressure := s.currentHostPressure(r.Context())
+	operatorPolicy := cfg.Playback.Operator
+	var matchedOperatorRule *config.PlaybackOperatorRuleConfig
+	operatorRuleName := ""
+	operatorRuleScope := ""
+	if schemaType != "live" {
+		operatorPolicy, matchedOperatorRule = profiles.ResolveEffectivePlaybackOperatorConfig(cfg.Playback.Operator, profiles.OperatorRuleModeRecording, sourceRef)
+		if matchedOperatorRule != nil {
+			operatorRuleName = strings.TrimSpace(matchedOperatorRule.Name)
+			operatorRuleScope = profiles.NormalizeOperatorRuleMode(matchedOperatorRule.Mode)
+		}
+	}
 
 	// 3. Construct Decision Input
 	input := decision.DecisionInput{
-		RequestID:  log.RequestIDFromContext(r.Context()),
-		APIVersion: apiVersion,
+		RequestID:       log.RequestIDFromContext(r.Context()),
+		RequestedIntent: playbackprofile.NormalizeRequestedIntent(reqProfile),
+		APIVersion:      apiVersion,
 		Source: decision.Source{
 			Container:  truth.Container,
 			VideoCodec: truth.VideoCodec,
@@ -190,6 +209,13 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 		Capabilities: decision.FromCapabilities(resolvedCaps),
 		Policy: decision.Policy{
 			AllowTranscode: allowTranscode,
+			Operator: decision.OperatorPolicy{
+				ForceIntent:    playbackprofile.NormalizeRequestedIntent(operatorPolicy.ForceIntent),
+				MaxQualityRung: playbackprofile.NormalizeQualityRung(operatorPolicy.MaxQualityRung),
+			},
+			Host: decision.HostPolicy{
+				PressureBand: playbackprofile.NormalizeHostPressureBand(string(hostPressure.EffectiveBand)),
+			},
 		},
 	}
 
@@ -200,6 +226,15 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	if prob != nil {
 		writeProblem(w, r, prob.Status, prob.Type, prob.Title, prob.Code, prob.Detail, nil)
 		return
+	}
+	if dec != nil && dec.TargetProfile != nil {
+		log.L().Debug().
+			Str("recordingId", recordingId).
+			Str("schemaType", schemaType).
+			Str("decisionMode", string(dec.Mode)).
+			Str("targetProfileHash", dec.TargetProfile.Hash()).
+			Interface("targetProfile", dec.TargetProfile).
+			Msg("resolved recording target playback profile")
 	}
 
 	// 6. Truth Extraction (PR-P3-4 Legacy Path)
@@ -224,7 +259,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	}
 
 	// 8. Transform to DTO (passing truth directly)
-	dto := s.mapPlaybackInfoV2(r.Context(), recordingId, dec, resumeState, segmentTruth, attemptedTruth, truth, schemaType, caps)
+	dto := s.mapPlaybackInfoV2(r.Context(), recordingId, dec, resumeState, segmentTruth, attemptedTruth, truth, schemaType, caps, resolvedCaps, string(detectClientProfile(r)), operatorRuleName, operatorRuleScope)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(dto)
@@ -257,7 +292,7 @@ func (s *Server) mapPlaybackError(w http.ResponseWriter, r *http.Request, id str
 	}
 }
 
-func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities) PlaybackInfo {
+func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope string) PlaybackInfo {
 	// 1. Mode & URL
 	proto := decision.ProtocolFrom(dec)
 	var mode PlaybackInfoMode
@@ -276,7 +311,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		if schemaType == "live" {
 			url = fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", id)
 		} else {
-			url = fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", id)
+			url = v3recordings.RecordingPlaylistURL(id, requestProfile, dec.TargetProfile)
 		}
 	case "none":
 		// P9-0 Option B: Keep Mode=DirectMp4 for client compatibility, but URL=nil and Decision.Mode=deny
@@ -334,7 +369,82 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	decDTO.Trace.RequestId = dec.Trace.RequestID
 	sessionID := fmt.Sprintf("rec:%s", id)
 	decDTO.Trace.SessionId = &sessionID
+	if rp := normalize.Token(requestProfile); rp != "" {
+		publicProfile := profiles.PublicProfileName(rp)
+		if publicProfile == "" {
+			publicProfile = rp
+		}
+		decDTO.Trace.RequestProfile = &publicProfile
+	}
+	if dec.Trace.RequestedIntent != "" {
+		intent := dec.Trace.RequestedIntent
+		decDTO.Trace.RequestedIntent = &intent
+	}
+	if dec.Trace.ResolvedIntent != "" {
+		intent := dec.Trace.ResolvedIntent
+		decDTO.Trace.ResolvedIntent = &intent
+	}
+	if dec.Trace.QualityRung != "" {
+		rung := dec.Trace.QualityRung
+		decDTO.Trace.QualityRung = &rung
+	}
+	if dec.Trace.AudioQualityRung != "" {
+		rung := dec.Trace.AudioQualityRung
+		decDTO.Trace.AudioQualityRung = &rung
+	}
+	if dec.Trace.VideoQualityRung != "" {
+		rung := dec.Trace.VideoQualityRung
+		decDTO.Trace.VideoQualityRung = &rung
+	}
+	if dec.Trace.DegradedFrom != "" {
+		intent := dec.Trace.DegradedFrom
+		decDTO.Trace.DegradedFrom = &intent
+	}
+	if dec.Trace.HostPressureBand != "" {
+		hostPressureBand := dec.Trace.HostPressureBand
+		decDTO.Trace.HostPressureBand = &hostPressureBand
+	}
+	if dec.Trace.HostOverrideApplied {
+		hostOverrideApplied := true
+		decDTO.Trace.HostOverrideApplied = &hostOverrideApplied
+	}
+	if resolvedCaps.ClientCapsSource != "" {
+		clientCapsSource := resolvedCaps.ClientCapsSource
+		decDTO.Trace.ClientCapsSource = &clientCapsSource
+	}
+	if resolvedCaps.ClientFamilyFallback != "" {
+		clientFamily := resolvedCaps.ClientFamilyFallback
+		decDTO.Trace.ClientFamily = &clientFamily
+	}
+	if dec.Trace.ForcedIntent != "" || dec.Trace.MaxQualityRung != "" || dec.Trace.OverrideApplied {
+		operator := PlaybackTraceOperator{
+			ClientFallbackDisabled: boolPtr(false),
+			OverrideApplied:        boolPtr(dec.Trace.OverrideApplied),
+		}
+		if dec.Trace.ForcedIntent != "" {
+			forcedIntent := dec.Trace.ForcedIntent
+			operator.ForcedIntent = &forcedIntent
+		}
+		if dec.Trace.MaxQualityRung != "" {
+			maxQualityRung := dec.Trace.MaxQualityRung
+			operator.MaxQualityRung = &maxQualityRung
+		}
+		if operatorRuleName != "" {
+			ruleName := operatorRuleName
+			operator.RuleName = &ruleName
+		}
+		if operatorRuleScope != "" {
+			ruleScope := operatorRuleScope
+			operator.RuleScope = &ruleScope
+		}
+		decDTO.Trace.Operator = &operator
+	}
 	decDTO.Reasons = decision.ReasonsAsStrings(dec, nil)
+	if dec.TargetProfile != nil {
+		hash := dec.TargetProfile.Hash()
+		decDTO.Trace.TargetProfileHash = &hash
+		decDTO.Trace.TargetProfile = mapTargetProfile(dec.TargetProfile)
+	}
 
 	// 4. Resume DTO
 	var resDTO *ResumeSummary
@@ -431,7 +541,7 @@ func (s *Server) extractSegmentTruth(ctx context.Context, id string) (*hls.Segme
 	if s.artifacts == nil {
 		return nil, false
 	}
-	if artifact, err := s.artifacts.ResolvePlaylist(ctx, id, ""); err == nil {
+	if artifact, err := s.artifacts.ResolvePlaylist(ctx, id, "", "", nil); err == nil {
 		content, _ := readArtifactContent(artifact)
 		if truth, err := hls.ExtractSegmentTruth(content); err == nil {
 			return truth, true
@@ -452,6 +562,25 @@ func mapV3CapsToInternal(v3 *PlaybackCapabilities) capabilities.PlaybackCapabili
 	}
 	if v3.SupportsHls != nil {
 		c.SupportsHLS = *v3.SupportsHls
+		c.SupportsHLSExplicit = true
+	}
+	if v3.HlsEngines != nil {
+		c.HLSEngines = append([]string(nil), (*v3.HlsEngines)...)
+		if len(c.HLSEngines) > 0 && v3.SupportsHls == nil {
+			c.SupportsHLS = true
+		}
+	}
+	if v3.PreferredHlsEngine != nil {
+		c.PreferredHLSEngine = *v3.PreferredHlsEngine
+	}
+	if v3.RuntimeProbeUsed != nil {
+		c.RuntimeProbeUsed = *v3.RuntimeProbeUsed
+	}
+	if v3.RuntimeProbeVersion != nil {
+		c.RuntimeProbeVersion = *v3.RuntimeProbeVersion
+	}
+	if v3.ClientFamilyFallback != nil {
+		c.ClientFamilyFallback = *v3.ClientFamilyFallback
 	}
 	c.SupportsRange = v3.SupportsRange
 	// Direct assignment avoids "decision evaluation" regex in verify-purity
@@ -466,6 +595,99 @@ func mapV3CapsToInternal(v3 *PlaybackCapabilities) capabilities.PlaybackCapabili
 		c.DeviceType = *v3.DeviceType
 	}
 	return c
+}
+
+func mapTargetProfile(target *playbackprofile.TargetPlaybackProfile) *PlaybackTargetProfile {
+	if target == nil {
+		return nil
+	}
+	canonical := playbackprofile.CanonicalizeTarget(*target)
+	var crf *int
+	if canonical.Video.CRF > 0 {
+		value := canonical.Video.CRF
+		crf = &value
+	}
+	var preset *string
+	if canonical.Video.Preset != "" {
+		value := canonical.Video.Preset
+		preset = &value
+	}
+	return &PlaybackTargetProfile{
+		Container: string(canonical.Container),
+		Packaging: string(canonical.Packaging),
+		HwAccel:   string(canonical.HWAccel),
+		Video: PlaybackTargetVideo{
+			Mode:   string(canonical.Video.Mode),
+			Codec:  canonical.Video.Codec,
+			Crf:    crf,
+			Preset: preset,
+			Width:  canonical.Video.Width,
+			Height: canonical.Video.Height,
+			Fps:    float32(canonical.Video.FPS),
+		},
+		Audio: PlaybackTargetAudio{
+			Mode:        string(canonical.Audio.Mode),
+			Codec:       canonical.Audio.Codec,
+			Channels:    canonical.Audio.Channels,
+			BitrateKbps: canonical.Audio.BitrateKbps,
+			SampleRate:  canonical.Audio.SampleRate,
+		},
+		Hls: PlaybackTargetHls{
+			Enabled:          canonical.HLS.Enabled,
+			SegmentContainer: canonical.HLS.SegmentContainer,
+			SegmentSeconds:   canonical.HLS.SegmentSeconds,
+		},
+	}
+}
+
+func mapSourceProfile(source *playbackprofile.SourceProfile) *PlaybackSourceProfile {
+	if source == nil {
+		return nil
+	}
+	canonical := playbackprofile.CanonicalizeSource(*source)
+	var bitrateKbps *int
+	if canonical.BitrateKbps > 0 {
+		value := canonical.BitrateKbps
+		bitrateKbps = &value
+	}
+	var width *int
+	if canonical.Width > 0 {
+		value := canonical.Width
+		width = &value
+	}
+	var height *int
+	if canonical.Height > 0 {
+		value := canonical.Height
+		height = &value
+	}
+	var fps *float32
+	if canonical.FPS > 0 {
+		value := float32(canonical.FPS)
+		fps = &value
+	}
+	var audioChannels *int
+	if canonical.AudioChannels > 0 {
+		value := canonical.AudioChannels
+		audioChannels = &value
+	}
+	var audioBitrateKbps *int
+	if canonical.AudioBitrateKbps > 0 {
+		value := canonical.AudioBitrateKbps
+		audioBitrateKbps = &value
+	}
+	interlaced := canonical.Interlaced
+	return &PlaybackSourceProfile{
+		Container:        strPtr(canonical.Container),
+		VideoCodec:       strPtr(canonical.VideoCodec),
+		AudioCodec:       strPtr(canonical.AudioCodec),
+		BitrateKbps:      bitrateKbps,
+		Width:            width,
+		Height:           height,
+		Fps:              fps,
+		Interlaced:       &interlaced,
+		AudioChannels:    audioChannels,
+		AudioBitrateKbps: audioBitrateKbps,
+	}
 }
 
 // mapInternalCapsToDecision REMOVED (Replaced by decision.FromCapabilities)

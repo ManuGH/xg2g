@@ -18,9 +18,28 @@
 						},
 						"selected_output_kind": "hls",
 						"selected_output_url": "placeholder://direct-stream.m3u8",
+						"targetProfile": {
+							"audio": {
+								"codec": "aac",
+								"mode": "copy"
+							},
+							"container": "mpegts",
+							"hls": {
+								"enabled": true,
+								"segmentContainer": "mpegts"
+							},
+							"hwaccel": "none",
+							"packaging": "ts",
+							"video": {
+								"codec": "h264",
+								"mode": "copy"
+							}
+						},
 						"trace": {
 							"inputHash": "f1487c99c3ae639929872323cae7775053be2e9f934130fbef94ba4f5f8947d8",
+							"qualityRung": "compatible_hls_ts",
 							"requestId": "stub-request-id",
+							"resolvedIntent": "compatible",
 							"ruleHits": [
 								"rule_container",
 								"rule_video",

@@ -16,14 +16,15 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
 
 type Resolver interface {
-	ResolvePlaylist(ctx context.Context, recordingID, profile string) (ArtifactOK, *ArtifactError)
-	ResolveTimeshift(ctx context.Context, recordingID, profile string) (ArtifactOK, *ArtifactError)
-	ResolveSegment(ctx context.Context, recordingID string, segment string) (ArtifactOK, *ArtifactError)
+	ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError)
+	ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError)
+	ResolveSegment(ctx context.Context, recordingID string, segment string, variant string) (ArtifactOK, *ArtifactError)
 }
 
 type DefaultResolver struct {
@@ -41,12 +42,19 @@ func New(cfg *config.AppConfig, manager *vod.Manager, mapper *recordings.PathMap
 }
 
 // ResolvePlaylist resolves the HLS playlist (index.m3u8), triggering builds if needed.
-func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, profile string) (ArtifactOK, *ArtifactError) {
+func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError) {
 	// 1. Validate ID
 	ref, ok := decodeRef(recordingID)
 	if !ok {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
 	}
+	variant = v3recordings.NormalizeVariantHash(variant)
+	targetProfile, resolvedVariant, artErr := recordingTarget(profile, variant, target)
+	if artErr != nil {
+		return ArtifactOK{}, artErr
+	}
+	variant = resolvedVariant
+	metaID := recordingVariantMetadataKey(ref, variant)
 
 	// Canonical Validation
 	if err := v3recordings.ValidateRecordingRef(ref); err != nil {
@@ -54,12 +62,28 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	}
 
 	// 2. State Check
-	meta, exists := r.vodManager.GetMetadata(ref)
+	meta, exists := r.vodManager.GetMetadata(metaID)
+	if !exists {
+		// Restart/self-heal path: if the HLS artifact is already on disk, rebuild the
+		// minimal READY metadata from the canonical final playlist path instead of
+		// forcing the client through a fresh PREPARING loop.
+		cacheDir, err := v3recordings.RecordingVariantCacheDir(r.cfg.HLS.Root, ref, variant)
+		if err == nil {
+			finalPath := filepath.Join(cacheDir, "index.m3u8")
+			if info, statErr := os.Stat(finalPath); statErr == nil && !info.IsDir() {
+				r.vodManager.MarkProbed(metaID, finalPath, nil, nil)
+				if repaired, ok := r.vodManager.GetMetadata(metaID); ok {
+					meta = repaired
+					exists = true
+				}
+			}
+		}
+	}
 	if !exists {
 		// First access: Start pipeline via EnsureSpec
-		if err := r.triggerBuild(ctx, ref, profile); err != nil {
+		if err := r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile); err != nil {
 			// If build trigger fails (e.g. source not found), map to correct error.
-			r.vodManager.TriggerProbe(ref, "build trigger failed: "+err.Error())
+			r.vodManager.TriggerProbe(metaID, "build trigger failed: "+err.Error())
 		}
 		// Return PREPARING to indicate process started
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing"}
@@ -67,14 +91,14 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 
 	// 3. FAILED Handling (Self-heal)
 	if meta.State == vod.ArtifactStateFailed {
-		if updated, ok := r.vodManager.PromoteFailedToReadyIfPlaylist(ref); ok {
+		if updated, ok := r.vodManager.PromoteFailedToReadyIfPlaylist(metaID); ok {
 			meta = updated
 		}
 	}
 	if meta.State == vod.ArtifactStateFailed {
 		// Attempt reconcile
-		if _, transitioned := r.vodManager.MarkPreparingIfState(ref, vod.ArtifactStateFailed, "reconcile: retrying build"); transitioned {
-			_ = r.triggerBuild(ctx, ref, profile)
+		if _, transitioned := r.vodManager.MarkPreparingIfState(metaID, vod.ArtifactStateFailed, "reconcile: retrying build"); transitioned {
+			_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
 			return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing (reconciling)"}
 		}
 
@@ -91,7 +115,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	if playlistPath == "" {
 		// Metadata is ready, but we lack an HLS artifact.
 		// Trigger/Resume build instead of re-probing to avoid stuck StatePreparing loops.
-		_ = r.triggerBuild(ctx, ref, profile)
+		_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist building"}
 	}
 
@@ -99,9 +123,9 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	// #nosec G304 - playlistPath is trusted from internal metadata
 	f, err := os.Open(playlistPath)
 	if err != nil {
-		r.vodManager.DemoteOnOpenFailure(ref, err)
+		r.vodManager.DemoteOnOpenFailure(metaID, err)
 		// Trigger build immediately to recover
-		_ = r.triggerBuild(ctx, ref, profile)
+		_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist open failed (reconciling)"}
 	}
 	defer func() { _ = f.Close() }()
@@ -117,7 +141,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	}
 
 	// Rewrite using canonical helper
-	rewritten := v3recordings.RewritePlaylistType(string(data), "VOD")
+	rewritten := v3recordings.RewritePlaylist(string(data), "VOD", variant)
 
 	return ArtifactOK{
 		Data:    []byte(rewritten),
@@ -126,21 +150,28 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	}, nil
 }
 
-func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, profile string) (ArtifactOK, *ArtifactError) {
+func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError) {
 	ref, ok := decodeRef(recordingID)
 	if !ok {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
 	}
+	variant = v3recordings.NormalizeVariantHash(variant)
+	targetProfile, resolvedVariant, artErr := recordingTarget(profile, variant, target)
+	if artErr != nil {
+		return ArtifactOK{}, artErr
+	}
+	variant = resolvedVariant
+	metaID := recordingVariantMetadataKey(ref, variant)
 
 	if err := v3recordings.ValidateRecordingRef(ref); err != nil {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Err: err, Detail: "invalid recording ref"}
 	}
 
-	meta, exists := r.vodManager.GetMetadata(ref)
+	meta, exists := r.vodManager.GetMetadata(metaID)
 	if !exists || meta.State != vod.ArtifactStateReady {
 		// Timeshift piggybacks on VOD build.
 		if !exists || meta.State == vod.ArtifactStateFailed {
-			_ = r.triggerBuild(ctx, ref, profile)
+			_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
 		}
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "preparing"}
 	}
@@ -149,7 +180,7 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 	// #nosec G304 - playlistPath is trusted from internal metadata
 	f, err := os.Open(playlistPath)
 	if err != nil {
-		r.vodManager.DemoteOnOpenFailure(ref, err)
+		r.vodManager.DemoteOnOpenFailure(metaID, err)
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second}
 	}
 	defer func() { _ = f.Close() }()
@@ -164,7 +195,7 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 	}
 
 	// Rewrite using canonical helper
-	rewritten := v3recordings.RewritePlaylistType(string(data), "EVENT")
+	rewritten := v3recordings.RewritePlaylist(string(data), "EVENT", variant)
 	return ArtifactOK{
 		Data:    []byte(rewritten),
 		ModTime: info.ModTime(),
@@ -172,7 +203,7 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 	}, nil
 }
 
-func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string, segment string) (ArtifactOK, *ArtifactError) {
+func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string, segment string, variant string) (ArtifactOK, *ArtifactError) {
 	ref, ok := decodeRef(recordingID)
 	if !ok {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
@@ -190,7 +221,7 @@ func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string
 		return ArtifactOK{}, &ArtifactError{Code: CodeNotFound, Detail: "segment not found"}
 	}
 
-	cacheDir, err := v3recordings.RecordingCacheDir(r.cfg.HLS.Root, ref)
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(r.cfg.HLS.Root, ref, variant)
 	if err != nil {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
 	}
@@ -235,7 +266,7 @@ func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string
 
 // Internal Logic
 
-func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile string) error {
+func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, variant, metaID string, targetProfile *playbackprofile.TargetPlaybackProfile) error {
 	// 1. Resolve Source
 	srcType, srcURL, _, err := r.resolveSource(ref)
 	if err != nil {
@@ -243,7 +274,7 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile string)
 	}
 
 	// 2. Determine Cache Dir
-	cacheDir, err := v3recordings.RecordingCacheDir(r.cfg.HLS.Root, ref)
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(r.cfg.HLS.Root, ref, variant)
 	if err != nil {
 		return err
 	}
@@ -252,14 +283,38 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile string)
 	finalPath := filepath.Join(cacheDir, "index.m3u8")
 
 	buildProfile := vod.ProfileDefault
-	if profile == "safari" {
-		buildProfile = vod.ProfileLow
+	if targetProfile == nil {
+		targetProfile = recordingTargetProfile(profile)
 	}
 
 	// Using EnsureSpec to start/resume build
-	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, ref, srcURL, cacheDir, "index.live.m3u8", finalPath, buildProfile)
+	_, err = r.vodManager.EnsureSpecWithTargetProfile(ctx, cacheDir, metaID, srcURL, cacheDir, "index.live.m3u8", finalPath, buildProfile, targetProfile)
 	_ = srcType // Unused for now
 	return err
+}
+
+func recordingVariantMetadataKey(ref, variant string) string {
+	variant = v3recordings.NormalizeVariantHash(variant)
+	if variant == "" {
+		return ref
+	}
+	return ref + "#variant:" + variant
+}
+
+func recordingTarget(profile, variant string, target *playbackprofile.TargetPlaybackProfile) (*playbackprofile.TargetPlaybackProfile, string, *ArtifactError) {
+	variant = v3recordings.NormalizeVariantHash(variant)
+	if target == nil {
+		target = recordingTargetProfile(profile)
+	}
+	if target == nil {
+		return nil, variant, nil
+	}
+	canonical := playbackprofile.CanonicalizeTarget(*target)
+	resolvedVariant := canonical.Hash()
+	if variant != "" && resolvedVariant != variant {
+		return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback variant mismatch"}
+	}
+	return &canonical, resolvedVariant, nil
 }
 
 func (r *DefaultResolver) resolveSource(serviceRef string) (string, string, string, error) {

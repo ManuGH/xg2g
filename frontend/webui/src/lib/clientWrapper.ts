@@ -1,10 +1,11 @@
 import { client } from '../client-ts/client.gen';
 import type { ApiError, ProblemDetails } from '../client-ts/types.gen';
+import { isUnauthorizedStatus, requestAuthRequired } from './sessionEvents';
 
 export type MappedApiError = {
   status?: number;
   code?: string;
-  title: string;
+  title?: string;
   detail?: string;
   requestId?: string;
 };
@@ -14,15 +15,23 @@ export class ClientRequestError extends Error {
   readonly code?: string;
   readonly requestId?: string;
   readonly detail?: string;
+  readonly title: string;
 
   constructor(mapped: MappedApiError) {
-    super(mapped.detail ?? mapped.title);
+    super(mapped.detail ?? mapped.title ?? 'Request failed');
     this.name = 'ClientRequestError';
     this.status = mapped.status;
     this.code = mapped.code;
     this.requestId = mapped.requestId;
     this.detail = mapped.detail;
+    this.title = mapped.title ?? 'Request failed';
   }
+}
+
+export interface ClientResult<TData = unknown> {
+  data?: TData;
+  error?: unknown;
+  response?: { status?: number };
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -100,15 +109,14 @@ export function mapApiError(error: unknown, fallbackStatus?: number): MappedApiE
     return {
       status: readNumber(error, 'status') ?? fallbackStatus,
       code: readString(error, 'code'),
-      title: readString(error, 'title') ?? readString(error, 'message') ?? 'Request failed',
+      title: readString(error, 'title') ?? readString(error, 'message'),
       detail: readString(error, 'detail'),
       requestId: readString(error, 'requestId')
     };
   }
 
   return {
-    status: fallbackStatus,
-    title: 'Request failed'
+    status: fallbackStatus
   };
 }
 
@@ -124,6 +132,57 @@ export function getApiBaseUrl(defaultBase: string = '/api/v3'): string {
   return (client.getConfig().baseUrl || defaultBase).replace(/\/$/, '');
 }
 
+interface ClientResultOptions {
+  source?: string;
+  silent?: boolean;
+}
+
+export function throwOnClientResultError(
+  result: Pick<ClientResult, 'error' | 'response'>,
+  options: ClientResultOptions = {}
+): void {
+  if (!result.error) {
+    return;
+  }
+
+  const status = result.response?.status;
+  const mapped = mapApiError(result.error, status);
+  if (isUnauthorizedStatus(status)) {
+    requestAuthRequired({
+      source: options.source,
+      status,
+      code: mapped.code
+    });
+  }
+
+  throw new ClientRequestError(mapped);
+}
+
+export function unwrapClientResultOrThrow<TData>(
+  result: ClientResult<TData>,
+  options: ClientResultOptions = {}
+): TData {
+  if (result.error) {
+    if (options.silent) {
+      const status = result.response?.status;
+      const mapped = mapApiError(result.error, status);
+      if (isUnauthorizedStatus(status)) {
+        requestAuthRequired({
+          source: options.source,
+          status,
+          code: mapped.code
+        });
+      }
+
+      return undefined as TData;
+    }
+
+    throwOnClientResultError(result, options);
+  }
+
+  return result.data as TData;
+}
+
 export async function putJsonOrThrow<TBody>(url: string, body: TBody): Promise<void> {
   const result = await client.put<unknown, ApiError | ProblemDetails>({
     url,
@@ -131,7 +190,5 @@ export async function putJsonOrThrow<TBody>(url: string, body: TBody): Promise<v
     headers: { 'Content-Type': 'application/json' }
   });
 
-  if (result.error) {
-    throw new ClientRequestError(mapApiError(result.error, result.response?.status));
-  }
+  throwOnClientResultError(result, { source: `PUT ${url}` });
 }

@@ -37,7 +37,11 @@ func main() {
 	allowCreate := flag.Bool("allow-create", false, "allow creating new schema nodes")
 	flag.Parse()
 
-	root, err := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		fail(err)
+	}
+	paths, err := resolvePaths(cwd)
 	if err != nil {
 		fail(err)
 	}
@@ -48,18 +52,49 @@ func main() {
 	}
 	entries := registryEntries(registry)
 
-	if err := updateConfigDoc(root, entries); err != nil {
+	if err := updateConfigDoc(paths.repoRoot, entries); err != nil {
 		fail(err)
 	}
-	if err := updateSchemaDefaults(root, entries, *allowCreate); err != nil {
+	if err := updateSchemaDefaults(paths.repoRoot, entries, *allowCreate); err != nil {
 		fail(err)
 	}
-	if err := writeGeneratedExample(root, entries); err != nil {
+	if err := writeGeneratedExample(paths.backendRoot, entries); err != nil {
 		fail(err)
 	}
-	if err := writeConfigInventory(root); err != nil {
+	if err := writeConfigInventory(paths.repoRoot); err != nil {
 		fail(err)
 	}
+}
+
+type generatorPaths struct {
+	repoRoot    string
+	backendRoot string
+}
+
+func resolvePaths(cwd string) (generatorPaths, error) {
+	cwd = filepath.Clean(cwd)
+	repoRootCandidate := filepath.Join(cwd, "backend", "go.mod")
+	if fileExists(repoRootCandidate) {
+		return generatorPaths{
+			repoRoot:    cwd,
+			backendRoot: filepath.Join(cwd, "backend"),
+		}, nil
+	}
+
+	parent := filepath.Dir(cwd)
+	if fileExists(filepath.Join(cwd, "go.mod")) && fileExists(filepath.Join(parent, configDocPath)) {
+		return generatorPaths{
+			repoRoot:    parent,
+			backendRoot: cwd,
+		}, nil
+	}
+
+	return generatorPaths{}, fmt.Errorf("resolve paths from %q: expected repo root or backend root", cwd)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func fail(err error) {

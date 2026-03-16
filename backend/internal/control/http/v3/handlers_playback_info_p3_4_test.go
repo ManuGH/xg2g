@@ -12,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -25,18 +26,18 @@ type MockArtifactsResolver struct {
 	mock.Mock
 }
 
-func (m *MockArtifactsResolver) ResolvePlaylist(ctx context.Context, recordingID, profile string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
-	args := m.Called(ctx, recordingID, profile)
+func (m *MockArtifactsResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, profile, variant, target)
 	if args.Get(1) != nil {
 		return artifacts.ArtifactOK{}, args.Get(1).(*artifacts.ArtifactError)
 	}
 	return args.Get(0).(artifacts.ArtifactOK), nil
 }
 
-func (m *MockArtifactsResolver) ResolveSegment(ctx context.Context, recordingID, segment string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+func (m *MockArtifactsResolver) ResolveSegment(ctx context.Context, recordingID, segment, variant string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
 	return artifacts.ArtifactOK{}, nil
 }
-func (m *MockArtifactsResolver) ResolveTimeshift(ctx context.Context, recordingID, profile string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+func (m *MockArtifactsResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
 	return artifacts.ArtifactOK{}, nil
 }
 
@@ -108,7 +109,7 @@ func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 seg1.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylist", mock.Anything, recordingID, "", "", mock.Anything).Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
@@ -145,7 +146,7 @@ seg1.ts
 seg2.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylist", mock.Anything, recordingID, "", "", mock.Anything).Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
@@ -183,7 +184,7 @@ seg2.ts
 #EXT-X-ENDLIST`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylist", mock.Anything, recordingID, "", "", mock.Anything).Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
@@ -226,7 +227,7 @@ seg1.ts
 seg2.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylist", mock.Anything, recordingID, "", "", mock.Anything).Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 

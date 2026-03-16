@@ -56,6 +56,20 @@
   display: flex;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.workflowControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  .workflowControls {
+    margin-left: auto;
+  }
 }
 
 .breadcrumbs {
@@ -275,15 +289,6 @@
   height: 20px;
 }
 
-.errorAlert {
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background: var(--status-error-subtle);
-  border: 1px solid var(--status-error-border);
-  color: var(--status-error);
-  font-size: var(--text-sm);
-}
-
 .playerFallback {
   margin-top: 20px;
 }
@@ -293,4 +298,3 @@
     grid-template-columns: 1fr;
   }
 }
-

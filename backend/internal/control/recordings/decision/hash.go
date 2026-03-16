@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // ComputeHash calculates a stable SHA-256 hash of the DecisionInput.
@@ -47,8 +49,11 @@ func (i DecisionInput) CanonicalJSONForHash() ([]byte, error) {
 		},
 		Policy: canonicalPolicy{
 			AllowTranscode: i.Policy.AllowTranscode,
+			Operator:       canonicalizeOperatorPolicy(i.Policy.Operator),
+			Host:           canonicalizeHostPolicy(i.Policy.Host),
 		},
-		APIVersion: robustNorm(i.APIVersion),
+		RequestedIntent: string(playbackprofile.NormalizeRequestedIntent(string(i.RequestedIntent))),
+		APIVersion:      robustNorm(i.APIVersion),
 		// RequestID explicitly EXCLUDED (ADR-009.2)
 	}
 
@@ -85,9 +90,12 @@ func (i DecisionInput) CanonicalJSON() ([]byte, error) {
 		},
 		Policy: canonicalPolicy{
 			AllowTranscode: i.Policy.AllowTranscode,
+			Operator:       canonicalizeOperatorPolicy(i.Policy.Operator),
+			Host:           canonicalizeHostPolicy(i.Policy.Host),
 		},
-		APIVersion: robustNorm(i.APIVersion),
-		RequestID:  i.RequestID, // Included for replay artifacts
+		RequestedIntent: string(playbackprofile.NormalizeRequestedIntent(string(i.RequestedIntent))),
+		APIVersion:      robustNorm(i.APIVersion),
+		RequestID:       i.RequestID, // Included for replay artifacts
 	}
 
 	return json.Marshal(c)
@@ -95,11 +103,12 @@ func (i DecisionInput) CanonicalJSON() ([]byte, error) {
 
 // canonicalInputFull includes RequestID (for replay artifacts)
 type canonicalInputFull struct {
-	Source       canonicalSource       `json:"source"`
-	Capabilities canonicalCapabilities `json:"caps"`
-	Policy       canonicalPolicy       `json:"policy"`
-	APIVersion   string                `json:"api"`
-	RequestID    string                `json:"rid,omitempty"`
+	Source          canonicalSource       `json:"source"`
+	Capabilities    canonicalCapabilities `json:"caps"`
+	Policy          canonicalPolicy       `json:"policy"`
+	RequestedIntent string                `json:"intent,omitempty"`
+	APIVersion      string                `json:"api"`
+	RequestID       string                `json:"rid,omitempty"`
 }
 
 // robustNormHash is just an alias to remind that normalization is semantic.
@@ -135,10 +144,11 @@ func sortedUnique(in []string) []string {
 
 // Canonical Structs (Private, strict order)
 type canonicalInput struct {
-	Source       canonicalSource       `json:"source"`
-	Capabilities canonicalCapabilities `json:"caps"`
-	Policy       canonicalPolicy       `json:"policy"`
-	APIVersion   string                `json:"api"`
+	Source          canonicalSource       `json:"source"`
+	Capabilities    canonicalCapabilities `json:"caps"`
+	Policy          canonicalPolicy       `json:"policy"`
+	RequestedIntent string                `json:"intent,omitempty"`
+	APIVersion      string                `json:"api"`
 }
 
 type canonicalSource struct {
@@ -163,5 +173,36 @@ type canonicalCapabilities struct {
 }
 
 type canonicalPolicy struct {
-	AllowTranscode bool `json:"tx"`
+	AllowTranscode bool                     `json:"tx"`
+	Operator       *canonicalOperatorPolicy `json:"operator,omitempty"`
+	Host           *canonicalHostPolicy     `json:"host,omitempty"`
+}
+
+type canonicalOperatorPolicy struct {
+	ForceIntent    string `json:"forceIntent,omitempty"`
+	MaxQualityRung string `json:"maxQualityRung,omitempty"`
+}
+
+type canonicalHostPolicy struct {
+	PressureBand string `json:"pressureBand,omitempty"`
+}
+
+func canonicalizeOperatorPolicy(policy OperatorPolicy) *canonicalOperatorPolicy {
+	forceIntent := string(playbackprofile.NormalizeRequestedIntent(string(policy.ForceIntent)))
+	maxQualityRung := string(playbackprofile.NormalizeQualityRung(string(policy.MaxQualityRung)))
+	if forceIntent == "" && maxQualityRung == "" {
+		return nil
+	}
+	return &canonicalOperatorPolicy{
+		ForceIntent:    forceIntent,
+		MaxQualityRung: maxQualityRung,
+	}
+}
+
+func canonicalizeHostPolicy(policy HostPolicy) *canonicalHostPolicy {
+	pressureBand := string(playbackprofile.NormalizeHostPressureBand(string(policy.PressureBand)))
+	if pressureBand == "" {
+		return nil
+	}
+	return &canonicalHostPolicy{PressureBand: pressureBand}
 }

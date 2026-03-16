@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -64,6 +67,52 @@ func TestMonitorProcess_RemovesHandleOnNaturalExit(t *testing.T) {
 	_, exists := adapter.activeProcs[handle]
 	adapter.mu.Unlock()
 	assert.False(t, exists)
+}
+
+func TestMonitorProcess_SurfacesMeaningfulExitDetail(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		5*time.Second,
+		"",
+	)
+
+	cmd := exec.Command("sh", "-c", "printf '[http @ 0x1] Stream ends prematurely at 0\\nError opening input files: Input/output error\\n' 1>&2; exit 1")
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+
+	handle := ports.RunHandle("session-1b-321")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-1b")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitorProcess did not finish in time")
+	}
+
+	status := adapter.Health(context.Background(), handle)
+	assert.False(t, status.Healthy)
+	assert.Equal(t, "upstream stream ended prematurely", status.Message)
 }
 
 func TestHealth_ExitedProcessInMapIsUnhealthyAndCleanedUp(t *testing.T) {
@@ -141,4 +190,8 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(logs, `"startup_phase":"first_segment_write"`))
 	assert.Contains(t, logs, `"frame":1`)
 	assert.Contains(t, logs, `"segment_path":"/tmp/seg_000001.m4s"`)
+	markerPath := filepath.Join(adapter.HLSRoot, "sessions", "session-3", model.SessionFirstFrameMarkerFilename)
+	marker, err := os.ReadFile(markerPath)
+	require.NoError(t, err)
+	assert.NotEmpty(t, strings.TrimSpace(string(marker)))
 }

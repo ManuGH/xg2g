@@ -10,9 +10,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	codecdecision "github.com/ManuGH/xg2g/internal/decision"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/domain/vod"
+	infraffmpeg "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -167,6 +170,12 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		if liveProbe := strings.TrimSpace(a.LiveProbeSize); liveProbe != "" {
 			probeSize = liveProbe
 		}
+		// Stream relay MPEG-TS often needs a much deeper initial probe before
+		// FFmpeg can resolve video dimensions and audio layout reliably.
+		if isStreamRelayURL(inputURL) {
+			analyzeDuration = "10000000"
+			probeSize = "20M"
+		}
 		if !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
 		}
@@ -265,7 +274,28 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 
 	sourceKey := fpsCacheKey(spec.Source, input.inputURL)
 	skipProbe := false
-	if sourceKey != "" {
+	if isStreamRelayURL(input.inputURL) {
+		skipProbe = true
+		logEvt := a.Logger.Info().
+			Str("session_id", spec.SessionID).
+			Str("startup_phase", "fps_probe_skipped_streamrelay").
+			Str("source_key", sourceKey).
+			Str("input_url", sanitizeURLForLog(input.inputURL))
+		if sourceKey != "" {
+			if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
+				fps = cachedFPS
+				logEvt.Int("cached_fps", cachedFPS).
+					Msg("skipping fps probe for stream relay input; using cached fps")
+			} else {
+				logEvt.Int("fallback_fps", fps).
+					Msg("skipping fps probe for stream relay input; using fallback fps")
+			}
+		} else {
+			logEvt.Int("fallback_fps", fps).
+				Msg("skipping fps probe for stream relay input; using fallback fps")
+		}
+	}
+	if !skipProbe && sourceKey != "" {
 		if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
 			a.Logger.Info().
 				Str("session_id", spec.SessionID).
@@ -403,7 +433,18 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		"-map", "0:a:0?",
 	)
 
-	if codec.useVAAPI {
+	if a.shouldPreferSafariRuntimeRemux(ctx, spec, input.inputURL) {
+		spec.Profile.TranscodeVideo = false
+		spec.Profile.Deinterlace = false
+		spec.Profile.Container = "fmp4"
+		if spec.Profile.AudioBitrateK <= 0 {
+			spec.Profile.AudioBitrateK = 192
+		}
+	}
+
+	if !spec.Profile.TranscodeVideo && !usesLegacyCPUDefaults(spec, codec.resolvedCodec) {
+		out.args = a.buildCopyVideoArgs(out.args, spec)
+	} else if codec.useVAAPI {
 		if codec.fullVAAPI {
 			out.args = a.buildVaapiVideoArgs(out.args, spec, codec.resolvedCodec, gop, segmentDurationSec)
 		} else {
@@ -425,19 +466,33 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		"-sn",
 		"-f", "hls",
 	)
+
+	segmentType := "mpegts"
+	segmentFilename := filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.ts")
+	if strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+		segmentType = "fmp4"
+		segmentFilename = filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.m4s")
+	}
+
 	out.args = append(out.args,
 		"-hls_time", strconv.Itoa(segmentDurationSec),
 		"-hls_list_size", strconv.Itoa(listSize),
 		"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time",
-		"-hls_segment_type", "mpegts",
-		"-hls_segment_filename", filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.ts"),
+		"-hls_segment_type", segmentType,
+		"-hls_segment_filename", segmentFilename,
 	)
+	if segmentType == "fmp4" {
+		out.args = append(out.args, "-hls_fmp4_init_filename", "init.mp4")
+	}
 	if initSegmentDurationSec > 0 {
 		out.args = append(out.args, "-hls_init_time", strconv.Itoa(initSegmentDurationSec))
 	}
 
 	outputPath := filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "index.m3u8")
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
+	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, spec.SessionID); markerPath != "" {
+		_ = os.Remove(markerPath)
+	}
 	a.Logger.Info().
 		Str("session_id", spec.SessionID).
 		Str("startup_phase", "output_dir_ready").
@@ -446,6 +501,61 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	out.args = append(out.args, outputPath)
 
 	return out, nil
+}
+
+func (a *LocalAdapter) shouldPreferSafariRuntimeRemux(ctx context.Context, spec ports.StreamSpec, inputURL string) bool {
+	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Name), profiles.ProfileSafari) {
+		return false
+	}
+	if !spec.Profile.TranscodeVideo {
+		return false
+	}
+	if strings.TrimSpace(inputURL) == "" {
+		return false
+	}
+
+	probeTimeout := a.SafariRuntimeProbeTimeout
+	if probeTimeout <= 0 {
+		probeTimeout = 6 * time.Second
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+
+	var (
+		info *vod.StreamInfo
+		err  error
+	)
+	if a.streamProbeFn != nil {
+		info, err = a.streamProbeFn(probeCtx, inputURL)
+	} else {
+		info, err = infraffmpeg.ProbeWithBin(probeCtx, a.FFprobeBin, inputURL)
+	}
+	if err != nil {
+		a.Logger.Info().
+			Err(err).
+			Str("sessionId", spec.SessionID).
+			Str("input_url", sanitizeURLForLog(inputURL)).
+			Dur("probe_timeout", probeTimeout).
+			Msg("safari runtime probe failed; keeping transcode path")
+		return false
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(info.Video.CodecName), "h264") || info.Video.Interlaced {
+		return false
+	}
+
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("video_codec", info.Video.CodecName).
+		Bool("interlaced", info.Video.Interlaced).
+		Str("container", info.Container).
+		Msg("safari runtime probe selected remux path")
+	return true
+}
+
+func usesLegacyCPUDefaults(spec ports.StreamSpec, outputCodec string) bool {
+	prof := spec.Profile
+	return prof.Name == "" && prof.VideoCodec == "" && !prof.TranscodeVideo && outputCodec == "h264"
 }
 
 func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
@@ -543,9 +653,19 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	return args
 }
 
+func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec) []string {
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("transcode.mode", "copy").
+		Str("video.codec", "copy").
+		Msg("pipeline video: copy")
+
+	return append(args, "-c:v", "copy")
+}
+
 func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
 	prof := spec.Profile
-	legacy := prof.VideoCodec == "" && !prof.TranscodeVideo && outputCodec == "h264"
+	legacy := usesLegacyCPUDefaults(spec, outputCodec)
 
 	codec := "libx264"
 	preset := "ultrafast"

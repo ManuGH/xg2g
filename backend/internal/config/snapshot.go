@@ -33,6 +33,9 @@ type RuntimeSnapshot struct {
 	HLS        HLSRuntime
 
 	FFmpegLogLevel string
+
+	UIDevProxyURL string
+	UIDevDir      string
 }
 
 type OpenWebIFRuntime struct {

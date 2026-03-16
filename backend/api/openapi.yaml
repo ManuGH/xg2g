@@ -172,6 +172,8 @@ components:
           type: string
           description: Playback URL for the HLS playlist.
           format: uri
+        trace:
+          $ref: "#/components/schemas/PlaybackTrace"
 
     Service:
       type: object
@@ -900,8 +902,8 @@ components:
       properties:
         capabilitiesVersion:
           type: integer
-          description: "Capabilities contract version (current: 1)"
-          example: 1
+          description: "Capabilities contract version (current: 2)"
+          example: 2
         container:
           type: array
           items:
@@ -945,6 +947,28 @@ components:
           type: string
           description: Client device category for policy decisions
           example: "desktop"
+        hlsEngines:
+          type: array
+          items:
+            type: string
+          description: Supported HLS playback engines (e.g. native, hlsjs)
+          example: ["native", "hlsjs"]
+        preferredHlsEngine:
+          type: string
+          description: Preferred HLS playback engine for this client (e.g. native, hlsjs)
+          example: "native"
+        runtimeProbeUsed:
+          type: boolean
+          description: Whether the capability snapshot was gathered from runtime browser probes
+          example: true
+        runtimeProbeVersion:
+          type: integer
+          description: Version of the runtime playback probe contract
+          example: 1
+        clientFamilyFallback:
+          type: string
+          description: Browser-family fallback used when the server needs conservative capability defaults
+          example: "chromium_hlsjs"
         allowTranscode:
           type: boolean
           description: Whether client allows transcoding (force bypass)
@@ -1037,9 +1061,213 @@ components:
         requestId:
           type: string
           description: Correlation ID (UUID or prefixed string like req_abc123)
+        requestProfile:
+          type: string
+          nullable: true
+        requestedIntent:
+          type: string
+          nullable: true
+        resolvedIntent:
+          type: string
+          nullable: true
+        qualityRung:
+          type: string
+          nullable: true
+        audioQualityRung:
+          type: string
+          nullable: true
+        videoQualityRung:
+          type: string
+          nullable: true
+        degradedFrom:
+          type: string
+          nullable: true
+        hostPressureBand:
+          type: string
+          nullable: true
+        hostOverrideApplied:
+          type: boolean
+          nullable: true
+        clientCapsSource:
+          type: string
+          nullable: true
+        clientFamily:
+          type: string
+          nullable: true
         sessionId:
           type: string
           nullable: true
+        source:
+          $ref: "#/components/schemas/PlaybackSourceProfile"
+        clientPath:
+          type: string
+          nullable: true
+        inputKind:
+          type: string
+          nullable: true
+        preflightReason:
+          type: string
+          nullable: true
+        preflightDetail:
+          type: string
+          nullable: true
+        targetProfileHash:
+          type: string
+          nullable: true
+        targetProfile:
+          $ref: "#/components/schemas/PlaybackTargetProfile"
+        ffmpegPlan:
+          $ref: "#/components/schemas/PlaybackTraceFfmpegPlan"
+        operator:
+          $ref: "#/components/schemas/PlaybackTraceOperator"
+        firstFrameAtMs:
+          type: integer
+          nullable: true
+        fallbackCount:
+          type: integer
+          nullable: true
+        lastFallbackReason:
+          type: string
+          nullable: true
+        stopReason:
+          type: string
+          nullable: true
+        stopClass:
+          type: string
+          nullable: true
+
+    PlaybackTraceOperator:
+      type: object
+      additionalProperties: false
+      properties:
+        forcedIntent:
+          type: string
+          nullable: true
+        maxQualityRung:
+          type: string
+          nullable: true
+        ruleName:
+          type: string
+          nullable: true
+        ruleScope:
+          type: string
+          nullable: true
+        clientFallbackDisabled:
+          type: boolean
+        overrideApplied:
+          type: boolean
+
+    PlaybackTraceFfmpegPlan:
+      type: object
+      additionalProperties: false
+      properties:
+        inputKind:
+          type: string
+        container:
+          type: string
+        packaging:
+          type: string
+        hwAccel:
+          type: string
+        videoMode:
+          type: string
+        videoCodec:
+          type: string
+        audioMode:
+          type: string
+        audioCodec:
+          type: string
+
+    PlaybackSourceProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        container:
+          type: string
+        videoCodec:
+          type: string
+        audioCodec:
+          type: string
+        bitrateKbps:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+        fps:
+          type: number
+        interlaced:
+          type: boolean
+        audioChannels:
+          type: integer
+        audioBitrateKbps:
+          type: integer
+
+    PlaybackTargetProfile:
+      type: object
+      required: [container, packaging, video, audio, hls, hwAccel]
+      additionalProperties: false
+      properties:
+        container:
+          type: string
+        packaging:
+          type: string
+        video:
+          $ref: "#/components/schemas/PlaybackTargetVideo"
+        audio:
+          $ref: "#/components/schemas/PlaybackTargetAudio"
+        hls:
+          $ref: "#/components/schemas/PlaybackTargetHls"
+        hwAccel:
+          type: string
+
+    PlaybackTargetAudio:
+      type: object
+      required: [mode, codec, channels, bitrateKbps, sampleRate]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+        codec:
+          type: string
+        channels:
+          type: integer
+        bitrateKbps:
+          type: integer
+        sampleRate:
+          type: integer
+
+    PlaybackTargetHls:
+      type: object
+      required: [enabled, segmentContainer, segmentSeconds]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        segmentContainer:
+          type: string
+        segmentSeconds:
+          type: integer
+
+    PlaybackTargetVideo:
+      type: object
+      required: [mode, codec, width, height, fps]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+        codec:
+          type: string
+        crf:
+          type: integer
+        preset:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        fps:
+          type: number
 
     PlaybackOutput:
       description: Output URL for client playback
@@ -2473,6 +2701,14 @@ paths:
       operationId: getLogs
       tags:
         - system
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Maximum number of most-recent log entries to return.
       responses:
         "200":
           description: Recent log entries

@@ -2,7 +2,7 @@
 
 **⚠️ DO NOT call these scripts directly.**
 
-These are **internal implementation details** called by the [Makefile](../Makefile).
+These are **internal implementation details** called by the [Makefile](../../Makefile).
 They are NOT guaranteed to be stable or usable standalone.
 
 ## Usage
@@ -34,10 +34,10 @@ This is **not a blanket exception** - prefer `make` in CI whenever possible.
 
 ## Exception: Operator Verification
 These operator-grade scripts are designed to be run directly on hosts:
-- `scripts/verify-systemd-unit.sh`
-- `scripts/verify-installed-unit.sh`
-- `scripts/verify-compose-contract.sh`
-- `scripts/run-service-smoke.sh`
+- `backend/scripts/verify-systemd-unit.sh`
+- `backend/scripts/verify-installed-unit.sh`
+- `backend/scripts/verify-compose-contract.sh`
+- `backend/scripts/run-service-smoke.sh`
 
 ---
 

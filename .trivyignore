@@ -1,0 +1,9 @@
+# xg2g Trivy Ignore List
+# Whitelist intentional bootstrap credentials and known false positives
+
+# Asymmetric Private Key
+private-key
+# Specific path (alternate mechanism)
+backend/internal/app/bootstrap/certs/xg2g.key
+# Rule ID variant
+AsymmetricPrivateKey

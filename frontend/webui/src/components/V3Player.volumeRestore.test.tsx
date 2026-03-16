@@ -27,7 +27,7 @@ describe('V3Player Volume Restore', () => {
       expect((volumeSlider as HTMLInputElement).value).toBe('0');
     });
 
-    const unmuteButton = await screen.findByTitle('player.unmute');
+    const unmuteButton = await screen.findByTitle(/Unmute/i);
     fireEvent.click(unmuteButton);
 
     await waitFor(() => {

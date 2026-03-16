@@ -41,7 +41,7 @@ operational view used for release planning and enforcement.
 3. **Fail-Start**: Switch to hard-fail in config validation once grace period ends.
 4. **Migration**: Provide idempotent tooling and operator playbook.
 5. **Removal**: Delete code paths, config keys, tests, and docs in the removal version.
-6. **Audit**: Run `scripts/check_deprecations.py` and update this inventory.
+6. **Audit**: Run `python3 backend/scripts/check_deprecations.py` and update this inventory.
 
 ## Current Actions (Suggested)
 

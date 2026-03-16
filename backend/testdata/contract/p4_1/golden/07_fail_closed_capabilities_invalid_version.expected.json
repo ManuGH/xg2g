@@ -4,7 +4,7 @@
 						"title": "Capabilities Invalid",
 						"status": 400,
 						"code": "capabilities_invalid",
-						"detail": "capabilities_version not supported (current: 1)"
+						"detail": "capabilities_version not supported (current: 2)"
 					},
 					"status": 400
 				}

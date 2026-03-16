@@ -1,0 +1,103 @@
+.root {
+  position: relative;
+}
+
+.gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(24px + var(--sat)) calc(24px + var(--sar)) calc(24px + var(--sab)) calc(24px + var(--sal));
+  background: var(--bg-base);
+}
+
+.gateFrame {
+  width: min(680px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+.page {
+  width: 100%;
+  min-height: 60vh;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.pageHeader {
+  display: grid;
+  gap: 12px;
+}
+
+.pageGrid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.section {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+
+.block,
+.line,
+.panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.block {
+  min-height: 96px;
+}
+
+.panel {
+  min-height: 220px;
+}
+
+.line {
+  min-height: 16px;
+  border-radius: var(--radius-sm);
+}
+
+.lineShort {
+  width: 28%;
+}
+
+.lineMedium {
+  width: 54%;
+}
+
+.lineWide {
+  width: 100%;
+}
+
+.sectionRow {
+  display: grid;
+  gap: 10px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 900px) {
+  .pageGrid {
+    grid-template-columns: 1fr;
+  }
+}

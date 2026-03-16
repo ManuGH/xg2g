@@ -41,7 +41,7 @@
 
 **Invariant**: Only `internal/control/recordings/decision/**` may directly import or call the decision engine.
 
-**Enforcement**: `scripts/verify-decision-ownership.sh` (CI stop-the-line gate).
+**Enforcement**: `backend/scripts/verify-decision-ownership.sh` (CI stop-the-line gate).
 
 ### Metric Design (FROZEN)
 

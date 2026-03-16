@@ -45,6 +45,18 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Version != "test-version" {
 		t.Errorf("expected Version=test-version, got %s", cfg.Version)
 	}
+	if cfg.Playback.Operator.ForceIntent != "" {
+		t.Errorf("expected Playback.Operator.ForceIntent default empty, got %q", cfg.Playback.Operator.ForceIntent)
+	}
+	if cfg.Playback.Operator.MaxQualityRung != "" {
+		t.Errorf("expected Playback.Operator.MaxQualityRung default empty, got %q", cfg.Playback.Operator.MaxQualityRung)
+	}
+	if cfg.Playback.Operator.DisableClientFallback {
+		t.Error("expected Playback.Operator.DisableClientFallback default false")
+	}
+	if len(cfg.Playback.Operator.SourceRules) != 0 {
+		t.Errorf("expected Playback.Operator.SourceRules default empty, got %d entries", len(cfg.Playback.Operator.SourceRules))
+	}
 }
 
 func TestLoadFromYAML(t *testing.T) {
@@ -125,6 +137,42 @@ hls:
 	}
 }
 
+func TestLoadPlaybackOperatorFromYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+openWebIF:
+  baseUrl: http://custom.local
+playback:
+  operator:
+    force_intent: quality
+    max_quality_rung: quality_audio_aac_320_stereo
+    disable_client_fallback: true
+`
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	loader := NewLoader(configPath, "1.0.0")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Playback.Operator.ForceIntent != "quality" {
+		t.Fatalf("expected Playback.Operator.ForceIntent=quality, got %q", cfg.Playback.Operator.ForceIntent)
+	}
+	if cfg.Playback.Operator.MaxQualityRung != "quality_audio_aac_320_stereo" {
+		t.Fatalf("expected Playback.Operator.MaxQualityRung=quality_audio_aac_320_stereo, got %q", cfg.Playback.Operator.MaxQualityRung)
+	}
+	if !cfg.Playback.Operator.DisableClientFallback {
+		t.Fatal("expected Playback.Operator.DisableClientFallback=true")
+	}
+}
+
 func TestENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
@@ -177,6 +225,108 @@ func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
 
 	if cfg.Enigma2.StreamPort != 7101 {
 		t.Errorf("expected canonical stream port: 7101, got %d", cfg.Enigma2.StreamPort)
+	}
+}
+
+func TestENVOverridesPlaybackOperatorFileConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+openWebIF:
+  baseUrl: http://file.local
+playback:
+  operator:
+    force_intent: compatible
+    max_quality_rung: compatible_audio_aac_256_stereo
+    disable_client_fallback: false
+`
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	t.Setenv("XG2G_PLAYBACK_FORCE_INTENT", "repair")
+	t.Setenv("XG2G_PLAYBACK_MAX_QUALITY_RUNG", "repair_audio_aac_192_stereo")
+	t.Setenv("XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", "true")
+
+	loader := NewLoader(configPath, "1.0.0")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Playback.Operator.ForceIntent != "repair" {
+		t.Fatalf("expected ENV override Playback.Operator.ForceIntent=repair, got %q", cfg.Playback.Operator.ForceIntent)
+	}
+	if cfg.Playback.Operator.MaxQualityRung != "repair_audio_aac_192_stereo" {
+		t.Fatalf("expected ENV override Playback.Operator.MaxQualityRung=repair_audio_aac_192_stereo, got %q", cfg.Playback.Operator.MaxQualityRung)
+	}
+	if !cfg.Playback.Operator.DisableClientFallback {
+		t.Fatal("expected ENV override Playback.Operator.DisableClientFallback=true")
+	}
+	if len(cfg.Playback.Operator.SourceRules) != 0 {
+		t.Fatalf("expected source rules to remain unset, got %d entries", len(cfg.Playback.Operator.SourceRules))
+	}
+}
+
+func TestLoadPlaybackOperatorSourceRulesFromFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+openWebIF:
+  baseUrl: http://file.local
+playback:
+  operator:
+    force_intent: compatible
+    source_rules:
+      - name: live-monk
+        mode: live
+        service_ref: "1:0:1:ABC"
+        force_intent: repair
+      - name: rec-prefix
+        mode: recording
+        service_ref_prefix: "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/"
+        max_quality_rung: compatible_audio_aac_256_stereo
+        disable_client_fallback: true
+`
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	loader := NewLoader(configPath, "1.0.0")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if len(cfg.Playback.Operator.SourceRules) != 2 {
+		t.Fatalf("expected 2 source rules, got %d", len(cfg.Playback.Operator.SourceRules))
+	}
+	if cfg.Playback.Operator.SourceRules[0].Name != "live-monk" {
+		t.Fatalf("unexpected first rule name %q", cfg.Playback.Operator.SourceRules[0].Name)
+	}
+	if cfg.Playback.Operator.SourceRules[0].Mode != "live" {
+		t.Fatalf("unexpected first rule mode %q", cfg.Playback.Operator.SourceRules[0].Mode)
+	}
+	if cfg.Playback.Operator.SourceRules[0].ServiceRef != "1:0:1:ABC" {
+		t.Fatalf("unexpected first rule service ref %q", cfg.Playback.Operator.SourceRules[0].ServiceRef)
+	}
+	if cfg.Playback.Operator.SourceRules[0].ForceIntent != "repair" {
+		t.Fatalf("unexpected first rule force intent %q", cfg.Playback.Operator.SourceRules[0].ForceIntent)
+	}
+	if cfg.Playback.Operator.SourceRules[1].ServiceRefPrefix != "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/" {
+		t.Fatalf("unexpected second rule prefix %q", cfg.Playback.Operator.SourceRules[1].ServiceRefPrefix)
+	}
+	if cfg.Playback.Operator.SourceRules[1].MaxQualityRung != "compatible_audio_aac_256_stereo" {
+		t.Fatalf("unexpected second rule max rung %q", cfg.Playback.Operator.SourceRules[1].MaxQualityRung)
+	}
+	if cfg.Playback.Operator.SourceRules[1].DisableClientFallback == nil || !*cfg.Playback.Operator.SourceRules[1].DisableClientFallback {
+		t.Fatal("expected second rule disable_client_fallback=true")
 	}
 }
 

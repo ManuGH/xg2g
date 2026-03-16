@@ -1,339 +1,224 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-// Phase 2D: Dashboard refactored to primitives (Card + StatusChip)
-// CTO Contract: No custom card/badge styling, layout-only CSS
-
+import type { CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import type { ChipState } from './ui/StatusChip';
 import {
   useSystemHealth,
   useReceiverCurrent,
   useStreams,
-  useDvrStatus,
-  useLogs
+  useDvrStatus
 } from '../hooks/useServerQueries';
-import { useTranslation } from 'react-i18next';
-import type { SystemHealth } from '../client-ts';
+import { toAppError } from '../lib/appErrors';
+import { ROUTE_MAP } from '../routes';
+import { Button, Card, StatusChip } from './ui';
+import ErrorPanel from './ErrorPanel';
+import LoadingSkeleton from './LoadingSkeleton';
 import StreamsList from './StreamsList';
-import { Button, Card, CardHeader, CardTitle, CardBody, StatusChip } from './ui';
 import styles from './Dashboard.module.css';
 
-export default function Dashboard() {
-  const { data: health, error, isLoading, refetch } = useSystemHealth();
+type HeroTone = 'streaming' | 'control' | 'standby';
 
-  if (error) return <div className={styles.errorText}>Error: {(error as Error).message}</div>;
-  if (isLoading || !health) return <div>Loading...</div>;
+export default function Dashboard() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { data: health, error, isLoading, refetch } = useSystemHealth();
+  const { data: receiver } = useReceiverCurrent();
+  const { data: streams = [] } = useStreams();
+  const { data: recording } = useDvrStatus();
+
+  if (error) {
+    return (
+      <div className={`${styles.page} animate-enter`.trim()}>
+        <ErrorPanel
+          error={toAppError(error, {
+            fallbackTitle: t('dashboard.loadErrorTitle', { defaultValue: 'Unable to load system health' }),
+            fallbackDetail: t('dashboard.loadErrorDetail', { defaultValue: 'Try again to refresh the current receiver and guide status.' }),
+          })}
+          onRetry={() => { void refetch(); }}
+        />
+      </div>
+    );
+  }
+  if (isLoading || !health) {
+    return (
+      <div className={`${styles.page} animate-enter`.trim()}>
+        <LoadingSkeleton variant="section" label={t('common.loading', { defaultValue: 'Loading...' })} />
+      </div>
+    );
+  }
+
+  const streamCount = streams.length;
+  const receiverUnavailable = receiver?.status === 'unavailable';
+  const currentChannel = receiver?.channel?.name || (receiverUnavailable ? t('common.receiverStandby') : 'Receiver ready');
+  const now = receiver?.now;
+  const next = receiver?.next;
+  const missingChannels = health.epg?.missingChannels || 0;
+  const heroTone: HeroTone = streamCount > 0 ? 'streaming' : receiverUnavailable ? 'standby' : 'control';
+  const hasProgramProgress = !!(now?.beginTimestamp && now?.durationSec);
+  const showReceiverContext = !hasProgramProgress && !receiverUnavailable;
+  const progressPercent = hasProgramProgress && now?.beginTimestamp && now?.durationSec
+    ? Math.min(100, Math.max(0, (((Date.now() / 1000) - now.beginTimestamp) / now.durationSec) * 100))
+    : 0;
+
+  const heroTitle = streamCount > 0
+    ? (now?.title || currentChannel)
+    : currentChannel;
+
+  const heroSummary = streamCount > 0
+    ? (now?.description || t('dashboard.heroStreamingSummary', { count: streamCount }))
+    : receiverUnavailable
+      ? t('dashboard.heroStandbySummary')
+      : next?.title
+        ? t('dashboard.heroNextUp', { title: next.title })
+        : t('dashboard.heroDefaultSummary');
+
+  const healthChip = mapHealthChip(health.status, t);
+  const signalItems = [
+    {
+      label: t('dashboard.connectedDevices'),
+      value: streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.readyForFirstSession')
+    },
+    {
+      label: t('dashboard.lastSyncLabel'),
+      value: formatTimeAgo(health.receiver?.lastCheck, t)
+    },
+    {
+      label: t('dashboard.guideGaps'),
+      value: missingChannels === 0 ? t('dashboard.none') : t('dashboard.missing', { count: missingChannels })
+    },
+    {
+      label: t('dashboard.recorder'),
+      value: recording?.serviceName || (recording?.isRecording ? t('dashboard.active') : t('dashboard.idle'))
+    },
+    {
+      label: t('dashboard.versionLabel'),
+      value: health.version
+    }
+  ];
 
   return (
     <div className={`${styles.page} animate-enter`.trim()}>
-      <div className={styles.header}>
-        <h2>xg2g Dashboard</h2>
-        <div className={styles.actions}>
-          <RecordingStatusIndicator />
-          <Button variant="secondary" onClick={() => refetch()}>Refresh</Button>
-        </div>
-      </div>
-
-      {/* Startup Warning Banner */}
-      {((health.epg?.missingChannels || 0) > 0 && (health.uptimeSeconds || 0) < 300) && (
-        <Card className={styles.warning}>
-          <CardHeader>
-            <CardTitle>System Initializing</CardTitle>
-            <StatusChip state="warning" label="SYNC" />
-          </CardHeader>
-          <CardBody>
-            <p>xg2g is syncing with the receiver in the background. Some data may be temporarily missing.</p>
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Primary Row: Receiver Status (HDMI Output) */}
-      <div className={styles.primary}>
-        <LiveTVCard />
-      </div>
-
-      {/* Second Row: Streaming Status */}
-      <div className={styles.statusGrid}>
-        <BoxStreamingCard />
-        <ProgramStatusCard health={health} />
-      </div>
-
-      {/* Active Streams Detail */}
-      <StreamsDetailSection />
-
-      {/* Bottom Row: EPG, Receiver, Info */}
-      <div className={styles.infoGrid}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Enigma2 Link</CardTitle>
-          </CardHeader>
-          <CardBody>
-            <StatusChip
-              state={health.receiver?.status === 'ok' ? 'success' : 'error'}
-              label={health.receiver?.status === 'ok' ? 'CONNECTED' : 'ERROR'}
-            />
-            <p className={styles.infoText}>Last Sync: {formatTimeAgo(health.receiver?.lastCheck)}</p>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>EPG Data</CardTitle>
-          </CardHeader>
-          <CardBody>
-            <StatusChip
-              state={
-                health.epg?.status === 'ok' ? 'success' :
-                  health.epg?.status === 'missing' ? 'warning' : 'error'
-              }
-              label={
-                health.epg?.status === 'ok' ? 'SYNCED' :
-                  health.epg?.status === 'missing' ? 'PARTIAL' : 'ERROR'
-              }
-            />
-            <p className={`${styles.infoText} tabular`.trim()}>{health.epg?.missingChannels || 0} channels missing data</p>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Program Info</CardTitle>
-          </CardHeader>
-          <CardBody>
-            <div className={styles.infoList}>
-              <div className={styles.infoItem}>
-                <span className={styles.infoLabel}>Version</span>
-                <span className={styles.infoValue}>{health.version}</span>
-              </div>
-              <div className={styles.infoItem}>
-                <span className={styles.infoLabel}>Uptime</span>
-                <span className={`${styles.infoValue} tabular`.trim()}>{formatUptime(health.uptimeSeconds || 0)}</span>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Recent Logs */}
-      <div className={styles.logs}>
-        <h3>Recent Logs</h3>
-        <LogList />
-      </div>
-    </div>
-  );
-}
-
-// Live TV Card (HDMI Output) - Refactored to primitives
-function LiveTVCard() {
-  const { t } = useTranslation();
-  const { data: info, isLoading } = useReceiverCurrent();
-
-  if (isLoading && !info) return <Card><CardBody>{t('common.loading')}</CardBody></Card>;
-
-  const hasNow = !!info?.now?.title;
-  const now = info?.now;
-  const channel = info?.channel;
-  const next = info?.next;
-
-  const isUnavailable = info?.status === 'unavailable';
-
-  return (
-    <Card variant="live" className={styles.liveTvCard}>
-      <CardHeader>
-        <div className={styles.liveTvHeader}>
-          <CardTitle>Live on Receiver</CardTitle>
-          <div className={styles.badgeGroup}>
-            {!isUnavailable && <StatusChip state="idle" label="HDMI" showIcon={false} />}
-            {!isUnavailable && <StatusChip state="live" label="LIVE" />}
-            {isUnavailable && <StatusChip state="idle" label="STANDBY" />}
+      <Card variant="action" className={[styles.heroCard, styles[`hero${capitalize(heroTone)}`]].join(' ')}>
+        <div className={styles.heroTop}>
+          <div className={styles.heroIdentity}>
+            <p className={styles.heroEyebrow}>{heroTone === 'streaming' ? t('dashboard.heroStreamingMoment') : t('dashboard.heroControlDeck')}</p>
+            <h2 className={styles.heroTitle}>{heroTitle}</h2>
+            <p className={styles.heroSummary}>{heroSummary}</p>
+          </div>
+          <div className={styles.heroToolbar}>
+            <StatusChip state={healthChip.state} label={healthChip.label} />
+            <Button variant="secondary" onClick={() => refetch()}>
+              {t('common.refresh')}
+            </Button>
           </div>
         </div>
-        <div className={styles.receiverChannel}>
-          {isUnavailable ? t('common.receiverStandby') : (channel?.name || 'Unknown Channel')}
-        </div>
-      </CardHeader>
 
-      <CardBody>
-        {hasNow && now ? (
-          <>
-            <div className={styles.programCurrent}>
-              <div className={styles.programTitle}>{now.title}</div>
-              <div className={styles.programDesc}>{now.description}</div>
-            </div>
-            {now.beginTimestamp && now.durationSec && (
-              <div className={styles.programProgress}>
-                <div className={`${styles.programTimes} tabular`.trim()}>
-                  <span>{new Date(now.beginTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  <span>{new Date((now.beginTimestamp + now.durationSec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        <div className={styles.heroBody}>
+          <div className={styles.heroMain}>
+            {hasProgramProgress && now?.beginTimestamp && now?.durationSec ? (
+              <div className={styles.heroTimeline}>
+                <div className={styles.timelineHeader}>
+                  <span className={styles.timelineLabel}>{t('dashboard.onReceiverNow')}</span>
+                  <span className={styles.timelineMeta}>
+                    {new Date(now.beginTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {' \u2192 '}
+                    {new Date((now.beginTimestamp + now.durationSec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
                 </div>
-                <div className={styles.progressBar}>
+                <div className={styles.timelineTrack}>
                   <div
-                    className={styles.progressFill}
-                    style={{ '--xg2g-prog': `${Math.min(100, Math.max(0, ((Date.now() / 1000) - now.beginTimestamp) / now.durationSec * 100))}%` } as React.CSSProperties & { [key: string]: string }}
+                    className={styles.timelineFill}
+                    style={{ '--xg2g-progress': `${progressPercent}%` } as CSSProperties & { [key: string]: string }}
                   />
                 </div>
+                {next?.title && <p className={styles.timelineNext}>{t('dashboard.upNext', { title: next.title })}</p>}
               </div>
-            )}
-            {next?.title && (
-              <div className={styles.programNext}>
-                <span className={styles.nextLabel}>UP NEXT:</span> {next.title}
+            ) : showReceiverContext ? (
+              <div className={styles.heroContextCard}>
+                <span className={styles.contextLabel}>{t('dashboard.receiverContext')}</span>
+                <span className={styles.contextValue}>{currentChannel}</span>
+                <span className={styles.contextDetail}>{t('dashboard.readyForPlayback')}</span>
               </div>
-            )}
-          </>
-        ) : (
-          <div className={styles.noData}>
-            {next?.title ? (
-              <div>
-                <div>{t('common.noCurrentProgram')}</div>
-                <div className={styles.programNext}>
-                  <span className={styles.nextLabel}>UP NEXT:</span> {next.title}
-                </div>
-              </div>
-            ) : (
-              <>{info?.status === 'unavailable' ? t('common.receiverUnavailable') : 'No EPG information available'}</>
-            )}
+            ) : null}
+
+            <div className={styles.heroActions}>
+              <Button onClick={() => navigate(ROUTE_MAP.epg)}>{t('nav.epg')}</Button>
+              <Button variant="secondary" onClick={() => navigate(ROUTE_MAP.recordings)}>
+                {t('nav.recordings')}
+              </Button>
+              <Button variant="ghost" onClick={() => navigate(ROUTE_MAP.timers)}>
+                {t('nav.timers')}
+              </Button>
+            </div>
           </div>
-        )}
-      </CardBody>
-    </Card>
-  );
-}
-
-// Box Streaming Card - Refactored to primitives
-function BoxStreamingCard() {
-  const { data: streams = [] } = useStreams();
-  const { t } = useTranslation();
-  const streamCount = streams.length;
-  const isStreaming = streamCount > 0;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('nav.cards.boxStreaming.title')}</CardTitle>
-      </CardHeader>
-      <CardBody>
-        <div className={styles.statusRow}>
-          <span className={styles.statusLabel}>{t('nav.cards.boxStreaming.inputLabel')}</span>
-          <StatusChip
-            state={isStreaming ? 'live' : 'idle'}
-            label={isStreaming ? `STREAMING (${streamCount})` : 'IDLE'}
-          />
         </div>
-      </CardBody>
-    </Card>
-  );
-}
+      </Card>
 
-// Program Status Card - Refactored to primitives
-function ProgramStatusCard({ health }: { health: SystemHealth }) {
-  const { data: streams = [] } = useStreams();
-  const { t } = useTranslation();
-  const streamCount = streams.length;
-  const isActive = streamCount > 0;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('nav.cards.programStatus.title')}</CardTitle>
-      </CardHeader>
-      <CardBody>
-        <div className={styles.statusRow}>
-          <span className={styles.statusLabel}>{t('nav.cards.programStatus.outputLabel')}</span>
-          <StatusChip
-            state={isActive ? 'live' : 'idle'}
-            label={isActive ? `${streamCount} ACTIVE` : 'IDLE'}
-          />
-        </div>
-        <div className={styles.infoList}>
-          <div className={styles.infoItem}>
-            <span className={styles.infoLabel}>Health</span>
+      <section className={styles.diagnosticsGrid}>
+        <Card className={styles.streamSurface}>
+          <div className={styles.panelHeader}>
+            <div>
+              <p className={styles.panelEyebrow}>{t('dashboard.diagnostics')}</p>
+              <h3 className={styles.panelTitle}>{t('dashboard.activeStreams')}</h3>
+            </div>
             <StatusChip
-              state={health.status === 'ok' ? 'success' : 'warning'}
-              label={health.status === 'ok' ? 'HEALTHY' : 'DEGRADED'}
-              showIcon={false}
+              state={streamCount > 0 ? 'live' : 'idle'}
+              label={streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.noSessions')}
             />
           </div>
-        </div>
-      </CardBody>
-    </Card>
-  );
-}
+          <div className={styles.panelBody}>
+            {streamCount > 0 ? (
+              <StreamsList compact />
+            ) : (
+              <div className={styles.emptyState}>
+                <p className={styles.emptyTitle}>{t('dashboard.noActiveStreams')}</p>
+                <p className={styles.emptyText}>{t('dashboard.startPlaybackHint')}</p>
+              </div>
+            )}
+          </div>
+        </Card>
 
-// Streams Detail Section - Refactored to primitive grid
-function StreamsDetailSection() {
-  return (
-    <div className={styles.streams}>
-      <h3>Active Streams</h3>
-      <StreamsList />
+        <Card className={styles.signalSurface}>
+          <div className={styles.panelHeader}>
+            <div>
+              <p className={styles.panelEyebrow}>{t('dashboard.signal')}</p>
+              <h3 className={styles.panelTitle}>{t('dashboard.receiverAndGuideHealth')}</h3>
+            </div>
+          </div>
+          <div className={styles.statusList}>
+            {signalItems.map((item) => (
+              <div key={item.label} className={styles.statusRow}>
+                <span className={styles.statusLabel}>{item.label}</span>
+                <span className={styles.statusValue}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </section>
     </div>
   );
 }
 
-// Recording Status Indicator - Refactored to StatusChip primitive
-function RecordingStatusIndicator() {
-  const { data: status } = useDvrStatus();
-
-  if (!status) {
-    return <StatusChip state="warning" label="REC: UNKNOWN" />;
-  }
-
-  return (
-    <StatusChip
-      state={status.isRecording ? 'recording' : 'idle'}
-      label={status.isRecording ? `REC: ACTIVE ${status.serviceName ? `(${status.serviceName})` : ''}` : 'REC: IDLE'}
-    />
-  );
+function mapHealthChip(status: string | undefined, t: (key: string) => string): { state: ChipState; label: string } {
+  if (status === 'ok') return { state: 'success', label: t('dashboard.systemHealthy') };
+  if (!status) return { state: 'warning', label: t('dashboard.healthUnknown') };
+  return { state: 'warning', label: t('dashboard.systemDegraded') };
 }
 
-// Log List Component - Unchanged (table, not card-based)
-function LogList() {
-  const { data: logs = [], isLoading, error } = useLogs(5);
-
-  if (error) return <div className={styles.errorText}>{(error as Error).message}</div>;
-  if (isLoading) return <div>Loading logs...</div>;
-  if (!logs || logs.length === 0) return <div className={styles.noData}>No recent logs</div>;
-
-  return (
-    <table className={styles.logTable}>
-      <thead>
-        <tr>
-          <th>Time</th>
-          <th>Level</th>
-          <th>Message</th>
-        </tr>
-      </thead>
-      <tbody>
-        {logs.map((log, i) => (
-          <tr key={i}>
-            <td className="tabular">{new Date(log.time || '').toLocaleTimeString()}</td>
-            <td className={styles.logLevel} data-level={(log.level || '').toLowerCase() || undefined}>
-              {log.level}
-            </td>
-            <td>{log.message}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-// Helper Functions
-function formatUptime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return `${h}h ${m}m`;
-}
-
-function formatTimeAgo(dateString: string | undefined): string {
-  if (!dateString) return 'Never';
+function formatTimeAgo(dateString: string | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (!dateString) return t('dashboard.timeNever');
   const date = new Date(dateString);
-  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return 'Never';
+  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return t('dashboard.timeNever');
 
   const now = new Date();
   const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-  if (diffSeconds < 60) return 'Just now';
-  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
-  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+  if (diffSeconds < 60) return t('dashboard.timeJustNow');
+  if (diffSeconds < 3600) return t('dashboard.timeMinutesAgo', { count: Math.floor(diffSeconds / 60) });
+  if (diffSeconds < 86400) return t('dashboard.timeHoursAgo', { count: Math.floor(diffSeconds / 3600) });
   return date.toLocaleDateString();
 }

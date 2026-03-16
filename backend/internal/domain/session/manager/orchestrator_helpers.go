@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/rs/zerolog"
 )
@@ -41,6 +42,14 @@ type finalOutcome struct {
 	Reason      model.ReasonCode
 	DetailDebug string
 }
+
+const (
+	defaultPlaylistReadyTimeout         = 60 * time.Second
+	defaultSafariPlaylistReadyTimeout   = 30 * time.Second
+	defaultRecoveryPlaylistReadyTimeout = 35 * time.Second
+	defaultVODPlaylistReadyTimeout      = 2 * time.Minute
+	defaultStartupProcessRetryLimit     = 1
+)
 
 func (o *Orchestrator) resolveSession(ctx context.Context, e model.StartSessionEvent) (string, *model.SessionRecord, context.Context, error) {
 	correlationID := e.CorrelationID
@@ -250,6 +259,20 @@ func (o *Orchestrator) startPipeline(
 		With().
 		Str("sid", e.SessionID).
 		Logger()
+	o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(r *model.SessionRecord, trace *model.PlaybackTrace) {
+		if trace.RequestProfile == "" {
+			trace.RequestProfile = profiles.PublicProfileName(e.ProfileID)
+		}
+		if trace.ClientPath == "" && r.ContextData != nil {
+			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
+		}
+		trace.InputKind = string(spec.Source.Type)
+		trace.TargetProfile = model.TraceTargetProfileFromProfile(currentProfileSpec)
+		if trace.TargetProfile != nil {
+			trace.TargetProfileHash = trace.TargetProfile.Hash()
+		}
+		trace.FFmpegPlan = model.TraceFFmpegPlanFromProfile(currentProfileSpec, string(spec.Source.Type), 0)
+	})
 	startupLogger.Info().
 		Str("session_id", e.SessionID).
 		Str("startup_phase", "pipeline_start_requested").
@@ -266,12 +289,16 @@ func (o *Orchestrator) startPipeline(
 			return "", newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, "", err)
 		}
 		if errors.Is(err, ports.ErrNoValidTS) {
-			detail := "preflight failed no valid ts"
-			var pErr *ports.PreflightError
-			if errors.As(err, &pErr) && pErr.Reason != "" {
-				detail = "preflight failed no valid ts: " + pErr.Reason
+			pErr, ok, mappedErr := preflightStartReasonError(err)
+			if ok {
+				result := pErr.StructuredResult()
+				o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(_ *model.SessionRecord, trace *model.PlaybackTrace) {
+					trace.PreflightReason = string(result.Reason)
+					trace.PreflightDetail = result.FailureDetail()
+				})
+				return "", mappedErr
 			}
-			return "", newReasonError(model.RPipelineStartFailed, detail, err)
+			return "", newReasonError(model.RPipelineStartFailed, "preflight failed no valid ts", err)
 		}
 		return "", newReasonError(model.RPipelineStartFailed, "pipeline start failed", err)
 	}
@@ -292,18 +319,11 @@ func (o *Orchestrator) waitForReady(
 	handle ports.RunHandle,
 	playlistPath string,
 	vodMode bool,
-	repairAttempted bool,
 	startTime time.Time,
 	logger zerolog.Logger,
 	ttfpRecorded *bool,
 ) (ready bool, reason model.ReasonCode, detail string) {
-	playlistReadyTimeout := 60 * time.Second
-	if repairAttempted {
-		playlistReadyTimeout = 20 * time.Second
-	}
-	if vodMode {
-		playlistReadyTimeout = 2 * time.Minute
-	}
+	playlistReadyTimeout := o.playlistReadyTimeout(currentProfileSpec, vodMode)
 	playlistPollInterval := 200 * time.Millisecond
 	playlistDeadline := time.Now().Add(playlistReadyTimeout)
 	ticker := time.NewTicker(playlistPollInterval)
@@ -313,7 +333,7 @@ func (o *Orchestrator) waitForReady(
 		Str("session_id", e.SessionID).
 		Str("service_ref", e.ServiceRef).
 		Str("profile", currentProfileSpec.Name).
-		Bool("repair_mode", repairAttempted).
+		Bool("recovery_mode", isStartupRecoveryProfile(currentProfileSpec.Name)).
 		Dur("timeout", playlistReadyTimeout).
 		Msg("waiting for playlist to become ready")
 
@@ -340,6 +360,59 @@ func (o *Orchestrator) waitForReady(
 		case <-ticker.C:
 			// continue
 		}
+	}
+}
+
+func (o *Orchestrator) playlistReadyTimeout(currentProfileSpec model.ProfileSpec, vodMode bool) time.Duration {
+	if vodMode {
+		return defaultVODPlaylistReadyTimeout
+	}
+	if isStartupRecoveryProfile(currentProfileSpec.Name) {
+		return defaultIfZero(o.RecoveryPlaylistReadyTimeout, defaultRecoveryPlaylistReadyTimeout)
+	}
+	if strings.EqualFold(strings.TrimSpace(currentProfileSpec.Name), profiles.ProfileSafari) {
+		return defaultIfZero(o.SafariPlaylistReadyTimeout, defaultSafariPlaylistReadyTimeout)
+	}
+	return defaultIfZero(o.PlaylistReadyTimeout, defaultPlaylistReadyTimeout)
+}
+
+func defaultIfZero(v, fallback time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return fallback
+}
+
+func isStartupRecoveryProfile(profileName string) bool {
+	normalized := strings.TrimSpace(profileName)
+	switch {
+	case strings.EqualFold(normalized, profiles.ProfileSafariDirty):
+		return true
+	case strings.EqualFold(normalized, profiles.ProfileRepair):
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldRetryStartupWaitFailure(reason model.ReasonCode, detail string, attempt int) bool {
+	if attempt >= defaultStartupProcessRetryLimit {
+		return false
+	}
+	if reason != model.RProcessEnded {
+		return false
+	}
+
+	lower := strings.ToLower(strings.TrimSpace(detail))
+	switch {
+	case strings.Contains(lower, "upstream stream ended prematurely"):
+		return true
+	case strings.Contains(lower, "failed to open upstream input"):
+		return true
+	case strings.Contains(lower, "invalid upstream input data"):
+		return true
+	default:
+		return false
 	}
 }
 
@@ -436,6 +509,13 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
 		return false, nil
 	}
+	if initURI := playlistInitSegment(content); initURI != "" {
+		initPath := filepath.Join(filepath.Dir(playlistPath), initURI)
+		initInfo, initErr := os.Stat(initPath)
+		if initErr != nil || initInfo.Size() == 0 {
+			return false, nil
+		}
+	}
 	segmentURIs := playlistSegments(content)
 	if vodMode {
 		if len(segmentURIs) == 0 {
@@ -464,6 +544,11 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		if segErr != nil || segInfo.Size() == 0 {
 			return false, nil
 		}
+	}
+	markerPath := filepath.Join(filepath.Dir(playlistPath), model.SessionFirstFrameMarkerFilename)
+	markerInfo, markerErr := os.Stat(markerPath)
+	if markerErr != nil || markerInfo.Size() == 0 {
+		return false, nil
 	}
 	if !*ttfpRecorded {
 		observeTTFP(profileID, startTime)
@@ -495,11 +580,42 @@ func playlistSegments(content []byte) []string {
 	return segments
 }
 
+func playlistInitSegment(content []byte) string {
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "#EXT-X-MAP:") {
+			continue
+		}
+		uriIdx := strings.Index(line, `URI="`)
+		if uriIdx < 0 {
+			continue
+		}
+		rest := line[uriIdx+len(`URI="`):]
+		endIdx := strings.IndexByte(rest, '"')
+		if endIdx < 0 {
+			continue
+		}
+		uri := strings.TrimSpace(rest[:endIdx])
+		if uri == "" || strings.Contains(uri, "..") || filepath.IsAbs(uri) {
+			return ""
+		}
+		return uri
+	}
+	return ""
+}
+
 func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSessionEvent, sessionCtx *sessionContext, slot int) error {
 	o.recordTransition(model.SessionUnknown, model.SessionStarting)
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
-		if r.State.IsTerminal() || r.State == model.SessionStopping {
-			return fmt.Errorf("session state %s, aborting start", r.State)
+		if r.State.IsTerminal() {
+			if !canRestartTerminalFallback(r) {
+				return fmt.Errorf("session state %s, aborting start: %w", r.State, ErrSessionCanceled)
+			}
+			resetForFallbackRestart(r, time.Now())
+		}
+		if r.State == model.SessionStopping {
+			return fmt.Errorf("session state %s, aborting start: %w", r.State, ErrSessionCanceled)
 		}
 		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvStartRequested}, nil, false, time.Now())
 		if err != nil {
@@ -508,8 +624,27 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 		if r.ContextData == nil {
 			r.ContextData = make(map[string]string)
 		}
+		inputKind := sessionInputKind(sessionCtx)
+		if inputKind != "" {
+			r.ContextData[model.CtxKeySourceType] = inputKind
+		}
+		if sessionCtx.ServiceRef != "" {
+			r.ContextData[model.CtxKeySource] = sessionCtx.ServiceRef
+		}
 		if sessionCtx.Mode == model.ModeLive && slot >= 0 {
 			r.ContextData[model.CtxKeyTunerSlot] = strconv.Itoa(slot)
+		}
+		trace := ensurePlaybackTrace(r)
+		if trace.RequestProfile == "" {
+			trace.RequestProfile = profiles.PublicProfileName(e.ProfileID)
+		}
+		if trace.ClientPath == "" {
+			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
+		}
+		trace.InputKind = inputKind
+		trace.TargetProfile = model.TraceTargetProfileFromProfile(r.Profile)
+		if trace.TargetProfile != nil {
+			trace.TargetProfileHash = trace.TargetProfile.Hash()
 		}
 		return nil
 	})
@@ -518,6 +653,42 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 		return err
 	}
 	return nil
+}
+
+func canRestartTerminalFallback(r *model.SessionRecord) bool {
+	if r == nil {
+		return false
+	}
+	return r.FallbackReason != "" || r.FallbackAtUnix > 0
+}
+
+func resetForFallbackRestart(r *model.SessionRecord, now time.Time) {
+	baseline := lifecycle.NewSessionRecord(now)
+	createdAtUnix := r.CreatedAtUnix
+
+	r.State = baseline.State
+	r.PipelineState = baseline.PipelineState
+	r.Reason = baseline.Reason
+	r.ReasonDetailCode = baseline.ReasonDetailCode
+	r.ReasonDetailDebug = ""
+	r.UpdatedAtUnix = baseline.UpdatedAtUnix
+	if createdAtUnix > 0 {
+		r.CreatedAtUnix = createdAtUnix
+	} else {
+		r.CreatedAtUnix = baseline.CreatedAtUnix
+	}
+	r.LastAccessUnix = 0
+	r.LastHeartbeatUnix = 0
+	r.StopReason = ""
+	r.LatestSegmentAt = time.Time{}
+	r.LastPlaylistAccessAt = time.Time{}
+	r.PlaylistPublishedAt = time.Time{}
+	if r.PlaybackTrace != nil {
+		r.PlaybackTrace.StopReason = ""
+		r.PlaybackTrace.StopClass = model.PlaybackStopClassNone
+		r.PlaybackTrace.FirstFrameAtUnix = 0
+		r.PlaybackTrace.FFmpegPlan = nil
+	}
 }
 
 func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSessionEvent) error {
@@ -534,8 +705,13 @@ func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSession
 		if err != nil {
 			return err
 		}
-		r.PlaylistPublishedAt = time.Now() // PR-P3-2: Truth for buffering/active derivation
-		r.LastAccessUnix = time.Now().Unix()
+		now := time.Now()
+		r.PlaylistPublishedAt = now // PR-P3-2: Truth for buffering/active derivation
+		r.LastAccessUnix = now.Unix()
+		trace := ensurePlaybackTrace(r)
+		if trace.FirstFrameAtUnix == 0 {
+			trace.FirstFrameAtUnix = firstFrameUnixFromArtifacts(o.HLSRoot, e.SessionID)
+		}
 		return nil
 	})
 	return err
@@ -567,34 +743,16 @@ func (o *Orchestrator) runExecutionLoop(
 		initialProfileSpec.VOD = true
 	}
 	currentProfileSpec := initialProfileSpec
-	repairAttempted := false
 	ttfpRecorded := false
 
 	var handle ports.RunHandle
 	var failReason model.ReasonCode
 	var failDetail string
 
-	// Simplified Retry Logic (Step 4.2 Decoupling)
-	// We stripped classifyFailure (ffmpeg logs) so we treat all failures as "unknown" or "packager".
-	// For now, we abort after 1 attempt or blind retry.
-	// If fails, we just return error.
-
-	var err error
-	handle, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
-	if err != nil {
-		return "", model.ProfileSpec{}, err
-	}
-	stopHandleOnExit := true
-	defer func() {
-		if stopHandleOnExit {
-			o.stopPipelineHandle(ctx, handle)
-		}
-	}()
-
 	o.recordTransition(model.SessionStarting, model.SessionPriming)
-	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() || r.State == model.SessionStopping {
-			return fmt.Errorf("session state %s, aborting priming", r.State)
+			return fmt.Errorf("session state %s, aborting priming: %w", r.State, ErrSessionCanceled)
 		}
 		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvPrimingStarted}, nil, false, time.Now())
 		if err != nil {
@@ -612,34 +770,63 @@ func (o *Orchestrator) runExecutionLoop(
 		})
 	}
 
-	playlistReadyResult := false
+	playlistPath := ""
 	if o.HLSRoot != "" {
-		playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
-		var waitReason model.ReasonCode
-		var waitDetail string
-
-		playlistReadyResult, waitReason, waitDetail = o.waitForReady(
-			ctx, hbCtx, e, currentProfileSpec, handle,
-			playlistPath, sessionCtx.IsVOD, repairAttempted,
-			startTime, logger, &ttfpRecorded,
-		)
-
-		if !playlistReadyResult {
-			failReason = waitReason
-			failDetail = waitDetail
-		}
-	} else {
-		playlistReadyResult = true
+		playlistPath = filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
 	}
 
-	if playlistReadyResult {
-		stopHandleOnExit = false
-		return handle, currentProfileSpec, nil
+	for attempt := 0; attempt <= defaultStartupProcessRetryLimit; attempt++ {
+		handle, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
+		if err != nil {
+			return "", model.ProfileSpec{}, err
+		}
+
+		playlistReadyResult := false
+		if playlistPath != "" {
+			var waitReason model.ReasonCode
+			var waitDetail string
+
+			playlistReadyResult, waitReason, waitDetail = o.waitForReady(
+				ctx, hbCtx, e, currentProfileSpec, handle,
+				playlistPath, sessionCtx.IsVOD,
+				startTime, logger, &ttfpRecorded,
+			)
+
+			if !playlistReadyResult {
+				failReason = waitReason
+				failDetail = waitDetail
+			}
+		} else {
+			playlistReadyResult = true
+		}
+
+		if playlistReadyResult {
+			return handle, currentProfileSpec, nil
+		}
+
+		if shouldRetryStartupWaitFailure(failReason, failDetail, attempt) {
+			logger.Warn().
+				Str("session_id", e.SessionID).
+				Int("attempt", attempt+1).
+				Int("max_retries", defaultStartupProcessRetryLimit).
+				Str("reason", string(failReason)).
+				Str("detail", failDetail).
+				Msg("startup failed before ready; retrying once")
+
+			o.stopPipelineHandle(ctx, handle)
+			if o.HLSRoot != "" {
+				o.cleanupFiles(e.SessionID)
+			}
+			ttfpRecorded = false
+			continue
+		}
+
+		o.stopPipelineHandle(ctx, handle)
+		return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
 	}
 
 	return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
 }
-
 func (o *Orchestrator) finalizeDeferred(
 	ctx context.Context,
 	event model.StartSessionEvent,
@@ -653,15 +840,11 @@ func (o *Orchestrator) finalizeDeferred(
 ) {
 	session := *sessionPtr
 	cause := detectTerminationCause(ctx, *retErr)
-	errForOutcome := cause.Error
-	if errForOutcome == nil && cause.ContextCancelled {
-		errForOutcome = context.Canceled
-	}
-	reason, _, detailDebug := lifecycle.ClassifyReason(errForOutcome)
-	if reason == model.RLeaseBusy && detailDebug == DedupLeaseHeldDetail {
-		return
+	if cause.Error == nil && cause.ContextCancelled {
+		cause.Error = context.Canceled
 	}
 	var outcome finalOutcome
+	var traceSnapshot *model.PlaybackTrace
 
 	// Use bounded timeout context for finalization instead of Background
 	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -691,6 +874,28 @@ func (o *Orchestrator) finalizeDeferred(
 		o.recordTransition(fromState, outcome.State)
 
 		r.UpdatedAtUnix = time.Now().Unix()
+		trace := ensurePlaybackTrace(r)
+		if trace.RequestProfile == "" {
+			trace.RequestProfile = profiles.PublicProfileName(event.ProfileID)
+		}
+		if trace.ClientPath == "" && r.ContextData != nil {
+			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
+		}
+		if trace.InputKind == "" {
+			trace.InputKind = sessionInputKindFromRecord(r)
+		}
+		if trace.TargetProfile == nil {
+			trace.TargetProfile = model.TraceTargetProfileFromProfile(r.Profile)
+		}
+		if trace.TargetProfile != nil && trace.TargetProfileHash == "" {
+			trace.TargetProfileHash = trace.TargetProfile.Hash()
+		}
+		if trace.FirstFrameAtUnix == 0 {
+			trace.FirstFrameAtUnix = firstFrameUnixFromArtifacts(o.HLSRoot, event.SessionID)
+		}
+		trace.StopReason = string(outcome.Reason)
+		trace.StopClass = model.TraceStopClassFromReason(outcome.Reason)
+		traceSnapshot = trace.Clone()
 		return nil
 	})
 	if err != nil {
@@ -711,6 +916,33 @@ func (o *Orchestrator) finalizeDeferred(
 		Str("sid", event.SessionID).
 		Str("reason", string(outcome.Reason)).
 		Str("profile", event.ProfileID)
+	if traceSnapshot != nil {
+		if traceSnapshot.RequestProfile != "" {
+			logEvt = logEvt.Str("request_profile", traceSnapshot.RequestProfile)
+		}
+		if traceSnapshot.ClientPath != "" {
+			logEvt = logEvt.Str("client_path", traceSnapshot.ClientPath)
+		}
+		if traceSnapshot.InputKind != "" {
+			logEvt = logEvt.Str("input_kind", traceSnapshot.InputKind)
+		}
+		if traceSnapshot.TargetProfileHash != "" {
+			logEvt = logEvt.Str("target_profile_hash", traceSnapshot.TargetProfileHash)
+		}
+		if traceSnapshot.FirstFrameAtUnix > 0 {
+			logEvt = logEvt.Int64("first_frame_at_unix", traceSnapshot.FirstFrameAtUnix)
+		}
+		if len(traceSnapshot.Fallbacks) > 0 {
+			logEvt = logEvt.Int("fallback_count", len(traceSnapshot.Fallbacks)).
+				Str("last_fallback_reason", traceSnapshot.Fallbacks[len(traceSnapshot.Fallbacks)-1].Reason)
+		}
+		if traceSnapshot.StopReason != "" {
+			logEvt = logEvt.Str("stop_reason", traceSnapshot.StopReason)
+		}
+		if traceSnapshot.StopClass != "" {
+			logEvt = logEvt.Str("stop_class", string(traceSnapshot.StopClass))
+		}
+	}
 
 	if outcome.DetailDebug != "" {
 		logEvt.Str("detail", outcome.DetailDebug)

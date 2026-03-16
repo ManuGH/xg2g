@@ -236,7 +236,6 @@ func testAllowedCIDRs(host string) []string {
 	}
 	return nil
 }
-
 func TestHTTPPreflightProvider_SetsBasicAuthFromSourceRef(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username, password, ok := r.BasicAuth()

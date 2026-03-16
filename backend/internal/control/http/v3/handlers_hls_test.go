@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -23,20 +24,20 @@ type MockArtifactResolver struct {
 	mock.Mock
 }
 
-func (m *MockArtifactResolver) ResolvePlaylist(ctx context.Context, recordingID, profile string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
-	args := m.Called(ctx, recordingID, profile)
+func (m *MockArtifactResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, profile, variant, target)
 	err, _ := args.Get(1).(*artifacts.ArtifactError)
 	return args.Get(0).(artifacts.ArtifactOK), err
 }
 
-func (m *MockArtifactResolver) ResolveTimeshift(ctx context.Context, recordingID, profile string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
-	args := m.Called(ctx, recordingID, profile)
+func (m *MockArtifactResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, profile, variant, target)
 	err, _ := args.Get(1).(*artifacts.ArtifactError)
 	return args.Get(0).(artifacts.ArtifactOK), err
 }
 
-func (m *MockArtifactResolver) ResolveSegment(ctx context.Context, recordingID string, segment string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
-	args := m.Called(ctx, recordingID, segment)
+func (m *MockArtifactResolver) ResolveSegment(ctx context.Context, recordingID string, segment string, variant string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, segment, variant)
 	err, _ := args.Get(1).(*artifacts.ArtifactError)
 	return args.Get(0).(artifacts.ArtifactOK), err
 }
@@ -62,7 +63,7 @@ func TestHLS_ProfilePropagation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := new(MockArtifactResolver)
-			svc.On("ResolvePlaylist", mock.Anything, "rec1", tt.expectedProfile).Return(artifacts.ArtifactOK{Data: []byte("ok"), Kind: artifacts.ArtifactKindPlaylist}, (*artifacts.ArtifactError)(nil))
+			svc.On("ResolvePlaylist", mock.Anything, "rec1", tt.expectedProfile, "", mock.Anything).Return(artifacts.ArtifactOK{Data: []byte("ok"), Kind: artifacts.ArtifactKindPlaylist}, (*artifacts.ArtifactError)(nil))
 
 			s := &Server{artifacts: svc}
 			w := httptest.NewRecorder()
@@ -110,7 +111,7 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			target: "playlist",
 			method: "GET",
 			setupMock: func() {
-				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything).Return(artifacts.ArtifactOK{
+				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything, "", mock.Anything).Return(artifacts.ArtifactOK{
 					Data:    []byte("#EXTM3U\n"),
 					ModTime: now,
 					Kind:    artifacts.ArtifactKindPlaylist,
@@ -125,7 +126,7 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			target: "playlist",
 			method: "HEAD",
 			setupMock: func() {
-				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything).Return(artifacts.ArtifactOK{
+				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything, "", mock.Anything).Return(artifacts.ArtifactOK{
 					Data:    []byte("#EXTM3U\n"),
 					ModTime: now,
 					Kind:    artifacts.ArtifactKindPlaylist,
@@ -141,7 +142,7 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			method:      "GET",
 			rangeHeader: "bytes=0-0",
 			setupMock: func() {
-				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything).Return(artifacts.ArtifactOK{
+				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything, "", mock.Anything).Return(artifacts.ArtifactOK{
 					Data:    []byte("#EXTM3U\n"),
 					ModTime: now,
 					Kind:    artifacts.ArtifactKindPlaylist,
@@ -155,7 +156,7 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			target: "playlist",
 			method: "GET",
 			setupMock: func() {
-				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything).Return(artifacts.ArtifactOK{}, &artifacts.ArtifactError{
+				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything, "", mock.Anything).Return(artifacts.ArtifactOK{}, &artifacts.ArtifactError{
 					Code:       artifacts.CodePreparing,
 					RetryAfter: 5 * time.Second,
 				}).Once()
@@ -167,7 +168,7 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			target: "segment",
 			method: "GET",
 			setupMock: func() {
-				mockRes.On("ResolveSegment", mock.Anything, recordingID, "seg_0.ts").Return(artifacts.ArtifactOK{
+				mockRes.On("ResolveSegment", mock.Anything, recordingID, "seg_0.ts", "").Return(artifacts.ArtifactOK{
 					AbsPath: segPath,
 					ModTime: now,
 					Kind:    artifacts.ArtifactKindSegmentTS,
@@ -183,7 +184,7 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			method:      "GET",
 			rangeHeader: "bytes=0-99",
 			setupMock: func() {
-				mockRes.On("ResolveSegment", mock.Anything, recordingID, "seg_0.ts").Return(artifacts.ArtifactOK{
+				mockRes.On("ResolveSegment", mock.Anything, recordingID, "seg_0.ts", "").Return(artifacts.ArtifactOK{
 					AbsPath: segPath,
 					ModTime: now,
 					Kind:    artifacts.ArtifactKindSegmentTS,
@@ -200,7 +201,7 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			method:      "GET",
 			rangeHeader: "bytes=2000-",
 			setupMock: func() {
-				mockRes.On("ResolveSegment", mock.Anything, recordingID, "seg_0.ts").Return(artifacts.ArtifactOK{
+				mockRes.On("ResolveSegment", mock.Anything, recordingID, "seg_0.ts", "").Return(artifacts.ArtifactOK{
 					AbsPath: segPath,
 					ModTime: now,
 					Kind:    artifacts.ArtifactKindSegmentTS,
@@ -330,7 +331,7 @@ seg_000001.m4s
 			s := &Server{artifacts: mockRes}
 
 			mockRes.
-				On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything).
+				On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything, "", mock.Anything).
 				Return(artifacts.ArtifactOK{
 					Data:    []byte(tt.playlist),
 					ModTime: now,
@@ -351,7 +352,7 @@ seg_000001.m4s
 
 			if sanity.initURI != "" {
 				mockRes.
-					On("ResolveSegment", mock.Anything, recordingID, sanity.initURI).
+					On("ResolveSegment", mock.Anything, recordingID, sanity.initURI, "").
 					Return(artifacts.ArtifactOK{
 						AbsPath: initPath,
 						ModTime: now,
@@ -378,7 +379,7 @@ seg_000001.m4s
 			}
 
 			mockRes.
-				On("ResolveSegment", mock.Anything, recordingID, firstSegment).
+				On("ResolveSegment", mock.Anything, recordingID, firstSegment, "").
 				Return(artifacts.ArtifactOK{
 					AbsPath: segmentPath,
 					ModTime: now,

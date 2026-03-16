@@ -154,6 +154,10 @@ func TestTraceability_GetSession_Real(t *testing.T) {
 
 	sid := uuid.UUID(resp.SessionId).String()
 	assertTraceability(t, w, resp.RequestId, sid, false)
+	require.NotNil(t, resp.Trace)
+	require.Equal(t, resp.RequestId, resp.Trace.RequestId)
+	require.NotNil(t, resp.Trace.SessionId)
+	require.Equal(t, sid, *resp.Trace.SessionId)
 }
 
 func TestTraceability_GetStreams(t *testing.T) {

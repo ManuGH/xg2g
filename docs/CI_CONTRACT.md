@@ -9,7 +9,7 @@ All developers must verify these gates locally before pushing.
 | :--- | :--- | :--- |
 | `lint` | `make lint` | Runs `golangci-lint`. |
 | `check-deprecations` | `python3 backend/scripts/check_deprecations.py` | Registry validation. |
-| `complexity-check` | `cd backend && gocyclo -over 20 ./internal ./cmd` | Complexity limit. |
+| `complexity-check` | `gocyclo -over 20 ./internal ./cmd` | Complexity limit. |
 | `openapi-drift` | `make generate && git diff --exit-code` | Spec sync check. |
 | `docs-drift` | `./hack/verify-docs-drift.sh` | Rendered-docs drift gate (clean tree). |
 
@@ -27,7 +27,7 @@ All developers must verify these gates locally before pushing.
 
 | CI Job | Local Command | Description |
 | :--- | :--- | :--- |
-| `build` | `make build` | Pure Go compilation (CGO disabled). |
+| `build` | `go build ./cmd/daemon` | Pure Go compilation (CGO disabled). |
 | `multi-platform` | `make build-all` | Cross-compilation. |
 
 ## 4. Environment Invariants

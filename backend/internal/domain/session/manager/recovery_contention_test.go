@@ -56,7 +56,7 @@ func TestContention_Blocked(t *testing.T) {
 
 	sA, err := st.GetSession(ctx, sessA)
 	require.NoError(t, err)
-	assert.Equal(t, model.SessionStarting, sA.State)
+	assert.Equal(t, model.SessionPriming, sA.State)
 
 	sessB := "session-B"
 	refB := "ref:B" // Different service, should NOT block on dedup lease
@@ -90,12 +90,55 @@ func TestContention_Blocked(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestContention_SameServiceDedupLeaseBusyFailsSession(t *testing.T) {
+	ctx := context.Background()
+
+	st := store.NewMemoryStore()
+	orch := &Orchestrator{
+		Store:               st,
+		LeaseTTL:            24 * time.Hour,
+		HeartbeatEvery:      0,
+		Owner:               "worker-1",
+		TunerSlots:          []int{0},
+		Platform:            NewStubPlatform(),
+		PipelineStopTimeout: 0,
+		LeaseKeyFunc: func(e model.StartSessionEvent) string {
+			return model.LeaseKeyService(e.ServiceRef)
+		},
+	}
+
+	const (
+		sessID = "session-dedup-busy"
+		ref    = "ref:same"
+	)
+
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  sessID,
+		ServiceRef: ref,
+		State:      model.SessionNew,
+	}))
+
+	_, ok, err := st.TryAcquireLease(ctx, model.LeaseKeyService(ref), "other-session", 24*time.Hour)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	err = orch.handleStart(ctx, model.StartSessionEvent{SessionID: sessID, ServiceRef: ref, ProfileID: "p1"})
+	assert.ErrorIs(t, err, ErrAdmissionRejected)
+
+	sess, err := st.GetSession(ctx, sessID)
+	require.NoError(t, err)
+	require.NotNil(t, sess)
+	assert.Equal(t, model.SessionFailed, sess.State)
+	assert.Equal(t, model.RLeaseBusy, sess.Reason)
+	assert.Equal(t, DedupLeaseHeldDetail, sess.ReasonDetailDebug)
+}
+
 func TestRecovery_StaleTunerLease(t *testing.T) {
 	ctx := context.Background()
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
-		Store:     st,
-		LeaseTTL:  24 * time.Hour,
+		Store:    st,
+		LeaseTTL: 24 * time.Hour,
 	}
 
 	sessID := "stale-tuner-sess"
@@ -122,8 +165,8 @@ func TestRecovery_ActiveTunerLease(t *testing.T) {
 	ctx := context.Background()
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
-		Store:     st,
-		LeaseTTL:  24 * time.Hour,
+		Store:    st,
+		LeaseTTL: 24 * time.Hour,
 	}
 
 	sessID := "active-tuner-sess"

@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'reac
 import type { TFunction } from 'i18next';
 import { createSession } from '../../client-ts';
 import { setClientAuthToken } from '../../lib/clientWrapper';
+import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import { telemetry } from '../../services/TelemetryService';
 import type { PlayerStatus, SessionCookieState, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
@@ -27,6 +28,7 @@ interface UseLiveSessionControllerProps {
   setError: Dispatch<SetStateAction<string | null>>;
   readResponseBody: ErrorBodyReader;
   createPlayerError: PlayerErrorFactory;
+  onSessionSnapshot?: (session: V3SessionStatusResponse) => void;
 }
 
 interface LiveSessionController {
@@ -55,7 +57,8 @@ export function useLiveSessionController({
   setStatus,
   setError,
   readResponseBody,
-  createPlayerError
+  createPlayerError,
+  onSessionSnapshot
 }: UseLiveSessionControllerProps): LiveSessionController {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null);
@@ -171,7 +174,8 @@ export function useLiveSessionController({
     if (leaseExpiresAtValue) {
       setLeaseExpiresAt(leaseExpiresAtValue);
     }
-  }, [setDurationSeconds, setPlaybackMode]);
+    onSessionSnapshot?.(session);
+  }, [onSessionSnapshot, setDurationSeconds, setPlaybackMode]);
 
   const waitForSessionReady = useCallback(async (
     trackedSessionId: string,
@@ -183,10 +187,18 @@ export function useLiveSessionController({
           headers: authHeaders()
         });
 
-        if (res.status === 401 || res.status === 403) {
+        if (notifyAuthRequiredIfUnauthorizedResponse(res, 'useLiveSessionController.waitForSessionReady')) {
           throw createPlayerError(t('player.authFailed'), {
             url: res.url,
-            status: res.status,
+            status: 401,
+            requestId: res.headers.get('X-Request-ID') || undefined
+          });
+        }
+
+        if (res.status === 403) {
+          throw createPlayerError(t('player.forbidden'), {
+            url: res.url,
+            status: 403,
             requestId: res.headers.get('X-Request-ID') || undefined
           });
         }
@@ -223,6 +235,19 @@ export function useLiveSessionController({
             reason_detail: json?.reason_detail,
             body: json ?? text
           };
+
+          onSessionSnapshot?.({
+            sessionId: typeof json?.session === 'string' ? json.session : trackedSessionId,
+            requestId,
+            state: typeof json?.state === 'string' ? json.state : 'FAILED',
+            reason: typeof json?.reason === 'string' ? json.reason : undefined,
+            reasonDetail: typeof json?.reason_detail === 'string'
+              ? json.reason_detail
+              : typeof json?.reasonDetail === 'string'
+                ? json.reasonDetail
+                : undefined,
+            trace: (json && typeof json === 'object' && 'trace' in json) ? (json.trace as V3SessionStatusResponse['trace']) : undefined,
+          });
 
           telemetry.emit('ui.error', {
             status: 410,
@@ -303,7 +328,7 @@ export function useLiveSessionController({
       waitedMs: maxAttempts * SESSION_READY_POLL_MS,
       pollMs: SESSION_READY_POLL_MS
     });
-  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, readResponseBody, t]);
+  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, onSessionSnapshot, readResponseBody, t]);
 
   useEffect(() => {
     if (!sessionId || !heartbeatInterval) {
@@ -325,7 +350,27 @@ export function useLiveSessionController({
           return;
         }
 
-        if (res.status === 200) {
+        if (notifyAuthRequiredIfUnauthorizedResponse(res, 'useLiveSessionController.heartbeat')) {
+          debugWarn('[V3Player][Heartbeat] Session unauthorized (401)');
+          window.clearInterval(timerId);
+          clearSessionLeaseState();
+          setPlaybackMode('UNKNOWN');
+          setStatus('error');
+          setError(t('player.authFailed'));
+          if (videoRef.current) {
+            videoRef.current.pause();
+          }
+        } else if (res.status === 403) {
+          debugWarn('[V3Player][Heartbeat] Session forbidden (403)');
+          window.clearInterval(timerId);
+          clearSessionLeaseState();
+          setPlaybackMode('UNKNOWN');
+          setStatus('error');
+          setError(t('player.forbidden'));
+          if (videoRef.current) {
+            videoRef.current.pause();
+          }
+        } else if (res.status === 200) {
           const data = await res.json();
           if (sessionIdRef.current !== trackedSessionId) {
             return;
@@ -335,6 +380,8 @@ export function useLiveSessionController({
         } else if (res.status === 410) {
           debugError('[V3Player][Heartbeat] Session expired (410)');
           window.clearInterval(timerId);
+          clearSessionLeaseState();
+          setPlaybackMode('UNKNOWN');
           setStatus('error');
           setError(t('player.sessionExpired') || 'Session expired. Please restart.');
           if (videoRef.current) {
@@ -343,6 +390,8 @@ export function useLiveSessionController({
         } else if (res.status === 404) {
           debugWarn('[V3Player][Heartbeat] Session not found (404)');
           window.clearInterval(timerId);
+          clearSessionLeaseState();
+          setPlaybackMode('UNKNOWN');
           setStatus('error');
           setError(t('player.sessionNotFound') || 'Session no longer exists.');
           if (videoRef.current) {
@@ -358,7 +407,7 @@ export function useLiveSessionController({
       debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
       window.clearInterval(timerId);
     };
-  }, [apiBase, authHeaders, heartbeatInterval, sessionId, setError, setStatus, t, videoRef]);
+  }, [apiBase, authHeaders, clearSessionLeaseState, heartbeatInterval, sessionId, setError, setPlaybackMode, setStatus, t, videoRef]);
 
   useEffect(() => {
     setClientAuthToken(token);

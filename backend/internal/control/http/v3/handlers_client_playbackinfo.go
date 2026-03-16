@@ -2,6 +2,8 @@ package v3
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
@@ -14,7 +16,10 @@ import (
 func (s *Server) PostItemsPlaybackInfo(w http.ResponseWriter, r *http.Request, itemId string) {
 	var req v3recordings.ClientPlaybackRequest
 	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", "Failed to parse request body: "+err.Error(), nil)
+			return
+		}
 	}
 
 	resp, playbackErr := s.recordingsProcessor().ResolveClientPlayback(r.Context(), itemId, req)

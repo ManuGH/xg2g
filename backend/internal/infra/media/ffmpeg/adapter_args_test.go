@@ -9,6 +9,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,6 +96,80 @@ func TestBuildArgs_EmptyProfileLegacy(t *testing.T) {
 	assert.Contains(t, args, "ultrafast", "legacy path preset=ultrafast")
 	assert.NotContains(t, args, "h264_vaapi", "legacy path must not contain VAAPI")
 	assert.NotContains(t, args, "-vaapi_device", "legacy path must not contain vaapi_device")
+}
+
+func TestBuildArgs_HighProfileUsesVideoCopy(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "copy-1",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "high",
+			TranscodeVideo: false,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-c:v")
+	assert.Contains(t, args, "copy", "explicit passthrough profiles must use video copy")
+	assert.NotContains(t, args, "libx264", "explicit passthrough profiles must not fall back to legacy CPU transcode")
+	assert.NotContains(t, args, "yadif", "explicit passthrough profiles must not inject deinterlace filters")
+	assert.Contains(t, args, "-c:a")
+	assert.Contains(t, args, "aac")
+}
+
+func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		return &vod.StreamInfo{
+			Container: "ts",
+			Video: vod.VideoStreamInfo{
+				CodecName:  "h264",
+				Interlaced: false,
+			},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-runtime-remux",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			TranscodeVideo: true,
+			Container:      "fmp4",
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-c:v")
+	assert.Contains(t, args, "copy", "runtime-probed progressive h264 safari streams should use video copy")
+	assert.NotContains(t, args, "libx264", "runtime-probed remux path must not transcode video")
+	assert.NotContains(t, args, "yadif", "runtime-probed remux path must not inject deinterlace filters")
+	assert.Contains(t, args, "-c:a")
+	assert.Contains(t, args, "aac")
 }
 
 func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
@@ -417,6 +492,44 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 	assert.NotContains(t, fflags, "nobuffer")
 }
 
+func TestBuildArgs_StreamRelayUsesRobustLiveProbe(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "streamrelay-ingest-flags",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: false,
+			VideoCodec:     "h264",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:")
+	require.NoError(t, err)
+
+	iIdx := indexOf(args, "-i")
+	require.True(t, iIdx > 0)
+
+	analyzeIdx := indexOf(args, "-analyzeduration")
+	require.True(t, analyzeIdx >= 0 && analyzeIdx < iIdx, "analyzeduration must be before -i")
+	analyze, ok := valueAfter(args, "-analyzeduration")
+	require.True(t, ok)
+	assert.Equal(t, "10000000", analyze)
+
+	probeIdx := indexOf(args, "-probesize")
+	require.True(t, probeIdx >= 0 && probeIdx < iIdx, "probesize must be before -i")
+	probe, ok := valueAfter(args, "-probesize")
+	require.True(t, ok)
+	assert.Equal(t, "20M", probe)
+}
+
 func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
@@ -724,6 +837,7 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
 			Name:           "safari_dirty",
+			Container:      "fmp4",
 			TranscodeVideo: true,
 			VideoCodec:     "h264",
 			Deinterlace:    true,
@@ -751,6 +865,18 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "1350", hlsListSize)
 
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "fmp4", hlsSegmentType)
+
+	hlsSegmentFilename, ok := valueAfter(args, "-hls_segment_filename")
+	require.True(t, ok)
+	assert.Contains(t, hlsSegmentFilename, "seg_%06d.m4s")
+
+	hlsInitFilename, ok := valueAfter(args, "-hls_fmp4_init_filename")
+	require.True(t, ok)
+	assert.Equal(t, "init.mp4", hlsInitFilename)
+
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
 	assert.Contains(t, x264Params, "keyint=100:min-keyint=100:scenecut=0")
@@ -758,6 +884,51 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 	forceKeyFrames, ok := valueAfter(args, "-force_key_frames")
 	require.True(t, ok)
 	assert.Equal(t, "expr:gte(t,n_forced*2)", forceKeyFrames)
+}
+
+func TestBuildArgs_UsesFMP4SegmentsWhenContainerRequested(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		return 25, "r_frame_rate", nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "fmp4-live-output",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "h264_fmp4",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			Deinterlace:    true,
+			VideoCRF:       18,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live")
+	require.NoError(t, err)
+
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "fmp4", hlsSegmentType)
+
+	hlsSegmentFilename, ok := valueAfter(args, "-hls_segment_filename")
+	require.True(t, ok)
+	assert.Contains(t, hlsSegmentFilename, "seg_%06d.m4s")
+
+	hlsInitFilename, ok := valueAfter(args, "-hls_fmp4_init_filename")
+	require.True(t, ok)
+	assert.Equal(t, "init.mp4", hlsInitFilename)
 }
 
 func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
@@ -794,6 +965,83 @@ func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live-skip")
 	require.NoError(t, err)
 	assert.Zero(t, probeCalls, "cached fps should skip the probe entirely")
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok)
+	assert.Contains(t, x264Params, "keyint=300:min-keyint=300:scenecut=0")
+}
+
+func TestBuildArgs_SkipsFPSProbeForStreamRelayInput(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	probeCalls := 0
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		probeCalls++
+		return 0, "", errors.New("probe should not be called for stream relay input")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "streamrelay-fps-skip",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			VideoCRF:       20,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:")
+	require.NoError(t, err)
+	assert.Zero(t, probeCalls, "stream relay input should skip the fps probe")
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok)
+	assert.Contains(t, x264Params, "keyint=150:min-keyint=150:scenecut=0")
+}
+
+func TestBuildArgs_UsesCachedFPSForStreamRelayInput(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	probeCalls := 0
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		probeCalls++
+		return 0, "", errors.New("probe should not be called for stream relay input")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "streamrelay-fps-cache",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			VideoCRF:       20,
+			Preset:         "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:"
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+
+	args, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	assert.Zero(t, probeCalls, "stream relay input should use cached fps without probing")
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)

@@ -33,7 +33,7 @@ This document tracks known issues that are not blockers for release but require 
 
 - **Status**: Completed on 2026-02-19.
 - **Result**: Added `templates/docs/ops/xg2g-verifier.service.tmpl` and `templates/docs/ops/xg2g-verifier.timer.tmpl`; renderer now emits both units.
-- **Follow-up**: Keep unit content aligned with `scripts/verify-runtime.sh` contract changes.
+- **Follow-up**: Keep unit content aligned with `backend/scripts/verify-runtime.sh` contract changes.
 
 ### 3. Remux Stub Cleanup
 

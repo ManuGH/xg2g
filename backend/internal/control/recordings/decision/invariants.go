@@ -52,7 +52,26 @@ func validateOutputInvariants(dec *Decision, input DecisionInput) error {
 		if !contains(input.Capabilities.AudioCodecs, input.Source.AudioCodec) {
 			return ErrInvariantViolation{Invariant: "#9", Detail: fmt.Sprintf("direct_play audio codec '%s' not not in client caps", input.Source.AudioCodec)}
 		}
+		if dec.TargetProfile == nil {
+			return ErrInvariantViolation{Invariant: "#9", Detail: "direct_play requires a target profile"}
+		}
+		if dec.TargetProfile.HLS.Enabled {
+			return ErrInvariantViolation{Invariant: "#9", Detail: "direct_play target profile must not enable hls"}
+		}
+		if dec.TargetProfile.Video.Mode != "copy" || dec.TargetProfile.Audio.Mode != "copy" {
+			return ErrInvariantViolation{Invariant: "#9", Detail: "direct_play target profile must copy audio and video"}
+		}
 
+	case ModeDirectStream:
+		if dec.TargetProfile == nil {
+			return ErrInvariantViolation{Invariant: "#9.5", Detail: "direct_stream requires a target profile"}
+		}
+		if !dec.TargetProfile.HLS.Enabled {
+			return ErrInvariantViolation{Invariant: "#9.5", Detail: "direct_stream target profile must enable hls"}
+		}
+		if dec.TargetProfile.Video.Mode != "copy" || dec.TargetProfile.Audio.Mode != "copy" {
+			return ErrInvariantViolation{Invariant: "#9.5", Detail: "direct_stream target profile must copy audio and video"}
+		}
 	case ModeTranscode:
 		// Invariant #10: Transcode Protocol
 		// - Protocol must be "hls" (Kind="hls")
@@ -60,6 +79,15 @@ func validateOutputInvariants(dec *Decision, input DecisionInput) error {
 
 		if dec.SelectedOutputKind != "hls" {
 			return ErrInvariantViolation{Invariant: "#10", Detail: fmt.Sprintf("transcode requires kind='hls', got '%s'", dec.SelectedOutputKind)}
+		}
+		if dec.TargetProfile == nil {
+			return ErrInvariantViolation{Invariant: "#10", Detail: "transcode requires a target profile"}
+		}
+		if !dec.TargetProfile.HLS.Enabled {
+			return ErrInvariantViolation{Invariant: "#10", Detail: "transcode target profile must enable hls"}
+		}
+		if dec.TargetProfile.Video.Mode != "transcode" && dec.TargetProfile.Audio.Mode != "transcode" {
+			return ErrInvariantViolation{Invariant: "#10", Detail: "transcode target profile must transcode audio or video"}
 		}
 
 	case ModeDeny:
@@ -76,6 +104,9 @@ func validateOutputInvariants(dec *Decision, input DecisionInput) error {
 		if len(dec.Outputs) > 0 {
 			return ErrInvariantViolation{Invariant: "#11", Detail: "deny mode must have zero outputs"}
 		}
+		if dec.TargetProfile != nil {
+			return ErrInvariantViolation{Invariant: "#11", Detail: "deny mode must not carry a target profile"}
+		}
 	}
 
 	return nil
@@ -88,6 +119,7 @@ func normalizeDecision(dec *Decision) {
 		dec.SelectedOutputURL = ""
 		dec.SelectedOutputKind = "" // Option A: Strict Empty
 		dec.Outputs = []Output{}    // Empty slice, not nil? User said "empty or nil". Type safe empty slice is cleaner.
+		dec.TargetProfile = nil
 	}
 }
 

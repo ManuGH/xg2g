@@ -52,13 +52,13 @@ func validateInput(input DecisionInput) *Problem {
 	}
 
 	// V-2: Capabilities version
-	if input.Capabilities.Version != 0 && input.Capabilities.Version != 1 {
+	if input.Capabilities.Version != 0 && input.Capabilities.Version != 1 && input.Capabilities.Version != 2 {
 		return &Problem{
 			Type:   "recordings/capabilities-invalid",
 			Title:  "Capabilities Invalid",
 			Status: 400,
 			Code:   string(ProblemCapabilitiesInvalid),
-			Detail: "capabilities_version not supported (current: 1)",
+			Detail: "capabilities_version not supported (current: 2)",
 		}
 	}
 

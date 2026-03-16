@@ -14,29 +14,88 @@
  * - Polling intervals gemäß xg2g-Semantik
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  deleteRecording,
+  getSystemConfig,
   getSystemHealth,
+  getSystemInfo,
+  getSystemScanStatus,
   getReceiverCurrent,
   getStreams,
   getDvrStatus,
   getLogs,
+  getTimers,
+  getDvrCapabilities,
+  deleteTimer,
+  getRecordings,
+  triggerSystemScan,
+  type AppConfig,
   type SystemHealth,
+  type SystemInfoData,
   type CurrentServiceInfo,
   type StreamSession,
-  type LogEntry
+  type LogEntry,
+  type TimerList,
+  type DvrCapabilities,
+  type RecordingResponse,
+  type ScanStatus
 } from '../client-ts';
+import { throwOnClientResultError, unwrapClientResultOrThrow } from '../lib/clientWrapper';
 
 /**
  * Query Keys (versioniert, strukturiert)
  */
 export const queryKeys = {
+  bootstrapConfig: ['v3', 'bootstrap', 'config'] as const,
+  systemConfig: ['v3', 'system', 'config'] as const,
   health: ['v3', 'system', 'health'] as const,
+  systemInfo: ['v3', 'system', 'info'] as const,
+  systemScanStatus: ['v3', 'system', 'scan'] as const,
   receiverCurrent: ['v3', 'receiver', 'current'] as const,
   streams: ['v3', 'streams'] as const,
   dvrStatus: ['v3', 'dvr', 'status'] as const,
+  dvrCapabilities: ['v3', 'dvr', 'capabilities'] as const,
+  timers: ['v3', 'timers'] as const,
+  recordings: (root: string = '', path: string = '') => ['v3', 'recordings', { root, path }] as const,
   logs: (limit?: number) => ['v3', 'logs', { limit }] as const,
 };
+
+export async function fetchSystemConfigStrict(): Promise<AppConfig | null> {
+  const result = await getSystemConfig();
+  throwOnClientResultError(result, { source: 'useBootstrapConfig' });
+  return result.data ?? null;
+}
+
+/**
+ * useSystemConfig - persisted backend configuration
+ *
+ * Polling: disabled
+ * staleTime: 30s
+ */
+export function useSystemConfig() {
+  return useQuery({
+    queryKey: queryKeys.systemConfig,
+    queryFn: async () => {
+      const result = await getSystemConfig();
+      return unwrapClientResultOrThrow<AppConfig | null>(result, {
+        source: 'useSystemConfig',
+        silent: true
+      }) ?? null;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useBootstrapConfig(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.bootstrapConfig,
+    queryFn: fetchSystemConfigStrict,
+    enabled,
+    retry: false,
+    staleTime: 0,
+  });
+}
 
 /**
  * useSystemHealth - System Health Status
@@ -49,21 +108,63 @@ export function useSystemHealth() {
     queryKey: queryKeys.health,
     queryFn: async () => {
       const result = await getSystemHealth();
-
-      if (result.error) {
-        // @ts-ignore - response.status check ist valid zur Runtime
-        if (result.response?.status === 401) {
-          window.dispatchEvent(new Event('auth-required'));
-          throw new Error('Authentication required');
-        }
-        // @ts-ignore - error.message kann zur Runtime existieren
-        throw new Error(result.error.message || 'Failed to fetch health');
-      }
-
-      return result.data as SystemHealth;
+      return unwrapClientResultOrThrow<SystemHealth>(result, { source: 'useSystemHealth' });
     },
     refetchInterval: 10_000, // 10s polling
     staleTime: 8_000, // 8s frisch
+  });
+}
+
+/**
+ * useSystemInfo - detailed receiver/system information
+ *
+ * Polling: 10s
+ * staleTime: 8s
+ */
+export function useSystemInfo() {
+  return useQuery({
+    queryKey: queryKeys.systemInfo,
+    queryFn: async () => {
+      const result = await getSystemInfo();
+      return unwrapClientResultOrThrow<SystemInfoData>(result, { source: 'useSystemInfo' });
+    },
+    refetchInterval: 10_000,
+    staleTime: 8_000,
+  });
+}
+
+/**
+ * useSystemScanStatus - channel scan state
+ *
+ * Polling: 2s
+ * staleTime: 1s
+ */
+export function useSystemScanStatus() {
+  return useQuery({
+    queryKey: queryKeys.systemScanStatus,
+    queryFn: async () => {
+      const result = await getSystemScanStatus();
+      return unwrapClientResultOrThrow<ScanStatus>(result, { source: 'useSystemScanStatus' });
+    },
+    refetchInterval: 2_000,
+    staleTime: 1_000,
+  });
+}
+
+/**
+ * useTriggerSystemScanMutation - start a new system scan and refresh scan status
+ */
+export function useTriggerSystemScanMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const result = await triggerSystemScan();
+      return unwrapClientResultOrThrow<{ status?: string }>(result, { source: 'useTriggerSystemScanMutation' });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.systemScanStatus });
+    },
   });
 }
 
@@ -78,13 +179,10 @@ export function useReceiverCurrent() {
     queryKey: queryKeys.receiverCurrent,
     queryFn: async () => {
       const result = await getReceiverCurrent();
-
-      if (result.error) {
-        // Silent fail - UI zeigt "unavailable"
-        return null;
-      }
-
-      return result.data as CurrentServiceInfo | null;
+      return unwrapClientResultOrThrow<CurrentServiceInfo | null>(result, {
+        source: 'useReceiverCurrent',
+        silent: true
+      }) ?? null;
     },
     refetchInterval: 10_000, // 10s polling
     staleTime: 8_000,
@@ -102,13 +200,10 @@ export function useStreams() {
     queryKey: queryKeys.streams,
     queryFn: async () => {
       const result = await getStreams();
-
-      if (result.error) {
-        // Silent fail - UI zeigt [] (keine streams)
-        return [];
-      }
-
-      return (result.data || []) as StreamSession[];
+      return unwrapClientResultOrThrow<StreamSession[]>(result, {
+        source: 'useStreams',
+        silent: true
+      }) ?? [];
     },
     refetchInterval: 5_000, // 5s polling
     staleTime: 4_000,
@@ -126,15 +221,107 @@ export function useDvrStatus() {
     queryKey: queryKeys.dvrStatus,
     queryFn: async () => {
       const result = await getDvrStatus();
-
-      if (result.error) {
-        return null;
-      }
-
-      return result.data as { isRecording?: boolean; serviceName?: string } | null;
+      return unwrapClientResultOrThrow<{ isRecording?: boolean; serviceName?: string } | null>(result, {
+        source: 'useDvrStatus',
+        silent: true
+      }) ?? null;
     },
     refetchInterval: 30_000, // 30s polling
     staleTime: 25_000,
+  });
+}
+
+/**
+ * useDvrCapabilities - DVR feature capability flags
+ *
+ * Polling: disabled
+ * staleTime: 5m
+ */
+export function useDvrCapabilities() {
+  return useQuery({
+    queryKey: queryKeys.dvrCapabilities,
+    queryFn: async () => {
+      const result = await getDvrCapabilities();
+      return unwrapClientResultOrThrow<DvrCapabilities | null>(result, {
+        source: 'useDvrCapabilities',
+        silent: true
+      }) ?? null;
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * useTimers - Scheduled recording timers
+ *
+ * Polling: disabled
+ * staleTime: 10s
+ */
+export function useTimers() {
+  return useQuery({
+    queryKey: queryKeys.timers,
+    queryFn: async () => {
+      const result = await getTimers();
+      const data = unwrapClientResultOrThrow<TimerList>(result, { source: 'useTimers' });
+      return data.items ?? [];
+    },
+    staleTime: 10_000,
+  });
+}
+
+/**
+ * useDeleteTimerMutation - delete timer and refresh timer list
+ */
+export function useDeleteTimerMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (timerId: string) => {
+      const result = await deleteTimer({ path: { timerId } });
+      unwrapClientResultOrThrow<void>(result, { source: 'useDeleteTimerMutation' });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.timers });
+    },
+  });
+}
+
+/**
+ * useRecordings - recordings browser payload for a root/path pair
+ *
+ * Polling: disabled
+ * staleTime: 10s
+ */
+export function useRecordings(root: string, path: string) {
+  return useQuery({
+    queryKey: queryKeys.recordings(root, path),
+    queryFn: async () => {
+      const result = await getRecordings({ query: { root, path } });
+      return unwrapClientResultOrThrow<RecordingResponse>(result, { source: 'useRecordings' });
+    },
+    placeholderData: previousData => previousData,
+    staleTime: 10_000,
+  });
+}
+
+/**
+ * useDeleteRecordingsMutation - delete one or more recordings and refresh listings
+ */
+export function useDeleteRecordingsMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (recordingIds: string[]) => {
+      await Promise.all(
+        recordingIds.map(async (recordingId) => {
+          const result = await deleteRecording({ path: { recordingId } });
+          unwrapClientResultOrThrow<void>(result, { source: 'useDeleteRecordingsMutation' });
+        })
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['v3', 'recordings'] });
+    },
   });
 }
 
@@ -149,12 +336,8 @@ export function useLogs(limit: number = 5) {
     queryKey: queryKeys.logs(limit),
     queryFn: async () => {
       const result = await getLogs();
-
-      if (result.error) {
-        throw new Error('Failed to load logs');
-      }
-
-      return ((result.data || []) as LogEntry[]).slice(0, limit);
+      const logs = unwrapClientResultOrThrow<LogEntry[]>(result, { source: 'useLogs' });
+      return (logs || []).slice(0, limit);
     },
     refetchInterval: false, // kein auto-refetch
     staleTime: 30_000,

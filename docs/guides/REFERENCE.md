@@ -5,7 +5,7 @@ configuration files, and health endpoints.
 
 > [!NOTE]
 > For architectural details, see [ARCHITECTURE.md](../arch/ARCHITECTURE.md). For
-> build/deploy facts, see [backend/BUILD.md](../../backend/BUILD.md).
+> build/deploy facts, see [DEPLOYMENT.md](../ops/DEPLOYMENT.md).
 
 ## 1. Environment Variables
 
@@ -21,7 +21,7 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_API_TOKEN` | Primary admin bearer token | - |
 | `XG2G_API_TOKEN_SCOPES`| Scopes for primary token (CSV) | `v3:read,v3:write` |
 | `XG2G_API_TOKENS` | Multi-token JSON list | `[{"token":"...","scopes":...}]` |
-| `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | Disable legacy `X-API-Token` header/cookie auth vectors | `true` |
+| `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | Disable legacy `X-API-Token` header/cookie auth vectors | `false` |
 
 ### V3 Streaming Engine
 
@@ -48,9 +48,10 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_E2_BACKOFF` | `200ms` | Initial retry backoff |
 | `XG2G_E2_MAX_BACKOFF` | `30s` | Max retry backoff duration (canonical) |
 | `XG2G_E2_STREAM_PORT` | `8001` | Deprecated direct stream port override (canonical) |
-| `XG2G_E2_USE_WEBIF_STREAMS` | `false` | Prefer `/web/stream.m3u` URL path |
+| `XG2G_E2_USE_WEBIF_STREAMS` | `true` | Prefer `/web/stream.m3u` URL path |
 | `XG2G_E2_RESPONSE_HEADER_TIMEOUT` | `10s` | HTTP response header timeout |
 | `XG2G_E2_TUNE_TIMEOUT` | `10s` | Tune timeout before fallback/error |
+| `XG2G_E2_AUTH_MODE` | `inherit` | Auth behavior (`inherit|none|explicit`) |
 | `XG2G_E2_RATE_LIMIT` | - | Optional per-session rate limit |
 | `XG2G_E2_RATE_BURST` | - | Optional burst for rate limiting |
 | `XG2G_E2_USER_AGENT` | - | Optional User-Agent override |

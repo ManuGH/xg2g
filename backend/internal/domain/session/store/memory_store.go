@@ -78,6 +78,31 @@ func (m *MemoryStore) GetIdempotency(ctx context.Context, idemKey string) (strin
 	return st.sessionID, true, nil
 }
 
+func (m *MemoryStore) DeleteIdempotencyIfMatch(ctx context.Context, idemKey, sessionID string) (bool, error) {
+	if idemKey == "" {
+		return false, nil
+	}
+
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	st, ok := m.idem[idemKey]
+	if !ok {
+		return false, nil
+	}
+	if now.After(st.exp) {
+		delete(m.idem, idemKey)
+		return false, nil
+	}
+	if st.sessionID != sessionID {
+		return false, nil
+	}
+
+	delete(m.idem, idemKey)
+	return true, nil
+}
+
 func (m *MemoryStore) TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error) {
 	now := time.Now()
 	deadline := now.Add(ttl)
@@ -164,9 +189,7 @@ func (m *MemoryStore) ListSessions(ctx context.Context) ([]*model.SessionRecord,
 
 	var list []*model.SessionRecord
 	for _, rec := range m.sessions {
-		// Return copy
-		cp := *rec
-		list = append(list, &cp)
+		list = append(list, cloneSessionRecord(rec))
 	}
 	return list, nil
 }
@@ -196,15 +219,7 @@ func (m *MemoryStore) QuerySessions(ctx context.Context, filter SessionFilter) (
 			continue
 		}
 
-		// Match - add copy to result
-		cp := *rec
-		if rec.ContextData != nil {
-			cp.ContextData = make(map[string]string, len(rec.ContextData))
-			for k, v := range rec.ContextData {
-				cp.ContextData[k] = v
-			}
-		}
-		result = append(result, &cp)
+		result = append(result, cloneSessionRecord(rec))
 	}
 
 	return result, nil
@@ -212,8 +227,7 @@ func (m *MemoryStore) QuerySessions(ctx context.Context, filter SessionFilter) (
 
 func (m *MemoryStore) PutSession(ctx context.Context, rec *model.SessionRecord) error {
 	m.mu.Lock()
-	cpy := *rec
-	m.sessions[rec.SessionID] = &cpy
+	m.sessions[rec.SessionID] = cloneSessionRecord(rec)
 	m.mu.Unlock()
 	return nil
 }
@@ -234,8 +248,7 @@ func (m *MemoryStore) PutSessionWithIdempotency(ctx context.Context, s *model.Se
 	}
 
 	// 2. Write Session
-	cpy := *s
-	m.sessions[s.SessionID] = &cpy
+	m.sessions[s.SessionID] = cloneSessionRecord(s)
 
 	// 3. Write Idempotency
 	if idemKey != "" {
@@ -250,15 +263,7 @@ func (m *MemoryStore) ScanSessions(ctx context.Context, fn func(*model.SessionRe
 	m.mu.RLock()
 	snapshot := make([]*model.SessionRecord, 0, len(m.sessions))
 	for _, rec := range m.sessions {
-		cpy := *rec // Shallow copy struct
-		// Deep copy map
-		if rec.ContextData != nil {
-			cpy.ContextData = make(map[string]string, len(rec.ContextData))
-			for k, v := range rec.ContextData {
-				cpy.ContextData[k] = v
-			}
-		}
-		snapshot = append(snapshot, &cpy)
+		snapshot = append(snapshot, cloneSessionRecord(rec))
 	}
 	m.mu.RUnlock()
 
@@ -285,14 +290,7 @@ func (m *MemoryStore) GetSession(ctx context.Context, sessionID string) (*model.
 	if !ok {
 		return nil, nil
 	}
-	cpy := *rec
-	if rec.ContextData != nil {
-		cpy.ContextData = make(map[string]string, len(rec.ContextData))
-		for k, v := range rec.ContextData {
-			cpy.ContextData[k] = v
-		}
-	}
-	return &cpy, nil
+	return cloneSessionRecord(rec), nil
 }
 
 func (m *MemoryStore) DeleteSession(ctx context.Context, id string) error {
@@ -310,21 +308,29 @@ func (m *MemoryStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 	if !ok {
 		return nil, errors.New("not found")
 	}
-	// Copy to work on
-	cpy := *rec
-	if rec.ContextData != nil {
-		cpy.ContextData = make(map[string]string, len(rec.ContextData))
-		for k, v := range rec.ContextData {
-			cpy.ContextData[k] = v
-		}
-	}
+	cpy := cloneSessionRecord(rec)
 
-	if err := fn(&cpy); err != nil {
+	if err := fn(cpy); err != nil {
 		return nil, err
 	}
 	// Save back
-	m.sessions[id] = &cpy
-	return &cpy, nil
+	m.sessions[id] = cloneSessionRecord(cpy)
+	return cloneSessionRecord(cpy), nil
+}
+
+func cloneSessionRecord(rec *model.SessionRecord) *model.SessionRecord {
+	if rec == nil {
+		return nil
+	}
+	cp := *rec
+	if rec.ContextData != nil {
+		cp.ContextData = make(map[string]string, len(rec.ContextData))
+		for k, v := range rec.ContextData {
+			cp.ContextData[k] = v
+		}
+	}
+	cp.PlaybackTrace = rec.PlaybackTrace.Clone()
+	return &cp
 }
 
 func (m *MemoryStore) DeleteAllLeases(ctx context.Context) (int, error) {

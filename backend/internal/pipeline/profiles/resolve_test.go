@@ -45,8 +45,8 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, true, specCPU.Deinterlace)
 	assert.Equal(t, "", specCPU.HWAccel)
 	assert.Equal(t, "libx264", specCPU.VideoCodec)
-	assert.Equal(t, "veryfast", specCPU.Preset)
-	assert.Equal(t, 18, specCPU.VideoCRF)
+	assert.Equal(t, "fast", specCPU.Preset)
+	assert.Equal(t, 23, specCPU.VideoCRF)
 }
 
 func TestResolve_UnknownCap(t *testing.T) {
@@ -115,14 +115,6 @@ func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 	assert.Equal(t, "libx264", specDisabled.VideoCodec)
 }
 
-func TestResolve_SafariDirtyDefaultEnv(t *testing.T) {
-	t.Setenv("XG2G_SAFARI_DIRTY_DEFAULT", "true")
-
-	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-	spec := Resolve("auto", safariUA, 0, nil, false, HWAccelAuto)
-	assert.Equal(t, "safari_dirty", spec.Name)
-}
-
 func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_DIRTY_CRF", "15")
 	t.Setenv("XG2G_SAFARI_DIRTY_PRESET", "medium")
@@ -138,4 +130,54 @@ func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	assert.Equal(t, 18000, spec.VideoMaxRateK)
 	assert.Equal(t, 36000, spec.VideoBufSizeK)
 	assert.Equal(t, 224, spec.AudioBitrateK)
+}
+
+func TestResolve_LiveVideoLadderBridge(t *testing.T) {
+	cases := []struct {
+		name       string
+		profile    string
+		wantCRF    int
+		wantPreset string
+	}{
+		{name: "safari_dvr uses compatible video ladder", profile: ProfileSafariDVR, wantCRF: 23, wantPreset: "fast"},
+		{name: "dvr uses compatible video ladder", profile: ProfileDVR, wantCRF: 23, wantPreset: "fast"},
+		{name: "repair uses repair video ladder", profile: ProfileRepair, wantCRF: 28, wantPreset: "veryfast"},
+		{name: "h264_fmp4 cpu fallback uses repair video ladder", profile: ProfileH264FMP4, wantCRF: 28, wantPreset: "veryfast"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := Resolve(tc.profile, "Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36", 0, &scan.Capability{Interlaced: true}, false, HWAccelAuto)
+			assert.True(t, spec.TranscodeVideo)
+			assert.Equal(t, tc.wantCRF, spec.VideoCRF)
+			assert.Equal(t, tc.wantPreset, spec.Preset)
+		})
+	}
+}
+
+func TestNormalizeRequestedProfileID_MapsPublicAliases(t *testing.T) {
+	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("compatible"))
+	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("quality"))
+	assert.Equal(t, ProfileLow, NormalizeRequestedProfileID("bandwidth"))
+	assert.Equal(t, ProfileCopy, NormalizeRequestedProfileID("direct"))
+	assert.Equal(t, ProfileCopy, NormalizeRequestedProfileID("passthrough"))
+	assert.Equal(t, ProfileRepair, NormalizeRequestedProfileID("repair"))
+	assert.Equal(t, "generic", NormalizeRequestedProfileID("generic"))
+}
+
+func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileAuto))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileHigh))
+	assert.Equal(t, PublicProfileBandwidth, PublicProfileName(ProfileLow))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileSafari))
+	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileSafariDirty))
+	assert.Equal(t, PublicProfileQuality, PublicProfileName(ProfileSafariHEVCHW))
+	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileH264FMP4))
+	assert.Equal(t, PublicProfileDirect, PublicProfileName(ProfileCopy))
+	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileRepair))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName("auto"))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName("universal"))
+	assert.Equal(t, PublicProfileQuality, PublicProfileName("quality"))
+	assert.Equal(t, PublicProfileRepair, PublicProfileName("repair"))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName("generic"))
 }

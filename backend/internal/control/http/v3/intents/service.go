@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -18,6 +19,7 @@ import (
 )
 
 const admissionLeaseTTL = 30 * time.Second
+const startReplayRecoveryAttempts = 3
 
 // Service handles intent processing independent of HTTP transport.
 type Service struct {
@@ -89,14 +91,10 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	reqProfileID := "universal"
 	requestedPlaybackMode := normalize.Token(intent.Params["playback_mode"])
 	if requestedPlaybackMode != "" {
-		playbackDecisionToken, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.Params)
+		_, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.Params)
 		if tokenErr != nil {
 			s.deps.IncLivePlaybackKey(keyLabel, resultLabel)
 			return nil, &Error{Kind: ErrorInvalidInput, Message: tokenErr.Error()}
-		}
-		if !s.deps.VerifyLivePlaybackDecision(playbackDecisionToken, intent.PrincipalID, intent.ServiceRef, requestedPlaybackMode) {
-			s.deps.IncLivePlaybackKey(keyLabel, "rejected_invalid")
-			return nil, &Error{Kind: ErrorInvalidInput, Message: "playback_mode is not attested by /live/stream-info"}
 		}
 		s.deps.IncLivePlaybackKey(keyLabel, resultLabel)
 		mappedProfile, mapErr := mapPlaybackModeToProfile(requestedPlaybackMode)
@@ -109,28 +107,56 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	} else if picked := pickProfileForCodecs(intent.Params["codecs"], av1OK, hevcOK, h264OK, hwaccelMode); picked != "" {
 		reqProfileID = picked
 	}
+	publicRequestProfile := profiles.PublicProfileName(reqProfileID)
+	operatorCfg := s.deps.PlaybackOperator()
+	effectiveProfileID, operatorSnapshot := profiles.ResolveRequestedProfileWithSourceOperatorOverride(reqProfileID, string(intent.Mode), intent.ServiceRef, operatorCfg)
+	effectiveProfileID = profiles.NormalizeRequestedProfileID(effectiveProfileID)
+	operatorActive := operatorSnapshot.ForcedIntent != playbackprofile.IntentUnknown || operatorSnapshot.MaxQualityRung != playbackprofile.RungUnknown
+	hostPressure := s.deps.HostPressure(ctx)
+	hostPressureBand := playbackprofile.NormalizeHostPressureBand(string(hostPressure.EffectiveBand))
+	hostOverrideApplied := false
 
 	bucket := "0"
 	if intent.StartMs != nil && *intent.StartMs > 0 {
 		bucket = fmt.Sprintf("%d", *intent.StartMs/1000)
 	}
-	idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, reqProfileID, bucket)
+	idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, effectiveProfileID, bucket)
 
-	resolveHasGPU := hasGPU
-	switch reqProfileID {
-	case profiles.ProfileAV1HW:
-		resolveHasGPU = av1OK
-	case profiles.ProfileSafariHEVCHW:
-		resolveHasGPU = hevcOK
-	case profiles.ProfileH264FMP4:
-		resolveHasGPU = h264OK
-	}
 	profileUserAgent := intent.UserAgent
 	if requestedPlaybackMode != "" {
 		profileUserAgent = ""
 	}
 
-	profileSpec := profiles.Resolve(reqProfileID, profileUserAgent, int(s.deps.DVRWindow().Seconds()), cap, resolveHasGPU, hwaccelMode)
+	resolveProfileSpec := func(profileID string) model.ProfileSpec {
+		resolveHasGPU := hasGPU
+		switch profileID {
+		case profiles.ProfileAV1HW:
+			resolveHasGPU = av1OK
+		case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
+			resolveHasGPU = hevcOK
+		case profiles.ProfileH264FMP4:
+			resolveHasGPU = h264OK
+		}
+		return profiles.Resolve(profileID, profileUserAgent, int(s.deps.DVRWindow().Seconds()), cap, resolveHasGPU, hwaccelMode)
+	}
+
+	profileSpec := resolveProfileSpec(effectiveProfileID)
+	if cappedSpec, changed := profiles.ApplyMaxQualityRung(profileSpec, operatorSnapshot.MaxQualityRung); changed {
+		profileSpec = cappedSpec
+		operatorSnapshot.OverrideApplied = true
+	}
+	if !operatorActive {
+		if downgradedProfileID, changed := profiles.ApplyHostPressureOverride(effectiveProfileID, hostPressureBand); changed {
+			effectiveProfileID = downgradedProfileID
+			profileSpec = resolveProfileSpec(effectiveProfileID)
+			hostOverrideApplied = true
+		}
+	}
+	resolvedIntent := profiles.PublicProfileName(profileSpec.Name)
+	degradedFrom := ""
+	if publicRequestProfile != "" && resolvedIntent != "" && publicRequestProfile != resolvedIntent {
+		degradedFrom = publicRequestProfile
+	}
 
 	controller := s.deps.AdmissionController()
 	if controller == nil {
@@ -197,12 +223,20 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	intent.Logger.Info().
 		Str("ua", intent.UserAgent).
 		Str("profile", profileSpec.Name).
+		Str("profile_public", publicRequestProfile).
+		Str("profile_effective", effectiveProfileID).
 		Int("dvr_window_sec", profileSpec.DVRWindowSec).
 		Str("idem_key", idempotencyKey).
 		Bool("gpu_available", hasGPU).
 		Str("hwaccel_requested", string(hwaccelMode)).
 		Str("hwaccel_effective", hwaccelEffective).
 		Str("hwaccel_reason", hwaccelReason).
+		Str("operator_force_intent", playbackprofile.PublicIntentName(operatorSnapshot.ForcedIntent)).
+		Str("operator_max_quality_rung", string(operatorSnapshot.MaxQualityRung)).
+		Bool("operator_disable_client_fallback", operatorSnapshot.DisableClientFallback).
+		Bool("operator_override_applied", operatorSnapshot.OverrideApplied).
+		Str("host_pressure_band", string(hostPressureBand)).
+		Bool("host_override_applied", hostOverrideApplied).
 		Str("encoder_backend", encoderBackend).
 		Str("video_codec", profileSpec.VideoCodec).
 		Str("container", profileSpec.Container).
@@ -216,8 +250,11 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 
 	phaseLabel := "phase2"
 	requestParams := map[string]string{
-		"profile": reqProfileID,
+		"profile": effectiveProfileID,
 		"bucket":  bucket,
+	}
+	if requestedPlaybackMode != "" {
+		requestParams[model.CtxKeyClientPath] = requestedPlaybackMode
 	}
 	if raw := intent.Params["codecs"]; raw != "" {
 		requestParams["codecs"] = raw
@@ -229,6 +266,20 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		requestParams[model.CtxKeyMode] = intent.Mode
 	}
 
+	var operatorTrace *model.PlaybackOperatorTrace
+	if operatorSnapshot.OverrideApplied || operatorSnapshot.ForcedIntent != playbackprofile.IntentUnknown || operatorSnapshot.MaxQualityRung != playbackprofile.RungUnknown || operatorSnapshot.DisableClientFallback {
+		operatorTrace = &model.PlaybackOperatorTrace{
+			ForcedIntent:           playbackprofile.PublicIntentName(operatorSnapshot.ForcedIntent),
+			MaxQualityRung:         string(operatorSnapshot.MaxQualityRung),
+			ClientFallbackDisabled: operatorSnapshot.DisableClientFallback,
+			RuleName:               operatorSnapshot.RuleName,
+			RuleScope:              operatorSnapshot.RuleScope,
+			OverrideApplied:        operatorSnapshot.OverrideApplied,
+		}
+	}
+
+	videoQualityRung := model.TraceVideoQualityRungFromProfile(profileSpec)
+
 	session := lifecycle.NewSessionRecord(time.Now())
 	session.SessionID = intent.SessionID
 	session.ServiceRef = intent.ServiceRef
@@ -237,41 +288,64 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	session.LeaseExpiresAtUnix = time.Now().Add(s.deps.SessionLeaseTTL()).Unix()
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
 	session.ContextData = requestParams
-
-	existingID, exists, err := store.PutSessionWithIdempotency(ctx, session, idempotencyKey, admissionLeaseTTL)
-	if err != nil {
-		intent.Logger.Error().Err(err).Msg("failed to persist intent")
-		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
-		return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to persist intent", Cause: err}
+	session.PlaybackTrace = &model.PlaybackTrace{
+		RequestProfile:      publicRequestProfile,
+		RequestedIntent:     publicRequestProfile,
+		ResolvedIntent:      resolvedIntent,
+		QualityRung:         videoQualityRung,
+		VideoQualityRung:    videoQualityRung,
+		DegradedFrom:        degradedFrom,
+		ClientPath:          requestedPlaybackMode,
+		Operator:            operatorTrace,
+		HostPressureBand:    string(hostPressureBand),
+		HostOverrideApplied: hostOverrideApplied,
 	}
 
-	if exists {
-		s.deps.RecordReplay(string(model.IntentTypeStreamStart))
-		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "replay")
-		intent.Logger.Info().Str("existing_sid", existingID).Msg("idempotent replay detected")
-
-		replayCorrelation := intent.CorrelationID
-		existingSession, getErr := store.GetSession(ctx, existingID)
-		if getErr == nil && existingSession != nil && existingSession.CorrelationID != "" {
-			replayCorrelation = existingSession.CorrelationID
-		} else if getErr == nil && existingSession != nil && existingSession.ContextData != nil {
-			if cid := existingSession.ContextData["correlationId"]; cid != "" {
-				replayCorrelation = cid
-			}
+	persisted := false
+	for attempt := 0; attempt < startReplayRecoveryAttempts; attempt++ {
+		existingID, exists, err := store.PutSessionWithIdempotency(ctx, session, idempotencyKey, admissionLeaseTTL)
+		if err != nil {
+			intent.Logger.Error().Err(err).Msg("failed to persist intent")
+			s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+			return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to persist intent", Cause: err}
+		}
+		if !exists {
+			persisted = true
+			break
 		}
 
-		return &Result{
-			SessionID:     existingID,
-			Status:        "idempotent_replay",
-			CorrelationID: replayCorrelation,
-		}, nil
+		replay, retry, replayErr := resolveStartReplay(ctx, store, idempotencyKey, existingID, intent.CorrelationID)
+		if replayErr != nil {
+			intent.Logger.Error().Err(replayErr).Str("existing_sid", existingID).Msg("failed to reconcile stale idempotent replay")
+			s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+			return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to reconcile idempotent replay", Cause: replayErr}
+		}
+		if replay != nil {
+			s.deps.RecordReplay(string(model.IntentTypeStreamStart))
+			s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "replay")
+			intent.Logger.Info().Str("existing_sid", existingID).Msg("idempotent replay detected")
+			return &Result{
+				SessionID:     existingID,
+				Status:        "idempotent_replay",
+				CorrelationID: replay.correlationID,
+			}, nil
+		}
+		if retry {
+			intent.Logger.Warn().Str("existing_sid", existingID).Int("attempt", attempt+1).Msg("discarded stale idempotent replay for terminal session")
+		}
+	}
+	if !persisted {
+		err := fmt.Errorf("stale idempotency mapping persisted after %d attempts", startReplayRecoveryAttempts)
+		intent.Logger.Error().Err(err).Str("idem_key", idempotencyKey).Msg("failed to refresh stale idempotency mapping")
+		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+		return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to refresh stale intent mapping", Cause: err}
 	}
 
 	evt := model.StartSessionEvent{
 		Type:          model.EventStartSession,
 		SessionID:     intent.SessionID,
 		ServiceRef:    intent.ServiceRef,
-		ProfileID:     reqProfileID,
+		ProfileID:     effectiveProfileID,
 		CorrelationID: intent.CorrelationID,
 		RequestedAtUN: time.Now().Unix(),
 	}
@@ -331,8 +405,13 @@ func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) st
 
 func mapPlaybackModeToProfile(mode string) (string, error) {
 	switch mode {
-	case "native_hls", "hlsjs", "direct_mp4":
-		return "high", nil
+	case "native_hls":
+		// native_hls should use the normal Safari profile first:
+		// progressive inputs stay remux/copy, interlaced or unknown inputs transcode.
+		// More aggressive recovery (safari_dirty / repair) is handled after runtime errors.
+		return profiles.ProfileSafari, nil
+	case "hlsjs", "direct_mp4":
+		return profiles.ProfileHigh, nil
 	case "transcode":
 		return profiles.ProfileH264FMP4, nil
 	case "deny":

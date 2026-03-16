@@ -9,10 +9,34 @@ package jobs
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
 )
+
+type mockEPGFetchClient struct {
+	bouquets        map[string]string
+	bouquetEvents   map[string][]openwebif.EPGEvent
+	perServiceEPG   map[string][]openwebif.EPGEvent
+	bouquetCalls    int
+	perServiceCalls int
+}
+
+func (m *mockEPGFetchClient) Bouquets(_ context.Context) (map[string]string, error) {
+	return m.bouquets, nil
+}
+
+func (m *mockEPGFetchClient) GetBouquetEPG(_ context.Context, bouquetRef string, _ int) ([]openwebif.EPGEvent, error) {
+	m.bouquetCalls++
+	return m.bouquetEvents[bouquetRef], nil
+}
+
+func (m *mockEPGFetchClient) GetEPG(_ context.Context, sRef string, _ int) ([]openwebif.EPGEvent, error) {
+	m.perServiceCalls++
+	return m.perServiceEPG[sRef], nil
+}
 
 // TestExtractSRefFromStreamURL tests service reference extraction from various URL formats.
 func TestExtractSRefFromStreamURL(t *testing.T) {
@@ -246,5 +270,174 @@ func TestAggregateEvents_NoMatchingChannels(t *testing.T) {
 
 	if len(programmes) != 0 {
 		t.Errorf("expected 0 programmes (no matching channels), got %d", len(programmes))
+	}
+}
+
+func TestCollectEPGProgrammes_FallsBackWhenBouquetCoverageIsTooShort(t *testing.T) {
+	now := time.Now().UTC()
+	serviceRef := "1:0:19:8F:4:85:C00000:0:0:0"
+
+	client := &mockEPGFetchClient{
+		bouquets: map[string]string{
+			"Premium": "bref-premium",
+		},
+		bouquetEvents: map[string][]openwebif.EPGEvent{
+			"bref-premium": {
+				{
+					Title:    "Expired bouquet event",
+					Begin:    now.Add(-2 * time.Hour).Unix(),
+					Duration: 1800,
+					SRef:     serviceRef,
+				},
+			},
+		},
+		perServiceEPG: map[string][]openwebif.EPGEvent{
+			serviceRef: {
+				{
+					Title:    "Future per-service event",
+					Begin:    now.Add(2 * time.Hour).Unix(),
+					Duration: 7200,
+					SRef:     serviceRef,
+				},
+			},
+		},
+	}
+
+	items := []playlist.Item{
+		{
+			Name:       "Sky Sport Austria 1",
+			Group:      "Premium",
+			ServiceRef: serviceRef,
+		},
+	}
+
+	cfg := config.AppConfig{
+		EPGSource:         "bouquet",
+		EPGDays:           14,
+		EPGTimeoutMS:      5000,
+		EPGMaxConcurrency: 1,
+		EPGRetries:        0,
+	}
+
+	programmes := collectEPGProgrammes(context.Background(), client, items, cfg)
+
+	if client.bouquetCalls != 1 {
+		t.Fatalf("expected 1 bouquet EPG call, got %d", client.bouquetCalls)
+	}
+	if client.perServiceCalls != 1 {
+		t.Fatalf("expected fallback to make 1 per-service EPG call, got %d", client.perServiceCalls)
+	}
+	if len(programmes) != 1 {
+		t.Fatalf("expected 1 programme after per-service fallback, got %d", len(programmes))
+	}
+	if programmes[0].Title.Text != "Future per-service event" {
+		t.Fatalf("expected per-service programme to win after fallback, got %q", programmes[0].Title.Text)
+	}
+}
+
+func TestCollectEPGProgrammes_UsesBouquetWhenCoverageIsSufficient(t *testing.T) {
+	now := time.Now().UTC()
+	serviceRef := "1:0:19:11:6:85:C00000:0:0:0"
+
+	client := &mockEPGFetchClient{
+		bouquets: map[string]string{
+			"Premium": "bref-premium",
+		},
+		bouquetEvents: map[string][]openwebif.EPGEvent{
+			"bref-premium": {
+				{
+					Title:    "Future bouquet event",
+					Begin:    now.Add(30 * time.Minute).Unix(),
+					Duration: int64((7 * time.Hour).Seconds()),
+					SRef:     serviceRef,
+				},
+			},
+		},
+	}
+
+	items := []playlist.Item{
+		{
+			Name:       "Sky Sport F1",
+			Group:      "Premium",
+			ServiceRef: serviceRef,
+		},
+	}
+
+	cfg := config.AppConfig{
+		EPGSource:         "bouquet",
+		EPGDays:           14,
+		EPGTimeoutMS:      5000,
+		EPGMaxConcurrency: 1,
+		EPGRetries:        0,
+	}
+
+	programmes := collectEPGProgrammes(context.Background(), client, items, cfg)
+
+	if client.bouquetCalls != 1 {
+		t.Fatalf("expected 1 bouquet EPG call, got %d", client.bouquetCalls)
+	}
+	if client.perServiceCalls != 0 {
+		t.Fatalf("expected no per-service fallback when bouquet coverage is sufficient, got %d calls", client.perServiceCalls)
+	}
+	if len(programmes) != 1 {
+		t.Fatalf("expected 1 bouquet programme, got %d", len(programmes))
+	}
+	if programmes[0].Title.Text != "Future bouquet event" {
+		t.Fatalf("expected bouquet programme to be used directly, got %q", programmes[0].Title.Text)
+	}
+}
+
+func TestBouquetEPGCoversFutureWindow(t *testing.T) {
+	now := time.Now().UTC()
+
+	tests := []struct {
+		name   string
+		events []openwebif.EPGEvent
+		wantOK bool
+	}{
+		{
+			name:   "no events",
+			events: nil,
+			wantOK: false,
+		},
+		{
+			name: "latest end already in the past",
+			events: []openwebif.EPGEvent{
+				{
+					Begin:    now.Add(-2 * time.Hour).Unix(),
+					Duration: 1800,
+				},
+			},
+			wantOK: false,
+		},
+		{
+			name: "future coverage shorter than minimum window",
+			events: []openwebif.EPGEvent{
+				{
+					Begin:    now.Add(10 * time.Minute).Unix(),
+					Duration: int64((2 * time.Hour).Seconds()),
+				},
+			},
+			wantOK: false,
+		},
+		{
+			name: "future coverage reaches minimum window",
+			events: []openwebif.EPGEvent{
+				{
+					Begin:    now.Add(15 * time.Minute).Unix(),
+					Duration: int64((7 * time.Hour).Seconds()),
+				},
+			},
+			wantOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotOK, _ := bouquetEPGCoversFutureWindow(tt.events, now, minBouquetFutureCoverage)
+			if gotOK != tt.wantOK {
+				t.Fatalf("bouquetEPGCoversFutureWindow() = %v, want %v", gotOK, tt.wantOK)
+			}
+		})
 	}
 }

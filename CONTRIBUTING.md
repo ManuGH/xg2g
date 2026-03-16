@@ -91,6 +91,10 @@ Before submitting a Pull Request, please ensure:
     - Build and push multi-architecture Docker images to GHCR.
     - Create a GitHub Release with all artifacts.
 
+    Release copy is standardized through:
+    - [docs/release/RELEASE_TEMPLATE.md](docs/release/RELEASE_TEMPLATE.md)
+    - [docs/release/GITHUB_PRESENCE_COPY.md](docs/release/GITHUB_PRESENCE_COPY.md)
+
 ## Pull Request Checklist
 
 - [ ] New features include tests.

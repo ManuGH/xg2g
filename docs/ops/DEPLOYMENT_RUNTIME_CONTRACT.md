@@ -1,7 +1,7 @@
 <!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl -->
 # GPU/CPU Runtime Contract
 
-**Verification**: Run `scripts/verify-runtime.sh` after build to ensure canonical contract compliance.
+**Verification**: Run `backend/scripts/verify-runtime.sh` after build to ensure canonical contract compliance.
 
 **Status**: CANONICAL - Single Source of Truth
 **Last Updated**: 2026-01-08

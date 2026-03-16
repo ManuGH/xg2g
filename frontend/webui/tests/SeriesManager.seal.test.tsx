@@ -13,6 +13,7 @@ vi.mock('../src/client-ts', async () => {
     getSeriesRules: vi.fn().mockResolvedValue({ data: [] }),
     getServices: vi.fn().mockResolvedValue({ data: [] }),
     createSeriesRule: vi.fn(),
+    updateSeriesRule: vi.fn(),
   };
 });
 
@@ -49,6 +50,48 @@ describe('SeriesManager Truth Sealing (UI-INV-SERIES-001)', () => {
       expect(call.body).not.toHaveProperty('channelRef');
       expect(call.body).not.toHaveProperty('days');
       expect(call.body).not.toHaveProperty('startWindow');
+    });
+  });
+
+  it('updates an existing rule instead of falling back to recreate', async () => {
+    (client.getSeriesRules as any).mockResolvedValueOnce({
+      data: [{
+        id: 'rule-1',
+        enabled: true,
+        keyword: 'Tatort',
+        channelRef: '',
+        days: [],
+        startWindow: '',
+        priority: 3,
+      }],
+    });
+
+    render(
+      <UiOverlayProvider>
+        <SeriesManager />
+      </UiOverlayProvider>
+    );
+
+    const editButton = await screen.findByRole('button', { name: 'Edit' });
+    fireEvent.click(editButton);
+
+    const keywordInput = screen.getByTestId('series-edit-keyword');
+    fireEvent.change(keywordInput, { target: { value: 'Polizeiruf' } });
+
+    const saveBtn = screen.getByTestId('series-edit-save');
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(client.updateSeriesRule).toHaveBeenCalledOnce();
+      expect(client.createSeriesRule).not.toHaveBeenCalled();
+
+      const call = (client.updateSeriesRule as any).mock.calls[0][0];
+      expect(call.path).toEqual({ id: 'rule-1' });
+      expect(call.body).toEqual({
+        enabled: true,
+        keyword: 'Polizeiruf',
+        priority: 3,
+      });
     });
   });
 });

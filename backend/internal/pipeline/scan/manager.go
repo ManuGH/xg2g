@@ -315,6 +315,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		}
 
 		// Probe with strict timeout (prevent hanging on zombie streams)
+		attemptedProbeURLs := map[string]struct{}{normalizeProbeURL(probeURL): {}}
 		probeCtx, probeCancel := context.WithTimeout(ctx, 8*time.Second)
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
 		metrics.SetScanInflightProbes(1)
@@ -332,6 +333,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 
 			fallbackURL, buildErr := buildFallbackURL(probeURL, sRef)
 			if buildErr == nil {
+				attemptedProbeURLs[normalizeProbeURL(fallbackURL)] = struct{}{}
 				// Use fresh timeout for fallback
 				fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
 				resFallback, errFallback := infra.Probe(fbCtx, fallbackURL)
@@ -351,17 +353,39 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		// If explicit ports failed, try the original M3U URL provided in the playlist.
 		// This respects "UseWebIFStreams" scenarios where the user relies on the API endpoint itself.
 		if err != nil {
-			log.L().Warn().Str("sref", sRef).Msg("scan: attempting fallback to original URL (web)")
-			fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
-			resOrig, errOrig := infra.Probe(fbCtx, ch.URL)
-			fbCancel()
+			origCtx, origCancel := context.WithTimeout(ctx, resolveM3UTimeout)
+			originalProbeURL, resolvedPlaylist, resolveErr := resolveOriginalProbeURL(origCtx, ch.URL)
+			origCancel()
 
-			if errOrig == nil {
-				log.L().Info().Str("sref", sRef).Msg("scan: fallback to original URL succeeded")
-				res = resOrig
-				err = nil
-			} else {
-				log.L().Warn().Err(errOrig).Str("sref", sRef).Msg("scan: final fallback failed")
+			switch {
+			case resolveErr != nil:
+				log.L().Debug().
+					Err(resolveErr).
+					Str("sref", sRef).
+					Msg("scan: original URL fallback unavailable")
+			case originalProbeURL == "":
+				log.L().Debug().
+					Str("sref", sRef).
+					Msg("scan: original URL fallback resolved to empty target")
+			case hasAttemptedProbeURL(attemptedProbeURLs, originalProbeURL):
+				log.L().Debug().
+					Str("sref", sRef).
+					Str("probe_url", originalProbeURL).
+					Bool("resolved_playlist", resolvedPlaylist).
+					Msg("scan: skipping original URL fallback; target already attempted")
+			default:
+				log.L().Warn().Str("sref", sRef).Msg("scan: attempting fallback to original URL (web)")
+				fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
+				resOrig, errOrig := infra.Probe(fbCtx, originalProbeURL)
+				fbCancel()
+
+				if errOrig == nil {
+					log.L().Info().Str("sref", sRef).Msg("scan: fallback to original URL succeeded")
+					res = resOrig
+					err = nil
+				} else {
+					log.L().Warn().Err(errOrig).Str("sref", sRef).Msg("scan: final fallback failed")
+				}
 			}
 		}
 		fromStore := false
@@ -503,6 +527,45 @@ func resolveStreamURL(ctx context.Context, urlStr string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("empty playlist")
+}
+
+func resolveOriginalProbeURL(ctx context.Context, urlStr string) (string, bool, error) {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return "", false, err
+	}
+	if !strings.HasSuffix(strings.ToLower(u.Path), ".m3u") {
+		return urlStr, false, nil
+	}
+
+	resolved, err := resolveStreamURL(ctx, urlStr)
+	if err != nil {
+		return "", true, err
+	}
+	return resolved, true, nil
+}
+
+func hasAttemptedProbeURL(attempted map[string]struct{}, probeURL string) bool {
+	normalized := normalizeProbeURL(probeURL)
+	if len(attempted) == 0 || normalized == "" {
+		return false
+	}
+	_, ok := attempted[normalized]
+	return ok
+}
+
+func normalizeProbeURL(probeURL string) string {
+	probeURL = strings.TrimSpace(probeURL)
+	if probeURL == "" {
+		return ""
+	}
+	u, err := url.Parse(probeURL)
+	if err != nil {
+		return probeURL
+	}
+	u.User = nil
+	u.Fragment = ""
+	return u.String()
 }
 
 func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {

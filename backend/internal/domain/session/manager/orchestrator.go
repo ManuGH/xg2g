@@ -33,7 +33,11 @@ type Orchestrator struct {
 	TunerSlots        []int  // Available hardware slots
 	HLSRoot           string // Root directory for HLS segments
 	LiveReadySegments int    // Minimum number of live HLS segments required before READY
-	Sweeper           SweeperConfig
+	// Optional startup wait overrides for orchestration tests and targeted recovery tuning.
+	PlaylistReadyTimeout         time.Duration
+	SafariPlaylistReadyTimeout   time.Duration
+	RecoveryPlaylistReadyTimeout time.Duration
+	Sweeper                      SweeperConfig
 
 	Pipeline        ports.MediaPipeline
 	Platform        ports.Platform         // OS/FS operations

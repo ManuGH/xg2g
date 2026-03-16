@@ -4,73 +4,354 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>xg2g API Reference</title>
+    <meta name="theme-color" content="#16324f" />
     <meta
       name="description"
-      content="xg2g OpenAPI reference for the v3 API, published via GitHub Pages."
+      content="xg2g OpenAPI reference for the v3 API, with direct links to the repo, quickstart, and source OpenAPI contract."
     />
     <style>
       :root {
         color-scheme: light;
+        --ink: #16324f;
+        --ink-soft: #42617f;
+        --sky: #5ca5d8;
+        --sand: #f7efe4;
+        --paper: #fffdf9;
+        --sun: #f3aa3b;
+        --ember: #e86a33;
+        --mint: #2b8a74;
+        --line: rgba(22, 50, 79, 0.12);
+        --shadow: 0 28px 70px rgba(22, 50, 79, 0.12);
       }
 
       body {
         margin: 0;
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        background: #f5f8fb;
-        color: #1a2433;
+        font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(243, 170, 59, 0.2), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(92, 165, 216, 0.22), transparent 30%),
+          linear-gradient(180deg, #f9f3ea 0%, #f4f7fb 55%, #edf4fa 100%);
+        color: var(--ink);
         min-height: 100vh;
-        display: flex;
-        flex-direction: column;
       }
 
-      .topbar {
-        background: linear-gradient(120deg, #1b4f72 0%, #21618c 60%, #2e86c1 100%);
+      a {
+        color: inherit;
+      }
+
+      .page {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 32px;
+        background:
+          linear-gradient(135deg, rgba(22, 50, 79, 0.98), rgba(32, 79, 113, 0.94)),
+          linear-gradient(180deg, rgba(243, 170, 59, 0.18), transparent);
         color: #fff;
-        padding: 20px 24px;
+        padding: 28px;
+        box-shadow: var(--shadow);
       }
 
-      .topbar h1 {
-        margin: 0 0 8px;
-        font-size: 1.5rem;
-        line-height: 1.2;
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -10% -35% auto;
+        width: 420px;
+        height: 420px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(243, 170, 59, 0.24), transparent 68%);
+        pointer-events: none;
       }
 
-      .topbar p {
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 28px;
+      }
+
+      .nav a,
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 11px 16px;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 700;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+        backdrop-filter: blur(8px);
+      }
+
+      .nav a:hover,
+      .button:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      .hero-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 28px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .hero-copy {
+        flex: 1 1 540px;
+        min-width: 0;
+      }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        font-size: 0.82rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #ffd9a2;
+        font-weight: 800;
+      }
+
+      h1 {
         margin: 0;
-        opacity: 0.92;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(2.4rem, 4vw, 4rem);
+        line-height: 1.02;
       }
 
-      .topbar a {
-        color: #d6ecff;
+      .lede {
+        margin: 18px 0 0;
+        max-width: 720px;
+        font-size: 1.1rem;
+        line-height: 1.65;
+        color: rgba(255, 255, 255, 0.88);
       }
 
-      .topbar a:hover {
-        color: #fff;
-      }
-
-      main {
-        flex: 1 1 auto;
+      .chip-row {
         display: flex;
-        flex-direction: column;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 22px 0 0;
       }
 
-      main > redoc {
-        flex: 1 1 auto;
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #f6fbff;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+      }
+
+      .hero-side {
+        flex: 0 1 320px;
+        display: grid;
+        gap: 14px;
+        align-self: stretch;
+      }
+
+      .side-card {
+        border-radius: 24px;
+        padding: 18px 18px 20px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .side-card strong {
+        display: block;
+        font-size: 1rem;
+      }
+
+      .side-card span {
+        display: block;
+        margin-top: 8px;
+        color: rgba(255, 255, 255, 0.8);
+        line-height: 1.5;
+      }
+
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .button-primary {
+        background: linear-gradient(135deg, var(--sun), var(--ember));
+        border-color: transparent;
+      }
+
+      .button-secondary {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin: 22px 0 0;
+      }
+
+      .summary-card {
+        border-radius: 24px;
+        padding: 20px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        box-shadow: 0 18px 40px rgba(22, 50, 79, 0.06);
+      }
+
+      .summary-card strong {
+        display: block;
+        font-size: 1.15rem;
+      }
+
+      .summary-card p {
+        margin: 10px 0 0;
+        line-height: 1.6;
+        color: var(--ink-soft);
+      }
+
+      .summary-card .pill {
+        display: inline-flex;
+        margin-bottom: 12px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        font-size: 0.84rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+      }
+
+      .pill-stable {
+        background: rgba(43, 138, 116, 0.12);
+        color: var(--mint);
+      }
+
+      .pill-source {
+        background: rgba(92, 165, 216, 0.14);
+        color: #1d6c9c;
+      }
+
+      .pill-pages {
+        background: rgba(243, 170, 59, 0.16);
+        color: #9a5b0c;
+      }
+
+      .redoc-shell {
+        margin-top: 26px;
+        overflow: hidden;
+        border-radius: 32px;
+        border: 1px solid var(--line);
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      redoc {
+        display: block;
+      }
+
+      code {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      @media (max-width: 700px) {
+        .page {
+          padding: 18px 12px 28px;
+        }
+
+        .hero {
+          padding: 20px;
+          border-radius: 24px;
+        }
+
+        .nav a,
+        .button {
+          width: 100%;
+        }
+
+        .side-card,
+        .summary-card {
+          border-radius: 20px;
+        }
+
+        .redoc-shell {
+          border-radius: 22px;
+        }
       }
     </style>
   </head>
   <body>
-    <header class="topbar">
-      <h1>xg2g API Reference</h1>
-      <p>
-        OpenAPI v3 documentation for <code>/api/v3</code>. Source:
-        <a href="https://github.com/ManuGH/xg2g/blob/main/backend/api/openapi.yaml"
-          >backend/api/openapi.yaml</a
-        >
-      </p>
-    </header>
-    <main>
-      <redoc spec-url="./openapi.yaml" hide-download-button></redoc>
+    <main class="page">
+      <section class="hero">
+        <nav class="nav" aria-label="Primary">
+          <a href="https://github.com/ManuGH/xg2g">GitHub Repo</a>
+          <a href="https://github.com/ManuGH/xg2g?tab=readme-ov-file#quickstart">Quickstart</a>
+          <a href="./openapi.yaml">OpenAPI YAML</a>
+          <a href="https://github.com/ManuGH/xg2g/tree/main/docs">Docs Portal</a>
+        </nav>
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">OpenAPI /api/v3 Reference</p>
+            <h1>xg2g API Reference</h1>
+            <p class="lede">
+              Contract-first docs for control, auth, sessions, health, and live
+              playback endpoints. This site is published from the repository and
+              tracks the OpenAPI source of truth.
+            </p>
+            <div class="chip-row" aria-label="Highlights">
+              <span class="chip">Stable surface: <code>/api/v3</code></span>
+              <span class="chip">Published via GitHub Pages</span>
+              <span class="chip">Source-controlled OpenAPI contract</span>
+            </div>
+            <div class="cta-row">
+              <a class="button button-primary" href="./openapi.yaml">Download OpenAPI</a>
+              <a class="button button-secondary" href="https://github.com/ManuGH/xg2g/blob/main/backend/api/openapi.yaml">View Source on GitHub</a>
+            </div>
+          </div>
+          <aside class="hero-side" aria-label="Reference notes">
+            <div class="side-card">
+              <strong>Integrate playback and control flows</strong>
+              <span>Use the same contract for auth exchange, session creation, HLS delivery, and operator tooling.</span>
+            </div>
+            <div class="side-card">
+              <strong>Built for repo-first maintenance</strong>
+              <span>The GitHub Pages site mirrors the checked-in <code>backend/api/openapi.yaml</code> contract.</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="summary-grid" aria-label="Summary">
+        <article class="summary-card">
+          <span class="pill pill-stable">Stable</span>
+          <strong>/api/v3 is the public contract</strong>
+          <p>Use this surface for integrations, automation, and UI clients. Versioning is explicit and release-backed.</p>
+        </article>
+        <article class="summary-card">
+          <span class="pill pill-source">Source of Truth</span>
+          <strong>Generated from one OpenAPI file</strong>
+          <p>The published docs are driven by <code>backend/api/openapi.yaml</code>, reducing drift between code and docs.</p>
+        </article>
+        <article class="summary-card">
+          <span class="pill pill-pages">GitHub Pages</span>
+          <strong>Fast public entry point</strong>
+          <p>Link users here for endpoint details, or send them to the repo quickstart when they need a working deployment first.</p>
+        </article>
+      </section>
+
+      <section class="redoc-shell" aria-label="Redoc reference">
+        <redoc spec-url="./openapi.yaml" hide-download-button></redoc>
+      </section>
     </main>
     <script src="https://cdn.redoc.ly/redoc/v2.1.5/bundles/redoc.standalone.js"></script>
   </body>

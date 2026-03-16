@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
@@ -195,5 +196,55 @@ func TestMemoryStore_ScanSessions_IsolatedSnapshot(t *testing.T) {
 		if id == "Z" {
 			t.Errorf("Snapshot was not isolated - new session 'Z' appeared in scan")
 		}
+	}
+}
+
+func TestMemoryStore_GetSession_DeepCopiesPlaybackTrace(t *testing.T) {
+	store := NewMemoryStore()
+	ctx := context.Background()
+
+	rec := &model.SessionRecord{
+		SessionID: "trace-copy",
+		State:     model.SessionReady,
+		PlaybackTrace: &model.PlaybackTrace{
+			RequestProfile: "compatible",
+			TargetProfile: &playbackprofile.TargetPlaybackProfile{
+				Audio: playbackprofile.AudioTarget{
+					Codec: "aac",
+				},
+			},
+			Fallbacks: []model.PlaybackFallbackTrace{{
+				Reason: "bufferAppendError",
+			}},
+		},
+	}
+	if err := store.PutSession(ctx, rec); err != nil {
+		t.Fatalf("PutSession failed: %v", err)
+	}
+
+	got, err := store.GetSession(ctx, "trace-copy")
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if got == nil || got.PlaybackTrace == nil {
+		t.Fatalf("expected playback trace copy, got %#v", got)
+	}
+
+	got.PlaybackTrace.RequestProfile = "direct"
+	got.PlaybackTrace.TargetProfile.Audio.Codec = "mp3"
+	got.PlaybackTrace.Fallbacks[0].Reason = "networkError"
+
+	again, err := store.GetSession(ctx, "trace-copy")
+	if err != nil {
+		t.Fatalf("second GetSession failed: %v", err)
+	}
+	if again.PlaybackTrace.RequestProfile != "compatible" {
+		t.Fatalf("request profile leaked through shared state: %q", again.PlaybackTrace.RequestProfile)
+	}
+	if again.PlaybackTrace.TargetProfile.Audio.Codec != "aac" {
+		t.Fatalf("target profile leaked through shared state: %q", again.PlaybackTrace.TargetProfile.Audio.Codec)
+	}
+	if again.PlaybackTrace.Fallbacks[0].Reason != "bufferAppendError" {
+		t.Fatalf("fallback trace leaked through shared state: %q", again.PlaybackTrace.Fallbacks[0].Reason)
 	}
 }

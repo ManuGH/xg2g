@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -35,14 +36,20 @@ func (s *Server) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Req
 func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string, isTimeshift bool, isHead bool) {
 	deps := s.recordingsModuleDeps()
 	profile := detectClientProfile(r)
+	variant := v3recordings.NormalizeVariantHash(r.URL.Query().Get("variant"))
+	target, err := v3recordings.DecodeTargetProfileQuery(r.URL.Query().Get("target"))
+	if err != nil {
+		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "invalid target profile")
+		return
+	}
 
 	var artifact artifacts.ArtifactOK
 	var artErr *artifacts.ArtifactError
 
 	if isTimeshift {
-		artifact, artErr = s.artifacts.ResolveTimeshift(r.Context(), recordingId, string(profile))
+		artifact, artErr = s.artifacts.ResolveTimeshift(r.Context(), recordingId, string(profile), variant, target)
 	} else {
-		artifact, artErr = s.artifacts.ResolvePlaylist(r.Context(), recordingId, string(profile))
+		artifact, artErr = s.artifacts.ResolvePlaylist(r.Context(), recordingId, string(profile), variant, target)
 	}
 
 	if artErr != nil {
@@ -160,7 +167,8 @@ func (s *Server) GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http
 
 func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string, isHead bool) {
 	deps := s.recordingsModuleDeps()
-	artifact, artErr := s.artifacts.ResolveSegment(r.Context(), recordingId, segment)
+	variant := v3recordings.NormalizeVariantHash(r.URL.Query().Get("variant"))
+	artifact, artErr := s.artifacts.ResolveSegment(r.Context(), recordingId, segment, variant)
 	if artErr != nil {
 		s.writeArtifactError(w, r, recordingId, playbackStageSegmentLabel, artErr)
 		return

@@ -23,16 +23,7 @@ const (
 
 var ffmpegURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
 
-type preflightResult struct {
-	ok           bool
-	bytes        int
-	reason       string
-	httpStatus   int
-	latencyMs    int64
-	resolvedPort int
-}
-
-type preflightFn func(context.Context, string) (preflightResult, error)
+type preflightFn func(context.Context, string) (ports.PreflightResult, error)
 
 func (a *LocalAdapter) selectStreamURL(ctx context.Context, sessionID, serviceRef, streamURL string) (string, error) {
 	return a.selectStreamURLWithPreflight(ctx, sessionID, serviceRef, streamURL, a.preflightTS)
@@ -45,17 +36,18 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 		Str("resolved_url", sanitizeURLForLog(streamURL)).
 		Msg("stream input preflight started")
 	result, err := preflight(ctx, streamURL)
+	result = normalizeAdapterPreflightResult(result, err)
 	a.Logger.Info().
 		Str("session_id", sessionID).
 		Str("startup_phase", "input_preflight_finished").
 		Str("resolved_url", sanitizeURLForLog(streamURL)).
-		Bool("ok", err == nil && result.ok).
-		Int("bytes", result.bytes).
-		Int64("latency_ms", result.latencyMs).
-		Int("http_status", result.httpStatus).
+		Bool("ok", err == nil && result.OK).
+		Int("bytes", result.Bytes).
+		Int64("latency_ms", result.LatencyMs).
+		Int("http_status", result.HTTPStatus).
 		Msg("stream input preflight finished")
-	reason := preflightReason(result, err)
-	if err == nil && result.ok {
+	reason := preflightReason(result)
+	if err == nil && result.OK {
 		return streamURL, nil
 	}
 
@@ -67,11 +59,12 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Str("sessionId", sessionID).
 			Str("service_ref", serviceRef).
 			Str("resolved_url", resolvedLogURL).
-			Int("preflight_bytes", result.bytes).
+			Int("preflight_bytes", result.Bytes).
 			Str("preflight_reason", reason).
-			Int64("preflight_latency_ms", result.latencyMs).
-			Int("http_status", result.httpStatus).
-			Int("resolved_port", result.resolvedPort).
+			Str("preflight_detail", result.FailureDetail()).
+			Int64("preflight_latency_ms", result.LatencyMs).
+			Int("http_status", result.HTTPStatus).
+			Int("resolved_port", result.ResolvedPort).
 			Msg("streamrelay preflight failed")
 	}
 
@@ -83,13 +76,21 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 				Str("sessionId", sessionID).
 				Str("service_ref", serviceRef).
 				Str("resolved_url", resolvedLogURL).
-				Int("preflight_bytes", result.bytes).
-				Str("preflight_reason", "fallback_url_invalid").
-				Int64("preflight_latency_ms", result.latencyMs).
-				Int("http_status", result.httpStatus).
-				Int("resolved_port", result.resolvedPort).
+				Int("preflight_bytes", result.Bytes).
+				Str("preflight_reason", string(ports.PreflightReasonFallbackURLInvalid)).
+				Str("preflight_detail", "fallback_url_invalid").
+				Int64("preflight_latency_ms", result.LatencyMs).
+				Int("http_status", result.HTTPStatus).
+				Int("resolved_port", result.ResolvedPort).
 				Msg("preflight failed and fallback url was invalid")
-			return "", &ports.PreflightError{Reason: "fallback_url_invalid"}
+			return "", ports.NewPreflightError(ports.PreflightResult{
+				Reason:       ports.PreflightReasonFallbackURLInvalid,
+				Detail:       "fallback_url_invalid",
+				HTTPStatus:   result.HTTPStatus,
+				Bytes:        result.Bytes,
+				LatencyMs:    result.LatencyMs,
+				ResolvedPort: result.ResolvedPort,
+			})
 		}
 		fallbackURL = a.injectCredentialsIfAllowed(fallbackURL)
 		fallbackLogURL := sanitizeURLForLog(fallbackURL)
@@ -99,15 +100,17 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Str("service_ref", serviceRef).
 			Str("resolved_url", resolvedLogURL).
 			Str("fallback_url", fallbackLogURL).
-			Int("preflight_bytes", result.bytes).
+			Int("preflight_bytes", result.Bytes).
 			Str("preflight_reason", reason).
-			Int64("preflight_latency_ms", result.latencyMs).
-			Int("http_status", result.httpStatus).
-			Int("resolved_port", result.resolvedPort).
+			Str("preflight_detail", result.FailureDetail()).
+			Int64("preflight_latency_ms", result.LatencyMs).
+			Int("http_status", result.HTTPStatus).
+			Int("resolved_port", result.ResolvedPort).
 			Msg("fallback to 8001 activated after streamrelay preflight failure")
 
 		fallbackResult, fallbackErr := preflight(ctx, fallbackURL)
-		if fallbackErr == nil && fallbackResult.ok {
+		fallbackResult = normalizeAdapterPreflightResult(fallbackResult, fallbackErr)
+		if fallbackErr == nil && fallbackResult.OK {
 			return fallbackURL, nil
 		}
 		a.Logger.Warn().Str("url", fallbackLogURL).Msg("fallback 8001 failed, trying original WebIF URL")
@@ -121,7 +124,8 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			origURL := u.String()
 
 			origRes, origErr := preflight(ctx, origURL)
-			if (origErr == nil && origRes.httpStatus == 200) || (origRes.httpStatus == 200 && origRes.bytes > 0) {
+			origRes = normalizeAdapterPreflightResult(origRes, origErr)
+			if (origErr == nil && origRes.HTTPStatus == http.StatusOK) || (origRes.HTTPStatus == http.StatusOK && origRes.Bytes > 0) {
 				a.Logger.Info().Str("url", sanitizeURLForLog(origURL)).Msg("fallback to original URL succeeded (M3U)")
 				return origURL, nil
 			}
@@ -131,7 +135,14 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Str("event", "all_fallbacks_failed").
 			Str("sessionId", sessionID).
 			Msg("all stream source fallbacks failed")
-		return "", &ports.PreflightError{Reason: "fallback_failed_all"}
+		return "", ports.NewPreflightError(ports.PreflightResult{
+			Reason:       ports.PreflightReasonFallbackFailed,
+			Detail:       "fallback_failed_all",
+			HTTPStatus:   result.HTTPStatus,
+			Bytes:        result.Bytes,
+			LatencyMs:    result.LatencyMs,
+			ResolvedPort: result.ResolvedPort,
+		})
 	}
 
 	a.Logger.Error().
@@ -139,31 +150,33 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 		Str("sessionId", sessionID).
 		Str("service_ref", serviceRef).
 		Str("resolved_url", resolvedLogURL).
-		Int("preflight_bytes", result.bytes).
+		Int("preflight_bytes", result.Bytes).
 		Str("preflight_reason", reason).
-		Int64("preflight_latency_ms", result.latencyMs).
-		Int("http_status", result.httpStatus).
-		Int("resolved_port", result.resolvedPort).
+		Str("preflight_detail", result.FailureDetail()).
+		Int64("preflight_latency_ms", result.LatencyMs).
+		Int("http_status", result.HTTPStatus).
+		Int("resolved_port", result.ResolvedPort).
 		Msg("preflight failed for resolved stream url")
-	return "", &ports.PreflightError{Reason: reason}
+	return "", ports.NewPreflightError(result)
 }
 
-func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result preflightResult, err error) {
+func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result ports.PreflightResult, err error) {
 	start := time.Now()
 	defer func() {
 		latency := time.Since(start)
-		result.latencyMs = latency.Milliseconds()
-		metrics.ObservePreflightLatency(result.resolvedPort, latency)
+		result.LatencyMs = latency.Milliseconds()
+		metrics.ObservePreflightLatency(result.ResolvedPort, latency)
+		result = result.Normalized()
 	}()
 
 	if strings.TrimSpace(rawURL) == "" {
-		result.reason = "empty_url"
+		result.Detail = "empty_url"
 		return result, fmt.Errorf("preflight url empty")
 	}
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		result.reason = "invalid_url"
+		result.Detail = "invalid_url"
 		return result, err
 	}
 
@@ -173,7 +186,7 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	}
 	if port != "" {
 		if portInt, portErr := strconv.Atoi(port); portErr == nil {
-			result.resolvedPort = portInt
+			result.ResolvedPort = portInt
 		}
 	}
 
@@ -186,7 +199,7 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 
 	req, _, err := buildAuthenticatedRequest(ctx, http.MethodGet, rawURL)
 	if err != nil {
-		result.reason = "request_build_failed"
+		result.Detail = "request_build_failed"
 		return result, err
 	}
 
@@ -201,20 +214,24 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		result.reason = "request_failed"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			result.Detail = "timeout"
+		} else {
+			result.Detail = "request_failed"
+		}
 		return result, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	result.httpStatus = resp.StatusCode
+	result.HTTPStatus = resp.StatusCode
 	if resp.StatusCode != http.StatusOK {
-		result.reason = fmt.Sprintf("http_status_%d", resp.StatusCode)
+		result.Detail = fmt.Sprintf("http_status_%d", resp.StatusCode)
 		return result, fmt.Errorf("preflight http status %d", resp.StatusCode)
 	}
 
 	buf := make([]byte, preflightMinBytes)
 	n, err := io.ReadAtLeast(resp.Body, buf, preflightMinBytes)
-	result.bytes = n
+	result.Bytes = n
 
 	latency := time.Since(start)
 	a.Logger.Info().
@@ -222,35 +239,48 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 		Int("bytes", n).
 		Dur("latency", latency).
 		Int64("preflight_latency_ms", latency.Milliseconds()).
-		Int("http_status", result.httpStatus).
-		Int("resolved_port", result.resolvedPort).
+		Int("http_status", result.HTTPStatus).
+		Int("resolved_port", result.ResolvedPort).
 		Msg("preflight read completed")
 
 	if err != nil {
-		result.reason = "short_read"
+		result.Detail = "short_read"
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			result.reason = "timeout"
+			result.Detail = "timeout"
 		}
 		return result, err
 	}
 
 	if !hasTSSync(buf) {
-		result.reason = "sync_miss"
+		result.Detail = "sync_miss"
 		return result, fmt.Errorf("preflight ts sync missing")
 	}
 
-	result.ok = true
+	result = ports.NewSuccessfulPreflightResult(n, latency.Milliseconds(), result.ResolvedPort)
 	return result, nil
 }
 
-func preflightReason(result preflightResult, err error) string {
-	if result.reason != "" {
-		return result.reason
+func normalizeAdapterPreflightResult(result ports.PreflightResult, err error) ports.PreflightResult {
+	if result.OK {
+		return result.Normalized()
 	}
-	if err != nil {
-		return "request_failed"
+	detail := result.FailureDetail()
+	if detail == "" {
+		if err != nil {
+			detail = "request_failed"
+		} else {
+			detail = "unknown"
+		}
 	}
-	return "unknown"
+	return ports.NewPreflightResult(detail, result.HTTPStatus, result.Bytes, result.LatencyMs, result.ResolvedPort)
+}
+
+func preflightReason(result ports.PreflightResult) string {
+	normalized := result.Normalized()
+	if normalized.Reason != "" {
+		return string(normalized.Reason)
+	}
+	return string(ports.PreflightReasonUnknown)
 }
 
 func hasTSSync(buf []byte) bool {
