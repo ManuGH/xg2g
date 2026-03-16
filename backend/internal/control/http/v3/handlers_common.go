@@ -12,6 +12,7 @@ import (
 	"reflect"
 
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // ClientProfile represents the detected capability bucket of the client.
@@ -61,6 +62,14 @@ func mapProfileString(s string) ClientProfile {
 // Note: This shadows the generated ProblemDetails to strictly enforce the "details" extension point
 func writeProblem(w http.ResponseWriter, r *http.Request, status int, problemType, title, code, detail string, extra map[string]any) {
 	problem.Write(w, r, status, problemType, title, code, detail, extra)
+}
+
+func writeRegisteredProblem(w http.ResponseWriter, r *http.Request, status int, problemType, title, code, detail string, extra map[string]any) {
+	spec := problemcode.MustResolve(code, title)
+	if problemType == "" {
+		problemType = spec.ProblemType
+	}
+	writeProblem(w, r, status, problemType, spec.Title, spec.Code, detail, extra)
 }
 
 // isNil is a robust nil check that handles the "typed nil interface" trap

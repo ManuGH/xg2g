@@ -28,7 +28,7 @@ func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL
 	dir := filepath.Dir(path)
 	tmpFile, err := os.CreateTemp(dir, ".xg2g-m3u-*.tmp")
 	if err != nil {
-		return fmt.Errorf("create temp M3U file: %w", err)
+		return WrapPlaylistWriteError(fmt.Errorf("create temp M3U file: %w", err))
 	}
 	tmpPath := tmpFile.Name()
 	defer func() {
@@ -40,18 +40,18 @@ func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL
 
 	// Write playlist to temp file
 	if err := playlist.WriteM3U(tmpFile, items, publicURL, xTvgURL); err != nil {
-		return fmt.Errorf("write M3U data: %w", err)
+		return WrapPlaylistWriteError(fmt.Errorf("write M3U data: %w", err))
 	}
 
 	// Close before rename (Windows requires this)
 	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp M3U file: %w", err)
+		return WrapPlaylistWriteError(fmt.Errorf("close temp M3U file: %w", err))
 	}
 	tmpFile = nil // Prevent double close in defer
 
 	// Rename temp file to target (best-effort atomic on Windows)
 	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("rename M3U file: %w", err)
+		return WrapPlaylistWriteError(fmt.Errorf("rename M3U file: %w", err))
 	}
 
 	logger.Debug().Str("path", path).Msg("wrote M3U file")
@@ -67,7 +67,7 @@ func writeXMLTV(ctx context.Context, path string, tv epg.TV) error {
 	dir := filepath.Dir(path)
 	tmpFile, err := os.CreateTemp(dir, ".xg2g-xmltv-*.tmp")
 	if err != nil {
-		return fmt.Errorf("create temp XMLTV file: %w", err)
+		return WrapXMLTVWriteError(fmt.Errorf("create temp XMLTV file: %w", err))
 	}
 	tmpPath := tmpFile.Name()
 	defer func() {
@@ -79,18 +79,18 @@ func writeXMLTV(ctx context.Context, path string, tv epg.TV) error {
 
 	// epg.WriteXMLTV needs a file path, so write to temp file path
 	if err := epg.WriteXMLTV(tv, tmpPath); err != nil {
-		return fmt.Errorf("write XMLTV data: %w", err)
+		return WrapXMLTVWriteError(fmt.Errorf("write XMLTV data: %w", err))
 	}
 
 	// Close before rename (Windows requires this)
 	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp XMLTV file: %w", err)
+		return WrapXMLTVWriteError(fmt.Errorf("close temp XMLTV file: %w", err))
 	}
 	tmpFile = nil // Prevent double close in defer
 
 	// Rename temp file to target (best-effort atomic on Windows)
 	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("rename XMLTV file: %w", err)
+		return WrapXMLTVWriteError(fmt.Errorf("rename XMLTV file: %w", err))
 	}
 
 	logger.Debug().Str("path", path).Msg("wrote XMLTV file")

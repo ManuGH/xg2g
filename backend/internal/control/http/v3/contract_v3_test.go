@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -114,6 +115,7 @@ func issueSessionCookie(t *testing.T, handler http.Handler, token string) *http.
 
 	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/auth/session", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.TLS = &tls.ConnectionState{}
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)

@@ -24,10 +24,7 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	store := deps.store
 
 	if store == nil {
-		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
-			Code:    "V3_UNAVAILABLE",
-			Message: "v3 not available",
-		})
+		RespondError(w, r, http.StatusServiceUnavailable, ErrV3NotAvailable)
 		return
 	}
 

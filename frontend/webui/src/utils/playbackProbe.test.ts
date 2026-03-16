@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import Hls from 'hls.js';
+import Hls from '../lib/hlsRuntime';
 import { probeRuntimePlaybackCapabilities } from './playbackProbe';
 import { resetCachedCodecs } from './codecDetection';
 
-vi.mock('hls.js', () => {
+vi.mock('../lib/hlsRuntime', () => {
   const HlsMock = vi.fn();
   (HlsMock as any).isSupported = vi.fn().mockReturnValue(true);
   return { default: HlsMock };

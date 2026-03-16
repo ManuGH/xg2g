@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
-import Hls from 'hls.js';
+import Hls from '../lib/hlsRuntime';
 import {
   postRecordingPlaybackInfo,
   type PlaybackCapabilities as PlaybackCapabilitiesContract,
@@ -173,6 +173,27 @@ function extractPlaybackTrace(value: unknown): PlaybackTraceContract | null {
   return null;
 }
 
+function readLegacyTargetProfileHash(decision: PlaybackInfo['decision']): string | null {
+  if (!decision || typeof decision !== 'object') {
+    return null;
+  }
+  const value = (decision as Record<string, unknown>).targetProfileHash;
+  return typeof value === 'string' ? value : null;
+}
+
+function readLegacyTargetProfile(decision: PlaybackInfo['decision']): PlaybackTargetProfile | null {
+  if (!decision || typeof decision !== 'object') {
+    return null;
+  }
+  const value = (decision as Record<string, unknown>).targetProfile;
+  return value && typeof value === 'object' ? value as PlaybackTargetProfile : null;
+}
+
+function readLegacyDurationMs(playbackInfo: PlaybackInfo): number | null {
+  const value = (playbackInfo as Record<string, unknown>).durationMs;
+  return typeof value === 'number' && value > 0 ? value : null;
+}
+
 function formatClientPath(snapshot: CapabilitySnapshot | null): string {
   if (!snapshot) return '-';
   const preferred = snapshot.preferredHlsEngine ?? '-';
@@ -266,16 +287,17 @@ function extractPlaybackObservability(
     degradedFrom: decision.trace?.degradedFrom ?? null,
     hostPressureBand: decision.trace?.hostPressureBand ?? null,
     hostOverrideApplied: decision.trace?.hostOverrideApplied ?? false,
-    targetProfileHash: decision.targetProfileHash ?? decision.trace?.targetProfileHash ?? null,
-    targetProfile: decision.targetProfile ?? null,
+    targetProfileHash: readLegacyTargetProfileHash(decision) ?? decision.trace?.targetProfileHash ?? null,
+    targetProfile: readLegacyTargetProfile(decision) ?? decision.trace?.targetProfile ?? null,
     operator: decision.trace?.operator ?? null,
     selectedOutputKind: decision.selectedOutputKind ?? null,
   };
 }
 
 function resolvePlaybackDurationSeconds(playbackInfo: PlaybackInfo): number | null {
-  if (typeof playbackInfo.durationMs === 'number' && playbackInfo.durationMs > 0) {
-    return playbackInfo.durationMs / 1000;
+  const legacyDurationMs = readLegacyDurationMs(playbackInfo);
+  if (legacyDurationMs) {
+    return legacyDurationMs / 1000;
   }
   if (typeof playbackInfo.durationSeconds === 'number' && playbackInfo.durationSeconds > 0) {
     return playbackInfo.durationSeconds;

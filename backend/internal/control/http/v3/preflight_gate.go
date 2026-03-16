@@ -11,6 +11,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 type streamURLProvider interface {
@@ -120,9 +121,9 @@ func validatePreflightOutboundURL(ctx context.Context, rawURL string, policy pla
 }
 
 func rejectPreflight(w http.ResponseWriter, r *http.Request, outcome preflight.PreflightOutcome, err error) bool {
-	status, problemType, title := preflight.MapPreflightOutcome(outcome)
+	status, _, _ := preflight.MapPreflightOutcome(outcome)
 	detail := preflightDetail(outcome)
-	code := preflightProblemCode(outcome)
+	spec := resolvePreflightProblem(outcome)
 
 	metrics.IncVODPreflightFail(string(outcome))
 
@@ -144,7 +145,7 @@ func rejectPreflight(w http.ResponseWriter, r *http.Request, outcome preflight.P
 		}
 	}
 
-	writeProblem(w, r, status, problemType, title, code, detail, nil)
+	writeRegisteredProblem(w, r, status, spec.ProblemType, spec.Title, spec.Code, detail, nil)
 	return true
 }
 
@@ -162,12 +163,23 @@ func isPreflightExpectedFailure(outcome preflight.PreflightOutcome) bool {
 	}
 }
 
-func preflightProblemCode(outcome preflight.PreflightOutcome) string {
-	code := strings.ToUpper(string(outcome))
-	if code == "" {
-		code = "INTERNAL"
+func resolvePreflightProblem(outcome preflight.PreflightOutcome) problemcode.Resolved {
+	switch outcome {
+	case preflight.PreflightUnreachable:
+		return problemcode.MustResolve(problemcode.CodePreflightUnreachable, "")
+	case preflight.PreflightTimeout:
+		return problemcode.MustResolve(problemcode.CodePreflightTimeout, "")
+	case preflight.PreflightUnauthorized:
+		return problemcode.MustResolve(problemcode.CodePreflightUnauthorized, "")
+	case preflight.PreflightForbidden:
+		return problemcode.MustResolve(problemcode.CodePreflightForbidden, "")
+	case preflight.PreflightNotFound:
+		return problemcode.MustResolve(problemcode.CodePreflightNotFound, "")
+	case preflight.PreflightBadGateway:
+		return problemcode.MustResolve(problemcode.CodePreflightBadGateway, "")
+	default:
+		return problemcode.MustResolve(problemcode.CodePreflightInternal, "")
 	}
-	return "PREFLIGHT_" + code
 }
 
 func preflightDetail(outcome preflight.PreflightOutcome) string {

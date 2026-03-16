@@ -67,6 +67,11 @@ var (
 		Help: "Total number of refresh failures by stage",
 	}, []string{"stage"}) // stage=config|bouquets|services|streamurl|write_m3u|xmltv
 
+	jobErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_job_errors_total",
+		Help: "Total number of background job errors by job, code, and retryability",
+	}, []string{"job", "code", "retryable"})
+
 	// EPG metrics
 	epgRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "xg2g_epg_requests_total",
@@ -180,6 +185,11 @@ func IncConfigValidationError() { configValidationErrors.Inc() }
 // IncRefreshFailure increments the refresh failure counter by stage.
 func IncRefreshFailure(stage string) { refreshFailuresTotal.WithLabelValues(stage).Inc() }
 
+// IncJobError increments the structured background job error counter.
+func IncJobError(job, code string, retryable bool) {
+	jobErrorsTotal.WithLabelValues(job, code, boolLabel(retryable)).Inc()
+}
+
 // IncEPGChannelError increments the EPG error counter.
 func IncEPGChannelError() {
 	epgRequestsTotal.WithLabelValues("error").Inc()
@@ -234,6 +244,13 @@ func IncLiveFFmpegStall(reason string) {
 // IncPiconFetch increments the picon fetch counter by result.
 func IncPiconFetch(result string) {
 	piconFetchesTotal.WithLabelValues(result).Inc()
+}
+
+func boolLabel(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 
 // P2.5 Observability Metrics

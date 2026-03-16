@@ -22,6 +22,7 @@ import (
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
+	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 
@@ -90,6 +91,7 @@ type Server struct {
 	playbackSLO            *playbackSessionTracker
 	intentService          *v3intents.Service
 	recordingsV3Service    *v3recordings.Service
+	sessionsV3Service      *v3sessions.Service
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -160,6 +162,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 	}
 	s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
 	s.recordingsV3Service = v3recordings.NewService(&serverRecordingsDeps{s: s})
+	s.sessionsV3Service = v3sessions.NewService(&serverSessionDeps{s: s})
 	s.epgSource = &epgAdapter{s}
 	return s
 }

@@ -1,4 +1,4 @@
-import Hls from 'hls.js';
+import Hls from '../../src/lib/hlsRuntime';
 import { vi } from 'vitest';
 import { resetCachedCodecs } from '../../src/utils/codecDetection';
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // GetLibraryRoots implements ServerInterface.
@@ -21,7 +22,7 @@ func (s *Server) GetLibraryRoots(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if librarySvc == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Library not enabled", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", problemcode.CodeUnavailable, "Library not enabled", nil)
 		return
 	}
 
@@ -45,7 +46,7 @@ func (s *Server) GetLibraryRootItems(w http.ResponseWriter, r *http.Request, roo
 	s.mu.RUnlock()
 
 	if librarySvc == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Library not enabled", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", problemcode.CodeUnavailable, "Library not enabled", nil)
 		return
 	}
 

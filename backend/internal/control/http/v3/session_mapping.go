@@ -5,10 +5,9 @@
 package v3
 
 import (
-	"strings"
-
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 type terminalProblemSpec struct {
@@ -90,19 +89,9 @@ func mapTerminalProblem(out lifecycle.PublicOutcome) terminalProblemSpec {
 		}
 	}
 
-	return terminalProblemSpec{
-		problemType: "urn:xg2g:error:session:gone",
-		title:       "Session Gone",
-		code:        "session_gone",
-		detail:      "Session is in a terminal state (stopped, failed, or cancelled).",
-	}
+	return problemSpecForCode(problemcode.CodeSessionGone, "", "Session is in a terminal state (stopped, failed, or cancelled).")
 }
 
 func mapAPIErrorProblem(apiErr *APIError, detail string) terminalProblemSpec {
-	return terminalProblemSpec{
-		problemType: "error/" + strings.ToLower(apiErr.Code),
-		title:       apiErr.Message,
-		code:        apiErr.Code,
-		detail:      detail,
-	}
+	return problemSpecForAPIError(apiErr, detail)
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -45,10 +46,10 @@ func newHandlerWithMiddlewares(svc *Server, _ config.AppConfig, extra []Middlewa
 	// 2. Create Router with RFC 7807 compliant 404/405 handlers
 	r := chi.NewRouter()
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		writeProblem(w, r, http.StatusNotFound, "system/not_found", "Not Found", "NOT_FOUND", "The requested resource was not found", nil)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "system/not_found", "Not Found", problemcode.CodeNotFound, "The requested resource was not found", nil)
 	})
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
-		writeProblem(w, r, http.StatusMethodNotAllowed, "system/method_not_allowed", "Method Not Allowed", "METHOD_NOT_ALLOWED", "The requested method is not allowed for this resource", nil)
+		writeRegisteredProblem(w, r, http.StatusMethodNotAllowed, "system/method_not_allowed", "Method Not Allowed", problemcode.CodeMethodNotAllowed, "The requested method is not allowed for this resource", nil)
 	})
 
 	// 3. Create Handler

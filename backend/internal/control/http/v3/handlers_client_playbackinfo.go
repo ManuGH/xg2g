@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // Responsibility: Client compatibility - PlaybackInfo (DirectPlay vs Transcode decision).
@@ -17,7 +18,7 @@ func (s *Server) PostItemsPlaybackInfo(w http.ResponseWriter, r *http.Request, i
 	var req v3recordings.ClientPlaybackRequest
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", "Failed to parse request body: "+err.Error(), nil)
+			writeRegisteredProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", problemcode.CodeInvalidInput, "Failed to parse request body: "+err.Error(), nil)
 			return
 		}
 	}
@@ -34,17 +35,17 @@ func (s *Server) PostItemsPlaybackInfo(w http.ResponseWriter, r *http.Request, i
 
 func (s *Server) writeClientPlaybackError(w http.ResponseWriter, r *http.Request, err *v3recordings.ClientPlaybackError) {
 	if err == nil {
-		writeProblem(w, r, http.StatusInternalServerError, "recordings/internal", "Internal Error", "INTERNAL_ERROR", "An unexpected error occurred", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "recordings/internal", "Internal Error", problemcode.CodeInternalError, "An unexpected error occurred", nil)
 		return
 	}
 
 	switch err.Kind {
 	case v3recordings.ClientPlaybackErrorUnavailable:
-		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Service Unavailable", "UNAVAILABLE", err.Message, nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Service Unavailable", problemcode.CodeUnavailable, err.Message, nil)
 	case v3recordings.ClientPlaybackErrorInvalidInput:
-		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", err.Message, nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", problemcode.CodeInvalidInput, err.Message, nil)
 	case v3recordings.ClientPlaybackErrorNotFound:
-		writeProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", "NOT_FOUND", err.Message, nil)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, err.Message, nil)
 	case v3recordings.ClientPlaybackErrorPreparing:
 		retryAfterSeconds := err.RetryAfterSeconds
 		if retryAfterSeconds <= 0 {
@@ -55,13 +56,13 @@ func (s *Server) writeClientPlaybackError(w http.ResponseWriter, r *http.Request
 			probeState = "IN_FLIGHT"
 		}
 		w.Header().Set("Retry-After", "5")
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", err.Message, map[string]any{
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", problemcode.CodeRecordingPreparing, err.Message, map[string]any{
 			"retryAfterSeconds": retryAfterSeconds,
 			"probeState":        probeState,
 		})
 	case v3recordings.ClientPlaybackErrorUpstreamUnavailable:
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/upstream_unavailable", "Upstream Unavailable", "UPSTREAM_UNAVAILABLE", err.Message, nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "recordings/upstream_unavailable", "Upstream Unavailable", problemcode.CodeUpstreamUnavailable, err.Message, nil)
 	default:
-		writeProblem(w, r, http.StatusInternalServerError, "recordings/internal", "Internal Error", "INTERNAL_ERROR", "An unexpected error occurred", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "recordings/internal", "Internal Error", problemcode.CodeInternalError, "An unexpected error occurred", nil)
 	}
 }

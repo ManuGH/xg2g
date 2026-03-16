@@ -15,10 +15,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
+	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -37,162 +36,36 @@ const (
 // Authorization: Requires v3:admin scope (enforced by route middleware).
 // Supports pagination via query parameters: offset (default 0) and limit (default 100, max 1000).
 func (s *Server) handleV3SessionsDebug(w http.ResponseWriter, r *http.Request) {
-	deps := s.sessionsModuleDeps()
-	store := deps.store
-
-	if store == nil {
-		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
-			Code:    "V3_UNAVAILABLE",
-			Message: "v3 store not initialized",
-		})
-		return
-	}
-
-	// 2. Parse Pagination Parameters
 	offset, limit := parsePaginationParams(r)
-
-	// 3. List Sessions
-	allSessions, err := store.ListSessions(r.Context())
+	result, err := s.sessionsProcessor().ListSessionsDebug(r.Context(), v3sessions.ListSessionsDebugRequest{
+		Offset: offset,
+		Limit:  limit,
+	})
 	if err != nil {
-		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, err.Error())
+		writeSessionsDebugServiceError(w, r, err)
 		return
 	}
 
-	// 4. Apply Pagination
-	total := len(allSessions)
-	start := offset
-	if start > total {
-		start = total
-	}
-	end := start + limit
-	if end > total {
-		end = total
-	}
-	sessions := allSessions[start:end]
-
-	// 5. Build Response with Metadata
-	response := map[string]any{
-		"sessions": sessions,
-		"pagination": map[string]int{
-			"offset": offset,
-			"limit":  limit,
-			"total":  total,
-			"count":  len(sessions),
-		},
-	}
-
-	writeJSON(w, http.StatusOK, response)
+	writeSessionsDebugResponse(w, result)
 }
 
 // handleV3SessionState returns a single session state.
 // Authorization: Requires v3:read scope (enforced by route middleware).
 func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 	deps := s.sessionsModuleDeps()
-	store := deps.store
-
-	if store == nil {
-		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
-			Code:    "V3_UNAVAILABLE",
-			Message: "v3 store not initialized",
-		})
-		return
-	}
-
 	sessionID := chi.URLParam(r, "sessionID")
-	if sessionID == "" || !model.IsSafeSessionID(sessionID) {
-		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "invalid session id")
+	result, err := s.sessionsProcessor().GetSession(r.Context(), v3sessions.GetSessionRequest{
+		SessionID: sessionID,
+		RequestID: requestID(r.Context()),
+		Now:       time.Now(),
+		HLSRoot:   deps.cfg.HLS.Root,
+	})
+	if err != nil {
+		writeSessionStateServiceError(w, r, deps.cfg.HLS.Root, err)
 		return
 	}
 
-	session, err := store.GetSession(r.Context(), sessionID)
-	if err != nil || session == nil {
-		RespondError(w, r, http.StatusNotFound, &APIError{
-			Code:    "SESSION_NOT_FOUND",
-			Message: "session not found",
-		})
-		return
-	}
-
-	// CTO Contract (Phase 5.3): Terminal sessions return 410 Gone with JSON body
-	if session.State.IsTerminal() {
-		trace := mapSessionPlaybackTrace(requestID(r.Context()), session, deps.cfg.HLS.Root)
-		out := lifecycle.PublicOutcomeFromRecord(session)
-		problemSpec := mapTerminalProblem(out)
-		state := string(mapSessionState(out.State))
-		reason, ok := mapSessionReason(out.Reason)
-		extra := map[string]any{
-			"session":       session.SessionID,
-			"state":         state,
-			"reason_detail": mapDetailCode(out.DetailCode),
-		}
-		if ok {
-			extra["reason"] = string(reason)
-		}
-		if trace != nil {
-			extra["trace"] = trace
-		}
-		writeProblem(w, r, http.StatusGone,
-			problemSpec.problemType,
-			problemSpec.title,
-			problemSpec.code,
-			problemSpec.detail,
-			extra,
-		)
-		return
-	}
-
-	resp := SessionResponse{
-		SessionId:     openapi_types.UUID(parseUUID(session.SessionID)),
-		ServiceRef:    &session.ServiceRef,
-		Profile:       &session.Profile.Name,
-		UpdatedAtMs:   toPtr(int(session.UpdatedAtUnix * 1000)),
-		RequestId:     requestID(r.Context()),
-		CorrelationId: &session.CorrelationID,
-		Trace:         mapSessionPlaybackTrace(requestID(r.Context()), session, deps.cfg.HLS.Root),
-	}
-
-	ensureTraceHeader(w, r.Context())
-
-	// Map State/Reason/Detail
-	out := lifecycle.PublicOutcomeFromRecord(session)
-	resp.State = mapSessionState(out.State)
-	if r, ok := mapSessionReason(out.Reason); ok {
-		resp.Reason = &r
-	}
-	detail := mapDetailCode(out.DetailCode)
-	resp.ReasonDetail = &detail
-
-	mode, durationSeconds, seekableStart, seekableEnd, liveEdge := sessionPlaybackInfo(session, time.Now())
-	if mode != "" {
-		m := SessionResponseMode(mode)
-		resp.Mode = &m
-	}
-	resp.DurationSeconds = toFloat32Ptr(durationSeconds)
-	resp.SeekableStartSeconds = toFloat32Ptr(seekableStart)
-	resp.SeekableEndSeconds = toFloat32Ptr(seekableEnd)
-	resp.LiveEdgeSeconds = toFloat32Ptr(liveEdge)
-	pUrl := fmt.Sprintf("%s/sessions/%s/hls/index.m3u8", V3BaseURL, session.SessionID)
-	resp.PlaybackUrl = &pUrl
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func toPtr[T any](v T) *T {
-	return &v
-}
-
-func toFloat32Ptr(v *float64) *float32 {
-	if v == nil {
-		return nil
-	}
-	f32 := float32(*v)
-	return &f32
-}
-
-func parseUUID(s string) uuid.UUID {
-	u, _ := uuid.Parse(s)
-	return u
+	writeSessionStateResponse(w, r, deps.cfg.HLS.Root, result)
 }
 
 // ReportPlaybackFeedback handles POST /sessions/{sessionId}/feedback
@@ -202,10 +75,7 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	store := deps.store
 
 	if bus == nil || store == nil {
-		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
-			Code:    "V3_UNAVAILABLE",
-			Message: "v3 not available",
-		})
+		RespondError(w, r, http.StatusServiceUnavailable, ErrV3NotAvailable)
 		return
 	}
 
@@ -236,7 +106,7 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	ctx := r.Context()
 	sess, err := store.GetSession(ctx, sessionId.String())
 	if err != nil || sess == nil {
-		RespondError(w, r, http.StatusNotFound, &APIError{Code: "NOT_FOUND", Message: "session not found"})
+		RespondError(w, r, http.StatusNotFound, ErrSessionFeedbackNotFound)
 		return
 	}
 	if sess.State != model.SessionReady && sess.State != model.SessionDraining {

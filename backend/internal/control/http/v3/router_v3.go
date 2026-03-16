@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/authz"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -102,5 +103,5 @@ func missingRouteScopePolicies() []string {
 }
 
 func defaultBindErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
-	writeProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", "INVALID_INPUT", err.Error(), nil)
+	writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, err.Error(), nil)
 }

@@ -271,6 +271,17 @@ func TestIncRefreshFailure(t *testing.T) {
 	}
 }
 
+func TestIncJobError(t *testing.T) {
+	initialRetryable := getCounterVecValue(t, jobErrorsTotal, "epg_fetch", "JOB_EPG_FETCH_TIMEOUT", "true")
+	initialTerminal := getCounterVecValue(t, jobErrorsTotal, "refresh", "JOB_PLAYLIST_WRITE_PERMISSION", "false")
+
+	IncJobError("epg_fetch", "JOB_EPG_FETCH_TIMEOUT", true)
+	IncJobError("refresh", "JOB_PLAYLIST_WRITE_PERMISSION", false)
+
+	assert.Equal(t, initialRetryable+1, getCounterVecValue(t, jobErrorsTotal, "epg_fetch", "JOB_EPG_FETCH_TIMEOUT", "true"))
+	assert.Equal(t, initialTerminal+1, getCounterVecValue(t, jobErrorsTotal, "refresh", "JOB_PLAYLIST_WRITE_PERMISSION", "false"))
+}
+
 func TestEPGMetrics(t *testing.T) {
 	t.Run("EPG channel error", func(t *testing.T) {
 		initialErrors := getCounterVecValue(t, epgRequestsTotal, "error")

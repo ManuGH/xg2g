@@ -14,6 +14,16 @@ interface ErrorPanelProps {
   className?: string;
 }
 
+function getSeverityLabel(severity: NonNullable<AppError['severity']>, t: ReturnType<typeof useTranslation>['t']): string {
+  return t(`common.errorSeverity.${severity}`, {
+    defaultValue: severity.charAt(0).toUpperCase() + severity.slice(1),
+  });
+}
+
+function isAbsoluteUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
 export default function ErrorPanel({
   error,
   onRetry,
@@ -24,17 +34,56 @@ export default function ErrorPanel({
 }: ErrorPanelProps) {
   const { t } = useTranslation();
   const TitleTag = titleAs;
+  const severityLabel = error.severity ? getSeverityLabel(error.severity, t) : null;
+  const hasMeta = Boolean(severityLabel || typeof error.status === 'number' || error.code);
+  const hasGuidance = Boolean(error.operatorHint || error.runbookUrl);
 
   return (
     <Card className={[styles.panel, className].filter(Boolean).join(' ')}>
       <div className={styles.body} role="alert">
-        {typeof error.status === 'number' ? (
-          <span className={styles.status}>
-            {t('common.error', { defaultValue: 'Error' })} {error.status}
-          </span>
+        {hasMeta ? (
+          <div className={styles.meta}>
+            {severityLabel ? (
+              <span className={styles.severity} data-severity={error.severity}>
+                {severityLabel}
+              </span>
+            ) : null}
+            {typeof error.status === 'number' ? (
+              <span className={styles.status}>
+                {t('common.error', { defaultValue: 'Error' })} {error.status}
+              </span>
+            ) : null}
+            {error.code ? (
+              <code className={styles.code}>
+                {t('common.errorCode', { defaultValue: 'Code' })}: {error.code}
+              </code>
+            ) : null}
+          </div>
         ) : null}
         <TitleTag className={styles.title}>{error.title}</TitleTag>
         {error.detail ? <p className={styles.detail}>{error.detail}</p> : null}
+        {hasGuidance ? (
+          <div className={styles.guidance}>
+            {error.operatorHint ? (
+              <div className={styles.operatorHint}>
+                <span className={styles.guidanceLabel}>
+                  {t('common.operatorHint', { defaultValue: 'Operator hint' })}
+                </span>
+                <p className={styles.guidanceText}>{error.operatorHint}</p>
+              </div>
+            ) : null}
+            {error.runbookUrl ? (
+              <a
+                className={styles.runbook}
+                href={error.runbookUrl}
+                target={isAbsoluteUrl(error.runbookUrl) ? '_blank' : undefined}
+                rel={isAbsoluteUrl(error.runbookUrl) ? 'noreferrer' : undefined}
+              >
+                {t('common.runbook', { defaultValue: 'Runbook' })}
+              </a>
+            ) : null}
+          </div>
+        ) : null}
         {(error.retryable && onRetry) || homeHref ? (
           <div className={styles.actions}>
             {error.retryable && onRetry ? (

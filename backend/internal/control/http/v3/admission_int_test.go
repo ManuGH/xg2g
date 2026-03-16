@@ -79,7 +79,7 @@ func TestAdmissionIntegration(t *testing.T) {
 		var pd ProblemDetails
 		json.NewDecoder(resp.Body).Decode(&pd)
 		require.NotNil(t, pd.Code)
-		assert.Equal(t, admission.CodeEngineDisabled, *pd.Code)
+		assert.Equal(t, ProblemCode(admission.CodeEngineDisabled), *pd.Code)
 	})
 
 	t.Run("Sessions Full -> 503", func(t *testing.T) {
@@ -101,7 +101,7 @@ func TestAdmissionIntegration(t *testing.T) {
 		var pd ProblemDetails
 		json.NewDecoder(resp.Body).Decode(&pd)
 		require.NotNil(t, pd.Code)
-		assert.Equal(t, admission.CodeSessionsFull, *pd.Code)
+		assert.Equal(t, ProblemCode(admission.CodeSessionsFull), *pd.Code)
 		assert.Equal(t, "5", resp.Header.Get("Retry-After"))
 	})
 
@@ -124,7 +124,7 @@ func TestAdmissionIntegration(t *testing.T) {
 		var pd ProblemDetails
 		json.NewDecoder(resp.Body).Decode(&pd)
 		require.NotNil(t, pd.Code)
-		assert.Equal(t, admission.CodeNoTuners, *pd.Code)
+		assert.Equal(t, ProblemCode(admission.CodeNoTuners), *pd.Code)
 	})
 
 	t.Run("State Unknown (Fail-Closed) -> 503", func(t *testing.T) {
@@ -144,6 +144,6 @@ func TestAdmissionIntegration(t *testing.T) {
 		var pd ProblemDetails
 		json.NewDecoder(resp.Body).Decode(&pd)
 		require.NotNil(t, pd.Code)
-		assert.Equal(t, admission.CodeStateUnknown, *pd.Code)
+		assert.Equal(t, ProblemCode(admission.CodeStateUnknown), *pd.Code)
 	})
 }

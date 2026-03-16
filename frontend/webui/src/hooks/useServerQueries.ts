@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   deleteRecording,
   getSystemConfig,
+  getErrors,
   getSystemHealth,
   getSystemInfo,
   getSystemScanStatus,
@@ -31,6 +32,7 @@ import {
   getRecordings,
   triggerSystemScan,
   type AppConfig,
+  type ErrorCatalogResponse,
   type SystemHealth,
   type SystemInfoData,
   type CurrentServiceInfo,
@@ -42,12 +44,14 @@ import {
   type ScanStatus
 } from '../client-ts';
 import { throwOnClientResultError, unwrapClientResultOrThrow } from '../lib/clientWrapper';
+import { setErrorCatalog } from '../lib/errorCatalog';
 
 /**
  * Query Keys (versioniert, strukturiert)
  */
 export const queryKeys = {
   bootstrapConfig: ['v3', 'bootstrap', 'config'] as const,
+  errorsCatalog: ['v3', 'system', 'errors-catalog'] as const,
   systemConfig: ['v3', 'system', 'config'] as const,
   health: ['v3', 'system', 'health'] as const,
   systemInfo: ['v3', 'system', 'info'] as const,
@@ -94,6 +98,27 @@ export function useBootstrapConfig(enabled: boolean) {
     enabled,
     retry: false,
     staleTime: 0,
+  });
+}
+
+export function useErrorCatalog(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.errorsCatalog,
+    queryFn: async () => {
+      const result = await getErrors();
+      const data = unwrapClientResultOrThrow<ErrorCatalogResponse | null>(result, {
+        source: 'useErrorCatalog',
+        silent: true
+      });
+      if (data?.items) {
+        setErrorCatalog(data.items);
+        return data.items;
+      }
+      return [];
+    },
+    enabled,
+    retry: false,
+    staleTime: 5 * 60_000,
   });
 }
 

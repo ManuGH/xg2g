@@ -11,6 +11,10 @@ vi.mock('./context/AppContext', () => ({
   useAppContext: () => mockUseAppContext(),
 }));
 
+vi.mock('./hooks/useServerQueries', () => ({
+  useErrorCatalog: vi.fn(),
+}));
+
 vi.mock('./components/Navigation', () => ({
   default: () => <div data-testid="navigation-stub" />,
 }));

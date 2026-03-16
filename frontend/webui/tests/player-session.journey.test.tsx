@@ -26,7 +26,7 @@ const {
   mockToast: vi.fn(),
 }));
 
-vi.mock('hls.js', () => {
+vi.mock('../src/lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),
@@ -271,7 +271,6 @@ describe('Player session journeys', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /player\.closePlayer|Close Player/i })).toBeInTheDocument();
       expect(screen.getByText('Journey Channel')).toBeInTheDocument();
-      expect(findFetchCall(fetchMock, '/live/stream-info')).toBeDefined();
       expect(findFetchCall(fetchMock, '/intents')).toBeDefined();
       expect(findFetchCall(fetchMock, '/sessions/sess-journey-1')).toBeDefined();
     });

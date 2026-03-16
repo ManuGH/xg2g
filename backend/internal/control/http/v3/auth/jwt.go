@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // JWTError classifications for strict HTTP 401/403 mapping.
@@ -35,33 +37,33 @@ var (
 func ClassifyError(err error) string {
 	switch {
 	case errors.Is(err, ErrTokenMissing):
-		return "TOKEN_MISSING"
+		return problemcode.CodeTokenMissing
 	case errors.Is(err, ErrTokenMalformed):
-		return "TOKEN_MALFORMED"
+		return problemcode.CodeTokenMalformed
 	case errors.Is(err, ErrInvalidAlg):
-		return "TOKEN_INVALID_ALG"
+		return problemcode.CodeTokenInvalidAlg
 	case errors.Is(err, ErrInvalidSig):
-		return "TOKEN_INVALID_SIG"
+		return problemcode.CodeTokenInvalidSig
 	case errors.Is(err, ErrTokenExpired):
-		return "TOKEN_EXPIRED"
+		return problemcode.CodeTokenExpired
 	case errors.Is(err, ErrTokenNotActive):
-		return "TOKEN_NOT_ACTIVE"
+		return problemcode.CodeTokenNotActive
 	case errors.Is(err, ErrMissingIAT), errors.Is(err, ErrMissingExp), errors.Is(err, ErrMissingNbf):
-		return "TOKEN_MISSING_CLAIM"
+		return problemcode.CodeTokenMissingClaim
 	case errors.Is(err, ErrMismatchIss):
-		return "TOKEN_ISS_MISMATCH"
+		return problemcode.CodeTokenIssMismatch
 	case errors.Is(err, ErrMismatchAud):
-		return "TOKEN_AUD_MISMATCH"
+		return problemcode.CodeTokenAudMismatch
 	case errors.Is(err, ErrMismatchSub):
-		return "TOKEN_SUB_MISMATCH"
+		return problemcode.CodeTokenSubMismatch
 	case errors.Is(err, ErrMismatchMode):
-		return "TOKEN_MODE_MISMATCH"
+		return problemcode.CodeTokenModeMismatch
 	case errors.Is(err, ErrMismatchCapHash):
-		return "TOKEN_CAP_MISMATCH"
+		return problemcode.CodeTokenCapMismatch
 	case errors.Is(err, ErrTokenTTLTooLong):
-		return "TOKEN_TTL_EXCEEDED"
+		return problemcode.CodeTokenTTLExceeded
 	default:
-		return "TOKEN_ERROR"
+		return problemcode.CodeTokenError
 	}
 }
 

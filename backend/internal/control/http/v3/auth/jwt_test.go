@@ -5,8 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 var secret = TestSecret()
@@ -167,12 +172,12 @@ func TestClassifyError_WrappedErrors(t *testing.T) {
 		err      error
 		wantCode string
 	}{
-		{"direct sentinel", ErrTokenExpired, "TOKEN_EXPIRED"},
-		{"wrapped sentinel", fmt.Errorf("layer: %w", ErrTokenExpired), "TOKEN_EXPIRED"},
-		{"double-wrapped", fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", ErrMismatchIss)), "TOKEN_ISS_MISMATCH"},
-		{"unknown error", fmt.Errorf("something unexpected"), "TOKEN_ERROR"},
-		{"wrapped malformed", fmt.Errorf("decode: %w", ErrTokenMalformed), "TOKEN_MALFORMED"},
-		{"wrapped ttl", fmt.Errorf("policy: %w", ErrTokenTTLTooLong), "TOKEN_TTL_EXCEEDED"},
+		{"direct sentinel", ErrTokenExpired, problemcode.CodeTokenExpired},
+		{"wrapped sentinel", fmt.Errorf("layer: %w", ErrTokenExpired), problemcode.CodeTokenExpired},
+		{"double-wrapped", fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", ErrMismatchIss)), problemcode.CodeTokenIssMismatch},
+		{"unknown error", fmt.Errorf("something unexpected"), problemcode.CodeTokenError},
+		{"wrapped malformed", fmt.Errorf("decode: %w", ErrTokenMalformed), problemcode.CodeTokenMalformed},
+		{"wrapped ttl", fmt.Errorf("policy: %w", ErrTokenTTLTooLong), problemcode.CodeTokenTTLExceeded},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -181,5 +186,16 @@ func TestClassifyError_WrappedErrors(t *testing.T) {
 				t.Errorf("ClassifyError(%v) = %q, want %q", tt.err, got, tt.wantCode)
 			}
 		})
+	}
+}
+
+func TestClassifyError_NoRawTokenCodeReturns(t *testing.T) {
+	data, err := os.ReadFile(filepath.Clean("jwt.go"))
+	if err != nil {
+		t.Fatalf("read jwt.go: %v", err)
+	}
+	rawTokenReturn := regexp.MustCompile(`return "TOKEN_[A-Z_]+"`)
+	if rawTokenReturn.Match(data) {
+		t.Fatal("jwt.go contains raw TOKEN_* code returns; use problemcode constants")
 	}
 }

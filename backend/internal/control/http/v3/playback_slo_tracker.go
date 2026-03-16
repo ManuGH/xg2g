@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 const (
@@ -34,6 +35,8 @@ const (
 	// have reliable per-session target-duration telemetry.
 	playbackRebufferMinorGap = 12 * time.Second
 	playbackRebufferMajorGap = 24 * time.Second
+	playbackErrorCodeUnknown = "UNKNOWN"
+	playbackErrorCodeGone    = "SESSION_GONE"
 )
 
 type playbackSessionMeta struct {
@@ -293,24 +296,24 @@ func playbackStageLabelFromLiveFilename(filename string) string {
 func playbackErrorCodeFromStatus(status int) string {
 	switch status {
 	case 400:
-		return "INVALID_INPUT"
+		return problemcode.CodeInvalidInput
 	case 401:
-		return "UNAUTHORIZED"
+		return problemcode.CodeUnauthorized
 	case 403:
-		return "FORBIDDEN"
+		return problemcode.CodeForbidden
 	case 404:
-		return "NOT_FOUND"
+		return problemcode.CodeNotFound
 	case 410:
-		return "SESSION_GONE"
+		return playbackErrorCodeGone
 	case 416:
-		return "INVALID_INPUT"
+		return problemcode.CodeInvalidInput
 	case 503:
-		return "SERVICE_UNAVAILABLE"
+		return problemcode.CodeServiceUnavailable
 	default:
 		if status >= 500 {
-			return "INTERNAL_ERROR"
+			return problemcode.CodeInternalError
 		}
-		return "UNKNOWN"
+		return playbackErrorCodeUnknown
 	}
 }
 

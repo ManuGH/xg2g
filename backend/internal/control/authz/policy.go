@@ -8,6 +8,7 @@ package authz
 // This is the single source of truth for required scopes.
 var operationScopes = map[string][]string{
 	"CreateSession":                    {"v3:read"},
+	"GetErrors":                        {"v3:read"},
 	"GetDvrCapabilities":               {"v3:read"},
 	"GetDvrStatus":                     {"v3:read"},
 	"GetEpg":                           {"v3:read"},

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // DeleteDeps defines dependencies for the Delete handler.
@@ -42,23 +43,28 @@ func DeleteRecording(w http.ResponseWriter, r *http.Request, recordingID string,
 
 func classifyDeleteError(err error) (int, string, string, string, string) {
 	if errors.Is(err, openwebif.ErrNotFound) {
-		return http.StatusNotFound, "recordings/not-found", "Not Found", "NOT_FOUND", "Recording not found"
+		return resolvedDeleteProblem(http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, "Recording not found")
 	}
 	if errors.Is(err, openwebif.ErrForbidden) {
-		return http.StatusForbidden, "recordings/upstream-auth", "Upstream Auth Failed", "UPSTREAM_AUTH", "Receiver rejected credentials or access forbidden"
+		return resolvedDeleteProblem(http.StatusForbidden, "recordings/upstream-auth", "Upstream Auth Failed", problemcode.CodeUpstreamAuth, "Receiver rejected credentials or access forbidden")
 	}
 	if errors.Is(err, openwebif.ErrTimeout) {
-		return http.StatusGatewayTimeout, "recordings/upstream-timeout", "Upstream Timeout", "UPSTREAM_TIMEOUT", "Receiver request timed out"
+		return resolvedDeleteProblem(http.StatusGatewayTimeout, "recordings/upstream-timeout", "Upstream Timeout", problemcode.CodeUpstreamTimeout, "Receiver request timed out")
 	}
 	if errors.Is(err, openwebif.ErrUpstreamUnavailable) {
-		return http.StatusBadGateway, "recordings/upstream-unavailable", "Upstream Unavailable", "UPSTREAM_UNAVAILABLE", "Receiver unreachable"
+		return resolvedDeleteProblem(http.StatusBadGateway, "recordings/upstream-unavailable", "Upstream Unavailable", problemcode.CodeUpstreamUnavailable, "Receiver unreachable")
 	}
 	if errors.Is(err, openwebif.ErrUpstreamError) {
-		return http.StatusBadGateway, "recordings/upstream", "Upstream Error", "UPSTREAM_ERROR", "Receiver error (5xx)"
+		return resolvedDeleteProblem(http.StatusBadGateway, "recordings/upstream", "Upstream Error", problemcode.CodeUpstreamError, "Receiver error (5xx)")
 	}
 	if errors.Is(err, openwebif.ErrUpstreamBadResponse) {
-		return http.StatusBadGateway, "recordings/upstream", "Upstream Error", "UPSTREAM_ERROR", "Receiver sent invalid response"
+		return resolvedDeleteProblem(http.StatusBadGateway, "recordings/upstream", "Upstream Error", problemcode.CodeUpstreamError, "Receiver sent invalid response")
 	}
 
-	return http.StatusInternalServerError, "recordings/delete_failed", "Delete Failed", "DELETE_FAILED", "An unexpected error occurred"
+	return resolvedDeleteProblem(http.StatusInternalServerError, "recordings/delete_failed", "Delete Failed", problemcode.CodeDeleteFailed, "An unexpected error occurred")
+}
+
+func resolvedDeleteProblem(status int, typ, title, code, detail string) (int, string, string, string, string) {
+	spec := problemcode.MustResolve(code, title)
+	return status, typ, spec.Title, spec.Code, detail
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	cfgvalidate "github.com/ManuGH/xg2g/internal/validate"
 )
 
@@ -68,7 +69,7 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	var req ConfigUpdate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Format", "INVALID_INPUT", "The request body could not be decoded as JSON", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Format", problemcode.CodeInvalidInput, "The request body could not be decoded as JSON", nil)
 		return
 	}
 
@@ -107,7 +108,7 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 		if req.Verification.Interval != nil {
 			dur, err := time.ParseDuration(*req.Verification.Interval)
 			if err != nil {
-				writeProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Interval", "INVALID_INPUT", "Verification interval must be a valid duration string", nil)
+				writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Interval", problemcode.CodeInvalidInput, "Verification interval must be a valid duration string", nil)
 				return
 			}
 			next.Verification.Interval = dur
@@ -152,12 +153,12 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Persistence
 	if deps.configManager == nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Configuration manager is not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", problemcode.CodeSaveFailed, "Configuration manager is not initialized", nil)
 		return
 	}
 	if err := deps.configManager.Save(&next); err != nil {
 		log.L().Error().Err(err).Msg("failed to save configuration")
-		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Failed to save configuration change to disk", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", problemcode.CodeSaveFailed, "Failed to save configuration change to disk", nil)
 		return
 	}
 
@@ -170,7 +171,7 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	diff, err := config.Diff(current, next)
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to diff configuration")
-		writeProblem(w, r, http.StatusInternalServerError, "system/diff_failed", "Diff Failed", "DIFF_FAILED", "Failed to compute configuration differences", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/diff_failed", "Diff Failed", problemcode.CodeDiffFailed, "Failed to compute configuration differences", nil)
 		return
 	}
 	restartRequired := diff.RestartRequired

@@ -17,6 +17,7 @@ import (
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // Types are now generated in server_gen.go
@@ -26,7 +27,7 @@ import (
 func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params GetRecordingsParams) {
 	deps := s.recordingsModuleDeps()
 	if deps.recordingsService == nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Recordings service not available", nil)
 		return
 	}
 
@@ -137,7 +138,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
 	deps := s.recordingsModuleDeps()
 	if deps.recordingsService == nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Recordings service not available", nil)
 		return
 	}
 
@@ -175,7 +176,7 @@ func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.R
 func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
 	deps := s.recordingsModuleDeps()
 	if deps.recordingsService == nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Recordings service not available", nil)
 		return
 	}
 
@@ -203,7 +204,7 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 	sessionID := "rec:" + recordingId
 	if deps.recordingsService == nil {
 		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "SERVICE_UNAVAILABLE")
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Recordings service not available", nil)
 		return
 	}
 
@@ -396,22 +397,22 @@ func (s *Server) writeRecordingError(w http.ResponseWriter, r *http.Request, err
 
 	switch class {
 	case recservice.ClassInvalidArgument:
-		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_INPUT", msg, nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", problemcode.CodeInvalidInput, msg, nil)
 	case recservice.ClassNotFound:
-		writeProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", "NOT_FOUND", msg, nil)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, msg, nil)
 	case recservice.ClassForbidden:
-		writeProblem(w, r, http.StatusForbidden, "recordings/forbidden", "Access Denied", "FORBIDDEN", msg, nil)
+		writeRegisteredProblem(w, r, http.StatusForbidden, "recordings/forbidden", "Access Denied", problemcode.CodeForbidden, msg, nil)
 	case recservice.ClassPreparing:
 		w.Header().Set("Retry-After", "5")
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", "PREPARING", msg, nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", problemcode.CodePreparing, msg, nil)
 	case recservice.ClassUnsupported:
-		writeProblem(w, r, http.StatusUnprocessableEntity, "recordings/remote-probe-unsupported", "Remote Probe Unsupported", "REMOTE_PROBE_UNSUPPORTED", msg, nil)
+		writeRegisteredProblem(w, r, http.StatusUnprocessableEntity, "recordings/remote-probe-unsupported", "Remote Probe Unsupported", problemcode.CodeRemoteProbeUnsupported, msg, nil)
 	case recservice.ClassUpstream:
 		// 502 Bad Gateway is appropriate for upstream/backend errors
-		writeProblem(w, r, http.StatusBadGateway, "recordings/upstream", "Upstream Error", "UPSTREAM_ERROR", msg, nil)
+		writeRegisteredProblem(w, r, http.StatusBadGateway, "recordings/upstream", "Upstream Error", problemcode.CodeUpstreamError, msg, nil)
 	default:
 		log.L().Error().Err(err).Msg("recordings service error")
-		writeProblem(w, r, http.StatusInternalServerError, "recordings/internal", "Internal Error", "INTERNAL_ERROR", "An unexpected error occurred", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "recordings/internal", "Internal Error", problemcode.CodeInternalError, "An unexpected error occurred", nil)
 	}
 }
 

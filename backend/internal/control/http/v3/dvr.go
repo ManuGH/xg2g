@@ -11,13 +11,14 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/dvr"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // GetSeriesRules implements ServerInterface
 func (s *Server) GetSeriesRules(w http.ResponseWriter, r *http.Request) {
 	deps := s.dvrModuleDeps()
 	if deps.seriesManager == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", "UNAVAILABLE", "Series manager is not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", problemcode.CodeUnavailable, "Series manager is not initialized", nil)
 		return
 	}
 
@@ -36,19 +37,19 @@ func (s *Server) GetSeriesRules(w http.ResponseWriter, r *http.Request) {
 func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 	deps := s.dvrModuleDeps()
 	if deps.seriesManager == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", "UNAVAILABLE", "Series manager is not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", problemcode.CodeUnavailable, "Series manager is not initialized", nil)
 		return
 	}
 
 	var req SeriesRule
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid JSON", "INVALID_INPUT", "The request body could not be decoded as JSON", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid JSON", problemcode.CodeInvalidInput, "The request body could not be decoded as JSON", nil)
 		return
 	}
 
 	// Validate keyword
 	if req.Keyword == nil || strings.TrimSpace(*req.Keyword) == "" {
-		writeProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Keyword Required", "INVALID_INPUT", "The rule keyword cannot be empty", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Keyword Required", problemcode.CodeInvalidInput, "The rule keyword cannot be empty", nil)
 		return
 	}
 
@@ -57,14 +58,14 @@ func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 	// Persist
 	id, err := deps.seriesManager.AddRule(dvrRule)
 	if err != nil {
-		writeProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", "SAVE_FAILED", "Failed to create rule", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", problemcode.CodeSaveFailed, "Failed to create rule", nil)
 		return
 	}
 
 	// Retrieve created rule with server-managed fields
 	created, ok := deps.seriesManager.GetRule(id)
 	if !ok {
-		writeProblem(w, r, http.StatusInternalServerError, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "Rule not found after creation", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "dvr/not_found", "Rule Not Found", problemcode.CodeNotFound, "Rule not found after creation", nil)
 		return
 	}
 
@@ -79,19 +80,19 @@ func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id string) {
 	deps := s.dvrModuleDeps()
 	if deps.seriesManager == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", "UNAVAILABLE", "Series manager is not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", problemcode.CodeUnavailable, "Series manager is not initialized", nil)
 		return
 	}
 
 	var req SeriesRuleUpdate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid JSON", "INVALID_INPUT", "The request body could not be decoded as JSON", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid JSON", problemcode.CodeInvalidInput, "The request body could not be decoded as JSON", nil)
 		return
 	}
 
 	// Validate keyword (already required by schema, but check for empty)
 	if strings.TrimSpace(req.Keyword) == "" {
-		writeProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Keyword Required", "INVALID_INPUT", "The rule keyword cannot be empty", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Keyword Required", problemcode.CodeInvalidInput, "The rule keyword cannot be empty", nil)
 		return
 	}
 
@@ -99,17 +100,17 @@ func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id str
 
 	if err := deps.seriesManager.UpdateRule(id, dvrRule); err != nil {
 		if errors.Is(err, dvr.ErrRuleNotFound) {
-			writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
+			writeRegisteredProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", problemcode.CodeNotFound, "The specified rule does not exist", nil)
 			return
 		}
-		writeProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", "SAVE_FAILED", "Failed to update rule", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", problemcode.CodeSaveFailed, "Failed to update rule", nil)
 		return
 	}
 
 	// Retrieve updated rule with server-managed fields
 	updated, ok := deps.seriesManager.GetRule(id)
 	if !ok {
-		writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", problemcode.CodeNotFound, "The specified rule does not exist", nil)
 		return
 	}
 
@@ -122,16 +123,16 @@ func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id str
 func (s *Server) DeleteSeriesRule(w http.ResponseWriter, r *http.Request, id string) {
 	deps := s.dvrModuleDeps()
 	if deps.seriesManager == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", "UNAVAILABLE", "Series manager is not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", problemcode.CodeUnavailable, "Series manager is not initialized", nil)
 		return
 	}
 
 	if err := deps.seriesManager.DeleteRule(id); err != nil {
 		if errors.Is(err, dvr.ErrRuleNotFound) {
-			writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
+			writeRegisteredProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", problemcode.CodeNotFound, "The specified rule does not exist", nil)
 			return
 		}
-		writeProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", "SAVE_FAILED", "Failed to delete rule", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", problemcode.CodeSaveFailed, "Failed to delete rule", nil)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -237,7 +238,7 @@ func mapAPIUpdateToRule(req SeriesRuleUpdate) dvr.SeriesRule {
 func (s *Server) RunAllSeriesRules(w http.ResponseWriter, r *http.Request, params RunAllSeriesRulesParams) {
 	deps := s.dvrModuleDeps()
 	if deps.seriesEngine == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", "UNAVAILABLE", "Series engine is not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", problemcode.CodeUnavailable, "Series engine is not initialized", nil)
 		return
 	}
 
@@ -248,7 +249,7 @@ func (s *Server) RunAllSeriesRules(w http.ResponseWriter, r *http.Request, param
 
 	reports, err := deps.seriesEngine.RunOnce(r.Context(), trigger, "")
 	if err != nil {
-		writeProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", "ENGINE_ERROR", err.Error(), nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", problemcode.CodeEngineError, err.Error(), nil)
 		return
 	}
 
@@ -265,7 +266,7 @@ func (s *Server) RunAllSeriesRules(w http.ResponseWriter, r *http.Request, param
 func (s *Server) RunSeriesRule(w http.ResponseWriter, r *http.Request, id string, params RunSeriesRuleParams) {
 	deps := s.dvrModuleDeps()
 	if deps.seriesEngine == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", "UNAVAILABLE", "Series engine is not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "dvr/unavailable", "DVR Unavailable", problemcode.CodeUnavailable, "Series engine is not initialized", nil)
 		return
 	}
 
@@ -277,15 +278,15 @@ func (s *Server) RunSeriesRule(w http.ResponseWriter, r *http.Request, id string
 	reports, err := deps.seriesEngine.RunOnce(r.Context(), trigger, id)
 	if err != nil {
 		if errors.Is(err, dvr.ErrRuleNotFound) {
-			writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
+			writeRegisteredProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", problemcode.CodeNotFound, "The specified rule does not exist", nil)
 			return
 		}
-		writeProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", "ENGINE_ERROR", err.Error(), nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", problemcode.CodeEngineError, err.Error(), nil)
 		return
 	}
 
 	if len(reports) == 0 {
-		writeProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", "ENGINE_ERROR", "No report generated", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", problemcode.CodeEngineError, "No report generated", nil)
 		return
 	}
 

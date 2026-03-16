@@ -75,8 +75,10 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
 
 	if err := validateConfig(cfg); err != nil {
+		err = WrapRefreshConfigError(err)
 		metrics.IncConfigValidationError()
 		metrics.IncRefreshFailure("config")
+		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "config"), err).Msg("refresh failed")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "config validation failed")
 		return nil, err
@@ -100,10 +102,12 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	span.AddEvent("fetching bouquets")
 	bouquets, err := client.Bouquets(ctx)
 	if err != nil {
+		err = WrapBouquetsFetchError(fmt.Errorf("failed to fetch bouquets: %w", err))
 		metrics.IncRefreshFailure("bouquets")
+		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "bouquets"), err).Msg("failed to fetch bouquets")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to fetch bouquets")
-		return nil, fmt.Errorf("failed to fetch bouquets: %w", err)
+		return nil, err
 	}
 	metrics.RecordBouquetsCount(len(bouquets))
 	span.SetAttributes(attribute.Int("bouquets.count", len(bouquets)))
@@ -162,12 +166,14 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 
 	// If ANY requested bouquet is missing, fail early with comprehensive error
 	if len(missingBouquets) > 0 {
-		metrics.IncRefreshFailure("bouquets")
 		availableNames := make([]string, 0, len(bouquets))
 		for name := range bouquets {
 			availableNames = append(availableNames, name)
 		}
-		return nil, fmt.Errorf("bouquets not found: %v; available bouquets: %v", missingBouquets, availableNames)
+		err = WrapBouquetNotFoundError(fmt.Errorf("bouquets not found: %v; available bouquets: %v", missingBouquets, availableNames))
+		metrics.IncRefreshFailure("bouquets")
+		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "bouquets"), err).Msg("configured bouquets not found")
+		return nil, err
 	}
 
 	var items []playlist.Item
@@ -183,8 +189,10 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 
 		services, err := client.Services(ctx, bouquetRef)
 		if err != nil {
+			err = WrapServicesFetchError(fmt.Errorf("failed to fetch services for bouquet %q: %w", bouquetName, err))
 			metrics.IncRefreshFailure("services")
-			return nil, fmt.Errorf("failed to fetch services for bouquet %q: %w", bouquetName, err)
+			logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "services").Str("bouquet", bouquetName), err).Msg("failed to fetch services")
+			return nil, err
 		}
 		metrics.RecordServicesCount(bouquetName, len(services))
 
@@ -192,7 +200,8 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 			name, ref := s[0], s[1]
 			streamURL, err := client.StreamURL(ctx, ref, name)
 			if err != nil {
-				logger.Warn().Err(err).Str("service", name).Msg("failed to build stream URL")
+				err = WrapStreamURLBuildError(fmt.Errorf("failed to build stream URL for %q: %w", name, err))
+				logJobError("refresh", logger.Warn().Err(err).Str("service", name), err).Msg("failed to build stream URL")
 				metrics.IncStreamURLBuild("failure")
 				metrics.IncRefreshFailure("streamurl")
 				continue
@@ -259,9 +268,10 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	// Write M3U playlist (filename configurable via ENV)
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, rt.PlaylistFilename)
 	if err != nil {
-		logger.Error().Err(err).Str("playlist", rt.PlaylistFilename).Msg("invalid playlist path")
+		err = WrapPlaylistPathError(fmt.Errorf("invalid playlist path: %w", err))
+		logJobError("refresh", logger.Error().Err(err).Str("playlist", rt.PlaylistFilename), err).Msg("invalid playlist path")
 		metrics.IncRefreshFailure("playlist_path_invalid")
-		return nil, fmt.Errorf("invalid playlist path: %w", err)
+		return nil, err
 	}
 
 	// Trigger background picon pre-warm (don't block refresh)
@@ -276,7 +286,9 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	if err := writeM3U(ctx, playlistPath, items, publicURL, rt.XTvgURL); err != nil {
 		metrics.IncRefreshFailure("write_m3u")
 		metrics.RecordPlaylistFileValidity("m3u", false)
-		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
+		err = fmt.Errorf("failed to write M3U playlist: %w", err)
+		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "write_m3u").Str("path", playlistPath), err).Msg("failed to write M3U playlist")
+		return nil, err
 	}
 	// Verify M3U file exists and is readable
 	if _, err := os.Stat(playlistPath); err == nil {
@@ -369,7 +381,9 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 		if xmlErr != nil {
 			metrics.IncRefreshFailure("xmltv")
 			metrics.RecordPlaylistFileValidity("xmltv", false)
-			return nil, fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, xmlErr)
+			xmlErr = fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, xmlErr)
+			logJobError("refresh", logger.Error().Err(xmlErr).Str("event", "refresh.failed").Str("stage", "xmltv").Str("path", xmltvFullPath), xmlErr).Msg("failed to write XMLTV file")
+			return nil, xmlErr
 		}
 		// Verify XMLTV file exists and is readable
 		if _, err := os.Stat(xmltvFullPath); err == nil {

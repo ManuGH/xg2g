@@ -13,7 +13,35 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/health"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
+
+// GetErrors implements ServerInterface.
+func (s *Server) GetErrors(w http.ResponseWriter, r *http.Request) {
+	entries := problemcode.PublicEntries()
+	items := make([]ErrorCatalogEntry, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, ErrorCatalogEntry{
+			Code:         ProblemCode(entry.Code),
+			Description:  entry.Description,
+			OperatorHint: entry.OperatorHint,
+			ProblemType:  entry.ProblemType,
+			Retryable:    entry.Retryable,
+			RunbookUrl:   stringPtrOrNil(entry.RunbookURL),
+			Severity:     ErrorSeverity(entry.Severity),
+			Title:        entry.DefaultTitle,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, ErrorCatalogResponse{Items: items})
+}
+
+func stringPtrOrNil(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
 
 // GetSystemHealth implements ServerInterface
 func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +49,7 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 	hm := deps.healthManager
 
 	if hm == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Health manager not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", problemcode.CodeUnavailable, "Health manager not initialized", nil)
 		return
 	}
 
@@ -32,14 +60,14 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 
 	info, err := read.GetHealthInfo(ctx, hm)
 	if err != nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Health Read Error", "INTERNAL_ERROR", err.Error(), nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Health Read Error", problemcode.CodeInternalError, err.Error(), nil)
 		return
 	}
 
 	// Map to generated types
-	status := Ok
+	status := SystemHealthStatusOk
 	if info.OverallStatus != string(health.StatusHealthy) {
-		status = Degraded
+		status = SystemHealthStatusDegraded
 	}
 
 	receiverStatus := ComponentStatusStatusOk
@@ -81,7 +109,7 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsP
 	ls := deps.logSource
 	entries, err := read.GetRecentLogs(ls)
 	if err != nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Log Read Error", "INTERNAL_ERROR", err.Error(), nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Log Read Error", problemcode.CodeInternalError, err.Error(), nil)
 		return
 	}
 

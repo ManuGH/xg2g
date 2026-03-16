@@ -23,7 +23,7 @@ func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Reques
 func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) GetLogs(w http.ResponseWriter, r *http.Request, params v3.GetLogsParams) {
 }
-func (m *MockPreparingServer) GetReceiverCurrent(w http.ResponseWriter, r *http.Request)   {}
+func (m *MockPreparingServer) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) GetRecordings(w http.ResponseWriter, r *http.Request, params v3.GetRecordingsParams) {
 }
 func (m *MockPreparingServer) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
@@ -68,6 +68,7 @@ func (m *MockPreparingServer) ReportPlaybackFeedback(w http.ResponseWriter, r *h
 // New methods identified from server_gen.go
 func (m *MockPreparingServer) GetStreams(w http.ResponseWriter, r *http.Request)                 {}
 func (m *MockPreparingServer) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string) {}
+func (m *MockPreparingServer) GetErrors(w http.ResponseWriter, r *http.Request)                  {}
 func (m *MockPreparingServer) GetSystemConfig(w http.ResponseWriter, r *http.Request)            {}
 func (m *MockPreparingServer) PutSystemConfig(w http.ResponseWriter, r *http.Request)            {}
 func (m *MockPreparingServer) GetSystemHealth(w http.ResponseWriter, r *http.Request)            {}

@@ -25,9 +25,10 @@ Browser-based clients (integrations) must use the following flow to obtain acces
 3. **Cookie Issuance**: The server validates the token and responds with a `Set-Cookie` header:
    - **Name**: `xg2g_session`
    - **HttpOnly**: `true` (Prevent XSS access)
-   - **SameSite**: `Strict` (Prevent CSRF)
+   - **SameSite**: `Lax` (Prevent cross-site ambient sends while preserving top-level navigation flows)
    - **Path**: `/api/v3/` (Scoped to API/Media routes)
-   - **Secure**: `true` (If HTTPS is enabled)
+   - **Secure**: `true` on HTTPS or trusted HTTPS proxy requests
+   - **Transport Rule**: `/api/v3/auth/session` rejects plain HTTP unless the request originates from loopback (`127.0.0.1` / `::1`)
 4. **Media Access**: Subsequent requests to `/api/v3/sessions/{id}/hls/*` will include the cookie automatically.
 
 ## Legacy Token Migration (X-API-Token)
