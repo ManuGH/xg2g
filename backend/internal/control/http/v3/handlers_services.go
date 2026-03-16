@@ -12,6 +12,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // Responsibility: Handles Service/Bouquet lists and manual refresh scanning.
@@ -48,7 +49,7 @@ func (s *Server) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {
 		v3BouquetsReadErrorTotal.WithLabelValues(cause).Inc()
 
 		log.L().Error().Err(err).Str("cause", cause).Msg("failed to get bouquets")
-		writeProblem(w, r, http.StatusInternalServerError, "services/read_failed", "Failed to Read Bouquets", "READ_FAILED", err.Error(), nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "services/read_failed", "Failed to Read Bouquets", problemcode.CodeReadFailed, err.Error(), nil)
 		return
 	}
 
@@ -87,7 +88,7 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 	res, err := read.GetServices(cfg, snap, src, q)
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to get services")
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Receiver Read Error", "INTERNAL_ERROR", err.Error(), nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Receiver Read Error", problemcode.CodeInternalError, err.Error(), nil)
 		return
 	}
 
@@ -137,12 +138,12 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 func (s *Server) PostServicesIdToggle(w http.ResponseWriter, r *http.Request, id string) {
 	var req PostServicesIdToggleJSONBody
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Body", "INVALID_INPUT", "The request body is malformed", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Body", problemcode.CodeInvalidInput, "The request body is malformed", nil)
 		return
 	}
 
 	if s.channelManager == nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Channel manager not initialized", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/unavailable", "Subsystem Unavailable", problemcode.CodeUnavailable, "Channel manager not initialized", nil)
 		return
 	}
 
@@ -153,7 +154,7 @@ func (s *Server) PostServicesIdToggle(w http.ResponseWriter, r *http.Request, id
 
 	if err := s.channelManager.SetEnabled(id, enabled); err != nil {
 		log.L().Error().Err(err).Str("channel_id", id).Msg("failed to toggle channel")
-		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Failed to save channel state", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", problemcode.CodeSaveFailed, "Failed to save channel state", nil)
 		return
 	}
 
@@ -170,7 +171,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	scan := deps.channelScanner
 
 	if isNil(scan) {
-		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Scanner not enabled", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", problemcode.CodeUnavailable, "Scanner not enabled", nil)
 		return
 	}
 

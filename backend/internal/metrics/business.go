@@ -67,6 +67,11 @@ var (
 		Help: "Total number of refresh failures by stage",
 	}, []string{"stage"}) // stage=config|bouquets|services|streamurl|write_m3u|xmltv
 
+	jobErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_job_errors_total",
+		Help: "Total number of background job errors by job, code, and retryability",
+	}, []string{"job", "code", "retryable"})
+
 	// EPG metrics
 	epgRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "xg2g_epg_requests_total",
@@ -110,6 +115,11 @@ var (
 		Name: "xg2g_ffmpeg_restarts_total",
 		Help: "Total number of ffmpeg process restarts",
 	})
+
+	liveFFmpegStallsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_live_ffmpeg_stalls_total",
+		Help: "Total number of live FFmpeg stalls by detection reason",
+	}, []string{"reason"}) // reason=watchdog_timeout|...
 
 	// Picon metrics
 	piconFetchesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -175,6 +185,11 @@ func IncConfigValidationError() { configValidationErrors.Inc() }
 // IncRefreshFailure increments the refresh failure counter by stage.
 func IncRefreshFailure(stage string) { refreshFailuresTotal.WithLabelValues(stage).Inc() }
 
+// IncJobError increments the structured background job error counter.
+func IncJobError(job, code string, retryable bool) {
+	jobErrorsTotal.WithLabelValues(job, code, boolLabel(retryable)).Inc()
+}
+
 // IncEPGChannelError increments the EPG error counter.
 func IncEPGChannelError() {
 	epgRequestsTotal.WithLabelValues("error").Inc()
@@ -221,9 +236,21 @@ func IncFFmpegRestart() {
 	ffmpegRestartsTotal.Inc()
 }
 
+// IncLiveFFmpegStall increments the live FFmpeg stall counter by reason.
+func IncLiveFFmpegStall(reason string) {
+	liveFFmpegStallsTotal.WithLabelValues(reason).Inc()
+}
+
 // IncPiconFetch increments the picon fetch counter by result.
 func IncPiconFetch(result string) {
 	piconFetchesTotal.WithLabelValues(result).Inc()
+}
+
+func boolLabel(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 
 // P2.5 Observability Metrics

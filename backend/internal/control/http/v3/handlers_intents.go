@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/normalize"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // Responsibility: Handles Intent creation (Start/Stop stream signals).
@@ -117,7 +118,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 	if intentType == model.IntentTypeStreamStart {
 		if req.PlaybackDecisionToken == nil || *req.PlaybackDecisionToken == "" {
-			writeProblem(w, r, http.StatusUnauthorized, "intent/token-missing", "Missing Decision Token", "TOKEN_MISSING", "A valid playbackDecisionToken is required to start a live stream", nil)
+			writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/token-missing", "Missing Decision Token", problemcode.CodeTokenMissing, "A valid playbackDecisionToken is required to start a live stream", nil)
 			return
 		}
 
@@ -125,14 +126,14 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		jwtSecret := append([]byte(nil), s.JWTSecret...)
 		s.mu.RUnlock()
 		if len(jwtSecret) == 0 {
-			writeProblem(w, r, http.StatusServiceUnavailable, "intent/security-unavailable", "Security Unavailable", "SECURITY_UNAVAILABLE", "Decision token verification is not configured", nil)
+			writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "intent/security-unavailable", "Security Unavailable", problemcode.CodeSecurityUnavailable, "Decision token verification is not configured", nil)
 			return
 		}
 
 		claims, err := auth.VerifyStrict(*req.PlaybackDecisionToken, jwtSecret, "xg2g/v3/intents", "xg2g")
 		if err != nil {
 			code := auth.ClassifyError(err)
-			writeProblem(w, r, http.StatusUnauthorized, "intent/unauthorized", "Unauthorized Intent", code, err.Error(), nil)
+			writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/unauthorized", "Unauthorized Intent", code, err.Error(), nil)
 			return
 		}
 		if claims.TraceID != "" {
@@ -142,7 +143,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		normRef := normalize.ServiceRef(req.ServiceRef)
 		normTokenSub := normalize.ServiceRef(claims.Sub)
 		if normRef != normTokenSub {
-			writeProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", "CLAIM_MISMATCH", "Token is not authorized for this service_ref", nil)
+			writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this service_ref", nil)
 			return
 		}
 
@@ -151,7 +152,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			reqMode = req.Params["mode"]
 		}
 		if raw := normalize.Token(reqMode); raw != "" && raw != claims.Mode {
-			writeProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", "CLAIM_MISMATCH", "Token is not authorized for this playback mode", nil)
+			writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this playback mode", nil)
 			return
 		}
 
@@ -172,7 +173,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if claims.CapHash != "" && claims.CapHash != expectedHash {
-			writeProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", "CLAIM_MISMATCH", "Token is not authorized for these playback capabilities", nil)
+			writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for these playback capabilities", nil)
 			return
 		}
 
@@ -240,7 +241,7 @@ func writeIntentProcessingError(w http.ResponseWriter, r *http.Request, err *v3i
 	case v3intents.ErrorInvalidInput:
 		respondIntentFailure(w, r, IntentErrInvalidInput, err.Error())
 	case v3intents.ErrorAdmissionUnavailable:
-		writeProblem(w, r, http.StatusServiceUnavailable, "admission/unavailable", "Admission Unavailable", "ADMISSION_UNAVAILABLE", "admission controller unavailable", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "admission/unavailable", "Admission Unavailable", problemcode.CodeAdmissionUnavailable, "admission controller unavailable", nil)
 	case v3intents.ErrorAdmissionRejected:
 		if err.RetryAfter != "" {
 			w.Header().Set("Retry-After", err.RetryAfter)

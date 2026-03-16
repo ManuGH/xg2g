@@ -8,11 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -115,6 +117,57 @@ func TestMonitorProcess_SurfacesMeaningfulExitDetail(t *testing.T) {
 	assert.Equal(t, "upstream stream ended prematurely", status.Message)
 }
 
+func TestMonitorProcess_KillsStalledProcessAndPreservesStallDetail(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		1500*time.Millisecond,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		1100*time.Millisecond,
+		"",
+	)
+
+	cmd := exec.Command("sh", "-c", "printf 'out_time_ms=1\\n' 1>&2; exec sleep 30")
+	procgroup.Set(cmd)
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+
+	handle := ports.RunHandle("session-stall-123")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-stall")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(6 * time.Second):
+		t.Fatal("monitorProcess did not terminate stalled process in time")
+	}
+
+	status := adapter.Health(context.Background(), handle)
+	assert.False(t, status.Healthy)
+	assert.Equal(t, "transcode stalled - no progress detected", status.Message)
+
+	if err := cmd.Process.Signal(syscall.Signal(0)); err == nil {
+		t.Fatal("stalled process still running after watchdog timeout")
+	}
+}
+
 func TestHealth_ExitedProcessInMapIsUnhealthyAndCleanedUp(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
@@ -173,10 +226,19 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 		"",
 	)
 
-	cmd := exec.Command("sh", "-c", "printf 'frame=    1 fps=0.0 q=0.0\\rframe=    2 fps=0.0 q=0.0\\rOpening '\\''/tmp/seg_000001.m4s'\\'' for writing\\nOpening '\\''/tmp/seg_000002.m4s'\\'' for writing\\n' 1>&2")
-	stderr, err := cmd.StderrPipe()
+	stderr, writer, err := os.Pipe()
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = stderr.Close()
+		_ = writer.Close()
+	})
+
+	cmd := exec.Command("sh", "-c", "sleep 0.1")
 	require.NoError(t, cmd.Start())
+	go func() {
+		defer writer.Close()
+		_, _ = io.WriteString(writer, "frame=    1 fps=0.0 q=0.0\rframe=    2 fps=0.0 q=0.0\rOpening '/tmp/seg_000001.m4s' for writing\nOpening '/tmp/seg_000002.m4s' for writing\n")
+	}()
 
 	handle := ports.RunHandle("session-3-789")
 	adapter.mu.Lock()

@@ -465,12 +465,6 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 
 	wd := watchdog.New(a.StartTimeout, a.StallTimeout)
 
-	// Forward lines to RingBuffer/Log and Watchdog
-	scanner := bufio.NewScanner(stderr)
-	scanner.Split(scanFFmpegLogTokens)
-	firstFrameLogged := false
-	firstSegmentLogged := false
-
 	if parentCtx == nil {
 		parentCtx = context.Background()
 	}
@@ -482,54 +476,102 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 		wdErrCh <- wd.Run(wdCtx)
 	}()
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !firstFrameLogged {
-			if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
-				firstFrameLogged = true
-				a.writeFirstFrameMarker(sessionID)
-				a.Logger.Info().
-					Str("session_id", sessionID).
-					Str("startup_phase", "first_frame").
-					Int("frame", frame).
-					Msg("ffmpeg first frame observed")
-			}
-		}
-		if !firstSegmentLogged {
-			if segmentPath, ok := extractStartupSegmentPath(line); ok {
-				firstSegmentLogged = true
-				a.Logger.Info().
-					Str("session_id", sessionID).
-					Str("startup_phase", "first_segment_write").
-					Str("segment_path", segmentPath).
-					Msg("ffmpeg first segment write observed")
-			}
-		}
-		sanitizedLine := sanitizeFFmpegLogLine(line)
-		if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
-			a.recordProcessDetail(handle, detail)
-		}
-		a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
-		wd.ParseLine(line)
-	}
-	if scanErr := scanner.Err(); scanErr != nil {
-		a.Logger.Warn().Err(scanErr).Str("sessionId", sessionID).Msg("ffmpeg stderr scan failed")
-	}
+	scanDone := make(chan struct{})
+	go func() {
+		defer close(scanDone)
 
-	procErr := cmd.Wait()
-	wdCancel()
+		// Forward lines to RingBuffer/Log and Watchdog.
+		scanner := bufio.NewScanner(stderr)
+		scanner.Split(scanFFmpegLogTokens)
+		firstFrameLogged := false
+		firstSegmentLogged := false
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !firstFrameLogged {
+				if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
+					firstFrameLogged = true
+					a.writeFirstFrameMarker(sessionID)
+					a.Logger.Info().
+						Str("session_id", sessionID).
+						Str("startup_phase", "first_frame").
+						Int("frame", frame).
+						Msg("ffmpeg first frame observed")
+				}
+			}
+			if !firstSegmentLogged {
+				if segmentPath, ok := extractStartupSegmentPath(line); ok {
+					firstSegmentLogged = true
+					a.Logger.Info().
+						Str("session_id", sessionID).
+						Str("startup_phase", "first_segment_write").
+						Str("segment_path", segmentPath).
+						Msg("ffmpeg first segment write observed")
+				}
+			}
+			sanitizedLine := sanitizeFFmpegLogLine(line)
+			if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
+				a.recordProcessDetail(handle, detail)
+			}
+			a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
+			wd.ParseLine(line)
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			a.Logger.Warn().Err(scanErr).Str("sessionId", sessionID).Msg("ffmpeg stderr scan failed")
+		}
+	}()
+
+	procErrCh := make(chan error, 1)
+	go func() {
+		procErrCh <- cmd.Wait()
+	}()
+
+	var procErr error
+	var resultErr error
+	watchdogConsumed := false
 
 	select {
+	case procErr = <-procErrCh:
+		resultErr = procErr
 	case wdErr := <-wdErrCh:
+		watchdogConsumed = true
 		if wdErr != nil {
+			metrics.IncLiveFFmpegStall("watchdog_timeout")
+			a.recordProcessDetail(handle, "transcode stalled - no progress detected")
 			a.Logger.Error().Err(wdErr).Str("sessionId", sessionID).Msg("watchdog triggered process termination")
+			a.terminateProcessGroup(cmd, sessionID)
+			procErr = <-procErrCh
+			resultErr = wdErr
+			break
 		}
-	default:
+		procErr = <-procErrCh
+		resultErr = procErr
+	case <-parentCtx.Done():
+		a.terminateProcessGroup(cmd, sessionID)
+		procErr = <-procErrCh
+		resultErr = parentCtx.Err()
 	}
+
+	wdCancel()
+	if !watchdogConsumed {
+		if wdErr := <-wdErrCh; wdErr != nil {
+			metrics.IncLiveFFmpegStall("watchdog_timeout")
+			a.recordProcessDetail(handle, "transcode stalled - no progress detected")
+			a.Logger.Error().Err(wdErr).Str("sessionId", sessionID).Msg("watchdog reported failure")
+			if resultErr == nil {
+				resultErr = wdErr
+			}
+		}
+	}
+
+	<-scanDone
 
 	if procErr != nil {
 		a.recordProcessDetail(handle, summarizeProcessExit(procErr))
 		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
+		return
+	}
+	if resultErr != nil {
 		return
 	}
 	a.clearProcessDetail(handle)
@@ -647,11 +689,24 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	}
 
 	if cmd.Process != nil {
-		// Use procgroup for deterministic tree reaping
-		return procgroup.KillGroup(cmd.Process.Pid, 2*time.Second, a.KillTimeout)
+		return a.killProcessGroup(cmd)
 	}
 
 	return nil
+}
+
+func (a *LocalAdapter) terminateProcessGroup(cmd *exec.Cmd, sessionID string) {
+	if err := a.killProcessGroup(cmd); err != nil {
+		a.Logger.Warn().Err(err).Str("sessionId", sessionID).Msg("failed to terminate ffmpeg process group")
+	}
+}
+
+func (a *LocalAdapter) killProcessGroup(cmd *exec.Cmd) error {
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	// Use procgroup for deterministic tree reaping.
+	return procgroup.KillGroup(cmd.Process.Pid, 2*time.Second, a.KillTimeout)
 }
 
 func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports.HealthStatus {
@@ -750,6 +805,8 @@ func (a *LocalAdapter) processStatusMessage(handle ports.RunHandle, fallback str
 
 func processDetailPriority(detail string) int {
 	switch detail {
+	case "transcode stalled - no progress detected":
+		return 50
 	case "upstream stream ended prematurely":
 		return 40
 	case "failed to open upstream input", "upstream input/output error":

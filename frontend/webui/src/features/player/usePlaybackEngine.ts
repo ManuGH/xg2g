@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
-import Hls from 'hls.js';
+import Hls from '../../lib/hlsRuntime';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
 import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';

@@ -7,11 +7,13 @@
 package v3
 
 import (
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -99,10 +101,6 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	// Require Bearer header for this "login" exchange.
 	reqToken := extractBearerToken(r)
 
-	// No implicit fallback; token must be presented.
-	cfg := s.GetConfig()
-	forceHTTPS := cfg.ForceHTTPS
-
 	// The client MUST present a valid bearer token to exchange it for a session cookie.
 	if reqToken == "" {
 		// Fail if no token presented and auth is required
@@ -113,6 +111,12 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
+	}
+
+	effectiveHTTPS := s.requestIsHTTPS(r)
+	if !effectiveHTTPS && !requestRemoteIsLoopback(r) {
+		RespondError(w, r, http.StatusBadRequest, ErrHTTPSRequired, "session exchange requires HTTPS or a trusted HTTPS proxy; plain HTTP is only accepted from loopback")
+		return
 	}
 
 	store := s.authSessionStoreOrDefault()
@@ -131,7 +135,7 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		Value:    sessionID,
 		Path:     "/api/v3/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil || forceHTTPS, // auto-detect or force
+		Secure:   effectiveHTTPS,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   sessionCookieMaxAgeSeconds,
 	})
@@ -164,4 +168,56 @@ func (s *Server) resolveSessionToken(sessionID string) (string, bool) {
 
 func (s *Server) deleteAuthSession(sessionID string) {
 	s.authSessionStoreOrDefault().InvalidateSession(sessionID)
+}
+
+func (s *Server) requestIsHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	if !strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		return false
+	}
+
+	trustedProxies, err := middleware.ParseCIDRs(splitCSVNonEmpty(strings.TrimSpace(s.GetConfig().TrustedProxies)))
+	if err != nil {
+		log.L().Warn().Err(err).Msg("invalid trusted proxies configuration for auth session exchange")
+		return false
+	}
+	remoteIP := requestRemoteIP(r)
+	return remoteIP != nil && middleware.IsIPAllowed(remoteIP, trustedProxies)
+}
+
+func requestRemoteIsLoopback(r *http.Request) bool {
+	ip := requestRemoteIP(r)
+	return ip != nil && ip.IsLoopback()
+}
+
+func requestRemoteIP(r *http.Request) net.IP {
+	if r == nil {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+	if host == "" {
+		return nil
+	}
+	return net.ParseIP(host)
+}
+
+func splitCSVNonEmpty(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }

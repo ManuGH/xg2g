@@ -8,18 +8,21 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 type mockEPGFetchClient struct {
 	bouquets        map[string]string
 	bouquetEvents   map[string][]openwebif.EPGEvent
 	perServiceEPG   map[string][]openwebif.EPGEvent
+	perServiceErr   error
 	bouquetCalls    int
 	perServiceCalls int
 }
@@ -35,7 +38,57 @@ func (m *mockEPGFetchClient) GetBouquetEPG(_ context.Context, bouquetRef string,
 
 func (m *mockEPGFetchClient) GetEPG(_ context.Context, sRef string, _ int) ([]openwebif.EPGEvent, error) {
 	m.perServiceCalls++
+	if m.perServiceErr != nil {
+		return nil, m.perServiceErr
+	}
 	return m.perServiceEPG[sRef], nil
+}
+
+func TestFetchEPGWithRetry_ClassifiesTimeoutAsRetryable(t *testing.T) {
+	client := &mockEPGFetchClient{perServiceErr: context.DeadlineExceeded}
+	cfg := config.AppConfig{EPGRetries: 2}
+
+	_, err := fetchEPGWithRetry(context.Background(), client, "1:0:1:ABC", cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if client.perServiceCalls != 3 {
+		t.Fatalf("GetEPG() calls = %d, want 3", client.perServiceCalls)
+	}
+	if got := JobErrorCode(err); got != problemcode.CodeJobEPGFetchTimeout {
+		t.Fatalf("JobErrorCode() = %q, want %q", got, problemcode.CodeJobEPGFetchTimeout)
+	}
+	if !JobErrorRetryable(err) {
+		t.Fatal("timeout error must be retryable")
+	}
+}
+
+func TestFetchEPGWithRetry_RejectsEmptyServiceRef(t *testing.T) {
+	_, err := fetchEPGWithRetry(context.Background(), &mockEPGFetchClient{}, "", config.AppConfig{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := JobErrorCode(err); got != problemcode.CodeJobEPGFetchInvalidInput {
+		t.Fatalf("JobErrorCode() = %q, want %q", got, problemcode.CodeJobEPGFetchInvalidInput)
+	}
+	if JobErrorRetryable(err) {
+		t.Fatal("invalid input must not be retryable")
+	}
+}
+
+func TestFetchEPGWithRetry_PropagatesFinalGenericFailure(t *testing.T) {
+	client := &mockEPGFetchClient{perServiceErr: errors.New("receiver returned malformed EPG")}
+
+	_, err := fetchEPGWithRetry(context.Background(), client, "1:0:1:ABC", config.AppConfig{EPGRetries: 0})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := JobErrorCode(err); got != problemcode.CodeJobEPGFetchFailed {
+		t.Fatalf("JobErrorCode() = %q, want %q", got, problemcode.CodeJobEPGFetchFailed)
+	}
+	if JobErrorRetryable(err) {
+		t.Fatal("generic fetch failure must not be retryable")
+	}
 }
 
 // TestExtractSRefFromStreamURL tests service reference extraction from various URL formats.

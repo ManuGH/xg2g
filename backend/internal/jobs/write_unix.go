@@ -26,7 +26,7 @@ func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL
 	// renameio handles: temp file creation, fsync, atomic rename, cleanup on error
 	pendingFile, err := renameio.NewPendingFile(path)
 	if err != nil {
-		return fmt.Errorf("create pending M3U file: %w", err)
+		return WrapPlaylistWriteError(fmt.Errorf("create pending M3U file: %w", err))
 	}
 	defer func() {
 		// Cleanup on error - renameio removes temp file if not committed
@@ -37,12 +37,12 @@ func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL
 
 	// Write playlist to pending file
 	if err := playlist.WriteM3U(pendingFile, items, publicURL, xTvgURL); err != nil {
-		return fmt.Errorf("write M3U data: %w", err)
+		return WrapPlaylistWriteError(fmt.Errorf("write M3U data: %w", err))
 	}
 
 	// CloseAtomicallyReplace: fsync + rename (durable + atomic)
 	if err := pendingFile.CloseAtomicallyReplace(); err != nil {
-		return fmt.Errorf("atomically replace M3U file: %w", err)
+		return WrapPlaylistWriteError(fmt.Errorf("atomically replace M3U file: %w", err))
 	}
 
 	return nil
@@ -56,7 +56,7 @@ func writeXMLTV(ctx context.Context, path string, tv epg.TV) error {
 	// renameio handles: temp file creation, fsync, atomic rename, cleanup on error
 	pendingFile, err := renameio.NewPendingFile(path)
 	if err != nil {
-		return fmt.Errorf("create pending XMLTV file: %w", err)
+		return WrapXMLTVWriteError(fmt.Errorf("create pending XMLTV file: %w", err))
 	}
 	defer func() {
 		// Cleanup on error - renameio removes temp file if not committed
@@ -68,12 +68,12 @@ func writeXMLTV(ctx context.Context, path string, tv epg.TV) error {
 	// epg.WriteXMLTV needs a file path, so write to pending file path
 	tmpPath := pendingFile.Name()
 	if err := epg.WriteXMLTV(tv, tmpPath); err != nil {
-		return fmt.Errorf("write XMLTV data: %w", err)
+		return WrapXMLTVWriteError(fmt.Errorf("write XMLTV data: %w", err))
 	}
 
 	// CloseAtomicallyReplace: fsync + rename (durable + atomic)
 	if err := pendingFile.CloseAtomicallyReplace(); err != nil {
-		return fmt.Errorf("atomically replace XMLTV file: %w", err)
+		return WrapXMLTVWriteError(fmt.Errorf("atomically replace XMLTV file: %w", err))
 	}
 
 	return nil

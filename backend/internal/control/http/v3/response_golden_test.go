@@ -62,12 +62,13 @@ func TestV3_ResponseGolden(t *testing.T) {
 	})
 
 	t.Run("ProblemDetails_JSON_Shape", func(t *testing.T) {
+		code := ProblemCode("INTERNAL_ERROR")
 		prob := ProblemDetails{
 			Type:      "test/error",
 			Title:     "Test Error",
 			Status:    500,
 			RequestId: "req_error_456",
-			Code:      strPtr("INTERNAL_ERROR"),
+			Code:      &code,
 		}
 
 		w := httptest.NewRecorder()

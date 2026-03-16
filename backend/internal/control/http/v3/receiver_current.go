@@ -10,6 +10,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 type scheduleEntry struct {
@@ -28,10 +29,10 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 	owiClient := s.owi(s.cfg, s.snap)
 	client, ok := owiClient.(*openwebif.Client)
 	if !ok || client == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable,
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable,
 			"receiver/client_unavailable",
 			"OpenWebIF Client Unavailable",
-			"CLIENT_UNAVAILABLE",
+			problemcode.CodeClientUnavailable,
 			"Cannot query receiver: client not initialized", nil)
 		return
 	}
@@ -74,10 +75,10 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		writeProblem(w, r, http.StatusBadGateway,
+		writeRegisteredProblem(w, r, http.StatusBadGateway,
 			"receiver/upstream_error",
 			"Failed to Query Current Service",
-			"UPSTREAM_ERROR",
+			problemcode.CodeUpstreamError,
 			err.Error(), nil)
 		return
 	}

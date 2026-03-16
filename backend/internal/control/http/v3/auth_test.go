@@ -8,12 +8,14 @@ package v3
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -296,6 +298,7 @@ func TestCreateSession(t *testing.T) {
 	// Auth success
 	req := httptest.NewRequest("POST", "/api/v3/auth/session", nil)
 	req.Header.Set("Authorization", "Bearer secret")
+	req.TLS = &tls.ConnectionState{}
 	w := httptest.NewRecorder()
 
 	s.CreateSession(w, req)
@@ -323,37 +326,84 @@ func TestCreateSession(t *testing.T) {
 	assert.True(t, found, "xg2g_session cookie not found")
 }
 
-func TestCreateSession_CookieSecureFlagByTLSOrForceHTTPS(t *testing.T) {
+func TestCreateSession_TransportSecurity(t *testing.T) {
 	testCases := []struct {
 		name         string
-		forceHTTPS   bool
+		cfg          config.AppConfig
+		remoteAddr   string
+		xfp          string
 		tlsRequest   bool
+		wantStatus   int
+		wantCode     string
+		expectCookie bool
 		expectSecure bool
 	}{
-		{name: "plain HTTP without force", forceHTTPS: false, tlsRequest: false, expectSecure: false},
-		{name: "direct TLS request", forceHTTPS: false, tlsRequest: true, expectSecure: true},
-		{name: "forced HTTPS", forceHTTPS: true, tlsRequest: false, expectSecure: true},
+		{
+			name: "plain HTTP non-loopback rejected",
+			cfg: config.AppConfig{
+				APIToken:       "secret",
+				APITokenScopes: []string{string(ScopeV3Read)},
+			},
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     problemcode.CodeHTTPSRequired,
+			expectCookie: false,
+		},
+		{
+			name: "direct TLS request",
+			cfg: config.AppConfig{
+				APIToken:       "secret",
+				APITokenScopes: []string{string(ScopeV3Read)},
+			},
+			tlsRequest:   true,
+			wantStatus:   http.StatusOK,
+			expectCookie: true,
+			expectSecure: true,
+		},
+		{
+			name: "trusted proxy HTTPS",
+			cfg: config.AppConfig{
+				APIToken:       "secret",
+				APITokenScopes: []string{string(ScopeV3Read)},
+				TrustedProxies: "127.0.0.1,::1",
+			},
+			remoteAddr:   "127.0.0.1:1234",
+			xfp:          "https",
+			wantStatus:   http.StatusOK,
+			expectCookie: true,
+			expectSecure: true,
+		},
+		{
+			name: "loopback plain HTTP allowed",
+			cfg: config.AppConfig{
+				APIToken:       "secret",
+				APITokenScopes: []string{string(ScopeV3Read)},
+			},
+			remoteAddr:   "127.0.0.1:1234",
+			wantStatus:   http.StatusOK,
+			expectCookie: true,
+			expectSecure: false,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &Server{
-				cfg: config.AppConfig{
-					APIToken:       "secret",
-					APITokenScopes: []string{string(ScopeV3Read)},
-					ForceHTTPS:     tc.forceHTTPS,
-				},
-			}
+			s := &Server{cfg: tc.cfg}
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v3/auth/session", nil)
 			req.Header.Set("Authorization", "Bearer secret")
+			if tc.remoteAddr != "" {
+				req.RemoteAddr = tc.remoteAddr
+			}
+			if tc.xfp != "" {
+				req.Header.Set("X-Forwarded-Proto", tc.xfp)
+			}
 			if tc.tlsRequest {
 				req.TLS = &tls.ConnectionState{}
 			}
 			w := httptest.NewRecorder()
 
 			s.CreateSession(w, req)
-			assert.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, tc.wantStatus, w.Code)
 
 			var sessionCookie *http.Cookie
 			for _, c := range w.Result().Cookies() {
@@ -361,6 +411,14 @@ func TestCreateSession_CookieSecureFlagByTLSOrForceHTTPS(t *testing.T) {
 					sessionCookie = c
 					break
 				}
+			}
+
+			if !tc.expectCookie {
+				assert.Nil(t, sessionCookie)
+				var body map[string]any
+				assert.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+				assert.Equal(t, tc.wantCode, body["code"])
+				return
 			}
 			if sessionCookie == nil {
 				t.Fatalf("xg2g_session cookie not found")

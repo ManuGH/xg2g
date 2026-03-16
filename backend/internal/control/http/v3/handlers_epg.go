@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // Responsibility: Handles EPG data retrieval and serving.
@@ -43,7 +44,7 @@ type nowNextItem struct {
 func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 	var req nowNextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Services) == 0 {
-		writeProblem(w, r, http.StatusBadRequest, "epg/invalid_input", "Invalid Request", "INVALID_INPUT", "Request body must contain non-empty services list", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "epg/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Request body must contain non-empty services list", nil)
 		return
 	}
 
@@ -278,7 +279,7 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 	entries, err := read.GetEpg(r.Context(), src, q, read.RealClock{})
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to load EPG")
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Internal Server Error", "INTERNAL_ERROR", "Failed to load EPG data", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Internal Server Error", problemcode.CodeInternalError, "Failed to load EPG data", nil)
 		return
 	}
 

@@ -1,4 +1,4 @@
-import Hls from 'hls.js';
+import Hls from '../lib/hlsRuntime';
 import { detectPreferredCodecs, type PreferredCodec } from './codecDetection';
 import { shouldPreferNativeWebKitHls } from './playerHelpers';
 

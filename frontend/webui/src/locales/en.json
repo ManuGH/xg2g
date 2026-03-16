@@ -48,6 +48,16 @@
     "retry": "Retry",
     "start": "Start",
     "stop": "Stop",
+    "error": "Error",
+    "errorCode": "Code",
+    "operatorHint": "Operator hint",
+    "runbook": "Runbook",
+    "errorSeverity": {
+      "info": "Info",
+      "warning": "Warning",
+      "error": "Error",
+      "critical": "Critical"
+    },
     "showDetails": "Show Details",
     "hideDetails": "Hide Details",
     "startStream": "Start Stream",

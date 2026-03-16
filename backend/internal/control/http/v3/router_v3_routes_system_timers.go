@@ -12,6 +12,7 @@ func registerConfigRoutes(register routeRegistrar, handler configRoutes) {
 }
 
 func registerSystemRoutes(register routeRegistrar, handler systemRoutes) {
+	register.add(http.MethodGet, "/errors", "GetErrors", handler.GetErrors)
 	register.add(http.MethodGet, "/system/health", "GetSystemHealth", handler.GetSystemHealth)
 	register.add(http.MethodGet, "/system/healthz", "GetSystemHealthz", handler.GetSystemHealthz)
 	register.add(http.MethodGet, "/system/info", "GetSystemInfo", handler.GetSystemInfo)

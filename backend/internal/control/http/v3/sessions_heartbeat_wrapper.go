@@ -7,6 +7,7 @@ package v3
 import (
 	"net/http"
 
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -24,7 +25,7 @@ func (siw *ServerInterfaceWrapper) SessionHeartbeat(w http.ResponseWriter, r *ht
 
 	heartbeatHandler, ok := siw.Handler.(sessionHeartbeatServer)
 	if !ok {
-		writeProblem(w, r, http.StatusNotImplemented, "/problems/system/not_implemented", "Not Implemented", "NOT_IMPLEMENTED", "SessionHeartbeat is not implemented", nil)
+		writeRegisteredProblem(w, r, http.StatusNotImplemented, "/problems/system/not_implemented", "Not Implemented", problemcode.CodeNotImplemented, "SessionHeartbeat is not implemented", nil)
 		return
 	}
 

@@ -8,7 +8,7 @@ import { suppressExpectedConsoleNoise } from './helpers/consoleNoise';
 import { findFetchCall, mockLiveFlowFetch } from './helpers/liveFlow';
 import { applyBrowserFamilyMatrix, browserFamilyMatrixCases } from './helpers/playbackMatrix';
 
-vi.mock('hls.js', () => {
+vi.mock('../src/lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),

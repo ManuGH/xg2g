@@ -4,29 +4,40 @@
 
 package v3
 
-import "github.com/ManuGH/xg2g/internal/domain/session/model"
+import (
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/problemcode"
+)
+
+type terminalProblemSpec struct {
+	problemType string
+	title       string
+	code        string
+	detail      string
+}
 
 // mapSessionState converts the domain session state to the API enum.
 func mapSessionState(s model.SessionState) SessionResponseState {
 	switch s {
 	case model.SessionStarting:
-		return STARTING
+		return SessionResponseStateSTARTING
 	case model.SessionPriming:
-		return PRIMING
+		return SessionResponseStatePRIMING
 	case model.SessionReady:
-		return READY
+		return SessionResponseStateREADY
 	case model.SessionDraining:
-		return DRAINING
+		return SessionResponseStateDRAINING
 	case model.SessionStopping:
-		return STOPPING
+		return SessionResponseStateSTOPPING
 	case model.SessionStopped:
-		return STOPPED
+		return SessionResponseStateSTOPPED
 	case model.SessionFailed:
-		return FAILED
+		return SessionResponseStateFAILED
 	case model.SessionCancelled:
-		return CANCELLED
+		return SessionResponseStateCANCELLED
 	default:
-		return IDLE
+		return SessionResponseStateIDLE
 	}
 }
 
@@ -56,6 +67,8 @@ func mapDetailCode(code model.ReasonDetailCode) string {
 		return "process ended during startup"
 	case model.DProcessExitedUnexpectedly:
 		return "process exited unexpectedly"
+	case model.DTranscodeStalled:
+		return "transcode stalled - no progress detected"
 	case model.DUpstreamEndedPrematurely:
 		return "upstream stream ended prematurely"
 	case model.DUpstreamInputOpenFailed:
@@ -65,4 +78,20 @@ func mapDetailCode(code model.ReasonDetailCode) string {
 	default:
 		return ""
 	}
+}
+
+// mapTerminalProblem is the SSOT for terminal session ProblemDetails mapping.
+func mapTerminalProblem(out lifecycle.PublicOutcome) terminalProblemSpec {
+	if out.State == model.SessionFailed {
+		switch out.DetailCode {
+		case model.DTranscodeStalled:
+			return mapAPIErrorProblem(ErrTranscodeStalled, "The session failed because the transcode process stopped producing progress.")
+		}
+	}
+
+	return problemSpecForCode(problemcode.CodeSessionGone, "", "Session is in a terminal state (stopped, failed, or cancelled).")
+}
+
+func mapAPIErrorProblem(apiErr *APIError, detail string) terminalProblemSpec {
+	return problemSpecForAPIError(apiErr, detail)
 }

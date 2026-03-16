@@ -8,12 +8,60 @@
   gap: 14px;
 }
 
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.severity,
 .status {
-  color: var(--status-error);
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
   font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.severity {
+  border: 1px solid var(--status-info-border);
+  color: var(--status-info);
+  background: var(--status-info-subtle);
+}
+
+.severity[data-severity='warning'] {
+  border-color: var(--status-warning-border);
+  color: var(--status-warning);
+  background: var(--status-warning-subtle);
+}
+
+.severity[data-severity='error'],
+.severity[data-severity='critical'] {
+  border-color: var(--status-error-border);
+  color: var(--status-error);
+  background: var(--status-error-subtle);
+}
+
+.status {
+  color: var(--status-error);
+}
+
+.code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-base);
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  font-size: var(--text-xs);
+  font-weight: 600;
 }
 
 .title {
@@ -30,6 +78,48 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.guidance {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-elevated) 70%, var(--bg-input));
+}
+
+.operatorHint {
+  display: grid;
+  gap: 6px;
+}
+
+.guidanceLabel {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.guidanceText {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.runbook {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  width: fit-content;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-base);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: 600;
+  background: var(--bg-base);
 }
 
 .link {
@@ -50,6 +140,12 @@
   background: var(--bg-hover);
 }
 
+.runbook:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.runbook:focus-visible,
 .link:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 3px;

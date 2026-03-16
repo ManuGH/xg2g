@@ -509,6 +509,49 @@ export type NowNextResponse = {
     items: Array<NowNextItem>;
 };
 
+/**
+ * Registry-backed public machine-readable short code for RFC7807 responses.
+ */
+export type ProblemCode = 'ADD_FAILED' | 'ADMISSION_ENGINE_DISABLED' | 'ADMISSION_NO_TUNERS' | 'ADMISSION_SESSIONS_FULL' | 'ADMISSION_STATE_UNKNOWN' | 'ADMISSION_TRANSCODES_FULL' | 'ADMISSION_UNAVAILABLE' | 'BOUQUET_NOT_FOUND' | 'BREAKER_OPEN' | 'CLAIM_MISMATCH' | 'CLIENT_UNAVAILABLE' | 'CONCURRENT_BUILDS_EXCEEDED' | 'CONFLICT' | 'DELETE_FAILED' | 'DIFF_FAILED' | 'DURATION_INVALID' | 'DURATION_NEGATIVE' | 'DURATION_OVERFLOW' | 'ENGINE_ERROR' | 'FILE_NOT_FOUND' | 'FORBIDDEN' | 'HTTPS_REQUIRED' | 'INTERNAL_ERROR' | 'INTERNAL_SERVER_ERROR' | 'INVALID_CAPABILITIES' | 'INVALID_ID' | 'INVALID_INPUT' | 'INVALID_PLAYLIST_PATH' | 'INVALID_SESSION_ID' | 'INVALID_TIME' | 'INVALID_TOKEN' | 'LIBRARY_ROOT_NOT_FOUND' | 'LIBRARY_SCAN_RUNNING' | 'METHOD_NOT_ALLOWED' | 'NOT_FOUND' | 'NOT_IMPLEMENTED' | 'PANIC' | 'PATH_TRAVERSAL' | 'PREFLIGHT_BAD_GATEWAY' | 'PREFLIGHT_FORBIDDEN' | 'PREFLIGHT_INTERNAL' | 'PREFLIGHT_NOT_FOUND' | 'PREFLIGHT_TIMEOUT' | 'PREFLIGHT_UNAUTHORIZED' | 'PREFLIGHT_UNREACHABLE' | 'PREPARING' | 'PROVIDER_ERROR' | 'RATE_LIMIT_EXCEEDED' | 'READ_FAILED' | 'RECEIVER_ERROR' | 'RECEIVER_INCONSISTENT' | 'RECEIVER_UNREACHABLE' | 'RECORDING_NOT_FOUND' | 'RECORDING_PREPARING' | 'REFRESH_FAILED' | 'REFRESH_IN_PROGRESS' | 'REMOTE_PROBE_UNSUPPORTED' | 'R_RECORDING_NOT_READY' | 'SAVE_FAILED' | 'SCAN_UNAVAILABLE' | 'SECURITY_UNAVAILABLE' | 'SERVICE_NOT_FOUND' | 'SERVICE_UNAVAILABLE' | 'SESSION.EXPIRED' | 'SESSION.NOT_FOUND' | 'SESSION.UPDATE_ERROR' | 'SESSION_NOT_FOUND' | 'STOP_FAILED' | 'STORE_ERROR' | 'TOKEN_AUD_MISMATCH' | 'TOKEN_CAP_MISMATCH' | 'TOKEN_ERROR' | 'TOKEN_EXPIRED' | 'TOKEN_INVALID_ALG' | 'TOKEN_INVALID_SIG' | 'TOKEN_ISS_MISMATCH' | 'TOKEN_MALFORMED' | 'TOKEN_MISSING' | 'TOKEN_MISSING_CLAIM' | 'TOKEN_MODE_MISMATCH' | 'TOKEN_NOT_ACTIVE' | 'TOKEN_SUB_MISMATCH' | 'TOKEN_TTL_EXCEEDED' | 'TRANSCODE_CANCELED' | 'TRANSCODE_FAILED' | 'TRANSCODE_STALLED' | 'TRANSCODE_START_TIMEOUT' | 'UNAUTHORIZED' | 'UNAVAILABLE' | 'UPDATE_FAILED' | 'UPSTREAM_AUTH' | 'UPSTREAM_EMPTY' | 'UPSTREAM_ERROR' | 'UPSTREAM_RESULT_FALSE' | 'UPSTREAM_TIMEOUT' | 'UPSTREAM_UNAVAILABLE' | 'V3_UNAVAILABLE' | 'capabilities_invalid' | 'capabilities_missing' | 'decision_ambiguous' | 'invariant_violation' | 'session_gone';
+
+/**
+ * Relative operational severity for this problem code.
+ */
+export type ErrorSeverity = 'info' | 'warning' | 'error' | 'critical';
+
+export type ErrorCatalogEntry = {
+    code: ProblemCode;
+    /**
+     * Stable operator-facing explanation of what the code means and when it is emitted.
+     */
+    description: string;
+    /**
+     * Recommended first remediation step or operator action for this code.
+     */
+    operatorHint: string;
+    /**
+     * Canonical RFC7807 problem type emitted for this code.
+     */
+    problemType: string;
+    severity: ErrorSeverity;
+    /**
+     * Whether an automated retry has a reasonable chance of succeeding without a code change.
+     */
+    retryable: boolean;
+    /**
+     * Optional URL or repository-relative runbook path with deeper remediation guidance.
+     */
+    runbookUrl?: string;
+    /**
+     * Default human-readable title emitted when no more specific title is provided.
+     */
+    title: string;
+};
+
+export type ErrorCatalogResponse = {
+    items: Array<ErrorCatalogEntry>;
+};
+
 export type ProblemDetails = {
     type: string;
     title: string;
@@ -517,10 +560,7 @@ export type ProblemDetails = {
      * Correlation ID (UUID or prefixed string like req_abc123)
      */
     requestId: string;
-    /**
-     * Stable machine-readable short code (e.g. "NOT_FOUND")
-     */
-    code?: string;
+    code?: ProblemCode;
     detail?: string;
     instance?: string;
     fields?: {
@@ -583,10 +623,6 @@ export type PlaybackInfo = {
      * wall-clock timestamp (UNIX) of the earliest segment in window. Becomes required in P3-4.
      */
     startUnix?: number;
-    /**
-     * Authoritative finite duration in milliseconds. Omitted if unknown or preparing.
-     */
-    durationMs?: number;
     /**
      * Duration in seconds. Omitted if unknown or preparing.
      */
@@ -677,15 +713,15 @@ export type PlaybackCapabilities = {
      */
     preferredHlsEngine?: string;
     /**
-     * Whether the capability snapshot was gathered from runtime browser probes.
+     * Whether the capability snapshot was gathered from runtime browser probes
      */
     runtimeProbeUsed?: boolean;
     /**
-     * Version of the runtime playback probe contract.
+     * Version of the runtime playback probe contract
      */
     runtimeProbeVersion?: number;
     /**
-     * Browser-family fallback used when the server needs conservative capability defaults.
+     * Browser-family fallback used when the server needs conservative capability defaults
      */
     clientFamilyFallback?: string;
     /**
@@ -730,14 +766,6 @@ export type PlaybackDecision = {
      * Machine-readable decision reason codes
      */
     reasons: Array<string>;
-    /**
-     * Resolved output target profile summary for observability/debugging.
-     */
-    targetProfile?: PlaybackTargetProfile | null;
-    /**
-     * Stable hash of the resolved target playback profile.
-     */
-    targetProfileHash?: string | null;
     trace: PlaybackTrace;
 };
 
@@ -761,13 +789,15 @@ export type PlaybackTrace = {
     clientCapsSource?: string | null;
     clientFamily?: string | null;
     sessionId?: string | null;
-    source?: PlaybackSourceProfile | null;
+    source?: PlaybackSourceProfile;
     clientPath?: string | null;
     inputKind?: string | null;
+    preflightReason?: string | null;
+    preflightDetail?: string | null;
     targetProfileHash?: string | null;
-    targetProfile?: PlaybackTargetProfile | null;
-    operator?: PlaybackTraceOperator | null;
-    ffmpegPlan?: PlaybackTraceFfmpegPlan | null;
+    targetProfile?: PlaybackTargetProfile;
+    ffmpegPlan?: PlaybackTraceFfmpegPlan;
+    operator?: PlaybackTraceOperator;
     firstFrameAtMs?: number | null;
     fallbackCount?: number | null;
     lastFallbackReason?: string | null;
@@ -780,8 +810,19 @@ export type PlaybackTraceOperator = {
     maxQualityRung?: string | null;
     ruleName?: string | null;
     ruleScope?: string | null;
-    clientFallbackDisabled: boolean;
-    overrideApplied: boolean;
+    clientFallbackDisabled?: boolean;
+    overrideApplied?: boolean;
+};
+
+export type PlaybackTraceFfmpegPlan = {
+    inputKind?: string;
+    container?: string;
+    packaging?: string;
+    hwAccel?: string;
+    videoMode?: string;
+    videoCodec?: string;
+    audioMode?: string;
+    audioCodec?: string;
 };
 
 export type PlaybackSourceProfile = {
@@ -797,34 +838,13 @@ export type PlaybackSourceProfile = {
     audioBitrateKbps?: number;
 };
 
-export type PlaybackTraceFfmpegPlan = {
-    inputKind?: string;
-    container?: string;
-    packaging?: string;
-    hwAccel?: string;
-    videoMode?: string;
-    videoCodec?: string;
-    audioMode?: string;
-    audioCodec?: string;
-};
-
 export type PlaybackTargetProfile = {
     container: string;
     packaging: string;
-    hwAccel: string;
     video: PlaybackTargetVideo;
     audio: PlaybackTargetAudio;
     hls: PlaybackTargetHls;
-};
-
-export type PlaybackTargetVideo = {
-    mode: string;
-    codec: string;
-    crf: number;
-    preset: string;
-    width: number;
-    height: number;
-    fps: number;
+    hwAccel: string;
 };
 
 export type PlaybackTargetAudio = {
@@ -839,6 +859,16 @@ export type PlaybackTargetHls = {
     enabled: boolean;
     segmentContainer: string;
     segmentSeconds: number;
+};
+
+export type PlaybackTargetVideo = {
+    mode: string;
+    codec: string;
+    crf?: number;
+    preset?: string;
+    width: number;
+    height: number;
+    fps: number;
 };
 
 /**
@@ -882,6 +912,24 @@ export type ProblemCapabilitiesInvalid = ProblemDetails & {
 
 export type ProblemDecisionAmbiguous = ProblemDetails & {
     code?: 'decision_ambiguous';
+};
+
+export type SessionTerminalProblem = {
+    type: string;
+    title: string;
+    status: number;
+    /**
+     * Correlation ID (UUID or prefixed string like req_abc123)
+     */
+    requestId: string;
+    code?: ProblemCode;
+    detail?: string;
+    instance?: string;
+    session: string;
+    state: 'STOPPED' | 'FAILED' | 'CANCELLED';
+    reason?: string;
+    reason_detail: string;
+    trace?: PlaybackTrace;
 };
 
 export type TimerCreateRequest = {
@@ -1097,6 +1145,22 @@ export type SeriesRuleWritable = {
     lastRunStatus?: string;
     lastRunSummary?: RunSummary;
 };
+
+export type GetErrorsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/errors';
+};
+
+export type GetErrorsResponses = {
+    /**
+     * Registry-backed public error catalog
+     */
+    200: ErrorCatalogResponse;
+};
+
+export type GetErrorsResponse = GetErrorsResponses[keyof GetErrorsResponses];
 
 export type GetSystemHealthData = {
     body?: never;
@@ -1850,6 +1914,10 @@ export type CreateSessionData = {
 
 export type CreateSessionErrors = {
     /**
+     * HTTPS required for session exchange
+     */
+    400: unknown;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -1859,10 +1927,8 @@ export type CreateSessionResponses = {
     /**
      * Session created
      */
-    204: void;
+    200: unknown;
 };
-
-export type CreateSessionResponse = CreateSessionResponses[keyof CreateSessionResponses];
 
 export type GetTimersData = {
     body?: never;
@@ -2416,6 +2482,10 @@ export type GetSessionStateErrors = {
      * Session not found
      */
     404: ApiError;
+    /**
+     * Terminal session state. `code` can be `TRANSCODE_STALLED` when the transcode watchdog detected no progress.
+     */
+    410: SessionTerminalProblem;
 };
 
 export type GetSessionStateError = GetSessionStateErrors[keyof GetSessionStateErrors];

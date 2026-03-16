@@ -8,6 +8,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -72,18 +73,18 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 	principal := auth.PrincipalFromContext(r.Context())
 	if principal == nil {
 		// Should be caught by auth middleware, but defensive check
-		writeProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", "UNAUTHORIZED", "Authentication required", nil)
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
 		return
 	}
 
 	if resumeStore == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Resume store not available", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", problemcode.CodeUnavailable, "Resume store not available", nil)
 		return
 	}
 
 	var req ResumeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", "INVALID_INPUT", "Invalid request body", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Invalid request body", nil)
 		return
 	}
 
@@ -115,7 +116,7 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 
 	if err := resumeStore.Put(r.Context(), principal.ID, recordingID, state); err != nil {
 		log.L().Error().Err(err).Msg("failed to save resume point")
-		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Failed to save resume point", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", problemcode.CodeSaveFailed, "Failed to save resume point", nil)
 		return
 	}
 

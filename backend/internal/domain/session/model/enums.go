@@ -131,6 +131,7 @@ const (
 	DInternalInvariantBreach   ReasonDetailCode = "D_INTERNAL_INVARIANT_BREACH"
 	DProcessEndedStartup       ReasonDetailCode = "D_PROCESS_ENDED_STARTUP"
 	DProcessExitedUnexpectedly ReasonDetailCode = "D_PROCESS_EXITED_UNEXPECTEDLY"
+	DTranscodeStalled          ReasonDetailCode = "D_TRANSCODE_STALLED"
 	DUpstreamEndedPrematurely  ReasonDetailCode = "D_UPSTREAM_ENDED_PREMATURELY"
 	DUpstreamInputOpenFailed   ReasonDetailCode = "D_UPSTREAM_INPUT_OPEN_FAILED"
 	DInvalidUpstreamInput      ReasonDetailCode = "D_INVALID_UPSTREAM_INPUT"

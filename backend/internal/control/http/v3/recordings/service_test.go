@@ -5,32 +5,57 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/clientplayback"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type stubDeps struct {
-	svc RecordingsService
+	svc          RecordingsService
+	cfg          config.AppConfig
+	hostPressure playbackprofile.HostPressureAssessment
 }
 
 func (d stubDeps) RecordingsService() RecordingsService {
 	return d.svc
 }
 
+func (d stubDeps) Config() config.AppConfig {
+	return d.cfg
+}
+
+func (d stubDeps) HostPressure(context.Context) playbackprofile.HostPressureAssessment {
+	return d.hostPressure
+}
+
 type stubRecordingsService struct {
-	resolveFn func(ctx context.Context, id, profile string) (domainrecordings.PlaybackResolution, error)
-	lastID    string
-	lastProf  string
-	calls     int
+	resolveFn       func(ctx context.Context, id, profile string) (domainrecordings.PlaybackResolution, error)
+	getMediaTruthFn func(ctx context.Context, id string) (playback.MediaTruth, error)
+	lastID          string
+	lastProf        string
+	lastTruthID     string
+	resolveCalls    int
+	truthCalls      int
 }
 
 func (s *stubRecordingsService) ResolvePlayback(ctx context.Context, id, profile string) (domainrecordings.PlaybackResolution, error) {
-	s.calls++
+	s.resolveCalls++
 	s.lastID = id
 	s.lastProf = profile
 	return s.resolveFn(ctx, id, profile)
+}
+
+func (s *stubRecordingsService) GetMediaTruth(ctx context.Context, id string) (playback.MediaTruth, error) {
+	s.truthCalls++
+	s.lastTruthID = id
+	if s.getMediaTruthFn == nil {
+		return playback.MediaTruth{}, nil
+	}
+	return s.getMediaTruthFn(ctx, id)
 }
 
 func TestService_ResolveClientPlayback_Unavailable(t *testing.T) {
@@ -112,7 +137,7 @@ func TestService_ResolveClientPlayback_ClassifiesErrors(t *testing.T) {
 			if tt.checkCause {
 				assert.ErrorIs(t, err.Cause, tt.inErr)
 			}
-			assert.Equal(t, 1, resolver.calls)
+			assert.Equal(t, 1, resolver.resolveCalls)
 			assert.Equal(t, "rec1", resolver.lastID)
 			assert.Equal(t, "generic", resolver.lastProf)
 		})

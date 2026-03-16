@@ -764,6 +764,156 @@ components:
           items:
             $ref: "#/components/schemas/NowNextItem"
 
+    ProblemCode:
+      type: string
+      description: Registry-backed public machine-readable short code for RFC7807 responses.
+      enum:
+        - ADD_FAILED
+        - ADMISSION_ENGINE_DISABLED
+        - ADMISSION_NO_TUNERS
+        - ADMISSION_SESSIONS_FULL
+        - ADMISSION_STATE_UNKNOWN
+        - ADMISSION_TRANSCODES_FULL
+        - ADMISSION_UNAVAILABLE
+        - BOUQUET_NOT_FOUND
+        - BREAKER_OPEN
+        - CLAIM_MISMATCH
+        - CLIENT_UNAVAILABLE
+        - CONCURRENT_BUILDS_EXCEEDED
+        - CONFLICT
+        - DELETE_FAILED
+        - DIFF_FAILED
+        - DURATION_INVALID
+        - DURATION_NEGATIVE
+        - DURATION_OVERFLOW
+        - ENGINE_ERROR
+        - FILE_NOT_FOUND
+        - FORBIDDEN
+        - HTTPS_REQUIRED
+        - INTERNAL_ERROR
+        - INTERNAL_SERVER_ERROR
+        - INVALID_CAPABILITIES
+        - INVALID_ID
+        - INVALID_INPUT
+        - INVALID_PLAYLIST_PATH
+        - INVALID_SESSION_ID
+        - INVALID_TIME
+        - INVALID_TOKEN
+        - LIBRARY_ROOT_NOT_FOUND
+        - LIBRARY_SCAN_RUNNING
+        - METHOD_NOT_ALLOWED
+        - NOT_FOUND
+        - NOT_IMPLEMENTED
+        - PANIC
+        - PATH_TRAVERSAL
+        - PREFLIGHT_BAD_GATEWAY
+        - PREFLIGHT_FORBIDDEN
+        - PREFLIGHT_INTERNAL
+        - PREFLIGHT_NOT_FOUND
+        - PREFLIGHT_TIMEOUT
+        - PREFLIGHT_UNAUTHORIZED
+        - PREFLIGHT_UNREACHABLE
+        - PREPARING
+        - PROVIDER_ERROR
+        - RATE_LIMIT_EXCEEDED
+        - READ_FAILED
+        - RECEIVER_ERROR
+        - RECEIVER_INCONSISTENT
+        - RECEIVER_UNREACHABLE
+        - RECORDING_NOT_FOUND
+        - RECORDING_PREPARING
+        - REFRESH_FAILED
+        - REFRESH_IN_PROGRESS
+        - REMOTE_PROBE_UNSUPPORTED
+        - R_RECORDING_NOT_READY
+        - SAVE_FAILED
+        - SCAN_UNAVAILABLE
+        - SECURITY_UNAVAILABLE
+        - SERVICE_NOT_FOUND
+        - SERVICE_UNAVAILABLE
+        - SESSION.EXPIRED
+        - SESSION.NOT_FOUND
+        - SESSION.UPDATE_ERROR
+        - SESSION_NOT_FOUND
+        - STOP_FAILED
+        - STORE_ERROR
+        - TOKEN_AUD_MISMATCH
+        - TOKEN_CAP_MISMATCH
+        - TOKEN_ERROR
+        - TOKEN_EXPIRED
+        - TOKEN_INVALID_ALG
+        - TOKEN_INVALID_SIG
+        - TOKEN_ISS_MISMATCH
+        - TOKEN_MALFORMED
+        - TOKEN_MISSING
+        - TOKEN_MISSING_CLAIM
+        - TOKEN_MODE_MISMATCH
+        - TOKEN_NOT_ACTIVE
+        - TOKEN_SUB_MISMATCH
+        - TOKEN_TTL_EXCEEDED
+        - TRANSCODE_CANCELED
+        - TRANSCODE_FAILED
+        - TRANSCODE_STALLED
+        - TRANSCODE_START_TIMEOUT
+        - UNAUTHORIZED
+        - UNAVAILABLE
+        - UPDATE_FAILED
+        - UPSTREAM_AUTH
+        - UPSTREAM_EMPTY
+        - UPSTREAM_ERROR
+        - UPSTREAM_RESULT_FALSE
+        - UPSTREAM_TIMEOUT
+        - UPSTREAM_UNAVAILABLE
+        - V3_UNAVAILABLE
+        - capabilities_invalid
+        - capabilities_missing
+        - decision_ambiguous
+        - invariant_violation
+        - session_gone
+
+    ErrorSeverity:
+      type: string
+      description: Relative operational severity for this problem code.
+      enum: [info, warning, error, critical]
+
+    ErrorCatalogEntry:
+      type: object
+      required: [code, problemType, title, description, operatorHint, severity, retryable]
+      additionalProperties: false
+      properties:
+        code:
+          $ref: "#/components/schemas/ProblemCode"
+        description:
+          type: string
+          description: Stable operator-facing explanation of what the code means and when it is emitted.
+        operatorHint:
+          type: string
+          description: Recommended first remediation step or operator action for this code.
+        problemType:
+          type: string
+          description: Canonical RFC7807 problem type emitted for this code.
+        severity:
+          $ref: "#/components/schemas/ErrorSeverity"
+        retryable:
+          type: boolean
+          description: Whether an automated retry has a reasonable chance of succeeding without a code change.
+        runbookUrl:
+          type: string
+          description: Optional URL or repository-relative runbook path with deeper remediation guidance.
+        title:
+          type: string
+          description: Default human-readable title emitted when no more specific title is provided.
+
+    ErrorCatalogResponse:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorCatalogEntry"
+
     ProblemDetails:
       type: object
       required: [type, title, status, requestId]
@@ -776,8 +926,7 @@ components:
           type: string
           description: Correlation ID (UUID or prefixed string like req_abc123)
         code:
-          type: string
-          description: Stable machine-readable short code (e.g. "NOT_FOUND")
+          $ref: "#/components/schemas/ProblemCode"
         detail: { type: string }
         instance: { type: string }
         fields:
@@ -1355,6 +1504,45 @@ components:
             code: "decision_ambiguous"
             detail: "No compatible playback path available"
 
+    SessionTerminalProblem:
+      type: object
+      required: [type, title, status, requestId, session, state, reason_detail]
+      additionalProperties: false
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        requestId:
+          type: string
+          description: Correlation ID (UUID or prefixed string like req_abc123)
+        code:
+          $ref: "#/components/schemas/ProblemCode"
+        detail: { type: string }
+        instance: { type: string }
+        session:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [STOPPED, FAILED, CANCELLED]
+        reason:
+          type: string
+        reason_detail:
+          type: string
+        trace:
+          $ref: "#/components/schemas/PlaybackTrace"
+      example:
+        type: "/problems/error/transcode_stalled"
+        title: "Transcode stalled - no progress detected"
+        status: 410
+        requestId: "req_abc123"
+        code: "TRANSCODE_STALLED"
+        detail: "The session failed because the transcode process stopped producing progress."
+        session: "550e8400-e29b-41d4-a716-446655440000"
+        state: "FAILED"
+        reason: "R_PROCESS_ENDED"
+        reason_detail: "transcode stalled - no progress detected"
+
     TimerCreateRequest:
       type: object
       required: [serviceRef, begin, end, name]
@@ -1622,6 +1810,20 @@ security:
   - BearerAuth: [v3:read]
 
 paths:
+  /errors:
+    get:
+      summary: List documented problem codes
+      operationId: getErrors
+      tags:
+        - v3
+      responses:
+        "200":
+          description: Registry-backed public error catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorCatalogResponse"
+
   /system/health:
     get:
       summary: Get system health
@@ -2446,15 +2648,17 @@ paths:
   /auth/session:
     post:
       summary: Create session cookie
-      description: Exchanges the Bearer token for a secure HttpOnly session cookie, enabling native playback (HLS) without token in URL.
+      description: Exchanges the Bearer token for a secure HttpOnly session cookie, enabling native playback (HLS) without token in URL. The exchange requires HTTPS or a trusted HTTPS proxy; plain HTTP is accepted only from loopback clients.
       operationId: createSession
       tags:
         - auth
       security:
         - BearerAuth: [v3:read]
       responses:
-        "204":
+        "200":
           description: Session created
+        "400":
+          description: HTTPS required for session exchange
         "401":
           description: Unauthorized
 
@@ -3058,6 +3262,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
+        "410":
+          description: Terminal session state. `code` can be `TRANSCODE_STALLED` when the transcode watchdog detected no progress.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SessionTerminalProblem"
 
   /sessions/{sessionID}/hls/{filename}:
     parameters:

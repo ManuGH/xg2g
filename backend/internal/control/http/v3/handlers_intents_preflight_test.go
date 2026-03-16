@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,6 +17,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 type stubPreflightProvider struct {
@@ -75,14 +77,15 @@ func TestIntentsPreflight_ProblemMapping(t *testing.T) {
 		name    string
 		outcome preflight.PreflightOutcome
 		status  int
+		code    string
 	}{
-		{"unreachable", preflight.PreflightUnreachable, http.StatusBadGateway},
-		{"timeout", preflight.PreflightTimeout, http.StatusGatewayTimeout},
-		{"unauthorized", preflight.PreflightUnauthorized, http.StatusUnauthorized},
-		{"forbidden", preflight.PreflightForbidden, http.StatusForbidden},
-		{"not_found", preflight.PreflightNotFound, http.StatusNotFound},
-		{"bad_gateway", preflight.PreflightBadGateway, http.StatusBadGateway},
-		{"internal", preflight.PreflightInternal, http.StatusInternalServerError},
+		{"unreachable", preflight.PreflightUnreachable, http.StatusBadGateway, problemcode.CodePreflightUnreachable},
+		{"timeout", preflight.PreflightTimeout, http.StatusGatewayTimeout, problemcode.CodePreflightTimeout},
+		{"unauthorized", preflight.PreflightUnauthorized, http.StatusUnauthorized, problemcode.CodePreflightUnauthorized},
+		{"forbidden", preflight.PreflightForbidden, http.StatusForbidden, problemcode.CodePreflightForbidden},
+		{"not_found", preflight.PreflightNotFound, http.StatusNotFound, problemcode.CodePreflightNotFound},
+		{"bad_gateway", preflight.PreflightBadGateway, http.StatusBadGateway, problemcode.CodePreflightBadGateway},
+		{"internal", preflight.PreflightInternal, http.StatusInternalServerError, problemcode.CodePreflightInternal},
 	}
 
 	for _, tc := range cases {
@@ -105,6 +108,7 @@ func TestIntentsPreflight_ProblemMapping(t *testing.T) {
 			require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 			require.Equal(t, float64(tc.status), body["status"])
 			require.Equal(t, "/problems/preflight/"+string(tc.outcome), body["type"])
+			require.Equal(t, tc.code, body["code"])
 			require.NotEmpty(t, body["title"])
 			require.NotEmpty(t, body["detail"])
 
@@ -167,6 +171,12 @@ func TestIntentsPreflight_DetailNoSecrets(t *testing.T) {
 	require.NotContains(t, detail, "token")
 	require.NotContains(t, detail, "Bearer")
 	require.NotContains(t, detail, "Authorization")
+}
+
+func TestPreflightGate_NoDynamicProblemCodeConstruction(t *testing.T) {
+	src, err := os.ReadFile("preflight_gate.go")
+	require.NoError(t, err)
+	require.NotContains(t, string(src), "\"PREFLIGHT_\" +")
 }
 
 func getCounterValueByName(t *testing.T, name string, labels map[string]string) float64 {

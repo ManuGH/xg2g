@@ -5,7 +5,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import V3Player from './V3Player';
 import type { V3PlayerProps } from '../types/v3-player';
 
-vi.mock('hls.js', () => {
+vi.mock('../lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),

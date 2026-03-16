@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/control/read"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -53,10 +54,7 @@ func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 		scanner := deps.channelScanner
 
 		if scanner == nil {
-			RespondError(w, r, http.StatusServiceUnavailable, &APIError{
-				Code:    "SCAN_UNAVAILABLE",
-				Message: "Smart Profile Scanner is not initialized",
-			})
+			RespondError(w, r, http.StatusServiceUnavailable, ErrScanUnavailable)
 			return
 		}
 
@@ -77,7 +75,7 @@ func (s *Server) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
 
 		st, err := read.GetScanStatus(r.Context(), ss)
 		if err != nil {
-			writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Scan Status Error", "INTERNAL_ERROR", err.Error(), nil)
+			writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Scan Status Error", problemcode.CodeInternalError, err.Error(), nil)
 			return
 		}
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // SystemInfo represents the full system information response
@@ -101,7 +102,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 				Msg("recovered from panic in GetSystemInfo")
 
 			if !tracker.WroteHeader() {
-				writeProblem(w, r, http.StatusInternalServerError, "system/panic", "Internal Server Error", "PANIC", "A serious error occurred while processing system information", nil)
+				writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/panic", "Internal Server Error", problemcode.CodePanic, "A serious error occurred while processing system information", nil)
 			}
 		}
 	}()
@@ -112,10 +113,10 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	// Type assert to concrete client (owi returns interface)
 	client, ok := owiClient.(*openwebif.Client)
 	if !ok || client == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable,
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable,
 			"system/client_unavailable",
 			"OpenWebIF Client Unavailable",
-			"CLIENT_UNAVAILABLE",
+			problemcode.CodeClientUnavailable,
 			"Cannot query receiver information: client not initialized", nil)
 		return
 	}
@@ -127,18 +128,18 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	// Query receiver info
 	info, err := client.About(upstreamCtx)
 	if err != nil {
-		writeProblem(w, r, http.StatusBadGateway,
+		writeRegisteredProblem(w, r, http.StatusBadGateway,
 			"system/upstream_error",
 			"Failed to Query Receiver",
-			"UPSTREAM_ERROR",
+			problemcode.CodeUpstreamError,
 			err.Error(), nil)
 		return
 	}
 	if info == nil {
-		writeProblem(w, r, http.StatusBadGateway,
+		writeRegisteredProblem(w, r, http.StatusBadGateway,
 			"system/upstream_error",
 			"Empty Receiver Response",
-			"UPSTREAM_EMPTY",
+			problemcode.CodeUpstreamEmpty,
 			"The receiver returned an empty response without an error", nil)
 		return
 	}

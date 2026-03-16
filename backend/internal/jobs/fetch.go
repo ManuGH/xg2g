@@ -176,7 +176,8 @@ func collectEPGFromBouquet(ctx context.Context, client epgFetchClient, items []p
 
 	availableBouquets, err := client.Bouquets(reqCtx)
 	if err != nil {
-		logger.Error().Err(err).Msg("Failed to fetch bouquets for EPG")
+		err = WrapBouquetsFetchError(fmt.Errorf("failed to fetch bouquets for EPG: %w", err))
+		logJobError("epg_fetch", logger.Error().Err(err), err).Msg("failed to fetch bouquets for EPG")
 		return nil
 	}
 
@@ -226,7 +227,8 @@ func collectEPGFromBouquet(ctx context.Context, client epgFetchClient, items []p
 		bCancel() // Release context resources immediately
 
 		if err != nil {
-			logger.Error().Err(err).Str("bouquet_ref", ref).Msg("Failed to fetch bouquet EPG")
+			err = WrapEPGFetchError(fmt.Errorf("failed to fetch bouquet EPG for %s: %w", ref, err))
+			logJobError("epg_fetch", logger.Error().Err(err).Str("bouquet_ref", ref), err).Msg("failed to fetch bouquet EPG")
 			continue
 		}
 
@@ -299,9 +301,9 @@ func collectEPGPerService(ctx context.Context, client epgFetchClient, items []pl
 
 			events, err := fetchEPGWithRetry(reqCtx, client, sRef, cfg)
 			if err != nil {
-				logger.Debug().Err(err).
+				logJobError("epg_fetch", logger.Debug().Err(err).
 					Str("channel", it.Name).
-					Str("tvg_id", it.TvgID).
+					Str("tvg_id", it.TvgID), err).
 					Msg("EPG fetch failed for channel")
 				results <- epgResult{channelID: it.TvgID, events: nil, err: err}
 				return
@@ -341,7 +343,7 @@ func collectEPGPerService(ctx context.Context, client epgFetchClient, items []pl
 // fetchEPGWithRetry attempts to fetch EPG data with exponential backoff retry
 func fetchEPGWithRetry(ctx context.Context, client epgFetchClient, sRef string, cfg config.AppConfig) ([]openwebif.EPGEvent, error) {
 	if sRef == "" {
-		return nil, fmt.Errorf("invalid empty sRef")
+		return nil, WrapEPGFetchError(fmt.Errorf("invalid empty sRef"))
 	}
 
 	var lastErr error
@@ -352,7 +354,7 @@ func fetchEPGWithRetry(ctx context.Context, client epgFetchClient, sRef string, 
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, WrapEPGFetchError(ctx.Err())
 			}
 		}
 
@@ -363,7 +365,7 @@ func fetchEPGWithRetry(ctx context.Context, client epgFetchClient, sRef string, 
 		lastErr = err
 	}
 
-	return nil, fmt.Errorf("EPG request failed after %d retries: %w", cfg.EPGRetries, lastErr)
+	return nil, WrapEPGFetchError(fmt.Errorf("EPG request failed after %d retries: %w", cfg.EPGRetries, lastErr))
 }
 
 func bouquetEPGCoversFutureWindow(events []openwebif.EPGEvent, now time.Time, minFutureCoverage time.Duration) (bool, time.Time) {

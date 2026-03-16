@@ -5,10 +5,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 type mockOWIClient struct {
@@ -36,8 +40,8 @@ func TestDeleteRecording_InvalidID(t *testing.T) {
 			if typ != "recordings/delete_failed" {
 				t.Errorf("expected type recordings/delete_failed, got %s", typ)
 			}
-			if code != "DELETE_FAILED" {
-				t.Errorf("expected code DELETE_FAILED, got %s", code)
+			if code != problemcode.CodeDeleteFailed {
+				t.Errorf("expected code %s, got %s", problemcode.CodeDeleteFailed, code)
 			}
 		},
 	}
@@ -46,6 +50,17 @@ func TestDeleteRecording_InvalidID(t *testing.T) {
 
 	if !problemCalled {
 		t.Error("expected WriteProblem to be called because client failed")
+	}
+}
+
+func TestDeleteRecording_NoRawCodeStringsInClassifier(t *testing.T) {
+	data, err := os.ReadFile(filepath.Clean("handler_delete.go"))
+	if err != nil {
+		t.Fatalf("read handler_delete.go: %v", err)
+	}
+	rawCodes := regexp.MustCompile(`"(NOT_FOUND|UPSTREAM_AUTH|UPSTREAM_TIMEOUT|UPSTREAM_UNAVAILABLE|UPSTREAM_ERROR|DELETE_FAILED)"`)
+	if rawCodes.Match(data) {
+		t.Fatal("handler_delete.go contains raw error code strings; use problemcode constants")
 	}
 }
 
@@ -95,8 +110,8 @@ func TestDeleteRecording_UpstreamFailure(t *testing.T) {
 			if typ != "recordings/delete_failed" {
 				t.Errorf("expected type recordings/delete_failed, got %s", typ)
 			}
-			if code != "DELETE_FAILED" {
-				t.Errorf("expected code DELETE_FAILED, got %s", code)
+			if code != problemcode.CodeDeleteFailed {
+				t.Errorf("expected code %s, got %s", problemcode.CodeDeleteFailed, code)
 			}
 		},
 		Logger: func(msg string, keyvals ...any) {
@@ -130,7 +145,7 @@ func TestDeleteRecording_UpstreamErrors(t *testing.T) {
 			err:        openwebif.ErrNotFound,
 			wantStatus: http.StatusNotFound,
 			wantType:   "recordings/not-found",
-			wantCode:   "NOT_FOUND",
+			wantCode:   problemcode.CodeNotFound,
 			wantTitle:  "Not Found",
 		},
 		{
@@ -138,7 +153,7 @@ func TestDeleteRecording_UpstreamErrors(t *testing.T) {
 			err:        openwebif.ErrForbidden,
 			wantStatus: http.StatusForbidden,
 			wantType:   "recordings/upstream-auth",
-			wantCode:   "UPSTREAM_AUTH",
+			wantCode:   problemcode.CodeUpstreamAuth,
 			wantTitle:  "Upstream Auth Failed",
 		},
 		{
@@ -146,7 +161,7 @@ func TestDeleteRecording_UpstreamErrors(t *testing.T) {
 			err:        openwebif.ErrTimeout,
 			wantStatus: http.StatusGatewayTimeout,
 			wantType:   "recordings/upstream-timeout",
-			wantCode:   "UPSTREAM_TIMEOUT",
+			wantCode:   problemcode.CodeUpstreamTimeout,
 			wantTitle:  "Upstream Timeout",
 		},
 		{
@@ -154,7 +169,7 @@ func TestDeleteRecording_UpstreamErrors(t *testing.T) {
 			err:        openwebif.ErrUpstreamUnavailable,
 			wantStatus: http.StatusBadGateway,
 			wantType:   "recordings/upstream-unavailable",
-			wantCode:   "UPSTREAM_UNAVAILABLE",
+			wantCode:   problemcode.CodeUpstreamUnavailable,
 			wantTitle:  "Upstream Unavailable",
 		},
 		{
@@ -162,7 +177,7 @@ func TestDeleteRecording_UpstreamErrors(t *testing.T) {
 			err:        openwebif.ErrUpstreamError,
 			wantStatus: http.StatusBadGateway,
 			wantType:   "recordings/upstream",
-			wantCode:   "UPSTREAM_ERROR",
+			wantCode:   problemcode.CodeUpstreamError,
 			wantTitle:  "Upstream Error",
 		},
 		{
@@ -170,7 +185,7 @@ func TestDeleteRecording_UpstreamErrors(t *testing.T) {
 			err:        openwebif.ErrUpstreamBadResponse,
 			wantStatus: http.StatusBadGateway,
 			wantType:   "recordings/upstream",
-			wantCode:   "UPSTREAM_ERROR",
+			wantCode:   problemcode.CodeUpstreamError,
 			wantTitle:  "Upstream Error",
 		},
 		{
@@ -178,7 +193,7 @@ func TestDeleteRecording_UpstreamErrors(t *testing.T) {
 			err:        errors.New("generic boom"),
 			wantStatus: http.StatusInternalServerError,
 			wantType:   "recordings/delete_failed",
-			wantCode:   "DELETE_FAILED",
+			wantCode:   problemcode.CodeDeleteFailed,
 			wantTitle:  "Delete Failed",
 		},
 	}

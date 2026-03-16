@@ -1,4 +1,4 @@
-import type { ProblemDetails } from '../client-ts';
+import type { ProblemCode, ProblemDetails } from '../client-ts';
 import { requestAuthRequired } from './sessionEvents';
 
 type JsonRecord = Record<string, unknown>;
@@ -59,7 +59,7 @@ function normalizeProblemDetails(body: JsonRecord, res: Response): ProblemDetail
     requestId
   };
 
-  const code = toOptionalString(body.code);
+  const code = toOptionalString(body.code) as ProblemCode | undefined;
   if (code) out.code = code;
   const detail = toOptionalString(body.detail);
   if (detail) out.detail = detail;

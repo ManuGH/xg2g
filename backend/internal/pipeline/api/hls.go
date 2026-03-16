@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
@@ -25,6 +26,13 @@ import (
 )
 
 const hlsPlaylistWaitTimeout = 5 * time.Second
+
+const (
+	hlsReasonHeader           = "X-XG2G-Reason"
+	hlsReasonTranscodeStalled = "transcode_stalled"
+	hlsReasonPlaylistMissing  = "playlist_missing"
+	hlsReasonSegmentMissing   = "segment_missing"
+)
 
 var pdtRe = regexp.MustCompile(`^#EXT-X-PROGRAM-DATE-TIME:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(Z|[+-]\d{4})\s*$`)
 
@@ -296,6 +304,28 @@ func serveArtifact(w http.ResponseWriter, r *http.Request, req hlsRequest, rec *
 	http.ServeContent(w, r, req.cleanName, info.ModTime(), f)
 }
 
+func setHLSFailureHintHeader(w http.ResponseWriter, rec *model.SessionRecord) {
+	if rec == nil {
+		return
+	}
+	if lifecycle.PublicOutcomeFromRecord(rec).DetailCode == model.DTranscodeStalled {
+		w.Header().Set(hlsReasonHeader, hlsReasonTranscodeStalled)
+	}
+}
+
+func setHLSMissingArtifactHintHeader(w http.ResponseWriter, req hlsRequest, rec *model.SessionRecord) {
+	if rec == nil || rec.State.IsTerminal() {
+		return
+	}
+	if req.isPlaylist {
+		w.Header().Set(hlsReasonHeader, hlsReasonPlaylistMissing)
+		return
+	}
+	if req.isSegment || req.isLegacySegment || req.isInit {
+		w.Header().Set(hlsReasonHeader, hlsReasonSegmentMissing)
+	}
+}
+
 // ServeHLS handles requests for HLS playlists and segments.
 // It enforces strict session validity and path security.
 func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, sessionID, filename string) {
@@ -329,6 +359,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 			statusCode = http.StatusGone
 			message = "stream ended"
 			w.Header().Set("Cache-Control", "no-store")
+			setHLSFailureHintHeader(w, rec)
 		}
 		http.Error(w, message, statusCode)
 		return
@@ -360,6 +391,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	if os.IsNotExist(err) {
 		logger.Warn().Err(err).Msg("file not found (final)")
 		// Normal during startup for segments or if playlist not yet promoted
+		setHLSMissingArtifactHintHeader(w, req, rec)
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}

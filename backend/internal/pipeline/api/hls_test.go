@@ -311,6 +311,7 @@ func TestServeHLS_NegativePreparingJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
 	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, "playlist_missing", w.Header().Get("X-XG2G-Reason"))
 	assertHardIsolation(t, w)
 
 	// Case 2: Session Not Ready (Terminal State - 410 Gone)
@@ -319,4 +320,51 @@ func TestServeHLS_NegativePreparingJSON(t *testing.T) {
 	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
 	assert.Equal(t, http.StatusGone, w.Code)
 	assertHardIsolation(t, w)
+}
+
+func TestServeHLS_TerminalTranscodeStalledSetsReasonHeader(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "stall-test-session"
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:        sessionID,
+			State:            model.SessionFailed,
+			Reason:           model.RProcessEnded,
+			ReasonDetailCode: model.DTranscodeStalled,
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+
+	assert.Equal(t, http.StatusGone, w.Code)
+	assert.Equal(t, "transcode_stalled", w.Header().Get("X-XG2G-Reason"))
+	assert.Contains(t, w.Body.String(), "stream ended")
+}
+
+func TestServeHLS_ActiveMissingSegmentSetsReasonHeader(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "segment-missing-test-session"
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionReady,
+			Profile: model.ProfileSpec{
+				Name: "high",
+			},
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/seg_000000.ts", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, tmpDir, sessionID, "seg_000000.ts")
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, "segment_missing", w.Header().Get("X-XG2G-Reason"))
+	assert.Contains(t, w.Body.String(), "file not found")
 }

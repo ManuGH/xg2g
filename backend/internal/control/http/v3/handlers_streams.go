@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -28,7 +29,7 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 
 	if store == nil {
 		log.L().Error().Msg("v3 store not initialized")
-		writeProblem(w, r, http.StatusServiceUnavailable, "streams/unavailable", "V3 control plane not enabled", "UNAVAILABLE", "The V3 control plane is not enabled", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "streams/unavailable", "V3 control plane not enabled", problemcode.CodeUnavailable, "The V3 control plane is not enabled", nil)
 		return
 	}
 
@@ -41,7 +42,7 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 	streams, err := read.GetStreams(r.Context(), cfg, snap, store, q)
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to get streams")
-		writeProblem(w, r, http.StatusInternalServerError, "streams/read_failed", "Failed to get streams", "READ_FAILED", "Failed to fetch active stream list", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "streams/read_failed", "Failed to get streams", problemcode.CodeReadFailed, "Failed to fetch active stream list", nil)
 		return
 	}
 
@@ -145,7 +146,7 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string) {
 	// Single source of truth for validation + contract shape
 	if id == "" || !model.IsSafeSessionID(id) {
-		writeProblem(w, r, http.StatusBadRequest, "streams/invalid_id", "Invalid Session ID", "INVALID_SESSION_ID", "The provided session ID contains unsafe characters", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "streams/invalid_id", "Invalid Session ID", problemcode.CodeInvalidSessionID, "The provided session ID contains unsafe characters", nil)
 		return
 	}
 
@@ -154,17 +155,17 @@ func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id stri
 	store := deps.store
 
 	if store == nil || bus == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "streams/unavailable", "Control Plane Unavailable", "UNAVAILABLE", "V3 control plane is not enabled", nil)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "streams/unavailable", "Control Plane Unavailable", problemcode.CodeUnavailable, "V3 control plane is not enabled", nil)
 		return
 	}
 
 	session, err := store.GetSession(r.Context(), id)
 	if err != nil {
-		writeProblem(w, r, http.StatusInternalServerError, "streams/stop_failed", "Stop Failed", "STOP_FAILED", "Failed to retrieve session state", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "streams/stop_failed", "Stop Failed", problemcode.CodeStopFailed, "Failed to retrieve session state", nil)
 		return
 	}
 	if session == nil {
-		writeProblem(w, r, http.StatusNotFound, "streams/not_found", "Session Not Found", "NOT_FOUND", "The session does not exist", nil)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "streams/not_found", "Session Not Found", problemcode.CodeNotFound, "The session does not exist", nil)
 		return
 	}
 
@@ -176,7 +177,7 @@ func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id stri
 		RequestedAtUN: time.Now().Unix(),
 	}
 	if err := bus.Publish(r.Context(), string(model.EventStopSession), event); err != nil {
-		writeProblem(w, r, http.StatusInternalServerError, "streams/stop_failed", "Stop Failed", "STOP_FAILED", "Failed to publish stop event", nil)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "streams/stop_failed", "Stop Failed", problemcode.CodeStopFailed, "Failed to publish stop event", nil)
 		return
 	}
 

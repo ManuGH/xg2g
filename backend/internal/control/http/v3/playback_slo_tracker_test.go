@@ -1,12 +1,15 @@
 package v3
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 func counterValueForLabels(t *testing.T, metricName string, labels map[string]string) float64 {
@@ -116,6 +119,29 @@ func TestClassifyPlaybackRebufferSeverity_Boundaries(t *testing.T) {
 	require.Equal(t, "minor", classifyPlaybackRebufferSeverity(playbackRebufferMinorGap))
 	require.Equal(t, "minor", classifyPlaybackRebufferSeverity(playbackRebufferMajorGap-time.Millisecond))
 	require.Equal(t, "major", classifyPlaybackRebufferSeverity(playbackRebufferMajorGap))
+}
+
+func TestPlaybackErrorCodeFromStatus(t *testing.T) {
+	cases := []struct {
+		status int
+		want   string
+	}{
+		{400, problemcode.CodeInvalidInput},
+		{401, problemcode.CodeUnauthorized},
+		{403, problemcode.CodeForbidden},
+		{404, problemcode.CodeNotFound},
+		{410, playbackErrorCodeGone},
+		{416, problemcode.CodeInvalidInput},
+		{503, problemcode.CodeServiceUnavailable},
+		{500, problemcode.CodeInternalError},
+		{302, playbackErrorCodeUnknown},
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%d", tc.status), func(t *testing.T) {
+			require.Equal(t, tc.want, playbackErrorCodeFromStatus(tc.status))
+		})
+	}
 }
 
 func TestPlaybackSessionTracker_RebufferBoundaries_EmitExpectedSeverity(t *testing.T) {
