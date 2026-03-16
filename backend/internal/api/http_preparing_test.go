@@ -21,7 +21,8 @@ func (m *MockPreparingServer) GetEpg(w http.ResponseWriter, r *http.Request, par
 }
 func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Request)         {}
 func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) GetLogs(w http.ResponseWriter, r *http.Request)              {}
+func (m *MockPreparingServer) GetLogs(w http.ResponseWriter, r *http.Request, params v3.GetLogsParams) {
+}
 func (m *MockPreparingServer) GetReceiverCurrent(w http.ResponseWriter, r *http.Request)   {}
 func (m *MockPreparingServer) GetRecordings(w http.ResponseWriter, r *http.Request, params v3.GetRecordingsParams) {
 }
