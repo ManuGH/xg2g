@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -58,12 +59,17 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 	if session.State.IsTerminal() {
 		logger.Debug().Str("sessionId", sessionID).Str("state", string(session.State)).Msg("heartbeat rejected: session terminal")
 		metrics.IncSessionHeartbeatTerminal()
+		out := lifecycle.PublicOutcomeFromRecord(session)
+		problemSpec := mapTerminalProblem(out)
 		extra := map[string]any{
-			"sessionId": sessionID,
-			"state":     string(session.State),
-			"reason":    string(session.Reason),
+			"sessionId":     sessionID,
+			"state":         string(mapSessionState(out.State)),
+			"reason_detail": mapDetailCode(out.DetailCode),
 		}
-		writeProblem(w, r, http.StatusGone, "sessions/terminal", "Session is no longer active", "SESSION.TERMINAL", "The session has reached a terminal state and cannot be heartbeated.", extra)
+		if reason, ok := mapSessionReason(out.Reason); ok {
+			extra["reason"] = string(reason)
+		}
+		writeProblem(w, r, http.StatusGone, problemSpec.problemType, problemSpec.title, problemSpec.code, problemSpec.detail, extra)
 		return
 	}
 

@@ -80,6 +80,13 @@ func TestClassifyReason(t *testing.T) {
 			wantDetail: "process died during startup: upstream stream ended prematurely",
 		},
 		{
+			name:       "process ended during startup with transcode stall",
+			err:        newReasonError(model.RProcessEnded, "process died during startup: transcode stalled - no progress detected", nil),
+			wantReason: model.RProcessEnded,
+			wantCode:   model.DTranscodeStalled,
+			wantDetail: "process died during startup: transcode stalled - no progress detected",
+		},
+		{
 			name:       "context canceled",
 			err:        context.Canceled,
 			wantReason: model.RCancelled,

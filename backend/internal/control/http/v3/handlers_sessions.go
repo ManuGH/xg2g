@@ -117,6 +117,7 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 	if session.State.IsTerminal() {
 		trace := mapSessionPlaybackTrace(requestID(r.Context()), session, deps.cfg.HLS.Root)
 		out := lifecycle.PublicOutcomeFromRecord(session)
+		problemSpec := mapTerminalProblem(out)
 		state := string(mapSessionState(out.State))
 		reason, ok := mapSessionReason(out.Reason)
 		extra := map[string]any{
@@ -131,10 +132,10 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 			extra["trace"] = trace
 		}
 		writeProblem(w, r, http.StatusGone,
-			"urn:xg2g:error:session:gone",
-			"Session Gone",
-			"session_gone",
-			"Session is in a terminal state (stopped, failed, or cancelled).",
+			problemSpec.problemType,
+			problemSpec.title,
+			problemSpec.code,
+			problemSpec.detail,
 			extra,
 		)
 		return

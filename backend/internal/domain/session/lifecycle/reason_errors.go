@@ -147,6 +147,8 @@ func inferReasonDetailCode(reason model.ReasonCode, detailDebug string) model.Re
 	lower := strings.ToLower(detailDebug)
 
 	switch {
+	case strings.Contains(lower, "transcode stalled - no progress detected"):
+		return model.DTranscodeStalled
 	case strings.Contains(lower, "upstream stream ended prematurely"):
 		return model.DUpstreamEndedPrematurely
 	case strings.Contains(lower, "failed to open upstream input"),

@@ -415,6 +415,8 @@ func TestV3Contract_SessionState_TerminalOutcomeMatrix(t *testing.T) {
 		wantState        string
 		wantReason       string
 		wantDetail       string
+		wantCode         string
+		wantType         string
 		expectCorrection bool
 	}{
 		{
@@ -455,6 +457,18 @@ func TestV3Contract_SessionState_TerminalOutcomeMatrix(t *testing.T) {
 			wantReason:  string(model.RProcessEnded),
 			wantDetail:  "upstream stream ended prematurely",
 		},
+		{
+			name:        "failed_process_stall_detail_inferred_from_debug",
+			state:       model.SessionFailed,
+			reason:      model.RProcessEnded,
+			detailCode:  model.DNone,
+			detailDebug: "process died during startup: transcode stalled - no progress detected",
+			wantState:   "FAILED",
+			wantReason:  string(model.RProcessEnded),
+			wantDetail:  "transcode stalled - no progress detected",
+			wantCode:    "TRANSCODE_STALLED",
+			wantType:    "/problems/error/transcode_stalled",
+		},
 	}
 
 	for _, tc := range cases {
@@ -494,6 +508,12 @@ func TestV3Contract_SessionState_TerminalOutcomeMatrix(t *testing.T) {
 			require.Equal(t, tc.wantDetail, problem["reason_detail"])
 			_, ok := problem["reason_detail"]
 			require.True(t, ok, "reason_detail must be present")
+			if tc.wantCode != "" {
+				require.Equal(t, tc.wantCode, problem["code"])
+			}
+			if tc.wantType != "" {
+				require.Equal(t, tc.wantType, problem["type"])
+			}
 
 			// Log assertion is brittle; skipping explicit check for log message
 			// as long as the data transformation (wantDetail) is correct.
@@ -511,6 +531,36 @@ func TestV3Contract_SessionState_TerminalOutcomeMatrix(t *testing.T) {
 			*/
 		})
 	}
+}
+
+func TestV3Contract_SessionHeartbeat_TerminalTranscodeStalledProblem(t *testing.T) {
+	s, st := newV3TestServer(t, t.TempDir())
+	sessionID := "550e8400-e29b-41d4-a716-446655440000"
+
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:        sessionID,
+		ServiceRef:       "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:          model.ProfileSpec{Name: "high"},
+		State:            model.SessionFailed,
+		Reason:           model.RProcessEnded,
+		ReasonDetailCode: model.DTranscodeStalled,
+		CorrelationID:    "corr-heartbeat-stall-001",
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/sessions/"+sessionID+"/heartbeat", nil)
+	rr := httptest.NewRecorder()
+
+	s.handleSessionHeartbeat(rr, req, sessionID)
+
+	require.Equal(t, http.StatusGone, rr.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Equal(t, "/problems/error/transcode_stalled", body["type"])
+	require.Equal(t, "TRANSCODE_STALLED", body["code"])
+	require.Equal(t, "FAILED", body["state"])
+	require.Equal(t, string(model.RProcessEnded), body["reason"])
+	require.Equal(t, "transcode stalled - no progress detected", body["reason_detail"])
 }
 
 func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
@@ -877,6 +927,62 @@ func TestV3Contract_HLS(t *testing.T) {
 	validateOpenAPIResponse(t, doc, reqM4s, rrM4s, &openapi3filter.Options{
 		ExcludeResponseBody: true,
 	})
+}
+
+func TestV3Contract_HLSTerminalTranscodeStalledHintHeader(t *testing.T) {
+	hlsRoot := t.TempDir()
+	s, st := newV3TestServer(t, hlsRoot)
+	sessionID := "550e8400-e29b-41d4-a716-446655440111"
+
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:        sessionID,
+		State:            model.SessionFailed,
+		ServiceRef:       "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:          model.ProfileSpec{Name: "high"},
+		Reason:           model.RProcessEnded,
+		ReasonDetailCode: model.DTranscodeStalled,
+	}))
+
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
+	})
+	sessionCookie := issueSessionCookie(t, handler, "test-token")
+
+	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/index.m3u8", nil)
+	req.AddCookie(sessionCookie)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusGone, rr.Code)
+	require.Equal(t, "transcode_stalled", rr.Header().Get("X-XG2G-Reason"))
+	require.Contains(t, rr.Body.String(), "stream ended")
+}
+
+func TestV3Contract_HLSActiveMissingSegmentHintHeader(t *testing.T) {
+	hlsRoot := t.TempDir()
+	s, st := newV3TestServer(t, hlsRoot)
+	sessionID := "550e8400-e29b-41d4-a716-446655440112"
+
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:  sessionID,
+		State:      model.SessionReady,
+		ServiceRef: "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:    model.ProfileSpec{Name: "high"},
+	}))
+
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
+	})
+	sessionCookie := issueSessionCookie(t, handler, "test-token")
+
+	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/seg_000000.ts", nil)
+	req.AddCookie(sessionCookie)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
+	require.Equal(t, "segment_missing", rr.Header().Get("X-XG2G-Reason"))
+	require.Contains(t, rr.Body.String(), "file not found")
 }
 
 func TestV3Contract_HLSRange(t *testing.T) {

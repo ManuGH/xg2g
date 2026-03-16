@@ -111,6 +111,11 @@ var (
 		Help: "Total number of ffmpeg process restarts",
 	})
 
+	liveFFmpegStallsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_live_ffmpeg_stalls_total",
+		Help: "Total number of live FFmpeg stalls by detection reason",
+	}, []string{"reason"}) // reason=watchdog_timeout|...
+
 	// Picon metrics
 	piconFetchesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "xg2g_picon_fetches_total",
@@ -219,6 +224,11 @@ func IncTranscodeError() {
 // IncFFmpegRestart increments the ffmpeg restart counter.
 func IncFFmpegRestart() {
 	ffmpegRestartsTotal.Inc()
+}
+
+// IncLiveFFmpegStall increments the live FFmpeg stall counter by reason.
+func IncLiveFFmpegStall(reason string) {
+	liveFFmpegStallsTotal.WithLabelValues(reason).Inc()
 }
 
 // IncPiconFetch increments the picon fetch counter by result.

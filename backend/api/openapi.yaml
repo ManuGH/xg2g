@@ -777,7 +777,7 @@ components:
           description: Correlation ID (UUID or prefixed string like req_abc123)
         code:
           type: string
-          description: Stable machine-readable short code (e.g. "NOT_FOUND")
+          description: Stable machine-readable short code (e.g. "NOT_FOUND", "TRANSCODE_STALLED")
         detail: { type: string }
         instance: { type: string }
         fields:
@@ -1354,6 +1354,46 @@ components:
             status: 422
             code: "decision_ambiguous"
             detail: "No compatible playback path available"
+
+    SessionTerminalProblem:
+      type: object
+      required: [type, title, status, requestId, session, state, reason_detail]
+      additionalProperties: false
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        requestId:
+          type: string
+          description: Correlation ID (UUID or prefixed string like req_abc123)
+        code:
+          type: string
+          description: Stable machine-readable short code (e.g. "SESSION_GONE", "TRANSCODE_STALLED")
+        detail: { type: string }
+        instance: { type: string }
+        session:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [STOPPED, FAILED, CANCELLED]
+        reason:
+          type: string
+        reason_detail:
+          type: string
+        trace:
+          $ref: "#/components/schemas/PlaybackTrace"
+      example:
+        type: "/problems/error/transcode_stalled"
+        title: "Transcode stalled - no progress detected"
+        status: 410
+        requestId: "req_abc123"
+        code: "TRANSCODE_STALLED"
+        detail: "The session failed because the transcode process stopped producing progress."
+        session: "550e8400-e29b-41d4-a716-446655440000"
+        state: "FAILED"
+        reason: "R_PROCESS_ENDED"
+        reason_detail: "transcode stalled - no progress detected"
 
     TimerCreateRequest:
       type: object
@@ -3058,6 +3098,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
+        "410":
+          description: Terminal session state. `code` can be `TRANSCODE_STALLED` when the transcode watchdog detected no progress.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/SessionTerminalProblem"
 
   /sessions/{sessionID}/hls/{filename}:
     parameters:

@@ -102,3 +102,19 @@ func TestRecordPlaylistFileValidity_MultipleTypes(t *testing.T) {
 		t.Error("expected xg2g_playlist_file_valid metric")
 	}
 }
+
+func TestIncLiveFFmpegStall(t *testing.T) {
+	metrics.IncLiveFFmpegStall("watchdog_timeout")
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	promhttp.Handler().ServeHTTP(recorder, req)
+
+	body := recorder.Body.String()
+	if !strings.Contains(body, "xg2g_live_ffmpeg_stalls_total") {
+		t.Error("expected xg2g_live_ffmpeg_stalls_total metric")
+	}
+	if !strings.Contains(body, `reason="watchdog_timeout"`) {
+		t.Error("expected watchdog_timeout label in live ffmpeg stall metric")
+	}
+}

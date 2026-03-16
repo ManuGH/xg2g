@@ -111,11 +111,12 @@ var (
 		Code:    "TRANSCODE_START_TIMEOUT",
 		Message: "Transcode failed to start within time limit",
 	}
-	ErrTranscodeStalledTimeout = &APIError{
-		Code:    "TRANSCODE_STALLED_TIMEOUT",
+	ErrTranscodeStalled = &APIError{
+		Code:    "TRANSCODE_STALLED",
 		Message: "Transcode stalled - no progress detected",
 	}
-	ErrTranscodeFailed = &APIError{
+	ErrTranscodeStalledTimeout = ErrTranscodeStalled
+	ErrTranscodeFailed         = &APIError{
 		Code:    "TRANSCODE_FAILED",
 		Message: "Transcode process exited with error",
 	}
