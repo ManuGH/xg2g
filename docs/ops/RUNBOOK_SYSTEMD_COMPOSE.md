@@ -10,27 +10,42 @@ systemctl daemon-reload
 systemctl enable --now xg2g
 ```
 
+Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
+
 **Path invariants (fail-closed):**
-- Compose file path is frozen to `/srv/xg2g/docker-compose.yml`.
+- Base compose file path is frozen to `/srv/xg2g/docker-compose.yml`.
+- Optional GPU overlay path is `/srv/xg2g/docker-compose.gpu.yml`.
 - Working directory must be `/srv/xg2g`.
 - Data directory must exist and be writable at `/var/lib/xg2g`.
 - Compose service name must remain `xg2g` (health gate relies on it).
 
 Production compose is deterministic. For local development, apply the override:
 `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
+Add `-f docker-compose.gpu.yml` on GPU hosts.
 
-Drift guard: `backend/scripts/verify-systemd-unit.sh` must pass before release.
+Drift guard: `backend/scripts/verify-systemd-unit.sh` and `backend/scripts/verify-systemd-runtime-contract.sh` must pass before release.
 Canonical unit is `docs/ops/xg2g.service`; no repo-root `xg2g.service` is permitted.
 
 Host verification (deploy-time, fail-closed):
 ```bash
 /srv/xg2g/scripts/verify-installed-unit.sh /srv/xg2g/docs/ops/xg2g.service
+/srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /
+/srv/xg2g/scripts/verify-systemd-runtime-contract.sh
 /srv/xg2g/scripts/verify-compose-contract.sh
 /srv/xg2g/scripts/run-service-smoke.sh
+/srv/xg2g/scripts/verify-post-deploy-playback.sh
 ```
+
+Post-deploy playback verification (operator-grade):
+- `verify-post-deploy-playback.sh` starts real live sessions against the local host and proves three runtime paths:
+  - tokenized HLS manifest works without cookie/header auth
+  - live DVR manifest stays sliding-window (`EXT-X-START`, no `PLAYLIST-TYPE`)
+  - forced transcode reaches `h264_vaapi` on `/dev/dri/renderD128`
+- The script stops its probe sessions on exit and is intended for deploy-time verification, not for periodic timer-driven runtime truth checks.
 
 ### Lifecycle Management
 The service uses `docker compose` as the underlying engine but is supervised by systemd.
+Use `/srv/xg2g/scripts/compose-xg2g.sh` for manual compose operations so you inspect the same file stack that systemd resolves.
 
 | Action | Command | Effect |
 |--------|---------|--------|
@@ -46,10 +61,10 @@ After startup, systemd can remain **active (exited)** even if containers later c
 **Runtime truth commands (authoritative):**
 ```bash
 cd /srv/xg2g
-docker compose --project-name xg2g ps
-cid="$(docker compose --project-name xg2g ps -q xg2g)"
+/srv/xg2g/scripts/compose-xg2g.sh ps
+cid="$(/srv/xg2g/scripts/compose-xg2g.sh ps -q xg2g)"
 docker inspect --format '{{.State.Health.Status}}' "$cid"
-docker compose --project-name xg2g logs -f --tail=200
+/srv/xg2g/scripts/compose-xg2g.sh logs -f --tail=200
 ```
 
 **Startup health gate:**
@@ -88,7 +103,7 @@ Access logs via Docker (source of truth) or systemd (capture).
 **Live Tail (Recommended)**:
 ```bash
 cd /srv/xg2g
-docker compose logs -f --tail=200
+/srv/xg2g/scripts/compose-xg2g.sh logs -f --tail=200
 ```
 
 **System Journal**:
@@ -111,9 +126,10 @@ When a future AI or operator debugs a failed `systemctl start xg2g` or `systemct
    systemctl status xg2g.service --no-pager -l
    journalctl -xeu xg2g.service --no-pager -n 120
    ```
-2. Compare the three live sources of truth:
+2. Compare the live sources of truth:
    - `/etc/systemd/system/xg2g.service`
    - `/srv/xg2g/docker-compose.yml`
+   - `/srv/xg2g/docker-compose.gpu.yml` (if present)
    - `/etc/xg2g/xg2g.env`
 3. Only after that, compare against the checked-in template `docs/ops/xg2g.service`.
 
@@ -134,6 +150,32 @@ Observed live-host delta on March 11, 2026:
 - `/etc/xg2g/xg2g.env` did not define `XG2G_METRICS_LISTEN`
 - Result: `xg2g healthcheck --mode ready` succeeded, but `xg2g healthcheck --mode ready --require-metrics --metrics-port 9091` failed with `connect: connection refused`
 
+Observed live-host delta on March 17, 2026:
+- `/srv/xg2g/docker-compose.yml` used `image: xg2g:local`
+- `/srv/xg2g/docker-compose.yml` healthcheck used `interval=10s`, `timeout=5s`, `retries=3`, `start_period=15s`
+- `/etc/systemd/system/xg2g.service` still enforced health primarily through its own `ExecStartPost` polling loop (`150` iterations with `sleep 1`)
+- Result: the old runbook wording that derived the startup gate from `start_period=60s` and `retries=5` was stale for this host; the practical gate remained the systemd-side 150s wait budget with `TimeoutStartSec=180`
+
+Observed live-host delta on March 17, 2026 (image truth):
+- `/etc/systemd/system/xg2g.service` derives the image to preflight from `/srv/xg2g/docker-compose.yml`; it is not a separate image source of truth.
+- When `/srv/xg2g/docker-compose.yml` points at `ghcr.io/manugh/xg2g:v3.3.0`, a locally built `xg2g:local` image is insufficient for `systemctl restart xg2g.service`.
+- Symptom: `ExecStartPre` fails with `No such image: ghcr.io/manugh/xg2g:v3.3.0` before Compose can start anything.
+- Operational rule: for hotfix deploys, either build/tag the image under the compose-pinned reference or update the live compose file first. Do not patch the installed unit under the assumption that it owns image truth.
+
+Observed live-host delta on March 17, 2026 (GPU contract drift):
+- The old repo contract effectively assumed a device mount in the base production compose.
+- That made CPU-only hosts impossible to start cleanly and left the runtime CPU fallback unreachable at infrastructure level.
+- Symptom: `hwaccel=force` playback probes fail with `GPU not available (no /dev/dri/renderD128)` even though the host itself exposes the render node.
+- Current rule: keep `/srv/xg2g/docker-compose.yml` device-neutral and load `/srv/xg2g/docker-compose.gpu.yml` only on GPU hosts. If VAAPI verification fails with that exact error, inspect the GPU overlay selection first; auto-discovery inside the app cannot recover from a missing container device mount.
+
+Observed live-host delta on March 17, 2026 (playback/runtime):
+- Safari-native media requests could not be trusted to carry header auth on `.m3u8` fetches; tokenized media URLs became the runtime-safe source of truth for HLS auth.
+- Live hosts may omit `ffmpeg.vaapiDevice` entirely; runtime now auto-discovers `/dev/dri/renderD128` and must be verified with an actual transcode probe, not only with container mounts.
+- After a service restart, Safari may keep polling an old HLS session URL from an already cancelled tab state. Symptom pattern:
+  - repeated `GET /api/v3/sessions/<old-id>/hls/index.m3u8?...` with `410`
+  - playback feedback like `networkError: levelLoadError`
+  - no fresh `POST /api/v3/live/stream-info`, no fresh `POST /api/v3/intents`, and no new `playlist ready - transitioning to READY state`
+  In that case, do not debug startup first. Hard-reload Safari (`Cmd+Option+R`) or reopen the tab, then start a new stream and inspect the fresh session instead of the stale `410` noise.
 If you see that exact mismatch, fix the live env first by setting:
 
 ```bash

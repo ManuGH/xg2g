@@ -2,7 +2,7 @@
 # Backend Targets
 # ===================================================================================================
 
-.PHONY: backend-build backend-run generate-config verify-config generate verify-generate ui-build backend-dev backend-dev-ui webui-dev dev-ui dev
+.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build build-offline backend-dev backend-dev-ui webui-dev dev-ui dev
 
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
@@ -36,6 +36,9 @@ verify-generate: generate ## Verify that generated code is up-to-date
 	@echo "Verifying generated code..."
 	@cd $(BACKEND_DIR) && git diff --exit-code internal/api/server_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
 	@echo "✅ Generated code is up-to-date"
+
+gen-openapi-hard: ## Generate OpenAPI hard-mode artifacts (snapshot + TS client + consumption types)
+	@cd $(BACKEND_DIR) && ./scripts/gen-openapi-hard-mode.sh
 
 generate-config: ## Generate config surfaces from registry
 	@echo "Generating config surfaces from registry..."

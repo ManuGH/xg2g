@@ -56,7 +56,7 @@ changelog:
 
 dockers:
   - image_templates:
-      - "ghcr.io/manugh/xg2g:{{ .Version }}-amd64"
+      - "ghcr.io/manugh/xg2g:{{ .Tag }}-amd64"
     dockerfile: infrastructure/docker/Dockerfile.release
     use: buildx
     build_flag_templates:
@@ -68,7 +68,7 @@ dockers:
       - ffmpeg-wrapper.sh
       - ffprobe-wrapper.sh
   - image_templates:
-      - "ghcr.io/manugh/xg2g:{{ .Version }}-arm64"
+      - "ghcr.io/manugh/xg2g:{{ .Tag }}-arm64"
     dockerfile: infrastructure/docker/Dockerfile.release
     use: buildx
     build_flag_templates:
@@ -81,14 +81,14 @@ dockers:
       - ffprobe-wrapper.sh
 
 docker_manifests:
-  - name_template: "ghcr.io/manugh/xg2g:{{ .Version }}"
+  - name_template: "ghcr.io/manugh/xg2g:{{ .Tag }}"
     image_templates:
-      - "ghcr.io/manugh/xg2g:{{ .Version }}-amd64"
-      - "ghcr.io/manugh/xg2g:{{ .Version }}-arm64"
+      - "ghcr.io/manugh/xg2g:{{ .Tag }}-amd64"
+      - "ghcr.io/manugh/xg2g:{{ .Tag }}-arm64"
   - name_template: "ghcr.io/manugh/xg2g:latest"
     image_templates:
-      - "ghcr.io/manugh/xg2g:{{ .Version }}-amd64"
-      - "ghcr.io/manugh/xg2g:{{ .Version }}-arm64"
+      - "ghcr.io/manugh/xg2g:{{ .Tag }}-amd64"
+      - "ghcr.io/manugh/xg2g:{{ .Tag }}-arm64"
 
 release:
   github:

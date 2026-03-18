@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BACKEND_ROOT="$REPO_ROOT/backend"
 cd "$REPO_ROOT"
 
 echo "--- gen-openapi-hard-mode ---"
@@ -10,14 +11,17 @@ echo "Generating Go OpenAPI artifacts..."
 make generate
 
 echo "Generating normative OpenAPI snapshot..."
-./scripts/generate-normative-snapshot.sh
+"$BACKEND_ROOT/scripts/generate-normative-snapshot.sh"
 
-if [ ! -d "$REPO_ROOT/frontend/webui/node_modules" ]; then
+echo "Generating consumption contract types..."
+node "$BACKEND_ROOT/scripts/generate-consumption-types.mjs"
+
+if [ ! -x "$REPO_ROOT/frontend/webui/node_modules/.bin/openapi-ts" ]; then
   echo "Installing webui dependencies (npm ci)..."
-  npm --prefix webui ci
+  npm --prefix frontend/webui ci
 fi
 
 echo "Generating TypeScript client from OpenAPI..."
-npm --prefix webui run generate-client
+npm --prefix frontend/webui run generate-client
 
 echo "✅ OpenAPI hard-mode generation complete"

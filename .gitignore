@@ -25,6 +25,7 @@ pkg/
 *.prof
 *.pid
 *.lock
+!/DIGESTS.lock
 *.tmp
 *.bk
 *.bak

@@ -11,6 +11,9 @@ concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check-env-access:
     runs-on: ubuntu-latest

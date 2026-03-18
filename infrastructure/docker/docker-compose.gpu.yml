@@ -1,0 +1,7 @@
+# Optional GPU overlay for hosts with a VAAPI render node.
+# Usage (dev): docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.gpu.yml up -d --build
+# Adjust the render node path if your host exposes a different device.
+services:
+  xg2g:
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128

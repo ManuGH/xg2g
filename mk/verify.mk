@@ -2,9 +2,9 @@
 # Governance and Verification Gates
 # ===================================================================================================
 
-.PHONY: verify verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-runtime verify-hot-reload-governance gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout
+.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout
 
-verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-runtime verify-hot-reload-governance ## Run all governance verification gates
+verify: verify-generated-artifacts verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract ## Run all governance verification gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -28,8 +28,23 @@ docs-render: ## Render templates into documentation and units
 	fi
 
 verify-docs-compiled: docs-render ## Verify that all docs and units are up-to-date
-	@git diff --exit-code README.md docs/ops/xg2g.service docker-compose.yml || (echo "❌ Documentation drift detected. Run 'make docs-render' and commit changes." && exit 1)
+	@git diff --exit-code README.md docker-compose.yml infrastructure/docker/docker-compose.yml docs/ops/xg2g.service docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md docs/ops/OPERATIONS_MODEL.md docs/ops/xg2g-verifier.service docs/ops/xg2g-verifier.timer || (echo "❌ Documentation drift detected. Run 'make docs-render' and commit changes." && exit 1)
 	@echo "✅ All documents and units are up-to-date"
+
+verify-generated-artifacts-contract: ## Verify generated artifact governance coverage and ungoverned detection
+	@./$(BACKEND_DIR)/scripts/verify-generated-artifacts-contract.sh
+
+verify-openapi-hard-mode: ## Verify OpenAPI hard-mode generated artifacts are up-to-date
+	@./$(BACKEND_DIR)/scripts/verify-openapi-hard-mode.sh
+
+verify-embedded-webui-dist: ## Verify embedded WebUI dist is up-to-date
+	@./$(BACKEND_DIR)/scripts/verify-embedded-webui-dist.sh
+
+verify-generated-artifacts: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-embedded-webui-dist verify-generated-artifacts-contract ## Verify all committed generated artifacts and governance rules
+	@echo "✅ Generated artifact governance passed"
+
+verify-release-output-contract: ## Verify the normative release/package output contract
+	@./$(BACKEND_DIR)/scripts/verify-release-output-contract.sh
 
 verify-purity: bootstrap-python-tools ## Verify UI purity, decision ownership, OpenAPI hygiene
 	@./$(BACKEND_DIR)/scripts/verify-ui-purity.sh
@@ -81,3 +96,13 @@ gate-v3-contract: bootstrap-python-tools ## Gate V3: OpenAPI v3 Contract Governa
 
 verify-v3-fanout: ## Verify v3 package fan-out
 	@./$(BACKEND_DIR)/scripts/check-fanout.sh
+
+verify-compose-resolver: ## Verify compose resolver ordering and GPU-neutral base compose
+	@./$(BACKEND_DIR)/scripts/verify-compose-resolver.sh
+
+verify-systemd-runtime-contract: ## Verify systemd/runtime env contract semantics
+	@./$(BACKEND_DIR)/scripts/verify-systemd-unit.sh
+	@./$(BACKEND_DIR)/scripts/verify-systemd-runtime-contract.sh
+
+verify-installation-contract: ## Verify packaging/install-time host layout contract
+	@./$(BACKEND_DIR)/scripts/verify-installation-contract.sh

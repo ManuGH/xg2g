@@ -89,7 +89,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 Optional (VAAPI / Intel+AMD iGPU):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.hwaccel.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.gpu.yml up -d
 ```
 
 ### Fast Container Rebuilds

@@ -6,7 +6,7 @@ invariants to guarantee that **Repository Truth = Runtime Truth**.
 
 ## 1. Truth Hierarchy (SSoT)
 
-- **`VERSION`**: Canonical source for the SemVer tag (e.g., `3.1.5`).
+- **`backend/VERSION`**: Canonical source for the release tag (e.g., `v3.3.0`).
 - **`DIGESTS.lock`**: ONLY truth for digests (`@sha256:...`).
 - **`RELEASE_MANIFEST.json`**: Canonical record of build state and metadata.
 

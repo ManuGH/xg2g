@@ -5,7 +5,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-VERSION="$(cat "${REPO_ROOT}/VERSION" | tr -d '[:space:]')"
+VERSION="$(cat "${REPO_ROOT}/backend/VERSION" | tr -d '[:space:]')"
 LOCK_FILE="${REPO_ROOT}/DIGESTS.lock"
 MANIFEST_FILE="${REPO_ROOT}/RELEASE_MANIFEST.json"
 
