@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libva2 \
     libx264-164 \
     libx265-215 \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g 10001 xg2g && \
@@ -53,3 +54,5 @@ RUN chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
 LABEL org.opencontainers.image.title="xg2g-ffmpeg-base" \
     org.opencontainers.image.description="Reusable FFmpeg runtime base for xg2g container builds" \
     org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
+
+USER 10001:10001

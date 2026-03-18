@@ -8,13 +8,13 @@
 # ==============================================================================
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FAIL=0
 
 echo "🔍 Auditing GitHub Action pins..."
 
 # Find all 'uses:' lines with a SHA-like pin (40 chars)
-USED_ACTIONS=$(grep -rE "uses:[[:space:]]+[^@]+@[a-f0-9]{40}" "$ROOT/.github/workflows" | \
+USED_ACTIONS=$(grep -rE "uses:[[:space:]]+[^@]+@[a-f0-9]{40}" "$REPO_ROOT/.github/workflows" | \
     sed -E 's/.*uses:[[:space:]]+([^[:space:]]+).*/\1/' | sort -u)
 
 if [[ -z "$USED_ACTIONS" ]]; then

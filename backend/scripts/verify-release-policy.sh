@@ -38,7 +38,7 @@ echo "🛡️  Release PR Firewall: Validating diff scope..."
 
 # 2. Authorized File List (Allowlist)
 ALLOWLIST=(
-    "VERSION"
+    "backend/VERSION"
     "DIGESTS.lock"
     "RELEASE_MANIFEST.json"
     "CHANGELOG.md"

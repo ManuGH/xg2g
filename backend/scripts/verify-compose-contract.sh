@@ -4,29 +4,33 @@ set -euo pipefail
 PROJECT="xg2g"
 SERVICE="xg2g"
 ROOT="/srv/xg2g"
-COMPOSE_FILE="$ROOT/docker-compose.yml"
+COMPOSE_HELPER="$ROOT/scripts/compose-xg2g.sh"
 
 cd "$ROOT"
 
-if [ ! -f "$COMPOSE_FILE" ]; then
-  echo "ERROR: compose file not found: $COMPOSE_FILE" >&2
+if [ ! -x "$COMPOSE_HELPER" ]; then
+  echo "ERROR: compose helper not found or not executable: $COMPOSE_HELPER" >&2
   exit 1
 fi
 
-if grep -q '\${' "$COMPOSE_FILE"; then
-  echo "ERROR: Prod docker-compose.yml contains \${...} interpolation (forbidden)." >&2
-  exit 1
-fi
+mapfile -t COMPOSE_FILES < <("$COMPOSE_HELPER" --print-files)
 
-if grep -qE '^[[:space:]]*build:[[:space:]]*' "$COMPOSE_FILE"; then
-  echo "ERROR: Prod docker-compose.yml contains build: (forbidden; must be image-only)." >&2
-  exit 1
-fi
+for compose_file in "${COMPOSE_FILES[@]}"; do
+  if grep -q '\${' "$compose_file"; then
+    echo "ERROR: Compose file contains \${...} interpolation (forbidden): $compose_file" >&2
+    exit 1
+  fi
+
+  if grep -qE '^[[:space:]]*build:[[:space:]]*' "$compose_file"; then
+    echo "ERROR: Compose file contains build: (forbidden; must be image-only): $compose_file" >&2
+    exit 1
+  fi
+done
 
 cfg="$(mktemp)"
 trap 'rm -f "$cfg"' EXIT
 
-docker compose --project-name "$PROJECT" config > "$cfg"
+"$COMPOSE_HELPER" config > "$cfg"
 
 read -r env_ok vol_ok < <(awk -v svc="$SERVICE" '
 function indent(line) { match(line, /^[[:space:]]*/); return RLENGTH }

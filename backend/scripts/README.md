@@ -34,10 +34,14 @@ This is **not a blanket exception** - prefer `make` in CI whenever possible.
 
 ## Exception: Operator Verification
 These operator-grade scripts are designed to be run directly on hosts:
+- `backend/scripts/compose-xg2g.sh`
 - `backend/scripts/verify-systemd-unit.sh`
+- `backend/scripts/verify-systemd-runtime-contract.sh`
+- `backend/scripts/verify-installation-contract.sh`
 - `backend/scripts/verify-installed-unit.sh`
 - `backend/scripts/verify-compose-contract.sh`
 - `backend/scripts/run-service-smoke.sh`
+- `backend/scripts/verify-post-deploy-playback.sh`
 
 ---
 

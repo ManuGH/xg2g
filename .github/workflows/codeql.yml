@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -29,29 +29,37 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ["go"]
+        # Keep CodeQL aligned with maintained first-party surfaces.
+        # We intentionally omit C/C++ and Rust because the repo only has vendor
+        # remnants there, and we omit Python because the remaining scripts are
+        # low-volume helpers that are not worth a dedicated stale category.
+        language: ["actions", "go", "javascript-typescript"]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      # Setup Go
+      # JavaScript/TypeScript is interpreted, so we can keep the scan focused on
+      # maintained source and ignore generated WebUI artifacts.
+      - name: Initialize CodeQL (JavaScript/TypeScript)
+        if: matrix.language == 'javascript-typescript'
+        uses: github/codeql-action/init@b1bff81932f5cdfc8695c7752dcee935dcd061c8
+        with:
+          languages: ${{ matrix.language }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Initialize CodeQL
+        if: matrix.language != 'javascript-typescript'
+        uses: github/codeql-action/init@b1bff81932f5cdfc8695c7752dcee935dcd061c8
+        with:
+          languages: ${{ matrix.language }}
+
       - name: Setup Go
+        if: matrix.language == 'go'
         uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # v6
         with:
           go-version-file: backend/go.mod
           cache: true
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@0d579ffd059c29b07949a3cce3983f0780820c98
-        with:
-          languages: ${{ matrix.language }}
-          # If you wish to specify custom queries, you can do so here or in a config file.
-          # By default, queries listed here will override any specified in a config file.
-          # Prefix the list here with "+" to use these queries and those in the config file.
-
-          # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-          # queries: security-extended,security-and-quality
 
       # Manual build for Go
       - name: Build Go
@@ -61,6 +69,6 @@ jobs:
           go build -tags=nogpu ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98
+        uses: github/codeql-action/analyze@b1bff81932f5cdfc8695c7752dcee935dcd061c8
         with:
           category: "/language:${{ matrix.language }}"

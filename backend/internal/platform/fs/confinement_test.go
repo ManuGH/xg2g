@@ -28,6 +28,11 @@ func TestConfineRelPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	nestedDir := filepath.Join(subDir, "nested")
+	if err := os.Mkdir(nestedDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
 	// Create a regular file "safe.txt"
 	safeFile := filepath.Join(tmpDir, "safe.txt")
 	if err := os.WriteFile(safeFile, []byte("safe"), 0o600); err != nil {
@@ -38,6 +43,16 @@ func TestConfineRelPath(t *testing.T) {
 	// We'll link to parent of tmpDir (usually /tmp)
 	linkOutside := filepath.Join(tmpDir, "link_outside")
 	if err := os.Symlink("..", linkOutside); err != nil {
+		t.Fatal(err)
+	}
+
+	linkChainOutside := filepath.Join(tmpDir, "link_chain_outside")
+	if err := os.Symlink("link_outside", linkChainOutside); err != nil {
+		t.Fatal(err)
+	}
+
+	linkInside := filepath.Join(tmpDir, "link_inside")
+	if err := os.Symlink("subdir", linkInside); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,9 +84,22 @@ func TestConfineRelPath(t *testing.T) {
 			wantPath: "subdir/foo.txt",
 		},
 		{
+			name:     "clean path variant inside root",
+			root:     tmpDir,
+			target:   "subdir/../safe.txt",
+			wantErr:  false,
+			wantPath: "safe.txt",
+		},
+		{
 			name:    "traversal attempt ..",
 			root:    tmpDir,
 			target:  "../outside.txt",
+			wantErr: true,
+		},
+		{
+			name:    "cleaned traversal attempt",
+			root:    tmpDir,
+			target:  "subdir/nested/../../../outside.txt",
 			wantErr: true,
 		},
 		{
@@ -85,6 +113,19 @@ func TestConfineRelPath(t *testing.T) {
 			root:    tmpDir,
 			target:  "link_outside/foo",
 			wantErr: true, // "link_outside" resolves to parent, so it escapes
+		},
+		{
+			name:    "symlink chain escape",
+			root:    tmpDir,
+			target:  "link_chain_outside/foo",
+			wantErr: true,
+		},
+		{
+			name:     "missing leaf under inside symlink",
+			root:     tmpDir,
+			target:   "link_inside/missing.txt",
+			wantErr:  false,
+			wantPath: "subdir/missing.txt",
 		},
 	}
 
@@ -121,6 +162,16 @@ func TestConfineAbsPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.Mkdir(subDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	linkInside := filepath.Join(tmpDir, "link_inside")
+	if err := os.Symlink("subdir", linkInside); err != nil {
+		t.Fatal(err)
+	}
+
 	// outside file
 	outsideDir, err := os.MkdirTemp("", "outside")
 	if err != nil {
@@ -132,6 +183,16 @@ func TestConfineAbsPath(t *testing.T) {
 		}
 	})
 	outsidePath := filepath.Join(outsideDir, "secret.txt")
+
+	linkOutside := filepath.Join(tmpDir, "link_outside")
+	if err := os.Symlink(outsideDir, linkOutside); err != nil {
+		t.Fatal(err)
+	}
+
+	linkChainOutside := filepath.Join(tmpDir, "link_chain_outside")
+	if err := os.Symlink("link_outside", linkChainOutside); err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name    string
@@ -146,9 +207,39 @@ func TestConfineAbsPath(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "cleaned absolute path inside root",
+			root:    tmpDir,
+			target:  filepath.Join(tmpDir, "subdir", "..", "safe.txt"),
+			wantErr: false,
+		},
+		{
 			name:    "outside absolute path",
 			root:    tmpDir,
 			target:  outsidePath,
+			wantErr: true,
+		},
+		{
+			name:    "missing nested path inside root",
+			root:    tmpDir,
+			target:  filepath.Join(tmpDir, "missing", "nested", "safe.txt"),
+			wantErr: false,
+		},
+		{
+			name:    "missing leaf under inside symlink",
+			root:    tmpDir,
+			target:  filepath.Join(linkInside, "missing.txt"),
+			wantErr: false,
+		},
+		{
+			name:    "missing leaf under outside symlink",
+			root:    tmpDir,
+			target:  filepath.Join(linkOutside, "missing.txt"),
+			wantErr: true,
+		},
+		{
+			name:    "symlink chain escape",
+			root:    tmpDir,
+			target:  filepath.Join(linkChainOutside, "missing.txt"),
 			wantErr: true,
 		},
 		{

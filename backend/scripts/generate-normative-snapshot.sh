@@ -1,19 +1,23 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 # scripts/generate-normative-snapshot.sh
 # Creates openapi/v3.normative.snapshot.yaml from api/openapi.yaml
 # By filtering out Forbidden fields defined in the manifest.
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FULL_API="$REPO_ROOT/api/openapi.yaml"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+FULL_API="$REPO_ROOT/backend/api/openapi.yaml"
 SNAPSHOT_FILE="$REPO_ROOT/openapi/v3.normative.snapshot.yaml"
-MANIFEST_FILE="$REPO_ROOT/contracts/ui_consumption.manifest.json"
+MANIFEST_FILE="$REPO_ROOT/backend/contracts/ui_consumption.manifest.json"
+OUTPUT_FILE="${1:-$SNAPSHOT_FILE}"
+HEADER="# GENERATED FILE - DO NOT EDIT. Source: backend/api/openapi.yaml + backend/contracts/ui_consumption.manifest.json"
+TMP_FILE="$(mktemp)"
+trap 'rm -f "$TMP_FILE" "$TMP_FILE.bak"' EXIT
 
 echo "generating normative openapi snapshot..."
 
 # Start with full copy
-cp "$FULL_API" "$SNAPSHOT_FILE"
+cp "$FULL_API" "$TMP_FILE"
 
 # Filter out Forbidden fields
 if command -v jq &> /dev/null; then
@@ -26,11 +30,16 @@ if command -v jq &> /dev/null; then
         # In production this should be a robust yq script.
         # For now, sed is "good enough" for the restricted set we control.
         # Using a safer sed pattern to avoid partial matches
-        sed -i.bak "/^[[:space:]]*$FIELD_KEY:/d" "$SNAPSHOT_FILE"
-        rm -f "${SNAPSHOT_FILE}.bak"
+        sed -i.bak "/^[[:space:]]*$FIELD_KEY:/d" "$TMP_FILE"
+        rm -f "${TMP_FILE}.bak"
     done
 else
     echo "jq not found, skipping filtering (Validation will likely fail)"
 fi
 
-echo "✅ Snapshot generated: $SNAPSHOT_FILE"
+{
+    printf '%s\n' "$HEADER"
+    cat "$TMP_FILE"
+} > "$OUTPUT_FILE"
+
+echo "✅ Snapshot generated: $OUTPUT_FILE"

@@ -20,6 +20,7 @@ Base command: `make [target]`
 | `build` | Compiles the offline-safe backend binary to `./bin/xg2g`. |
 | `ui-build` | Builds `frontend/webui/` and copies the bundle into `backend/internal/control/http/dist/`. |
 | `docker-build` | Builds the Docker image (AMD64) with `--load` |
+| `security-closure` | Rebuilds images fresh and runs the local security closure proof bundle |
 | `test` | Runs unit and fast integration tests |
 | `lint` | Executes `golangci-lint`, WebUI linting, and design contract checks |
 

@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libva2 \
     libx264-164 \
     libx265-215 \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create runtime user and writable directories in the reusable base layer.

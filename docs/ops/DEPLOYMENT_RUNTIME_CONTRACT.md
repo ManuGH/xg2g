@@ -108,17 +108,22 @@ docker exec xg2g-prod ls -l /dev/dri/renderD128
 **Container Runtime**:
 
 ```yaml
-devices:
-  - /dev/dri/renderD128:/dev/dri/renderD128
+services:
+  xg2g:
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
 ```
 
-Repo helper: `docker-compose.hwaccel.yml` mounts `/dev/dri` for VAAPI without editing the production compose.
+Base production compose stays device-neutral.
+GPU hosts opt in through `docker-compose.gpu.yml`, which `compose-xg2g.sh`
+auto-loads when present. Operators may also set `COMPOSE_FILE` in
+`/etc/xg2g/xg2g.env` for explicit file selection.
 
 **Detection Logic**:
 
-- Device present → GPU available
-- Device absent → GPU unavailable (fail-closed, use CPU)
-- **Test**: `hwaccel=force` on host without device → MUST return 400
+- GPU override loaded + device present → GPU available
+- GPU override absent or device absent → GPU unavailable (fail-closed, use CPU)
+- **Test**: `hwaccel=force` without override/device → MUST return 400
 
 ## 4. Homelab SOA Setup - Golden Path
 
@@ -135,10 +140,6 @@ services:
 
     # Network
     network_mode: host  # or bridge with port mapping
-
-    # GPU Access (Intel/AMD VAAPI)
-    devices:
-      - /dev/dri/renderD128:/dev/dri/renderD128
 
     # Volumes
     # Advanced: Digest-Pinning (High-Assurance Enforcement)
@@ -167,6 +168,19 @@ services:
               count: 1
               capabilities: [gpu]
 ```
+
+**Optional GPU Overlay (`docker-compose.gpu.yml`)**:
+
+```yaml
+services:
+  xg2g:
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+```
+
+Use the overlay only on hosts that actually expose that render node. The
+base compose must stay valid on CPU-only systems so runtime CPU fallback
+remains reachable.
 
 ### Directory Structure
 

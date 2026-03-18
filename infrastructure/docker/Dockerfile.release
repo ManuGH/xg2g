@@ -21,6 +21,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
   XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"
 
 RUN apt-get update && \
+  apt-get upgrade -y && \
   packages="ca-certificates mesa-va-drivers libva-drm2 libva2 libx264-164 libx265-215" && \
   case "$(uname -m)" in \
   x86_64) packages="$packages intel-media-va-driver" ;; \

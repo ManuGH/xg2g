@@ -2,7 +2,7 @@
 # Quality Assurance Targets
 # ===================================================================================================
 
-.PHONY: lint lint-fix test test-race test-cover cover test-all test-integration smoke-test codex security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test ci-pr ci-nightly bootstrap-python-tools
+.PHONY: lint lint-fix test test-race test-cover cover test-all test-integration smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test ci-pr ci-nightly bootstrap-python-tools
 
 lint: ## Run golangci-lint with all checks
 	@echo "Running golangci-lint..."
@@ -75,6 +75,13 @@ codex: quality-gates ## Run Codex review bundle (lint + race/coverage + govulnch
 
 security: security-vulncheck security-audit sbom ## Run comprehensive security analysis
 
+security-closure: ## Rebuild images fresh and run local security closure proofs
+	@echo "Running confinement regression matrix..."
+	@cd $(BACKEND_DIR) && $(GO) test ./internal/platform/fs -count=1 -run 'TestConfine(RelPath|AbsPath)' -v
+	@echo "Running container runtime closure proof..."
+	@./$(BACKEND_DIR)/scripts/verify-image-runtime.sh
+	@echo "NOTE: Re-run GitHub CodeQL, Trivy, and Scorecard workflows to close scanner evidence."
+
 security-scan: dev-tools ## Run container vulnerability scanning
 	@echo "Running container vulnerability scan..."
 	@mkdir -p $(ARTIFACTS_DIR)
@@ -108,11 +115,11 @@ quality-gates-offline: ## Offline-only gates (no network, no codegen)
 	@cd $(BACKEND_DIR) && $(GO) vet ./...
 	@echo "✅ Offline gates passed"
 
-quality-gates-online: verify-config verify-docs-compiled verify-generate verify-v3-fanout gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
+quality-gates-online: verify-generated-artifacts verify-release-output-contract verify-v3-fanout verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: lint verify-config verify-generate gate-repo-hygiene verify-client-wrapper ui-build webui-test ## Run the local PR validation bundle used by CI
+ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract gate-repo-hygiene verify-client-wrapper webui-test ## Run the local PR validation bundle used by CI
 	@echo "✅ PR gate bundle passed"
 
 ci-nightly: quality-gates-online webui-test ## Run the nightly validation bundle used by CI

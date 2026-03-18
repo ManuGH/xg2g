@@ -5,6 +5,7 @@ PROJECT="xg2g"
 SERVICE="xg2g"
 UNIT="xg2g"
 COMPOSE_FILE="/srv/xg2g/docker-compose.yml"
+COMPOSE_HELPER="/srv/xg2g/scripts/compose-xg2g.sh"
 ENV_FILE="/etc/xg2g/xg2g.env"
 COMPOSE_DIR="/srv/xg2g"
 
@@ -18,11 +19,16 @@ if [ -f "${COMPOSE_FILE}.bak" ] || [ -f "${ENV_FILE}.bak" ]; then
   exit 1
 fi
 
+if [ ! -x "$COMPOSE_HELPER" ]; then
+  echo "ERROR: compose helper not found or not executable: $COMPOSE_HELPER" >&2
+  exit 1
+fi
+
 cd "$COMPOSE_DIR"
 
 cleanup_runtime() {
   systemctl stop "$UNIT" >/dev/null 2>&1 || true
-  docker compose --project-name "$PROJECT" down --remove-orphans >/dev/null 2>&1 || true
+  "$COMPOSE_HELPER" down --remove-orphans >/dev/null 2>&1 || true
   systemctl reset-failed "$UNIT" >/dev/null 2>&1 || true
 }
 
@@ -37,7 +43,7 @@ restore_files() {
 
 must_empty_container() {
   local cid
-  cid="$(docker compose --project-name "$PROJECT" ps -q "$SERVICE" || true)"
+  cid="$("$COMPOSE_HELPER" ps -q "$SERVICE" || true)"
   if [ -n "$cid" ]; then
     echo "ERROR: Expected no container, but got cid=$cid" >&2
     exit 1
@@ -96,19 +102,19 @@ cleanup_runtime
 
 echo "== 4) Valid start + healthy =="
 systemctl start "$UNIT"
-cid="$(docker compose --project-name "$PROJECT" ps -q "$SERVICE")"
+cid="$("$COMPOSE_HELPER" ps -q "$SERVICE")"
 test -n "$cid"
 status="$(docker inspect --format '{{.State.Health.Status}}' "$cid")"
 if [ "$status" != "healthy" ]; then
   echo "ERROR: expected healthy, got: $status" >&2
-  docker compose --project-name "$PROJECT" logs --tail=200 >&2 || true
+  "$COMPOSE_HELPER" logs --tail=200 >&2 || true
   exit 1
 fi
 
 echo "== 5) Reload idempotent (CID unchanged) =="
 cid_before="$cid"
 systemctl reload "$UNIT"
-cid_after="$(docker compose --project-name "$PROJECT" ps -q "$SERVICE")"
+cid_after="$("$COMPOSE_HELPER" ps -q "$SERVICE")"
 if [ "$cid_before" != "$cid_after" ]; then
   echo "ERROR: expected no recreation; cid_before=$cid_before cid_after=$cid_after" >&2
   exit 1

@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# Pin all GitHub Actions to SHA256 hashes for security
-# This improves the OpenSSF Scorecard "Pinned-Dependencies" score
+# DEPRECATED: do not use this script.
+# The repository no longer enforces blanket SHA pinning for all workflow actions,
+# and the mappings below are intentionally left as historical context only.
+# Running this script would rewrite current workflow tags back to stale SHAs.
 
 set -euo pipefail
+
+echo "DEPRECATED: .github/scripts/pin-actions.sh is disabled because its mappings are stale." >&2
+echo "Do not auto-rewrite workflow action tags with this script." >&2
+echo "If you need to audit existing SHA pins, run backend/scripts/verify-action-pins.sh instead." >&2
+exit 1
 
 # Action version to SHA mappings (verified 2025-10-29)
 declare -A ACTION_PINS=(

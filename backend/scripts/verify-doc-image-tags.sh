@@ -10,7 +10,11 @@ REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 VERSION_FILE="${REPO_ROOT}/VERSION"
 
 if [[ ! -f "$VERSION_FILE" ]]; then
-    echo "❌ VERSION file not found in repo root: ${VERSION_FILE}"
+    VERSION_FILE="${REPO_ROOT}/backend/VERSION"
+fi
+
+if [[ ! -f "$VERSION_FILE" ]]; then
+    echo "❌ VERSION file not found: ${VERSION_FILE}"
     exit 1
 fi
 

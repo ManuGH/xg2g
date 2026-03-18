@@ -89,6 +89,11 @@ func ConfineAbsPath(rootAbs, targetAbs string) (string, error) {
 
 // resolveAndCheck resolves realPath symlinks and ensures it is within realRoot.
 func resolveAndCheck(realRoot, fullPath string) (string, error) {
+	fullPath, err := confineLexicalPath(realRoot, fullPath)
+	if err != nil {
+		return "", err
+	}
+
 	var realPath string
 	if info, err := os.Lstat(fullPath); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
@@ -109,6 +114,10 @@ func resolveAndCheck(realRoot, fullPath string) (string, error) {
 	} else {
 		// File does not exist? Check parent.
 		dir := filepath.Dir(fullPath)
+		dir, err = confineLexicalPath(realRoot, dir)
+		if err != nil {
+			return "", err
+		}
 		if rp, err := filepath.EvalSymlinks(dir); err == nil {
 			realPath = filepath.Join(rp, filepath.Base(fullPath))
 		} else {
@@ -123,17 +132,23 @@ func resolveAndCheck(realRoot, fullPath string) (string, error) {
 		}
 	}
 
-	// Finally, verify realPath starts with realRoot
-	rel, err := filepath.Rel(realRoot, realPath)
+	return confineLexicalPath(realRoot, realPath)
+}
+
+func confineLexicalPath(realRoot, candidate string) (string, error) {
+	cleanRoot := filepath.Clean(realRoot)
+	cleanCandidate := filepath.Clean(candidate)
+
+	rel, err := filepath.Rel(cleanRoot, cleanCandidate)
 	if err != nil {
 		return "", fmt.Errorf("rel computation failed: %w", err)
 	}
 
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path escapes root via symlinks: %s", realPath)
+		return "", fmt.Errorf("path escapes root: %s", cleanCandidate)
 	}
 
-	return realPath, nil
+	return cleanCandidate, nil
 }
 
 // IsRegularFile checks if path exists and is a regular file (not directory, device, etc).

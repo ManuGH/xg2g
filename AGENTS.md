@@ -6,8 +6,9 @@ For `xg2g` start/restart incidents, do not assume checked-in docs match the live
 Capture and compare these three files before patching anything:
 
 - `/etc/systemd/system/xg2g.service` — installed unit that systemd actually runs
-- `/srv/xg2g/docker-compose.yml` — live Compose source of truth for the `xg2g` service image
-- `/etc/xg2g/xg2g.env` — live environment file loaded by both systemd and Compose
+- `/srv/xg2g/docker-compose.yml` — frozen base Compose source of truth for the `xg2g` service image
+- `/srv/xg2g/docker-compose.gpu.yml` — optional GPU overlay; compare it too when present
+- `/etc/xg2g/xg2g.env` — live environment file loaded by both systemd and Compose; may also select compose files via `COMPOSE_FILE`
 
 The checked-in canonical template is [docs/ops/xg2g.service](/root/xg2g/docs/ops/xg2g.service), generated from [backend/templates/docs/ops/xg2g.service.tmpl](/root/xg2g/backend/templates/docs/ops/xg2g.service.tmpl). The live unit may drift from both.
 

@@ -34,4 +34,5 @@ All developers must verify these gates locally before pushing.
 
 - **Config Determinism**: `internal/config` is the ONLY package allowed to read os.
 - **Reproducible Builds**: Built with `SOURCE_DATE_EPOCH` from git history.
+- **Container Freshness**: Runtime Dockerfiles intentionally run `apt-get upgrade -y`; rebuilt image digests may drift over time in exchange for CVE freshness on deployed hosts.
 - **Local WIP Note**: For local dirty worktrees, use `./hack/verify-docs-drift.sh --allow-dirty`.

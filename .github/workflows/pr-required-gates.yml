@@ -120,14 +120,16 @@ jobs:
           printf '%s\n' "${ui_contract_scope[@]}" > /tmp/required-gates-ui-contract-scope.txt
           printf '%s\n' "${webui_ts_scope[@]}" > /tmp/required-gates-webui-ts-scope.txt
 
-          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
-          echo "ui_contract_count=${#ui_contract_scope[@]}" >> "$GITHUB_OUTPUT"
-          echo "webui_ts_count=${#webui_ts_scope[@]}" >> "$GITHUB_OUTPUT"
-          echo "webui_changed=$webui_changed" >> "$GITHUB_OUTPUT"
-          echo "webui_build_needed=$webui_build_needed" >> "$GITHUB_OUTPUT"
-          echo "changed_count=${changed_count:-0}" >> "$GITHUB_OUTPUT"
-          echo "legacy_large_pr=$legacy_large_pr" >> "$GITHUB_OUTPUT"
-          echo "skip_reason=$skip_reason" >> "$GITHUB_OUTPUT"
+          {
+            echo "range=$RANGE"
+            echo "ui_contract_count=${#ui_contract_scope[@]}"
+            echo "webui_ts_count=${#webui_ts_scope[@]}"
+            echo "webui_changed=$webui_changed"
+            echo "webui_build_needed=$webui_build_needed"
+            echo "changed_count=${changed_count:-0}"
+            echo "legacy_large_pr=$legacy_large_pr"
+            echo "skip_reason=$skip_reason"
+          } >> "$GITHUB_OUTPUT"
 
           echo "Diff range: $RANGE"
           echo "PR changed files (GitHub): ${changed_count:-0}"

@@ -57,6 +57,7 @@ render "${BACKEND_ROOT}/templates/docs/ops/xg2g.service.tmpl" "${REPO_ROOT}/docs
 
 # 3. docker-compose.yml
 render "${BACKEND_ROOT}/templates/docker-compose.yml.tmpl" "${REPO_ROOT}/docker-compose.yml" "shell"
+render "${BACKEND_ROOT}/templates/docker-compose.yml.tmpl" "${REPO_ROOT}/infrastructure/docker/docker-compose.yml" "shell"
 
 # 4. Deployment Runtime Contract
 render "${BACKEND_ROOT}/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl" "${REPO_ROOT}/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md" "md"

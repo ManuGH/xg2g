@@ -6,7 +6,9 @@ After=network-online.target docker.service
 Requires=docker.service
 
 # Truth model: systemd orchestrates Compose only; Docker is runtime truth.
-# Compose file path is frozen to /srv/xg2g/docker-compose.yml.
+# Base compose path is frozen to /srv/xg2g/docker-compose.yml.
+# Optional GPU overlay lives at /srv/xg2g/docker-compose.gpu.yml and is loaded
+# by compose-xg2g.sh when present (or via COMPOSE_FILE in /etc/xg2g/xg2g.env).
 
 # Fail fast if working dir / compose file missing
 ConditionPathIsDirectory=/srv/xg2g
@@ -31,7 +33,7 @@ ExecStartPre=/bin/sh -eu -c 't="${XG2G_API_TOKEN:-}"; t="$(printf %s "$t" | tr -
 ExecStartPre=/bin/sh -eu -c 's="${XG2G_DECISION_SECRET:-}"; s="$(printf %s "$s" | tr -d "[:space:]")"; if [ -z "$s" ]; then echo "Missing XG2G_DECISION_SECRET (required for live stream JWT)" >&2; exit 1; fi; len="$(printf %s "$s" | wc -c)"; if [ "$len" -lt 32 ]; then echo "XG2G_DECISION_SECRET too short: need >= 32 bytes for HS256, got ${len}" >&2; exit 1; fi'
 
 # Fail-closed: ensure compose file is valid before touching containers
-ExecStartPre=/usr/bin/docker compose --project-name xg2g config -q
+ExecStartPre=/srv/xg2g/scripts/compose-xg2g.sh config -q
 
 # Fail-closed: enforce production compose contract (env_file + volume + no interpolation).
 ExecStartPre=/srv/xg2g/scripts/verify-compose-contract.sh
@@ -41,16 +43,16 @@ ExecStartPre=/srv/xg2g/scripts/verify-compose-contract.sh
 ExecStartPre=/bin/sh -eu -c 'awk '"'"'$0 ~ /^[[:space:]]*services:[[:space:]]*$/ {in=1; next} in && $0 ~ /^[[:space:]]*#/ {next} in && $0 ~ /^[[:space:]]*$/ {next} in && $0 ~ /^[[:space:]]+xg2g:[[:space:]]*$/ {found=1} in && $0 !~ /^[[:space:]]+/ {in=0} END {exit(found?0:1)}'"'"' /srv/xg2g/docker-compose.yml'
 
 # Bring up stack
-ExecStart=/usr/bin/docker compose --project-name xg2g up -d --remove-orphans
+ExecStart=/srv/xg2g/scripts/compose-xg2g.sh up -d --remove-orphans
 
 # Safer stop semantics for a daemon service (keeps networks; doesn't tear down volumes)
-ExecStop=/usr/bin/docker compose --project-name xg2g stop
+ExecStop=/srv/xg2g/scripts/compose-xg2g.sh stop
 
 # Operator-friendly reload: apply config changes
-ExecReload=/usr/bin/docker compose --project-name xg2g up -d --remove-orphans
+ExecReload=/srv/xg2g/scripts/compose-xg2g.sh up -d --remove-orphans
 
 # Gate "start" on container health within TimeoutStartSec (requires service name: xg2g).
-ExecStartPost=/bin/sh -eu -c 'cid="$(/usr/bin/docker compose --project-name xg2g ps -q xg2g)"; test -n "$cid"; i=0; while [ "$i" -lt 150 ]; do status="$(/usr/bin/docker inspect --format "{{.State.Health.Status}}" "$cid" 2>/dev/null || true)"; if [ -z "$status" ] || [ "$status" = "<no value>" ]; then echo "Healthcheck not configured" >&2; exit 1; fi; if [ "$status" = "healthy" ]; then exit 0; fi; if [ "$status" = "unhealthy" ]; then echo "Container is unhealthy" >&2; exit 1; fi; sleep 1; i=$((i+1)); done; echo "Timed out waiting for healthy" >&2; exit 1'
+ExecStartPost=/bin/sh -eu -c 'cid="$(/srv/xg2g/scripts/compose-xg2g.sh ps -q xg2g)"; test -n "$cid"; i=0; while [ "$i" -lt 150 ]; do status="$(/usr/bin/docker inspect --format "{{.State.Health.Status}}" "$cid" 2>/dev/null || true)"; if [ -z "$status" ] || [ "$status" = "<no value>" ]; then echo "Healthcheck not configured" >&2; exit 1; fi; if [ "$status" = "healthy" ]; then exit 0; fi; if [ "$status" = "unhealthy" ]; then echo "Container is unhealthy" >&2; exit 1; fi; sleep 1; i=$((i+1)); done; echo "Timed out waiting for healthy" >&2; exit 1'
 
 TimeoutStartSec=180
 TimeoutStopSec=60
