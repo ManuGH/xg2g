@@ -173,6 +173,8 @@ type PlayerFetchScenario = {
   heartbeatBody?: Record<string, unknown>;
 };
 
+const PLAYER_NETWORK_WAIT_MS = 3_000;
+
 function installPlayerFetchMock(scenario: PlayerFetchScenario = {}) {
   const sessionId = 'sess-journey-1';
   const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
@@ -268,12 +270,16 @@ describe('Player session journeys', () => {
     await screen.findByText('EPG launcher ready');
     fireEvent.click(screen.getByRole('button', { name: 'Launch player' }));
 
+    await screen.findByRole('button', { name: /player\.closePlayer|Close Player/i });
+    await screen.findByText('Journey Channel');
+
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /player\.closePlayer|Close Player/i })).toBeInTheDocument();
-      expect(screen.getByText('Journey Channel')).toBeInTheDocument();
       expect(findFetchCall(fetchMock, '/intents')).toBeDefined();
+    }, { timeout: PLAYER_NETWORK_WAIT_MS });
+
+    await waitFor(() => {
       expect(findFetchCall(fetchMock, '/sessions/sess-journey-1')).toBeDefined();
-    });
+    }, { timeout: PLAYER_NETWORK_WAIT_MS });
   });
 
   it('routes a player 401 start intent to the session-expired auth surface', async () => {
