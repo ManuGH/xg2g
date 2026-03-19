@@ -40,11 +40,12 @@ func TestGroupKill(t *testing.T) {
 	err = process.Signal(syscall.Signal(0))
 	require.Error(t, err, "Parent process should be dead")
 
-	// 4. Verify no processes found in that PGID
-	// This is harder to check directly without scanning /proc or using pgrep
-	// but Signal(-pid, 0) should return ESRCH
-	err = syscall.Kill(-pgid, syscall.Signal(0))
-	require.Equal(t, syscall.ESRCH, err, "Process group should be dead")
+	// 4. Verify the process group eventually disappears.
+	// Child processes can briefly remain as zombies after the parent exits,
+	// so an immediate ESRCH is racy under slower CI/coverage runs.
+	require.Eventually(t, func() bool {
+		return syscall.Kill(-pgid, syscall.Signal(0)) == syscall.ESRCH
+	}, time.Second, 10*time.Millisecond, "Process group should be dead")
 }
 
 func TestKillGroupAlreadyGone(t *testing.T) {
