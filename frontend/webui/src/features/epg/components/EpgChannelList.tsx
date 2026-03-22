@@ -91,7 +91,8 @@ function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
           size="sm"
           active
         >
-          <span>▶</span> Play
+          <span aria-hidden="true">▶</span>
+          <span className={styles.playLabel}>Play</span>
         </Button>
       )}
     </div>
