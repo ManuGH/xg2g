@@ -1447,6 +1447,8 @@ function V3Player(props: V3PlayerProps) {
   const stopSummary = formatStopSummary(sessionPlaybackTrace);
   const hostPressureSummary = formatHostPressureSummary(effectiveHostPressureBand, effectiveHostOverrideApplied);
   const showVerboseErrorTelemetry = !isCompactTouchLayout;
+  const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
+  const audioToggleIcon = isMuted ? '🔊' : '🔇';
 
   return (
     <div
@@ -1828,13 +1830,18 @@ function V3Player(props: V3PlayerProps) {
 
           {canAdjustVolume && (
             <div className={styles.volumeControl}>
-              <button
-                className={styles.volumeButton}
+              <Button
+                variant={isMuted ? 'primary' : 'ghost'}
+                size="sm"
+                className={styles.audioToggleButton}
                 onClick={toggleMute}
-                title={isMuted ? t('player.unmute') : t('player.mute')}
+                title={audioToggleLabel}
+                aria-label={audioToggleLabel}
+                aria-pressed={!isMuted}
               >
-                {isMuted ? '🔇' : volume > 0.5 ? '🔊' : volume > 0 ? '🔉' : '🔈'}
-              </button>
+                <span className={styles.audioToggleIcon} aria-hidden="true">{audioToggleIcon}</span>
+                <span>{audioToggleLabel}</span>
+              </Button>
               <input
                 type="range"
                 min="0"

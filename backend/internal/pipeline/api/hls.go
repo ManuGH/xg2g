@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,38 @@ const (
 )
 
 var pdtRe = regexp.MustCompile(`^#EXT-X-PROGRAM-DATE-TIME:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(Z|[+-]\d{4})\s*$`)
+
+func preferredLiveStartOffsetSeconds(content []byte) int {
+	const (
+		defaultOffset = 3
+		minOffset     = 2
+		maxOffset     = 4
+	)
+
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
+			continue
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
+		target, err := strconv.Atoi(raw)
+		if err != nil || target <= 0 {
+			return defaultOffset
+		}
+
+		offset := (target + 1) / 2
+		if offset < minOffset {
+			offset = minOffset
+		}
+		if offset > maxOffset {
+			offset = maxOffset
+		}
+		return offset
+	}
+
+	return defaultOffset
+}
 
 func normalizeProgramDateTimeLine(line string) string {
 	m := pdtRe.FindStringSubmatch(line)
@@ -205,17 +238,21 @@ func awaitPlaylist(ctx context.Context, filePath string, req hlsRequest, rec *mo
 
 func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.Logger) (*bytes.Reader, error) {
 	forcePlaylistType := ""
-	var insertStartTag string
+	insertStartTag := ""
 	if rec.Profile.VOD {
 		forcePlaylistType = "VOD"
 	} else if rec.Profile.DVRWindowSec > 0 {
 		forcePlaylistType = "EVENT"
-		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", rec.Profile.DVRWindowSec)
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(source, 1024*1024))
 	if err != nil {
 		return nil, fmt.Errorf("read playlist: %w", err)
+	}
+	if forcePlaylistType == "EVENT" {
+		// Start Safari near live edge instead of the beginning of the full DVR window.
+		// This avoids replaying fragile bootstrap segments when a live attach begins mid-GOP.
+		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", preferredLiveStartOffsetSeconds(raw))
 	}
 
 	insertedPlaylistType := false

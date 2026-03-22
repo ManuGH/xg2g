@@ -125,8 +125,8 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
   try {
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
     if (!hasNativeHls) return false;
-    if (hlsJsSupported) return false;
     if (shouldForceNativeMobileHls(videoEl)) return true;
+    if (hlsJsSupported) return false;
 
     const webkitVideo = videoEl as unknown as {
       webkitSupportsPresentationMode?: unknown;
