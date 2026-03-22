@@ -32,6 +32,14 @@ func UIHandler(cfg UIConfig) http.Handler {
 		setUIHeaders(w, r.URL.Path, cfg.CSP, uiCacheModeProd)
 
 		if uiAvailable {
+			if isUIHTMLRoute(r.URL.Path) {
+				req := r.Clone(r.Context())
+				req.URL.Path = "/"
+				req.URL.RawPath = req.URL.Path
+				fileServer.ServeHTTP(w, req)
+				return
+			}
+
 			fileServer.ServeHTTP(w, r)
 			return
 		}

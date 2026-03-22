@@ -22,6 +22,16 @@ import (
 // piconFilenameRE matches safe picon filenames: hex/digit segments separated by underscores, ending in .png.
 var piconFilenameRE = regexp.MustCompile(`^[0-9A-Fa-f_]+\.png$`)
 
+var publicUIReservedPrefixes = []string{
+	"/api",
+	"/auth",
+	"/stream",
+	"/internal",
+	"/logos",
+	"/ui",
+	"/Items",
+}
+
 func (s *Server) newRouter() chi.Router {
 	r := middleware.NewRouter(middleware.StackConfig{
 		EnableCORS:           true,
@@ -75,13 +85,15 @@ func (s *Server) registerPublicRoutes(r chi.Router) {
 	r.Get("/healthz", systemhttp.NewHealthHandler(s.healthManager))
 	r.Get("/readyz", systemhttp.NewReadyHandler(s.healthManager))
 
-	r.Handle("/ui/*", http.StripPrefix("/ui", controlhttp.UIHandler(controlhttp.UIConfig{
+	uiHandler := controlhttp.UIHandler(controlhttp.UIConfig{
 		CSP:         middleware.DefaultCSP,
 		DevProxyURL: s.snap.Runtime.UIDevProxyURL,
 		DevDir:      s.snap.Runtime.UIDevDir,
-	})))
+	})
+	r.Handle("/ui/*", http.StripPrefix("/ui", uiHandler))
 	r.Get("/ui", redirectTo("/ui/", http.StatusMovedPermanently))
 	r.Get("/", redirectTo("/ui/", http.StatusTemporaryRedirect))
+	r.NotFound(s.publicNotFoundHandler(uiHandler))
 
 	// Serve picon logos from {dataDir}/picons/ directory.
 	// URLs are generated as /logos/{REF}.png by refresh and services.go.
@@ -134,6 +146,45 @@ func redirectTo(path string, code int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, path, code)
 	}
+}
+
+func (s *Server) publicNotFoundHandler(uiHandler http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if shouldServePublicUIFallback(r) {
+			uiHandler.ServeHTTP(w, r)
+			return
+		}
+
+		http.NotFound(w, r)
+	}
+}
+
+func shouldServePublicUIFallback(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+
+	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		return false
+	}
+
+	path := r.URL.Path
+	if path == "" || path == "/" || strings.Contains(path, ".") {
+		return false
+	}
+
+	switch path {
+	case "/healthz", "/readyz", "/livez", "/metrics":
+		return false
+	}
+
+	for _, prefix := range publicUIReservedPrefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (s *Server) scopedRouters(r chi.Router) (chi.Router, chi.Router, chi.Router, chi.Router, chi.Router) {
