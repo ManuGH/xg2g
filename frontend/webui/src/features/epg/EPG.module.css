@@ -535,6 +535,176 @@
   color: var(--text-primary);
 }
 
+@media (max-width: 48rem) {
+  .toolbar {
+    padding: 16px 18px;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .toolbarLeft h3 {
+    font-size: 1.25rem;
+  }
+
+  .toolbarRight {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .controls {
+    padding: 14px 18px;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .controls label {
+    min-width: 0;
+  }
+
+  .pills {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pill {
+    min-height: 40px;
+    padding: 0 12px;
+  }
+
+  .search {
+    padding: 14px 18px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+  }
+
+  .searchLeft {
+    min-height: 48px;
+  }
+
+  .searchRight {
+    display: flex;
+  }
+
+  .searchRight button {
+    min-height: 48px;
+  }
+
+  .card {
+    margin: 0 18px 14px;
+    padding: 16px;
+  }
+
+  .channel {
+    gap: 16px;
+    margin-bottom: 18px;
+    padding-bottom: 15px;
+  }
+
+  .channelName {
+    font-size: 1rem;
+  }
+
+  .play {
+    min-height: 44px;
+  }
+
+  .programme {
+    gap: 16px;
+    padding: 14px 16px;
+  }
+
+  .programmeTime {
+    min-width: 112px;
+    font-size: 0.8125rem;
+  }
+
+  .programmeDesc {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  .toggle {
+    min-height: 40px;
+  }
+}
+
+@media (max-height: 32rem) and (orientation: landscape) {
+  .toolbar {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+
+  .toolbarLeft p {
+    display: none;
+  }
+
+  .controls {
+    padding: 10px 16px;
+    gap: 10px 14px;
+  }
+
+  .pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .pills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .search {
+    padding: 10px 16px;
+    grid-template-columns: minmax(0, 1fr) 168px;
+  }
+
+  .searchLeft {
+    min-height: 44px;
+  }
+
+  .searchRight button {
+    width: 100%;
+  }
+
+  .card {
+    margin: 0 16px 12px;
+    padding: 14px 16px;
+  }
+
+  .channel {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .logo {
+    width: 56px;
+    height: 36px;
+  }
+
+  .programme {
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .programmeTime {
+    min-width: 0;
+    width: auto;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .programmeDesc {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+}
+
 @media (max-width: 30rem) {
   .toolbar {
     flex-direction: column;
