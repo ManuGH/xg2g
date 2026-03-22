@@ -64,11 +64,17 @@ Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 
 > `XG2G_DECISION_SECRET` is mandatory. xg2g refuses to start without a live
 > playback signing secret.
+>
+> Local quickstart over `http://localhost:8088/ui/` is supported only from the
+> same host. If you access xg2g from another browser or device, you must expose
+> it via HTTPS or a trusted HTTPS proxy. Browser playback needs
+> `POST /api/v3/auth/session` to mint the `xg2g_session` cookie, and that
+> exchange is rejected over plain HTTP for non-loopback clients.
 
 **Next steps:**
 [Configuration](docs/guides/CONFIGURATION.md) •
 [Deployment](docs/ops/DEPLOYMENT.md) •
-[Security](SECURITY.md) •
+[Security](docs/ops/SECURITY.md) •
 [Architecture](docs/arch/ARCHITECTURE.md) •
 [ADRs](docs/ADR/)
 
@@ -139,7 +145,7 @@ Tier-1 aligned with Apple HLS guidance for the compatibility path.
 - [Configuration Guide](docs/guides/CONFIGURATION.md)
 - [Deployment Guide](docs/ops/DEPLOYMENT.md)
 - [Observability](docs/ops/OBSERVABILITY.md)
-- [Security Policy](SECURITY.md)
+- [Security Invariants](docs/ops/SECURITY.md)
 
 **Build on xg2g**
 

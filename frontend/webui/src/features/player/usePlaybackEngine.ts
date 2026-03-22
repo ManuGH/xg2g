@@ -53,6 +53,7 @@ export function usePlaybackEngine({
 }: UsePlaybackEngineProps): PlaybackEngineController {
   const lastHlsUrlRef = useRef<string | null>(null);
   const lastHlsEngineRef = useRef<PlaybackEngineName>('auto');
+  const replayHlsRef = useRef<((url: string, engine?: PlaybackEngineName) => void) | null>(null);
   const decodeRecoveryInFlightRef = useRef(false);
   const decodeRecoveryAttemptsRef = useRef(0);
   const pendingNativeAutoplayRef = useRef<(() => void) | null>(null);
@@ -128,6 +129,83 @@ export function usePlaybackEngine({
       }, 50);
     }
   }, [clearPendingNativeAutoplay, hlsRef, isTeardownRef, videoRef]);
+
+  const beginSessionDecodeRecovery = useCallback((
+    code: number,
+    message: string,
+    onFailure: (err: unknown) => void
+  ): boolean => {
+    if (
+      !sessionIdRef.current ||
+      !lastHlsUrlRef.current ||
+      decodeRecoveryInFlightRef.current ||
+      decodeRecoveryAttemptsRef.current >= 2
+    ) {
+      return false;
+    }
+
+    const trackedSessionId = sessionIdRef.current;
+    const trackedUrl = lastHlsUrlRef.current;
+    const trackedEngine = lastHlsEngineRef.current;
+
+    decodeRecoveryInFlightRef.current = true;
+    decodeRecoveryAttemptsRef.current += 1;
+    setStatus('recovering');
+    setError(null);
+    setErrorDetails(null);
+    setShowErrorDetails(false);
+
+    void (async () => {
+      try {
+        await reportError('error', code, message);
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+
+        if (sessionIdRef.current !== trackedSessionId) {
+          return;
+        }
+
+        const session = await waitForSessionReady(trackedSessionId, 80);
+
+        if (sessionIdRef.current !== trackedSessionId) {
+          return;
+        }
+
+        resetPlaybackEngine();
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+
+        if (sessionIdRef.current !== trackedSessionId) {
+          return;
+        }
+
+        const nextUrl = session.playbackUrl || trackedUrl;
+        if (!nextUrl) {
+          throw new Error('Recovered session missing playbackUrl');
+        }
+
+        setStatus('buffering');
+        setError(null);
+        setErrorDetails(null);
+        setShowErrorDetails(false);
+        replayHlsRef.current?.(nextUrl, trackedEngine);
+      } catch (recoveryErr) {
+        debugWarn('[V3Player] Decode recovery failed', recoveryErr);
+        onFailure(recoveryErr);
+      } finally {
+        decodeRecoveryInFlightRef.current = false;
+      }
+    })();
+
+    return true;
+  }, [
+    reportError,
+    resetPlaybackEngine,
+    sessionIdRef,
+    setError,
+    setErrorDetails,
+    setShowErrorDetails,
+    setStatus,
+    waitForSessionReady
+  ]);
 
   const playHls = useCallback((url: string, engine: PlaybackEngineName = 'auto') => {
     const video = videoRef.current;
@@ -221,13 +299,11 @@ export function usePlaybackEngine({
           return;
         }
 
-        if (sessionIdRef.current) {
-          const code = data.type === Hls.ErrorTypes.MEDIA_ERROR ? 3 : 0;
-          void reportError('error', code, `${data.type}: ${data.details}`);
-        }
-
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
+            if (sessionIdRef.current) {
+              void reportError('error', 0, `${data.type}: ${data.details}`);
+            }
             if (networkRetryCount < maxNetworkRetries) {
               const backoffMs = Math.min(1000 * Math.pow(2, networkRetryCount), networkBackoffCapMs);
               networkRetryCount++;
@@ -245,18 +321,34 @@ export function usePlaybackEngine({
           case Hls.ErrorTypes.MEDIA_ERROR:
             if (!mediaRecoveryAttempted) {
               mediaRecoveryAttempted = true;
+              if (sessionIdRef.current) {
+                void reportError('error', 3, `${data.type}: ${data.details}`);
+              }
               debugWarn('[V3Player] MEDIA_ERROR: attempting single recovery');
               setStatus('recovering');
               hls.recoverMediaError();
             } else {
-              debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
-              hlsRef.current?.destroy();
-              setStatus('error');
-              setError(`${t('player.hlsError')}: ${data.type}`);
-              setErrorDetails(`${data.details} (media recovery failed)`);
+              debugWarn('[V3Player] MEDIA_ERROR: local recovery exhausted, attempting session reattach');
+              const started = beginSessionDecodeRecovery(3, `${data.type}: ${data.details}`, () => {
+                debugError('[V3Player] MEDIA_ERROR: session reattach failed, failing terminally');
+                hlsRef.current?.destroy();
+                setStatus('error');
+                setError(`${t('player.hlsError')}: ${data.type}`);
+                setErrorDetails(`${data.details} (media recovery failed)`);
+              });
+              if (!started) {
+                debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
+                hlsRef.current?.destroy();
+                setStatus('error');
+                setError(`${t('player.hlsError')}: ${data.type}`);
+                setErrorDetails(`${data.details} (media recovery failed)`);
+              }
             }
             break;
           default:
+            if (sessionIdRef.current) {
+              void reportError('error', 0, `${data.type}: ${data.details}`);
+            }
             hlsRef.current?.destroy();
             setStatus('error');
             setError(`${t('player.hlsError')}: ${data.type}`);
@@ -285,7 +377,9 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, scheduleNativeAutoplay, sessionIdRef, setError, setErrorDetails, setStats, setStatus, shouldPreferNativeHls, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, scheduleNativeAutoplay, sessionIdRef, setError, setErrorDetails, setStats, setStatus, shouldPreferNativeHls, t, updateStats, videoRef]);
+
+  replayHlsRef.current = playHls;
 
   const playDirectMp4 = useCallback((url: string) => {
     clearPendingNativeAutoplay();
@@ -432,58 +526,10 @@ export function usePlaybackEngine({
         const safeCode = typeof err.code === 'number' ? err.code : 0;
         const message = err.message || JSON.stringify(diagnostics);
 
-        if (
-          safeCode === 3 &&
-          lastHlsUrlRef.current &&
-          !decodeRecoveryInFlightRef.current &&
-          decodeRecoveryAttemptsRef.current < 2
-        ) {
-          const trackedSessionId = sessionIdRef.current;
-          const trackedUrl = lastHlsUrlRef.current;
-          const trackedEngine = lastHlsEngineRef.current;
-
-          decodeRecoveryInFlightRef.current = true;
-          decodeRecoveryAttemptsRef.current += 1;
-          setStatus('recovering');
-          setError(null);
-          setErrorDetails(null);
-          setShowErrorDetails(false);
-
-          void (async () => {
-            try {
-              await reportError('error', safeCode, message);
-              await new Promise((resolve) => window.setTimeout(resolve, 750));
-
-              if (sessionIdRef.current !== trackedSessionId) {
-                return;
-              }
-
-              await waitForSessionReady(trackedSessionId, 80);
-
-              if (sessionIdRef.current !== trackedSessionId) {
-                return;
-              }
-
-              resetPlaybackEngine();
-              await new Promise((resolve) => window.setTimeout(resolve, 100));
-
-              if (sessionIdRef.current !== trackedSessionId) {
-                return;
-              }
-
-              setStatus('buffering');
-              setError(null);
-              setErrorDetails(null);
-              setShowErrorDetails(false);
-              playHls(trackedUrl, trackedEngine);
-            } catch (recoveryErr) {
-              debugWarn('[V3Player] Decode recovery failed', recoveryErr);
-              setStatus('error');
-              setError(`Video Error: ${err?.code} (${message}) | State: ${videoEl.readyState}/${videoEl.networkState} | Prev: null`);
-            } finally {
-              decodeRecoveryInFlightRef.current = false;
-            }
-          })();
+        if (safeCode === 3 && beginSessionDecodeRecovery(safeCode, message, () => {
+          setStatus('error');
+          setError(`Video Error: ${err?.code} (${message}) | State: ${videoEl.readyState}/${videoEl.networkState} | Prev: null`);
+        })) {
           return;
         }
 
@@ -511,7 +557,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('error', onError);
     };
-  }, [hlsRef, isTeardownRef, playHls, reportError, resetPlaybackEngine, sessionIdRef, setError, setErrorDetails, setShowErrorDetails, setStatus, videoRef, waitForSessionReady]);
+  }, [beginSessionDecodeRecovery, hlsRef, isTeardownRef, reportError, sessionIdRef, setError, setErrorDetails, setShowErrorDetails, setStatus, videoRef]);
 
   return {
     resetPlaybackEngine,

@@ -1321,7 +1321,7 @@ function V3Player(props: V3PlayerProps) {
 
   const handleRetry = useCallback(async () => {
     try {
-      await stopStream();
+      await stopStream(true);
     } finally {
       startIntentInFlight.current = false;
       void startStream();
