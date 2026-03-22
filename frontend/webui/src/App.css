@@ -3,6 +3,7 @@
 .app-container {
   margin-left: calc(var(--nav-shell-width) + 24px);
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 24px 28px 40px 0;
 }
 
