@@ -58,4 +58,23 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.audioCodecs).toEqual(['aac', 'mp3']);
     expect(probe.videoCodecs).toEqual(['h264']);
   });
+
+  it('prefers hls.js on modern WebKit even when native HLS is also available', async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+
+    const video = document.createElement('video');
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+
+    const probe = await probeRuntimePlaybackCapabilities(video, 'live');
+
+    expect(probe.nativeHls).toBe(true);
+    expect(probe.hlsJs).toBe(true);
+    expect(probe.preferredHlsEngine).toBe('hlsjs');
+    expect(probe.hlsEngines).toEqual(['hlsjs', 'native']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
+  });
 });
