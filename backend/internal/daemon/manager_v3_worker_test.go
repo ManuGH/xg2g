@@ -8,16 +8,30 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
+	"github.com/ManuGH/xg2g/internal/log"
 	pipebus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 )
 
 type testV3Orchestrator struct{}
 
 func (testV3Orchestrator) Run(context.Context) error { return nil }
+
+type blockingV3Orchestrator struct {
+	started chan struct{}
+}
+
+func (o blockingV3Orchestrator) Run(ctx context.Context) error {
+	if o.started != nil {
+		close(o.started)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
 
 type captureV3Factory struct {
 	called bool
@@ -95,5 +109,67 @@ func TestBuildV3Orchestrator_FactoryMustReturnOrchestrator(t *testing.T) {
 	_, err := m.buildV3Orchestrator(config.AppConfig{}, v3WorkerRuntimeDeps{})
 	if !errors.Is(err, ErrMissingV3Orchestrator) {
 		t.Fatalf("buildV3Orchestrator() error = %v, want %v", err, ErrMissingV3Orchestrator)
+	}
+}
+
+func TestStartV3Worker_RegistersLeaseExpiryWorker(t *testing.T) {
+	b := pipebus.NewMemoryBus()
+	s := sessionstore.NewMemoryStore()
+	p := stub.NewAdapter()
+	started := make(chan struct{})
+	factory := &captureV3Factory{orch: blockingV3Orchestrator{started: started}}
+
+	m := &manager{
+		deps: Deps{
+			Logger:                log.WithComponent("test"),
+			Config:                config.AppConfig{Sessions: config.SessionsConfig{ExpiryCheckInterval: time.Minute}},
+			V3Bus:                 b,
+			V3Store:               s,
+			MediaPipeline:         p,
+			ReceiverHealthCheck:   func(context.Context) error { return nil },
+			V3OrchestratorFactory: factory,
+		},
+		logger: log.WithComponent("test"),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errChan := make(chan error, 2)
+	if err := m.startV3Worker(ctx, errChan); err != nil {
+		t.Fatalf("startV3Worker() error = %v", err)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("orchestrator worker did not start")
+	}
+
+	hookNames := make(map[string]bool)
+	for _, hook := range m.shutdownHooks {
+		hookNames[hook.name] = true
+	}
+
+	if !hookNames["v3_orchestrator_stop"] {
+		t.Fatal("expected v3_orchestrator_stop shutdown hook to be registered")
+	}
+	if !hookNames["v3_lease_expiry_stop"] {
+		t.Fatal("expected v3_lease_expiry_stop shutdown hook to be registered")
+	}
+
+	cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+	defer shutdownCancel()
+	for i := len(m.shutdownHooks) - 1; i >= 0; i-- {
+		if err := m.shutdownHooks[i].hook(shutdownCtx); err != nil {
+			t.Fatalf("shutdown hook %q failed: %v", m.shutdownHooks[i].name, err)
+		}
+	}
+
+	select {
+	case err := <-errChan:
+		t.Fatalf("unexpected worker error: %v", err)
+	default:
 	}
 }

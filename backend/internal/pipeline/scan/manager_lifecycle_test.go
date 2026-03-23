@@ -99,3 +99,40 @@ func TestManager_CloseStopsBackgroundBeforeStoreClose(t *testing.T) {
 	assert.Equal(t, int32(1), store.closed.Load())
 	assert.False(t, manager.isScanning.Load())
 }
+
+func TestManager_RunBackground_PausesUntilPlaybackIdle(t *testing.T) {
+	store := &lifecycleTestStore{}
+	manager := NewManager(store, t.TempDir()+"/playlist.m3u", nil)
+
+	playbackReleased := make(chan struct{})
+	manager.ActivePlaybackFn = func(ctx context.Context) (bool, error) {
+		select {
+		case <-playbackReleased:
+			return false, nil
+		default:
+			return true, nil
+		}
+	}
+
+	started := make(chan struct{}, 1)
+	manager.scanFn = func(ctx context.Context) error {
+		started <- struct{}{}
+		return nil
+	}
+
+	require.True(t, manager.RunBackground())
+
+	select {
+	case <-started:
+		t.Fatal("background scan started while playback was still active")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	close(playbackReleased)
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background scan did not resume after playback became idle")
+	}
+}

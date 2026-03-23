@@ -18,13 +18,13 @@ func Dispatch(rec *model.SessionRecord, phase Phase, ev Event, cause error, stop
 		return illegalTransition(rec, rec.State, ev.Kind, now)
 	}
 	if ev.Kind == EvTerminalize {
-		out := TerminalOutcome(stopIntent, phase, cause)
+		out := TerminalOutcome(stopIntent, ev.Reason, phase, cause)
 		tr := Transition{
-			From:   rec.State,
-			To:     out.State,
-			Event:  EvTerminalize,
-			Reason: out.Reason,
-			DetailCode: out.DetailCode,
+			From:        rec.State,
+			To:          out.State,
+			Event:       EvTerminalize,
+			Reason:      out.Reason,
+			DetailCode:  out.DetailCode,
 			DetailDebug: out.DetailDebug,
 		}
 		ApplyTransition(rec, tr, now)

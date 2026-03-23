@@ -34,7 +34,7 @@ function renderGate(initialEntries: string[] = [ROUTE_MAP.epg]) {
 describe('BootstrapGate', () => {
   beforeEach(() => {
     mockUseAppContext.mockReturnValue({
-      auth: { token: 'stored-token', isAuthenticated: true },
+      auth: { token: 'stored-token', isAuthenticated: true, isReady: true },
       setToken: vi.fn(),
       setPlayingChannel: vi.fn(),
     });
@@ -52,7 +52,7 @@ describe('BootstrapGate', () => {
 
   it('shows the auth surface when no token is available', () => {
     mockUseAppContext.mockReturnValue({
-      auth: { token: '', isAuthenticated: false },
+      auth: { token: '', isAuthenticated: false, isReady: true },
       setToken: vi.fn(),
       setPlayingChannel: vi.fn(),
     });
@@ -69,7 +69,7 @@ describe('BootstrapGate', () => {
     const setToken = vi.fn();
 
     mockUseAppContext.mockReturnValue({
-      auth: { token: '', isAuthenticated: false },
+      auth: { token: '', isAuthenticated: false, isReady: true },
       setToken,
       setPlayingChannel: vi.fn(),
     });
@@ -128,7 +128,7 @@ describe('BootstrapGate', () => {
     const setPlayingChannel = vi.fn();
 
     mockUseAppContext.mockReturnValue({
-      auth: { token: 'stale-token', isAuthenticated: true },
+      auth: { token: 'stale-token', isAuthenticated: true, isReady: true },
       setToken,
       setPlayingChannel,
     });
@@ -161,7 +161,7 @@ describe('BootstrapGate', () => {
     const setPlayingChannel = vi.fn();
 
     mockUseAppContext.mockReturnValue({
-      auth: { token: 'live-token', isAuthenticated: true },
+      auth: { token: 'live-token', isAuthenticated: true, isReady: true },
       setToken,
       setPlayingChannel,
     });
@@ -199,5 +199,24 @@ describe('BootstrapGate', () => {
     expect(screen.getByText('Bootstrap backend offline')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for auth header synchronization before starting bootstrap validation', () => {
+    mockUseAppContext.mockReturnValue({
+      auth: { token: 'stored-token', isAuthenticated: true, isReady: false },
+      setToken: vi.fn(),
+      setPlayingChannel: vi.fn(),
+    });
+    mockUseBootstrapConfig.mockReturnValue({
+      data: null,
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    renderGate();
+
+    expect(screen.getByRole('status', { name: 'Initializing...' })).toHaveAttribute('data-loading-variant', 'gate');
+    expect(mockUseBootstrapConfig).toHaveBeenCalledWith(false);
   });
 });

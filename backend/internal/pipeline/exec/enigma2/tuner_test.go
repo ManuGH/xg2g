@@ -80,3 +80,63 @@ func TestTuner_Tune_Timeout(t *testing.T) {
 	err := tuner.Tune(ctx, "1:0:1:TARGET:0")
 	assert.ErrorIs(t, err, ErrReadyTimeout)
 }
+
+func TestTuner_Tune_DoesNotSkipZapForRelayPort(t *testing.T) {
+	var zapCalls int32
+	var polls int32
+	targetRef := "1:0:1:123:0"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/zap":
+			atomic.AddInt32(&zapCalls, 1)
+			_, _ = fmt.Fprintln(w, `{"result": true}`)
+		case "/api/getcurrent":
+			count := atomic.AddInt32(&polls, 1)
+			ref := "1:0:0:0:0"
+			if count > 1 {
+				ref = targetRef
+			}
+			_, _ = fmt.Fprintf(w, `{"result": true, "info": {"ref": "%s"}}`+"\n", ref)
+		case "/api/signal":
+			locked := atomic.LoadInt32(&polls) > 2
+			_, _ = fmt.Fprintf(w, `{"result": true, "lock": %v, "snr": 80}`+"\n", locked)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	client := NewClientWithOptions(ts.URL, Options{Timeout: time.Second, StreamPort: 17999})
+	tuner := NewTuner(client, 0, time.Second)
+	tuner.PollInterval = 10 * time.Millisecond
+	tuner.PostZapDelay = 10 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := tuner.Tune(ctx, targetRef)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&zapCalls))
+}
+
+func TestTuner_Tune_SkipsZapForDirectTSPort(t *testing.T) {
+	var requests int32
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	client := NewClientWithOptions(ts.URL, Options{Timeout: time.Second, StreamPort: 8001})
+	tuner := NewTuner(client, 0, time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := tuner.Tune(ctx, "1:0:1:123:0")
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), atomic.LoadInt32(&requests))
+}

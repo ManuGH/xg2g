@@ -26,7 +26,11 @@ func FuzzTerminalOutcomeInvariants(f *testing.F) {
 			cause = nil
 		}
 
-		out := TerminalOutcome(stop, phase, cause)
+		stopReason := model.ReasonCode("")
+		if stop {
+			stopReason = model.RClientStop
+		}
+		out := TerminalOutcome(stop, stopReason, phase, cause)
 
 		if stop {
 			if out.State != model.SessionStopped || out.Reason != model.RClientStop || out.DetailCode != model.DNone {

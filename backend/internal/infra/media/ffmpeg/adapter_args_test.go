@@ -1,6 +1,7 @@
 package ffmpeg
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -170,6 +171,12 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 	assert.NotContains(t, args, "yadif", "runtime-probed remux path must not inject deinterlace filters")
 	assert.Contains(t, args, "-c:a")
 	assert.Contains(t, args, "aac")
+
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", hlsSegmentType, "native safari remux path should stay on TS HLS")
+
+	assert.NotContains(t, args, "-hls_fmp4_init_filename", "native safari remux path must not emit fMP4 init segments")
 }
 
 func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
@@ -188,6 +195,7 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 			TranscodeVideo: true,
 			HWAccel:        "vaapi",
 			VideoCodec:     "h264",
+			VideoQP:        20,
 			Deinterlace:    true,
 			VideoMaxRateK:  20000,
 			VideoBufSizeK:  40000,
@@ -220,12 +228,16 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 	assert.Contains(t, args, "deinterlace_vaapi")
 	assert.NotContains(t, args, "yadif")
 
-	// VBR rate control (NOT CRF)
-	assert.Contains(t, args, "-b:v")
-	assert.Contains(t, args, "20000k")
+	// CQP with an explicit QP becomes the primary quality knob.
+	assert.Contains(t, args, "-rc_mode")
+	assert.Contains(t, args, "CQP")
+	assert.Contains(t, args, "-qp")
+	assert.Contains(t, args, "20")
+	assert.NotContains(t, args, "-b:v")
 	assert.Contains(t, args, "-maxrate")
 	assert.Contains(t, args, "-bufsize")
 	assert.Contains(t, args, "40000k")
+	assert.Contains(t, args, "20000k")
 	assert.NotContains(t, args, "-crf")
 
 	// No CPU-specific flags
@@ -252,6 +264,7 @@ func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
 			TranscodeVideo: true,
 			HWAccel:        "vaapi_encode_only",
 			VideoCodec:     "h264",
+			VideoQP:        20,
 			Deinterlace:    true,
 			VideoMaxRateK:  20000,
 			VideoBufSizeK:  40000,
@@ -281,7 +294,11 @@ func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
 	assert.Contains(t, vf, "format=nv12,hwupload")
 
 	assert.Contains(t, args, "h264_vaapi")
-	assert.Contains(t, args, "-b:v")
+	assert.Contains(t, args, "-rc_mode")
+	assert.Contains(t, args, "CQP")
+	assert.Contains(t, args, "-qp")
+	assert.Contains(t, args, "20")
+	assert.NotContains(t, args, "-b:v")
 	assert.Contains(t, args, "20000k")
 	assert.NotContains(t, args, "-crf")
 	assert.NotContains(t, args, "-preset")
@@ -317,6 +334,8 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 	assert.Contains(t, args, "hevc_vaapi")
+	assert.Contains(t, args, "-b:v")
+	assert.Contains(t, args, "5000k")
 	assert.NotContains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "deinterlace_vaapi", "progressive source: no deinterlace filter")
 	assert.NotContains(t, args, "yadif")
@@ -492,7 +511,7 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 	assert.NotContains(t, fflags, "nobuffer")
 }
 
-func TestBuildArgs_StreamRelayUsesRobustLiveProbe(t *testing.T) {
+func TestBuildArgs_StreamRelayPassthroughUsesFastLiveProbe(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
@@ -521,13 +540,75 @@ func TestBuildArgs_StreamRelayUsesRobustLiveProbe(t *testing.T) {
 	require.True(t, analyzeIdx >= 0 && analyzeIdx < iIdx, "analyzeduration must be before -i")
 	analyze, ok := valueAfter(args, "-analyzeduration")
 	require.True(t, ok)
-	assert.Equal(t, "10000000", analyze)
+	assert.Equal(t, "1000000", analyze)
 
 	probeIdx := indexOf(args, "-probesize")
 	require.True(t, probeIdx >= 0 && probeIdx < iIdx, "probesize must be before -i")
 	probe, ok := valueAfter(args, "-probesize")
 	require.True(t, ok)
+	assert.Equal(t, "1M", probe)
+}
+
+func TestBuildArgs_StreamRelayTranscodeUsesRobustLiveProbe(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "streamrelay-transcode-probe",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:")
+	require.NoError(t, err)
+
+	analyze, ok := valueAfter(args, "-analyzeduration")
+	require.True(t, ok)
+	assert.Equal(t, "10000000", analyze)
+
+	probe, ok := valueAfter(args, "-probesize")
+	require.True(t, ok)
 	assert.Equal(t, "20M", probe)
+}
+
+func TestBuildArgs_PassthroughLogsDirectDecisionSummary(t *testing.T) {
+	var buf bytes.Buffer
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(&buf),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "direct-summary",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			TranscodeVideo: false,
+			VideoCodec:     "h264",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	_, err := adapter.buildArgs(context.Background(), spec, "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:")
+	require.NoError(t, err)
+
+	logs := buf.String()
+	assert.Contains(t, logs, `"event":"decision.summary"`)
+	assert.Contains(t, logs, `"path":"direct"`)
+	assert.Contains(t, logs, `"reason":"direct_play_supported"`)
+	assert.NotContains(t, logs, `"path":"transcode_cpu"`)
 }
 
 func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {

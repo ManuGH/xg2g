@@ -13,12 +13,18 @@ import (
 )
 
 type mockScan struct {
-	calls int32
-	ch    chan struct{}
+	calls      int32
+	forceCalls int32
+	ch         chan struct{}
 }
 
 func (m *mockScan) RunBackground() bool {
 	atomic.AddInt32(&m.calls, 1)
+	return true
+}
+
+func (m *mockScan) RunBackgroundForce() bool {
+	atomic.AddInt32(&m.forceCalls, 1)
 	if m.ch != nil {
 		select {
 		case m.ch <- struct{}{}:
@@ -67,6 +73,7 @@ func TestContract_SystemRefresh(t *testing.T) {
 			t.Fatalf("expected refresh to trigger RunBackground")
 		}
 
-		assert.Equal(t, int32(1), atomic.LoadInt32(&ms.calls))
+		assert.Equal(t, int32(0), atomic.LoadInt32(&ms.calls))
+		assert.Equal(t, int32(1), atomic.LoadInt32(&ms.forceCalls))
 	})
 }

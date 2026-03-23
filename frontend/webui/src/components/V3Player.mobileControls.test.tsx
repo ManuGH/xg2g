@@ -70,7 +70,6 @@ describe('V3Player Mobile Controls', () => {
     });
 
     if (requestPictureInPictureDescriptor) {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).requestPictureInPicture;
     }
 
@@ -84,27 +83,23 @@ describe('V3Player Mobile Controls', () => {
     if (webkitEnterFullscreenDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
     }
 
     if (requestPictureInPictureDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'requestPictureInPicture', requestPictureInPictureDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).requestPictureInPicture;
     }
     if (requestFullscreenDescriptor) {
       Object.defineProperty(HTMLDivElement.prototype, 'requestFullscreen', requestFullscreenDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLDivElement.prototype as any).requestFullscreen;
     }
 
     if (pictureInPictureEnabledDescriptor) {
       Object.defineProperty(document, 'pictureInPictureEnabled', pictureInPictureEnabledDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (document as any).pictureInPictureEnabled;
     }
 

@@ -11,17 +11,66 @@ const (
 	IdleThreshold    = 30 * time.Second
 )
 
+// PlaylistAccessAge returns the age of the last confirmed consumer playlist access.
+// If no playlist was requested yet, PlaylistPublishedAt acts as the grace-period anchor.
+func PlaylistAccessAge(r *SessionRecord, now time.Time) (time.Duration, bool) {
+	if r == nil {
+		return 0, false
+	}
+	if !r.LastPlaylistAccessAt.IsZero() {
+		return now.Sub(r.LastPlaylistAccessAt), true
+	}
+	if !r.PlaylistPublishedAt.IsZero() {
+		return now.Sub(r.PlaylistPublishedAt), true
+	}
+	return 0, false
+}
+
+// PlaylistAccessFresh reports whether playlist access is still fresh within the given threshold.
+// Sessions that never published a playlist yet are treated as fresh so startup does not look idle.
+func PlaylistAccessFresh(r *SessionRecord, now time.Time, threshold time.Duration) bool {
+	if threshold <= 0 {
+		return true
+	}
+	age, ok := PlaylistAccessAge(r, now)
+	if !ok {
+		return true
+	}
+	return age <= threshold
+}
+
+// PlaylistAccessExceeded reports whether the playlist access age exceeded the given threshold.
+func PlaylistAccessExceeded(r *SessionRecord, now time.Time, threshold time.Duration) bool {
+	if threshold <= 0 {
+		return false
+	}
+	age, ok := PlaylistAccessAge(r, now)
+	if !ok {
+		return false
+	}
+	return age > threshold
+}
+
+func segmentsFresh(r *SessionRecord, now time.Time, threshold time.Duration) bool {
+	return r != nil && !r.LatestSegmentAt.IsZero() && now.Sub(r.LatestSegmentAt) <= threshold
+}
+
+func segmentsStalled(r *SessionRecord, now time.Time, threshold time.Duration) bool {
+	return r != nil && !r.LatestSegmentAt.IsZero() && now.Sub(r.LatestSegmentAt) > threshold
+}
+
 // DeriveLifecycleState determines the semantic lifecycle state of a session
 // based on absolute truths (process, files, access).
 //
 // Logic Protocol (Strict Priority):
-// 1. error    - Terminal failure (FAILED, CANCELLED, STOPPED)
-// 2. ending   - In-progress shutdown (DRAINING, STOPPING)
-// 3. starting - Early initialization (NEW, STARTING)
-// 4. buffering- Process running but not yet playable (PRIMING or Missing Segments)
-// 5. stalled  - Segments were being produced but stopped unexpectedly (> 12s)
-// 6. idle     - Stream is healthy but has no active manifest access (> 30s)
-// 7. active   - Healthy stream with active manifest access
+//  1. error    - Terminal failure (FAILED, CANCELLED, STOPPED)
+//  2. ending   - In-progress shutdown (DRAINING, STOPPING)
+//  3. starting - Early initialization (NEW, STARTING)
+//  4. buffering- Process running but not yet playable (PRIMING or Missing Segments)
+//  5. idle     - Stream has no active manifest access (> 30s), regardless of short segment drift
+//  6. stalled  - Either an actively consumed stream stopped producing segments (> 12s), or an idle
+//     stream stayed abandoned long enough to outlive the idle window plus stall grace
+//  7. active   - Healthy stream with active manifest access
 func DeriveLifecycleState(r *SessionRecord, now time.Time) LifecycleState {
 	// 1. Error (Terminal)
 	if r.State == SessionFailed || r.State == SessionCancelled || r.State == SessionStopped {
@@ -38,46 +87,41 @@ func DeriveLifecycleState(r *SessionRecord, now time.Time) LifecycleState {
 		return LifecycleStarting
 	}
 
-	// Constants for threshold checks
-	segmentsFresh := !r.LatestSegmentAt.IsZero() && now.Sub(r.LatestSegmentAt) <= StalledThreshold
-	accessFresh := !r.LastPlaylistAccessAt.IsZero() && now.Sub(r.LastPlaylistAccessAt) <= IdleThreshold
-
-	// Handle case where session hasn't been accessed yet (treat as fresh for a grace period)
-	if r.LastPlaylistAccessAt.IsZero() {
-		// If it's a fresh session (just started), it's not "idle" yet.
-		// We use PlaylistPublishedAt as a reference for grace period.
-		if !r.PlaylistPublishedAt.IsZero() && now.Sub(r.PlaylistPublishedAt) <= IdleThreshold {
-			accessFresh = true
-		} else if r.PlaylistPublishedAt.IsZero() {
-			// Not published yet -> not active/idle anyway
-			accessFresh = true
-		}
-	}
+	hasFreshSegments := segmentsFresh(r, now, StalledThreshold)
+	hasStalledSegments := segmentsStalled(r, now, StalledThreshold)
+	accessFresh := PlaylistAccessFresh(r, now, IdleThreshold)
+	accessAge, hasAccessAge := PlaylistAccessAge(r, now)
 
 	// 4. Buffering
-	// Rule: Priming state OR (FFmpeg running + Playlist up BUT no segments yet)
+	// Rule: Priming state OR (FFmpeg running + Playlist up BUT no segments yet while
+	// playlist access is still within the startup grace window).
 	isFFmpegRunning := r.PipelineState == PipeFFmpegRunning || r.PipelineState == PipePackagerReady || r.PipelineState == PipeServing
 	playlistPublished := !r.PlaylistPublishedAt.IsZero()
 
-	if r.State == SessionPriming || (isFFmpegRunning && playlistPublished && r.LatestSegmentAt.IsZero()) {
+	if r.State == SessionPriming || (isFFmpegRunning && playlistPublished && r.LatestSegmentAt.IsZero() && accessFresh) {
 		return LifecycleBuffering
 	}
 
-	// 5. Stalled
-	// Rule: Stalled if we ever saw segments, but they are now too old.
-	if !r.LatestSegmentAt.IsZero() && now.Sub(r.LatestSegmentAt) > StalledThreshold {
-		return LifecycleStalled
+	// 5. Idle
+	// Rule: Missing recent playlist access is the primary consumer truth.
+	// If access has gone stale, hold the session in idle first. Only escalate to stalled after
+	// the idle window plus a segment-stall grace has also elapsed.
+	if !accessFresh {
+		if hasStalledSegments && hasAccessAge && accessAge > IdleThreshold+StalledThreshold {
+			return LifecycleStalled
+		}
+		return LifecycleIdle
 	}
 
-	// 6. Idle
-	// Rule: Segments are fresh, but playlist hasn't been polled in > 30s AND we aren't in grace period.
-	if segmentsFresh && !accessFresh {
-		return LifecycleIdle
+	// 6. Stalled
+	// Rule: With an active consumer, stale segments indicate a broken pipeline.
+	if hasStalledSegments {
+		return LifecycleStalled
 	}
 
 	// 7. Active
 	// Fallback: If segments are fresh and access is fresh (or in grace period).
-	if segmentsFresh && accessFresh {
+	if hasFreshSegments && accessFresh {
 		return LifecycleActive
 	}
 

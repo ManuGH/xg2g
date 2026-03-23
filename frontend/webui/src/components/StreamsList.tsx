@@ -57,6 +57,35 @@ const formatDuration = (date: Date): string => {
   return `${diffHours}h ${diffMins % 60}m`;
 };
 
+const formatClientFamily = (family: string | undefined): string => {
+  switch (family) {
+    case 'chromium_hlsjs':
+      return 'Chromium';
+    case 'firefox_hlsjs':
+      return 'Firefox';
+    case 'safari_native':
+      return 'Safari';
+    case 'ios_safari_native':
+      return 'iOS Safari';
+    default:
+      return family ?? '';
+  }
+};
+
+const formatPreferredHlsEngine = (engine: string | undefined): string => {
+  switch (engine) {
+    case 'hlsjs':
+      return 'hls.js';
+    case 'native':
+      return 'Native HLS';
+    default:
+      return engine ?? '';
+  }
+};
+
+const shouldShowDeviceType = (deviceType: string | undefined): boolean =>
+  Boolean(deviceType && deviceType !== 'web');
+
 export default function StreamsList({ compact = false }: StreamsListProps) {
   const { data: streams = [], error } = useStreams();
   const count = streams.length;
@@ -95,10 +124,30 @@ export default function StreamsList({ compact = false }: StreamsListProps) {
                   </div>
                 )}
                 <div className={styles.streamMeta}>
-                  <div className={styles.metaItem}>
-                    <span className={styles.metaLabel}>Client:</span>
-                    <span className="tabular">{maskIP(s.clientIp)}</span>
-                  </div>
+                  {s.clientIp && (
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaLabel}>Client-IP:</span>
+                      <span className="tabular">{maskIP(s.clientIp)}</span>
+                    </div>
+                  )}
+                  {s.clientFamily && (
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaLabel}>Client:</span>
+                      <span>{formatClientFamily(s.clientFamily)}</span>
+                    </div>
+                  )}
+                  {s.preferredHlsEngine && (
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaLabel}>Player:</span>
+                      <span>{formatPreferredHlsEngine(s.preferredHlsEngine)}</span>
+                    </div>
+                  )}
+                  {shouldShowDeviceType(s.deviceType) && (
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaLabel}>Device:</span>
+                      <span>{s.deviceType}</span>
+                    </div>
+                  )}
                   <div className={styles.metaItem}>
                     <span className={styles.metaLabel}>Started:</span>
                     <span className="tabular">{s.startedAt ? formatDuration(new Date(s.startedAt)) : 'unknown'}</span>

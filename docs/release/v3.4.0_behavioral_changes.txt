@@ -1,0 +1,12 @@
+- Live playback startup now surfaces a backend-provided `profileReason` and uses
+  a startup/rebuffer overlay strategy for native playback paths to reduce stale
+  frame flashes and ambiguous "loading" states.
+- Manual refresh via the v3 API now forces a background scan instead of being
+  skipped by cached scan state, which makes operator-triggered refreshes
+  deterministic.
+- Live GPU transcoding now requires an explicit VAAPI device setting
+  (`ffmpeg.vaapiDevice` or `XG2G_VAAPI_DEVICE`); a mounted `/dev/dri/renderD128`
+  alone is no longer operationally sufficient.
+- Cleartext token-auth startup warnings are suppressed when xg2g is explicitly
+  configured behind trusted HTTPS proxies, while direct non-loopback HTTP access
+  remains warned and unsupported for browser auth flows.

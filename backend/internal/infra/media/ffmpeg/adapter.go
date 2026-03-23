@@ -513,7 +513,14 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 			if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
 				a.recordProcessDetail(handle, detail)
 			}
-			a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
+			switch ffmpegLogLevel(sanitizedLine) {
+			case zerolog.WarnLevel:
+				a.Logger.Warn().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
+			case zerolog.InfoLevel:
+				a.Logger.Info().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
+			default:
+				a.Logger.Debug().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
+			}
 			wd.ParseLine(line)
 		}
 		if scanErr := scanner.Err(); scanErr != nil {
@@ -836,6 +843,69 @@ func summarizeFFmpegFailureLine(line string) string {
 		return "invalid upstream input data"
 	}
 	return ""
+}
+
+func ffmpegLogLevel(line string) zerolog.Level {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return zerolog.DebugLevel
+	}
+	if isFFmpegProgressLine(lower) {
+		return zerolog.DebugLevel
+	}
+	if summarizeFFmpegFailureLine(lower) != "" || looksLikeFFmpegWarning(lower) {
+		return zerolog.WarnLevel
+	}
+	return zerolog.InfoLevel
+}
+
+func isFFmpegProgressLine(lower string) bool {
+	switch {
+	case strings.HasPrefix(lower, "frame="),
+		strings.HasPrefix(lower, "fps="),
+		strings.HasPrefix(lower, "stream_"),
+		strings.HasPrefix(lower, "bitrate="),
+		strings.HasPrefix(lower, "total_size="),
+		strings.HasPrefix(lower, "out_time_us="),
+		strings.HasPrefix(lower, "out_time_ms="),
+		strings.HasPrefix(lower, "out_time="),
+		strings.HasPrefix(lower, "dup_frames="),
+		strings.HasPrefix(lower, "drop_frames="),
+		strings.HasPrefix(lower, "speed="),
+		strings.HasPrefix(lower, "progress="):
+		return true
+	case strings.Contains(lower, " opening '") && strings.Contains(lower, "' for writing"):
+		return true
+	case strings.Contains(lower, "opening \"") && strings.Contains(lower, "\" for writing"):
+		return true
+	case strings.Contains(lower, "press [q] to stop"):
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeFFmpegWarning(lower string) bool {
+	keywords := []string{
+		" error",
+		"error ",
+		"failed",
+		"invalid",
+		"non-existing",
+		"no frame",
+		"decode_slice_header",
+		"corrupt",
+		"unable to",
+		"could not",
+		"connection refused",
+		"broken pipe",
+	}
+	for _, keyword := range keywords {
+		if strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 func summarizeProcessExit(procErr error) string {

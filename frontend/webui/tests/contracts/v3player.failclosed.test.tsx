@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../../src/components/V3Player';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as sdk from '../../src/client-ts';

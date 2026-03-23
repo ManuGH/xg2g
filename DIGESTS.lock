@@ -3,6 +3,10 @@
   "releases": {
     "3.1.7": {
       "digest": "pending"
+    },
+    "v3.4.0": {
+      "digest": "pending",
+      "published_at": "pending"
     }
   }
 }

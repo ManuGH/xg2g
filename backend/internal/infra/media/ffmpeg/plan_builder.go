@@ -63,6 +63,39 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 }
 
 func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
+	if !spec.Profile.TranscodeVideo && !usesLegacyCPUDefaults(spec, normalizeRequestedCodec(spec.Profile.VideoCodec)) {
+		resolvedCodec := normalizeRequestedCodec(spec.Profile.VideoCodec)
+		if resolvedCodec == "" {
+			resolvedCodec = "h264"
+		}
+		metrics.RecordDecisionSummary(
+			spec.Profile.Name,
+			"direct",
+			resolvedCodec,
+			false,
+			"direct_play_supported",
+		)
+
+		a.Logger.Info().
+			Str("event", "decision.summary").
+			Str("profile", spec.Profile.Name).
+			Str("requested_codec", resolvedCodec).
+			Strs("supported_hw_codecs", a.supportedHWCodecs()).
+			Bool("hwaccel_available", false).
+			Str("path", "direct").
+			Str("output_codec", resolvedCodec).
+			Bool("use_hwaccel", false).
+			Str("reason", "direct_play_supported").
+			Msg("decision summary")
+
+		return codecPlan{
+			resolvedCodec: resolvedCodec,
+			useVAAPI:      false,
+			fullVAAPI:     false,
+			preInputArgs:  nil,
+		}, nil
+	}
+
 	useHWPath := profiles.IsGPUBackedProfile(spec.Profile.HWAccel)
 	if isPreferHWProfile(spec.Profile.Name) {
 		useHWPath = true
@@ -172,9 +205,13 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		}
 		// Stream relay MPEG-TS often needs a much deeper initial probe before
 		// FFmpeg can resolve video dimensions and audio layout reliably.
+		// Keep that only for video-transcode paths; passthrough/remux sessions
+		// already know enough about the stream and pay a visible startup penalty.
 		if isStreamRelayURL(inputURL) {
-			analyzeDuration = "10000000"
-			probeSize = "20M"
+			if spec.Profile.TranscodeVideo {
+				analyzeDuration = "10000000"
+				probeSize = "20M"
+			}
 		}
 		if !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
@@ -436,7 +473,10 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	if a.shouldPreferSafariRuntimeRemux(ctx, spec, input.inputURL) {
 		spec.Profile.TranscodeVideo = false
 		spec.Profile.Deinterlace = false
-		spec.Profile.Container = "fmp4"
+		// Native Safari is tolerant on MPEG-TS HLS, but remuxed broadcast H.264
+		// inside fMP4 has shown audio-only / black-video failures in production.
+		// Keep the runtime-remux optimization, but package it as classic TS HLS.
+		spec.Profile.Container = "mpegts"
 		if spec.Profile.AudioBitrateK <= 0 {
 			spec.Profile.AudioBitrateK = 192
 		}
@@ -565,6 +605,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		Str("transcode.mode", "vaapi").
 		Str("vaapi.device", a.VaapiDevice).
 		Str("video.codec", outputCodec).
+		Int("video.qp", prof.VideoQP).
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
@@ -582,18 +623,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
-
-	if prof.VideoMaxRateK > 0 {
-		args = append(args,
-			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
-			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
-		)
-		if prof.VideoBufSizeK > 0 {
-			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
-		}
-	} else {
-		args = append(args, "-global_quality", "23")
-	}
+	args = appendVaapiRateControlArgs(args, prof)
 
 	args = append(args,
 		"-g", strconv.Itoa(gop),
@@ -612,6 +642,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		Str("transcode.mode", "vaapi_encode_only").
 		Str("vaapi.device", a.VaapiDevice).
 		Str("video.codec", outputCodec).
+		Int("video.qp", prof.VideoQP).
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
@@ -631,6 +662,31 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
+	args = appendVaapiRateControlArgs(args, prof)
+
+	args = append(args,
+		"-g", strconv.Itoa(gop),
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
+		"-flags", "+cgop",
+		"-profile:v", "main",
+	)
+	return args
+}
+
+func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string {
+	if prof.VideoQP > 0 {
+		args = append(args,
+			"-rc_mode", "CQP",
+			"-qp", strconv.Itoa(prof.VideoQP),
+		)
+		if prof.VideoMaxRateK > 0 {
+			args = append(args, "-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK))
+		}
+		if prof.VideoBufSizeK > 0 {
+			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+		return args
+	}
 
 	if prof.VideoMaxRateK > 0 {
 		args = append(args,
@@ -640,17 +696,10 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		if prof.VideoBufSizeK > 0 {
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
 		}
-	} else {
-		args = append(args, "-global_quality", "23")
+		return args
 	}
 
-	args = append(args,
-		"-g", strconv.Itoa(gop),
-		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
-		"-flags", "+cgop",
-		"-profile:v", "main",
-	)
-	return args
+	return append(args, "-global_quality", "23")
 }
 
 func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec) []string {

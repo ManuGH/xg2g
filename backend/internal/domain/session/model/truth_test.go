@@ -63,6 +63,17 @@ func TestDeriveLifecycleState(t *testing.T) {
 			expected: LifecycleBuffering,
 		},
 		{
+			name: "No segments ever seen, but playlist access stale -> idle",
+			record: &SessionRecord{
+				State:                SessionReady,
+				PipelineState:        PipeServing,
+				PlaylistPublishedAt:  now.Add(-2 * time.Minute),
+				LatestSegmentAt:      time.Time{},
+				LastPlaylistAccessAt: now.Add(-31 * time.Second),
+			},
+			expected: LifecycleIdle,
+		},
+		{
 			name: "Active: segments fresh, access fresh",
 			record: &SessionRecord{
 				State:                SessionReady,
@@ -118,13 +129,24 @@ func TestDeriveLifecycleState(t *testing.T) {
 			expected: LifecycleStalled,
 		},
 		{
-			name: "Stalled wins over Idle",
+			name: "Idle wins first when playlist access already went stale",
 			record: &SessionRecord{
 				State:                SessionReady,
 				PipelineState:        PipeServing,
 				PlaylistPublishedAt:  now.Add(-60 * time.Second),
 				LatestSegmentAt:      now.Add(-13 * time.Second),
 				LastPlaylistAccessAt: now.Add(-31 * time.Second),
+			},
+			expected: LifecycleIdle,
+		},
+		{
+			name: "Stalled after idle window plus stall grace elapsed",
+			record: &SessionRecord{
+				State:                SessionReady,
+				PipelineState:        PipeServing,
+				PlaylistPublishedAt:  now.Add(-90 * time.Second),
+				LatestSegmentAt:      now.Add(-13 * time.Second),
+				LastPlaylistAccessAt: now.Add(-(IdleThreshold + StalledThreshold + 1*time.Second)),
 			},
 			expected: LifecycleStalled,
 		},

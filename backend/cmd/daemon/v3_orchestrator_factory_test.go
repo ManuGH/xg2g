@@ -113,6 +113,13 @@ func TestV3OrchestratorFactoryBuild_ConfiguresWorker(t *testing.T) {
 	if orch.Sweeper.IdleTimeout != cfg.Engine.IdleTimeout {
 		t.Fatalf("Sweeper.IdleTimeout = %v, want %v", orch.Sweeper.IdleTimeout, cfg.Engine.IdleTimeout)
 	}
+	hb, ok := orch.HeartbeatSource.(*worker.FSWatcherHeartbeatSource)
+	if !ok {
+		t.Fatalf("HeartbeatSource = %T, want *worker.FSWatcherHeartbeatSource", orch.HeartbeatSource)
+	}
+	if hb.HLSRoot != cfg.HLS.Root {
+		t.Fatalf("HeartbeatSource.HLSRoot = %q, want %q", hb.HLSRoot, cfg.HLS.Root)
+	}
 	if orch.Owner == "" {
 		t.Fatal("Owner should be generated")
 	}
