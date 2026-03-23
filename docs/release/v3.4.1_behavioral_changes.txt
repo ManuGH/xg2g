@@ -1,0 +1,6 @@
+- Release artifacts now align the embedded WebUI bundle and versioned config/docs
+  surfaces with the merged live-session lifecycle changes shipped after `v3.4.0`.
+- The daemon now reports build-injected release metadata consistently, so
+  `xg2g --version`, startup logs, and status surfaces match the published tag.
+- No additional operator action is required beyond the `v3.4.0` rollout guidance;
+  this patch release is intended to supersede the earlier `v3.4.0` publication.
