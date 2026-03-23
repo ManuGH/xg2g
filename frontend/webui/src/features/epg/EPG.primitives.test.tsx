@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClientRequestError } from '../../lib/clientWrapper';
+import { ClientRequestError } from '../../services/clientWrapper';
 import type { EpgEvent, Timer } from './types';
 
 const {

@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClientRequestError } from '../lib/clientWrapper';
-import { requestAuthRequired } from '../lib/sessionEvents';
+import { ClientRequestError } from '../services/clientWrapper';
+import { requestAuthRequired } from '../features/player/sessionEvents';
 import BootstrapGate from './BootstrapGate';
 import { ROUTE_MAP } from '../routes';
 

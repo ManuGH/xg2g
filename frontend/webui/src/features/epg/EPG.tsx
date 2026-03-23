@@ -15,7 +15,7 @@ import { EpgChannelList } from './components/EpgChannelList';
 import ErrorPanel from '../../components/ErrorPanel';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import { toAppError } from '../../lib/appErrors';
-import { isUnauthorizedError } from '../../lib/sessionEvents';
+import { isUnauthorizedError } from '../player/sessionEvents';
 import { normalizeEpgText } from '../../utils/text';
 import { debugError, debugLog, formatError } from '../../utils/logging';
 import { useUiOverlay } from '../../context/UiOverlayContext';

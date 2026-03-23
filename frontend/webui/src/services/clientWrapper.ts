@@ -1,6 +1,6 @@
 import { client } from '../client-ts/client.gen';
 import type { ApiError, ProblemDetails } from '../client-ts/types.gen';
-import { isUnauthorizedStatus, requestAuthRequired } from './sessionEvents';
+import { isUnauthorizedStatus, requestAuthRequired } from '../features/player/sessionEvents';
 
 export type MappedApiError = {
   status?: number;

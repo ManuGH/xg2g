@@ -12,7 +12,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { AppProvider } from './context/AppContext.tsx';
 import { UiOverlayProvider } from './context/UiOverlayContext.tsx';
 import { i18nReady } from './i18n';
-import { setClientAuthToken } from './lib/clientWrapper';
+import { setClientAuthToken } from './services/clientWrapper';
 import { ROUTE_MAP } from './routes.ts';
 import { getStoredToken } from './utils/tokenStorage';
 

@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { getSystemHealth, postSystemRefresh, type SystemHealth } from '../client-ts';
 import { toAppError } from '../lib/appErrors';
-import { unwrapClientResultOrThrow } from '../lib/clientWrapper';
+import { unwrapClientResultOrThrow } from '../services/clientWrapper';
 import type { AppError } from '../types/errors';
 import { Button, ButtonLink } from './ui';
 import ErrorPanel from './ErrorPanel';

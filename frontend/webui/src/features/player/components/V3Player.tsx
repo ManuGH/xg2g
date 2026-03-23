@@ -12,7 +12,7 @@ import {
   type PlaybackTraceOperator,
   type PlaybackTargetProfile,
 } from '../../../client-ts';
-import { getApiBaseUrl } from '../../../lib/clientWrapper';
+import { getApiBaseUrl } from '../../../services/clientWrapper';
 import { telemetry } from '../../../services/TelemetryService';
 import type {
   V3PlayerProps,

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ClientRequestError } from '../lib/clientWrapper';
-import { subscribeAuthRequired } from '../lib/sessionEvents';
+import { ClientRequestError } from '../services/clientWrapper';
+import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import { useAppContext } from '../context/AppContext';
 import { useBootstrapConfig } from '../hooks/useServerQueries';
 import { normalizePathname, ROUTE_MAP } from '../routes';

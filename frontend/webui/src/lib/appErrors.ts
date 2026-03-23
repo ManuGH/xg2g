@@ -1,4 +1,4 @@
-import { ClientRequestError, mapApiError } from './clientWrapper';
+import { ClientRequestError, mapApiError } from '../services/clientWrapper';
 import { getErrorCatalogEntry } from './errorCatalog';
 import type { AppError, AppErrorSeverity } from '../types/errors';
 
