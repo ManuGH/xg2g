@@ -14,9 +14,10 @@
 Turn Enigma2 live TV into browser-ready playback that actually works on
 Safari, iPhone, iPad, Chrome, and modern TVs.
 
-xg2g takes MPEG-TS from Enigma2 satellite and DVB-T2 receivers and prefers
-browser-safe HLS delivery when compatibility repair is needed, with
-observability, fail-closed auth, and operator-friendly health checks built in.
+xg2g takes MPEG-TS from Enigma2 satellite and DVB-T2 receivers and delivers
+native HLS with `.ts` segments to Apple devices, falling back to browser-safe
+fMP4 HLS delivery when compatibility repair is needed. Observability,
+fail-closed auth, and operator-friendly health checks are built in.
 
 **Start here:** [Quickstart](#quickstart) •
 [Live API Docs](https://manugh.github.io/xg2g/) •
@@ -31,7 +32,7 @@ observability, fail-closed auth, and operator-friendly health checks built in.
 
 | Without xg2g | With xg2g |
 | :--- | :--- |
-| Enigma2 raw MPEG-TS streams | Browser-ready HLS (fMP4 or native TS) |
+| Enigma2 raw MPEG-TS streams | Browser-ready HLS (native `.ts` and fMP4) |
 | Every client wants a different stream profile | One server-enforced universal delivery policy |
 | Recordings stuck on the set-top box | Seamless resume state across devices |
 | DIY proxies hide failures until users complain | Health checks, logs, metrics, and clear startup gates |
@@ -41,9 +42,8 @@ observability, fail-closed auth, and operator-friendly health checks built in.
 
 | Input | Delivery | Good First Targets |
 | :--- | :--- | :--- |
-| Enigma2 live MPEG-TS | HLS with fMP4 or TS segments | Safari, iPhone, iPad, Chrome, current desktop browsers |
+| Enigma2 live MPEG-TS | HLS with native `.ts` or fMP4 segments | Safari, iPhone, iPad, Chrome, current desktop browsers |
 | Enigma2 VOD / Recordings | HLS or Direct Play | Local app instances, smart TVs |
-| Enigma2 recordings | Browser-ready playback via the same policy | Web UI, custom integrations, internal operator tools |
 
 ## Quickstart
 
