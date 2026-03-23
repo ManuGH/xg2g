@@ -36,15 +36,15 @@ function RouteScopedBoundaryHarness() {
 }
 
 describe('ErrorBoundary', () => {
-  const originalError = console.error;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     shouldThrow = false;
-    console.error = vi.fn();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    console.error = originalError;
+    consoleErrorSpy.mockRestore();
     vi.clearAllMocks();
   });
 

@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/daemon"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -145,8 +146,10 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		if err != nil {
 			return false, err
 		}
+		now := time.Now()
 		for _, s := range sessions {
-			if !s.State.IsTerminal() {
+			switch model.DeriveLifecycleState(s, now) {
+			case model.LifecycleStarting, model.LifecycleBuffering, model.LifecycleActive, model.LifecycleStalled:
 				return true, nil
 			}
 		}

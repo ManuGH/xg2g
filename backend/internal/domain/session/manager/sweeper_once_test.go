@@ -182,13 +182,18 @@ func TestSweeper_SweepOnce_IdleTimeout(t *testing.T) {
 	}
 
 	sid := "sess-idle"
+	now := time.Now()
 
-	// Seed: READY session with old LastAccessUnix
+	// Seed: READY session with stale playlist access, but fresh heartbeat access.
 	_ = st.PutSession(ctx, &model.SessionRecord{
-		SessionID:      sid,
-		State:          model.SessionReady,
-		ServiceRef:     "ref:idle",
-		LastAccessUnix: time.Now().Add(-1 * time.Minute).Unix(),
+		SessionID:            sid,
+		State:                model.SessionReady,
+		ServiceRef:           "ref:idle",
+		LastAccessUnix:       now.Unix(),
+		PlaylistPublishedAt:  now.Add(-2 * time.Minute),
+		LastPlaylistAccessAt: now.Add(-1 * time.Minute).Add(-1 * time.Second),
+		LatestSegmentAt:      now.Add(-2 * time.Second),
+		LeaseExpiresAtUnix:   now.Add(1 * time.Minute).Unix(),
 	})
 
 	// Call SweepOnce

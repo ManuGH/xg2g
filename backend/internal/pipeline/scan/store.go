@@ -5,14 +5,112 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 type Capability struct {
-	ServiceRef string    `json:"service_ref"`
-	Interlaced bool      `json:"interlaced"`
-	LastScan   time.Time `json:"last_scan"`
-	Resolution string    `json:"resolution"`
-	Codec      string    `json:"codec"`
+	ServiceRef    string          `json:"service_ref"`
+	Interlaced    bool            `json:"interlaced"`
+	LastScan      time.Time       `json:"last_scan"`
+	LastAttempt   time.Time       `json:"last_attempt,omitempty"`
+	LastSuccess   time.Time       `json:"last_success,omitempty"`
+	State         CapabilityState `json:"state,omitempty"`
+	FailureReason string          `json:"failure_reason,omitempty"`
+	NextRetryAt   time.Time       `json:"next_retry_at,omitempty"`
+	Resolution    string          `json:"resolution"`
+	Codec         string          `json:"codec"`
+}
+
+type CapabilityState string
+
+const (
+	CapabilityStateOK      CapabilityState = "ok"
+	CapabilityStatePartial CapabilityState = "partial"
+	CapabilityStateFailed  CapabilityState = "failed"
+)
+
+const (
+	successRetryWindow = 30 * 24 * time.Hour
+	partialRetryWindow = 6 * time.Hour
+	failureRetryWindow = 24 * time.Hour
+)
+
+func (c Capability) Normalized() Capability {
+	c.ServiceRef = normalize.ServiceRef(c.ServiceRef)
+
+	state := c.State
+	switch state {
+	case CapabilityStateOK, CapabilityStatePartial, CapabilityStateFailed:
+	default:
+		state = inferCapabilityState(c.Resolution, c.Codec)
+	}
+	c.State = state
+
+	if c.LastAttempt.IsZero() && !c.LastScan.IsZero() {
+		c.LastAttempt = c.LastScan
+	}
+	if c.LastSuccess.IsZero() && state != CapabilityStateFailed && !c.LastScan.IsZero() {
+		c.LastSuccess = c.LastScan
+	}
+	if c.LastScan.IsZero() && !c.LastSuccess.IsZero() {
+		c.LastScan = c.LastSuccess
+	}
+	if c.NextRetryAt.IsZero() {
+		anchor := c.LastAttempt
+		if anchor.IsZero() {
+			anchor = c.LastSuccess
+		}
+		if anchor.IsZero() {
+			anchor = c.LastScan
+		}
+		if !anchor.IsZero() {
+			c.NextRetryAt = anchor.Add(defaultRetryDelay(state))
+		}
+	}
+
+	return c
+}
+
+func (c Capability) RetryDue(now time.Time) bool {
+	normalized := c.Normalized()
+	if normalized.NextRetryAt.IsZero() {
+		return true
+	}
+	return !now.Before(normalized.NextRetryAt)
+}
+
+func (c Capability) Usable() bool {
+	switch c.Normalized().State {
+	case CapabilityStateOK, CapabilityStatePartial:
+		return true
+	default:
+		return false
+	}
+}
+
+func inferCapabilityState(resolution, codec string) CapabilityState {
+	hasResolution := resolution != ""
+	hasCodec := codec != ""
+	switch {
+	case hasResolution && hasCodec:
+		return CapabilityStateOK
+	case hasResolution || hasCodec:
+		return CapabilityStatePartial
+	default:
+		return CapabilityStateFailed
+	}
+}
+
+func defaultRetryDelay(state CapabilityState) time.Duration {
+	switch state {
+	case CapabilityStatePartial:
+		return partialRetryWindow
+	case CapabilityStateFailed:
+		return failureRetryWindow
+	default:
+		return successRetryWindow
+	}
 }
 
 // CapabilityStore defines the interface for hardware metadata persistence.
@@ -58,14 +156,18 @@ func NewMemoryStore() *MemoryStore {
 func (s *MemoryStore) Update(cap Capability) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	cap = cap.Normalized()
 	s.data[cap.ServiceRef] = cap
 }
 
 func (s *MemoryStore) Get(serviceRef string) (Capability, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	cap, ok := s.data[serviceRef]
-	return cap, ok
+	cap, ok := s.data[normalize.ServiceRef(serviceRef)]
+	if !ok {
+		return Capability{}, false
+	}
+	return cap.Normalized(), true
 }
 
 func (s *MemoryStore) Close() error {

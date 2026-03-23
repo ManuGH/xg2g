@@ -19,11 +19,14 @@ type Outcome struct {
 }
 
 // TerminalOutcome is the single source of truth for terminal session outcomes.
-func TerminalOutcome(stopIntent bool, phase Phase, err error) Outcome {
+func TerminalOutcome(stopIntent bool, stopReason model.ReasonCode, phase Phase, err error) Outcome {
 	if stopIntent {
+		if stopReason == "" {
+			stopReason = model.RClientStop
+		}
 		return Outcome{
 			State:       model.SessionStopped,
-			Reason:      model.RClientStop,
+			Reason:      stopReason,
 			DetailCode:  model.DNone,
 			DetailDebug: "",
 		}

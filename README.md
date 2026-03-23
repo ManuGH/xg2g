@@ -52,7 +52,7 @@ docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   -e XG2G_DECISION_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/manugh/xg2g:v3.3.0
+  ghcr.io/manugh/xg2g:v3.4.1
 ```
 
 Check the service health:

@@ -49,13 +49,11 @@ describe('V3Player Safari Logic', () => {
     if (webkitEnterFullscreenDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
     }
     if (webkitSupportsPresentationModeDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', webkitSupportsPresentationModeDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
     }
     if (maxTouchPointsDescriptor) {

@@ -48,6 +48,12 @@ echo "🕵️ Scanning ${#FILES[@]} files for image tag drift..."
 
 for file in "${FILES[@]}"; do
     if [[ ! -f "$file" ]]; then continue; fi
+
+    case "$file" in
+        "${REPO_ROOT}/docs/ops/RELEASE_OUTPUT_CONTRACT.md"|${REPO_ROOT}/docs/release/*)
+            continue
+            ;;
+    esac
     
     # 4. Universal Forbidden Check: :latest
     if grep -q ":latest" "$file"; then

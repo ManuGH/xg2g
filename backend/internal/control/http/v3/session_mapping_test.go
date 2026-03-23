@@ -43,6 +43,7 @@ func TestMapSessionReason(t *testing.T) {
 		{model.RNone, SessionResponseReason(model.RNone), true},
 		{model.RCancelled, SessionResponseReason(model.RCancelled), true},
 		{model.RClientStop, SessionResponseReason(model.RClientStop), true},
+		{model.RIdleTimeout, SessionResponseReason(model.RIdleTimeout), true},
 		{model.RTuneTimeout, SessionResponseReason(model.RTuneTimeout), true},
 	}
 

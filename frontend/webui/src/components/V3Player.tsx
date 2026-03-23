@@ -25,6 +25,7 @@ import type {
 import { useLiveSessionController } from '../features/player/useLiveSessionController';
 import { usePlaybackEngine } from '../features/player/usePlaybackEngine';
 import { usePlayerChrome } from '../features/player/usePlayerChrome';
+import { resolveStartupOverlayLabel, resolveStartupOverlaySupport } from '../features/player/startupOverlayLabel';
 import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
@@ -306,6 +307,33 @@ function resolvePlaybackDurationSeconds(playbackInfo: PlaybackInfo): number | nu
   return null;
 }
 
+type NativeVideoRevealThresholds = {
+  stableMs: number;
+  retryMs: number;
+  minBufferSeconds: number;
+  minAdvanceSeconds: number;
+  requirePlaybackResume: boolean;
+};
+
+const NATIVE_VIDEO_REVEAL_STARTUP: NativeVideoRevealThresholds = {
+  stableMs: 650,
+  retryMs: 250,
+  minBufferSeconds: 0.75,
+  minAdvanceSeconds: 0.12,
+  requirePlaybackResume: false,
+};
+
+const NATIVE_VIDEO_REVEAL_REBUFFER: NativeVideoRevealThresholds = {
+  stableMs: 420,
+  retryMs: 160,
+  minBufferSeconds: 0.5,
+  minAdvanceSeconds: 0.22,
+  requirePlaybackResume: true,
+};
+
+const NATIVE_VIDEO_REBUFFER_VEIL_MS = 2300;
+const NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS = 140;
+
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
   const { token, autoStart, onClose, duration } = props;
@@ -326,6 +354,12 @@ function V3Player(props: V3PlayerProps) {
   const [capabilitySnapshot, setCapabilitySnapshot] = useState<CapabilitySnapshot | null>(null);
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
   const [sessionPlaybackTrace, setSessionPlaybackTrace] = useState<PlaybackTraceContract | null>(null);
+  const [sessionProfileReason, setSessionProfileReason] = useState<string | null>(null);
+  const [startupElapsedSeconds, setStartupElapsedSeconds] = useState(0);
+  const [showBufferingOverlay, setShowBufferingOverlay] = useState(false);
+  const [showNativeVideo, setShowNativeVideo] = useState(true);
+  const [showNativeVideoVeil, setShowNativeVideoVeil] = useState(false);
+  const [nativeVeilResumeArmed, setNativeVeilResumeArmed] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoElementRef>(null);
@@ -340,6 +374,15 @@ function V3Player(props: V3PlayerProps) {
   // ADR-00X: Profile-related refs removed (universal policy only)
   const isTeardownRef = useRef<boolean>(false);
   const userPauseIntentRef = useRef<boolean>(false);
+  const startupStartedAtRef = useRef<number | null>(null);
+  const bufferingOverlayTimerRef = useRef<number | null>(null);
+  const nativeVideoRevealTimerRef = useRef<number | null>(null);
+  const nativeVideoVeilRevealTimerRef = useRef<number | null>(null);
+  const nativeVideoVeilClearTimerRef = useRef<number | null>(null);
+  const nativeVideoShownRef = useRef(false);
+  const nativeVideoHoldPositionRef = useRef<number | null>(null);
+  const nativeVideoTempMutedRef = useRef(false);
+  const nativeManagedPauseRef = useRef(false);
 
   const [durationSeconds, setDurationSeconds] = useState<number | null>(
     duration && duration > 0 ? duration : null
@@ -449,6 +492,7 @@ function V3Player(props: V3PlayerProps) {
     if (session.requestId) {
       setTraceId(session.requestId);
     }
+    setSessionProfileReason(session.profileReason ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
   }, [mergeSessionPlaybackTrace]);
 
@@ -590,15 +634,33 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
+  const clearNativeVideoVeilTimers = useCallback(() => {
+    if (nativeVideoVeilRevealTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoVeilRevealTimerRef.current);
+      nativeVideoVeilRevealTimerRef.current = null;
+    }
+    if (nativeVideoVeilClearTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoVeilClearTimerRef.current);
+      nativeVideoVeilClearTimerRef.current = null;
+    }
+  }, []);
+
   const clearPlaybackSelection = useCallback(() => {
     activeRecordingRef.current = null;
+    nativeVideoShownRef.current = false;
+    nativeVideoHoldPositionRef.current = null;
+    clearNativeVideoVeilTimers();
     setActiveRecordingId(null);
     setVodStreamMode(null);
     setActiveHlsEngine(null);
+    setShowNativeVideo(true);
+    setShowNativeVideoVeil(false);
+    setNativeVeilResumeArmed(false);
     setCapabilitySnapshot(null);
     setPlaybackObservability(null);
     setSessionPlaybackTrace(null);
-  }, []);
+    setSessionProfileReason(null);
+  }, [clearNativeVideoVeilTimers]);
 
   const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
@@ -607,6 +669,48 @@ function V3Player(props: V3PlayerProps) {
     clearSessionLeaseState();
     resetChromeState();
   }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
+
+  const clearNativeVideoRevealTimer = useCallback(() => {
+    if (nativeVideoRevealTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoRevealTimerRef.current);
+      nativeVideoRevealTimerRef.current = null;
+    }
+  }, []);
+
+  const getBufferedAheadSeconds = useCallback((): number => {
+    const video = videoRef.current;
+    if (!video || !video.buffered.length) {
+      return 0;
+    }
+
+    for (let i = 0; i < video.buffered.length; i++) {
+      const start = video.buffered.start(i);
+      const end = video.buffered.end(i);
+      if (video.currentTime >= start && video.currentTime <= end) {
+        return Math.max(0, end - video.currentTime);
+      }
+    }
+
+    const finalEnd = video.buffered.end(video.buffered.length - 1);
+    return finalEnd > video.currentTime ? finalEnd - video.currentTime : 0;
+  }, [videoRef]);
+
+  const cleanupPlaybackResources = useCallback(() => {
+    const activeHls = hlsRef.current;
+    const activeSessionId = sessionIdRef.current;
+    const activeVideo = videoRef.current;
+
+    if (activeHls) activeHls.destroy();
+    if (activeVideo) {
+      activeVideo.pause();
+      activeVideo.src = '';
+    }
+
+    clearVodRetry();
+    clearVodFetch();
+    clearPlaybackSelection();
+    void sendStopIntent(activeSessionId, true);
+  }, [clearPlaybackSelection, clearVodFetch, clearVodRetry, hlsRef, sendStopIntent, sessionIdRef, videoRef]);
 
   const hasActivePlayback = useCallback((): boolean => {
     const videoEl = videoRef.current;
@@ -880,7 +984,7 @@ function V3Player(props: V3PlayerProps) {
           setActiveHlsEngine(null);
           playDirectMp4(streamUrl);
           return;
-        } catch (err) {
+        } catch (_error) {
           if (activeRecordingRef.current !== id) return;
           setStatus('error');
           setPlayerError({
@@ -940,7 +1044,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
+  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -1158,6 +1262,15 @@ function V3Player(props: V3PlayerProps) {
           // Keep canonical contract key for downstream compatibility checks.
           playback_decision_token: liveDecisionToken
         };
+        if (requestCaps.clientFamilyFallback) {
+          intentParams.client_family = requestCaps.clientFamilyFallback;
+        }
+        if (requestCaps.preferredHlsEngine) {
+          intentParams.preferred_hls_engine = requestCaps.preferredHlsEngine;
+        }
+        if (requestCaps.deviceType) {
+          intentParams.device_type = requestCaps.deviceType;
+        }
         const capHash = extractCapHashFromDecisionToken(liveDecisionToken);
         if (capHash) {
           intentParams.capHash = capHash;
@@ -1310,7 +1423,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -1355,32 +1468,298 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [requestedDuration]);
 
-  // Cleanup effect
+  const isImmediateStartupStatus =
+    status === 'starting' || status === 'priming' || status === 'building';
+  const isNativeEngine = activeHlsEngine === 'native';
+  const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
+  const shouldHoldNativeVideo =
+    isNativeEngine && !showNativeVideo && !hasTerminalStatus;
+  const isOverlayStartupStatus =
+    isImmediateStartupStatus || status === 'buffering' || shouldHoldNativeVideo;
+  const overlayStatus: PlayerStatus = shouldHoldNativeVideo ? 'buffering' : status;
+
   useEffect(() => {
-    const videoEl = videoRef.current;
+    if (bufferingOverlayTimerRef.current !== null) {
+      window.clearTimeout(bufferingOverlayTimerRef.current);
+      bufferingOverlayTimerRef.current = null;
+    }
+
+    if (status !== 'buffering') {
+      setShowBufferingOverlay(false);
+      return;
+    }
+
+    bufferingOverlayTimerRef.current = window.setTimeout(() => {
+      bufferingOverlayTimerRef.current = null;
+      setShowBufferingOverlay(true);
+    }, 325);
+
     return () => {
-      if (hlsRef.current) hlsRef.current.destroy();
-      if (videoEl) {
-        videoEl.pause();
-        videoEl.src = '';
+      if (bufferingOverlayTimerRef.current !== null) {
+        window.clearTimeout(bufferingOverlayTimerRef.current);
+        bufferingOverlayTimerRef.current = null;
       }
-      clearVodRetry();
-      clearVodFetch();
-      clearPlaybackSelection();
-      sendStopIntent(sessionIdRef.current, true);
     };
-  }, [clearPlaybackSelection, clearVodFetch, clearVodRetry, sendStopIntent]);
+  }, [status]);
+
+  useEffect(() => {
+    if (!isNativeEngine) {
+      clearNativeVideoRevealTimer();
+      clearNativeVideoVeilTimers();
+      nativeVideoShownRef.current = false;
+      nativeVideoHoldPositionRef.current = null;
+      setShowNativeVideo(true);
+      setShowNativeVideoVeil(false);
+      setNativeVeilResumeArmed(false);
+      return;
+    }
+
+    if (status === 'starting' || status === 'priming' || status === 'building' || status === 'buffering' || status === 'recovering') {
+      clearNativeVideoRevealTimer();
+      clearNativeVideoVeilTimers();
+      if (showNativeVideo) {
+        nativeVideoHoldPositionRef.current = videoRef.current?.currentTime ?? null;
+      }
+      setShowNativeVideo(false);
+      setShowNativeVideoVeil(true);
+      setNativeVeilResumeArmed(false);
+      return;
+    }
+
+    if (status === 'idle' || status === 'error' || status === 'stopped') {
+      clearNativeVideoRevealTimer();
+      clearNativeVideoVeilTimers();
+      nativeVideoShownRef.current = false;
+      nativeVideoHoldPositionRef.current = null;
+      setShowNativeVideo(true);
+      setShowNativeVideoVeil(false);
+      setNativeVeilResumeArmed(false);
+      return;
+    }
+
+    if (status === 'paused') {
+      clearNativeVideoRevealTimer();
+      clearNativeVideoVeilTimers();
+      nativeVideoHoldPositionRef.current = null;
+      setShowNativeVideo(true);
+      setShowNativeVideoVeil(false);
+      setNativeVeilResumeArmed(false);
+      return;
+    }
+
+    if (showNativeVideo) {
+      return;
+    }
+
+    const revealThresholds = nativeVideoShownRef.current
+      ? NATIVE_VIDEO_REVEAL_REBUFFER
+      : NATIVE_VIDEO_REVEAL_STARTUP;
+
+    const waitForStablePlayback = () => {
+      const video = videoRef.current;
+      if (!video) {
+        nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.retryMs);
+        return;
+      }
+
+      const bufferAheadSeconds = getBufferedAheadSeconds();
+      const holdPosition = nativeVideoHoldPositionRef.current;
+      const playbackAdvancedEnough =
+        holdPosition === null || !Number.isFinite(holdPosition)
+          ? true
+          : Math.max(0, video.currentTime - holdPosition) >= revealThresholds.minAdvanceSeconds;
+      const playbackResumeSatisfied = revealThresholds.requirePlaybackResume
+        ? !video.paused
+        : (status === 'ready' || !video.paused);
+      const readyForReveal =
+        video.readyState >= 3 &&
+        playbackResumeSatisfied &&
+        playbackAdvancedEnough &&
+        (video.readyState >= 4 || bufferAheadSeconds >= revealThresholds.minBufferSeconds);
+
+      if (readyForReveal) {
+        nativeVideoRevealTimerRef.current = null;
+        const isRebufferReveal = nativeVideoShownRef.current;
+        nativeVideoShownRef.current = true;
+        nativeVideoHoldPositionRef.current = null;
+        setShowNativeVideo(true);
+        clearNativeVideoVeilTimers();
+        if (isRebufferReveal) {
+          setShowNativeVideoVeil(true);
+          setNativeVeilResumeArmed(false);
+          nativeVideoVeilRevealTimerRef.current = window.setTimeout(() => {
+            nativeVideoVeilRevealTimerRef.current = null;
+            setNativeVeilResumeArmed(true);
+          }, NATIVE_VIDEO_REBUFFER_VEIL_MS);
+        } else {
+          setShowNativeVideoVeil(true);
+          setNativeVeilResumeArmed(true);
+        }
+        return;
+      }
+
+      nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.retryMs);
+    };
+
+    clearNativeVideoRevealTimer();
+    nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.stableMs);
+
+    return () => {
+      clearNativeVideoRevealTimer();
+      clearNativeVideoVeilTimers();
+    };
+  }, [
+    clearNativeVideoRevealTimer,
+    clearNativeVideoVeilTimers,
+    getBufferedAheadSeconds,
+    isNativeEngine,
+    showNativeVideo,
+    status,
+    videoRef,
+  ]);
+
+  useEffect(() => {
+    if (!isOverlayStartupStatus) {
+      startupStartedAtRef.current = null;
+      setStartupElapsedSeconds(0);
+      return;
+    }
+
+    if (startupStartedAtRef.current === null) {
+      startupStartedAtRef.current = Date.now();
+    }
+
+    const updateElapsed = () => {
+      const startedAt = startupStartedAtRef.current;
+      if (startedAt === null) {
+        setStartupElapsedSeconds(0);
+        return;
+      }
+      setStartupElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    };
+
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [isOverlayStartupStatus]);
+
+  // Cleanup effect
+  useEffect(() => cleanupPlaybackResources, [cleanupPlaybackResources]);
 
   // Overlay styles
   // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css
   // Static layout styles are in V3Player.module.css (scoped)
 
   const spinnerLabel =
-    status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building'
-      ? (status === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current && vodStreamMode === 'direct_mp4')
+    isOverlayStartupStatus
+      ? (overlayStatus === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current && vodStreamMode === 'direct_mp4')
         ? t('player.preparingDirectPlay') // Show explicit preparing for VOD buffering
-        : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
+        : resolveStartupOverlayLabel(
+          overlayStatus,
+          `${t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}…`,
+          sessionProfileReason,
+          t,
+        )
       : '';
+  const spinnerSupport =
+    isOverlayStartupStatus
+      ? resolveStartupOverlaySupport(sessionProfileReason, t)
+      : '';
+  const showStartupOverlay =
+    isImmediateStartupStatus ||
+    (status === 'buffering' && showBufferingOverlay) ||
+    shouldHoldNativeVideo;
+  const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
+  const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (isNativeEngine && showNativeBufferingMask) {
+      if (!video.muted) {
+        video.muted = true;
+        nativeVideoTempMutedRef.current = true;
+      }
+      return;
+    }
+
+    if (nativeVideoTempMutedRef.current) {
+      video.muted = false;
+      nativeVideoTempMutedRef.current = false;
+    }
+  }, [isNativeEngine, showNativeBufferingMask, videoRef]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (isNativeEngine && showNativeVideoVeil && showNativeVideo) {
+      if (nativeVeilResumeArmed) {
+        return;
+      }
+      if (!nativeManagedPauseRef.current && !video.paused) {
+        video.dataset.xg2gManagedPause = '1';
+        nativeManagedPauseRef.current = true;
+        video.pause();
+      }
+      return;
+    }
+
+    if (nativeManagedPauseRef.current) {
+      delete video.dataset.xg2gManagedPause;
+      nativeManagedPauseRef.current = false;
+      if (isNativeEngine && !hasTerminalStatus && status !== 'paused') {
+        void video.play().catch((err) => debugWarn('[V3Player] Native veil resume play blocked', err));
+      }
+    }
+  }, [hasTerminalStatus, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, status, videoRef]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (!(isNativeEngine && showNativeVideoVeil && showNativeVideo && nativeVeilResumeArmed)) {
+      return;
+    }
+
+    const releaseVeil = () => {
+      clearNativeVideoVeilTimers();
+      nativeVideoVeilClearTimerRef.current = window.setTimeout(() => {
+        nativeVideoVeilClearTimerRef.current = null;
+        setShowNativeVideoVeil(false);
+        setNativeVeilResumeArmed(false);
+      }, NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS);
+    };
+
+    const handlePlaying = () => {
+      releaseVeil();
+    };
+
+    if (!video.paused && video.readyState >= 3) {
+      releaseVeil();
+      return;
+    }
+
+    video.addEventListener('playing', handlePlaying, { once: true });
+
+    delete video.dataset.xg2gManagedPause;
+    nativeManagedPauseRef.current = false;
+    void video.play().catch((err) => {
+      debugWarn('[V3Player] Native veil resume play blocked', err);
+      setNativeVeilResumeArmed(false);
+    });
+
+    return () => {
+      video.removeEventListener('playing', handlePlaying);
+    };
+  }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, videoRef]);
 
   const effectiveClientPath =
     sessionPlaybackTrace?.clientPath ||
@@ -1630,14 +2009,57 @@ function V3Player(props: V3PlayerProps) {
         </div>
       )}
 
-      <div className={styles.videoWrapper}>
+      <div
+        className={[
+          styles.videoWrapper,
+          showNativeBufferingMask ? styles.videoWrapperMasked : null,
+        ].filter(Boolean).join(' ')}
+      >
         {channel && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
+        {showNativeBufferingMask && (
+          <div
+            className={styles.nativeBufferingMask}
+            aria-hidden="true"
+          ></div>
+        )}
 
         {/* PREPARING Overlay (VOD Remux) */}
-        {(status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building') && (
-          <div className={styles.spinnerOverlay} ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}>
-            <div className={`${styles.spinner} spinner-base`}></div>
-            <div className={styles.spinnerLabel}>{spinnerLabel}</div>
+        {showStartupOverlay && (
+          <div
+            className={[
+              styles.spinnerOverlay,
+              useNativeBufferingSafeOverlay ? styles.spinnerOverlaySafe : null,
+            ].filter(Boolean).join(' ')}
+            ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}
+          >
+            <div className={styles.spinnerBadge}>
+              <div className={`${styles.spinner} spinner-base`}></div>
+            </div>
+            <div className={styles.spinnerContent}>
+              <div className={styles.spinnerEyebrow}>
+                {t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' })}
+              </div>
+              {channel && <h2 className={styles.spinnerTitle}>{channel.name}</h2>}
+              <div className={styles.spinnerStatusRow}>
+                <StatusChip
+                  state={overlayStatus === 'buffering' ? 'live' : 'idle'}
+                  label={t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}
+                />
+              </div>
+              <div className={styles.spinnerLabel}>{spinnerLabel}</div>
+              <div className={styles.spinnerSupport}>{spinnerSupport}</div>
+                <div className={styles.spinnerMeta}>
+                  <div className={styles.spinnerProgressTrack} aria-hidden="true">
+                    <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
+                  </div>
+                  <div className={styles.spinnerElapsed}>
+                    {t('player.startupElapsed', {
+                    defaultValue: 'Wait {{seconds}}s',
+                    seconds: startupElapsedSeconds,
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1648,7 +2070,10 @@ function V3Player(props: V3PlayerProps) {
           webkit-playsinline=""
           preload="metadata"
           autoPlay={!!autoStart}
-          className={styles.videoElement}
+          className={[
+            styles.videoElement,
+            showNativeBufferingMask ? styles.videoElementHidden : null,
+          ].filter(Boolean).join(' ')}
         />
       </div>
 

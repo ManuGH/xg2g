@@ -6,8 +6,8 @@ set -e
 # - No direct console usage outside the logging helper.
 # - No token/authorization/bearer strings in log calls.
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WEBUI_SRC="$ROOT_DIR/frontend/webui/src"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+WEBUI_SRC="$REPO_ROOT/frontend/webui/src"
 EXIT_CODE=0
 
 if [ ! -d "$WEBUI_SRC" ]; then

@@ -53,20 +53,17 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 	// 	return nil
 	// }
 
-	// Skip Zap if UseWebIFStreams is enabled.
-	// Rationale: calling /web/stream.m3u implies that OpenWebIF handles zapping and port selection internally.
-	// Manual Zap from xg2g interferes with this logic or causes unnecessary main-tuner switches.
-	if t.Client != nil && t.Client.UseWebIFStreams {
-		logger.Info().Msg("skipping explicit zap for WebIF stream (OpenWebIF manages zap/port)")
-		return nil
-	}
-
-	// Skip Zap if StreamPort is configured (direct port access like 8001).
-	// Port 8001 provides direct streams without requiring tuner zap.
-	// This allows parallel usage: HDMI-TV stays on current channel, xg2g streams independently.
-	if t.Client != nil && t.Client.StreamPort > 0 {
-		logger.Info().Int("streamPort", t.Client.StreamPort).Msg("skipping zap for direct port access")
-		return nil
+	if t.Client != nil {
+		// Only plain WebIF-managed streams and direct TS ports can skip explicit zapping.
+		// Relay/middleware ports like 17999 often need the receiver tuned first.
+		if t.Client.UseWebIFStreams && t.Client.StreamPort == 0 {
+			logger.Info().Msg("skipping explicit zap for WebIF stream (OpenWebIF manages zap/port)")
+			return nil
+		}
+		if t.Client.StreamPort == 8001 || t.Client.StreamPort == 8002 {
+			logger.Info().Int("streamPort", t.Client.StreamPort).Msg("skipping zap for direct TS port access")
+			return nil
+		}
 	}
 
 	if err := t.Client.Zap(ctx, serviceRef); err != nil {

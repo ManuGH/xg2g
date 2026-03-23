@@ -318,6 +318,8 @@ func (s *dummyScanner) GetCapability(ref string) (scan.Capability, bool) {
 
 func (s *dummyScanner) RunBackground() bool { return false }
 
+func (s *dummyScanner) RunBackgroundForce() bool { return false }
+
 type dummyPreflight struct{}
 
 func (p *dummyPreflight) Check(ctx context.Context, ref preflight.SourceRef) (preflight.PreflightResult, error) {

@@ -38,6 +38,7 @@ export default function BootstrapGate() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const { auth, setToken, setPlayingChannel } = useAppContext();
+  const authReady = auth.isReady ?? true;
   const [tokenValue, setTokenValue] = useState('');
   const [forcedAuthPrompt, setForcedAuthPrompt] = useState<AuthPromptReason | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,7 +47,7 @@ export default function BootstrapGate() {
     error,
     isLoading,
     refetch,
-  } = useBootstrapConfig(auth.isAuthenticated);
+  } = useBootstrapConfig(auth.isAuthenticated && authReady);
 
   const handleAuthRequired = useCallback(() => {
     setForcedAuthPrompt('expired');
@@ -68,6 +69,9 @@ export default function BootstrapGate() {
     if (forcedAuthPrompt) {
       return forcedAuthPrompt;
     }
+    if (!authReady) {
+      return null;
+    }
     if (isUnauthorized) {
       return 'expired';
     }
@@ -75,7 +79,7 @@ export default function BootstrapGate() {
       return 'missing';
     }
     return null;
-  }, [auth.isAuthenticated, forcedAuthPrompt, isUnauthorized]);
+  }, [auth.isAuthenticated, authReady, forcedAuthPrompt, isUnauthorized]);
 
   useEffect(() => {
     if (auth.isAuthenticated && !isUnauthorized) {
@@ -95,6 +99,10 @@ export default function BootstrapGate() {
       inputRef.current?.focus();
     }
   }, [authReason]);
+
+  if (!authReady) {
+    return <LoadingSkeleton variant="gate" label={t('app.initializing', { defaultValue: 'Initializing...' })} />;
+  }
 
   const handleAuthSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

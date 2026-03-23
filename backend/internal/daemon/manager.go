@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -181,7 +182,7 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 				errChan <- fmt.Errorf("API server (HTTPS): %w", err)
 			}
 		} else {
-			if tokenAuthConfigured {
+			if shouldWarnCleartextTokenAuth(m.serverCfg.ListenAddr, m.deps.Config, tokenAuthConfigured) {
 				m.logger.Warn().
 					Msg("running with token auth over cleartext HTTP - credentials can be sniffed on network")
 			}
@@ -200,6 +201,35 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 	}()
 
 	return nil
+}
+
+func shouldWarnCleartextTokenAuth(listenAddr string, cfg config.AppConfig, tokenAuthConfigured bool) bool {
+	if !tokenAuthConfigured {
+		return false
+	}
+	if strings.TrimSpace(cfg.TLSCert) != "" && strings.TrimSpace(cfg.TLSKey) != "" {
+		return false
+	}
+	if strings.TrimSpace(cfg.TrustedProxies) != "" {
+		return false
+	}
+	return !isLoopbackListenAddr(listenAddr)
+}
+
+func isLoopbackListenAddr(listenAddr string) bool {
+	if listenAddr == "" {
+		return false
+	}
+	host := listenAddr
+	if parsedHost, _, err := net.SplitHostPort(listenAddr); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // startMetricsServer starts the Prometheus metrics HTTP server.

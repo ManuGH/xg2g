@@ -12,6 +12,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/rs/zerolog"
 )
 
@@ -214,6 +215,49 @@ func TestSelectStreamURL_FallbackFailedAllStructuredResult(t *testing.T) {
 	_, err := adapter.selectStreamURLWithPreflight(
 		context.Background(),
 		"sid-4",
+		serviceRef,
+		resolved,
+		preflight,
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var pErr *ports.PreflightError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("expected PreflightError, got %T", err)
+	}
+	result := pErr.StructuredResult()
+	if result.Reason != ports.PreflightReasonFallbackFailed {
+		t.Fatalf("expected fallback_failed, got %q", result.Reason)
+	}
+	if result.Detail != "fallback_failed_all" {
+		t.Fatalf("expected fallback_failed_all detail, got %q", result.Detail)
+	}
+}
+
+func TestSelectStreamURL_DoesNotAcceptWebIFPlaylistAsTSFallback(t *testing.T) {
+	e2 := enigma2.NewClientWithOptions("http://127.0.0.1", enigma2.Options{Timeout: time.Second})
+	adapter := NewLocalAdapter("", "", "", e2, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
+
+	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
+	resolved := "http://127.0.0.1:17999/" + serviceRef
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
+		switch {
+		case strings.Contains(rawURL, ":17999"):
+			return ports.NewPreflightResult("sync_miss", http.StatusOK, 564, 0, 17999), errors.New("no ts")
+		case strings.Contains(rawURL, ":8001"):
+			return ports.NewPreflightResult("sync_miss", http.StatusOK, 564, 0, 8001), errors.New("no ts")
+		case strings.Contains(rawURL, "/web/stream.m3u"):
+			return ports.NewPreflightResult("sync_miss", http.StatusOK, 564, 0, 80), errors.New("playlist, not ts")
+		default:
+			t.Fatalf("unexpected preflight url %q", rawURL)
+			return ports.PreflightResult{}, nil
+		}
+	}
+
+	_, err := adapter.selectStreamURLWithPreflight(
+		context.Background(),
+		"sid-webif-playlist",
 		serviceRef,
 		resolved,
 		preflight,

@@ -117,6 +117,19 @@
       "recovering": "Wiederherstellung…",
       "stopped": "Gestoppt"
     },
+    "startupHints": {
+      "safariCompatTranscode": "Safari-kompatibler Stream wird vorbereitet…",
+      "repairTranscode": "Stream wird repariert und transkodiert…",
+      "transcodeStartup": "Transkodierter Stream wird vorbereitet…"
+    },
+    "startupSupport": {
+      "default": "Die Wiedergabe startet automatisch, sobald die ersten stabilen Segmente bereit sind.",
+      "safariCompatTranscode": "Für Safari wird zuerst eine kompatible Stream-Variante aufgebaut. Das dauert meist etwas länger.",
+      "repairTranscode": "Der Eingangsstream wird vor dem Start stabilisiert, damit die Wiedergabe sauber anlaufen kann.",
+      "transcodeStartup": "Der Stream wird für dieses Gerät vorbereitet und startet danach automatisch."
+    },
+    "startupElapsed": "Wartezeit {{seconds}}s",
+    "startupSurfaceEyebrow": "Live-Start",
     "playlistNotReady": "Playlist noch nicht bereit",
     "readyButNotPlayable": "READY gemeldet, aber Playlist nicht verfügbar",
     "sessionNotReadyInTime": "Sitzung wurde nicht rechtzeitig bereit",

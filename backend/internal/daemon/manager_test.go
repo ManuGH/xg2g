@@ -397,13 +397,55 @@ func TestManager_WithMetrics(t *testing.T) {
 	}
 }
 
-func TestManager_StartAPIServer_WarnsOnCleartextTokenAuth(t *testing.T) {
+func TestManager_StartAPIServer_DoesNotWarnOnLoopbackCleartextTokenAuth(t *testing.T) {
 	var logBuf safeBuffer
 	testLogger := zerolog.New(&logBuf).With().Timestamp().Logger()
 
 	m := &manager{
 		serverCfg: config.ServerConfig{
 			ListenAddr:      "127.0.0.1:0",
+			ReadTimeout:     1 * time.Second,
+			WriteTimeout:    1 * time.Second,
+			IdleTimeout:     10 * time.Second,
+			MaxHeaderBytes:  1 << 20,
+			ShutdownTimeout: 1 * time.Second,
+		},
+		deps: Deps{
+			Logger:     testLogger,
+			Config:     config.AppConfig{APIToken: "secret-token"},
+			APIHandler: http.NotFoundHandler(),
+		},
+		logger: testLogger,
+	}
+
+	errChan := make(chan error, 1)
+	if err := m.startAPIServer(context.Background(), errChan); err != nil {
+		t.Fatalf("startAPIServer() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if m.apiServer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_ = m.apiServer.Shutdown(ctx)
+		}
+	})
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if strings.Contains(logBuf.String(), "running with token auth over cleartext HTTP") {
+		t.Fatalf("did not expect cleartext token auth warning on loopback listener, got: %s", logBuf.String())
+	}
+}
+
+func TestManager_StartAPIServer_WarnsOnCleartextTokenAuthPublicListener(t *testing.T) {
+	var logBuf safeBuffer
+	testLogger := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	m := &manager{
+		serverCfg: config.ServerConfig{
+			ListenAddr:      ":0",
 			ReadTimeout:     1 * time.Second,
 			WriteTimeout:    1 * time.Second,
 			IdleTimeout:     10 * time.Second,
@@ -438,6 +480,51 @@ func TestManager_StartAPIServer_WarnsOnCleartextTokenAuth(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("expected cleartext token auth warning in logs, got: %s", logBuf.String())
+}
+
+func TestManager_StartAPIServer_DoesNotWarnWhenTrustedProxiesConfigured(t *testing.T) {
+	var logBuf safeBuffer
+	testLogger := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	m := &manager{
+		serverCfg: config.ServerConfig{
+			ListenAddr:      ":0",
+			ReadTimeout:     1 * time.Second,
+			WriteTimeout:    1 * time.Second,
+			IdleTimeout:     10 * time.Second,
+			MaxHeaderBytes:  1 << 20,
+			ShutdownTimeout: 1 * time.Second,
+		},
+		deps: Deps{
+			Logger: testLogger,
+			Config: config.AppConfig{
+				APIToken:       "secret-token",
+				TrustedProxies: "10.10.55.12/32",
+			},
+			APIHandler: http.NotFoundHandler(),
+		},
+		logger: testLogger,
+	}
+
+	errChan := make(chan error, 1)
+	if err := m.startAPIServer(context.Background(), errChan); err != nil {
+		t.Fatalf("startAPIServer() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if m.apiServer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_ = m.apiServer.Shutdown(ctx)
+		}
+	})
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if strings.Contains(logBuf.String(), "running with token auth over cleartext HTTP") {
+		t.Fatalf("did not expect cleartext token auth warning with trusted proxy config, got: %s", logBuf.String())
+	}
 }
 
 func TestManager_PropagatesListenErrors(t *testing.T) {

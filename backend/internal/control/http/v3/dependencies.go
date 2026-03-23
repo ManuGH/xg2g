@@ -42,6 +42,7 @@ type TimerReader interface {
 // ChannelScanner abstracts the refresh/scan subsystem for testability.
 type ChannelScanner interface {
 	RunBackground() bool
+	RunBackgroundForce() bool
 	GetCapability(serviceRef string) (scan.Capability, bool)
 }
 

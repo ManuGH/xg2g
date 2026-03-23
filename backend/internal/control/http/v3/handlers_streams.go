@@ -64,6 +64,9 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 		id := st.ID
 		name := st.ChannelName
 		ip := st.ClientIP
+		clientFamily := st.ClientFamily
+		preferredHLSEngine := st.PreferredHLSEngine
+		deviceType := st.DeviceType
 		start := st.StartedAt
 		detailed := st.DetailedState
 
@@ -107,6 +110,15 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 			StartedAt:     &start,
 			RequestId:     requestID(r.Context()),
 			State:         activeState,
+		}
+		if clientFamily != "" {
+			dto.ClientFamily = &clientFamily
+		}
+		if preferredHLSEngine != "" {
+			dto.PreferredHlsEngine = &preferredHLSEngine
+		}
+		if deviceType != "" {
+			dto.DeviceType = &deviceType
 		}
 
 		// Enrich with EPG if available

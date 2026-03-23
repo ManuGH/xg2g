@@ -330,7 +330,7 @@ export function useLiveSessionController({
       waitedMs: maxAttempts * SESSION_READY_POLL_MS,
       pollMs: SESSION_READY_POLL_MS
     });
-  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, onSessionSnapshot, readResponseBody, t]);
+  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, onSessionSnapshot, readResponseBody, setStatus, t]);
 
   useEffect(() => {
     if (!sessionId || !heartbeatInterval) {

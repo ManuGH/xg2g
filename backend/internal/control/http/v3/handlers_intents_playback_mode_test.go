@@ -61,6 +61,8 @@ func (s *noopIntentScanner) GetCapability(ref string) (scan.Capability, bool) {
 
 func (s *noopIntentScanner) RunBackground() bool { return false }
 
+func (s *noopIntentScanner) RunBackgroundForce() bool { return false }
+
 type noopIntentPreflight struct{}
 
 func (p *noopIntentPreflight) Check(ctx context.Context, ref preflight.SourceRef) (preflight.PreflightResult, error) {

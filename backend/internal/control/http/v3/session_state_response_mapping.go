@@ -31,6 +31,7 @@ func mapSessionStateResponse(reqID string, hlsRoot string, result v3sessions.Get
 		SessionId:     openapi_types.UUID(parseUUID(session.SessionID)),
 		ServiceRef:    &session.ServiceRef,
 		Profile:       &session.Profile.Name,
+		ProfileReason: sessionProfileReason(session),
 		UpdatedAtMs:   toPtr(int(session.UpdatedAtUnix * 1000)),
 		RequestId:     reqID,
 		CorrelationId: &session.CorrelationID,
