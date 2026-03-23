@@ -40,8 +40,10 @@
   /* Surfaces */
   --surface-shell: rgba(11, 16, 26, 0.72);
   --surface-shell-strong: rgba(16, 22, 34, 0.88);
+  --surface-shell-safe: rgba(8, 12, 18, 0.94);
   --surface-panel: rgba(19, 25, 38, 0.72);
   --surface-panel-strong: rgba(23, 30, 45, 0.86);
+  --surface-panel-safe: rgba(20, 28, 40, 0.96);
   --surface-panel-soft: rgba(14, 19, 29, 0.56);
   --surface-highlight: rgba(255, 255, 255, 0.12);
   --surface-muted: rgba(255, 255, 255, 0.04);
@@ -102,6 +104,7 @@
   --shadow-card: 0 20px 40px rgba(0, 0, 0, 0.28);
   --shadow-hover: 0 24px 54px rgba(0, 0, 0, 0.34);
   --shadow-shell: 0 24px 64px rgba(0, 0, 0, 0.3);
+  --shadow-shell-safe: 0 22px 48px rgba(0, 0, 0, 0.42);
   --shadow-accent-live: 0 16px 42px rgba(245, 159, 10, 0.14);
   --shadow-accent-action: 0 16px 42px rgba(74, 144, 245, 0.16);
   --shadow-status-success: 0 0 6px rgba(52, 211, 153, 0.4);
@@ -404,12 +407,18 @@ a:hover {
   border: 4px solid var(--border-elevated);
   border-radius: 50%;
   border-top-color: var(--accent-action);
-  animation: spin 0.9s linear infinite;
+  animation-name: spin;
+  animation-duration: 0.9s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
   will-change: transform;
 }
 
 .animate-startup-progress {
-  animation: startupProgressSlide 1.45s ease-in-out infinite;
+  animation-name: startupProgressSlide;
+  animation-duration: 1.45s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 
 /* ========================================

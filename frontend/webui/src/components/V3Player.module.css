@@ -171,16 +171,16 @@
 }
 
 .spinnerOverlaySafe {
-  background: rgba(8, 12, 18, 0.94);
+  background: var(--surface-shell-safe);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.42);
+  box-shadow: var(--shadow-shell-safe);
 }
 
 .spinnerOverlaySafe .spinnerBadge {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent-action) 16%, white 4%), transparent),
-    rgba(20, 28, 40, 0.96);
+    var(--surface-panel-safe);
   box-shadow: none;
 }
 
