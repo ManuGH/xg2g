@@ -53,11 +53,12 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 	now := time.Now().Unix()
 
 	// CTO Patch 2: Efficient query (NO full-scan)
-	// Filter by: states (new|starting|ready) AND lease_expires_at <= now
+	// Filter by: states (new|starting|priming|ready) AND lease_expires_at <= now
 	filter := store.SessionFilter{
 		States: []model.SessionState{
 			model.SessionNew,
 			model.SessionStarting,
+			model.SessionPriming,
 			model.SessionReady,
 		},
 		LeaseExpiresBefore: now,
@@ -71,7 +72,7 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 
 	expiredCount := 0
 
-	// CTO Patch 3: Already filtered to new|starting|ready by query
+	// CTO Patch 3: Already filtered to new|starting|priming|ready by query
 	for _, session := range sessions {
 		// Determine stop reason based on state
 		var stopReason string
@@ -81,6 +82,9 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 		case model.SessionNew, model.SessionStarting:
 			stopReason = "LEASE_EXPIRED"
 			releaseResources = false // No resources allocated yet
+		case model.SessionPriming:
+			stopReason = "LEASE_EXPIRED"
+			releaseResources = true // Priming already owns runtime resources and must be cleaned up
 		case model.SessionReady:
 			stopReason = "LEASE_EXPIRED"
 			releaseResources = true // Release tuner, cleanup HLS
