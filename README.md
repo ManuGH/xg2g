@@ -27,10 +27,13 @@ observability, fail-closed auth, and operator-friendly health checks built in.
 
 ## What xg2g fixes
 
-| Your Problem | What Changes with xg2g |
+### The Problem It Solves
+
+| Without xg2g | With xg2g |
 | :--- | :--- |
-| Enigma2 MPEG-TS does not play cleanly in Safari or iOS | Browser-ready HLS with H.264/AAC/fMP4 |
+| Enigma2 raw MPEG-TS streams | Browser-ready HLS (fMP4 or native TS) |
 | Every client wants a different stream profile | One server-enforced universal delivery policy |
+| Recordings stuck on the set-top box | Seamless resume state across devices |
 | DIY proxies hide failures until users complain | Health checks, logs, metrics, and clear startup gates |
 | Ad hoc setups drift over time | Versioned images, release automation, and CI-backed changes |
 
@@ -38,7 +41,8 @@ observability, fail-closed auth, and operator-friendly health checks built in.
 
 | Input | Delivery | Good First Targets |
 | :--- | :--- | :--- |
-| Enigma2 live MPEG-TS | HLS with fMP4 segments | Safari, iPhone, iPad, Chrome, current desktop browsers |
+| Enigma2 live MPEG-TS | HLS with fMP4 or TS segments | Safari, iPhone, iPad, Chrome, current desktop browsers |
+| Enigma2 VOD / Recordings | HLS or Direct Play | Local app instances, smart TVs |
 | Enigma2 recordings | Browser-ready playback via the same policy | Web UI, custom integrations, internal operator tools |
 
 ## Quickstart

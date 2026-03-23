@@ -6,7 +6,7 @@ Approved copy for public GitHub surfaces.
 
 **Description**
 
-`Browser-ready HLS gateway for Enigma2. Delivers H.264/AAC/fMP4 to Safari, iPhone, iPad, Chrome, and modern TVs.`
+`Browser-ready HLS gateway for Enigma2. Delivers H.264/AAC/fMP4 and native TS to Safari, iPhone, iPad, Chrome, and modern TVs.`
 
 **Website**
 
