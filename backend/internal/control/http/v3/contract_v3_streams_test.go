@@ -306,13 +306,21 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 		assert.Equal(t, id, list[0].SessionId.String())
 		assert.Equal(t, "req_test_123", list[0].RequestId)
 		assert.Equal(t, StreamSessionStateActive, list[0].State)
+		require.NotNil(t, list[0].DetailedState)
+		assert.Equal(t, StreamSessionDetailedState("active"), *list[0].DetailedState)
 	})
 	t.Run("Lifecycle_Truth_Mapping", func(t *testing.T) {
 		now := time.Now()
 		sessions := []*model.SessionRecord{
 			{
-				SessionID: "buffering",
+				SessionID: "priming",
 				State:     model.SessionPriming,
+			},
+			{
+				SessionID:           "buffering",
+				State:               model.SessionReady,
+				PipelineState:       model.PipeServing,
+				PlaylistPublishedAt: now.Add(-1 * time.Minute),
 			},
 			{
 				SessionID:            "active",
@@ -353,18 +361,26 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 
 		// New governance: Only "running" sessions returned (starting/buffering/active)
 		// Non-running (stalled/idle) are filtered by canonicalize layer
-		require.Len(t, list, 2, "Only running sessions (buffering, active) returned; stalled/idle filtered")
+		require.Len(t, list, 3, "Only running sessions (priming, buffering, active) returned; stalled/idle filtered")
 
 		stateMap := make(map[string]StreamSessionState)
+		detailedStateMap := make(map[string]StreamSessionDetailedState)
 		for _, sess := range list {
 			if sess.Id != nil {
 				stateMap[*sess.Id] = sess.State
+				if sess.DetailedState != nil {
+					detailedStateMap[*sess.Id] = *sess.DetailedState
+				}
 			}
 		}
 
-		// Both running sessions are mapped to "active" state
+		// All running sessions remain backward-compatible as "active"
+		assert.Equal(t, StreamSessionStateActive, stateMap["priming"], "priming lifecycle → active contract state")
 		assert.Equal(t, StreamSessionStateActive, stateMap["buffering"], "buffering lifecycle → active contract state")
 		assert.Equal(t, StreamSessionStateActive, stateMap["active"], "active lifecycle → active contract state")
+		assert.Equal(t, StreamSessionDetailedState("priming"), detailedStateMap["priming"], "priming session preserves detailed state")
+		assert.Equal(t, StreamSessionDetailedState("buffering"), detailedStateMap["buffering"], "ready-but-not-playable session preserves buffering detail")
+		assert.Equal(t, StreamSessionDetailedState("active"), detailedStateMap["active"], "active session preserves detailed state")
 
 		// stalled and idle no longer in response (filtered out)
 		_, hasStalled := stateMap["stalled"]

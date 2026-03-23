@@ -1712,6 +1712,10 @@ components:
         state:
           type: string
           enum: [starting, buffering, active, stalled, ending, idle, error]
+        detailedState:
+          type: string
+          description: Fine-grained diagnostic state for running sessions.
+          enum: [starting, priming, buffering, active, stalled, ending, idle, error]
         program:
           type: object
           properties:
