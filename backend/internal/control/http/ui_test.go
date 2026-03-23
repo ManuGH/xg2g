@@ -63,6 +63,23 @@ func TestUIHandler_AssetsCached(t *testing.T) {
 	}
 }
 
+func TestUIHandler_SPARoutesServeIndexHTML(t *testing.T) {
+	handler := UIHandler(UIConfig{CSP: "default-src 'self'"})
+
+	req := httptest.NewRequest(http.MethodGet, "/epg", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected SPA route to return 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Fatalf("expected SPA route to return HTML, got %q", contentType)
+	}
+}
+
 // TestUIHandler_CSPHeader verifies CSP header is set from config
 func TestUIHandler_CSPHeader(t *testing.T) {
 	testCSP := "default-src 'self'; media-src blob:"

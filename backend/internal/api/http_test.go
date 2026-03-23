@@ -334,6 +334,51 @@ func TestLegacyFilesRoutesRemoved(t *testing.T) {
 	}
 }
 
+func TestRootUIFallback_ServesHTMLForBrowserRoutes(t *testing.T) {
+	server := mustNewServer(t, config.AppConfig{
+		DataDir: t.TempDir(),
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}, config.NewManager(""))
+	handler := server.Handler()
+
+	for _, path := range []string{"/epg", "/egp", "/recordings"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Header.Set("Accept", "text/html,application/xhtml+xml")
+
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			assert.NotEqual(t, http.StatusNotFound, rr.Code)
+			assert.Contains(t, rr.Header().Get("Content-Type"), "text/html")
+		})
+	}
+}
+
+func TestRootUIFallback_KeepsReservedPrefixesAs404(t *testing.T) {
+	server := mustNewServer(t, config.AppConfig{
+		DataDir: t.TempDir(),
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}, config.NewManager(""))
+	handler := server.Handler()
+
+	for _, path := range []string{"/api", "/api/unknown", "/auth/session", "/stream/live", "/internal/missing", "/Items/test"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Header.Set("Accept", "text/html,application/xhtml+xml")
+
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			assert.Equal(t, http.StatusNotFound, rr.Code)
+		})
+	}
+}
+
 func TestMiddlewareChain(t *testing.T) {
 	server := mustNewServer(t, config.AppConfig{
 		APIToken:       "test-token",

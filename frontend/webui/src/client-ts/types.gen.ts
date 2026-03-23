@@ -1048,6 +1048,10 @@ export type StreamSession = {
     channelName?: string;
     startedAt?: string;
     state: 'starting' | 'buffering' | 'active' | 'stalled' | 'ending' | 'idle' | 'error';
+    /**
+     * Fine-grained diagnostic state for running sessions.
+     */
+    detailedState?: 'starting' | 'priming' | 'buffering' | 'active' | 'stalled' | 'ending' | 'idle' | 'error';
     program?: {
         title?: string;
         description?: string;

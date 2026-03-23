@@ -115,7 +115,7 @@ describe('V3Player Mobile Controls', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders a fullscreen control and uses wrapper fullscreen on touch devices when hls.js is active', async () => {
+  it('keeps wrapper fullscreen on touch devices when native HLS is preferred', async () => {
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -123,7 +123,7 @@ describe('V3Player Mobile Controls', () => {
     const { container } = render(<V3Player {...props} />);
 
     await waitFor(() => {
-      expect(Hls).toHaveBeenCalled();
+      expect(Hls).not.toHaveBeenCalled();
     });
 
     const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
@@ -136,7 +136,7 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.queryByRole('button', { name: /player\.dvrMode/i })).not.toBeInTheDocument();
   });
 
-  it('keeps volume controls visible on mobile WebKit when the hls.js path is active', async () => {
+  it('hides volume controls on mobile WebKit when the native HLS path is active', async () => {
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -144,10 +144,10 @@ describe('V3Player Mobile Controls', () => {
     render(<V3Player {...props} />);
 
     await waitFor(() => {
-      expect(Hls).toHaveBeenCalled();
+      expect(Hls).not.toHaveBeenCalled();
     });
 
-    expect(screen.getByRole('slider')).toBeInTheDocument();
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /player\.pipLabel/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });

@@ -28,3 +28,21 @@ func canonicalRunningState(sessionID string, state model.LifecycleState) (string
 		return "", fmt.Errorf("unknown lifecycle state %q for session %s", state, sessionID)
 	}
 }
+
+// detailedRunningState preserves the more precise diagnostic state for running
+// sessions while the public `state` field stays backward-compatible as `active`.
+func detailedRunningState(sessionID string, sessionState model.SessionState, lifecycleState model.LifecycleState) (string, error) {
+	switch lifecycleState {
+	case model.LifecycleStarting:
+		return string(model.LifecycleStarting), nil
+	case model.LifecycleBuffering:
+		if sessionState == model.SessionPriming {
+			return "priming", nil
+		}
+		return string(model.LifecycleBuffering), nil
+	case model.LifecycleActive, model.LifecycleStalled, model.LifecycleEnding, model.LifecycleIdle, model.LifecycleError:
+		return string(lifecycleState), nil
+	default:
+		return "", fmt.Errorf("unknown detailed lifecycle state %q for session %s", lifecycleState, sessionID)
+	}
+}

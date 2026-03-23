@@ -49,12 +49,19 @@ export async function probeRuntimePlaybackCapabilities(
   const nativeHls = probeNativeHls(videoEl);
   const supportsAc3 = scope === 'live' && probeAc3(videoEl);
   const preferNativeHls = shouldPreferNativeWebKitHls(videoEl, hlsJsSupported);
+  const preferredHlsEngine: RuntimeHlsEngine | null =
+    hlsJsSupported && !preferNativeHls ? 'hlsjs' :
+      nativeHls ? 'native' :
+        hlsJsSupported ? 'hlsjs' : null;
 
   const hlsEngines: RuntimeHlsEngine[] = [];
-  if (nativeHls) {
+  if (preferredHlsEngine) {
+    hlsEngines.push(preferredHlsEngine);
+  }
+  if (nativeHls && preferredHlsEngine !== 'native') {
     hlsEngines.push('native');
   }
-  if (hlsJsSupported && !preferNativeHls) {
+  if (hlsJsSupported && preferredHlsEngine !== 'hlsjs' && !preferNativeHls) {
     hlsEngines.push('hlsjs');
   }
 
@@ -73,7 +80,7 @@ export async function probeRuntimePlaybackCapabilities(
     usedRuntimeProbe: true,
     nativeHls,
     hlsJs: hlsJsSupported,
-    preferredHlsEngine: hlsEngines[0] ?? null,
+    preferredHlsEngine,
     hlsEngines: dedupeStrings(hlsEngines),
     containers: dedupeStrings(containers),
     videoCodecs: dedupeStrings(preferredCodecs),

@@ -353,4 +353,62 @@ describe('Player session journeys', () => {
 
     expect(screen.queryByRole('heading', { name: 'Session Expired' })).toBeNull();
   });
+
+  it('re-exchanges the auth session on a new playback start and fails closed when the exchange is rejected', async () => {
+    const fetchMock = installPlayerFetchMock({
+      sessionStatus: 410,
+      sessionBody: {
+        status: 410,
+        code: 'SESSION_GONE',
+        reason: 'LEASE_EXPIRED',
+        reason_detail: 'Lease expired',
+        requestId: 'req-session-expired',
+      },
+    });
+
+    mockCreateSession
+      .mockResolvedValueOnce({
+        data: {},
+        error: undefined,
+        response: { status: 200 },
+      })
+      .mockResolvedValueOnce({
+        error: {
+          status: 400,
+          title: 'HTTPS required',
+          detail: 'session exchange requires HTTPS or a trusted HTTPS proxy; plain HTTP is only accepted from loopback',
+          requestId: 'req-auth-session-https',
+        },
+        response: { status: 400 },
+      });
+
+    renderJourney(ROUTE_MAP.epg);
+
+    await screen.findByText('EPG launcher ready');
+    fireEvent.click(screen.getByRole('button', { name: 'Launch player' }));
+
+    await waitFor(() => {
+      expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /common\.retry|Retry/i }));
+
+    await waitFor(() => {
+      expect(mockCreateSession).toHaveBeenCalledTimes(2);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/HTTPS required/i)).toBeInTheDocument();
+    });
+
+    const startIntentCalls = (fetchMock as any).mock.calls.filter((call: any[]) => {
+      if (!String(call[0]).includes('/intents')) return false;
+      try {
+        const body = JSON.parse(String(call[1]?.body ?? '{}'));
+        return body?.type === 'stream.start';
+      } catch {
+        return false;
+      }
+    });
+    expect(startIntentCalls).toHaveLength(1);
+  });
 });

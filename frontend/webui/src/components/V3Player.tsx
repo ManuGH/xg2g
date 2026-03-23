@@ -33,6 +33,7 @@ import {
   PlayerError,
   readResponseBody,
   extractCapHashFromDecisionToken,
+  hasTouchInput,
   canUseDesktopWebKitFullscreen,
   shouldForceNativeMobileHls,
   shouldPreferNativeWebKitHls
@@ -456,6 +457,7 @@ function V3Player(props: V3PlayerProps) {
     return getApiBaseUrl();
   }, []);
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
+  const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
 
   const {
     sessionIdRef,
@@ -1321,7 +1323,7 @@ function V3Player(props: V3PlayerProps) {
 
   const handleRetry = useCallback(async () => {
     try {
-      await stopStream();
+      await stopStream(true);
     } finally {
       startIntentInFlight.current = false;
       void startStream();
@@ -1444,6 +1446,7 @@ function V3Player(props: V3PlayerProps) {
   const fallbackSummary = formatFallbackSummary(sessionPlaybackTrace);
   const stopSummary = formatStopSummary(sessionPlaybackTrace);
   const hostPressureSummary = formatHostPressureSummary(effectiveHostPressureBand, effectiveHostOverrideApplied);
+  const showVerboseErrorTelemetry = !isCompactTouchLayout;
 
   return (
     <div
@@ -1658,7 +1661,7 @@ function V3Player(props: V3PlayerProps) {
               <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
             ) : null}
           </div>
-          {(stopSummary !== '-' || fallbackSummary !== '-' || ffmpegPlanSummary !== '-' || hostPressureSummary !== '-') && (
+          {showVerboseErrorTelemetry && (stopSummary !== '-' || fallbackSummary !== '-' || ffmpegPlanSummary !== '-' || hostPressureSummary !== '-') && (
             <div className={styles.errorTelemetry}>
               {stopSummary !== '-' && (
                 <div className={styles.errorTelemetryRow}>

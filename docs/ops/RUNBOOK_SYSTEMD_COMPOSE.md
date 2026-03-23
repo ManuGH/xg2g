@@ -89,6 +89,11 @@ use `systemctl restart xg2g` and verify container health via Docker.
 ### Security Notes (Minimum)
 - `/etc/xg2g/xg2g.env` must be `root:root` and `0600` (contains secrets).
 - Credentials embedded in URLs are a known risk; prefer separate user/pass variables or secret files when available.
+- Browser-facing deployments must use HTTPS directly or a trusted HTTPS proxy.
+  Plain HTTP is acceptable only for same-host loopback access. For non-loopback
+  browsers, `/api/v3/auth/session` rejects plain HTTP, the `xg2g_session`
+  cookie is not issued, and native HLS playback can fail with `HTTPS required`,
+  media `401`, or generic `Video Error: 4` surfaces.
 ```bash
 chown root:root /etc/xg2g/xg2g.env
 chmod 600 /etc/xg2g/xg2g.env
@@ -117,6 +122,7 @@ journalctl -u xg2g -f
   - `XG2G_API_TOKEN` — control plane bearer token.
   - `XG2G_DECISION_SECRET` — live stream JWT signing key, min 32 bytes. See `docs/ops/SECURITY.md` for generation and rotation procedure.
 * **Crash Loop**: If running manually via `docker compose` without the systemd safety checks, the container may restart indefinitely on missing config. Use `systemctl start` for fail-closed protection.
+* **Remote browser playback fails with `HTTPS required`, media `401`, or `Video Error: 4`**: the browser is likely reaching xg2g over plain HTTP. Put `/ui/` and `/api/v3/` behind HTTPS or a trusted HTTPS proxy, then verify the browser can complete `POST /api/v3/auth/session` and receive the `xg2g_session` cookie.
 
 ### AI / Incident Triage Order
 When a future AI or operator debugs a failed `systemctl start xg2g` or `systemctl restart xg2g`, use this order and do not assume repo docs match the live host:
