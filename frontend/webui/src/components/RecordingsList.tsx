@@ -18,7 +18,7 @@ import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
 import styles from './Recordings.module.css';
 
-const V3Player = lazy(() => import('./V3Player'));
+const V3Player = lazy(() => import('../features/player/components/V3Player'));
 
 // Simple Icons
 const FolderIcon = ({ className }: { className?: string }) => (

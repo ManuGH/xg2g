@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
-import Hls from '../features/player/lib/hlsRuntime';
+import Hls from '../lib/hlsRuntime';
 import {
   postRecordingPlaybackInfo,
   type PlaybackCapabilities as PlaybackCapabilitiesContract,
@@ -11,9 +11,9 @@ import {
   type PlaybackTraceFfmpegPlan,
   type PlaybackTraceOperator,
   type PlaybackTargetProfile,
-} from '../client-ts';
-import { getApiBaseUrl } from '../lib/clientWrapper';
-import { telemetry } from '../services/TelemetryService';
+} from '../../../client-ts';
+import { getApiBaseUrl } from '../../../lib/clientWrapper';
+import { telemetry } from '../../../services/TelemetryService';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -21,15 +21,15 @@ import type {
   V3SessionStatusResponse,
   HlsInstanceRef,
   VideoElementRef
-} from '../types/v3-player';
-import { useLiveSessionController } from '../features/player/useLiveSessionController';
-import { usePlaybackEngine } from '../features/player/usePlaybackEngine';
-import { usePlayerChrome } from '../features/player/usePlayerChrome';
-import { resolveStartupOverlayLabel, resolveStartupOverlaySupport } from '../features/player/startupOverlayLabel';
-import { useResume } from '../features/resume/useResume';
-import { ResumeState } from '../features/resume/api';
-import { Button, Card, StatusChip } from './ui';
-import { debugError, debugLog, debugWarn } from '../utils/logging';
+} from '../../../types/v3-player';
+import { useLiveSessionController } from '../useLiveSessionController';
+import { usePlaybackEngine } from '../usePlaybackEngine';
+import { usePlayerChrome } from '../usePlayerChrome';
+import { resolveStartupOverlayLabel, resolveStartupOverlaySupport } from '../startupOverlayLabel';
+import { useResume } from '../../resume/useResume';
+import { ResumeState } from '../../resume/api';
+import { Button, Card, StatusChip } from '../../../components/ui';
+import { debugError, debugLog, debugWarn } from '../../../utils/logging';
 import {
   PlayerError,
   readResponseBody,
@@ -38,12 +38,12 @@ import {
   canUseDesktopWebKitFullscreen,
   shouldForceNativeMobileHls,
   shouldPreferNativeWebKitHls
-} from '../features/player/utils/playerHelpers';
-import { detectPlaybackClientFamily } from '../features/player/utils/playbackClientFamily';
-import { probeRuntimePlaybackCapabilities } from '../features/player/utils/playbackProbe';
-import { normalizePlayerError } from '../lib/appErrors';
-import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
-import type { AppError } from '../types/errors';
+} from '../utils/playerHelpers';
+import { detectPlaybackClientFamily } from '../utils/playbackClientFamily';
+import { probeRuntimePlaybackCapabilities } from '../utils/playbackProbe';
+import { normalizePlayerError } from '../../../lib/appErrors';
+import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
+import type { AppError } from '../../../types/errors';
 import styles from './V3Player.module.css';
 
 interface ApiErrorResponse {

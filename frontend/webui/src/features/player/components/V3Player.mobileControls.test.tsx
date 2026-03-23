@@ -2,10 +2,10 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import V3Player from './V3Player';
-import Hls from '../features/player/lib/hlsRuntime';
-import type { V3PlayerProps } from '../types/v3-player';
+import Hls from '../lib/hlsRuntime';
+import type { V3PlayerProps } from '../../../types/v3-player';
 
-vi.mock('../features/player/lib/hlsRuntime', () => {
+vi.mock('../lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),
