@@ -164,8 +164,8 @@ Observed live-host delta on March 17, 2026:
 
 Observed live-host delta on March 17, 2026 (image truth):
 - `/etc/systemd/system/xg2g.service` derives the image to preflight from `/srv/xg2g/docker-compose.yml`; it is not a separate image source of truth.
-- When `/srv/xg2g/docker-compose.yml` points at `ghcr.io/manugh/xg2g:v3.4.0`, a locally built `xg2g:local` image is insufficient for `systemctl restart xg2g.service`.
-- Symptom: `ExecStartPre` fails with `No such image: ghcr.io/manugh/xg2g:v3.4.0` before Compose can start anything.
+- When `/srv/xg2g/docker-compose.yml` points at `ghcr.io/manugh/xg2g:v3.4.1`, a locally built `xg2g:local` image is insufficient for `systemctl restart xg2g.service`.
+- Symptom: `ExecStartPre` fails with `No such image: ghcr.io/manugh/xg2g:v3.4.1` before Compose can start anything.
 - Operational rule: for hotfix deploys, either build/tag the image under the compose-pinned reference or update the live compose file first. Do not patch the installed unit under the assumption that it owns image truth.
 
 Observed live-host delta on March 17, 2026 (GPU contract drift):

@@ -18,12 +18,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/app/bootstrap"
 	xglog "github.com/ManuGH/xg2g/internal/log"
-)
-
-var (
-	version   = "v3.4.0"
-	commit    = "dev"
-	buildDate = "unknown"
+	appversion "github.com/ManuGH/xg2g/internal/version"
 )
 
 // maskURL removes user info from a URL string for safe logging.
@@ -150,17 +145,23 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("%s (commit: %s, built: %s)\n", version, commit, buildDate)
+		fmt.Printf("%s (commit: %s, built: %s)\n", appversion.Version, appversion.Commit, appversion.Date)
 		os.Exit(0)
 	}
 
-	xglog.Configure(xglog.Config{Level: "info", Service: "xg2g", Version: version})
+	xglog.Configure(xglog.Config{Level: "info", Service: "xg2g", Version: appversion.Version})
 	logger := xglog.WithComponent("daemon")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	container, err := bootstrap.WireServices(ctx, version, commit, buildDate, strings.TrimSpace(*configPath))
+	container, err := bootstrap.WireServices(
+		ctx,
+		appversion.Version,
+		appversion.Commit,
+		appversion.Date,
+		strings.TrimSpace(*configPath),
+	)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to wire daemon services")
 	}
