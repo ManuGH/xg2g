@@ -71,6 +71,7 @@ type ProfileSpec struct {
 	HWAccel        string `json:"hwAccel,omitempty"`    // "vaapi", "vaapi_encode_only", "qsv", "nvenc", etc.
 	Deinterlace    bool   `json:"deinterlace,omitempty"`
 	VideoCRF       int    `json:"videoCrf,omitempty"`
+	VideoQP        int    `json:"videoQp,omitempty"`
 	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`
 	VideoMaxRateK  int    `json:"videoMaxRateK,omitempty"`
 	VideoBufSizeK  int    `json:"videoBufSizeK,omitempty"`

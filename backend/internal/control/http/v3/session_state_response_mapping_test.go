@@ -15,6 +15,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,6 +67,27 @@ func TestWriteSessionStateResponse_WritesJSONAndTraceHeader(t *testing.T) {
 	assert.Equal(t, V3BaseURL+"/sessions/550e8400-e29b-41d4-a716-446655440001/hls/index.m3u8", *body.PlaybackUrl)
 	require.NotNil(t, body.DurationSeconds)
 	assert.Equal(t, float32(3600), *body.DurationSeconds)
+}
+
+func TestMapSessionStateResponse_IncludesProfileReasonForSafariTranscode(t *testing.T) {
+	resp := mapSessionStateResponse("req-profile-reason", "", v3sessions.GetSessionResult{
+		Session: &model.SessionRecord{
+			SessionID:     "550e8400-e29b-41d4-a716-446655440002",
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			Profile:       model.ProfileSpec{Name: profiles.ProfileSafari, TranscodeVideo: true},
+			State:         model.SessionPriming,
+			CorrelationID: "corr-safari",
+		},
+		Outcome: lifecycle.PublicOutcome{
+			State:      model.SessionPriming,
+			Reason:     model.RNone,
+			DetailCode: model.DNone,
+		},
+		PlaybackInfo: v3sessions.SessionPlaybackInfo{Mode: model.ModeLive},
+	})
+
+	require.NotNil(t, resp.ProfileReason)
+	assert.Equal(t, sessionProfileReasonSafariCompatTranscode, *resp.ProfileReason)
 }
 
 func float64Ptr(v float64) *float64 { return &v }

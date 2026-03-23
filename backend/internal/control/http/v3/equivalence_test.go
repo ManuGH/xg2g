@@ -41,9 +41,9 @@ func getSystemHealth_Legacy(s *Server, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respH := hm.Health(r.Context(), true)
-	status := SystemHealthStatusOk
+	status := Ok
 	if respH.Status != health.StatusHealthy {
-		status = SystemHealthStatusDegraded
+		status = Degraded
 	}
 	receiverStatus := ComponentStatusStatusOk
 	if res, ok := respH.Checks["receiver_connection"]; ok {

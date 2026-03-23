@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/stretchr/testify/assert"
@@ -74,7 +75,8 @@ func TestNormalizeProgramDateTimeLine(t *testing.T) {
 
 // MockStore implements model.Store for testing
 type MockStore struct {
-	Session *model.SessionRecord
+	Session            *model.SessionRecord
+	UpdateSessionCalls int
 }
 
 func (m *MockStore) GetSession(ctx context.Context, sessionID string) (*model.SessionRecord, error) {
@@ -110,6 +112,66 @@ func (m *MockStore) Delete(ctx context.Context, sessionID string) error {
 		m.Session = nil
 	}
 	return nil
+}
+
+func (m *MockStore) UpdateSession(ctx context.Context, sessionID string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error) {
+	if m.Session == nil || m.Session.SessionID != sessionID {
+		return nil, os.ErrNotExist
+	}
+	m.UpdateSessionCalls++
+	if err := fn(m.Session); err != nil {
+		return nil, err
+	}
+	return m.Session, nil
+}
+
+func TestTouchPlaylistAccessTime_AllowsInitialPlaylistTouchAfterReady(t *testing.T) {
+	now := time.Now()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:      "sid-1",
+			LastAccessUnix: now.Unix(),
+		},
+	}
+	rec := &model.SessionRecord{
+		SessionID:      "sid-1",
+		LastAccessUnix: now.Unix(),
+	}
+
+	touchPlaylistAccessTime(context.Background(), store, hlsRequest{
+		sessionID:  "sid-1",
+		filename:   "index.m3u8",
+		isPlaylist: true,
+	}, rec)
+
+	require.Equal(t, 1, store.UpdateSessionCalls)
+	require.False(t, store.Session.LastPlaylistAccessAt.IsZero())
+	require.Equal(t, store.Session.LastPlaylistAccessAt.Unix(), store.Session.LastAccessUnix)
+}
+
+func TestTouchPlaylistAccessTime_ThrottlesRepeatedPlaylistTouch(t *testing.T) {
+	now := time.Now()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:            "sid-2",
+			LastAccessUnix:       now.Unix(),
+			LastPlaylistAccessAt: now,
+		},
+	}
+	rec := &model.SessionRecord{
+		SessionID:            "sid-2",
+		LastAccessUnix:       now.Unix(),
+		LastPlaylistAccessAt: now,
+	}
+
+	touchPlaylistAccessTime(context.Background(), store, hlsRequest{
+		sessionID:  "sid-2",
+		filename:   "index.m3u8",
+		isPlaylist: true,
+	}, rec)
+
+	require.Equal(t, 0, store.UpdateSessionCalls)
+	require.True(t, store.Session.LastPlaylistAccessAt.Equal(now))
 }
 
 func TestServeHLS_DVRWithStartTag(t *testing.T) {

@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@27fdb267c15a8835f1ead03dfa07f89be2bb741a # v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -40,6 +40,6 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> 2" # pin to v2.x; bump intentionally when v3 ships
-          args: release --clean
+          args: release --clean --timeout 2h
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

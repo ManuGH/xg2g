@@ -70,7 +70,6 @@ describe('V3Player Mobile Controls', () => {
     });
 
     if (requestPictureInPictureDescriptor) {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).requestPictureInPicture;
     }
 
@@ -84,27 +83,23 @@ describe('V3Player Mobile Controls', () => {
     if (webkitEnterFullscreenDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
     }
 
     if (requestPictureInPictureDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'requestPictureInPicture', requestPictureInPictureDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).requestPictureInPicture;
     }
     if (requestFullscreenDescriptor) {
       Object.defineProperty(HTMLDivElement.prototype, 'requestFullscreen', requestFullscreenDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLDivElement.prototype as any).requestFullscreen;
     }
 
     if (pictureInPictureEnabledDescriptor) {
       Object.defineProperty(document, 'pictureInPictureEnabled', pictureInPictureEnabledDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (document as any).pictureInPictureEnabled;
     }
 
@@ -115,7 +110,7 @@ describe('V3Player Mobile Controls', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders a fullscreen control and uses wrapper fullscreen on touch devices when hls.js is active', async () => {
+  it('keeps wrapper fullscreen on touch devices when native HLS is preferred', async () => {
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -123,7 +118,7 @@ describe('V3Player Mobile Controls', () => {
     const { container } = render(<V3Player {...props} />);
 
     await waitFor(() => {
-      expect(Hls).toHaveBeenCalled();
+      expect(Hls).not.toHaveBeenCalled();
     });
 
     const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
@@ -136,7 +131,7 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.queryByRole('button', { name: /player\.dvrMode/i })).not.toBeInTheDocument();
   });
 
-  it('keeps volume controls visible on mobile WebKit when the hls.js path is active', async () => {
+  it('hides volume controls on mobile WebKit when the native HLS path is active', async () => {
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -144,10 +139,10 @@ describe('V3Player Mobile Controls', () => {
     render(<V3Player {...props} />);
 
     await waitFor(() => {
-      expect(Hls).toHaveBeenCalled();
+      expect(Hls).not.toHaveBeenCalled();
     });
 
-    expect(screen.getByRole('slider')).toBeInTheDocument();
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /player\.pipLabel/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });

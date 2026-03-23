@@ -14,42 +14,49 @@ import (
 
 func TestTerminalOutcome_TruthTable(t *testing.T) {
 	t.Run("stop intent wins over cancel", func(t *testing.T) {
-		out := TerminalOutcome(true, PhaseStart, context.Canceled)
+		out := TerminalOutcome(true, model.RClientStop, PhaseStart, context.Canceled)
 		assert.Equal(t, model.SessionStopped, out.State)
 		assert.Equal(t, model.RClientStop, out.Reason)
 		assert.Equal(t, model.DNone, out.DetailCode)
 	})
 
 	t.Run("stop intent wins over deadline exceeded", func(t *testing.T) {
-		out := TerminalOutcome(true, PhaseStart, context.DeadlineExceeded)
+		out := TerminalOutcome(true, "", PhaseStart, context.DeadlineExceeded)
 		assert.Equal(t, model.SessionStopped, out.State)
 		assert.Equal(t, model.RClientStop, out.Reason)
 		assert.Equal(t, model.DNone, out.DetailCode)
 	})
 
+	t.Run("stop intent preserves idle timeout reason", func(t *testing.T) {
+		out := TerminalOutcome(true, model.RIdleTimeout, PhaseRunning, context.Canceled)
+		assert.Equal(t, model.SessionStopped, out.State)
+		assert.Equal(t, model.RIdleTimeout, out.Reason)
+		assert.Equal(t, model.DNone, out.DetailCode)
+	})
+
 	t.Run("plain cancel maps to cancelled", func(t *testing.T) {
-		out := TerminalOutcome(false, PhaseStart, context.Canceled)
+		out := TerminalOutcome(false, "", PhaseStart, context.Canceled)
 		assert.Equal(t, model.SessionCancelled, out.State)
 		assert.Equal(t, model.RCancelled, out.Reason)
 		assert.Equal(t, model.DContextCanceled, out.DetailCode)
 	})
 
 	t.Run("deadline exceeded during start maps to tune timeout", func(t *testing.T) {
-		out := TerminalOutcome(false, PhaseStart, context.DeadlineExceeded)
+		out := TerminalOutcome(false, "", PhaseStart, context.DeadlineExceeded)
 		assert.Equal(t, model.SessionFailed, out.State)
 		assert.Equal(t, model.RTuneTimeout, out.Reason)
 		assert.Equal(t, model.DDeadlineExceeded, out.DetailCode)
 	})
 
 	t.Run("deadline exceeded outside start is distinct", func(t *testing.T) {
-		out := TerminalOutcome(false, PhaseRunning, context.DeadlineExceeded)
+		out := TerminalOutcome(false, "", PhaseRunning, context.DeadlineExceeded)
 		assert.Equal(t, model.SessionFailed, out.State)
 		assert.Equal(t, model.RDeadlineExceeded, out.Reason)
 		assert.Equal(t, model.DDeadlineExceeded, out.DetailCode)
 	})
 
 	t.Run("vod completion returns draining", func(t *testing.T) {
-		out := TerminalOutcome(false, PhaseVODComplete, nil)
+		out := TerminalOutcome(false, "", PhaseVODComplete, nil)
 		assert.Equal(t, model.SessionDraining, out.State)
 		assert.Equal(t, model.RNone, out.Reason)
 		assert.Equal(t, model.DRecordingComplete, out.DetailCode)
@@ -81,7 +88,7 @@ func TestTerminalOutcome_StopWinsRace(t *testing.T) {
 	<-done
 
 	holder := errVal.Load().(errHolder)
-	out := TerminalOutcome(stopIntent.Load(), PhaseStart, holder.err)
+	out := TerminalOutcome(stopIntent.Load(), model.RClientStop, PhaseStart, holder.err)
 	assert.Equal(t, model.SessionStopped, out.State)
 	assert.Equal(t, model.RClientStop, out.Reason)
 	assert.Equal(t, model.DNone, out.DetailCode)

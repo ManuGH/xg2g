@@ -147,7 +147,11 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 
 	now := time.Now()
 	nowUnix := now.Unix()
-	if rec.LastAccessUnix != 0 && nowUnix-rec.LastAccessUnix < minAccessUpdateIntervalSec {
+	// The first successful playlist GET after READY must always win, even if the
+	// session just transitioned to READY and LastAccessUnix was set during startup.
+	if !rec.LastPlaylistAccessAt.IsZero() &&
+		rec.LastAccessUnix != 0 &&
+		nowUnix-rec.LastAccessUnix < minAccessUpdateIntervalSec {
 		return
 	}
 
@@ -159,7 +163,9 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 		if r == nil {
 			return nil
 		}
-		if r.LastAccessUnix != 0 && nowUnix-r.LastAccessUnix < minAccessUpdateIntervalSec {
+		if !r.LastPlaylistAccessAt.IsZero() &&
+			r.LastAccessUnix != 0 &&
+			nowUnix-r.LastAccessUnix < minAccessUpdateIntervalSec {
 			return nil
 		}
 		r.LastAccessUnix = nowUnix

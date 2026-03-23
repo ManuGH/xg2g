@@ -25,16 +25,21 @@ type StreamsQuery struct {
 
 // StreamSession is a control-layer representation of an active stream.
 type StreamSession struct {
-	ID          string
-	ChannelName string
-	ServiceRef  string
-	ClientIP    string
-	StartedAt   time.Time
-	State       string // "active" (strict, non-terminal)
-	Program     string
-	Description string
-	StartTime   int64
-	EndTime     int64
+	ID                 string
+	ChannelName        string
+	ServiceRef         string
+	ClientIP           string
+	ClientFamily       string
+	PreferredHLSEngine string
+	DeviceType         string
+	StartedAt          time.Time
+	State              string // "active" (strict, non-terminal)
+	// DetailedState preserves the finer-grained diagnostic view for running sessions.
+	DetailedState string
+	Program       string
+	Description   string
+	StartTime     int64
+	EndTime       int64
 }
 
 // StateStore defines the read interface needed from the session store.
@@ -54,6 +59,7 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 	if err != nil {
 		return []StreamSession{}, err
 	}
+	now := time.Now()
 
 	// 2. Resolve Channel Names (Best Effort)
 	nameMap := make(map[string]string)
@@ -88,18 +94,27 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		if r.State.IsTerminal() {
 			continue
 		}
+		// Fail-closed: sessions with an expired lease are no longer worker-owned and
+		// must not surface as running, even if cleanup has not caught up yet.
+		if r.LeaseExpiresAtUnix > 0 && now.Unix() >= r.LeaseExpiresAtUnix {
+			continue
+		}
 
 		serviceRef := CanonicalServiceRef(r.ServiceRef)
 
 		// Map State: Domain → Contract
 		// Use the deterministic truth engine (PR-P3-2)
-		lifecycleState := model.DeriveLifecycleState(r, time.Now())
+		lifecycleState := model.DeriveLifecycleState(r, now)
 
 		// Canonicalize: running states → "active", non-running → filter, unknown → fail
 		contractState, err := canonicalRunningState(r.SessionID, lifecycleState)
 		if err != nil {
 			// Fail-closed: unknown state leaked into provider
 			return []StreamSession{}, fmt.Errorf("state canonicalization failed: %w", err)
+		}
+		detailedState, err := detailedRunningState(r.SessionID, r.State, lifecycleState)
+		if err != nil {
+			return []StreamSession{}, fmt.Errorf("detailed state derivation failed: %w", err)
 		}
 		if contractState == "" {
 			// Non-running state (stalled/ending/idle/error) → filter out
@@ -119,6 +134,14 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 				ip = val
 			}
 		}
+		clientFamily := ""
+		preferredHLSEngine := ""
+		deviceType := ""
+		if r.ContextData != nil {
+			clientFamily = strings.TrimSpace(r.ContextData[model.CtxKeyClientFamily])
+			preferredHLSEngine = strings.TrimSpace(r.ContextData[model.CtxKeyPreferredEngine])
+			deviceType = strings.TrimSpace(r.ContextData[model.CtxKeyDeviceType])
+		}
 
 		// StartedAt
 		var startedAt time.Time
@@ -127,12 +150,16 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		}
 
 		sessions = append(sessions, StreamSession{
-			ID:          r.SessionID,
-			ChannelName: name,
-			ServiceRef:  serviceRef,
-			ClientIP:    ip,
-			StartedAt:   startedAt,
-			State:       contractState,
+			ID:                 r.SessionID,
+			ChannelName:        name,
+			ServiceRef:         serviceRef,
+			ClientIP:           ip,
+			ClientFamily:       clientFamily,
+			PreferredHLSEngine: preferredHLSEngine,
+			DeviceType:         deviceType,
+			StartedAt:          startedAt,
+			State:              contractState,
+			DetailedState:      detailedState,
 		})
 	}
 

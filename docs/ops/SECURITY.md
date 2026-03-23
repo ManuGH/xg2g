@@ -24,6 +24,11 @@ To protect against Cross-Site Request Forgery (CSRF) while maintaining API usabi
   plain HTTP for smoke tests and one-box development.
 - Any browser-facing deployment reached from another device or hostname must be
   served over HTTPS, either directly in xg2g or through a trusted HTTPS proxy.
+- When xg2g is intentionally deployed behind a trusted HTTPS proxy, the backend
+  hop from proxy to xg2g may remain plain HTTP on an internal network. Startup
+  cleartext-token warnings are therefore suppressed when `trustedProxies` is
+  configured. Direct cleartext access to the xg2g listener is still an operator
+  responsibility and should remain LAN-scoped or otherwise blocked.
 - If xg2g sees a non-loopback browser request as plain HTTP,
   `POST /api/v3/auth/session` fails closed with `400 HTTPS required`. The
   `xg2g_session` cookie is not minted, native HLS media requests to

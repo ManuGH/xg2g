@@ -103,7 +103,9 @@ backend/internal/control/http/v3/openapi.yaml
 # ==============================================================================
 # IDE & System
 # ==============================================================================
-.vscode/
+.vscode/*
+**/.vscode/*
+!.vscode/extensions.json
 .idea/
 .DS_Store
 ._*

@@ -188,7 +188,6 @@ describe('V3Player ServiceRef Input', () => {
           webkitSupportsPresentationModeDescriptor
         );
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
       }
 
@@ -318,7 +317,6 @@ describe('V3Player ServiceRef Input', () => {
           webkitSupportsPresentationModeDescriptor
         );
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
       }
 

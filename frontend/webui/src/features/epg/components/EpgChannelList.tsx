@@ -363,6 +363,45 @@ export function EpgChannelList({
     });
   }, [channels]);
 
+  // Search mode: group events by channel, show top 2 + expandable rest.
+  const searchGroups = React.useMemo(() => {
+    const groups: Array<[string, EpgEvent[]]> = [];
+
+    for (const [serviceRef, events] of eventsByServiceRef.entries()) {
+      if (events.length === 0) continue;
+
+      // Sort events: NOW first, then chronological.
+      const sorted = [...events].sort((a, b) => {
+        const aNow = a.start <= currentTime && a.end > currentTime ? 0 : 1;
+        const bNow = b.start <= currentTime && b.end > currentTime ? 0 : 1;
+        if (aNow !== bNow) return aNow - bNow;
+        return a.start - b.start;
+      });
+
+      groups.push([serviceRef, sorted]);
+    }
+
+    // Sort groups by channel number/name.
+    groups.sort(([refA], [refB]) => {
+      const chA = channels.find((c) => c.serviceRef === refA || c.id === refA);
+      const chB = channels.find((c) => c.serviceRef === refB || c.id === refB);
+      const numA = parseInt(chA?.number || '', 10);
+      const numB = parseInt(chB?.number || '', 10);
+      const validA = !Number.isNaN(numA);
+      const validB = !Number.isNaN(numB);
+
+      if (validA && validB && numA !== numB) return numA - numB;
+      if (validA && !validB) return -1;
+      if (!validA && validB) return 1;
+
+      const nameA = chA?.name || refA || '';
+      const nameB = chB?.name || refB || '';
+      return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    return groups;
+  }, [eventsByServiceRef, currentTime, channels]);
+
   if (mode === 'main') {
     return (
       <>
@@ -390,45 +429,6 @@ export function EpgChannelList({
       </>
     );
   }
-
-  // Search mode: group events by channel, show top 2 + expandable rest
-  const searchGroups = React.useMemo(() => {
-    const groups: Array<[string, EpgEvent[]]> = [];
-
-    for (const [serviceRef, events] of eventsByServiceRef.entries()) {
-      if (events.length === 0) continue;
-
-      // Sort events: NOW first, then chronological
-      const sorted = [...events].sort((a, b) => {
-        const aNow = a.start <= currentTime && a.end > currentTime ? 0 : 1;
-        const bNow = b.start <= currentTime && b.end > currentTime ? 0 : 1;
-        if (aNow !== bNow) return aNow - bNow;
-        return a.start - b.start;
-      });
-
-      groups.push([serviceRef, sorted]);
-    }
-
-    // Sort groups by channel number/name
-    groups.sort(([refA], [refB]) => {
-      const chA = channels.find((c) => c.serviceRef === refA || c.id === refA);
-      const chB = channels.find((c) => c.serviceRef === refB || c.id === refB);
-      const numA = parseInt(chA?.number || '', 10);
-      const numB = parseInt(chB?.number || '', 10);
-      const validA = !Number.isNaN(numA);
-      const validB = !Number.isNaN(numB);
-
-      if (validA && validB && numA !== numB) return numA - numB;
-      if (validA && !validB) return -1;
-      if (!validA && validB) return 1;
-
-      const nameA = chA?.name || refA || '';
-      const nameB = chB?.name || refB || '';
-      return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
-    });
-
-    return groups;
-  }, [eventsByServiceRef, currentTime, channels]);
 
   return (
     <>

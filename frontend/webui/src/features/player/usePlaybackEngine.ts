@@ -597,6 +597,10 @@ export function usePlaybackEngine({
       if (isTeardownRef.current) {
         return;
       }
+      if (videoEl.dataset.xg2gManagedPause === '1') {
+        debugLog('[V3Player] Event: pause (managed native veil hold ignored)');
+        return;
+      }
       clearNativeStallRecovery();
       setStatus((prev) => (prev === 'error' ? prev : 'paused'));
     };

@@ -49,13 +49,11 @@ describe('V3Player Safari Logic', () => {
     if (webkitEnterFullscreenDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
     }
     if (webkitSupportsPresentationModeDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', webkitSupportsPresentationModeDescriptor);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
     }
     if (maxTouchPointsDescriptor) {
@@ -64,7 +62,7 @@ describe('V3Player Safari Logic', () => {
     vi.restoreAllMocks();
   });
 
-  it('initializes hls.js on desktop Safari when modern WebKit MSE support is available', () => {
+  it('prefers native HLS on desktop Safari when WebKit playback controls are available', () => {
     // Simulate Safari
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15');
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
@@ -86,9 +84,10 @@ describe('V3Player Safari Logic', () => {
       return el;
     });
 
-    render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+    const { container } = render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
-    expect(Hls).toHaveBeenCalled();
+    expect(Hls).not.toHaveBeenCalled();
+    expect(container.querySelector('video')?.getAttribute('src')).toBe('http://example.com/playlist.m3u8');
   });
 
   it('should initialize HLS.js on Chrome (Non-Safari)', () => {
@@ -135,7 +134,7 @@ describe('V3Player Safari Logic', () => {
     expect(Hls).not.toHaveBeenCalled();
   });
 
-  it('initializes hls.js on mobile WebKit when modern WebKit MSE support is available', () => {
+  it('prefers native HLS on mobile WebKit when native fullscreen controls are available', () => {
     userAgentGetter.mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
 
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
@@ -153,8 +152,9 @@ describe('V3Player Safari Logic', () => {
       return originalCanPlayType.call(this, type);
     });
 
-    render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+    const { container } = render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
-    expect(Hls).toHaveBeenCalled();
+    expect(Hls).not.toHaveBeenCalled();
+    expect(container.querySelector('video')?.getAttribute('src')).toBe('http://example.com/playlist.m3u8');
   });
 });

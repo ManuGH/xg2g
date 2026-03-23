@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getLogs, type LogEntry } from '../client-ts';
 import { toAppError } from '../lib/appErrors';
 import { unwrapClientResultOrThrow } from '../lib/clientWrapper';
@@ -16,7 +16,7 @@ export default function Logs() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<AppError | null>(null);
 
-  const fetchLogs = async (): Promise<void> => {
+  const fetchLogs = useCallback(async (): Promise<void> => {
     setLoading(true);
     setError(null);
 
@@ -29,12 +29,11 @@ export default function Logs() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void fetchLogs();
+  }, [fetchLogs]);
 
   return (
     <div className={`${styles.view} animate-enter`.trim()}>

@@ -70,6 +70,10 @@ export type SessionResponse = {
     serviceRef?: string;
     profile?: string;
     /**
+     * Short machine-readable hint explaining why the effective playback profile/path was selected.
+     */
+    profileReason?: string;
+    /**
      * Session lifecycle state. STARTING guarantees a session ticket is allocated.
      * READY/ACTIVE guarantees a playable HLS stream.
      *
@@ -1045,9 +1049,25 @@ export type StreamSession = {
      */
     requestId: string;
     clientIp?: string;
+    /**
+     * Coarse browser/player family reported by the client (e.g. chromium_hlsjs).
+     */
+    clientFamily?: string;
     channelName?: string;
+    /**
+     * Preferred HLS playback engine reported by the client (e.g. native, hlsjs).
+     */
+    preferredHlsEngine?: string;
+    /**
+     * Optional client device category reported during stream startup.
+     */
+    deviceType?: string;
     startedAt?: string;
     state: 'starting' | 'buffering' | 'active' | 'stalled' | 'ending' | 'idle' | 'error';
+    /**
+     * Fine-grained diagnostic state for running sessions.
+     */
+    detailedState?: 'starting' | 'priming' | 'buffering' | 'active' | 'stalled' | 'ending' | 'idle' | 'error';
     program?: {
         title?: string;
         description?: string;

@@ -100,6 +100,10 @@ components:
           type: string
         profile:
           type: string
+        profileReason:
+          type: string
+          description: Short machine-readable hint explaining why the effective playback profile/path was selected.
+          example: safari_compat_transcode
         state:
           type: string
           description: |
@@ -1704,14 +1708,27 @@ components:
           description: Correlation ID for the trace. Mandatory in P3-1.
         clientIp:
           type: string
+        clientFamily:
+          type: string
+          description: Coarse browser/player family reported by the client (e.g. chromium_hlsjs).
         channelName:
           type: string
+        preferredHlsEngine:
+          type: string
+          description: Preferred HLS playback engine reported by the client (e.g. native, hlsjs).
+        deviceType:
+          type: string
+          description: Optional client device category reported during stream startup.
         startedAt:
           type: string
           format: date-time
         state:
           type: string
           enum: [starting, buffering, active, stalled, ending, idle, error]
+        detailedState:
+          type: string
+          description: Fine-grained diagnostic state for running sessions.
+          enum: [starting, priming, buffering, active, stalled, ending, idle, error]
         program:
           type: object
           properties:

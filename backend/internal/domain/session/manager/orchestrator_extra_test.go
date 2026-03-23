@@ -10,6 +10,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,6 +119,61 @@ func TestOrchestrator_Observability_PreflightFailureMapsToInput(t *testing.T) {
 	assert.Equal(t, "sync_miss", s.PlaybackTrace.PreflightDetail)
 	assert.Equal(t, string(model.PlaybackStopClassInput), string(s.PlaybackTrace.StopClass))
 	assert.Equal(t, string(model.RUpstreamCorrupt), s.PlaybackTrace.StopReason)
+}
+
+func TestOrchestrator_FinalizeDeferred_PreservesIdleTimeoutReason(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	st := store.NewMemoryStore()
+	orch := &Orchestrator{
+		Store:    st,
+		Platform: NewStubPlatform(),
+	}
+
+	sessionID := "sess-idle-finalize"
+	rec := &model.SessionRecord{
+		SessionID:     sessionID,
+		ServiceRef:    "ref:idle",
+		State:         model.SessionStopping,
+		Reason:        model.RIdleTimeout,
+		Profile:       model.ProfileSpec{Name: "high"},
+		PlaybackTrace: &model.PlaybackTrace{},
+	}
+	require.NoError(t, st.PutSession(ctx, rec))
+
+	sessionPtr := &model.SessionRecord{
+		SessionID:  sessionID,
+		ServiceRef: "ref:idle",
+		Profile:    model.ProfileSpec{Name: "high"},
+	}
+	sessionCtx := &sessionContext{
+		Mode:       model.ModeLive,
+		ServiceRef: "ref:idle",
+	}
+	retErr := error(nil)
+	startRecorded := true
+
+	cancel()
+
+	orch.finalizeDeferred(
+		ctx,
+		model.StartSessionEvent{SessionID: sessionID, ServiceRef: "ref:idle", ProfileID: "high"},
+		&sessionPtr,
+		sessionCtx,
+		zerolog.Nop(),
+		&startRecorded,
+		func(string, model.ReasonCode) {},
+		func(model.ReasonCode) string { return "" },
+		&retErr,
+	)
+
+	got, err := st.GetSession(context.Background(), sessionID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, model.SessionStopped, got.State)
+	assert.Equal(t, model.RIdleTimeout, got.Reason)
+	require.NotNil(t, got.PlaybackTrace)
+	assert.Equal(t, string(model.RIdleTimeout), got.PlaybackTrace.StopReason)
+	assert.Equal(t, model.PlaybackStopClassOperator, got.PlaybackTrace.StopClass)
 }
 
 type FailingPipeline struct {

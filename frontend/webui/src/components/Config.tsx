@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useCallback, FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemConfig, putSystemConfig, type AppConfig, type ConfigUpdate } from '../client-ts';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
@@ -61,11 +61,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('untested');
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null);
 
-  useEffect(() => {
-    loadConfig();
-  }, []);
-
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     try {
       setLoading(true);
       const result = await getSystemConfig();
@@ -88,7 +84,11 @@ function Config(props: ConfigProps = { showTitle: true }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
+
+  useEffect(() => {
+    void loadConfig();
+  }, [loadConfig]);
 
   const checkHealthAndReload = async () => {
     const pollInterval = setInterval(async () => {
@@ -98,7 +98,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
           clearInterval(pollInterval);
           window.location.reload();
         }
-      } catch (e) {
+      } catch (_error) {
         // Still down, ignore
       }
     }, 1000);

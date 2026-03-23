@@ -27,7 +27,7 @@ func TestResolve_SmartScan(t *testing.T) {
 	progCap := &scan.Capability{Interlaced: false}
 	specProg := Resolve("auto", safariUA, 0, progCap, true, HWAccelAuto)
 	assert.Equal(t, false, specProg.TranscodeVideo, "Progressive should assume safe for copy")
-	assert.Equal(t, "fmp4", specProg.Container)
+	assert.Equal(t, "mpegts", specProg.Container)
 	assert.Equal(t, 192, specProg.AudioBitrateK, "Audio should be normalized for Safari")
 
 	// 2. Interlaced + GPU -> Transcode VAAPI
@@ -37,7 +37,7 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, true, specGPU.Deinterlace)
 	assert.Equal(t, "vaapi", specGPU.HWAccel)
 	assert.Equal(t, "h264", specGPU.VideoCodec)
-	assert.Equal(t, 16, specGPU.VideoCRF)
+	assert.Equal(t, 20, specGPU.VideoQP)
 
 	// 3. Interlaced + No GPU -> Transcode CPU
 	specCPU := Resolve("auto", safariUA, 0, interCap, false, HWAccelAuto)
@@ -45,8 +45,8 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, true, specCPU.Deinterlace)
 	assert.Equal(t, "", specCPU.HWAccel)
 	assert.Equal(t, "libx264", specCPU.VideoCodec)
-	assert.Equal(t, "fast", specCPU.Preset)
-	assert.Equal(t, 23, specCPU.VideoCRF)
+	assert.Equal(t, "slow", specCPU.Preset)
+	assert.Equal(t, 20, specCPU.VideoCRF)
 }
 
 func TestResolve_UnknownCap(t *testing.T) {
@@ -82,6 +82,7 @@ func TestResolve_SafariDirtyExplicit(t *testing.T) {
 	assert.Equal(t, "safari_dirty", specGPUOptIn.Name)
 	assert.Equal(t, "vaapi", specGPUOptIn.HWAccel)
 	assert.Equal(t, "h264", specGPUOptIn.VideoCodec)
+	assert.Equal(t, 20, specGPUOptIn.VideoQP)
 	assert.Equal(t, 20000, specGPUOptIn.VideoMaxRateK)
 	assert.Equal(t, 40000, specGPUOptIn.VideoBufSizeK)
 }
@@ -93,6 +94,7 @@ func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 	specEncodeOnly := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
 	assert.Equal(t, "vaapi_encode_only", specEncodeOnly.HWAccel)
 	assert.Equal(t, "h264", specEncodeOnly.VideoCodec)
+	assert.Equal(t, 20, specEncodeOnly.VideoQP)
 	assert.Equal(t, 20000, specEncodeOnly.VideoMaxRateK)
 	assert.Equal(t, 40000, specEncodeOnly.VideoBufSizeK)
 
@@ -118,6 +120,7 @@ func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_DIRTY_CRF", "15")
 	t.Setenv("XG2G_SAFARI_DIRTY_PRESET", "medium")
+	t.Setenv("XG2G_SAFARI_DIRTY_VAAPI_QP", "19")
 	t.Setenv("XG2G_SAFARI_DIRTY_MAXRATE_K", "18000")
 	t.Setenv("XG2G_SAFARI_DIRTY_BUFSIZE_K", "36000")
 	t.Setenv("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", "224")
@@ -130,6 +133,12 @@ func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	assert.Equal(t, 18000, spec.VideoMaxRateK)
 	assert.Equal(t, 36000, spec.VideoBufSizeK)
 	assert.Equal(t, 224, spec.AudioBitrateK)
+
+	specGPU := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelForce)
+	assert.Equal(t, "vaapi", specGPU.HWAccel)
+	assert.Equal(t, 19, specGPU.VideoQP)
+	assert.Equal(t, 18000, specGPU.VideoMaxRateK)
+	assert.Equal(t, 36000, specGPU.VideoBufSizeK)
 }
 
 func TestResolve_LiveVideoLadderBridge(t *testing.T) {
@@ -139,6 +148,7 @@ func TestResolve_LiveVideoLadderBridge(t *testing.T) {
 		wantCRF    int
 		wantPreset string
 	}{
+		{name: "safari cpu fallback uses quality video ladder", profile: ProfileSafari, wantCRF: 20, wantPreset: "slow"},
 		{name: "safari_dvr uses compatible video ladder", profile: ProfileSafariDVR, wantCRF: 23, wantPreset: "fast"},
 		{name: "dvr uses compatible video ladder", profile: ProfileDVR, wantCRF: 23, wantPreset: "fast"},
 		{name: "repair uses repair video ladder", profile: ProfileRepair, wantCRF: 28, wantPreset: "veryfast"},

@@ -22,6 +22,7 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 		wantContainer       string
 		wantDeinterlace     bool
 		wantVideoCRF        int
+		wantVideoQP         int
 		wantPreset          string
 	}{
 		{
@@ -32,7 +33,7 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 			wantInternalProfile: ProfileSafari,
 			wantPublicProfile:   PublicProfileCompatible,
 			wantTranscodeVideo:  false,
-			wantContainer:       "fmp4",
+			wantContainer:       "mpegts",
 			wantDeinterlace:     false,
 		},
 		{
@@ -47,7 +48,22 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 			wantTranscodeVideo:  true,
 			wantContainer:       "fmp4",
 			wantDeinterlace:     true,
-			wantVideoCRF:        16,
+			wantVideoQP:         20,
+		},
+		{
+			name:                "safari macos auto interlaced without gpu uses higher quality cpu transcode rung",
+			clientFixture:       playbackprofile.ClientSafariNative,
+			requestedProfile:    "auto",
+			cap:                 &scan.Capability{Interlaced: true},
+			hasGPU:              false,
+			hwaccelMode:         HWAccelAuto,
+			wantInternalProfile: ProfileSafari,
+			wantPublicProfile:   PublicProfileCompatible,
+			wantTranscodeVideo:  true,
+			wantContainer:       "fmp4",
+			wantDeinterlace:     true,
+			wantVideoCRF:        20,
+			wantPreset:          "slow",
 		},
 		{
 			name:                "ios safari auto uses same native safari family semantics",
@@ -57,7 +73,7 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 			wantInternalProfile: ProfileSafari,
 			wantPublicProfile:   PublicProfileCompatible,
 			wantTranscodeVideo:  false,
-			wantContainer:       "fmp4",
+			wantContainer:       "mpegts",
 			wantDeinterlace:     false,
 		},
 		{
@@ -132,6 +148,9 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 			assert.Equal(t, tc.wantDeinterlace, spec.Deinterlace)
 			if tc.wantVideoCRF != 0 {
 				assert.Equal(t, tc.wantVideoCRF, spec.VideoCRF)
+			}
+			if tc.wantVideoQP != 0 {
+				assert.Equal(t, tc.wantVideoQP, spec.VideoQP)
 			}
 			if tc.wantPreset != "" {
 				assert.Equal(t, tc.wantPreset, spec.Preset)

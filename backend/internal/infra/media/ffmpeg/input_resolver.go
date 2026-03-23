@@ -125,7 +125,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 
 			origRes, origErr := preflight(ctx, origURL)
 			origRes = normalizeAdapterPreflightResult(origRes, origErr)
-			if (origErr == nil && origRes.HTTPStatus == http.StatusOK) || (origRes.HTTPStatus == http.StatusOK && origRes.Bytes > 0) {
+			if origErr == nil && origRes.OK {
 				a.Logger.Info().Str("url", sanitizeURLForLog(origURL)).Msg("fallback to original URL succeeded (M3U)")
 				return origURL, nil
 			}

@@ -12,7 +12,9 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { AppProvider } from './context/AppContext.tsx';
 import { UiOverlayProvider } from './context/UiOverlayContext.tsx';
 import { i18nReady } from './i18n';
+import { setClientAuthToken } from './lib/clientWrapper';
 import { ROUTE_MAP } from './routes.ts';
+import { getStoredToken } from './utils/tokenStorage';
 
 // TanStack Query Client Configuration
 // Phase 1: Server-State Layer (2026 State-of-the-Art)
@@ -26,6 +28,10 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Prime the shared API client before React mounts so the first bootstrap query
+// already carries the persisted token on cold starts.
+setClientAuthToken(getStoredToken());
 
 const root = createRoot(document.getElementById('root')!);
 

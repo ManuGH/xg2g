@@ -177,7 +177,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		start := time.Now()
-		scan.RunBackground()
+		scan.RunBackgroundForce()
 		log.L().Info().Dur("duration", time.Since(start)).Msg("manual refresh triggered via API")
 	}()
 

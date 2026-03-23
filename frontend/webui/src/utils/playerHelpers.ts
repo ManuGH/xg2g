@@ -136,7 +136,11 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
       typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
       typeof webkitVideo.webkitSetPresentationMode === 'function';
 
-    return !hasTouchInput() && (canUseDesktopWebKitFullscreen(videoEl) || hasDesktopPresentationMode);
+    if (!hasTouchInput() && (canUseDesktopWebKitFullscreen(videoEl) || hasDesktopPresentationMode)) {
+      return true;
+    }
+
+    return !hlsJsSupported;
   } catch {
     return false;
   }

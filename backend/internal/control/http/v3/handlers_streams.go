@@ -64,7 +64,11 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 		id := st.ID
 		name := st.ChannelName
 		ip := st.ClientIP
+		clientFamily := st.ClientFamily
+		preferredHLSEngine := st.PreferredHLSEngine
+		deviceType := st.DeviceType
 		start := st.StartedAt
+		detailed := st.DetailedState
 
 		// Map State
 		var activeState StreamSessionState
@@ -87,19 +91,34 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 			log.L().Warn().Str("state", st.State).Msg("unknown stream state")
 			activeState = StreamSessionStateError
 		}
+		var detailedState *StreamSessionDetailedState
+		if detailed != "" {
+			mapped := StreamSessionDetailedState(detailed)
+			detailedState = &mapped
+		}
 
 		var clientIP *string
 		if q.IncludeClientIP {
 			clientIP = &ip
 		}
 		dto := StreamSession{
-			Id:          &id,
-			SessionId:   openapi_types.UUID(parseUUID(st.ID)),
-			ChannelName: &name,
-			ClientIp:    clientIP,
-			StartedAt:   &start,
-			RequestId:   requestID(r.Context()),
-			State:       activeState,
+			Id:            &id,
+			SessionId:     openapi_types.UUID(parseUUID(st.ID)),
+			ChannelName:   &name,
+			ClientIp:      clientIP,
+			DetailedState: detailedState,
+			StartedAt:     &start,
+			RequestId:     requestID(r.Context()),
+			State:         activeState,
+		}
+		if clientFamily != "" {
+			dto.ClientFamily = &clientFamily
+		}
+		if preferredHLSEngine != "" {
+			dto.PreferredHlsEngine = &preferredHLSEngine
+		}
+		if deviceType != "" {
+			dto.DeviceType = &deviceType
 		}
 
 		// Enrich with EPG if available

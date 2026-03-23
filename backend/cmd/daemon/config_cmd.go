@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	appversion "github.com/ManuGH/xg2g/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -130,7 +131,7 @@ func runConfigValidate(args []string) int {
 		return 2
 	}
 
-	loader := config.NewLoader(configPath, version)
+	loader := config.NewLoader(configPath, appversion.Version)
 	if _, err := loader.Load(); err != nil {
 		fmt.Fprintf(os.Stderr, "Configuration error in %s:\n  %v\n", configPath, err)
 		return 1
@@ -177,7 +178,7 @@ func runConfigDump(args []string) int {
 		return 2
 	}
 
-	loader := config.NewLoader(configPath, version)
+	loader := config.NewLoader(configPath, appversion.Version)
 	cfg, err := loader.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Configuration error in %s:\n  %v\n", configPath, err)
