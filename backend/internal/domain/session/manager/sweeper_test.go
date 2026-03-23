@@ -132,7 +132,7 @@ func TestSweeper_IdleStop(t *testing.T) {
 
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
-		Store:     st,
+		Store: st,
 	}
 	sweeper := &Sweeper{
 		Orch: orch,
@@ -142,10 +142,15 @@ func TestSweeper_IdleStop(t *testing.T) {
 	}
 
 	sid := "sess-idle"
+	now := time.Now()
 	rec := &model.SessionRecord{
-		SessionID:      sid,
-		State:          model.SessionReady,
-		LastAccessUnix: time.Now().Add(-1 * time.Minute).Unix(),
+		SessionID:            sid,
+		State:                model.SessionReady,
+		LastAccessUnix:       now.Unix(), // Heartbeat activity must not mask idle playback.
+		PlaylistPublishedAt:  now.Add(-2 * time.Minute),
+		LastPlaylistAccessAt: now.Add(-1 * time.Minute),
+		LatestSegmentAt:      now.Add(-2 * time.Second),
+		LeaseExpiresAtUnix:   now.Add(1 * time.Minute).Unix(),
 	}
 	require.NoError(t, st.PutSession(ctx, rec))
 
@@ -156,4 +161,40 @@ func TestSweeper_IdleStop(t *testing.T) {
 	require.NotNil(t, got)
 	assert.Equal(t, model.SessionStopping, got.State)
 	assert.Equal(t, model.RIdleTimeout, got.Reason)
+}
+
+func TestSweeper_IdleStop_SkipsExpiredLeaseSessions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	st := store.NewMemoryStore()
+	orch := &Orchestrator{
+		Store: st,
+	}
+	sweeper := &Sweeper{
+		Orch: orch,
+		Conf: SweeperConfig{
+			IdleTimeout: 30 * time.Second,
+		},
+	}
+
+	sid := "sess-lease-expired"
+	now := time.Now()
+	rec := &model.SessionRecord{
+		SessionID:            sid,
+		State:                model.SessionReady,
+		PlaylistPublishedAt:  now.Add(-2 * time.Minute),
+		LastPlaylistAccessAt: now.Add(-1 * time.Minute),
+		LatestSegmentAt:      now.Add(-2 * time.Second),
+		LeaseExpiresAtUnix:   now.Add(-5 * time.Second).Unix(),
+	}
+	require.NoError(t, st.PutSession(ctx, rec))
+
+	sweeper.sweepStore(ctx)
+
+	got, err := st.GetSession(ctx, sid)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, model.SessionReady, got.State)
+	assert.NotEqual(t, model.RIdleTimeout, got.Reason)
 }

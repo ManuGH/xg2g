@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { epgReducer, createInitialEpgState } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';
 import { addTimer } from '../../client-ts';
-import type { EpgChannel, EpgBouquet, Timer, EpgEvent } from './types';
+import type { EpgChannel, EpgBouquet, Timer, EpgEvent, EpgFilters } from './types';
 import { EPG_MAX_HORIZON_HOURS } from './types';
 import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
@@ -288,7 +288,7 @@ export default function EPG({
   // Render
   // ============================================================================
 
-  const handleFilterChange = useCallback((updates: Partial<typeof state.filters>) => {
+  const handleFilterChange = useCallback((updates: Partial<EpgFilters>) => {
     dispatch({ type: 'SET_FILTER', payload: updates });
 
     // Sync bouquet selection with parent (if provided)

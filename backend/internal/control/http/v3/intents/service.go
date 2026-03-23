@@ -256,6 +256,15 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	if requestedPlaybackMode != "" {
 		requestParams[model.CtxKeyClientPath] = requestedPlaybackMode
 	}
+	if clientFamily := normalize.Token(intent.Params[model.CtxKeyClientFamily]); clientFamily != "" {
+		requestParams[model.CtxKeyClientFamily] = clientFamily
+	}
+	if preferredEngine := normalize.Token(intent.Params[model.CtxKeyPreferredEngine]); preferredEngine != "" {
+		requestParams[model.CtxKeyPreferredEngine] = preferredEngine
+	}
+	if deviceType := normalize.Token(intent.Params[model.CtxKeyDeviceType]); deviceType != "" {
+		requestParams[model.CtxKeyDeviceType] = deviceType
+	}
 	if raw := intent.Params["codecs"]; raw != "" {
 		requestParams["codecs"] = raw
 	}

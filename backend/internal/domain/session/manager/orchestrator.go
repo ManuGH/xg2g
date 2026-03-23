@@ -420,7 +420,7 @@ func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent)
 					return err
 				}
 			} else {
-				_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize}, nil, true, time.Now())
+				_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize, Reason: e.Reason}, nil, true, time.Now())
 				if err != nil {
 					return err
 				}

@@ -125,16 +125,17 @@ export function UiOverlayProvider({ children }: { children: ReactNode }) {
   const [portalEl, setPortalEl] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = document.createElement('div');
+    const toastTimeouts = toastTimeoutsRef.current;
     el.setAttribute('data-ui-overlay-root', 'true');
     document.body.appendChild(el);
     setPortalEl(el);
 
     return () => {
       // Clean up pending timers and pending confirm.
-      for (const timer of toastTimeoutsRef.current.values()) {
+      for (const timer of toastTimeouts.values()) {
         window.clearTimeout(timer);
       }
-      toastTimeoutsRef.current.clear();
+      toastTimeouts.clear();
       confirmResolveRef.current?.(false);
       confirmResolveRef.current = null;
 

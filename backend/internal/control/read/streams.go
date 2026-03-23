@@ -25,12 +25,15 @@ type StreamsQuery struct {
 
 // StreamSession is a control-layer representation of an active stream.
 type StreamSession struct {
-	ID          string
-	ChannelName string
-	ServiceRef  string
-	ClientIP    string
-	StartedAt   time.Time
-	State       string // "active" (strict, non-terminal)
+	ID                 string
+	ChannelName        string
+	ServiceRef         string
+	ClientIP           string
+	ClientFamily       string
+	PreferredHLSEngine string
+	DeviceType         string
+	StartedAt          time.Time
+	State              string // "active" (strict, non-terminal)
 	// DetailedState preserves the finer-grained diagnostic view for running sessions.
 	DetailedState string
 	Program       string
@@ -125,6 +128,14 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 				ip = val
 			}
 		}
+		clientFamily := ""
+		preferredHLSEngine := ""
+		deviceType := ""
+		if r.ContextData != nil {
+			clientFamily = strings.TrimSpace(r.ContextData[model.CtxKeyClientFamily])
+			preferredHLSEngine = strings.TrimSpace(r.ContextData[model.CtxKeyPreferredEngine])
+			deviceType = strings.TrimSpace(r.ContextData[model.CtxKeyDeviceType])
+		}
 
 		// StartedAt
 		var startedAt time.Time
@@ -133,13 +144,16 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		}
 
 		sessions = append(sessions, StreamSession{
-			ID:            r.SessionID,
-			ChannelName:   name,
-			ServiceRef:    serviceRef,
-			ClientIP:      ip,
-			StartedAt:     startedAt,
-			State:         contractState,
-			DetailedState: detailedState,
+			ID:                 r.SessionID,
+			ChannelName:        name,
+			ServiceRef:         serviceRef,
+			ClientIP:           ip,
+			ClientFamily:       clientFamily,
+			PreferredHLSEngine: preferredHLSEngine,
+			DeviceType:         deviceType,
+			StartedAt:          startedAt,
+			State:              contractState,
+			DetailedState:      detailedState,
 		})
 	}
 

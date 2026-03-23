@@ -209,7 +209,6 @@ function restoreProperty(target: object, key: string, descriptor: PropertyDescri
     Object.defineProperty(target, key, descriptor);
     return;
   }
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
   delete (target as Record<string, unknown>)[key];
 }
 

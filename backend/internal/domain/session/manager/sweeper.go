@@ -16,7 +16,7 @@ type SweeperConfig struct {
 	Interval         time.Duration
 	SessionRetention time.Duration // How long to keep terminal sessions in Store
 	FileRetention    time.Duration // How long to keep orphan files? (Or strict sync?)
-	IdleTimeout      time.Duration // Stop READY sessions after no client access (0 disables)
+	IdleTimeout      time.Duration // Stop READY/DRAINING sessions after no playlist access (0 disables)
 }
 
 // Sweeper performs background cleanup of stale sessions and files.
@@ -106,16 +106,17 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 			}
 		}
 
-		// Rule 3: Idle READY sessions -> STOP (if enabled)
+		// Rule 3: Idle READY/DRAINING sessions -> STOP (if enabled)
+		// Lane separation:
+		// - Lease expiry owns sessions whose lease already expired.
+		// - Sweeper only handles sessions that are still lease-valid but no longer consumed.
 		if s.Conf.IdleTimeout > 0 && (r.State == model.SessionReady || r.State == model.SessionDraining) {
-			lastAccess := r.LastAccessUnix
-			if lastAccess == 0 {
-				lastAccess = r.UpdatedAtUnix
+			if r.LeaseExpiresAtUnix > 0 && now.Unix() > r.LeaseExpiresAtUnix {
+				return nil
 			}
-			if lastAccess == 0 {
-				lastAccess = r.CreatedAtUnix
-			}
-			if lastAccess > 0 && now.Sub(time.Unix(lastAccess, 0)) > s.Conf.IdleTimeout {
+			lifecycleState := model.DeriveLifecycleState(r, now)
+			if (lifecycleState == model.LifecycleIdle || lifecycleState == model.LifecycleStalled) &&
+				model.PlaylistAccessExceeded(r, now, s.Conf.IdleTimeout) {
 				toStop = append(toStop, r.SessionID)
 			}
 		}

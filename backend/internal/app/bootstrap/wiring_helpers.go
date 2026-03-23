@@ -100,6 +100,7 @@ func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orchest
 		Store:               inputs.Store,
 		Bus:                 bus.NewAdapter(inputs.Bus),
 		Platform:            platform.NewOSPlatform(),
+		HeartbeatSource:     &worker.FSWatcherHeartbeatSource{HLSRoot: cfg.HLS.Root},
 		LeaseTTL:            30 * time.Second,
 		HeartbeatEvery:      10 * time.Second,
 		Owner:               workerOwner,

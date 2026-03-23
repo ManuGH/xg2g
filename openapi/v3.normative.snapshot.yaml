@@ -1703,8 +1703,17 @@ components:
           description: Correlation ID for the trace. Mandatory in P3-1.
         clientIp:
           type: string
+        clientFamily:
+          type: string
+          description: Coarse browser/player family reported by the client (e.g. chromium_hlsjs).
         channelName:
           type: string
+        preferredHlsEngine:
+          type: string
+          description: Preferred HLS playback engine reported by the client (e.g. native, hlsjs).
+        deviceType:
+          type: string
+          description: Optional client device category reported during stream startup.
         startedAt:
           type: string
           format: date-time

@@ -855,7 +855,7 @@ func (o *Orchestrator) finalizeDeferred(
 			return nil
 		}
 
-		stopIntent := r.State == model.SessionStopping || r.Reason == model.RClientStop
+		stopIntent := r.State == model.SessionStopping || r.Reason == model.RClientStop || r.Reason == model.RIdleTimeout
 		errForOutcome := cause.Error
 		if errForOutcome == nil && cause.ContextCancelled {
 			errForOutcome = context.Canceled
@@ -865,7 +865,7 @@ func (o *Orchestrator) finalizeDeferred(
 			phase = lifecycle.PhaseVODComplete
 		}
 		fromState := r.State
-		tr, err := lifecycle.Dispatch(r, phase, lifecycle.Event{Kind: lifecycle.EvTerminalize}, errForOutcome, stopIntent, time.Now())
+		tr, err := lifecycle.Dispatch(r, phase, lifecycle.Event{Kind: lifecycle.EvTerminalize, Reason: r.Reason}, errForOutcome, stopIntent, time.Now())
 		if err != nil {
 			return err
 		}

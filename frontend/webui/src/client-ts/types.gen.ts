@@ -1045,7 +1045,19 @@ export type StreamSession = {
      */
     requestId: string;
     clientIp?: string;
+    /**
+     * Coarse browser/player family reported by the client (e.g. chromium_hlsjs).
+     */
+    clientFamily?: string;
     channelName?: string;
+    /**
+     * Preferred HLS playback engine reported by the client (e.g. native, hlsjs).
+     */
+    preferredHlsEngine?: string;
+    /**
+     * Optional client device category reported during stream startup.
+     */
+    deviceType?: string;
     startedAt?: string;
     state: 'starting' | 'buffering' | 'active' | 'stalled' | 'ending' | 'idle' | 'error';
     /**
