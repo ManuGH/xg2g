@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 )
 
@@ -53,6 +54,7 @@ type Manager struct {
 	m3uPath    string
 	e2Client   *enigma2.Client
 	isScanning atomic.Bool
+	forceScan  atomic.Bool
 
 	ProbeDelay time.Duration
 
@@ -89,7 +91,11 @@ func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client)
 }
 
 func (m *Manager) GetCapability(serviceRef string) (Capability, bool) {
-	return m.store.Get(serviceRef)
+	cap, ok := m.store.Get(serviceRef)
+	if !ok || !cap.Usable() {
+		return Capability{}, false
+	}
+	return cap, true
 }
 
 func (m *Manager) GetStatus() ScanStatus {
@@ -152,7 +158,7 @@ func ExtractServiceRef(rawURL string) string {
 
 	// 1. Try 'ref' query parameter (OpenWebIF style)
 	if ref := u.Query().Get("ref"); ref != "" {
-		return ref
+		return normalize.ServiceRef(ref)
 	}
 
 	// 2. Try path splitting (Direct Stream style)
@@ -161,7 +167,7 @@ func ExtractServiceRef(rawURL string) string {
 	path := strings.TrimSuffix(u.Path, "/")
 	parts := strings.Split(path, "/")
 	if len(parts) > 0 {
-		return parts[len(parts)-1]
+		return normalize.ServiceRef(parts[len(parts)-1])
 	}
 	return ""
 }
@@ -169,6 +175,13 @@ func ExtractServiceRef(rawURL string) string {
 // RunScan performs the scan synchronously. Returns error if failed.
 // Returns nil if scan is already running (deduplicated).
 func (m *Manager) RunScan(ctx context.Context) error {
+	if m.scanFn == nil {
+		hasWork, err := m.hasPendingProbeCandidates(time.Now())
+		if err == nil && !hasWork {
+			log.L().Info().Msg("scan: warm capability cache, skipping synchronous scan")
+			return nil
+		}
+	}
 	if !m.isScanning.CompareAndSwap(false, true) {
 		return nil
 	}
@@ -178,9 +191,29 @@ func (m *Manager) RunScan(ctx context.Context) error {
 
 // RunBackground triggers scan in background. Returns true if started, false if already running.
 func (m *Manager) RunBackground() bool {
+	if m.scanFn == nil {
+		hasWork, err := m.hasPendingProbeCandidates(time.Now())
+		if err == nil && !hasWork {
+			log.L().Info().Msg("scan: warm capability cache, skipping startup/background scan")
+			return false
+		}
+		if err != nil {
+			log.L().Warn().Err(err).Msg("scan: failed to evaluate warm cache, continuing with background scan")
+		}
+	}
+	return m.runBackground(false)
+}
+
+// RunBackgroundForce triggers a full rescan even when the capability cache is warm.
+func (m *Manager) RunBackgroundForce() bool {
+	return m.runBackground(true)
+}
+
+func (m *Manager) runBackground(force bool) bool {
 	if !m.isScanning.CompareAndSwap(false, true) {
 		return false
 	}
+	m.forceScan.Store(force)
 
 	baseCtx := m.backgroundContext()
 	m.bgWG.Add(1)
@@ -208,14 +241,22 @@ func (m *Manager) backgroundContext() context.Context {
 }
 
 func (m *Manager) executeScan(ctx context.Context) error {
+	force := m.forceScan.Swap(false)
+	if err := m.waitForPlaybackIdle(ctx); err != nil {
+		return err
+	}
 	if m.scanFn != nil {
 		return m.scanFn(ctx)
 	}
-	return m.scanInternal(ctx)
+	return m.scanInternal(ctx, force)
 }
 
-func (m *Manager) scanInternal(ctx context.Context) error {
-	log.L().Info().Msg("scan: starting channel capability scan")
+func (m *Manager) scanInternal(ctx context.Context, force bool) error {
+	logEvt := log.L().Info()
+	if force {
+		logEvt = logEvt.Bool("force", true)
+	}
+	logEvt.Msg("scan: starting channel capability scan")
 
 	m.mu.Lock()
 	m.status.State = "running"
@@ -246,6 +287,15 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 	m.status.TotalChannels = len(channels)
 	m.mu.Unlock()
 
+	now := time.Now()
+	if !force {
+		channels = m.filterProbeCandidates(channels, now)
+		if len(channels) == 0 {
+			log.L().Info().Msg("scan: warm capability cache has no due candidates")
+			return nil
+		}
+	}
+
 	// 2. Iterate and Probe
 	updates := 0
 	scanned := 0
@@ -270,19 +320,16 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if err := m.waitForPlaybackIdle(ctx); err != nil {
+			return err
+		}
 
 		sRef := ExtractServiceRef(ch.URL)
 		if sRef == "" {
 			continue
 		}
 
-		// Optimization: Check if we already have this capability in store
-		// If found, skip expensive probing (especially critical for single-tuner setups with 20s lock time)
-		if cap, found := m.store.Get(sRef); found && cap.Resolution != "" {
-			log.L().Debug().Str("sref", sRef).Msg("scan: found in cache, skipping probe")
-			scanned++ // Count as scanned for stats
-			continue
-		}
+		existingCap, found := m.store.Get(sRef)
 
 		// Resolve stream URL:
 		// 1. Try Enigma2 Client resolution (Smart Player Logic)
@@ -388,10 +435,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 				}
 			}
 		}
-		fromStore := false
-		if cap, found := m.store.Get(sRef); found && cap.Resolution != "" {
-			fromStore = true
-		}
+		fromStore := found && existingCap.Usable()
 
 		scanned++
 		m.mu.Lock()
@@ -400,23 +444,19 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 
 		if err != nil {
 			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: probe failed")
+			m.store.Update(m.mergeFailedAttempt(existingCap, found, sRef, time.Now(), err))
 			if !fromStore {
 				atomic.AddInt32(&m.consecutiveFailureCount, 1)
 			}
 		} else {
 			atomic.StoreInt32(&m.consecutiveFailureCount, 0)
-			cap := Capability{
-				ServiceRef: sRef,
-				Interlaced: res.Video.Interlaced,
-				LastScan:   time.Now(),
-				Resolution: fmt.Sprintf("%dx%d", res.Video.Width, res.Video.Height),
-				Codec:      res.Video.CodecName,
-			}
+			cap := m.capabilityFromProbe(existingCap, found, sRef, time.Now(), res.Video.Interlaced, res.Video.Width, res.Video.Height, res.Video.CodecName)
 
 			log.L().Info().
 				Str("sref", sRef).
 				Bool("interlaced", cap.Interlaced).
 				Str("res", cap.Resolution).
+				Str("state", string(cap.State)).
 				Msg("scan: result")
 
 			m.store.Update(cap)
@@ -429,13 +469,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		// Phase 2: Production-Grade Rate Limiting
 		delay := m.ProbeDelay
 
-		// 1. Playback Awareness: Throttle if playback active
-		if active, pbErr := m.ActivePlaybackFn(ctx); pbErr == nil && active {
-			delay = 10 * time.Second
-			log.L().Debug().Msg("scan: playback active detected, throttling scan delay to 10s")
-		}
-
-		// 2. Adaptive Backoff: Increase delay on consecutive failures
+		// 1. Adaptive Backoff: Increase delay on consecutive failures
 		failCount := atomic.LoadInt32(&m.consecutiveFailureCount)
 		if failCount > 0 {
 			multiplier := 1 << (failCount - 1)
@@ -449,7 +483,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 			log.L().Debug().Int32("consecutive_failures", failCount).Dur("adaptive_delay", delay).Msg("scan: applying adaptive backoff")
 		}
 
-		// 3. Apply Delay with Jitter (±20%)
+		// 2. Apply Delay with Jitter (±20%)
 		if delay > 0 {
 			jitter := time.Duration(0)
 			if jitterRange := int64(delay / 5); jitterRange > 0 {
@@ -466,6 +500,135 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (m *Manager) waitForPlaybackIdle(ctx context.Context) error {
+	if m == nil || m.ActivePlaybackFn == nil {
+		return nil
+	}
+
+	paused := false
+	for {
+		active, err := m.ActivePlaybackFn(ctx)
+		if err != nil {
+			log.L().Warn().Err(err).Msg("scan: active playback check failed, continuing without scan pause")
+			return nil
+		}
+		if !active {
+			if paused {
+				log.L().Info().Msg("scan: playback idle, resuming capability scan")
+			}
+			return nil
+		}
+		if !paused {
+			log.L().Info().Msg("scan: active playback detected, pausing capability scan")
+			paused = true
+		}
+		if err := sleepCtx(ctx, time.Second); err != nil {
+			return err
+		}
+	}
+}
+
+func (m *Manager) hasPendingProbeCandidates(now time.Time) (bool, error) {
+	content, err := os.ReadFile(m.m3uPath)
+	if err != nil {
+		return false, err
+	}
+	channels := m3u.Parse(string(content))
+	for _, ch := range channels {
+		sRef := ExtractServiceRef(ch.URL)
+		if sRef == "" {
+			continue
+		}
+		if m.shouldProbeService(sRef, now) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (m *Manager) filterProbeCandidates(channels []m3u.Channel, now time.Time) []m3u.Channel {
+	filtered := make([]m3u.Channel, 0, len(channels))
+	seen := make(map[string]struct{}, len(channels))
+	for _, ch := range channels {
+		sRef := ExtractServiceRef(ch.URL)
+		if sRef == "" {
+			continue
+		}
+		if _, ok := seen[sRef]; ok {
+			continue
+		}
+		seen[sRef] = struct{}{}
+		if m.shouldProbeService(sRef, now) {
+			filtered = append(filtered, ch)
+		}
+	}
+	return filtered
+}
+
+func (m *Manager) shouldProbeService(serviceRef string, now time.Time) bool {
+	cap, found := m.store.Get(serviceRef)
+	if !found {
+		return true
+	}
+	return cap.RetryDue(now)
+}
+
+func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRef string, now time.Time, interlaced bool, width, height int, codec string) Capability {
+	cap := existing
+	if !found {
+		cap = Capability{ServiceRef: serviceRef}
+	}
+	cap.ServiceRef = serviceRef
+	cap.Interlaced = interlaced
+	cap.LastAttempt = now.UTC()
+	cap.FailureReason = ""
+	cap.Codec = strings.TrimSpace(codec)
+	if width > 0 && height > 0 {
+		cap.Resolution = fmt.Sprintf("%dx%d", width, height)
+	} else {
+		cap.Resolution = ""
+	}
+	cap.State = inferCapabilityState(cap.Resolution, cap.Codec)
+	if cap.State == CapabilityStateFailed {
+		cap.FailureReason = "probe_returned_no_media_metadata"
+		cap.NextRetryAt = now.UTC().Add(failureRetryWindow)
+		cap.LastScan = existing.LastScan
+		cap.LastSuccess = existing.LastSuccess
+		return cap.Normalized()
+	}
+	cap.LastScan = now.UTC()
+	cap.LastSuccess = now.UTC()
+	cap.NextRetryAt = now.UTC().Add(defaultRetryDelay(cap.State))
+	return cap.Normalized()
+}
+
+func (m *Manager) mergeFailedAttempt(existing Capability, found bool, serviceRef string, now time.Time, err error) Capability {
+	cap := existing
+	if !found {
+		cap = Capability{
+			ServiceRef: serviceRef,
+			State:      CapabilityStateFailed,
+		}
+	}
+	cap.ServiceRef = serviceRef
+	cap.LastAttempt = now.UTC()
+	cap.FailureReason = strings.TrimSpace(err.Error())
+	if cap.FailureReason == "" {
+		cap.FailureReason = "probe_failed"
+	}
+	normalized := cap.Normalized()
+	switch normalized.State {
+	case CapabilityStatePartial:
+		normalized.NextRetryAt = now.UTC().Add(partialRetryWindow)
+	case CapabilityStateOK:
+		normalized.NextRetryAt = now.UTC().Add(failureRetryWindow)
+	default:
+		normalized.State = CapabilityStateFailed
+		normalized.NextRetryAt = now.UTC().Add(failureRetryWindow)
+	}
+	return normalized.Normalized()
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) error {

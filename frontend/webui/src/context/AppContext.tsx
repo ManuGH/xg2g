@@ -1,6 +1,6 @@
 // Application Context - Centralized State Management with TypeScript
 
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useLayoutEffect, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { getServices, getServicesBouquets } from '../client-ts';
 import { setClientAuthToken, throwOnClientResultError } from '../lib/clientWrapper';
@@ -24,8 +24,11 @@ interface AppProviderProps {
 }
 
 export function AppProvider({ children }: AppProviderProps) {
+  const [initialToken] = useState<string>(() => getStoredToken());
+
   // Auth State
-  const [token, setTokenState] = useState<string>(getStoredToken());
+  const [token, setTokenState] = useState<string>(initialToken);
+  const [authReady, setAuthReady] = useState<boolean>(() => !initialToken);
 
   // Channel State
   const [bouquets, setBouquets] = useState<Bouquet[]>([]);
@@ -39,23 +42,28 @@ export function AppProvider({ children }: AppProviderProps) {
   // UI State
   const [dataLoaded, setDataLoaded] = useState<boolean>(false);
 
-  // Initialize client with stored token after mount to avoid render-time side effects.
-  useEffect(() => {
-    const storedToken = getStoredToken();
-    if (storedToken) {
-      setClientAuthToken(storedToken);
+  // Synchronize the client auth header before bootstrap queries run.
+  // This keeps token hydration out of render while avoiding a 401 race on cold starts.
+  useLayoutEffect(() => {
+    if (authReady) {
+      return;
     }
-  }, []);
+    setClientAuthToken(token);
+    setAuthReady(true);
+  }, [authReady, token]);
 
   // Actions
   const setToken = useCallback((newToken: string) => {
-    setTokenState(newToken);
-    if (newToken) {
-      setStoredToken(newToken);
+    const normalizedToken = newToken.trim();
+    setTokenState(normalizedToken);
+    if (normalizedToken) {
+      setStoredToken(normalizedToken);
+      setAuthReady(false);
     } else {
       clearStoredToken();
+      setClientAuthToken('');
+      setAuthReady(true);
     }
-    setClientAuthToken(newToken);
     setBouquets([]);
     setSelectedBouquet('');
     setChannels([]);
@@ -118,7 +126,8 @@ export function AppProvider({ children }: AppProviderProps) {
     // State
     auth: {
       token,
-      isAuthenticated: !!token
+      isAuthenticated: !!token,
+      isReady: authReady,
     },
     channels: {
       bouquets,

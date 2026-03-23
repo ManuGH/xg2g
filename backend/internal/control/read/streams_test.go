@@ -188,3 +188,35 @@ func TestGetStreams_Provider_ThinClientAudit_Test28(t *testing.T) {
 
 	// 3. Shape Stability (Non-nil slice assumed by logic, confirmed by contract test)
 }
+
+func TestGetStreams_Provider_FiltersExpiredLeaseSessions(t *testing.T) {
+	sessions := []*model.SessionRecord{
+		{
+			SessionID:          "expired_new",
+			State:              model.SessionNew,
+			CreatedAtUnix:      time.Now().Add(-17 * time.Hour).Unix(),
+			LeaseExpiresAtUnix: time.Now().Add(-16 * time.Hour).Unix(),
+		},
+		{
+			SessionID:          "expired_ready",
+			State:              model.SessionReady,
+			CreatedAtUnix:      time.Now().Add(-10 * time.Minute).Unix(),
+			LeaseExpiresAtUnix: time.Now().Add(-5 * time.Minute).Unix(),
+		},
+		{
+			SessionID:          "live_ready",
+			State:              model.SessionReady,
+			CreatedAtUnix:      time.Now().Add(-1 * time.Minute).Unix(),
+			LeaseExpiresAtUnix: time.Now().Add(1 * time.Minute).Unix(),
+		},
+	}
+
+	store := &MockStore{Sessions: sessions}
+	cfg := config.AppConfig{DataDir: t.TempDir()}
+	snap := config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: "missing.m3u"}}
+
+	streams, err := GetStreams(context.Background(), cfg, snap, store, StreamsQuery{})
+	require.NoError(t, err)
+	require.Len(t, streams, 1)
+	assert.Equal(t, "live_ready", streams[0].ID)
+}

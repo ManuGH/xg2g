@@ -13,6 +13,14 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
+	sqliteutil "github.com/ManuGH/xg2g/internal/persistence/sqlite"
+	"github.com/rs/zerolog"
+)
+
+const (
+	heartbeatPollInterval           = 2 * time.Second
+	heartbeatStoreUpdateMaxAttempts = 3
+	heartbeatStoreRetryBaseBackoff  = 75 * time.Millisecond
 )
 
 // SegmentHeartbeatSource defines the interface for monitoring stream activity.
@@ -83,7 +91,7 @@ func (o *Orchestrator) startHeartbeatMonitor(ctx context.Context, sessionID stri
 	}
 
 	// Rate-limited: 2s interval (as recommended by CTO "no busy loop", enough for 1s segments)
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(heartbeatPollInterval)
 	defer ticker.Stop()
 
 	logger := log.L().With().Str("sid", sessionID).Str("monitor", "heartbeat").Logger()
@@ -100,20 +108,51 @@ func (o *Orchestrator) startHeartbeatMonitor(ctx context.Context, sessionID stri
 			}
 
 			if found {
-				_, err := o.Store.UpdateSession(ctx, sessionID, func(r *model.SessionRecord) error {
-					if r == nil {
-						return nil
-					}
-					// Only update if it's newer to avoid backwards drift
-					if t.After(r.LatestSegmentAt) {
-						r.LatestSegmentAt = t
-					}
-					return nil
-				})
-				if err != nil {
+				if err := o.updateLatestSegmentHeartbeat(ctx, sessionID, t, logger); err != nil {
 					logger.Warn().Err(err).Msg("failed to update session heartbeat in store")
 				}
 			}
 		}
+	}
+}
+
+func (o *Orchestrator) updateLatestSegmentHeartbeat(ctx context.Context, sessionID string, latest time.Time, logger zerolog.Logger) error {
+	var err error
+	for attempt := 1; attempt <= heartbeatStoreUpdateMaxAttempts; attempt++ {
+		_, err = o.Store.UpdateSession(ctx, sessionID, func(r *model.SessionRecord) error {
+			if r == nil {
+				return nil
+			}
+			// Only update if it's newer to avoid backwards drift
+			if latest.After(r.LatestSegmentAt) {
+				r.LatestSegmentAt = latest
+			}
+			return nil
+		})
+		if err == nil {
+			return nil
+		}
+		if !sqliteutil.IsBusyRetryable(err) || attempt == heartbeatStoreUpdateMaxAttempts {
+			return err
+		}
+
+		backoff := heartbeatStoreRetryBaseBackoff * time.Duration(attempt)
+		logger.Debug().Err(err).Int("attempt", attempt).Dur("backoff", backoff).Msg("retrying transient sqlite heartbeat contention")
+		if err := sleepWithContext(ctx, backoff); err != nil {
+			return err
+		}
+	}
+	return err
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }

@@ -4,7 +4,7 @@
 
 **Status**: CANONICAL - Single Source of Truth
 **Last Updated**: 2026-01-08
-**Applies To**: v{{VERSION}}+
+**Applies To**: {{VERSION}}+
 
 > [!IMPORTANT]
 > This document defines **non-negotiable** behavior. No bauchgefühl, no interpretation.
@@ -118,10 +118,31 @@ GPU hosts opt in through `docker-compose.gpu.yml`, which `compose-xg2g.sh`
 auto-loads when present. Operators may also set `COMPOSE_FILE` in
 `/etc/xg2g/xg2g.env` for explicit file selection.
 
+**Runtime Config Requirement**:
+
+Container device mounts alone do not enable GPU transcoding in the live path.
+For VAAPI-backed session decisions, operators must also configure the render
+node explicitly through one of:
+
+```yaml
+ffmpeg:
+  vaapiDevice: /dev/dri/renderD128
+```
+
+or:
+
+```bash
+XG2G_VAAPI_DEVICE=/dev/dri/renderD128
+```
+
+Without that config key, VAAPI preflight is skipped and eligible live sessions
+fall back fail-closed to CPU even when `/dev/dri/renderD128` is visible inside
+the container and FFmpeg can encode with `h264_vaapi` manually.
+
 **Detection Logic**:
 
-- GPU override loaded + device present → GPU available
-- GPU override absent or device absent → GPU unavailable (fail-closed, use CPU)
+- GPU override loaded + device present + `ffmpeg.vaapiDevice` configured + preflight passed → GPU available
+- GPU override absent, device absent, config absent, or preflight failed → GPU unavailable (fail-closed, use CPU)
 - **Test**: `hwaccel=force` without override/device → MUST return 400
 
 ## 4. Homelab SOA Setup - Golden Path
@@ -245,6 +266,9 @@ docker run --rm --device /dev/dri/renderD128 xg2g:{{VERSION}} ls -l /dev/dri/
 
 **Expected**: `renderD128` present
 
+Live-runtime note: this check alone is insufficient. It only proves the device
+is mounted, not that xg2g will choose GPU for session startup.
+
 Command (hwaccel test):
 
 ```bash
@@ -253,6 +277,10 @@ docker run --rm --device /dev/dri/renderD128 xg2g:{{VERSION}} \
 ```
 
 Expected: Success (exit 0)
+
+Live-runtime requirement: also verify that the runtime config points at the same
+device (`ffmpeg.vaapiDevice` or `XG2G_VAAPI_DEVICE`). A manual FFmpeg success
+without that setting can still leave xg2g session decisions on CPU.
 
 #### Failure
 

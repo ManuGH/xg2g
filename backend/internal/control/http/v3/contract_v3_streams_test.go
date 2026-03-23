@@ -388,6 +388,12 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 				LatestSegmentAt:      time.Time{},
 				LastPlaylistAccessAt: now.Add(-40 * time.Second), // stale access must not remain buffering forever
 			},
+			{
+				SessionID:          "expired_starting",
+				State:              model.SessionNew,
+				CreatedAtUnix:      now.Add(-17 * time.Hour).Unix(),
+				LeaseExpiresAtUnix: now.Add(-16 * time.Hour).Unix(),
+			},
 		}
 
 		mockStore := &MockStoreForStreams{Sessions: sessions}
@@ -427,8 +433,10 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 		// stalled and idle no longer in response (filtered out)
 		_, hasStalled := stateMap["stalled"]
 		_, hasIdle := stateMap["idle"]
+		_, hasExpiredStarting := stateMap["expired_starting"]
 		assert.False(t, hasStalled, "stalled sessions are filtered (non-running)")
 		assert.False(t, hasIdle, "idle sessions are filtered (non-running)")
+		assert.False(t, hasExpiredStarting, "expired pre-ready sessions are filtered fail-closed")
 	})
 }
 

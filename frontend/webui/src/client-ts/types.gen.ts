@@ -70,6 +70,10 @@ export type SessionResponse = {
     serviceRef?: string;
     profile?: string;
     /**
+     * Short machine-readable hint explaining why the effective playback profile/path was selected.
+     */
+    profileReason?: string;
+    /**
      * Session lifecycle state. STARTING guarantees a session ticket is allocated.
      * READY/ACTIVE guarantees a playable HLS stream.
      *

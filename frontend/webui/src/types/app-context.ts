@@ -5,6 +5,7 @@ import type { Service, Bouquet } from '../client-ts';
 export interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
+  isReady?: boolean;
 }
 
 export interface ChannelState {

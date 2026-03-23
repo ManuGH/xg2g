@@ -164,8 +164,8 @@ Observed live-host delta on March 17, 2026:
 
 Observed live-host delta on March 17, 2026 (image truth):
 - `/etc/systemd/system/xg2g.service` derives the image to preflight from `/srv/xg2g/docker-compose.yml`; it is not a separate image source of truth.
-- When `/srv/xg2g/docker-compose.yml` points at `ghcr.io/manugh/xg2g:v3.3.0`, a locally built `xg2g:local` image is insufficient for `systemctl restart xg2g.service`.
-- Symptom: `ExecStartPre` fails with `No such image: ghcr.io/manugh/xg2g:v3.3.0` before Compose can start anything.
+- When `/srv/xg2g/docker-compose.yml` points at `ghcr.io/manugh/xg2g:v3.4.0`, a locally built `xg2g:local` image is insufficient for `systemctl restart xg2g.service`.
+- Symptom: `ExecStartPre` fails with `No such image: ghcr.io/manugh/xg2g:v3.4.0` before Compose can start anything.
 - Operational rule: for hotfix deploys, either build/tag the image under the compose-pinned reference or update the live compose file first. Do not patch the installed unit under the assumption that it owns image truth.
 
 Observed live-host delta on March 17, 2026 (GPU contract drift):
@@ -176,13 +176,29 @@ Observed live-host delta on March 17, 2026 (GPU contract drift):
 
 Observed live-host delta on March 17, 2026 (playback/runtime):
 - Safari-native media requests could not be trusted to carry header auth on `.m3u8` fetches; tokenized media URLs became the runtime-safe source of truth for HLS auth.
-- Live hosts may omit `ffmpeg.vaapiDevice` entirely; runtime now auto-discovers `/dev/dri/renderD128` and must be verified with an actual transcode probe, not only with container mounts.
 - After a service restart, Safari may keep polling an old HLS session URL from an already cancelled tab state. Symptom pattern:
   - repeated `GET /api/v3/sessions/<old-id>/hls/index.m3u8?...` with `410`
   - playback feedback like `networkError: levelLoadError`
   - no fresh `POST /api/v3/live/stream-info`, no fresh `POST /api/v3/intents`, and no new `playlist ready - transitioning to READY state`
   In that case, do not debug startup first. Hard-reload Safari (`Cmd+Option+R`) or reopen the tab, then start a new stream and inspect the fresh session instead of the stale `410` noise.
-If you see that exact mismatch, fix the live env first by setting:
+
+Observed live-host delta on March 23, 2026 (VAAPI runtime truth):
+- Container-level GPU visibility is necessary but not sufficient. A live host with `/dev/dri/renderD128` mounted into the container still fell back to CPU for Safari transcode sessions until `ffmpeg.vaapiDevice` was explicitly configured.
+- Current runtime rule: if GPU transcoding is desired, set exactly one of:
+  - `/var/lib/xg2g/config.yaml`:
+    ```yaml
+    ffmpeg:
+      vaapiDevice: /dev/dri/renderD128
+    ```
+  - `/etc/xg2g/xg2g.env`: `XG2G_VAAPI_DEVICE=/dev/dri/renderD128`
+- Without that config key, VAAPI preflight is skipped during wiring/bootstrap and live playback decisions fail-closed to CPU (`libx264`) even when FFmpeg inside the container can encode with `h264_vaapi`.
+- Verification rule: do not trust only `docker exec ... ls /dev/dri` or ad-hoc FFmpeg smoke tests. Also run a real transcode-capable live session and confirm log evidence such as:
+  - `gpu_available:true`
+  - `decision.summary ... "path":"transcode_hw"`
+  - `pipeline video: vaapi`
+- Operational shorthand: `ffmpeg.vaapiDevice` is currently not optional for GPU transcoding. A fresh deploy that omits it should be expected to fall back silently to CPU for eligible live transcode paths.
+
+If you see the March 11 metrics-only health mismatch, fix the live env first by setting:
 
 ```bash
 XG2G_METRICS_LISTEN=:9091

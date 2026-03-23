@@ -59,6 +59,7 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 	if err != nil {
 		return []StreamSession{}, err
 	}
+	now := time.Now()
 
 	// 2. Resolve Channel Names (Best Effort)
 	nameMap := make(map[string]string)
@@ -93,12 +94,17 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		if r.State.IsTerminal() {
 			continue
 		}
+		// Fail-closed: sessions with an expired lease are no longer worker-owned and
+		// must not surface as running, even if cleanup has not caught up yet.
+		if r.LeaseExpiresAtUnix > 0 && now.Unix() >= r.LeaseExpiresAtUnix {
+			continue
+		}
 
 		serviceRef := CanonicalServiceRef(r.ServiceRef)
 
 		// Map State: Domain → Contract
 		// Use the deterministic truth engine (PR-P3-2)
-		lifecycleState := model.DeriveLifecycleState(r, time.Now())
+		lifecycleState := model.DeriveLifecycleState(r, now)
 
 		// Canonicalize: running states → "active", non-running → filter, unknown → fail
 		contractState, err := canonicalRunningState(r.SessionID, lifecycleState)

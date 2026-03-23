@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	sessionmanager "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	pipebus "github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -44,6 +45,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 
 	m.registerV3Checks(&cfg, runtimeDeps.receiverHealthCheck)
 	m.launchV3Orchestrator(ctx, errChan, orch)
+	m.launchV3LeaseExpiryWorker(ctx, errChan, cfg, runtimeDeps.store)
 
 	return nil
 }
@@ -133,6 +135,36 @@ func (m *manager) launchV3Orchestrator(ctx context.Context, errChan chan<- error
 		if err != nil && !errors.Is(err, context.Canceled) {
 			m.logger.Error().Err(err).Msg("v3 worker orchestrator exited unexpected")
 			errChan <- fmt.Errorf("v3 worker: %w", err)
+		}
+		workerDone <- err
+		close(workerDone)
+	}()
+}
+
+func (m *manager) launchV3LeaseExpiryWorker(ctx context.Context, errChan chan<- error, cfg config.AppConfig, store sessionstore.StateStore) {
+	worker := &sessionmanager.LeaseExpiryWorker{
+		Store:  store,
+		Config: &cfg,
+	}
+
+	workerCtx, workerCancel := context.WithCancel(ctx)
+	workerDone := make(chan error, 1)
+
+	m.RegisterShutdownHook("v3_lease_expiry_stop", func(shutdownCtx context.Context) error {
+		workerCancel()
+		select {
+		case <-shutdownCtx.Done():
+			return fmt.Errorf("timeout waiting for v3 lease expiry worker stop: %w", shutdownCtx.Err())
+		case <-workerDone:
+			return nil
+		}
+	})
+
+	go func() {
+		err := worker.Run(workerCtx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			m.logger.Error().Err(err).Msg("v3 lease expiry worker exited unexpected")
+			errChan <- fmt.Errorf("v3 lease expiry: %w", err)
 		}
 		workerDone <- err
 		close(workerDone)

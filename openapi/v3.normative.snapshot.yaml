@@ -101,6 +101,10 @@ components:
           type: string
         profile:
           type: string
+        profileReason:
+          type: string
+          description: Short machine-readable hint explaining why the effective playback profile/path was selected.
+          example: safari_compat_transcode
         state:
           type: string
           description: |

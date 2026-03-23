@@ -117,6 +117,19 @@
       "recovering": "Recovering…",
       "stopped": "Stopped"
     },
+    "startupHints": {
+      "safariCompatTranscode": "Preparing Safari-compatible stream…",
+      "repairTranscode": "Repairing and transcoding stream…",
+      "transcodeStartup": "Preparing transcoded stream…"
+    },
+    "startupSupport": {
+      "default": "Playback starts automatically as soon as the first stable segments are ready.",
+      "safariCompatTranscode": "Safari needs a compatible stream variant first. This can take a little longer.",
+      "repairTranscode": "The incoming stream is being stabilized before playback starts.",
+      "transcodeStartup": "The stream is being prepared for this device and will start automatically."
+    },
+    "startupElapsed": "Wait {{seconds}}s",
+    "startupSurfaceEyebrow": "Live startup",
     "playlistNotReady": "Playlist not ready",
     "readyButNotPlayable": "READY reported, but playlist is not available",
     "sessionNotReadyInTime": "Session did not become ready in time",

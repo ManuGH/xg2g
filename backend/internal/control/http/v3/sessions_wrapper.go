@@ -59,7 +59,7 @@ func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Run in background
-		if started := scanner.RunBackground(); started {
+		if started := scanner.RunBackgroundForce(); started {
 			writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 		} else {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "already_running"})

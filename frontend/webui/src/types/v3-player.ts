@@ -85,6 +85,7 @@ export interface V3SessionStatusResponse {
   state: string;
   reason?: string;
   reasonDetail?: string;
+  profileReason?: string;
   correlationId?: string;
   trace?: PlaybackTrace;
   updatedAtMs?: number;

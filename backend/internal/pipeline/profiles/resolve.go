@@ -251,8 +251,10 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		// Smart Profile Logic
 		if cap != nil && !cap.Interlaced {
 			// Progressive -> Direct Remux (Original Quality)
+			// Keep native Safari on classic HLS-TS for passthrough. This avoids
+			// black-video failures seen with copied broadcast H.264 inside fMP4.
 			spec.TranscodeVideo = false
-			spec.Container = "fmp4"
+			spec.Container = "mpegts"
 			spec.AudioBitrateK = 192
 			// HWAccel disabled for passthrough
 		} else {
@@ -266,16 +268,20 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			useGPU := shouldUseGPU(hasGPU, hwaccelMode)
 
 			if useGPU {
-				// GPU Acceleration (High Quality)
+				// GPU acceleration uses an explicit VAAPI QP target as the primary
+				// quality knob. The bitrate fields remain available as optional
+				// safety ceilings in the FFmpeg builder.
 				spec.HWAccel = "vaapi"
 				spec.VideoCodec = "h264"
-				spec.VideoCRF = 16
-				spec.VideoMaxRateK = 20000
-				spec.VideoBufSizeK = 40000
+				spec.VideoQP = envIntBounded("XG2G_SAFARI_VAAPI_QP", 20, 10, 40)
+				spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_VAAPI_MAXRATE_K", 20000, 4000, 60000)
+				spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_VAAPI_BUFSIZE_K", 40000, 8000, 120000)
 			} else {
-				// CPU Fallback (Safe Quality)
+				// CPU fallback keeps the Safari-compatible H.264/fMP4 path,
+				// but use the quality rung so the software encode lands closer
+				// to the original receiver picture than the old safe default.
 				spec.VideoCodec = "libx264"
-				applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
+				applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentQuality))
 				spec.VideoMaxRateK = 8000
 				spec.VideoBufSizeK = 16000
 			}
@@ -300,11 +306,13 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		case safariDirtyHWModeFull:
 			spec.HWAccel = profileHWAccelVAAPI
 			spec.VideoCodec = "h264"
+			spec.VideoQP = envIntBounded("XG2G_SAFARI_DIRTY_VAAPI_QP", 20, 10, 40)
 			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
 			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 40000, 8000, 120000)
 		case safariDirtyHWModeEncodeOnly:
 			spec.HWAccel = profileHWAccelVAAPIEncodeOnly
 			spec.VideoCodec = "h264"
+			spec.VideoQP = envIntBounded("XG2G_SAFARI_DIRTY_VAAPI_QP", 20, 10, 40)
 			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
 			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 40000, 8000, 120000)
 		default:
