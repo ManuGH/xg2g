@@ -6,7 +6,7 @@
  * browser capability detection helpers.
  */
 
-import type { VideoElementRef } from '../types/v3-player';
+import type { VideoElementRef } from '../../../types/v3-player';
 
 // --- Error Type ---
 
@@ -126,7 +126,6 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
     if (!hasNativeHls) return false;
     if (shouldForceNativeMobileHls(videoEl)) return true;
-    if (hlsJsSupported) return false;
 
     const webkitVideo = videoEl as unknown as {
       webkitSupportsPresentationMode?: unknown;

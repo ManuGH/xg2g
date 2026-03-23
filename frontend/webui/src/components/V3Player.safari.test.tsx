@@ -2,10 +2,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import V3Player from './V3Player';
-import Hls from '../lib/hlsRuntime';
+import Hls from '../features/player/lib/hlsRuntime';
 
 // Mock HLS.js
-vi.mock('../lib/hlsRuntime', () => {
+vi.mock('../features/player/lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),

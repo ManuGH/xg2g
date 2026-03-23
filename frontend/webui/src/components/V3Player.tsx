@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
-import Hls from '../lib/hlsRuntime';
+import Hls from '../features/player/lib/hlsRuntime';
 import {
   postRecordingPlaybackInfo,
   type PlaybackCapabilities as PlaybackCapabilitiesContract,
@@ -38,9 +38,9 @@ import {
   canUseDesktopWebKitFullscreen,
   shouldForceNativeMobileHls,
   shouldPreferNativeWebKitHls
-} from '../utils/playerHelpers';
-import { detectPlaybackClientFamily } from '../utils/playbackClientFamily';
-import { probeRuntimePlaybackCapabilities } from '../utils/playbackProbe';
+} from '../features/player/utils/playerHelpers';
+import { detectPlaybackClientFamily } from '../features/player/utils/playbackClientFamily';
+import { probeRuntimePlaybackCapabilities } from '../features/player/utils/playbackProbe';
 import { normalizePlayerError } from '../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
 import type { AppError } from '../types/errors';
