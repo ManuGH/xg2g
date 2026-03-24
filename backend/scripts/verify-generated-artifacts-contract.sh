@@ -21,7 +21,7 @@ GOVERNED_EXACT=(
   "backend/config.generated.example.yaml"
   "backend/internal/api/server_gen.go"
   "backend/internal/control/http/v3/server_gen.go"
-  "frontend/webui/src/contracts/consumption.d.ts"
+  "frontend/webui/src/types/api/consumption.d.ts"
   "openapi/v3.normative.snapshot.yaml"
 )
 
