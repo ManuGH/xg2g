@@ -7,6 +7,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DOC="${REPO_ROOT}/docs/ops/RELEASE_OUTPUT_CONTRACT.md"
 GORELEASER_CFG="${REPO_ROOT}/.goreleaser.yml"
 RELEASE_WORKFLOW="${REPO_ROOT}/.github/workflows/release.yml"
+DOCKER_WORKFLOW="${REPO_ROOT}/.github/workflows/docker.yml"
+FFMPEG_BASE_WORKFLOW="${REPO_ROOT}/.github/workflows/ffmpeg-base.yml"
+RELEASE_DOCKERFILE="${REPO_ROOT}/infrastructure/docker/Dockerfile.release"
+FFMPEG_BASE_DOCKERFILE="${REPO_ROOT}/Dockerfile.ffmpeg-base"
+MK_VARIABLES="${REPO_ROOT}/mk/variables.mk"
+FFMPEG_BUILD_SCRIPT="${REPO_ROOT}/backend/scripts/build-ffmpeg.sh"
 RELEASE_PREPARE="${REPO_ROOT}/backend/scripts/release-prepare.sh"
 RELEASE_VERIFY_REMOTE="${REPO_ROOT}/backend/scripts/release-verify-remote.sh"
 DIGEST_VERIFY="${REPO_ROOT}/backend/scripts/verify-digest-lock.sh"
@@ -45,6 +51,15 @@ assert_contains() {
   grep -Fq -- "${needle}" "${file}" || fail "${label}: expected '${needle}' in ${file}"
 }
 
+assert_not_contains() {
+  local file="$1"
+  local needle="$2"
+  local label="$3"
+  if grep -Fq -- "${needle}" "${file}"; then
+    fail "${label}: unexpected '${needle}' in ${file}"
+  fi
+}
+
 normalize_tag_version() {
   local raw="${1:-}"
   local plain="${raw#v}"
@@ -57,6 +72,20 @@ normalize_plain_version() {
   local plain="${raw#v}"
   [[ -n "${plain}" ]] || fail "empty version"
   printf '%s\n' "${plain}"
+}
+
+extract_make_ffmpeg_version() {
+  local version
+  version="$(sed -n 's/^FFMPEG_VERSION := //p' "${MK_VARIABLES}" | head -n 1 | tr -d '[:space:]')"
+  [[ -n "${version}" ]] || fail "unable to determine FFMPEG_VERSION from ${MK_VARIABLES}"
+  printf '%s\n' "${version}"
+}
+
+extract_build_script_ffmpeg_version() {
+  local version
+  version="$(sed -n 's/^FFMPEG_VERSION=\"\(.*\)\"/\1/p' "${FFMPEG_BUILD_SCRIPT}" | head -n 1 | tr -d '[:space:]')"
+  [[ -n "${version}" ]] || fail "unable to determine FFMPEG_VERSION from ${FFMPEG_BUILD_SCRIPT}"
+  printf '%s\n' "${version}"
 }
 
 expected_bundle_files() {
@@ -109,16 +138,28 @@ verify_doc_contract() {
   assert_contains "${DOC}" 'backend/VERSION' "release output doc version source"
   assert_contains "${DOC}" 'RELEASE_MANIFEST.json' "release output doc exclusion"
   assert_contains "${DOC}" 'DIGESTS.lock' "release output doc exclusion"
+  assert_contains "${DOC}" 'xg2g-ffmpeg:<ffmpeg-version>' "release output doc exclusion"
+  assert_contains "${DOC}" '.github/workflows/ffmpeg-base.yml' "release output doc truth input"
+  assert_contains "${DOC}" 'Dockerfile.ffmpeg-base' "release output doc truth input"
   assert_contains "${DOC}" 'unexpected published output' "release output doc policy"
 }
 
 verify_release_workflow_contract() {
   assert_file "${RELEASE_WORKFLOW}"
+  assert_file "${DOCKER_WORKFLOW}"
+  assert_file "${FFMPEG_BASE_WORKFLOW}"
 
   assert_contains "${RELEASE_WORKFLOW}" 'tags:' "release workflow trigger"
   assert_contains "${RELEASE_WORKFLOW}" '- "v*"' "release workflow tag trigger"
   assert_contains "${RELEASE_WORKFLOW}" 'goreleaser/goreleaser-action@v7' "release workflow goreleaser action"
   assert_contains "${RELEASE_WORKFLOW}" 'args: release --clean' "release workflow goreleaser args"
+  assert_contains "${RELEASE_WORKFLOW}" 'Verify FFmpeg base image availability' "release workflow ffmpeg base gate"
+  assert_contains "${RELEASE_WORKFLOW}" 'docker/login-action@' "release workflow ghcr login"
+  assert_contains "${DOCKER_WORKFLOW}" 'branches:' "docker workflow trigger"
+  assert_contains "${DOCKER_WORKFLOW}" '- main' "docker workflow main trigger"
+  assert_not_contains "${DOCKER_WORKFLOW}" '- "v*"' "docker workflow tag trigger"
+  assert_contains "${FFMPEG_BASE_WORKFLOW}" 'Dockerfile.ffmpeg-base' "ffmpeg base workflow dockerfile"
+  assert_contains "${FFMPEG_BASE_WORKFLOW}" 'ghcr.io/${{ github.repository_owner }}/xg2g-ffmpeg' "ffmpeg base workflow registry"
 }
 
 verify_goreleaser_contract() {
@@ -137,6 +178,27 @@ verify_goreleaser_contract() {
   assert_contains "${GORELEASER_CFG}" 'ghcr.io/manugh/xg2g:{{ .Tag }}-arm64' "goreleaser arm64 image tag"
   assert_contains "${GORELEASER_CFG}" 'name_template: "ghcr.io/manugh/xg2g:{{ .Tag }}"' "goreleaser manifest tag"
   assert_contains "${GORELEASER_CFG}" 'name_template: "ghcr.io/manugh/xg2g:latest"' "goreleaser latest manifest"
+  assert_not_contains "${GORELEASER_CFG}" 'build-ffmpeg.sh' "goreleaser release ffmpeg source build"
+}
+
+verify_release_docker_contract() {
+  local mk_ffmpeg_version
+  local build_script_ffmpeg_version
+
+  assert_file "${RELEASE_DOCKERFILE}"
+  assert_file "${FFMPEG_BASE_DOCKERFILE}"
+  assert_file "${MK_VARIABLES}"
+  assert_file "${FFMPEG_BUILD_SCRIPT}"
+
+  mk_ffmpeg_version="$(extract_make_ffmpeg_version)"
+  build_script_ffmpeg_version="$(extract_build_script_ffmpeg_version)"
+  [[ "${mk_ffmpeg_version}" == "${build_script_ffmpeg_version}" ]] || fail "FFMPEG_VERSION drift between ${MK_VARIABLES} (${mk_ffmpeg_version}) and ${FFMPEG_BUILD_SCRIPT} (${build_script_ffmpeg_version})"
+
+  assert_contains "${RELEASE_DOCKERFILE}" "ARG FFMPEG_BASE_IMAGE=ghcr.io/manugh/xg2g-ffmpeg:${mk_ffmpeg_version}" "release docker ffmpeg base image"
+  assert_contains "${RELEASE_DOCKERFILE}" 'FROM ${FFMPEG_BASE_IMAGE} AS runtime' "release docker runtime base"
+  assert_not_contains "${RELEASE_DOCKERFILE}" 'RUN ./build-ffmpeg.sh' "release docker ffmpeg rebuild"
+  assert_contains "${FFMPEG_BASE_DOCKERFILE}" 'COPY backend/scripts/build-ffmpeg.sh .' "ffmpeg base docker build script"
+  assert_contains "${FFMPEG_BASE_DOCKERFILE}" 'COPY --chown=root:root backend/scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg' "ffmpeg base docker wrapper"
 }
 
 verify_release_input_contract() {
@@ -334,6 +396,7 @@ main() {
   verify_doc_contract
   verify_release_workflow_contract
   verify_goreleaser_contract
+  verify_release_docker_contract
   verify_release_input_contract
   verify_synthetic_bundle_guards
 
