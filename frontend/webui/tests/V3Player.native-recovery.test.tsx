@@ -1,9 +1,9 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import V3Player from '../src/components/V3Player';
+import V3Player from '../src/features/player/components/V3Player';
 
-vi.mock('../src/lib/hlsRuntime', () => {
+vi.mock('../src/features/player/lib/hlsRuntime', () => {
   const HlsMock = vi.fn();
   (HlsMock as any).isSupported = vi.fn().mockReturnValue(false);
   return { default: HlsMock };

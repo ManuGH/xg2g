@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 describe('V3Player Duration Truth Gate', () => {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const playerPath = path.resolve(__dirname, '../../src/components/V3Player.tsx');
+  const playerPath = path.resolve(__dirname, '../../src/features/player/components/V3Player.tsx');
   const resumePath = path.resolve(__dirname, '../../src/features/resume/useResume.ts');
 
   it('does not use HTMLMediaElement duration as duration truth input', () => {

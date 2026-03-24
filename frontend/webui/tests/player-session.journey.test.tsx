@@ -26,7 +26,7 @@ const {
   mockToast: vi.fn(),
 }));
 
-vi.mock('../src/lib/hlsRuntime', () => {
+vi.mock('../src/features/player/lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),

@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import V3Player from '../../src/components/V3Player';
+import V3Player from '../../src/features/player/components/V3Player';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as sdk from '../../src/client-ts';
 

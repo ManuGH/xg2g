@@ -2,13 +2,13 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as sdk from '../src/client-ts';
-import V3Player from '../src/components/V3Player';
-import { resetCachedCodecs } from '../src/utils/codecDetection';
+import V3Player from '../src/features/player/components/V3Player';
+import { resetCachedCodecs } from '../src/features/player/utils/codecDetection';
 import { suppressExpectedConsoleNoise } from './helpers/consoleNoise';
 import { findFetchCall, mockLiveFlowFetch } from './helpers/liveFlow';
 import { applyBrowserFamilyMatrix, browserFamilyMatrixCases } from './helpers/playbackMatrix';
 
-vi.mock('../src/lib/hlsRuntime', () => {
+vi.mock('../src/features/player/lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),
