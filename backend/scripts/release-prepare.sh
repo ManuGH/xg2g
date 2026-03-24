@@ -6,6 +6,8 @@ set -euo pipefail
 
 # Match CI semantics by default while still allowing explicit overrides.
 export GOTOOLCHAIN="${GOTOOLCHAIN:-auto}"
+export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/xg2g-gocache}"
+mkdir -p "${GOCACHE}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 BACKEND_VERSION_FILE="${REPO_ROOT}/backend/VERSION"
