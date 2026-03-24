@@ -123,8 +123,23 @@ EOF
 echo "✅ RELEASE_MANIFEST.json updated (digest set to null for now)"
 
 # 6. Final Verification (Local)
-echo "🧪 Running final verification gates..."
-make verify || (echo "❌ Verification failed. Fix drift or errors." && exit 1)
+# Release preparation intentionally runs on a dirty tree after version/doc rendering,
+# so use release-friendly gates that validate source truth without requiring the
+# freshly generated artifacts to have been committed yet.
+echo "🧪 Running release-friendly verification gates..."
+make \
+  verify-config \
+  verify-doc-links \
+  verify-doc-image-tags \
+  verify-digest-lock \
+  verify-release-output-contract \
+  verify-compose-resolver \
+  verify-systemd-runtime-contract \
+  verify-installation-contract \
+  verify-generated-artifacts-contract \
+  verify-openapi-hard-mode \
+  verify-embedded-webui-dist \
+  || (echo "❌ Verification failed. Fix drift or errors." && exit 1)
 
 echo "✨ Release preparation complete for ${TAG_VERSION}."
 echo "📝 Please review and commit: backend/VERSION, RELEASE_MANIFEST.json, and generated docs."
