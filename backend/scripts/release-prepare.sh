@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-# Fail-closed toolchain governance
-export GOTOOLCHAIN=local
+# Match CI semantics by default while still allowing explicit overrides.
+export GOTOOLCHAIN="${GOTOOLCHAIN:-auto}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 BACKEND_VERSION_FILE="${REPO_ROOT}/backend/VERSION"
