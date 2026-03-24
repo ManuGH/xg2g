@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, useLayoutEffect, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { getServices, getServicesBouquets } from '../client-ts';
-import { setClientAuthToken, throwOnClientResultError } from '../lib/clientWrapper';
+import { setClientAuthToken, throwOnClientResultError } from '../services/clientWrapper';
 import type { AppContextType } from '../types/app-context';
 import type { Service, Bouquet } from '../client-ts';
 import { debugError, debugLog, formatError } from '../utils/logging';

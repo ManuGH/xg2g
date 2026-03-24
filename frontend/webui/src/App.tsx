@@ -12,7 +12,7 @@ import { ROUTE_MAP } from './routes';
 
 // Lazy load feature views (Phase 4: Bundle optimization)
 // V3Player is lazy loaded because it includes heavy HLS.js dependency
-const V3Player = lazy(() => import('./components/V3Player'));
+const V3Player = lazy(() => import('./features/player/components/V3Player'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const EPG = lazy(() => import('./features/epg/EPG'));
 const Logs = lazy(() => import('./components/Logs'));

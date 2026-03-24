@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getLogs, type LogEntry } from '../client-ts';
 import { toAppError } from '../lib/appErrors';
-import { unwrapClientResultOrThrow } from '../lib/clientWrapper';
+import { unwrapClientResultOrThrow } from '../services/clientWrapper';
 import type { AppError } from '../types/errors';
 import { Button } from './ui';
 import ErrorPanel from './ErrorPanel';

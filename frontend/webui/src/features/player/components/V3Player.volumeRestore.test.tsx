@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import V3Player from './V3Player';
-import type { V3PlayerProps } from '../types/v3-player';
+import type { V3PlayerProps } from '../../../types/v3-player';
 
 vi.mock('../client-ts', () => ({
   createSession: vi.fn(),

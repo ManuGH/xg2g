@@ -2,7 +2,7 @@
 // Zero React dependencies, zero legacy client imports
 
 import { getEpg, getServices, getServicesBouquets, getTimers } from '../../client-ts';
-import { throwOnClientResultError, unwrapClientResultOrThrow } from '../../lib/clientWrapper';
+import { throwOnClientResultError, unwrapClientResultOrThrow } from '../../services/clientWrapper';
 import type { EpgEvent, EpgChannel, EpgBouquet, Timer } from './types';
 import { debugError } from '../../utils/logging';
 

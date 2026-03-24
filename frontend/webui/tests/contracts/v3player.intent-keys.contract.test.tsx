@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
-import V3Player from '../../src/components/V3Player';
+import V3Player from '../../src/features/player/components/V3Player';
 import { suppressExpectedConsoleNoise } from '../helpers/consoleNoise';
 import { findFetchCall, mockLiveFlowFetch } from '../helpers/liveFlow';
 

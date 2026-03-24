@@ -16,7 +16,7 @@ if [ "$#" -gt 0 ]; then
       src/client-ts/*)
         continue
         ;;
-      src/lib/clientWrapper.ts|src/lib/clientWrapper.test.ts)
+      src/services/clientWrapper.ts|src/services/clientWrapper.test.ts)
         continue
         ;;
       *.ts|*.tsx|*.js|*.jsx)
@@ -32,7 +32,7 @@ if [ "${#scan_targets[@]}" -gt 0 ]; then
   if command -v rg >/dev/null 2>&1; then
     if rg -n -- "$PATTERN" "${scan_targets[@]}"; then
       echo "❌ Direct client-ts/*.gen import detected outside wrapper boundary."
-      echo "   Use imports from src/client-ts (index) or src/lib/clientWrapper."
+      echo "   Use imports from src/client-ts (index) or the approved client wrapper surface."
       exit 1
     fi
   else
@@ -47,11 +47,11 @@ else
     if rg -n \
       --glob '*.{ts,tsx,js,jsx}' \
       --glob '!src/client-ts/**' \
-      --glob '!src/lib/clientWrapper.ts' \
-      --glob '!src/lib/clientWrapper.test.ts' \
+      --glob '!src/services/clientWrapper.ts' \
+      --glob '!src/services/clientWrapper.test.ts' \
       -- "$PATTERN" src tests; then
       echo "❌ Direct client-ts/*.gen import detected outside wrapper boundary."
-      echo "   Use imports from src/client-ts (index) or src/lib/clientWrapper."
+      echo "   Use imports from src/client-ts (index) or the approved client wrapper surface."
       exit 1
     fi
   else
@@ -61,7 +61,7 @@ else
       --exclude='clientWrapper.ts' \
       --exclude='clientWrapper.test.ts'; then
       echo "❌ Direct client-ts/*.gen import detected outside wrapper boundary."
-      echo "   Use imports from src/client-ts (index) or src/lib/clientWrapper."
+      echo "   Use imports from src/client-ts (index) or the approved client wrapper surface."
       exit 1
     fi
   fi

@@ -15,8 +15,8 @@ const {
   getServicesBouquets: vi.fn(),
 }));
 
-vi.mock('../lib/clientWrapper', async () => {
-  const actual = await vi.importActual<typeof import('../lib/clientWrapper')>('../lib/clientWrapper');
+vi.mock('../services/clientWrapper', async () => {
+  const actual = await vi.importActual<typeof import('../services/clientWrapper')>('../services/clientWrapper');
   return {
     ...actual,
     setClientAuthToken,

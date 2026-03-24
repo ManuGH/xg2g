@@ -228,7 +228,7 @@ seg_000001.ts
 
 	// Black-Box Output Assertions (CTO Gate)
 	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "DVR MUST force EVENT type")
-	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-2700,PRECISE=YES", "DVR MUST inject EXT-X-START with correct offset")
+	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-2,PRECISE=YES", "DVR MUST inject EXT-X-START near live edge")
 	assert.NotContains(t, content, "#EXT-X-ENDLIST", "DVR (Rolling) MUST NOT contain ENDLIST")
 	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE:VOD", "DVR MUST NOT contain VOD tag")
 
@@ -238,6 +238,23 @@ seg_000001.ts
 	startTagIdx := strings.Index(content, "#EXT-X-START")
 
 	assert.True(t, extM3UIdx < playlistTypeIdx && playlistTypeIdx < startTagIdx, "Semantic tags must follow header in order")
+}
+
+func TestPreferredLiveStartOffsetSeconds(t *testing.T) {
+	t.Run("uses half target duration with bounds", func(t *testing.T) {
+		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000000,\nseg_000000.ts\n")
+		assert.Equal(t, 3, preferredLiveStartOffsetSeconds(raw))
+	})
+
+	t.Run("clamps very small targets", func(t *testing.T) {
+		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1.000000,\nseg_000000.ts\n")
+		assert.Equal(t, 2, preferredLiveStartOffsetSeconds(raw))
+	})
+
+	t.Run("clamps very large targets", func(t *testing.T) {
+		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.000000,\nseg_000000.ts\n")
+		assert.Equal(t, 4, preferredLiveStartOffsetSeconds(raw))
+	})
 }
 
 func TestServeHLS_VODNoStartTag(t *testing.T) {

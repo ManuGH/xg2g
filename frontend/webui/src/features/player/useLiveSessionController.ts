@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
 import { createSession } from '../../client-ts';
-import { setClientAuthToken, throwOnClientResultError } from '../../lib/clientWrapper';
+import { setClientAuthToken, throwOnClientResultError } from '../../services/clientWrapper';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import { telemetry } from '../../services/TelemetryService';
 import type { PlayerStatus, SessionCookieState, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';

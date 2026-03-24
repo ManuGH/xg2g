@@ -6,7 +6,7 @@
  * browser capability detection helpers.
  */
 
-import type { VideoElementRef } from '../types/v3-player';
+import type { VideoElementRef } from '../../../types/v3-player';
 
 // --- Error Type ---
 

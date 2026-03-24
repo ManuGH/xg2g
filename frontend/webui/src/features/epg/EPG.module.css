@@ -59,6 +59,18 @@
   gap: 8px;
 }
 
+.actionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.actionLabel,
+.playLabel {
+  white-space: nowrap;
+}
+
 .toolbarRight button:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--border-elevated);
@@ -151,6 +163,19 @@
   outline: none;
 }
 
+.searchLeft select {
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  border-left: 1px solid var(--border-base);
+  border-radius: 0;
+  padding: 0 0 0 12px;
+  font-size: 13px;
+  outline: none;
+  min-width: 140px;
+  height: 100%;
+}
+
 .searchRight button {
   background: var(--accent-action);
   color: var(--text-primary);
@@ -160,6 +185,10 @@
   font-weight: 600;
   cursor: pointer;
   transition: all var(--motion-standard) var(--ease-standard);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
 }
 
 .searchRight button:hover:not(:disabled) {
@@ -504,4 +533,380 @@
 .pillActive {
   background: var(--accent-action);
   color: var(--text-primary);
+}
+
+@media (max-width: 48rem) {
+  .toolbar {
+    padding: 16px 18px;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .toolbarLeft h3 {
+    font-size: 1.25rem;
+  }
+
+  .toolbarRight {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .controls {
+    padding: 14px 18px;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .controls label {
+    min-width: 0;
+  }
+
+  .pills {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pill {
+    min-height: 40px;
+    padding: 0 12px;
+  }
+
+  .search {
+    padding: 14px 18px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+  }
+
+  .searchLeft {
+    min-height: 48px;
+  }
+
+  .searchRight {
+    display: flex;
+  }
+
+  .searchRight button {
+    min-height: 48px;
+  }
+
+  .card {
+    margin: 0 18px 14px;
+    padding: 16px;
+  }
+
+  .channel {
+    gap: 16px;
+    margin-bottom: 18px;
+    padding-bottom: 15px;
+  }
+
+  .channelName {
+    font-size: 1rem;
+  }
+
+  .play {
+    min-height: 44px;
+  }
+
+  .programme {
+    gap: 16px;
+    padding: 14px 16px;
+  }
+
+  .programmeTime {
+    min-width: 112px;
+    font-size: 0.8125rem;
+  }
+
+  .programmeDesc {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  .toggle {
+    min-height: 40px;
+  }
+}
+
+@media (max-height: 32rem) and (orientation: landscape) {
+  .toolbar {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+
+  .toolbarLeft p {
+    display: none;
+  }
+
+  .controls {
+    padding: 10px 16px;
+    gap: 10px 14px;
+  }
+
+  .pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .pills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .search {
+    padding: 10px 16px;
+    grid-template-columns: minmax(0, 1fr) 168px;
+  }
+
+  .searchLeft {
+    min-height: 44px;
+  }
+
+  .searchRight button {
+    width: 100%;
+  }
+
+  .card {
+    margin: 0 16px 12px;
+    padding: 14px 16px;
+  }
+
+  .channel {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .logo {
+    width: 56px;
+    height: 36px;
+  }
+
+  .programme {
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .programmeTime {
+    min-width: 0;
+    width: auto;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .programmeDesc {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+}
+
+@media (max-width: 30rem) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+
+  .toolbarLeft h3 {
+    font-size: 1.125rem;
+  }
+
+  .toolbarLeft p {
+    display: none;
+  }
+
+  .toolbarRight {
+    justify-content: flex-end;
+  }
+
+  .toolbarRight button,
+  .searchRight button,
+  .controls select,
+  .searchLeft select,
+  .pill,
+  .toggle,
+  .recordButton {
+    min-height: 44px;
+  }
+
+  .toolbarRight button {
+    padding: 0 14px;
+  }
+
+  .controls {
+    padding: 12px 16px;
+    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .controls label {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .controls select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .pills {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 6px;
+  }
+
+  .pills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pill {
+    flex: 0 0 auto;
+    padding: 0 14px;
+    font-size: 0.75rem;
+    scroll-snap-align: start;
+    white-space: nowrap;
+  }
+
+  .search {
+    padding: 12px 16px;
+    flex-direction: column;
+  }
+
+  .searchLeft {
+    padding: 0 12px;
+    min-height: 52px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .searchIcon {
+    margin-right: 4px;
+  }
+
+  .search input {
+    min-width: 0;
+    flex: 1 1 0;
+    padding: 12px 0;
+    font-size: 0.8125rem;
+  }
+
+  .searchLeft select {
+    width: calc(100% + 24px);
+    min-width: 0;
+    margin: 0 -12px;
+    padding: 12px;
+    border-left: none;
+    border-top: 1px solid var(--border-base);
+    height: auto;
+  }
+
+  .searchRight button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .card {
+    margin: 0 12px 12px;
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .channel {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    align-items: center;
+  }
+
+  .logo {
+    width: 56px;
+    height: 36px;
+  }
+
+  .channelName {
+    font-size: 0.9375rem;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .channelGroup {
+    margin-top: 6px;
+    font-size: 0.625rem;
+  }
+
+  .play {
+    margin-left: 0;
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 12px;
+  }
+
+  .playLabel,
+  .actionLabel {
+    display: none;
+  }
+
+  .programmes,
+  .programmesNoncurrent {
+    gap: 10px;
+  }
+
+  .programme {
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 12px;
+  }
+
+  .programmeTime {
+    min-width: 0;
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.8125rem;
+  }
+
+  .programmeTitle {
+    font-size: 0.875rem;
+    margin-bottom: 4px;
+  }
+
+  .programmeDesc {
+    font-size: 0.75rem;
+    line-height: 1.4;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  .recordButton {
+    width: 36px;
+    height: 36px;
+  }
+
+  .toggle {
+    font-size: 0.8125rem;
+    padding: 10px 12px;
+  }
+
+  .emptyState {
+    padding: 40px 24px;
+  }
 }

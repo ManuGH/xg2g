@@ -43,7 +43,7 @@ import {
   type RecordingResponse,
   type ScanStatus
 } from '../client-ts';
-import { throwOnClientResultError, unwrapClientResultOrThrow } from '../lib/clientWrapper';
+import { throwOnClientResultError, unwrapClientResultOrThrow } from '../services/clientWrapper';
 import { setErrorCatalog } from '../lib/errorCatalog';
 
 /**

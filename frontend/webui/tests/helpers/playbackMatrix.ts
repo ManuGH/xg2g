@@ -1,6 +1,6 @@
-import Hls from '../../src/lib/hlsRuntime';
+import Hls from '../../src/features/player/lib/hlsRuntime';
 import { vi } from 'vitest';
-import { resetCachedCodecs } from '../../src/utils/codecDetection';
+import { resetCachedCodecs } from '../../src/features/player/utils/codecDetection';
 
 export type BrowserFamily = 'safari_native' | 'ios_safari_native' | 'firefox_hlsjs' | 'chromium_hlsjs';
 

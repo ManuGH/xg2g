@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ClientRequestError } from '../src/lib/clientWrapper';
+import { ClientRequestError } from '../src/services/clientWrapper';
 import { resetErrorCatalog, setErrorCatalog } from '../src/lib/errorCatalog';
 import { toAppError } from '../src/lib/appErrors';
 

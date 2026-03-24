@@ -58,10 +58,10 @@
   <text x="426" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">H.264</text>
   <rect x="524" y="410" width="98" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
   <text x="558" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">AAC</text>
-  <rect x="636" y="410" width="108" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
-  <text x="666" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">fMP4</text>
-  <rect x="758" y="410" width="72" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
-  <text x="778" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">HLS</text>
+  <rect x="636" y="410" width="130" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
+  <text x="652" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">fMP4 / TS</text>
+  <rect x="780" y="410" width="72" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
+  <text x="800" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">HLS</text>
 
   <path d="M342 354H390" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
   <path d="M364 338L396 354L364 370" fill="#E86A33"/>

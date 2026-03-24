@@ -11,9 +11,9 @@ import {
   type PlaybackTraceFfmpegPlan,
   type PlaybackTraceOperator,
   type PlaybackTargetProfile,
-} from '../client-ts';
-import { getApiBaseUrl } from '../lib/clientWrapper';
-import { telemetry } from '../services/TelemetryService';
+} from '../../../client-ts';
+import { getApiBaseUrl } from '../../../services/clientWrapper';
+import { telemetry } from '../../../services/TelemetryService';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -21,15 +21,15 @@ import type {
   V3SessionStatusResponse,
   HlsInstanceRef,
   VideoElementRef
-} from '../types/v3-player';
-import { useLiveSessionController } from '../features/player/useLiveSessionController';
-import { usePlaybackEngine } from '../features/player/usePlaybackEngine';
-import { usePlayerChrome } from '../features/player/usePlayerChrome';
-import { resolveStartupOverlayLabel, resolveStartupOverlaySupport } from '../features/player/startupOverlayLabel';
-import { useResume } from '../features/resume/useResume';
-import { ResumeState } from '../features/resume/api';
-import { Button, Card, StatusChip } from './ui';
-import { debugError, debugLog, debugWarn } from '../utils/logging';
+} from '../../../types/v3-player';
+import { useLiveSessionController } from '../useLiveSessionController';
+import { usePlaybackEngine } from '../usePlaybackEngine';
+import { usePlayerChrome } from '../usePlayerChrome';
+import { resolveStartupOverlayLabel, resolveStartupOverlaySupport } from '../startupOverlayLabel';
+import { useResume } from '../../resume/useResume';
+import { ResumeState } from '../../resume/api';
+import { Button, Card, StatusChip } from '../../../components/ui';
+import { debugError, debugLog, debugWarn } from '../../../utils/logging';
 import {
   PlayerError,
   readResponseBody,
@@ -41,9 +41,9 @@ import {
 } from '../utils/playerHelpers';
 import { detectPlaybackClientFamily } from '../utils/playbackClientFamily';
 import { probeRuntimePlaybackCapabilities } from '../utils/playbackProbe';
-import { normalizePlayerError } from '../lib/appErrors';
-import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
-import type { AppError } from '../types/errors';
+import { normalizePlayerError } from '../../../lib/appErrors';
+import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
+import type { AppError } from '../../../types/errors';
 import styles from './V3Player.module.css';
 
 interface ApiErrorResponse {
@@ -1826,6 +1826,8 @@ function V3Player(props: V3PlayerProps) {
   const stopSummary = formatStopSummary(sessionPlaybackTrace);
   const hostPressureSummary = formatHostPressureSummary(effectiveHostPressureBand, effectiveHostOverrideApplied);
   const showVerboseErrorTelemetry = !isCompactTouchLayout;
+  const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
+  const audioToggleIcon = isMuted ? '🔊' : '🔇';
 
   return (
     <div
@@ -2253,13 +2255,18 @@ function V3Player(props: V3PlayerProps) {
 
           {canAdjustVolume && (
             <div className={styles.volumeControl}>
-              <button
-                className={styles.volumeButton}
+              <Button
+                variant={isMuted ? 'primary' : 'ghost'}
+                size="sm"
+                className={styles.audioToggleButton}
                 onClick={toggleMute}
-                title={isMuted ? t('player.unmute') : t('player.mute')}
+                title={audioToggleLabel}
+                aria-label={audioToggleLabel}
+                aria-pressed={!isMuted}
               >
-                {isMuted ? '🔇' : volume > 0.5 ? '🔊' : volume > 0 ? '🔉' : '🔈'}
-              </button>
+                <span className={styles.audioToggleIcon} aria-hidden="true">{audioToggleIcon}</span>
+                <span>{audioToggleLabel}</span>
+              </Button>
               <input
                 type="range"
                 min="0"

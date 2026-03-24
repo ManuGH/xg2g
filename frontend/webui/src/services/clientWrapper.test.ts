@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { client } from '../client-ts/client.gen';
-import { subscribeAuthRequired } from './sessionEvents';
+import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import {
   ClientRequestError,
   isApiError,

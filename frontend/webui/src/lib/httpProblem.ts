@@ -1,5 +1,5 @@
 import type { ProblemCode, ProblemDetails } from '../client-ts';
-import { requestAuthRequired } from './sessionEvents';
+import { requestAuthRequired } from '../features/player/sessionEvents';
 
 type JsonRecord = Record<string, unknown>;
 

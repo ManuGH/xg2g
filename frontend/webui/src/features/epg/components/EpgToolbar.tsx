@@ -41,8 +41,9 @@ export function EpgToolbar({
           <p>{t('epg.timeRange')}: {t('epg.rangeNowTo' + filters.timeRange + 'h', { defaultValue: 'now to +' + filters.timeRange + 'h' })}</p>
         </div>
         <div className={styles.toolbarRight}>
-          <button onClick={onRefresh} disabled={loading}>
-            {t('epg.reload')}
+          <button onClick={onRefresh} disabled={loading} aria-label={t('epg.reload')}>
+            <span className={styles.actionIcon} aria-hidden="true">↻</span>
+            <span className={styles.actionLabel}>{t('epg.reload')}</span>
           </button>
         </div>
       </div>
@@ -89,7 +90,7 @@ export function EpgToolbar({
       {/* Search Bar */}
       <div className={styles.search}>
         <div className={styles.searchLeft}>
-          <div className={styles.searchIcon}>⏎</div>
+          <div className={styles.searchIcon}>⌕</div>
           <input
             type="text"
             value={filters.query || ''}
@@ -122,8 +123,10 @@ export function EpgToolbar({
           <button
             onClick={onSearch}
             disabled={searchLoading || !filters.query?.trim()}
+            aria-label={t('epg.search')}
           >
-            {searchLoading ? t('common.loading') : t('epg.search')}
+            <span className={styles.actionIcon} aria-hidden="true">{searchLoading ? '…' : '⌕'}</span>
+            <span className={styles.actionLabel}>{searchLoading ? t('common.loading') : t('epg.search')}</span>
           </button>
         </div>
       </div>

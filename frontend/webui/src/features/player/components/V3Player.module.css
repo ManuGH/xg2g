@@ -15,6 +15,7 @@
   left: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   background:
     radial-gradient(circle at 18% 20%, var(--accent-action-subtle), transparent 24%),
     radial-gradient(circle at 82% 18%, var(--accent-live-subtle), transparent 24%),
@@ -571,31 +572,24 @@
   border: 1px solid var(--border-elevated);
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
+  flex-wrap: wrap;
 }
 
-.volumeButton {
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  font-size: 18px;
-  cursor: pointer;
+.audioToggleButton {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
-  border-radius: 14px;
-  transition:
-    color var(--motion-standard) var(--ease-standard),
-    background var(--motion-standard) var(--ease-standard);
+  justify-content: flex-start;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
-.volumeButton:hover {
-  color: var(--accent-action);
-  background: var(--surface-muted);
+.audioToggleIcon {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .volumeSlider {
+  flex: 1 1 96px;
   width: 80px;
   height: 6px;
   -webkit-appearance: none;
@@ -684,10 +678,11 @@
     right: 16px;
     bottom: calc(108px + var(--sab));
     transform: none;
+    min-width: 0;
     width: auto;
     grid-template-columns: 1fr;
-    padding: 16px 16px 18px;
-    gap: 14px;
+    padding: 14px 16px;
+    gap: 12px;
     border-radius: 22px;
   }
 
@@ -711,7 +706,8 @@
   }
 
   .spinnerLabel {
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
+    text-align: center;
   }
 
   .spinnerSupport {
@@ -837,7 +833,13 @@
     padding: 8px 12px;
   }
 
+  .audioToggleButton {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
   .volumeSlider {
+    flex-basis: 100%;
     width: 100%;
     min-width: 72px;
   }
