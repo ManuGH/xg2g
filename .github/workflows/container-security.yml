@@ -69,7 +69,6 @@ jobs:
           vuln-type: "os,library"
           ignore-unfixed: false
 
-
       - name: Fail on critical/high vulnerabilities
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
@@ -141,7 +140,6 @@ jobs:
           output: "trivy-fs-results.sarif"
           severity: "CRITICAL,HIGH"
           scanners: "secret,misconfig"
-
 
   generate-sbom:
     name: Generate and Scan SBOM
