@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App';
 import { AppProvider } from '../src/context/AppContext';
-import { ClientRequestError } from '../src/lib/clientWrapper';
+import { ClientRequestError } from '../src/services/clientWrapper';
 import { ROUTE_MAP } from '../src/routes';
 
 const {

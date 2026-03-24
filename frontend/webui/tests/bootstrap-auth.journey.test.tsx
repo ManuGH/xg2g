@@ -4,7 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App';
 import { AppProvider } from '../src/context/AppContext';
-import { requestAuthRequired } from '../src/lib/sessionEvents';
+import { requestAuthRequired } from '../src/features/player/sessionEvents';
 import { ROUTE_MAP } from '../src/routes';
 
 const {
