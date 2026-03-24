@@ -53,10 +53,11 @@ from pathlib import Path
 import re
 
 path = Path("${VERSION_FALLBACK_FILE}")
+new_version = "${TAG_VERSION}"
 text = path.read_text()
 updated = re.sub(
     r'Version = "v[^"]+"',
-    f'Version = "{TAG_VERSION}"',
+    f'Version = "{new_version}"',
     text,
     count=1,
 )
