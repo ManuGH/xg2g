@@ -9,6 +9,7 @@ export GOTOOLCHAIN=local
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 BACKEND_VERSION_FILE="${REPO_ROOT}/backend/VERSION"
+VERSION_FALLBACK_FILE="${REPO_ROOT}/backend/internal/version/version.go"
 NEW_VERSION_RAW="${1:-}"
 
 if [[ -z "$NEW_VERSION_RAW" ]]; then
@@ -46,16 +47,41 @@ fi
 echo "$TAG_VERSION" > "${BACKEND_VERSION_FILE}"
 echo "✅ backend/VERSION updated to ${TAG_VERSION}"
 
-# 3b. Add placeholder to DIGESTS.lock to satisfy verification gates
-# This will be replaced by release-verify-remote after publishing.
-if ! grep -q "\"${TAG_VERSION}\":" "${REPO_ROOT}/DIGESTS.lock"; then
-    cat <<EOF >> "${REPO_ROOT}/DIGESTS.lock"
-  "${TAG_VERSION}":
-    digest: "pending"
-    published_at: "pending"
+# Keep the fallback version metadata aligned with the release tag.
+python3 - <<EOF
+from pathlib import Path
+import re
+
+path = Path("${VERSION_FALLBACK_FILE}")
+text = path.read_text()
+updated = re.sub(
+    r'Version = "v[^"]+"',
+    f'Version = "{TAG_VERSION}"',
+    text,
+    count=1,
+)
+if updated == text:
+    raise SystemExit("failed to update backend/internal/version/version.go")
+path.write_text(updated)
 EOF
-    echo "✅ Placeholder added to DIGESTS.lock"
-fi
+echo "✅ backend/internal/version/version.go updated to ${TAG_VERSION}"
+
+# 3b. Add placeholder to DIGESTS.lock to satisfy verification gates.
+# DIGESTS.lock is JSON; update it structurally so retries stay deterministic.
+python3 - <<EOF
+import json
+from pathlib import Path
+
+path = Path("${REPO_ROOT}/DIGESTS.lock")
+data = json.loads(path.read_text())
+data.setdefault("releases", {})
+data["releases"]["${TAG_VERSION}"] = {
+    "digest": "pending",
+    "published_at": "pending",
+}
+path.write_text(json.dumps(data, indent=2) + "\n")
+EOF
+echo "✅ DIGESTS.lock placeholder synchronized for ${TAG_VERSION}"
 
 # 4. Render Documentation (Idempotent)
 make docs-render
@@ -70,7 +96,14 @@ echo -e "\n" >> "${REPO_ROOT}/CHANGELOG.md"
 # Updated exclusively here per Hard Condition #1
 GIT_SHA=$(git rev-parse HEAD)
 BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-IMAGE_REPO=$(grep "image:" "${REPO_ROOT}/DIGESTS.lock" | awk '{print $2}' | tr -d '[:space:]')
+IMAGE_REPO=$(python3 - <<EOF
+import json
+from pathlib import Path
+
+data = json.loads(Path("${REPO_ROOT}/DIGESTS.lock").read_text())
+print(data["image"])
+EOF
+)
 
 cat <<EOF > "${REPO_ROOT}/RELEASE_MANIFEST.json"
 {

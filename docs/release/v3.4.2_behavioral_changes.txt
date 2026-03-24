@@ -1,3 +1,4 @@
 Operational changes:
 - `verify-compose-contract.sh` now validates required `env_file` and `/var/lib/xg2g` mounts against the source compose files instead of the normalized `docker compose config` output, preventing false fail-closed restarts on live hosts.
 - The systemd + Compose runbook now records the March 24, 2026 live-host installation drift so operators can distinguish target-state docs from currently deployed runtime truth during upgrades.
+- `release-prepare.sh` now updates `DIGESTS.lock`, `RELEASE_MANIFEST.json`, and the fallback version string structurally from the JSON source of truth, so tagged release preparation no longer aborts before manifest generation.
