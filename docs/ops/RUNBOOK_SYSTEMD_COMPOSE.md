@@ -198,6 +198,16 @@ Observed live-host delta on March 23, 2026 (VAAPI runtime truth):
   - `pipeline video: vaapi`
 - Operational shorthand: `ffmpeg.vaapiDevice` is currently not optional for GPU transcoding. A fresh deploy that omits it should be expected to fall back silently to CPU for eligible live transcode paths.
 
+Observed live-host delta on March 24, 2026 (installation drift still present):
+- `/etc/systemd/system/xg2g.service` did not byte-match either `/srv/xg2g/docs/ops/xg2g.service` or the repo template `docs/ops/xg2g.service`.
+- `/srv/xg2g/docs/ops/xg2g.service` and the installed unit still used direct `/usr/bin/docker compose --project-name xg2g ...` calls; `/srv/xg2g/scripts/compose-xg2g.sh` was absent on the host.
+- The installed unit carried extra `ExecStartPre` gates not present in the canonical host copy, including:
+  - image preflight derived from `services.xg2g.image` in `/srv/xg2g/docker-compose.yml`
+  - `docker compose run --rm --no-deps xg2g config validate -f /var/lib/xg2g/config.yaml`
+- `/srv/xg2g/docker-compose.yml` was still pinned to `ghcr.io/manugh/xg2g:v3.3.0`, mounted `/dev/dri/renderD128` in the base compose, and no `/srv/xg2g/docker-compose.gpu.yml` existed.
+- Runtime truth matched that older deployment: `docker inspect` reported image `ghcr.io/manugh/xg2g:v3.3.0`, and recent container logs reported `version":"v3.3.0-hotfix26"`.
+- Operational rule: for this host, treat the installed unit plus `/srv/xg2g/docker-compose.yml` as runtime truth and the GitHub docs as target-state documentation until `/srv/xg2g` and `/etc/systemd/system/xg2g.service` are redeployed together.
+
 If you see the March 11 metrics-only health mismatch, fix the live env first by setting:
 
 ```bash
