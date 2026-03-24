@@ -779,3 +779,7 @@ Operational changes:
 - `release-prepare.sh` now updates `DIGESTS.lock`, `RELEASE_MANIFEST.json`, and the fallback version string structurally from the JSON source of truth, defaults to `GOTOOLCHAIN=auto`, and uses a writable explicit `GOCACHE`, so tagged release preparation no longer aborts on stale local toolchains or unwritable host cache defaults before manifest generation.
 
 
+### Behavioral Changes (v3.4.3)
+
+
+
