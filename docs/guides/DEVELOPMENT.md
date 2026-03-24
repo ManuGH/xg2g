@@ -103,6 +103,10 @@ make docker-dev-fast
 
 `make docker-ffmpeg-base` builds `xg2g-ffmpeg:7.1.3` once from [Dockerfile.ffmpeg-base](../../Dockerfile.ffmpeg-base). `make docker-dev-fast` then rebuilds the app container with `XG2G_FFMPEG_BASE_IMAGE=xg2g-ffmpeg:7.1.3`, so the main [Dockerfile](../../Dockerfile) can reuse the cached FFmpeg runtime layer instead of rebuilding FFmpeg.
 
+The tagged release pipeline follows the same pattern via
+`ghcr.io/manugh/xg2g-ffmpeg:7.1.3`, so release cuts do not recompile FFmpeg
+from source on every tag.
+
 If FFmpeg version or build flags change in `backend/scripts/build-ffmpeg.sh`, rebuild the base image first:
 
 ```bash

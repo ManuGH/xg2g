@@ -55,7 +55,7 @@ jobs:
 
       - name: Upload filesystem scan to GitHub Security
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v3.27.9
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v3.27.9
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-filesystem
@@ -118,7 +118,7 @@ jobs:
 
       - name: Upload image scan to GitHub Security
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v3.27.9
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v3.27.9
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image

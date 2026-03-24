@@ -50,7 +50,11 @@ for file in "${FILES[@]}"; do
     if [[ ! -f "$file" ]]; then continue; fi
 
     case "$file" in
-        "${REPO_ROOT}/docs/ops/RELEASE_OUTPUT_CONTRACT.md"|${REPO_ROOT}/docs/release/*)
+        "${REPO_ROOT}/docs/ops/RELEASE_OUTPUT_CONTRACT.md"|\
+        "${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"|\
+        ${REPO_ROOT}/docs/release/*)
+            # Historical release/runbook references intentionally record past
+            # tags and must not be rewritten to the current version.
             continue
             ;;
     esac

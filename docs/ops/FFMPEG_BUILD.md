@@ -12,6 +12,8 @@ xg2g uses a **pinned, reproducible FFmpeg build** (7.1.3) bundled into the conta
 - Scoped (no global LD_LIBRARY_PATH leak)
 - Explicit (contract via ENV in Dockerfile)
 - Auditable (verification commands below)
+- Published separately as `ghcr.io/manugh/xg2g-ffmpeg:7.1.3`
+- Reused by tagged release images so tag cuts do not rebuild FFmpeg from source
 
 ## Architecture
 
@@ -182,6 +184,14 @@ export LD_LIBRARY_PATH=/opt/ffmpeg/lib
 
 ## CI Recommendations
 
+### Base Image Publication
+
+`Dockerfile.ffmpeg-base` is the canonical FFmpeg container build. The
+`.github/workflows/ffmpeg-base.yml` workflow publishes
+`ghcr.io/manugh/xg2g-ffmpeg:7.1.3` from `main` whenever FFmpeg build inputs
+change. Tagged releases then inherit that base image instead of recompiling
+FFmpeg inside the release workflow.
+
 ### Fast Assertion Job
 
 ```yaml
@@ -224,7 +234,10 @@ export LD_LIBRARY_PATH=/opt/ffmpeg/lib
 2. Update checksum `EXPECTED_SHA256`
 3. Test locally: `make setup`
 4. Update this doc with new version
-5. Rebuild container and run verification commands
-6. Update SBOM and security scans
+5. Merge the FFmpeg base change to `main` so `.github/workflows/ffmpeg-base.yml`
+   publishes the refreshed `ghcr.io/manugh/xg2g-ffmpeg:<version>` tag
+6. Verify the base image is reachable in GHCR before cutting a tagged release
+7. Rebuild container and run verification commands
+8. Update SBOM and security scans
 
 **Critical**: Always verify checksum before building new versions.
