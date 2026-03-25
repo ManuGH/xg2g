@@ -10,6 +10,7 @@ DEPLOYMENT_INDEX="${REPO_ROOT}/docs/ops/DEPLOYMENT.md"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 
 REQUIRED_REPO_FILES=(
+  "deploy/sync.sh"
   "deploy/docker-compose.yml"
   "deploy/xg2g.service"
   "deploy/xg2g.env.schema.yaml"
@@ -22,6 +23,7 @@ REQUIRED_REPO_FILES=(
 )
 
 REQUIRED_REPO_EXECUTABLES=(
+  "deploy/sync.sh"
   "backend/scripts/compose-xg2g.sh"
   "backend/scripts/verify-compose-contract.sh"
   "backend/scripts/verify-installed-unit.sh"
@@ -145,7 +147,9 @@ verify_installation_doc() {
 verify_docs_discoverability() {
   assert_file "${DEPLOYMENT_INDEX}"
   assert_contains "${DEPLOYMENT_INDEX}" '`docs/ops/INSTALLATION_CONTRACT.md`' "deployment index installation contract"
-  assert_contains "${DEPLOYMENT_INDEX}" 'repo-side deploy bundle is being staged under `deploy/`' "deployment index deploy migration note"
+  assert_contains "${DEPLOYMENT_INDEX}" 'Repo-side deploy truth lives under `deploy/`.' "deployment index deploy migration note"
+  assert_contains "${DEPLOYMENT_INDEX}" '`deploy/sync.sh --check --ref <tag|sha>`' "deployment index sync check command"
+  assert_contains "${DEPLOYMENT_INDEX}" '`deploy/sync.sh --apply --ref <tag|sha>`' "deployment index sync apply command"
 
   assert_file "${RUNBOOK}"
   assert_contains "${RUNBOOK}" 'Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.' "runbook installation contract link"
