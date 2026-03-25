@@ -83,13 +83,13 @@ systemctl stop xg2g
 For local development with Compose, apply the dev override:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
 Optional (VAAPI / Intel+AMD iGPU):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.gpu.yml up -d
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml -f deploy/docker-compose.gpu.yml up -d
 ```
 
 ### Fast Container Rebuilds

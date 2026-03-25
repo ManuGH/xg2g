@@ -1,6 +1,6 @@
 #!/bin/bash
 # Best Practice 2026: Zero-Drift Document Renderer
-# Compiles templates into deploy bundle truth and compatibility mirrors using
+# Compiles templates into deploy bundle truth and generated docs using
 # SSoT inputs (VERSION, DIGESTS.lock).
 
 set -euo pipefail
@@ -59,15 +59,12 @@ render_body() {
         "$src" > "$dst"
 }
 
-render_deploy_unit_bundle() {
+render_deploy_unit() {
     local src="$1"
     local deploy_dst="$2"
-    local compat_dst="$3"
     local body
 
     body="$(mktemp)"
-    trap 'rm -f "${body}"' RETURN
-
     render_body "$src" "$body"
 
     {
@@ -75,62 +72,38 @@ render_deploy_unit_bundle() {
         cat "$body"
     } > "$deploy_dst"
     echo "✅ Rendered: ${deploy_dst}"
-
-    {
-        printf '%s\n' '# GENERATED FILE - DO NOT EDIT. Source: deploy/xg2g.service'
-        tail -n +2 "$deploy_dst"
-    } > "$compat_dst"
-    echo "✅ Rendered: ${compat_dst}"
+    rm -f "$body"
 }
 
-render_deploy_compose_bundle() {
+render_deploy_compose() {
     local src="$1"
     local deploy_dst="$2"
-    local compat_dst="$3"
-    local infra_dst="$4"
     local body
 
     body="$(mktemp)"
-    trap 'rm -f "${body}"' RETURN
 
     render_body "$src" "$body"
 
     {
         printf '%s\n' '# Canonical deploy bundle file for xg2g production compose.'
-        printf '%s\n' '# Step-1 migration note: keep content aligned with repo-root docker-compose.yml'
-        printf '%s\n' '# until legacy verification and rendering paths are rewired.'
         cat "$body"
     } > "$deploy_dst"
     echo "✅ Rendered: ${deploy_dst}"
-
-    {
-        printf '%s\n' '# GENERATED FILE - DO NOT EDIT. Source: deploy/docker-compose.yml'
-        tail -n +4 "$deploy_dst"
-    } > "$compat_dst"
-    echo "✅ Rendered: ${compat_dst}"
-
-    {
-        printf '%s\n' '# GENERATED FILE - DO NOT EDIT. Source: deploy/docker-compose.yml'
-        tail -n +4 "$deploy_dst"
-    } > "$infra_dst"
-    echo "✅ Rendered: ${infra_dst}"
+    rm -f "$body"
 }
 
 # 1. README.md
 render "${BACKEND_ROOT}/templates/README.md.tmpl" "${REPO_ROOT}/README.md" "md"
 
-# 2. systemd Unit bundle + compatibility mirror
-render_deploy_unit_bundle \
+# 2. systemd Unit bundle
+render_deploy_unit \
     "${BACKEND_ROOT}/templates/docs/ops/xg2g.service.tmpl" \
-    "${REPO_ROOT}/deploy/xg2g.service" \
-    "${REPO_ROOT}/docs/ops/xg2g.service"
+    "${REPO_ROOT}/deploy/xg2g.service"
 
-# 3. docker-compose bundle + compatibility mirrors
-render_deploy_compose_bundle \
+# 3. docker-compose bundle
+render_deploy_compose \
     "${BACKEND_ROOT}/templates/docker-compose.yml.tmpl" \
-    "${REPO_ROOT}/deploy/docker-compose.yml" \
-    "${REPO_ROOT}/docker-compose.yml" \
-    "${REPO_ROOT}/infrastructure/docker/docker-compose.yml"
+    "${REPO_ROOT}/deploy/docker-compose.yml"
 
 # 4. Deployment Runtime Contract
 render "${BACKEND_ROOT}/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl" "${REPO_ROOT}/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md" "md"

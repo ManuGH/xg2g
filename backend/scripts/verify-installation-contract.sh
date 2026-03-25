@@ -14,8 +14,6 @@ REQUIRED_REPO_FILES=(
   "deploy/docker-compose.yml"
   "deploy/xg2g.service"
   "deploy/xg2g.env.schema.yaml"
-  "docker-compose.yml"
-  "docs/ops/xg2g.service"
   "backend/scripts/compose-xg2g.sh"
   "backend/scripts/verify-compose-contract.sh"
   "backend/scripts/verify-installed-unit.sh"
@@ -33,7 +31,6 @@ REQUIRED_REPO_EXECUTABLES=(
 
 OPTIONAL_REPO_FILES=(
   "deploy/docker-compose.gpu.yml"
-  "docker-compose.gpu.yml"
   "docs/ops/xg2g-verifier.service"
   "docs/ops/xg2g-verifier.timer"
   "backend/scripts/verify-runtime.sh"
@@ -174,27 +171,6 @@ verify_repo_sources() {
   for path in "${REQUIRED_REPO_EXECUTABLES[@]}"; do
     assert_executable "${REPO_ROOT}/${path}" "repo executable"
   done
-}
-
-verify_repo_mirrors() {
-  assert_same_content_ignoring_leading_comments \
-    "${REPO_ROOT}/deploy/docker-compose.yml" \
-    "${REPO_ROOT}/docker-compose.yml" \
-    "base compose compatibility mirror"
-
-  assert_same_content_ignoring_leading_comments \
-    "${REPO_ROOT}/deploy/xg2g.service" \
-    "${REPO_ROOT}/docs/ops/xg2g.service" \
-    "systemd unit compatibility mirror"
-
-  if [[ -e "${REPO_ROOT}/deploy/docker-compose.gpu.yml" || -e "${REPO_ROOT}/docker-compose.gpu.yml" ]]; then
-    assert_file "${REPO_ROOT}/deploy/docker-compose.gpu.yml"
-    assert_file "${REPO_ROOT}/docker-compose.gpu.yml"
-    assert_same_content_ignoring_leading_comments \
-      "${REPO_ROOT}/deploy/docker-compose.gpu.yml" \
-      "${REPO_ROOT}/docker-compose.gpu.yml" \
-      "gpu overlay compatibility mirror"
-  fi
 }
 
 verify_install_tree() {
@@ -354,7 +330,6 @@ main() {
   verify_installation_doc
   verify_docs_discoverability
   verify_repo_sources
-  verify_repo_mirrors
   verify_negative_drift_guard
 
   echo "OK: installation contract holds."

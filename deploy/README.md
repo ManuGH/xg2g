@@ -10,14 +10,11 @@ This is the deploy-SSoT migration slice:
 - `deploy/xg2g.env.schema.yaml` is the initial machine-readable contract for `/etc/xg2g/xg2g.env`.
 - `deploy/sync.sh` is the idempotent host sync entrypoint.
 
-Current migration boundary:
+Current deployment boundary:
 
-- Docs renderers and verifier scripts now consume `deploy/` as repo truth and keep legacy mirrors in sync.
+- Docs renderers and verifier scripts consume `deploy/` directly as repo truth.
 - Live hosts are still operationally validated via `/srv/xg2g` and `/etc/systemd/system`.
-- Until the host pull path is fully adopted, changes in `deploy/` must keep these compatibility mirrors aligned:
-  - `deploy/xg2g.service` -> `docs/ops/xg2g.service`
-  - `deploy/docker-compose.yml` -> `docker-compose.yml`
-  - `deploy/docker-compose.gpu.yml` -> `docker-compose.gpu.yml`
+- `deploy/sync.sh` applies the repo bundle onto those host targets.
 
 Sync workflow:
 
@@ -27,7 +24,7 @@ Sync workflow:
 - Exit `0` means synced, `1` means drift, `2` means `/etc/xg2g/xg2g.env` violates the deploy contract.
 - `--install-root <path>` is available for local dry-runs and fixture-style tests.
 
-Why the env schema is intentionally narrow in step 1:
+Why the env schema is intentionally narrow:
 
 - `/etc/xg2g/xg2g.env` mixes deploy-time keys, systemd/compose control, and app overrides.
 - The deploy contract keys are curated here first.
@@ -36,4 +33,4 @@ Why the env schema is intentionally narrow in step 1:
 Remaining tail after this slice:
 
 - live hosts still need to adopt `deploy/sync.sh` as the normal deployment entrypoint everywhere
-- some public ops docs still describe legacy compatibility mirrors for historical drift analysis
+- some historical docs still describe previously observed host drift against older layouts

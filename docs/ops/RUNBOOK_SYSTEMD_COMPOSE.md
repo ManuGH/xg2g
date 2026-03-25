@@ -21,11 +21,11 @@ Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
 - Compose service name must remain `xg2g` (health gate relies on it).
 
 Production compose is deterministic. For local development, apply the override:
-`docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
-Add `-f docker-compose.gpu.yml` on GPU hosts.
+`docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d`.
+Add `-f deploy/docker-compose.gpu.yml` on GPU hosts.
 
 Drift guard: `backend/scripts/verify-systemd-unit.sh` and `backend/scripts/verify-systemd-runtime-contract.sh` must pass before release.
-Canonical repo-side unit is `deploy/xg2g.service`; `docs/ops/xg2g.service` is the generated compatibility mirror and no repo-root `xg2g.service` is permitted.
+Canonical repo-side unit is `deploy/xg2g.service`; no repo-root `xg2g.service` is permitted.
 
 Host verification (deploy-time, fail-closed):
 ```bash
@@ -102,7 +102,7 @@ chmod 600 /etc/xg2g/xg2g.env
 ```
 Host-side hygiene in the systemd unit (UMask/NoNewPrivileges) applies to the compose client only; it
 does not harden the container runtime.
-Container hardening (cap drops, read-only, tmpfs, user) is owned by `docker-compose.yml`.
+Container hardening (cap drops, read-only, tmpfs, user) is owned by `/srv/xg2g/docker-compose.yml`.
 
 ### Log Access & Troubleshooting
 Access logs via Docker (source of truth) or systemd (capture).
@@ -139,7 +139,7 @@ When a future AI or operator debugs a failed `systemctl start xg2g` or `systemct
    - `/srv/xg2g/docker-compose.yml`
    - `/srv/xg2g/docker-compose.gpu.yml` (if present)
    - `/etc/xg2g/xg2g.env`
-3. Only after that, compare against the repo-side canonical unit `deploy/xg2g.service` and the generated compatibility mirror `docs/ops/xg2g.service`.
+3. Only after that, compare against the repo-side canonical unit `deploy/xg2g.service`.
 
 Use these symptom mappings:
 

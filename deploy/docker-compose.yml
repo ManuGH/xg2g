@@ -1,6 +1,4 @@
 # Canonical deploy bundle file for xg2g production compose.
-# Step-1 migration note: keep content aligned with repo-root docker-compose.yml
-# until legacy verification and rendering paths are rewired.
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:v3.4.3

@@ -16,9 +16,7 @@ fi
 rendered_paths=(
   "README.md"
   "deploy/docker-compose.yml"
-  "docker-compose.yml"
   "deploy/xg2g.service"
-  "docs/ops/xg2g.service"
   "docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"
   "docs/ops/OPERATIONS_MODEL.md"
   "docs/ops/xg2g-verifier.service"

@@ -6,7 +6,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 UNIT_TEMPLATE="${REPO_ROOT}/backend/templates/docs/ops/xg2g.service.tmpl"
 CANONICAL_DEPLOY_UNIT="${REPO_ROOT}/deploy/xg2g.service"
-COMPAT_UNIT="${REPO_ROOT}/docs/ops/xg2g.service"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 COMPOSE_HELPER="${REPO_ROOT}/backend/scripts/compose-xg2g.sh"
 COMPOSE_CONTRACT="${REPO_ROOT}/backend/scripts/verify-compose-contract.sh"
@@ -15,7 +14,6 @@ CANONICAL_ROOT="/srv/xg2g"
 CANONICAL_ENV_FILE="/etc/xg2g/xg2g.env"
 CANONICAL_HELPER="${CANONICAL_ROOT}/scripts/compose-xg2g.sh"
 CANONICAL_COMPOSE_CONTRACT="${CANONICAL_ROOT}/scripts/verify-compose-contract.sh"
-COMPAT_UNIT_HEADER="# GENERATED FILE - DO NOT EDIT. Source: deploy/xg2g.service"
 
 fail() {
   echo "ERROR: $*" >&2
@@ -55,24 +53,14 @@ assert_regex() {
 verify_unit_render_sync() {
   assert_file "${UNIT_TEMPLATE}"
   assert_file "${CANONICAL_DEPLOY_UNIT}"
-  assert_file "${COMPAT_UNIT}"
-  assert_exact_line "${COMPAT_UNIT}" "${COMPAT_UNIT_HEADER}" "generated unit header"
 
-  local rendered_body
   local deploy_body
-  local compat_body
-  rendered_body="$(mktemp)"
   deploy_body="$(mktemp)"
-  compat_body="$(mktemp)"
-
-  tail -n +2 "${COMPAT_UNIT}" > "${rendered_body}"
-  diff -u "${UNIT_TEMPLATE}" "${rendered_body}" >/dev/null || fail "docs/ops/xg2g.service drifted from backend/templates/docs/ops/xg2g.service.tmpl"
 
   tail -n +2 "${CANONICAL_DEPLOY_UNIT}" > "${deploy_body}"
-  tail -n +2 "${COMPAT_UNIT}" > "${compat_body}"
-  diff -u "${deploy_body}" "${compat_body}" >/dev/null || fail "docs/ops/xg2g.service drifted from deploy/xg2g.service"
+  diff -u "${UNIT_TEMPLATE}" "${deploy_body}" >/dev/null || fail "deploy/xg2g.service drifted from backend/templates/docs/ops/xg2g.service.tmpl"
 
-  rm -f "${rendered_body}" "${deploy_body}" "${compat_body}"
+  rm -f "${deploy_body}"
 }
 
 verify_unit_semantics() {
