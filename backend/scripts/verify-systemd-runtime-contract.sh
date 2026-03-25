@@ -15,7 +15,7 @@ CANONICAL_ROOT="/srv/xg2g"
 CANONICAL_ENV_FILE="/etc/xg2g/xg2g.env"
 CANONICAL_HELPER="${CANONICAL_ROOT}/scripts/compose-xg2g.sh"
 CANONICAL_COMPOSE_CONTRACT="${CANONICAL_ROOT}/scripts/verify-compose-contract.sh"
-COMPAT_UNIT_HEADER="# GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/xg2g.service.tmpl"
+COMPAT_UNIT_HEADER="# GENERATED FILE - DO NOT EDIT. Source: deploy/xg2g.service"
 
 fail() {
   echo "ERROR: $*" >&2

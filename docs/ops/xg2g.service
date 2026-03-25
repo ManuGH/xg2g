@@ -1,4 +1,4 @@
-# GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/xg2g.service.tmpl
+# GENERATED FILE - DO NOT EDIT. Source: deploy/xg2g.service
 [Unit]
 Description=xg2g Hardened Daemon (Docker Compose)
 Wants=network-online.target
