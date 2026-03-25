@@ -447,3 +447,37 @@ func TestServeHLS_ActiveMissingSegmentSetsReasonHeader(t *testing.T) {
 	assert.Equal(t, "segment_missing", w.Header().Get("X-XG2G-Reason"))
 	assert.Contains(t, w.Body.String(), "file not found")
 }
+
+func TestServeHLS_StartingSegmentWaitsForArtifact(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "segment-wait-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionStarting,
+			Profile: model.ProfileSpec{
+				Name: "safari",
+			},
+		},
+	}
+
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		_ = os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), []byte("segment-data"), 0o600)
+	}()
+
+	req := httptest.NewRequest("GET", "/seg_000000.ts", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, tmpDir, sessionID, "seg_000000.ts")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "video/mp2t", w.Header().Get("Content-Type"))
+	assert.Equal(t, "public, max-age=60", w.Header().Get("Cache-Control"))
+	assert.Equal(t, "identity", w.Header().Get("Content-Encoding"))
+	assert.Empty(t, w.Header().Get("X-XG2G-Reason"))
+	assert.Equal(t, "segment-data", w.Body.String())
+}

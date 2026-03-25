@@ -26,7 +26,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const hlsPlaylistWaitTimeout = 5 * time.Second
+const hlsStartupArtifactWaitTimeout = 5 * time.Second
 
 const (
 	hlsReasonHeader           = "X-XG2G-Reason"
@@ -199,44 +199,68 @@ func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath s
 	return filePath, legacyPath, nil
 }
 
-func awaitPlaylist(ctx context.Context, filePath string, req hlsRequest, rec *model.SessionRecord, logger zerolog.Logger) (os.FileInfo, error) {
+func isStartupHLSState(state model.SessionState) bool {
+	return state == model.SessionNew || state == model.SessionStarting || state == model.SessionPriming
+}
+
+func shouldPollMissingArtifact(req hlsRequest, rec *model.SessionRecord) bool {
+	if rec == nil || !isStartupHLSState(rec.State) {
+		return false
+	}
+	return req.isPlaylist || req.isSegment || req.isLegacySegment || req.isInit
+}
+
+func artifactKind(req hlsRequest) string {
+	switch {
+	case req.isPlaylist:
+		return "playlist"
+	case req.isInit:
+		return "init"
+	case req.isSegment || req.isLegacySegment:
+		return "segment"
+	default:
+		return "artifact"
+	}
+}
+
+func awaitArtifact(ctx context.Context, filePath string, req hlsRequest, rec *model.SessionRecord, logger zerolog.Logger) (os.FileInfo, error) {
 	info, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
-		if req.isPlaylist && (rec.State == model.SessionNew || rec.State == model.SessionStarting || rec.State == model.SessionPriming) {
-			logger.Info().Msg("playlist missing during start, polling...")
+		if shouldPollMissingArtifact(req, rec) {
+			logger.Info().Str("artifact", artifactKind(req)).Msg("artifact missing during start, polling")
 
 			ticker := time.NewTicker(250 * time.Millisecond)
 			defer ticker.Stop()
 
-			timeout := time.NewTimer(hlsPlaylistWaitTimeout)
+			timeout := time.NewTimer(hlsStartupArtifactWaitTimeout)
 			defer timeout.Stop()
 
 		PollLoop:
 			for {
 				select {
 				case <-ctx.Done():
-					logger.Info().Msg("polling cancelled by request context")
+					logger.Info().Str("artifact", artifactKind(req)).Msg("artifact polling cancelled by request context")
 					break PollLoop
 				case <-timeout.C:
-					logger.Info().Msg("polling finished without success (timeout)")
+					logger.Info().Str("artifact", artifactKind(req)).Msg("artifact polling finished without success (timeout)")
 					break PollLoop
 				case <-ticker.C:
 					info, err = os.Stat(filePath)
 					if err == nil {
-						logger.Info().Msg("playlist appeared during polling")
+						logger.Info().Str("artifact", artifactKind(req)).Msg("artifact appeared during polling")
 						break PollLoop
 					}
 					if !os.IsNotExist(err) {
-						logger.Error().Err(err).Msg("playlist stat error during polling")
+						logger.Error().Err(err).Str("artifact", artifactKind(req)).Msg("artifact stat error during polling")
 						break PollLoop
 					}
 				}
 			}
-		} else {
+		} else if req.isPlaylist && rec != nil {
 			logger.Info().Str("state", string(rec.State)).Msg("playlist missing, not polling (state mismatch)")
 		}
 	} else if err != nil {
-		logger.Error().Err(err).Msg("initial stat failed")
+		logger.Error().Err(err).Str("artifact", artifactKind(req)).Msg("initial stat failed")
 	}
 
 	return info, err
@@ -419,7 +443,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 
 	logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("path", filePath).Str("state", string(rec.State)).Logger()
 
-	info, err := awaitPlaylist(r.Context(), filePath, req, rec, logger)
+	info, err := awaitArtifact(r.Context(), filePath, req, rec, logger)
 
 	if os.IsNotExist(err) && legacyFilePath != "" {
 		legacyInfo, legacyErr := os.Stat(legacyFilePath)
