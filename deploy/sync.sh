@@ -20,28 +20,28 @@ DRIFT_DETECTED=0
 TEMP_DIRS=()
 
 CORE_SPECS=(
-  "deploy/docker-compose.yml|/srv/xg2g/docker-compose.yml|0644"
-  "deploy/xg2g.service|/srv/xg2g/docs/ops/xg2g.service|0644"
-  "deploy/xg2g.service|/etc/systemd/system/xg2g.service|0644"
-  "backend/scripts/compose-xg2g.sh|/srv/xg2g/scripts/compose-xg2g.sh|0755"
-  "backend/scripts/verify-compose-contract.sh|/srv/xg2g/scripts/verify-compose-contract.sh|0755"
-  "backend/scripts/verify-installed-unit.sh|/srv/xg2g/scripts/verify-installed-unit.sh|0755"
-  "backend/scripts/verify-systemd-runtime-contract.sh|/srv/xg2g/scripts/verify-systemd-runtime-contract.sh|0755"
-  "backend/scripts/verify-installation-contract.sh|/srv/xg2g/scripts/verify-installation-contract.sh|0755"
+  "deploy/docker-compose.yml|/srv/xg2g/docker-compose.yml|644"
+  "deploy/xg2g.service|/srv/xg2g/docs/ops/xg2g.service|644"
+  "deploy/xg2g.service|/etc/systemd/system/xg2g.service|644"
+  "backend/scripts/compose-xg2g.sh|/srv/xg2g/scripts/compose-xg2g.sh|755"
+  "backend/scripts/verify-compose-contract.sh|/srv/xg2g/scripts/verify-compose-contract.sh|755"
+  "backend/scripts/verify-installed-unit.sh|/srv/xg2g/scripts/verify-installed-unit.sh|755"
+  "backend/scripts/verify-systemd-runtime-contract.sh|/srv/xg2g/scripts/verify-systemd-runtime-contract.sh|755"
+  "backend/scripts/verify-installation-contract.sh|/srv/xg2g/scripts/verify-installation-contract.sh|755"
 )
 
 GPU_SPECS=(
-  "deploy/docker-compose.gpu.yml|/srv/xg2g/docker-compose.gpu.yml|0644"
+  "deploy/docker-compose.gpu.yml|/srv/xg2g/docker-compose.gpu.yml|644"
 )
 
 VERIFIER_SPECS=(
-  "docs/ops/xg2g-verifier.service|/srv/xg2g/docs/ops/xg2g-verifier.service|0644"
-  "docs/ops/xg2g-verifier.timer|/srv/xg2g/docs/ops/xg2g-verifier.timer|0644"
-  "backend/scripts/verify-runtime.sh|/srv/xg2g/scripts/verify-runtime.sh|0755"
-  "backend/VERSION|/srv/xg2g/VERSION|0644"
-  "DIGESTS.lock|/srv/xg2g/DIGESTS.lock|0644"
-  "docs/ops/xg2g-verifier.service|/etc/systemd/system/xg2g-verifier.service|0644"
-  "docs/ops/xg2g-verifier.timer|/etc/systemd/system/xg2g-verifier.timer|0644"
+  "docs/ops/xg2g-verifier.service|/srv/xg2g/docs/ops/xg2g-verifier.service|644"
+  "docs/ops/xg2g-verifier.timer|/srv/xg2g/docs/ops/xg2g-verifier.timer|644"
+  "backend/scripts/verify-runtime.sh|/srv/xg2g/scripts/verify-runtime.sh|755"
+  "backend/VERSION|/srv/xg2g/VERSION|644"
+  "DIGESTS.lock|/srv/xg2g/DIGESTS.lock|644"
+  "docs/ops/xg2g-verifier.service|/etc/systemd/system/xg2g-verifier.service|644"
+  "docs/ops/xg2g-verifier.timer|/etc/systemd/system/xg2g-verifier.timer|644"
 )
 
 VERIFIER_TARGETS=(
