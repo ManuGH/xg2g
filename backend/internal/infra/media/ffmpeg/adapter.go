@@ -530,6 +530,9 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 
 	procErrCh := make(chan error, 1)
 	go func() {
+		// os/exec closes StderrPipe from Wait. Draining stderr first avoids
+		// dropping the final FFmpeg failure lines that Health surfaces later.
+		<-scanDone
 		procErrCh <- cmd.Wait()
 	}()
 
