@@ -4,11 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+DEPLOY_ROOT="${REPO_ROOT}/deploy"
 INSTALL_DOC="${REPO_ROOT}/docs/ops/INSTALLATION_CONTRACT.md"
 DEPLOYMENT_INDEX="${REPO_ROOT}/docs/ops/DEPLOYMENT.md"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 
 REQUIRED_REPO_FILES=(
+  "deploy/docker-compose.yml"
+  "deploy/xg2g.service"
+  "deploy/xg2g.env.schema.yaml"
   "docker-compose.yml"
   "docs/ops/xg2g.service"
   "backend/scripts/compose-xg2g.sh"
@@ -26,6 +30,7 @@ REQUIRED_REPO_EXECUTABLES=(
 )
 
 OPTIONAL_REPO_FILES=(
+  "deploy/docker-compose.gpu.yml"
   "docker-compose.gpu.yml"
   "docs/ops/xg2g-verifier.service"
   "docs/ops/xg2g-verifier.timer"
@@ -77,6 +82,23 @@ assert_executable() {
   [[ -x "${path}" ]] || fail "${label}: expected executable file at ${path}"
 }
 
+normalize_leading_comments() {
+  local path="$1"
+
+  awk '
+    BEGIN { body = 0 }
+    {
+      if (!body) {
+        if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^#/) {
+          next
+        }
+        body = 1
+      }
+      print
+    }
+  ' "${path}"
+}
+
 assert_same_file() {
   local left="$1"
   local right="$2"
@@ -84,10 +106,32 @@ assert_same_file() {
   diff -u "${left}" "${right}" >/dev/null || fail "${label}: ${left} and ${right} differ"
 }
 
+assert_same_content_ignoring_leading_comments() {
+  local left="$1"
+  local right="$2"
+  local label="$3"
+  local left_body
+  local right_body
+
+  left_body="$(mktemp)"
+  right_body="$(mktemp)"
+
+  normalize_leading_comments "${left}" > "${left_body}"
+  normalize_leading_comments "${right}" > "${right_body}"
+  if ! diff -u "${left_body}" "${right_body}" >/dev/null; then
+    rm -f "${left_body}" "${right_body}"
+    fail "${label}: ${left} and ${right} differ after normalizing repo-only headers"
+  fi
+
+  rm -f "${left_body}" "${right_body}"
+}
+
 verify_installation_doc() {
   assert_file "${INSTALL_DOC}"
   assert_contains "${INSTALL_DOC}" "## Required Host Layout" "installation contract section"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/docker-compose.yml`' "installation contract base compose"
+  assert_contains "${INSTALL_DOC}" '`deploy/docker-compose.yml`' "installation contract canonical base compose source"
+  assert_contains "${INSTALL_DOC}" '`deploy/xg2g.service`' "installation contract canonical unit source"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/compose-xg2g.sh`' "installation contract compose helper"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/verify-installation-contract.sh`' "installation contract verifier script"
   assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g.service`' "installation contract installed unit"
@@ -101,6 +145,7 @@ verify_installation_doc() {
 verify_docs_discoverability() {
   assert_file "${DEPLOYMENT_INDEX}"
   assert_contains "${DEPLOYMENT_INDEX}" '`docs/ops/INSTALLATION_CONTRACT.md`' "deployment index installation contract"
+  assert_contains "${DEPLOYMENT_INDEX}" 'repo-side deploy bundle is being staged under `deploy/`' "deployment index deploy migration note"
 
   assert_file "${RUNBOOK}"
   assert_contains "${RUNBOOK}" 'Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.' "runbook installation contract link"
@@ -121,6 +166,27 @@ verify_repo_sources() {
   for path in "${REQUIRED_REPO_EXECUTABLES[@]}"; do
     assert_executable "${REPO_ROOT}/${path}" "repo executable"
   done
+}
+
+verify_repo_mirrors() {
+  assert_same_content_ignoring_leading_comments \
+    "${REPO_ROOT}/deploy/docker-compose.yml" \
+    "${REPO_ROOT}/docker-compose.yml" \
+    "base compose compatibility mirror"
+
+  assert_same_content_ignoring_leading_comments \
+    "${REPO_ROOT}/deploy/xg2g.service" \
+    "${REPO_ROOT}/docs/ops/xg2g.service" \
+    "systemd unit compatibility mirror"
+
+  if [[ -e "${REPO_ROOT}/deploy/docker-compose.gpu.yml" || -e "${REPO_ROOT}/docker-compose.gpu.yml" ]]; then
+    assert_file "${REPO_ROOT}/deploy/docker-compose.gpu.yml"
+    assert_file "${REPO_ROOT}/docker-compose.gpu.yml"
+    assert_same_content_ignoring_leading_comments \
+      "${REPO_ROOT}/deploy/docker-compose.gpu.yml" \
+      "${REPO_ROOT}/docker-compose.gpu.yml" \
+      "gpu overlay compatibility mirror"
+  fi
 }
 
 verify_install_tree() {
@@ -222,9 +288,12 @@ build_reference_install_tree() {
 
   install -d "${install_root}/srv/xg2g/scripts" "${install_root}/srv/xg2g/docs/ops" "${install_root}/etc/systemd/system" "${install_root}/etc/xg2g" "${install_root}/var/lib/xg2g"
 
-  install -m 0644 "${REPO_ROOT}/docker-compose.yml" "${install_root}/srv/xg2g/docker-compose.yml"
-  install -m 0644 "${REPO_ROOT}/docs/ops/xg2g.service" "${install_root}/srv/xg2g/docs/ops/xg2g.service"
-  install -m 0644 "${REPO_ROOT}/docs/ops/xg2g.service" "${install_root}/etc/systemd/system/xg2g.service"
+  install -m 0644 "${DEPLOY_ROOT}/docker-compose.yml" "${install_root}/srv/xg2g/docker-compose.yml"
+  if [[ -f "${DEPLOY_ROOT}/docker-compose.gpu.yml" ]]; then
+    install -m 0644 "${DEPLOY_ROOT}/docker-compose.gpu.yml" "${install_root}/srv/xg2g/docker-compose.gpu.yml"
+  fi
+  install -m 0644 "${DEPLOY_ROOT}/xg2g.service" "${install_root}/srv/xg2g/docs/ops/xg2g.service"
+  install -m 0644 "${DEPLOY_ROOT}/xg2g.service" "${install_root}/etc/systemd/system/xg2g.service"
 
   install -m 0755 "${REPO_ROOT}/backend/scripts/compose-xg2g.sh" "${install_root}/srv/xg2g/scripts/compose-xg2g.sh"
   install -m 0755 "${REPO_ROOT}/backend/scripts/verify-compose-contract.sh" "${install_root}/srv/xg2g/scripts/verify-compose-contract.sh"
@@ -277,6 +346,7 @@ main() {
   verify_installation_doc
   verify_docs_discoverability
   verify_repo_sources
+  verify_repo_mirrors
   verify_negative_drift_guard
 
   echo "OK: installation contract holds."
