@@ -1,11 +1,13 @@
 # Canonical deploy bundle file for xg2g systemd installation.
-# Step-1 migration note: keep content aligned with docs/ops/xg2g.service
-# until legacy verification and rendering paths are rewired.
 [Unit]
 Description=xg2g Hardened Daemon (Docker Compose)
 Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
+
+# Repo-side canonical source for this unit lives at deploy/xg2g.service.
+# docs/ops/xg2g.service remains a generated compatibility mirror until the
+# docs/render and verification pipeline is fully rewired to deploy/.
 
 # Truth model: systemd orchestrates Compose only; Docker is runtime truth.
 # Base compose path is frozen to /srv/xg2g/docker-compose.yml.
