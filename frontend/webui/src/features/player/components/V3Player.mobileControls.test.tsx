@@ -110,7 +110,7 @@ describe('V3Player Mobile Controls', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps wrapper fullscreen on touch devices when native HLS is preferred', async () => {
+  it('uses native video fullscreen on touch devices when native HLS is preferred', async () => {
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -125,9 +125,9 @@ describe('V3Player Mobile Controls', () => {
     fireEvent.click(fullscreenButton);
 
     const video = container.querySelector('video') as HTMLVideoElement;
-    expect(requestFullscreen).toHaveBeenCalledTimes(1);
-    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
-    expect(video.controls).toBe(false);
+    expect(requestFullscreen).not.toHaveBeenCalled();
+    expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    expect(video.controls).toBe(true);
     expect(screen.queryByRole('button', { name: /player\.dvrMode/i })).not.toBeInTheDocument();
   });
 
