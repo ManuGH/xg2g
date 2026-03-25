@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 HELPER="${SCRIPT_DIR}/compose-xg2g.sh"
-BASE_COMPOSE="${REPO_ROOT}/infrastructure/docker/docker-compose.yml"
+BASE_COMPOSE="${REPO_ROOT}/deploy/docker-compose.yml"
 
 fail() {
   echo "ERROR: $*" >&2

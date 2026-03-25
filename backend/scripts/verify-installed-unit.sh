@@ -2,6 +2,8 @@
 set -euo pipefail
 
 UNIT_NAME="xg2g.service"
+# Host installs still compare against the deployed compatibility mirror under
+# /srv/xg2g/docs/ops/ until the host sync path is rewired to pull from deploy/.
 EXPECTED_UNIT="${1:-/srv/xg2g/docs/ops/xg2g.service}"
 
 DROPIN_DIR="/etc/systemd/system/${UNIT_NAME}.d"

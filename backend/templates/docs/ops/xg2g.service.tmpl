@@ -4,6 +4,8 @@ Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
 
+# Repo-side canonical source for this unit lives at deploy/xg2g.service.
+
 # Truth model: systemd orchestrates Compose only; Docker is runtime truth.
 # Base compose path is frozen to /srv/xg2g/docker-compose.yml.
 # Optional GPU overlay lives at /srv/xg2g/docker-compose.gpu.yml and is loaded

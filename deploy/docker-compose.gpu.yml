@@ -1,0 +1,5 @@
+# Canonical deploy bundle file for the optional VAAPI GPU overlay.
+services:
+  xg2g:
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128

@@ -9,3 +9,14 @@ This document is now split into two canonical sources:
 If you are looking for systemd, start/stop/reload, or smoke checks, use the runbook.
 If you are looking for required host paths, shipped scripts, unit locations, or install-time artifacts, use the installation contract.
 If you are looking for FFmpeg, GPU, or runtime invariants, use the runtime contract.
+
+Repo-side deploy truth lives under `deploy/`.
+
+- `deploy/sync.sh --check --ref <tag|sha>` compares a pinned repo ref against the host install root.
+- `deploy/sync.sh --apply --ref <tag|sha>` copies repo truth into `/srv/xg2g` and `/etc/systemd/system`, reloads systemd, and reruns the same checks.
+- `deploy/xg2g.env.schema.yaml` is the contract for validating `/etc/xg2g/xg2g.env` during sync.
+
+`deploy/sync.sh --apply --ref <tag|sha>` is the only supported deployment path.
+Direct host edits, ad-hoc file copies, and manual `/srv/xg2g` drift are not supported deployment workflows.
+
+The installation contract and runbook remain the live-host reference for target paths, verification, and runtime debugging after sync has applied the pinned ref.

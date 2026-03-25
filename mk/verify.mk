@@ -28,7 +28,7 @@ docs-render: ## Render templates into documentation and units
 	fi
 
 verify-docs-compiled: docs-render ## Verify that all docs and units are up-to-date
-	@git diff --exit-code README.md docker-compose.yml infrastructure/docker/docker-compose.yml docs/ops/xg2g.service docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md docs/ops/OPERATIONS_MODEL.md docs/ops/xg2g-verifier.service docs/ops/xg2g-verifier.timer || (echo "❌ Documentation drift detected. Run 'make docs-render' and commit changes." && exit 1)
+	@git diff --exit-code README.md deploy/docker-compose.yml deploy/xg2g.service docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md docs/ops/OPERATIONS_MODEL.md docs/ops/xg2g-verifier.service docs/ops/xg2g-verifier.timer || (echo "❌ Documentation drift detected. Run 'make docs-render' and commit changes." && exit 1)
 	@echo "✅ All documents and units are up-to-date"
 
 verify-generated-artifacts-contract: ## Verify generated artifact governance coverage and ungoverned detection

@@ -3,12 +3,13 @@
 Canonical guide for managing the hardened `xg2g` daemon via systemd.
 
 ### Installation
-Deploy the hardened unit file and enable the service:
+Deploy a pinned repo ref via the sync entrypoint:
 ```bash
-cp docs/ops/xg2g.service /etc/systemd/system/
-systemctl daemon-reload
+deploy/sync.sh --apply --ref <tag|sha>
 systemctl enable --now xg2g
 ```
+
+Manual file copies into `/etc/systemd/system` or `/srv/xg2g` are not a supported deployment path.
 
 Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
 
@@ -20,14 +21,15 @@ Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
 - Compose service name must remain `xg2g` (health gate relies on it).
 
 Production compose is deterministic. For local development, apply the override:
-`docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
-Add `-f docker-compose.gpu.yml` on GPU hosts.
+`docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d`.
+Add `-f deploy/docker-compose.gpu.yml` on GPU hosts.
 
 Drift guard: `backend/scripts/verify-systemd-unit.sh` and `backend/scripts/verify-systemd-runtime-contract.sh` must pass before release.
-Canonical unit is `docs/ops/xg2g.service`; no repo-root `xg2g.service` is permitted.
+Canonical repo-side unit is `deploy/xg2g.service`; no repo-root `xg2g.service` is permitted.
 
 Host verification (deploy-time, fail-closed):
 ```bash
+deploy/sync.sh --check --ref <tag|sha>
 /srv/xg2g/scripts/verify-installed-unit.sh /srv/xg2g/docs/ops/xg2g.service
 /srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /
 /srv/xg2g/scripts/verify-systemd-runtime-contract.sh
@@ -100,7 +102,7 @@ chmod 600 /etc/xg2g/xg2g.env
 ```
 Host-side hygiene in the systemd unit (UMask/NoNewPrivileges) applies to the compose client only; it
 does not harden the container runtime.
-Container hardening (cap drops, read-only, tmpfs, user) is owned by `docker-compose.yml`.
+Container hardening (cap drops, read-only, tmpfs, user) is owned by `/srv/xg2g/docker-compose.yml`.
 
 ### Log Access & Troubleshooting
 Access logs via Docker (source of truth) or systemd (capture).
@@ -137,7 +139,7 @@ When a future AI or operator debugs a failed `systemctl start xg2g` or `systemct
    - `/srv/xg2g/docker-compose.yml`
    - `/srv/xg2g/docker-compose.gpu.yml` (if present)
    - `/etc/xg2g/xg2g.env`
-3. Only after that, compare against the checked-in template `docs/ops/xg2g.service`.
+3. Only after that, compare against the repo-side canonical unit `deploy/xg2g.service`.
 
 Use these symptom mappings:
 
@@ -199,7 +201,7 @@ Observed live-host delta on March 23, 2026 (VAAPI runtime truth):
 - Operational shorthand: `ffmpeg.vaapiDevice` is currently not optional for GPU transcoding. A fresh deploy that omits it should be expected to fall back silently to CPU for eligible live transcode paths.
 
 Observed live-host delta on March 24, 2026 (installation drift still present):
-- `/etc/systemd/system/xg2g.service` did not byte-match either `/srv/xg2g/docs/ops/xg2g.service` or the repo template `docs/ops/xg2g.service`.
+- `/etc/systemd/system/xg2g.service` did not byte-match either `/srv/xg2g/docs/ops/xg2g.service` or the repo-side canonical unit `deploy/xg2g.service`.
 - `/srv/xg2g/docs/ops/xg2g.service` and the installed unit still used direct `/usr/bin/docker compose --project-name xg2g ...` calls; `/srv/xg2g/scripts/compose-xg2g.sh` was absent on the host.
 - The installed unit carried extra `ExecStartPre` gates not present in the canonical host copy, including:
   - image preflight derived from `services.xg2g.image` in `/srv/xg2g/docker-compose.yml`

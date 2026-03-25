@@ -67,5 +67,5 @@ docker-dev-fast: ## Rebuild dev container using cached FFmpeg base
 		--build-arg FFMPEG_BASE_IMAGE=$(FFMPEG_BASE_TAG) \
 		-t $(DOCKER_IMAGE):dev \
 		.
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate xg2g
+	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate xg2g
 	@echo "✅ Dev container rebuilt with cached FFmpeg base"
