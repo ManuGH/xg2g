@@ -121,13 +121,13 @@ func (w *Watchdog) ParseLine(line string) {
 		ms, _ := strconv.ParseInt(val, 10, 64)
 		if ms > w.lastOutTimeMs {
 			w.lastOutTimeMs = ms
-			w.recordHeartbeat()
+			w.recordParsedProgress()
 		}
 	case "total_size":
 		size, _ := strconv.ParseInt(val, 10, 64)
 		if size > w.lastTotalSize {
 			w.lastTotalSize = size
-			w.recordHeartbeat()
+			w.recordParsedProgress()
 		}
 	case "progress":
 		if val == "end" {
@@ -137,9 +137,26 @@ func (w *Watchdog) ParseLine(line string) {
 	}
 }
 
-func (w *Watchdog) recordHeartbeat() {
+// ObserveProgress records externally observed startup/runtime progress such as
+// first encoded frames or the first HLS segment write.
+func (w *Watchdog) ObserveProgress() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.recordExternalProgress()
+}
+
+func (w *Watchdog) recordParsedProgress() {
 	w.lastHeartbeat = w.clock.Now()
 	if !w.hasProgress && (w.lastOutTimeMs > 0 || w.lastTotalSize > 0) {
+		w.hasProgress = true
+		w.state = StateRunning
+		log.L().Debug().Msg("watchdog: meaningful progress detected")
+	}
+}
+
+func (w *Watchdog) recordExternalProgress() {
+	w.lastHeartbeat = w.clock.Now()
+	if !w.hasProgress {
 		w.hasProgress = true
 		w.state = StateRunning
 		log.L().Debug().Msg("watchdog: meaningful progress detected")

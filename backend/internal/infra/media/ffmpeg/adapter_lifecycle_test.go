@@ -168,6 +168,52 @@ func TestMonitorProcess_KillsStalledProcessAndPreservesStallDetail(t *testing.T)
 	}
 }
 
+func TestMonitorProcess_FirstFramePreventsStartupTimeout(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		1500*time.Millisecond,
+		false,
+		2*time.Second,
+		6,
+		150*time.Millisecond,
+		1200*time.Millisecond,
+		"",
+	)
+
+	cmd := exec.Command("sh", "-c", "printf 'frame=    1\\n' 1>&2; sleep 0.3")
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+
+	handle := ports.RunHandle("session-startup-frame-123")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-startup-frame")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitorProcess did not finish in time")
+	}
+
+	status := adapter.Health(context.Background(), handle)
+	assert.False(t, status.Healthy)
+	assert.Equal(t, "process not found", status.Message)
+}
+
 func TestHealth_ExitedProcessInMapIsUnhealthyAndCleanedUp(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
