@@ -3,12 +3,13 @@
 Canonical guide for managing the hardened `xg2g` daemon via systemd.
 
 ### Installation
-Deploy the hardened unit file and enable the service:
+Deploy a pinned repo ref via the sync entrypoint:
 ```bash
-cp deploy/xg2g.service /etc/systemd/system/
-systemctl daemon-reload
+deploy/sync.sh --apply --ref <tag|sha>
 systemctl enable --now xg2g
 ```
+
+Manual file copies into `/etc/systemd/system` or `/srv/xg2g` are not a supported deployment path.
 
 Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
 
@@ -28,6 +29,7 @@ Canonical repo-side unit is `deploy/xg2g.service`; `docs/ops/xg2g.service` is th
 
 Host verification (deploy-time, fail-closed):
 ```bash
+deploy/sync.sh --check --ref <tag|sha>
 /srv/xg2g/scripts/verify-installed-unit.sh /srv/xg2g/docs/ops/xg2g.service
 /srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /
 /srv/xg2g/scripts/verify-systemd-runtime-contract.sh

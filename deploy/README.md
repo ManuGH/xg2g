@@ -23,6 +23,7 @@ Sync workflow:
 
 - `deploy/sync.sh --check --ref <tag|sha>` compares a pinned repo ref against the host install root.
 - `deploy/sync.sh --apply --ref <tag|sha>` copies the bundle to the host, reloads systemd, and reruns `--check`.
+- `deploy/sync.sh --apply --ref <tag|sha>` is the only supported deployment path. Manual file copies and direct host edits are drift by definition.
 - Exit `0` means synced, `1` means drift, `2` means `/etc/xg2g/xg2g.env` violates the deploy contract.
 - `--install-root <path>` is available for local dry-runs and fixture-style tests.
 
@@ -34,5 +35,5 @@ Why the env schema is intentionally narrow in step 1:
 
 Remaining tail after this slice:
 
-- live hosts still need to adopt `deploy/sync.sh` as the normal deployment entrypoint
+- live hosts still need to adopt `deploy/sync.sh` as the normal deployment entrypoint everywhere
 - some public ops docs still describe legacy compatibility mirrors for historical drift analysis

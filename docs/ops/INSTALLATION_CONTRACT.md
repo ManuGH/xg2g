@@ -32,6 +32,7 @@ These paths are optional and host-specific. Absence is valid unless otherwise no
 
 Repo-side canonical deploy truth now lives under `deploy/`. Files under `/srv/xg2g/`
 remain installation targets and must not be treated as an editable source of truth.
+Supported installs must be applied via `deploy/sync.sh --apply --ref <tag|sha>`, not via manual file copies.
 
 ## Optional Periodic Verifier Bundle
 

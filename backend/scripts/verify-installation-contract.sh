@@ -142,6 +142,7 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" "## Optional Periodic Verifier Bundle" "installation contract optional verifier bundle"
   assert_contains "${INSTALL_DOC}" "all-or-nothing" "installation contract bundle rule"
   assert_contains "${INSTALL_DOC}" "--verify-install-root /" "installation contract live-host verification"
+  assert_contains "${INSTALL_DOC}" '`deploy/sync.sh --apply --ref <tag|sha>`' "installation contract sync apply path"
 }
 
 verify_docs_discoverability() {
@@ -150,9 +151,12 @@ verify_docs_discoverability() {
   assert_contains "${DEPLOYMENT_INDEX}" 'Repo-side deploy truth lives under `deploy/`.' "deployment index deploy migration note"
   assert_contains "${DEPLOYMENT_INDEX}" '`deploy/sync.sh --check --ref <tag|sha>`' "deployment index sync check command"
   assert_contains "${DEPLOYMENT_INDEX}" '`deploy/sync.sh --apply --ref <tag|sha>`' "deployment index sync apply command"
+  assert_contains "${DEPLOYMENT_INDEX}" 'only supported deployment path' "deployment index sole deployment path"
 
   assert_file "${RUNBOOK}"
   assert_contains "${RUNBOOK}" 'Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.' "runbook installation contract link"
+  assert_contains "${RUNBOOK}" 'Manual file copies into `/etc/systemd/system` or `/srv/xg2g` are not a supported deployment path.' "runbook unsupported manual deployment note"
+  assert_contains "${RUNBOOK}" 'deploy/sync.sh --check --ref <tag|sha>' "runbook sync check command"
   assert_contains "${RUNBOOK}" "/srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /" "runbook installation verifier command"
 }
 

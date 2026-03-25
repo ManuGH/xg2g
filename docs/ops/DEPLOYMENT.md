@@ -16,4 +16,7 @@ Repo-side deploy truth lives under `deploy/`.
 - `deploy/sync.sh --apply --ref <tag|sha>` copies repo truth into `/srv/xg2g` and `/etc/systemd/system`, reloads systemd, and reruns the same checks.
 - `deploy/xg2g.env.schema.yaml` is the contract for validating `/etc/xg2g/xg2g.env` during sync.
 
-The installation contract and runbook remain the live-host reference for target paths and runtime debugging.
+`deploy/sync.sh --apply --ref <tag|sha>` is the only supported deployment path.
+Direct host edits, ad-hoc file copies, and manual `/srv/xg2g` drift are not supported deployment workflows.
+
+The installation contract and runbook remain the live-host reference for target paths, verification, and runtime debugging after sync has applied the pinned ref.
