@@ -115,7 +115,7 @@ describe('V3Player Mobile Controls', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders a fullscreen control and uses wrapper fullscreen on touch devices when hls.js is active', async () => {
+  it('uses native video fullscreen on touch devices when WebKit fullscreen is available', async () => {
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -130,9 +130,9 @@ describe('V3Player Mobile Controls', () => {
     fireEvent.click(fullscreenButton);
 
     const video = container.querySelector('video') as HTMLVideoElement;
-    expect(requestFullscreen).toHaveBeenCalledTimes(1);
-    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
-    expect(video.controls).toBe(false);
+    expect(requestFullscreen).not.toHaveBeenCalled();
+    expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    expect(video.controls).toBe(true);
     expect(screen.queryByRole('button', { name: /player\.dvrMode/i })).not.toBeInTheDocument();
   });
 
@@ -150,5 +150,20 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.getByRole('slider')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /player\.pipLabel/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+  });
+
+  it('does not force autoplay mute on touch WebKit devices', async () => {
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(Hls).toHaveBeenCalled();
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    expect(video.muted).toBe(false);
   });
 });
