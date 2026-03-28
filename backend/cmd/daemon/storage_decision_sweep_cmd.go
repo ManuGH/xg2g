@@ -401,7 +401,7 @@ func executeStorageDecisionSweep(opts storageDecisionSweepOptions) (storageDecis
 	capabilitiesDBPath := resolveStorageDBPath(dataDir, "capabilities.sqlite")
 	decisionDBPath := resolveStorageDBPath(dataDir, "decision_audit.sqlite")
 	for _, path := range []string{capabilitiesDBPath, decisionDBPath} {
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 			return storageDecisionSweep{}, fmt.Errorf("create store dir for %s: %w", path, err)
 		}
 	}
@@ -615,7 +615,8 @@ func loadStorageDecisionSweepState(path string) (*storageDecisionSweep, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil
 	}
-	data, err := os.ReadFile(path)
+	// #nosec G304 -- state path is resolved from controlled dataDir/CLI input and file reads are the purpose of this command.
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -633,7 +634,7 @@ func persistStorageDecisionSweepState(path string, result storageDecisionSweep) 
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return err
 	}
 	snapshot := result
@@ -712,7 +713,8 @@ func selectStorageDecisionSweepServices(playlistPath string, opts storageDecisio
 		return nil, fmt.Errorf("--limit must be >= 0")
 	}
 
-	content, err := os.ReadFile(playlistPath)
+	// #nosec G304 -- playlistPath is validated by ResolvePlaylistPath before it reaches the sweep selector.
+	content, err := os.ReadFile(filepath.Clean(playlistPath))
 	if err != nil {
 		return nil, err
 	}

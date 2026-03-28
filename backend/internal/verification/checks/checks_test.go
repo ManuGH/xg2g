@@ -15,18 +15,22 @@ import (
 	"github.com/ManuGH/xg2g/internal/verification/checks"
 )
 
-const minimalConfigYAML = `version: "1"
-dataDir: /tmp/xg2g-config-test
+func minimalConfigYAML(dataDir string) string {
+	return `version: "1"
+dataDir: ` + dataDir + `
+store:
+  path: ` + filepath.Join(dataDir, "store") + `
 enigma2:
   baseUrl: http://receiver.local
 epg:
   enabled: true
 `
+}
 
 func TestConfigChecker_Drift(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "config.yaml")
-	err := os.WriteFile(path, []byte(minimalConfigYAML+"logLevel: info\n"), 0644)
+	err := os.WriteFile(path, []byte(minimalConfigYAML(tmp)+"logLevel: info\n"), 0644)
 	require.NoError(t, err)
 
 	cfg, err := config.NewLoader(path, "test-version").Load()
@@ -50,7 +54,7 @@ func TestConfigChecker_Drift(t *testing.T) {
 func TestConfigChecker_EnvOverlayDoesNotDrift(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "config.yaml")
-	err := os.WriteFile(path, []byte(minimalConfigYAML+"logLevel: info\n"), 0644)
+	err := os.WriteFile(path, []byte(minimalConfigYAML(tmp)+"logLevel: info\n"), 0644)
 	require.NoError(t, err)
 
 	t.Setenv("XG2G_LOG_LEVEL", "debug")

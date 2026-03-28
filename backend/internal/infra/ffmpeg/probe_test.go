@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+func writeExecutableScript(t *testing.T, path string, content string) {
+	t.Helper()
+
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(content), 0o755); err != nil {
+		t.Fatalf("write temp script: %v", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		t.Fatalf("rename temp script: %v", err)
+	}
+}
+
 func TestProbeWithBin_RedactsCredentialsInFFprobeError(t *testing.T) {
 	t.Parallel()
 
@@ -17,9 +29,7 @@ func TestProbeWithBin_RedactsCredentialsInFFprobeError(t *testing.T) {
 	script := "#!/bin/sh\n" +
 		"echo 'http://user:secret@example.com:17999/1:0:19:EF75:3F9:1:C00000:0:0:0: Input/output error' 1>&2\n" +
 		"exit 1\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake ffprobe: %v", err)
-	}
+	writeExecutableScript(t, scriptPath, script)
 
 	_, err := ProbeWithBin(context.Background(), scriptPath, "http://user:secret@example.com:17999/1:0:19:EF75:3F9:1:C00000:0:0:0:")
 	if err == nil {
@@ -44,9 +54,7 @@ func TestProbeWithOptions_AddsAnalyzeDurationAndProbeSize(t *testing.T) {
 	script := "#!/bin/sh\n" +
 		"printf '%s\n' \"$@\" > \"" + argsPath + "\"\n" +
 		"printf '{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"h264\",\"width\":1920,\"height\":1080}],\"format\":{\"duration\":\"1.0\",\"format_name\":\"mpegts\"}}'\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake ffprobe: %v", err)
-	}
+	writeExecutableScript(t, scriptPath, script)
 
 	_, err := probeWithBinAndOptions(context.Background(), scriptPath, "http://example.com/stream", ProbeOptions{
 		AnalyzeDuration: 15 * time.Second,

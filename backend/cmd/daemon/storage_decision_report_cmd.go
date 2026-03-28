@@ -485,6 +485,7 @@ func queryCapability(db *sql.DB, columns map[string]bool, serviceRef string) (sc
 		return scan.Capability{}, false, nil
 	}
 
+	// #nosec G201 -- select expressions are derived from a fixed internal allowlist and only expand to column names or NULL aliases.
 	query := fmt.Sprintf(`
 		SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 		FROM capabilities
@@ -584,6 +585,7 @@ func queryDecisionCurrentRows(db *sql.DB, columns map[string]bool, serviceRef st
 	}
 
 	var args []any
+	// #nosec G202 -- dynamic fragments are fixed internal column expressions selected from an allowlist, not user input.
 	query := `
 	SELECT service_ref, ` + sqliteSelectExpr(columns, "origin") + `, client_family, requested_intent, resolved_intent, ` + sqliteSelectExpr(columns, "client_caps_source") + `, mode, target_profile_json, reasons_json, basis_hash, changed_at_ms, last_seen_at_ms
 	FROM decision_current
