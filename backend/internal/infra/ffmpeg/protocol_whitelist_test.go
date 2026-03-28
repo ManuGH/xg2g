@@ -9,17 +9,13 @@ import (
 )
 
 func TestProbeWithBin_AddsProtocolWhitelistForRemoteInput(t *testing.T) {
-	t.Parallel()
-
 	tmpDir := t.TempDir()
 	scriptPath := filepath.Join(tmpDir, "fake-ffprobe.sh")
 	argsPath := filepath.Join(tmpDir, "args.txt")
 	script := "#!/bin/sh\n" +
 		"printf '%s\n' \"$@\" > \"" + argsPath + "\"\n" +
 		"printf '{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"h264\",\"width\":1920,\"height\":1080}],\"format\":{\"duration\":\"1.0\",\"format_name\":\"mpegts\"}}'\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake ffprobe: %v", err)
-	}
+	writeExecutableScript(t, scriptPath, script)
 
 	_, err := ProbeWithBin(context.Background(), scriptPath, "http://user:secret@example.com/playlist.m3u8")
 	if err != nil {
@@ -37,17 +33,13 @@ func TestProbeWithBin_AddsProtocolWhitelistForRemoteInput(t *testing.T) {
 }
 
 func TestProbeWithBin_OmitsProtocolWhitelistForLocalFile(t *testing.T) {
-	t.Parallel()
-
 	tmpDir := t.TempDir()
 	scriptPath := filepath.Join(tmpDir, "fake-ffprobe.sh")
 	argsPath := filepath.Join(tmpDir, "args.txt")
 	script := "#!/bin/sh\n" +
 		"printf '%s\n' \"$@\" > \"" + argsPath + "\"\n" +
 		"printf '{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"h264\",\"width\":1920,\"height\":1080}],\"format\":{\"duration\":\"1.0\",\"format_name\":\"mpegts\"}}'\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake ffprobe: %v", err)
-	}
+	writeExecutableScript(t, scriptPath, script)
 
 	_, err := ProbeWithBin(context.Background(), scriptPath, "/tmp/example.ts")
 	if err != nil {

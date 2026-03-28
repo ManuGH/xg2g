@@ -22,8 +22,6 @@ func writeExecutableScript(t *testing.T, path string, content string) {
 }
 
 func TestProbeWithBin_RedactsCredentialsInFFprobeError(t *testing.T) {
-	t.Parallel()
-
 	tmpDir := t.TempDir()
 	scriptPath := filepath.Join(tmpDir, "fake-ffprobe.sh")
 	script := "#!/bin/sh\n" +
@@ -46,8 +44,6 @@ func TestProbeWithBin_RedactsCredentialsInFFprobeError(t *testing.T) {
 }
 
 func TestProbeWithOptions_AddsAnalyzeDurationAndProbeSize(t *testing.T) {
-	t.Parallel()
-
 	tmpDir := t.TempDir()
 	scriptPath := filepath.Join(tmpDir, "fake-ffprobe.sh")
 	argsPath := filepath.Join(tmpDir, "args.txt")
