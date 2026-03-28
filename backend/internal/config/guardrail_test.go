@@ -32,4 +32,56 @@ func TestCheckLegacyEnvWithEnviron(t *testing.T) {
 			t.Fatalf("expected error to mention split key, got %v", err)
 		}
 	})
+
+	t.Run("legacy owi host suggests canonical host line", func(t *testing.T) {
+		err := CheckLegacyEnvWithEnviron([]string{"XG2G_OWI_BASE=http://receiver.local"})
+		if err == nil {
+			t.Fatalf("expected legacy key error")
+		}
+		if !strings.Contains(err.Error(), "XG2G_E2_HOST=http://receiver.local") {
+			t.Fatalf("expected canonical host migration line, got %v", err)
+		}
+	})
+
+	t.Run("legacy owi host with embedded credentials does not leak password", func(t *testing.T) {
+		err := CheckLegacyEnvWithEnviron([]string{"XG2G_OWI_BASE=http://root:pw-123@receiver.local"})
+		if err == nil {
+			t.Fatalf("expected legacy key error")
+		}
+		if !strings.Contains(err.Error(), "XG2G_E2_HOST=http://receiver.local") {
+			t.Fatalf("expected sanitized host migration line, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "XG2G_E2_USER=root") {
+			t.Fatalf("expected canonical user migration line, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "XG2G_E2_PASS") {
+			t.Fatalf("expected canonical password hint, got %v", err)
+		}
+		if strings.Contains(err.Error(), "pw-123") {
+			t.Fatalf("legacy error leaked password: %v", err)
+		}
+	})
+
+	t.Run("legacy timeout suggests canonical duration", func(t *testing.T) {
+		err := CheckLegacyEnvWithEnviron([]string{"XG2G_OWI_TIMEOUT_MS=5000"})
+		if err == nil {
+			t.Fatalf("expected legacy key error")
+		}
+		if !strings.Contains(err.Error(), "XG2G_E2_TIMEOUT=5s") {
+			t.Fatalf("expected canonical duration migration line, got %v", err)
+		}
+	})
+
+	t.Run("legacy stream port explains deprecated canonical override", func(t *testing.T) {
+		err := CheckLegacyEnvWithEnviron([]string{"XG2G_STREAM_PORT=8001"})
+		if err == nil {
+			t.Fatalf("expected legacy key error")
+		}
+		if !strings.Contains(err.Error(), "XG2G_E2_STREAM_PORT=8001") {
+			t.Fatalf("expected canonical stream port migration line, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "itself deprecated") {
+			t.Fatalf("expected deprecation note, got %v", err)
+		}
+	})
 }

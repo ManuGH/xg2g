@@ -130,6 +130,69 @@ expected="$(printf '%s\n' \
   "-q")"
 assert_eq "${expected}" "${actual}" "docker compose argument ordering"
 
+cat <<'EOF' > "${root}/bin/docker"
+#!/usr/bin/env bash
+set -euo pipefail
+cat <<'OUT'
+services:
+  xg2g:
+    environment:
+      XG2G_API_TOKEN: abc123
+      XG2G_DECISION_SECRET: supersecret
+      XG2G_E2_HOST: http://root:pw@10.10.55.64
+      XG2G_E2_PASS: boxsecret
+      XG2G_LOG_LEVEL: debug
+OUT
+EOF
+chmod +x "${root}/bin/docker"
+
+actual="$(PATH="${root}/bin:${PATH}" \
+XG2G_COMPOSE_ROOT="${root}" \
+XG2G_ENV_FILE="${root}/xg2g.env" \
+  "${HELPER}" config)"
+case "${actual}" in
+  *"XG2G_API_TOKEN: REDACTED"*) ;;
+  *)
+    fail "default config output did not redact XG2G_API_TOKEN"
+    ;;
+esac
+case "${actual}" in
+  *"XG2G_DECISION_SECRET: REDACTED"*) ;;
+  *)
+    fail "default config output did not redact XG2G_DECISION_SECRET"
+    ;;
+esac
+case "${actual}" in
+  *"XG2G_E2_PASS: REDACTED"*) ;;
+  *)
+    fail "default config output did not redact XG2G_E2_PASS"
+    ;;
+esac
+case "${actual}" in
+  *"XG2G_E2_HOST: http://REDACTED@10.10.55.64"*) ;;
+  *)
+    fail "default config output did not redact URL credentials"
+    ;;
+esac
+case "${actual}" in
+  *"XG2G_LOG_LEVEL: debug"*) ;;
+  *)
+    fail "default config output over-redacted non-secret values"
+    ;;
+esac
+
+actual="$(PATH="${root}/bin:${PATH}" \
+XG2G_COMPOSE_ROOT="${root}" \
+XG2G_ENV_FILE="${root}/xg2g.env" \
+XG2G_COMPOSE_CONFIG_REDACT=0 \
+  "${HELPER}" config)"
+case "${actual}" in
+  *"XG2G_API_TOKEN: abc123"*"XG2G_DECISION_SECRET: supersecret"*"XG2G_E2_HOST: http://root:pw@10.10.55.64"*) ;;
+  *)
+    fail "raw config opt-out did not preserve secret values"
+    ;;
+esac
+
 if grep -qE '^[[:space:]]*devices:[[:space:]]*$' "${BASE_COMPOSE}"; then
   fail "base compose contains a devices binding"
 fi

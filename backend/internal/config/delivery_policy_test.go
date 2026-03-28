@@ -9,9 +9,8 @@ import (
 // setupEnv sets up the minimum required environment variables for validation to pass
 func setupEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("XG2G_OWI_BASE", "http://test-enigma2-host")
+	t.Setenv("XG2G_E2_HOST", "http://test-enigma2-host")
 	t.Setenv("XG2G_ENGINE_ENABLED", "false")
-	t.Setenv("XG2G_E2_HOST", "")
 }
 
 // TestDeliveryPolicyDefaults verifies that the default delivery_policy is "universal"

@@ -36,10 +36,11 @@ func (s *Server) snapshotV3Dependencies() v3DependencySnapshot {
 
 func sanitizeV3RuntimeDependencies(deps v3.Dependencies) v3.Dependencies {
 	return v3.Dependencies{
-		Bus:         deps.Bus,
-		Store:       deps.Store,
-		ResumeStore: deps.ResumeStore,
-		Scan:        deps.Scan,
+		Bus:           deps.Bus,
+		Store:         deps.Store,
+		ResumeStore:   deps.ResumeStore,
+		Scan:          deps.Scan,
+		DecisionAudit: deps.DecisionAudit,
 	}
 }
 
@@ -59,6 +60,7 @@ func (s *Server) syncV3HandlerDependencies() {
 		Store:             deps.runtimeDeps.Store,
 		ResumeStore:       deps.runtimeDeps.ResumeStore,
 		Scan:              deps.runtimeDeps.Scan,
+		DecisionAudit:     deps.runtimeDeps.DecisionAudit,
 		PathMapper:        deps.recordingPathMapper,
 		ChannelManager:    deps.channelManager,
 		SeriesManager:     deps.seriesManager,

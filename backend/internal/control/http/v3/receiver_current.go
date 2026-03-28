@@ -58,7 +58,7 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if st.InStandby == "true" {
+	if standbyKnown, inStandby := parseOWIBoolString(st.InStandby); standbyKnown && inStandby {
 		unavailable := CurrentServiceInfoStatusUnavailable
 		resp := CurrentServiceInfo{
 			Status: &unavailable,

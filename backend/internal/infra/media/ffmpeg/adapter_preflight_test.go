@@ -16,6 +16,45 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func TestDeriveVAAPIEncoderCapabilities_UsesRelativeStartupCost(t *testing.T) {
+	t.Parallel()
+
+	caps := deriveVAAPIEncoderCapabilities(map[string]time.Duration{
+		"h264_vaapi": 100 * time.Millisecond,
+		"hevc_vaapi": 160 * time.Millisecond,
+		"av1_vaapi":  320 * time.Millisecond,
+	}, 1.75, 2.50)
+
+	if !caps["h264_vaapi"].Verified || !caps["h264_vaapi"].AutoEligible {
+		t.Fatalf("expected h264_vaapi to stay auto-eligible: %#v", caps["h264_vaapi"])
+	}
+	if !caps["hevc_vaapi"].Verified || !caps["hevc_vaapi"].AutoEligible {
+		t.Fatalf("expected hevc_vaapi to be auto-eligible within ratio budget: %#v", caps["hevc_vaapi"])
+	}
+	if !caps["av1_vaapi"].Verified {
+		t.Fatalf("expected av1_vaapi to be verified: %#v", caps["av1_vaapi"])
+	}
+	if caps["av1_vaapi"].AutoEligible {
+		t.Fatalf("expected av1_vaapi to be excluded from auto ladder when above ratio budget: %#v", caps["av1_vaapi"])
+	}
+}
+
+func TestDeriveVAAPIEncoderCapabilities_FallsBackToFastestVerifiedBaseline(t *testing.T) {
+	t.Parallel()
+
+	caps := deriveVAAPIEncoderCapabilities(map[string]time.Duration{
+		"hevc_vaapi": 180 * time.Millisecond,
+		"av1_vaapi":  500 * time.Millisecond,
+	}, 1.75, 2.50)
+
+	if !caps["hevc_vaapi"].AutoEligible {
+		t.Fatalf("expected fastest verified encoder to seed auto ladder: %#v", caps["hevc_vaapi"])
+	}
+	if caps["av1_vaapi"].AutoEligible {
+		t.Fatalf("expected slower av1_vaapi to stay out of auto ladder: %#v", caps["av1_vaapi"])
+	}
+}
+
 func TestPreflightTS_SyncOK(t *testing.T) {
 	buf := make([]byte, 188*3)
 	buf[0] = 0x47

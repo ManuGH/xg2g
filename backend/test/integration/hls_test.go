@@ -144,7 +144,7 @@ func TestHLSEndpoint(t *testing.T) {
 			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
 			fmt.Sprintf("XG2G_PROXY_PORT=%d", proxyPort),
 			"XG2G_INSTANT_TUNE=false", // disable stream detector to force direct target use
-			"XG2G_OWI_BASE="+mockTS.URL,
+			"XG2G_E2_HOST="+mockTS.URL,
 			"XG2G_BOUQUET=Test Channel",
 			"XG2G_INITIAL_REFRESH=false",
 			"XG2G_HDHR_ENABLED=true",
@@ -249,7 +249,7 @@ func TestHLSEndpoint(t *testing.T) {
 			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
 			fmt.Sprintf("XG2G_PROXY_PORT=%d", proxyPort),
 			"XG2G_INSTANT_TUNE=false", // disable stream detector to force direct target use
-			"XG2G_OWI_BASE="+mockTS.URL,
+			"XG2G_E2_HOST="+mockTS.URL,
 			"XG2G_BOUQUET=Test Channel",
 			"XG2G_INITIAL_REFRESH=false",
 			"XG2G_HDHR_ENABLED=true",

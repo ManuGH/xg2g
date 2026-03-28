@@ -64,6 +64,24 @@ func mapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 		AudioCodecs:         v3.AudioCodecs,
 		SupportsHLS:         false,
 	}
+	if v3.VideoCodecSignals != nil {
+		c.VideoCodecSignals = make([]capabilities.VideoCodecSignal, 0, len(*v3.VideoCodecSignals))
+		for _, signal := range *v3.VideoCodecSignals {
+			mapped := capabilities.VideoCodecSignal{
+				Codec:     signal.Codec,
+				Supported: signal.Supported,
+			}
+			if signal.Smooth != nil {
+				v := *signal.Smooth
+				mapped.Smooth = &v
+			}
+			if signal.PowerEfficient != nil {
+				v := *signal.PowerEfficient
+				mapped.PowerEfficient = &v
+			}
+			c.VideoCodecSignals = append(c.VideoCodecSignals, mapped)
+		}
+	}
 	if v3.SupportsHls != nil {
 		c.SupportsHLS = *v3.SupportsHls
 		c.SupportsHLSExplicit = true

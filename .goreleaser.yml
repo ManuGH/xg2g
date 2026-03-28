@@ -6,9 +6,6 @@ before:
   hooks:
     - make ui-build
     - bash -c 'cd backend && go mod tidy'
-    - cp backend/scripts/build-ffmpeg.sh .
-    - cp backend/scripts/ffmpeg-wrapper.sh .
-    - cp backend/scripts/ffprobe-wrapper.sh .
 
 builds:
   - id: xg2g
@@ -63,10 +60,6 @@ dockers:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.source={{ .GitURL }}"
       - "--label=org.opencontainers.image.version={{ .Version }}"
-    extra_files:
-      - build-ffmpeg.sh
-      - ffmpeg-wrapper.sh
-      - ffprobe-wrapper.sh
   - image_templates:
       - "ghcr.io/manugh/xg2g:{{ .Tag }}-arm64"
     dockerfile: infrastructure/docker/Dockerfile.release
@@ -75,10 +68,6 @@ dockers:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.source={{ .GitURL }}"
       - "--label=org.opencontainers.image.version={{ .Version }}"
-    extra_files:
-      - build-ffmpeg.sh
-      - ffmpeg-wrapper.sh
-      - ffprobe-wrapper.sh
 
 docker_manifests:
   - name_template: "ghcr.io/manugh/xg2g:{{ .Tag }}"

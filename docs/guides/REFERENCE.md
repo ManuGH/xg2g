@@ -60,7 +60,7 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_E2_FALLBACK_TO_8001` | `true` | Fallback to legacy port 8001 |
 | `XG2G_E2_PREFLIGHT_TIMEOUT` | `10s` | TS preflight timeout |
 
-Legacy fallback keys (compat only): `XG2G_OWI_BASE`, `XG2G_OWI_USER`, `XG2G_OWI_PASS`, `XG2G_OWI_TIMEOUT_MS`, `XG2G_OWI_RETRIES`, `XG2G_OWI_BACKOFF_MS`, `XG2G_OWI_MAX_BACKOFF_MS`, `XG2G_STREAM_PORT`, `XG2G_USE_WEBIF_STREAMS`.
+Legacy receiver env aliases are no longer accepted at startup. Use the canonical `XG2G_E2_*` surface only.
 
 ### Feature Flags & Safety
 

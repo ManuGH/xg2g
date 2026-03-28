@@ -35,6 +35,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Log in to GHCR
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify FFmpeg base image availability
+        run: |
+          version="$(sed -n 's/^FFMPEG_VERSION := //p' mk/variables.mk | head -n 1 | tr -d '[:space:]')"
+          test -n "${version}"
+          docker buildx imagetools inspect "ghcr.io/manugh/xg2g-ffmpeg:${version}" >/dev/null
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:

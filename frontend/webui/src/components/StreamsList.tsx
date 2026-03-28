@@ -1,15 +1,17 @@
 // Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import { useStreams } from '../hooks/useServerQueries';
-import { Card, CardHeader, CardBody, StatusChip } from './ui';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { StreamSession } from '../client-ts';
+import { useUiOverlay } from '../context/UiOverlayContext';
+import { useStopStreamMutation, useStreams } from '../hooks/useServerQueries';
+import { Button, StatusChip } from './ui';
 import styles from './Streams.module.css';
 
 interface StreamsListProps {
   compact?: boolean;
 }
-
 
 function assertNever(x: never): never {
   throw new Error(`Unhandled StreamSessionState: ${String(x)}`);
@@ -20,24 +22,22 @@ function assertNever(x: never): never {
  * Strictly follows Domain Truth Mapping (CTO Hardrail) for P3-2.
  * Maps exact OpenAPI enum states to UI semantics.
  */
-function mapStreamToChip(session: StreamSession) {
+function mapStreamToChip(session: StreamSession, label: string) {
   switch (session.state) { // xg2g:allow-webui-logic
     case 'starting':
-      return { state: 'idle', label: 'STARTING' } as const;
+      return { state: 'idle', label } as const;
     case 'buffering':
-      return { state: 'warning', label: 'BUFFERING' } as const;
+      return { state: 'warning', label } as const;
     case 'active':
-      // Pulse reserved for live/recording; active simply means "healthy pipeline"
-      return { state: 'success', label: 'ACTIVE' } as const;
+      return { state: 'live', label } as const;
     case 'stalled':
-      // Operator-critical warning
-      return { state: 'warning', label: 'STALLED' } as const;
+      return { state: 'warning', label } as const;
     case 'ending':
-      return { state: 'idle', label: 'ENDING' } as const;
+      return { state: 'idle', label } as const;
     case 'idle':
-      return { state: 'idle', label: 'IDLE' } as const;
+      return { state: 'idle', label } as const;
     case 'error':
-      return { state: 'error', label: 'ERROR', pulse: true } as const;
+      return { state: 'error', label } as const;
   }
   // Fail-closed for unknown states (runtime safety + strict exhaustiveness)
   return assertNever(session.state);
@@ -87,74 +87,130 @@ const shouldShowDeviceType = (deviceType: string | undefined): boolean =>
   Boolean(deviceType && deviceType !== 'web');
 
 export default function StreamsList({ compact = false }: StreamsListProps) {
+  const { t } = useTranslation();
+  const { confirm, toast } = useUiOverlay();
   const { data: streams = [], error } = useStreams();
+  const stopStreamMutation = useStopStreamMutation();
+  const [stoppingSessionId, setStoppingSessionId] = useState<string | null>(null);
   const count = streams.length;
 
   if (count === 0 && !error) return null;
+
+  const handleStop = async (session: StreamSession) => {
+    const channelName = session.channelName || t('dashboard.sessionUnknownChannel');
+    const ok = await confirm({
+      title: t('dashboard.stopStreamTitle'),
+      message: t('dashboard.stopStreamMessage', { channel: channelName }),
+      confirmLabel: t('common.stop'),
+      cancelLabel: t('common.close'),
+      tone: 'danger',
+    });
+
+    if (!ok) return;
+
+    setStoppingSessionId(session.sessionId);
+    try {
+      await stopStreamMutation.mutateAsync(session.sessionId);
+      toast({
+        kind: 'success',
+        message: t('dashboard.stopStreamSuccess', { channel: channelName }),
+      });
+    } catch (mutationError) {
+      const details = mutationError instanceof Error ? mutationError.message : undefined;
+      toast({
+        kind: 'error',
+        message: t('dashboard.stopStreamError', { channel: channelName }),
+        details,
+      });
+    } finally {
+      setStoppingSessionId(null);
+    }
+  };
 
   return (
     <div className={[styles.section, compact ? styles.sectionCompact : null].filter(Boolean).join(' ')}>
       {!compact && (
         <h3 className={styles.heading}>
-          Active Streams <span className="tabular">({count})</span>
+          {t('dashboard.activeStreams')} <span className="tabular">({count})</span>
         </h3>
       )}
-      {error && <p className={styles.errorText}>Failed to load stream details</p>}
+      {error && <p className={styles.errorText}>{t('dashboard.streamDetailsError')}</p>}
 
-      <div className={styles.grid}>
+      <div className={styles.list} role="list">
         {streams.map((s: StreamSession) => {
-          const chip = mapStreamToChip(s);
+          const chip = mapStreamToChip(
+            s,
+            t(`player.statusStates.${s.detailedState ?? s.state}`, { defaultValue: s.detailedState ?? s.state })
+          );
+          const isStopping = stopStreamMutation.isPending && stoppingSessionId === s.sessionId;
+          const metaItems = [
+            {
+              key: 'client',
+              label: t('dashboard.sessionClient'),
+              value: formatClientFamily(s.clientFamily) || t('common.notAvailable'),
+            },
+            {
+              key: 'player',
+              label: t('dashboard.sessionPlayer'),
+              value: formatPreferredHlsEngine(s.preferredHlsEngine) || t('common.notAvailable'),
+            },
+            shouldShowDeviceType(s.deviceType) ? {
+              key: 'device',
+              label: t('dashboard.sessionDevice'),
+              value: s.deviceType || t('common.notAvailable'),
+            } : null,
+            s.clientIp ? {
+              key: 'ip',
+              label: t('dashboard.sessionIp'),
+              value: maskIP(s.clientIp),
+            } : null,
+          ].filter(Boolean) as Array<{ key: string; label: string; value: string }>;
+
           return (
-            <Card key={s.id} variant="standard" className={styles.streamCard} interactive>
-              <CardHeader>
-                <div className={styles.streamHeader}>
-                  <div className={styles.streamTitleGroup}>
-                    <StatusChip state="success" label="STREAM" showIcon={false} />
-                    <div className={styles.streamChannel}>{s.channelName || 'Unknown Channel'}</div>
+            <article key={s.sessionId} className={styles.row} role="listitem">
+              <div className={styles.rowPrimary}>
+                <div className={styles.rowHeading}>
+                  <div className={styles.rowTitleBlock}>
+                    <div className={styles.streamChannel}>{s.channelName || t('dashboard.sessionUnknownChannel')}</div>
+                    <p className={styles.streamProgram}>
+                      {s.program?.title || t('dashboard.sessionProgramFallback')}
+                    </p>
                   </div>
                   <StatusChip state={chip.state} label={chip.label} />
                 </div>
-              </CardHeader>
 
-              <CardBody>
-                {s.program?.title && (
-                  <div className={styles.streamProgram}>
-                    <div className={styles.programTitle}>{s.program.title}</div>
-                    <div className={styles.programDesc}>{s.program.description}</div>
-                  </div>
-                )}
-                <div className={styles.streamMeta}>
-                  {s.clientIp && (
-                    <div className={styles.metaItem}>
-                      <span className={styles.metaLabel}>Client-IP:</span>
-                      <span className="tabular">{maskIP(s.clientIp)}</span>
+                <div className={styles.metaList}>
+                  {metaItems.map((item) => (
+                    <div key={`${s.sessionId}-${item.key}`} className={styles.metaPill}>
+                      <span className={styles.metaLabel}>{item.label}</span>
+                      <span>{item.value}</span>
                     </div>
-                  )}
-                  {s.clientFamily && (
-                    <div className={styles.metaItem}>
-                      <span className={styles.metaLabel}>Client:</span>
-                      <span>{formatClientFamily(s.clientFamily)}</span>
-                    </div>
-                  )}
-                  {s.preferredHlsEngine && (
-                    <div className={styles.metaItem}>
-                      <span className={styles.metaLabel}>Player:</span>
-                      <span>{formatPreferredHlsEngine(s.preferredHlsEngine)}</span>
-                    </div>
-                  )}
-                  {shouldShowDeviceType(s.deviceType) && (
-                    <div className={styles.metaItem}>
-                      <span className={styles.metaLabel}>Device:</span>
-                      <span>{s.deviceType}</span>
-                    </div>
-                  )}
-                  <div className={styles.metaItem}>
-                    <span className={styles.metaLabel}>Started:</span>
-                    <span className="tabular">{s.startedAt ? formatDuration(new Date(s.startedAt)) : 'unknown'}</span>
-                  </div>
+                  ))}
                 </div>
-              </CardBody>
-            </Card>
+
+                <p className={styles.sessionMeta}>
+                  {t('common.session')} <span className="tabular">{s.sessionId}</span>
+                </p>
+              </div>
+
+              <div className={styles.rowRuntime}>
+                <span className={styles.runtimeLabel}>{t('dashboard.sessionRuntime')}</span>
+                <span className={`${styles.runtimeValue} tabular`.trim()}>
+                  {s.startedAt ? formatDuration(new Date(s.startedAt)) : t('common.notAvailable')}
+                </span>
+              </div>
+
+              <div className={styles.rowAction}>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => { void handleStop(s); }}
+                  disabled={stopStreamMutation.isPending}
+                >
+                  {isStopping ? t('dashboard.stoppingStream') : t('common.stop')}
+                </Button>
+              </div>
+            </article>
           );
         })}
       </div>

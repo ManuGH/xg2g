@@ -35,10 +35,13 @@ const (
 	safariDirtyHLSTimeSec = 2
 	// safariDirtyHLSInitTimeSec allows a shorter startup segment before steady-state.
 	safariDirtyHLSInitTimeSec = 1
+	// Relative startup-cost thresholds for automatic codec promotion above H.264.
+	defaultHEVCVAAPIAutoRatioMax = 1.75
+	defaultAV1VAAPIAutoRatioMax  = 2.50
 )
 
 // vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
-var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi"}
+var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi", "av1_vaapi"}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
@@ -82,8 +85,9 @@ type LocalAdapter struct {
 	SafariRuntimeProbeTimeout time.Duration
 	VaapiDevice               string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
 	vaapiEncoders             map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
-	vaapiDeviceChecked        bool            // device-level preflight ran
-	vaapiDeviceErr            error           // device-level preflight error
+	vaapiEncoderCaps          map[string]hardware.VAAPIEncoderCapability
+	vaapiDeviceChecked        bool  // device-level preflight ran
+	vaapiDeviceErr            error // device-level preflight error
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
@@ -267,6 +271,7 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 	}
 
 	a.vaapiEncoders = make(map[string]bool)
+	a.vaapiEncoderCaps = make(map[string]hardware.VAAPIEncoderCapability)
 	a.vaapiDeviceChecked = true
 
 	a.Logger.Info().Str("device", a.VaapiDevice).Msg("vaapi preflight: starting")
@@ -275,6 +280,7 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 	if _, err := os.Stat(a.VaapiDevice); err != nil {
 		a.vaapiDeviceErr = fmt.Errorf("vaapi device not accessible: %w", err)
 		a.Logger.Error().Err(a.vaapiDeviceErr).Str("device", a.VaapiDevice).Msg("vaapi preflight: device stat failed")
+		hardware.SetVAAPIEncoderCapabilities(nil)
 		hardware.SetVAAPIPreflightResult(false)
 		return a.vaapiDeviceErr
 	}
@@ -288,34 +294,59 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 	if err != nil {
 		a.vaapiDeviceErr = fmt.Errorf("vaapi preflight: ffmpeg -encoders failed: %w", err)
 		a.Logger.Error().Err(a.vaapiDeviceErr).Msg("vaapi preflight: encoder check failed")
+		hardware.SetVAAPIEncoderCapabilities(nil)
 		hardware.SetVAAPIPreflightResult(false)
 		return a.vaapiDeviceErr
 	}
 	encoderList := string(checkOut)
 
 	// 3. Test each encoder with a real 5-frame encode
+	verifiedElapsed := make(map[string]time.Duration, len(vaapiEncodersToTest))
 	for _, enc := range vaapiEncodersToTest {
 		if !strings.Contains(encoderList, enc) {
 			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
 			continue
 		}
-		if err := a.testVaapiEncoder(enc); err != nil {
+		elapsed, err := a.testVaapiEncoder(enc)
+		if err != nil {
 			a.Logger.Warn().Err(err).Str("encoder", enc).Msg("vaapi preflight: encoder test failed")
 		} else {
 			a.vaapiEncoders[enc] = true
-			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder verified")
+			verifiedElapsed[enc] = elapsed
+			a.Logger.Info().
+				Str("encoder", enc).
+				Dur("probe_elapsed", elapsed).
+				Msg("vaapi preflight: encoder verified")
 		}
 	}
 
 	if len(a.vaapiEncoders) == 0 {
 		a.vaapiDeviceErr = fmt.Errorf("vaapi preflight: no working VAAPI encoders found")
 		a.Logger.Error().Err(a.vaapiDeviceErr).Msg("vaapi preflight: failed")
+		hardware.SetVAAPIEncoderCapabilities(nil)
 		hardware.SetVAAPIPreflightResult(false)
 		return a.vaapiDeviceErr
 	}
 
+	a.vaapiEncoderCaps = deriveVAAPIEncoderCapabilities(
+		verifiedElapsed,
+		envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", defaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
+		envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", defaultAV1VAAPIAutoRatioMax, 1.0, 10.0),
+	)
+	for _, enc := range vaapiEncodersToTest {
+		cap, ok := a.vaapiEncoderCaps[enc]
+		if !ok || !cap.Verified {
+			continue
+		}
+		a.Logger.Info().
+			Str("encoder", enc).
+			Dur("probe_elapsed", cap.ProbeElapsed).
+			Bool("auto_eligible", cap.AutoEligible).
+			Msg("vaapi preflight: encoder capability")
+	}
+
 	// Publish per-encoder results for higher layers (HTTP/profile selection).
-	hardware.SetVAAPIEncoderPreflight(a.vaapiEncoders)
+	hardware.SetVAAPIEncoderCapabilities(a.vaapiEncoderCaps)
 
 	hardware.SetVAAPIPreflightResult(true)
 	a.Logger.Info().
@@ -326,9 +357,10 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 }
 
 // testVaapiEncoder runs a real 5-frame encode test for a specific VAAPI encoder.
-func (a *LocalAdapter) testVaapiEncoder(encoder string) error {
+func (a *LocalAdapter) testVaapiEncoder(encoder string) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	start := time.Now()
 	// #nosec G204 -- BinPath and VaapiDevice are trusted from config
 	cmd := exec.CommandContext(ctx, a.BinPath,
 		"-vaapi_device", a.VaapiDevice,
@@ -341,14 +373,71 @@ func (a *LocalAdapter) testVaapiEncoder(encoder string) error {
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
+		return 0, fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
 	}
-	return nil
+	return time.Since(start), nil
 }
 
 // VaapiEncoderVerified returns true if the given encoder passed preflight.
 func (a *LocalAdapter) VaapiEncoderVerified(encoder string) bool {
 	return a.vaapiEncoders[encoder]
+}
+
+// VaapiEncoderAutoEligible returns true if the encoder is verified and suitable
+// for generic automatic codec selection on this host.
+func (a *LocalAdapter) VaapiEncoderAutoEligible(encoder string) bool {
+	cap, ok := a.vaapiEncoderCaps[encoder]
+	return ok && cap.Verified && cap.AutoEligible
+}
+
+func deriveVAAPIEncoderCapabilities(samples map[string]time.Duration, hevcRatioMax, av1RatioMax float64) map[string]hardware.VAAPIEncoderCapability {
+	if len(samples) == 0 {
+		return nil
+	}
+
+	caps := make(map[string]hardware.VAAPIEncoderCapability, len(samples))
+	baseline, ok := selectVAAPIAutoBaseline(samples)
+	if !ok {
+		return caps
+	}
+
+	for encoder, elapsed := range samples {
+		cap := hardware.VAAPIEncoderCapability{
+			Verified:     true,
+			ProbeElapsed: elapsed,
+			AutoEligible: encoder == "h264_vaapi",
+		}
+		if !cap.AutoEligible {
+			ratio := float64(elapsed) / float64(baseline)
+			switch encoder {
+			case "hevc_vaapi":
+				cap.AutoEligible = ratio <= hevcRatioMax
+			case "av1_vaapi":
+				cap.AutoEligible = ratio <= av1RatioMax
+			default:
+				cap.AutoEligible = true
+			}
+		}
+		caps[encoder] = cap
+	}
+
+	return caps
+}
+
+func selectVAAPIAutoBaseline(samples map[string]time.Duration) (time.Duration, bool) {
+	if elapsed, ok := samples["h264_vaapi"]; ok && elapsed > 0 {
+		return elapsed, true
+	}
+	var baseline time.Duration
+	for _, elapsed := range samples {
+		if elapsed <= 0 {
+			continue
+		}
+		if baseline == 0 || elapsed < baseline {
+			baseline = elapsed
+		}
+	}
+	return baseline, baseline > 0
 }
 
 // Start initiates the media process.
@@ -447,7 +536,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
-	go a.monitorProcess(ctx, handle, cmd, stderr, spec.SessionID)
+	go a.monitorProcess(ctx, handle, cmd, stderr, spec.SessionID, argsUseVAAPI(args))
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(sourceKey, spec.SessionID)
 	}
@@ -456,7 +545,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	return handle, nil
 }
 
-func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string) {
+func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, usesVAAPI bool) {
 	defer func() {
 		a.mu.Lock()
 		delete(a.activeProcs, handle)
@@ -476,6 +565,7 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 		wdErrCh <- wd.Run(wdCtx)
 	}()
 
+	vaapiRuntimeFailureLine := ""
 	scanDone := make(chan struct{})
 	go func() {
 		defer close(scanDone)
@@ -512,6 +602,9 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 			sanitizedLine := sanitizeFFmpegLogLine(line)
 			if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
 				a.recordProcessDetail(handle, detail)
+			}
+			if usesVAAPI && vaapiRuntimeFailureLine == "" && isVAAPIRuntimeFailureLine(sanitizedLine) {
+				vaapiRuntimeFailureLine = sanitizedLine
 			}
 			switch ffmpegLogLevel(sanitizedLine) {
 			case zerolog.WarnLevel:
@@ -573,6 +666,10 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 
 	<-scanDone
 
+	if usesVAAPI && vaapiRuntimeFailureLine != "" && (procErr != nil || resultErr != nil) {
+		a.recordVAAPIRuntimeFailure(sessionID, vaapiRuntimeFailureLine)
+	}
+
 	if procErr != nil {
 		a.recordProcessDetail(handle, summarizeProcessExit(procErr))
 		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
@@ -582,6 +679,15 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 		return
 	}
 	a.clearProcessDetail(handle)
+}
+
+func argsUseVAAPI(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-vaapi_device" {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *LocalAdapter) writeFirstFrameMarker(sessionID string) {
@@ -777,6 +883,24 @@ func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
 	return n
 }
 
+func envFloatBounded(key string, defaultValue, minValue, maxValue float64) float64 {
+	raw := strings.TrimSpace(config.ParseString(key, ""))
+	if raw == "" {
+		return defaultValue
+	}
+	n, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return defaultValue
+	}
+	if n < minValue {
+		return minValue
+	}
+	if n > maxValue {
+		return maxValue
+	}
+	return n
+}
+
 func envBool(key string, defaultValue bool) bool {
 	return config.ParseBool(key, defaultValue)
 }
@@ -843,6 +967,53 @@ func summarizeFFmpegFailureLine(line string) string {
 		return "invalid upstream input data"
 	}
 	return ""
+}
+
+func isVAAPIRuntimeFailureLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return false
+	}
+	if strings.Contains(lower, "vaapi") && looksLikeFFmpegWarning(lower) {
+		return true
+	}
+	definitiveKeywords := []string{
+		"libva error",
+		"no usable encoding entrypoint",
+		"failed to end picture",
+		"failed to sync surface",
+		"failed to export surface",
+		"failed to upload",
+		"hardware device reference is required",
+		"va_create",
+	}
+	for _, keyword := range definitiveKeywords {
+		if strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	if (strings.Contains(lower, "hwupload") || strings.Contains(lower, "renderd128")) && looksLikeFFmpegWarning(lower) {
+		return true
+	}
+	return false
+}
+
+func (a *LocalAdapter) recordVAAPIRuntimeFailure(sessionID, failureLine string) {
+	if !hardware.IsVAAPIReady() {
+		return
+	}
+	failures, demoted := hardware.RecordVAAPIRuntimeFailure()
+	event := a.Logger.Warn().
+		Str("session_id", sessionID).
+		Int("vaapi_runtime_failures", failures)
+	if failureLine != "" {
+		event = event.Str("ffmpeg_log", failureLine)
+	}
+	if demoted {
+		event.Msg("vaapi runtime failure threshold reached; gpu demoted to cpu fallback")
+		return
+	}
+	event.Msg("recorded vaapi runtime failure")
 }
 
 func ffmpegLogLevel(line string) zerolog.Level {

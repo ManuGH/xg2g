@@ -15,9 +15,16 @@ package hardware
 import (
 	"os"
 	"sync"
+	"time"
 )
 
 const vaapiRuntimeFailureThreshold = 3
+
+type VAAPIEncoderCapability struct {
+	Verified     bool
+	ProbeElapsed time.Duration
+	AutoEligible bool
+}
 
 var (
 	vaapiMu      sync.RWMutex
@@ -29,9 +36,9 @@ var (
 	// Per-encoder preflight results. These are populated by the FFmpeg adapter's
 	// PreflightVAAPI(), and allow higher layers to make codec-specific decisions
 	// (e.g. AV1 only if av1_vaapi verified).
-	vaapiEncMu       sync.RWMutex
-	vaapiEncChecked  bool
-	vaapiEncVerified map[string]bool
+	vaapiEncMu      sync.RWMutex
+	vaapiEncChecked bool
+	vaapiEncCaps    map[string]VAAPIEncoderCapability
 )
 
 // HasVAAPI checks if the VAAPI render device exists
@@ -57,17 +64,34 @@ func SetVAAPIPreflightResult(passed bool) {
 // SetVAAPIEncoderPreflight records per-encoder preflight status (e.g. "av1_vaapi" -> true).
 // Called once at startup by the FFmpeg adapter after running encoder-specific encode tests.
 func SetVAAPIEncoderPreflight(verified map[string]bool) {
+	caps := make(map[string]VAAPIEncoderCapability, len(verified))
+	for k, v := range verified {
+		if !v {
+			continue
+		}
+		caps[k] = VAAPIEncoderCapability{
+			Verified:     true,
+			AutoEligible: true,
+		}
+	}
+	SetVAAPIEncoderCapabilities(caps)
+}
+
+// SetVAAPIEncoderCapabilities records per-encoder capability state from startup
+// preflight, including verification, elapsed probe time, and whether the codec
+// is considered auto-eligible for generic negotiation on this host.
+func SetVAAPIEncoderCapabilities(capabilities map[string]VAAPIEncoderCapability) {
 	vaapiEncMu.Lock()
 	defer vaapiEncMu.Unlock()
 	vaapiEncChecked = true
-	if verified == nil {
-		vaapiEncVerified = nil
+	if capabilities == nil {
+		vaapiEncCaps = nil
 		return
 	}
-	vaapiEncVerified = make(map[string]bool, len(verified))
-	for k, v := range verified {
-		if v {
-			vaapiEncVerified[k] = true
+	vaapiEncCaps = make(map[string]VAAPIEncoderCapability, len(capabilities))
+	for k, v := range capabilities {
+		if v.Verified {
+			vaapiEncCaps[k] = v
 		}
 	}
 }
@@ -86,10 +110,39 @@ func IsVAAPIReady() bool {
 func IsVAAPIEncoderReady(encoder string) bool {
 	vaapiEncMu.RLock()
 	defer vaapiEncMu.RUnlock()
-	if !vaapiEncChecked || vaapiEncVerified == nil {
+	if !vaapiEncChecked || vaapiEncCaps == nil {
 		return false
 	}
-	return vaapiEncVerified[encoder]
+	return vaapiEncCaps[encoder].Verified
+}
+
+// IsVAAPIEncoderAutoEligible returns true only if startup preflight verified the
+// encoder and classified it as suitable for generic automatic codec selection on
+// this host. Fail-closed: returns false if encoder preflight hasn't run yet.
+func IsVAAPIEncoderAutoEligible(encoder string) bool {
+	vaapiEncMu.RLock()
+	defer vaapiEncMu.RUnlock()
+	if !vaapiEncChecked || vaapiEncCaps == nil {
+		return false
+	}
+	cap, ok := vaapiEncCaps[encoder]
+	return ok && cap.Verified && cap.AutoEligible
+}
+
+// VAAPIEncoderCapabilityFor returns the stored startup capability for a VAAPI
+// encoder. The bool is false if preflight has not run or the encoder was not
+// verified.
+func VAAPIEncoderCapabilityFor(encoder string) (VAAPIEncoderCapability, bool) {
+	vaapiEncMu.RLock()
+	defer vaapiEncMu.RUnlock()
+	if !vaapiEncChecked || vaapiEncCaps == nil {
+		return VAAPIEncoderCapability{}, false
+	}
+	cap, ok := vaapiEncCaps[encoder]
+	if !ok || !cap.Verified {
+		return VAAPIEncoderCapability{}, false
+	}
+	return cap, true
 }
 
 // RecordVAAPIRuntimeFailure increments the runtime failure counter after startup preflight.
@@ -112,7 +165,7 @@ func RecordVAAPIRuntimeFailure() (failures int, demoted bool) {
 
 	vaapiEncMu.Lock()
 	vaapiEncChecked = true
-	vaapiEncVerified = map[string]bool{}
+	vaapiEncCaps = map[string]VAAPIEncoderCapability{}
 	vaapiEncMu.Unlock()
 	return failures, true
 }

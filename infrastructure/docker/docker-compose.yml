@@ -12,7 +12,6 @@ services:
     environment:
       - XG2G_DATA=/var/lib/xg2g
       - XG2G_LISTEN=:8088
-      - XG2G_LOG_LEVEL=info
       - XG2G_FFMPEG_BIN=/usr/local/bin/ffmpeg
       - XG2G_FFPROBE_BIN=/usr/local/bin/ffprobe
       - FFMPEG_HOME=/opt/ffmpeg

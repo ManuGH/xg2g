@@ -17,6 +17,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -118,6 +119,11 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	if err != nil {
 		return nil, fmt.Errorf("initialize scan store: %w", err)
 	}
+	decisionAuditStore, err := decisionaudit.NewAuditStore(cfg.Store.Backend, cfg.Store.Path)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to initialize decision audit store, continuing without decision history")
+		decisionAuditStore = nil
+	}
 
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
 	if err != nil {
@@ -158,10 +164,11 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger)
 
 	s.WireV3Runtime(v3.Dependencies{
-		Bus:         v3Bus,
-		Store:       v3Store,
-		ResumeStore: resumeStore,
-		Scan:        v3Scan,
+		Bus:           v3Bus,
+		Store:         v3Store,
+		ResumeStore:   resumeStore,
+		Scan:          v3Scan,
+		DecisionAudit: decisionAuditStore,
 	}, nil)
 
 	driftStatePath, err := paths.ResolveDataFilePath(cfg.DataDir, "drift_state.json", true)
@@ -174,7 +181,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	}
 
 	configCheck := checks.NewConfigChecker(effectiveConfigPath, cfgHolder)
-	runtimeCheck := checks.NewRuntimeChecker(checks.NewRealRunner(), runtime.Version(), "7.1.3")
+	runtimeCheck := checks.NewRuntimeChecker(checks.NewRealRunner(), runtime.Version(), "8.1")
 	var verifyWorker *verification.Worker
 	if !cfg.Verification.Enabled {
 		logger.Info().Msg("Verification worker disabled by config (XG2G_VERIFY_ENABLED=false)")

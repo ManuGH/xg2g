@@ -322,8 +322,8 @@ func TestConfigGovernance_RemovedEnvWarnOnly(t *testing.T) {
 	require.True(t, found, "expected XG2G_HTTP_ENABLE_HTTP2 to be flagged as removed")
 
 	// Provide minimal valid config to avoid unrelated validation errors. Loader must not fail.
-	os.Setenv("XG2G_OWI_BASE", "http://localhost")
-	defer os.Unsetenv("XG2G_OWI_BASE")
+	os.Setenv("XG2G_E2_HOST", "http://localhost")
+	defer os.Unsetenv("XG2G_E2_HOST")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	loader := NewLoader("", "test-version")
@@ -332,19 +332,18 @@ func TestConfigGovernance_RemovedEnvWarnOnly(t *testing.T) {
 	assert.NoError(t, err, "removed env vars should be ignored (warn-only)")
 }
 
-func TestConfigGovernance_DeprecationWarn(t *testing.T) {
-	// Set an environment variable marked as "warn" in docs/deprecations.json
+func TestConfigGovernance_DeprecationFailStart(t *testing.T) {
 	os.Setenv("XG2G_STREAM_PORT", "8002")
 	defer os.Unsetenv("XG2G_STREAM_PORT")
 
-	// Provide minimal valid config
-	os.Setenv("XG2G_OWI_BASE", "http://localhost")
-	defer os.Unsetenv("XG2G_OWI_BASE")
+	os.Setenv("XG2G_E2_HOST", "http://localhost")
+	defer os.Unsetenv("XG2G_E2_HOST")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
 
-	// Loading should succeed (warn only)
-	assert.NoError(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "XG2G_STREAM_PORT")
+	assert.Contains(t, err.Error(), "XG2G_E2_STREAM_PORT=8002")
 }

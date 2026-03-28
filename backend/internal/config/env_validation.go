@@ -62,11 +62,8 @@ func (l *Loader) ValidateEnvUsage(strict bool) error {
 			continue
 		}
 
-		if strings.HasPrefix(key, "XG2G_V3_") {
+		if isLegacyEnvHandledByGuardrail(key) {
 			continue // handled by CheckLegacyEnvWithEnviron
-		}
-		if key == "XG2G_FFMPEG_PATH" {
-			continue // handled by CheckLegacyEnvWithEnviron (split literal in guardrail)
 		}
 
 		if _, ok := known[key]; ok {

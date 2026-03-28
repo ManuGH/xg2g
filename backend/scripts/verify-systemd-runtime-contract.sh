@@ -87,7 +87,6 @@ verify_unit_semantics() {
   assert_exact_line "${unit_file}" "NoNewPrivileges=true" "unit no-new-privileges"
 
   assert_contains "${unit_file}" "XG2G_E2_HOST" "unit required env preflight"
-  assert_contains "${unit_file}" "XG2G_OWI_BASE" "unit legacy env preflight"
   assert_contains "${unit_file}" "XG2G_API_TOKEN" "unit API token preflight"
   assert_contains "${unit_file}" "XG2G_DECISION_SECRET" "unit decision secret preflight"
   assert_contains "${unit_file}" "need >= 32 bytes for HS256" "unit decision secret length guard"

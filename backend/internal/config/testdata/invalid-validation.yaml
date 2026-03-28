@@ -1,7 +1,7 @@
 # Invalid: passes YAML parsing but fails validation (EPG days out of range)
 version: "1"
 dataDir: /tmp/xg2g-test
-openWebIF:
+enigma2:
   baseUrl: http://receiver.local
   username: testuser
   password: testpass

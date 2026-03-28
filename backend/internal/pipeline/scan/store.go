@@ -3,6 +3,7 @@ package scan
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,14 +21,21 @@ type Capability struct {
 	NextRetryAt   time.Time       `json:"next_retry_at,omitempty"`
 	Resolution    string          `json:"resolution"`
 	Codec         string          `json:"codec"`
+	Container     string          `json:"container,omitempty"`
+	VideoCodec    string          `json:"video_codec,omitempty"`
+	AudioCodec    string          `json:"audio_codec,omitempty"`
+	Width         int             `json:"width,omitempty"`
+	Height        int             `json:"height,omitempty"`
+	FPS           float64         `json:"fps,omitempty"`
 }
 
 type CapabilityState string
 
 const (
-	CapabilityStateOK      CapabilityState = "ok"
-	CapabilityStatePartial CapabilityState = "partial"
-	CapabilityStateFailed  CapabilityState = "failed"
+	CapabilityStateOK                CapabilityState = "ok"
+	CapabilityStatePartial           CapabilityState = "partial"
+	CapabilityStateFailed            CapabilityState = "failed"
+	CapabilityStateInactiveEventFeed CapabilityState = "inactive_event_feed"
 )
 
 const (
@@ -38,10 +46,32 @@ const (
 
 func (c Capability) Normalized() Capability {
 	c.ServiceRef = normalize.ServiceRef(c.ServiceRef)
+	c.Resolution = strings.TrimSpace(c.Resolution)
+	c.Container = normalizeContainer(c.Container)
+	c.VideoCodec = normalize.Token(c.VideoCodec)
+	c.AudioCodec = normalize.Token(c.AudioCodec)
+	c.Codec = normalize.Token(c.Codec)
+
+	// Legacy rows only stored a single codec column. Treat it as video codec
+	// when no richer truth is present yet.
+	if c.VideoCodec == "" && c.AudioCodec == "" && c.Codec != "" {
+		c.VideoCodec = c.Codec
+	}
+	if c.Codec == "" {
+		switch {
+		case c.VideoCodec != "":
+			c.Codec = c.VideoCodec
+		case c.AudioCodec != "":
+			c.Codec = c.AudioCodec
+		}
+	}
+	if c.Resolution == "" && c.Width > 0 && c.Height > 0 {
+		c.Resolution = fmt.Sprintf("%dx%d", c.Width, c.Height)
+	}
 
 	state := c.State
 	switch state {
-	case CapabilityStateOK, CapabilityStatePartial, CapabilityStateFailed:
+	case CapabilityStateOK, CapabilityStatePartial, CapabilityStateFailed, CapabilityStateInactiveEventFeed:
 	default:
 		state = inferCapabilityState(c.Resolution, c.Codec)
 	}
@@ -50,7 +80,7 @@ func (c Capability) Normalized() Capability {
 	if c.LastAttempt.IsZero() && !c.LastScan.IsZero() {
 		c.LastAttempt = c.LastScan
 	}
-	if c.LastSuccess.IsZero() && state != CapabilityStateFailed && !c.LastScan.IsZero() {
+	if c.LastSuccess.IsZero() && state != CapabilityStateFailed && state != CapabilityStateInactiveEventFeed && !c.LastScan.IsZero() {
 		c.LastSuccess = c.LastScan
 	}
 	if c.LastScan.IsZero() && !c.LastSuccess.IsZero() {
@@ -89,6 +119,15 @@ func (c Capability) Usable() bool {
 	}
 }
 
+func (c Capability) IsInactiveEventFeed() bool {
+	return c.Normalized().State == CapabilityStateInactiveEventFeed
+}
+
+func (c Capability) HasMediaTruth() bool {
+	normalized := c.Normalized()
+	return normalized.Container != "" && normalized.VideoCodec != "" && normalized.AudioCodec != ""
+}
+
 func inferCapabilityState(resolution, codec string) CapabilityState {
 	hasResolution := resolution != ""
 	hasCodec := codec != ""
@@ -102,11 +141,22 @@ func inferCapabilityState(resolution, codec string) CapabilityState {
 	}
 }
 
+func normalizeContainer(in string) string {
+	switch normalize.Token(in) {
+	case "mpegts":
+		return "ts"
+	default:
+		return normalize.Token(in)
+	}
+}
+
 func defaultRetryDelay(state CapabilityState) time.Duration {
 	switch state {
 	case CapabilityStatePartial:
 		return partialRetryWindow
 	case CapabilityStateFailed:
+		return failureRetryWindow
+	case CapabilityStateInactiveEventFeed:
 		return failureRetryWindow
 	default:
 		return successRetryWindow

@@ -22,7 +22,7 @@ func TestStrictConfig_FailsOnUnknownFields(t *testing.T) {
 	yamlContent := `
 dataDir: /tmp
 unknownField: should_fail
-openWebIF:
+enigma2:
   baseUrl: http://test.local
 `
 

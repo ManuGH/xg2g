@@ -10,6 +10,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/rs/zerolog"
 )
@@ -472,6 +473,63 @@ func TestService_ProcessIntent_StartDegradesQualityProfileUnderHostPressure(t *t
 	}
 	if deps.store.putSession.PlaybackTrace.HostPressureBand != "constrained" || !deps.store.putSession.PlaybackTrace.HostOverrideApplied {
 		t.Fatalf("expected host pressure trace to be persisted, got %#v", deps.store.putSession.PlaybackTrace)
+	}
+}
+
+func TestService_ProcessIntent_RejectsExplicitHWProfileWithoutVerifiedEncoder(t *testing.T) {
+	deps := newMockDeps()
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-hevc-hw-missing",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "safari_hevc_hw"},
+		CorrelationID: "corr-hevc-hw-missing",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if res != nil {
+		t.Fatalf("expected nil result, got %#v", res)
+	}
+	if err == nil || err.Kind != ErrorInvalidInput {
+		t.Fatalf("expected ErrorInvalidInput, got %#v", err)
+	}
+	if deps.store.putSession != nil {
+		t.Fatal("expected no session to be persisted when explicit hw profile is unavailable")
+	}
+}
+
+func TestService_ProcessIntent_RejectsExplicitHWProfileWhenHwaccelOff(t *testing.T) {
+	hardware.SetVAAPIEncoderPreflight(map[string]bool{"hevc_vaapi": true})
+	hardware.SetVAAPIPreflightResult(true)
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-hevc-hw-off",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "safari_hevc_hw", "hwaccel": "off"},
+		CorrelationID: "corr-hevc-hw-off",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if res != nil {
+		t.Fatalf("expected nil result, got %#v", res)
+	}
+	if err == nil || err.Kind != ErrorInvalidInput {
+		t.Fatalf("expected ErrorInvalidInput, got %#v", err)
+	}
+	if deps.store.putSession != nil {
+		t.Fatal("expected no session to be persisted when hwaccel=off conflicts with explicit hw profile")
 	}
 }
 

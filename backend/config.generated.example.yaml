@@ -48,16 +48,6 @@ enigma2:
   useWebIFStreams: false
   userAgent: ""
   username: ""
-openWebIF:
-  backoff: 200ms
-  baseUrl: http://127.0.0.1
-  maxBackoff: 30s
-  password: ""
-  retries: 2
-  streamPort: 8001
-  timeout: 10s
-  useWebIFStreams: false
-  username: ""
 epg:
   days: 14
   enabled: true

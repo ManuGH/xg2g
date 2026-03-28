@@ -29,21 +29,30 @@ type Service struct {
 func NewService(configs []RootConfig, store *Store) *Service {
 	scanner := NewScanner(store)
 
-	svc := &Service{
+	return &Service{
 		configs: configs,
 		store:   store,
 		scanner: scanner,
 	}
+}
 
-	// Initialize roots in DB
-	ctx := context.Background()
-	for _, cfg := range configs {
-		if err := store.UpsertRoot(ctx, cfg.ID, cfg.Type); err != nil {
-			log.L().Error().Err(err).Str("root_id", cfg.ID).Msg("failed to initialize library root")
-		}
+// InitializeRoots persists configured library roots during runtime startup.
+func (s *Service) InitializeRoots(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("initialize roots: nil context")
 	}
 
-	return svc
+	var errs []error
+	for _, cfg := range s.configs {
+		if err := s.store.UpsertRoot(ctx, cfg.ID, cfg.Type); err != nil {
+			log.L().Error().Err(err).Str("root_id", cfg.ID).Msg("failed to initialize library root")
+			errs = append(errs, fmt.Errorf("root %s: %w", cfg.ID, err))
+		}
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
 }
 
 // GetRoots returns all library roots with current status.

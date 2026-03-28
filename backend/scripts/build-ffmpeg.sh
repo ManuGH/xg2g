@@ -1,9 +1,9 @@
 #!/bin/bash
 # FFmpeg Auto-Build Script for xg2g
-# Builds pinned FFmpeg 7.1.3 with HLS/VAAPI/x264/AAC support
+# Builds pinned FFmpeg 8.1 with HLS/VAAPI/x264/AAC support
 set -euo pipefail
 
-FFMPEG_VERSION="7.1.3"
+FFMPEG_VERSION="8.1"
 FFMPEG_URL="https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"
 TARGET_DIR="${TARGET_DIR:-/opt/ffmpeg}"
 BUILD_DIR="${BUILD_DIR:-/tmp/ffmpeg-build}"
@@ -22,7 +22,7 @@ fi
 
 # Verify checksum (sha256)
 echo "Verifying checksum..."
-EXPECTED_SHA256="f0bf043299db9e3caacb435a712fc541fbb07df613c4b893e8b77e67baf3adbe"
+EXPECTED_SHA256="b072aed6871998cce9b36e7774033105ca29e33632be5b6347f3206898e0756a"
 VERIFY_LINE="${EXPECTED_SHA256}  ffmpeg-${FFMPEG_VERSION}.tar.xz"
 verify_checksum() {
     if command -v sha256sum >/dev/null 2>&1; then

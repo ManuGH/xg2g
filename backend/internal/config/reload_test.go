@@ -25,7 +25,7 @@ func writeValidConfig(t *testing.T, path string, bouquet string) {
 	// Use map/struct to marshal correct YAML to avoid indentation issues
 	cfg := map[string]interface{}{
 		"dataDir": "/tmp/test",
-		"openWebIF": map[string]interface{}{
+		"enigma2": map[string]interface{}{
 			"baseUrl":  "http://test.example.com",
 			"username": "testuser",
 			"password": "testpass",
@@ -212,7 +212,7 @@ func TestConfigHolder_Reload_ValidationFailure(t *testing.T) {
 
 	// Write invalid config (EPG days out of range)
 	invalidContent := `
-openWebIF:
+enigma2:
   baseUrl: http://test.example.com
 epg:
   enabled: true
@@ -505,7 +505,7 @@ func TestConfigHolder_Reload_StrictParseFailure(t *testing.T) {
 	// Write config with unknown field (strict parsing should reject)
 	invalidContent := `
 dataDir: /tmp/test
-openWebIF:
+enigma2:
   baseUrl: http://test.example.com
 bouquets:
   - test-bouquet
@@ -555,7 +555,7 @@ func TestConfigHolder_Reload_TypeMismatch(t *testing.T) {
 	// Write config with type mismatch (days should be int, not string)
 	invalidContent := `
 dataDir: /tmp/test
-openWebIF:
+enigma2:
   baseUrl: http://test.example.com
 bouquets:
   - test-bouquet
@@ -601,7 +601,7 @@ func TestConfigHolder_Reload_BusinessLogicFailure(t *testing.T) {
 	// Write config that parses but fails validation (epg.days out of range)
 	invalidContent := `
 dataDir: /tmp/test
-openWebIF:
+enigma2:
   baseUrl: http://test.example.com
 bouquets:
   - test-bouquet

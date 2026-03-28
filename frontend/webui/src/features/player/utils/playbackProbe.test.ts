@@ -51,7 +51,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
 
     const probe = await probeRuntimePlaybackCapabilities(video, 'live');
 
-    expect(probe.version).toBe(1);
+    expect(probe.version).toBe(2);
     expect(probe.usedRuntimeProbe).toBe(true);
     expect(probe.nativeHls).toBe(true);
     expect(probe.hlsJs).toBe(false);
@@ -60,6 +60,11 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.containers).toEqual(['mp4', 'ts']);
     expect(probe.audioCodecs).toEqual(['aac', 'mp3', 'ac3']);
     expect(probe.videoCodecs).toContain('h264');
+    expect(probe.videoCodecSignals).toEqual([
+      { codec: 'av1', supported: false },
+      { codec: 'hevc', supported: false },
+      { codec: 'h264', supported: true },
+    ]);
   });
 
   it('uses hls.js plus fmp4 on non-native clients and strips recording ac3', async () => {
@@ -80,6 +85,11 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
     expect(probe.audioCodecs).toEqual(['aac', 'mp3']);
     expect(probe.videoCodecs).toEqual(['h264']);
+    expect(probe.videoCodecSignals).toEqual([
+      { codec: 'av1', supported: false },
+      { codec: 'hevc', supported: false },
+      { codec: 'h264', supported: true },
+    ]);
   });
 
   it('prefers native HLS on desktop WebKit when native playback controls are available', async () => {
@@ -107,6 +117,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
     expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
   });
 
   it('prefers native HLS on touch WebKit even when hls.js is available', async () => {
@@ -133,5 +144,6 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
     expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
   });
 });

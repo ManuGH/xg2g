@@ -12,9 +12,9 @@
   margin: 0 auto;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
   .app-container {
     margin-left: 0;
-    padding: 16px 16px calc(108px + var(--sab));
+    padding: 16px 16px calc(92px + var(--sab));
   }
 }

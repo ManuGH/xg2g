@@ -25,6 +25,7 @@ import (
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/vod"
@@ -63,6 +64,7 @@ type Server struct {
 	v3Store                SessionStateStore
 	resumeStore            resume.Store
 	v3Scan                 ChannelScanner
+	decisionAudit          decisionaudit.EventSink
 	owiFactory             receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
 	recordingPathMapper    *recinfra.PathMapper
 	channelManager         *channels.Manager
@@ -332,10 +334,22 @@ func (s *Server) SetRuntimeContext(ctx context.Context) error {
 	if s.runtimeCancel != nil {
 		s.runtimeCancel()
 	}
-	s.runtimeCtx, s.runtimeCancel = context.WithCancel(ctx)
-	runtimeCtx := s.runtimeCtx
+	runtimeCtx, runtimeCancel := context.WithCancel(ctx)
+	s.runtimeCtx, s.runtimeCancel = runtimeCtx, runtimeCancel
 	hostPressureMonitor := s.hostPressureMonitor
+	librarySvc := s.libraryService
 	s.mu.Unlock()
+
+	if librarySvc != nil {
+		if err := librarySvc.InitializeRoots(runtimeCtx); err != nil {
+			runtimeCancel()
+			s.mu.Lock()
+			s.runtimeCancel = nil
+			s.runtimeCtx = nil
+			s.mu.Unlock()
+			return fmt.Errorf("initialize library roots: %w", err)
+		}
+	}
 	admissionmonitor.StartCPUSampler(runtimeCtx, hostPressureMonitor, 0, nil)
 	return nil
 }
@@ -422,6 +436,7 @@ type Dependencies struct {
 	Store             SessionStateStore
 	ResumeStore       resume.Store
 	Scan              ChannelScanner
+	DecisionAudit     decisionaudit.EventSink
 	PathMapper        *recinfra.PathMapper
 	ChannelManager    *channels.Manager
 	SeriesManager     *dvr.Manager
@@ -465,6 +480,12 @@ func (s *Server) SetDependencies(deps Dependencies) {
 		s.v3Scan = deps.Scan
 	} else {
 		s.v3Scan = nil
+	}
+
+	if !isNil(deps.DecisionAudit) {
+		s.decisionAudit = deps.DecisionAudit
+	} else {
+		s.decisionAudit = nil
 	}
 
 	if !isNil(deps.ScanSource) {

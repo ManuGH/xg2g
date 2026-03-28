@@ -21,6 +21,12 @@ func TestSqliteStore_RoundTripsRetryMetadata(t *testing.T) {
 		LastAttempt:   now,
 		FailureReason: "no_lock",
 		NextRetryAt:   now.Add(24 * time.Hour),
+		Container:     "ts",
+		VideoCodec:    "h264",
+		AudioCodec:    "aac",
+		Width:         1280,
+		Height:        720,
+		FPS:           50,
 	})
 
 	got, found := store.Get("1:0:1:FAILED")
@@ -29,6 +35,12 @@ func TestSqliteStore_RoundTripsRetryMetadata(t *testing.T) {
 	require.True(t, got.LastAttempt.Equal(now))
 	require.Equal(t, "no_lock", got.FailureReason)
 	require.True(t, got.NextRetryAt.Equal(now.Add(24*time.Hour)))
+	require.Equal(t, "ts", got.Container)
+	require.Equal(t, "h264", got.VideoCodec)
+	require.Equal(t, "aac", got.AudioCodec)
+	require.Equal(t, 1280, got.Width)
+	require.Equal(t, 720, got.Height)
+	require.Equal(t, 50.0, got.FPS)
 }
 
 func TestSqliteStore_NormalizesLegacyIncompleteRows(t *testing.T) {
@@ -96,8 +108,8 @@ func TestSqliteStore_MigratesLegacySchemaDespiteMatchingUserVersion(t *testing.T
 	var count int
 	err = store.DB.QueryRow(`
 	SELECT COUNT(*) FROM pragma_table_info('capabilities')
-	WHERE name IN ('last_attempt', 'last_success', 'scan_state', 'failure_reason', 'next_retry_at')
+	WHERE name IN ('last_attempt', 'last_success', 'scan_state', 'failure_reason', 'next_retry_at', 'container', 'video_codec', 'audio_codec', 'width', 'height', 'fps')
 	`).Scan(&count)
 	require.NoError(t, err)
-	require.Equal(t, 5, count)
+	require.Equal(t, 11, count)
 }

@@ -14,11 +14,24 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func prepareVAAPIRuntimeState(t *testing.T) {
+	t.Helper()
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderPreflight(map[string]bool{
+		"h264_vaapi": true,
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+}
 
 func TestMonitorProcess_RemovesHandleOnNaturalExit(t *testing.T) {
 	adapter := NewLocalAdapter(
@@ -51,7 +64,7 @@ func TestMonitorProcess_RemovesHandleOnNaturalExit(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-1")
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-1", false)
 		close(done)
 	}()
 
@@ -102,7 +115,7 @@ func TestMonitorProcess_SurfacesMeaningfulExitDetail(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-1b")
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-1b", false)
 		close(done)
 	}()
 
@@ -149,7 +162,7 @@ func TestMonitorProcess_KillsStalledProcessAndPreservesStallDetail(t *testing.T)
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-stall")
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-stall", false)
 		close(done)
 	}()
 
@@ -245,7 +258,7 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 	adapter.activeProcs[handle] = cmd
 	adapter.mu.Unlock()
 
-	adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-3")
+	adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-3", false)
 
 	logs := buf.String()
 	assert.Equal(t, 1, strings.Count(logs, `"startup_phase":"first_frame"`))
@@ -256,4 +269,104 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 	marker, err := os.ReadFile(markerPath)
 	require.NoError(t, err)
 	assert.NotEmpty(t, strings.TrimSpace(string(marker)))
+}
+
+func TestMonitorProcess_RecordsVAAPIRuntimeFailureForVAAPIError(t *testing.T) {
+	prepareVAAPIRuntimeState(t)
+
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		5*time.Second,
+		"",
+	)
+
+	cmd := exec.Command("sh", "-c", "printf '[h264_vaapi @ 0x1] Failed to end picture encode issue: 23 (internal encoding error).\\n' 1>&2; exit 1")
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+
+	handle := ports.RunHandle("session-vaapi-runtime-123")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-vaapi-runtime", true)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitorProcess did not finish in time")
+	}
+
+	_, demoted := hardware.RecordVAAPIRuntimeFailure()
+	require.False(t, demoted, "runtime failure should already have been counted once")
+	_, demoted = hardware.RecordVAAPIRuntimeFailure()
+	require.True(t, demoted, "third observed runtime failure should demote VAAPI readiness")
+	assert.False(t, hardware.IsVAAPIReady())
+}
+
+func TestMonitorProcess_DoesNotRecordVAAPIRuntimeFailureForGenericExit(t *testing.T) {
+	prepareVAAPIRuntimeState(t)
+
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		5*time.Second,
+		"",
+	)
+
+	cmd := exec.Command("sh", "-c", "printf 'Error opening input files: Input/output error\\n' 1>&2; exit 1")
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+
+	handle := ports.RunHandle("session-generic-runtime-123")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcess(context.Background(), handle, cmd, stderr, "session-generic-runtime", true)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitorProcess did not finish in time")
+	}
+
+	_, demoted := hardware.RecordVAAPIRuntimeFailure()
+	require.False(t, demoted)
+	_, demoted = hardware.RecordVAAPIRuntimeFailure()
+	require.False(t, demoted, "generic upstream exits must not consume the VAAPI demotion budget")
+	assert.True(t, hardware.IsVAAPIReady())
 }

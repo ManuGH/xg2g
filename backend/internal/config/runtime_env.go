@@ -125,111 +125,86 @@ func readOpenWebIFRuntime(getenv func(string) string) OpenWebIFRuntime {
 }
 
 func readHLSRuntime(getenv func(string) string) HLSRuntime {
-	outDir := getString(getenv, "XG2G_HLS_OUTPUT_DIR", "")
-	if strings.TrimSpace(outDir) == "" {
-		outDir = "" // keep proxy default (os.TempDir) unless explicitly configured
+	return HLSRuntime{
+		OutputDir: readHLSOutputDir(getenv),
+		Generic:   readGenericHLSConfig(getenv),
+		Safari:    readSafariDVRConfig(getenv),
+		LLHLS:     readLLHLSConfig(getenv),
 	}
+}
 
+func readHLSOutputDir(getenv func(string) string) string {
+	outDir := readTrimmedEnv(getenv, "XG2G_HLS_OUTPUT_DIR")
+	if outDir == "" {
+		return "" // keep proxy default (os.TempDir) unless explicitly configured
+	}
+	return outDir
+}
+
+func readGenericHLSConfig(getenv func(string) string) streamprofile.GenericHLSConfig {
 	generic := streamprofile.DefaultGenericHLSConfig()
-	if v := strings.TrimSpace(getString(getenv, "XG2G_HLS_DVR_SECONDS", "")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			generic.DVRWindowSize = n
-		}
-	}
+	applyPositiveInt(getenv, "XG2G_HLS_DVR_SECONDS", &generic.DVRWindowSize)
+	return generic
+}
 
+func readSafariDVRConfig(getenv func(string) string) streamprofile.SafariDVRConfig {
 	safari := streamprofile.DefaultSafariDVRConfig()
-	if v := strings.TrimSpace(getString(getenv, "XG2G_SAFARI_DVR_SEGMENT_DURATION", "")); v != "" {
-		// Valid range 2-10s. 2s is optimized for fast startup (Safari), 6s+ for stability.
-		if n, err := strconv.Atoi(v); err == nil && n >= 2 && n <= 10 {
-			safari.SegmentDuration = n
-		}
+
+	// Valid range 2-10s. 2s is optimized for fast startup (Safari), 6s+ for stability.
+	applyBoundedInt(getenv, "XG2G_SAFARI_DVR_SEGMENT_DURATION", 2, 10, &safari.SegmentDuration)
+	applyBoundedInt(getenv, "XG2G_SAFARI_DVR_WINDOW_SIZE", 1800, 7200, &safari.DVRWindowSize)
+	applyBoundedInt(getenv, "XG2G_SAFARI_DVR_STARTUP_SEGMENTS", 1, 10, &safari.StartupSegments)
+
+	if ffmpegPath := firstNonEmptyEnv(getenv, "XG2G_SAFARI_DVR_FFMPEG_PATH", "XG2G_WEB_FFMPEG_PATH"); ffmpegPath != "" {
+		safari.FFmpegPath = ffmpegPath
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_SAFARI_DVR_WINDOW_SIZE", "")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1800 && n <= 7200 {
-			safari.DVRWindowSize = n
-		}
-	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_SAFARI_DVR_STARTUP_SEGMENTS", "")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 10 {
-			safari.StartupSegments = n
-		}
-	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_SAFARI_DVR_FFMPEG_PATH", "")); v != "" {
-		safari.FFmpegPath = v
-	} else if v := strings.TrimSpace(getString(getenv, "XG2G_WEB_FFMPEG_PATH", "")); v != "" {
-		safari.FFmpegPath = v
-	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_SAFARI_DVR_FORCE_AAC", "")); v == "false" {
+	if readTrimmedEnv(getenv, "XG2G_SAFARI_DVR_FORCE_AAC") == "false" {
 		safari.ForceAAC = false
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_SAFARI_DVR_AAC_BITRATE", "")); v != "" {
-		safari.AACBitrate = v
+	if bitrate := readTrimmedEnv(getenv, "XG2G_SAFARI_DVR_AAC_BITRATE"); bitrate != "" {
+		safari.AACBitrate = bitrate
 	}
 
+	return safari
+}
+
+func readLLHLSConfig(getenv func(string) string) streamprofile.LLHLSConfig {
 	llhls := streamprofile.DefaultLLHLSConfig()
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_SEGMENT_DURATION", "")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 2 {
-			llhls.SegmentDuration = n
-		}
-	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_PLAYLIST_SIZE", "")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 6 && n <= 10 {
-			llhls.PlaylistSize = n
-		}
-	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_STARTUP_SEGMENTS", "")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 3 {
-			llhls.StartupSegments = n
-		}
-	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_PART_SIZE", "")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 65536 && n <= 1048576 {
-			llhls.PartSize = n
-		}
-	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_FFMPEG_PATH", "")); v != "" {
-		llhls.FFmpegPath = v
-	} else if v := strings.TrimSpace(getString(getenv, "XG2G_WEB_FFMPEG_PATH", "")); v != "" {
-		llhls.FFmpegPath = v
-	}
 
-	if strings.TrimSpace(getString(getenv, "XG2G_LLHLS_HEVC_ENABLED", "")) == "true" || strings.TrimSpace(getString(getenv, "XG2G_WEB_HEVC_PROFILE_ENABLED", "")) == "true" {
+	applyBoundedInt(getenv, "XG2G_LLHLS_SEGMENT_DURATION", 1, 2, &llhls.SegmentDuration)
+	applyBoundedInt(getenv, "XG2G_LLHLS_PLAYLIST_SIZE", 6, 10, &llhls.PlaylistSize)
+	applyBoundedInt(getenv, "XG2G_LLHLS_STARTUP_SEGMENTS", 1, 3, &llhls.StartupSegments)
+	applyBoundedInt(getenv, "XG2G_LLHLS_PART_SIZE", 65536, 1048576, &llhls.PartSize)
+
+	if ffmpegPath := firstNonEmptyEnv(getenv, "XG2G_LLHLS_FFMPEG_PATH", "XG2G_WEB_FFMPEG_PATH"); ffmpegPath != "" {
+		llhls.FFmpegPath = ffmpegPath
+	}
+	if readTrimmedEnv(getenv, "XG2G_LLHLS_HEVC_ENABLED") == "true" || readTrimmedEnv(getenv, "XG2G_WEB_HEVC_PROFILE_ENABLED") == "true" {
 		llhls.HevcEnabled = true
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_HEVC_BITRATE", "")); v != "" {
-		llhls.HevcBitrate = v
-	} else if v := strings.TrimSpace(getString(getenv, "XG2G_WEB_HEVC_BITRATE", "")); v != "" {
-		llhls.HevcBitrate = v
+	if bitrate := firstNonEmptyEnv(getenv, "XG2G_LLHLS_HEVC_BITRATE", "XG2G_WEB_HEVC_BITRATE"); bitrate != "" {
+		llhls.HevcBitrate = bitrate
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_HEVC_PEAK", "")); v != "" {
-		llhls.HevcMaxBitrate = v
-	} else if v := strings.TrimSpace(getString(getenv, "XG2G_WEB_HEVC_MAXBITRATE", "")); v != "" {
-		llhls.HevcMaxBitrate = v
+	if peak := firstNonEmptyEnv(getenv, "XG2G_LLHLS_HEVC_PEAK", "XG2G_WEB_HEVC_MAXBITRATE"); peak != "" {
+		llhls.HevcMaxBitrate = peak
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_HEVC_ENCODER", "")); v != "" {
-		llhls.HevcEncoder = v
-	} else if v := strings.TrimSpace(getString(getenv, "XG2G_WEB_HEVC_ENCODER", "")); v != "" {
-		llhls.HevcEncoder = v
+	if encoder := firstNonEmptyEnv(getenv, "XG2G_LLHLS_HEVC_ENCODER", "XG2G_WEB_HEVC_ENCODER"); encoder != "" {
+		llhls.HevcEncoder = encoder
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_HEVC_PROFILE", "")); v != "" {
-		llhls.HevcProfile = v
+	if profile := readTrimmedEnv(getenv, "XG2G_LLHLS_HEVC_PROFILE"); profile != "" {
+		llhls.HevcProfile = profile
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_HEVC_LEVEL", "")); v != "" {
-		llhls.HevcLevel = v
+	if level := readTrimmedEnv(getenv, "XG2G_LLHLS_HEVC_LEVEL"); level != "" {
+		llhls.HevcLevel = level
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_LLHLS_VAAPI_DEVICE", "")); v != "" {
-		llhls.VaapiDevice = v
+	if device := readTrimmedEnv(getenv, "XG2G_LLHLS_VAAPI_DEVICE"); device != "" {
+		llhls.VaapiDevice = device
 	}
-	if v := strings.TrimSpace(getString(getenv, "XG2G_WEB_LL_HLS_PART_DURATION", "")); v != "" {
-		llhls.PartDuration = v
+	if duration := readTrimmedEnv(getenv, "XG2G_WEB_LL_HLS_PART_DURATION"); duration != "" {
+		llhls.PartDuration = duration
 	}
 
-	return HLSRuntime{
-		OutputDir: outDir,
-		Generic:   generic,
-		Safari:    safari,
-		LLHLS:     llhls,
-	}
+	return llhls
 }
 
 func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
@@ -269,6 +244,44 @@ func getString(getenv func(string) string, key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
+}
+
+func readTrimmedEnv(getenv func(string) string, key string) string {
+	return strings.TrimSpace(getString(getenv, key, ""))
+}
+
+func firstNonEmptyEnv(getenv func(string) string, keys ...string) string {
+	for _, key := range keys {
+		if value := readTrimmedEnv(getenv, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func applyPositiveInt(getenv func(string) string, key string, target *int) {
+	if value, ok := readIntEnv(getenv, key); ok && value > 0 {
+		*target = value
+	}
+}
+
+func applyBoundedInt(getenv func(string) string, key string, min, max int, target *int) {
+	if value, ok := readIntEnv(getenv, key); ok && value >= min && value <= max {
+		*target = value
+	}
+}
+
+func readIntEnv(getenv func(string) string, key string) (int, bool) {
+	raw := readTrimmedEnv(getenv, key)
+	if raw == "" {
+		return 0, false
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
 }
 
 func getInt(getenv func(string) string, key string, defaultValue int) int {

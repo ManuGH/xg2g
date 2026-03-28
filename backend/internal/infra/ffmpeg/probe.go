@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/vod"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/rs/zerolog/log"
 )
 
@@ -20,22 +23,39 @@ type Prober struct {
 	BinaryPath string
 }
 
+type ProbeOptions struct {
+	AnalyzeDuration time.Duration
+	ProbeSizeBytes  int64
+}
+
+var ffprobeURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
+
 func NewProber(binaryPath string) *Prober {
 	return &Prober{BinaryPath: strings.TrimSpace(binaryPath)}
 }
 
 func (p *Prober) Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
-	return ProbeWithBin(ctx, p.BinaryPath, path)
+	return probeWithBinAndOptions(ctx, p.BinaryPath, path, ProbeOptions{})
 }
 
 // Probe executes ffprobe and returns stream info.
 func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
-	return ProbeWithBin(ctx, "", path)
+	return probeWithBinAndOptions(ctx, "", path, ProbeOptions{})
+}
+
+// ProbeWithOptions executes ffprobe and returns stream info with optional
+// analyze/probe budget overrides.
+func ProbeWithOptions(ctx context.Context, path string, opts ProbeOptions) (*vod.StreamInfo, error) {
+	return probeWithBinAndOptions(ctx, "", path, opts)
 }
 
 // ProbeWithBin executes ffprobe and returns stream info.
 // If binaryPath is empty, it falls back to PATH resolution ("ffprobe").
 func ProbeWithBin(ctx context.Context, binaryPath string, path string) (*vod.StreamInfo, error) {
+	return probeWithBinAndOptions(ctx, binaryPath, path, ProbeOptions{})
+}
+
+func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string, opts ProbeOptions) (*vod.StreamInfo, error) {
 	headers := "Connection: close\r\n"
 	if u, err := url.Parse(path); err == nil && u.User != nil {
 		pwd, _ := u.User.Password()
@@ -47,11 +67,22 @@ func ProbeWithBin(ctx context.Context, binaryPath string, path string) (*vod.Str
 		"-v", "error",
 		"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
 		"-headers", headers,
+	}
+	if whitelist, ok := InputProtocolWhitelist(path); ok {
+		args = append(args, "-protocol_whitelist", whitelist)
+	}
+	if opts.AnalyzeDuration > 0 {
+		args = append(args, "-analyzeduration", strconv.FormatInt(opts.AnalyzeDuration.Microseconds(), 10))
+	}
+	if opts.ProbeSizeBytes > 0 {
+		args = append(args, "-probesize", strconv.FormatInt(opts.ProbeSizeBytes, 10))
+	}
+	args = append(args,
 		"-print_format", "json",
 		"-show_format",
 		"-show_streams",
 		path,
-	}
+	)
 
 	ffprobeBin := strings.TrimSpace(binaryPath)
 	if ffprobeBin == "" {
@@ -90,15 +121,15 @@ func ProbeWithBin(ctx context.Context, binaryPath string, path string) (*vod.Str
 		if err != nil {
 			// Log warning about non-zero exit (likely partial file or warnings).
 			// Truncate stderr to prevent log explosion on massive dumps.
-			errStr := stderr.String()
+			errStr := sanitizeProbeText(stderr.String())
 			if len(errStr) > 4096 {
 				errStr = errStr[:4096] + "..."
 			}
-			log.Warn().Err(err).Str("path", path).Str("stderr", errStr).Msg("ffprobe non-zero exit but JSON accepted")
+			log.Warn().Err(err).Str("path", sanitizeProbePathForLog(path)).Str("stderr", errStr).Msg("ffprobe non-zero exit but JSON accepted")
 		}
 	} else if err != nil {
 		// Execution failed AND/OR no usable JSON.
-		errStr := stderr.String()
+		errStr := sanitizeProbeText(stderr.String())
 		if len(errStr) > 4096 {
 			errStr = errStr[:4096] + "..."
 		}
@@ -183,6 +214,17 @@ func ProbeWithBin(ctx context.Context, binaryPath string, path string) (*vod.Str
 	info.Container = canonical
 
 	return info, nil
+}
+
+func sanitizeProbePathForLog(path string) string {
+	if strings.Contains(path, "://") {
+		return platformnet.SanitizeURL(path)
+	}
+	return path
+}
+
+func sanitizeProbeText(raw string) string {
+	return ffprobeURLPattern.ReplaceAllStringFunc(raw, platformnet.SanitizeURL)
 }
 
 type probeData struct {

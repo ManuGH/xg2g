@@ -45,7 +45,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 
 	m.registerV3Checks(&cfg, runtimeDeps.receiverHealthCheck)
 	m.launchV3Orchestrator(ctx, errChan, orch)
-	m.launchV3LeaseExpiryWorker(ctx, errChan, cfg, runtimeDeps.store)
+	m.launchV3LeaseExpiryWorker(ctx, errChan, cfg, runtimeDeps.store, runtimeDeps.bus)
 
 	return nil
 }
@@ -141,9 +141,10 @@ func (m *manager) launchV3Orchestrator(ctx context.Context, errChan chan<- error
 	}()
 }
 
-func (m *manager) launchV3LeaseExpiryWorker(ctx context.Context, errChan chan<- error, cfg config.AppConfig, store sessionstore.StateStore) {
+func (m *manager) launchV3LeaseExpiryWorker(ctx context.Context, errChan chan<- error, cfg config.AppConfig, store sessionstore.StateStore, bus pipebus.Bus) {
 	worker := &sessionmanager.LeaseExpiryWorker{
 		Store:  store,
+		Bus:    bus,
 		Config: &cfg,
 	}
 

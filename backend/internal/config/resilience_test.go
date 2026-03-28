@@ -16,7 +16,7 @@ func setupConfigTest(t *testing.T) (*Loader, func(*AppConfig)) {
 	l := NewLoader("", "v3")
 
 	// satisfy strict validation
-	t.Setenv("XG2G_OWI_BASE", "http://mock")
+	t.Setenv("XG2G_E2_HOST", "http://mock")
 	t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 	t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 
@@ -57,7 +57,7 @@ func TestResilienceZeroOverrides(t *testing.T) {
 	l := NewLoader("", "v3")
 
 	// satisfy strict validation
-	t.Setenv("XG2G_OWI_BASE", "http://mock")
+	t.Setenv("XG2G_E2_HOST", "http://mock")
 	t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 	t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 
@@ -216,7 +216,7 @@ func TestResilienceValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// satisfy strict validation
-			t.Setenv("XG2G_OWI_BASE", "http://mock")
+			t.Setenv("XG2G_E2_HOST", "http://mock")
 			t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 			t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 

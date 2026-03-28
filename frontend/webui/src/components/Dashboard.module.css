@@ -11,7 +11,7 @@
   color: var(--text-secondary);
 }
 
-.heroCard,
+.summaryCard,
 .streamSurface,
 .signalSurface {
   position: relative;
@@ -22,49 +22,46 @@
   box-shadow: var(--shadow-card);
 }
 
-.heroCard::before,
+.summaryCard::before,
 .streamSurface::before,
 .signalSurface::before {
   content: none;
 }
 
-.heroCard {
+.summaryCard {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   padding: 24px 26px;
   min-height: 0;
 }
 
-.heroStreaming {
+.summaryStreaming {
   background: var(--surface-panel-strong);
 }
 
-.heroControl {
+.summaryControl {
   background: var(--surface-panel);
 }
 
-.heroStandby {
+.summaryStandby {
   background: var(--surface-panel-soft);
 }
 
-.heroTop {
-  position: relative;
-  z-index: 1;
+.summaryHeader {
   display: flex;
   justify-content: space-between;
   gap: 24px;
   align-items: flex-start;
 }
 
-.heroIdentity {
-  max-width: 760px;
+.summaryIdentity {
+  max-width: 780px;
 }
 
-.heroEyebrow,
+.summaryEyebrow,
 .panelEyebrow,
-.metricEyebrow,
-.factLabel,
+.metricLabel,
 .contextLabel {
   display: block;
   margin: 0 0 8px;
@@ -74,27 +71,25 @@
   text-transform: uppercase;
 }
 
-.heroTitle {
+.summaryTitle {
   margin: 0;
   font-family: var(--font-heading);
   font-size: clamp(1.8rem, 3vw, 2.9rem);
   line-height: 1;
   letter-spacing: -0.04em;
   color: var(--text-primary);
-  max-width: 12ch;
+  max-width: 14ch;
 }
 
-.heroSummary {
+.summaryDescription {
   margin: 14px 0 0;
-  max-width: 58ch;
+  max-width: 60ch;
   color: var(--text-secondary);
   font-size: 0.95rem;
   line-height: 1.6;
 }
 
-.heroToolbar {
-  position: relative;
-  z-index: 1;
+.summaryChips {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -102,25 +97,40 @@
   justify-content: flex-end;
 }
 
-.heroBody {
-  position: relative;
-  z-index: 1;
-  display: block;
+.summaryMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
 }
 
-.heroMain {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 760px;
-}
-
-.heroTimeline,
-.heroContextCard {
+.metricCard,
+.contextCard {
   padding: 18px 20px;
   border-radius: 22px;
   border: 1px solid var(--border-base);
   background: var(--bg-input);
+}
+
+.metricCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.metricValue {
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.metricDetail {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
 }
 
 .timelineHeader {
@@ -166,12 +176,6 @@
   font-weight: 600;
 }
 
-.heroActions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .diagnosticsGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
@@ -189,8 +193,6 @@
 }
 
 .panelHeader {
-  position: relative;
-  z-index: 1;
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -206,8 +208,7 @@
 }
 
 .panelBody {
-  position: relative;
-  z-index: 1;
+  min-width: 0;
 }
 
 .emptyState {
@@ -234,12 +235,15 @@
 }
 
 .statusRow {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 0;
+  display: grid;
+  gap: 4px;
+  padding: 14px 0;
   border-bottom: 1px solid var(--border-base);
+}
+
+.statusRow:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .statusLabel {
@@ -250,54 +254,89 @@
 .statusValue {
   color: var(--text-primary);
   font-weight: 600;
-  text-align: right;
+}
+
+.statusDetail {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
 }
 
 @media (max-width: 1180px) {
+  .summaryMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .diagnosticsGrid {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
   .page {
     gap: 16px;
-    padding-bottom: 20px;
   }
 
-  .heroCard,
+  .summaryCard,
   .streamSurface,
   .signalSurface {
-    border-radius: 24px;
+    border-radius: 22px;
   }
 
-  .heroCard {
-    padding: 22px;
-    min-height: 0;
+  .summaryCard {
+    padding: 18px;
+    gap: 16px;
   }
 
-  .heroTop {
+  .summaryHeader {
     flex-direction: column;
+    gap: 16px;
   }
 
-  .heroTitle {
+  .summaryIdentity {
     max-width: none;
-    font-size: clamp(1.65rem, 7vw, 2.2rem);
   }
 
-  .heroToolbar,
-  .heroActions {
+  .summaryTitle {
+    max-width: none;
+    font-size: clamp(1.45rem, 4.6vw, 2.1rem);
+  }
+
+  .summaryDescription {
+    margin-top: 10px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .summaryChips {
     width: 100%;
-  }
-
-  .heroToolbar {
     justify-content: flex-start;
   }
 
-  .panelHeader,
-  .timelineHeader,
-  .statusRow {
+  .summaryMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .metricCard,
+  .contextCard {
+    padding: 14px 16px;
+    border-radius: 18px;
+  }
+
+  .timelineHeader {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .streamSurface,
+  .signalSurface {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    gap: 14px;
+    padding-bottom: 20px;
   }
 }

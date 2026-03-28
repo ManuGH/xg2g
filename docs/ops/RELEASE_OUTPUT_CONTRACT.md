@@ -10,6 +10,9 @@ inputs, and which outputs are explicitly outside the published contract.
 - `unexpected published output` is a blocker.
 - Release output changes require updating this document, the verifier, and the
   release configuration in the same slice.
+- Release-tag registry outputs MUST be published by `.github/workflows/release.yml`
+  only. Auxiliary workflows may publish supporting images, but they must not
+  republish `ghcr.io/manugh/xg2g:vX.Y.Z*`.
 - The canonical version source is `backend/VERSION` in tag form (`vX.Y.Z`).
 - GitHub release archive names use GoReleaser `{{ .Version }}` semantics
   (`X.Y.Z` without the leading `v`).
@@ -62,6 +65,7 @@ they are not published release outputs:
 
 - `RELEASE_MANIFEST.json`
 - `DIGESTS.lock`
+- `ghcr.io/manugh/xg2g-ffmpeg:<ffmpeg-version>` reusable FFmpeg base image
 - GoReleaser `dist/` internals and temporary build contexts
 - copied helper files such as `build-ffmpeg.sh`, `ffmpeg-wrapper.sh`,
   `ffprobe-wrapper.sh`
@@ -75,7 +79,9 @@ the current external release guarantee unless this contract is updated.
 The release output contract is derived from:
 
 - `.github/workflows/release.yml`
+- `.github/workflows/ffmpeg-base.yml`
 - `.goreleaser.yml`
+- `Dockerfile.ffmpeg-base`
 - `infrastructure/docker/Dockerfile.release`
 - `backend/VERSION`
 

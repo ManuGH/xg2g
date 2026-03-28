@@ -13,6 +13,6 @@ are deprecated and removed.
 
 ## Active Deprecations
 
-| Item | Replacement | Remove In |
-|:---|:---|:---|
-| XG2G_STREAM_PORT | XG2G_E2_STREAM_PORT | v3.5.0 |
+| Item | Replacement | Phase | Remove In |
+|:---|:---|:---|:---|
+| XG2G_STREAM_PORT | XG2G_E2_STREAM_PORT | fail-start | v3.5.0 |

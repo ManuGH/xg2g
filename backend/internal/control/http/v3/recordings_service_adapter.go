@@ -18,6 +18,18 @@ func (d *serverRecordingsDeps) RecordingsService() v3recordings.RecordingsServic
 	return d.s.recordingsModuleDeps().recordingsService
 }
 
+func (d *serverRecordingsDeps) ChannelTruthSource() v3recordings.ChannelTruthSource {
+	d.s.mu.RLock()
+	defer d.s.mu.RUnlock()
+	return d.s.v3Scan
+}
+
+func (d *serverRecordingsDeps) DecisionAuditSink() v3recordings.DecisionAuditSink {
+	d.s.mu.RLock()
+	defer d.s.mu.RUnlock()
+	return d.s.decisionAudit
+}
+
 func (d *serverRecordingsDeps) Config() config.AppConfig {
 	return d.s.GetConfig()
 }

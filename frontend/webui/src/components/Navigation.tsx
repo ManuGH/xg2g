@@ -17,7 +17,7 @@ interface NavItem {
   section: NavSection;
 }
 
-const mobilePrimaryViews: AppView[] = ['dashboard', 'epg', 'recordings', 'settings'];
+const mobilePrimaryViews: AppView[] = ['dashboard', 'epg', 'recordings'];
 
 function NavIcon({ name, className = '' }: { name: IconName; className?: string }) {
   const commonProps = {
@@ -198,6 +198,13 @@ export default function Navigation({ onLogout }: NavigationProps) {
 
   const primaryMobileItems = navItems.filter((item) => mobilePrimaryViews.includes(item.id));
   const overflowItems = navItems.filter((item) => !mobilePrimaryViews.includes(item.id));
+  const overflowSections = (['quick', 'main', 'footer'] as NavSection[])
+    .map((section) => ({
+      id: section,
+      label: sectionLabels[section],
+      items: overflowItems.filter((item) => item.section === section),
+    }))
+    .filter((section) => section.items.length > 0);
   const activePath = normalizePathname(pathname);
   const overflowActive = overflowItems.some((item) => ROUTE_MAP[item.id] === activePath);
 
@@ -216,9 +223,6 @@ export default function Navigation({ onLogout }: NavigationProps) {
       </span>
       <span className={styles.itemText}>
         <span className={styles.label}>{item.label}</span>
-        {appearance === 'sheet' && (
-          <span className={styles.sheetMeta}>{sectionLabels[item.section]}</span>
-        )}
       </span>
     </NavLink>
   );
@@ -337,8 +341,15 @@ export default function Navigation({ onLogout }: NavigationProps) {
                 </button>
               </div>
 
-              <div className={styles.sheetGrid}>
-                {overflowItems.map((item) => renderNavItem(item, 'sheet'))}
+              <div className={styles.sheetSections}>
+                {overflowSections.map((section) => (
+                  <section key={section.id} className={styles.sheetSection} aria-label={section.label}>
+                    <p className={styles.sheetSectionTitle}>{section.label}</p>
+                    <div className={styles.sheetList}>
+                      {section.items.map((item) => renderNavItem(item, 'sheet'))}
+                    </div>
+                  </section>
+                ))}
               </div>
 
               {onLogout && (

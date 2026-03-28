@@ -85,9 +85,11 @@ use `systemctl restart xg2g` and verify container health via Docker.
    ```bash
    systemctl reload xg2g
    ```
+Legacy receiver env aliases such as `XG2G_OWI_*`, `XG2G_STREAM_PORT`, and `XG2G_USE_WEBIF_STREAMS` now fail startup; keep `/etc/xg2g/xg2g.env` on the canonical `XG2G_E2_*` surface.
 
 ### Security Notes (Minimum)
 - `/etc/xg2g/xg2g.env` must be `root:root` and `0600` (contains secrets).
+- `/srv/xg2g/scripts/compose-xg2g.sh config` redacts secret env values by default before printing rendered Compose. Use `XG2G_COMPOSE_CONFIG_REDACT=0` only when you explicitly need raw output on a controlled terminal.
 - Credentials embedded in URLs are a known risk; prefer separate user/pass variables or secret files when available.
 - Browser-facing deployments must use HTTPS directly or a trusted HTTPS proxy.
   Plain HTTP is acceptable only for same-host loopback access. For non-loopback
@@ -118,9 +120,10 @@ journalctl -u xg2g -f
 
 **Common Issues**:
 * **Start Fails immediately**: Check `systemctl status xg2g`. Ensure all required env vars are set in `/etc/xg2g/xg2g.env`:
-  - `XG2G_E2_HOST` (legacy fallback: `XG2G_OWI_BASE`) — receiver base URL; both vars must match if set.
+  - `XG2G_E2_HOST` — receiver base URL.
   - `XG2G_API_TOKEN` — control plane bearer token.
   - `XG2G_DECISION_SECRET` — live stream JWT signing key, min 32 bytes. See `docs/ops/SECURITY.md` for generation and rotation procedure.
+  - If the journal mentions `legacy environment variable(s) detected`, remove the listed legacy receiver keys and apply the exact `XG2G_E2_*` replacement lines shown in the error.
 * **Crash Loop**: If running manually via `docker compose` without the systemd safety checks, the container may restart indefinitely on missing config. Use `systemctl start` for fail-closed protection.
 * **Remote browser playback fails with `HTTPS required`, media `401`, or `Video Error: 4`**: the browser is likely reaching xg2g over plain HTTP. Put `/ui/` and `/api/v3/` behind HTTPS or a trusted HTTPS proxy, then verify the browser can complete `POST /api/v3/auth/session` and receive the `xg2g_session` cookie.
 
@@ -197,6 +200,17 @@ Observed live-host delta on March 23, 2026 (VAAPI runtime truth):
   - `decision.summary ... "path":"transcode_hw"`
   - `pipeline video: vaapi`
 - Operational shorthand: `ffmpeg.vaapiDevice` is currently not optional for GPU transcoding. A fresh deploy that omits it should be expected to fall back silently to CPU for eligible live transcode paths.
+
+Observed live-host delta on March 24, 2026 (installation drift still present):
+- `/etc/systemd/system/xg2g.service` did not byte-match either `/srv/xg2g/docs/ops/xg2g.service` or the repo template `docs/ops/xg2g.service`.
+- `/srv/xg2g/docs/ops/xg2g.service` and the installed unit still used direct `/usr/bin/docker compose --project-name xg2g ...` calls even though `/srv/xg2g/scripts/compose-xg2g.sh` was present on the host.
+- The installed unit carried extra `ExecStartPre` gates not present in the canonical host copy, including:
+  - image preflight derived from `services.xg2g.image` in `/srv/xg2g/docker-compose.yml`
+  - `docker compose run --rm --no-deps xg2g config validate -f /var/lib/xg2g/config.yaml`
+- `/srv/xg2g/docker-compose.yml` was still pinned to `ghcr.io/manugh/xg2g:v3.3.0` and still mounted `/dev/dri/renderD128` in the base compose.
+- `/srv/xg2g/docker-compose.gpu.yml` now existed, but it duplicated the same `/dev/dri/renderD128` device mount instead of being the sole GPU-specific overlay.
+- Runtime truth matched that older deployment: `docker inspect` reported image `ghcr.io/manugh/xg2g:v3.3.0`, and recent container logs reported `version":"v3.3.0-hotfix26"`.
+- Operational rule: for this host, treat the installed unit plus `/srv/xg2g/docker-compose.yml` as runtime truth and the GitHub docs as target-state documentation until `/srv/xg2g` and `/etc/systemd/system/xg2g.service` are redeployed together. The mere presence of `/srv/xg2g/scripts/compose-xg2g.sh` does not mean systemd is using the helper yet.
 
 If you see the March 11 metrics-only health mismatch, fix the live env first by setting:
 

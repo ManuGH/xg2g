@@ -9,45 +9,44 @@ import (
 func TestTimerOperationError_MapsKnownMessages(t *testing.T) {
 	tests := []struct {
 		name         string
+		status       int
 		message      string
 		wantSentinel error
 		wantStatus   int
 	}{
 		{
-			name:         "conflict_english",
-			message:      "Timer conflict detected",
-			wantSentinel: ErrTimerConflict,
-			wantStatus:   http.StatusConflict,
-		},
-		{
-			name:         "conflict_german",
+			name:         "logical_rejection_uses_status_ok",
+			status:       http.StatusOK,
 			message:      "Konflikt mit anderem Timer",
-			wantSentinel: ErrTimerConflict,
+			wantSentinel: ErrUpstreamRejected,
+			wantStatus:   http.StatusOK,
+		},
+		{
+			name:         "not_found_http_status",
+			status:       http.StatusNotFound,
+			message:      "timer not found",
+			wantSentinel: ErrNotFound,
+			wantStatus:   http.StatusNotFound,
+		},
+		{
+			name:         "conflict_http_status",
+			status:       http.StatusConflict,
+			message:      "Timer conflict detected",
+			wantSentinel: ErrConflict,
 			wantStatus:   http.StatusConflict,
 		},
 		{
-			name:         "not_found_english",
-			message:      "timer not found",
-			wantSentinel: ErrTimerNotFound,
-			wantStatus:   http.StatusNotFound,
-		},
-		{
-			name:         "not_found_404",
-			message:      "HTTP 404",
-			wantSentinel: ErrTimerNotFound,
-			wantStatus:   http.StatusNotFound,
-		},
-		{
-			name:         "unknown_message",
+			name:         "bad_request_remains_generic_rejection",
+			status:       http.StatusBadRequest,
 			message:      "unexpected response",
-			wantSentinel: ErrUpstreamBadResponse,
+			wantSentinel: ErrUpstreamRejected,
 			wantStatus:   http.StatusBadRequest,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := timerOperationError("timers.add", tt.message)
+			err := timerOperationError("timers.add", tt.status, tt.message)
 			if !errors.Is(err, tt.wantSentinel) {
 				t.Fatalf("expected sentinel %v, got %v", tt.wantSentinel, err)
 			}
@@ -83,5 +82,11 @@ func TestTimerErrorClassifiers_UseTypedErrors(t *testing.T) {
 	}
 	if IsTimerNotFound(errors.New("404 in plain text")) {
 		t.Fatal("plain text error must not classify as timer not found")
+	}
+	if IsTimerConflict(&OWIError{Status: http.StatusOK, Body: "Konflikt mit anderem Timer"}) {
+		t.Fatal("localized body text must not classify as timer conflict without typed status")
+	}
+	if IsTimerNotFound(&OWIError{Status: http.StatusOK, Body: "timer not found"}) {
+		t.Fatal("localized body text must not classify as timer not found without typed status")
 	}
 }

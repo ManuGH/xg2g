@@ -220,7 +220,7 @@ describe('Primary navigation and EPG journeys', () => {
     await waitFor(() => {
       expect(screen.getByText('Timers route ready')).toBeInTheDocument();
       expect(screen.getByTestId('journey-pathname')).toHaveTextContent(ROUTE_MAP.timers);
-      expect(screen.queryByRole('dialog', { name: 'Control surfaces' })).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'More tools' })).toBeNull();
     });
   });
 

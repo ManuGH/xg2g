@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	schemaVersion = 4 // Includes retry metadata for persistent capability cache entries.
+	schemaVersion = 5 // Includes persisted media truth for live decision reuse.
 )
 
 // SqliteStore implements Capability storage using SQLite.
@@ -58,7 +58,13 @@ func (s *SqliteStore) migrate() error {
 		failure_reason TEXT,
 		next_retry_at TEXT,
 		resolution TEXT NOT NULL,
-		codec TEXT NOT NULL
+		codec TEXT NOT NULL,
+		container TEXT,
+		video_codec TEXT,
+		audio_codec TEXT,
+		width INTEGER NOT NULL DEFAULT 0,
+		height INTEGER NOT NULL DEFAULT 0,
+		fps REAL NOT NULL DEFAULT 0
 	);
 	CREATE INDEX IF NOT EXISTS idx_capabilities_scan ON capabilities(last_scan);
 
@@ -82,6 +88,12 @@ func (s *SqliteStore) migrate() error {
 		`ALTER TABLE capabilities ADD COLUMN scan_state TEXT`,
 		`ALTER TABLE capabilities ADD COLUMN failure_reason TEXT`,
 		`ALTER TABLE capabilities ADD COLUMN next_retry_at TEXT`,
+		`ALTER TABLE capabilities ADD COLUMN container TEXT`,
+		`ALTER TABLE capabilities ADD COLUMN video_codec TEXT`,
+		`ALTER TABLE capabilities ADD COLUMN audio_codec TEXT`,
+		`ALTER TABLE capabilities ADD COLUMN width INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN height INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN fps REAL NOT NULL DEFAULT 0`,
 	} {
 		if err := execIfMissingColumn(tx, "capabilities", stmt); err != nil {
 			return err
@@ -109,9 +121,10 @@ func (s *SqliteStore) Update(cap Capability) {
 	query := `
 	INSERT INTO capabilities (
 		service_ref, interlaced, last_scan, last_attempt, last_success,
-		scan_state, failure_reason, next_retry_at, resolution, codec
+		scan_state, failure_reason, next_retry_at, resolution, codec,
+		container, video_codec, audio_codec, width, height, fps
 	)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(service_ref) DO UPDATE SET
 		interlaced = excluded.interlaced,
 		last_scan = excluded.last_scan,
@@ -121,7 +134,13 @@ func (s *SqliteStore) Update(cap Capability) {
 		failure_reason = excluded.failure_reason,
 		next_retry_at = excluded.next_retry_at,
 		resolution = excluded.resolution,
-		codec = excluded.codec
+		codec = excluded.codec,
+		container = excluded.container,
+		video_codec = excluded.video_codec,
+		audio_codec = excluded.audio_codec,
+		width = excluded.width,
+		height = excluded.height,
+		fps = excluded.fps
 	`
 	_, _ = s.DB.Exec(query,
 		cap.ServiceRef,
@@ -134,13 +153,20 @@ func (s *SqliteStore) Update(cap Capability) {
 		dbNullableTime(cap.NextRetryAt),
 		cap.Resolution,
 		cap.Codec,
+		dbNullableString(cap.Container),
+		dbNullableString(cap.VideoCodec),
+		dbNullableString(cap.AudioCodec),
+		cap.Width,
+		cap.Height,
+		cap.FPS,
 	)
 }
 
 func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 	normalizedRef := normalize.ServiceRef(serviceRef)
 	query := `
-	SELECT service_ref, interlaced, last_scan, last_attempt, last_success, scan_state, failure_reason, next_retry_at, resolution, codec
+	SELECT service_ref, interlaced, last_scan, last_attempt, last_success, scan_state, failure_reason, next_retry_at, resolution, codec,
+		container, video_codec, audio_codec, width, height, fps
 	FROM capabilities
 	WHERE RTRIM(service_ref, ':') = ?
 	ORDER BY CASE WHEN service_ref = ? THEN 0 ELSE 1 END
@@ -154,6 +180,12 @@ func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 	var scanState sql.NullString
 	var failureReason sql.NullString
 	var nextRetryAt sql.NullString
+	var container sql.NullString
+	var videoCodec sql.NullString
+	var audioCodec sql.NullString
+	var width sql.NullInt64
+	var height sql.NullInt64
+	var fps sql.NullFloat64
 	err := s.DB.QueryRow(query, normalizedRef, normalizedRef).Scan(
 		&storedRef,
 		&cap.Interlaced,
@@ -165,6 +197,12 @@ func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 		&nextRetryAt,
 		&cap.Resolution,
 		&cap.Codec,
+		&container,
+		&videoCodec,
+		&audioCodec,
+		&width,
+		&height,
+		&fps,
 	)
 	if err != nil {
 		return Capability{}, false
@@ -183,6 +221,24 @@ func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 	}
 	if failureReason.Valid {
 		cap.FailureReason = failureReason.String
+	}
+	if container.Valid {
+		cap.Container = container.String
+	}
+	if videoCodec.Valid {
+		cap.VideoCodec = videoCodec.String
+	}
+	if audioCodec.Valid {
+		cap.AudioCodec = audioCodec.String
+	}
+	if width.Valid {
+		cap.Width = int(width.Int64)
+	}
+	if height.Valid {
+		cap.Height = int(height.Int64)
+	}
+	if fps.Valid {
+		cap.FPS = fps.Float64
 	}
 	cap.NextRetryAt = parseNullableTime(nextRetryAt)
 	return cap.Normalized(), true

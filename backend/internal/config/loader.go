@@ -122,9 +122,6 @@ func (l *Loader) Load() (AppConfig, error) {
 	}
 
 	// 3. Override with environment variables (highest priority)
-	if err := l.checkAliasEnvToEnvConflicts(); err != nil {
-		return cfg, err
-	}
 	l.mergeEnvConfig(&cfg)
 	// Resolve ffprobe path from canonical config (ENV -> derive from ffmpeg.bin -> PATH fallback).
 	cfg.FFmpeg.FFprobeBin = ResolveFFprobeBin(cfg.FFmpeg.FFprobeBin, cfg.FFmpeg.Bin)
@@ -207,6 +204,9 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 	presence, err := parseAliasPresence(data)
 	if err != nil {
 		return nil, fmt.Errorf("parse alias presence: %w", err)
+	}
+	if err := rejectLegacyOpenWebIFYAML(presence); err != nil {
+		return nil, err
 	}
 	l.filePresence = presence
 

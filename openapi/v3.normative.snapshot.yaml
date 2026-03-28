@@ -1056,8 +1056,8 @@ components:
       properties:
         capabilitiesVersion:
           type: integer
-          description: "Capabilities contract version (current: 2)"
-          example: 2
+          description: "Capabilities contract version (current: 3)"
+          example: 3
         container:
           type: array
           items:
@@ -1070,6 +1070,11 @@ components:
             type: string
           description: Supported video codecs
           example: ["h264", "hevc"]
+        videoCodecSignals:
+          type: array
+          description: Runtime decode signals per video codec from MediaCapabilities and fallback browser probes
+          items:
+            $ref: "#/components/schemas/PlaybackVideoCodecSignal"
         audioCodecs:
           type: array
           items:
@@ -1118,7 +1123,7 @@ components:
         runtimeProbeVersion:
           type: integer
           description: Version of the runtime playback probe contract
-          example: 1
+          example: 2
         clientFamilyFallback:
           type: string
           description: Browser-family fallback used when the server needs conservative capability defaults
@@ -1127,6 +1132,28 @@ components:
           type: boolean
           description: Whether client allows transcoding (force bypass)
           default: true
+          example: true
+
+    PlaybackVideoCodecSignal:
+      type: object
+      required: [codec, supported]
+      additionalProperties: false
+      properties:
+        codec:
+          type: string
+          description: Video codec identifier
+          example: "av1"
+        supported:
+          type: boolean
+          description: Whether the browser can decode this codec at all
+          example: true
+        smooth:
+          type: boolean
+          description: Whether the browser reported smooth playback for this codec
+          example: true
+        powerEfficient:
+          type: boolean
+          description: Whether the browser reported hardware-efficient decode for this codec
           example: true
 
     PlaybackDecision:

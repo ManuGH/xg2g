@@ -66,6 +66,7 @@ type CapabilitySnapshot = Pick<
   | 'runtimeProbeUsed'
   | 'runtimeProbeVersion'
   | 'clientFamilyFallback'
+  | 'videoCodecSignals'
 > & {
   hlsEngines?: string[];
   preferredHlsEngine?: string;
@@ -215,6 +216,30 @@ function formatRequestProfileLabel(profile: string | null): string {
     default:
       return profile || '-';
   }
+}
+
+function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null): string[] {
+  if (!snapshot) return [];
+
+  const out: string[] = [];
+  const signals = Array.isArray(snapshot.videoCodecSignals) ? snapshot.videoCodecSignals : [];
+  const signalFor = (codec: string) => signals.find((signal) => signal.codec === codec);
+
+  const av1 = signalFor('av1');
+  if (av1?.supported && av1.powerEfficient) {
+    out.push('av1');
+  }
+
+  const hevc = signalFor('hevc');
+  if (hevc?.supported && (hevc.powerEfficient || hevc.smooth)) {
+    out.push('hevc');
+  }
+
+  if (snapshot.videoCodecs.includes('h264') || out.length === 0) {
+    out.push('h264');
+  }
+
+  return Array.from(new Set(out));
 }
 
 function formatQualityRungLabel(rung: string | null): string {
@@ -538,6 +563,7 @@ function V3Player(props: V3PlayerProps) {
     isIdle,
     volume,
     isMuted,
+    canToggleMute,
     canAdjustVolume,
     stats,
     setStats,
@@ -763,9 +789,10 @@ function V3Player(props: V3PlayerProps) {
     const clientFamilyFallback = detectPlaybackClientFamily(video);
 
     const capabilities: CapabilitySnapshot = {
-      capabilitiesVersion: 2,
+      capabilitiesVersion: 3,
       container: probe.containers,
       videoCodecs: probe.videoCodecs,
+      videoCodecSignals: probe.videoCodecSignals,
       audioCodecs: probe.audioCodecs,
       hlsEngines: probe.hlsEngines.length > 0 ? probe.hlsEngines : undefined,
       preferredHlsEngine: probe.preferredHlsEngine ?? undefined,
@@ -1270,6 +1297,10 @@ function V3Player(props: V3PlayerProps) {
         }
         if (requestCaps.deviceType) {
           intentParams.device_type = requestCaps.deviceType;
+        }
+        const autoCodecs = resolveAutoTranscodeCodecs(requestCaps);
+        if (autoCodecs.length > 0) {
+          intentParams.codecs = autoCodecs.join(',');
         }
         const capHash = extractCapHashFromDecisionToken(liveDecisionToken);
         if (capHash) {
@@ -2253,7 +2284,7 @@ function V3Player(props: V3PlayerProps) {
             </Button>
           )}
 
-          {canAdjustVolume && (
+          {canToggleMute && (
             <div className={styles.volumeControl}>
               <Button
                 variant={isMuted ? 'primary' : 'ghost'}
@@ -2267,15 +2298,21 @@ function V3Player(props: V3PlayerProps) {
                 <span className={styles.audioToggleIcon} aria-hidden="true">{audioToggleIcon}</span>
                 <span>{audioToggleLabel}</span>
               </Button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                className={styles.volumeSlider}
-                value={isMuted ? 0 : volume}
-                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-              />
+              {canAdjustVolume ? (
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  className={styles.volumeSlider}
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                />
+              ) : (
+                <span className={styles.deviceVolumeHint}>
+                  {t('player.deviceVolumeHint', { defaultValue: 'Use device buttons' })}
+                </span>
+              )}
             </div>
           )}
 

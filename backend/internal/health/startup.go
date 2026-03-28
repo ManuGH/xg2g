@@ -79,18 +79,18 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 		logger.Info().Str("addr", cfg.APIListenAddr).Msg("✓ API listen address is valid")
 	}
 
-	// b. OWI Base URL (Syntax + Scheme)
+	// b. Enigma2 base URL (Syntax + Scheme)
 	if cfg.Enigma2.BaseURL == "" {
-		logger.Warn().Msg("OpenWebIF base URL not configured; running in setup mode")
+		logger.Warn().Msg("Enigma2 base URL not configured; running in setup mode")
 	} else {
 		u, err := url.Parse(cfg.Enigma2.BaseURL)
 		if err != nil {
-			return fmt.Errorf("invalid XG2G_OWI_BASE URL: %w", err)
+			return fmt.Errorf("invalid XG2G_E2_HOST URL: %w", err)
 		}
 		if u.Scheme != "http" && u.Scheme != "https" {
-			return fmt.Errorf("XG2G_OWI_BASE scheme must be http or https, got: %s", u.Scheme)
+			return fmt.Errorf("XG2G_E2_HOST scheme must be http or https, got: %s", u.Scheme)
 		}
-		logger.Info().Str("url", platformnet.SanitizeURL(cfg.Enigma2.BaseURL)).Msg("✓ OWI Base URL is valid")
+		logger.Info().Str("url", platformnet.SanitizeURL(cfg.Enigma2.BaseURL)).Msg("✓ Enigma2 base URL is valid")
 	}
 
 	// c. TLS Config (Pair + Readable)

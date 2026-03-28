@@ -90,7 +90,7 @@ func TestHardeningSuite(t *testing.T) {
 			"XG2G_DATA=" + t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
 			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
-			"XG2G_OWI_BASE=" + mockOWI.URL,
+			"XG2G_E2_HOST=" + mockOWI.URL,
 			"XG2G_BOUQUET=Test",       // REQUIRED
 			"XG2G_API_TOKEN=" + token, // ENABLE AUTH
 			"XG2G_INITIAL_REFRESH=false",
@@ -189,7 +189,7 @@ func TestHardeningSuite(t *testing.T) {
 			"XG2G_DATA=" + t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
 			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
-			"XG2G_OWI_BASE=" + mockOWI.URL,
+			"XG2G_E2_HOST=" + mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
 			"PATH=" + os.Getenv("PATH"),
@@ -259,7 +259,7 @@ func TestHardeningSuite(t *testing.T) {
 			"XG2G_DATA=" + t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
 			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
-			"XG2G_OWI_BASE=" + mockOWI.URL,
+			"XG2G_E2_HOST=" + mockOWI.URL,
 			"XG2G_INITIAL_REFRESH=false",
 			"XG2G_BOUQUET=Test",                   // REQUIRED
 			"XG2G_FFMPEG_BIN=/nonexistent/ffmpeg", // Trigger "FFmpeg not found"

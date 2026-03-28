@@ -167,7 +167,7 @@ func buildConfigDoc(entries []config.ConfigEntry) string {
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 		b.WriteString(fmt.Sprintf("### %s\n\n", group))
 		if group == "enigma2" {
-			b.WriteString("Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).\n\n")
+			b.WriteString("Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.\n\n")
 		}
 		b.WriteString("| Path | Env | Default | Status | Profile |\n")
 		b.WriteString("| --- | --- | --- | --- | --- |\n")
@@ -212,21 +212,16 @@ var openWebIFAliases = map[string]string{
 }
 
 var generatedExampleFallbacks = map[string]any{
-	"enigma2.baseUrl":   "http://127.0.0.1",
-	"openWebIF.baseUrl": "http://127.0.0.1",
-	"api.tokenScopes":   []string{"v3:read"},
-	"bouquets":          []string{},
+	"enigma2.baseUrl": "http://127.0.0.1",
+	"api.tokenScopes": []string{"v3:read"},
+	"bouquets":        []string{},
 }
 
 func configPathsForEntry(entry config.ConfigEntry) []string {
 	if entry.Path == "" {
 		return nil
 	}
-	paths := []string{entry.Path}
-	if alias, ok := openWebIFAliases[entry.Path]; ok && alias != entry.Path {
-		paths = append(paths, alias)
-	}
-	return paths
+	return []string{entry.Path}
 }
 
 func isAliasPath(entry config.ConfigEntry, path string) bool {
@@ -258,6 +253,7 @@ func updateSchemaDefaults(root string, entries []config.ConfigEntry, allowCreate
 			}
 		}
 	}
+	stripLegacyOpenWebIFSchema(schema)
 
 	out, err := marshalSortedJSON(schema)
 	if err != nil {
@@ -270,6 +266,59 @@ func updateSchemaDefaults(root string, entries []config.ConfigEntry, allowCreate
 		return fmt.Errorf("write schema: %w", err)
 	}
 	return nil
+}
+
+func stripLegacyOpenWebIFSchema(schema map[string]any) {
+	if props, ok := schema["properties"].(map[string]any); ok {
+		delete(props, "openWebIF")
+		if enigma2, ok := props["enigma2"].(map[string]any); ok {
+			if enigma2Props, ok := enigma2["properties"].(map[string]any); ok {
+				if baseURL, ok := enigma2Props["baseUrl"].(map[string]any); ok {
+					baseURL["description"] = "Base URL of the Enigma2 receiver"
+				}
+			}
+		}
+	}
+
+	if examples, ok := schema["examples"].([]any); ok {
+		for _, item := range examples {
+			example, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			if legacy, ok := example["openWebIF"]; ok {
+				if _, exists := example["enigma2"]; !exists {
+					example["enigma2"] = legacy
+				}
+				delete(example, "openWebIF")
+			}
+		}
+	}
+
+	required, ok := schema["required"].([]any)
+	if !ok {
+		return
+	}
+	filtered := make([]any, 0, len(required))
+	hasEnigma2 := false
+	for _, item := range required {
+		key, ok := item.(string)
+		if !ok {
+			filtered = append(filtered, item)
+			continue
+		}
+		if key == "openWebIF" {
+			continue
+		}
+		if key == "enigma2" {
+			hasEnigma2 = true
+		}
+		filtered = append(filtered, key)
+	}
+	if !hasEnigma2 {
+		filtered = append(filtered, "enigma2")
+	}
+	schema["required"] = filtered
 }
 
 func setSchemaDefault(schema map[string]any, entry config.ConfigEntry, path string, allowCreate bool) error {

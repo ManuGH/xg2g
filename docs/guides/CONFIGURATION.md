@@ -21,8 +21,8 @@ We structure configuration into three distinct tiers.
 Configuration options are generated from the registry to prevent drift. Any manual edits
 inside the generated block are overwritten by `cmd/configgen`.
 
-Note: YAML compatibility keys under `openWebIF.*` map to the registry's `enigma2.*` entries.
-Defaults and env bindings are listed under `enigma2.*` below.
+Legacy YAML keys under `openWebIF.*` are rejected at load time.
+Use canonical `enigma2.*` keys; defaults and env bindings are listed under `enigma2.*` below.
 
 Generated artifacts:
 
@@ -79,7 +79,7 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 
 ### enigma2
 
-Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
+Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |

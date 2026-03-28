@@ -20,7 +20,7 @@ import (
 )
 
 func TestPutSystemConfigRejectsInvalid(t *testing.T) {
-	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	cfg, err := config.NewLoader("", "test").Load()
 	require.NoError(t, err)
@@ -47,7 +47,7 @@ func TestPutSystemConfigRejectsInvalid(t *testing.T) {
 }
 
 func TestPutSystemConfigTriggersShutdown(t *testing.T) {
-	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	cfg, err := config.NewLoader("", "test").Load()
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestPutSystemConfigTriggersShutdown(t *testing.T) {
 }
 
 func TestPutSystemConfigDoesNotAliasCurrent(t *testing.T) {
-	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	cfg, err := config.NewLoader("", "test").Load()
 	require.NoError(t, err)

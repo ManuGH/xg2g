@@ -9,7 +9,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/clientplayback"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,6 +20,8 @@ type stubDeps struct {
 	svc          RecordingsService
 	cfg          config.AppConfig
 	hostPressure playbackprofile.HostPressureAssessment
+	truthSource  ChannelTruthSource
+	auditSink    DecisionAuditSink
 }
 
 func (d stubDeps) RecordingsService() RecordingsService {
@@ -28,8 +32,46 @@ func (d stubDeps) Config() config.AppConfig {
 	return d.cfg
 }
 
+func (d stubDeps) ChannelTruthSource() ChannelTruthSource {
+	return d.truthSource
+}
+
+func (d stubDeps) DecisionAuditSink() DecisionAuditSink {
+	return d.auditSink
+}
+
 func (d stubDeps) HostPressure(context.Context) playbackprofile.HostPressureAssessment {
 	return d.hostPressure
+}
+
+type stubTruthSource struct {
+	getCapabilityFn func(serviceRef string) (scan.Capability, bool)
+	lastServiceRef  string
+	calls           int
+}
+
+func (s *stubTruthSource) GetCapability(serviceRef string) (scan.Capability, bool) {
+	s.calls++
+	s.lastServiceRef = serviceRef
+	if s.getCapabilityFn == nil {
+		return scan.Capability{}, false
+	}
+	return s.getCapabilityFn(serviceRef)
+}
+
+type stubDecisionAuditSink struct {
+	recordFn  func(ctx context.Context, event decision.Event) error
+	lastEvent decision.Event
+	callCount int
+}
+
+func (s *stubDecisionAuditSink) Record(ctx context.Context, event decision.Event) error {
+	s.callCount++
+	s.lastEvent = event
+	if s.recordFn == nil {
+		return nil
+	}
+	return s.recordFn(ctx, event)
 }
 
 type stubRecordingsService struct {

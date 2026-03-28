@@ -133,10 +133,10 @@ type AboutInfo struct {
 		FriendlyChipsetDescription string `json:"friendlychipsetdescription"`
 		FriendlyChipsetText        string `json:"friendlychipsettext"`
 
-		// Memory (OpenWebIF returns these in a non-intuitive order!)
-		Mem1 string `json:"mem1"` // FREE memory (not used!) e.g., "577 MB"
-		Mem2 string `json:"mem2"` // USED memory (not free!) e.g., "13 MB"
-		Mem3 string `json:"mem3"` // TOTAL memory e.g., "590 MB"
+		// Memory (live OpenWebIF returns total/available plus a friendly summary)
+		Mem1 string `json:"mem1"` // TOTAL memory, e.g. "757484 kB"
+		Mem2 string `json:"mem2"` // AVAILABLE/FREE memory, e.g. "548180 kB"
+		Mem3 string `json:"mem3"` // Friendly summary, e.g. "548180 kB frei / 757484 kB insgesamt"
 
 		// Software versions
 		OEVer               string      `json:"oever"`               // OE-Alliance version
@@ -794,7 +794,7 @@ func (c *Client) AddTimer(ctx context.Context, sRef string, begin, end int64, na
 	}
 
 	if !resp.Result {
-		return timerOperationError("timers.add", resp.Message)
+		return timerOperationError("timers.add", http.StatusOK, resp.Message)
 	}
 
 	return nil
@@ -820,7 +820,7 @@ func (c *Client) DeleteTimer(ctx context.Context, sRef string, begin, end int64)
 	}
 
 	if !resp.Result {
-		return timerOperationError("timers.delete", resp.Message)
+		return timerOperationError("timers.delete", http.StatusOK, resp.Message)
 	}
 
 	return nil
@@ -904,7 +904,7 @@ func (c *Client) UpdateTimer(ctx context.Context, oldSRef string, oldBegin, oldE
 			if !resp.Result {
 				// Logic Failure (200 OK but Result=false).
 				// Convert to typed timer operation error for classification.
-				return timerOperationError("timers.change", resp.Message)
+				return timerOperationError("timers.change", http.StatusOK, resp.Message)
 			}
 			return nil
 		}
@@ -1035,11 +1035,6 @@ func (c *Client) shouldPromoteAToB(owiErr *OWIError) bool {
 
 	msg := strings.ToLower(owiErr.Body)
 
-	// User Requirement 1.3: "AND message does NOT match conflict tokens"
-	if c.isConflict(owiErr.Body) {
-		return false
-	}
-
 	// Whitelist check: indicates receiver didn't understand "channel" or "change_*" params.
 	keys := []string{"channel", "change_"}
 	signals := []string{"unknown parameter", "unknown argument"}
@@ -1061,11 +1056,6 @@ func (c *Client) shouldPromoteAToB(owiErr *OWIError) bool {
 func (c *Client) isSafeForFallback(owiErr *OWIError) bool {
 	// Rule 1.3: Param-rejection logic error (Status 400 or 200/Result=false)
 	if owiErr.Status != http.StatusBadRequest && owiErr.Status != http.StatusOK {
-		return false
-	}
-
-	// Must NOT be a conflict
-	if c.isConflict(owiErr.Body) {
 		return false
 	}
 
@@ -1114,10 +1104,6 @@ func (c *Client) isTechnicalError(err error) bool {
 
 func (c *Client) isConflictError(err error) bool {
 	return IsTimerConflict(err)
-}
-
-func (c *Client) isConflict(msg string) bool {
-	return timerMessageHasAnyToken(msg, timerConflictTokens)
 }
 
 // buildTimerChangeFlavorA builds parameters for Flavor A (channel + change_*).
@@ -1378,6 +1364,7 @@ type StatusInfo struct {
 	Result      bool   `json:"result"`
 	InStandby   string `json:"inStandby"`   // "true" or "false"
 	IsRecording string `json:"isRecording"` // "true" or "false"
+	IsStreaming string `json:"isStreaming"` // "true" or "false"
 	ServiceName string `json:"currservice_name"`
 	ServiceRef  string `json:"currservice_serviceref"`
 }

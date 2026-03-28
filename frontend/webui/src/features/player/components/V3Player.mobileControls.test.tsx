@@ -1,9 +1,10 @@
 /// <reference types="@testing-library/jest-dom" />
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import V3Player from './V3Player';
 import Hls from '../lib/hlsRuntime';
 import type { V3PlayerProps } from '../../../types/v3-player';
+import styles from './V3Player.module.css';
 
 vi.mock('../lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
@@ -80,6 +81,8 @@ describe('V3Player Mobile Controls', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
+
     if (webkitEnterFullscreenDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
     } else {
@@ -131,7 +134,7 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.queryByRole('button', { name: /player\.dvrMode/i })).not.toBeInTheDocument();
   });
 
-  it('hides volume controls on mobile WebKit when the native HLS path is active', async () => {
+  it('keeps mute controls but hides the volume slider on mobile WebKit when the native HLS path is active', async () => {
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -143,7 +146,31 @@ describe('V3Player Mobile Controls', () => {
     });
 
     expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /unmute|mute/i })).toBeInTheDocument();
+    expect(screen.getByText(/use device buttons/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /player\.pipLabel/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+  });
+
+  it('does not auto-hide the bridge deck on touch devices after the idle timeout', async () => {
+    vi.useFakeTimers();
+
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+
+    const player = container.firstElementChild as HTMLElement;
+    expect(player.className).not.toContain(styles.userIdle);
+
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+
+    expect(player.className).not.toContain(styles.userIdle);
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });
 });
