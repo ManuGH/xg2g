@@ -5,14 +5,21 @@
 package config
 
 import (
-	"os"
 	"strings"
 )
 
 // DecisionSecretFromEnv reads XG2G_DECISION_SECRET from process environment.
 // Returns nil if the variable is unset or whitespace-only.
 func DecisionSecretFromEnv() []byte {
-	value, ok := os.LookupEnv("XG2G_DECISION_SECRET")
+	return DecisionSecretFromLookup(nil)
+}
+
+func DecisionSecretFromLookup(lookup envLookupFunc) []byte {
+	if lookup == nil {
+		lookup = currentProcessLookupEnv()
+	}
+
+	value, ok := lookup("XG2G_DECISION_SECRET")
 	if !ok {
 		return nil
 	}
