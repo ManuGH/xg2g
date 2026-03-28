@@ -27,6 +27,27 @@ type Service struct {
 	deps Deps
 }
 
+type startHardwareState struct {
+	hasGPU       bool
+	av1Verified  bool
+	hevcVerified bool
+	h264Verified bool
+}
+
+type startProfileResolution struct {
+	requestedPlaybackMode string
+	publicRequestProfile  string
+	effectiveProfileID    string
+	profileSpec           model.ProfileSpec
+	operatorSnapshot      profiles.OperatorOverrideSnapshot
+	hostPressureBand      playbackprofile.HostPressureBand
+	hostOverrideApplied   bool
+	bucket                string
+	idempotencyKey        string
+	resolvedIntent        string
+	degradedFrom          string
+}
+
 func NewService(deps Deps) *Service {
 	return &Service{deps: deps}
 }
@@ -45,20 +66,72 @@ func (s *Service) ProcessIntent(ctx context.Context, intent Intent) (*Result, *E
 func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Error) {
 	store := s.deps.SessionStore()
 	bus := s.deps.EventBus()
-
-	// Smart Profile Lookup
-	var cap *scan.Capability
-	if scanner := s.deps.ChannelScanner(); scanner != nil {
-		if c, found := scanner.GetCapability(intent.ServiceRef); found {
-			cap = &c
-		}
+	capability := s.lookupStartCapability(intent.ServiceRef)
+	hardwareState := detectStartHardwareState()
+	hwaccelMode, err := s.resolveStartHWAccelMode(intent, hardwareState)
+	if err != nil {
+		return nil, err
+	}
+	reqProfileID, requestedPlaybackMode, err := s.resolveRequestedStartProfile(intent, hwaccelMode)
+	if err != nil {
+		return nil, err
+	}
+	resolution, err := s.resolveStartProfile(ctx, intent, capability, hardwareState, hwaccelMode, reqProfileID, requestedPlaybackMode)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkStartAdmission(ctx, intent, resolution.profileSpec); err != nil {
+		return nil, err
 	}
 
-	hasGPU := hardware.IsVAAPIReady()
-	av1Verified := hardware.IsVAAPIEncoderReady("av1_vaapi")
-	hevcVerified := hardware.IsVAAPIEncoderReady("hevc_vaapi")
-	h264Verified := hardware.IsVAAPIEncoderReady("h264_vaapi")
+	hwaccelEffective, hwaccelReason, encoderBackend := deriveStartHWAccelSummary(resolution.profileSpec, hwaccelMode, hardwareState.hasGPU)
+	s.logStartProfileResolution(intent, resolution, hardwareState, hwaccelMode, hwaccelEffective, hwaccelReason, encoderBackend)
 
+	if !s.deps.HasTunerSlots() {
+		s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "no_slots")
+		return nil, &Error{Kind: ErrorNoTunerSlots, Message: "no tuner slots configured", RetryAfter: "10"}
+	}
+
+	phaseLabel := "phase2"
+	session := s.buildStartSession(intent, resolution)
+	if replay, err := s.persistStartSession(ctx, intent, store, session, resolution.idempotencyKey, phaseLabel); err != nil {
+		return nil, err
+	} else if replay != nil {
+		return replay, nil
+	}
+	if err := s.publishStartSession(ctx, intent, bus, resolution.effectiveProfileID, phaseLabel); err != nil {
+		return nil, err
+	}
+
+	intent.Logger.Info().Msg("intent accepted")
+	s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "accepted")
+
+	return &Result{
+		SessionID:     intent.SessionID,
+		Status:        "accepted",
+		CorrelationID: intent.CorrelationID,
+	}, nil
+}
+
+func (s *Service) lookupStartCapability(serviceRef string) *scan.Capability {
+	if scanner := s.deps.ChannelScanner(); scanner != nil {
+		if capability, found := scanner.GetCapability(serviceRef); found {
+			return &capability
+		}
+	}
+	return nil
+}
+
+func detectStartHardwareState() startHardwareState {
+	return startHardwareState{
+		hasGPU:       hardware.IsVAAPIReady(),
+		av1Verified:  hardware.IsVAAPIEncoderReady("av1_vaapi"),
+		hevcVerified: hardware.IsVAAPIEncoderReady("hevc_vaapi"),
+		h264Verified: hardware.IsVAAPIEncoderReady("h264_vaapi"),
+	}
+}
+
+func (s *Service) resolveStartHWAccelMode(intent Intent, hw startHardwareState) (profiles.HWAccelMode, *Error) {
 	hwaccelMode := profiles.HWAccelAuto
 	if hwaccel := normalize.Token(intent.Params["hwaccel"]); hwaccel != "" {
 		switch hwaccel {
@@ -70,37 +143,41 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 			hwaccelMode = profiles.HWAccelAuto
 		default:
 			s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "invalid_hwaccel")
-			return nil, &Error{
+			return "", &Error{
 				Kind:    ErrorInvalidInput,
 				Message: fmt.Sprintf("invalid hwaccel value: %q (must be auto, force, or off)", hwaccel),
 			}
 		}
 	}
 
-	if hwaccelMode == profiles.HWAccelForce && !hasGPU {
+	if hwaccelMode == profiles.HWAccelForce && !hw.hasGPU {
 		reason := "no /dev/dri/renderD128"
 		if hardware.HasVAAPI() {
 			reason = "VAAPI preflight encode test failed"
 		}
 		s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hwaccel_unavailable")
-		return nil, &Error{
+		return "", &Error{
 			Kind:    ErrorInvalidInput,
 			Message: fmt.Sprintf("hwaccel=force requested but GPU not available (%s)", reason),
 		}
 	}
 
+	return hwaccelMode, nil
+}
+
+func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profiles.HWAccelMode) (string, string, *Error) {
 	reqProfileID := "universal"
 	requestedPlaybackMode := normalize.Token(intent.Params["playback_mode"])
 	if requestedPlaybackMode != "" {
 		_, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.Params)
 		if tokenErr != nil {
 			s.deps.IncLivePlaybackKey(keyLabel, resultLabel)
-			return nil, &Error{Kind: ErrorInvalidInput, Message: tokenErr.Error()}
+			return "", "", &Error{Kind: ErrorInvalidInput, Message: tokenErr.Error()}
 		}
 		s.deps.IncLivePlaybackKey(keyLabel, resultLabel)
 		mappedProfile, mapErr := mapPlaybackModeToProfile(requestedPlaybackMode)
 		if mapErr != nil {
-			return nil, &Error{Kind: ErrorInvalidInput, Message: mapErr.Error()}
+			return "", "", &Error{Kind: ErrorInvalidInput, Message: mapErr.Error()}
 		}
 		reqProfileID = mappedProfile
 		if requestedPlaybackMode == "transcode" {
@@ -108,86 +185,94 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 				reqProfileID = picked
 			}
 		}
-	} else if p := normalize.Token(intent.Params["profile"]); p != "" {
-		reqProfileID = p
-	} else if picked := pickProfileForCodecs(intent.Params["codecs"], hwaccelMode); picked != "" {
-		reqProfileID = picked
+		return reqProfileID, requestedPlaybackMode, nil
 	}
-	publicRequestProfile := profiles.PublicProfileName(reqProfileID)
-	operatorCfg := s.deps.PlaybackOperator()
-	effectiveProfileID, operatorSnapshot := profiles.ResolveRequestedProfileWithSourceOperatorOverride(reqProfileID, string(intent.Mode), intent.ServiceRef, operatorCfg)
-	effectiveProfileID = profiles.NormalizeRequestedProfileID(effectiveProfileID)
-	operatorActive := operatorSnapshot.ForcedIntent != playbackprofile.IntentUnknown || operatorSnapshot.MaxQualityRung != playbackprofile.RungUnknown
-	hostPressure := s.deps.HostPressure(ctx)
-	hostPressureBand := playbackprofile.NormalizeHostPressureBand(string(hostPressure.EffectiveBand))
-	hostOverrideApplied := false
+	if profileID := normalize.Token(intent.Params["profile"]); profileID != "" {
+		return profileID, "", nil
+	}
+	if picked := pickProfileForCodecs(intent.Params["codecs"], hwaccelMode); picked != "" {
+		return picked, "", nil
+	}
+	return reqProfileID, "", nil
+}
 
-	bucket := "0"
-	if intent.StartMs != nil && *intent.StartMs > 0 {
-		bucket = fmt.Sprintf("%d", *intent.StartMs/1000)
+func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capability *scan.Capability, hw startHardwareState, hwaccelMode profiles.HWAccelMode, reqProfileID, requestedPlaybackMode string) (startProfileResolution, *Error) {
+	resolution := startProfileResolution{
+		requestedPlaybackMode: requestedPlaybackMode,
+		publicRequestProfile:  profiles.PublicProfileName(reqProfileID),
 	}
-	idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, effectiveProfileID, bucket)
+	operatorCfg := s.deps.PlaybackOperator()
+	resolution.effectiveProfileID, resolution.operatorSnapshot = profiles.ResolveRequestedProfileWithSourceOperatorOverride(reqProfileID, string(intent.Mode), intent.ServiceRef, operatorCfg)
+	resolution.effectiveProfileID = profiles.NormalizeRequestedProfileID(resolution.effectiveProfileID)
+	resolution.hostPressureBand = playbackprofile.NormalizeHostPressureBand(string(s.deps.HostPressure(ctx).EffectiveBand))
+	resolution.bucket = "0"
+	if intent.StartMs != nil && *intent.StartMs > 0 {
+		resolution.bucket = fmt.Sprintf("%d", *intent.StartMs/1000)
+	}
+	resolution.idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, resolution.effectiveProfileID, resolution.bucket)
 
 	profileUserAgent := intent.UserAgent
 	if requestedPlaybackMode != "" {
 		profileUserAgent = ""
 	}
-
 	resolveProfileSpec := func(profileID string) model.ProfileSpec {
-		resolveHasGPU := hasGPU
-		switch profileID {
-		case profiles.ProfileAV1HW:
-			resolveHasGPU = av1Verified
-		case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
-			resolveHasGPU = hevcVerified
-		case profiles.ProfileH264FMP4:
-			resolveHasGPU = h264Verified
-		}
-		return profiles.Resolve(profileID, profileUserAgent, int(s.deps.DVRWindow().Seconds()), cap, resolveHasGPU, hwaccelMode)
+		return s.resolveProfileSpec(profileID, profileUserAgent, capability, hw, hwaccelMode)
 	}
-
-	profileSpec := resolveProfileSpec(effectiveProfileID)
-	if cappedSpec, changed := profiles.ApplyMaxQualityRung(profileSpec, operatorSnapshot.MaxQualityRung); changed {
-		profileSpec = cappedSpec
-		operatorSnapshot.OverrideApplied = true
+	resolution.profileSpec = resolveProfileSpec(resolution.effectiveProfileID)
+	if cappedSpec, changed := profiles.ApplyMaxQualityRung(resolution.profileSpec, resolution.operatorSnapshot.MaxQualityRung); changed {
+		resolution.profileSpec = cappedSpec
+		resolution.operatorSnapshot.OverrideApplied = true
 	}
+	operatorActive := resolution.operatorSnapshot.ForcedIntent != playbackprofile.IntentUnknown || resolution.operatorSnapshot.MaxQualityRung != playbackprofile.RungUnknown
 	if !operatorActive {
-		if downgradedProfileID, changed := profiles.ApplyHostPressureOverride(effectiveProfileID, hostPressureBand); changed {
-			effectiveProfileID = downgradedProfileID
-			profileSpec = resolveProfileSpec(effectiveProfileID)
-			hostOverrideApplied = true
+		if downgradedProfileID, changed := profiles.ApplyHostPressureOverride(resolution.effectiveProfileID, resolution.hostPressureBand); changed {
+			resolution.effectiveProfileID = downgradedProfileID
+			resolution.profileSpec = resolveProfileSpec(resolution.effectiveProfileID)
+			resolution.hostOverrideApplied = true
 		}
 	}
-	if requiredEncoder, ok := requiredVerifiedVAAPIEncoderForProfile(effectiveProfileID); ok {
+	if requiredEncoder, ok := requiredVerifiedVAAPIEncoderForProfile(resolution.effectiveProfileID); ok {
 		if hwaccelMode == profiles.HWAccelOff {
 			s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hw_profile_conflict")
-			return nil, &Error{
+			return startProfileResolution{}, &Error{
 				Kind:    ErrorInvalidInput,
-				Message: fmt.Sprintf("profile %q requires verified hardware acceleration; hwaccel=off is incompatible", effectiveProfileID),
+				Message: fmt.Sprintf("profile %q requires verified hardware acceleration; hwaccel=off is incompatible", resolution.effectiveProfileID),
 			}
 		}
 		if !hardware.IsVAAPIEncoderReady(requiredEncoder) {
 			s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hw_profile_unavailable")
-			return nil, &Error{
+			return startProfileResolution{}, &Error{
 				Kind:    ErrorInvalidInput,
-				Message: fmt.Sprintf("profile %q requires verified %s on this host", effectiveProfileID, requiredEncoder),
+				Message: fmt.Sprintf("profile %q requires verified %s on this host", resolution.effectiveProfileID, requiredEncoder),
 			}
 		}
 	}
-	resolvedIntent := profiles.PublicProfileName(profileSpec.Name)
-	degradedFrom := ""
-	if publicRequestProfile != "" && resolvedIntent != "" && publicRequestProfile != resolvedIntent {
-		degradedFrom = publicRequestProfile
+	resolution.resolvedIntent = profiles.PublicProfileName(resolution.profileSpec.Name)
+	if resolution.publicRequestProfile != "" && resolution.resolvedIntent != "" && resolution.publicRequestProfile != resolution.resolvedIntent {
+		resolution.degradedFrom = resolution.publicRequestProfile
 	}
+	return resolution, nil
+}
 
+func (s *Service) resolveProfileSpec(profileID, userAgent string, capability *scan.Capability, hw startHardwareState, hwaccelMode profiles.HWAccelMode) model.ProfileSpec {
+	resolveHasGPU := hw.hasGPU
+	switch profileID {
+	case profiles.ProfileAV1HW:
+		resolveHasGPU = hw.av1Verified
+	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
+		resolveHasGPU = hw.hevcVerified
+	case profiles.ProfileH264FMP4:
+		resolveHasGPU = hw.h264Verified
+	}
+	return profiles.Resolve(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveHasGPU, hwaccelMode)
+}
+
+func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profileSpec model.ProfileSpec) *Error {
 	controller := s.deps.AdmissionController()
 	if controller == nil {
-		return nil, &Error{Kind: ErrorAdmissionUnavailable}
+		return &Error{Kind: ErrorAdmissionUnavailable}
 	}
-
-	runtimeState := s.deps.AdmissionRuntimeState(ctx)
-	wantsTranscode := profileSpec.TranscodeVideo
-	decision := controller.Check(ctx, admission.Request{WantsTranscode: wantsTranscode}, runtimeState)
+	decision := controller.Check(ctx, admission.Request{WantsTranscode: profileSpec.TranscodeVideo}, s.deps.AdmissionRuntimeState(ctx))
 	if !decision.Allow {
 		if decision.Problem != nil {
 			s.deps.RecordReject(decision.Problem.Code)
@@ -210,73 +295,70 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 			Msg("admission rejected")
 
 		s.deps.RecordIntent(string(model.IntentTypeStreamStart), "admission", problemCode)
-		return nil, &Error{Kind: ErrorAdmissionRejected, RetryAfter: retryAfter, AdmissionProblem: decision.Problem}
+		return &Error{Kind: ErrorAdmissionRejected, RetryAfter: retryAfter, AdmissionProblem: decision.Problem}
 	}
-
 	s.deps.RecordAdmit()
+	return nil
+}
 
-	var hwaccelEffective, hwaccelReason, encoderBackend string
+func deriveStartHWAccelSummary(profileSpec model.ProfileSpec, hwaccelMode profiles.HWAccelMode, hasGPU bool) (effective, reason, backend string) {
 	if profileSpec.TranscodeVideo {
 		if profiles.IsGPUBackedProfile(profileSpec.HWAccel) {
-			hwaccelEffective = "gpu"
-			encoderBackend = "vaapi"
+			effective = "gpu"
+			backend = "vaapi"
 			if hwaccelMode == profiles.HWAccelForce {
-				hwaccelReason = "forced"
+				reason = "forced"
 			} else {
-				hwaccelReason = "auto_has_gpu"
+				reason = "auto_has_gpu"
 			}
-		} else {
-			hwaccelEffective = "cpu"
-			encoderBackend = profileSpec.VideoCodec
-			if hwaccelMode == profiles.HWAccelOff {
-				hwaccelReason = "user_disabled"
-			} else if !hasGPU {
-				hwaccelReason = "no_gpu_available"
-			} else {
-				hwaccelReason = "profile_cpu_only"
-			}
+			return effective, reason, backend
 		}
-	} else {
-		hwaccelEffective = "off"
-		hwaccelReason = "passthrough"
-		encoderBackend = "none"
+		effective = "cpu"
+		backend = profileSpec.VideoCodec
+		if hwaccelMode == profiles.HWAccelOff {
+			reason = "user_disabled"
+		} else if !hasGPU {
+			reason = "no_gpu_available"
+		} else {
+			reason = "profile_cpu_only"
+		}
+		return effective, reason, backend
 	}
+	return "off", "passthrough", "none"
+}
 
+func (s *Service) logStartProfileResolution(intent Intent, resolution startProfileResolution, hw startHardwareState, hwaccelMode profiles.HWAccelMode, hwaccelEffective, hwaccelReason, encoderBackend string) {
 	intent.Logger.Info().
 		Str("ua", intent.UserAgent).
-		Str("profile", profileSpec.Name).
-		Str("profile_public", publicRequestProfile).
-		Str("profile_effective", effectiveProfileID).
-		Int("dvr_window_sec", profileSpec.DVRWindowSec).
-		Str("idem_key", idempotencyKey).
-		Bool("gpu_available", hasGPU).
+		Str("profile", resolution.profileSpec.Name).
+		Str("profile_public", resolution.publicRequestProfile).
+		Str("profile_effective", resolution.effectiveProfileID).
+		Int("dvr_window_sec", resolution.profileSpec.DVRWindowSec).
+		Str("idem_key", resolution.idempotencyKey).
+		Bool("gpu_available", hw.hasGPU).
 		Str("hwaccel_requested", string(hwaccelMode)).
 		Str("hwaccel_effective", hwaccelEffective).
 		Str("hwaccel_reason", hwaccelReason).
-		Str("operator_force_intent", playbackprofile.PublicIntentName(operatorSnapshot.ForcedIntent)).
-		Str("operator_max_quality_rung", string(operatorSnapshot.MaxQualityRung)).
-		Bool("operator_disable_client_fallback", operatorSnapshot.DisableClientFallback).
-		Bool("operator_override_applied", operatorSnapshot.OverrideApplied).
-		Str("host_pressure_band", string(hostPressureBand)).
-		Bool("host_override_applied", hostOverrideApplied).
+		Str("operator_force_intent", playbackprofile.PublicIntentName(resolution.operatorSnapshot.ForcedIntent)).
+		Str("operator_max_quality_rung", string(resolution.operatorSnapshot.MaxQualityRung)).
+		Bool("operator_disable_client_fallback", resolution.operatorSnapshot.DisableClientFallback).
+		Bool("operator_override_applied", resolution.operatorSnapshot.OverrideApplied).
+		Str("host_pressure_band", string(resolution.hostPressureBand)).
+		Bool("host_override_applied", resolution.hostOverrideApplied).
 		Str("encoder_backend", encoderBackend).
-		Str("video_codec", profileSpec.VideoCodec).
-		Str("container", profileSpec.Container).
-		Bool("llhls", profileSpec.LLHLS).
+		Str("video_codec", resolution.profileSpec.VideoCodec).
+		Str("container", resolution.profileSpec.Container).
+		Bool("llhls", resolution.profileSpec.LLHLS).
 		Msg("intent profile resolved")
+}
 
-	if !s.deps.HasTunerSlots() {
-		s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "no_slots")
-		return nil, &Error{Kind: ErrorNoTunerSlots, Message: "no tuner slots configured", RetryAfter: "10"}
-	}
-
-	phaseLabel := "phase2"
+func buildStartRequestParams(intent Intent, resolution startProfileResolution) map[string]string {
 	requestParams := map[string]string{
-		"profile": effectiveProfileID,
-		"bucket":  bucket,
+		"profile": resolution.effectiveProfileID,
+		"bucket":  resolution.bucket,
 	}
-	if requestedPlaybackMode != "" {
-		requestParams[model.CtxKeyClientPath] = requestedPlaybackMode
+	if resolution.requestedPlaybackMode != "" {
+		requestParams[model.CtxKeyClientPath] = resolution.requestedPlaybackMode
 	}
 	if clientFamily := normalize.Token(intent.Params[model.CtxKeyClientFamily]); clientFamily != "" {
 		requestParams[model.CtxKeyClientFamily] = clientFamily
@@ -296,42 +378,49 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	if intent.Mode != "" {
 		requestParams[model.CtxKeyMode] = intent.Mode
 	}
+	return requestParams
+}
 
-	var operatorTrace *model.PlaybackOperatorTrace
-	if operatorSnapshot.OverrideApplied || operatorSnapshot.ForcedIntent != playbackprofile.IntentUnknown || operatorSnapshot.MaxQualityRung != playbackprofile.RungUnknown || operatorSnapshot.DisableClientFallback {
-		operatorTrace = &model.PlaybackOperatorTrace{
-			ForcedIntent:           playbackprofile.PublicIntentName(operatorSnapshot.ForcedIntent),
-			MaxQualityRung:         string(operatorSnapshot.MaxQualityRung),
-			ClientFallbackDisabled: operatorSnapshot.DisableClientFallback,
-			RuleName:               operatorSnapshot.RuleName,
-			RuleScope:              operatorSnapshot.RuleScope,
-			OverrideApplied:        operatorSnapshot.OverrideApplied,
-		}
+func buildStartOperatorTrace(snapshot profiles.OperatorOverrideSnapshot) *model.PlaybackOperatorTrace {
+	if !snapshot.OverrideApplied && snapshot.ForcedIntent == playbackprofile.IntentUnknown && snapshot.MaxQualityRung == playbackprofile.RungUnknown && !snapshot.DisableClientFallback {
+		return nil
 	}
+	return &model.PlaybackOperatorTrace{
+		ForcedIntent:           playbackprofile.PublicIntentName(snapshot.ForcedIntent),
+		MaxQualityRung:         string(snapshot.MaxQualityRung),
+		ClientFallbackDisabled: snapshot.DisableClientFallback,
+		RuleName:               snapshot.RuleName,
+		RuleScope:              snapshot.RuleScope,
+		OverrideApplied:        snapshot.OverrideApplied,
+	}
+}
 
-	videoQualityRung := model.TraceVideoQualityRungFromProfile(profileSpec)
-
+func (s *Service) buildStartSession(intent Intent, resolution startProfileResolution) *model.SessionRecord {
+	videoQualityRung := model.TraceVideoQualityRungFromProfile(resolution.profileSpec)
 	session := lifecycle.NewSessionRecord(time.Now())
 	session.SessionID = intent.SessionID
 	session.ServiceRef = intent.ServiceRef
-	session.Profile = profileSpec
+	session.Profile = resolution.profileSpec
 	session.CorrelationID = intent.CorrelationID
 	session.LeaseExpiresAtUnix = time.Now().Add(s.deps.SessionLeaseTTL()).Unix()
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
-	session.ContextData = requestParams
+	session.ContextData = buildStartRequestParams(intent, resolution)
 	session.PlaybackTrace = &model.PlaybackTrace{
-		RequestProfile:      publicRequestProfile,
-		RequestedIntent:     publicRequestProfile,
-		ResolvedIntent:      resolvedIntent,
+		RequestProfile:      resolution.publicRequestProfile,
+		RequestedIntent:     resolution.publicRequestProfile,
+		ResolvedIntent:      resolution.resolvedIntent,
 		QualityRung:         videoQualityRung,
 		VideoQualityRung:    videoQualityRung,
-		DegradedFrom:        degradedFrom,
-		ClientPath:          requestedPlaybackMode,
-		Operator:            operatorTrace,
-		HostPressureBand:    string(hostPressureBand),
-		HostOverrideApplied: hostOverrideApplied,
+		DegradedFrom:        resolution.degradedFrom,
+		ClientPath:          resolution.requestedPlaybackMode,
+		Operator:            buildStartOperatorTrace(resolution.operatorSnapshot),
+		HostPressureBand:    string(resolution.hostPressureBand),
+		HostOverrideApplied: resolution.hostOverrideApplied,
 	}
+	return session
+}
 
+func (s *Service) persistStartSession(ctx context.Context, intent Intent, store SessionStore, session *model.SessionRecord, idempotencyKey, phaseLabel string) (*Result, *Error) {
 	persisted := false
 	for attempt := 0; attempt < startReplayRecoveryAttempts; attempt++ {
 		existingID, exists, err := store.PutSessionWithIdempotency(ctx, session, idempotencyKey, admissionLeaseTTL)
@@ -365,13 +454,17 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 			intent.Logger.Warn().Str("existing_sid", existingID).Int("attempt", attempt+1).Msg("discarded stale idempotent replay for terminal session")
 		}
 	}
-	if !persisted {
-		err := fmt.Errorf("stale idempotency mapping persisted after %d attempts", startReplayRecoveryAttempts)
-		intent.Logger.Error().Err(err).Str("idem_key", idempotencyKey).Msg("failed to refresh stale idempotency mapping")
-		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
-		return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to refresh stale intent mapping", Cause: err}
+	if persisted {
+		return nil, nil
 	}
 
+	err := fmt.Errorf("stale idempotency mapping persisted after %d attempts", startReplayRecoveryAttempts)
+	intent.Logger.Error().Err(err).Str("idem_key", idempotencyKey).Msg("failed to refresh stale idempotency mapping")
+	s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+	return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to refresh stale intent mapping", Cause: err}
+}
+
+func (s *Service) publishStartSession(ctx context.Context, intent Intent, bus EventBus, effectiveProfileID, phaseLabel string) *Error {
 	evt := model.StartSessionEvent{
 		Type:          model.EventStartSession,
 		SessionID:     intent.SessionID,
@@ -388,18 +481,10 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		intent.Logger.Error().Err(err).Msg("failed to publish start event")
 		s.deps.RecordPublish("session.start", "error")
 		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "publish_error")
-		return nil, &Error{Kind: ErrorPublishUnavailable, Message: "failed to publish event", Cause: err}
+		return &Error{Kind: ErrorPublishUnavailable, Message: "failed to publish event", Cause: err}
 	}
 	s.deps.RecordPublish("session.start", "ok")
-
-	intent.Logger.Info().Msg("intent accepted")
-	s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "accepted")
-
-	return &Result{
-		SessionID:     intent.SessionID,
-		Status:        "accepted",
-		CorrelationID: intent.CorrelationID,
-	}, nil
+	return nil
 }
 
 func (s *Service) processStop(ctx context.Context, intent Intent) (*Result, *Error) {

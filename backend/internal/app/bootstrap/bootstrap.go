@@ -49,6 +49,7 @@ type Container struct {
 	App           *daemon.App
 
 	snapshot         config.Snapshot
+	piconPool        *jobs.PiconPool
 	scanManager      *scan.Manager
 	verificationWork *verification.Worker
 
@@ -468,6 +469,10 @@ func (c *Container) Start(ctx context.Context) error {
 	}
 
 	c.startOnce.Do(func() {
+		if err := c.initPiconPool(ctx); err != nil {
+			c.Logger.Warn().Err(err).Msg("failed to initialize picon pool; background pre-warm disabled")
+		}
+
 		if c.scanManager != nil {
 			c.scanManager.AttachLifecycle(ctx)
 		}
@@ -486,6 +491,28 @@ func (c *Container) Start(ctx context.Context) error {
 		}
 	})
 
+	return nil
+}
+
+func (c *Container) initPiconPool(ctx context.Context) error {
+	if c == nil || c.snapshot.App.PiconBase == "" || c.piconPool != nil {
+		return nil
+	}
+
+	pool, err := jobs.NewPiconPoolForConfig(ctx, c.snapshot.App)
+	if err != nil {
+		return err
+	}
+	c.piconPool = pool
+	if c.Manager != nil {
+		c.Manager.RegisterShutdownHook("picon_pool_stop", func(context.Context) error {
+			pool.Stop()
+			return nil
+		})
+	}
+	if c.App != nil {
+		c.App.SetPiconPool(pool)
+	}
 	return nil
 }
 
@@ -528,7 +555,7 @@ func (c *Container) Run(ctx context.Context, stop context.CancelFunc) error {
 func (c *Container) runInitialRefresh(ctx context.Context) {
 	time.Sleep(100 * time.Millisecond)
 	c.Logger.Info().Msg("performing initial data refresh (background)")
-	st, err := jobs.Refresh(ctx, c.snapshot)
+	st, err := jobs.RefreshWithOptions(ctx, c.snapshot, jobs.WithPiconPool(c.piconPool))
 	if err != nil {
 		c.Logger.Error().Err(err).Msg("initial data refresh failed")
 		c.Logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")

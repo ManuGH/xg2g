@@ -37,6 +37,12 @@ type outputPlan struct {
 	args []string
 }
 
+type liveSegmentLayout struct {
+	segmentDurationSec     int
+	initSegmentDurationSec int
+	listSize               int
+}
+
 func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]string, error) {
 	codecPhase, err := a.planCodec(spec)
 	if err != nil {
@@ -289,23 +295,58 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 }
 
 func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec, input inputPlan, codec codecPlan) (outputPlan, error) {
-	segmentDurationSec := a.SegmentSeconds
-	initSegmentDurationSec := 0
-	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && segmentDurationSec > safariDirtyHLSTimeSec {
-		segmentDurationSec = safariDirtyHLSTimeSec
-		initSegmentDurationSec = safariDirtyHLSInitTimeSec
-		if initSegmentDurationSec > segmentDurationSec {
-			initSegmentDurationSec = segmentDurationSec
+	layout, err := a.planLiveSegmentLayout(spec)
+	if err != nil {
+		return outputPlan{}, err
+	}
+	fps := a.resolveLiveFPS(ctx, spec, input.inputURL)
+	spec = a.applySafariRuntimeRemuxOverride(ctx, spec, input.inputURL)
+	gop := fps * layout.segmentDurationSec
+
+	out := outputPlan{}
+	out.args = append(out.args,
+		"-map", "0:v:0?",
+		"-map", "0:a:0?",
+	)
+
+	out.args = a.buildLiveVideoOutputArgs(out.args, spec, codec, gop, layout.segmentDurationSec)
+	out.args = appendLiveAudioArgs(out.args, spec)
+	out.args = a.appendLiveHLSArgs(out.args, spec, layout)
+	out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID))
+
+	return out, nil
+}
+
+func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegmentLayout, error) {
+	layout := liveSegmentLayout{
+		segmentDurationSec: a.SegmentSeconds,
+		listSize:           10,
+	}
+	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && layout.segmentDurationSec > safariDirtyHLSTimeSec {
+		layout.segmentDurationSec = safariDirtyHLSTimeSec
+		layout.initSegmentDurationSec = safariDirtyHLSInitTimeSec
+		if layout.initSegmentDurationSec > layout.segmentDurationSec {
+			layout.initSegmentDurationSec = layout.segmentDurationSec
 		}
 	}
-	if segmentDurationSec <= 0 {
-		return outputPlan{}, fmt.Errorf("invalid hls segment seconds: %d", segmentDurationSec)
+	if layout.segmentDurationSec <= 0 {
+		return liveSegmentLayout{}, fmt.Errorf("invalid hls segment seconds: %d", layout.segmentDurationSec)
 	}
+	if a.DVRWindow > 0 {
+		layout.listSize = int(math.Ceil(a.DVRWindow.Seconds() / float64(layout.segmentDurationSec)))
+		if layout.listSize < 3 {
+			layout.listSize = 3
+		}
+	}
+	return layout, nil
+}
+
+func (a *LocalAdapter) defaultLiveFPS(spec ports.StreamSpec, inputURL string) int {
 	fps := a.FPSFallback
 	if fps <= 0 {
 		fps = 25
 	}
-	if (spec.Source.Type != ports.SourceTuner && !isStreamRelayURL(input.inputURL)) && !spec.Profile.Deinterlace {
+	if (spec.Source.Type != ports.SourceTuner && !isStreamRelayURL(inputURL)) && !spec.Profile.Deinterlace {
 		fps = 30
 	}
 	if spec.Profile.Deinterlace || strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") {
@@ -314,197 +355,206 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	if fps <= 0 {
 		fps = 25
 	}
+	return fps
+}
 
-	sourceKey := fpsCacheKey(spec.Source, input.inputURL)
-	skipProbe := false
-	if isStreamRelayURL(input.inputURL) {
-		skipProbe = true
+func (a *LocalAdapter) resolveLiveFPS(ctx context.Context, spec ports.StreamSpec, inputURL string) int {
+	fps := a.defaultLiveFPS(spec, inputURL)
+	sourceKey := fpsCacheKey(spec.Source, inputURL)
+	if resolved, skipProbe := a.resolveSkippedLiveFPS(ctx, spec, inputURL, sourceKey, fps); skipProbe {
+		return resolved
+	}
+	return a.resolveProbedLiveFPS(ctx, spec, inputURL, sourceKey, fps)
+}
+
+func (a *LocalAdapter) resolveSkippedLiveFPS(ctx context.Context, spec ports.StreamSpec, inputURL, sourceKey string, fallback int) (int, bool) {
+	if isStreamRelayURL(inputURL) {
 		logEvt := a.Logger.Info().
 			Str("session_id", spec.SessionID).
 			Str("startup_phase", "fps_probe_skipped_streamrelay").
 			Str("source_key", sourceKey).
-			Str("input_url", sanitizeURLForLog(input.inputURL))
-		if sourceKey != "" {
-			if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
-				fps = cachedFPS
-				logEvt.Int("cached_fps", cachedFPS).
-					Msg("skipping fps probe for stream relay input; using cached fps")
-			} else {
-				logEvt.Int("fallback_fps", fps).
-					Msg("skipping fps probe for stream relay input; using fallback fps")
-			}
-		} else {
-			logEvt.Int("fallback_fps", fps).
-				Msg("skipping fps probe for stream relay input; using fallback fps")
+			Str("input_url", sanitizeURLForLog(inputURL))
+		if cachedFPS, ok := a.cachedFPS(sourceKey); ok {
+			logEvt.Int("cached_fps", cachedFPS).
+				Msg("skipping fps probe for stream relay input; using cached fps")
+			return cachedFPS, true
 		}
+		logEvt.Int("fallback_fps", fallback).
+			Msg("skipping fps probe for stream relay input; using fallback fps")
+		return fallback, true
 	}
-	if !skipProbe && sourceKey != "" {
-		if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
-			a.Logger.Info().
-				Str("session_id", spec.SessionID).
-				Str("startup_phase", "fps_cache_available").
-				Str("source_key", sourceKey).
-				Int("cached_fps", cachedFPS).
-				Msg("fps cache available before probe")
-			if a.SkipFPSProbeOnCache {
-				warmupSucceeded := true
-				if a.SkipFPSProbeWarmup > 0 && isHTTPInputURL(input.inputURL) {
-					a.Logger.Info().
-						Str("session_id", spec.SessionID).
-						Str("startup_phase", "fps_probe_warmup_started").
-						Str("source_key", sourceKey).
-						Str("input_url", sanitizeURLForLog(input.inputURL)).
-						Dur("warmup_duration", a.SkipFPSProbeWarmup).
-						Msg("starting cache-hit stream warmup")
-					warmupResult, warmupErr := a.warmupInputStream(ctx, input.inputURL, a.SkipFPSProbeWarmup)
-					warmupEvt := a.Logger.Info().
-						Str("session_id", spec.SessionID).
-						Str("startup_phase", "fps_probe_warmup_finished").
-						Str("source_key", sourceKey).
-						Str("input_url", sanitizeURLForLog(input.inputURL)).
-						Int("warmup_bytes", warmupResult.bytes).
-						Int("http_status", warmupResult.httpStatus).
-						Int64("latency_ms", warmupResult.latencyMs)
-					if warmupErr != nil {
-						warmupEvt = warmupEvt.Err(warmupErr)
-						warmupSucceeded = false
-					}
-					warmupEvt.Msg("cache-hit stream warmup finished")
-				}
-				if warmupSucceeded {
-					fps = cachedFPS
-					skipProbe = true
-					a.Logger.Info().
-						Str("session_id", spec.SessionID).
-						Str("startup_phase", "fps_probe_skipped").
-						Str("source_key", sourceKey).
-						Int("cached_fps", cachedFPS).
-						Msg("skipping fps probe because cached fps is available")
-				} else {
-					a.Logger.Warn().
-						Str("session_id", spec.SessionID).
-						Str("startup_phase", "fps_probe_skip_aborted").
-						Str("source_key", sourceKey).
-						Int("cached_fps", cachedFPS).
-						Msg("cache-hit stream warmup failed, falling back to fps probe")
-				}
-			}
-		}
+	if sourceKey == "" {
+		return fallback, false
 	}
-	if !skipProbe {
-		a.Logger.Info().
-			Str("session_id", spec.SessionID).
-			Str("startup_phase", "fps_probe_started").
-			Str("source_key", sourceKey).
-			Str("input_url", sanitizeURLForLog(input.inputURL)).
-			Msg("fps probe started")
-		detected, basis, err := a.probeFPS(ctx, input.inputURL)
-		probeEvt := a.Logger.Info().
-			Str("session_id", spec.SessionID).
-			Str("startup_phase", "fps_probe_finished").
-			Str("source_key", sourceKey).
-			Str("input_url", sanitizeURLForLog(input.inputURL))
-		if err != nil {
-			probeEvt = probeEvt.Err(err)
-		} else {
-			probeEvt = probeEvt.Int("detected_fps", detected).Str("fps_basis", basis)
-		}
-		probeEvt.Msg("fps probe finished")
-		if err == nil && detected >= a.FPSMin && detected <= a.FPSMax {
-			fps = detected
-			if sourceKey != "" {
-				a.setLastKnownFPS(sourceKey, detected)
-			}
-			a.Logger.Debug().
-				Str("sessionId", spec.SessionID).
-				Int("fps", fps).
-				Str("fps_basis", basis).
-				Str("url", sanitizeURLForLog(input.inputURL)).
-				Msg("detected input fps")
-		} else {
-			if err == nil {
-				err = fmt.Errorf("detected fps out of range: %d", detected)
-			}
-			if sourceKey != "" {
-				if cachedFPS, ok := a.getLastKnownFPS(sourceKey); ok && cachedFPS >= a.FPSMin && cachedFPS <= a.FPSMax {
-					fps = cachedFPS
-					a.Logger.Warn().
-						Str("sessionId", spec.SessionID).
-						Err(err).
-						Int("cached_fps", cachedFPS).
-						Str("fps_basis", "last_known_source").
-						Str("source_key", sourceKey).
-						Int("fps_min", a.FPSMin).
-						Int("fps_max", a.FPSMax).
-						Str("url", sanitizeURLForLog(input.inputURL)).
-						Msg("fps detection failed, using last known source fps")
-				} else {
-					a.Logger.Warn().
-						Str("sessionId", spec.SessionID).
-						Err(err).
-						Int("fallback_fps", fps).
-						Int("fps_min", a.FPSMin).
-						Int("fps_max", a.FPSMax).
-						Str("url", sanitizeURLForLog(input.inputURL)).
-						Msg("fps detection failed, using fallback")
-				}
-			} else {
-				a.Logger.Warn().
-					Str("sessionId", spec.SessionID).
-					Err(err).
-					Int("fallback_fps", fps).
-					Int("fps_min", a.FPSMin).
-					Int("fps_max", a.FPSMax).
-					Str("url", sanitizeURLForLog(input.inputURL)).
-					Msg("fps detection failed, using fallback")
-			}
-		}
+	cachedFPS, ok := a.cachedFPS(sourceKey)
+	if !ok {
+		return fallback, false
 	}
+	a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "fps_cache_available").
+		Str("source_key", sourceKey).
+		Int("cached_fps", cachedFPS).
+		Msg("fps cache available before probe")
+	if !a.SkipFPSProbeOnCache {
+		return fallback, false
+	}
+	if a.shouldAbortCachedFPSSkip(ctx, spec, inputURL, sourceKey, cachedFPS) {
+		return fallback, false
+	}
+	a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "fps_probe_skipped").
+		Str("source_key", sourceKey).
+		Int("cached_fps", cachedFPS).
+		Msg("skipping fps probe because cached fps is available")
+	return cachedFPS, true
+}
 
-	gop := fps * segmentDurationSec
-	listSize := 10
-	if a.DVRWindow > 0 {
-		listSize = int(math.Ceil(a.DVRWindow.Seconds() / float64(segmentDurationSec)))
-		if listSize < 3 {
-			listSize = 3
-		}
+func (a *LocalAdapter) shouldAbortCachedFPSSkip(ctx context.Context, spec ports.StreamSpec, inputURL, sourceKey string, cachedFPS int) bool {
+	if a.SkipFPSProbeWarmup <= 0 || !isHTTPInputURL(inputURL) {
+		return false
 	}
-
-	out := outputPlan{}
-	out.args = append(out.args,
-		"-map", "0:v:0?",
-		"-map", "0:a:0?",
-	)
-
-	if a.shouldPreferSafariRuntimeRemux(ctx, spec, input.inputURL) {
-		spec.Profile.TranscodeVideo = false
-		spec.Profile.Deinterlace = false
-		// Native Safari is tolerant on MPEG-TS HLS, but remuxed broadcast H.264
-		// inside fMP4 has shown audio-only / black-video failures in production.
-		// Keep the runtime-remux optimization, but package it as classic TS HLS.
-		spec.Profile.Container = "mpegts"
-		if spec.Profile.AudioBitrateK <= 0 {
-			spec.Profile.AudioBitrateK = 192
-		}
+	a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "fps_probe_warmup_started").
+		Str("source_key", sourceKey).
+		Str("input_url", sanitizeURLForLog(inputURL)).
+		Dur("warmup_duration", a.SkipFPSProbeWarmup).
+		Msg("starting cache-hit stream warmup")
+	warmupResult, warmupErr := a.warmupInputStream(ctx, inputURL, a.SkipFPSProbeWarmup)
+	warmupEvt := a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "fps_probe_warmup_finished").
+		Str("source_key", sourceKey).
+		Str("input_url", sanitizeURLForLog(inputURL)).
+		Int("warmup_bytes", warmupResult.bytes).
+		Int("http_status", warmupResult.httpStatus).
+		Int64("latency_ms", warmupResult.latencyMs)
+	if warmupErr != nil {
+		warmupEvt = warmupEvt.Err(warmupErr)
 	}
+	warmupEvt.Msg("cache-hit stream warmup finished")
+	if warmupErr == nil {
+		return false
+	}
+	a.Logger.Warn().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "fps_probe_skip_aborted").
+		Str("source_key", sourceKey).
+		Int("cached_fps", cachedFPS).
+		Msg("cache-hit stream warmup failed, falling back to fps probe")
+	return true
+}
 
-	if !spec.Profile.TranscodeVideo && !usesLegacyCPUDefaults(spec, codec.resolvedCodec) {
-		out.args = a.buildCopyVideoArgs(out.args, spec)
-	} else if codec.useVAAPI {
-		if codec.fullVAAPI {
-			out.args = a.buildVaapiVideoArgs(out.args, spec, codec.resolvedCodec, gop, segmentDurationSec)
-		} else {
-			out.args = a.buildVaapiEncodeOnlyVideoArgs(out.args, spec, codec.resolvedCodec, gop, segmentDurationSec)
-		}
+func (a *LocalAdapter) resolveProbedLiveFPS(ctx context.Context, spec ports.StreamSpec, inputURL, sourceKey string, fallback int) int {
+	a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "fps_probe_started").
+		Str("source_key", sourceKey).
+		Str("input_url", sanitizeURLForLog(inputURL)).
+		Msg("fps probe started")
+	detected, basis, err := a.probeFPS(ctx, inputURL)
+	probeEvt := a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "fps_probe_finished").
+		Str("source_key", sourceKey).
+		Str("input_url", sanitizeURLForLog(inputURL))
+	if err != nil {
+		probeEvt = probeEvt.Err(err)
 	} else {
-		out.args = a.buildCPUVideoArgs(out.args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+		probeEvt = probeEvt.Int("detected_fps", detected).Str("fps_basis", basis)
 	}
+	probeEvt.Msg("fps probe finished")
+	if err == nil && a.isValidFPS(detected) {
+		if sourceKey != "" {
+			a.setLastKnownFPS(sourceKey, detected)
+		}
+		a.Logger.Debug().
+			Str("sessionId", spec.SessionID).
+			Int("fps", detected).
+			Str("fps_basis", basis).
+			Str("url", sanitizeURLForLog(inputURL)).
+			Msg("detected input fps")
+		return detected
+	}
+	if err == nil {
+		err = fmt.Errorf("detected fps out of range: %d", detected)
+	}
+	if cachedFPS, ok := a.cachedFPS(sourceKey); ok {
+		a.Logger.Warn().
+			Str("sessionId", spec.SessionID).
+			Err(err).
+			Int("cached_fps", cachedFPS).
+			Str("fps_basis", "last_known_source").
+			Str("source_key", sourceKey).
+			Int("fps_min", a.FPSMin).
+			Int("fps_max", a.FPSMax).
+			Str("url", sanitizeURLForLog(inputURL)).
+			Msg("fps detection failed, using last known source fps")
+		return cachedFPS
+	}
+	a.Logger.Warn().
+		Str("sessionId", spec.SessionID).
+		Err(err).
+		Int("fallback_fps", fallback).
+		Int("fps_min", a.FPSMin).
+		Int("fps_max", a.FPSMax).
+		Str("url", sanitizeURLForLog(inputURL)).
+		Msg("fps detection failed, using fallback")
+	return fallback
+}
 
+func (a *LocalAdapter) cachedFPS(sourceKey string) (int, bool) {
+	if sourceKey == "" {
+		return 0, false
+	}
+	cachedFPS, ok := a.getLastKnownFPS(sourceKey)
+	if !ok || !a.isValidFPS(cachedFPS) {
+		return 0, false
+	}
+	return cachedFPS, true
+}
+
+func (a *LocalAdapter) isValidFPS(fps int) bool {
+	return fps >= a.FPSMin && fps <= a.FPSMax
+}
+
+func (a *LocalAdapter) applySafariRuntimeRemuxOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) ports.StreamSpec {
+	if !a.shouldPreferSafariRuntimeRemux(ctx, spec, inputURL) {
+		return spec
+	}
+	spec.Profile.TranscodeVideo = false
+	spec.Profile.Deinterlace = false
+	// Native Safari is tolerant on MPEG-TS HLS, but remuxed broadcast H.264
+	// inside fMP4 has shown audio-only / black-video failures in production.
+	// Keep the runtime-remux optimization, but package it as classic TS HLS.
+	spec.Profile.Container = "mpegts"
+	if spec.Profile.AudioBitrateK <= 0 {
+		spec.Profile.AudioBitrateK = 192
+	}
+	return spec
+}
+
+func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.StreamSpec, codec codecPlan, gop, segmentDurationSec int) []string {
+	if !spec.Profile.TranscodeVideo && !usesLegacyCPUDefaults(spec, codec.resolvedCodec) {
+		return a.buildCopyVideoArgs(args, spec)
+	}
+	if codec.useVAAPI {
+		if codec.fullVAAPI {
+			return a.buildVaapiVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+		}
+		return a.buildVaapiEncodeOnlyVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+	}
+	return a.buildCPUVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+}
+
+func appendLiveAudioArgs(args []string, spec ports.StreamSpec) []string {
 	audioBitrate := "192k"
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
 	}
-	out.args = append(out.args,
+	return append(args,
 		"-c:a", "aac",
 		"-b:a", audioBitrate,
 		"-ac", "2",
@@ -512,41 +562,43 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		"-sn",
 		"-f", "hls",
 	)
+}
 
+func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, layout liveSegmentLayout) []string {
 	segmentType := "mpegts"
 	segmentFilename := filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.ts")
 	if strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
 		segmentType = "fmp4"
 		segmentFilename = filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.m4s")
 	}
-
-	out.args = append(out.args,
-		"-hls_time", strconv.Itoa(segmentDurationSec),
-		"-hls_list_size", strconv.Itoa(listSize),
+	args = append(args,
+		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
+		"-hls_list_size", strconv.Itoa(layout.listSize),
 		"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time",
 		"-hls_segment_type", segmentType,
 		"-hls_segment_filename", segmentFilename,
 	)
 	if segmentType == "fmp4" {
-		out.args = append(out.args, "-hls_fmp4_init_filename", "init.mp4")
+		args = append(args, "-hls_fmp4_init_filename", "init.mp4")
 	}
-	if initSegmentDurationSec > 0 {
-		out.args = append(out.args, "-hls_init_time", strconv.Itoa(initSegmentDurationSec))
+	if layout.initSegmentDurationSec > 0 {
+		args = append(args, "-hls_init_time", strconv.Itoa(layout.initSegmentDurationSec))
 	}
+	return args
+}
 
-	outputPath := filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "index.m3u8")
+func (a *LocalAdapter) prepareLiveOutputPath(sessionID string) string {
+	outputPath := filepath.Join(a.HLSRoot, "sessions", sessionID, "index.m3u8")
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
-	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, spec.SessionID); markerPath != "" {
+	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID); markerPath != "" {
 		_ = os.Remove(markerPath)
 	}
 	a.Logger.Info().
-		Str("session_id", spec.SessionID).
+		Str("session_id", sessionID).
 		Str("startup_phase", "output_dir_ready").
 		Str("output_path", outputPath).
 		Msg("output directory ready")
-	out.args = append(out.args, outputPath)
-
-	return out, nil
+	return outputPath
 }
 
 func (a *LocalAdapter) shouldPreferSafariRuntimeRemux(ctx context.Context, spec ports.StreamSpec, inputURL string) bool {

@@ -8,25 +8,21 @@ import (
 	"context"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/playlist"
 	"github.com/rs/zerolog/log"
 )
 
 // PrewarmPicons downloads all missing picons in the background
-func PrewarmPicons(ctx context.Context, cfg config.AppConfig, items []playlist.Item) {
+func PrewarmPicons(ctx context.Context, pool *PiconPool, items []playlist.Item) {
+	if pool == nil {
+		log.Debug().Msg("Picon: pre-warm skipped because no worker pool is configured")
+		return
+	}
+
 	log.Info().Int("count", len(items)).Msg("Picon: Starting background pre-warm")
 
 	refs := extractPiconRefs(items)
 	log.Info().Int("unique_picons", len(refs)).Msg("Picon: Identified unique picons to warm")
-
-	// Get (or init) global pool
-	// Note: Ideally InitPiconPool is called at app startup to ensure workers are running,
-	// but this lazy getter handles it if not.
-	pool := GetPiconPool(cfg)
-
-	// We don't start/stop the pool here anymore (it's global/long-lived).
-	// We just enqueue jobs.
 
 	var enq, dropped int
 	for ref := range refs {

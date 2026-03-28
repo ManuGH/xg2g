@@ -13,7 +13,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 )
@@ -82,4 +84,119 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(tmp, "xmltv.xml")); err != nil {
 		t.Fatalf("xmltv.xml not written: %v", err)
 	}
+}
+
+func TestRefresh_DoesNotPrewarmPiconsWithoutRuntimePool(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/bouquets", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"bouquets": [][]string{{"1:7:TEST:REF:", "Favourites"}},
+		})
+	})
+	mux.HandleFunc("/api/getservices", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"services": []map[string]string{
+				{"servicename": "Chan A", "servicereference": "1:0:19:AAA:1:1:C00000:0:0:0:"},
+			},
+		})
+	})
+	mux.HandleFunc("/picon/", func(http.ResponseWriter, *http.Request) {
+		t.Fatalf("unexpected picon fetch without configured runtime pool")
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir:   tmp,
+		PiconBase: srv.URL,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    srv.URL,
+			StreamPort: 8001,
+		},
+		Bouquet: "Favourites",
+	}
+
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	status, err := Refresh(context.Background(), snap)
+	if err != nil {
+		t.Fatalf("Refresh returned error: %v", err)
+	}
+	if status == nil || status.Channels != 1 {
+		t.Fatalf("unexpected status: %#v", status)
+	}
+
+	if _, err := os.Stat(filepath.Join(tmp, "picons")); !os.IsNotExist(err) {
+		t.Fatalf("picon cache dir should not exist without runtime pool, err=%v", err)
+	}
+}
+
+func TestRefresh_WithRuntimePoolPrewarmsPicons(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/bouquets", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"bouquets": [][]string{{"1:7:TEST:REF:", "Favourites"}},
+		})
+	})
+	serviceRef := "1:0:19:AAA:1:1:C00000:0:0:0:"
+	mux.HandleFunc("/api/getservices", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"services": []map[string]string{
+				{"servicename": "Chan A", "servicereference": serviceRef},
+			},
+		})
+	})
+	mux.HandleFunc("/picon/", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, ".png") {
+			t.Fatalf("unexpected picon path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("fake-png"))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir:   tmp,
+		PiconBase: srv.URL,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    srv.URL,
+			StreamPort: 8001,
+		},
+		Bouquet: "Favourites",
+	}
+
+	pool, err := NewPiconPoolForConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewPiconPoolForConfig returned error: %v", err)
+	}
+	defer pool.Stop()
+
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	status, err := RefreshWithOptions(context.Background(), snap, WithPiconPool(pool))
+	if err != nil {
+		t.Fatalf("Refresh returned error: %v", err)
+	}
+	if status == nil || status.Channels != 1 {
+		t.Fatalf("unexpected status: %#v", status)
+	}
+
+	storeRef := strings.TrimRight(strings.ReplaceAll(serviceRef, ":", "_"), "_")
+	wantFile := filepath.Join(tmp, "picons", storeRef+".png")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(wantFile); err == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("expected prewarmed picon file %q", wantFile)
 }
