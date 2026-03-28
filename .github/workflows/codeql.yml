@@ -60,6 +60,7 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache: true
+          cache-dependency-path: backend/go.sum
 
       # Manual build for Go
       - name: Build Go
