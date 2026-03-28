@@ -130,12 +130,12 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     });
 
     const request = (sdk.postRecordingPlaybackInfo as any).mock.calls[0]?.[0];
-    expect(request?.body?.capabilitiesVersion).toBe(2);
+    expect(request?.body?.capabilitiesVersion).toBe(3);
     expect(request?.body?.audioCodecs).toEqual(['aac', 'mp3']);
     expect(request?.body?.hlsEngines).toContain('native');
     expect(request?.body?.preferredHlsEngine).toBe('native');
     expect(request?.body?.runtimeProbeUsed).toBe(true);
-    expect(request?.body?.runtimeProbeVersion).toBe(1);
+    expect(request?.body?.runtimeProbeVersion).toBe(2);
     expect(request?.body?.clientFamilyFallback).toBe('safari_native');
 
     await waitFor(() => {

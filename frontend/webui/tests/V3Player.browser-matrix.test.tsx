@@ -106,14 +106,14 @@ describe('V3Player Browser Family Matrix', () => {
 
       const streamInfoCall = findFetchCall(global.fetch as any, '/live/stream-info');
       const streamInfoBody = JSON.parse(String(streamInfoCall?.[1]?.body ?? '{}'));
-      expect(streamInfoBody.capabilities.capabilitiesVersion).toBe(2);
+      expect(streamInfoBody.capabilities.capabilitiesVersion).toBe(3);
       expect(streamInfoBody.capabilities.container).toEqual(fixture.capabilities.live.container);
       expect(streamInfoBody.capabilities.videoCodecs).toEqual(fixture.capabilities.live.videoCodecs);
       expect(streamInfoBody.capabilities.audioCodecs).toEqual(fixture.capabilities.live.audioCodecs);
       expect(streamInfoBody.capabilities.hlsEngines).toEqual(fixture.capabilities.live.hlsEngines);
       expect(streamInfoBody.capabilities.preferredHlsEngine).toBe(fixture.capabilities.live.preferredHlsEngine);
       expect(streamInfoBody.capabilities.runtimeProbeUsed).toBe(true);
-      expect(streamInfoBody.capabilities.runtimeProbeVersion).toBe(1);
+      expect(streamInfoBody.capabilities.runtimeProbeVersion).toBe(2);
       expect(streamInfoBody.capabilities.clientFamilyFallback).toBe(fixture.id);
 
       const intentCall = findFetchCall(global.fetch as any, '/intents');
@@ -153,14 +153,14 @@ describe('V3Player Browser Family Matrix', () => {
       });
 
       const request = (sdk.postRecordingPlaybackInfo as any).mock.calls[0]?.[0];
-      expect(request?.body?.capabilitiesVersion).toBe(2);
+      expect(request?.body?.capabilitiesVersion).toBe(3);
       expect(request?.body?.container).toEqual(fixture.capabilities.recording.container);
       expect(request?.body?.videoCodecs).toEqual(fixture.capabilities.recording.videoCodecs);
       expect(request?.body?.audioCodecs).toEqual(fixture.capabilities.recording.audioCodecs);
       expect(request?.body?.hlsEngines).toEqual(fixture.capabilities.recording.hlsEngines);
       expect(request?.body?.preferredHlsEngine).toBe(fixture.capabilities.recording.preferredHlsEngine);
       expect(request?.body?.runtimeProbeUsed).toBe(true);
-      expect(request?.body?.runtimeProbeVersion).toBe(1);
+      expect(request?.body?.runtimeProbeVersion).toBe(2);
       expect(request?.body?.clientFamilyFallback).toBe(fixture.id);
     } finally {
       restoreBrowserFamily();
