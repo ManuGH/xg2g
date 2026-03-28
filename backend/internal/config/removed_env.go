@@ -4,7 +4,6 @@
 package config
 
 import (
-	"os"
 	"sort"
 
 	"github.com/ManuGH/xg2g/internal/log"
@@ -40,7 +39,7 @@ var removedEnvKeys = []RemovedEnvKey{
 
 func FindActiveRemovedEnvKeysWithLookup(lookup envLookupFunc) []RemovedEnvKey {
 	if lookup == nil {
-		lookup = os.LookupEnv
+		lookup = currentProcessLookupEnv()
 	}
 
 	out := make([]RemovedEnvKey, 0, len(removedEnvKeys))
@@ -54,7 +53,7 @@ func FindActiveRemovedEnvKeysWithLookup(lookup envLookupFunc) []RemovedEnvKey {
 }
 
 func FindActiveRemovedEnvKeys() []RemovedEnvKey {
-	return FindActiveRemovedEnvKeysWithLookup(os.LookupEnv)
+	return FindActiveRemovedEnvKeysWithLookup(currentProcessLookupEnv())
 }
 
 func WarnRemovedEnvKeysWithLookup(lookup envLookupFunc) {
@@ -72,5 +71,5 @@ func WarnRemovedEnvKeysWithLookup(lookup envLookupFunc) {
 }
 
 func WarnRemovedEnvKeys() {
-	WarnRemovedEnvKeysWithLookup(os.LookupEnv)
+	WarnRemovedEnvKeysWithLookup(currentProcessLookupEnv())
 }

@@ -21,12 +21,12 @@ type envLookupFunc func(string) (string, bool)
 // ParseString reads a string from environment variable or returns default value.
 // It logs the source (environment or default) for observability.
 func ParseString(key, defaultValue string) string {
-	return parseStringWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+	return parseStringWithLookup(log.WithComponent("config"), currentProcessLookupEnv(), key, defaultValue)
 }
 
 func parseStringWithLookup(logger zerolog.Logger, lookup envLookupFunc, key, defaultValue string) string {
 	if lookup == nil {
-		lookup = os.LookupEnv
+		lookup = currentProcessLookupEnv()
 	}
 	if value, exists := lookup(key); exists {
 		lowerKey := strings.ToLower(key)
@@ -65,18 +65,18 @@ func parseStringWithLookup(logger zerolog.Logger, lookup envLookupFunc, key, def
 // ParseInt reads an integer from environment variable or returns default value.
 // It validates the input and falls back to default on parse errors.
 func ParseInt(key string, defaultValue int) int {
-	return parseIntWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+	return parseIntWithLookup(log.WithComponent("config"), currentProcessLookupEnv(), key, defaultValue)
 }
 
 // ParseDuration reads a duration from environment variable in Go duration format (e.g. "5s").
 // It falls back to default on parse errors or empty variables and logs the choice.
 func ParseDuration(key string, defaultValue time.Duration) time.Duration {
-	return parseDurationWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+	return parseDurationWithLookup(log.WithComponent("config"), currentProcessLookupEnv(), key, defaultValue)
 }
 
 func parseIntWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue int) int {
 	if lookup == nil {
-		lookup = os.LookupEnv
+		lookup = currentProcessLookupEnv()
 	}
 	if v, ok := lookup(key); ok {
 		if v == "" {
@@ -112,7 +112,7 @@ func parseIntWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string,
 
 func parseDurationWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue time.Duration) time.Duration {
 	if lookup == nil {
-		lookup = os.LookupEnv
+		lookup = currentProcessLookupEnv()
 	}
 	if v, ok := lookup(key); ok {
 		if v == "" {
@@ -149,13 +149,13 @@ func parseDurationWithLookup(logger zerolog.Logger, lookup envLookupFunc, key st
 // ParseBool reads a boolean from environment variable or returns default value.
 // It accepts "true", "false", "1", "0", "yes", "no" (case-insensitive).
 func ParseBool(key string, defaultValue bool) bool {
-	return parseBoolWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+	return parseBoolWithLookup(log.WithComponent("config"), currentProcessLookupEnv(), key, defaultValue)
 }
 
 // ReadOSRuntimeEnv reads all runtime environment variables from the current process
 // environment and returns an immutable Env suitable for BuildSnapshot.
 func ReadOSRuntimeEnv() (Env, error) {
-	return ReadEnv(os.Getenv)
+	return ReadEnv(currentProcessGetEnv())
 }
 
 // ReadOSRuntimeEnvOrDefault reads the runtime Env from the current process environment.
@@ -170,12 +170,12 @@ func ReadOSRuntimeEnvOrDefault() Env {
 
 // ParseFloat reads a float64 from environment variable or returns default value.
 func ParseFloat(key string, defaultValue float64) float64 {
-	return parseFloatWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+	return parseFloatWithLookup(log.WithComponent("config"), currentProcessLookupEnv(), key, defaultValue)
 }
 
 func parseBoolWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue bool) bool {
 	if lookup == nil {
-		lookup = os.LookupEnv
+		lookup = currentProcessLookupEnv()
 	}
 	if v, ok := lookup(key); ok {
 		if v == "" {
@@ -221,7 +221,7 @@ func parseBoolWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string
 
 func parseFloatWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue float64) float64 {
 	if lookup == nil {
-		lookup = os.LookupEnv
+		lookup = currentProcessLookupEnv()
 	}
 	if v, ok := lookup(key); ok {
 		if v == "" {
@@ -257,5 +257,5 @@ func parseFloatWithLookup(logger zerolog.Logger, lookup envLookupFunc, key strin
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR
 func expandEnv(s string) string {
-	return os.ExpandEnv(s)
+	return os.Expand(s, currentProcessGetEnv())
 }

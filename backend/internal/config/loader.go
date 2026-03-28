@@ -32,16 +32,16 @@ type Loader struct {
 
 // NewLoader creates a new configuration loader
 func NewLoader(configPath, version string) *Loader {
-	return NewLoaderWithEnv(configPath, version, os.LookupEnv, os.Environ)
+	return NewLoaderWithEnv(configPath, version, currentProcessLookupEnv(), currentProcessEnviron())
 }
 
 // NewLoaderWithEnv creates a new configuration loader with an injected environment source.
 func NewLoaderWithEnv(configPath, version string, lookup envLookupFunc, list func() []string) *Loader {
 	if lookup == nil {
-		lookup = os.LookupEnv
+		lookup = currentProcessLookupEnv()
 	}
 	if list == nil {
-		list = os.Environ
+		list = currentProcessEnviron()
 	}
 	return &Loader{
 		configPath:      configPath,
@@ -82,14 +82,14 @@ func (l *Loader) envFloat(key string, defaultVal float64) float64 {
 func (l *Loader) envLookup(key string) (string, bool) {
 	l.ConsumedEnvKeys[key] = struct{}{}
 	if l.lookupEnvFn == nil {
-		return os.LookupEnv(key)
+		return currentProcessLookupEnv()(key)
 	}
 	return l.lookupEnvFn(key)
 }
 
 func (l *Loader) envEnviron() []string {
 	if l.listEnvFn == nil {
-		return os.Environ()
+		return currentProcessEnviron()()
 	}
 	return l.listEnvFn()
 }
