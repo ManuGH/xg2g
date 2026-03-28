@@ -6,6 +6,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -56,50 +57,11 @@ type PiconPool struct {
 	stopOnce sync.Once
 }
 
-var (
-	globalPool     *PiconPool
-	globalPoolOnce sync.Once
-)
-
-// InitPiconPool initializes the global PiconPool singleton.
-func InitPiconPool(cfg config.AppConfig) {
-	globalPoolOnce.Do(func() {
-		upstreamBase := cfg.PiconBase
-		if upstreamBase == "" {
-			upstreamBase = cfg.Enigma2.BaseURL
-		}
-
-		piconDir := filepath.Join(cfg.DataDir, "picons")
-		if err := os.MkdirAll(piconDir, 0750); err != nil {
-			log.Error().Err(err).Msg("Picon: failed to create cache dir, worker pool will likely fail")
-		}
-
-		// Defaults
-		conf := PiconPoolConfig{
-			Workers:       8,
-			QueueSize:     512,
-			NegTTL:        10 * time.Minute,
-			ClientTimeout: 30 * time.Second,
-		}
-
-		globalPool = NewPiconPool(upstreamBase, piconDir, conf)
-		globalPool.Start()
-		log.Info().
-			Int("workers", conf.Workers).
-			Int("queue_size", conf.QueueSize).
-			Msg("Picon: Global worker pool initialized")
-	})
-}
-
-// GetPiconPool returns the global singleton, taking care to initialize it logic safely.
-func GetPiconPool(cfg config.AppConfig) *PiconPool {
-	// Always call Init to ensure Once has run, handling the race where globalPool is nil
-	// but Init is running elsewhere.
-	InitPiconPool(cfg)
-	return globalPool
-}
-
 func NewPiconPool(upstreamBase, piconDir string, cfg PiconPoolConfig) *PiconPool {
+	return NewPiconPoolWithContext(context.Background(), upstreamBase, piconDir, cfg)
+}
+
+func NewPiconPoolWithContext(rootCtx context.Context, upstreamBase, piconDir string, cfg PiconPoolConfig) *PiconPool {
 	// Ensure defaults if zero (double safety)
 	if cfg.Workers <= 0 {
 		cfg.Workers = 8
@@ -107,8 +69,18 @@ func NewPiconPool(upstreamBase, piconDir string, cfg PiconPoolConfig) *PiconPool
 	if cfg.QueueSize <= 0 {
 		cfg.QueueSize = 512
 	}
+	if cfg.NegTTL <= 0 {
+		cfg.NegTTL = 10 * time.Minute
+	}
+	if cfg.ClientTimeout <= 0 {
+		cfg.ClientTimeout = 30 * time.Second
+	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	parent := context.Background()
+	if rootCtx != nil {
+		parent = rootCtx
+	}
+	ctx, cancel := context.WithCancel(parent)
 
 	return &PiconPool{
 		upstreamBase: upstreamBase,
@@ -122,6 +94,31 @@ func NewPiconPool(upstreamBase, piconDir string, cfg PiconPoolConfig) *PiconPool
 		neg:          make(map[string]time.Time),
 		negTTL:       cfg.NegTTL,
 	}
+}
+
+func NewPiconPoolForConfig(rootCtx context.Context, cfg config.AppConfig) (*PiconPool, error) {
+	if rootCtx == nil {
+		return nil, fmt.Errorf("picon pool context is nil")
+	}
+
+	upstreamBase := cfg.PiconBase
+	if upstreamBase == "" {
+		upstreamBase = cfg.Enigma2.BaseURL
+	}
+
+	piconDir := filepath.Join(cfg.DataDir, "picons")
+	if err := os.MkdirAll(piconDir, 0750); err != nil {
+		return nil, fmt.Errorf("create picon cache dir: %w", err)
+	}
+
+	pool := NewPiconPoolWithContext(rootCtx, upstreamBase, piconDir, PiconPoolConfig{})
+	pool.Start()
+	log.Info().
+		Int("workers", pool.workers).
+		Int("queue_size", cap(pool.jobs)).
+		Str("cache_dir", piconDir).
+		Msg("Picon: worker pool initialized")
+	return pool, nil
 }
 
 func (p *PiconPool) Start() {

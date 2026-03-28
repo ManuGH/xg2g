@@ -54,11 +54,36 @@ type Status struct {
 	Error string `json:"error,omitempty"`
 }
 
-// Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
-//
+type RefreshOption func(*refreshOptions)
 
-//nolint:gocyclo // Complex orchestration function with validation, requires sequential operations
+type refreshOptions struct {
+	piconPool *PiconPool
+}
+
+func WithPiconPool(pool *PiconPool) RefreshOption {
+	return func(opts *refreshOptions) {
+		opts.piconPool = pool
+	}
+}
+
+func buildRefreshOptions(opts []RefreshOption) refreshOptions {
+	var cfg refreshOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	return cfg
+}
+
 func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
+	return RefreshWithOptions(ctx, snap)
+}
+
+// RefreshWithOptions performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV.
+//
+//nolint:gocyclo // Complex orchestration function with validation, requires sequential operations
+func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...RefreshOption) (*Status, error) {
 	// Start tracing span for the entire refresh job
 	tracer := telemetry.Tracer("xg2g.jobs")
 	ctx, span := tracer.Start(ctx, "job.refresh",
@@ -68,6 +93,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 
 	cfg := snap.App
 	rt := snap.Runtime
+	refreshOpts := buildRefreshOptions(opts)
 
 	startTime := time.Now()
 
@@ -84,7 +110,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 		return nil, err
 	}
 
-	opts := openwebif.Options{
+	owiOpts := openwebif.Options{
 		Timeout:         cfg.Enigma2.Timeout,
 		MaxRetries:      cfg.Enigma2.Retries,
 		Backoff:         cfg.Enigma2.Backoff,
@@ -96,7 +122,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 
 		HTTPMaxConnsPerHost: rt.OpenWebIF.HTTPMaxConnsPerHost,
 	}
-	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, opts)
+	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, owiOpts)
 
 	// Fetch bouquets with tracing
 	span.AddEvent("fetching bouquets")
@@ -276,7 +302,11 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 
 	// Trigger background picon pre-warm (don't block refresh)
 	if cfg.PiconBase != "" {
-		go PrewarmPicons(ctx, cfg, items)
+		if refreshOpts.piconPool != nil {
+			go PrewarmPicons(ctx, refreshOpts.piconPool, items)
+		} else {
+			logger.Debug().Msg("skipping picon pre-warm because no runtime picon pool is configured")
+		}
 	}
 
 	// Generate M3U

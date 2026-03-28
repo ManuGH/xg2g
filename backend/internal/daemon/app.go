@@ -30,6 +30,7 @@ type App struct {
 	manager      Manager
 	cfgHolder    *config.ConfigHolder
 	apiServer    *api.Server
+	piconPool    *jobs.PiconPool
 	proxyOnly    bool
 	reloadSignal os.Signal
 }
@@ -44,6 +45,10 @@ func NewApp(logger zerolog.Logger, manager Manager, cfgHolder *config.ConfigHold
 		proxyOnly:    proxyOnly,
 		reloadSignal: syscall.SIGHUP,
 	}
+}
+
+func (a *App) SetPiconPool(pool *jobs.PiconPool) {
+	a.piconPool = pool
 }
 
 // Run starts all owned background subsystems and blocks until ctx is cancelled or a fatal error occurs.
@@ -169,7 +174,7 @@ func (a *App) Run(ctx context.Context) error {
 						}
 
 						a.logger.Info().Msg("Starting scheduled EPG refresh")
-						if st, err := jobs.Refresh(ctx, *snap); err != nil {
+						if st, err := jobs.RefreshWithOptions(ctx, *snap, jobs.WithPiconPool(a.piconPool)); err != nil {
 							a.logger.Error().Err(err).Msg("Scheduled EPG refresh failed")
 						} else {
 							a.logger.Info().Msg("Scheduled EPG refresh completed")
