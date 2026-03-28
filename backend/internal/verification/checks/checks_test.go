@@ -27,8 +27,16 @@ epg:
 `
 }
 
+func pinConfigEnv(t *testing.T, dataDir string) {
+	t.Helper()
+	t.Setenv("XG2G_DATA", dataDir)
+	t.Setenv("XG2G_DATA_DIR", dataDir)
+	t.Setenv("XG2G_STORE_PATH", filepath.Join(dataDir, "store"))
+}
+
 func TestConfigChecker_Drift(t *testing.T) {
 	tmp := t.TempDir()
+	pinConfigEnv(t, tmp)
 	path := filepath.Join(tmp, "config.yaml")
 	err := os.WriteFile(path, []byte(minimalConfigYAML(tmp)+"logLevel: info\n"), 0644)
 	require.NoError(t, err)
@@ -53,6 +61,7 @@ func TestConfigChecker_Drift(t *testing.T) {
 
 func TestConfigChecker_EnvOverlayDoesNotDrift(t *testing.T) {
 	tmp := t.TempDir()
+	pinConfigEnv(t, tmp)
 	path := filepath.Join(tmp, "config.yaml")
 	err := os.WriteFile(path, []byte(minimalConfigYAML(tmp)+"logLevel: info\n"), 0644)
 	require.NoError(t, err)
