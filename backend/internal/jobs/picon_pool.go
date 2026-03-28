@@ -58,7 +58,7 @@ type PiconPool struct {
 }
 
 func NewPiconPool(upstreamBase, piconDir string, cfg PiconPoolConfig) *PiconPool {
-	return NewPiconPoolWithContext(nil, upstreamBase, piconDir, cfg)
+	return NewPiconPoolWithContext(context.Background(), upstreamBase, piconDir, cfg)
 }
 
 func NewPiconPoolWithContext(rootCtx context.Context, upstreamBase, piconDir string, cfg PiconPoolConfig) *PiconPool {
