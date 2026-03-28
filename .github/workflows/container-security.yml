@@ -69,13 +69,6 @@ jobs:
           vuln-type: "os,library"
           ignore-unfixed: false
 
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8
-        if: always()
-        with:
-          sarif_file: "trivy-results.sarif"
-          category: "container-production"
-
       - name: Fail on critical/high vulnerabilities
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
@@ -147,13 +140,6 @@ jobs:
           output: "trivy-fs-results.sarif"
           severity: "CRITICAL,HIGH"
           scanners: "secret,misconfig"
-
-      - name: Upload filesystem scan to GitHub Security
-        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v3.27.9
-        if: always()
-        with:
-          sarif_file: "trivy-fs-results.sarif"
-          category: "filesystem-secrets"
 
   generate-sbom:
     name: Generate and Scan SBOM

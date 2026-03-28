@@ -107,6 +107,10 @@ The tagged release pipeline follows the same pattern via
 `ghcr.io/manugh/xg2g-ffmpeg:8.1`, so release cuts do not recompile FFmpeg
 from source on every tag.
 
+The tagged release pipeline follows the same pattern via
+`ghcr.io/manugh/xg2g-ffmpeg:7.1.3`, so release cuts do not recompile FFmpeg
+from source on every tag.
+
 If FFmpeg version or build flags change in `backend/scripts/build-ffmpeg.sh`, rebuild the base image first:
 
 ```bash
