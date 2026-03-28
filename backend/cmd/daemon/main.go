@@ -62,6 +62,8 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g --config /etc/xg2g/config.yaml")
 	_, _ = fmt.Fprintln(w, "  xg2g config validate -f /etc/xg2g/config.yaml")
 	_, _ = fmt.Fprintln(w, "  xg2g storage verify --path /var/lib/xg2g/sessions.sqlite")
+	_, _ = fmt.Fprintln(w, "  xg2g storage decision-report --data-dir /var/lib/xg2g --bouquet Premium --format table")
+	_, _ = fmt.Fprintln(w, "  xg2g storage decision-sweep --config /etc/xg2g/config.yaml --data-dir /var/lib/xg2g --bouquet Premium --skip-scan")
 	_, _ = fmt.Fprintln(w, "  xg2g healthcheck --mode=ready --port=8088")
 	_, _ = fmt.Fprintln(w, "  xg2g diagnostic --action=refresh --token $XG2G_API_TOKEN")
 }

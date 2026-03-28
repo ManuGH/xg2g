@@ -8,12 +8,13 @@ import (
 // PlaybackCapabilities represents the core capability set for playback decisions.
 // This struct is intended to be the domain truth, mapped to/from OpenAPI or shims.
 type PlaybackCapabilities struct {
-	CapabilitiesVersion int      `json:"capabilitiesVersion"`
-	Containers          []string `json:"containers"`
-	VideoCodecs         []string `json:"videoCodecs"`
-	AudioCodecs         []string `json:"audioCodecs"`
-	SupportsHLS         bool     `json:"supportsHls"`
-	SupportsHLSExplicit bool     `json:"supportsHlsExplicit,omitempty"`
+	CapabilitiesVersion int                `json:"capabilitiesVersion"`
+	Containers          []string           `json:"containers"`
+	VideoCodecs         []string           `json:"videoCodecs"`
+	VideoCodecSignals   []VideoCodecSignal `json:"videoCodecSignals,omitempty"`
+	AudioCodecs         []string           `json:"audioCodecs"`
+	SupportsHLS         bool               `json:"supportsHls"`
+	SupportsHLSExplicit bool               `json:"supportsHlsExplicit,omitempty"`
 
 	// DeviceType is optional but helpful for identity-bound profiles
 	DeviceType           string   `json:"deviceType,omitempty"`
@@ -28,6 +29,13 @@ type PlaybackCapabilities struct {
 	AllowTranscode *bool     `json:"allowTranscode,omitempty"`
 	MaxVideo       *MaxVideo `json:"maxVideo,omitempty"`
 	SupportsRange  *bool     `json:"supportsRange,omitempty"`
+}
+
+type VideoCodecSignal struct {
+	Codec          string `json:"codec"`
+	Supported      bool   `json:"supported"`
+	Smooth         *bool  `json:"smooth,omitempty"`
+	PowerEfficient *bool  `json:"powerEfficient,omitempty"`
 }
 
 type MaxVideo struct {
@@ -47,6 +55,7 @@ func CanonicalizeCapabilities(in PlaybackCapabilities) PlaybackCapabilities {
 
 	out.Containers = canonicalStringSet(out.Containers)
 	out.VideoCodecs = canonicalStringSet(out.VideoCodecs)
+	out.VideoCodecSignals = canonicalVideoCodecSignals(out.VideoCodecSignals)
 	out.AudioCodecs = canonicalStringSet(out.AudioCodecs)
 	out.HLSEngines = canonicalStringSet(out.HLSEngines)
 	out.DeviceType = strings.ToLower(strings.TrimSpace(out.DeviceType))
@@ -66,6 +75,9 @@ func CanonicalizeCapabilities(in PlaybackCapabilities) PlaybackCapabilities {
 	}
 	if out.AudioCodecs == nil {
 		out.AudioCodecs = []string{}
+	}
+	if out.VideoCodecSignals == nil {
+		out.VideoCodecSignals = []VideoCodecSignal{}
 	}
 	if out.HLSEngines == nil {
 		out.HLSEngines = []string{}
@@ -92,5 +104,41 @@ func canonicalStringSet(in []string) []string {
 		out = append(out, k)
 	}
 	sort.Strings(out)
+	return out
+}
+
+func canonicalVideoCodecSignals(in []VideoCodecSignal) []VideoCodecSignal {
+	if in == nil {
+		return []VideoCodecSignal{}
+	}
+
+	merged := make(map[string]VideoCodecSignal, len(in))
+	for _, raw := range in {
+		codec := strings.ToLower(strings.TrimSpace(raw.Codec))
+		if codec == "" {
+			continue
+		}
+
+		next := merged[codec]
+		next.Codec = codec
+		next.Supported = next.Supported || raw.Supported
+		if raw.Smooth != nil && *raw.Smooth {
+			v := true
+			next.Smooth = &v
+		}
+		if raw.PowerEfficient != nil && *raw.PowerEfficient {
+			v := true
+			next.PowerEfficient = &v
+		}
+		merged[codec] = next
+	}
+
+	out := make([]VideoCodecSignal, 0, len(merged))
+	for _, signal := range merged {
+		out = append(out, signal)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Codec < out[j].Codec
+	})
 	return out
 }

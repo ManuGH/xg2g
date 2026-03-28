@@ -437,6 +437,7 @@ func (m *MockServer) handleStatusInfo(w http.ResponseWriter, _ *http.Request) {
 		"result":                 true,
 		"inStandby":              standbyStr,
 		"isRecording":            isRecordingStr,
+		"isStreaming":            "false",
 		"currservice_name":       "Mock Channel",
 		"currservice_serviceref": m.currentServiceRef,
 	}

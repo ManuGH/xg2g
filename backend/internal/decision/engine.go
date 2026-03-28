@@ -42,6 +42,7 @@ type Input struct {
 type ServerCapabilities struct {
 	HWAccelAvailable  bool
 	SupportedHWCodecs []string
+	AutoHWCodecs      []string
 }
 
 type Output struct {
@@ -154,6 +155,7 @@ func Decide(in Input) Output {
 
 func pickBestCandidate(in Input, codecs []string, rule profileRule) (Output, bool) {
 	var candidates []candidate
+	autoMode := isAutoNegotiation(in, rule)
 	for _, codec := range codecs {
 		c := canonicalCodec(codec)
 		if c == "" {
@@ -164,7 +166,7 @@ func pickBestCandidate(in Input, codecs []string, rule profileRule) (Output, boo
 			hw:    false,
 			score: scoreCandidate(c, false, rule),
 		})
-		if hwCodecAvailable(in.Server, c) {
+		if hwCodecAvailable(in.Server, c) && (!autoMode || hwCodecAutoEligible(in.Server, c)) {
 			candidates = append(candidates, candidate{
 				codec: c,
 				hw:    true,
@@ -263,6 +265,7 @@ func normalizeInput(in Input) Input {
 	in.ClientCodecs = normalizedCodecs(in.ClientCodecs)
 	in.ClientContainers = normalizedTokens(in.ClientContainers)
 	in.Server.SupportedHWCodecs = normalizedCodecs(in.Server.SupportedHWCodecs)
+	in.Server.AutoHWCodecs = normalizedCodecs(in.Server.AutoHWCodecs)
 	return in
 }
 
@@ -317,6 +320,26 @@ func hwCodecAvailable(server ServerCapabilities, codec string) bool {
 		return false
 	}
 	return contains(server.SupportedHWCodecs, codec)
+}
+
+func hwCodecAutoEligible(server ServerCapabilities, codec string) bool {
+	if !hwCodecAvailable(server, codec) {
+		return false
+	}
+	if len(server.AutoHWCodecs) == 0 {
+		return true
+	}
+	return contains(server.AutoHWCodecs, codec)
+}
+
+func isAutoNegotiation(in Input, rule profileRule) bool {
+	if in.RequireHW || rule.requireHW {
+		return false
+	}
+	if rule.hardCodec != "" || rule.preferredCodec != "" {
+		return false
+	}
+	return in.RequestedCodec == ""
 }
 
 func contains(slice []string, value string) bool {

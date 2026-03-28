@@ -8,7 +8,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,6 +99,234 @@ func TestService_ResolvePlaybackInfo_LiveSuccess(t *testing.T) {
 	assert.Equal(t, "h264", res.Truth.VideoCodec)
 	assert.Equal(t, "aac", res.Truth.AudioCodec)
 	assert.Equal(t, 0, recSvc.truthCalls)
+}
+
+func TestService_ResolvePlaybackInfo_LiveUsesScanTruthWhenAvailable(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return scan.Capability{
+				ServiceRef: serviceRef,
+				State:      scan.CapabilityStateOK,
+				Container:  "ts",
+				VideoCodec: "hevc",
+				AudioCodec: "ac3",
+				Codec:      "hevc",
+				Resolution: "3840x2160",
+				Width:      3840,
+				Height:     2160,
+				FPS:        50,
+				Interlaced: true,
+			}, true
+		},
+	}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-scan",
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "ts", res.Truth.Container)
+	assert.Equal(t, "hevc", res.Truth.VideoCodec)
+	assert.Equal(t, "ac3", res.Truth.AudioCodec)
+	assert.Equal(t, 3840, res.Truth.Width)
+	assert.Equal(t, 2160, res.Truth.Height)
+	assert.Equal(t, 50.0, res.Truth.FPS)
+	assert.True(t, res.Truth.Interlaced)
+	assert.Equal(t, 0, recSvc.truthCalls)
+	assert.Equal(t, 1, truthSource.calls)
+	assert.Equal(t, "1:0:1:2B66:3F3:1:C00000:0:0:0:", truthSource.lastServiceRef)
+}
+
+func TestService_ResolvePlaybackInfo_LiveFallsBackWhenScanTruthIncomplete(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return scan.Capability{
+				ServiceRef: serviceRef,
+				State:      scan.CapabilityStateOK,
+				VideoCodec: "hevc",
+				Codec:      "hevc",
+				Resolution: "1920x1080",
+				Width:      1920,
+				Height:     1080,
+			}, true
+		},
+	}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-fallback",
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "mpegts", res.Truth.Container)
+	assert.Equal(t, "h264", res.Truth.VideoCodec)
+	assert.Equal(t, "aac", res.Truth.AudioCodec)
+	assert.Equal(t, 0, recSvc.truthCalls)
+	assert.Equal(t, 1, truthSource.calls)
+}
+
+func TestService_ResolvePlaybackInfo_LiveTranscodeUsesMeasuredAutoCodecProfile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+	svc := NewService(stubDeps{
+		svc: recSvc,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	hevcSmooth := true
+	hevcEfficient := true
+	h264Smooth := true
+	h264Efficient := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:19:EF75:3F9:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-transcode",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 3,
+			Containers:          []string{"hls", "mp4"},
+			VideoCodecs:         []string{"hevc"},
+			AudioCodecs:         []string{"aac", "ac3", "mp2"},
+			SupportsHLS:         true,
+			RuntimeProbeUsed:    true,
+			RuntimeProbeVersion: 2,
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
+				{Codec: "h264", Supported: true, Smooth: &h264Smooth, PowerEfficient: &h264Efficient},
+			},
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.NotNil(t, res.Decision.TargetProfile)
+	assert.Equal(t, "fmp4", res.Decision.Selected.Container)
+	assert.Equal(t, "hevc", res.Decision.Selected.VideoCodec)
+	assert.Equal(t, "aac", res.Decision.Selected.AudioCodec)
+	assert.Equal(t, "quality", res.Decision.Trace.RequestedIntent)
+	assert.Equal(t, "quality", res.Decision.Trace.ResolvedIntent)
+	assert.Equal(t, "hevc", res.Decision.TargetProfile.Video.Codec)
+	assert.Equal(t, "fmp4", res.Decision.TargetProfile.Container)
+}
+
+func TestService_ResolvePlaybackInfo_RecordsDecisionAuditAfterFinalAlignment(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	auditSink := &stubDecisionAuditSink{}
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+	svc := NewService(stubDeps{
+		svc:       recSvc,
+		auditSink: auditSink,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	hevcSmooth := true
+	hevcEfficient := true
+	h264Smooth := true
+	h264Efficient := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:        "1:0:19:EF75:3F9:1:C00000:0:0:0:",
+		SubjectKind:      PlaybackSubjectLive,
+		APIVersion:       "v3.1",
+		SchemaType:       "live",
+		RequestID:        "req-live-audit",
+		ClientProfile:    "safari",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 3,
+			Containers:          []string{"hls", "mp4"},
+			VideoCodecs:         []string{"hevc"},
+			AudioCodecs:         []string{"aac", "ac3", "mp2"},
+			SupportsHLS:         true,
+			RuntimeProbeUsed:    true,
+			RuntimeProbeVersion: 2,
+			ClientCapsSource:    "runtime_plus_family",
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
+				{Codec: "h264", Supported: true, Smooth: &h264Smooth, PowerEfficient: &h264Efficient},
+			},
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.Equal(t, 1, auditSink.callCount)
+	require.Equal(t, decision.OriginRuntime, auditSink.lastEvent.Origin)
+	require.Equal(t, "safari", auditSink.lastEvent.ClientFamily)
+	require.Equal(t, "quality", auditSink.lastEvent.RequestedIntent)
+	require.Equal(t, res.Decision.Trace.InputHash, auditSink.lastEvent.BasisHash)
+	require.Equal(t, decision.ModeTranscode, auditSink.lastEvent.Mode)
+	require.NotNil(t, auditSink.lastEvent.TargetProfile)
+	require.Equal(t, "fmp4", auditSink.lastEvent.TargetProfile.Container)
+	require.Equal(t, "hevc", auditSink.lastEvent.TargetProfile.Video.Codec)
+	require.Equal(t, "aac", auditSink.lastEvent.TargetProfile.Audio.Codec)
 }
 
 func TestService_ResolvePlaybackInfo_PreparingStatus(t *testing.T) {

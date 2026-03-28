@@ -93,6 +93,23 @@ func TestDecide_CodecNegotiationContract(t *testing.T) {
 			wantRequested: "auto",
 		},
 		{
+			name: "auto negotiation ignores verified hevc hw when host marks only h264 as auto-eligible",
+			in: Input{
+				SourceCodec:  "vp9",
+				ClientCodecs: []string{"h264", "hevc"},
+				Server: ServerCapabilities{
+					HWAccelAvailable:  true,
+					SupportedHWCodecs: []string{"hevc", "h264"},
+					AutoHWCodecs:      []string{"h264"},
+				},
+			},
+			wantPath:      PathTranscodeHW,
+			wantCodec:     "h264",
+			wantReason:    ReasonCodecSelected,
+			wantUseHW:     true,
+			wantRequested: "auto",
+		},
+		{
 			name: "safari_hevc is hard constrained to hevc even on cpu",
 			in: Input{
 				SourceCodec:  "vp9",
@@ -103,6 +120,24 @@ func TestDecide_CodecNegotiationContract(t *testing.T) {
 			wantPath:      PathTranscodeCPU,
 			wantCodec:     "hevc",
 			wantReason:    ReasonProfileConstraint,
+			wantRequested: "hevc",
+		},
+		{
+			name: "explicit hevc hw profile still uses verified hevc even when auto ladder excludes it",
+			in: Input{
+				SourceCodec:  "vp9",
+				ClientCodecs: []string{"h264", "hevc"},
+				Profile:      "safari_hevc_hw",
+				Server: ServerCapabilities{
+					HWAccelAvailable:  true,
+					SupportedHWCodecs: []string{"hevc", "h264"},
+					AutoHWCodecs:      []string{"h264"},
+				},
+			},
+			wantPath:      PathTranscodeHW,
+			wantCodec:     "hevc",
+			wantReason:    ReasonCodecSelected,
+			wantUseHW:     true,
 			wantRequested: "hevc",
 		},
 		{

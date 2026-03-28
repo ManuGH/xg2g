@@ -141,7 +141,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			"XG2G_OWI_BASE="+mockOWI.URL,
+			"XG2G_E2_HOST="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
 			"XG2G_RATELIMIT=true",
@@ -200,7 +200,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			"XG2G_OWI_BASE="+mockOWI.URL,
+			"XG2G_E2_HOST="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
 		)
@@ -228,9 +228,9 @@ func TestSecuritySuiteExtended(t *testing.T) {
 
 		headers := resp.Header
 		expected := map[string]string{
-			"X-Frame-Options":         "DENY",
-			"X-Content-Type-Options":  "nosniff",
-			"Referrer-Policy":         "no-referrer",
+			"X-Frame-Options":        "DENY",
+			"X-Content-Type-Options": "nosniff",
+			"Referrer-Policy":        "no-referrer",
 		}
 		for k, v := range expected {
 			if got := headers.Get(k); got != v {
@@ -265,7 +265,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			"XG2G_OWI_BASE="+mockOWI.URL,
+			"XG2G_E2_HOST="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
 		)
@@ -317,7 +317,7 @@ http://example.com/stream
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+tempDir,
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			"XG2G_OWI_BASE="+mockOWI.URL,
+			"XG2G_E2_HOST="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_HDHR_ENABLED=true",
 			"XG2G_INITIAL_REFRESH=false",
@@ -369,7 +369,7 @@ http://example.com/stream
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			"XG2G_OWI_BASE="+mockOWI.URL,
+			"XG2G_E2_HOST="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_XMLTV_PATH=../../etc/passwd", // TRAVERSAL ATTEMPT
 			"XG2G_INITIAL_REFRESH=false",
@@ -414,7 +414,7 @@ http://example.com/stream
 		initialConfig := fmt.Sprintf(`
 bouquets: 
   - "Test"
-openWebIF:
+enigma2:
   baseUrl: "%s"
 `, mockOWI.URL)
 		_ = os.WriteFile(configFile, []byte(initialConfig), 0600)
@@ -447,7 +447,7 @@ openWebIF:
 		newConfig := fmt.Sprintf(`
 bouquets:
   - "ReloadedC"
-openWebIF:
+enigma2:
   baseUrl: "%s"
 `, mockOWI.URL)
 

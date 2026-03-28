@@ -22,7 +22,7 @@ WorkingDirectory=/srv/xg2g
 # Load env (explicitly required)
 EnvironmentFile=/etc/xg2g/xg2g.env
 
-# Fail-closed: enforce mandatory config (canonical XG2G_E2_HOST; legacy fallback XG2G_OWI_BASE)
+# Fail-closed: enforce mandatory canonical receiver config.
 # These checks fail cleanly before any containers are touched and reject whitespace-only values.
 ExecStartPre=/bin/sh -eu -c '/usr/bin/docker info >/dev/null'
 ExecStartPre=/bin/sh -eu -c 'test -w /var/lib/xg2g'
@@ -39,7 +39,7 @@ ExecStartPre=/srv/xg2g/scripts/verify-compose-contract.sh
 
 # Fail-closed: enforce service name invariant (health gate relies on it).
 # Parses the frozen compose file directly to avoid format drift in rendered output.
-ExecStartPre=/bin/sh -eu -c 'awk '"'"'$0 ~ /^[[:space:]]*services:[[:space:]]*$/ {in=1; next} in && $0 ~ /^[[:space:]]*#/ {next} in && $0 ~ /^[[:space:]]*$/ {next} in && $0 ~ /^[[:space:]]+xg2g:[[:space:]]*$/ {found=1} in && $0 !~ /^[[:space:]]+/ {in=0} END {exit(found?0:1)}'"'"' /srv/xg2g/docker-compose.yml'
+ExecStartPre=/bin/sh -eu -c 'awk '"'"'$0 ~ /^[[:space:]]*services:[[:space:]]*$/ {s=1; next} s && $0 ~ /^[[:space:]]*#/ {next} s && $0 ~ /^[[:space:]]*$/ {next} s && $0 ~ /^[[:space:]]+xg2g:[[:space:]]*$/ {found=1} s && $0 !~ /^[[:space:]]+/ {s=0} END {exit(found?0:1)}'"'"' /srv/xg2g/docker-compose.yml'
 
 # Bring up stack
 ExecStart=/srv/xg2g/scripts/compose-xg2g.sh up -d --remove-orphans
@@ -51,7 +51,7 @@ ExecStop=/srv/xg2g/scripts/compose-xg2g.sh stop
 ExecReload=/srv/xg2g/scripts/compose-xg2g.sh up -d --remove-orphans
 
 # Gate "start" on container health within TimeoutStartSec (requires service name: xg2g).
-ExecStartPost=/bin/sh -eu -c 'cid="$(/srv/xg2g/scripts/compose-xg2g.sh ps -q xg2g)"; test -n "$cid"; i=0; while [ "$i" -lt 150 ]; do status="$(/usr/bin/docker inspect --format "{{.State.Health.Status}}" "$cid" 2>/dev/null || true)"; if [ -z "$status" ] || [ "$status" = "<no value>" ]; then echo "Healthcheck not configured" >&2; exit 1; fi; if [ "$status" = "healthy" ]; then exit 0; fi; if [ "$status" = "unhealthy" ]; then echo "Container is unhealthy" >&2; exit 1; fi; sleep 1; i=$((i+1)); done; echo "Timed out waiting for healthy" >&2; exit 1'
+ExecStartPost=/bin/sh -eu -c 'cid="$$(/srv/xg2g/scripts/compose-xg2g.sh ps -q xg2g)"; test -n "$$cid"; i=0; while [ "$$i" -lt 150 ]; do status="$$(/usr/bin/docker inspect --format "{{.State.Health.Status}}" "$$cid" 2>/dev/null || true)"; if [ -z "$$status" ] || [ "$$status" = "<no value>" ]; then echo "Healthcheck not configured" >&2; exit 1; fi; if [ "$$status" = "healthy" ]; then exit 0; fi; if [ "$$status" = "unhealthy" ]; then echo "Container is unhealthy" >&2; exit 1; fi; sleep 1; i=$$((i+1)); done; echo "Timed out waiting for healthy" >&2; exit 1'
 
 TimeoutStartSec=180
 TimeoutStopSec=60

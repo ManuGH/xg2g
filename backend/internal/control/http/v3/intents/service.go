@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -54,9 +55,9 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	}
 
 	hasGPU := hardware.IsVAAPIReady()
-	av1OK := hardware.IsVAAPIEncoderReady("av1_vaapi")
-	hevcOK := hardware.IsVAAPIEncoderReady("hevc_vaapi")
-	h264OK := hardware.IsVAAPIEncoderReady("h264_vaapi")
+	av1Verified := hardware.IsVAAPIEncoderReady("av1_vaapi")
+	hevcVerified := hardware.IsVAAPIEncoderReady("hevc_vaapi")
+	h264Verified := hardware.IsVAAPIEncoderReady("h264_vaapi")
 
 	hwaccelMode := profiles.HWAccelAuto
 	if hwaccel := normalize.Token(intent.Params["hwaccel"]); hwaccel != "" {
@@ -102,9 +103,14 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 			return nil, &Error{Kind: ErrorInvalidInput, Message: mapErr.Error()}
 		}
 		reqProfileID = mappedProfile
+		if requestedPlaybackMode == "transcode" {
+			if picked := pickProfileForCodecs(intent.Params["codecs"], hwaccelMode); picked != "" {
+				reqProfileID = picked
+			}
+		}
 	} else if p := normalize.Token(intent.Params["profile"]); p != "" {
 		reqProfileID = p
-	} else if picked := pickProfileForCodecs(intent.Params["codecs"], av1OK, hevcOK, h264OK, hwaccelMode); picked != "" {
+	} else if picked := pickProfileForCodecs(intent.Params["codecs"], hwaccelMode); picked != "" {
 		reqProfileID = picked
 	}
 	publicRequestProfile := profiles.PublicProfileName(reqProfileID)
@@ -131,11 +137,11 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		resolveHasGPU := hasGPU
 		switch profileID {
 		case profiles.ProfileAV1HW:
-			resolveHasGPU = av1OK
+			resolveHasGPU = av1Verified
 		case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
-			resolveHasGPU = hevcOK
+			resolveHasGPU = hevcVerified
 		case profiles.ProfileH264FMP4:
-			resolveHasGPU = h264OK
+			resolveHasGPU = h264Verified
 		}
 		return profiles.Resolve(profileID, profileUserAgent, int(s.deps.DVRWindow().Seconds()), cap, resolveHasGPU, hwaccelMode)
 	}
@@ -150,6 +156,22 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 			effectiveProfileID = downgradedProfileID
 			profileSpec = resolveProfileSpec(effectiveProfileID)
 			hostOverrideApplied = true
+		}
+	}
+	if requiredEncoder, ok := requiredVerifiedVAAPIEncoderForProfile(effectiveProfileID); ok {
+		if hwaccelMode == profiles.HWAccelOff {
+			s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hw_profile_conflict")
+			return nil, &Error{
+				Kind:    ErrorInvalidInput,
+				Message: fmt.Sprintf("profile %q requires verified hardware acceleration; hwaccel=off is incompatible", effectiveProfileID),
+			}
+		}
+		if !hardware.IsVAAPIEncoderReady(requiredEncoder) {
+			s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hw_profile_unavailable")
+			return nil, &Error{
+				Kind:    ErrorInvalidInput,
+				Message: fmt.Sprintf("profile %q requires verified %s on this host", effectiveProfileID, requiredEncoder),
+			}
 		}
 	}
 	resolvedIntent := profiles.PublicProfileName(profileSpec.Name)
@@ -449,68 +471,17 @@ func resolvePlaybackDecisionToken(params map[string]string) (token, keyLabel, re
 	}
 }
 
-func pickProfileForCodecs(raw string, av1OK, hevcOK, h264OK bool, hwaccelMode profiles.HWAccelMode) string {
-	codecs := parseCodecList(raw)
-	if len(codecs) == 0 {
-		return ""
-	}
-
-	hwAllowed := hwaccelMode != profiles.HWAccelOff
-
-	for _, c := range codecs {
-		switch c {
-		case "av1":
-			if hwAllowed && av1OK {
-				return profiles.ProfileAV1HW
-			}
-		case "hevc":
-			if hwAllowed && hevcOK {
-				return profiles.ProfileSafariHEVCHW
-			}
-			return profiles.ProfileSafariHEVC
-		case "h264":
-			_ = h264OK
-			return profiles.ProfileH264FMP4
-		}
-	}
-
-	return ""
+func pickProfileForCodecs(raw string, hwaccelMode profiles.HWAccelMode) string {
+	return autocodec.PickProfileForCodecs(raw, hwaccelMode)
 }
 
-func parseCodecList(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
+func requiredVerifiedVAAPIEncoderForProfile(profileID string) (string, bool) {
+	switch profiles.NormalizeRequestedProfileID(profileID) {
+	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
+		return "hevc_vaapi", true
+	case profiles.ProfileAV1HW:
+		return "av1_vaapi", true
+	default:
+		return "", false
 	}
-
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == ' ' || r == ';' || r == '\t' || r == '\n' || r == '\r'
-	})
-
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		t := strings.ToLower(strings.TrimSpace(p))
-		if t == "" {
-			continue
-		}
-		switch t {
-		case "av01":
-			t = "av1"
-		case "h265":
-			t = "hevc"
-		case "h.265":
-			t = "hevc"
-		case "h264":
-			t = "h264"
-		case "avc":
-			t = "h264"
-		case "avc1":
-			t = "h264"
-		}
-		if t != "av1" && t != "hevc" && t != "h264" {
-			continue
-		}
-		out = append(out, t)
-	}
-	return out
 }

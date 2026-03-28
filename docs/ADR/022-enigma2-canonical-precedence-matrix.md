@@ -3,6 +3,8 @@
 **Status:** Accepted  
 **Date:** 2026-02-11
 
+**Update 2026-03-26:** the transition described here is complete. `openWebIF.*`, `XG2G_OWI_*`, `XG2G_STREAM_PORT`, and `XG2G_USE_WEBIF_STREAMS` are now hard-fail legacy inputs during config loading, not active fallback paths.
+
 ## Context
 
 Nach der Auflösung der alten `merge.go`-Monolithik existieren für Receiver-Konfiguration weiterhin zwei Namensräume:

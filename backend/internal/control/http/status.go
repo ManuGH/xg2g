@@ -39,7 +39,7 @@ func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Release: version.Version,
 		Digest:  version.Commit,
 		Runtime: RuntimeInfo{
-			FFmpeg: "7.1.3",
+			FFmpeg: "8.1",
 			Go:     "1.25.3",
 		},
 	}

@@ -50,7 +50,7 @@ This document tracks known issues that are not blockers for release but require 
 ### 5. Go Toolchain Directive Normalization
 
 - **Status**: Completed on 2026-02-19.
-- **Result**: Normalized `go.mod` directives to `go 1.25` and `toolchain go1.25.7`.
+- **Result**: Go toolchain pins are aligned on `1.25.8` for CI, local workspace, and container builds.
 - **Follow-up**: Keep Go directive updates synchronized with CI toolchain image updates.
 
 ### 6. CI Wrapper Boundary Drift

@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/vod"
 	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
@@ -27,7 +29,14 @@ import (
 const (
 	backgroundScanTimeout = 30 * time.Minute
 	resolveM3UTimeout     = 2 * time.Second
+	defaultProbeTimeout   = 8 * time.Second
+	extendedProbeTimeout  = 20 * time.Second
+
+	extendedProbeAnalyzeDuration = 15 * time.Second
+	extendedProbeSizeBytes       = 8 << 20
 )
+
+var errLifecycleContextNotAttached = errors.New("scan: lifecycle context not attached")
 
 var resolveM3UHTTPClient = &http.Client{
 	Timeout: resolveM3UTimeout,
@@ -66,6 +75,7 @@ type Manager struct {
 	cancel      context.CancelFunc
 	bgWG        sync.WaitGroup
 	scanFn      func(context.Context) error
+	probeFn     func(context.Context, string, infra.ProbeOptions) (*vod.StreamInfo, error)
 
 	// Phase 2: Production-Grade Robustness
 	ActivePlaybackFn        func(ctx context.Context) (bool, error)
@@ -83,6 +93,7 @@ func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client)
 		m3uPath:    m3uPath,
 		e2Client:   e2Client,
 		ProbeDelay: 5000 * time.Millisecond,
+		probeFn:    infra.ProbeWithOptions,
 		status: ScanStatus{
 			State: "idle",
 		},
@@ -215,7 +226,17 @@ func (m *Manager) runBackground(force bool) bool {
 	}
 	m.forceScan.Store(force)
 
-	baseCtx := m.backgroundContext()
+	baseCtx, err := m.backgroundContext()
+	if err != nil {
+		m.isScanning.Store(false)
+		m.mu.Lock()
+		m.status.State = "failed"
+		m.status.FinishedAt = time.Now().Unix()
+		m.status.LastError = err.Error()
+		m.mu.Unlock()
+		log.L().Error().Err(err).Msg("scan: background scan rejected")
+		return false
+	}
 	m.bgWG.Add(1)
 	go func() {
 		defer m.bgWG.Done()
@@ -229,15 +250,14 @@ func (m *Manager) runBackground(force bool) bool {
 	return true
 }
 
-func (m *Manager) backgroundContext() context.Context {
+func (m *Manager) backgroundContext() (context.Context, error) {
 	m.lifecycleMu.Lock()
 	defer m.lifecycleMu.Unlock()
 
 	if m.runtimeCtx == nil {
-		m.runtimeCtx, m.cancel = context.WithCancel(context.TODO())
-		log.L().Warn().Msg("scan: lifecycle context not attached; using detached TODO context")
+		return nil, errLifecycleContextNotAttached
 	}
-	return m.runtimeCtx
+	return m.runtimeCtx, nil
 }
 
 func (m *Manager) executeScan(ctx context.Context) error {
@@ -361,78 +381,44 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 			}
 		}
 
-		// Probe with strict timeout (prevent hanging on zombie streams)
-		attemptedProbeURLs := map[string]struct{}{normalizeProbeURL(probeURL): {}}
-		probeCtx, probeCancel := context.WithTimeout(ctx, 8*time.Second)
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
-		metrics.SetScanInflightProbes(1)
-		res, err := infra.Probe(probeCtx, probeURL)
-		metrics.SetScanInflightProbes(0)
-		probeCancel() // Start fresh context for fallback if needed
-
-		// Fallback Logic: If probe fails and we have a resolved URL (or even if not), try 8001
-		// This handles the case where "official" stream URL (17999) is closed but 8001 works.
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				metrics.IncScanProbeTimeout()
+		res, successfulProbeURL, err := m.probeWithFallbacks(ctx, sRef, ch.URL, probeURL, infra.ProbeOptions{}, defaultProbeTimeout)
+		if shouldAttemptExtendedRetry(existingCap, found, res, err) {
+			retryInitialURL := successfulProbeURL
+			if strings.TrimSpace(retryInitialURL) == "" {
+				retryInitialURL = probeURL
 			}
-			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: initial probe failed, attempting port 8001 fallback")
+			log.L().Info().
+				Str("sref", sRef).
+				Dur("timeout", extendedProbeTimeout).
+				Dur("analyzeduration", extendedProbeAnalyzeDuration).
+				Int64("probesize_bytes", extendedProbeSizeBytes).
+				Msg("scan: media truth incomplete, retrying with extended ffprobe budget")
 
-			fallbackURL, buildErr := buildFallbackURL(probeURL, sRef)
-			if buildErr == nil {
-				attemptedProbeURLs[normalizeProbeURL(fallbackURL)] = struct{}{}
-				// Use fresh timeout for fallback
-				fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
-				resFallback, errFallback := infra.Probe(fbCtx, fallbackURL)
-				fbCancel()
-
-				if errFallback == nil {
-					log.L().Info().Str("sref", sRef).Msg("scan: fallback to 8001 succeeded")
-					res = resFallback
-					err = nil
-				} else {
-					log.L().Warn().Err(errFallback).Str("sref", sRef).Msg("scan: fallback 8001 probe failed")
-				}
+			retryRes, _, retryErr := m.probeWithFallbacks(
+				ctx,
+				sRef,
+				ch.URL,
+				retryInitialURL,
+				infra.ProbeOptions{
+					AnalyzeDuration: extendedProbeAnalyzeDuration,
+					ProbeSizeBytes:  extendedProbeSizeBytes,
+				},
+				extendedProbeTimeout,
+			)
+			retryBase := res
+			if retryBase == nil && found {
+				retryBase = streamInfoFromCapability(existingCap)
 			}
-		}
-
-		// Fallback Logic Level 3: Original URL (e.g. /web/stream.m3u)
-		// If explicit ports failed, try the original M3U URL provided in the playlist.
-		// This respects "UseWebIFStreams" scenarios where the user relies on the API endpoint itself.
-		if err != nil {
-			origCtx, origCancel := context.WithTimeout(ctx, resolveM3UTimeout)
-			originalProbeURL, resolvedPlaylist, resolveErr := resolveOriginalProbeURL(origCtx, ch.URL)
-			origCancel()
-
 			switch {
-			case resolveErr != nil:
-				log.L().Debug().
-					Err(resolveErr).
-					Str("sref", sRef).
-					Msg("scan: original URL fallback unavailable")
-			case originalProbeURL == "":
-				log.L().Debug().
-					Str("sref", sRef).
-					Msg("scan: original URL fallback resolved to empty target")
-			case hasAttemptedProbeURL(attemptedProbeURLs, originalProbeURL):
-				log.L().Debug().
-					Str("sref", sRef).
-					Str("probe_url", originalProbeURL).
-					Bool("resolved_playlist", resolvedPlaylist).
-					Msg("scan: skipping original URL fallback; target already attempted")
+			case retryErr != nil:
+				log.L().Warn().Err(retryErr).Str("sref", sRef).Msg("scan: extended probe retry failed")
+			case isRicherMediaTruth(retryBase, retryRes):
+				res = retryRes
+				err = nil
+				log.L().Info().Str("sref", sRef).Msg("scan: extended probe retry enriched media truth")
 			default:
-				log.L().Warn().Str("sref", sRef).Msg("scan: attempting fallback to original URL (web)")
-				fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
-				resOrig, errOrig := infra.Probe(fbCtx, originalProbeURL)
-				fbCancel()
-
-				if errOrig == nil {
-					log.L().Info().Str("sref", sRef).Msg("scan: fallback to original URL succeeded")
-					res = resOrig
-					err = nil
-				} else {
-					log.L().Warn().Err(errOrig).Str("sref", sRef).Msg("scan: final fallback failed")
-				}
+				log.L().Warn().Str("sref", sRef).Msg("scan: extended probe retry returned conflicting or non-additive media truth; keeping original result")
 			}
 		}
 		fromStore := found && existingCap.Usable()
@@ -444,16 +430,19 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 
 		if err != nil {
 			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: probe failed")
-			m.store.Update(m.mergeFailedAttempt(existingCap, found, sRef, time.Now(), err))
+			m.store.Update(m.mergeFailedAttempt(existingCap, found, sRef, ch.Name, time.Now(), err))
 			if !fromStore {
 				atomic.AddInt32(&m.consecutiveFailureCount, 1)
 			}
 		} else {
 			atomic.StoreInt32(&m.consecutiveFailureCount, 0)
-			cap := m.capabilityFromProbe(existingCap, found, sRef, time.Now(), res.Video.Interlaced, res.Video.Width, res.Video.Height, res.Video.CodecName)
+			cap := m.capabilityFromProbe(existingCap, found, sRef, ch.Name, time.Now(), res)
 
 			log.L().Info().
 				Str("sref", sRef).
+				Str("container", cap.Container).
+				Str("video_codec", cap.VideoCodec).
+				Str("audio_codec", cap.AudioCodec).
 				Bool("interlaced", cap.Interlaced).
 				Str("res", cap.Resolution).
 				Str("state", string(cap.State)).
@@ -530,6 +519,209 @@ func (m *Manager) waitForPlaybackIdle(ctx context.Context) error {
 	}
 }
 
+func shouldAttemptExtendedRetry(existing Capability, found bool, initial *vod.StreamInfo, probeErr error) bool {
+	if needsExtendedMediaTruthRetry(initial) {
+		return true
+	}
+	if probeErr == nil || !found {
+		return false
+	}
+	normalized := existing.Normalized()
+	return normalized.Usable() && !normalized.HasMediaTruth()
+}
+
+func needsExtendedMediaTruthRetry(info *vod.StreamInfo) bool {
+	if info == nil {
+		return false
+	}
+	return strings.TrimSpace(info.Video.CodecName) != "" &&
+		(strings.TrimSpace(info.Container) == "" || strings.TrimSpace(info.Audio.CodecName) == "")
+}
+
+func streamInfoFromCapability(cap Capability) *vod.StreamInfo {
+	normalized := cap.Normalized()
+	if normalized.Container == "" &&
+		normalized.VideoCodec == "" &&
+		normalized.AudioCodec == "" &&
+		normalized.Width == 0 &&
+		normalized.Height == 0 &&
+		normalized.FPS == 0 {
+		return nil
+	}
+	return &vod.StreamInfo{
+		Container: normalized.Container,
+		Video: vod.VideoStreamInfo{
+			CodecName:  normalized.VideoCodec,
+			Width:      normalized.Width,
+			Height:     normalized.Height,
+			FPS:        normalized.FPS,
+			Interlaced: normalized.Interlaced,
+		},
+		Audio: vod.AudioStreamInfo{
+			CodecName: normalized.AudioCodec,
+		},
+	}
+}
+
+func isRicherMediaTruth(base *vod.StreamInfo, candidate *vod.StreamInfo) bool {
+	if candidate == nil {
+		return false
+	}
+	if base == nil {
+		return strings.TrimSpace(candidate.Container) != "" ||
+			strings.TrimSpace(candidate.Video.CodecName) != "" ||
+			strings.TrimSpace(candidate.Audio.CodecName) != "" ||
+			candidate.Video.Width > 0 ||
+			candidate.Video.Height > 0 ||
+			candidate.Video.FPS > 0
+	}
+
+	added := false
+	if !compareStrictAdditiveString(base.Container, candidate.Container, &added) {
+		return false
+	}
+	if !compareStrictAdditiveString(base.Video.CodecName, candidate.Video.CodecName, &added) {
+		return false
+	}
+	if !compareStrictAdditiveString(base.Audio.CodecName, candidate.Audio.CodecName, &added) {
+		return false
+	}
+	if !compareStrictAdditiveInt(base.Video.Width, candidate.Video.Width, &added) {
+		return false
+	}
+	if !compareStrictAdditiveInt(base.Video.Height, candidate.Video.Height, &added) {
+		return false
+	}
+	if !compareStrictAdditiveFloat(base.Video.FPS, candidate.Video.FPS, &added) {
+		return false
+	}
+	return added
+}
+
+func compareStrictAdditiveString(base, candidate string, added *bool) bool {
+	base = strings.TrimSpace(base)
+	candidate = strings.TrimSpace(candidate)
+	switch {
+	case base == "" && candidate == "":
+		return true
+	case base == "":
+		*added = true
+		return true
+	case candidate == "":
+		return false
+	default:
+		return strings.EqualFold(base, candidate)
+	}
+}
+
+func compareStrictAdditiveInt(base, candidate int, added *bool) bool {
+	switch {
+	case base == 0 && candidate == 0:
+		return true
+	case base == 0:
+		*added = true
+		return true
+	case candidate == 0:
+		return false
+	default:
+		return base == candidate
+	}
+}
+
+func compareStrictAdditiveFloat(base, candidate float64, added *bool) bool {
+	switch {
+	case base == 0 && candidate == 0:
+		return true
+	case base == 0:
+		*added = true
+		return true
+	case candidate == 0:
+		return false
+	default:
+		return fmt.Sprintf("%.3f", base) == fmt.Sprintf("%.3f", candidate)
+	}
+}
+
+func (m *Manager) probeWithFallbacks(ctx context.Context, serviceRef, originalURL, initialProbeURL string, opts infra.ProbeOptions, timeout time.Duration) (*vod.StreamInfo, string, error) {
+	initialProbeURL = strings.TrimSpace(initialProbeURL)
+	if initialProbeURL == "" {
+		initialProbeURL = strings.TrimSpace(originalURL)
+	}
+	attemptedProbeURLs := map[string]struct{}{}
+	if normalized := normalizeProbeURL(initialProbeURL); normalized != "" {
+		attemptedProbeURLs[normalized] = struct{}{}
+	}
+
+	res, err := m.runProbeAttempt(ctx, initialProbeURL, opts, timeout)
+	if err == nil {
+		return res, initialProbeURL, nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		metrics.IncScanProbeTimeout()
+	}
+	log.L().Warn().Err(err).Str("sref", serviceRef).Msg("scan: initial probe failed, attempting port 8001 fallback")
+
+	fallbackURL, buildErr := buildFallbackURL(initialProbeURL, serviceRef)
+	if buildErr == nil && !hasAttemptedProbeURL(attemptedProbeURLs, fallbackURL) {
+		attemptedProbeURLs[normalizeProbeURL(fallbackURL)] = struct{}{}
+		resFallback, errFallback := m.runProbeAttempt(ctx, fallbackURL, opts, timeout)
+		if errFallback == nil {
+			log.L().Info().Str("sref", serviceRef).Msg("scan: fallback to 8001 succeeded")
+			return resFallback, fallbackURL, nil
+		}
+		log.L().Warn().Err(errFallback).Str("sref", serviceRef).Msg("scan: fallback 8001 probe failed")
+	}
+
+	origCtx, origCancel := context.WithTimeout(ctx, resolveM3UTimeout)
+	originalProbeURL, resolvedPlaylist, resolveErr := resolveOriginalProbeURL(origCtx, originalURL)
+	origCancel()
+
+	switch {
+	case resolveErr != nil:
+		log.L().Debug().
+			Err(resolveErr).
+			Str("sref", serviceRef).
+			Msg("scan: original URL fallback unavailable")
+	case originalProbeURL == "":
+		log.L().Debug().
+			Str("sref", serviceRef).
+			Msg("scan: original URL fallback resolved to empty target")
+	case hasAttemptedProbeURL(attemptedProbeURLs, originalProbeURL):
+		log.L().Debug().
+			Str("sref", serviceRef).
+			Str("probe_url", originalProbeURL).
+			Bool("resolved_playlist", resolvedPlaylist).
+			Msg("scan: skipping original URL fallback; target already attempted")
+	default:
+		log.L().Warn().Str("sref", serviceRef).Msg("scan: attempting fallback to original URL (web)")
+		resOrig, errOrig := m.runProbeAttempt(ctx, originalProbeURL, opts, timeout)
+		if errOrig == nil {
+			log.L().Info().Str("sref", serviceRef).Msg("scan: fallback to original URL succeeded")
+			return resOrig, originalProbeURL, nil
+		}
+		log.L().Warn().Err(errOrig).Str("sref", serviceRef).Msg("scan: final fallback failed")
+	}
+
+	return nil, "", err
+}
+
+func (m *Manager) runProbeAttempt(ctx context.Context, probeURL string, opts infra.ProbeOptions, timeout time.Duration) (*vod.StreamInfo, error) {
+	if strings.TrimSpace(probeURL) == "" {
+		return nil, fmt.Errorf("probe url empty")
+	}
+	probeCtx, probeCancel := context.WithTimeout(ctx, timeout)
+	defer probeCancel()
+
+	metrics.SetScanInflightProbes(1)
+	defer metrics.SetScanInflightProbes(0)
+
+	probeFn := m.probeFn
+	if probeFn == nil {
+		probeFn = infra.ProbeWithOptions
+	}
+	return probeFn(probeCtx, probeURL, opts)
+}
+
 func (m *Manager) hasPendingProbeCandidates(now time.Time) (bool, error) {
 	content, err := os.ReadFile(m.m3uPath)
 	if err != nil {
@@ -575,24 +767,42 @@ func (m *Manager) shouldProbeService(serviceRef string, now time.Time) bool {
 	return cap.RetryDue(now)
 }
 
-func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRef string, now time.Time, interlaced bool, width, height int, codec string) Capability {
+func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRef string, channelName string, now time.Time, info *vod.StreamInfo) Capability {
 	cap := existing
 	if !found {
 		cap = Capability{ServiceRef: serviceRef}
 	}
 	cap.ServiceRef = serviceRef
-	cap.Interlaced = interlaced
 	cap.LastAttempt = now.UTC()
 	cap.FailureReason = ""
-	cap.Codec = strings.TrimSpace(codec)
-	if width > 0 && height > 0 {
-		cap.Resolution = fmt.Sprintf("%dx%d", width, height)
+	if info != nil {
+		cap.Container = info.Container
+		cap.VideoCodec = strings.TrimSpace(info.Video.CodecName)
+		cap.AudioCodec = strings.TrimSpace(info.Audio.CodecName)
+		cap.Codec = ""
+		if cap.VideoCodec != "" {
+			cap.Codec = cap.VideoCodec
+		} else if cap.AudioCodec != "" {
+			cap.Codec = cap.AudioCodec
+		}
+		cap.Interlaced = info.Video.Interlaced
+		cap.Width = info.Video.Width
+		cap.Height = info.Video.Height
+		cap.FPS = info.Video.FPS
+	}
+	if cap.Width > 0 && cap.Height > 0 {
+		cap.Resolution = fmt.Sprintf("%dx%d", cap.Width, cap.Height)
 	} else {
 		cap.Resolution = ""
 	}
 	cap.State = inferCapabilityState(cap.Resolution, cap.Codec)
 	if cap.State == CapabilityStateFailed {
-		cap.FailureReason = "probe_returned_no_media_metadata"
+		if isLikelyInactiveEventFeed(channelName, nil) {
+			cap.State = CapabilityStateInactiveEventFeed
+			cap.FailureReason = "inactive_event_feed_no_media_metadata"
+		} else {
+			cap.FailureReason = "probe_returned_no_media_metadata"
+		}
 		cap.NextRetryAt = now.UTC().Add(failureRetryWindow)
 		cap.LastScan = existing.LastScan
 		cap.LastSuccess = existing.LastSuccess
@@ -604,7 +814,7 @@ func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRe
 	return cap.Normalized()
 }
 
-func (m *Manager) mergeFailedAttempt(existing Capability, found bool, serviceRef string, now time.Time, err error) Capability {
+func (m *Manager) mergeFailedAttempt(existing Capability, found bool, serviceRef string, channelName string, now time.Time, err error) Capability {
 	cap := existing
 	if !found {
 		cap = Capability{
@@ -619,6 +829,11 @@ func (m *Manager) mergeFailedAttempt(existing Capability, found bool, serviceRef
 		cap.FailureReason = "probe_failed"
 	}
 	normalized := cap.Normalized()
+	if normalized.State == CapabilityStateInactiveEventFeed || (!normalized.Usable() && isLikelyInactiveEventFeed(channelName, err)) {
+		normalized.State = CapabilityStateInactiveEventFeed
+		normalized.NextRetryAt = now.UTC().Add(failureRetryWindow)
+		return normalized.Normalized()
+	}
 	switch normalized.State {
 	case CapabilityStatePartial:
 		normalized.NextRetryAt = now.UTC().Add(partialRetryWindow)
@@ -629,6 +844,52 @@ func (m *Manager) mergeFailedAttempt(existing Capability, found bool, serviceRef
 		normalized.NextRetryAt = now.UTC().Add(failureRetryWindow)
 	}
 	return normalized.Normalized()
+}
+
+func isLikelyInactiveEventFeed(channelName string, err error) bool {
+	if !isLikelyEventFeedChannel(channelName) {
+		return false
+	}
+	if err == nil {
+		return true
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(msg, "stream ends prematurely") ||
+		strings.Contains(msg, "signal: killed") ||
+		strings.Contains(msg, "input/output error")
+}
+
+func isLikelyEventFeedChannel(channelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(channelName))
+	switch name {
+	case "sky sport top event", "sky sport tennis", "sky sport golf", "sky sport premier league", "sky sport mix", "sky sport news", "sky sport f1":
+		return true
+	}
+	if n, ok := parseTrailingChannelNumber(name, "sky sport austria "); ok {
+		return n >= 2
+	}
+	if n, ok := parseTrailingChannelNumber(name, "sky sport bundesliga "); ok {
+		return n >= 8
+	}
+	if n, ok := parseTrailingChannelNumber(name, "sky sport "); ok {
+		return n >= 7
+	}
+	return false
+}
+
+func parseTrailingChannelNumber(name string, prefix string) (int, bool) {
+	if !strings.HasPrefix(name, prefix) {
+		return 0, false
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(name, prefix))
+	if value == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) error {

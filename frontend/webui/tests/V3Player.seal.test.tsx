@@ -110,12 +110,12 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
 
     const streamInfoCall = findFetchCall((global.fetch as any), '/live/stream-info');
     const streamInfoBody = JSON.parse(String(streamInfoCall?.[1]?.body ?? '{}'));
-    expect(streamInfoBody.capabilities.capabilitiesVersion).toBe(2);
+    expect(streamInfoBody.capabilities.capabilitiesVersion).toBe(3);
     expect(streamInfoBody.capabilities.audioCodecs).toContain('ac3');
     expect(streamInfoBody.capabilities.hlsEngines).toContain('native');
     expect(streamInfoBody.capabilities.preferredHlsEngine).toBe('native');
     expect(streamInfoBody.capabilities.runtimeProbeUsed).toBe(true);
-    expect(streamInfoBody.capabilities.runtimeProbeVersion).toBe(1);
+    expect(streamInfoBody.capabilities.runtimeProbeVersion).toBe(2);
     expect(streamInfoBody.capabilities.clientFamilyFallback).toBe('safari_native');
   });
 

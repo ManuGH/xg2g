@@ -15,11 +15,11 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	// Set OWIBase to keep defaults deterministic for this test.
-	_ = os.Setenv("XG2G_OWI_BASE", "http://example.com")
+	// Set receiver base URL to keep defaults deterministic for this test.
+	_ = os.Setenv("XG2G_E2_HOST", "http://example.com")
 	_ = os.Setenv("XG2G_STORE_PATH", t.TempDir())
 	defer func() {
-		_ = os.Unsetenv("XG2G_OWI_BASE")
+		_ = os.Unsetenv("XG2G_E2_HOST")
 		_ = os.Unsetenv("XG2G_STORE_PATH")
 	}()
 
@@ -67,7 +67,7 @@ func TestLoadFromYAML(t *testing.T) {
 
 	yamlContent := fmt.Sprintf(`
 dataDir: %s
-openWebIF:
+enigma2:
   baseUrl: http://custom.local
   username: testuser
   password: testpass
@@ -116,7 +116,7 @@ func TestLoadFromYAMLHLSReadySegments(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
-openWebIF:
+enigma2:
   baseUrl: http://custom.local
 hls:
   readySegments: 5
@@ -143,7 +143,7 @@ func TestLoadPlaybackOperatorFromYAML(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
-openWebIF:
+enigma2:
   baseUrl: http://custom.local
 playback:
   operator:
@@ -182,7 +182,7 @@ func TestENVOverridesFile(t *testing.T) {
 
 	yamlContent := fmt.Sprintf(`
 dataDir: %s
-openWebIF:
+enigma2:
   baseUrl: http://file.local
   streamPort: 9001
 `, fileDataDir)
@@ -192,8 +192,8 @@ openWebIF:
 	}
 
 	t.Setenv("XG2G_DATA", envDataDir)
-	t.Setenv("XG2G_OWI_BASE", "http://env.local")
-	t.Setenv("XG2G_STREAM_PORT", "7001")
+	t.Setenv("XG2G_E2_HOST", "http://env.local")
+	t.Setenv("XG2G_E2_STREAM_PORT", "7001")
 
 	loader := NewLoader(configPath, "1.0.0")
 	cfg, err := loader.Load()
@@ -213,7 +213,7 @@ openWebIF:
 }
 
 func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
-	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
 
@@ -234,7 +234,7 @@ func TestENVOverridesPlaybackOperatorFileConfig(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
-openWebIF:
+enigma2:
   baseUrl: http://file.local
 playback:
   operator:
@@ -277,7 +277,7 @@ func TestLoadPlaybackOperatorSourceRulesFromFile(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
-openWebIF:
+enigma2:
   baseUrl: http://file.local
 playback:
   operator:
@@ -330,18 +330,20 @@ playback:
 	}
 }
 
-func TestENVStreamPortAliasConflictFails(t *testing.T) {
-	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+func TestENVLegacyStreamPortFailsStart(t *testing.T) {
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_STREAM_PORT", "7001")
-	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
 
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
 	if err == nil {
-		t.Fatal("expected alias conflict error, got nil")
+		t.Fatal("expected legacy env error, got nil")
 	}
-	if !strings.Contains(err.Error(), "openWebIF.streamPort conflicts with enigma2.streamPort") {
+	if !strings.Contains(err.Error(), "XG2G_STREAM_PORT") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "XG2G_E2_STREAM_PORT=7001") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -354,7 +356,7 @@ func TestPrecedenceOrder(t *testing.T) {
 
 	yamlContent := fmt.Sprintf(`
 dataDir: %s
-openWebIF:
+enigma2:
   baseUrl: http://example.com
   streamPort: 9001
 epg:
@@ -503,8 +505,7 @@ func TestValidateEPGBounds(t *testing.T) {
 	}
 }
 
-// TestOWIMaxBackoffFromENV tests that XG2G_OWI_MAX_BACKOFF_MS is read correctly
-func TestOWIMaxBackoffFromENV(t *testing.T) {
+func TestE2MaxBackoffDefaultAndCanonicalEnv(t *testing.T) {
 	tests := []struct {
 		name            string
 		envValue        string
@@ -519,25 +520,25 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 		},
 		{
 			name:            "custom_value_2s",
-			envValue:        "2000",
+			envValue:        "2s",
 			expectedBackoff: 2 * time.Second,
 			description:     "Custom 2s maxBackoff from ENV",
 		},
 		{
 			name:            "custom_value_5s",
-			envValue:        "5000",
+			envValue:        "5s",
 			expectedBackoff: 5 * time.Second,
 			description:     "Custom 5s maxBackoff from ENV",
 		},
 		{
 			name:            "custom_value_10s",
-			envValue:        "10000",
+			envValue:        "10s",
 			expectedBackoff: 10 * time.Second,
 			description:     "Custom 10s maxBackoff from ENV",
 		},
 		{
 			name:            "custom_value_30s",
-			envValue:        "30000",
+			envValue:        "30s",
 			expectedBackoff: 30 * time.Second,
 			description:     "Maximum 30s maxBackoff from ENV",
 		},
@@ -545,16 +546,12 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clean environment
-			_ = os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
-
-			// Set OWIBase for test clarity
-			t.Setenv("XG2G_OWI_BASE", "http://example.com")
+			_ = os.Unsetenv("XG2G_E2_MAX_BACKOFF")
+			t.Setenv("XG2G_E2_HOST", "http://example.com")
 			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
-			// Set test-specific ENV
 			if tt.envValue != "" {
-				t.Setenv("XG2G_OWI_MAX_BACKOFF_MS", tt.envValue)
+				t.Setenv("XG2G_E2_MAX_BACKOFF", tt.envValue)
 			}
 
 			loader := NewLoader("", "test-version")
@@ -572,7 +569,7 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 }
 
 func TestE2MaxBackoffFromENV(t *testing.T) {
-	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_E2_MAX_BACKOFF", "9s")
 
@@ -587,8 +584,8 @@ func TestE2MaxBackoffFromENV(t *testing.T) {
 	}
 }
 
-// TestOWIMaxBackoffFromFile tests that maxBackoff from YAML config is read correctly
-func TestOWIMaxBackoffFromFile(t *testing.T) {
+// TestE2MaxBackoffFromFile tests that maxBackoff from canonical YAML config is read correctly.
+func TestE2MaxBackoffFromFile(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tests := []struct {
 		name            string
@@ -635,7 +632,7 @@ func TestOWIMaxBackoffFromFile(t *testing.T) {
 
 			yamlContent := fmt.Sprintf(`
 dataDir: %s
-openWebIF:
+enigma2:
   baseUrl: http://test.local
   maxBackoff: %s
 `, tmpDir, tt.yamlBackoff)
@@ -658,8 +655,8 @@ openWebIF:
 	}
 }
 
-// TestOWIMaxBackoffENVOverridesFile tests precedence: ENV > File > Default
-func TestOWIMaxBackoffENVOverridesFile(t *testing.T) {
+// TestE2MaxBackoffENVOverridesFile tests precedence: ENV > File > Default.
+func TestE2MaxBackoffENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -667,7 +664,7 @@ func TestOWIMaxBackoffENVOverridesFile(t *testing.T) {
 	// File config: 5s maxBackoff
 	yamlContent := fmt.Sprintf(`
 dataDir: %s
-openWebIF:
+enigma2:
   baseUrl: http://test.local
   maxBackoff: 5s
   backoff: 500ms
@@ -678,7 +675,7 @@ openWebIF:
 	}
 
 	// ENV config: 10s maxBackoff (should override file)
-	t.Setenv("XG2G_OWI_MAX_BACKOFF_MS", "10000")
+	t.Setenv("XG2G_E2_MAX_BACKOFF", "10s")
 
 	loader := NewLoader(configPath, "1.0.0")
 	cfg, err := loader.Load()
@@ -697,15 +694,15 @@ openWebIF:
 	}
 }
 
-// TestOWIBackoffConfigConsistency tests that all OWI timing configs work together
-func TestOWIBackoffConfigConsistency(t *testing.T) {
+// TestE2BackoffConfigConsistency tests that canonical Enigma2 timing config works together.
+func TestE2BackoffConfigConsistency(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := fmt.Sprintf(`
 dataDir: %s
-openWebIF:
+enigma2:
   baseUrl: http://test.local
   timeout: 15s
   retries: 5
@@ -738,30 +735,31 @@ openWebIF:
 	}
 }
 
-// TestOWIMaxBackoffInvalidValues tests handling of invalid maxBackoff values
-func TestOWIMaxBackoffInvalidValues(t *testing.T) {
+func TestE2MaxBackoffInvalidValues(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tests := []struct {
 		name          string
 		envValue      string
 		expectDefault bool
+		expectErr     bool
 		description   string
 	}{
 		{
 			name:          "invalid_string",
-			envValue:      "not-a-number",
+			envValue:      "not-a-duration",
 			expectDefault: true,
 			description:   "Invalid string should use default",
 		},
 		{
 			name:          "negative_value",
-			envValue:      "-1000",
-			expectDefault: false, // Will parse as negative duration
-			description:   "Negative value should parse (validation happens elsewhere)",
+			envValue:      "-1s",
+			expectDefault: false,
+			expectErr:     true,
+			description:   "Negative value should fail validation",
 		},
 		{
 			name:          "zero_value",
-			envValue:      "0",
+			envValue:      "0s",
 			expectDefault: false, // Will parse as 0
 			description:   "Zero value should parse (validation happens elsewhere)",
 		},
@@ -775,20 +773,25 @@ func TestOWIMaxBackoffInvalidValues(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clean environment
-			_ = os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
-
-			// Set OWIBase for test clarity
-			t.Setenv("XG2G_OWI_BASE", "http://example.com")
+			_ = os.Unsetenv("XG2G_E2_MAX_BACKOFF")
+			t.Setenv("XG2G_E2_HOST", "http://example.com")
 			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
-			// Set test-specific ENV
 			if tt.envValue != "" {
-				t.Setenv("XG2G_OWI_MAX_BACKOFF_MS", tt.envValue)
+				t.Setenv("XG2G_E2_MAX_BACKOFF", tt.envValue)
 			}
 
 			loader := NewLoader("", "test-version")
 			cfg, err := loader.Load()
+			if tt.expectErr {
+				if err == nil {
+					t.Fatalf("expected Load() to fail")
+				}
+				if !containsString(err.Error(), "Enigma2.MaxBackoff") {
+					t.Fatalf("expected Enigma2.MaxBackoff validation error, got %v", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Load() failed: %v", err)
 			}
@@ -818,7 +821,7 @@ func TestYAMLCanDisableFeatures(t *testing.T) {
 	// YAML with EPG explicitly disabled and retries set to 0
 	yamlContent := fmt.Sprintf(`
 dataDir: %s
-openWebIF:
+enigma2:
   baseUrl: http://test.local
   retries: 0
 epg:
@@ -850,13 +853,12 @@ epg:
 		t.Errorf("EPG Retries should be 0 when epg.retries: 0 in YAML, but EPGRetries=%d", cfg.EPGRetries)
 	}
 
-	// Note: OWIRetries is not a pointer in OpenWebIFConfig, so it still has the old behavior
-	// This is intentional - we only fixed EPG fields for now
+	// Note: enigma2.retries is not a pointer in Enigma2Config, so it still has the old behavior.
+	// This is intentional; this regression test only covers the pointer-based EPG fields.
 }
 
 func TestParseScopedTokensFromEnv(t *testing.T) {
-	// Set valid OWIBase to satisfy validation (Enigma2 inherits this)
-	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	t.Run("json_format", func(t *testing.T) {

@@ -13,6 +13,7 @@ var (
 	ErrUpstreamUnavailable = errors.New("upstream: host unreachable or transport failure")
 	ErrUpstreamError       = errors.New("upstream: internal error (5xx)")
 	ErrUpstreamBadResponse = errors.New("upstream: invalid response format or malformed data")
+	ErrUpstreamRejected    = errors.New("upstream: request rejected")
 	ErrTimeout             = errors.New("upstream: request timed out")
 )
 

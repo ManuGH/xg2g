@@ -79,7 +79,7 @@ func TestGracefulShutdown(t *testing.T) {
 		"XG2G_DATA=" + dataDir,
 		fmt.Sprintf("XG2G_LISTEN=:%d", port),
 		fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
-		"XG2G_OWI_BASE=" + mockOWI.URL,
+		"XG2G_E2_HOST=" + mockOWI.URL,
 		"XG2G_BOUQUET=Test",
 		"XG2G_EPG_ENABLED=false",            // Disable EPG to simplify test
 		"XG2G_HDHR_ENABLED=false",           // Disable HDHR
@@ -203,7 +203,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 		"XG2G_DATA=" + dataDir,
 		fmt.Sprintf("XG2G_LISTEN=:%d", port),
 		fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
-		"XG2G_OWI_BASE=" + mockOWI.URL,
+		"XG2G_E2_HOST=" + mockOWI.URL,
 		"XG2G_BOUQUET=Test",
 		"XG2G_EPG_ENABLED=false",
 		"XG2G_HDHR_ENABLED=false",

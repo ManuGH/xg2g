@@ -611,6 +611,12 @@
   box-shadow: var(--shadow-accent-action);
 }
 
+.deviceVolumeHint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .liveButton {
   min-height: 44px;
   background:
@@ -842,5 +848,33 @@
     flex-basis: 100%;
     width: 100%;
     min-width: 72px;
+  }
+}
+
+@media (max-width: 768px) and (orientation: landscape), (max-height: 500px) {
+  .controlsHeader {
+    top: auto;
+    max-height: calc(100dvh - 88px - var(--sat) - var(--sab));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-top: 12px;
+  }
+
+  .vodControls,
+  .seekControls,
+  .utilityControls,
+  .volumeControl {
+    width: 100%;
+  }
+
+  .utilityControls {
+    gap: 10px;
+    align-content: flex-start;
+  }
+
+  .deviceVolumeHint {
+    white-space: normal;
   }
 }

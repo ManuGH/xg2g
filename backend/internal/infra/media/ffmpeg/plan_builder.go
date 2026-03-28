@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -109,6 +110,7 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		Server: codecdecision.ServerCapabilities{
 			HWAccelAvailable:  useHWPath,
 			SupportedHWCodecs: a.supportedHWCodecs(),
+			AutoHWCodecs:      a.autoHWCodecs(),
 		},
 	}
 	neg := codecdecision.Decide(decisionIn)
@@ -127,6 +129,7 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		Str("profile", decisionInSummary.Profile).
 		Str("requested_codec", decisionInSummary.RequestedCodec).
 		Strs("supported_hw_codecs", decisionInSummary.SupportedHWCodecs).
+		Strs("auto_hw_codecs", decisionInSummary.AutoHWCodecs).
 		Bool("hwaccel_available", decisionInSummary.HWAccelAvailable).
 		Str("path", decisionOutSummary.Path).
 		Str("output_codec", decisionOutSummary.OutputCodec).
@@ -249,6 +252,9 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 	}
 
 	netInputArgs := append([]string{}, baseInputArgs...)
+	if whitelist, ok := infraffmpeg.InputProtocolWhitelist(inputURL); ok {
+		netInputArgs = append(netInputArgs, "-protocol_whitelist", whitelist)
+	}
 	netInputArgs = append(netInputArgs,
 		"-reconnect", "1",
 		"-reconnect_at_eof", "1",
@@ -558,18 +564,11 @@ func (a *LocalAdapter) shouldPreferSafariRuntimeRemux(ctx context.Context, spec 
 	if probeTimeout <= 0 {
 		probeTimeout = 6 * time.Second
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
-	defer cancel()
-
 	var (
 		info *vod.StreamInfo
 		err  error
 	)
-	if a.streamProbeFn != nil {
-		info, err = a.streamProbeFn(probeCtx, inputURL)
-	} else {
-		info, err = infraffmpeg.ProbeWithBin(probeCtx, a.FFprobeBin, inputURL)
-	}
+	info, err = a.runSafariRuntimeProbeWithRetry(ctx, spec.SessionID, inputURL, probeTimeout)
 	if err != nil {
 		a.Logger.Info().
 			Err(err).
@@ -591,6 +590,79 @@ func (a *LocalAdapter) shouldPreferSafariRuntimeRemux(ctx context.Context, spec 
 		Str("container", info.Container).
 		Msg("safari runtime probe selected remux path")
 	return true
+}
+
+func (a *LocalAdapter) runSafariRuntimeProbeWithRetry(ctx context.Context, sessionID, inputURL string, probeTimeout time.Duration) (*vod.StreamInfo, error) {
+	const maxAttempts = 2
+
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, probeTimeout)
+		info, err := a.runSafariRuntimeProbeOnce(attemptCtx, inputURL)
+		cancel()
+		if err == nil {
+			if attempt > 1 {
+				a.Logger.Info().
+					Str("sessionId", sessionID).
+					Str("input_url", sanitizeURLForLog(inputURL)).
+					Int("attempt", attempt).
+					Msg("safari runtime probe recovered after transient startup error")
+			}
+			return info, nil
+		}
+
+		lastErr = err
+		if attempt == maxAttempts || !shouldRetrySafariRuntimeProbe(err, inputURL) {
+			break
+		}
+
+		a.Logger.Info().
+			Err(err).
+			Str("sessionId", sessionID).
+			Str("input_url", sanitizeURLForLog(inputURL)).
+			Int("attempt", attempt).
+			Msg("safari runtime probe transient startup error; retrying")
+
+		select {
+		case <-time.After(250 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	return nil, lastErr
+}
+
+func (a *LocalAdapter) runSafariRuntimeProbeOnce(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+	if a.streamProbeFn != nil {
+		return a.streamProbeFn(ctx, inputURL)
+	}
+	return infraffmpeg.ProbeWithBin(ctx, a.FFprobeBin, inputURL)
+}
+
+func shouldRetrySafariRuntimeProbe(err error, inputURL string) bool {
+	if err == nil || !isStreamRelayURL(inputURL) {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	transientMarkers := []string{
+		"stream ends prematurely",
+		"input/output error",
+		"non-existing pps",
+		"decode_slice_header error",
+		"no frame!",
+		"mmco: unref short failure",
+	}
+	for _, marker := range transientMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func usesLegacyCPUDefaults(spec ports.StreamSpec, outputCodec string) bool {
@@ -802,6 +874,20 @@ func (a *LocalAdapter) supportedHWCodecs() []string {
 		codecs = append(codecs, "hevc")
 	}
 	if a.VaapiEncoderVerified("av1_vaapi") {
+		codecs = append(codecs, "av1")
+	}
+	return codecs
+}
+
+func (a *LocalAdapter) autoHWCodecs() []string {
+	codecs := make([]string, 0, 3)
+	if a.VaapiEncoderAutoEligible("h264_vaapi") {
+		codecs = append(codecs, "h264")
+	}
+	if a.VaapiEncoderAutoEligible("hevc_vaapi") {
+		codecs = append(codecs, "hevc")
+	}
+	if a.VaapiEncoderAutoEligible("av1_vaapi") {
 		codecs = append(codecs, "av1")
 	}
 	return codecs

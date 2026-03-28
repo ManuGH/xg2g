@@ -16,6 +16,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createIntent,
   deleteRecording,
   getSystemConfig,
   getErrors,
@@ -32,6 +33,7 @@ import {
   getRecordings,
   triggerSystemScan,
   type AppConfig,
+  type CreateIntentResponse,
   type ErrorCatalogResponse,
   type SystemHealth,
   type SystemInfoData,
@@ -232,6 +234,32 @@ export function useStreams() {
     },
     refetchInterval: 5_000, // 5s polling
     staleTime: 4_000,
+  });
+}
+
+/**
+ * useStopStreamMutation - stop an active stream session and refresh stream list
+ */
+export function useStopStreamMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const result = await createIntent({
+        body: {
+          type: 'stream.stop',
+          sessionId,
+        },
+      });
+
+      return unwrapClientResultOrThrow<CreateIntentResponse | null>(result, {
+        source: 'useStopStreamMutation',
+        silent: true,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.streams });
+    },
   });
 }
 

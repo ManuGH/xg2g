@@ -74,7 +74,8 @@ type TLSConfig struct {
 	ForceHTTPS *bool  `yaml:"forceHTTPS,omitempty"`
 }
 
-// OpenWebIFConfig holds OpenWebIF client configuration
+// OpenWebIFConfig is retained only so the loader can emit a targeted migration
+// error for legacy YAML files that still use openWebIF.*.
 type OpenWebIFConfig struct {
 	BaseURL    string `yaml:"baseUrl"`
 	Username   string `yaml:"username,omitempty"`

@@ -174,3 +174,50 @@ func TestOrchestrator_Stop_Idempotency(t *testing.T) {
 	// Original reason should be preserved (idempotent - first stop wins)
 	assert.Equal(t, originalRecord.Reason, s.Reason, "Original stop reason preserved")
 }
+
+func TestOrchestrator_Stop_AlreadyStoppingCancelsActiveSession(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+
+	orch := &Orchestrator{
+		Store:  st,
+		active: make(map[string]context.CancelFunc),
+	}
+
+	sessionID := "sess-already-stopping"
+	err := st.PutSession(ctx, &model.SessionRecord{
+		SessionID:     sessionID,
+		ServiceRef:    "ref:lease",
+		State:         model.SessionStopping,
+		PipelineState: model.PipeStopRequested,
+		Reason:        model.RLeaseExpired,
+		StopReason:    "LEASE_EXPIRED",
+		UpdatedAtUnix: time.Now().Unix(),
+	})
+	require.NoError(t, err)
+
+	cancelled := make(chan struct{}, 1)
+	orch.active[sessionID] = func() {
+		cancelled <- struct{}{}
+	}
+
+	err = orch.handleStop(ctx, model.StopSessionEvent{
+		SessionID: sessionID,
+		Reason:    model.RLeaseExpired,
+	})
+	require.NoError(t, err)
+
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("expected active session cancellation")
+	}
+
+	got, err := st.GetSession(ctx, sessionID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, model.SessionStopping, got.State)
+	assert.Equal(t, model.RLeaseExpired, got.Reason)
+	assert.Equal(t, model.PipeStopRequested, got.PipelineState)
+	assert.Equal(t, "LEASE_EXPIRED", got.StopReason)
+}

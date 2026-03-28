@@ -65,6 +65,9 @@ func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
+	protocolWhitelist, ok := valueAfter(args, "-protocol_whitelist")
+	require.True(t, ok)
+	assert.Equal(t, "crypto,http,https,tcp,tls", protocolWhitelist)
 	assert.Contains(t, args, "0:v:0?", "video map should be optional for audio-only inputs")
 	assert.Contains(t, args, "0:a:0?", "audio map should remain optional")
 }
@@ -177,6 +180,122 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 	assert.Equal(t, "mpegts", hlsSegmentType, "native safari remux path should stay on TS HLS")
 
 	assert.NotContains(t, args, "-hls_fmp4_init_filename", "native safari remux path must not emit fMP4 init segments")
+}
+
+func TestBuildArgs_SafariRuntimeProbeRetriesTransientStreamRelayStartup(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	probeCalls := 0
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		probeCalls++
+		if probeCalls == 1 {
+			return nil, errors.New("ffprobe failed: exit status 1 (stderr: [http @ 0x0] Stream ends prematurely at 0. Input/output error\n[h264 @ 0x0] non-existing PPS 0 referenced\n[h264 @ 0x0] decode_slice_header error\n[h264 @ 0x0] no frame!)")
+		}
+		return &vod.StreamInfo{
+			Container: "ts",
+			Video: vod.VideoStreamInfo{
+				CodecName:  "h264",
+				Interlaced: false,
+			},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-runtime-remux-retry",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			TranscodeVideo: true,
+			Container:      "fmp4",
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:"
+	args, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	assert.Equal(t, 2, probeCalls, "transient streamrelay startup errors should be retried once")
+	assert.Contains(t, args, "-c:v")
+	assert.Contains(t, args, "copy", "recovered safari runtime probe should still select video copy")
+	assert.NotContains(t, args, "libx264", "recovered safari runtime probe must not fall back to transcode")
+
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", hlsSegmentType, "recovered safari remux path should stay on TS HLS")
+}
+
+func TestBuildArgs_SafariRuntimeProbeRetryUsesFreshTimeoutPerAttempt(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.SafariRuntimeProbeTimeout = 2 * time.Second
+
+	deadlines := make([]time.Time, 0, 2)
+	probeCalls := 0
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		probeCalls++
+		deadline, ok := ctx.Deadline()
+		require.True(t, ok, "runtime probe attempt should have its own timeout")
+		deadlines = append(deadlines, deadline)
+		if probeCalls == 1 {
+			return nil, errors.New("ffprobe failed: stream ends prematurely at 0; non-existing PPS 0 referenced; decode_slice_header error; no frame!")
+		}
+		return &vod.StreamInfo{
+			Container: "ts",
+			Video: vod.VideoStreamInfo{
+				CodecName:  "h264",
+				Interlaced: false,
+			},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-runtime-remux-retry-deadline",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			TranscodeVideo: true,
+			Container:      "fmp4",
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:"
+	_, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	require.Len(t, deadlines, 2)
+	assert.True(t, deadlines[1].After(deadlines[0]), "retry attempt should receive a fresh timeout budget")
+}
+
+func TestShouldRetrySafariRuntimeProbe_TransientStreamRelayOnly(t *testing.T) {
+	streamRelayURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:"
+
+	assert.True(t, shouldRetrySafariRuntimeProbe(
+		errors.New("ffprobe failed: stream ends prematurely at 0; Input/output error; non-existing PPS 0 referenced; no frame!"),
+		streamRelayURL,
+	))
+	assert.False(t, shouldRetrySafariRuntimeProbe(errors.New("401 unauthorized"), streamRelayURL))
+	assert.False(t, shouldRetrySafariRuntimeProbe(
+		errors.New("ffprobe failed: stream ends prematurely at 0; no frame!"),
+		"http://example.com/live",
+	))
+	assert.False(t, shouldRetrySafariRuntimeProbe(context.DeadlineExceeded, streamRelayURL))
 }
 
 func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
@@ -618,6 +737,9 @@ func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
 	)
 
 	args := adapter.buildFPSProbeArgs("http://example.com/stream", false)
+	protocolWhitelist, ok := valueAfter(args, "-protocol_whitelist")
+	require.True(t, ok)
+	assert.Equal(t, "crypto,http,https,tcp,tls", protocolWhitelist)
 	fflags, ok := valueAfter(args, "-fflags")
 	require.True(t, ok)
 	assert.Equal(t, "+genpts+discardcorrupt+igndts", fflags)
@@ -642,6 +764,40 @@ func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
 	retryProbe, ok := valueAfter(retryArgs, "-probesize")
 	require.True(t, ok)
 	assert.Equal(t, "20M", retryProbe)
+}
+
+func TestBuildArgs_FileInputsDoNotUseProtocolWhitelist(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "file-no-whitelist",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "libx264",
+		},
+		Source: ports.StreamSource{
+			ID:   "/tmp/example.ts",
+			Type: ports.SourceFile,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Equal(t, -1, indexOf(args, "-protocol_whitelist"))
+}
+
+func TestBuildFPSProbeArgs_FileInputsDoNotUseProtocolWhitelist(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	args := adapter.buildFPSProbeArgs("/tmp/example.ts", false)
+	assert.Equal(t, -1, indexOf(args, "-protocol_whitelist"))
 }
 
 func TestBuildArgs_ResilientIngestToggleOff(t *testing.T) {

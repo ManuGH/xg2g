@@ -673,7 +673,7 @@ export type PlaybackInfoReason = 'directplay_match' | 'transcode_audio' | 'trans
  */
 export type PlaybackCapabilities = {
     /**
-     * Capabilities contract version (current: 2)
+     * Capabilities contract version (current: 3)
      */
     capabilitiesVersion: number;
     /**
@@ -684,6 +684,10 @@ export type PlaybackCapabilities = {
      * Supported video codecs
      */
     videoCodecs: Array<string>;
+    /**
+     * Runtime decode signals per video codec from MediaCapabilities and fallback browser probes
+     */
+    videoCodecSignals?: Array<PlaybackVideoCodecSignal>;
     /**
      * Supported audio codecs
      */
@@ -732,6 +736,25 @@ export type PlaybackCapabilities = {
      * Whether client allows transcoding (force bypass)
      */
     allowTranscode?: boolean;
+};
+
+export type PlaybackVideoCodecSignal = {
+    /**
+     * Video codec identifier
+     */
+    codec: string;
+    /**
+     * Whether the browser can decode this codec at all
+     */
+    supported: boolean;
+    /**
+     * Whether the browser reported smooth playback for this codec
+     */
+    smooth?: boolean;
+    /**
+     * Whether the browser reported hardware-efficient decode for this codec
+     */
+    powerEfficient?: boolean;
 };
 
 /**

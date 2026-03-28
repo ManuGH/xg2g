@@ -4,6 +4,7 @@ type InputSummary struct {
 	Profile           string
 	RequestedCodec    string
 	SupportedHWCodecs []string
+	AutoHWCodecs      []string
 	HWAccelAvailable  bool
 }
 
@@ -31,11 +32,14 @@ func (in Input) Summary() InputSummary {
 
 	hwCodecs := make([]string, len(n.Server.SupportedHWCodecs))
 	copy(hwCodecs, n.Server.SupportedHWCodecs)
+	autoHWCodecs := make([]string, len(n.Server.AutoHWCodecs))
+	copy(autoHWCodecs, n.Server.AutoHWCodecs)
 
 	return InputSummary{
 		Profile:           n.Profile,
 		RequestedCodec:    requested,
 		SupportedHWCodecs: hwCodecs,
+		AutoHWCodecs:      autoHWCodecs,
 		HWAccelAvailable:  n.Server.HWAccelAvailable,
 	}
 }

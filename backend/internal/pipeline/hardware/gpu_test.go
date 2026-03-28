@@ -17,7 +17,7 @@ func resetVaapiState(t *testing.T) {
 
 	vaapiEncMu.Lock()
 	vaapiEncChecked = false
-	vaapiEncVerified = nil
+	vaapiEncCaps = nil
 	vaapiEncMu.Unlock()
 
 	t.Cleanup(func() {
@@ -29,7 +29,7 @@ func resetVaapiState(t *testing.T) {
 
 		vaapiEncMu.Lock()
 		vaapiEncChecked = false
-		vaapiEncVerified = nil
+		vaapiEncCaps = nil
 		vaapiEncMu.Unlock()
 	})
 }
@@ -87,6 +87,37 @@ func TestIsVAAPIEncoderReady_AfterSet(t *testing.T) {
 	}
 	if !IsVAAPIEncoderReady("av1_vaapi") {
 		t.Fatal("expected av1_vaapi to be ready")
+	}
+}
+
+func TestIsVAAPIEncoderAutoEligible_UsesMeasuredCapability(t *testing.T) {
+	resetVaapiState(t)
+
+	SetVAAPIEncoderCapabilities(map[string]VAAPIEncoderCapability{
+		"h264_vaapi": {
+			Verified:     true,
+			ProbeElapsed: 120,
+			AutoEligible: true,
+		},
+		"hevc_vaapi": {
+			Verified:     true,
+			ProbeElapsed: 250,
+			AutoEligible: false,
+		},
+	})
+
+	if !IsVAAPIEncoderAutoEligible("h264_vaapi") {
+		t.Fatal("expected h264_vaapi to be auto-eligible")
+	}
+	if IsVAAPIEncoderAutoEligible("hevc_vaapi") {
+		t.Fatal("expected hevc_vaapi to be not auto-eligible")
+	}
+	cap, ok := VAAPIEncoderCapabilityFor("h264_vaapi")
+	if !ok {
+		t.Fatal("expected h264_vaapi capability to be available")
+	}
+	if !cap.Verified || !cap.AutoEligible || cap.ProbeElapsed != 120 {
+		t.Fatalf("unexpected capability snapshot: %#v", cap)
 	}
 }
 

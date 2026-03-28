@@ -10,7 +10,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-GOTOOLCHAIN ?= go1.25.7
+GOTOOLCHAIN ?= go1.25.8
 export GOTOOLCHAIN
 export GOWORK := off
 GO := go
@@ -31,12 +31,12 @@ TMP_DIR := tmp
 WEBUI_DIST_DIR := $(BACKEND_DIR)/internal/control/http/dist
 # Reproducible build flags
 BUILD_FLAGS := -trimpath -buildvcs=false
-LDFLAGS := -ldflags "-s -w -buildid= -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT_HASH)' -X 'main.buildDate=$(BUILD_DATE)'"
+LDFLAGS := -ldflags "-s -w -buildid= -X 'github.com/ManuGH/xg2g/internal/version.Version=$(VERSION)' -X 'github.com/ManuGH/xg2g/internal/version.Commit=$(COMMIT_HASH)' -X 'github.com/ManuGH/xg2g/internal/version.Date=$(BUILD_DATE)'"
 DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?=
 PLATFORMS := linux/amd64
 # Keep in sync with backend/scripts/build-ffmpeg.sh.
-FFMPEG_VERSION := 7.1.3
+FFMPEG_VERSION := 8.1
 FFMPEG_BASE_IMAGE ?= $(DOCKER_IMAGE)-ffmpeg
 FFMPEG_BASE_TAG := $(FFMPEG_BASE_IMAGE):$(FFMPEG_VERSION)
 

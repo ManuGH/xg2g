@@ -54,6 +54,9 @@ func TestManager_RunBackgroundForce_StartsWithWarmCache(t *testing.T) {
 		started <- struct{}{}
 		return ctx.Err()
 	}
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	defer parentCancel()
+	manager.AttachLifecycle(parentCtx)
 
 	require.True(t, manager.RunBackgroundForce(), "manual refresh should bypass warm-cache skip")
 	select {

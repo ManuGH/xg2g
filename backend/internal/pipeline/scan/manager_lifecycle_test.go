@@ -92,6 +92,10 @@ func TestManager_CloseStopsBackgroundBeforeStoreClose(t *testing.T) {
 		return ctx.Err()
 	}
 
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	defer parentCancel()
+	manager.AttachLifecycle(parentCtx)
+
 	require.True(t, manager.RunBackground())
 	<-started
 
@@ -120,6 +124,10 @@ func TestManager_RunBackground_PausesUntilPlaybackIdle(t *testing.T) {
 		return nil
 	}
 
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	defer parentCancel()
+	manager.AttachLifecycle(parentCtx)
+
 	require.True(t, manager.RunBackground())
 
 	select {
@@ -134,5 +142,26 @@ func TestManager_RunBackground_PausesUntilPlaybackIdle(t *testing.T) {
 	case <-started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("background scan did not resume after playback became idle")
+	}
+}
+
+func TestManager_RunBackgroundForce_RequiresAttachedLifecycle(t *testing.T) {
+	store := &lifecycleTestStore{}
+	manager := NewManager(store, t.TempDir()+"/playlist.m3u", nil)
+
+	started := make(chan struct{}, 1)
+	manager.scanFn = func(ctx context.Context) error {
+		started <- struct{}{}
+		return nil
+	}
+
+	require.False(t, manager.RunBackgroundForce())
+	assert.Equal(t, "failed", manager.GetStatus().State)
+	assert.Equal(t, errLifecycleContextNotAttached.Error(), manager.GetStatus().LastError)
+
+	select {
+	case <-started:
+		t.Fatal("background scan started without lifecycle attachment")
+	case <-time.After(200 * time.Millisecond):
 	}
 }

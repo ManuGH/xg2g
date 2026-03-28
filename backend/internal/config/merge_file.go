@@ -12,10 +12,13 @@ import (
 
 // mergeFileConfig merges file configuration into jobs.Config.
 func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
-	if err := l.checkAliasConflicts(src); err != nil {
+	if err := rejectLegacyOpenWebIFYAML(l.filePresence); err != nil {
 		return err
 	}
-	if err := l.checkAliasEnvConflicts(src); err != nil {
+	if legacyKeys := legacyOpenWebIFKeysFromConfig(src); len(legacyKeys) > 0 {
+		return legacyOpenWebIFYAMLError(legacyKeys)
+	}
+	if err := l.checkAliasConflicts(src); err != nil {
 		return err
 	}
 	if err := l.checkVODConflicts(src); err != nil {
@@ -67,14 +70,7 @@ func (l *Loader) mergeFileCore(dst *AppConfig, src *FileConfig) {
 }
 
 func (l *Loader) mergeFileEnigma2Aliases(dst *AppConfig, src *FileConfig) error {
-	// OpenWebIF and Enigma2 aliases map into the same runtime Enigma2 settings.
-	// Preserve current precedence: openWebIF first, then enigma2.
-	openPatch, err := enigma2FilePatchFromOpenWebIF(src.OpenWebIF)
-	if err != nil {
-		return err
-	}
-	applyEnigma2FilePatch(dst, openPatch)
-
+	// YAML file config is canonical-only: openWebIF.* is rejected before merge.
 	e2Patch, err := enigma2FilePatchFromEnigma2(src.Enigma2)
 	if err != nil {
 		return err

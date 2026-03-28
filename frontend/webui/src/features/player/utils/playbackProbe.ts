@@ -1,12 +1,17 @@
 import Hls from '../lib/hlsRuntime';
-import { detectPreferredCodecs, type PreferredCodec } from './codecDetection';
+import {
+  detectPreferredCodecs,
+  detectVideoCodecSignals,
+  type PreferredCodec,
+  type VideoCodecSignal
+} from './codecDetection';
 import { shouldPreferNativeWebKitHls } from './playerHelpers';
 
 export type RuntimePlaybackProbeScope = 'live' | 'recording';
 export type RuntimeHlsEngine = 'native' | 'hlsjs';
 
 export type RuntimePlaybackProbe = {
-  version: 1;
+  version: 2;
   usedRuntimeProbe: boolean;
   nativeHls: boolean;
   hlsJs: boolean;
@@ -14,6 +19,7 @@ export type RuntimePlaybackProbe = {
   hlsEngines: RuntimeHlsEngine[];
   containers: string[];
   videoCodecs: PreferredCodec[];
+  videoCodecSignals: VideoCodecSignal[];
   audioCodecs: string[];
   supportsRange: boolean;
 };
@@ -44,7 +50,10 @@ export async function probeRuntimePlaybackCapabilities(
   videoEl: HTMLVideoElement | null,
   scope: RuntimePlaybackProbeScope = 'live'
 ): Promise<RuntimePlaybackProbe> {
-  const preferredCodecs = await detectPreferredCodecs(videoEl);
+  const [preferredCodecs, videoCodecSignals] = await Promise.all([
+    detectPreferredCodecs(videoEl),
+    detectVideoCodecSignals(videoEl),
+  ]);
   const hlsJsSupported = Hls.isSupported();
   const nativeHls = probeNativeHls(videoEl);
   const supportsAc3 = scope === 'live' && probeAc3(videoEl);
@@ -76,7 +85,7 @@ export async function probeRuntimePlaybackCapabilities(
   }
 
   return {
-    version: 1,
+    version: 2,
     usedRuntimeProbe: true,
     nativeHls,
     hlsJs: hlsJsSupported,
@@ -84,6 +93,7 @@ export async function probeRuntimePlaybackCapabilities(
     hlsEngines: dedupeStrings(hlsEngines),
     containers: dedupeStrings(containers),
     videoCodecs: dedupeStrings(preferredCodecs),
+    videoCodecSignals,
     audioCodecs: dedupeStrings(audioCodecs),
     supportsRange: true,
   };

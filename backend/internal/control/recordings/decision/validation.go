@@ -3,6 +3,8 @@ package decision
 import (
 	"fmt"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 )
 
 var allowedAPIVersions = map[string]struct{}{
@@ -52,13 +54,13 @@ func validateInput(input DecisionInput) *Problem {
 	}
 
 	// V-2: Capabilities version
-	if input.Capabilities.Version != 0 && input.Capabilities.Version != 1 && input.Capabilities.Version != 2 {
+	if input.Capabilities.Version != 0 && !capabilities.IsSupportedVersion(input.Capabilities.Version) {
 		return &Problem{
 			Type:   "recordings/capabilities-invalid",
 			Title:  "Capabilities Invalid",
 			Status: 400,
 			Code:   string(ProblemCapabilitiesInvalid),
-			Detail: "capabilities_version not supported (current: 2)",
+			Detail: fmt.Sprintf("capabilities_version not supported (current: %d)", capabilities.MaxSupportedVersion),
 		}
 	}
 

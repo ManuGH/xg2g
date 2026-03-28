@@ -3,6 +3,8 @@ package decision
 import (
 	"context"
 	"testing"
+
+	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 )
 
 func baseDecisionInput() DecisionInput {
@@ -67,7 +69,14 @@ func TestCapabilitiesVersionStrict(t *testing.T) {
 	}
 
 	input = baseDecisionInput()
-	input.Capabilities.Version = 3
+	input.Capabilities.Version = capabilities.MaxSupportedVersion
+	_, _, prob = Decide(ctx, input, "test")
+	if prob != nil {
+		t.Fatalf("expected capabilities_version=%d to pass, got %v", capabilities.MaxSupportedVersion, prob)
+	}
+
+	input = baseDecisionInput()
+	input.Capabilities.Version = capabilities.MaxSupportedVersion + 1
 	_, _, prob = Decide(ctx, input, "test")
 	if prob == nil || prob.Status != 400 {
 		t.Fatalf("expected 400 for invalid capabilities_version, got %v", prob)

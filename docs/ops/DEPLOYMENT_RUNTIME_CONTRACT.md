@@ -4,7 +4,7 @@
 **Verification**: Run `backend/scripts/verify-runtime.sh` after build to ensure canonical contract compliance.
 
 **Status**: CANONICAL - Single Source of Truth
-**Last Updated**: 2026-01-08
+**Last Updated**: 2026-03-26
 **Applies To**: v3.4.3+
 
 > [!IMPORTANT]
@@ -72,8 +72,8 @@
 /usr/local/bin/ffmpeg  → wrapper script
 /usr/local/bin/ffprobe → wrapper script
 ↓
-/opt/ffmpeg/bin/ffmpeg  (pinned 7.1.3)
-/opt/ffmpeg/bin/ffprobe (pinned 7.1.3)
+/opt/ffmpeg/bin/ffmpeg  (pinned 8.1)
+/opt/ffmpeg/bin/ffprobe (pinned 8.1)
 ```
 
 **Wrapper Guarantees**:
@@ -239,7 +239,7 @@ docker run --rm xg2g:v3.4.3 which ffmpeg
 docker run --rm xg2g:v3.4.3 ffmpeg -version | head -1
 ```
 
-**Expected**: `ffmpeg version 7.1.3`
+**Expected**: `ffmpeg version 8.1`
 
 **Command**:
 
@@ -334,7 +334,7 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
     # FFmpeg wrapper
     docker run --rm xg2g:v3.4.3 sh -c '
       [ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ] || exit 1
-      ffmpeg -version | grep -q "7.1.3" || exit 1
+      ffmpeg -version | grep -q "8.1" || exit 1
       [ "$XG2G_FFMPEG_BIN" = "/usr/local/bin/ffmpeg" ] || exit 1
     '
 
@@ -384,7 +384,7 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 Before deploying to production, verify:
 
 - [ ] FFmpeg wrapper contract verified (`which ffmpeg` → wrapper)
-- [ ] Pinned version confirmed (`ffmpeg -version` → 7.1.3)
+- [ ] Pinned version confirmed (`ffmpeg -version` → 8.1)
 - [ ] GPU device mounted if GPU transcoding enabled
 - [ ] VOD safety gates passing (M3, M4)
 - [ ] Persistent volumes configured (`/var/lib/xg2g`)

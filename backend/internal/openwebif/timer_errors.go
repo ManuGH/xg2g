@@ -3,38 +3,39 @@ package openwebif
 import (
 	"errors"
 	"net/http"
-	"strings"
 )
-
-// OpenWebIF timer endpoints return localized free-text messages for logical failures
-// (result=false) without a stable machine-readable error code.
-var timerConflictTokens = []string{"conflict", "overlap", "konflikt", "ueberschneidung", "überschneidung"}
-var timerNotFoundTokens = []string{"not found", "nicht gefunden", "404"}
 
 var (
 	ErrTimerConflict = errors.New("timer conflict")
 	ErrTimerNotFound = errors.New("timer not found")
 )
 
-func timerOperationError(operation, message string) error {
-	normalized := strings.TrimSpace(message)
-	sentinel := ErrUpstreamBadResponse
-	status := http.StatusBadRequest
-
-	switch {
-	case timerMessageHasAnyToken(normalized, timerConflictTokens):
-		sentinel = ErrTimerConflict
-		status = http.StatusConflict
-	case timerMessageHasAnyToken(normalized, timerNotFoundTokens):
-		sentinel = ErrTimerNotFound
-		status = http.StatusNotFound
+func timerOperationError(operation string, status int, message string) error {
+	if status == 0 {
+		status = http.StatusOK
 	}
 
 	return &OWIError{
-		Sentinel:  sentinel,
+		Sentinel:  timerOperationSentinel(status),
 		Operation: operation,
 		Status:    status,
-		Body:      normalized,
+		Body:      message,
+	}
+}
+
+func timerOperationSentinel(status int) error {
+	switch status {
+	case http.StatusNotFound:
+		return ErrNotFound
+	case http.StatusConflict:
+		return ErrConflict
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return ErrForbidden
+	default:
+		if status >= 500 {
+			return ErrUpstreamError
+		}
+		return ErrUpstreamRejected
 	}
 }
 
@@ -62,19 +63,6 @@ func IsTimerNotFound(err error) bool {
 	var owiErr *OWIError
 	if errors.As(err, &owiErr) {
 		return owiErr.Status == http.StatusNotFound
-	}
-	return false
-}
-
-func timerMessageHasAnyToken(message string, tokens []string) bool {
-	msg := strings.ToLower(strings.TrimSpace(message))
-	if msg == "" {
-		return false
-	}
-	for _, token := range tokens {
-		if strings.Contains(msg, token) {
-			return true
-		}
 	}
 	return false
 }

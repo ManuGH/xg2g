@@ -134,8 +134,8 @@ func TestSmoke(t *testing.T) {
 	cmd.Env = withEnv(cmd.Env, "XG2G_STORE_PATH", filepath.Join(dataDir, "store"))
 	cmd.Env = withEnv(cmd.Env, "XG2G_LISTEN", ":58080") // Use non-standard port
 	cmd.Env = withEnv(cmd.Env, "XG2G_LOG_LEVEL", "debug")
-	// Point to Mock OWI
-	cmd.Env = withEnv(cmd.Env, "XG2G_OWI_BASE", mockAddr)
+	// Point to mock receiver
+	cmd.Env = withEnv(cmd.Env, "XG2G_E2_HOST", mockAddr)
 	cmd.Env = withEnv(cmd.Env, "XG2G_BOUQUET", "SmokeTest") // Must match mock return
 
 	// Keep smoke env strict-compatible: no legacy proxy/hdhr keys.

@@ -13,7 +13,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/verification"
-	"gopkg.in/yaml.v3"
 )
 
 // ConfigProvider provides the current configuration.
@@ -35,12 +34,16 @@ func NewConfigChecker(path string, provider ConfigProvider) *ConfigChecker {
 }
 
 func (c *ConfigChecker) Check(ctx context.Context) ([]verification.Mismatch, error) {
-	// 1. Load Expected (Declared in File)
-	// We read the raw file, verify it's valid yaml, then canonicalize to JSON logic.
-	data, err := os.ReadFile(c.configPath)
-	if err != nil {
+	// 1. Get the current effective config first so we can normalize the
+	// expected side with the same loader/version path used at runtime.
+	snap := c.provider.Current()
+	if snap == nil {
+		return nil, fmt.Errorf("config provider returned nil snapshot")
+	}
+
+	// 2. Ensure the declared config file still exists on disk.
+	if _, err := os.Stat(c.configPath); err != nil {
 		if os.IsNotExist(err) {
-			// If config file missing but app running -> Mismatch
 			return []verification.Mismatch{{
 				Kind:     verification.KindConfig,
 				Key:      "config.file",
@@ -51,22 +54,20 @@ func (c *ConfigChecker) Check(ctx context.Context) ([]verification.Mismatch, err
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	// Unmarshal to FileConfig to normalize
-	var expectedCfg config.FileConfig
-	if err := yaml.Unmarshal(data, &expectedCfg); err != nil {
-		return nil, fmt.Errorf("parse expected config: %w", err)
+	// 3. Rebuild the expected config using the same defaults + file + ENV
+	// precedence path as the running process. This avoids false-positive drift
+	// when operators intentionally configure the service via environment.
+	loader := config.NewLoader(c.configPath, snap.App.Version)
+	expectedApp, err := loader.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load expected config: %w", err)
 	}
+	expectedCfg := config.ToFileConfig(&expectedApp)
 
-	// 2. Load Actual (Effective Memory)
-	// Get current snapshot atomar/safe via provider
-	snap := c.provider.Current()
-	if snap == nil {
-		// Should not happen if initialized correctly
-		return nil, fmt.Errorf("config provider returned nil snapshot")
-	}
+	// 4. Convert the in-memory runtime config to the same canonical file shape.
 	actualCfg := config.ToFileConfig(&snap.App) // snap.App is struct, need pointer
 
-	// 3. Compare Canonical Hashes
+	// 5. Compare canonical hashes.
 	expectedHash := hashConfig(expectedCfg)
 	actualHash := hashConfig(actualCfg)
 
@@ -155,7 +156,7 @@ func (c *RuntimeChecker) Check(ctx context.Context) ([]verification.Mismatch, er
 		if err != nil {
 			return nil, fmt.Errorf("ffmpeg check: %w", err)
 		}
-		// Parse first line: "ffmpeg version 7.1.3-..."
+		// Parse first line: "ffmpeg version 8.1-..."
 		line := strings.Split(string(out), "\n")[0]
 		parts := strings.Fields(line)
 		if len(parts) >= 3 && parts[0] == "ffmpeg" && parts[1] == "version" {

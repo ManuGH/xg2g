@@ -81,58 +81,6 @@ func applyEnigma2FilePatch(dst *AppConfig, patch enigma2FilePatch) {
 	}
 }
 
-func enigma2FilePatchFromOpenWebIF(src OpenWebIFConfig) (enigma2FilePatch, error) {
-	var patch enigma2FilePatch
-
-	if src.BaseURL != "" {
-		v := expandEnv(src.BaseURL)
-		patch.BaseURL = &v
-	}
-	if src.Username != "" {
-		v := expandEnv(src.Username)
-		patch.Username = &v
-	}
-	if src.Password != "" {
-		v := expandEnv(src.Password)
-		patch.Password = &v
-	}
-	if src.StreamPort > 0 {
-		v := src.StreamPort
-		patch.StreamPort = &v
-	}
-	if src.UseWebIF != nil {
-		v := *src.UseWebIF
-		patch.UseWebIFStreams = &v
-	}
-	if src.Timeout != "" {
-		d, err := time.ParseDuration(src.Timeout)
-		if err != nil {
-			return enigma2FilePatch{}, fmt.Errorf("invalid openWebIF.timeout: %w", err)
-		}
-		patch.Timeout = &d
-	}
-	if src.Backoff != "" {
-		d, err := time.ParseDuration(src.Backoff)
-		if err != nil {
-			return enigma2FilePatch{}, fmt.Errorf("invalid openWebIF.backoff: %w", err)
-		}
-		patch.Backoff = &d
-	}
-	if src.MaxBackoff != "" {
-		d, err := time.ParseDuration(src.MaxBackoff)
-		if err != nil {
-			return enigma2FilePatch{}, fmt.Errorf("invalid openWebIF.maxBackoff: %w", err)
-		}
-		patch.MaxBackoff = &d
-	}
-	if src.Retries > 0 {
-		v := src.Retries
-		patch.Retries = &v
-	}
-
-	return patch, nil
-}
-
 func enigma2FilePatchFromEnigma2(src Enigma2Config) (enigma2FilePatch, error) {
 	var patch enigma2FilePatch
 

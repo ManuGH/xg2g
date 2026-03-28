@@ -46,8 +46,10 @@ describe('Dashboard', () => {
   it('renders a compact dashboard without duplicate health or log panels', () => {
     render(<Dashboard />);
 
-    expect(screen.getAllByText('System healthy')).toHaveLength(1);
+    screen.getByText('Control summary');
+    expect(screen.getByRole('status', { name: 'System healthy - success' })).toBeInTheDocument();
     expect(screen.queryByText('Recent logs')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
     screen.getByText('Receiver and guide health');
   });
 

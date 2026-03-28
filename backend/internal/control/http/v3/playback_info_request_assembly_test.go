@@ -20,10 +20,22 @@ func intPtr(i int) *int { return &i }
 
 func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	hlsEngines := []string{"native", "hlsjs"}
+	videoCodecSignals := []PlaybackVideoCodecSignal{
+		{
+			Codec:          "av1",
+			Supported:      true,
+			Smooth:         boolPtr(true),
+			PowerEfficient: boolPtr(true),
+		},
+		{
+			Codec:     "h264",
+			Supported: true,
+		},
+	}
 	caps := &PlaybackCapabilities{
 		AllowTranscode:       boolPtr(false),
 		AudioCodecs:          []string{"aac"},
-		CapabilitiesVersion:  2,
+		CapabilitiesVersion:  3,
 		ClientFamilyFallback: strPtr("safari"),
 		Container:            []string{"mpegts", "hls"},
 		DeviceType:           strPtr("tv"),
@@ -39,9 +51,10 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		},
 		PreferredHlsEngine:  strPtr("native"),
 		RuntimeProbeUsed:    boolPtr(true),
-		RuntimeProbeVersion: intPtr(3),
+		RuntimeProbeVersion: intPtr(2),
 		SupportsHls:         boolPtr(true),
 		SupportsRange:       boolPtr(true),
+		VideoCodecSignals:   &videoCodecSignals,
 		VideoCodecs:         []string{"h264"},
 	}
 
@@ -67,16 +80,22 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		"User-Agent": "Mozilla/5.0 Safari/605.1.15",
 		"X-Test":     "first",
 	}, got.Headers)
-	assert.Equal(t, 2, got.Capabilities.CapabilitiesVersion)
+	assert.Equal(t, 3, got.Capabilities.CapabilitiesVersion)
 	assert.Equal(t, []string{"mpegts", "hls"}, got.Capabilities.Containers)
 	assert.Equal(t, []string{"h264"}, got.Capabilities.VideoCodecs)
+	assert.Equal(t, []string{"av1", "h264"}, []string{
+		got.Capabilities.VideoCodecSignals[0].Codec,
+		got.Capabilities.VideoCodecSignals[1].Codec,
+	})
+	require.NotNil(t, got.Capabilities.VideoCodecSignals[0].PowerEfficient)
+	assert.True(t, *got.Capabilities.VideoCodecSignals[0].PowerEfficient)
 	assert.Equal(t, []string{"aac"}, got.Capabilities.AudioCodecs)
 	assert.True(t, got.Capabilities.SupportsHLS)
 	assert.True(t, got.Capabilities.SupportsHLSExplicit)
 	assert.Equal(t, []string{"native", "hlsjs"}, got.Capabilities.HLSEngines)
 	assert.Equal(t, "native", got.Capabilities.PreferredHLSEngine)
 	assert.True(t, got.Capabilities.RuntimeProbeUsed)
-	assert.Equal(t, 3, got.Capabilities.RuntimeProbeVersion)
+	assert.Equal(t, 2, got.Capabilities.RuntimeProbeVersion)
 	assert.Equal(t, "safari", got.Capabilities.ClientFamilyFallback)
 	assert.Equal(t, "tv", got.Capabilities.DeviceType)
 	require.NotNil(t, got.Capabilities.SupportsRange)

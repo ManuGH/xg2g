@@ -6,6 +6,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -15,10 +16,15 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
+type stopEventBus interface {
+	Publish(ctx context.Context, topic string, event interface{}) error
+}
+
 // LeaseExpiryWorker runs a background goroutine that expires sessions
 // whose leases have expired (ADR-009)
 type LeaseExpiryWorker struct {
 	Store  store.SessionExpiryStore
+	Bus    stopEventBus
 	Config *config.AppConfig
 }
 
@@ -51,6 +57,7 @@ func (w *LeaseExpiryWorker) Run(ctx context.Context) error {
 
 func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 	now := time.Now().Unix()
+	expiredAt := time.Unix(now, 0)
 
 	// CTO Patch 2: Efficient query (NO full-scan)
 	// Filter by: states (new|starting|priming|ready) AND lease_expires_at <= now
@@ -79,9 +86,12 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 		var releaseResources bool
 
 		switch session.State {
-		case model.SessionNew, model.SessionStarting:
+		case model.SessionNew:
 			stopReason = "LEASE_EXPIRED"
 			releaseResources = false // No resources allocated yet
+		case model.SessionStarting:
+			stopReason = "LEASE_EXPIRED"
+			releaseResources = true // STARTING already owns dedup/tuner leases
 		case model.SessionPriming:
 			stopReason = "LEASE_EXPIRED"
 			releaseResources = true // Priming already owns runtime resources and must be cleaned up
@@ -92,20 +102,12 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 			continue // Skip (defensive, should not happen due to filter)
 		}
 
-		// Transition to stopped
-		_, err := w.Store.UpdateSession(ctx, session.SessionID, func(s *model.SessionRecord) error {
-			// Skip if already terminal
-			if s.State.IsTerminal() {
-				return nil
-			}
-			_, err := lifecycle.Dispatch(s, lifecycle.PhaseFromState(s.State), lifecycle.Event{Kind: lifecycle.EvLeaseExpired}, nil, false, time.Unix(now, 0))
-			if err != nil {
-				return err
-			}
-			s.StopReason = stopReason
-			return nil
-		})
-
+		var err error
+		if releaseResources {
+			err = w.requestCleanupStop(ctx, session, stopReason, expiredAt)
+		} else {
+			err = w.markLeaseExpired(ctx, session.SessionID, stopReason, expiredAt)
+		}
 		if err != nil {
 			log.L().Error().
 				Err(err).
@@ -123,13 +125,6 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 		// Metrics
 		sessionsLeaseExpiredTotal.WithLabelValues(string(session.State)).Inc()
 		expiredCount++
-
-		// Release resources if needed (for READY/RUNNING sessions)
-		if releaseResources {
-			// Publish stop event for cleanup
-			// This triggers the orchestrator's cleanup logic
-			_ = publishStopEvent(ctx, w.Store, session.SessionID, stopReason)
-		}
 	}
 
 	if expiredCount > 0 {
@@ -139,13 +134,71 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 	}
 }
 
-// publishStopEvent publishes a stop event for cleanup
-func publishStopEvent(ctx context.Context, _ store.SessionExpiryStore, sessionID string, reason string) error {
-	// Note: This is a helper - actual implementation may need bus access
-	// For now, just log the intent
-	log.L().Debug().
-		Str("session_id", sessionID).
-		Str("reason", reason).
-		Msg("would publish stop event for cleanup")
-	return nil
+func (w *LeaseExpiryWorker) markLeaseExpired(ctx context.Context, sessionID string, stopReason string, now time.Time) error {
+	_, err := w.Store.UpdateSession(ctx, sessionID, func(s *model.SessionRecord) error {
+		if s == nil || s.State.IsTerminal() {
+			return nil
+		}
+		_, err := lifecycle.Dispatch(s, lifecycle.PhaseFromState(s.State), lifecycle.Event{Kind: lifecycle.EvLeaseExpired}, nil, false, now)
+		if err != nil {
+			return err
+		}
+		s.StopReason = stopReason
+		return nil
+	})
+	return err
+}
+
+func (w *LeaseExpiryWorker) requestCleanupStop(ctx context.Context, session *model.SessionRecord, stopReason string, now time.Time) error {
+	if w.Bus == nil {
+		return errors.New("lease expiry cleanup bus not configured")
+	}
+	if session == nil {
+		return errors.New("session is nil")
+	}
+
+	var shouldPublish bool
+	_, err := w.Store.UpdateSession(ctx, session.SessionID, func(s *model.SessionRecord) error {
+		if s == nil || s.State.IsTerminal() {
+			return nil
+		}
+		if s.State == model.SessionStopping {
+			if s.StopReason == "" {
+				s.StopReason = stopReason
+			}
+			if s.Reason == "" {
+				s.Reason = model.RLeaseExpired
+			}
+			s.PipelineState = model.PipeStopRequested
+			return nil
+		}
+
+		_, err := lifecycle.Dispatch(
+			s,
+			lifecycle.PhaseFromState(s.State),
+			lifecycle.Event{Kind: lifecycle.EvStopRequested, Reason: model.RLeaseExpired},
+			nil,
+			false,
+			now,
+		)
+		if err != nil {
+			return err
+		}
+		s.StopReason = stopReason
+		s.PipelineState = model.PipeStopRequested
+		shouldPublish = true
+		return nil
+	})
+	if err != nil || !shouldPublish {
+		return err
+	}
+
+	event := model.StopSessionEvent{
+		Type:          model.EventStopSession,
+		SessionID:     session.SessionID,
+		Reason:        model.RLeaseExpired,
+		CorrelationID: session.CorrelationID,
+		RequestedAtUN: now.Unix(),
+	}
+	return w.Bus.Publish(ctx, string(model.EventStopSession), event)
 }

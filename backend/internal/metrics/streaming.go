@@ -68,6 +68,11 @@ var (
 		Help: "Usage and validation outcomes for live playback decision keys in /api/v3/intents",
 	}, []string{"key", "result"})
 
+	LiveTruthSourceTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_live_truth_source_total",
+		Help: "Observed source of live media truth used for playback decisions",
+	}, []string{"source", "reason"})
+
 	// --- Phase 4 Metrics ---
 
 	// Enigma2ReadyDuration tracks time spent waiting for readiness check
@@ -163,6 +168,16 @@ func IncLiveIntentsPlaybackKey(key, result string) {
 		normalizeLiveIntentPlaybackKeyLabel(key),
 		normalizeLiveIntentPlaybackResultLabel(result),
 	).Inc()
+}
+
+func IncLiveTruthSource(source, reason string) {
+	if source == "" {
+		source = "unknown"
+	}
+	if reason == "" {
+		reason = "unknown"
+	}
+	LiveTruthSourceTotal.WithLabelValues(source, reason).Inc()
 }
 
 // ObserveEnigma2Ready records readiness check duration.

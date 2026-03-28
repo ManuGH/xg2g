@@ -17,6 +17,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/normalize"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/stretchr/testify/require"
 )
@@ -191,4 +193,77 @@ func TestHandleV3Intents_PlaybackModeNativeHLSMapsToSafariProfile(t *testing.T) 
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, "safari", store.lastSession.Profile.Name)
 	require.Equal(t, "safari", store.lastSession.ContextData["profile"])
+}
+
+func TestHandleV3Intents_PlaybackModeTranscodeUsesMeasuredCodecRanking(t *testing.T) {
+	store := &capturingIntentStore{}
+	cfg := config.AppConfig{}
+	cfg.Engine.TunerSlots = []int{0}
+	cfg.Engine.Enabled = true
+	cfg.Limits.MaxSessions = 8
+	cfg.Limits.MaxTranscodes = 4
+	cfg.Sessions.LeaseTTL = time.Minute
+	cfg.Sessions.HeartbeatInterval = 30 * time.Second
+	cfg.Enigma2.BaseURL = "http://example.com"
+
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{})
+	})
+
+	s := &Server{
+		cfg:       cfg,
+		JWTSecret: auth.TestSecret(),
+	}
+	s.SetDependencies(Dependencies{
+		Bus:   &noopIntentBus{},
+		Store: store,
+		Scan:  &noopIntentScanner{},
+	})
+	s.admission = admission.NewController(cfg)
+	s.admissionState = &MockAdmissionState{Tuners: 1}
+
+	serviceRef := "1:0:19:22:6:85:C00000:0:0:0:"
+	now := time.Now().Unix()
+	token := generateTestToken(t, auth.TokenClaims{
+		Iss:     "xg2g",
+		Aud:     "xg2g/v3/intents",
+		Sub:     normalize.ServiceRef(serviceRef),
+		Jti:     "test-uuid-transcode-codecs",
+		Iat:     now,
+		Nbf:     now - 10,
+		Exp:     now + 60,
+		Mode:    "transcode",
+		CapHash: "cap-match",
+	}, auth.TestSecret())
+
+	reqBody := v3api.IntentRequest{
+		Type:                  "stream.start",
+		ServiceRef:            serviceRef,
+		PlaybackDecisionToken: &token,
+		Params: map[string]string{
+			"playback_mode":           "transcode",
+			"playback_decision_token": token,
+			"capHash":                 "cap-match",
+			"codecs":                  "hevc,h264",
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.handleV3Intents(rr, req)
+
+	require.Equal(t, http.StatusAccepted, rr.Code)
+	require.NotNil(t, store.lastSession)
+	require.Equal(t, profiles.ProfileSafariHEVCHW, store.lastSession.Profile.Name)
+	require.Equal(t, profiles.ProfileSafariHEVCHW, store.lastSession.ContextData["profile"])
 }

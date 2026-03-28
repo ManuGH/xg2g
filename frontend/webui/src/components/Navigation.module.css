@@ -181,18 +181,11 @@
   white-space: nowrap;
 }
 
-.sheetMeta {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
 .mobileShell {
   display: none;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
   .desktopShell {
     display: none;
   }
@@ -208,23 +201,24 @@
   }
 
   .mobileNav {
-    margin: 0 12px calc(12px + var(--sab));
-    padding: 8px;
-    border-radius: 28px;
+    margin: 0 10px calc(8px + var(--sab));
+    padding: 6px;
+    border-radius: 24px;
     border: 1px solid var(--border-strong);
     background: var(--surface-shell-strong);
-    display: flex;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
     pointer-events: auto;
   }
 
   .mobileItem {
-    min-height: 64px;
-    padding: 8px 6px 10px;
+    min-height: 56px;
+    padding: 6px 4px 8px;
     flex-direction: column;
     justify-content: center;
-    gap: 8px;
-    border-radius: 20px;
+    gap: 6px;
+    border-radius: 18px;
   }
 
   .mobileItem .itemText {
@@ -234,14 +228,16 @@
   }
 
   .mobileItem .label {
-    font-size: 11px;
-    letter-spacing: 0.01em;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+    text-align: center;
   }
 
   .mobileItem .iconShell {
-    width: 36px;
-    height: 36px;
-    border-radius: 14px;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
   }
 
   .sheetBackdrop {
@@ -256,11 +252,14 @@
 
   .mobileSheet {
     position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: calc(92px + var(--sab));
-    padding: 18px;
-    border-radius: 28px;
+    left: 10px;
+    right: 10px;
+    bottom: calc(74px + var(--sab));
+    max-height: min(420px, calc(100dvh - 96px - var(--sat) - var(--sab)));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 14px 14px;
+    border-radius: 24px;
     border: 1px solid var(--border-strong);
     background: var(--surface-shell-strong);
     pointer-events: auto;
@@ -271,7 +270,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
   }
 
   .sheetEyebrow {
@@ -285,7 +284,7 @@
   .sheetTitle {
     margin: 0;
     font-family: var(--font-heading);
-    font-size: var(--text-h1);
+    font-size: clamp(1.2rem, 4vw, 1.45rem);
     color: var(--text-primary);
   }
 
@@ -302,16 +301,37 @@
     gap: 10px;
   }
 
-  .sheetGrid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+  .sheetSections {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .sheetSection {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sheetSectionTitle {
+    margin: 0;
+    padding: 0 2px;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .sheetList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .sheetItem {
-    min-height: 72px;
-    padding: 12px;
-    border-radius: 20px;
+    min-height: 52px;
+    padding: 8px;
+    border-radius: 18px;
     background: var(--surface-muted);
   }
 
@@ -320,9 +340,30 @@
     transform: none;
   }
 
+  .sheetItem .iconShell {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
   .sheetFooter {
     margin-top: 14px;
     padding-top: 14px;
     border-top: 1px solid var(--border-base);
+  }
+}
+
+@media (max-height: 430px) and (hover: none) and (pointer: coarse) {
+  .mobileNav {
+    margin-bottom: calc(6px + var(--sab));
+  }
+
+  .mobileItem {
+    min-height: 52px;
+  }
+
+  .mobileSheet {
+    bottom: calc(68px + var(--sab));
+    max-height: calc(100dvh - 86px - var(--sat) - var(--sab));
   }
 }

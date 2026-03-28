@@ -6,7 +6,6 @@ package config
 
 import (
 	"strings"
-	"time"
 )
 
 // mergeEnvConfig merges environment variables into jobs.Config.
@@ -14,7 +13,6 @@ import (
 // Uses consistent ParseBool/ParseInt/ParseDuration helpers from env.go.
 func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvCore(cfg)
-	l.mergeEnvLegacyOWI(cfg)
 	l.mergeEnvGlobal(cfg)
 	l.mergeEnvBouquet(cfg)
 	l.mergeEnvEPG(cfg)
@@ -45,35 +43,6 @@ func (l *Loader) mergeEnvCore(cfg *AppConfig) {
 	cfg.DataDir = l.envString("XG2G_DATA", cfg.DataDir)
 	cfg.LogLevel = l.envString("XG2G_LOG_LEVEL", cfg.LogLevel)
 	cfg.LogService = l.envString("XG2G_LOG_SERVICE", cfg.LogService)
-}
-
-func (l *Loader) mergeEnvLegacyOWI(cfg *AppConfig) {
-	// Enigma2 (Legacy OWI compatibility)
-	cfg.Enigma2.BaseURL = l.envString("XG2G_OWI_BASE", cfg.Enigma2.BaseURL)
-
-	// Username: XG2G_OWI_USER
-	if v := l.envString("XG2G_OWI_USER", ""); v != "" {
-		cfg.Enigma2.Username = v
-	}
-
-	// Password: XG2G_OWI_PASS
-	if v := l.envString("XG2G_OWI_PASS", ""); v != "" {
-		cfg.Enigma2.Password = v
-	}
-	cfg.Enigma2.StreamPort = l.envInt("XG2G_STREAM_PORT", cfg.Enigma2.StreamPort)
-	cfg.Enigma2.UseWebIFStreams = l.envBool("XG2G_USE_WEBIF_STREAMS", cfg.Enigma2.UseWebIFStreams)
-
-	// OpenWebIF timeouts/retries
-	if ms := l.envInt("XG2G_OWI_TIMEOUT_MS", 0); ms > 0 {
-		cfg.Enigma2.Timeout = time.Duration(ms) * time.Millisecond
-	}
-	cfg.Enigma2.Retries = l.envInt("XG2G_OWI_RETRIES", cfg.Enigma2.Retries)
-	if ms := l.envInt("XG2G_OWI_BACKOFF_MS", 0); ms > 0 {
-		cfg.Enigma2.Backoff = time.Duration(ms) * time.Millisecond
-	}
-	if ms := l.envInt("XG2G_OWI_MAX_BACKOFF_MS", 0); ms > 0 {
-		cfg.Enigma2.MaxBackoff = time.Duration(ms) * time.Millisecond
-	}
 }
 
 func (l *Loader) mergeEnvGlobal(cfg *AppConfig) {

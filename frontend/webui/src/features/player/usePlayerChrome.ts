@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { HlsInstanceRef, PlayerStats, PlayerStatus, VideoElementRef } from '../../types/v3-player';
 import { debugLog, debugWarn } from '../../utils/logging';
+import { hasTouchInput } from './utils/playerHelpers';
 
 type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
 type ForceNativeFn = (videoEl?: VideoElementRef) => boolean;
@@ -37,6 +38,7 @@ interface PlayerChromeController {
   isIdle: boolean;
   volume: number;
   isMuted: boolean;
+  canToggleMute: boolean;
   canAdjustVolume: boolean;
   stats: PlayerStats;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
@@ -102,10 +104,12 @@ export function usePlayerChrome({
   const [isIdle, setIsIdle] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [canToggleMute, setCanToggleMute] = useState(true);
   const [canAdjustVolume, setCanAdjustVolume] = useState(true);
   const [stats, setStats] = useState<PlayerStats>(initialStats);
   const lastNonZeroVolumeRef = useRef<number>(1);
   const idleTimerRef = useRef<number | null>(null);
+  const isTouchDevice = useMemo(() => hasTouchInput(), []);
 
   const formatClock = useCallback((value: number): string => {
     if (!Number.isFinite(value) || value < 0) return '--:--';
@@ -521,6 +525,7 @@ export function usePlayerChrome({
   useEffect(() => {
     const video = videoRef.current;
     const container = containerRef.current;
+    const nativeMobileHls = allowNativeFullscreen && shouldForceNativeMobileHls(video);
     const pipAvailable =
       typeof document !== 'undefined' &&
       !!document.pictureInPictureEnabled &&
@@ -530,12 +535,13 @@ export function usePlayerChrome({
       (allowNativeFullscreen && !!video?.webkitEnterFullscreen) ||
       !!container?.requestFullscreen ||
       (typeof document !== 'undefined' && document.fullscreenEnabled === true);
-    // Keep the full WebUI chrome on WebKit when hls.js/MMS is active.
-    // Native-mobile HLS is the only path that still needs platform controls.
-    const volumeAvailable = !(allowNativeFullscreen && shouldForceNativeMobileHls(video));
+    // Native mobile WebKit uses the device buttons for loudness; keep mute
+    // available but hide the ineffective browser volume slider there.
+    const volumeAvailable = !nativeMobileHls;
 
     setCanTogglePiP(pipAvailable);
     setCanToggleFullscreen(fullscreenAvailable);
+    setCanToggleMute(!!video);
     setCanAdjustVolume(volumeAvailable);
   }, [allowNativeFullscreen, containerRef, shouldForceNativeMobileHls, videoRef]);
 
@@ -585,6 +591,11 @@ export function usePlayerChrome({
     const container = containerRef.current;
     if (!container) return;
 
+    if (isTouchDevice) {
+      setIsIdle(false);
+      return;
+    }
+
     const resetIdle = () => {
       setIsIdle(false);
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
@@ -609,7 +620,7 @@ export function usePlayerChrome({
       container.removeEventListener('keydown', onKey);
       container.removeEventListener('touchstart', onClick);
     };
-  }, [containerRef]);
+  }, [containerRef, isTouchDevice]);
 
   const windowDuration = useMemo(() => Math.max(0, seekableEnd - seekableStart), [seekableEnd, seekableStart]);
   const relativePosition = useMemo(
@@ -642,6 +653,7 @@ export function usePlayerChrome({
     isIdle,
     volume,
     isMuted,
+    canToggleMute,
     canAdjustVolume,
     stats,
     setStats,

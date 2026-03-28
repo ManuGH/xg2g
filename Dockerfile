@@ -1,5 +1,5 @@
-# Multi-Stage Dockerfile for xg2g with embedded FFmpeg 7.1.3
-ARG BUILD_VERSION=v3.4.0
+# Multi-Stage Dockerfile for xg2g with embedded FFmpeg 8.1
+ARG BUILD_VERSION=v3.4.1
 ARG BUILD_COMMIT=unknown
 ARG BUILD_DATE=unknown
 ARG FFMPEG_BASE_IMAGE=ffmpeg-runtime-base-internal
@@ -74,8 +74,8 @@ COPY backend/contracts/version_matrix.json ../../backend/contracts/version_matri
 RUN npm run build
 
 # Stage 3: Build xg2g application
-# Keep in sync with go.mod (currently requires Go 1.25.7).
-FROM golang:1.25.7 AS app-builder
+# Keep in sync with go.mod (currently requires Go 1.25.8).
+FROM golang:1.25.8 AS app-builder
 ARG BUILD_VERSION
 ARG BUILD_COMMIT
 ARG BUILD_DATE
@@ -91,7 +91,7 @@ COPY --from=webui-builder /frontend/webui/dist /app/backend/internal/control/htt
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    cd /app/backend && go build -buildvcs=false -ldflags="-s -w -X main.version=${BUILD_VERSION} -X main.commit=${BUILD_COMMIT} -X main.buildDate=${BUILD_DATE}" -o /xg2g ./cmd/daemon
+    cd /app/backend && go build -buildvcs=false -ldflags="-s -w -X github.com/ManuGH/xg2g/internal/version.Version=${BUILD_VERSION} -X github.com/ManuGH/xg2g/internal/version.Commit=${BUILD_COMMIT} -X github.com/ManuGH/xg2g/internal/version.Date=${BUILD_DATE}" -o /xg2g ./cmd/daemon
 
 # Stage 4: Final runtime image.
 # By default this inherits the internal FFmpeg base stage.

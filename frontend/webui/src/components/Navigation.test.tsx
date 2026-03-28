@@ -27,11 +27,11 @@ describe('Navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
 
     screen.getByText('Navigation');
-    screen.getByText('Control surfaces', { selector: 'h2' });
+    screen.getByText('More tools', { selector: 'h2' });
     screen.getByText('Close');
   });
 
-  it('promotes settings into the mobile primary row and keeps timers in the more sheet', () => {
+  it('keeps settings and timers in the more sheet while the primary row stays focused on core routes', () => {
     render(
       <MemoryRouter initialEntries={[ROUTE_MAP.dashboard]}>
         <Navigation />
@@ -40,11 +40,15 @@ describe('Navigation', () => {
 
     const mobileNav = screen.getByRole('navigation', { name: 'Mobile navigation', hidden: true });
     const mobileLinks = screen.getAllByRole('link', { hidden: true }).filter((link) => mobileNav.contains(link));
-    expect(mobileLinks.map((link) => link.textContent)).toContain('Settings');
+    expect(mobileLinks.map((link) => link.textContent)).toContain('Dashboard');
+    expect(mobileLinks.map((link) => link.textContent)).toContain('TV/EPG');
+    expect(mobileLinks.map((link) => link.textContent)).toContain('Recordings');
     expect(mobileLinks.map((link) => link.textContent)).not.toContain('Timers');
+    expect(mobileLinks.map((link) => link.textContent)).not.toContain('Settings');
 
     fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
 
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', ROUTE_MAP.settings);
     expect(screen.getByRole('link', { name: 'Timers' })).toHaveAttribute('href', ROUTE_MAP.timers);
   });
 
@@ -92,7 +96,7 @@ describe('Navigation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
 
-    const sheetTitle = screen.getByText('Control surfaces', { selector: 'h2' });
+    const sheetTitle = screen.getByText('More tools', { selector: 'h2' });
     const dialog = sheetTitle.closest('[role="dialog"]');
     expect(dialog).toBeInTheDocument();
     await waitFor(() => {
@@ -114,7 +118,7 @@ describe('Navigation', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
 
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Control surfaces' })).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'More tools' })).toBeNull();
       expect(moreButton).toHaveFocus();
     });
     expect(document.body.style.overflow).toBe('');
@@ -133,7 +137,7 @@ describe('Navigation', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.timers);
-      expect(screen.queryByRole('dialog', { name: 'Control surfaces' })).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'More tools' })).toBeNull();
     });
   });
 });

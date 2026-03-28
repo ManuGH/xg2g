@@ -23,6 +23,78 @@ resolve_compose_file() {
   printf '%s/%s\n' "${ROOT}" "${file}"
 }
 
+config_redaction_enabled() {
+  local mode="${XG2G_COMPOSE_CONFIG_REDACT:-1}"
+  mode="${mode,,}"
+
+  case "${mode}" in
+    0|false|no|off)
+      return 1
+      ;;
+  esac
+
+  return 0
+}
+
+redact_compose_output() {
+  awk '
+function ltrim(value) {
+  sub(/^[[:space:]]+/, "", value)
+  return value
+}
+function is_secret_key(key) {
+  key = tolower(key)
+  return key ~ /(^|[._-])(token|secret|password|passwd|pass|api[_-]?key)([._-]|$)/
+}
+function redact_url(value, redacted) {
+  redacted = value
+  gsub(/:\/\/[^\/[:space:]\"]+:[^@\/[:space:]\"]+@/, "://REDACTED@", redacted)
+  return redacted
+}
+{
+  line = $0
+
+  stripped = line
+  sub(/^[[:space:]]*-[[:space:]]*/, "", stripped)
+  eq = index(stripped, "=")
+  if (eq > 1) {
+    key = substr(stripped, 1, eq - 1)
+    value = substr(stripped, eq + 1)
+    prefix = substr(line, 1, length(line) - length(stripped))
+    if (is_secret_key(key)) {
+      print prefix key "=REDACTED"
+      next
+    }
+    redacted = redact_url(value)
+    if (redacted != value) {
+      print prefix key "=" redacted
+      next
+    }
+  }
+
+  stripped = line
+  sub(/^[[:space:]]*/, "", stripped)
+  colon = index(stripped, ":")
+  if (colon > 1) {
+    key = substr(stripped, 1, colon - 1)
+    value = ltrim(substr(stripped, colon + 1))
+    prefix = substr(line, 1, length(line) - length(stripped))
+    if (is_secret_key(key)) {
+      print prefix key ": REDACTED"
+      next
+    }
+    redacted = redact_url(value)
+    if (redacted != value) {
+      print prefix key ": " redacted
+      next
+    }
+  }
+
+  print line
+}
+'
+}
+
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
   # shellcheck disable=SC1090
@@ -67,5 +139,10 @@ args=(--project-name "${PROJECT}")
 for file in "${compose_files[@]}"; do
   args+=(-f "${file}")
 done
+
+if [[ "$#" -gt 0 && "$1" == "config" ]] && config_redaction_enabled; then
+  docker compose "${args[@]}" "$@" | redact_compose_output
+  exit $?
+fi
 
 exec docker compose "${args[@]}" "$@"

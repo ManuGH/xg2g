@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	infraffmpeg "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 )
 
 type fpsCacheEntry struct {
@@ -206,6 +208,9 @@ func (a *LocalAdapter) buildFPSProbeArgs(inputURL string, retry bool) []string {
 
 	args := []string{
 		"-v", "error",
+	}
+	if whitelist, ok := infraffmpeg.InputProtocolWhitelist(inputURL); ok {
+		args = append(args, "-protocol_whitelist", whitelist)
 	}
 	if v := strings.TrimSpace(a.FPSProbeFFlags); v != "" {
 		args = append(args, "-fflags", v)

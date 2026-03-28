@@ -28,7 +28,7 @@ func TestFileStore_Roundtrip(t *testing.T) {
 			{
 				Kind:     verification.KindRuntime,
 				Key:      "runtime.ffmpeg.version",
-				Expected: "7.1.3",
+				Expected: "8.1",
 				Actual:   "6.x",
 			},
 		},

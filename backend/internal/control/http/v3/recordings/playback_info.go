@@ -3,13 +3,18 @@ package recordings
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
@@ -73,6 +78,9 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		}
 	}
 
+	alignLiveAutoCodecDecision(req, resolvedCaps, dec)
+	s.recordDecisionAudit(ctx, sourceRef, req, resolvedCaps, input, dec)
+
 	return PlaybackInfoResult{
 		SourceRef:            sourceRef,
 		Truth:                truth,
@@ -102,7 +110,7 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 				Cause:   err,
 			}
 		}
-		return subjectID, assumeLiveTruth(subjectID), nil
+		return subjectID, resolveLiveTruth(subjectID, s.deps.ChannelTruthSource()), nil
 	case PlaybackSubjectRecording:
 		sourceRef, ok := domainrecordings.DecodeRecordingID(subjectID)
 		if !ok {
@@ -142,6 +150,64 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 			Kind:    PlaybackInfoErrorInvalidInput,
 			Message: "unsupported playback subject kind",
 		}
+	}
+}
+
+func (s *Service) recordDecisionAudit(ctx context.Context, sourceRef string, req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, input decision.DecisionInput, dec *decision.Decision) {
+	sink := s.deps.DecisionAuditSink()
+	if sink == nil || dec == nil {
+		return
+	}
+
+	clientFamily := strings.TrimSpace(resolvedCaps.ClientFamilyFallback)
+	if clientFamily == "" {
+		clientFamily = req.ClientProfile
+	}
+
+	event, err := decision.BuildEvent(decision.EventMetadata{
+		ServiceRef:       sourceRef,
+		SubjectKind:      string(req.SubjectKind),
+		Origin:           decision.OriginRuntime,
+		ClientFamily:     clientFamily,
+		ClientCapsSource: resolvedCaps.ClientCapsSource,
+		DeviceType:       resolvedCaps.DeviceType,
+		DecidedAt:        time.Now().UTC(),
+	}, input, dec)
+	if err != nil {
+		log.L().Warn().Err(err).Str("serviceRef", sourceRef).Msg("decision audit: failed to build event")
+		return
+	}
+	if err := sink.Record(ctx, event); err != nil {
+		log.L().Warn().Err(err).Str("serviceRef", sourceRef).Str("basisHash", event.BasisHash).Msg("decision audit: failed to persist event")
+	}
+}
+
+func alignLiveAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
+	if req.SubjectKind != PlaybackSubjectLive || dec == nil || dec.Mode != decision.ModeTranscode {
+		return
+	}
+
+	profileID := autocodec.PickProfileForCapabilities(resolvedCaps, profiles.HWAccelAuto)
+	if profileID == "" {
+		return
+	}
+
+	profileSpec := profiles.Resolve(profileID, "", 0, nil, hardware.IsVAAPIReady(), profiles.HWAccelAuto)
+	target := model.TraceTargetProfileFromProfile(profileSpec)
+	if target != nil {
+		dec.TargetProfile = target
+		dec.Selected.Container = target.Container
+		if strings.TrimSpace(target.Video.Codec) != "" {
+			dec.Selected.VideoCodec = target.Video.Codec
+		}
+		if strings.TrimSpace(target.Audio.Codec) != "" {
+			dec.Selected.AudioCodec = target.Audio.Codec
+		}
+	}
+
+	if publicProfile := profiles.PublicProfileName(profileID); publicProfile != "" {
+		dec.Trace.RequestedIntent = publicProfile
+		dec.Trace.ResolvedIntent = publicProfile
 	}
 }
 

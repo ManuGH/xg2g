@@ -126,7 +126,7 @@
 - Offline Gates bleiben gruen
 
 **Result**
-- `go.mod` normalized to `go 1.25` with `toolchain go1.25.7`.
+- `go.mod`, `go.work`, and default build pins aligned on Go `1.25.8`.
 
 ---
 

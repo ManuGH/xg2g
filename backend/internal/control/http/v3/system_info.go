@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
@@ -121,18 +122,46 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use short timeout for upstream calls to prevent blocking the dashboard if receiver is offline
+	// Use a short shared deadline and fan out the upstream calls in parallel so
+	// one slow endpoint does not starve the others inside the same 2s budget.
 	upstreamCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	// Query receiver info
-	info, err := client.About(upstreamCtx)
-	if err != nil {
+	var (
+		info         *openwebif.AboutInfo
+		infoErr      error
+		statusInfo   *openwebif.StatusInfo
+		statusErr    error
+		locations    []openwebif.MovieLocation
+		locationsErr error
+		wg           sync.WaitGroup
+	)
+
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		info, infoErr = client.About(upstreamCtx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		statusInfo, statusErr = client.GetStatusInfo(upstreamCtx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		locations, locationsErr = client.GetLocations(upstreamCtx)
+	}()
+
+	wg.Wait()
+
+	if infoErr != nil {
 		writeRegisteredProblem(w, r, http.StatusBadGateway,
 			"system/upstream_error",
 			"Failed to Query Receiver",
 			problemcode.CodeUpstreamError,
-			err.Error(), nil)
+			infoErr.Error(), nil)
 		return
 	}
 	if info == nil {
@@ -144,8 +173,21 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cross-check streaming state with the lighter status endpoint.
+	// Some receivers briefly leave stale tuner.stream values in /api/about
+	// after a client disconnects, while /api/statusinfo already reports
+	// isStreaming=false and /api/about info.streams is empty.
+	if statusErr != nil {
+		log.L().Debug().Err(statusErr).Msg("system_info: failed to fetch statusinfo; falling back to tuner-only stream state")
+		statusInfo = nil
+	}
+
 	// Query recording locations (bookmarks)
-	locations, _ := client.GetLocations(upstreamCtx)
+	if locationsErr != nil {
+		log.L().Debug().Err(locationsErr).Msg("system_info: failed to fetch locations; continuing without recording locations")
+		locations = nil
+	}
+
 	locationItems := make([]StorageItem, 0)
 	for _, loc := range locations {
 		if loc.Path != "" {
@@ -173,7 +215,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 			DriverDate:    info.Info.DriverDate,
 			WebIFVersion:  info.Info.WebIFVer,
 		},
-		Tuners:  convertTuners(info.Info.Tuners),
+		Tuners:  convertTuners(info.Info.Tuners, info.Info.Streams, statusInfo),
 		Network: convertNetwork(info.Info.IFaces),
 		Storage: s.convertStorage(info.Info.HDD, locationItems),
 		Runtime: RuntimeInfo{
@@ -263,7 +305,12 @@ func orElse(value, fallback string) string {
 }
 
 // convertTuners converts AboutTuner to TunerInfo
-func convertTuners(tuners []openwebif.AboutTuner) []TunerInfo {
+func convertTuners(tuners []openwebif.AboutTuner, aboutStreams any, status *openwebif.StatusInfo) []TunerInfo {
+	aboutKnown, aboutActive := aboutStreamsState(aboutStreams)
+	statusKnown, statusActive := statusStreamingState(status)
+	streamingSignalKnown := aboutKnown || statusKnown
+	streamingActive := aboutActive || statusActive
+
 	result := make([]TunerInfo, len(tuners))
 	for i, tuner := range tuners {
 		// Determine status based on which field is populated
@@ -273,7 +320,11 @@ func convertTuners(tuners []openwebif.AboutTuner) []TunerInfo {
 		} else if tuner.Live != "" {
 			status = "live"
 		} else if tuner.Stream != "" {
-			status = "streaming"
+			// Suppress stale per-tuner stream flags when the receiver globally
+			// already reports that no stream is active.
+			if !streamingSignalKnown || streamingActive {
+				status = "streaming"
+			}
 		}
 
 		result[i] = TunerInfo{
@@ -283,6 +334,44 @@ func convertTuners(tuners []openwebif.AboutTuner) []TunerInfo {
 		}
 	}
 	return result
+}
+
+func statusStreamingState(info *openwebif.StatusInfo) (known bool, active bool) {
+	if info == nil {
+		return false, false
+	}
+
+	return parseOWIBoolString(info.IsStreaming)
+}
+
+func aboutStreamsState(v any) (known bool, active bool) {
+	switch streams := v.(type) {
+	case nil:
+		return false, false
+	case []any:
+		return true, len(streams) > 0
+	case map[string]any:
+		return true, len(streams) > 0
+	case string:
+		return true, strings.TrimSpace(streams) != ""
+	case bool:
+		return true, streams
+	default:
+		// Preserve legacy behavior for unexpected payloads by treating them as
+		// an active/known signal instead of suppressing streaming.
+		return true, true
+	}
+}
+
+func parseOWIBoolString(v string) (known bool, value bool) {
+	switch strings.TrimSpace(strings.ToLower(v)) {
+	case "true", "1", "yes", "on":
+		return true, true
+	case "false", "0", "no", "off":
+		return true, false
+	default:
+		return false, false
+	}
 }
 
 // convertNetwork converts NetworkInterface to NetworkInfo

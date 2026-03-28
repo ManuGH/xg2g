@@ -2,7 +2,7 @@
 # Valid minimal xg2g configuration
 version: "1"
 dataDir: /tmp/xg2g-config-test
-openWebIF:
+enigma2:
   baseUrl: http://receiver.local
   username: testuser
   password: testpass

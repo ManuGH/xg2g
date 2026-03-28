@@ -41,13 +41,8 @@ enigma2:
   # Recommended: false (use direct resolver path by default).
   useWebIFStreams: false
 
-# Legacy YAML alias (compat path still required by schema contract):
-openWebIF:
-  baseUrl: "http://127.0.0.1"
-  timeout: "10s"
-  retries: 2
-  streamPort: 8001
-  useWebIFStreams: false
+# Legacy YAML section `openWebIF:` is rejected at load time.
+# Use `enigma2:` only.
 # ------------------------------------------------------------------------------
 # Enigma2 Advanced Options [OPTIONAL]
 # ------------------------------------------------------------------------------
@@ -176,14 +171,14 @@ picons:
 # Advanced Configuration Examples
 # ==============================================================================
 
-# Example 1: Minimal configuration (OpenWebIF only)
+# Example 1: Minimal receiver configuration
 # ---
-# openWebIF:
+# enigma2:
 #   baseUrl: "http://192.168.1.100"
 
 # Example 2: Full EPG setup with authentication
 # ---
-# openWebIF:
+# enigma2:
 #   baseUrl: "http://dreambox.local"
 #   username: "admin"
 #   password: "secret"
@@ -195,7 +190,7 @@ picons:
 
 # Example 3: Multiple bouquets with custom API token
 # ---
-# openWebIF:
+# enigma2:
 #   baseUrl: "http://192.168.1.100"
 # bouquets:
 #   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"favorites.tv\" ORDER BY bouquet"
@@ -209,7 +204,7 @@ picons:
 
 # Example 4: High-performance EPG collection
 # ---
-# openWebIF:
+# enigma2:
 #   baseUrl: "http://192.168.1.100"
 #   timeout: "30s"
 #   retries: 5
@@ -253,10 +248,10 @@ picons:
 #   XG2G_E2_FALLBACK_TO_8001     - Fallback to :8001 when relay fails
 #   XG2G_E2_PREFLIGHT_TIMEOUT    - TS preflight timeout
 #
-# Enigma2 legacy fallback (compat only):
-#   XG2G_OWI_BASE, XG2G_OWI_USER, XG2G_OWI_PASS
-#   XG2G_OWI_TIMEOUT_MS, XG2G_OWI_RETRIES, XG2G_OWI_BACKOFF_MS, XG2G_OWI_MAX_BACKOFF_MS
-#   XG2G_STREAM_PORT, XG2G_USE_WEBIF_STREAMS
+# Legacy receiver env aliases are rejected at startup:
+#   XG2G_OWI_*
+#   XG2G_STREAM_PORT
+#   XG2G_USE_WEBIF_STREAMS
 #
 # Bouquets:
 #   XG2G_BOUQUET                 - Comma-separated list of bouquet names (empty = all)
@@ -291,7 +286,7 @@ picons:
 #   XG2G_STORE_PATH              - Store path (default: /var/lib/xg2g/store)
 #   XG2G_HLS_ROOT                - HLS output root (default: $XG2G_DATA/hls)
 #   XG2G_TUNER_SLOTS             - Allowed tuner slots (range or CSV)
-#   XG2G_E2_HOST                 - Enigma2 receiver base URL (preferred; legacy fallback: XG2G_OWI_BASE)
+#   XG2G_E2_HOST                 - Enigma2 receiver base URL
 #   XG2G_E2_USER                 - Enigma2 username
 #   XG2G_E2_PASS                 - Enigma2 password
 #   XG2G_E2_TIMEOUT              - Enigma2 HTTP timeout (e.g., 10s)

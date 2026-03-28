@@ -413,6 +413,17 @@ func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent)
 		if r.State.IsTerminal() {
 			return nil
 		}
+		if r.State == model.SessionStopping {
+			if r.Reason == "" && e.Reason != "" {
+				r.Reason = e.Reason
+			}
+			if r.StopReason == "" && e.Reason == model.RLeaseExpired {
+				r.StopReason = "LEASE_EXPIRED"
+			}
+			r.PipelineState = model.PipeStopRequested
+			r.UpdatedAtUnix = time.Now().Unix()
+			return nil
+		}
 		if r.State == model.SessionNew {
 			if e.Reason == model.RIdleTimeout {
 				_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvSweeperForcedStop}, nil, false, time.Now())

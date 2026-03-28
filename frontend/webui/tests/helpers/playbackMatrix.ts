@@ -59,14 +59,14 @@ const browserProbeFixtures: Record<BrowserFamily, BrowserProbeFixture> = {
     capabilities: {
       live: {
         container: ['mp4', 'ts'],
-        videoCodecs: ['hevc', 'h264'],
+        videoCodecs: ['h264'],
         audioCodecs: ['aac', 'mp3', 'ac3'],
         hlsEngines: ['native'],
         preferredHlsEngine: 'native',
       },
       recording: {
         container: ['mp4', 'ts'],
-        videoCodecs: ['hevc', 'h264'],
+        videoCodecs: ['h264'],
         audioCodecs: ['aac', 'mp3'],
         hlsEngines: ['native'],
         preferredHlsEngine: 'native',
@@ -95,14 +95,14 @@ const browserProbeFixtures: Record<BrowserFamily, BrowserProbeFixture> = {
     capabilities: {
       live: {
         container: ['mp4', 'ts'],
-        videoCodecs: ['hevc', 'h264'],
+        videoCodecs: ['h264'],
         audioCodecs: ['aac', 'mp3', 'ac3'],
         hlsEngines: ['native'],
         preferredHlsEngine: 'native',
       },
       recording: {
         container: ['mp4', 'ts'],
-        videoCodecs: ['hevc', 'h264'],
+        videoCodecs: ['h264'],
         audioCodecs: ['aac', 'mp3'],
         hlsEngines: ['native'],
         preferredHlsEngine: 'native',

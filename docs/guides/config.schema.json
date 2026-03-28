@@ -13,6 +13,14 @@
         "userbouquet.favourites.tv"
       ],
       "dataDir": "/var/lib/xg2g",
+      "enigma2": {
+        "baseUrl": "http://receiver.local",
+        "password": "dreambox",
+        "retries": 3,
+        "streamPort": 8001,
+        "timeout": "10s",
+        "username": "root"
+      },
       "epg": {
         "days": 7,
         "enabled": true,
@@ -26,14 +34,6 @@
       "metrics": {
         "enabled": false,
         "listenAddr": ":9091"
-      },
-      "openWebIF": {
-        "baseUrl": "http://receiver.local",
-        "password": "dreambox",
-        "retries": 3,
-        "streamPort": 8001,
-        "timeout": "10s",
-        "username": "root"
       },
       "picons": {
         "baseUrl": "http://receiver.local/picon"
@@ -287,7 +287,7 @@
           "type": "string"
         },
         "baseUrl": {
-          "description": "Base URL of the Enigma2 receiver (defaults to openWebIF.baseUrl)",
+          "description": "Base URL of the Enigma2 receiver",
           "examples": [
             "http://receiver.local",
             "http://192.168.1.100",
@@ -308,7 +308,7 @@
         },
         "maxBackoff": {
           "default": "30s",
-          "description": "Maximum backoff duration for exponential backoff (Go duration format). Environment: XG2G_E2_MAX_BACKOFF (canonical), XG2G_OWI_MAX_BACKOFF_MS (legacy fallback).",
+          "description": "Maximum backoff duration for exponential backoff (Go duration format). Environment: XG2G_E2_MAX_BACKOFF.",
           "examples": [
             "2s",
             "5s",
@@ -318,7 +318,7 @@
           "type": "string"
         },
         "password": {
-          "description": "Enigma2 authentication password (if required). Can also be provided via environment variable XG2G_E2_PASS (canonical) or XG2G_OWI_PASS (legacy). Never logged in plaintext. Environment variables are expanded.",
+          "description": "Enigma2 authentication password (if required). Can also be provided via environment variable XG2G_E2_PASS. Never logged in plaintext. Environment variables are expanded.",
           "examples": [
             "dreambox",
             "${ENIGMA_PASSWORD}"
@@ -382,7 +382,7 @@
         "streamPort": {
           "default": 8001,
           "deprecated": true,
-          "description": "Deprecated direct stream port override. Environment: XG2G_E2_STREAM_PORT (canonical), XG2G_STREAM_PORT (legacy fallback).",
+          "description": "Deprecated direct stream port override. Environment: XG2G_E2_STREAM_PORT.",
           "type": "integer"
         },
         "timeout": {
@@ -731,112 +731,6 @@
       },
       "type": "object"
     },
-    "openWebIF": {
-      "description": "OpenWebIF API configuration for Enigma2 receiver",
-      "properties": {
-        "backoff": {
-          "default": "200ms",
-          "deprecated": true,
-          "description": "Initial backoff duration between retries (Go duration format)",
-          "examples": [
-            "500ms",
-            "1s",
-            "100ms"
-          ],
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "type": "string"
-        },
-        "baseUrl": {
-          "deprecated": true,
-          "description": "Base URL of the Enigma2 receiver's OpenWebIF interface",
-          "examples": [
-            "http://receiver.local",
-            "http://192.168.1.100",
-            "https://enigma2.example.com"
-          ],
-          "format": "uri",
-          "pattern": "^https?://",
-          "type": "string"
-        },
-        "maxBackoff": {
-          "default": "30s",
-          "deprecated": true,
-          "description": "Legacy alias for enigma2.maxBackoff. Environment fallback: XG2G_OWI_MAX_BACKOFF_MS.",
-          "examples": [
-            "30s",
-            "1m",
-            "10s"
-          ],
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "type": "string"
-        },
-        "password": {
-          "deprecated": true,
-          "description": "OpenWebIF authentication password (if required). Can also be provided via environment variable XG2G_OWI_PASS. Never logged in plaintext. Environment variables like ${PASS} are expanded.",
-          "examples": [
-            "dreambox",
-            "${ENIGMA_PASSWORD}"
-          ],
-          "type": "string",
-          "writeOnly": true
-        },
-        "retries": {
-          "default": 2,
-          "deprecated": true,
-          "description": "Number of retry attempts for failed HTTP requests",
-          "examples": [
-            3,
-            5,
-            0
-          ],
-          "maximum": 10,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "streamPort": {
-          "default": 8001,
-          "deprecated": true,
-          "description": "Legacy alias for enigma2.streamPort. Environment fallback: XG2G_STREAM_PORT.",
-          "examples": [
-            8001,
-            8002
-          ],
-          "maximum": 65535,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "timeout": {
-          "default": "10s",
-          "deprecated": true,
-          "description": "HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)",
-          "examples": [
-            "10s",
-            "5s",
-            "30s"
-          ],
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "type": "string"
-        },
-        "useWebIFStreams": {
-          "default": false,
-          "deprecated": true,
-          "type": "boolean"
-        },
-        "username": {
-          "deprecated": true,
-          "description": "OpenWebIF authentication username (if required). Environment variables like ${USER} are expanded.",
-          "examples": [
-            "root",
-            "${ENIGMA_USER}"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "baseUrl"
-      ],
-      "type": "object"
-    },
     "picons": {
       "description": "Picon/channel logo configuration",
       "properties": {
@@ -1113,8 +1007,8 @@
   },
   "required": [
     "dataDir",
-    "openWebIF",
-    "epg"
+    "epg",
+    "enigma2"
   ],
   "title": "xg2g Configuration",
   "type": "object"
