@@ -19,14 +19,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep Link Filter -->
+            <!-- Deep Link Filter (Dynamic via Flavor) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <data android:scheme="https" />
-                <data android:host="xg2g.home.matrixcentral.de" />
+                <data android:scheme="${deepLinkScheme}" />
+                <data android:host="${deepLinkHost}" />
                 <data android:pathPrefix="/ui" />
             </intent-filter>
         </activity>

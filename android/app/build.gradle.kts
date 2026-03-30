@@ -17,7 +17,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["appLabel"] = "xg2g"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.home.matrixcentral.de/ui/\"")
+        manifestPlaceholders["deepLinkScheme"] = "https"
+        manifestPlaceholders["deepLinkHost"] = "xg2g.example.invalid"
+        buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.example.invalid/ui/\"")
     }
 
     buildFeatures {
@@ -32,6 +34,8 @@ android {
             versionNameSuffix = "-dev"
             manifestPlaceholders["appLabel"] = "xg2g Dev"
             manifestPlaceholders["usesCleartextTraffic"] = "false"
+            manifestPlaceholders["deepLinkScheme"] = "https"
+            manifestPlaceholders["deepLinkHost"] = "xg2g.home.matrixcentral.de"
             buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.home.matrixcentral.de/ui/\"")
         }
         create("staging") {
@@ -40,12 +44,16 @@ android {
             versionNameSuffix = "-staging"
             manifestPlaceholders["appLabel"] = "xg2g Staging"
             manifestPlaceholders["usesCleartextTraffic"] = "false"
+            manifestPlaceholders["deepLinkScheme"] = "https"
+            manifestPlaceholders["deepLinkHost"] = "staging.example.invalid"
             buildConfigField("String", "DEFAULT_BASE_URL", "\"https://staging.example.invalid/ui/\"")
         }
         create("prod") {
             dimension = "environment"
             manifestPlaceholders["appLabel"] = "xg2g"
             manifestPlaceholders["usesCleartextTraffic"] = "false"
+            manifestPlaceholders["deepLinkScheme"] = "https"
+            manifestPlaceholders["deepLinkHost"] = "xg2g.example.invalid"
             buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.example.invalid/ui/\"")
         }
     }

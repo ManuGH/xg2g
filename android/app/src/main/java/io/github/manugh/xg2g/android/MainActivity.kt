@@ -74,7 +74,8 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest
             ): Boolean {
                 val target = request.url
-                val baseHost = Uri.parse(BuildConfig.DEFAULT_BASE_URL).host
+                val baseUri = Uri.parse(BuildConfig.DEFAULT_BASE_URL)
+                val baseHost = baseUri.host
 
                 return when {
                     target.scheme !in setOf("http", "https") -> {
@@ -106,12 +107,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun resolveStartUrl(): String {
         val data = intent.dataString
-        if (data != null && data.startsWith("https://xg2g.home.matrixcentral.de/ui")) {
+        val baseUrl = BuildConfig.DEFAULT_BASE_URL
+        val baseUri = Uri.parse(baseUrl)
+
+        // Check if intent data matches the configured base URL (including scheme, host, and path prefix)
+        if (data != null && baseUri.host != null && data.startsWith("${baseUri.scheme}://${baseUri.host}${baseUri.path}")) {
             return data
         }
 
         val overrideUrl = intent.getStringExtra(EXTRA_BASE_URL)?.trim().orEmpty()
-        val raw = if (overrideUrl.isNotEmpty()) overrideUrl else BuildConfig.DEFAULT_BASE_URL
+        val raw = if (overrideUrl.isNotEmpty()) overrideUrl else baseUrl
         return if (raw.endsWith("/")) raw else "$raw/"
     }
 
