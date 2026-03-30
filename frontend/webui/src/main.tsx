@@ -12,6 +12,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { AppProvider } from './context/AppContext.tsx';
 import { UiOverlayProvider } from './context/UiOverlayContext.tsx';
 import { i18nReady } from './i18n';
+import { applyHostEnvironmentToDocument, resolveHostEnvironment } from './lib/hostBridge';
 import { setClientAuthToken } from './services/clientWrapper';
 import { ROUTE_MAP } from './routes.ts';
 import { getStoredToken } from './utils/tokenStorage';
@@ -32,6 +33,7 @@ const queryClient = new QueryClient({
 // Prime the shared API client before React mounts so the first bootstrap query
 // already carries the persisted token on cold starts.
 setClientAuthToken(getStoredToken());
+applyHostEnvironmentToDocument(resolveHostEnvironment());
 
 const root = createRoot(document.getElementById('root')!);
 

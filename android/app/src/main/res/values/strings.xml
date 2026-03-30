@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">xg2g</string>
+    <string name="server_setup_title">Connect to xg2g</string>
+    <string name="server_setup_tv_tip">Tip for TV: open your xg2g server in Silk or Downloader and use the “Open in xg2g App” button from Settings.</string>
+    <string name="server_setup_hint">https://your-server.de</string>
+    <string name="server_setup_connect">Connect</string>
+    <string name="server_setup_cancel">Cancel</string>
+    <string name="server_setup_invalid_url">Please enter a valid URL.</string>
+    <string name="server_setup_error_no_scheme">URL must start with http:// or https://</string>
+    <string name="server_change_button">Change Server</string>
+
     <string name="webview_error_title">Connection problem</string>
     <string name="webview_ssl_error_title">Certificate problem</string>
     <string name="webview_error_retry">Retry</string>
@@ -9,5 +19,8 @@
     <string name="webview_error_connect">The app could not connect to xg2g. Check whether the server is reachable.</string>
     <string name="webview_error_timeout">The connection to xg2g timed out. Try again in a moment.</string>
     <string name="webview_error_too_many_requests">The server is rate limiting requests right now. Try again shortly.</string>
+    <string name="webview_http_error_detail">The server responded with HTTP %1$d for the main page request.</string>
+    <string name="webview_renderer_crashed">Android had to restart the embedded browser process after it crashed. Retry the page.</string>
+    <string name="webview_renderer_gone">Android reclaimed the embedded browser process. Retry the page.</string>
     <string name="webview_ssl_error_detail">Android rejected the TLS certificate for %1$s. Check that the certificate is valid and trusted on this device.</string>
 </resources>

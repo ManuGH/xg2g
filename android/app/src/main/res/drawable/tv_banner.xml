@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="20dp" />
+            <gradient
+                android:angle="0"
+                android:endColor="#0F1B2B"
+                android:startColor="#1B3C68" />
+        </shape>
+    </item>
+
+    <item
+        android:bottom="18dp"
+        android:left="24dp"
+        android:right="210dp"
+        android:top="18dp"
+        android:drawable="@drawable/ic_launcher_foreground" />
+
+    <item
+        android:bottom="34dp"
+        android:left="168dp"
+        android:right="24dp"
+        android:top="34dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="18dp" />
+            <gradient
+                android:angle="0"
+                android:endColor="#133B57"
+                android:startColor="#0A111C" />
+            <stroke
+                android:width="1dp"
+                android:color="#335E8F" />
+        </shape>
+    </item>
+
+    <item
+        android:bottom="92dp"
+        android:left="196dp"
+        android:right="68dp"
+        android:top="58dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="10dp" />
+            <solid android:color="#4A90F5" />
+        </shape>
+    </item>
+
+    <item
+        android:bottom="58dp"
+        android:left="196dp"
+        android:right="120dp"
+        android:top="98dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="8dp" />
+            <solid android:color="#F59F0A" />
+        </shape>
+    </item>
+
+    <item
+        android:bottom="58dp"
+        android:left="282dp"
+        android:right="68dp"
+        android:top="98dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="8dp" />
+            <solid android:color="#223650" />
+        </shape>
+    </item>
+</layer-list>

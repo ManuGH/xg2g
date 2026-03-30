@@ -1,0 +1,50 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Scale and Center the entire logo to fit the "Safe Zone" -->
+    <group
+        android:translateX="54"
+        android:translateY="54"
+        android:scaleX="0.65"
+        android:scaleY="0.65">
+
+        <group android:translateX="-60" android:translateY="-40">
+
+            <!-- BOTTOM SWOOSH (Blue Arrow) -->
+            <path
+                android:fillColor="#3574F0"
+                android:pathData="M110,50 C110,85 10,85 10,60 L-5,75 L0,35 L25,45 L10,60 C10,75 100,75 100,50 Z" />
+
+            <!-- TOP SWOOSH (White Arrow) -->
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M10,35 C10,0 110,0 110,25 L125,10 L120,50 L100,40 L110,25 C110,10 20,10 20,35 Z" />
+
+            <!-- XG2G TEXT (Slanted/Racing Style) -->
+            <group android:translateY="28">
+                <!-- X (Blue) -->
+                <path
+                    android:fillColor="#3574F0"
+                    android:pathData="M10,0 L25,0 L32,15 L38,0 L53,0 L40,20 L55,40 L40,40 L32,28 L24,40 L9,40 L25,20 Z" />
+
+                <!-- G (White) -->
+                <path
+                    android:fillColor="#FFFFFF"
+                    android:pathData="M58,0 L83,0 L85,8 L68,8 L65,32 L78,32 L79,22 L72,22 L73,15 L88,15 L85,40 L55,40 Z" />
+
+                <!-- 2 (White) -->
+                <path
+                    android:fillColor="#FFFFFF"
+                    android:pathData="M90,0 L115,0 L117,8 L100,8 L98,18 C110,18 115,22 116,30 L118,40 L88,40 L87,32 L105,32 C105,25 100,25 90,25 Z" />
+
+                <!-- G (White) -->
+                <path
+                    android:fillColor="#FFFFFF"
+                    android:pathData="M120,0 L145,0 L147,8 L130,8 L127,32 L140,32 L141,22 L134,22 L135,15 L150,15 L147,40 L117,40 Z" />
+            </group>
+        </group>
+    </group>
+</vector>

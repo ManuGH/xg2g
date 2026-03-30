@@ -62,6 +62,13 @@
   margin-bottom: 20px;
 }
 
+.onboardingCard {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
 .group label {
   display: block;
   margin-bottom: 8px;
@@ -72,6 +79,17 @@
   font-size: 0.9em;
   color: var(--text-muted);
   margin-top: 4px;
+}
+
+.launchValue {
+  display: block;
+  width: 100%;
+  overflow-wrap: anywhere;
+  background: var(--surface-panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 12px 14px;
 }
 
 .footer {
@@ -230,4 +248,3 @@
   padding: 10px 12px;
   font-size: 14px;
 }
-

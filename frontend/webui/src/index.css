@@ -273,6 +273,29 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
+:root[data-xg2g-host-tv="true"] {
+  --nav-height: 72px;
+  --content-max-width: 1680px;
+}
+
+:root[data-xg2g-host-tv="true"] body {
+  font-size: 1.0625rem;
+}
+
+:root[data-xg2g-host-tv="true"] :where(a, button, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 3px solid var(--accent-live);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 6px rgba(245, 159, 10, 0.18);
+}
+
+:root[data-xg2g-host-tv="true"] button,
+:root[data-xg2g-host-tv="true"] [role="button"],
+:root[data-xg2g-host-tv="true"] input,
+:root[data-xg2g-host-tv="true"] select,
+:root[data-xg2g-host-tv="true"] textarea {
+  min-height: 52px;
+}
+
 /* Links */
 a {
   color: var(--accent-action);

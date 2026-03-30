@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android Studio / IDE Inspired Palette -->
+    <color name="ide_background">#070a11</color>
+    <color name="ide_surface">#1e1f22</color>
+    <color name="ide_blue">#3574F0</color>
+    <color name="ide_text_primary">#F5F5F7</color>
+    <color name="ide_text_secondary">#9BA1A6</color>
+    <color name="ide_error">#F87171</color>
+
+    <color name="launcher_background">#070a11</color>
+</resources>

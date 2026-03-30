@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Config, { isConfigured } from './Config';
 import {
@@ -31,6 +31,19 @@ function Settings() {
     refetch: refetchScanStatus,
   } = useSystemScanStatus();
   const triggerScanMutation = useTriggerSystemScanMutation();
+  const androidTvBaseUrl = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+    return new URL('/ui/', window.location.origin).toString();
+  }, []);
+  const androidTvLaunchUrl = useMemo(() => {
+    if (!androidTvBaseUrl) {
+      return '';
+    }
+    const params = new URLSearchParams({ base_url: androidTvBaseUrl });
+    return `xg2g://connect?${params.toString()}`;
+  }, [androidTvBaseUrl]);
 
   const configured = isConfigured(config);
   const scanStatusErrorMessage = !scanStatus
@@ -93,6 +106,31 @@ function Settings() {
             )}
           </div>
         )}
+      </div>
+
+      <div className={styles.section}>
+        <h3>{t('settings.androidTv.title')}</h3>
+        <p className={styles.subtitle}>{t('settings.androidTv.subtitle')}</p>
+
+        <div className={styles.onboardingCard}>
+          <div className={styles.group}>
+            <label>{t('settings.androidTv.currentServer')}</label>
+            <code className={`${styles.launchValue} tabular`.trim()}>{androidTvBaseUrl}</code>
+            <span className={styles.hint}>{t('settings.androidTv.currentServerHint')}</span>
+          </div>
+
+          <div className={styles.inputRow}>
+            <Button
+              href={androidTvLaunchUrl}
+              variant="secondary"
+              rel="noopener noreferrer"
+            >
+              {t('settings.androidTv.openApp')}
+            </Button>
+          </div>
+
+          <p className={styles.hint}>{t('settings.androidTv.hint')}</p>
+        </div>
       </div>
 
       <div className={styles.section}>

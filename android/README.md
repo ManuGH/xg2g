@@ -25,7 +25,7 @@ Native additions should be limited to Android-specific concerns such as:
 - Picture-in-picture
 - Notifications
 - File pickers / share targets
-- Better deep-link handling
+- TV / remote integration
 
 ## Build Flavors
 
@@ -35,13 +35,14 @@ The app defines three product flavors:
 - `staging`
 - `prod`
 
-Defaults:
+Flavor differences today:
 
-- `dev` points to `http://10.0.2.2:8080/ui/` for the Android emulator
-- `staging` points to `https://staging.example.invalid/ui/`
-- `prod` points to `https://xg2g.example.invalid/ui/`
+- `dev` allows cleartext traffic for emulator-local HTTP during development
+- `staging` and `prod` remain HTTPS-only
+- deep/app-link hosts are flavor-specific
 
-You should change the `staging` and `prod` URLs before shipping.
+The server URL itself is configured at runtime through setup UI, app links, or
+an explicit `base_url` intent extra.
 
 ## Opening In Android Studio
 
@@ -53,9 +54,9 @@ You should change the `staging` and `prod` URLs before shipping.
 
 ## Local Development
 
-The `dev` flavor is wired for the Android emulator:
+The `dev` flavor is intended for emulator/device testing against a local xg2g
+server and permits cleartext `http://10.0.2.2/...` URLs when needed.
 
-- backend UI host: `http://10.0.2.2:8080/ui/`
 - xg2g dev workflow in this repo: see [docs/guides/DEVELOPMENT.md](../docs/guides/DEVELOPMENT.md)
 
 Typical local flow:
@@ -66,6 +67,8 @@ make webui-dev
 ```
 
 Then run the Android app as `devDebug` inside the emulator.
+Use either the in-app setup screen or the intent override below to point the
+client at `http://10.0.2.2:8080/ui/`.
 
 ## Runtime URL Override
 
@@ -77,16 +80,25 @@ adb shell am start \
   --es base_url http://10.0.2.2:8080/ui/
 ```
 
+The app also accepts a browser/app link for TV-friendly onboarding:
+
+```text
+xg2g://connect?base_url=https%3A%2F%2Fyour-server.example%2Fui%2F
+```
+
+When launched from a browser on Android TV / Fire TV, the app stores that base
+URL and uses it as the new default server.
+
 ## Security Notes
 
-- `dev` allows cleartext traffic for emulator-local HTTP.
+- `dev` allows cleartext traffic so emulator-local HTTP targets such as
+  `http://10.0.2.2:8080/ui/` can be used during development.
 - `staging` and `prod` are HTTPS-only by default.
 - This matches the server-side expectation that browser session cookie flows
   should not rely on plain HTTP outside loopback.
 
 ## Next Steps
 
-- Add app icon and signing config
-- Add deep links
+- Add release signing config
 - Decide whether playback remains in WebView or moves to Media3
 - Add Android CI and AAB signing/release flow
