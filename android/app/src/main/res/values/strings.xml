@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="webview_error_title">Connection problem</string>
+    <string name="webview_ssl_error_title">Certificate problem</string>
+    <string name="webview_error_retry">Retry</string>
+    <string name="webview_error_open_in_browser">Open in browser</string>
+    <string name="webview_error_generic">The app could not load xg2g right now.</string>
+    <string name="webview_error_host_lookup">The xg2g host could not be resolved. Check DNS and the configured host name.</string>
+    <string name="webview_error_connect">The app could not connect to xg2g. Check whether the server is reachable.</string>
+    <string name="webview_error_timeout">The connection to xg2g timed out. Try again in a moment.</string>
+    <string name="webview_error_too_many_requests">The server is rate limiting requests right now. Try again shortly.</string>
+    <string name="webview_ssl_error_detail">Android rejected the TLS certificate for %1$s. Check that the certificate is valid and trusted on this device.</string>
+</resources>

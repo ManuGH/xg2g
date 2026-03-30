@@ -8,6 +8,7 @@ import './App.css';
 import { useAppContext } from './context/AppContext';
 import AppShell from './AppShell';
 import BootstrapGate from './components/BootstrapGate';
+import { usePlayerHistoryBridge } from './features/player/usePlayerHistoryBridge';
 import { ROUTE_MAP } from './routes';
 
 // Lazy load feature views (Phase 4: Bundle optimization)
@@ -37,6 +38,10 @@ function App() {
     setPlayingChannel(null);
     setToken('');
   };
+  const handlePlayerClose = usePlayerHistoryBridge(
+    playback.playingChannel !== null,
+    () => setPlayingChannel(null),
+  );
 
   const memoizedBouquets = useMemo(() => (channels.bouquets || []).map(b => ({
     name: b.name || 'Unknown',
@@ -51,7 +56,7 @@ function App() {
             token={auth.token || ''}
             channel={playback.playingChannel}
             autoStart={true}
-            onClose={() => setPlayingChannel(null)}
+            onClose={handlePlayerClose}
           />
         </Suspense>
       )}

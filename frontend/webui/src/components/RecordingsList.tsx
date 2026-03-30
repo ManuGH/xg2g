@@ -10,6 +10,7 @@ import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
 import { useTranslation } from 'react-i18next';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
+import { usePlayerHistoryBridge } from '../features/player/usePlayerHistoryBridge';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useDeleteRecordingsMutation, useRecordings } from '../hooks/useServerQueries';
 import { toAppError } from '../lib/appErrors';
@@ -96,6 +97,7 @@ export default function RecordingsList() {
   const [root, setRoot] = useState<string>(''); // Selected Root ID
   const [path, setPath] = useState<string>(''); // Current relative path
   const [playing, setPlaying] = useState<PlayingState | null>(null);
+  const handlePlayerClose = usePlayerHistoryBridge(playing !== null, () => setPlaying(null));
   const [filterMode, setFilterMode] = useState<RecordingsFilter>('all');
   const [sortMode, setSortMode] = useState<RecordingsSort>('newest');
 
@@ -433,7 +435,7 @@ export default function RecordingsList() {
             recordingId={playing.recordingId}
             token={auth?.token || undefined}
             autoStart={true}
-            onClose={() => setPlaying(null)}
+            onClose={handlePlayerClose}
             duration={playing.durationSeconds}
           />
         </Suspense>

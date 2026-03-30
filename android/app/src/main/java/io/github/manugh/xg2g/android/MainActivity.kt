@@ -6,29 +6,48 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
+import android.webkit.SslErrorHandler
+import android.webkit.SslError
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.View
+import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
+    private lateinit var errorContainer: View
+    private lateinit var errorTitle: TextView
+    private lateinit var errorDetail: TextView
+    private lateinit var retryButton: MaterialButton
+    private lateinit var openInBrowserButton: MaterialButton
+    private var lastRequestedUrl: String = BuildConfig.DEFAULT_BASE_URL
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.WEBVIEW_DEBUGGING)
 
-        webView = WebView(this)
-        setContentView(webView)
+        setContentView(R.layout.activity_main)
+        webView = findViewById(R.id.webview)
+        errorContainer = findViewById(R.id.error_container)
+        errorTitle = findViewById(R.id.error_title)
+        errorDetail = findViewById(R.id.error_detail)
+        retryButton = findViewById(R.id.retry_button)
+        openInBrowserButton = findViewById(R.id.open_in_browser_button)
         configureWebView()
+        configureErrorUi()
         installBackHandler()
 
         if (savedInstanceState == null) {
-            webView.loadUrl(resolveStartUrl())
+            loadAppUrl(resolveStartUrl())
         } else {
+            lastRequestedUrl = savedInstanceState.getString(STATE_LAST_REQUESTED_URL) ?: resolveStartUrl()
             webView.restoreState(savedInstanceState)
         }
     }
@@ -36,10 +55,11 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        webView.loadUrl(resolveStartUrl())
+        loadAppUrl(resolveStartUrl())
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_LAST_REQUESTED_URL, lastRequestedUrl)
         webView.saveState(outState)
         super.onSaveInstanceState(outState)
     }
@@ -64,11 +84,16 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = false
             builtInZoomControls = false
             displayZoomControls = false
+            setSupportMultipleWindows(false)
             userAgentString = "${userAgentString} xg2g-android/${BuildConfig.VERSION_NAME}"
         }
 
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageCommitVisible(view: WebView, url: String?) {
+                hideErrorUi()
+            }
+
             override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest
@@ -89,12 +114,52 @@ class MainActivity : AppCompatActivity() {
                     else -> false
                 }
             }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError
+            ) {
+                if (!request.isForMainFrame) {
+                    return
+                }
+
+                showErrorUi(
+                    title = getString(R.string.webview_error_title),
+                    detail = describeMainFrameError(error.errorCode, error.description?.toString()),
+                )
+            }
+
+            override fun onReceivedSslError(
+                view: WebView,
+                handler: SslErrorHandler,
+                error: SslError
+            ) {
+                handler.cancel()
+                showErrorUi(
+                    title = getString(R.string.webview_ssl_error_title),
+                    detail = getString(R.string.webview_ssl_error_detail, Uri.parse(lastRequestedUrl).host ?: lastRequestedUrl),
+                )
+            }
+        }
+    }
+
+    private fun configureErrorUi() {
+        retryButton.setOnClickListener {
+            loadAppUrl(lastRequestedUrl)
+        }
+        openInBrowserButton.setOnClickListener {
+            openExternal(Uri.parse(lastRequestedUrl))
         }
     }
 
     private fun installBackHandler() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                if (errorContainer.visibility == View.VISIBLE) {
+                    loadAppUrl(lastRequestedUrl)
+                    return
+                }
                 if (webView.canGoBack()) {
                     webView.goBack()
                     return
@@ -120,6 +185,34 @@ class MainActivity : AppCompatActivity() {
         return if (raw.endsWith("/")) raw else "$raw/"
     }
 
+    private fun loadAppUrl(url: String) {
+        lastRequestedUrl = url
+        hideErrorUi()
+        webView.loadUrl(url)
+    }
+
+    private fun showErrorUi(title: String, detail: String) {
+        errorTitle.text = title
+        errorDetail.text = detail
+        errorContainer.visibility = View.VISIBLE
+        webView.visibility = View.GONE
+    }
+
+    private fun hideErrorUi() {
+        errorContainer.visibility = View.GONE
+        webView.visibility = View.VISIBLE
+    }
+
+    private fun describeMainFrameError(errorCode: Int, description: String?): String {
+        return when (errorCode) {
+            WebViewClient.ERROR_HOST_LOOKUP -> getString(R.string.webview_error_host_lookup)
+            WebViewClient.ERROR_CONNECT -> getString(R.string.webview_error_connect)
+            WebViewClient.ERROR_TIMEOUT -> getString(R.string.webview_error_timeout)
+            WebViewClient.ERROR_TOO_MANY_REQUESTS -> getString(R.string.webview_error_too_many_requests)
+            else -> description?.takeIf { it.isNotBlank() } ?: getString(R.string.webview_error_generic)
+        }
+    }
+
     private fun openExternal(uri: Uri) {
         val intent = Intent(Intent.ACTION_VIEW, uri)
         try {
@@ -131,5 +224,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_BASE_URL = "base_url"
+        private const val STATE_LAST_REQUESTED_URL = "state_last_requested_url"
     }
 }
