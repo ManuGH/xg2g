@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { HlsInstanceRef, PlayerStats, PlayerStatus, VideoElementRef } from '../../types/v3-player';
 import { debugLog, debugWarn } from '../../utils/logging';
+import { onHostMediaKey } from '../../lib/hostBridge';
 import { hasTouchInput } from './utils/playerHelpers';
 
 type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
@@ -180,19 +181,49 @@ export function usePlayerChrome({
     }
   }, [seekTo, videoRef]);
 
-  const togglePlayPause = useCallback(() => {
+  const play = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
+    if (!video.paused) return;
 
+    userPauseIntentRef.current = false;
+    setStatus((current) => (current === 'paused' || current === 'ready' ? 'buffering' : current));
+    video.play().catch((err) => debugWarn('Play failed', err));
+  }, [setStatus, userPauseIntentRef, videoRef]);
+
+  const pause = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
     if (video.paused) {
-      userPauseIntentRef.current = false;
-      video.play().catch((err) => debugWarn('Play failed', err));
+      setStatus('paused');
       return;
     }
 
     userPauseIntentRef.current = true;
     video.pause();
-  }, [userPauseIntentRef, videoRef]);
+    setStatus('paused');
+  }, [setStatus, userPauseIntentRef, videoRef]);
+
+  const stop = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    userPauseIntentRef.current = true;
+    video.pause();
+    setStatus('paused');
+  }, [setStatus, userPauseIntentRef, videoRef]);
+
+  const togglePlayPause = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      play();
+      return;
+    }
+
+    pause();
+  }, [pause, play, videoRef]);
 
   const toggleFullscreen = useCallback(async () => {
     const video = videoRef.current;
@@ -351,6 +382,61 @@ export function usePlayerChrome({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [seekBy, toggleFullscreen, toggleMute, togglePiP, togglePlayPause, toggleStats]);
+
+  useEffect(() => onHostMediaKey((action) => {
+    switch (action) {
+      case 'playPause':
+        togglePlayPause();
+        break;
+      case 'play':
+        play();
+        break;
+      case 'pause':
+        pause();
+        break;
+      case 'seekBack':
+        seekBy(-15);
+        break;
+      case 'seekForward':
+        seekBy(15);
+        break;
+      case 'stop':
+        stop();
+        break;
+    }
+  }), [pause, play, seekBy, stop, togglePlayPause]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+      return;
+    }
+
+    const mediaSession = navigator.mediaSession;
+    const setHandler = (
+      action: MediaSessionAction,
+      handler: MediaSessionActionHandler | null,
+    ) => {
+      try {
+        mediaSession.setActionHandler(action, handler);
+      } catch (err) {
+        debugWarn(`Media session action "${action}" is not available`, err);
+      }
+    };
+
+    setHandler('play', () => play());
+    setHandler('pause', () => pause());
+    setHandler('stop', () => stop());
+    setHandler('seekbackward', canSeek ? () => seekBy(-15) : null);
+    setHandler('seekforward', canSeek ? () => seekBy(15) : null);
+
+    return () => {
+      setHandler('play', null);
+      setHandler('pause', null);
+      setHandler('stop', null);
+      setHandler('seekbackward', null);
+      setHandler('seekforward', null);
+    };
+  }, [canSeek, pause, play, seekBy, stop]);
 
   useEffect(() => {
     const video = videoRef.current;

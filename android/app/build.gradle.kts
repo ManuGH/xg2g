@@ -19,7 +19,6 @@ android {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         manifestPlaceholders["deepLinkScheme"] = "https"
         manifestPlaceholders["deepLinkHost"] = "xg2g.example.invalid"
-        buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.example.invalid/ui/\"")
     }
 
     buildFeatures {
@@ -33,10 +32,9 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             manifestPlaceholders["appLabel"] = "xg2g Dev"
-            manifestPlaceholders["usesCleartextTraffic"] = "false"
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             manifestPlaceholders["deepLinkScheme"] = "https"
             manifestPlaceholders["deepLinkHost"] = "xg2g.home.matrixcentral.de"
-            buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.home.matrixcentral.de/ui/\"")
         }
         create("staging") {
             dimension = "environment"
@@ -46,7 +44,6 @@ android {
             manifestPlaceholders["usesCleartextTraffic"] = "false"
             manifestPlaceholders["deepLinkScheme"] = "https"
             manifestPlaceholders["deepLinkHost"] = "staging.example.invalid"
-            buildConfigField("String", "DEFAULT_BASE_URL", "\"https://staging.example.invalid/ui/\"")
         }
         create("prod") {
             dimension = "environment"
@@ -54,7 +51,6 @@ android {
             manifestPlaceholders["usesCleartextTraffic"] = "false"
             manifestPlaceholders["deepLinkScheme"] = "https"
             manifestPlaceholders["deepLinkHost"] = "xg2g.example.invalid"
-            buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.example.invalid/ui/\"")
         }
     }
 
@@ -88,4 +84,12 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.2")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.webkit:webkit:1.11.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
+    testImplementation("junit:junit:4.13.2")
+
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

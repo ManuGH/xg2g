@@ -1,4 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Xg2g" parent="Theme.Material3.DayNight.NoActionBar" />
+    <!-- Base application theme (Android Studio / Dracula style) -->
+    <style name="Theme.Xg2g" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- Main colors -->
+        <item name="colorPrimary">@color/ide_blue</item>
+        <item name="colorOnPrimary">@color/ide_text_primary</item>
+        <item name="colorPrimaryContainer">@color/ide_blue</item>
+        <item name="colorOnPrimaryContainer">@color/ide_text_primary</item>
+
+        <item name="android:windowBackground">@color/ide_background</item>
+        <item name="colorSurface">@color/ide_surface</item>
+        <item name="colorOnSurface">@color/ide_text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/ide_text_secondary</item>
+
+        <item name="colorError">@color/ide_error</item>
+
+        <!-- Components -->
+        <item name="editTextStyle">@style/Widget.Material3.TextInputEditText.OutlinedBox</item>
+        <item name="textInputStyle">@style/Widget.Material3.TextInputLayout.OutlinedBox</item>
+
+        <!-- Navigation & Status Bar -->
+        <item name="android:navigationBarColor">@color/ide_background</item>
+        <item name="android:statusBarColor">@color/ide_background</item>
+    </style>
+
+    <!-- Splash Screen Theme -->
+    <style name="Theme.Xg2g.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ide_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.Xg2g</item>
+    </style>
+
+    <!-- Theme for Launcher (Fallback) -->
+    <style name="Theme.Xg2g.Launcher" parent="Theme.Xg2g" />
 </resources>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { resolveHostEnvironment } from '../lib/hostBridge';
 import { ROUTE_MAP, normalizePathname, type AppView } from '../routes';
 import styles from './Navigation.module.css';
 
@@ -195,6 +196,20 @@ export default function Navigation({ onLogout }: NavigationProps) {
 
     previousShowMoreMenuRef.current = showMoreMenu;
   }, [showMoreMenu]);
+
+  useEffect(() => {
+    if (showMoreMenu || !resolveHostEnvironment().isTv) {
+      return;
+    }
+
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (activeElement && activeElement !== document.body && activeElement !== document.documentElement) {
+      return;
+    }
+
+    const activeNavItem = document.querySelector<HTMLElement>('a[aria-current="page"]');
+    activeNavItem?.focus();
+  }, [pathname, showMoreMenu]);
 
   const primaryMobileItems = navItems.filter((item) => mobilePrimaryViews.includes(item.id));
   const overflowItems = navItems.filter((item) => !mobilePrimaryViews.includes(item.id));

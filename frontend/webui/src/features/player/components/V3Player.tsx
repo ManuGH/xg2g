@@ -43,6 +43,7 @@ import { detectPlaybackClientFamily } from '../utils/playbackClientFamily';
 import { probeRuntimePlaybackCapabilities } from '../utils/playbackProbe';
 import { normalizePlayerError } from '../../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
+import { requestHostInputFocus, resolveHostEnvironment, setHostPlaybackActive } from '../../../lib/hostBridge';
 import type { AppError } from '../../../types/errors';
 import styles from './V3Player.module.css';
 
@@ -385,6 +386,7 @@ function V3Player(props: V3PlayerProps) {
   const [showNativeVideo, setShowNativeVideo] = useState(true);
   const [showNativeVideoVeil, setShowNativeVideoVeil] = useState(false);
   const [nativeVeilResumeArmed, setNativeVeilResumeArmed] = useState(false);
+  const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoElementRef>(null);
@@ -408,6 +410,7 @@ function V3Player(props: V3PlayerProps) {
   const nativeVideoHoldPositionRef = useRef<number | null>(null);
   const nativeVideoTempMutedRef = useRef(false);
   const nativeManagedPauseRef = useRef(false);
+  const visibilityManagedPauseRef = useRef(false);
 
   const [durationSeconds, setDurationSeconds] = useState<number | null>(
     duration && duration > 0 ? duration : null
@@ -425,6 +428,9 @@ function V3Player(props: V3PlayerProps) {
   // Resume State
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(
+    () => typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  );
 
   const setPlayerError = useCallback((nextError: AppError | null) => {
     setError(nextError);
@@ -1503,11 +1509,60 @@ function V3Player(props: V3PlayerProps) {
     status === 'starting' || status === 'priming' || status === 'building';
   const isNativeEngine = activeHlsEngine === 'native';
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
+  const shouldKeepHostAwake =
+    hostEnvironment.supportsKeepScreenAwake &&
+    isDocumentVisible &&
+    !hasTerminalStatus &&
+    status !== 'paused';
   const shouldHoldNativeVideo =
     isNativeEngine && !showNativeVideo && !hasTerminalStatus;
   const isOverlayStartupStatus =
     isImmediateStartupStatus || status === 'buffering' || shouldHoldNativeVideo;
   const overlayStatus: PlayerStatus = shouldHoldNativeVideo ? 'buffering' : status;
+
+  useEffect(() => {
+    if (!hostEnvironment.supportsKeepScreenAwake) {
+      return;
+    }
+
+    setHostPlaybackActive(shouldKeepHostAwake);
+    return () => setHostPlaybackActive(false);
+  }, [hostEnvironment.supportsKeepScreenAwake, shouldKeepHostAwake]);
+
+  useEffect(() => {
+    if (!hostEnvironment.isTv) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const inPictureInPicture = document.pictureInPictureElement === video;
+    if (!isDocumentVisible && !inPictureInPicture) {
+      if (!video.paused && !userPauseIntentRef.current && !hasTerminalStatus) {
+        visibilityManagedPauseRef.current = true;
+        video.pause();
+        setStatus('paused');
+      }
+      return;
+    }
+
+    if (!visibilityManagedPauseRef.current) {
+      return;
+    }
+
+    visibilityManagedPauseRef.current = false;
+    if (userPauseIntentRef.current || hasTerminalStatus) {
+      return;
+    }
+
+    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    void video.play().catch((err) => {
+      debugWarn('[V3Player] Host resume play blocked', err);
+    });
+  }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, setStatus, status, videoRef]);
 
   useEffect(() => {
     if (bufferingOverlayTimerRef.current !== null) {
@@ -1676,6 +1731,44 @@ function V3Player(props: V3PlayerProps) {
 
   // Cleanup effect
   useEffect(() => cleanupPlaybackResources, [cleanupPlaybackResources]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsDocumentVisible(document.visibilityState !== 'hidden');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handleVisibilityChange);
+    window.addEventListener('pagehide', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handleVisibilityChange);
+      window.removeEventListener('pagehide', handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hostEnvironment.isTv) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      requestHostInputFocus();
+
+      const activeElement = document.activeElement as HTMLElement | null;
+      if (activeElement && activeElement !== document.body && activeElement !== document.documentElement) {
+        return;
+      }
+
+      const nextFocusTarget = containerRef.current?.querySelector<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      nextFocusTarget?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [hostEnvironment.isTv, onClose]);
 
   // Overlay styles
   // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css

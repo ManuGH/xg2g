@@ -289,6 +289,14 @@
     "title": "Einstellungen",
     "subtitle": "Receiver-Setup konfigurieren und Streaming-Defaults wählen. Das Setup bleibt hier nach der Ersteinrichtung.",
     "saved": "Einstellungen automatisch gespeichert",
+    "androidTv": {
+      "title": "Android TV",
+      "subtitle": "Verknüpfe die Android-TV-App mit diesem Server, ohne die URL auf dem Fernseher eintippen zu müssen.",
+      "currentServer": "Aktueller Server",
+      "currentServerHint": "Öffne den App-Link unten auf demselben Android-TV- oder Fire-TV-Gerät, auf dem die xg2g-App installiert ist.",
+      "openApp": "In xg2g App öffnen",
+      "hint": "Falls der Browser nach einer App fragt, xg2g auswählen und die Auswahl dauerhaft erlauben."
+    },
     "streaming": {
       "title": "Streaming",
       "policy": {
