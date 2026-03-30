@@ -17,7 +17,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["appLabel"] = "xg2g"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.example.invalid/ui/\"")
+        buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.home.matrixcentral.de/ui/\"")
     }
 
     buildFeatures {
@@ -31,8 +31,8 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             manifestPlaceholders["appLabel"] = "xg2g Dev"
-            manifestPlaceholders["usesCleartextTraffic"] = "true"
-            buildConfigField("String", "DEFAULT_BASE_URL", "\"http://10.0.2.2:8080/ui/\"")
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
+            buildConfigField("String", "DEFAULT_BASE_URL", "\"https://xg2g.home.matrixcentral.de/ui/\"")
         }
         create("staging") {
             dimension = "environment"

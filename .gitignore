@@ -84,6 +84,7 @@ data/
 livetest-data/
 *.m3u
 *.xml
+!android/**/*.xml
 *.gz
 *.zip
 xg2g-main.zip

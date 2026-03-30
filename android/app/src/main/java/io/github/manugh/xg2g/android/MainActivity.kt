@@ -33,6 +33,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        webView.loadUrl(resolveStartUrl())
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         webView.saveState(outState)
         super.onSaveInstanceState(outState)
@@ -68,7 +74,7 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest
             ): Boolean {
                 val target = request.url
-                val baseHost = Uri.parse(resolveStartUrl()).host
+                val baseHost = Uri.parse(BuildConfig.DEFAULT_BASE_URL).host
 
                 return when {
                     target.scheme !in setOf("http", "https") -> {
@@ -99,6 +105,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun resolveStartUrl(): String {
+        val data = intent.dataString
+        if (data != null && data.startsWith("https://xg2g.home.matrixcentral.de/ui")) {
+            return data
+        }
+
         val overrideUrl = intent.getStringExtra(EXTRA_BASE_URL)?.trim().orEmpty()
         val raw = if (overrideUrl.isNotEmpty()) overrideUrl else BuildConfig.DEFAULT_BASE_URL
         return if (raw.endsWith("/")) raw else "$raw/"
