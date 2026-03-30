@@ -31,3 +31,5 @@ data/
 dist/
 # 2. Ignore local WebUI builds (Docker builds its own via multi-stage)
 internal/control/http/dist/
+# 3. Ignore Android client sources; server images do not consume them
+android/
