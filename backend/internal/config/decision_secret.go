@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	decisionSecretEnvKey       = "XG2G_DECISION_SECRET"
-	decisionSecretLegacyEnvKey = "XG2G_PLAYBACK_DECISION_SECRET"
+	decisionSecretEnvKey       = "XG2G_DECISION_SECRET"          // #nosec G101 -- environment variable key, not a credential value.
+	decisionSecretLegacyEnvKey = "XG2G_PLAYBACK_DECISION_SECRET" // #nosec G101 -- environment variable key, not a credential value.
 )
 
 // DecisionSecretFromEnv reads the canonical playback decision secret from process environment.

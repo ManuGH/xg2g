@@ -17,10 +17,8 @@
   position: relative;
   overflow: hidden;
   border-radius: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
-    linear-gradient(155deg, rgba(18, 28, 42, 0.88), rgba(9, 15, 24, 0.86));
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-panel) 86%, var(--surface-stage) 14%);
   box-shadow: var(--shadow-card);
 }
 
@@ -33,7 +31,7 @@
   inset: auto auto -26% -10%;
   width: 44%;
   height: 52%;
-  background: radial-gradient(circle, rgba(88, 195, 255, 0.1), transparent 72%);
+  background: color-mix(in srgb, var(--accent-action-subtle) 52%, transparent);
 }
 
 .summaryCard {
@@ -45,21 +43,15 @@
 }
 
 .summaryStreaming {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
-    linear-gradient(145deg, rgba(18, 35, 51, 0.94), rgba(9, 16, 26, 0.9));
+  background: color-mix(in srgb, var(--surface-panel-strong) 88%, var(--surface-stage) 12%);
 }
 
 .summaryControl {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
-    linear-gradient(145deg, rgba(17, 28, 44, 0.92), rgba(9, 15, 24, 0.88));
+  background: color-mix(in srgb, var(--surface-panel) 90%, var(--surface-stage) 10%);
 }
 
 .summaryStandby {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
-    linear-gradient(145deg, rgba(14, 22, 34, 0.9), rgba(8, 13, 22, 0.86));
+  background: color-mix(in srgb, var(--surface-shell) 88%, var(--surface-stage) 12%);
 }
 
 .summaryHeader {
@@ -121,8 +113,8 @@
 .contextCard {
   padding: 20px 22px;
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-base);
+  background: var(--surface-muted);
 }
 
 .metricCard {
@@ -164,7 +156,7 @@
   margin-top: 14px;
   height: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
   overflow: hidden;
 }
 
@@ -252,9 +244,9 @@
   display: grid;
   gap: 4px;
   padding: 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-base);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.035);
+  background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
 }
 
 .statusRow:last-child {

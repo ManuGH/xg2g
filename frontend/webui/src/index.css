@@ -175,9 +175,9 @@ body {
   font-size: var(--text-base);
   background-color: var(--bg-base);
   background-image:
-    radial-gradient(circle at 10% 14%, rgba(88, 195, 255, 0.16), transparent 24%),
-    radial-gradient(circle at 84% 8%, rgba(255, 155, 84, 0.14), transparent 22%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0));
+    radial-gradient(circle at 10% 14%, color-mix(in srgb, var(--accent-action-subtle) 88%, transparent), transparent 24%),
+    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--accent-live-subtle) 88%, transparent), transparent 22%),
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent);
   color: var(--text-primary);
   margin: 0;
   padding: 0;
@@ -198,9 +198,9 @@ body::before {
   position: fixed;
   inset: -8% -6%;
   background:
-    radial-gradient(circle at 14% 12%, rgba(88, 195, 255, 0.16), transparent 26%),
-    radial-gradient(circle at 82% 10%, rgba(255, 155, 84, 0.14), transparent 18%),
-    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.05), transparent 34%);
+    radial-gradient(circle at 14% 12%, color-mix(in srgb, var(--accent-action-subtle) 88%, transparent), transparent 26%),
+    radial-gradient(circle at 82% 10%, color-mix(in srgb, var(--accent-live-subtle) 88%, transparent), transparent 18%),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 34%);
   pointer-events: none;
   z-index: 0;
 }
@@ -210,10 +210,10 @@ body::after {
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--text-primary) 2%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text-primary) 1.4%, transparent) 1px, transparent 1px);
   background-size: 100% 132px, 132px 100%;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.46), transparent 80%);
+  mask-image: linear-gradient(180deg, color-mix(in srgb, black 46%, transparent), transparent 80%);
   opacity: 0.14;
   pointer-events: none;
   z-index: 0;
@@ -309,7 +309,7 @@ button:focus-visible {
 :root[data-xg2g-host-tv="true"] :where(a, button, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 3px solid var(--accent-live);
   outline-offset: 4px;
-  box-shadow: 0 0 0 6px rgba(245, 159, 10, 0.18);
+  box-shadow: var(--shadow-accent-live);
 }
 
 :root[data-xg2g-host-tv="true"] button,
