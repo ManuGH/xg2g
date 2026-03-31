@@ -262,7 +262,11 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 	size := info.Size()
 
 	// 3. Set Base Headers
-	w.Header().Set("Content-Type", "video/mp4")
+	contentType := res.ContentType
+	if contentType == "" {
+		contentType = "video/mp4"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Last-Modified", info.ModTime().UTC().Format(http.TimeFormat))
 

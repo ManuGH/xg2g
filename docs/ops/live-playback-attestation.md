@@ -7,7 +7,7 @@ Live-Playback ist nur mit server-attestierter Entscheidung erlaubt (SSOT, fail-c
 Setze einen stabilen Secret ueber alle Instanzen:
 
 - YAML: `api.playbackDecisionSecret`
-- ENV: `XG2G_PLAYBACK_DECISION_SECRET`
+- ENV: `XG2G_DECISION_SECRET`
 - Empfehlung: 32+ Bytes random
 
 Optional (empfohlen fuer Rotation):

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../components/ui';
+import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
 import styles from './UiOverlayContext.module.css';
 
 export type ToastKind = 'success' | 'warning' | 'error' | 'info';
@@ -197,6 +198,8 @@ function ConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const confirmButtonRef = React.useRef<HTMLButtonElement>(null);
+
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
@@ -204,6 +207,11 @@ function ConfirmDialog({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onCancel]);
+
+  useTvInitialFocus({
+    enabled: true,
+    targetRef: confirmButtonRef,
+  });
 
   return (
     <div
@@ -225,6 +233,7 @@ function ConfirmDialog({
             {confirm.cancelLabel}
           </Button>
           <Button
+            ref={confirmButtonRef}
             variant={confirm.tone === 'danger' ? 'danger' : 'primary'}
             onClick={onConfirm}
             autoFocus

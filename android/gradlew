@@ -81,11 +81,30 @@ Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
     fi
 else
+    if [ "$darwin" = "true" ] ; then
+        for mac_java_home in \
+            "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+            "$HOME/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+            "/Applications/Android Studio.app/Contents/jre/Contents/Home" \
+            "$HOME/Applications/Android Studio.app/Contents/jre/Contents/Home"
+        do
+            if [ -x "$mac_java_home/bin/java" ] ; then
+                JAVA_HOME="$mac_java_home"
+                export JAVA_HOME
+                break
+            fi
+        done
+    fi
+
+    if [ -n "$JAVA_HOME" ] ; then
+        JAVACMD="$JAVA_HOME/bin/java"
+    else
     JAVACMD="java"
     which java >/dev/null 2>&1 || die "ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
 
 Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
+    fi
 fi
 
 # Increase the maximum file descriptors if we can.

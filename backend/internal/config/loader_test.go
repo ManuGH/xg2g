@@ -212,6 +212,36 @@ enigma2:
 	}
 }
 
+func TestEnvRecordingPlaybackOverrides(t *testing.T) {
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDING_PLAYBACK_POLICY", "local_only")
+	t.Setenv("XG2G_RECORDING_STABLE_WINDOW", "250ms")
+	t.Setenv("XG2G_RECORDINGS_MAP", "/media/nfs-recordings=/Volumes/enigma2-recordings")
+
+	loader := NewLoader("", "test-version")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.RecordingPlaybackPolicy != PlaybackPolicyLocalOnly {
+		t.Fatalf("expected RecordingPlaybackPolicy=%q, got %q", PlaybackPolicyLocalOnly, cfg.RecordingPlaybackPolicy)
+	}
+	if cfg.RecordingStableWindow != 250*time.Millisecond {
+		t.Fatalf("expected RecordingStableWindow=250ms, got %v", cfg.RecordingStableWindow)
+	}
+	if len(cfg.RecordingPathMappings) != 1 {
+		t.Fatalf("expected 1 recording path mapping, got %d", len(cfg.RecordingPathMappings))
+	}
+	if cfg.RecordingPathMappings[0].ReceiverRoot != "/media/nfs-recordings" {
+		t.Fatalf("expected receiver root /media/nfs-recordings, got %q", cfg.RecordingPathMappings[0].ReceiverRoot)
+	}
+	if cfg.RecordingPathMappings[0].LocalRoot != "/Volumes/enigma2-recordings" {
+		t.Fatalf("expected local root /Volumes/enigma2-recordings, got %q", cfg.RecordingPathMappings[0].LocalRoot)
+	}
+}
+
 func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())

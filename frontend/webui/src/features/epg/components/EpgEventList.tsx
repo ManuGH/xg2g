@@ -74,7 +74,8 @@ export function EpgEventRow({
           {onRecord &&
             (isRecorded ? (
               <span title="Aufnahme geplant" className={styles.recordIndicator}>
-                🔴
+                <span className={styles.recordIndicatorDot} />
+                <span className={styles.recordIndicatorLabel}>REC</span>
               </span>
             ) : (
               <button
@@ -85,7 +86,7 @@ export function EpgEventRow({
                 }}
                 title="Aufnahme planen"
               >
-                ⏺
+                <span className={styles.recordButtonDot} />
               </button>
             ))}
         </div>

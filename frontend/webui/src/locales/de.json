@@ -141,6 +141,11 @@
     "retryAfter": "Bitte in ~{{seconds}}s erneut versuchen.",
     "sessionFailed": "Sitzung fehlgeschlagen",
     "hlsError": "HLS Fehler",
+    "manifestRequestFailed": "Wiedergabe-Manifest konnte nicht geladen werden",
+    "playbackManifestRejected": "Wiedergabe-Manifest wurde abgewiesen",
+    "segmentRequestFailed": "Mediensegment konnte nicht geladen werden",
+    "decodeError": "Dieses Gerät konnte den Stream nicht dekodieren",
+    "sourceNotSupported": "Dieses Gerät lehnt die Stream-Quelle ab",
     "authFailed": "Anmeldung fehlgeschlagen",
     "forbidden": "Zugriff verweigert",
     "recordingNotFound": "Aufnahme nicht gefunden (möglicherweise gelöscht).",
@@ -292,10 +297,17 @@
     "androidTv": {
       "title": "Android TV",
       "subtitle": "Verknüpfe die Android-TV-App mit diesem Server, ohne die URL auf dem Fernseher eintippen zu müssen.",
+      "eyebrow": "Wohnzimmer Übergabe",
+      "headline": "Gib den aktuellen Server in einem Schritt an deinen TV weiter.",
       "currentServer": "Aktueller Server",
       "currentServerHint": "Öffne den App-Link unten auf demselben Android-TV- oder Fire-TV-Gerät, auf dem die xg2g-App installiert ist.",
       "openApp": "In xg2g App öffnen",
-      "hint": "Falls der Browser nach einer App fragt, xg2g auswählen und die Auswahl dauerhaft erlauben."
+      "hint": "Falls der Browser nach einer App fragt, xg2g auswählen und die Auswahl dauerhaft erlauben.",
+      "steps": {
+        "browser": "Öffne diese Seite in Silk oder Downloader direkt auf dem TV.",
+        "launch": "Nutze den App-Link, um die aktuelle xg2g-Server-URL zu übergeben.",
+        "confirm": "xg2g einmal auswählen und die App-Zuordnung auf dem Gerät merken lassen."
+      }
     },
     "streaming": {
       "title": "Streaming",
@@ -495,6 +507,21 @@
   "auth": {
     "title": "Authentifizierung erforderlich",
     "placeholder": "API-Token eingeben",
-    "submit": "Anmelden"
+    "submit": "Anmelden",
+    "requiredTitle": "Authentifizierung erforderlich",
+    "requiredEyebrow": "Anmelden",
+    "requiredCopy": "Gib dein API-Token ein, um die xg2g-Steuerfläche zu öffnen.",
+    "requiredHint": "Das Token wird nach erfolgreicher Anmeldung lokal in diesem Browser gespeichert.",
+    "expiredTitle": "Sitzung abgelaufen",
+    "expiredEyebrow": "Neu anmelden",
+    "expiredCopy": "Das gespeicherte API-Token wurde abgelehnt. Gib ein gültiges Token ein, um fortzufahren.",
+    "expiredHint": "Mit einem neuen Token wird der Start automatisch erneut versucht.",
+    "tokenLabel": "API-Token",
+    "tokenPlaceholder": "API-Token eingeben",
+    "authenticate": "Authentifizieren",
+    "showToken": "Token zeigen",
+    "hideToken": "Token verbergen",
+    "clearToken": "Leeren",
+    "tvHint": "Auf dem TV kann das Token beim Tippen sichtbar bleiben, damit Tippfehler sofort auffallen."
   }
 }

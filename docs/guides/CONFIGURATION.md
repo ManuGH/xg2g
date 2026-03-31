@@ -32,9 +32,8 @@ Generated artifacts:
 ## Bootstrap Security Note
 
 Live playback startup also requires `XG2G_DECISION_SECRET` in the process
-environment. This bootstrap secret is enforced during server wiring and is
-distinct from the advanced `api.playbackDecisionSecret`
-(`XG2G_PLAYBACK_DECISION_SECRET`) configuration surface listed below.
+environment. This is the canonical environment variable for
+`api.playbackDecisionSecret` and is enforced during server wiring.
 
 <!-- BEGIN GENERATED CONFIG OPTIONS -->
 ## Registry Options (Generated)
@@ -51,7 +50,7 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 | `api.playbackDecisionKeyId` | `XG2G_PLAYBACK_DECISION_KID` | - | Active | Advanced |
 | `api.playbackDecisionPreviousKeys` | `XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS` | - | Active | Advanced |
 | `api.playbackDecisionRotationWindow` | `XG2G_PLAYBACK_DECISION_ROTATION_WINDOW` | `10m` | Active | Advanced |
-| `api.playbackDecisionSecret` | `XG2G_PLAYBACK_DECISION_SECRET` | - | Active | Advanced |
+| `api.playbackDecisionSecret` | `XG2G_DECISION_SECRET` | - | Active | Advanced |
 | `api.token` | `XG2G_API_TOKEN` | - | Active | Simple |
 | `api.tokenScopes` | `XG2G_API_TOKEN_SCOPES` | - | Active | Advanced |
 | `api.tokens` | `XG2G_API_TOKENS` | - | Active | Advanced |
@@ -209,9 +208,9 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
-| `recording_playback.mappings` | - | - | Active | Advanced |
-| `recording_playback.playback_policy` | - | `auto` | Active | Advanced |
-| `recording_playback.stable_window` | - | `10s` | Active | Advanced |
+| `recording_playback.mappings` | `XG2G_RECORDINGS_MAP` | - | Active | Advanced |
+| `recording_playback.playback_policy` | `XG2G_RECORDING_PLAYBACK_POLICY` | `auto` | Active | Advanced |
+| `recording_playback.stable_window` | `XG2G_RECORDING_STABLE_WINDOW` | `10s` | Active | Advanced |
 
 ### root
 

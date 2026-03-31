@@ -9,7 +9,7 @@ import (
 func TestPlaybackDecisionRotationEnvOverrides(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
-	t.Setenv("XG2G_PLAYBACK_DECISION_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_DECISION_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_PLAYBACK_DECISION_KID", "kid-env")
 	t.Setenv("XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS", "kid-old:abcdefghijklmnopqrstuvwxyz0123456789ABCDE2")
 	t.Setenv("XG2G_PLAYBACK_DECISION_ROTATION_WINDOW", "7m")
@@ -34,6 +34,22 @@ func TestPlaybackDecisionRotationEnvOverrides(t *testing.T) {
 	}
 	if cfg.PlaybackDecisionRotationWindow != 7*time.Minute {
 		t.Fatalf("expected rotation window 7m, got %v", cfg.PlaybackDecisionRotationWindow)
+	}
+}
+
+func TestPlaybackDecisionSecretLegacyEnvFallback(t *testing.T) {
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_PLAYBACK_DECISION_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+
+	loader := NewLoader("", "test")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.PlaybackDecisionSecret != "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1" {
+		t.Fatalf("expected legacy playback decision secret fallback, got %q", cfg.PlaybackDecisionSecret)
 	}
 }
 

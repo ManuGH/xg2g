@@ -470,3 +470,37 @@ func TestGetRecordingHLSPlaylist_MissingMetadata_ReusesExistingPlaylist(t *testi
 	require.Equal(t, vod.ArtifactStateReady, meta.State)
 	require.Equal(t, playlistPath, meta.PlaylistPath)
 }
+
+func TestGetRecordingHLSPlaylist_PreparingServesLivePlaylist(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:/media/nfs/live-monk.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+	cfg := config.AppConfig{
+		HLS: config.HLSConfig{
+			Root: t.TempDir(),
+		},
+	}
+
+	srv := NewServer(cfg, nil, nil)
+	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
+	require.NoError(t, err)
+	defer vodMgr.Shutdown()
+	srv.SetDependencies(Dependencies{VODManager: vodMgr})
+
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, serviceRef, genericRecordingVariantHash())
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(cacheDir, 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "seg_0001.ts"), []byte{0x47}, 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "index.live.m3u8"), []byte("#EXTM3U\n#EXTINF:6.0,\nseg_0001.ts\n"), 0600))
+
+	vodMgr.SeedMetadata(genericRecordingMetaID(serviceRef), vod.Metadata{
+		State: vod.ArtifactStatePreparing,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/playlist.m3u8?variant="+genericRecordingVariantHash(), nil)
+	rr := httptest.NewRecorder()
+	srv.GetRecordingHLSPlaylist(rr, req, recordingID)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Contains(t, rr.Body.String(), "#EXT-X-PLAYLIST-TYPE:EVENT")
+	require.NotContains(t, rr.Body.String(), "#EXT-X-ENDLIST")
+}

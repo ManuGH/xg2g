@@ -5,6 +5,7 @@ import Hls from './lib/hlsRuntime';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
 import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
+import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
 type ReportErrorFn = (event: 'error' | 'warning', code: number, msg?: string) => Promise<void>;
@@ -391,6 +392,8 @@ export function usePlaybackEngine({
           return;
         }
 
+        const presentation = classifyHlsFatalError(data, t, lastHlsUrlRef.current);
+
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
             if (sessionIdRef.current) {
@@ -406,8 +409,8 @@ export function usePlaybackEngine({
               debugError(`[V3Player] NETWORK_ERROR: max retries (${maxNetworkRetries}) exhausted`);
               hlsRef.current?.destroy();
               setStatus('error');
-              setError(t('player.networkError'));
-              setErrorDetails(`${data.details} (${maxNetworkRetries} retries exhausted)`);
+              setError(presentation.title);
+              setErrorDetails(`${presentation.details} • ${maxNetworkRetries} retries exhausted`);
             }
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
@@ -425,15 +428,15 @@ export function usePlaybackEngine({
                 debugError('[V3Player] MEDIA_ERROR: session reattach failed, failing terminally');
                 hlsRef.current?.destroy();
                 setStatus('error');
-                setError(`${t('player.hlsError')}: ${data.type}`);
-                setErrorDetails(`${data.details} (media recovery failed)`);
+                setError(presentation.title);
+                setErrorDetails(`${presentation.details} • media recovery failed`);
               });
               if (!started) {
                 debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
                 hlsRef.current?.destroy();
                 setStatus('error');
-                setError(`${t('player.hlsError')}: ${data.type}`);
-                setErrorDetails(`${data.details} (media recovery failed)`);
+                setError(presentation.title);
+                setErrorDetails(`${presentation.details} • media recovery failed`);
               }
             }
             break;
@@ -443,8 +446,8 @@ export function usePlaybackEngine({
             }
             hlsRef.current?.destroy();
             setStatus('error');
-            setError(`${t('player.hlsError')}: ${data.type}`);
-            setErrorDetails(JSON.stringify(data, null, 2));
+            setError(presentation.title);
+            setErrorDetails(presentation.details);
             break;
         }
       });
@@ -633,6 +636,14 @@ export function usePlaybackEngine({
 
       debugError('[V3Player] Video Element Error:', diagnostics);
       clearNativeStallRecovery();
+      const presentation = classifyMediaElementError({
+        code: err?.code,
+        message: err?.message,
+        currentSrc: videoEl.currentSrc,
+        readyState: videoEl.readyState,
+        networkState: videoEl.networkState,
+        hlsJsActive: !!hlsRef.current,
+      }, t);
 
       if (err && sessionIdRef.current) {
         const safeCode = typeof err.code === 'number' ? err.code : 0;
@@ -644,7 +655,8 @@ export function usePlaybackEngine({
 
         if (shouldAttemptNativeRecovery && beginSessionDecodeRecovery(safeCode, message, () => {
           setStatus('error');
-          setError(`Video Error: ${err?.code} (${message}) | State: ${videoEl.readyState}/${videoEl.networkState} | Prev: null`);
+          setError(presentation.title);
+          setErrorDetails(`${presentation.details} • native recovery failed`);
         })) {
           return;
         }
@@ -653,7 +665,8 @@ export function usePlaybackEngine({
       }
 
       setStatus('error');
-      setError((prev) => `Video Error: ${err?.code} (${err?.message}) | State: ${videoEl.readyState}/${videoEl.networkState} | Prev: ${prev}`);
+      setError(presentation.title);
+      setErrorDetails(presentation.details);
     };
 
     videoEl.addEventListener('waiting', onWaiting);

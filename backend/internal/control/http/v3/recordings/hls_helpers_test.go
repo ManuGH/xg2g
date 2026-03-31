@@ -63,9 +63,9 @@ seg_00001.ts?foo=bar`
 	output := RewritePlaylist(input, "VOD", "abc123")
 
 	require.Contains(t, output, "#EXT-X-PLAYLIST-TYPE:VOD")
+	assert.Contains(t, output, `#EXT-X-MAP:URI="init.mp4?variant=abc123"`)
 	assert.Contains(t, output, "seg_00000.ts?variant=abc123")
 	assert.Contains(t, output, "seg_00001.ts?foo=bar&variant=abc123")
-	assert.NotContains(t, output, "init.mp4?variant=abc123")
 	assert.Contains(t, output, "#EXT-X-ENDLIST")
 }
 

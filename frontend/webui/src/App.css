@@ -1,20 +1,91 @@
 /* App shell - keep global footprint minimal */
 
 .app-container {
-  margin-left: calc(var(--nav-shell-width) + 24px);
+  margin-left: calc(var(--nav-shell-width) + 44px);
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 24px 28px 40px 0;
+  padding: 18px 22px 28px 0;
 }
 
 .content-area {
-  max-width: var(--content-max-width);
+  position: relative;
+  overflow: hidden;
+  max-width: calc(var(--content-max-width) + 40px);
   margin: 0 auto;
+  min-height: calc(100vh - 36px);
+  min-height: calc(100dvh - 36px);
+  padding: clamp(20px, 2vw, 30px);
+  border-radius: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    linear-gradient(145deg, rgba(15, 22, 34, 0.96), rgba(7, 12, 20, 0.92));
+  box-shadow: var(--shadow-stage);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+}
+
+.content-area::before,
+.content-area::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.content-area::before {
+  inset: -24% auto auto -8%;
+  width: 48%;
+  height: 52%;
+  background: radial-gradient(circle, rgba(88, 195, 255, 0.16), transparent 72%);
+  opacity: 0.85;
+}
+
+.content-area::after {
+  inset: auto -10% -24% auto;
+  width: 44%;
+  height: 48%;
+  background: radial-gradient(circle, rgba(255, 155, 84, 0.12), transparent 74%);
+  opacity: 0.7;
+}
+
+.content-area > * {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-xg2g-host-platform="android-tv"] .app-container {
+  margin-left: 0;
+  padding: 0;
+}
+
+:root[data-xg2g-host-platform="android-tv"] .content-area {
+  max-width: none;
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 26px 30px 40px;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-xg2g-host-platform="android-tv"] .content-area::before,
+:root[data-xg2g-host-platform="android-tv"] .content-area::after {
+  display: none;
 }
 
 @media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
   .app-container {
     margin-left: 0;
-    padding: 16px 16px calc(92px + var(--sab));
+    padding: 12px 12px calc(92px + var(--sab));
+  }
+
+  .content-area {
+    min-height: auto;
+    padding: 12px;
+    border-radius: 26px;
   }
 }

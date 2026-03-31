@@ -1,8 +1,8 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 6px 0 24px;
+  gap: 22px;
+  padding: 4px 0 24px;
 }
 
 .loadingState,
@@ -16,43 +16,57 @@
 .signalSurface {
   position: relative;
   overflow: hidden;
-  border-radius: 24px;
-  border: 1px solid var(--border-elevated);
-  background: var(--surface-panel);
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    linear-gradient(155deg, rgba(18, 28, 42, 0.88), rgba(9, 15, 24, 0.86));
   box-shadow: var(--shadow-card);
 }
 
 .summaryCard::before,
 .streamSurface::before,
 .signalSurface::before {
-  content: none;
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  inset: auto auto -26% -10%;
+  width: 44%;
+  height: 52%;
+  background: radial-gradient(circle, rgba(88, 195, 255, 0.1), transparent 72%);
 }
 
 .summaryCard {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 24px 26px;
+  gap: 22px;
+  padding: 28px 30px;
   min-height: 0;
 }
 
 .summaryStreaming {
-  background: var(--surface-panel-strong);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
+    linear-gradient(145deg, rgba(18, 35, 51, 0.94), rgba(9, 16, 26, 0.9));
 }
 
 .summaryControl {
-  background: var(--surface-panel);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
+    linear-gradient(145deg, rgba(17, 28, 44, 0.92), rgba(9, 15, 24, 0.88));
 }
 
 .summaryStandby {
-  background: var(--surface-panel-soft);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
+    linear-gradient(145deg, rgba(14, 22, 34, 0.9), rgba(8, 13, 22, 0.86));
 }
 
 .summaryHeader {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
-  align-items: flex-start;
+  gap: 26px;
+  align-items: flex-end;
 }
 
 .summaryIdentity {
@@ -74,18 +88,18 @@
 .summaryTitle {
   margin: 0;
   font-family: var(--font-heading);
-  font-size: clamp(1.8rem, 3vw, 2.9rem);
-  line-height: 1;
+  font-size: clamp(2.1rem, 3.3vw, 3.4rem);
+  line-height: 0.96;
   letter-spacing: -0.04em;
   color: var(--text-primary);
   max-width: 14ch;
 }
 
 .summaryDescription {
-  margin: 14px 0 0;
+  margin: 16px 0 0;
   max-width: 60ch;
   color: var(--text-secondary);
-  font-size: 0.95rem;
+  font-size: 1rem;
   line-height: 1.6;
 }
 
@@ -100,15 +114,15 @@
 .summaryMetrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 16px;
 }
 
 .metricCard,
 .contextCard {
-  padding: 18px 20px;
-  border-radius: 22px;
-  border: 1px solid var(--border-base);
-  background: var(--bg-input);
+  padding: 20px 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .metricCard {
@@ -121,7 +135,7 @@
 .metricValue {
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+  font-size: clamp(1.08rem, 1.7vw, 1.3rem);
   font-weight: 600;
   line-height: 1.2;
   overflow-wrap: anywhere;
@@ -147,10 +161,10 @@
 }
 
 .timelineTrack {
-  margin-top: 12px;
+  margin-top: 14px;
   height: 10px;
   border-radius: 999px;
-  background: var(--bg-hover);
+  background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 
@@ -178,14 +192,14 @@
 
 .diagnosticsGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+  gap: 20px;
   align-items: start;
 }
 
 .streamSurface,
 .signalSurface {
-  padding: 18px;
+  padding: 22px;
 }
 
 .signalSurface {
@@ -195,9 +209,9 @@
 .panelHeader {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .panelTitle {
@@ -212,7 +226,7 @@
 }
 
 .emptyState {
-  padding: 20px 0;
+  padding: 28px 10px;
   color: var(--text-secondary);
 }
 
@@ -231,19 +245,20 @@
 
 .statusList {
   display: grid;
-  gap: 0;
+  gap: 10px;
 }
 
 .statusRow {
   display: grid;
   gap: 4px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border-base);
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.035);
 }
 
 .statusRow:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+  padding: 16px 18px;
 }
 
 .statusLabel {
@@ -280,7 +295,7 @@
   .summaryCard,
   .streamSurface,
   .signalSurface {
-    border-radius: 22px;
+    border-radius: 24px;
   }
 
   .summaryCard {

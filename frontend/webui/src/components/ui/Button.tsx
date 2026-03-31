@@ -24,17 +24,19 @@ export type ButtonAsLinkProps = ButtonCommonProps &
   };
 
 export type ButtonProps = ButtonAsButtonProps | ButtonAsLinkProps;
+type ButtonComponent = {
+  (props: ButtonAsButtonProps & React.RefAttributes<HTMLButtonElement>): React.ReactElement;
+  (props: ButtonAsLinkProps & React.RefAttributes<HTMLAnchorElement>): React.ReactElement;
+};
 
-export function Button(props: ButtonAsButtonProps): React.ReactElement;
-export function Button(props: ButtonAsLinkProps): React.ReactElement;
-export function Button({
+const ButtonImpl = React.forwardRef<HTMLButtonElement | HTMLAnchorElement, ButtonProps>(function Button({
   variant = 'primary',
   size = 'md',
   active = false,
   state,
   className,
   ...props
-}: ButtonProps) {
+}, ref) {
   const cls = [styles.button, className].filter(Boolean).join(' ');
   const shared = {
     className: cls,
@@ -46,9 +48,13 @@ export function Button({
 
   if ('href' in props && typeof props.href === 'string') {
     const { href, ...rest } = props;
-    return <a href={href} {...shared} {...rest} />;
+    return <a ref={ref as React.Ref<HTMLAnchorElement>} href={href} {...shared} {...rest} />;
   }
 
   const { type, ...rest } = props;
-  return <button type={type ?? 'button'} {...shared} {...rest} />;
-}
+  return <button ref={ref as React.Ref<HTMLButtonElement>} type={type ?? 'button'} {...shared} {...rest} />;
+});
+
+ButtonImpl.displayName = 'Button';
+
+export const Button = ButtonImpl as ButtonComponent;

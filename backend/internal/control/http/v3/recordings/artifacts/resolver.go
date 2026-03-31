@@ -80,6 +80,11 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 		}
 	}
 	if !exists {
+		if artifact, ok := r.resolveLivePlaylistArtifact(ref, variant); ok {
+			return artifact, nil
+		}
+	}
+	if !exists {
 		// First access: Start pipeline via EnsureSpec
 		if err := r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile); err != nil {
 			// If build trigger fails (e.g. source not found), map to correct error.
@@ -107,12 +112,18 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 
 	// 4. NOT READY
 	if meta.State != vod.ArtifactStateReady {
+		if artifact, ok := r.resolveLivePlaylistArtifact(ref, variant); ok {
+			return artifact, nil
+		}
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: string(meta.State)}
 	}
 
 	// 5. READY
 	playlistPath := meta.PlaylistPath
 	if playlistPath == "" {
+		if artifact, ok := r.resolveLivePlaylistArtifact(ref, variant); ok {
+			return artifact, nil
+		}
 		// Metadata is ready, but we lack an HLS artifact.
 		// Trigger/Resume build instead of re-probing to avoid stuck StatePreparing loops.
 		_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
@@ -148,6 +159,36 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 		ModTime: info.ModTime(),
 		Kind:    ArtifactKindPlaylist,
 	}, nil
+}
+
+func (r *DefaultResolver) resolveLivePlaylistArtifact(ref, variant string) (ArtifactOK, bool) {
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(r.cfg.HLS.Root, ref, variant)
+	if err != nil {
+		return ArtifactOK{}, false
+	}
+
+	livePath, ok := v3recordings.RecordingLivePlaylistReady(cacheDir)
+	if !ok {
+		return ArtifactOK{}, false
+	}
+
+	// #nosec G304 - livePath is confined by RecordingLivePlaylistReady
+	data, err := os.ReadFile(livePath)
+	if err != nil {
+		return ArtifactOK{}, false
+	}
+
+	info, err := os.Stat(livePath)
+	if err != nil {
+		return ArtifactOK{}, false
+	}
+
+	rewritten := v3recordings.RewritePlaylist(string(data), "EVENT", variant)
+	return ArtifactOK{
+		Data:    []byte(rewritten),
+		ModTime: info.ModTime(),
+		Kind:    ArtifactKindPlaylist,
+	}, true
 }
 
 func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError) {

@@ -7,7 +7,10 @@ import type { EpgEvent, EpgChannel } from '../types';
 import { isEventVisible } from '../epgModel';
 import { EpgEventRow } from './EpgEventList';
 import { Button } from '../../../components/ui';
+import { resolveHostEnvironment } from '../../../lib/hostBridge';
 import styles from '../EPG.module.css';
+
+const CHANNEL_JUMP_TIMEOUT_MS = 900;
 
 // Helper: Get localized day string "Do 28.12."
 // Returns null if date matches "today" (relative to currentTime, but user said "same day no date")
@@ -29,17 +32,38 @@ function getTodayLabel(): string {
   });
 }
 
+function buildChannelFallback(displayName: string, channel: EpgChannel): string {
+  if (channel.number) {
+    return channel.number.slice(0, 3);
+  }
+
+  const source = (channel.name || channel.id || displayName)
+    .replace(/^\d+\s*[·.-]?\s*/, '')
+    .trim();
+  const letters = source
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('');
+
+  return letters || 'TV';
+}
+
 // Channel Header Component
 interface ChannelHeaderProps {
   channel: EpgChannel;
+  channelIndex?: number;
   displayName: string;
   onPlay?: (channel: EpgChannel) => void;
 }
 
-function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
+function ChannelHeader({ channel, channelIndex, displayName, onPlay }: ChannelHeaderProps) {
   const { t } = useTranslation();
+  const [imageFailed, setImageFailed] = React.useState(false);
   const logo = channel?.logoUrl || channel?.logoUrl || channel?.logo;
   const isPlayable = Boolean(onPlay);
+  const fallbackLabel = buildChannelFallback(displayName, channel);
 
   const triggerPlay = (): void => {
     if (onPlay) {
@@ -60,20 +84,19 @@ function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
       role={isPlayable ? 'button' : undefined}
       tabIndex={isPlayable ? 0 : undefined}
       aria-label={isPlayable ? t('epg.playStream') : undefined}
+      data-xg2g-channel-focus="true"
+      data-xg2g-channel-index={typeof channelIndex === 'number' ? channelIndex : undefined}
+      data-xg2g-channel-number={channel.number || undefined}
     >
       <div className={styles.logo}>
-        {logo ? (
+        {logo && !imageFailed ? (
           <img
             src={logo}
             alt={displayName}
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-              const parent = e.currentTarget.parentNode as HTMLElement;
-              if (parent) parent.innerHTML = '<span>🎬</span>';
-            }}
+            onError={() => setImageFailed(true)}
           />
         ) : (
-          <span>🎬</span>
+          <span className={styles.logoFallback}>{fallbackLabel}</span>
         )}
       </div>
       <div className={styles.channelMeta}>
@@ -92,7 +115,7 @@ function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
           active
         >
           <span aria-hidden="true">▶</span>
-          <span className={styles.playLabel}>Play</span>
+          <span className={styles.playLabel}>{t('epg.playCta', { defaultValue: 'Watch' })}</span>
         </Button>
       )}
     </div>
@@ -101,6 +124,7 @@ function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
 
 // Single Channel Card (Main View)
 interface ChannelCardProps {
+  channelIndex: number;
   channel: EpgChannel;
   events: EpgEvent[];
   currentTime: number;
@@ -113,6 +137,7 @@ interface ChannelCardProps {
 }
 
 function ChannelCard({
+  channelIndex,
   channel,
   events,
   currentTime,
@@ -139,8 +164,12 @@ function ChannelCard({
   const todayLabel = getTodayLabel();
 
   return (
-    <div className={styles.card}>
-      <ChannelHeader channel={channel} displayName={displayName} onPlay={onPlay} />
+    <div
+      className={styles.card}
+      data-xg2g-channel-index={channelIndex}
+      data-xg2g-channel-number={channel.number || undefined}
+    >
+      <ChannelHeader channel={channel} channelIndex={channelIndex} displayName={displayName} onPlay={onPlay} />
 
       <div className={styles.programmes}>
         {current && (
@@ -343,6 +372,14 @@ export function EpgChannelList({
   onRecord,
   isRecorded,
 }: EpgChannelListProps) {
+  const isTvHost = React.useMemo(() => resolveHostEnvironment().isTv, []);
+  const listRef = React.useRef<HTMLDivElement | null>(null);
+  const [channelJumpBuffer, setChannelJumpBuffer] = React.useState('');
+  const channelJumpResetRef = React.useRef<number | null>(null);
+  const holdKeyRef = React.useRef<string | null>(null);
+  const holdRepeatCountRef = React.useRef(0);
+  const holdLastTsRef = React.useRef(0);
+
   // Sort channels by number (LCN) then name
   const sortedChannels = React.useMemo(() => {
     return [...channels].sort((a, b) => {
@@ -362,6 +399,16 @@ export function EpgChannelList({
       return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [channels]);
+
+  const channelNumberIndex = React.useMemo(() => {
+    return sortedChannels.reduce<Map<string, number>>((acc, channel, index) => {
+      const normalizedNumber = (channel.number || '').replace(/\D/g, '');
+      if (normalizedNumber) {
+        acc.set(normalizedNumber, index);
+      }
+      return acc;
+    }, new Map());
+  }, [sortedChannels]);
 
   // Search mode: group events by channel, show top 2 + expandable rest.
   const searchGroups = React.useMemo(() => {
@@ -402,10 +449,196 @@ export function EpgChannelList({
     return groups;
   }, [eventsByServiceRef, currentTime, channels]);
 
+  React.useEffect(() => {
+    if (!isTvHost || mode !== 'main') {
+      return;
+    }
+
+    const findFocusedChannelIndex = (): number => {
+      const activeElement = document.activeElement as HTMLElement | null;
+      const channelNode = activeElement?.closest<HTMLElement>('[data-xg2g-channel-index]');
+      const value = channelNode?.dataset.xg2gChannelIndex;
+      return value ? Number.parseInt(value, 10) : -1;
+    };
+
+    const focusChannelAt = (index: number): void => {
+      const root = listRef.current;
+      if (!root || sortedChannels.length === 0) {
+        return;
+      }
+
+      const safeIndex = Math.max(0, Math.min(sortedChannels.length - 1, index));
+      const card = root.querySelector<HTMLElement>(`[data-xg2g-channel-index="${safeIndex}"]`);
+      const target = card?.querySelector<HTMLElement>('[data-xg2g-channel-focus="true"]');
+      if (!target) {
+        return;
+      }
+
+      target.focus({ preventScroll: true });
+      card?.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'auto' });
+    };
+
+    const resetHoldState = () => {
+      holdKeyRef.current = null;
+      holdRepeatCountRef.current = 0;
+      holdLastTsRef.current = 0;
+    };
+
+    const scheduleChannelJumpReset = () => {
+      if (channelJumpResetRef.current !== null) {
+        window.clearTimeout(channelJumpResetRef.current);
+      }
+      channelJumpResetRef.current = window.setTimeout(() => {
+        setChannelJumpBuffer('');
+      }, CHANNEL_JUMP_TIMEOUT_MS);
+    };
+
+    const focusChannelByNumber = (buffer: string) => {
+      if (!buffer) {
+        return;
+      }
+
+      const exactMatch = channelNumberIndex.get(buffer);
+      if (typeof exactMatch === 'number') {
+        focusChannelAt(exactMatch);
+        return;
+      }
+
+      const prefixMatch = sortedChannels.findIndex((channel) =>
+        (channel.number || '').replace(/\D/g, '').startsWith(buffer)
+      );
+      if (prefixMatch >= 0) {
+        focusChannelAt(prefixMatch);
+      }
+    };
+
+    const resolveHoldStep = (key: 'ArrowDown' | 'ArrowUp', event: KeyboardEvent): number => {
+      const now = performance.now();
+      const isContinuousHold =
+        holdKeyRef.current === key &&
+        (event.repeat || now - holdLastTsRef.current < 420);
+
+      if (!isContinuousHold) {
+        holdKeyRef.current = key;
+        holdRepeatCountRef.current = 0;
+        holdLastTsRef.current = now;
+        return 1;
+      }
+
+      holdRepeatCountRef.current += 1;
+      holdLastTsRef.current = now;
+
+      if (holdRepeatCountRef.current >= 10) {
+        return 48;
+      }
+      if (holdRepeatCountRef.current >= 6) {
+        return 24;
+      }
+      if (holdRepeatCountRef.current >= 3) {
+        return 12;
+      }
+      return 6;
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      const isTypingTarget = Boolean(
+        target?.isContentEditable ||
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT'
+      );
+      if (isTypingTarget) {
+        return;
+      }
+
+      const activeIndex = findFocusedChannelIndex();
+      const isInsideList = activeIndex >= 0;
+      const allowGlobalGuideNav = isInsideList || target === document.body;
+      if (!allowGlobalGuideNav) {
+        return;
+      }
+
+      if (/^\d$/.test(event.key)) {
+        event.preventDefault();
+        resetHoldState();
+        setChannelJumpBuffer((current) => {
+          const next = `${current}${event.key}`.slice(-4);
+          focusChannelByNumber(next);
+          return next;
+        });
+        scheduleChannelJumpReset();
+        return;
+      }
+
+      let nextIndex = activeIndex >= 0 ? activeIndex : 0;
+
+      switch (event.key) {
+        case 'ArrowDown':
+          nextIndex += resolveHoldStep('ArrowDown', event);
+          break;
+        case 'ArrowUp':
+          nextIndex -= resolveHoldStep('ArrowUp', event);
+          break;
+        case 'PageDown':
+        case 'ChannelDown':
+        case 'MediaChannelDown':
+          resetHoldState();
+          nextIndex += 24;
+          break;
+        case 'PageUp':
+        case 'ChannelUp':
+        case 'MediaChannelUp':
+          resetHoldState();
+          nextIndex -= 24;
+          break;
+        case 'Home':
+          resetHoldState();
+          nextIndex = 0;
+          break;
+        case 'End':
+          resetHoldState();
+          nextIndex = sortedChannels.length - 1;
+          break;
+        default:
+          if (event.key !== 'Tab') {
+            resetHoldState();
+          }
+          return;
+      }
+
+      event.preventDefault();
+      setChannelJumpBuffer('');
+      focusChannelAt(nextIndex);
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        resetHoldState();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      if (channelJumpResetRef.current !== null) {
+        window.clearTimeout(channelJumpResetRef.current);
+      }
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [channelNumberIndex, isTvHost, mode, sortedChannels]);
+
   if (mode === 'main') {
     return (
-      <>
-        {sortedChannels.map((channel) => {
+      <div ref={listRef}>
+        {isTvHost && channelJumpBuffer ? (
+          <div className={styles.channelJumpHud} aria-live="polite">
+            CH {channelJumpBuffer}
+          </div>
+        ) : null}
+        {sortedChannels.map((channel, channelIndex) => {
           // Use channel.serviceRef to match EPG events (XMLTV channel IDs)
           const ref = channel.serviceRef || channel.id || '';
           const events = eventsByServiceRef.get(ref) || [];
@@ -414,6 +647,7 @@ export function EpgChannelList({
           return (
             <ChannelCard
               key={ref}
+              channelIndex={channelIndex}
               channel={channel}
               events={events}
               currentTime={currentTime}
@@ -426,12 +660,12 @@ export function EpgChannelList({
             />
           );
         })}
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div ref={listRef}>
       {searchGroups.map(([serviceRef, events]) => {
         const channel =
           channels.find((c) => c.serviceRef === serviceRef || c.id === serviceRef) ||
@@ -452,6 +686,6 @@ export function EpgChannelList({
           />
         );
       })}
-    </>
+    </div>
   );
 }

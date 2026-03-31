@@ -256,7 +256,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
             </div>
             <div className={styles.brandCopy}>
               <span className={styles.brandTitle}>xg2g</span>
-              <span className={styles.brandSubtitle}>Bridge Deck</span>
+              <span className={styles.brandSubtitle}>Control Surface</span>
             </div>
           </div>
 

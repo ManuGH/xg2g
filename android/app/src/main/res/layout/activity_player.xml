@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/player_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:keepScreenOn="true"
+        app:show_buffering="when_playing"
+        app:use_controller="true" />
+
+    <LinearLayout
+        android:id="@+id/player_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#8C070A11"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="16dp">
+
+        <TextView
+            android:id="@+id/player_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/native_playback_title"
+            android:textAppearance="?attr/textAppearanceTitleLarge"
+            android:textColor="@color/ide_text_primary"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/player_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/native_playback_status_loading"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="@color/ide_text_secondary" />
+    </LinearLayout>
+</FrameLayout>

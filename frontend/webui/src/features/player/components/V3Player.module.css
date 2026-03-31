@@ -120,6 +120,18 @@
     var(--bg-video);
 }
 
+.startupBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, rgba(10, 16, 26, 0.08), transparent 38%),
+    linear-gradient(180deg, rgba(6, 10, 18, 0.24), rgba(6, 10, 18, 0.68));
+  backdrop-filter: blur(10px) saturate(110%);
+  -webkit-backdrop-filter: blur(10px) saturate(110%);
+}
+
 .overlayTitle {
   position: absolute;
   top: 24px;
@@ -152,22 +164,24 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  z-index: 30;
-  pointer-events: none;
+  z-index: 32;
+  pointer-events: auto;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 18px;
-  width: min(560px, calc(100% - 32px));
-  padding: 22px 24px;
-  border-radius: 28px;
-  border: 1px solid color-mix(in srgb, var(--border-elevated) 72%, white 28%);
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 22px;
+  width: min(640px, calc(100% - 48px));
+  padding: 28px 30px;
+  border-radius: 32px;
+  border: 1px solid color-mix(in srgb, var(--border-elevated) 68%, white 32%);
   background:
-    radial-gradient(circle at top left, var(--accent-action-subtle), transparent 34%),
-    linear-gradient(180deg, var(--surface-highlight), transparent),
-    var(--surface-shell);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  box-shadow: var(--shadow-shell);
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-action-subtle) 88%, white 12%), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-highlight) 82%, white 18%), transparent 42%),
+    color-mix(in srgb, var(--surface-shell) 90%, var(--surface-shell-strong) 10%);
+  backdrop-filter: blur(26px) saturate(165%);
+  -webkit-backdrop-filter: blur(26px) saturate(165%);
+  box-shadow:
+    0 24px 72px rgba(3, 8, 16, 0.36),
+    var(--shadow-shell);
   align-items: center;
 }
 
@@ -186,9 +200,9 @@
 }
 
 .spinnerBadge {
-  width: 72px;
-  height: 72px;
-  border-radius: 24px;
+  width: 88px;
+  height: 88px;
+  border-radius: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -203,7 +217,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -228,6 +242,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .spinner {
@@ -238,24 +253,25 @@
 
 .spinnerLabel {
   color: var(--text-primary);
-  font-size: clamp(1rem, 1.35vw, 1.1rem);
+  font-size: clamp(1.05rem, 1.4vw, 1.18rem);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .spinnerSupport {
   color: var(--text-secondary);
   font-size: var(--text-sm);
   line-height: 1.5;
-  max-width: 48ch;
+  max-width: 44ch;
 }
 
 .spinnerMeta {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   width: 100%;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .spinnerProgressTrack {
@@ -275,6 +291,13 @@
   background: linear-gradient(90deg, var(--accent-action), var(--accent-live));
   box-shadow: var(--shadow-accent-action);
   will-change: transform;
+}
+
+.spinnerActions {
+  display: flex;
+  width: 100%;
+  justify-content: flex-end;
+  margin-top: 6px;
 }
 
 .spinnerElapsed {
@@ -721,13 +744,17 @@
   }
 
   .spinnerMeta {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     align-items: stretch;
     gap: 8px;
   }
 
   .spinnerElapsed {
     align-self: flex-end;
+  }
+
+  .spinnerActions {
+    justify-content: flex-start;
   }
 
   .controlsHeader {

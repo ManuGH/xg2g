@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { UiOverlayProvider, useUiOverlay } from '../src/context/UiOverlayContext';
 
 function Harness() {
@@ -37,6 +37,11 @@ function Harness() {
 }
 
 describe('UiOverlayProvider', () => {
+  afterEach(() => {
+    delete window.__XG2G_HOST__;
+    delete window.Xg2gHost;
+  });
+
   it('renders toast and allows manual dismiss', async () => {
     render(
       <UiOverlayProvider>
@@ -108,5 +113,37 @@ describe('UiOverlayProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('result').textContent).toBe('no');
     });
+  });
+
+  it('moves TV focus onto the confirm action when the dialog opens', async () => {
+    const requestInputFocus = vi.fn();
+    delete window.__XG2G_HOST__;
+    window.Xg2gHost = {
+      getCapabilitiesJson: () => JSON.stringify({
+        platform: 'android-tv',
+        isTv: true,
+        supportsKeepScreenAwake: true,
+        supportsHostMediaKeys: true,
+        supportsInputFocus: true,
+        supportsNativePlayback: false,
+      }),
+      requestInputFocus,
+      setPlaybackActive: vi.fn(),
+    };
+
+    render(
+      <UiOverlayProvider>
+        <Harness />
+      </UiOverlayProvider>
+    );
+
+    fireEvent.click(screen.getByText('Confirm'));
+    const confirmButton = await screen.findByRole('button', { name: 'Yes' });
+
+    await waitFor(() => {
+      expect(requestInputFocus).toHaveBeenCalledTimes(2);
+      expect(confirmButton).toHaveFocus();
+    });
+
   });
 });

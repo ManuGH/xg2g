@@ -217,8 +217,11 @@ func (t *truthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 	}
 
 	// Gate: Impossible Probe (Blocked Preparing - Option A)
-	// If we have no known artifacts/playlist and no way to get them, return Preparing (Blocked).
-	if !metaOk || (!meta.HasArtifact() && !meta.HasPlaylist()) {
+	// Remote recordings can be decision-ready from probe truth alone even when there
+	// is no local artifact/playlist yet. Only block here when we truly lack both
+	// artifact state and usable metadata.
+	hasUsableMetadata := metaOk && (meta.Container != "" || meta.VideoCodec != "" || meta.AudioCodec != "" || meta.Duration > 0)
+	if !metaOk || (!meta.HasArtifact() && !meta.HasPlaylist() && !hasUsableMetadata) {
 		if localPath == "" {
 			if !t.probeConfigured {
 				// No local path + No probe configured = Blocked Preparing (Option A)
@@ -242,12 +245,13 @@ func (t *truthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 
 	codecComplete := metaOk && meta.Container != "" && meta.VideoCodec != "" && meta.AudioCodec != ""
 
-	needsProbe := false
-	if !codecComplete {
-		needsProbe = true
-	} else if storeDuration <= 0 && meta.Duration <= 0 {
-		needsProbe = true
-	}
+	durationTruth := ResolveDurationTruth(DurationTruthResolveInput{
+		PrimaryDurationSeconds:   storeDuration,
+		SecondaryDurationSeconds: meta.Duration,
+		SecondarySource:          DurationTruthSourceFFProbe,
+	})
+
+	needsProbe := !codecComplete
 
 	if needsProbe {
 		// Valid metadata exists, but we are missing critical codec/container truth.
@@ -258,10 +262,11 @@ func (t *truthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 		}
 	}
 
-	// Determine Final Truth Duration
-	finalDuration := float64(meta.Duration)
-	if storeDuration > 0 {
-		finalDuration = float64(storeDuration)
+	// Duration can remain unknown for remote receiver recordings where ffprobe
+	// yields stable codec/container truth but no total runtime over HTTP.
+	finalDuration := float64(0)
+	if seconds := durationTruth.DurationSeconds(); seconds != nil {
+		finalDuration = float64(*seconds)
 	}
 
 	// Return Truth (Gate R1 Invariant: Status == Ready => Truth != nil)
@@ -269,16 +274,19 @@ func (t *truthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 		Status:  TruthStatusReady,
 		Reasons: []ReasonCode{ReasonReady},
 		Truth: &playback.MediaTruth{
-			Status:     playback.MediaStatusReady,
-			Reasons:    []playback.ReasonCode{playback.ReasonCode(ReasonReady)},
-			Container:  meta.Container,
-			VideoCodec: meta.VideoCodec,
-			AudioCodec: meta.AudioCodec,
-			Duration:   finalDuration,
-			Width:      meta.Width,
-			Height:     meta.Height,
-			FPS:        meta.FPS,
-			Interlaced: meta.Interlaced,
+			Status:             playback.MediaStatusReady,
+			Reasons:            []playback.ReasonCode{playback.ReasonCode(ReasonReady)},
+			Container:          meta.Container,
+			VideoCodec:         meta.VideoCodec,
+			AudioCodec:         meta.AudioCodec,
+			Duration:           finalDuration,
+			DurationSource:     string(durationTruth.Source),
+			DurationConfidence: string(durationTruth.Confidence),
+			DurationReasons:    durationTruth.ReasonStrings(),
+			Width:              meta.Width,
+			Height:             meta.Height,
+			FPS:                meta.FPS,
+			Interlaced:         meta.Interlaced,
 		},
 	}
 }

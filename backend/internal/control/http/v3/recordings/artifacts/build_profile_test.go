@@ -34,6 +34,22 @@ func TestRecordingTargetProfile_SafariUsesCompatibleFMP4Packaging(t *testing.T) 
 	}
 }
 
+func TestRecordingTargetProfile_AndroidNativeUsesCompatibleFMP4Packaging(t *testing.T) {
+	target := recordingTargetProfile("android_native")
+	if target == nil {
+		t.Fatal("expected target profile")
+	}
+	if target.Video.Mode != "transcode" || target.Video.Codec != "h264" || target.Video.CRF != 23 || target.Video.Preset != "fast" {
+		t.Fatalf("expected android_native to use compatible video ladder, got %#v", target.Video)
+	}
+	if target.Audio.Mode != "transcode" || target.Audio.Codec != "aac" || target.Audio.BitrateKbps != 256 {
+		t.Fatalf("unexpected android_native audio target: %#v", target.Audio)
+	}
+	if target.Packaging != "fmp4" || target.HLS.SegmentContainer != "fmp4" || target.Container != "mp4" {
+		t.Fatalf("expected android_native to use fmp4 packaging, got %#v", target)
+	}
+}
+
 func TestRecordingTargetProfile_QualityUsesHigherAACBitrate(t *testing.T) {
 	target := recordingTargetProfile("quality")
 	if target == nil {

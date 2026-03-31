@@ -113,23 +113,47 @@ function Settings() {
         <p className={styles.subtitle}>{t('settings.androidTv.subtitle')}</p>
 
         <div className={styles.onboardingCard}>
-          <div className={styles.group}>
-            <label>{t('settings.androidTv.currentServer')}</label>
-            <code className={`${styles.launchValue} tabular`.trim()}>{androidTvBaseUrl}</code>
-            <span className={styles.hint}>{t('settings.androidTv.currentServerHint')}</span>
+          <div className={styles.onboardingHero}>
+            <div className={styles.onboardingIntro}>
+              <p className={styles.onboardingEyebrow}>{t('settings.androidTv.eyebrow')}</p>
+              <h4 className={styles.onboardingTitle}>{t('settings.androidTv.headline')}</h4>
+              <p className={styles.onboardingCopy}>{t('settings.androidTv.subtitle')}</p>
+            </div>
+
+            <div className={styles.onboardingSteps} aria-label={t('settings.androidTv.eyebrow')}>
+              <div className={styles.stepCard}>
+                <span className={`${styles.stepNumber} tabular`.trim()}>1</span>
+                <p className={styles.stepLabel}>{t('settings.androidTv.steps.browser')}</p>
+              </div>
+              <div className={styles.stepCard}>
+                <span className={`${styles.stepNumber} tabular`.trim()}>2</span>
+                <p className={styles.stepLabel}>{t('settings.androidTv.steps.launch')}</p>
+              </div>
+              <div className={styles.stepCard}>
+                <span className={`${styles.stepNumber} tabular`.trim()}>3</span>
+                <p className={styles.stepLabel}>{t('settings.androidTv.steps.confirm')}</p>
+              </div>
+            </div>
           </div>
 
-          <div className={styles.inputRow}>
-            <Button
-              href={androidTvLaunchUrl}
-              variant="secondary"
-              rel="noopener noreferrer"
-            >
-              {t('settings.androidTv.openApp')}
-            </Button>
-          </div>
+          <div className={styles.onboardingMeta}>
+            <div className={styles.group}>
+              <label>{t('settings.androidTv.currentServer')}</label>
+              <code className={`${styles.launchValue} tabular`.trim()}>{androidTvBaseUrl}</code>
+              <span className={styles.hint}>{t('settings.androidTv.currentServerHint')}</span>
+            </div>
 
-          <p className={styles.hint}>{t('settings.androidTv.hint')}</p>
+            <div className={styles.onboardingActions}>
+              <Button
+                href={androidTvLaunchUrl}
+                className={styles.onboardingButton}
+                rel="noopener noreferrer"
+              >
+                {t('settings.androidTv.openApp')}
+              </Button>
+              <p className={styles.hint}>{t('settings.androidTv.hint')}</p>
+            </div>
+          </div>
         </div>
       </div>
 

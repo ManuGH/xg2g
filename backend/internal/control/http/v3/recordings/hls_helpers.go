@@ -81,6 +81,9 @@ func RewritePlaylist(content, playlistType, variant string) string {
 		if shouldInsertType && strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") {
 			continue
 		}
+		if variant != "" && strings.HasPrefix(line, "#EXT-X-MAP:") {
+			line = appendVariantQueryToMapDirective(line, variant)
+		}
 		if variant != "" && line != "" && !strings.HasPrefix(line, "#") {
 			line = appendVariantQuery(line, variant)
 		}
@@ -119,4 +122,22 @@ func appendVariantQuery(uri, variant string) string {
 		return uri + "&variant=" + variant
 	}
 	return uri + "?variant=" + variant
+}
+
+func appendVariantQueryToMapDirective(line, variant string) string {
+	const marker = `URI="`
+	if variant == "" || strings.Contains(line, "variant=") {
+		return line
+	}
+	start := strings.Index(line, marker)
+	if start < 0 {
+		return line
+	}
+	start += len(marker)
+	end := strings.Index(line[start:], `"`)
+	if end < 0 {
+		return line
+	}
+	end += start
+	return line[:start] + appendVariantQuery(line[start:end], variant) + line[end:]
 }

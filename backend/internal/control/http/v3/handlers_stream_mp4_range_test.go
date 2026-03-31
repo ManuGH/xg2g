@@ -157,3 +157,33 @@ func TestStreamRecordingDirect_RangeMatrix(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamRecordingDirect_TsContentType(t *testing.T) {
+	tmpDir := t.TempDir()
+	artifactPath := filepath.Join(tmpDir, "test.ts")
+	require.NoError(t, os.WriteFile(artifactPath, []byte("0123456789"), 0644))
+
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/movie.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("Stream", mock.Anything, recservice.StreamInput{
+		RecordingID: recordingID,
+	}).Return(recservice.StreamResult{
+		Ready:       true,
+		LocalPath:   artifactPath,
+		ContentType: "video/mp2t",
+	}, nil)
+
+	s := createTestServerDTO(svc)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/stream.mp4", nil)
+	r.Header.Set("Range", "bytes=0-3")
+
+	s.StreamRecordingDirect(w, r, recordingID)
+
+	assert.Equal(t, http.StatusPartialContent, w.Code)
+	assert.Equal(t, "video/mp2t", w.Header().Get("Content-Type"))
+	assert.Equal(t, "bytes", w.Header().Get("Accept-Ranges"))
+	assert.Equal(t, "0123", w.Body.String())
+}

@@ -2,6 +2,8 @@ package recordings
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -135,6 +137,93 @@ func TestService_List_Success(t *testing.T) {
 	assert.Equal(t, EncodeRecordingID(validTestRef), result.Recordings[0].RecordingID)
 }
 
+func TestService_List_UsesReceiverLocationAsDefaultRoot(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{
+			Root: "/tmp/xg2g-hls",
+		},
+	}
+	owi := new(MockOWIClient)
+	resumeStore := new(MockResumeStore)
+	resolver := new(MockResolverForService)
+	runner := new(MockRunnerForService)
+	prober := new(MockProber)
+	mapper := new(MockPathMapper)
+
+	vm, err := vod.NewManager(runner, prober, mapper)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	svc, err := NewService(cfg, vm, resolver, owi, resumeStore)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+
+	const receiverRoot = "/media/nfs-recordings"
+	const receiverRef = "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/Monk.ts"
+
+	owi.On("GetLocations", mock.Anything).Return([]OWILocation{
+		{Name: "nfs-recordings", Path: receiverRoot},
+	}, nil)
+	owi.On("GetTimers", mock.Anything).Return([]OWITimer{}, nil)
+	owi.On("GetRecordings", mock.Anything, receiverRoot).Return(OWIRecordingsList{
+		Result: true,
+		Movies: []OWIMovie{
+			{
+				ServiceRef: receiverRef,
+				Title:      "Monk",
+				Length:     "40:25",
+			},
+		},
+	}, nil)
+
+	result, err := svc.List(context.Background(), ListInput{})
+	assert.NoError(t, err)
+	assert.Equal(t, "nfs-recordings", result.CurrentRoot)
+	assert.Len(t, result.Roots, 1)
+	assert.Equal(t, "nfs-recordings", result.Roots[0].ID)
+	assert.Len(t, result.Recordings, 1)
+	assert.Equal(t, "Monk", result.Recordings[0].Title)
+}
+
+func TestService_List_FallsBackToLegacyHddWhenNoRootsDiscovered(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{
+			Root: "/tmp/xg2g-hls",
+		},
+	}
+	owi := new(MockOWIClient)
+	resumeStore := new(MockResumeStore)
+	resolver := new(MockResolverForService)
+	runner := new(MockRunnerForService)
+	prober := new(MockProber)
+	mapper := new(MockPathMapper)
+
+	vm, err := vod.NewManager(runner, prober, mapper)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	svc, err := NewService(cfg, vm, resolver, owi, resumeStore)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+
+	owi.On("GetLocations", mock.Anything).Return([]OWILocation{}, nil)
+	owi.On("GetTimers", mock.Anything).Return([]OWITimer{}, nil)
+	owi.On("GetRecordings", mock.Anything, "/media/hdd/movie").Return(OWIRecordingsList{
+		Result: true,
+		Movies: []OWIMovie{},
+	}, nil)
+
+	result, err := svc.List(context.Background(), ListInput{})
+	assert.NoError(t, err)
+	assert.Equal(t, "hdd", result.CurrentRoot)
+	assert.Len(t, result.Roots, 1)
+	assert.Equal(t, "hdd", result.Roots[0].ID)
+}
+
 func TestService_ResolvePlayback_Success(t *testing.T) {
 	s, _, _, slv, _ := setupServiceTest(t)
 
@@ -187,6 +276,30 @@ func TestService_Stream_NotReady_TriggersProbe(t *testing.T) {
 		meta, ok := vm.GetMetadata(validTestRef)
 		return ok && meta.State == vod.ArtifactStatePreparing
 	}, 1*time.Second, 10*time.Millisecond)
+}
+
+func TestService_Stream_ReadyLocalTsUsesResolvedPath(t *testing.T) {
+	s, _, _, _, vm := setupServiceTest(t)
+
+	hexID := EncodeRecordingID(validTestRef)
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "Monk.ts")
+	assert.NoError(t, os.WriteFile(localPath, []byte("ts-data"), 0644))
+
+	vm.SeedMetadata(validTestRef, vod.Metadata{
+		State:        vod.ArtifactStateReady,
+		ResolvedPath: localPath,
+		Container:    "mpegts",
+		VideoCodec:   "h264",
+		AudioCodec:   "ac3",
+	})
+
+	result, err := s.Stream(context.Background(), StreamInput{RecordingID: hexID})
+	assert.NoError(t, err)
+	assert.True(t, result.Ready)
+	assert.Equal(t, localPath, result.LocalPath)
+	assert.Equal(t, "video/mp2t", result.ContentType)
+	assert.Equal(t, CacheNoStore, result.CachePolicy)
 }
 
 func TestService_Delete_Success(t *testing.T) {

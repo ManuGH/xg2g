@@ -1,0 +1,467 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ide_background"
+    tools:context=".MainActivity">
+
+    <View
+        android:layout_width="680dp"
+        android:layout_height="680dp"
+        android:layout_gravity="top|start"
+        android:alpha="0.95"
+        android:background="@drawable/bg_shell_glow_primary"
+        android:importantForAccessibility="no"
+        android:translationX="-220dp"
+        android:translationY="-220dp" />
+
+    <View
+        android:layout_width="520dp"
+        android:layout_height="520dp"
+        android:layout_gravity="bottom|end"
+        android:alpha="0.82"
+        android:background="@drawable/bg_shell_glow_live"
+        android:importantForAccessibility="no"
+        android:translationX="180dp"
+        android:translationY="160dp" />
+
+    <WebView
+        android:id="@+id/webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/tv_menu_button"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="56dp"
+        android:layout_marginTop="40dp"
+        android:contentDescription="@string/tv_open_menu"
+        android:padding="0dp"
+        android:visibility="gone"
+        app:icon="@drawable/ic_tv_menu"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:iconTint="@color/ide_text_primary" />
+
+    <FrameLayout
+        android:id="@+id/fullscreen_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/loading_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingHorizontal="64dp"
+        android:paddingVertical="48dp"
+        android:visibility="gone">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="640dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingHorizontal="36dp"
+                android:paddingVertical="34dp">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:indeterminate="true" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:gravity="center"
+                    android:text="@string/shell_loading_title"
+                    android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/loading_detail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:text="@string/shell_loading_detail_generic"
+                    android:textAppearance="?attr/textAppearanceBodyLarge" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/setup_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingHorizontal="64dp"
+        android:paddingVertical="48dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="640dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            app:strokeColor="@color/ide_outline">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="36dp"
+                android:paddingVertical="34dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/server_setup_kicker"
+                    android:textAppearance="@style/TextAppearance.Xg2g.ShellEyebrow" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/server_setup_title"
+                    android:textAppearance="?attr/textAppearanceHeadlineMedium"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="@string/server_setup_support"
+                    android:textAppearance="@style/TextAppearance.Xg2g.ShellSupport" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="22dp"
+                    android:background="@drawable/bg_shell_callout"
+                    android:padding="18dp"
+                    android:text="@string/server_setup_tv_tip"
+                    android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/server_url_layout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="26dp"
+                    android:hint="@string/server_setup_hint"
+                    app:errorEnabled="true">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/server_url_edit_text"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textUri"
+                        android:maxLines="1" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/connect_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/server_setup_connect" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/cancel_setup_button"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/server_setup_cancel"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/error_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingHorizontal="64dp"
+        android:paddingVertical="48dp"
+        android:visibility="gone">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="640dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="36dp"
+                android:paddingVertical="34dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/webview_error_kicker"
+                    android:textAppearance="@style/TextAppearance.Xg2g.ShellEyebrow" />
+
+                <TextView
+                    android:id="@+id/error_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                    android:textStyle="bold"
+                    tools:text="Connection problem" />
+
+                <TextView
+                    android:id="@+id/error_detail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    tools:text="The app could not reach xg2g." />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/retry_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:text="@string/webview_error_retry" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/change_server_button"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/server_change_button" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/open_in_browser_button"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/webview_error_open_in_browser" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/tv_quick_actions_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#7005090F"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingHorizontal="64dp"
+        android:paddingVertical="48dp"
+        android:visibility="gone">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="392dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="start|center_vertical"
+            app:cardBackgroundColor="@android:color/transparent"
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_tv_navigation_panel"
+                android:orientation="vertical"
+                android:paddingHorizontal="36dp"
+                android:paddingVertical="34dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <View
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:background="@drawable/bg_tv_brand_mark" />
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="xg2g"
+                            android:textAppearance="?attr/textAppearanceTitleLarge"
+                            android:textColor="@color/ide_text_primary"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/tv_brand_subtitle"
+                            android:textAppearance="@style/TextAppearance.Xg2g.ShellSupport" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="26dp"
+                    android:text="@string/tv_quick_actions_title"
+                    android:textAppearance="?attr/textAppearanceHeadlineMedium"
+                    android:textColor="@color/ide_text_primary"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tv_quick_actions_context"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="@string/tv_quick_actions_context_fallback"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/tv_quick_actions_support"
+                    android:textAppearance="@style/TextAppearance.Xg2g.ShellSupport"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/tv_destinations_heading"
+                    android:textAppearance="@style/TextAppearance.Xg2g.ShellEyebrow"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_home_destination_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_destination_home" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_guide_destination_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_destination_guide" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_recordings_destination_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_destination_recordings" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_timers_destination_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_destination_timers" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_settings_destination_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_destination_settings" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:text="@string/tv_actions_heading"
+                    android:textAppearance="@style/TextAppearance.Xg2g.ShellEyebrow"
+                    android:visibility="gone" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_reload_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="0dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_quick_actions_reload" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_change_server_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_quick_actions_change_server"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_open_in_browser_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_quick_actions_browser"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_exit_button"
+                    style="@style/Widget.Xg2g.Button.TvRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:text="@string/tv_quick_actions_exit" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </FrameLayout>
+
+</FrameLayout>

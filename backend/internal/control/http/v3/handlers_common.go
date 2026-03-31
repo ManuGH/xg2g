@@ -12,6 +12,7 @@ import (
 	"reflect"
 
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
+	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
@@ -25,7 +26,7 @@ const (
 
 // detectClientProfile identifies the client profile from the request.
 // Priority:
-// 1. Query parameter "profile" (e.g. ?profile=safari)
+// 1. Query parameter "profile" (e.g. ?profile=safari or ?profile=android_native)
 // 2. Header "X-XG2G-Profile"
 // 3. User-Agent sniffing (Fallback)
 func detectClientProfile(r *http.Request) ClientProfile {
@@ -50,11 +51,13 @@ func detectClientProfile(r *http.Request) ClientProfile {
 }
 
 func mapProfileString(s string) ClientProfile {
-	switch strings.ToLower(s) {
+	switch token := normalize.Token(s); token {
+	case "":
+		return ClientProfileGeneric
 	case "safari":
 		return ClientProfileSafari
 	default:
-		return ClientProfileGeneric
+		return ClientProfile(token)
 	}
 }
 

@@ -45,18 +45,27 @@ func (m *MockArtifactResolver) ResolveSegment(ctx context.Context, recordingID s
 func TestHLS_ProfilePropagation(t *testing.T) {
 	tests := []struct {
 		name            string
+		requestPath     string
 		userAgent       string
 		expectedProfile string
 	}{
 		{
 			name:            "Safari_Mac",
+			requestPath:     "/api/v3/recordings/rec1/playlist.m3u8",
 			userAgent:       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15",
 			expectedProfile: "safari",
 		},
 		{
 			name:            "Generic_Chrome",
+			requestPath:     "/api/v3/recordings/rec1/playlist.m3u8",
 			userAgent:       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
 			expectedProfile: "generic",
+		},
+		{
+			name:            "Explicit_AndroidNative_Query",
+			requestPath:     "/api/v3/recordings/rec1/playlist.m3u8?profile=android_native",
+			userAgent:       "Mozilla/5.0 (Linux; Android 15; sdk_gphone64_arm64 Build/AE3A.240806.005) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36",
+			expectedProfile: "android_native",
 		},
 	}
 
@@ -67,7 +76,7 @@ func TestHLS_ProfilePropagation(t *testing.T) {
 
 			s := &Server{artifacts: svc}
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest("GET", "/api/v3/recordings/rec1/playlist.m3u8", nil)
+			r := httptest.NewRequest("GET", tt.requestPath, nil)
 			r.Header.Set("User-Agent", tt.userAgent)
 
 			s.GetRecordingHLSPlaylist(w, r, "rec1")
@@ -137,7 +146,7 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 			wantLen:    0,
 		},
 		{
-			name:        "Playlist_416_RangeViolation",
+			name:        "Playlist_200_IgnoresRangeProbe",
 			target:      "playlist",
 			method:      "GET",
 			rangeHeader: "bytes=0-0",
@@ -148,8 +157,25 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 					Kind:    artifacts.ArtifactKindPlaylist,
 				}, (*artifacts.ArtifactError)(nil)).Once()
 			},
-			wantStatus: http.StatusRequestedRangeNotSatisfiable,
-			wantRange:  "bytes */8",
+			wantStatus: http.StatusOK,
+			wantType:   "application/vnd.apple.mpegurl",
+			wantLen:    8,
+		},
+		{
+			name:        "Playlist_200_HEAD_IgnoresRangeProbe",
+			target:      "playlist",
+			method:      "HEAD",
+			rangeHeader: "bytes=0-0",
+			setupMock: func() {
+				mockRes.On("ResolvePlaylist", mock.Anything, recordingID, mock.Anything, "", mock.Anything).Return(artifacts.ArtifactOK{
+					Data:    []byte("#EXTM3U\n"),
+					ModTime: now,
+					Kind:    artifacts.ArtifactKindPlaylist,
+				}, (*artifacts.ArtifactError)(nil)).Once()
+			},
+			wantStatus: http.StatusOK,
+			wantType:   "application/vnd.apple.mpegurl",
+			wantLen:    0,
 		},
 		{
 			name:   "Playlist_503_Preparing",
@@ -252,6 +278,8 @@ func TestHLSHandlers_Matrix(t *testing.T) {
 
 			if tt.wantRange != "" {
 				assert.Equal(t, tt.wantRange, w.Header().Get("Content-Range"))
+			} else if tt.target == "playlist" {
+				assert.Empty(t, w.Header().Get("Content-Range"))
 			}
 			if tt.wantStatus == http.StatusServiceUnavailable {
 				assert.Equal(t, "application/problem+json", w.Header().Get("Content-Type"))

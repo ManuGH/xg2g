@@ -124,3 +124,12 @@ func TestBuildPlaybackInfoServiceRequest_RecordingDefaults(t *testing.T) {
 	assert.NotNil(t, got.Headers)
 	assert.Nil(t, got.Capabilities)
 }
+
+func TestBuildPlaybackInfoServiceRequest_RecordingPreservesExplicitAndroidProfile(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info?profile=android_native", nil)
+
+	got := buildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
+
+	assert.Equal(t, "android_native", got.RequestedProfile)
+	assert.Equal(t, "android_native", got.ClientProfile)
+}

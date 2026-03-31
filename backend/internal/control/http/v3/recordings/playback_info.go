@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -79,6 +80,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	}
 
 	alignLiveAutoCodecDecision(req, resolvedCaps, dec)
+	alignRecordingNativePackaging(req, resolvedCaps, dec)
 	s.recordDecisionAudit(ctx, sourceRef, req, resolvedCaps, input, dec)
 
 	return PlaybackInfoResult{
@@ -208,6 +210,117 @@ func alignLiveAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabiliti
 	if publicProfile := profiles.PublicProfileName(profileID); publicProfile != "" {
 		dec.Trace.RequestedIntent = publicProfile
 		dec.Trace.ResolvedIntent = publicProfile
+	}
+}
+
+func alignRecordingNativePackaging(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
+	if req.SubjectKind != PlaybackSubjectRecording || dec == nil || dec.TargetProfile == nil {
+		return
+	}
+	if !recordingClientWantsFMP4(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
+		return
+	}
+	if shouldPreferRecordingNativeDirectStream(dec) {
+		if recordingClientSupportsDirectTransportStream(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
+			return
+		}
+		rewriteRecordingDecisionToDirectStream(dec)
+	}
+	if dec.SelectedOutputKind != "hls" || !dec.TargetProfile.HLS.Enabled {
+		return
+	}
+
+	target := *dec.TargetProfile
+	target.Container = "mp4"
+	target.Packaging = playbackprofile.PackagingFMP4
+	target.HLS.Enabled = true
+	target.HLS.SegmentContainer = "fmp4"
+	canonical := playbackprofile.CanonicalizeTarget(target)
+	dec.TargetProfile = &canonical
+	if dec.Mode == decision.ModeDirectStream {
+		dec.Trace.QualityRung = string(playbackprofile.RungCompatibleHLSFMP4)
+	}
+}
+
+func shouldPreferRecordingNativeDirectStream(dec *decision.Decision) bool {
+	if dec == nil || dec.Mode != decision.ModeDirectPlay || dec.TargetProfile == nil {
+		return false
+	}
+
+	target := playbackprofile.CanonicalizeTarget(*dec.TargetProfile)
+	if target.Video.Mode != playbackprofile.MediaModeCopy || target.Audio.Mode != playbackprofile.MediaModeCopy {
+		return false
+	}
+
+	switch normalize.Token(target.Container) {
+	case "ts", "mpegts":
+		return true
+	}
+	return target.Packaging == playbackprofile.PackagingTS
+}
+
+func rewriteRecordingDecisionToDirectStream(dec *decision.Decision) {
+	if dec == nil || dec.TargetProfile == nil {
+		return
+	}
+
+	target := playbackprofile.CanonicalizeTarget(*dec.TargetProfile)
+	target.HLS.Enabled = true
+	target.HLS.SegmentContainer = "mpegts"
+	canonical := playbackprofile.CanonicalizeTarget(target)
+
+	dec.Mode = decision.ModeDirectStream
+	dec.Outputs = []decision.Output{
+		{
+			Kind: "hls",
+			URL:  "placeholder://direct-stream.m3u8",
+		},
+	}
+	dec.TargetProfile = &canonical
+	dec.Reasons = []decision.ReasonCode{decision.ReasonDirectStreamMatch}
+	dec.SelectedOutputKind = "hls"
+	dec.SelectedOutputURL = "placeholder://direct-stream.m3u8"
+	dec.Trace.ResolvedIntent = playbackprofile.PublicIntentName(playbackprofile.IntentCompatible)
+	dec.Trace.QualityRung = string(playbackprofile.RungCompatibleHLSTS)
+	dec.Trace.AudioQualityRung = ""
+	dec.Trace.VideoQualityRung = ""
+	if dec.Trace.RequestedIntent == string(playbackprofile.IntentDirect) {
+		dec.Trace.DegradedFrom = string(playbackprofile.IntentDirect)
+	} else {
+		dec.Trace.DegradedFrom = ""
+	}
+	dec.Trace.Why = []decision.Reason{
+		{
+			Code: decision.ReasonDirectStreamMatch,
+		},
+	}
+}
+
+func recordingClientWantsFMP4(requestedProfile string, clientFamily string) bool {
+	switch strings.ToLower(strings.TrimSpace(requestedProfile)) {
+	case "android_native", "android_tv_native", "safari", "safari_dvr", "safari_dirty", "safari_hevc", "safari_hevc_hw", "safari_hevc_hw_ll", "h264_fmp4":
+		return true
+	}
+
+	switch strings.ToLower(strings.TrimSpace(clientFamily)) {
+	case "android_native", "android_tv_native", "safari_native", "ios_safari_native":
+		return true
+	default:
+		return false
+	}
+}
+
+func recordingClientSupportsDirectTransportStream(requestedProfile string, clientFamily string) bool {
+	switch strings.ToLower(strings.TrimSpace(requestedProfile)) {
+	case "android_native", "android_tv_native":
+		return true
+	}
+
+	switch strings.ToLower(strings.TrimSpace(clientFamily)) {
+	case "android_native", "android_tv_native":
+		return true
+	default:
+		return false
 	}
 }
 

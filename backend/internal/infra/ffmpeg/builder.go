@@ -11,6 +11,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 )
 
+const stableTranscodeAudioFilter = "aresample=async=1:first_pts=0,asetpts=N/SR/TB"
+
 // mapProfileToArgs converts the high-level intent into FFmpeg flags.
 func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 	// Validation: OutputTemp must be a non-empty filename
@@ -37,6 +39,8 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 
 	args := []string{
 		"-y", "-nostdin", "-hide_banner", "-progress", "pipe:2", "-loglevel", "warning",
+		"-fflags", "+genpts+discardcorrupt+igndts",
+		"-avoid_negative_ts", "make_zero",
 		"-i", inputPath,
 	}
 
@@ -50,8 +54,9 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 		args = append(args, mapLegacyProfileToArgs(spec.Profile)...)
 	}
 
-	// Map only video and audio streams (exclude subtitles/teletext)
-	args = append(args, "-map", "0:v", "-map", "0:a")
+	// Keep recording HLS variants on the primary A/V streams to avoid
+	// multi-audio TS outputs that some TV/WebView demuxers reject.
+	args = append(args, "-map", "0:v:0?", "-map", "0:a:0?")
 
 	args = append(args, hlsOutputArgs(spec.WorkDir, outputPath, spec.TargetProfile)...)
 	return args, nil
@@ -60,11 +65,23 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 func mapLegacyProfileToArgs(profile vod.Profile) []string {
 	switch profile {
 	case vod.ProfileHigh:
-		return []string{"-c:v", "libx264", "-preset", "slow", "-crf", "18", "-c:a", "aac", "-b:a", "192k"}
+		return []string{
+			"-c:v", "libx264", "-preset", "slow", "-crf", "18",
+			"-c:a", "aac", "-b:a", "192k",
+			"-af", stableTranscodeAudioFilter,
+		}
 	case vod.ProfileLow:
-		return []string{"-c:v", "libx264", "-preset", "fast", "-crf", "23", "-c:a", "aac", "-b:a", "128k"}
+		return []string{
+			"-c:v", "libx264", "-preset", "fast", "-crf", "23",
+			"-c:a", "aac", "-b:a", "128k",
+			"-af", stableTranscodeAudioFilter,
+		}
 	default:
-		return []string{"-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"}
+		return []string{
+			"-c:v", "copy",
+			"-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000",
+			"-af", stableTranscodeAudioFilter,
+		}
 	}
 }
 
@@ -125,7 +142,10 @@ func audioTargetArgs(audio ports.AudioTarget) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		args := []string{"-c:a", encoder}
+		args := []string{
+			"-c:a", encoder,
+			"-af", stableTranscodeAudioFilter,
+		}
 		if audio.BitrateKbps > 0 {
 			args = append(args, "-b:a", strconv.Itoa(audio.BitrateKbps)+"k")
 		}

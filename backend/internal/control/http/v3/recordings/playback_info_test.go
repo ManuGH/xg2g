@@ -10,6 +10,7 @@ import (
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/stretchr/testify/assert"
@@ -68,6 +69,122 @@ func TestService_ResolvePlaybackInfo_RecordingSuccess(t *testing.T) {
 	assert.Equal(t, "req-1", res.Decision.Trace.RequestID)
 	assert.Equal(t, 1, recSvc.truthCalls)
 	assert.Equal(t, recordingID, recSvc.lastTruthID)
+}
+
+func TestService_ResolvePlaybackInfo_RecordingNativeHLSUsesFMP4Target(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/demo.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return playback.MediaTruth{
+				Status:     playback.MediaStatusReady,
+				Container:  "mpegts",
+				VideoCodec: "h264",
+				AudioCodec: "mp2",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+			}, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc: recSvc,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	allowTranscode := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   recordingID,
+		SubjectKind: PlaybackSubjectRecording,
+		APIVersion:  "v3.1",
+		SchemaType:  "compact",
+		RequestID:   "req-native-rec",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mpegts", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			DeviceType:           "android_tv",
+			HLSEngines:           []string{"native"},
+			PreferredHLSEngine:   "native",
+			ClientFamilyFallback: "android_tv_native",
+			AllowTranscode:       &allowTranscode,
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.NotNil(t, res.Decision.TargetProfile)
+	assert.Equal(t, decision.ModeTranscode, res.Decision.Mode)
+	assert.Equal(t, playbackprofile.PackagingFMP4, res.Decision.TargetProfile.Packaging)
+	assert.Equal(t, "mp4", res.Decision.TargetProfile.Container)
+	assert.Equal(t, "fmp4", res.Decision.TargetProfile.HLS.SegmentContainer)
+}
+
+func TestService_ResolvePlaybackInfo_RecordingNativePrefersDirectStreamForCopyableTS(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/demo.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return playback.MediaTruth{
+				Status:     playback.MediaStatusReady,
+				Container:  "mpegts",
+				VideoCodec: "h264",
+				AudioCodec: "ac3",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+			}, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc: recSvc,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	allowTranscode := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   recordingID,
+		SubjectKind: PlaybackSubjectRecording,
+		APIVersion:  "v3.1",
+		SchemaType:  "compact",
+		RequestID:   "req-native-direct-stream",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mpegts", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			DeviceType:           "android_tv",
+			HLSEngines:           []string{"native"},
+			PreferredHLSEngine:   "native",
+			ClientFamilyFallback: "android_tv_native",
+			AllowTranscode:       &allowTranscode,
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.NotNil(t, res.Decision.TargetProfile)
+	assert.Equal(t, decision.ModeDirectStream, res.Decision.Mode)
+	assert.Equal(t, []decision.ReasonCode{decision.ReasonDirectStreamMatch}, res.Decision.Reasons)
+	assert.Equal(t, "hls", res.Decision.SelectedOutputKind)
+	assert.Equal(t, playbackprofile.PackagingFMP4, res.Decision.TargetProfile.Packaging)
+	assert.Equal(t, "mp4", res.Decision.TargetProfile.Container)
+	assert.Equal(t, "fmp4", res.Decision.TargetProfile.HLS.SegmentContainer)
+	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Video.Mode)
+	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
+	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Audio.Mode)
+	assert.Equal(t, "ac3", res.Decision.TargetProfile.Audio.Codec)
+	assert.Equal(t, string(playbackprofile.RungCompatibleHLSFMP4), res.Decision.Trace.QualityRung)
+	assert.Equal(t, string(playbackprofile.IntentCompatible), res.Decision.Trace.ResolvedIntent)
 }
 
 func TestService_ResolvePlaybackInfo_LiveSuccess(t *testing.T) {
