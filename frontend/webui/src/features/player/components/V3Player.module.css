@@ -116,7 +116,7 @@
   pointer-events: none;
   opacity: 1;
   background:
-    radial-gradient(circle at center, rgba(12, 18, 28, 0.18), transparent 42%),
+    radial-gradient(circle at center, color-mix(in srgb, var(--surface-shell) 24%, transparent), transparent 42%),
     var(--bg-video);
 }
 
@@ -126,8 +126,8 @@
   z-index: 24;
   pointer-events: none;
   background:
-    radial-gradient(circle at center, rgba(10, 16, 26, 0.08), transparent 38%),
-    linear-gradient(180deg, rgba(6, 10, 18, 0.24), rgba(6, 10, 18, 0.68));
+    radial-gradient(circle at center, color-mix(in srgb, var(--surface-shell-safe) 12%, transparent), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-video) 24%, transparent), color-mix(in srgb, var(--bg-video) 68%, transparent));
   backdrop-filter: blur(10px) saturate(110%);
   -webkit-backdrop-filter: blur(10px) saturate(110%);
 }
@@ -180,7 +180,7 @@
   backdrop-filter: blur(26px) saturate(165%);
   -webkit-backdrop-filter: blur(26px) saturate(165%);
   box-shadow:
-    0 24px 72px rgba(3, 8, 16, 0.36),
+    0 24px 72px color-mix(in srgb, var(--bg-video) 36%, transparent),
     var(--shadow-shell);
   align-items: center;
 }
