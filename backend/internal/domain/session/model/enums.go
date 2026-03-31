@@ -30,6 +30,7 @@ const (
 	CtxKeyClientFamily    = "client_family"
 	CtxKeyPreferredEngine = "preferred_hls_engine"
 	CtxKeyDeviceType      = "device_type"
+	CtxKeyDecisionRequest = "decision_request_id"
 )
 
 const (

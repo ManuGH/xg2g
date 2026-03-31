@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	auditSchemaVersion       = 2
+	auditSchemaVersion       = 3
 	historyRetention         = 30 * 24 * time.Hour
 	historyEntriesPerKey     = 20
 	defaultUnknownEventValue = "unknown"
@@ -57,15 +57,22 @@ func (s *SqliteAuditStore) migrate() error {
 
 	switch {
 	case currentVersion <= 0:
-		if err := createAuditSchemaV2(tx); err != nil {
+		if err := createAuditSchemaV3(tx); err != nil {
 			return err
 		}
 	case currentVersion == 1:
 		if err := migrateAuditSchemaV1ToV2(tx); err != nil {
 			return err
 		}
+		if err := migrateAuditSchemaV2ToV3(tx); err != nil {
+			return err
+		}
+	case currentVersion == 2:
+		if err := migrateAuditSchemaV2ToV3(tx); err != nil {
+			return err
+		}
 	default:
-		if err := createAuditSchemaV2(tx); err != nil {
+		if err := createAuditSchemaV3(tx); err != nil {
 			return err
 		}
 	}
@@ -79,7 +86,7 @@ func (s *SqliteAuditStore) migrate() error {
 	return tx.Commit()
 }
 
-func createAuditSchemaV2(tx *sql.Tx) error {
+func createAuditSchemaV3(tx *sql.Tx) error {
 	if _, err := tx.Exec(`
 	CREATE TABLE IF NOT EXISTS decision_current (
 		service_ref TEXT NOT NULL,
@@ -96,6 +103,7 @@ func createAuditSchemaV2(tx *sql.Tx) error {
 		selected_audio_codec TEXT NOT NULL,
 		target_profile_json TEXT,
 		reasons_json TEXT NOT NULL,
+		shadow_json TEXT,
 		resolved_intent TEXT,
 		host_pressure_band TEXT,
 		client_caps_source TEXT,
@@ -122,6 +130,7 @@ func createAuditSchemaV2(tx *sql.Tx) error {
 		selected_audio_codec TEXT NOT NULL,
 		target_profile_json TEXT,
 		reasons_json TEXT NOT NULL,
+		shadow_json TEXT,
 		resolved_intent TEXT,
 		host_pressure_band TEXT,
 		client_caps_source TEXT,
@@ -147,7 +156,7 @@ func migrateAuditSchemaV1ToV2(tx *sql.Tx) error {
 		return err
 	}
 	if currentHasOrigin && historyHasOrigin {
-		return createAuditSchemaV2(tx)
+		return createAuditSchemaV3(tx)
 	}
 
 	if _, err := tx.Exec(`
@@ -239,7 +248,31 @@ func migrateAuditSchemaV1ToV2(tx *sql.Tx) error {
 		return err
 	}
 
-	return createAuditSchemaV2(tx)
+	return createAuditSchemaV3(tx)
+}
+
+func migrateAuditSchemaV2ToV3(tx *sql.Tx) error {
+	currentHasShadow, err := tableHasColumn(tx, "decision_current", "shadow_json")
+	if err != nil {
+		return err
+	}
+	if !currentHasShadow {
+		if _, err := tx.Exec(`ALTER TABLE decision_current ADD COLUMN shadow_json TEXT`); err != nil {
+			return err
+		}
+	}
+
+	historyHasShadow, err := tableHasColumn(tx, "decision_history", "shadow_json")
+	if err != nil {
+		return err
+	}
+	if !historyHasShadow {
+		if _, err := tx.Exec(`ALTER TABLE decision_history ADD COLUMN shadow_json TEXT`); err != nil {
+			return err
+		}
+	}
+
+	return createAuditSchemaV3(tx)
 }
 
 func tableHasColumn(tx *sql.Tx, table string, column string) (bool, error) {
@@ -302,7 +335,7 @@ func (s *SqliteAuditStore) Record(ctx context.Context, event Event) error {
 		}
 	}
 
-	if outputChanged {
+	if outputChanged || shouldAlwaysInsertAuditHistory(event) {
 		if err := insertAuditHistory(ctx, tx, event, eventAtMS); err != nil {
 			return err
 		}
@@ -337,7 +370,7 @@ func loadCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event) (currentA
 }
 
 func upsertCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event, changedAtMS, lastSeenAtMS int64) error {
-	targetProfileJSON, reasonsJSON, err := auditPayloadJSON(event)
+	targetProfileJSON, reasonsJSON, shadowJSON, err := auditPayloadJSON(event)
 	if err != nil {
 		return err
 	}
@@ -347,8 +380,8 @@ func upsertCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event, changed
 		`INSERT INTO decision_current (
 			service_ref, subject_kind, origin, client_family, requested_intent, basis_hash, truth_hash, output_hash,
 			mode, selected_container, selected_video_codec, selected_audio_codec, target_profile_json, reasons_json,
-			resolved_intent, host_pressure_band, client_caps_source, device_type, changed_at_ms, last_seen_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			shadow_json, resolved_intent, host_pressure_band, client_caps_source, device_type, changed_at_ms, last_seen_at_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(service_ref, subject_kind, origin, client_family, requested_intent) DO UPDATE SET
 			basis_hash = excluded.basis_hash,
 			truth_hash = excluded.truth_hash,
@@ -359,6 +392,7 @@ func upsertCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event, changed
 			selected_audio_codec = excluded.selected_audio_codec,
 			target_profile_json = excluded.target_profile_json,
 			reasons_json = excluded.reasons_json,
+			shadow_json = excluded.shadow_json,
 			resolved_intent = excluded.resolved_intent,
 			host_pressure_band = excluded.host_pressure_band,
 			client_caps_source = excluded.client_caps_source,
@@ -379,6 +413,7 @@ func upsertCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event, changed
 		event.Selected.AudioCodec,
 		targetProfileJSON,
 		reasonsJSON,
+		shadowJSON,
 		normalizeNullableToken(event.ResolvedIntent),
 		normalizeNullableToken(event.HostPressureBand),
 		normalizeNullableToken(event.ClientCapsSource),
@@ -390,7 +425,7 @@ func upsertCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event, changed
 }
 
 func insertAuditHistory(ctx context.Context, tx *sql.Tx, event Event, decidedAtMS int64) error {
-	targetProfileJSON, reasonsJSON, err := auditPayloadJSON(event)
+	targetProfileJSON, reasonsJSON, shadowJSON, err := auditPayloadJSON(event)
 	if err != nil {
 		return err
 	}
@@ -400,8 +435,8 @@ func insertAuditHistory(ctx context.Context, tx *sql.Tx, event Event, decidedAtM
 		`INSERT INTO decision_history (
 			service_ref, subject_kind, origin, client_family, requested_intent, basis_hash, truth_hash, output_hash,
 			mode, selected_container, selected_video_codec, selected_audio_codec, target_profile_json, reasons_json,
-			resolved_intent, host_pressure_band, client_caps_source, device_type, decided_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			shadow_json, resolved_intent, host_pressure_band, client_caps_source, device_type, decided_at_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		event.ServiceRef,
 		normalizeSubjectKind(event.SubjectKind),
 		normalizeEventOrigin(event.Origin),
@@ -416,6 +451,7 @@ func insertAuditHistory(ctx context.Context, tx *sql.Tx, event Event, decidedAtM
 		event.Selected.AudioCodec,
 		targetProfileJSON,
 		reasonsJSON,
+		shadowJSON,
 		normalizeNullableToken(event.ResolvedIntent),
 		normalizeNullableToken(event.HostPressureBand),
 		normalizeNullableToken(event.ClientCapsSource),
@@ -452,12 +488,12 @@ func pruneAuditHistory(ctx context.Context, tx *sql.Tx, event Event, cutoffMS in
 	return err
 }
 
-func auditPayloadJSON(event Event) (sql.NullString, string, error) {
+func auditPayloadJSON(event Event) (sql.NullString, string, sql.NullString, error) {
 	var targetProfileJSON sql.NullString
 	if event.TargetProfile != nil {
 		encoded, err := json.Marshal(event.TargetProfile)
 		if err != nil {
-			return sql.NullString{}, "", err
+			return sql.NullString{}, "", sql.NullString{}, err
 		}
 		targetProfileJSON = sql.NullString{String: string(encoded), Valid: true}
 	}
@@ -468,10 +504,23 @@ func auditPayloadJSON(event Event) (sql.NullString, string, error) {
 	}
 	encodedReasons, err := json.Marshal(reasons)
 	if err != nil {
-		return sql.NullString{}, "", err
+		return sql.NullString{}, "", sql.NullString{}, err
 	}
 
-	return targetProfileJSON, string(encodedReasons), nil
+	var shadowJSON sql.NullString
+	if event.Shadow != nil {
+		encoded, err := json.Marshal(event.Shadow)
+		if err != nil {
+			return sql.NullString{}, "", sql.NullString{}, err
+		}
+		shadowJSON = sql.NullString{String: string(encoded), Valid: true}
+	}
+
+	return targetProfileJSON, string(encodedReasons), shadowJSON, nil
+}
+
+func shouldAlwaysInsertAuditHistory(event Event) bool {
+	return normalizeEventOrigin(event.Origin) == OriginShadowDivergence
 }
 
 func normalizeSubjectKind(value string) string {

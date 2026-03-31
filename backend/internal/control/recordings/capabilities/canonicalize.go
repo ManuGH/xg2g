@@ -17,13 +17,15 @@ type PlaybackCapabilities struct {
 	SupportsHLSExplicit bool               `json:"supportsHlsExplicit,omitempty"`
 
 	// DeviceType is optional but helpful for identity-bound profiles
-	DeviceType           string   `json:"deviceType,omitempty"`
-	HLSEngines           []string `json:"hlsEngines,omitempty"`
-	PreferredHLSEngine   string   `json:"preferredHlsEngine,omitempty"`
-	RuntimeProbeUsed     bool     `json:"runtimeProbeUsed,omitempty"`
-	RuntimeProbeVersion  int      `json:"runtimeProbeVersion,omitempty"`
-	ClientFamilyFallback string   `json:"clientFamilyFallback,omitempty"`
-	ClientCapsSource     string   `json:"clientCapsSource,omitempty"`
+	DeviceType           string          `json:"deviceType,omitempty"`
+	DeviceContext        *DeviceContext  `json:"deviceContext,omitempty"`
+	NetworkContext       *NetworkContext `json:"networkContext,omitempty"`
+	HLSEngines           []string        `json:"hlsEngines,omitempty"`
+	PreferredHLSEngine   string          `json:"preferredHlsEngine,omitempty"`
+	RuntimeProbeUsed     bool            `json:"runtimeProbeUsed,omitempty"`
+	RuntimeProbeVersion  int             `json:"runtimeProbeVersion,omitempty"`
+	ClientFamilyFallback string          `json:"clientFamilyFallback,omitempty"`
+	ClientCapsSource     string          `json:"clientCapsSource,omitempty"`
 
 	// Allowed constraints ONLY (per ADR P7):
 	AllowTranscode *bool     `json:"allowTranscode,omitempty"`
@@ -44,6 +46,25 @@ type MaxVideo struct {
 	Fps    int `json:"fps"`
 }
 
+type DeviceContext struct {
+	Brand        string `json:"brand,omitempty"`
+	Product      string `json:"product,omitempty"`
+	Device       string `json:"device,omitempty"`
+	Platform     string `json:"platform,omitempty"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Model        string `json:"model,omitempty"`
+	OSName       string `json:"osName,omitempty"`
+	OSVersion    string `json:"osVersion,omitempty"`
+	SDKInt       int    `json:"sdkInt,omitempty"`
+}
+
+type NetworkContext struct {
+	Kind              string `json:"kind,omitempty"`
+	DownlinkKbps      int    `json:"downlinkKbps,omitempty"`
+	Metered           *bool  `json:"metered,omitempty"`
+	InternetValidated *bool  `json:"internetValidated,omitempty"`
+}
+
 // CanonicalizeCapabilities normalizes a capabilities struct to a deterministic form.
 // Normative rules:
 // - nil slices => empty slices
@@ -59,6 +80,8 @@ func CanonicalizeCapabilities(in PlaybackCapabilities) PlaybackCapabilities {
 	out.AudioCodecs = canonicalStringSet(out.AudioCodecs)
 	out.HLSEngines = canonicalStringSet(out.HLSEngines)
 	out.DeviceType = strings.ToLower(strings.TrimSpace(out.DeviceType))
+	out.DeviceContext = canonicalDeviceContext(out.DeviceContext)
+	out.NetworkContext = canonicalNetworkContext(out.NetworkContext)
 	out.PreferredHLSEngine = strings.ToLower(strings.TrimSpace(out.PreferredHLSEngine))
 	out.ClientFamilyFallback = strings.ToLower(strings.TrimSpace(out.ClientFamilyFallback))
 	out.ClientCapsSource = strings.ToLower(strings.TrimSpace(out.ClientCapsSource))
@@ -84,6 +107,43 @@ func CanonicalizeCapabilities(in PlaybackCapabilities) PlaybackCapabilities {
 	}
 
 	return out
+}
+
+func canonicalDeviceContext(in *DeviceContext) *DeviceContext {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Brand = strings.ToLower(strings.TrimSpace(out.Brand))
+	out.Product = strings.ToLower(strings.TrimSpace(out.Product))
+	out.Device = strings.ToLower(strings.TrimSpace(out.Device))
+	out.Platform = strings.ToLower(strings.TrimSpace(out.Platform))
+	out.Manufacturer = strings.ToLower(strings.TrimSpace(out.Manufacturer))
+	out.Model = strings.ToLower(strings.TrimSpace(out.Model))
+	out.OSName = strings.ToLower(strings.TrimSpace(out.OSName))
+	out.OSVersion = strings.TrimSpace(out.OSVersion)
+	if out.SDKInt < 0 {
+		out.SDKInt = 0
+	}
+	if out.Brand == "" && out.Product == "" && out.Device == "" && out.Platform == "" && out.Manufacturer == "" && out.Model == "" && out.OSName == "" && out.OSVersion == "" && out.SDKInt == 0 {
+		return nil
+	}
+	return &out
+}
+
+func canonicalNetworkContext(in *NetworkContext) *NetworkContext {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Kind = strings.ToLower(strings.TrimSpace(out.Kind))
+	if out.DownlinkKbps < 0 {
+		out.DownlinkKbps = 0
+	}
+	if out.Kind == "" && out.DownlinkKbps == 0 && out.Metered == nil && out.InternetValidated == nil {
+		return nil
+	}
+	return &out
 }
 
 func canonicalStringSet(in []string) []string {

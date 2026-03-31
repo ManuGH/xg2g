@@ -14,6 +14,22 @@ const (
 )
 
 func (s *Server) currentHostPressure(ctx context.Context) playbackprofile.HostPressureAssessment {
+	snapshot, tracker, ok := s.hostRuntimeSnapshot(ctx)
+	if !ok || tracker == nil || !hostPressureActionable(snapshot) {
+		return playbackprofile.HostPressureAssessment{}
+	}
+	return tracker.Evaluate(snapshot)
+}
+
+func (s *Server) currentHostRuntime(ctx context.Context) playbackprofile.HostRuntimeSnapshot {
+	snapshot, _, ok := s.hostRuntimeSnapshot(ctx)
+	if !ok {
+		return playbackprofile.HostRuntimeSnapshot{}
+	}
+	return snapshot
+}
+
+func (s *Server) hostRuntimeSnapshot(ctx context.Context) (playbackprofile.HostRuntimeSnapshot, *hardware.PressureTracker, bool) {
 	deps := s.sessionsModuleDeps()
 
 	s.mu.RLock()
@@ -21,16 +37,13 @@ func (s *Server) currentHostPressure(ctx context.Context) playbackprofile.HostPr
 	tracker := s.hostPressureTracker
 	s.mu.RUnlock()
 
-	if deps.admissionState == nil || monitor == nil || tracker == nil {
-		return playbackprofile.HostPressureAssessment{}
+	if deps.admissionState == nil || monitor == nil {
+		return playbackprofile.HostRuntimeSnapshot{}, tracker, false
 	}
 
 	runtimeState := CollectRuntimeState(ctx, deps.admissionState)
 	snapshot := hardware.SnapshotHostRuntime(deps.cfg.FFmpeg.Bin != "", deps.cfg.HLS.Root != "", runtimeState, monitor.Snapshot())
-	if !hostPressureActionable(snapshot) {
-		return playbackprofile.HostPressureAssessment{}
-	}
-	return tracker.Evaluate(snapshot)
+	return snapshot, tracker, true
 }
 
 func hostPressureActionable(snapshot playbackprofile.HostRuntimeSnapshot) bool {

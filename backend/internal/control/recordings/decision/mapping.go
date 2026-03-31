@@ -82,6 +82,7 @@ func FromCapabilities(c capabilities.PlaybackCapabilities) Capabilities {
 		dc.MaxVideo = &MaxVideoDimensions{
 			Width:  c.MaxVideo.Width,
 			Height: c.MaxVideo.Height,
+			FPS:    c.MaxVideo.Fps,
 		}
 	}
 	return dc

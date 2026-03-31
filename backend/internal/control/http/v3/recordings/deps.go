@@ -6,6 +6,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
@@ -30,6 +31,9 @@ type Deps interface {
 	RecordingsService() RecordingsService
 	ChannelTruthSource() ChannelTruthSource
 	DecisionAuditSink() DecisionAuditSink
+	CapabilityRegistry() capreg.Store
 	Config() config.AppConfig
 	HostPressure(ctx context.Context) playbackprofile.HostPressureAssessment
+	HostRuntime(ctx context.Context) playbackprofile.HostRuntimeSnapshot
+	ReceiverContext(ctx context.Context) *capreg.ReceiverContext
 }

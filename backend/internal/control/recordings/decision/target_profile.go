@@ -95,7 +95,7 @@ func buildTargetProfile(mode Mode, pred Predicates, input DecisionInput) targetP
 		resolvedIntent, degradedFrom := resolveTranscodeIntent(effectiveIntent)
 		video := playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy}
 		videoQualityRung := playbackprofile.RungUnknown
-		if pred.CanVideo && normalize.Token(input.Source.VideoCodec) != "" {
+		if pred.CanVideo && !pred.VideoRepairRequired && normalize.Token(input.Source.VideoCodec) != "" {
 			video.Codec = input.Source.VideoCodec
 		} else {
 			video = transcodeVideoTarget(resolvedIntent, input.Source)

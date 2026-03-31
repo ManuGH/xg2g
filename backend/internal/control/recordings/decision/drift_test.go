@@ -22,8 +22,8 @@ func TestGate_DecisionInput_Drift(t *testing.T) {
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(schema)))
 
 	// 4. Compare with Golden Hash
-	// CURRENT GOLDEN HASH (Phase R4-D + operator override + host pressure policy extension)
-	const GOLDEN_HASH = "84ba3f7638a6fb8f1698bc0229b806f36f60db713d1f9aa53d6bb9c7457c98cb"
+	// CURRENT GOLDEN HASH (Phase R4-D + maxVideo FPS constraint + operator override + host pressure policy extension + interlaced source repair semantics)
+	const GOLDEN_HASH = "903c7fa8db3ea6f075f53615673c52e4ea2d312bd41fda143da1054e5b4613dc"
 
 	if hash != GOLDEN_HASH {
 		t.Errorf("🛑 STOP THE LINE 🛑\nDecisionInput schema drift detected!\n\nExpected Hash: %s\nActual Hash:   %s\n\nSchema Dump:\n%s\n\nTo fix:\n1. Revert changes to DecisionInput OR\n2. Update docs/ADR/009-playback-decision-spec.md to reflect changes AND\n3. Update GOLDEN_HASH in this test.", GOLDEN_HASH, hash, schema)

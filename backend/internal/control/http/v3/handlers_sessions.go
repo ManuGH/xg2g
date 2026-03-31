@@ -17,6 +17,8 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -88,6 +90,11 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	// 3. Check for MediaError 3 (Safari HLS decode error)
 	// We only trigger fallback if it's an error and specifically code 3
 	isDecodeError := req.Event == PlaybackFeedbackRequestEventError && req.Code != nil && *req.Code == 3
+	ctx := r.Context()
+	sess, err := store.GetSession(ctx, sessionId.String())
+	if err == nil && sess != nil {
+		s.recordPlaybackFeedbackObservation(ctx, sess, req)
+	}
 
 	if !isDecodeError {
 		// Just log info/warnings
@@ -102,8 +109,10 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// 4. Trigger Fallback
-	ctx := r.Context()
-	sess, err := store.GetSession(ctx, sessionId.String())
+	if err != nil {
+		RespondError(w, r, http.StatusNotFound, ErrSessionFeedbackNotFound)
+		return
+	}
 	if err != nil || sess == nil {
 		RespondError(w, r, http.StatusNotFound, ErrSessionFeedbackNotFound)
 		return
@@ -327,6 +336,170 @@ func ensureSessionPlaybackTrace(session *model.SessionRecord) *model.PlaybackTra
 		session.PlaybackTrace = &model.PlaybackTrace{}
 	}
 	return session.PlaybackTrace
+}
+
+func (s *Server) recordPlaybackFeedbackObservation(ctx context.Context, sess *model.SessionRecord, req PlaybackFeedbackRequest) {
+	if s == nil || sess == nil {
+		return
+	}
+
+	s.mu.RLock()
+	registry := s.capabilityRegistry
+	s.mu.RUnlock()
+	if registry == nil {
+		return
+	}
+
+	decisionRequestID := ""
+	if sess.ContextData != nil {
+		decisionRequestID = strings.TrimSpace(sess.ContextData[model.CtxKeyDecisionRequest])
+	}
+
+	linked := capreg.PlaybackObservation{}
+	if decisionRequestID != "" {
+		var (
+			ok  bool
+			err error
+		)
+		linked, ok, err = registry.LookupDecisionObservation(ctx, decisionRequestID)
+		if err != nil {
+			log.L().Warn().Err(err).Str("sessionId", sess.SessionID).Str("decisionRequestId", decisionRequestID).Msg("capability registry decision lookup failed")
+		}
+		if !ok {
+			linked = capreg.PlaybackObservation{}
+		}
+	}
+
+	trace := sess.PlaybackTrace
+	target := traceTargetProfileForFeedback(sess)
+	observation := capreg.PlaybackObservation{
+		ObservedAt:         time.Now().UTC(),
+		RequestID:          decisionRequestID,
+		ObservationKind:    "feedback",
+		Outcome:            playbackFeedbackOutcome(req.Event),
+		SessionID:          strings.TrimSpace(sess.SessionID),
+		SourceRef:          firstNonEmptyFeedback(strings.TrimSpace(sess.ServiceRef), linked.SourceRef),
+		SourceFingerprint:  linked.SourceFingerprint,
+		SubjectKind:        firstNonEmptyFeedback(feedbackSubjectKind(sess), linked.SubjectKind),
+		RequestedIntent:    firstNonEmptyFeedback(feedbackTraceIntent(trace, true), linked.RequestedIntent),
+		ResolvedIntent:     firstNonEmptyFeedback(feedbackTraceIntent(trace, false), linked.ResolvedIntent),
+		Mode:               feedbackMode(linked.Mode, target),
+		SelectedContainer:  feedbackContainer(linked.SelectedContainer, target),
+		SelectedVideoCodec: feedbackVideoCodec(linked.SelectedVideoCodec, target),
+		SelectedAudioCodec: feedbackAudioCodec(linked.SelectedAudioCodec, target),
+		SourceWidth:        linked.SourceWidth,
+		SourceHeight:       linked.SourceHeight,
+		SourceFPS:          linked.SourceFPS,
+		HostFingerprint:    linked.HostFingerprint,
+		DeviceFingerprint:  linked.DeviceFingerprint,
+		ClientCapsHash:     linked.ClientCapsHash,
+		Network:            linked.Network,
+		FeedbackEvent:      string(req.Event),
+		FeedbackCode:       derefInt(req.Code),
+		FeedbackMessage:    derefString(req.Message),
+	}
+
+	if err := registry.RecordObservation(ctx, observation); err != nil {
+		log.L().Warn().Err(err).Str("sessionId", sess.SessionID).Str("decisionRequestId", decisionRequestID).Msg("capability registry feedback observation failed")
+	}
+}
+
+func playbackFeedbackOutcome(event PlaybackFeedbackRequestEvent) string {
+	switch event {
+	case PlaybackFeedbackRequestEventError:
+		return "failed"
+	case PlaybackFeedbackRequestEventWarning:
+		return "warning"
+	default:
+		return "started"
+	}
+}
+
+func feedbackSubjectKind(sess *model.SessionRecord) string {
+	if sess == nil || sess.ContextData == nil {
+		return "live"
+	}
+	switch strings.ToLower(strings.TrimSpace(sess.ContextData[model.CtxKeyMode])) {
+	case "recording":
+		return "recording"
+	default:
+		return "live"
+	}
+}
+
+func feedbackTraceIntent(trace *model.PlaybackTrace, requested bool) string {
+	if trace == nil {
+		return ""
+	}
+	if requested {
+		return strings.TrimSpace(trace.RequestedIntent)
+	}
+	return strings.TrimSpace(trace.ResolvedIntent)
+}
+
+func traceTargetProfileForFeedback(sess *model.SessionRecord) *playbackprofile.TargetPlaybackProfile {
+	if sess == nil {
+		return nil
+	}
+	if sess.PlaybackTrace != nil && sess.PlaybackTrace.TargetProfile != nil {
+		return sess.PlaybackTrace.TargetProfile
+	}
+	return model.TraceTargetProfileFromProfile(sess.Profile)
+}
+
+func feedbackMode(existing string, target *playbackprofile.TargetPlaybackProfile) string {
+	if existing = strings.TrimSpace(existing); existing != "" {
+		return existing
+	}
+	if target == nil {
+		return ""
+	}
+	if target.Video.Mode == playbackprofile.MediaModeCopy && target.Audio.Mode == playbackprofile.MediaModeCopy {
+		if target.HLS.Enabled {
+			return "direct_stream"
+		}
+		return "direct_play"
+	}
+	return "transcode"
+}
+
+func feedbackContainer(existing string, target *playbackprofile.TargetPlaybackProfile) string {
+	if existing = strings.TrimSpace(existing); existing != "" {
+		return existing
+	}
+	if target == nil {
+		return ""
+	}
+	return strings.TrimSpace(target.Container)
+}
+
+func feedbackVideoCodec(existing string, target *playbackprofile.TargetPlaybackProfile) string {
+	if existing = strings.TrimSpace(existing); existing != "" {
+		return existing
+	}
+	if target == nil {
+		return ""
+	}
+	return strings.TrimSpace(target.Video.Codec)
+}
+
+func feedbackAudioCodec(existing string, target *playbackprofile.TargetPlaybackProfile) string {
+	if existing = strings.TrimSpace(existing); existing != "" {
+		return existing
+	}
+	if target == nil {
+		return ""
+	}
+	return strings.TrimSpace(target.Audio.Codec)
+}
+
+func firstNonEmptyFeedback(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hlsRoot string) *PlaybackTrace {

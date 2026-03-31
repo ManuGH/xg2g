@@ -9,6 +9,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/clientplayback"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
@@ -20,8 +21,11 @@ type stubDeps struct {
 	svc          RecordingsService
 	cfg          config.AppConfig
 	hostPressure playbackprofile.HostPressureAssessment
+	hostRuntime  playbackprofile.HostRuntimeSnapshot
+	receiver     *capreg.ReceiverContext
 	truthSource  ChannelTruthSource
 	auditSink    DecisionAuditSink
+	capRegistry  capreg.Store
 }
 
 func (d stubDeps) RecordingsService() RecordingsService {
@@ -40,8 +44,20 @@ func (d stubDeps) DecisionAuditSink() DecisionAuditSink {
 	return d.auditSink
 }
 
+func (d stubDeps) CapabilityRegistry() capreg.Store {
+	return d.capRegistry
+}
+
 func (d stubDeps) HostPressure(context.Context) playbackprofile.HostPressureAssessment {
 	return d.hostPressure
+}
+
+func (d stubDeps) HostRuntime(context.Context) playbackprofile.HostRuntimeSnapshot {
+	return d.hostRuntime
+}
+
+func (d stubDeps) ReceiverContext(context.Context) *capreg.ReceiverContext {
+	return d.receiver
 }
 
 type stubTruthSource struct {
@@ -62,12 +78,14 @@ func (s *stubTruthSource) GetCapability(serviceRef string) (scan.Capability, boo
 type stubDecisionAuditSink struct {
 	recordFn  func(ctx context.Context, event decision.Event) error
 	lastEvent decision.Event
+	events    []decision.Event
 	callCount int
 }
 
 func (s *stubDecisionAuditSink) Record(ctx context.Context, event decision.Event) error {
 	s.callCount++
 	s.lastEvent = event
+	s.events = append(s.events, event)
 	if s.recordFn == nil {
 		return nil
 	}

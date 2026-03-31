@@ -6,6 +6,7 @@ package v3
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
@@ -19,13 +20,23 @@ func buildPlaybackInfoServiceRequest(r *http.Request, subjectID string, caps *Pl
 		SubjectKind:      playbackSubjectKindForSchema(schemaType),
 		APIVersion:       apiVersion,
 		SchemaType:       schemaType,
-		RequestedProfile: r.URL.Query().Get("profile"),
+		RequestedProfile: requestedPlaybackProfile(r),
 		PrincipalID:      playbackRequestPrincipalID(r),
 		RequestID:        log.RequestIDFromContext(r.Context()),
 		ClientProfile:    string(detectClientProfile(r)),
 		Headers:          playbackRequestHeaders(r.Header),
 		Capabilities:     mapV3CapsToInternal(caps),
 	}
+}
+
+func requestedPlaybackProfile(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if profile := strings.TrimSpace(r.URL.Query().Get("profile")); profile != "" {
+		return profile
+	}
+	return strings.TrimSpace(r.Header.Get("X-XG2G-Profile"))
 }
 
 func playbackSubjectKindForSchema(schemaType string) v3recordings.PlaybackSubjectKind {
@@ -115,6 +126,33 @@ func mapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 	}
 	if v3.DeviceType != nil {
 		c.DeviceType = *v3.DeviceType
+	}
+	if v3.DeviceContext != nil {
+		c.DeviceContext = &capabilities.DeviceContext{
+			Brand:        derefString(v3.DeviceContext.Brand),
+			Product:      derefString(v3.DeviceContext.Product),
+			Device:       derefString(v3.DeviceContext.Device),
+			Platform:     derefString(v3.DeviceContext.Platform),
+			Manufacturer: derefString(v3.DeviceContext.Manufacturer),
+			Model:        derefString(v3.DeviceContext.Model),
+			OSName:       derefString(v3.DeviceContext.OsName),
+			OSVersion:    derefString(v3.DeviceContext.OsVersion),
+			SDKInt:       derefInt(v3.DeviceContext.SdkInt),
+		}
+	}
+	if v3.NetworkContext != nil {
+		c.NetworkContext = &capabilities.NetworkContext{
+			Kind:         derefString(v3.NetworkContext.Kind),
+			DownlinkKbps: derefInt(v3.NetworkContext.DownlinkKbps),
+		}
+		if v3.NetworkContext.Metered != nil {
+			v := *v3.NetworkContext.Metered
+			c.NetworkContext.Metered = &v
+		}
+		if v3.NetworkContext.InternetValidated != nil {
+			v := *v3.NetworkContext.InternetValidated
+			c.NetworkContext.InternetValidated = &v
+		}
 	}
 	return &c
 }

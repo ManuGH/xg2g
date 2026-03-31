@@ -26,6 +26,7 @@ type Event struct {
 	Selected         SelectedFormats                        `json:"selected"`
 	Reasons          []ReasonCode                           `json:"reasons"`
 	TargetProfile    *playbackprofile.TargetPlaybackProfile `json:"targetProfile,omitempty"`
+	Shadow           *ShadowDivergence                      `json:"shadow,omitempty"`
 	BasisHash        string                                 `json:"basisHash"`
 	TruthHash        string                                 `json:"truthHash"`
 	OutputHash       string                                 `json:"outputHash"`
@@ -44,8 +45,9 @@ type EventMetadata struct {
 }
 
 const (
-	OriginRuntime = "runtime"
-	OriginSweep   = "sweep"
+	OriginRuntime          = "runtime"
+	OriginSweep            = "sweep"
+	OriginShadowDivergence = "shadow_divergence"
 )
 
 type EventSink interface {
@@ -75,7 +77,7 @@ func BuildEvent(meta EventMetadata, input DecisionInput, dec *Decision) (Event, 
 		decidedAt = time.Now().UTC()
 	}
 
-	outputHash, err := computeDecisionOutputHash(dec.Mode, selected, reasons, targetProfile)
+	outputHash, err := computeDecisionOutputHash(dec.Mode, selected, reasons, targetProfile, nil)
 	if err != nil {
 		return Event{}, fmt.Errorf("compute decision output hash: %w", err)
 	}
@@ -93,12 +95,31 @@ func BuildEvent(meta EventMetadata, input DecisionInput, dec *Decision) (Event, 
 		Selected:         selected,
 		Reasons:          reasons,
 		TargetProfile:    targetProfile,
+		Shadow:           nil,
 		BasisHash:        basisHash,
 		TruthHash:        computeTruthHash(input.Source),
 		OutputHash:       outputHash,
 		HostPressureBand: string(playbackprofile.NormalizeHostPressureBand(dec.Trace.HostPressureBand)),
 		DecidedAt:        decidedAt,
 	}, nil
+}
+
+func BuildShadowDivergenceEvent(base Event, shadow ShadowDivergence) (Event, error) {
+	event := base.Normalized()
+	normalizedShadow := shadow.Normalized()
+	if err := normalizedShadow.Valid(); err != nil {
+		return Event{}, fmt.Errorf("decision shadow event requires valid shadow payload: %w", err)
+	}
+
+	event.Origin = OriginShadowDivergence
+	event.Shadow = &normalizedShadow
+
+	outputHash, err := computeDecisionOutputHash(event.Mode, event.Selected, event.Reasons, event.TargetProfile, event.Shadow)
+	if err != nil {
+		return Event{}, fmt.Errorf("compute decision shadow output hash: %w", err)
+	}
+	event.OutputHash = outputHash
+	return event, nil
 }
 
 func (e Event) Normalized() Event {
@@ -112,6 +133,10 @@ func (e Event) Normalized() Event {
 	e.ResolvedIntent = normalize.Token(e.ResolvedIntent)
 	e.Selected = normalizeSelected(e.Selected)
 	e.HostPressureBand = string(playbackprofile.NormalizeHostPressureBand(e.HostPressureBand))
+	if e.Shadow != nil {
+		shadow := e.Shadow.Normalized()
+		e.Shadow = &shadow
+	}
 	e.DecidedAt = e.DecidedAt.UTC()
 	if e.DecidedAt.IsZero() {
 		e.DecidedAt = time.Now().UTC()
@@ -136,6 +161,14 @@ func (e Event) Valid() error {
 	case strings.TrimSpace(e.TruthHash) == "":
 		return fmt.Errorf("decision event requires truth hash")
 	}
+	if e.Shadow != nil {
+		if err := e.Shadow.Valid(); err != nil {
+			return err
+		}
+	}
+	if e.Origin == OriginShadowDivergence && e.Shadow == nil {
+		return fmt.Errorf("shadow divergence event requires shadow payload")
+	}
 	return nil
 }
 
@@ -144,6 +177,7 @@ type canonicalDecisionOutput struct {
 	Selected      SelectedFormats                        `json:"selected"`
 	Reasons       []string                               `json:"reasons"`
 	TargetProfile *playbackprofile.TargetPlaybackProfile `json:"targetProfile,omitempty"`
+	Shadow        *ShadowDivergence                      `json:"shadow,omitempty"`
 }
 
 type canonicalTruth struct {
@@ -156,7 +190,7 @@ type canonicalTruth struct {
 	FPS         float64 `json:"fps"`
 }
 
-func computeDecisionOutputHash(mode Mode, selected SelectedFormats, reasons []ReasonCode, targetProfile *playbackprofile.TargetPlaybackProfile) (string, error) {
+func computeDecisionOutputHash(mode Mode, selected SelectedFormats, reasons []ReasonCode, targetProfile *playbackprofile.TargetPlaybackProfile, shadow *ShadowDivergence) (string, error) {
 	serializedReasons := make([]string, 0, len(reasons))
 	for _, reason := range reasons {
 		serializedReasons = append(serializedReasons, string(reason))
@@ -166,6 +200,7 @@ func computeDecisionOutputHash(mode Mode, selected SelectedFormats, reasons []Re
 		Selected:      normalizeSelected(selected),
 		Reasons:       serializedReasons,
 		TargetProfile: targetProfile,
+		Shadow:        shadow,
 	})
 	if err != nil {
 		return "", err

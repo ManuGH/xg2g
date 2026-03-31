@@ -36,6 +36,7 @@ func (i DecisionInput) CanonicalJSONForHash() ([]byte, error) {
 			Width:       i.Source.Width,
 			Height:      i.Source.Height,
 			FPS:         i.Source.FPS,
+			Interlaced:  i.Source.Interlaced,
 		},
 		Capabilities: canonicalCapabilities{
 			Version:       i.Capabilities.Version,
@@ -77,6 +78,7 @@ func (i DecisionInput) CanonicalJSON() ([]byte, error) {
 			Width:       i.Source.Width,
 			Height:      i.Source.Height,
 			FPS:         i.Source.FPS,
+			Interlaced:  i.Source.Interlaced,
 		},
 		Capabilities: canonicalCapabilities{
 			Version:       i.Capabilities.Version,
@@ -159,6 +161,7 @@ type canonicalSource struct {
 	Width       int     `json:"w"`
 	Height      int     `json:"h"`
 	FPS         float64 `json:"fps"`
+	Interlaced  bool    `json:"interlaced,omitempty"`
 }
 
 type canonicalCapabilities struct {

@@ -14,6 +14,7 @@ type Intent struct {
 	Params        map[string]string
 	StartMs       *int64
 	CorrelationID string
+	DecisionTrace string
 	Mode          string
 	UserAgent     string
 	PrincipalID   string

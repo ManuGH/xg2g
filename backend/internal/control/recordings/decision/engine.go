@@ -26,7 +26,7 @@ func Decide(ctx context.Context, input DecisionInput, schemaType string) (int, *
 	}
 
 	// Phase 2: Compute compatibility predicates
-	pred := computePredicates(input.Source, input.Capabilities, input.Policy)
+	pred := computePredicates(ctx, input.Source, input.Capabilities, input.Policy)
 
 	// Phase 3: Decision table evaluation (first match wins)
 	// (Returns Mode and ReasonCodes per ADR-P8)
@@ -126,6 +126,9 @@ func evaluateDecision(pred Predicates, caps Capabilities, policy Policy) (Mode, 
 	// Step 6: Transcode
 	rules = append(rules, "rule_transcode")
 	if pred.TranscodeNeeded && pred.TranscodePossible {
+		if len(reasons) == 0 {
+			reasons = append(reasons, ReasonNoCompatiblePlaybackPath)
+		}
 		return ModeTranscode, reasons, rules
 	}
 

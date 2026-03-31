@@ -741,6 +741,19 @@ type PlaybackCapabilities struct {
 	// DeviceType Client device category for policy decisions
 	DeviceType *string `json:"deviceType,omitempty"`
 
+	// DeviceContext Optional device identity context supplied by native/web probes
+	DeviceContext *struct {
+		Brand        *string `json:"brand,omitempty"`
+		Device       *string `json:"device,omitempty"`
+		Manufacturer *string `json:"manufacturer,omitempty"`
+		Model        *string `json:"model,omitempty"`
+		OsName       *string `json:"osName,omitempty"`
+		OsVersion    *string `json:"osVersion,omitempty"`
+		Platform     *string `json:"platform,omitempty"`
+		Product      *string `json:"product,omitempty"`
+		SdkInt       *int    `json:"sdkInt,omitempty"`
+	} `json:"deviceContext,omitempty"`
+
 	// HlsEngines Supported HLS playback engines (e.g. native, hlsjs)
 	HlsEngines *[]string `json:"hlsEngines,omitempty"`
 
@@ -765,6 +778,14 @@ type PlaybackCapabilities struct {
 
 	// SupportsRange Whether client supports HTTP range requests
 	SupportsRange *bool `json:"supportsRange,omitempty"`
+
+	// NetworkContext Optional current network context from native/web probes
+	NetworkContext *struct {
+		DownlinkKbps      *int    `json:"downlinkKbps,omitempty"`
+		InternetValidated *bool   `json:"internetValidated,omitempty"`
+		Kind              *string `json:"kind,omitempty"`
+		Metered           *bool   `json:"metered,omitempty"`
+	} `json:"networkContext,omitempty"`
 
 	// VideoCodecSignals Runtime decode signals per video codec from MediaCapabilities and fallback browser probes
 	VideoCodecSignals *[]PlaybackVideoCodecSignal `json:"videoCodecSignals,omitempty"`

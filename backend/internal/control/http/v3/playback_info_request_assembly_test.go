@@ -38,8 +38,29 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		CapabilitiesVersion:  3,
 		ClientFamilyFallback: strPtr("safari"),
 		Container:            []string{"mpegts", "hls"},
-		DeviceType:           strPtr("tv"),
-		HlsEngines:           &hlsEngines,
+		DeviceContext: &struct {
+			Brand        *string `json:"brand,omitempty"`
+			Device       *string `json:"device,omitempty"`
+			Manufacturer *string `json:"manufacturer,omitempty"`
+			Model        *string `json:"model,omitempty"`
+			OsName       *string `json:"osName,omitempty"`
+			OsVersion    *string `json:"osVersion,omitempty"`
+			Platform     *string `json:"platform,omitempty"`
+			Product      *string `json:"product,omitempty"`
+			SdkInt       *int    `json:"sdkInt,omitempty"`
+		}{
+			Brand:        strPtr("google"),
+			Device:       strPtr("foster"),
+			Manufacturer: strPtr("NVIDIA"),
+			Model:        strPtr("Shield"),
+			OsName:       strPtr("Android"),
+			OsVersion:    strPtr("14"),
+			Platform:     strPtr("android-tv"),
+			Product:      strPtr("mdarcy"),
+			SdkInt:       intPtr(34),
+		},
+		DeviceType: strPtr("tv"),
+		HlsEngines: &hlsEngines,
 		MaxVideo: &struct {
 			Fps    *int `json:"fps,omitempty"`
 			Height *int `json:"height,omitempty"`
@@ -52,10 +73,21 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		PreferredHlsEngine:  strPtr("native"),
 		RuntimeProbeUsed:    boolPtr(true),
 		RuntimeProbeVersion: intPtr(2),
-		SupportsHls:         boolPtr(true),
-		SupportsRange:       boolPtr(true),
-		VideoCodecSignals:   &videoCodecSignals,
-		VideoCodecs:         []string{"h264"},
+		NetworkContext: &struct {
+			DownlinkKbps      *int    `json:"downlinkKbps,omitempty"`
+			InternetValidated *bool   `json:"internetValidated,omitempty"`
+			Kind              *string `json:"kind,omitempty"`
+			Metered           *bool   `json:"metered,omitempty"`
+		}{
+			DownlinkKbps:      intPtr(940000),
+			InternetValidated: boolPtr(true),
+			Kind:              strPtr("ethernet"),
+			Metered:           boolPtr(false),
+		},
+		SupportsHls:       boolPtr(true),
+		SupportsRange:     boolPtr(true),
+		VideoCodecSignals: &videoCodecSignals,
+		VideoCodecs:       []string{"h264"},
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/streams/live?profile=safari", nil)
@@ -98,6 +130,23 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	assert.Equal(t, 2, got.Capabilities.RuntimeProbeVersion)
 	assert.Equal(t, "safari", got.Capabilities.ClientFamilyFallback)
 	assert.Equal(t, "tv", got.Capabilities.DeviceType)
+	require.NotNil(t, got.Capabilities.DeviceContext)
+	assert.Equal(t, "google", got.Capabilities.DeviceContext.Brand)
+	assert.Equal(t, "mdarcy", got.Capabilities.DeviceContext.Product)
+	assert.Equal(t, "foster", got.Capabilities.DeviceContext.Device)
+	assert.Equal(t, "android-tv", got.Capabilities.DeviceContext.Platform)
+	assert.Equal(t, "NVIDIA", got.Capabilities.DeviceContext.Manufacturer)
+	assert.Equal(t, "Shield", got.Capabilities.DeviceContext.Model)
+	assert.Equal(t, "Android", got.Capabilities.DeviceContext.OSName)
+	assert.Equal(t, "14", got.Capabilities.DeviceContext.OSVersion)
+	assert.Equal(t, 34, got.Capabilities.DeviceContext.SDKInt)
+	require.NotNil(t, got.Capabilities.NetworkContext)
+	assert.Equal(t, "ethernet", got.Capabilities.NetworkContext.Kind)
+	assert.Equal(t, 940000, got.Capabilities.NetworkContext.DownlinkKbps)
+	require.NotNil(t, got.Capabilities.NetworkContext.Metered)
+	assert.False(t, *got.Capabilities.NetworkContext.Metered)
+	require.NotNil(t, got.Capabilities.NetworkContext.InternetValidated)
+	assert.True(t, *got.Capabilities.NetworkContext.InternetValidated)
 	require.NotNil(t, got.Capabilities.SupportsRange)
 	assert.True(t, *got.Capabilities.SupportsRange)
 	require.NotNil(t, got.Capabilities.AllowTranscode)
@@ -132,4 +181,14 @@ func TestBuildPlaybackInfoServiceRequest_RecordingPreservesExplicitAndroidProfil
 
 	assert.Equal(t, "android_native", got.RequestedProfile)
 	assert.Equal(t, "android_native", got.ClientProfile)
+}
+
+func TestBuildPlaybackInfoServiceRequest_FallsBackToProfileHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)
+	req.Header.Set("X-XG2G-Profile", "repair")
+
+	got := buildPlaybackInfoServiceRequest(req, "rec1", nil, "v3.1", "compact")
+
+	assert.Equal(t, "repair", got.RequestedProfile)
+	assert.Equal(t, "repair", got.ClientProfile)
 }

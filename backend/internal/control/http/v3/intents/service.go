@@ -375,6 +375,9 @@ func buildStartRequestParams(intent Intent, resolution startProfileResolution) m
 	if intent.CorrelationID != "" {
 		requestParams["correlationId"] = intent.CorrelationID
 	}
+	if intent.DecisionTrace != "" {
+		requestParams[model.CtxKeyDecisionRequest] = intent.DecisionTrace
+	}
 	if intent.Mode != "" {
 		requestParams[model.CtxKeyMode] = intent.Mode
 	}

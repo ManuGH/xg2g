@@ -25,6 +25,7 @@ import (
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
@@ -65,6 +66,7 @@ type Server struct {
 	resumeStore            resume.Store
 	v3Scan                 ChannelScanner
 	decisionAudit          decisionaudit.EventSink
+	capabilityRegistry     capreg.Store
 	owiFactory             receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
 	recordingPathMapper    *recinfra.PathMapper
 	channelManager         *channels.Manager
@@ -76,6 +78,9 @@ type Server struct {
 	epgCache               *epg.TV // EPG Cache reference
 	owiClient              *openwebif.Client
 	owiEpoch               uint64
+	receiverAbout          *openwebif.AboutInfo
+	receiverAboutAt        time.Time
+	receiverAboutEpoch     uint64
 	configManager          *config.Manager
 	configMu               sync.Mutex // Serializes configuration updates
 	epgCacheTime           time.Time
@@ -432,26 +437,27 @@ func (s *Server) SetPreflightCheck(fn PreflightProvider) {
 
 // Dependencies groups runtime services injected into the v3 handler.
 type Dependencies struct {
-	Bus               bus.Bus
-	Store             SessionStateStore
-	ResumeStore       resume.Store
-	Scan              ChannelScanner
-	DecisionAudit     decisionaudit.EventSink
-	PathMapper        *recinfra.PathMapper
-	ChannelManager    *channels.Manager
-	SeriesManager     *dvr.Manager
-	SeriesEngine      *dvr.SeriesEngine
-	VODManager        *vod.Manager
-	EPGCache          *epg.TV
-	HealthManager     *health.Manager
-	LogSource         interface{ GetRecentLogs() []log.LogEntry }
-	ScanSource        ScanSource
-	DVRSource         RecordingStatusProvider
-	ServicesSource    ServiceStateReader
-	TimersSource      TimerReader
-	RecordingsService recservice.Service
-	RequestShutdown   func(context.Context) error
-	PreflightProvider PreflightProvider
+	Bus                bus.Bus
+	Store              SessionStateStore
+	ResumeStore        resume.Store
+	Scan               ChannelScanner
+	DecisionAudit      decisionaudit.EventSink
+	CapabilityRegistry capreg.Store
+	PathMapper         *recinfra.PathMapper
+	ChannelManager     *channels.Manager
+	SeriesManager      *dvr.Manager
+	SeriesEngine       *dvr.SeriesEngine
+	VODManager         *vod.Manager
+	EPGCache           *epg.TV
+	HealthManager      *health.Manager
+	LogSource          interface{ GetRecentLogs() []log.LogEntry }
+	ScanSource         ScanSource
+	DVRSource          RecordingStatusProvider
+	ServicesSource     ServiceStateReader
+	TimersSource       TimerReader
+	RecordingsService  recservice.Service
+	RequestShutdown    func(context.Context) error
+	PreflightProvider  PreflightProvider
 }
 
 // SetDependencies injects shared services into the handler.
@@ -486,6 +492,12 @@ func (s *Server) SetDependencies(deps Dependencies) {
 		s.decisionAudit = deps.DecisionAudit
 	} else {
 		s.decisionAudit = nil
+	}
+
+	if !isNil(deps.CapabilityRegistry) {
+		s.capabilityRegistry = deps.CapabilityRegistry
+	} else {
+		s.capabilityRegistry = nil
 	}
 
 	if !isNil(deps.ScanSource) {

@@ -26,6 +26,7 @@ func NormalizeInput(in DecisionInput) DecisionInput {
 			Width:       in.Source.Width,
 			Height:      in.Source.Height,
 			FPS:         in.Source.FPS,
+			Interlaced:  in.Source.Interlaced,
 		},
 		Capabilities: Capabilities{
 			Version:       in.Capabilities.Version,
