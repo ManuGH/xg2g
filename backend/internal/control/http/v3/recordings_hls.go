@@ -60,18 +60,9 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 	// Apply SSOT Headers
 	xg2ghttp.WriteHLSPlaylistHeaders(w, artifact.ModTime)
 
-	// PR-P9-2: Range Policy A for Playlists (Explicitly 416 if range present)
-	if r.Header.Get("Range") != "" {
-		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStagePlaylistLabel, "INVALID_INPUT")
-		size := int64(len(artifact.Data))
-		if artifact.AbsPath != "" {
-			if info, err := os.Stat(artifact.AbsPath); err == nil {
-				size = info.Size()
-			}
-		}
-		xg2ghttp.Write416(w, size)
-		return
-	}
+	// Some TV/WebView clients send benign Range probes for playlists even though
+	// HLS manifests are not byte-range resources. Serve the full playlist and
+	// keep Accept-Ranges absent instead of hard-failing with 416.
 
 	// Timeshift specific override if needed (though ResolveTimeshift might already set it,
 	// we enforce it here for contract truth)

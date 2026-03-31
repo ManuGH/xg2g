@@ -7,7 +7,7 @@ package config
 import "testing"
 
 func TestDecisionSecretFromLookup(t *testing.T) {
-	t.Run("trimmed value", func(t *testing.T) {
+	t.Run("trimmed canonical value", func(t *testing.T) {
 		got := DecisionSecretFromLookup(func(key string) (string, bool) {
 			if key != "XG2G_DECISION_SECRET" {
 				t.Fatalf("unexpected key lookup: %s", key)
@@ -16,6 +16,40 @@ func TestDecisionSecretFromLookup(t *testing.T) {
 		})
 		if string(got) != "top-secret-value" {
 			t.Fatalf("DecisionSecretFromLookup() = %q, want %q", string(got), "top-secret-value")
+		}
+	})
+
+	t.Run("falls back to legacy playback secret env", func(t *testing.T) {
+		got := DecisionSecretFromLookup(func(key string) (string, bool) {
+			switch key {
+			case "XG2G_DECISION_SECRET":
+				return "", false
+			case "XG2G_PLAYBACK_DECISION_SECRET":
+				return " legacy-secret ", true
+			default:
+				t.Fatalf("unexpected key lookup: %s", key)
+				return "", false
+			}
+		})
+		if string(got) != "legacy-secret" {
+			t.Fatalf("DecisionSecretFromLookup() = %q, want %q", string(got), "legacy-secret")
+		}
+	})
+
+	t.Run("canonical takes precedence over legacy", func(t *testing.T) {
+		got := DecisionSecretFromLookup(func(key string) (string, bool) {
+			switch key {
+			case "XG2G_DECISION_SECRET":
+				return "canonical-secret", true
+			case "XG2G_PLAYBACK_DECISION_SECRET":
+				return "legacy-secret", true
+			default:
+				t.Fatalf("unexpected key lookup: %s", key)
+				return "", false
+			}
+		})
+		if string(got) != "canonical-secret" {
+			t.Fatalf("DecisionSecretFromLookup() = %q, want %q", string(got), "canonical-secret")
 		}
 	})
 

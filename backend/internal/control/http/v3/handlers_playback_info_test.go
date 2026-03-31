@@ -15,6 +15,7 @@ import (
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/stretchr/testify/assert"
@@ -538,6 +539,134 @@ func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testin
 	require.True(t, ok)
 	assert.Equal(t, "family_fallback", trace["clientCapsSource"])
 	assert.Equal(t, "ios_safari_native", trace["clientFamily"])
+}
+
+func TestPostRecordingPlaybackInfo_AndroidNativeReturnsFMP4VariantURL(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/demo.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+		Status:     playback.MediaStatusReady,
+		Container:  "mpegts",
+		VideoCodec: "h264",
+		AudioCodec: "mp2",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+	}, nil)
+
+	s := createTestServerDTO(svc)
+	body := `{
+		"capabilitiesVersion":3,
+		"container":["hls","mpegts","mp4"],
+		"videoCodecs":["h264"],
+		"audioCodecs":["aac","ac3"],
+		"supportsHls":true,
+		"supportsRange":true,
+		"deviceType":"android_tv",
+		"hlsEngines":["native"],
+		"preferredHlsEngine":"native",
+		"runtimeProbeUsed":false,
+		"runtimeProbeVersion":1,
+		"clientFamilyFallback":"android_tv_native",
+		"allowTranscode":true
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	s.PostRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+
+	selectedOutputURL, ok := dec["selectedOutputUrl"].(string)
+	require.True(t, ok)
+	parsed, err := url.Parse(selectedOutputURL)
+	require.NoError(t, err)
+	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", parsed.Path)
+	assert.NotEmpty(t, parsed.Query().Get("variant"))
+	assert.NotEmpty(t, parsed.Query().Get("target"))
+
+	target, err := v3recordings.DecodeTargetProfileQuery(parsed.Query().Get("target"))
+	require.NoError(t, err)
+	require.NotNil(t, target)
+	assert.Equal(t, playbackprofile.PackagingFMP4, target.Packaging)
+	assert.Equal(t, "mp4", target.Container)
+	assert.Equal(t, "fmp4", target.HLS.SegmentContainer)
+}
+
+func TestPostRecordingPlaybackInfo_AndroidNativeCopyableTSReturnsDirectPlayStreamURL(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/demo.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+		Status:     playback.MediaStatusReady,
+		Container:  "mpegts",
+		VideoCodec: "h264",
+		AudioCodec: "ac3",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+	}, nil)
+
+	s := createTestServerDTO(svc)
+	body := `{
+		"capabilitiesVersion":3,
+		"container":["hls","mpegts","mp4"],
+		"videoCodecs":["h264"],
+		"audioCodecs":["aac","ac3"],
+		"supportsHls":true,
+		"supportsRange":true,
+		"deviceType":"android_tv",
+		"hlsEngines":["native"],
+		"preferredHlsEngine":"native",
+		"runtimeProbeUsed":false,
+		"runtimeProbeVersion":1,
+		"clientFamilyFallback":"android_tv_native",
+		"allowTranscode":true
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	s.PostRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+	assert.Equal(t, "direct_mp4", raw["mode"])
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "direct_play", dec["mode"])
+	assert.Equal(t, "file", dec["selectedOutputKind"])
+
+	selectedOutputURL, ok := dec["selectedOutputUrl"].(string)
+	require.True(t, ok)
+	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/stream.mp4", selectedOutputURL)
+
+	trace, ok := dec["trace"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "direct", trace["resolvedIntent"])
+	assert.Equal(t, "direct_copy", trace["qualityRung"])
+
+	targetProfileRaw, ok := trace["targetProfile"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", targetProfileRaw["container"])
+	assert.Equal(t, "ts", targetProfileRaw["packaging"])
 }
 
 func TestPostLivePlaybackInfo_InvalidServiceRef_RejectsNonLiveFormat(t *testing.T) {

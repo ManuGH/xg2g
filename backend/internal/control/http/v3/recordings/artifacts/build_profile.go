@@ -9,6 +9,9 @@ import (
 func recordingTargetProfile(profile string) *playbackprofile.TargetPlaybackProfile {
 	raw := normalize.Token(profile)
 	publicProfile := profiles.PublicProfileName(raw)
+	if raw == "android_native" || raw == "android_tv_native" {
+		publicProfile = profiles.PublicProfileCompatible
+	}
 	packaging, segmentContainer, container := resolveRecordingPackaging(raw)
 
 	target := playbackprofile.TargetPlaybackProfile{
@@ -29,7 +32,7 @@ func recordingTargetProfile(profile string) *playbackprofile.TargetPlaybackProfi
 
 func resolveRecordingPackaging(raw string) (playbackprofile.Packaging, string, string) {
 	switch raw {
-	case "safari", "safari_dvr", "safari_dirty", "safari_hevc", "safari_hevc_hw", "safari_hevc_hw_ll", "h264_fmp4":
+	case "android_native", "android_tv_native", "safari", "safari_dvr", "safari_dirty", "safari_hevc", "safari_hevc_hw", "safari_hevc_hw_ll", "h264_fmp4":
 		return playbackprofile.PackagingFMP4, "fmp4", "mp4"
 	default:
 		return playbackprofile.PackagingTS, "mpegts", "mpegts"

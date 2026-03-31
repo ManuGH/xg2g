@@ -31,14 +31,25 @@ export function EpgToolbar({
   const { t } = useTranslation();
   const loading = loadState === 'loading';
   const searchLoading = searchLoadState === 'loading';
+  const rangeLabel = t('epg.rangeNowTo' + filters.timeRange + 'h', {
+    defaultValue: 'now to +' + filters.timeRange + 'h'
+  });
+  const activeBouquet = bouquets.find((b) => b.name === filters.bouquetId)?.name || t('epg.allServices');
+  const dateLabel = new Intl.DateTimeFormat(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date());
 
   return (
-    <>
-      {/* Header Bar */}
-      <div className={styles.toolbar}>
+    <section className={styles.toolbar}>
+      <div className={styles.toolbarHero}>
         <div className={styles.toolbarLeft}>
-          <h3>{t('epg.pageTitle', { count: channelCount })}</h3>
-          <p>{t('epg.timeRange')}: {t('epg.rangeNowTo' + filters.timeRange + 'h', { defaultValue: 'now to +' + filters.timeRange + 'h' })}</p>
+          <p className={styles.toolbarEyebrow}>{t('epg.pageTitleEyebrow', { defaultValue: 'Live guide' })}</p>
+          <h3 className={styles.toolbarTitle}>{t('epg.pageTitle', { count: channelCount })}</h3>
+          <p className={styles.toolbarSummary}>
+            {t('epg.timeRange')}: {rangeLabel} · {dateLabel}
+          </p>
         </div>
         <div className={styles.toolbarRight}>
           <button onClick={onRefresh} disabled={loading} aria-label={t('epg.reload')}>
@@ -48,46 +59,21 @@ export function EpgToolbar({
         </div>
       </div>
 
-      {/* Filter Controls */}
-      <div className={styles.controls}>
-        {bouquets.length > 0 && (
-          <label>
-            {t('epg.bouquet')}:
-            <select
-              value={filters.bouquetId || ''}
-              onChange={(e) => onFilterChange({ bouquetId: e.target.value })}
-            >
-              <option value="">{t('epg.allServices')}</option>
-              {bouquets.map((b) => (
-                <option key={b.name} value={b.name}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <label>{t('epg.timeRange')}:</label>
-        <div className={styles.pills}>
-          {[
-            { label: t('epg.rangeNow', { defaultValue: 'Now' }), value: 6 },
-            { label: t('epg.rangeEvening', { defaultValue: 'Evening' }), value: 12 },
-            { label: t('epg.rangeDay', { defaultValue: 'Day' }), value: 24 },
-            { label: t('epg.rangeWeek', { defaultValue: 'Week' }), value: 168 },
-            { label: t('epg.rangeAll', { defaultValue: 'All' }), value: EPG_MAX_HORIZON_HOURS },
-          ].map((opt) => (
-            <button
-              key={opt.value}
-              className={[styles.pill, filters.timeRange === opt.value ? styles.pillActive : null].filter(Boolean).join(' ')}
-              onClick={() => onFilterChange({ timeRange: opt.value })}
-            >
-              {opt.label}
-            </button>
-          ))}
+      <div className={styles.toolbarMeta}>
+        <div className={styles.metaPill}>
+          <span className={styles.metaLabel}>{t('epg.allServices')}</span>
+          <span className={styles.metaValue}>{channelCount}</span>
+        </div>
+        <div className={styles.metaPill}>
+          <span className={styles.metaLabel}>{t('epg.bouquet')}</span>
+          <span className={styles.metaValue}>{activeBouquet}</span>
+        </div>
+        <div className={styles.metaPill}>
+          <span className={styles.metaLabel}>{t('epg.timeRange')}</span>
+          <span className={styles.metaValue}>{rangeLabel}</span>
         </div>
       </div>
 
-      {/* Search Bar */}
       <div className={styles.search}>
         <div className={styles.searchLeft}>
           <div className={styles.searchIcon}>⌕</div>
@@ -105,19 +91,6 @@ export function EpgToolbar({
               }
             }}
           />
-          {bouquets.length > 0 && (
-            <select
-              value={filters.bouquetId || ''}
-              onChange={(e) => onFilterChange({ bouquetId: e.target.value })}
-            >
-              <option value="">{t('epg.allBouquets')}</option>
-              {bouquets.map((b) => (
-                <option key={b.name} value={b.name}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          )}
         </div>
         <div className={styles.searchRight}>
           <button
@@ -130,6 +103,46 @@ export function EpgToolbar({
           </button>
         </div>
       </div>
-    </>
+
+      <div className={styles.controls}>
+        {bouquets.length > 0 && (
+          <label className={styles.filterField}>
+            <span>{t('epg.bouquet')}</span>
+            <select
+              value={filters.bouquetId || ''}
+              onChange={(e) => onFilterChange({ bouquetId: e.target.value })}
+            >
+              <option value="">{t('epg.allServices')}</option>
+              {bouquets.map((b) => (
+                <option key={b.name} value={b.name}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <div className={styles.rangeGroup}>
+          <label>{t('epg.timeRange')}</label>
+          <div className={styles.pills}>
+            {[
+              { label: t('epg.rangeNow', { defaultValue: 'Now' }), value: 6 },
+              { label: t('epg.rangeEvening', { defaultValue: 'Evening' }), value: 12 },
+              { label: t('epg.rangeDay', { defaultValue: 'Day' }), value: 24 },
+              { label: t('epg.rangeWeek', { defaultValue: 'Week' }), value: 168 },
+              { label: t('epg.rangeAll', { defaultValue: 'All' }), value: EPG_MAX_HORIZON_HOURS },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                className={[styles.pill, filters.timeRange === opt.value ? styles.pillActive : null].filter(Boolean).join(' ')}
+                onClick={() => onFilterChange({ timeRange: opt.value })}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

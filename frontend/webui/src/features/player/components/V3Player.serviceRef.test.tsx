@@ -347,6 +347,54 @@ describe('V3Player ServiceRef Input', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it('passes the current API token into native playback requests on Android hosts', async () => {
+    const originalHost = window.__XG2G_HOST__;
+    const originalBridge = window.Xg2gHost;
+    const startNativePlayback = vi.fn();
+
+    window.__XG2G_HOST__ = {
+      platform: 'android-tv',
+      isTv: true,
+      supportsKeepScreenAwake: true,
+      supportsHostMediaKeys: true,
+      supportsInputFocus: true,
+      supportsNativePlayback: true,
+    };
+    window.Xg2gHost = {
+      startNativePlayback,
+      stopNativePlayback: vi.fn(),
+      setPlaybackActive: vi.fn(),
+      requestInputFocus: vi.fn(),
+      getNativePlaybackStateJson: vi.fn().mockReturnValue('null'),
+    };
+
+    try {
+      const props = { autoStart: false, token: 'dev-token' } as unknown as V3PlayerProps;
+      render(<V3Player {...props} />);
+
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: '1:0:1:123:456:789:0:0:0:0:' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+      await waitFor(() => {
+        expect(startNativePlayback).toHaveBeenCalledTimes(1);
+      });
+
+      const payload = startNativePlayback.mock.calls[0]?.[0];
+      expect(payload).toBeDefined();
+      expect(JSON.parse(String(payload))).toMatchObject({
+        kind: 'live',
+        serviceRef: '1:0:1:123:456:789:0:0:0:0:',
+        authToken: 'dev-token'
+      });
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    } finally {
+      window.__XG2G_HOST__ = originalHost;
+      window.Xg2gHost = originalBridge;
+    }
+  });
+
   it('dispatches auth-required when /intents returns 401', async () => {
     const authRequiredHandler = vi.fn();
     window.addEventListener('auth-required', authRequiredHandler);

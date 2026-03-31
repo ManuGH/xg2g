@@ -43,7 +43,21 @@ import { detectPlaybackClientFamily } from '../utils/playbackClientFamily';
 import { probeRuntimePlaybackCapabilities } from '../utils/playbackProbe';
 import { normalizePlayerError } from '../../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
-import { requestHostInputFocus, resolveHostEnvironment, setHostPlaybackActive } from '../../../lib/hostBridge';
+import { useTvInitialFocus } from '../../../hooks/useTvInitialFocus';
+import {
+  getNativePlaybackState,
+  onNativePlaybackState,
+  requestHostInputFocus,
+  resolveHostEnvironment,
+  setHostPlaybackActive,
+  startNativePlayback,
+  stopNativePlayback,
+} from '../../../lib/hostBridge';
+import type {
+  HostEnvironment,
+  NativePlaybackRequest,
+  NativePlaybackState as HostNativePlaybackState,
+} from '../../../lib/hostBridge';
 import type { AppError } from '../../../types/errors';
 import styles from './V3Player.module.css';
 
@@ -359,6 +373,43 @@ const NATIVE_VIDEO_REVEAL_REBUFFER: NativeVideoRevealThresholds = {
 
 const NATIVE_VIDEO_REBUFFER_VEIL_MS = 2300;
 const NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS = 140;
+const NATIVE_PLAYER_STATE_IDLE = 1;
+const NATIVE_PLAYER_STATE_BUFFERING = 2;
+const NATIVE_PLAYER_STATE_READY = 3;
+const NATIVE_PLAYER_STATE_ENDED = 4;
+
+function supportsManagedNativePlayback(environment: HostEnvironment): boolean {
+  return environment.supportsNativePlayback
+    && (environment.platform === 'android' || environment.platform === 'android-tv');
+}
+
+function resolveNativePlaybackStatus(state: HostNativePlaybackState | null): PlayerStatus | null {
+  if (!state?.activeRequest) {
+    if (state?.lastError) {
+      return 'error';
+    }
+    if (state?.playerState === NATIVE_PLAYER_STATE_ENDED) {
+      return 'stopped';
+    }
+    return null;
+  }
+
+  if (state.lastError) {
+    return 'error';
+  }
+
+  switch (state.playerState) {
+    case NATIVE_PLAYER_STATE_BUFFERING:
+      return state.session ? 'buffering' : 'starting';
+    case NATIVE_PLAYER_STATE_READY:
+      return state.playWhenReady ? 'playing' : 'paused';
+    case NATIVE_PLAYER_STATE_ENDED:
+      return 'stopped';
+    case NATIVE_PLAYER_STATE_IDLE:
+    default:
+      return state.session ? 'buffering' : 'starting';
+  }
+}
 
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
@@ -387,6 +438,9 @@ function V3Player(props: V3PlayerProps) {
   const [showNativeVideoVeil, setShowNativeVideoVeil] = useState(false);
   const [nativeVeilResumeArmed, setNativeVeilResumeArmed] = useState(false);
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
+  const isNativePlaybackHost = supportsManagedNativePlayback(hostEnvironment);
+  const [nativePlaybackState, setNativePlaybackState] = useState<HostNativePlaybackState | null>(null);
+  const [nativeSessionId, setNativeSessionId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoElementRef>(null);
@@ -411,6 +465,8 @@ function V3Player(props: V3PlayerProps) {
   const nativeVideoTempMutedRef = useRef(false);
   const nativeManagedPauseRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
+  const nativePlaybackWasActiveRef = useRef(false);
+  const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
 
   const [durationSeconds, setDurationSeconds] = useState<number | null>(
     duration && duration > 0 ? duration : null
@@ -428,6 +484,7 @@ function V3Player(props: V3PlayerProps) {
   // Resume State
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
+  const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
   const [isDocumentVisible, setIsDocumentVisible] = useState(
     () => typeof document === 'undefined' || document.visibilityState !== 'hidden'
   );
@@ -679,9 +736,12 @@ function V3Player(props: V3PlayerProps) {
 
   const clearPlaybackSelection = useCallback(() => {
     activeRecordingRef.current = null;
+    nativePlaybackWasActiveRef.current = false;
     nativeVideoShownRef.current = false;
     nativeVideoHoldPositionRef.current = null;
     clearNativeVideoVeilTimers();
+    setNativePlaybackState(null);
+    setNativeSessionId(null);
     setActiveRecordingId(null);
     setVodStreamMode(null);
     setActiveHlsEngine(null);
@@ -731,6 +791,7 @@ function V3Player(props: V3PlayerProps) {
     const activeHls = hlsRef.current;
     const activeSessionId = sessionIdRef.current;
     const activeVideo = videoRef.current;
+    const hasNativePlayback = isNativePlaybackHost && nativePlaybackState?.activeRequest;
 
     if (activeHls) activeHls.destroy();
     if (activeVideo) {
@@ -741,8 +802,25 @@ function V3Player(props: V3PlayerProps) {
     clearVodRetry();
     clearVodFetch();
     clearPlaybackSelection();
+    if (hasNativePlayback) {
+      stopNativePlayback();
+    }
     void sendStopIntent(activeSessionId, true);
-  }, [clearPlaybackSelection, clearVodFetch, clearVodRetry, hlsRef, sendStopIntent, sessionIdRef, videoRef]);
+  }, [
+    clearPlaybackSelection,
+    clearVodFetch,
+    clearVodRetry,
+    hlsRef,
+    isNativePlaybackHost,
+    nativePlaybackState,
+    sendStopIntent,
+    sessionIdRef,
+    videoRef,
+  ]);
+
+  useEffect(() => {
+    cleanupPlaybackResourcesRef.current = cleanupPlaybackResources;
+  }, [cleanupPlaybackResources]);
 
   const hasActivePlayback = useCallback((): boolean => {
     const videoEl = videoRef.current;
@@ -757,11 +835,15 @@ function V3Player(props: V3PlayerProps) {
 
   const teardownActivePlayback = useCallback(async (): Promise<void> => {
     const activeSessionId = sessionIdRef.current;
+    const hadNativePlayback = isNativePlaybackHost && Boolean(nativePlaybackState?.activeRequest);
     const hadActivePlayback = hasActivePlayback();
 
     clearPlaybackSelection();
     clearVodRetry();
     clearVodFetch();
+    if (hadNativePlayback) {
+      stopNativePlayback();
+    }
     if (hadActivePlayback) {
       resetPlaybackEngine();
       await sleep(75);
@@ -782,12 +864,129 @@ function V3Player(props: V3PlayerProps) {
     sendStopIntent,
     sessionIdRef,
     sleep,
+    isNativePlaybackHost,
+    nativePlaybackState,
   ]);
+
+  const beginNativePlayback = useCallback((request: NativePlaybackRequest): void => {
+    const started = startNativePlayback(request);
+    if (!started) {
+      throw new Error('Native playback bridge unavailable');
+    }
+
+    nativePlaybackWasActiveRef.current = true;
+    setNativePlaybackState({
+      activeRequest: request,
+      session: null,
+      playerState: NATIVE_PLAYER_STATE_IDLE,
+      playWhenReady: true,
+      isInPip: false,
+      lastError: null,
+    });
+    clearPlayerError();
+    setActiveHlsEngine(null);
+    if (request.kind === 'recording') {
+      activeRecordingRef.current = request.recordingId;
+      setActiveRecordingId(request.recordingId);
+      setPlaybackMode('VOD');
+    } else {
+      activeRecordingRef.current = null;
+      setActiveRecordingId(null);
+      setPlaybackMode('LIVE');
+    }
+    setStatus('starting');
+  }, [clearPlayerError, setPlaybackMode, setStatus]);
 
   const prepareFreshPlayback = useCallback((mode: 'LIVE' | 'VOD') => {
     setDurationSeconds(requestedDuration);
     setPlaybackMode(mode);
   }, [requestedDuration]);
+
+  const syncNativePlaybackState = useCallback((nextState: HostNativePlaybackState | null) => {
+    if (!isNativePlaybackHost) {
+      return;
+    }
+
+    setNativePlaybackState(nextState);
+
+    const hadActiveNativePlayback = nativePlaybackWasActiveRef.current;
+    const activeRequest = nextState?.activeRequest ?? null;
+    const hasActiveNativePlayback = nextState != null && activeRequest != null;
+    nativePlaybackWasActiveRef.current = hasActiveNativePlayback;
+
+    if (!hasActiveNativePlayback) {
+      if (hadActiveNativePlayback) {
+        activeRecordingRef.current = null;
+        setNativeSessionId(null);
+        setActiveRecordingId(null);
+        setActiveHlsEngine(null);
+        setPlaybackMode('UNKNOWN');
+        if (nextState?.lastError) {
+          setPlayerError({
+            title: nextState.lastError,
+            retryable: true,
+          });
+          setStatus('error');
+        } else {
+          setStatus('stopped');
+        }
+      }
+      return;
+    }
+
+    const resolvedState = nextState;
+    const diagnostics = resolvedState.diagnostics ?? null;
+    const nextNativeSessionId =
+      resolvedState.session?.sessionId ??
+      (typeof diagnostics?.trace?.sessionId === 'string' ? diagnostics.trace.sessionId : null) ??
+      (resolvedState.session?.trace && typeof resolvedState.session.trace === 'object' && typeof resolvedState.session.trace.sessionId === 'string'
+        ? resolvedState.session.trace.sessionId
+        : null);
+    setNativeSessionId(nextNativeSessionId);
+
+    const nextTraceId = diagnostics?.requestId ?? resolvedState.session?.requestId ?? null;
+    if (nextTraceId) {
+      setTraceId(nextTraceId);
+    }
+
+    const nextProfileReason = resolvedState.session?.profileReason ?? diagnostics?.profileReason ?? null;
+    setSessionProfileReason(nextProfileReason);
+
+    if (diagnostics?.playbackInfo) {
+      setPlaybackObservability(extractPlaybackObservability(
+        diagnostics.playbackInfo as PlaybackInfo,
+        typeof diagnostics.trace?.clientPath === 'string' ? diagnostics.trace.clientPath : 'android/native'
+      ));
+    }
+
+    mergeSessionPlaybackTrace(extractPlaybackTrace(diagnostics?.trace));
+    mergeSessionPlaybackTrace(extractPlaybackTrace(resolvedState.session?.trace));
+
+    if (resolvedState.lastError) {
+      setPlayerError({
+        title: resolvedState.lastError,
+        retryable: true,
+      });
+    } else {
+      clearPlayerError();
+    }
+
+    if (activeRequest.kind === 'recording') {
+      activeRecordingRef.current = activeRequest.recordingId;
+      setActiveRecordingId(activeRequest.recordingId);
+      setPlaybackMode('VOD');
+    } else {
+      activeRecordingRef.current = null;
+      setActiveRecordingId(null);
+      setPlaybackMode('LIVE');
+    }
+    setActiveHlsEngine(null);
+
+    const mappedStatus = resolveNativePlaybackStatus(nextState);
+    if (mappedStatus) {
+      setStatus(mappedStatus);
+    }
+  }, [clearPlayerError, isNativePlaybackHost, setPlaybackMode, setPlayerError, setStatus]);
 
   const gatherPlaybackCapabilities = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
@@ -1085,11 +1284,30 @@ function V3Player(props: V3PlayerProps) {
     userPauseIntentRef.current = false;
     applyAutoplayMute();
 
+    // Re-resolve at call time to avoid stale closure from useMemo/useCallback caching.
+    const nativeHost = supportsManagedNativePlayback(resolveHostEnvironment());
+
     try {
       if (recordingId) {
         debugLog('[V3Player] startStream: recordingId path', { recordingId, hasSrc: !!src });
         if (src) {
           debugWarn('[V3Player] Both recordingId and src provided; prioritizing recordingId (VOD path).');
+        }
+        if (nativeHost) {
+          if (hasActivePlayback() || nativePlaybackState?.activeRequest) {
+            await teardownActivePlayback();
+          } else {
+            clearPlaybackState();
+          }
+          prepareFreshPlayback('VOD');
+          beginNativePlayback({
+            kind: 'recording',
+            recordingId,
+            authToken: token || undefined,
+            startPositionMs: 0,
+            title: channel?.name ?? recordingId,
+          });
+          return;
         }
         await startRecordingPlayback(recordingId);
         return;
@@ -1130,6 +1348,16 @@ function V3Player(props: V3PlayerProps) {
       setStatus('starting');
       clearPlayerError();
       setTraceId('-');
+
+      if (nativeHost) {
+        beginNativePlayback({
+          kind: 'live',
+          serviceRef: ref,
+          authToken: token || undefined,
+          title: channel?.name ?? ref,
+        });
+        return;
+      }
 
       try {
         await ensureSessionCookie();
@@ -1460,7 +1688,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback, beginNativePlayback, channel?.name, isNativePlaybackHost, nativePlaybackState]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -1487,6 +1715,23 @@ function V3Player(props: V3PlayerProps) {
       if (ref) setSRef(ref);
     }
   }, [channel]);
+
+  useEffect(() => {
+    if (!isNativePlaybackHost) {
+      setNativePlaybackState(null);
+      nativePlaybackWasActiveRef.current = false;
+      return;
+    }
+
+    syncNativePlaybackState(getNativePlaybackState());
+    const unsubscribe = onNativePlaybackState((nextState) => {
+      syncNativePlaybackState(nextState);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [isNativePlaybackHost, syncNativePlaybackState]);
 
   useEffect(() => {
     if (!autoStart || mounted.current) return;
@@ -1530,6 +1775,10 @@ function V3Player(props: V3PlayerProps) {
   }, [hostEnvironment.supportsKeepScreenAwake, shouldKeepHostAwake]);
 
   useEffect(() => {
+    if (isNativePlaybackHost && nativePlaybackState?.activeRequest) {
+      return;
+    }
+
     if (!hostEnvironment.isTv) {
       return;
     }
@@ -1562,7 +1811,7 @@ function V3Player(props: V3PlayerProps) {
     void video.play().catch((err) => {
       debugWarn('[V3Player] Host resume play blocked', err);
     });
-  }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, setStatus, status, videoRef]);
+  }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
   useEffect(() => {
     if (bufferingOverlayTimerRef.current !== null) {
@@ -1729,8 +1978,11 @@ function V3Player(props: V3PlayerProps) {
     return () => window.clearInterval(timer);
   }, [isOverlayStartupStatus]);
 
-  // Cleanup effect
-  useEffect(() => cleanupPlaybackResources, [cleanupPlaybackResources]);
+  useEffect(() => {
+    return () => {
+      cleanupPlaybackResourcesRef.current();
+    };
+  }, []);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -1769,6 +2021,10 @@ function V3Player(props: V3PlayerProps) {
 
     return () => window.cancelAnimationFrame(frame);
   }, [hostEnvironment.isTv, onClose]);
+  useTvInitialFocus({
+    enabled: hostEnvironment.isTv && showResumeOverlay,
+    targetRef: resumePrimaryActionRef,
+  });
 
   // Overlay styles
   // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css
@@ -1795,6 +2051,8 @@ function V3Player(props: V3PlayerProps) {
     shouldHoldNativeVideo;
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
   const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;
+  const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || Boolean(onClose));
+  const showPlaybackChrome = !useMinimalStartupChrome;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1889,6 +2147,12 @@ function V3Player(props: V3PlayerProps) {
     sessionPlaybackTrace?.clientPath ||
     playbackObservability?.clientPath ||
     formatClientPath(capabilitySnapshot);
+  const effectiveSessionId =
+    sessionIdRef.current ||
+    nativeSessionId ||
+    nativePlaybackState?.session?.sessionId ||
+    sessionPlaybackTrace?.sessionId ||
+    null;
   const effectiveRequestProfile =
     sessionPlaybackTrace?.requestProfile ??
     playbackObservability?.requestProfile ??
@@ -1974,7 +2238,7 @@ function V3Player(props: V3PlayerProps) {
       )}
 
       {/* Stats Overlay */}
-      {showStats && (
+      {showStats && showPlaybackChrome && (
         <div className={styles.statsOverlay}>
           <Card variant="standard">
             <Card.Header>
@@ -1990,7 +2254,7 @@ function V3Player(props: V3PlayerProps) {
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('common.session', { defaultValue: 'Session' })}</span>
-                <span className={styles.statsValue}>{sessionIdRef.current || '-'}</span>
+                <span className={styles.statsValue}>{effectiveSessionId || '-'}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('common.requestId', { defaultValue: 'Request ID' })}</span>
@@ -2141,12 +2405,15 @@ function V3Player(props: V3PlayerProps) {
           showNativeBufferingMask ? styles.videoWrapperMasked : null,
         ].filter(Boolean).join(' ')}
       >
-        {channel && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
+        {channel && showPlaybackChrome && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
         {showNativeBufferingMask && (
           <div
             className={styles.nativeBufferingMask}
             aria-hidden="true"
           ></div>
+        )}
+        {useMinimalStartupChrome && (
+          <div className={styles.startupBackdrop} aria-hidden="true"></div>
         )}
 
         {/* PREPARING Overlay (VOD Remux) */}
@@ -2156,6 +2423,7 @@ function V3Player(props: V3PlayerProps) {
               styles.spinnerOverlay,
               useNativeBufferingSafeOverlay ? styles.spinnerOverlaySafe : null,
             ].filter(Boolean).join(' ')}
+            aria-live="polite"
             ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}
           >
             <div className={styles.spinnerBadge}>
@@ -2174,17 +2442,24 @@ function V3Player(props: V3PlayerProps) {
               </div>
               <div className={styles.spinnerLabel}>{spinnerLabel}</div>
               <div className={styles.spinnerSupport}>{spinnerSupport}</div>
-                <div className={styles.spinnerMeta}>
-                  <div className={styles.spinnerProgressTrack} aria-hidden="true">
-                    <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
-                  </div>
-                  <div className={styles.spinnerElapsed}>
-                    {t('player.startupElapsed', {
+              <div className={styles.spinnerMeta}>
+                <div className={styles.spinnerProgressTrack} aria-hidden="true">
+                  <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
+                </div>
+                <div className={styles.spinnerElapsed}>
+                  {t('player.startupElapsed', {
                     defaultValue: 'Wait {{seconds}}s',
                     seconds: startupElapsedSeconds,
                   })}
                 </div>
               </div>
+              {useMinimalStartupChrome && !onClose && (
+                <div className={styles.spinnerActions}>
+                  <Button variant="danger" size="sm" onClick={() => void stopStream()}>
+                    ⏹ {t('common.stop')}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2252,192 +2527,194 @@ function V3Player(props: V3PlayerProps) {
             <div className={styles.errorDetailsContent}>
               <pre className={styles.errorDetailsPre}>{error.detail}</pre>
               <br />
-              {t('common.session')}: {sessionIdRef.current || t('common.notAvailable')}
+              {t('common.session')}: {effectiveSessionId || t('common.notAvailable')}
             </div>
           )}
         </div>
       )}
 
       {/* Controls & Status Bar */}
-      <div className={styles.controlsHeader}>
-        {hasSeekWindow ? (
-          <div className={[styles.vodControls, styles.seekControls].join(' ')}>
-            <div className={styles.seekButtons}>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
-                ↺ 15m
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
-                ↺ 60s
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
-                ↺ 15s
-              </Button>
-            </div>
+      {showPlaybackChrome && (
+        <div className={styles.controlsHeader}>
+          {hasSeekWindow ? (
+            <div className={[styles.vodControls, styles.seekControls].join(' ')}>
+              <div className={styles.seekButtons}>
+                <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
+                  ↺ 15m
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
+                  ↺ 60s
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
+                  ↺ 15s
+                </Button>
+              </div>
 
-            <Button
-              variant="primary"
-              size="icon"
-              className={styles.playPauseButton}
-              onClick={togglePlayPause}
-              title={isPlaying ? t('player.pause') : t('player.play')}
-              aria-label={isPlaying ? t('player.pause') : t('player.play')}
-            >
-              {isPlaying ? '⏸' : '▶'}
-            </Button>
-
-            <div className={styles.seekSliderGroup}>
-              <span className={styles.vodTime}>{startTimeDisplay}</span>
-              <input
-                type="range"
-                min="0"
-                max={windowDuration}
-                step="0.1"
-                className={styles.vodSlider}
-                value={relativePosition}
-                onChange={(e) => {
-                  const newVal = parseFloat(e.target.value);
-                  seekTo(seekableStart + newVal);
-                }}
-              />
-              <span className={styles.vodTimeTotal}>{endTimeDisplay}</span>
-            </div>
-
-            <div className={styles.seekButtons}>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
-                +15s
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
-                +60s
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
-                +15m
-              </Button>
-            </div>
-
-            {isLiveMode && (
-              <button
-                className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                onClick={() => seekTo(seekableEnd)}
-                title={t('player.goLive')}
-              >
-                LIVE
-              </button>
-            )}
-          </div>
-        ) : (
-          !channel && !recordingId && !src && (
-            <input
-              type="text"
-              className={styles.serviceInput}
-              value={sRef}
-              onChange={(e) => setSRef(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const nextRef = e.currentTarget.value;
-                  void startStream(nextRef);
-                }
-              }}
-            />
-          )
-        )}
-
-        {/* ADR-00X: Profile dropdown removed (universal policy only) */}
-
-        {!autoStart && !src && !recordingId && (
-          <Button
-            onClick={() => startStream()}
-            disabled={status === 'starting' || status === 'priming'}
-          >
-            ▶ {t('common.startStream')}
-          </Button>
-        )}
-
-        {/* DVR Mode Button (Safari Only / Fallback) */}
-        {showDvrModeButton && !canToggleFullscreen && (
-          <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
-            📺 DVR
-          </Button>
-        )}
-
-        <div className={styles.utilityControls}>
-          {canToggleFullscreen && (
-            <Button
-              variant="ghost"
-              size="sm"
-              active={isFullscreen}
-              onClick={() => void toggleFullscreen()}
-              title={isFullscreen
-                ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
-                : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
-            >
-              ⛶ {isFullscreen
-                ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
-                : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
-            </Button>
-          )}
-
-          {canToggleMute && (
-            <div className={styles.volumeControl}>
               <Button
-                variant={isMuted ? 'primary' : 'ghost'}
-                size="sm"
-                className={styles.audioToggleButton}
-                onClick={toggleMute}
-                title={audioToggleLabel}
-                aria-label={audioToggleLabel}
-                aria-pressed={!isMuted}
+                variant="primary"
+                size="icon"
+                className={styles.playPauseButton}
+                onClick={togglePlayPause}
+                title={isPlaying ? t('player.pause') : t('player.play')}
+                aria-label={isPlaying ? t('player.pause') : t('player.play')}
               >
-                <span className={styles.audioToggleIcon} aria-hidden="true">{audioToggleIcon}</span>
-                <span>{audioToggleLabel}</span>
+                {isPlaying ? '⏸' : '▶'}
               </Button>
-              {canAdjustVolume ? (
+
+              <div className={styles.seekSliderGroup}>
+                <span className={styles.vodTime}>{startTimeDisplay}</span>
                 <input
                   type="range"
                   min="0"
-                  max="1"
-                  step="0.05"
-                  className={styles.volumeSlider}
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  max={windowDuration}
+                  step="0.1"
+                  className={styles.vodSlider}
+                  value={relativePosition}
+                  onChange={(e) => {
+                    const newVal = parseFloat(e.target.value);
+                    seekTo(seekableStart + newVal);
+                  }}
                 />
-              ) : (
-                <span className={styles.deviceVolumeHint}>
-                  {t('player.deviceVolumeHint', { defaultValue: 'Use device buttons' })}
-                </span>
+                <span className={styles.vodTimeTotal}>{endTimeDisplay}</span>
+              </div>
+
+              <div className={styles.seekButtons}>
+                <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
+                  +15s
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
+                  +60s
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
+                  +15m
+                </Button>
+              </div>
+
+              {isLiveMode && (
+                <button
+                  className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
+                  onClick={() => seekTo(seekableEnd)}
+                  title={t('player.goLive')}
+                >
+                  LIVE
+                </button>
               )}
             </div>
+          ) : (
+            !channel && !recordingId && !src && (
+              <input
+                type="text"
+                className={styles.serviceInput}
+                value={sRef}
+                onChange={(e) => setSRef(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const nextRef = e.currentTarget.value;
+                    void startStream(nextRef);
+                  }
+                }}
+              />
+            )
           )}
 
-          {canTogglePiP && (
+          {/* ADR-00X: Profile dropdown removed (universal policy only) */}
+
+          {!autoStart && !src && !recordingId && (
+            <Button
+              onClick={() => startStream()}
+              disabled={startIntentInFlight.current}
+            >
+              ▶ {t('common.startStream')}
+            </Button>
+          )}
+
+          {/* DVR Mode Button (Safari Only / Fallback) */}
+          {showDvrModeButton && !canToggleFullscreen && (
+            <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
+              📺 DVR
+            </Button>
+          )}
+
+          <div className={styles.utilityControls}>
+            {canToggleFullscreen && (
+              <Button
+                variant="ghost"
+                size="sm"
+                active={isFullscreen}
+                onClick={() => void toggleFullscreen()}
+                title={isFullscreen
+                  ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
+                  : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+              >
+                ⛶ {isFullscreen
+                  ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
+                  : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+              </Button>
+            )}
+
+            {canToggleMute && (
+              <div className={styles.volumeControl}>
+                <Button
+                  variant={isMuted ? 'primary' : 'ghost'}
+                  size="sm"
+                  className={styles.audioToggleButton}
+                  onClick={toggleMute}
+                  title={audioToggleLabel}
+                  aria-label={audioToggleLabel}
+                  aria-pressed={!isMuted}
+                >
+                  <span className={styles.audioToggleIcon} aria-hidden="true">{audioToggleIcon}</span>
+                  <span>{audioToggleLabel}</span>
+                </Button>
+                {canAdjustVolume ? (
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    className={styles.volumeSlider}
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  />
+                ) : (
+                  <span className={styles.deviceVolumeHint}>
+                    {t('player.deviceVolumeHint', { defaultValue: 'Use device buttons' })}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {canTogglePiP && (
+              <Button
+                variant="ghost"
+                size="sm"
+                active={isPip}
+                onClick={() => void togglePiP()}
+                title={t('player.pipTitle')}
+              >
+                📺 {t('player.pipLabel')}
+              </Button>
+            )}
+
             <Button
               variant="ghost"
               size="sm"
-              active={isPip}
-              onClick={() => void togglePiP()}
-              title={t('player.pipTitle')}
+              active={showStats}
+              onClick={toggleStats}
+              title={t('player.statsTitle')}
             >
-              📺 {t('player.pipLabel')}
+              📊 {t('player.statsLabel')}
             </Button>
-          )}
 
-          <Button
-            variant="ghost"
-            size="sm"
-            active={showStats}
-            onClick={toggleStats}
-            title={t('player.statsTitle')}
-          >
-            📊 {t('player.statsLabel')}
-          </Button>
-
-          {!onClose && (
-            <Button variant="danger" onClick={() => void stopStream()}>
-              ⏹ {t('common.stop')}
-            </Button>
-          )}
+            {!onClose && (
+              <Button variant="danger" onClick={() => void stopStream()}>
+                ⏹ {t('common.stop')}
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {/* Resume Overlay */}
       {showResumeOverlay && resumeState && (
         <div className={styles.resumeOverlay}>
@@ -2446,6 +2723,8 @@ function V3Player(props: V3PlayerProps) {
             <p>{t('player.resumePrompt', { time: formatClock(resumeState.posSeconds) })}</p>
             <div className={styles.resumeActions}>
               <Button
+                ref={resumePrimaryActionRef}
+                autoFocus
                 onClick={() => {
                   seekWhenReady(resumeState.posSeconds);
                   setShowResumeOverlay(false);

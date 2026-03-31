@@ -3,8 +3,10 @@ package recordings
 import (
 	"context"
 	"fmt"
+	"mime"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -115,6 +117,7 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 	}
 
 	const standardHddPath = "/media/hdd/movie"
+	hasDiscoveredRoots := len(roots) > 0
 	// Determine if standard HDD path is already covered
 	hddFound := false
 	for _, p := range roots {
@@ -124,10 +127,10 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 		}
 	}
 
-	// Only add default "hdd" -> "/media/hdd/movie" if:
-	// 1. That path isn't already mapped by another key (hddFound)
-	// 2. The key "hdd" isn't already used by config (e.g. mapping to "/media/hdd")
-	if _, ok := roots["hdd"]; !ok && !hddFound {
+	// Only synthesize the legacy default root when neither config nor the receiver
+	// exposed any usable recording location. Otherwise we risk preferring an empty
+	// phantom HDD root over the real receiver/NAS root (for example nfs-recordings).
+	if _, ok := roots["hdd"]; !ok && !hddFound && !hasDiscoveredRoots {
 		roots["hdd"] = standardHddPath
 	}
 
@@ -403,6 +406,13 @@ func (s *service) Stream(ctx context.Context, in StreamInput) (StreamResult, err
 
 	// 2. Validate Path
 	cachePath := meta.ArtifactPath
+	contentType := "video/mp4"
+	cachePolicy := CacheSegments
+	if cachePath == "" && meta.ResolvedPath != "" {
+		cachePath = meta.ResolvedPath
+		contentType = recordingDirectContentType(meta, cachePath)
+		cachePolicy = CacheNoStore
+	}
 	if cachePath == "" {
 		s.vodManager.MarkUnknown(serviceRef)
 		s.vodManager.TriggerProbe(serviceRef, "")
@@ -435,8 +445,30 @@ func (s *service) Stream(ctx context.Context, in StreamInput) (StreamResult, err
 	return StreamResult{
 		Ready:       true,
 		LocalPath:   cachePath,
-		CachePolicy: CacheSegments,
+		ContentType: contentType,
+		CachePolicy: cachePolicy,
 	}, nil
+}
+
+func recordingDirectContentType(meta vod.Metadata, localPath string) string {
+	switch strings.ToLower(strings.TrimSpace(meta.Container)) {
+	case "ts", "mpegts":
+		return "video/mp2t"
+	case "mp4", "mov", "m4v":
+		return "video/mp4"
+	}
+
+	switch strings.ToLower(strings.TrimSpace(filepath.Ext(localPath))) {
+	case ".ts", ".mpegts":
+		return "video/mp2t"
+	case ".mp4", ".m4v", ".mov":
+		return "video/mp4"
+	}
+
+	if detected := mime.TypeByExtension(filepath.Ext(localPath)); detected != "" {
+		return detected
+	}
+	return "application/octet-stream"
 }
 
 func (s *service) Delete(ctx context.Context, in DeleteInput) (DeleteResult, error) {

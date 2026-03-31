@@ -34,6 +34,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvTrustedProxies(cfg)
 	l.mergeEnvStreaming(cfg)
 	l.mergeEnvPlayback(cfg)
+	l.mergeEnvRecordings(cfg)
 	l.mergeEnvVerification(cfg)
 }
 
@@ -77,7 +78,9 @@ func (l *Loader) mergeEnvAPI(cfg *AppConfig) {
 		cfg.APITokens = tokens
 	}
 	cfg.APIDisableLegacyTokenSources = l.envBool("XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES", cfg.APIDisableLegacyTokenSources)
-	cfg.PlaybackDecisionSecret = l.envString("XG2G_PLAYBACK_DECISION_SECRET", cfg.PlaybackDecisionSecret)
+	if value, ok := decisionSecretValueFromLookup(l.envLookup); ok {
+		cfg.PlaybackDecisionSecret = value
+	}
 	cfg.PlaybackDecisionKeyID = l.envString("XG2G_PLAYBACK_DECISION_KID", cfg.PlaybackDecisionKeyID)
 	cfg.PlaybackDecisionPreviousKeys = parseCommaSeparated(l.envString("XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS", ""), cfg.PlaybackDecisionPreviousKeys)
 	cfg.PlaybackDecisionRotationWindow = l.envDuration("XG2G_PLAYBACK_DECISION_ROTATION_WINDOW", cfg.PlaybackDecisionRotationWindow)
@@ -236,6 +239,15 @@ func (l *Loader) mergeEnvPlayback(cfg *AppConfig) {
 	cfg.Playback.Operator.ForceIntent = l.envString("XG2G_PLAYBACK_FORCE_INTENT", cfg.Playback.Operator.ForceIntent)
 	cfg.Playback.Operator.MaxQualityRung = l.envString("XG2G_PLAYBACK_MAX_QUALITY_RUNG", cfg.Playback.Operator.MaxQualityRung)
 	cfg.Playback.Operator.DisableClientFallback = l.envBool("XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", cfg.Playback.Operator.DisableClientFallback)
+}
+
+func (l *Loader) mergeEnvRecordings(cfg *AppConfig) {
+	cfg.RecordingPlaybackPolicy = l.envString("XG2G_RECORDING_PLAYBACK_POLICY", cfg.RecordingPlaybackPolicy)
+	cfg.RecordingStableWindow = l.envDuration("XG2G_RECORDING_STABLE_WINDOW", cfg.RecordingStableWindow)
+	cfg.RecordingPathMappings = parseRecordingMappings(
+		l.envString("XG2G_RECORDINGS_MAP", ""),
+		cfg.RecordingPathMappings,
+	)
 }
 
 func (l *Loader) mergeEnvVerification(cfg *AppConfig) {

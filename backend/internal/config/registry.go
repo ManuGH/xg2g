@@ -137,7 +137,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "api.tokenScopes", Env: "XG2G_API_TOKEN_SCOPES", FieldPath: "APITokenScopes", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.tokens", Env: "XG2G_API_TOKENS", FieldPath: "APITokens", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.disableLegacyTokenSources", Env: "XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES", FieldPath: "APIDisableLegacyTokenSources", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
-		{Path: "api.playbackDecisionSecret", Env: "XG2G_PLAYBACK_DECISION_SECRET", FieldPath: "PlaybackDecisionSecret", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "api.playbackDecisionSecret", Env: "XG2G_DECISION_SECRET", FieldPath: "PlaybackDecisionSecret", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.playbackDecisionKeyId", Env: "XG2G_PLAYBACK_DECISION_KID", FieldPath: "PlaybackDecisionKeyID", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.playbackDecisionPreviousKeys", Env: "XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS", FieldPath: "PlaybackDecisionPreviousKeys", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.playbackDecisionRotationWindow", Env: "XG2G_PLAYBACK_DECISION_ROTATION_WINDOW", FieldPath: "PlaybackDecisionRotationWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Minute},
@@ -226,9 +226,9 @@ func buildRegistry() (*Registry, error) {
 
 		// --- RECORDINGS ---
 		{Path: "recording_roots", Env: "", FieldPath: "RecordingRoots", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "recording_playback.playback_policy", Env: "", FieldPath: "RecordingPlaybackPolicy", Profile: ProfileAdvanced, Status: StatusActive, Default: "auto"},
-		{Path: "recording_playback.stable_window", Env: "", FieldPath: "RecordingStableWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
-		{Path: "recording_playback.mappings", Env: "", FieldPath: "RecordingPathMappings", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "recording_playback.playback_policy", Env: "XG2G_RECORDING_PLAYBACK_POLICY", FieldPath: "RecordingPlaybackPolicy", Profile: ProfileAdvanced, Status: StatusActive, Default: "auto"},
+		{Path: "recording_playback.stable_window", Env: "XG2G_RECORDING_STABLE_WINDOW", FieldPath: "RecordingStableWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
+		{Path: "recording_playback.mappings", Env: "XG2G_RECORDINGS_MAP", FieldPath: "RecordingPathMappings", Profile: ProfileAdvanced, Status: StatusActive},
 
 		// --- VOD (Typed Config) ---
 		{Path: "vod.probeSize", Env: "", FieldPath: "VOD.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "50M"},

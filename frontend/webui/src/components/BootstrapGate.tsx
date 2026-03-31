@@ -5,6 +5,8 @@ import { ClientRequestError } from '../services/clientWrapper';
 import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import { useAppContext } from '../context/AppContext';
 import { useBootstrapConfig } from '../hooks/useServerQueries';
+import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
+import { resolveHostEnvironment } from '../lib/hostBridge';
 import { normalizePathname, ROUTE_MAP } from '../routes';
 import { isConfigured } from './Config';
 import AuthSurface from './AuthSurface';
@@ -38,9 +40,12 @@ export default function BootstrapGate() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const { auth, setToken, setPlayingChannel } = useAppContext();
+  const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
+  const isTvHost = hostEnvironment.isTv;
   const authReady = auth.isReady ?? true;
   const [tokenValue, setTokenValue] = useState('');
   const [forcedAuthPrompt, setForcedAuthPrompt] = useState<AuthPromptReason | null>(null);
+  const [isTokenVisible, setIsTokenVisible] = useState<boolean>(() => isTvHost);
   const inputRef = useRef<HTMLInputElement>(null);
   const {
     data: config = null,
@@ -51,10 +56,10 @@ export default function BootstrapGate() {
 
   const handleAuthRequired = useCallback(() => {
     setForcedAuthPrompt('expired');
-    setTokenValue('');
+    setTokenValue((current) => current.trim() || auth.token || '');
     setPlayingChannel(null);
     setToken('');
-  }, [setPlayingChannel, setToken]);
+  }, [auth.token, setPlayingChannel, setToken]);
 
   useEffect(() => {
     return subscribeAuthRequired(() => {
@@ -82,11 +87,11 @@ export default function BootstrapGate() {
   }, [auth.isAuthenticated, authReady, forcedAuthPrompt, isUnauthorized]);
 
   useEffect(() => {
-    if (auth.isAuthenticated && !isUnauthorized) {
+    if (auth.isAuthenticated && !isUnauthorized && config) {
       setForcedAuthPrompt(null);
       setTokenValue('');
     }
-  }, [auth.isAuthenticated, isUnauthorized]);
+  }, [auth.isAuthenticated, config, isUnauthorized]);
 
   useEffect(() => {
     if (isUnauthorized) {
@@ -95,10 +100,14 @@ export default function BootstrapGate() {
   }, [handleAuthRequired, isUnauthorized]);
 
   useEffect(() => {
-    if (authReason) {
-      inputRef.current?.focus();
+    if (authReason !== null) {
+      setIsTokenVisible(isTvHost);
     }
-  }, [authReason]);
+  }, [authReason, isTvHost]);
+  useTvInitialFocus({
+    enabled: authReason !== null,
+    targetRef: inputRef,
+  });
 
   if (!authReady) {
     return <LoadingSkeleton variant="gate" label={t('app.initializing', { defaultValue: 'Initializing...' })} />;
@@ -113,7 +122,7 @@ export default function BootstrapGate() {
       return;
     }
 
-    setTokenValue('');
+    setTokenValue(token);
     setToken(token);
   };
 
@@ -134,6 +143,18 @@ export default function BootstrapGate() {
       authReason === 'expired'
         ? t('auth.expiredEyebrow', { defaultValue: 'Re-authenticate' })
         : t('auth.requiredEyebrow', { defaultValue: 'Sign in' });
+    const authBaseHint = authReason === 'expired'
+      ? t('auth.expiredHint', {
+        defaultValue: 'Submitting a new token will retry startup automatically.',
+      })
+      : t('auth.requiredHint', {
+        defaultValue: 'The token is stored locally in this browser after successful sign-in.',
+      });
+    const authHint = isTvHost
+      ? `${authBaseHint} ${t('auth.tvHint', {
+        defaultValue: 'On TV the token can stay visible while typing so you can spot mistakes immediately.',
+      })}`
+      : authBaseHint;
 
     return (
       <AuthSurface
@@ -150,13 +171,37 @@ export default function BootstrapGate() {
           submitDisabled: tokenValue.trim().length === 0,
           placeholder: t('auth.tokenPlaceholder', { defaultValue: 'Enter API Token' }),
           inputRef,
-          hint: authReason === 'expired'
-            ? t('auth.expiredHint', {
-              defaultValue: 'Submitting a new token will retry startup automatically.',
-            })
-            : t('auth.requiredHint', {
-              defaultValue: 'The token is stored locally in this browser after successful sign-in.',
-            }),
+          hint: authHint,
+          inputType: isTokenVisible ? 'text' : 'password',
+          inputActions: (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-pressed={isTokenVisible}
+                onClick={() => {
+                  setIsTokenVisible((current) => !current);
+                  window.requestAnimationFrame(() => inputRef.current?.focus());
+                }}
+              >
+                {isTokenVisible
+                  ? t('auth.hideToken', { defaultValue: 'Hide token' })
+                  : t('auth.showToken', { defaultValue: 'Show token' })}
+              </Button>
+              {tokenValue ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setTokenValue('');
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {t('auth.clearToken', { defaultValue: 'Clear' })}
+                </Button>
+              ) : null}
+            </>
+          ),
         }}
       />
     );

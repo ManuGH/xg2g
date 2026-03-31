@@ -112,7 +112,7 @@ api:
 
   # Secret for signing live playback decision attestations (multi-instance safe).
   # Recommended: at least 32 random characters.
-  # ENV: XG2G_PLAYBACK_DECISION_SECRET
+  # ENV: XG2G_DECISION_SECRET
   # playbackDecisionSecret: ""
 
   # Active key id (`kid`) for live playback decision attestations.

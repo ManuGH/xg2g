@@ -1,10 +1,11 @@
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useMemo } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useAppContext } from './context/AppContext';
 import Navigation from './components/Navigation';
 import ErrorBoundary from './components/ErrorBoundary';
 import LoadingSkeleton from './components/LoadingSkeleton';
 import { resetErrorCatalog } from './lib/errorCatalog';
+import { resolveHostEnvironment } from './lib/hostBridge';
 import { useErrorCatalog } from './hooks/useServerQueries';
 import { normalizePathname, ROUTE_MAP } from './routes';
 
@@ -15,6 +16,8 @@ interface AppShellProps {
 export default function AppShell({ onLogout }: AppShellProps) {
   const { auth, channels, dataLoaded, loadBouquetsAndChannels } = useAppContext();
   const { pathname } = useLocation();
+  const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
+  const usesNativeTvNavigation = hostEnvironment.platform === 'android-tv';
   const normalizedPathname = normalizePathname(pathname);
   const isSettingsRoute = normalizedPathname === ROUTE_MAP.settings;
   const isHydratingShell = !isSettingsRoute && channels.loading && !dataLoaded;
@@ -41,7 +44,7 @@ export default function AppShell({ onLogout }: AppShellProps) {
 
   return (
     <>
-      <Navigation onLogout={onLogout} />
+      {!usesNativeTvNavigation && <Navigation onLogout={onLogout} />}
       <main className="content-area">
         <ErrorBoundary
           homeHref={ROUTE_MAP.dashboard}

@@ -141,6 +141,11 @@
     "retryAfter": "Try again in ~{{seconds}}s.",
     "sessionFailed": "Session failed",
     "hlsError": "HLS Error",
+    "manifestRequestFailed": "Playback manifest could not be loaded",
+    "playbackManifestRejected": "Playback manifest was rejected",
+    "segmentRequestFailed": "Media segment request failed",
+    "decodeError": "This device could not decode the stream",
+    "sourceNotSupported": "This device rejected the stream source",
     "authFailed": "Authentication failed",
     "forbidden": "Access denied",
     "recordingNotFound": "Recording was not found (it may have been deleted).",
@@ -292,10 +297,17 @@
     "androidTv": {
       "title": "Android TV",
       "subtitle": "Pair the Android TV app with this server without typing the URL on the TV.",
+      "eyebrow": "Living-room handoff",
+      "headline": "Hand the current server to your TV in one step.",
       "currentServer": "Current Server",
       "currentServerHint": "Open the app link below on the same Android TV or Fire TV device where the xg2g app is installed.",
       "openApp": "Open in xg2g App",
-      "hint": "If the browser asks which app to use, choose xg2g and allow it to remember the choice."
+      "hint": "If the browser asks which app to use, choose xg2g and allow it to remember the choice.",
+      "steps": {
+        "browser": "Open this page in Silk or Downloader on the TV.",
+        "launch": "Use the app link to hand off the current xg2g server URL.",
+        "confirm": "Pick xg2g once and let the device remember the app choice."
+      }
     },
     "streaming": {
       "title": "Streaming",
@@ -495,6 +507,21 @@
   "auth": {
     "title": "Authentication Required",
     "placeholder": "Enter API Token",
-    "submit": "Authenticate"
+    "submit": "Authenticate",
+    "requiredTitle": "Authentication Required",
+    "requiredEyebrow": "Sign in",
+    "requiredCopy": "Enter your API token to open the xg2g control surface.",
+    "requiredHint": "The token is stored locally in this browser after successful sign-in.",
+    "expiredTitle": "Session Expired",
+    "expiredEyebrow": "Re-authenticate",
+    "expiredCopy": "Your saved API token was rejected. Enter a valid token to continue.",
+    "expiredHint": "Submitting a new token will retry startup automatically.",
+    "tokenLabel": "API Token",
+    "tokenPlaceholder": "Enter API Token",
+    "authenticate": "Authenticate",
+    "showToken": "Show token",
+    "hideToken": "Hide token",
+    "clearToken": "Clear",
+    "tvHint": "On TV the token can stay visible while typing so you can spot mistakes immediately."
   }
 }

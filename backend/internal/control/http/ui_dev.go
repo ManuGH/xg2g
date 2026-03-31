@@ -23,11 +23,18 @@ func UIHandler(cfg UIConfig) http.Handler {
 	devCSP := withAdditionalConnectSrc(cfg.CSP, "ws:", "wss:")
 	devCSP = withAdditionalScriptSrc(devCSP, "'unsafe-inline'")
 
-	if cfg.DevDir != "" {
-		return newUIDevStaticHandler(cfg.DevDir, devCSP)
+	devDir := strings.TrimSpace(cfg.DevDir)
+	if devDir == "" {
+		devDir = strings.TrimSpace(os.Getenv("XG2G_UI_DEV_DIR"))
+	}
+	if devDir != "" {
+		return newUIDevStaticHandler(devDir, devCSP)
 	}
 
-	proxyURL := cfg.DevProxyURL
+	proxyURL := strings.TrimSpace(cfg.DevProxyURL)
+	if proxyURL == "" {
+		proxyURL = strings.TrimSpace(os.Getenv("XG2G_UI_DEV_PROXY_URL"))
+	}
 	if proxyURL == "" {
 		proxyURL = defaultUIDevProxyURL
 	}

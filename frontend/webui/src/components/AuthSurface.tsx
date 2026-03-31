@@ -13,6 +13,8 @@ interface AuthSurfaceFormProps {
   placeholder?: string;
   inputRef?: RefObject<HTMLInputElement | null>;
   hint?: string;
+  inputType?: 'password' | 'text';
+  inputActions?: ReactNode;
 }
 
 interface AuthSurfaceProps {
@@ -49,20 +51,23 @@ export default function AuthSurface({
               <label htmlFor={inputId} className={styles.label}>
                 {form.label}
               </label>
-              <input
-                id={inputId}
-                ref={form.inputRef}
-                type="password"
-                name={form.name}
-                value={form.value}
-                placeholder={form.placeholder}
-                aria-describedby={form.hint ? hintId : undefined}
-                onChange={(event) => form.onValueChange(event.target.value)}
-                autoComplete="current-password"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-              />
+              <div className={styles.inputRow}>
+                <input
+                  id={inputId}
+                  ref={form.inputRef}
+                  type={form.inputType ?? 'password'}
+                  name={form.name}
+                  value={form.value}
+                  placeholder={form.placeholder}
+                  aria-describedby={form.hint ? hintId : undefined}
+                  onChange={(event) => form.onValueChange(event.target.value)}
+                  autoComplete="current-password"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+                {form.inputActions ? <div className={styles.inputActions}>{form.inputActions}</div> : null}
+              </div>
               {form.hint ? (
                 <p id={hintId} className={styles.hint}>
                   {form.hint}

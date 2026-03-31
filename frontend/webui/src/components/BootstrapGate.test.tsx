@@ -47,6 +47,7 @@ describe('BootstrapGate', () => {
   });
 
   afterEach(() => {
+    delete window.__XG2G_HOST__;
     vi.clearAllMocks();
   });
 
@@ -82,6 +83,7 @@ describe('BootstrapGate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
 
     expect(setToken).toHaveBeenCalledWith('new-token');
+    expect(screen.getByLabelText('API Token')).toHaveValue('new-token');
   });
 
   it('redirects unconfigured routes to settings', async () => {
@@ -176,6 +178,35 @@ describe('BootstrapGate', () => {
       expect(setToken).toHaveBeenCalledWith('');
       expect(setPlayingChannel).toHaveBeenCalledWith(null);
     });
+    expect(screen.getByLabelText('API Token')).toHaveValue('live-token');
+  });
+
+  it('shows the token in clear text on TV hosts and supports clearing it', () => {
+    window.__XG2G_HOST__ = {
+      platform: 'android-tv',
+      isTv: true,
+      supportsKeepScreenAwake: false,
+      supportsHostMediaKeys: true,
+      supportsInputFocus: true,
+      supportsNativePlayback: false,
+    };
+
+    mockUseAppContext.mockReturnValue({
+      auth: { token: '', isAuthenticated: false, isReady: true },
+      setToken: vi.fn(),
+      setPlayingChannel: vi.fn(),
+    });
+
+    renderGate();
+
+    const input = screen.getByLabelText('API Token') as HTMLInputElement;
+    expect(input.type).toBe('text');
+    expect(screen.getByRole('button', { name: 'Hide token' })).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'test01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+    expect(input).toHaveValue('');
   });
 
   it('shows a retryable recovery surface for bootstrap errors', async () => {

@@ -57,6 +57,12 @@
   gap: 8px;
 }
 
+.inputRow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .label {
   color: var(--text-primary);
   font-size: var(--text-sm);
@@ -88,9 +94,32 @@
   outline-offset: 3px;
 }
 
+.inputActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .hint {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
   line-height: 1.5;
+}
+
+@media (min-width: 680px) {
+  .inputRow {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .inputRow input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .inputActions {
+    justify-content: flex-end;
+    flex: 0 0 auto;
+  }
 }

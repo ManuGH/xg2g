@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">xg2g</string>
+    <string name="server_setup_kicker">TV host setup</string>
     <string name="server_setup_title">Connect to xg2g</string>
+    <string name="server_setup_support">Keep this screen pointed at your xg2g bridge. On TV, app links are the fastest way back into the native shell.</string>
     <string name="server_setup_tv_tip">Tip for TV: open your xg2g server in Silk or Downloader and use the “Open in xg2g App” button from Settings.</string>
     <string name="server_setup_hint">https://your-server.de</string>
     <string name="server_setup_connect">Connect</string>
@@ -9,7 +11,11 @@
     <string name="server_setup_invalid_url">Please enter a valid URL.</string>
     <string name="server_setup_error_no_scheme">URL must start with http:// or https://</string>
     <string name="server_change_button">Change Server</string>
+    <string name="shell_loading_title">Opening xg2g</string>
+    <string name="shell_loading_detail_generic">Waiting for the bridge to respond. On TV, Back opens app actions when you are at the root page.</string>
+    <string name="shell_loading_detail_host">Connecting to %1$s. On TV, Back opens app actions when you are at the root page.</string>
 
+    <string name="webview_error_kicker">Embedded browser</string>
     <string name="webview_error_title">Connection problem</string>
     <string name="webview_ssl_error_title">Certificate problem</string>
     <string name="webview_error_retry">Retry</string>
@@ -23,4 +29,27 @@
     <string name="webview_renderer_crashed">Android had to restart the embedded browser process after it crashed. Retry the page.</string>
     <string name="webview_renderer_gone">Android reclaimed the embedded browser process. Retry the page.</string>
     <string name="webview_ssl_error_detail">Android rejected the TLS certificate for %1$s. Check that the certificate is valid and trusted on this device.</string>
+    <string name="tv_quick_actions_kicker">TV navigation</string>
+    <string name="tv_quick_actions_title">Browse xg2g</string>
+    <string name="tv_quick_actions_context">Current page: %1$s</string>
+    <string name="tv_quick_actions_context_fallback">Current page unavailable</string>
+    <string name="tv_quick_actions_support">Use Back, Menu, or Settings to open this panel from the root view. Back closes the panel instead of leaving the app.</string>
+    <string name="tv_brand_subtitle">Streaming shell</string>
+    <string name="tv_open_menu">Open navigation</string>
+    <string name="tv_destinations_heading">Browse</string>
+    <string name="tv_actions_heading">Actions</string>
+    <string name="tv_destination_home">Home</string>
+    <string name="tv_destination_guide">Live TV</string>
+    <string name="tv_destination_recordings">Recordings</string>
+    <string name="tv_destination_timers">Timers</string>
+    <string name="tv_destination_settings">Settings</string>
+    <string name="tv_quick_actions_reload">Refresh</string>
+    <string name="tv_quick_actions_change_server">Change server</string>
+    <string name="tv_quick_actions_browser">Open external browser</string>
+    <string name="tv_quick_actions_exit">Exit</string>
+    <string name="native_playback_title">Native Playback</string>
+    <string name="native_playback_status_loading">Preparing native playback…</string>
+    <string name="native_playback_status_idle">Waiting for native playback request</string>
+    <string name="native_playback_status_error">Playback error: %1$s</string>
+    <string name="native_playback_status_active">Playback %1$s</string>
 </resources>

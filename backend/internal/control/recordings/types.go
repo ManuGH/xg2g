@@ -147,6 +147,7 @@ type StreamInput struct {
 type StreamResult struct {
 	Ready       bool
 	LocalPath   string
+	ContentType string
 	State       string // For 503 response (e.g. PREPARING, UNKNOWN)
 	RetryAfter  int    // Retry-After header value in seconds
 	CachePolicy CachePolicy

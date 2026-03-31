@@ -22,5 +22,12 @@ describe('Button primitive', () => {
     expect(link).toHaveAttribute('href', '/x');
     expect(link).toHaveAttribute('download');
   });
-});
 
+  it('passes button refs through to the underlying DOM node', () => {
+    const ref = React.createRef<HTMLButtonElement>();
+
+    render(<Button ref={ref}>Focusable</Button>);
+
+    expect(ref.current).toBe(screen.getByRole('button', { name: /focusable/i }));
+  });
+});

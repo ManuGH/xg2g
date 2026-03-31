@@ -7,47 +7,37 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
-import android.view.View
 import android.view.WindowManager
+import android.webkit.URLUtil
 import android.webkit.WebView
-import android.widget.FrameLayout
-import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.core.view.isVisible
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import io.github.manugh.xg2g.android.playback.PlaybackSessionRegistry
+import io.github.manugh.xg2g.android.playback.bridge.NativePlaybackBridge
+import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
+import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var rootContainer: FrameLayout
-    private lateinit var fullscreenContainer: FrameLayout
+    private lateinit var screenUi: MainScreenUi
     private lateinit var webViewController: WebViewHostController
-
-    private lateinit var setupContainer: View
-    private lateinit var serverUrlLayout: TextInputLayout
-    private lateinit var serverUrlEditText: TextInputEditText
-    private lateinit var connectButton: MaterialButton
-    private lateinit var cancelSetupButton: MaterialButton
-
-    private lateinit var errorContainer: View
-    private lateinit var errorTitle: TextView
-    private lateinit var errorDetail: TextView
-    private lateinit var retryButton: MaterialButton
-    private lateinit var changeServerButton: MaterialButton
-    private lateinit var openInBrowserButton: MaterialButton
 
     private var lastRequestedUrl: String = ""
     private var playbackActive = false
+    private var uiState: MainUiState = MainUiState.Loading()
 
-    private val serverSettings by lazy { ServerSettingsStore(this) }
+    private val serverSettingsStore by lazy { ServerSettingsStore(this) }
+    private val nativePlaybackBridge by lazy(LazyThreadSafetyMode.NONE) { NativePlaybackBridge(this) }
     private val isTvDevice by lazy(LazyThreadSafetyMode.NONE) { detectTvDevice() }
-    private val hostCapabilitiesJson by lazy(LazyThreadSafetyMode.NONE) { buildHostCapabilitiesJson() }
+    private val serializedHostCapabilities by lazy(LazyThreadSafetyMode.NONE) { buildHostCapabilitiesJson() }
     private val webView: WebView
-        get() = webViewController.currentWebView
+        get() = webViewController.activeWebView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -57,33 +47,21 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_main)
 
-        rootContainer = findViewById(R.id.root_container)
-        fullscreenContainer = findViewById(R.id.fullscreen_container)
-        val initialWebView: WebView = findViewById(R.id.webview)
-
-        setupContainer = findViewById(R.id.setup_container)
-        serverUrlLayout = findViewById(R.id.server_url_layout)
-        serverUrlEditText = findViewById(R.id.server_url_edit_text)
-        connectButton = findViewById(R.id.connect_button)
-        cancelSetupButton = findViewById(R.id.cancel_setup_button)
-
-        errorContainer = findViewById(R.id.error_container)
-        errorTitle = findViewById(R.id.error_title)
-        errorDetail = findViewById(R.id.error_detail)
-        retryButton = findViewById(R.id.retry_button)
-        changeServerButton = findViewById(R.id.change_server_button)
-        openInBrowserButton = findViewById(R.id.open_in_browser_button)
+        screenUi = MainScreenUi(
+            activity = this,
+            isTvDevice = isTvDevice
+        )
 
         webViewController = WebViewHostController(
             activity = this,
-            initialWebView = initialWebView,
-            rootContainer = rootContainer,
-            fullscreenContainer = fullscreenContainer,
+            initialWebView = screenUi.initialWebView,
+            rootContainer = screenUi.rootContainer,
+            fullscreenContainer = screenUi.fullscreenContainer,
             isTvDevice = isTvDevice,
             appVersionName = BuildConfig.VERSION_NAME,
-            hostCapabilitiesJson = hostCapabilitiesJson,
+            serializedHostCapabilities = serializedHostCapabilities,
             callbacks = object : WebViewHostController.Callbacks {
-                override fun currentBaseUrl(): String? = serverSettings.getServerUrl()
+                override fun currentBaseUrl(): String? = serverSettingsStore.getServerUrl()
 
                 override fun lastRequestedUrl(): String = lastRequestedUrl
 
@@ -91,9 +69,8 @@ class MainActivity : AppCompatActivity() {
                     lastRequestedUrl = url
                 }
 
-                override fun onPageReady() {
-                    hideErrorUi()
-                    hideSetupUi()
+                override fun onMainFrameVisible() {
+                    setUiState(MainUiState.Content)
                 }
 
                 override fun onMainFrameError(title: String, detail: String) {
@@ -104,9 +81,21 @@ class MainActivity : AppCompatActivity() {
                     setPlaybackActive(active)
                 }
 
-                override fun isSetupVisible(): Boolean = setupContainer.isVisible
+                override fun startNativePlayback(request: NativePlaybackRequest) {
+                    nativePlaybackBridge.start(request)
+                }
 
-                override fun isErrorVisible(): Boolean = errorContainer.isVisible
+                override fun stopNativePlayback() {
+                    nativePlaybackBridge.stop()
+                }
+
+                override fun currentNativePlaybackStateJson(): String {
+                    return PlaybackSessionRegistry.currentStateJson()
+                }
+
+                override fun isSetupVisible(): Boolean = uiState is MainUiState.Setup
+
+                override fun isErrorVisible(): Boolean = uiState is MainUiState.Error
 
                 override fun openExternal(uri: Uri) {
                     this@MainActivity.openExternal(uri)
@@ -114,17 +103,17 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        configureSetupUi()
-        configureErrorUi()
+        configureScreenUi()
         installBackHandler()
+        observeNativePlaybackState()
 
         val configuredBaseUrl = ServerTargetResolver.resolveConfiguredBaseUrl(
-            existingBaseUrl = serverSettings.getServerUrl(),
+            existingBaseUrl = serverSettingsStore.getServerUrl(),
             overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
             deepLinkUrl = intent.dataString
         )
         if (configuredBaseUrl != null) {
-            serverSettings.saveServerUrl(configuredBaseUrl)
+            serverSettingsStore.saveServerUrl(configuredBaseUrl)
             val startUrl = ServerTargetResolver.resolveStartUrl(
                 baseUrl = configuredBaseUrl,
                 overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
@@ -139,9 +128,7 @@ class MainActivity : AppCompatActivity() {
                 if (restoredState == null || webView.url.isNullOrBlank()) {
                     loadAppUrl(lastRequestedUrl)
                 } else if (!webViewController.hasCustomView()) {
-                    hideErrorUi()
-                    hideSetupUi()
-                    webView.isVisible = true
+                    setUiState(MainUiState.Content)
                 }
             }
         } else {
@@ -149,16 +136,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun observeNativePlaybackState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                PlaybackSessionRegistry.state.collect { state ->
+                    webViewController.publishNativePlaybackState(PlaybackJsonCodec.stateToJson(state))
+                }
+            }
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         val configuredBaseUrl = ServerTargetResolver.resolveConfiguredBaseUrl(
-            existingBaseUrl = serverSettings.getServerUrl(),
+            existingBaseUrl = serverSettingsStore.getServerUrl(),
             overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
             deepLinkUrl = intent.dataString
         )
         if (configuredBaseUrl != null) {
-            serverSettings.saveServerUrl(configuredBaseUrl)
+            serverSettingsStore.saveServerUrl(configuredBaseUrl)
             loadAppUrl(
                 ServerTargetResolver.resolveStartUrl(
                     baseUrl = configuredBaseUrl,
@@ -181,6 +178,16 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        webViewController.onTrimMemory(level)
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        webViewController.onLowMemory()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(STATE_LAST_REQUESTED_URL, lastRequestedUrl)
         webViewController.saveState(outState)
@@ -192,36 +199,56 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun configureSetupUi() {
-        connectButton.setOnClickListener {
-            val input = serverUrlEditText.text?.toString()?.trim().orEmpty()
-            if (validateAndSaveUrl(input)) {
-                loadAppUrl(serverSettings.getServerUrl()!!)
+    private fun configureScreenUi() {
+        screenUi.bindActions(
+            onConnect = { input ->
+                if (validateAndSaveUrl(input)) {
+                    loadAppUrl(serverSettingsStore.getServerUrl()!!)
+                }
+            },
+            onCancelSetup = {
+                val savedUrl = serverSettingsStore.getServerUrl()
+                if (savedUrl != null) {
+                    loadAppUrl(savedUrl)
+                }
+            },
+            onRetry = { loadAppUrl(lastRequestedUrl) },
+            onChangeServer = { showSetupUi() },
+            onOpenInBrowser = { openExternal(currentExternalUrl().toUri()) },
+            onOpenTvMenu = { showTvQuickActions() },
+            onOpenTvHome = { navigateToTvDestination(TvNavigationDestination.Home) },
+            onOpenTvGuide = { navigateToTvDestination(TvNavigationDestination.Guide) },
+            onOpenTvRecordings = { navigateToTvDestination(TvNavigationDestination.Recordings) },
+            onOpenTvTimers = { navigateToTvDestination(TvNavigationDestination.Timers) },
+            onOpenTvSettings = { navigateToTvDestination(TvNavigationDestination.Settings) },
+            onQuickReload = {
+                hideTvQuickActions(restoreFocus = false)
+                reloadCurrentPage()
+            },
+            onQuickChangeServer = {
+                hideTvQuickActions(restoreFocus = false)
+                showSetupUi()
+            },
+            onQuickOpenInBrowser = {
+                hideTvQuickActions(restoreFocus = false)
+                openExternal(currentExternalUrl().toUri())
+            },
+            onQuickExit = {
+                hideTvQuickActions(restoreFocus = false)
+                backgroundTaskOrFinish()
             }
-        }
-        cancelSetupButton.setOnClickListener {
-            val savedUrl = serverSettings.getServerUrl()
-            if (savedUrl != null) {
-                loadAppUrl(savedUrl)
-            }
-        }
+        )
     }
 
     private fun validateAndSaveUrl(input: String): Boolean {
         val normalizedUrl = ServerTargetResolver.normalizeServerUrl(input)
         if (normalizedUrl == null) {
-            serverUrlLayout.error = getString(R.string.server_setup_invalid_url)
+            screenUi.showServerUrlError(getString(R.string.server_setup_invalid_url))
             return false
         }
-        serverUrlLayout.error = null
-        serverSettings.saveServerUrl(normalizedUrl)
+        screenUi.clearServerUrlError()
+        serverSettingsStore.saveServerUrl(normalizedUrl)
         return true
-    }
-
-    private fun configureErrorUi() {
-        retryButton.setOnClickListener { loadAppUrl(lastRequestedUrl) }
-        changeServerButton.setOnClickListener { showSetupUi() }
-        openInBrowserButton.setOnClickListener { openExternal(lastRequestedUrl.toUri()) }
     }
 
     private fun installBackHandler() {
@@ -231,26 +258,43 @@ class MainActivity : AppCompatActivity() {
                     webViewController.hideCustomView()
                     return
                 }
-                if (setupContainer.isVisible) {
-                    val savedUrl = serverSettings.getServerUrl()
-                    if (savedUrl != null) {
-                        loadAppUrl(savedUrl)
-                    } else {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
+
+                if (screenUi.isTvQuickActionsVisible()) {
+                    hideTvQuickActions(restoreFocus = true)
+                    return
+                }
+
+                when (uiState) {
+                    is MainUiState.Setup -> {
+                        val savedUrl = serverSettingsStore.getServerUrl()
+                        if (savedUrl != null) {
+                            loadAppUrl(savedUrl)
+                        } else {
+                            backgroundTaskOrFinish()
+                        }
+                        return
                     }
-                    return
+
+                    is MainUiState.Error -> {
+                        showSetupUi()
+                        return
+                    }
+
+                    is MainUiState.Loading,
+                    MainUiState.Content -> {
+                        if (webViewController.canGoBack()) {
+                            webViewController.goBack()
+                            return
+                        }
+
+                        if (canOpenTvQuickActions()) {
+                            showTvQuickActions()
+                            return
+                        }
+                    }
                 }
-                if (errorContainer.isVisible) {
-                    showSetupUi()
-                    return
-                }
-                if (webViewController.canGoBack()) {
-                    webViewController.goBack()
-                    return
-                }
-                isEnabled = false
-                onBackPressedDispatcher.onBackPressed()
+
+                backgroundTaskOrFinish()
             }
         })
     }
@@ -260,52 +304,61 @@ class MainActivity : AppCompatActivity() {
             onBackPressedDispatcher.onBackPressed()
             return true
         }
-        if (event?.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && handleMediaKey(keyCode)) {
-            return true
+        if (event?.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            if (handleAppControlKey(keyCode)) {
+                return true
+            }
+            if (handleMediaKey(keyCode)) {
+                return true
+            }
         }
         return super.onKeyDown(keyCode, event)
     }
 
     private fun loadAppUrl(url: String) {
         setPlaybackActive(false)
+        hideTvQuickActions(restoreFocus = false)
         lastRequestedUrl = url
-        hideErrorUi()
-        hideSetupUi()
-        webView.isVisible = false
+        setUiState(MainUiState.Loading(destinationLabel = describeDestination(url)))
         webViewController.loadUrl(url)
     }
 
     private fun showSetupUi() {
         setPlaybackActive(false)
-        val savedUrl = serverSettings.getServerUrl()
-        setupContainer.isVisible = true
-        cancelSetupButton.isVisible = savedUrl != null
-        errorContainer.isVisible = false
-        webView.isVisible = false
-        serverUrlEditText.setText(savedUrl ?: "")
-        serverUrlEditText.requestFocus()
-    }
-
-    private fun hideSetupUi() {
-        setupContainer.isVisible = false
+        hideTvQuickActions(restoreFocus = false)
+        setUiState(MainUiState.Setup(serverSettingsStore.getServerUrl()))
     }
 
     private fun showErrorUi(title: String, detail: String) {
         setPlaybackActive(false)
-        errorTitle.text = title
-        errorDetail.text = detail
-        errorContainer.isVisible = true
-        setupContainer.isVisible = false
-        webView.isVisible = false
-        retryButton.requestFocus()
+        hideTvQuickActions(restoreFocus = false)
+        setUiState(MainUiState.Error(title = title, detail = detail))
     }
 
-    private fun hideErrorUi() {
-        errorContainer.isVisible = false
+    private fun handleAppControlKey(keyCode: Int): Boolean {
+        if (!isTvDevice || webViewController.hasCustomView()) {
+            return false
+        }
+
+        return when (keyCode) {
+            KeyEvent.KEYCODE_MENU,
+            KeyEvent.KEYCODE_SETTINGS -> {
+                if (screenUi.isTvQuickActionsVisible()) {
+                    hideTvQuickActions(restoreFocus = true)
+                } else if (canOpenTvQuickActions()) {
+                    showTvQuickActions()
+                } else {
+                    return false
+                }
+                true
+            }
+
+            else -> false
+        }
     }
 
     private fun handleMediaKey(keyCode: Int): Boolean {
-        if (setupContainer.isVisible || errorContainer.isVisible) {
+        if (uiState is MainUiState.Setup || uiState is MainUiState.Error) {
             return false
         }
 
@@ -352,7 +405,117 @@ class MainActivity : AppCompatActivity() {
             .put("supportsKeepScreenAwake", true)
             .put("supportsHostMediaKeys", true)
             .put("supportsInputFocus", true)
+            .put("supportsNativePlayback", true)
             .toString()
+    }
+
+    private fun setUiState(newState: MainUiState) {
+        uiState = newState
+        screenUi.render(
+            state = newState,
+            webView = webView,
+            hasCustomView = webViewController.hasCustomView()
+        )
+
+        if (newState == MainUiState.Content && !screenUi.isTvQuickActionsVisible()) {
+            webViewController.requestInputFocus()
+        }
+    }
+
+    private fun canOpenTvQuickActions(): Boolean {
+        return isTvDevice && uiState == MainUiState.Content
+    }
+
+    private fun showTvQuickActions() {
+        if (!canOpenTvQuickActions()) {
+            return
+        }
+        screenUi.showTvQuickActions(
+            context = describeDestination(currentExternalUrl()),
+            activeDestination = resolveActiveTvDestination(currentExternalUrl())
+        )
+    }
+
+    private fun hideTvQuickActions(restoreFocus: Boolean) {
+        if (!screenUi.isTvQuickActionsVisible()) {
+            return
+        }
+
+        screenUi.hideTvQuickActions()
+        if (restoreFocus && uiState == MainUiState.Content) {
+            webViewController.requestInputFocus()
+        }
+    }
+
+    private fun reloadCurrentPage() {
+        loadAppUrl(currentExternalUrl())
+    }
+
+    private fun navigateToTvDestination(destination: TvNavigationDestination) {
+        val targetUrl = buildTvDestinationUrl(destination)
+        if (targetUrl == null) {
+            showSetupUi()
+            return
+        }
+
+        if (resolveActiveTvDestination(currentExternalUrl()) == destination) {
+            hideTvQuickActions(restoreFocus = true)
+            return
+        }
+
+        hideTvQuickActions(restoreFocus = false)
+        loadAppUrl(targetUrl)
+    }
+
+    private fun currentExternalUrl(): String {
+        return lastRequestedUrl.takeIf { URLUtil.isNetworkUrl(it) }
+            ?: serverSettingsStore.getServerUrl()
+            ?: ""
+    }
+
+    private fun buildTvDestinationUrl(destination: TvNavigationDestination): String? {
+        val baseUrl = serverSettingsStore.getServerUrl() ?: return null
+        val baseUri = baseUrl.toUri()
+        val basePath = baseUri.encodedPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let { if (it.endsWith("/")) it else "$it/" }
+            ?: "/ui/"
+        val routePath = destination.routePath.removePrefix("/")
+        return baseUri.buildUpon()
+            .encodedPath(basePath + routePath)
+            .encodedQuery(null)
+            .fragment(null)
+            .build()
+            .toString()
+    }
+
+    private fun resolveActiveTvDestination(url: String): TvNavigationDestination? {
+        if (url.isBlank()) {
+            return null
+        }
+
+        val targetUri = runCatching { url.toUri() }.getOrNull() ?: return null
+        val path = targetUri.encodedPath.orEmpty()
+
+        return when {
+            path.contains("/recordings") -> TvNavigationDestination.Recordings
+            path.contains("/timers") -> TvNavigationDestination.Timers
+            path.contains("/settings") -> TvNavigationDestination.Settings
+            path.contains("/dashboard") -> TvNavigationDestination.Home
+            path.contains("/epg") || path.endsWith("/ui") || path.endsWith("/ui/") -> TvNavigationDestination.Guide
+            else -> null
+        }
+    }
+
+    private fun describeDestination(url: String): String? {
+        if (url.isBlank()) {
+            return null
+        }
+
+        val targetUri = runCatching { url.toUri() }.getOrNull() ?: return url
+        val host = targetUri.host ?: return url
+        val path = targetUri.encodedPath?.takeIf { it.isNotBlank() && it != "/" }
+        return if (path != null) "$host$path" else host
     }
 
     private fun openExternal(uri: Uri) {
@@ -361,6 +524,26 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         } catch (_: ActivityNotFoundException) {
         }
+    }
+
+    private fun backgroundTaskOrFinish() {
+        if (isTvDevice) {
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                startActivity(homeIntent)
+                return
+            } catch (_: ActivityNotFoundException) {
+            }
+
+            if (moveTaskToBack(true)) {
+                return
+            }
+        }
+
+        finish()
     }
 
     companion object {

@@ -63,10 +63,103 @@
 }
 
 .onboardingCard {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 20px;
+  background:
+    radial-gradient(circle at top left, rgba(74, 144, 245, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(15, 22, 34, 0.98), rgba(19, 29, 44, 0.96));
+  border: 1px solid var(--border-elevated);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: var(--shadow-shell);
+  overflow: hidden;
+}
+
+.onboardingHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.onboardingIntro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.onboardingEyebrow {
+  margin: 0;
+  color: var(--accent-live);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.onboardingTitle {
+  margin: 0;
+  max-width: 22ch;
+}
+
+.onboardingCopy {
+  margin: 0;
+  color: var(--text-secondary);
+  max-width: 44ch;
+}
+
+.onboardingSteps {
+  display: grid;
+  gap: 12px;
+}
+
+.stepCard {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 16px;
+  background: rgba(9, 13, 20, 0.44);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+
+.stepNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--accent-live-subtle);
+  color: var(--accent-live);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.stepLabel {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.onboardingMeta {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.85fr);
+  gap: 18px;
+  margin-top: 22px;
+  align-items: end;
+}
+
+.onboardingActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.onboardingButton {
+  min-width: 220px;
+  box-shadow: var(--shadow-accent-action);
 }
 
 .group label {
@@ -85,11 +178,13 @@
   display: block;
   width: 100%;
   overflow-wrap: anywhere;
-  background: var(--surface-panel-soft);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: rgba(6, 10, 16, 0.66);
+  border: 1px solid var(--border-elevated);
+  border-radius: 12px;
   color: var(--text-primary);
-  padding: 12px 14px;
+  padding: 14px 16px;
+  min-height: 54px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .footer {
@@ -247,4 +342,15 @@
   color: var(--text-primary);
   padding: 10px 12px;
   font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .onboardingHero,
+  .onboardingMeta {
+    grid-template-columns: 1fr;
+  }
+
+  .onboardingButton {
+    width: 100%;
+  }
 }

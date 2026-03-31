@@ -52,6 +52,11 @@ an explicit `base_url` intent extra.
 4. Select a build variant such as `devDebug`.
 5. Run on an emulator or device.
 
+On macOS, `./gradlew` also falls back to Android Studio's bundled JBR when
+`JAVA_HOME` is not set, so terminal builds can work without a separate JDK
+install as long as Android Studio is installed in `/Applications` or
+`~/Applications`.
+
 ## Local Development
 
 The `dev` flavor is intended for emulator/device testing against a local xg2g

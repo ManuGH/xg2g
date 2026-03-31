@@ -8,8 +8,14 @@ import (
 	"strings"
 )
 
-// DecisionSecretFromEnv reads XG2G_DECISION_SECRET from process environment.
-// Returns nil if the variable is unset or whitespace-only.
+const (
+	decisionSecretEnvKey       = "XG2G_DECISION_SECRET"
+	decisionSecretLegacyEnvKey = "XG2G_PLAYBACK_DECISION_SECRET"
+)
+
+// DecisionSecretFromEnv reads the canonical playback decision secret from process environment.
+// It prefers XG2G_DECISION_SECRET and falls back to the legacy XG2G_PLAYBACK_DECISION_SECRET.
+// Returns nil if both variables are unset or whitespace-only.
 func DecisionSecretFromEnv() []byte {
 	return DecisionSecretFromLookup(nil)
 }
@@ -19,13 +25,24 @@ func DecisionSecretFromLookup(lookup envLookupFunc) []byte {
 		lookup = currentProcessLookupEnv()
 	}
 
-	value, ok := lookup("XG2G_DECISION_SECRET")
-	if !ok {
-		return nil
+	if value, ok := decisionSecretValueFromLookup(lookup); ok {
+		return []byte(value)
 	}
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
+	return nil
+}
+
+func decisionSecretValueFromLookup(lookup envLookupFunc) (string, bool) {
+	if value, ok := lookup(decisionSecretEnvKey); ok {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value, true
+		}
 	}
-	return []byte(value)
+	if value, ok := lookup(decisionSecretLegacyEnvKey); ok {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value, true
+		}
+	}
+	return "", false
 }

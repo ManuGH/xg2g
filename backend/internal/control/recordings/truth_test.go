@@ -257,6 +257,51 @@ drain:
 	}
 }
 
+func TestTruthProvider_RemoteMetadataWithoutDurationIsReady(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/20251217 1219 - ORF1 HD - Monk.ts"
+	cfg := &config.AppConfig{
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://receiver:80",
+			StreamPort: 8001,
+		},
+		RecordingPlaybackPolicy: config.PlaybackPolicyReceiverOnly,
+	}
+
+	mgr := &mockManager{
+		data: map[string]vod.Metadata{
+			serviceRef: {
+				State:      vod.ArtifactStateReady,
+				Container:  "ts",
+				VideoCodec: "h264",
+				AudioCodec: "ac3",
+			},
+		},
+	}
+
+	resolver, err := NewResolver(cfg, mgr, ResolverOptions{
+		ProbeFn: func(ctx context.Context, serviceRef, sourceURL string) (*vod.StreamInfo, error) {
+			return nil, nil
+		},
+	})
+	require.NoError(t, err)
+
+	truth, err := resolver.GetMediaTruth(context.Background(), serviceRef)
+	require.NoError(t, err)
+	assert.Equal(t, playback.MediaStatusReady, truth.Status)
+	assert.Equal(t, "ts", truth.Container)
+	assert.Equal(t, "h264", truth.VideoCodec)
+	assert.Equal(t, "ac3", truth.AudioCodec)
+	assert.Zero(t, truth.Duration)
+	assert.Equal(t, string(DurationTruthSourceUnknown), truth.DurationSource)
+	assert.Equal(t, string(DurationTruthConfidenceLow), truth.DurationConfidence)
+	assert.Contains(t, truth.DurationReasons, string(DurationReasonUnknownDeniedSeek))
+
+	res, err := resolver.Resolve(context.Background(), serviceRef, IntentStream, ProfileGeneric)
+	require.NoError(t, err)
+	assert.Equal(t, string(playback.MediaStatusReady), res.TruthStatus)
+	assert.Nil(t, res.DurationSeconds)
+}
+
 // Mocks for truthProvider Test
 
 type mockPathResolverMock struct {
