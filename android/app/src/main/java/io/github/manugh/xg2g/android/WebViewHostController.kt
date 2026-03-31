@@ -38,6 +38,7 @@ internal class WebViewHostController(
     private val isTvDevice: Boolean,
     private val appVersionName: String,
     private val serializedHostCapabilities: String,
+    private val serializedPlaybackCapabilities: String,
     private val callbacks: Callbacks
 ) {
     interface Callbacks {
@@ -70,6 +71,7 @@ internal class WebViewHostController(
     private val hostBridge = HostJavascriptBridge(
         activity = activity,
         serializedHostCapabilities = serializedHostCapabilities,
+        serializedPlaybackCapabilities = serializedPlaybackCapabilities,
         activeWebView = { webView },
         callbacks = object : HostJavascriptBridge.Callbacks {
             override fun onPlaybackActiveChanged(active: Boolean) {

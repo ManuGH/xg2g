@@ -83,6 +83,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	}
 
 	alignAutoCodecDecision(req, resolvedCaps, dec)
+	alignLiveNativePackaging(req, resolvedCaps, dec)
 	alignRecordingNativePackaging(req, resolvedCaps, dec)
 	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, sourceRef, req, truth, resolvedCaps)
 	s.recordDecisionAudit(ctx, sourceRef, req, resolvedCaps, input, dec)
@@ -238,18 +239,45 @@ func shouldApplyAutoCodecDecision(requestedProfile string) bool {
 	}
 }
 
+func alignLiveNativePackaging(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
+	if req.SubjectKind != PlaybackSubjectLive || dec == nil || dec.TargetProfile == nil {
+		return
+	}
+	if !clientWantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
+		return
+	}
+	if shouldPreferNativeDirectStream(dec) {
+		rewriteDecisionToDirectStream(dec)
+	}
+	if dec.SelectedOutputKind != "hls" || !dec.TargetProfile.HLS.Enabled {
+		return
+	}
+
+	target := *dec.TargetProfile
+	target.Container = "fmp4"
+	target.Packaging = playbackprofile.PackagingFMP4
+	target.HLS.Enabled = true
+	target.HLS.SegmentContainer = "fmp4"
+	canonical := playbackprofile.CanonicalizeTarget(target)
+	dec.TargetProfile = &canonical
+	dec.Selected.Container = "fmp4"
+	if dec.Mode == decision.ModeDirectStream {
+		dec.Trace.QualityRung = string(playbackprofile.RungCompatibleHLSFMP4)
+	}
+}
+
 func alignRecordingNativePackaging(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
 	if req.SubjectKind != PlaybackSubjectRecording || dec == nil || dec.TargetProfile == nil {
 		return
 	}
-	if !recordingClientWantsFMP4(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
+	if !clientWantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
 		return
 	}
-	if shouldPreferRecordingNativeDirectStream(dec) {
+	if shouldPreferNativeDirectStream(dec) {
 		if recordingClientSupportsDirectTransportStream(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
 			return
 		}
-		rewriteRecordingDecisionToDirectStream(dec)
+		rewriteDecisionToDirectStream(dec)
 	}
 	if dec.SelectedOutputKind != "hls" || !dec.TargetProfile.HLS.Enabled {
 		return
@@ -267,7 +295,7 @@ func alignRecordingNativePackaging(req PlaybackInfoRequest, resolvedCaps capabil
 	}
 }
 
-func shouldPreferRecordingNativeDirectStream(dec *decision.Decision) bool {
+func shouldPreferNativeDirectStream(dec *decision.Decision) bool {
 	if dec == nil || dec.Mode != decision.ModeDirectPlay || dec.TargetProfile == nil {
 		return false
 	}
@@ -284,7 +312,7 @@ func shouldPreferRecordingNativeDirectStream(dec *decision.Decision) bool {
 	return target.Packaging == playbackprofile.PackagingTS
 }
 
-func rewriteRecordingDecisionToDirectStream(dec *decision.Decision) {
+func rewriteDecisionToDirectStream(dec *decision.Decision) {
 	if dec == nil || dec.TargetProfile == nil {
 		return
 	}
@@ -321,7 +349,7 @@ func rewriteRecordingDecisionToDirectStream(dec *decision.Decision) {
 	}
 }
 
-func recordingClientWantsFMP4(requestedProfile string, clientFamily string) bool {
+func clientWantsFMP4Packaging(requestedProfile string, clientFamily string) bool {
 	switch strings.ToLower(strings.TrimSpace(requestedProfile)) {
 	case "android_native", "android_tv_native", "safari", "safari_dvr", "safari_dirty", "safari_hevc", "safari_hevc_hw", "safari_hevc_hw_ll", "h264_fmp4":
 		return true

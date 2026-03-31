@@ -21,6 +21,8 @@ import io.github.manugh.xg2g.android.playback.PlaybackSessionRegistry
 import io.github.manugh.xg2g.android.playback.bridge.NativePlaybackBridge
 import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
+import io.github.manugh.xg2g.android.playback.net.NativePlaybackCapabilities
+import io.github.manugh.xg2g.android.playback.net.PlaybackApiJsonCodec
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -36,6 +38,11 @@ class MainActivity : AppCompatActivity() {
     private val nativePlaybackBridge by lazy(LazyThreadSafetyMode.NONE) { NativePlaybackBridge(this) }
     private val isTvDevice by lazy(LazyThreadSafetyMode.NONE) { detectTvDevice() }
     private val serializedHostCapabilities by lazy(LazyThreadSafetyMode.NONE) { buildHostCapabilitiesJson() }
+    private val serializedPlaybackCapabilities by lazy(LazyThreadSafetyMode.NONE) {
+        PlaybackApiJsonCodec.playbackCapabilitiesJson(
+            NativePlaybackCapabilities.create(applicationContext)
+        )
+    }
     private val webView: WebView
         get() = webViewController.activeWebView
 
@@ -60,6 +67,7 @@ class MainActivity : AppCompatActivity() {
             isTvDevice = isTvDevice,
             appVersionName = BuildConfig.VERSION_NAME,
             serializedHostCapabilities = serializedHostCapabilities,
+            serializedPlaybackCapabilities = serializedPlaybackCapabilities,
             callbacks = object : WebViewHostController.Callbacks {
                 override fun currentBaseUrl(): String? = serverSettingsStore.getServerUrl()
 
@@ -313,6 +321,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && screenUi.isTvQuickActionsVisible()) {
+            screenUi.ensureTvQuickActionsFocus()
+        }
+
+        return super.dispatchKeyEvent(event)
     }
 
     private fun loadAppUrl(url: String) {

@@ -18,9 +18,11 @@ The decision is a pure function of `DecisionInput`. Any "unknown" or zero-value 
 | `Source.Container` | string | Normalized (lowercase) | Deny (ReasonContainerNotSupported) |
 | `Source.VideoCodec` | string | Normalized (lowercase) | Deny (ReasonVideoCodecNotSupported) |
 | `Source.AudioCodec` | string | Normalized (lowercase) | Deny (ReasonAudioCodecNotSupported) |
+| `Source.Interlaced` | bool | Truth hint from scanner/probe | If true, passthrough/remux is treated as unsafe and video repair transcode is required |
 | `Capabilities.Containers` | []string | Set of allowed | Implicit Deny if not present |
 | `Capabilities.VideoCodecs` | []string | Set of allowed | Implicit Deny if not present |
 | `Capabilities.AudioCodecs` | []string | Set of allowed | Implicit Deny if not present |
+| `Capabilities.MaxVideo` | object | Optional upper bound for width/height/fps | If present and source exceeds it, video is treated as incompatible and must transcode; if present but source width/height/fps are unknown, passthrough/remux must fail closed |
 | `Policy.AllowTranscode` | bool | Boolean | If false, Transcode -> Deny |
 | `Policy.Operator.ForceIntent` | enum | Optional operator override: `direct`, `compatible`, `quality`, `repair` | Unknown normalizes to empty; may force a more conservative path when technically possible |
 | `Policy.Operator.MaxQualityRung` | enum | Optional operator ceiling for the quality ladder | Unknown normalizes to empty; only clamps to known ladder rungs |
@@ -55,10 +57,10 @@ Capabilities $A$ are "better or equal" to $B$ ($A \succeq B$) if:
 Evaluation stops at the first match.
 
 1. **Rule-Container**: If `Source.Container` not in `Capabilities.Containers` -> **Fail checks** (May fallback to Transcode).
-2. **Rule-Video**: If `Source.VideoCodec` not in `Capabilities.VideoCodecs` -> **Transcode Needed**.
+2. **Rule-Video**: If `Source.VideoCodec` not in `Capabilities.VideoCodecs`, if `Source.Interlaced == true`, or if `Capabilities.MaxVideo` exists and source width/height/fps exceed it, -> **Transcode Needed**.
 3. **Rule-Audio**: If `Source.AudioCodec` not in `Capabilities.AudioCodecs` -> **Transcode Needed**.
 4. **Rule-DirectPlay**: If `Container` matches AND `DirectPlayPossible` (MP4/MOV + Range) -> **DirectPlay**.
-5. **Rule-DirectStream**: If `SupportsHLS` AND Codecs Compatible -> **DirectStream**.
+5. **Rule-DirectStream**: If `SupportsHLS` AND Codecs Compatible AND source is safe for passthrough/remux -> **DirectStream**.
 6. **Rule-Transcode**: If `AllowTranscode` -> **Transcode**.
 7. **Default**: **Deny** (`ReasonNoCompatiblePlaybackPath`).
 

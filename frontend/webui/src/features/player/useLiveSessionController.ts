@@ -35,7 +35,7 @@ interface LiveSessionController {
   sessionId: string | null;
   sessionIdRef: MutableRefObject<string | null>;
   authHeaders: (contentType?: boolean) => HeadersInit;
-  reportError: (event: 'error' | 'warning', code: number, msg?: string) => Promise<void>;
+  reportError: (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
   ensureSessionCookie: () => Promise<void>;
   setActiveSessionId: (sessionId: string | null) => void;
   clearSessionLeaseState: () => void;
@@ -74,7 +74,7 @@ export function useLiveSessionController({
     return headers;
   }, [token]);
 
-  const reportError = useCallback(async (event: 'error' | 'warning', code: number, msg?: string) => {
+  const reportError = useCallback(async (event: 'error' | 'warning' | 'info', code: number, msg?: string) => {
     if (!sessionIdRef.current) return;
     try {
       await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {

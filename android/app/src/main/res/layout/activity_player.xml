@@ -11,8 +11,52 @@
         android:layout_height="match_parent"
         android:keepScreenOn="true"
         app:show_buffering="when_playing"
-        app:use_controller="true" />
+        app:use_controller="false"
+        app:shutter_background_color="#000000"
+        app:use_artwork="false" />
 
+    <!-- Loading overlay: logo centered, info top-left -->
+    <FrameLayout
+        android:id="@+id/player_loading_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000">
+
+        <ImageView
+            android:id="@+id/player_loading_logo"
+            android:layout_width="160dp"
+            android:layout_height="160dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/app_name"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:orientation="vertical"
+            android:paddingHorizontal="24dp"
+            android:paddingVertical="20dp">
+
+            <TextView
+                android:id="@+id/player_loading_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="@color/ide_text_primary"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/player_loading_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="@color/ide_text_secondary" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Persistent info overlay (shown briefly after playback starts) -->
     <LinearLayout
         android:id="@+id/player_overlay"
         android:layout_width="match_parent"
@@ -21,7 +65,8 @@
         android:background="#8C070A11"
         android:orientation="vertical"
         android:paddingHorizontal="20dp"
-        android:paddingVertical="16dp">
+        android:paddingVertical="16dp"
+        android:visibility="gone">
 
         <TextView
             android:id="@+id/player_title"

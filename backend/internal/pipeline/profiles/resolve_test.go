@@ -49,6 +49,14 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, 20, specCPU.VideoCRF)
 }
 
+func TestResolve_SafariWithoutUserAgentUsesFMP4ForNativeProgressiveClients(t *testing.T) {
+	spec := Resolve("safari", "", 0, &scan.Capability{Interlaced: false}, false, HWAccelAuto)
+
+	assert.False(t, spec.TranscodeVideo)
+	assert.Equal(t, "fmp4", spec.Container)
+	assert.Equal(t, 192, spec.AudioBitrateK)
+}
+
 func TestResolve_UnknownCap(t *testing.T) {
 	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 

@@ -192,6 +192,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSMapsToSafariProfile(t *testing.T) 
 	require.Equal(t, http.StatusAccepted, rr.Code)
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, "safari", store.lastSession.Profile.Name)
+	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
 	require.Equal(t, "safari", store.lastSession.ContextData["profile"])
 }
 

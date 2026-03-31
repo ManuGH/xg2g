@@ -15,6 +15,12 @@ internal class PlayerHolder(
     context: Context,
     private val okHttpClient: OkHttpClient
 ) {
+    private companion object {
+        const val LIVE_TARGET_OFFSET_MS = 6_000L
+        const val LIVE_MIN_OFFSET_MS = 4_000L
+        const val LIVE_MAX_OFFSET_MS = 20_000L
+    }
+
     private val renderersFactory = DefaultRenderersFactory(context.applicationContext)
         .setEnableAudioTrackPlaybackParams(false)
         .setEnableAudioOutputPlaybackParameters(false)
@@ -55,7 +61,11 @@ internal class PlayerHolder(
 
         if (isLive) {
             mediaItemBuilder.setLiveConfiguration(
-                MediaItem.LiveConfiguration.Builder().build()
+                MediaItem.LiveConfiguration.Builder()
+                    .setTargetOffsetMs(LIVE_TARGET_OFFSET_MS)
+                    .setMinOffsetMs(LIVE_MIN_OFFSET_MS)
+                    .setMaxOffsetMs(LIVE_MAX_OFFSET_MS)
+                    .build()
             )
         }
 

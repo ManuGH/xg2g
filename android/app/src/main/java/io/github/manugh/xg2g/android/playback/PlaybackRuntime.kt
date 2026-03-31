@@ -1,7 +1,8 @@
 package io.github.manugh.xg2g.android.playback
 
-import android.util.Log
 import android.content.Context
+import android.util.Log
+import androidx.media3.common.Player
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackState
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackDiagnostics
@@ -20,6 +21,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 internal class PlaybackRuntime(
     context: Context,
@@ -39,6 +42,8 @@ internal class PlaybackRuntime(
         onError = ::reportError
     )
     private val playerEventForwarder = PlayerEventForwarder(playerHolder.player, ::onPlayerStateChanged)
+    private var reportedReadySessionId: String? = null
+    private var reportedErrorSignature: String? = null
 
     override val player = playerHolder.player
     override val state: StateFlow<NativePlaybackState> = stateStore.state
@@ -104,6 +109,8 @@ internal class PlaybackRuntime(
             is NativePlaybackRequest.Recording, null -> heartbeatManager.stop()
         }
         playerHolder.clear()
+        reportedReadySessionId = null
+        reportedErrorSignature = null
         if (force || current.activeRequest != null || current.session != null) {
             setState(NativePlaybackState())
         }
@@ -146,12 +153,29 @@ internal class PlaybackRuntime(
 
     private fun reportError(throwable: Throwable) {
         Log.e(TAG, "native playback error", throwable)
+        reportSessionFeedback("error", null, throwable.message ?: throwable.javaClass.simpleName)
         mutateState { current ->
             current.copy(lastError = throwable.message ?: throwable.javaClass.simpleName)
         }
     }
 
     private fun onPlayerStateChanged(playerState: Int, playWhenReady: Boolean, error: String?) {
+        if (error != null) {
+            val signature = currentLiveSessionId()?.let { "$it::$error" }
+            if (signature != null && signature != reportedErrorSignature) {
+                reportedErrorSignature = signature
+                reportSessionFeedback("error", null, error)
+            }
+        }
+        if (playerState == Player.STATE_READY && playWhenReady) {
+            currentLiveSessionId()?.let { sessionId ->
+                if (reportedReadySessionId != sessionId) {
+                    reportedReadySessionId = sessionId
+                    reportedErrorSignature = null
+                    reportSessionFeedback("info", 200, "playing")
+                }
+            }
+        }
         mutateState { current ->
             current.copy(
                 playerState = playerState,
@@ -167,6 +191,25 @@ internal class PlaybackRuntime(
 
     private inline fun mutateState(transform: (NativePlaybackState) -> NativePlaybackState) {
         setState(transform(stateStore.current()))
+    }
+
+    private fun reportSessionFeedback(event: String, code: Int?, message: String?) {
+        val sessionId = currentLiveSessionId() ?: return
+        scope.launch {
+            runCatching {
+                playbackApi.reportPlaybackFeedback(sessionId, event, code, message)
+            }.onFailure { err ->
+                Log.w(TAG, "failed to report playback feedback", err)
+            }
+        }
+    }
+
+    private fun currentLiveSessionId(): String? {
+        val sessionId = stateStore.current().session?.sessionId ?: return null
+        return runCatching {
+            UUID.fromString(sessionId)
+            sessionId
+        }.getOrNull()
     }
 
     private companion object {

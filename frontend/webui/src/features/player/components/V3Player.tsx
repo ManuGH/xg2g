@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import Hls from '../lib/hlsRuntime';
 import {
   postRecordingPlaybackInfo,
-  type PlaybackCapabilities as PlaybackCapabilitiesContract,
   type PlaybackInfo,
   type PlaybackSourceProfile,
   type PlaybackTrace as PlaybackTraceContract,
@@ -39,8 +38,12 @@ import {
   shouldForceNativeMobileHls,
   shouldPreferNativeWebKitHls
 } from '../utils/playerHelpers';
-import { detectPlaybackClientFamily } from '../utils/playbackClientFamily';
-import { probeRuntimePlaybackCapabilities } from '../utils/playbackProbe';
+import { gatherPlaybackCapabilities, type CapabilitySnapshot } from '../utils/playbackCapabilities';
+import {
+  buildPlaybackProfileHeaders,
+  gatherPlaybackClientContext,
+  resolvePlaybackRequestProfile,
+} from '../utils/playbackRequestProfile';
 import { normalizePlayerError } from '../../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
 import { useTvInitialFocus } from '../../../hooks/useTvInitialFocus';
@@ -67,25 +70,6 @@ interface ApiErrorResponse {
   requestId?: string;
   details?: unknown;
 }
-
-type CapabilitySnapshot = Pick<
-  PlaybackCapabilitiesContract,
-  | 'capabilitiesVersion'
-  | 'container'
-  | 'videoCodecs'
-  | 'audioCodecs'
-  | 'deviceType'
-  | 'supportsHls'
-  | 'supportsRange'
-  | 'allowTranscode'
-  | 'runtimeProbeUsed'
-  | 'runtimeProbeVersion'
-  | 'clientFamilyFallback'
-  | 'videoCodecSignals'
-> & {
-  hlsEngines?: string[];
-  preferredHlsEngine?: string;
-};
 
 type PlaybackObservability = {
   clientPath: string | null;
@@ -988,29 +972,9 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [clearPlayerError, isNativePlaybackHost, setPlaybackMode, setPlayerError, setStatus]);
 
-  const gatherPlaybackCapabilities = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
+  const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
-    const probe = await probeRuntimePlaybackCapabilities(video, scope);
-    const clientFamilyFallback = detectPlaybackClientFamily(video);
-
-    const capabilities: CapabilitySnapshot = {
-      capabilitiesVersion: 3,
-      container: probe.containers,
-      videoCodecs: probe.videoCodecs,
-      videoCodecSignals: probe.videoCodecSignals,
-      audioCodecs: probe.audioCodecs,
-      hlsEngines: probe.hlsEngines.length > 0 ? probe.hlsEngines : undefined,
-      preferredHlsEngine: probe.preferredHlsEngine ?? undefined,
-      supportsHls: probe.hlsEngines.length > 0,
-      supportsRange: probe.supportsRange,
-      allowTranscode: true,
-      deviceType: 'web',
-      runtimeProbeUsed: probe.usedRuntimeProbe,
-      runtimeProbeVersion: probe.version,
-      clientFamilyFallback,
-    };
-
-    return capabilities;
+    return gatherPlaybackCapabilities(scope, video);
   }, []);
 
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
@@ -1038,7 +1002,12 @@ function V3Player(props: V3PlayerProps) {
 
       try {
         const maxMetaRetries = 20;
-        requestCaps = await gatherPlaybackCapabilities('recording');
+        requestCaps = await gatherPlaybackCapabilitiesForPlayer('recording');
+        const requestProfile = resolvePlaybackRequestProfile(
+          gatherPlaybackClientContext(),
+          requestCaps,
+          'recording'
+        );
         setCapabilitySnapshot(requestCaps);
         let pInfo: PlaybackInfo | undefined;
 
@@ -1047,7 +1016,8 @@ function V3Player(props: V3PlayerProps) {
 
           const { data, error, response } = await postRecordingPlaybackInfo({
             path: { recordingId: id },
-            body: requestCaps
+            body: requestCaps,
+            headers: buildPlaybackProfileHeaders(requestProfile),
           });
 
           if (error) {
@@ -1276,7 +1246,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilities, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
+  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilitiesForPlayer, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -1355,6 +1325,7 @@ function V3Player(props: V3PlayerProps) {
           serviceRef: ref,
           authToken: token || undefined,
           title: channel?.name ?? ref,
+          logoUrl: channel?.logoUrl || undefined,
         });
         return;
       }
@@ -1366,13 +1337,21 @@ function V3Player(props: V3PlayerProps) {
         let liveMode: 'native_hls' | 'hlsjs' | 'direct_mp4' | 'transcode' | 'deny' = 'deny';
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
 
-        const requestCaps = await gatherPlaybackCapabilities('live');
+        const requestCaps = await gatherPlaybackCapabilitiesForPlayer('live');
+        const requestProfile = resolvePlaybackRequestProfile(
+          gatherPlaybackClientContext(),
+          requestCaps,
+          'live'
+        );
         const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         setCapabilitySnapshot(requestCaps);
         // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
         const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
           method: 'POST',
-          headers: authHeaders(true),
+          headers: {
+            ...(authHeaders(true) as Record<string, string>),
+            ...buildPlaybackProfileHeaders(requestProfile),
+          },
           body: JSON.stringify({
             serviceRef: ref,
             capabilities: requestCaps
@@ -1688,7 +1667,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilities, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback, beginNativePlayback, channel?.name, isNativePlaybackHost, nativePlaybackState]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback, beginNativePlayback, channel?.name, isNativePlaybackHost, nativePlaybackState]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;

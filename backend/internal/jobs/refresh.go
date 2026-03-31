@@ -300,13 +300,13 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 		return nil, err
 	}
 
-	// Trigger background picon pre-warm (don't block refresh)
-	if cfg.PiconBase != "" {
-		if refreshOpts.piconPool != nil {
-			go PrewarmPicons(ctx, refreshOpts.piconPool, items)
-		} else {
-			logger.Debug().Msg("skipping picon pre-warm because no runtime picon pool is configured")
-		}
+	// Trigger background picon pre-warm (don't block refresh).
+	// The runtime pool can fall back to the Enigma2 base URL even when no explicit
+	// PiconBase is configured, so gate this on the runtime pool, not on cfg.PiconBase.
+	if refreshOpts.piconPool != nil {
+		go PrewarmPicons(ctx, refreshOpts.piconPool, items)
+	} else if cfg.PiconBase != "" {
+		logger.Debug().Msg("skipping picon pre-warm because no runtime picon pool is configured")
 	}
 
 	// Generate M3U

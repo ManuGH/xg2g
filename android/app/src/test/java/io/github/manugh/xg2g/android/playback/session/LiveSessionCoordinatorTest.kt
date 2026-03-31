@@ -120,6 +120,8 @@ class LiveSessionCoordinatorTest {
             error("heartbeat should not run in these tests")
         }
 
+        override suspend fun reportPlaybackFeedback(sessionId: String, event: String, code: Int?, message: String?) = Unit
+
         override suspend fun stopSession(sessionId: String) {
             stoppedSessions += sessionId
         }

@@ -502,7 +502,10 @@ func (c *Container) Start(ctx context.Context) error {
 }
 
 func (c *Container) initPiconPool(ctx context.Context) error {
-	if c == nil || c.snapshot.App.PiconBase == "" || c.piconPool != nil {
+	if c == nil || c.piconPool != nil {
+		return nil
+	}
+	if c.snapshot.App.Enigma2.BaseURL == "" && c.snapshot.App.PiconBase == "" {
 		return nil
 	}
 

@@ -22,7 +22,7 @@ class PlaybackApiJsonCodecTest {
             ),
             capabilities = NativePlaybackCapabilities(
                 capabilitiesVersion = 3,
-                container = listOf("hls", "ts", "mp4"),
+                container = listOf("hls", "fmp4", "ts", "mp4"),
                 videoCodecs = listOf("h264"),
                 audioCodecs = listOf("aac", "ac3"),
                 supportsHls = true,
@@ -33,20 +33,37 @@ class PlaybackApiJsonCodecTest {
                 runtimeProbeUsed = false,
                 runtimeProbeVersion = 1,
                 clientFamilyFallback = "android_tv_native",
-                allowTranscode = true
+                allowTranscode = true,
+                deviceContext = NativePlaybackDeviceContext(
+                    brand = "google",
+                    product = "mdarcy",
+                    device = "foster",
+                    platform = "android-tv",
+                    manufacturer = "NVIDIA",
+                    model = "Shield TV Pro",
+                    osName = "android",
+                    osVersion = "14",
+                    sdkInt = 34,
+                )
             )
         )
 
         val json = JSONObject(body)
         val capabilities = json.getJSONObject("capabilities")
 
-        assertEquals(3, capabilities.getJSONArray("container").length())
+        assertEquals(4, capabilities.getJSONArray("container").length())
         assertEquals("hls", capabilities.getJSONArray("container").getString(0))
-        assertEquals("ts", capabilities.getJSONArray("container").getString(1))
-        assertEquals("mp4", capabilities.getJSONArray("container").getString(2))
+        assertEquals("fmp4", capabilities.getJSONArray("container").getString(1))
+        assertEquals("ts", capabilities.getJSONArray("container").getString(2))
+        assertEquals("mp4", capabilities.getJSONArray("container").getString(3))
         assertEquals("h264", capabilities.getJSONArray("videoCodecs").getString(0))
         assertEquals("aac", capabilities.getJSONArray("audioCodecs").getString(0))
         assertEquals("native", capabilities.getJSONArray("hlsEngines").getString(0))
+        val deviceContext = capabilities.getJSONObject("deviceContext")
+        assertEquals("google", deviceContext.getString("brand"))
+        assertEquals("mdarcy", deviceContext.getString("product"))
+        assertEquals("foster", deviceContext.getString("device"))
+        assertEquals("Shield TV Pro", deviceContext.getString("model"))
     }
 
     @Test

@@ -4,13 +4,204 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
+import type { PlaybackInfo, PlaybackSourceProfile } from '../../../client-ts';
 import { isEventVisible } from '../epgModel';
 import { EpgEventRow } from './EpgEventList';
 import { Button } from '../../../components/ui';
+import { requestAuthRequired } from '../../player/sessionEvents';
+import { gatherPlaybackCapabilities, type CapabilitySnapshot } from '../../player/utils/playbackCapabilities';
+import {
+  buildPlaybackProfileHeaders,
+  gatherPlaybackClientContext,
+  resolvePlaybackRequestProfile,
+  type PlaybackRequestProfile,
+} from '../../player/utils/playbackRequestProfile';
 import { resolveHostEnvironment } from '../../../lib/hostBridge';
+import { getApiBaseUrl } from '../../../services/clientWrapper';
+import { getStoredToken } from '../../../utils/tokenStorage';
 import styles from '../EPG.module.css';
 
 const CHANNEL_JUMP_TIMEOUT_MS = 900;
+const CHANNEL_HOLD_START_DELAY_MS = 180;
+const CHANNEL_HOLD_REPEAT_INTERVAL_MS = 90;
+const CHANNEL_BADGE_INITIAL_PREFETCH = 12;
+const CHANNEL_BADGE_FOCUS_BEHIND = 3;
+const CHANNEL_BADGE_FOCUS_AHEAD = 8;
+
+type ChannelPlaybackMode = 'direct_play' | 'direct_stream' | 'transcode' | 'deny';
+
+type ChannelPlaybackBadge = {
+  mode: ChannelPlaybackMode;
+  label: string;
+  detail: string | null;
+  title: string;
+};
+
+const channelPlaybackBadgeCache = new Map<string, ChannelPlaybackBadge>();
+const channelPlaybackBadgeInflight = new Map<string, Promise<ChannelPlaybackBadge | null>>();
+
+function buildCapabilityCacheKey(capabilities: CapabilitySnapshot, requestProfile?: PlaybackRequestProfile): string {
+  return JSON.stringify({
+    deviceType: capabilities.deviceType || 'unknown',
+    container: [...(capabilities.container || [])].sort(),
+    videoCodecs: [...(capabilities.videoCodecs || [])].sort(),
+    audioCodecs: [...(capabilities.audioCodecs || [])].sort(),
+    hlsEngines: [...(capabilities.hlsEngines || [])].sort(),
+    preferredHlsEngine: capabilities.preferredHlsEngine || '',
+    maxVideo: capabilities.maxVideo || null,
+    supportsRange: capabilities.supportsRange === true,
+    supportsHls: capabilities.supportsHls === true,
+    runtimeProbeUsed: capabilities.runtimeProbeUsed === true,
+    clientFamilyFallback: capabilities.clientFamilyFallback || '',
+    requestProfile: requestProfile || '',
+  });
+}
+
+function formatResolutionLabel(
+  resolution?: string | null,
+  source?: PlaybackSourceProfile | null
+): string | null {
+  const sourceHeight = source?.height;
+  const sourceWidth = source?.width;
+  if (typeof sourceWidth === 'number' && typeof sourceHeight === 'number' && sourceWidth > 0 && sourceHeight > 0) {
+    return `${sourceHeight}p`;
+  }
+
+  if (!resolution) {
+    return null;
+  }
+
+  const match = resolution.match(/(\d+)\s*x\s*(\d+)/i);
+  if (!match) {
+    return resolution;
+  }
+
+  const height = Number.parseInt(match[2] || '', 10);
+  return Number.isNaN(height) ? resolution : `${height}p`;
+}
+
+function buildChannelPlaybackDetail(channel: EpgChannel, info: PlaybackInfo): string | null {
+  const source = info.decision?.trace?.source;
+  const resolution = formatResolutionLabel(channel.resolution, source);
+  const videoCodec = source?.videoCodec || info.videoCodec || channel.codec || null;
+  const audioCodec = source?.audioCodec || info.audioCodec || null;
+  const codecSummary = [videoCodec, audioCodec].filter(Boolean).join('/');
+  const detail = [resolution, codecSummary || null].filter(Boolean).join(' · ');
+  return detail || null;
+}
+
+function buildChannelPlaybackBadge(channel: EpgChannel, info: PlaybackInfo): ChannelPlaybackBadge | null {
+  const rawMode = typeof info.decision?.mode === 'string'
+    ? info.decision.mode
+    : typeof info.mode === 'string'
+      ? info.mode
+      : null;
+
+  if (rawMode !== 'direct_play' && rawMode !== 'direct_stream' && rawMode !== 'transcode' && rawMode !== 'deny') {
+    return null;
+  }
+
+  const detail = buildChannelPlaybackDetail(channel, info);
+  switch (rawMode) {
+    case 'direct_play':
+      return {
+        mode: rawMode,
+        label: 'Direct',
+        detail,
+        title: 'Runs on this device without remux or re-encode',
+      };
+    case 'direct_stream':
+      return {
+        mode: rawMode,
+        label: 'Remux',
+        detail,
+        title: 'Runs on this device without re-encode, packaged as HLS',
+      };
+    case 'transcode':
+      return {
+        mode: rawMode,
+        label: 'Encode',
+        detail,
+        title: 'Needs video or audio transcoding on this device',
+      };
+    case 'deny':
+      return {
+        mode: rawMode,
+        label: 'Blocked',
+        detail,
+        title: 'Cannot be played on this device with the current constraints',
+      };
+  }
+}
+
+async function fetchChannelPlaybackBadge(
+  apiBase: string,
+  channel: EpgChannel,
+  capabilities: CapabilitySnapshot,
+  capabilityCacheKey: string,
+  requestProfile?: PlaybackRequestProfile
+): Promise<ChannelPlaybackBadge | null> {
+  const serviceRef = channel.serviceRef || channel.id || '';
+  if (!serviceRef) {
+    return null;
+  }
+
+  const cacheKey = `${capabilityCacheKey}::${serviceRef}`;
+  const cached = channelPlaybackBadgeCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const inflight = channelPlaybackBadgeInflight.get(cacheKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const request = (async () => {
+    const authToken = getStoredToken().trim();
+    const response = await fetch(`${apiBase}/live/stream-info`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...buildPlaybackProfileHeaders(requestProfile),
+      },
+      body: JSON.stringify({
+        serviceRef,
+        capabilities,
+      }),
+    });
+
+    let payload: PlaybackInfo | null = null;
+    try {
+      payload = await response.json() as PlaybackInfo;
+    } catch {
+      payload = null;
+    }
+
+    if (response.status === 401) {
+      requestAuthRequired({ source: 'EPG.channelPlaybackBadge', status: 401 });
+      return null;
+    }
+
+    if (!response.ok || !payload) {
+      return null;
+    }
+
+    const badge = buildChannelPlaybackBadge(channel, payload);
+    if (badge) {
+      channelPlaybackBadgeCache.set(cacheKey, badge);
+    }
+    return badge;
+  })();
+
+  channelPlaybackBadgeInflight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    channelPlaybackBadgeInflight.delete(cacheKey);
+  }
+}
 
 // Helper: Get localized day string "Do 28.12."
 // Returns null if date matches "today" (relative to currentTime, but user said "same day no date")
@@ -55,10 +246,11 @@ interface ChannelHeaderProps {
   channel: EpgChannel;
   channelIndex?: number;
   displayName: string;
+  playbackBadge?: ChannelPlaybackBadge | null;
   onPlay?: (channel: EpgChannel) => void;
 }
 
-function ChannelHeader({ channel, channelIndex, displayName, onPlay }: ChannelHeaderProps) {
+function ChannelHeader({ channel, channelIndex, displayName, playbackBadge, onPlay }: ChannelHeaderProps) {
   const { t } = useTranslation();
   const [imageFailed, setImageFailed] = React.useState(false);
   const logo = channel?.logoUrl || channel?.logoUrl || channel?.logo;
@@ -101,7 +293,33 @@ function ChannelHeader({ channel, channelIndex, displayName, onPlay }: ChannelHe
       </div>
       <div className={styles.channelMeta}>
         <div className={styles.channelName}>{displayName}</div>
-        {channel?.group && <div className={styles.channelGroup}>{channel.group}</div>}
+        {(channel?.group || playbackBadge) && (
+          <div className={styles.channelAux}>
+            {channel?.group && <div className={styles.channelGroup}>{channel.group}</div>}
+            {playbackBadge && (
+              <div className={styles.channelPlaybackMeta}>
+                <span
+                  className={[
+                    styles.channelPlaybackBadge,
+                    playbackBadge.mode === 'direct_play'
+                      ? styles.channelPlaybackBadgeDirect
+                      : playbackBadge.mode === 'direct_stream'
+                        ? styles.channelPlaybackBadgeRemux
+                        : playbackBadge.mode === 'transcode'
+                          ? styles.channelPlaybackBadgeEncode
+                          : styles.channelPlaybackBadgeBlocked,
+                  ].join(' ')}
+                  title={playbackBadge.title}
+                >
+                  {playbackBadge.label}
+                </span>
+                {playbackBadge.detail && (
+                  <span className={styles.channelPlaybackDetail}>{playbackBadge.detail}</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {onPlay && (
         <Button
@@ -126,6 +344,7 @@ function ChannelHeader({ channel, channelIndex, displayName, onPlay }: ChannelHe
 interface ChannelCardProps {
   channelIndex: number;
   channel: EpgChannel;
+  playbackBadge?: ChannelPlaybackBadge | null;
   events: EpgEvent[];
   currentTime: number;
   timeRangeHours: number;
@@ -139,6 +358,7 @@ interface ChannelCardProps {
 function ChannelCard({
   channelIndex,
   channel,
+  playbackBadge,
   events,
   currentTime,
   timeRangeHours,
@@ -169,7 +389,13 @@ function ChannelCard({
       data-xg2g-channel-index={channelIndex}
       data-xg2g-channel-number={channel.number || undefined}
     >
-      <ChannelHeader channel={channel} channelIndex={channelIndex} displayName={displayName} onPlay={onPlay} />
+      <ChannelHeader
+        channel={channel}
+        channelIndex={channelIndex}
+        displayName={displayName}
+        playbackBadge={playbackBadge}
+        onPlay={onPlay}
+      />
 
       <div className={styles.programmes}>
         {current && (
@@ -240,6 +466,7 @@ function ChannelCard({
 // Search Results Group
 interface SearchGroupProps {
   channel: EpgChannel;
+  playbackBadge?: ChannelPlaybackBadge | null;
   events: EpgEvent[];
   currentTime: number;
   isExpanded: boolean;
@@ -251,6 +478,7 @@ interface SearchGroupProps {
 
 function SearchGroup({
   channel,
+  playbackBadge,
   events,
   currentTime,
   isExpanded,
@@ -271,7 +499,7 @@ function SearchGroup({
 
   return (
     <div className={styles.searchGroup}>
-      <ChannelHeader channel={channel} displayName={displayName} onPlay={onPlay} />
+      <ChannelHeader channel={channel} displayName={displayName} playbackBadge={playbackBadge} onPlay={onPlay} />
 
       <div className={styles.programmes}>
         {top2.map((event, index) => {
@@ -373,12 +601,17 @@ export function EpgChannelList({
   isRecorded,
 }: EpgChannelListProps) {
   const isTvHost = React.useMemo(() => resolveHostEnvironment().isTv, []);
+  const apiBase = React.useMemo(() => getApiBaseUrl('/api/v3'), []);
   const listRef = React.useRef<HTMLDivElement | null>(null);
   const [channelJumpBuffer, setChannelJumpBuffer] = React.useState('');
+  const [focusedChannelIndex, setFocusedChannelIndex] = React.useState(0);
+  const [capabilitySnapshot, setCapabilitySnapshot] = React.useState<CapabilitySnapshot | null>(null);
+  const [playbackBadges, setPlaybackBadges] = React.useState<Record<string, ChannelPlaybackBadge>>({});
   const channelJumpResetRef = React.useRef<number | null>(null);
   const holdKeyRef = React.useRef<string | null>(null);
   const holdRepeatCountRef = React.useRef(0);
-  const holdLastTsRef = React.useRef(0);
+  const holdStartTimeoutRef = React.useRef<number | null>(null);
+  const holdRepeatTimeoutRef = React.useRef<number | null>(null);
 
   // Sort channels by number (LCN) then name
   const sortedChannels = React.useMemo(() => {
@@ -449,6 +682,138 @@ export function EpgChannelList({
     return groups;
   }, [eventsByServiceRef, currentTime, channels]);
 
+  const searchChannels = React.useMemo(() => {
+    return searchGroups.map(([serviceRef]) =>
+      channels.find((channel) => channel.serviceRef === serviceRef || channel.id === serviceRef) ||
+      ({ serviceRef, id: serviceRef, name: serviceRef } as EpgChannel)
+    );
+  }, [channels, searchGroups]);
+
+  const orderedDisplayChannels = mode === 'main' ? sortedChannels : searchChannels;
+  const playbackRequestProfile = React.useMemo(
+    () => (capabilitySnapshot
+      ? resolvePlaybackRequestProfile(gatherPlaybackClientContext(), capabilitySnapshot, 'live')
+      : undefined),
+    [capabilitySnapshot]
+  );
+  const capabilityCacheKey = React.useMemo(
+    () => (capabilitySnapshot ? buildCapabilityCacheKey(capabilitySnapshot, playbackRequestProfile) : null),
+    [capabilitySnapshot, playbackRequestProfile]
+  );
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    gatherPlaybackCapabilities('live')
+      .then((snapshot) => {
+        if (!cancelled) {
+          setCapabilitySnapshot(snapshot);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCapabilitySnapshot(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const primePlaybackBadges = React.useCallback((indices: number[]) => {
+    if (!capabilitySnapshot || !capabilityCacheKey) {
+      return;
+    }
+
+    const uniqueIndices = Array.from(new Set(indices))
+      .filter((index) => index >= 0 && index < orderedDisplayChannels.length);
+
+    uniqueIndices.forEach((index) => {
+      const channel = orderedDisplayChannels[index];
+      const serviceRef = channel?.serviceRef || channel?.id || '';
+      if (!channel || !serviceRef) {
+        return;
+      }
+
+      const cacheKey = `${capabilityCacheKey}::${serviceRef}`;
+      const cached = channelPlaybackBadgeCache.get(cacheKey);
+      if (cached) {
+        setPlaybackBadges((current) =>
+          current[serviceRef] === cached ? current : { ...current, [serviceRef]: cached }
+        );
+        return;
+      }
+
+      void fetchChannelPlaybackBadge(apiBase, channel, capabilitySnapshot, capabilityCacheKey, playbackRequestProfile)
+        .then((badge) => {
+          if (!badge) {
+            return;
+          }
+          setPlaybackBadges((current) =>
+            current[serviceRef] === badge ? current : { ...current, [serviceRef]: badge }
+          );
+        })
+        .catch(() => {});
+    });
+  }, [apiBase, capabilityCacheKey, capabilitySnapshot, orderedDisplayChannels, playbackRequestProfile]);
+
+  React.useEffect(() => {
+    if (orderedDisplayChannels.length === 0) {
+      return;
+    }
+
+    const indices = Array.from(
+      { length: Math.min(CHANNEL_BADGE_INITIAL_PREFETCH, orderedDisplayChannels.length) },
+      (_, index) => index
+    );
+
+    primePlaybackBadges(indices);
+  }, [orderedDisplayChannels, primePlaybackBadges]);
+
+  React.useEffect(() => {
+    if (mode !== 'main') {
+      return;
+    }
+
+    const indices: number[] = [];
+    for (
+      let index = Math.max(0, focusedChannelIndex - CHANNEL_BADGE_FOCUS_BEHIND);
+      index <= Math.min(sortedChannels.length - 1, focusedChannelIndex + CHANNEL_BADGE_FOCUS_AHEAD);
+      index += 1
+    ) {
+      indices.push(index);
+    }
+
+    primePlaybackBadges(indices);
+  }, [focusedChannelIndex, mode, primePlaybackBadges, sortedChannels.length]);
+
+  React.useEffect(() => {
+    const root = listRef.current;
+    if (!root) {
+      return;
+    }
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      const channelNode = target?.closest<HTMLElement>('[data-xg2g-channel-index]');
+      const value = channelNode?.dataset.xg2gChannelIndex;
+      if (!value) {
+        return;
+      }
+
+      const nextIndex = Number.parseInt(value, 10);
+      if (!Number.isNaN(nextIndex)) {
+        setFocusedChannelIndex(nextIndex);
+      }
+    };
+
+    root.addEventListener('focusin', handleFocusIn);
+    return () => {
+      root.removeEventListener('focusin', handleFocusIn);
+    };
+  }, []);
+
   React.useEffect(() => {
     if (!isTvHost || mode !== 'main') {
       return;
@@ -468,6 +833,7 @@ export function EpgChannelList({
       }
 
       const safeIndex = Math.max(0, Math.min(sortedChannels.length - 1, index));
+      setFocusedChannelIndex(safeIndex);
       const card = root.querySelector<HTMLElement>(`[data-xg2g-channel-index="${safeIndex}"]`);
       const target = card?.querySelector<HTMLElement>('[data-xg2g-channel-focus="true"]');
       if (!target) {
@@ -479,9 +845,16 @@ export function EpgChannelList({
     };
 
     const resetHoldState = () => {
+      if (holdStartTimeoutRef.current !== null) {
+        window.clearTimeout(holdStartTimeoutRef.current);
+        holdStartTimeoutRef.current = null;
+      }
+      if (holdRepeatTimeoutRef.current !== null) {
+        window.clearTimeout(holdRepeatTimeoutRef.current);
+        holdRepeatTimeoutRef.current = null;
+      }
       holdKeyRef.current = null;
       holdRepeatCountRef.current = 0;
-      holdLastTsRef.current = 0;
     };
 
     const scheduleChannelJumpReset = () => {
@@ -512,32 +885,48 @@ export function EpgChannelList({
       }
     };
 
-    const resolveHoldStep = (key: 'ArrowDown' | 'ArrowUp', event: KeyboardEvent): number => {
-      const now = performance.now();
-      const isContinuousHold =
-        holdKeyRef.current === key &&
-        (event.repeat || now - holdLastTsRef.current < 420);
-
-      if (!isContinuousHold) {
-        holdKeyRef.current = key;
-        holdRepeatCountRef.current = 0;
-        holdLastTsRef.current = now;
-        return 1;
-      }
-
-      holdRepeatCountRef.current += 1;
-      holdLastTsRef.current = now;
-
-      if (holdRepeatCountRef.current >= 10) {
-        return 48;
-      }
-      if (holdRepeatCountRef.current >= 6) {
-        return 24;
-      }
-      if (holdRepeatCountRef.current >= 3) {
+    const resolveHoldStep = (repeatCount: number): number => {
+      if (repeatCount >= 10) {
         return 12;
       }
-      return 6;
+      if (repeatCount >= 6) {
+        return 8;
+      }
+      if (repeatCount >= 3) {
+        return 4;
+      }
+      return 2;
+    };
+
+    const moveFocusByStep = (key: 'ArrowDown' | 'ArrowUp', step: number) => {
+      const currentIndex = findFocusedChannelIndex();
+      const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+      const direction = key === 'ArrowDown' ? 1 : -1;
+      focusChannelAt(baseIndex + (step * direction));
+    };
+
+    const startHoldLoop = (key: 'ArrowDown' | 'ArrowUp') => {
+      if (holdStartTimeoutRef.current !== null) {
+        window.clearTimeout(holdStartTimeoutRef.current);
+      }
+      if (holdRepeatTimeoutRef.current !== null) {
+        window.clearTimeout(holdRepeatTimeoutRef.current);
+      }
+
+      const runRepeat = () => {
+        if (holdKeyRef.current !== key) {
+          return;
+        }
+
+        holdRepeatCountRef.current += 1;
+        moveFocusByStep(key, resolveHoldStep(holdRepeatCountRef.current));
+        holdRepeatTimeoutRef.current = window.setTimeout(runRepeat, CHANNEL_HOLD_REPEAT_INTERVAL_MS);
+      };
+
+      holdStartTimeoutRef.current = window.setTimeout(() => {
+        holdStartTimeoutRef.current = null;
+        runRepeat();
+      }, CHANNEL_HOLD_START_DELAY_MS);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -572,34 +961,48 @@ export function EpgChannelList({
         return;
       }
 
-      let nextIndex = activeIndex >= 0 ? activeIndex : 0;
-
       switch (event.key) {
         case 'ArrowDown':
-          nextIndex += resolveHoldStep('ArrowDown', event);
-          break;
-        case 'ArrowUp':
-          nextIndex -= resolveHoldStep('ArrowUp', event);
-          break;
+        case 'ArrowUp': {
+          event.preventDefault();
+          setChannelJumpBuffer('');
+          const key = event.key as 'ArrowDown' | 'ArrowUp';
+          if (holdKeyRef.current === key) {
+            return;
+          }
+          resetHoldState();
+          holdKeyRef.current = key;
+          moveFocusByStep(key, 1);
+          startHoldLoop(key);
+          return;
+        }
         case 'PageDown':
         case 'ChannelDown':
         case 'MediaChannelDown':
           resetHoldState();
-          nextIndex += 24;
+          event.preventDefault();
+          setChannelJumpBuffer('');
+          focusChannelAt((activeIndex >= 0 ? activeIndex : 0) + 24);
           break;
         case 'PageUp':
         case 'ChannelUp':
         case 'MediaChannelUp':
           resetHoldState();
-          nextIndex -= 24;
+          event.preventDefault();
+          setChannelJumpBuffer('');
+          focusChannelAt((activeIndex >= 0 ? activeIndex : 0) - 24);
           break;
         case 'Home':
           resetHoldState();
-          nextIndex = 0;
+          event.preventDefault();
+          setChannelJumpBuffer('');
+          focusChannelAt(0);
           break;
         case 'End':
           resetHoldState();
-          nextIndex = sortedChannels.length - 1;
+          event.preventDefault();
+          setChannelJumpBuffer('');
+          focusChannelAt(sortedChannels.length - 1);
           break;
         default:
           if (event.key !== 'Tab') {
@@ -607,10 +1010,6 @@ export function EpgChannelList({
           }
           return;
       }
-
-      event.preventDefault();
-      setChannelJumpBuffer('');
-      focusChannelAt(nextIndex);
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -624,6 +1023,12 @@ export function EpgChannelList({
     return () => {
       if (channelJumpResetRef.current !== null) {
         window.clearTimeout(channelJumpResetRef.current);
+      }
+      if (holdStartTimeoutRef.current !== null) {
+        window.clearTimeout(holdStartTimeoutRef.current);
+      }
+      if (holdRepeatTimeoutRef.current !== null) {
+        window.clearTimeout(holdRepeatTimeoutRef.current);
       }
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
@@ -649,6 +1054,7 @@ export function EpgChannelList({
               key={ref}
               channelIndex={channelIndex}
               channel={channel}
+              playbackBadge={playbackBadges[ref] || null}
               events={events}
               currentTime={currentTime}
               timeRangeHours={timeRangeHours}
@@ -676,6 +1082,7 @@ export function EpgChannelList({
           <SearchGroup
             key={serviceRef}
             channel={channel}
+            playbackBadge={playbackBadges[serviceRef] || null}
             events={events}
             currentTime={currentTime}
             isExpanded={isExpanded}

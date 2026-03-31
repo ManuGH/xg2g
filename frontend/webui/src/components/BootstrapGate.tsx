@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import { ClientRequestError } from '../services/clientWrapper';
 import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import { useAppContext } from '../context/AppContext';
-import { useBootstrapConfig } from '../hooks/useServerQueries';
+import { queryKeys, useBootstrapConfig } from '../hooks/useServerQueries';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
 import { resolveHostEnvironment } from '../lib/hostBridge';
 import { normalizePathname, ROUTE_MAP } from '../routes';
@@ -40,6 +41,7 @@ export default function BootstrapGate() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const { auth, setToken, setPlayingChannel } = useAppContext();
+  const queryClient = useQueryClient();
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const isTvHost = hostEnvironment.isTv;
   const authReady = auth.isReady ?? true;
@@ -122,6 +124,14 @@ export default function BootstrapGate() {
       return;
     }
 
+    // Clear stale 401 bootstrap state before we apply the replacement token.
+    // Otherwise the old unauthorized query error can immediately trip the
+    // auth-required effect again and wipe the fresh token during re-auth.
+    void queryClient.resetQueries({
+      queryKey: queryKeys.bootstrapConfig,
+      exact: true,
+    });
+    setForcedAuthPrompt(null);
     setTokenValue(token);
     setToken(token);
   };

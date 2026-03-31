@@ -107,11 +107,14 @@ function mapSdkBouquet(dto: any): EpgBouquet {
 function mapSdkChannel(dto: any): EpgChannel {
   return {
     id: dto.id || dto.serviceRef || '',
+    serviceRef: dto.serviceRef || dto.id || '',
     name: dto.name || 'Unknown',
     number: dto.number,
     group: dto.group,
     logoUrl: dto.logoUrl,
-    logo: dto.logo
+    logo: dto.logo,
+    resolution: dto.resolution,
+    codec: dto.codec,
   };
 }
 
