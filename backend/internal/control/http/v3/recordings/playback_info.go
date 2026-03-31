@@ -29,6 +29,8 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		}
 	}
 
+	req = s.applyCapabilityRegistryFallback(ctx, req)
+
 	sourceRef, truth, err := s.resolveSubjectTruth(ctx, req, svc)
 	if err != nil {
 		return PlaybackInfoResult{}, err
@@ -65,6 +67,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		s.deps.HostPressure(ctx),
 	)
 
+	ctx = decision.WithShadowCollector(ctx, decision.NewShadowCollector())
 	_, dec, prob := decision.Decide(ctx, input, req.SchemaType)
 	if prob != nil {
 		return PlaybackInfoResult{}, &PlaybackInfoError{
@@ -79,9 +82,11 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		}
 	}
 
-	alignLiveAutoCodecDecision(req, resolvedCaps, dec)
+	alignAutoCodecDecision(req, resolvedCaps, dec)
 	alignRecordingNativePackaging(req, resolvedCaps, dec)
+	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, sourceRef, req, truth, resolvedCaps)
 	s.recordDecisionAudit(ctx, sourceRef, req, resolvedCaps, input, dec)
+	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
 
 	return PlaybackInfoResult{
 		SourceRef:            sourceRef,
@@ -182,10 +187,21 @@ func (s *Service) recordDecisionAudit(ctx context.Context, sourceRef string, req
 	if err := sink.Record(ctx, event); err != nil {
 		log.L().Warn().Err(err).Str("serviceRef", sourceRef).Str("basisHash", event.BasisHash).Msg("decision audit: failed to persist event")
 	}
+
+	for _, divergence := range decision.ShadowDivergencesFromContext(ctx) {
+		shadowEvent, err := decision.BuildShadowDivergenceEvent(event, divergence)
+		if err != nil {
+			log.L().Warn().Err(err).Str("serviceRef", sourceRef).Msg("decision audit: failed to build shadow divergence event")
+			continue
+		}
+		if err := sink.Record(ctx, shadowEvent); err != nil {
+			log.L().Warn().Err(err).Str("serviceRef", sourceRef).Str("basisHash", shadowEvent.BasisHash).Msg("decision audit: failed to persist shadow divergence event")
+		}
+	}
 }
 
-func alignLiveAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
-	if req.SubjectKind != PlaybackSubjectLive || dec == nil || dec.Mode != decision.ModeTranscode {
+func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
+	if req.Capabilities == nil || dec == nil || dec.Mode != decision.ModeTranscode || !shouldApplyAutoCodecDecision(req.RequestedProfile) {
 		return
 	}
 
@@ -210,6 +226,15 @@ func alignLiveAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabiliti
 	if publicProfile := profiles.PublicProfileName(profileID); publicProfile != "" {
 		dec.Trace.RequestedIntent = publicProfile
 		dec.Trace.ResolvedIntent = publicProfile
+	}
+}
+
+func shouldApplyAutoCodecDecision(requestedProfile string) bool {
+	switch strings.ToLower(strings.TrimSpace(requestedProfile)) {
+	case "direct", "copy", "passthrough", "compatible", "high", "bandwidth", "low", "repair", "h264_fmp4", "safari_dirty":
+		return false
+	default:
+		return true
 	}
 }
 
@@ -379,6 +404,7 @@ func buildDecisionInput(
 			Width:      truth.Width,
 			Height:     truth.Height,
 			FPS:        truth.FPS,
+			Interlaced: truth.Interlaced,
 		},
 		Capabilities: decision.FromCapabilities(resolvedCaps),
 		Policy: decision.Policy{

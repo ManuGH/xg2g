@@ -44,16 +44,17 @@ func ReferenceDecide(input DecisionInput) *Decision {
 
 	// Rule 3: Audio Support
 	canAudio := modelContains(input.Capabilities.AudioCodecs, input.Source.AudioCodec)
+	videoRepairRequired := input.Source.Interlaced || (input.Capabilities.MaxVideo != nil && (input.Source.Width <= 0 || input.Source.Height <= 0 || input.Source.FPS <= 0))
 
 	// Rule 4: DirectPlay (MP4/MOV/M4V + Ranges)
 	// FIX R2-001: Normalize container to match modelContains() behavior
 	containerNorm := robustNorm(input.Source.Container)
 	isMp4 := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v"
 	supportsRange := input.Capabilities.SupportsRange != nil && *input.Capabilities.SupportsRange
-	directPlayPossible := isMp4 && supportsRange && canContainer && canVideo && canAudio
+	directPlayPossible := isMp4 && supportsRange && canContainer && canVideo && canAudio && !videoRepairRequired
 
 	// Rule 5: Direct Stream (HLS + Codecs)
-	directStreamPossible := input.Capabilities.SupportsHLS && canVideo && canAudio
+	directStreamPossible := input.Capabilities.SupportsHLS && canVideo && canAudio && !videoRepairRequired
 
 	// Rule 6: Transcode (requires HLS support)
 	transcodePossible := input.Policy.AllowTranscode && input.Capabilities.SupportsHLS
@@ -118,6 +119,9 @@ func ReferenceDecide(input DecisionInput) *Decision {
 
 	// Recalculate TranscodeNeeded logic to match predicates.go:
 	if transcodePossible {
+		if len(reasons) == 0 {
+			reasons = append(reasons, ReasonNoCompatiblePlaybackPath)
+		}
 		// Engine: if pred.TranscodeNeeded && pred.TranscodePossible { return ModeTranscode }
 		return makeRefDecision(ModeTranscode, reasons, rules)
 	}

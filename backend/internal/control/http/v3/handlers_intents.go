@@ -105,6 +105,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	mode := model.ModeLive
 	modeRecording := normalize.Token(model.ModeRecording)
 	modeLive := normalize.Token(model.ModeLive)
+	decisionTraceID := ""
 	if raw := normalize.Token(req.Params["mode"]); raw != "" {
 		if raw == modeRecording {
 			respondIntentFailure(w, r, IntentErrInvalidInput, "recording playback uses /recordings")
@@ -137,6 +138,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if claims.TraceID != "" {
+			decisionTraceID = claims.TraceID
 			logger = logger.With().Str("traceId", claims.TraceID).Logger()
 		}
 
@@ -194,6 +196,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		Params:        req.Params,
 		StartMs:       req.StartMs,
 		CorrelationID: correlationID,
+		DecisionTrace: decisionTraceID,
 		Mode:          mode,
 		UserAgent:     r.UserAgent(),
 		PrincipalID:   principalID,

@@ -36,11 +36,12 @@ func (s *Server) snapshotV3Dependencies() v3DependencySnapshot {
 
 func sanitizeV3RuntimeDependencies(deps v3.Dependencies) v3.Dependencies {
 	return v3.Dependencies{
-		Bus:           deps.Bus,
-		Store:         deps.Store,
-		ResumeStore:   deps.ResumeStore,
-		Scan:          deps.Scan,
-		DecisionAudit: deps.DecisionAudit,
+		Bus:                deps.Bus,
+		Store:              deps.Store,
+		ResumeStore:        deps.ResumeStore,
+		Scan:               deps.Scan,
+		DecisionAudit:      deps.DecisionAudit,
+		CapabilityRegistry: deps.CapabilityRegistry,
 	}
 }
 
@@ -56,26 +57,27 @@ func (s *Server) syncV3HandlerDependencies() {
 	}
 
 	deps.handler.SetDependencies(v3.Dependencies{
-		Bus:               deps.runtimeDeps.Bus,
-		Store:             deps.runtimeDeps.Store,
-		ResumeStore:       deps.runtimeDeps.ResumeStore,
-		Scan:              deps.runtimeDeps.Scan,
-		DecisionAudit:     deps.runtimeDeps.DecisionAudit,
-		PathMapper:        deps.recordingPathMapper,
-		ChannelManager:    deps.channelManager,
-		SeriesManager:     deps.seriesManager,
-		SeriesEngine:      deps.seriesEngine,
-		VODManager:        deps.vodManager,
-		EPGCache:          deps.epgCache,
-		HealthManager:     deps.healthManager,
-		LogSource:         logSourceWrapper{},
-		ScanSource:        scanSource,
-		DVRSource:         &dvrSourceWrapper{s},
-		ServicesSource:    deps.channelManager,
-		TimersSource:      &dvrSourceWrapper{s},
-		RecordingsService: deps.recordingsService,
-		RequestShutdown:   deps.requestShutdown,
-		PreflightProvider: deps.preflightProvider,
+		Bus:                deps.runtimeDeps.Bus,
+		Store:              deps.runtimeDeps.Store,
+		ResumeStore:        deps.runtimeDeps.ResumeStore,
+		Scan:               deps.runtimeDeps.Scan,
+		DecisionAudit:      deps.runtimeDeps.DecisionAudit,
+		CapabilityRegistry: deps.runtimeDeps.CapabilityRegistry,
+		PathMapper:         deps.recordingPathMapper,
+		ChannelManager:     deps.channelManager,
+		SeriesManager:      deps.seriesManager,
+		SeriesEngine:       deps.seriesEngine,
+		VODManager:         deps.vodManager,
+		EPGCache:           deps.epgCache,
+		HealthManager:      deps.healthManager,
+		LogSource:          logSourceWrapper{},
+		ScanSource:         scanSource,
+		DVRSource:          &dvrSourceWrapper{s},
+		ServicesSource:     deps.channelManager,
+		TimersSource:       &dvrSourceWrapper{s},
+		RecordingsService:  deps.recordingsService,
+		RequestShutdown:    deps.requestShutdown,
+		PreflightProvider:  deps.preflightProvider,
 	})
 }
 

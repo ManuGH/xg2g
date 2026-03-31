@@ -32,12 +32,14 @@ type Source struct {
 	Width       int     `json:"w"`
 	Height      int     `json:"h"`
 	FPS         float64 `json:"fps"`
+	Interlaced  bool    `json:"interlaced,omitempty"`
 }
 
 // MaxVideoDimensions defines video resolution limits.
 type MaxVideoDimensions struct {
 	Width  int `json:"w"`
 	Height int `json:"h"`
+	FPS    int `json:"fps,omitempty"`
 }
 
 // Capabilities represents client capabilities.
@@ -145,6 +147,7 @@ type Predicates struct {
 	CanContainer         bool
 	CanVideo             bool
 	CanAudio             bool
+	VideoRepairRequired  bool
 	DirectPlayPossible   bool
 	DirectStreamPossible bool
 	TranscodeNeeded      bool

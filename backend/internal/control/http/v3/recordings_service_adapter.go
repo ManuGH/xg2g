@@ -5,6 +5,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
@@ -30,12 +31,26 @@ func (d *serverRecordingsDeps) DecisionAuditSink() v3recordings.DecisionAuditSin
 	return d.s.decisionAudit
 }
 
+func (d *serverRecordingsDeps) CapabilityRegistry() capreg.Store {
+	d.s.mu.RLock()
+	defer d.s.mu.RUnlock()
+	return d.s.capabilityRegistry
+}
+
 func (d *serverRecordingsDeps) Config() config.AppConfig {
 	return d.s.GetConfig()
 }
 
 func (d *serverRecordingsDeps) HostPressure(ctx context.Context) playbackprofile.HostPressureAssessment {
 	return d.s.currentHostPressure(ctx)
+}
+
+func (d *serverRecordingsDeps) HostRuntime(ctx context.Context) playbackprofile.HostRuntimeSnapshot {
+	return d.s.currentHostRuntime(ctx)
+}
+
+func (d *serverRecordingsDeps) ReceiverContext(ctx context.Context) *capreg.ReceiverContext {
+	return d.s.currentReceiverContext(ctx)
 }
 
 func (s *Server) recordingsProcessor() *v3recordings.Service {

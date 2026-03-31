@@ -21,7 +21,24 @@ func TestParseRecordingPlaybackPostInput_Success(t *testing.T) {
 		"container":["mp4","hls"],
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac"],
-		"supportsHls":true
+		"supportsHls":true,
+		"deviceContext":{
+			"brand":"google",
+			"product":"mdarcy",
+			"device":"foster",
+			"platform":"android-tv",
+			"manufacturer":"NVIDIA",
+			"model":"Shield",
+			"osName":"Android",
+			"osVersion":"14",
+			"sdkInt":34
+		},
+		"networkContext":{
+			"kind":"ethernet",
+			"downlinkKbps":940000,
+			"metered":false,
+			"internetValidated":true
+		}
 	}`))
 
 	caps, problem := parseRecordingPlaybackPostInput(req)
@@ -34,6 +51,13 @@ func TestParseRecordingPlaybackPostInput_Success(t *testing.T) {
 	assert.Equal(t, []string{"aac"}, caps.AudioCodecs)
 	require.NotNil(t, caps.SupportsHls)
 	assert.True(t, *caps.SupportsHls)
+	require.NotNil(t, caps.DeviceContext)
+	assert.Equal(t, "google", *caps.DeviceContext.Brand)
+	assert.Equal(t, "mdarcy", *caps.DeviceContext.Product)
+	assert.Equal(t, "foster", *caps.DeviceContext.Device)
+	assert.Equal(t, "android-tv", *caps.DeviceContext.Platform)
+	require.NotNil(t, caps.NetworkContext)
+	assert.Equal(t, "ethernet", *caps.NetworkContext.Kind)
 }
 
 func TestParseRecordingPlaybackPostInput_InvalidCapabilitiesVersion(t *testing.T) {
@@ -61,7 +85,12 @@ func TestParseLivePlaybackPostInput_NormalizesServiceRef(t *testing.T) {
 			"capabilitiesVersion":2,
 			"container":["mpegts"],
 			"videoCodecs":["h264"],
-			"audioCodecs":["aac"]
+			"audioCodecs":["aac"],
+			"deviceContext":{
+				"platform":"browser",
+				"osName":"windows",
+				"osVersion":"11"
+			}
 		}
 	}`))
 
@@ -72,6 +101,8 @@ func TestParseLivePlaybackPostInput_NormalizesServiceRef(t *testing.T) {
 	require.NotNil(t, input.capabilities)
 	assert.Equal(t, 2, input.capabilities.CapabilitiesVersion)
 	assert.Equal(t, []string{"mpegts"}, input.capabilities.Container)
+	require.NotNil(t, input.capabilities.DeviceContext)
+	assert.Equal(t, "browser", *input.capabilities.DeviceContext.Platform)
 }
 
 func TestParseLivePlaybackPostInput_InvalidJSON(t *testing.T) {

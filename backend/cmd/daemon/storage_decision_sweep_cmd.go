@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	recordingcaps "github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/m3u"
@@ -239,6 +240,18 @@ func (d storageDecisionSweepDeps) Config() config.AppConfig {
 
 func (d storageDecisionSweepDeps) HostPressure(context.Context) playbackprofile.HostPressureAssessment {
 	return playbackprofile.HostPressureAssessment{}
+}
+
+func (d storageDecisionSweepDeps) HostRuntime(context.Context) playbackprofile.HostRuntimeSnapshot {
+	return playbackprofile.HostRuntimeSnapshot{}
+}
+
+func (d storageDecisionSweepDeps) CapabilityRegistry() capreg.Store {
+	return nil
+}
+
+func (d storageDecisionSweepDeps) ReceiverContext(context.Context) *capreg.ReceiverContext {
+	return nil
 }
 
 func runStorageDecisionSweep(args []string) int {

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -96,12 +98,124 @@ func (b *feedbackBus) Subscribe(ctx context.Context, topic string) (bus.Subscrib
 	return nil, nil
 }
 
+type feedbackRegistry struct {
+	mu                  sync.Mutex
+	decisionObservation capreg.PlaybackObservation
+	recorded            []capreg.PlaybackObservation
+}
+
+func (r *feedbackRegistry) RememberHost(context.Context, capreg.HostSnapshot) error { return nil }
+
+func (r *feedbackRegistry) RememberDevice(context.Context, capreg.DeviceSnapshot) error { return nil }
+
+func (r *feedbackRegistry) RememberSource(context.Context, capreg.SourceSnapshot) error { return nil }
+
+func (r *feedbackRegistry) LookupCapabilities(context.Context, capreg.DeviceIdentity) (capabilities.PlaybackCapabilities, bool, error) {
+	return capabilities.PlaybackCapabilities{}, false, nil
+}
+
+func (r *feedbackRegistry) LookupDecisionObservation(_ context.Context, requestID string) (capreg.PlaybackObservation, bool, error) {
+	if strings.TrimSpace(requestID) == strings.TrimSpace(r.decisionObservation.RequestID) {
+		return r.decisionObservation, true, nil
+	}
+	return capreg.PlaybackObservation{}, false, nil
+}
+
+func (r *feedbackRegistry) RecordObservation(_ context.Context, observation capreg.PlaybackObservation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.recorded = append(r.recorded, observation)
+	return nil
+}
+
+func (r *feedbackRegistry) lastObservation() capreg.PlaybackObservation {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.recorded) == 0 {
+		return capreg.PlaybackObservation{}
+	}
+	return r.recorded[len(r.recorded)-1]
+}
+
 func writeFirstFrameMarker(t *testing.T, hlsRoot, sid string) {
 	t.Helper()
 	markerPath := model.SessionFirstFrameMarkerPath(hlsRoot, sid)
 	require.NotEmpty(t, markerPath)
 	require.NoError(t, os.MkdirAll(filepath.Dir(markerPath), 0o755))
 	require.NoError(t, os.WriteFile(markerPath, []byte("ready"), 0o600))
+}
+
+func TestReportPlaybackFeedback_RecordsFeedbackObservation(t *testing.T) {
+	sid := uuid.NewString()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-observation-001",
+			Profile: model.ProfileSpec{
+				Name:      "universal",
+				Container: "ts",
+			},
+			ContextData: map[string]string{
+				model.CtxKeyMode:            model.ModeLive,
+				model.CtxKeyDecisionRequest: "decision-req-1",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				RequestedIntent: "quality",
+				ResolvedIntent:  "compatible",
+			},
+		},
+	}
+	registry := &feedbackRegistry{
+		decisionObservation: capreg.PlaybackObservation{
+			RequestID:          "decision-req-1",
+			ObservationKind:    "decision",
+			Outcome:            "predicted",
+			SourceRef:          "1:0:1:445D:453:1:C00000:0:0:0:",
+			SourceFingerprint:  "source-fp-1",
+			SubjectKind:        "live",
+			RequestedIntent:    "quality",
+			ResolvedIntent:     "compatible",
+			Mode:               "direct_stream",
+			SelectedContainer:  "ts",
+			SelectedVideoCodec: "h264",
+			SelectedAudioCodec: "ac3",
+			SourceWidth:        1920,
+			SourceHeight:       1080,
+			SourceFPS:          50,
+			HostFingerprint:    "host-fp-1",
+			DeviceFingerprint:  "device-fp-1",
+			ClientCapsHash:     "caps-hash-1",
+		},
+	}
+
+	s := &Server{
+		cfg:                config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}},
+		v3Store:            store,
+		v3Bus:              newFeedbackBus(),
+		capabilityRegistry: registry,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"info","code":200,"message":"playing"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	observed := registry.lastObservation()
+	require.Equal(t, "decision-req-1", observed.RequestID)
+	require.Equal(t, "feedback", observed.ObservationKind)
+	require.Equal(t, "started", observed.Outcome)
+	require.Equal(t, sid, observed.SessionID)
+	require.Equal(t, "direct_stream", observed.Mode)
+	require.Equal(t, "source-fp-1", observed.SourceFingerprint)
+	require.Equal(t, "host-fp-1", observed.HostFingerprint)
+	require.Equal(t, "device-fp-1", observed.DeviceFingerprint)
+	require.Equal(t, "info", observed.FeedbackEvent)
+	require.Equal(t, 200, observed.FeedbackCode)
+	require.Equal(t, "playing", observed.FeedbackMessage)
 }
 
 func TestReportPlaybackFeedback_WaitsForTerminalBeforeRestart(t *testing.T) {

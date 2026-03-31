@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -155,6 +156,56 @@ func TestSqliteAuditStore_SeparatesRuntimeAndSweepCurrentRows(t *testing.T) {
 	require.Equal(t, "basis-sweep", sweepBasis)
 }
 
+func TestSqliteAuditStore_ShadowDivergenceAlwaysPersistsHistoryPerRequest(t *testing.T) {
+	store, err := NewSqliteAuditStore(filepath.Join(t.TempDir(), "decision_audit.sqlite"))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.DB.Close()) }()
+
+	baseTime := time.Date(2026, 3, 31, 18, 0, 0, 0, time.UTC)
+	base := testDecisionEvent(baseTime, "basis-shadow-a", "output-shadow-a")
+	shadowEvent, err := BuildShadowDivergenceEvent(base, ShadowDivergence{
+		Predicate:                     "video",
+		LegacyCanVideo:                true,
+		LegacyVideoRepairRequired:     false,
+		LegacyCompatibleWithoutRepair: true,
+		NewCompatible:                 false,
+		NewReasons:                    []string{"codec_mismatch"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Record(context.Background(), shadowEvent))
+
+	secondBase := testDecisionEvent(baseTime.Add(time.Minute), "basis-shadow-b", "output-shadow-a")
+	secondShadowEvent, err := BuildShadowDivergenceEvent(secondBase, ShadowDivergence{
+		Predicate:                     "video",
+		LegacyCanVideo:                true,
+		LegacyVideoRepairRequired:     false,
+		LegacyCompatibleWithoutRepair: true,
+		NewCompatible:                 false,
+		NewReasons:                    []string{"codec_mismatch"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Record(context.Background(), secondShadowEvent))
+
+	require.Equal(t, 2, countDecisionHistoryRows(t, store))
+
+	var shadowJSON string
+	err = store.DB.QueryRow(
+		`SELECT shadow_json FROM decision_current
+		WHERE service_ref = ? AND subject_kind = ? AND origin = ? AND client_family = ? AND requested_intent = ?`,
+		secondShadowEvent.ServiceRef,
+		secondShadowEvent.SubjectKind,
+		secondShadowEvent.Origin,
+		secondShadowEvent.ClientFamily,
+		secondShadowEvent.RequestedIntent,
+	).Scan(&shadowJSON)
+	require.NoError(t, err)
+
+	var shadow ShadowDivergence
+	require.NoError(t, json.Unmarshal([]byte(shadowJSON), &shadow))
+	require.Equal(t, "video", shadow.Predicate)
+	require.Equal(t, []string{"codec_mismatch"}, shadow.NewReasons)
+}
+
 func TestSqliteAuditStore_MigratesV1RowsToRuntimeOrigin(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "decision_audit.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
@@ -242,6 +293,18 @@ func TestSqliteAuditStore_MigratesV1RowsToRuntimeOrigin(t *testing.T) {
 	err = store.DB.QueryRow(`SELECT COUNT(*) FROM decision_history WHERE origin = ?`, OriginRuntime).Scan(&historyRuntimeCount)
 	require.NoError(t, err)
 	require.Equal(t, 1, historyRuntimeCount)
+
+	tx, err := store.DB.Begin()
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+
+	currentHasShadow, err := tableHasColumn(tx, "decision_current", "shadow_json")
+	require.NoError(t, err)
+	require.True(t, currentHasShadow)
+
+	historyHasShadow, err := tableHasColumn(tx, "decision_history", "shadow_json")
+	require.NoError(t, err)
+	require.True(t, historyHasShadow)
 }
 
 func testDecisionEvent(decidedAt time.Time, basisHash, outputHash string) Event {

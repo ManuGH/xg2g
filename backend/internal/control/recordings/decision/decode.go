@@ -257,6 +257,7 @@ func DecodeDecisionInput(data []byte) (DecisionInput, *Problem) {
 		Width       int     `json:"width"`
 		Height      int     `json:"height"`
 		FPS         float64 `json:"fps"`
+		Interlaced  bool    `json:"interlaced"`
 	}
 	type legacyCaps struct {
 		Version       int                 `json:"version"`
@@ -312,6 +313,7 @@ func DecodeDecisionInput(data []byte) (DecisionInput, *Problem) {
 			Width:       aux.LegacySource.Width,
 			Height:      aux.LegacySource.Height,
 			FPS:         aux.LegacySource.FPS,
+			Interlaced:  aux.LegacySource.Interlaced,
 		}
 	}
 

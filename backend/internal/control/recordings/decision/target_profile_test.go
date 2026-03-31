@@ -50,6 +50,9 @@ func TestDecide_DirectStreamEmitsHLSTargetProfile(t *testing.T) {
 			Container:  "mkv",
 			VideoCodec: "h264",
 			AudioCodec: "aac",
+			Width:      1920,
+			Height:     1080,
+			FPS:        25,
 		},
 		Capabilities: Capabilities{
 			Version:       1,
@@ -78,6 +81,48 @@ func TestDecide_DirectStreamEmitsHLSTargetProfile(t *testing.T) {
 	}
 	if dec.TargetProfile.Video.Mode != "copy" || dec.TargetProfile.Audio.Mode != "copy" {
 		t.Fatalf("expected direct stream to copy audio and video, got %#v", dec.TargetProfile)
+	}
+}
+
+func TestDecide_InterlacedSourceTranscodesVideoInsteadOfDirectStream(t *testing.T) {
+	input := DecisionInput{
+		Source: Source{
+			Container:   "mpegts",
+			VideoCodec:  "h264",
+			AudioCodec:  "aac",
+			Width:       1920,
+			Height:      1080,
+			FPS:         25,
+			Interlaced:  true,
+			BitrateKbps: 6000,
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mpegts", "mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: boolPtr(true),
+		},
+		Policy:     Policy{AllowTranscode: true},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.Mode != ModeTranscode {
+		t.Fatalf("expected transcode, got %s", dec.Mode)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Video.Mode != "transcode" || dec.TargetProfile.Video.Codec != "h264" {
+		t.Fatalf("expected interlaced video repair transcode, got %#v", dec.TargetProfile.Video)
+	}
+	if dec.TargetProfile.Audio.Mode != "copy" || dec.TargetProfile.Audio.Codec != "aac" {
+		t.Fatalf("expected audio copy target, got %#v", dec.TargetProfile.Audio)
 	}
 }
 
@@ -168,6 +213,94 @@ func TestDecide_TranscodeAudioQualityIntentUsesHigherAACBitrate(t *testing.T) {
 	}
 	if dec.Trace.AudioQualityRung != string(playbackprofile.RungQualityAudioAAC320Stereo) || dec.Trace.VideoQualityRung != "" {
 		t.Fatalf("expected quality audio ladder trace, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_MaxVideoBlocksDirectVideoCopyWhenResolutionIsTooHigh(t *testing.T) {
+	input := DecisionInput{
+		Source: Source{
+			Container:   "mkv",
+			VideoCodec:  "hevc",
+			AudioCodec:  "aac",
+			Width:       3840,
+			Height:      2160,
+			FPS:         50,
+			BitrateKbps: 18000,
+		},
+		Capabilities: Capabilities{
+			Version:       3,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"hevc", "h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+			MaxVideo: &MaxVideoDimensions{
+				Width:  1920,
+				Height: 1080,
+				FPS:    60,
+			},
+		},
+		Policy:     Policy{AllowTranscode: true},
+		APIVersion: "v3.1",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.Mode != ModeTranscode {
+		t.Fatalf("expected transcode, got %s", dec.Mode)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Video.Mode != "transcode" || dec.TargetProfile.Video.Codec != "h264" {
+		t.Fatalf("expected video transcode target, got %#v", dec.TargetProfile.Video)
+	}
+	if dec.TargetProfile.Audio.Mode != "copy" || dec.TargetProfile.Audio.Codec != "aac" {
+		t.Fatalf("expected audio copy target, got %#v", dec.TargetProfile.Audio)
+	}
+}
+
+func TestDecide_MaxVideoBlocksDirectVideoCopyWhenFpsIsTooHigh(t *testing.T) {
+	input := DecisionInput{
+		Source: Source{
+			Container:  "mkv",
+			VideoCodec: "h264",
+			AudioCodec: "aac",
+			Width:      1920,
+			Height:     1080,
+			FPS:        60,
+		},
+		Capabilities: Capabilities{
+			Version:       3,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+			MaxVideo: &MaxVideoDimensions{
+				Width:  1920,
+				Height: 1080,
+				FPS:    30,
+			},
+		},
+		Policy:     Policy{AllowTranscode: true},
+		APIVersion: "v3.1",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.Mode != ModeTranscode {
+		t.Fatalf("expected transcode, got %s", dec.Mode)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Video.Mode != "transcode" || dec.TargetProfile.Video.Codec != "h264" {
+		t.Fatalf("expected video transcode target, got %#v", dec.TargetProfile.Video)
 	}
 }
 
