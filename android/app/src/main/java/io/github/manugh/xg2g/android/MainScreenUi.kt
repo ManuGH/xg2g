@@ -58,6 +58,7 @@ internal class MainScreenUi(
     private val actionRailBackground = color(R.color.ide_surface_panel)
     private val actionRailStroke = color(R.color.ide_outline_soft)
     private val actionRailText = color(R.color.ide_text_secondary)
+    private var preferredQuickActionsFocusTarget: MaterialButton? = null
 
     fun bindActions(
         onConnect: (String) -> Unit,
@@ -117,12 +118,37 @@ internal class MainScreenUi(
         updateActionStyles()
         tvMenuButton.isVisible = false
         tvQuickActionsContainer.isVisible = true
-        buttonForDestination(activeDestination).requestFocus()
+        preferredQuickActionsFocusTarget = buttonForDestination(activeDestination)
+        preferredQuickActionsFocusTarget?.requestFocus()
     }
 
     fun hideTvQuickActions() {
         tvQuickActionsContainer.isVisible = false
         tvMenuButton.isVisible = isTvDevice
+    }
+
+    fun ensureTvQuickActionsFocus() {
+        if (!tvQuickActionsContainer.isVisible) {
+            return
+        }
+
+        val currentFocus = activity.currentFocus
+        if (currentFocus != null && isDescendantOf(tvQuickActionsContainer, currentFocus)) {
+            return
+        }
+
+        val fallbackTarget = listOfNotNull(
+            preferredQuickActionsFocusTarget,
+            tvHomeDestinationButton,
+            tvGuideDestinationButton,
+            tvRecordingsDestinationButton,
+            tvTimersDestinationButton,
+            tvSettingsDestinationButton,
+            tvReloadButton,
+            tvExitButton,
+        ).firstOrNull { it.isShown && it.isEnabled }
+
+        fallbackTarget?.requestFocus()
     }
 
     private fun buttonForDestination(destination: TvNavigationDestination?): MaterialButton {
@@ -230,4 +256,15 @@ internal class MainScreenUi(
     }
 
     private fun color(resId: Int): Int = ContextCompat.getColor(activity, resId)
+
+    private fun isDescendantOf(container: View, candidate: View): Boolean {
+        var current: View? = candidate
+        while (current != null) {
+            if (current === container) {
+                return true
+            }
+            current = current.parent as? View
+        }
+        return false
+    }
 }

@@ -12,6 +12,7 @@ import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 internal class HostJavascriptBridge(
     private val activity: AppCompatActivity,
     private val serializedHostCapabilities: String,
+    private val serializedPlaybackCapabilities: String,
     private val activeWebView: () -> WebView,
     private val callbacks: Callbacks
 ) {
@@ -97,6 +98,9 @@ internal class HostJavascriptBridge(
     private inner class JavascriptApi {
         @JavascriptInterface
         fun getCapabilitiesJson(): String = serializedHostCapabilities
+
+        @JavascriptInterface
+        fun getPlaybackCapabilitiesJson(): String = serializedPlaybackCapabilities
 
         @JavascriptInterface
         fun setPlaybackActive(active: Boolean) {

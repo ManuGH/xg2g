@@ -251,10 +251,15 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		// Smart Profile Logic
 		if cap != nil && !cap.Interlaced {
 			// Progressive -> Direct Remux (Original Quality)
-			// Keep native Safari on classic HLS-TS for passthrough. This avoids
-			// black-video failures seen with copied broadcast H.264 inside fMP4.
+			// Browser Safari stays on classic HLS-TS because copied broadcast H.264
+			// inside fMP4 caused black-video regressions there. Native clients that
+			// reuse the safari family (for example Android native_hls) prefer fMP4.
 			spec.TranscodeVideo = false
-			spec.Container = "mpegts"
+			if isSafari {
+				spec.Container = "mpegts"
+			} else {
+				spec.Container = "fmp4"
+			}
 			spec.AudioBitrateK = 192
 			// HWAccel disabled for passthrough
 		} else {

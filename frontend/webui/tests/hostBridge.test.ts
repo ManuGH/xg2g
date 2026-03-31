@@ -3,6 +3,7 @@ import {
   applyHostEnvironmentToDocument,
   HOST_MEDIA_KEY_EVENT,
   HOST_NATIVE_PLAYBACK_STATE_EVENT,
+  getNativePlaybackCapabilities,
   getNativePlaybackState,
   onHostMediaKey,
   onNativePlaybackState,
@@ -78,6 +79,21 @@ describe('hostBridge', () => {
     window.Xg2gHost = {
       startNativePlayback: startNativePlaybackSpy,
       stopNativePlayback: stopNativePlaybackSpy,
+      getPlaybackCapabilitiesJson: () => JSON.stringify({
+        capabilitiesVersion: 3,
+        container: ['hls', 'ts'],
+        videoCodecs: ['h264'],
+        audioCodecs: ['aac', 'ac3'],
+        supportsHls: true,
+        supportsRange: true,
+        deviceType: 'android_tv',
+        hlsEngines: ['native'],
+        preferredHlsEngine: 'native',
+        runtimeProbeUsed: false,
+        runtimeProbeVersion: 1,
+        clientFamilyFallback: 'android_tv_native',
+        allowTranscode: true,
+      }),
       getNativePlaybackStateJson: () => JSON.stringify({
         activeRequest: { kind: 'live', serviceRef: '1:0:1:AA' },
         session: { sessionId: 'sess-1', state: 'READY' },
@@ -95,6 +111,7 @@ describe('hostBridge', () => {
       title: 'Recording',
     });
     stopNativePlayback();
+    const nativeCapabilities = getNativePlaybackCapabilities();
     const state = getNativePlaybackState();
 
     expect(started).toBe(true);
@@ -105,6 +122,11 @@ describe('hostBridge', () => {
       title: 'Recording',
     }));
     expect(stopNativePlaybackSpy).toHaveBeenCalledTimes(1);
+    expect(nativeCapabilities).toEqual(expect.objectContaining({
+      deviceType: 'android_tv',
+      videoCodecs: ['h264'],
+      audioCodecs: ['aac', 'ac3'],
+    }));
     expect(state?.activeRequest?.kind).toBe('live');
     expect(state?.session?.sessionId).toBe('sess-1');
     expect(state?.playerState).toBe(3);

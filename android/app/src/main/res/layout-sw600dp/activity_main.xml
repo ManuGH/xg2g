@@ -266,6 +266,7 @@
         android:layout_height="match_parent"
         android:background="#7005090F"
         android:clickable="true"
+        android:descendantFocusability="afterDescendants"
         android:focusable="true"
         android:paddingHorizontal="64dp"
         android:paddingVertical="48dp"

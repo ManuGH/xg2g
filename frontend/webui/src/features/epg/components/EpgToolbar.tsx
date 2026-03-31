@@ -1,9 +1,11 @@
 // EPG Toolbar - Filter controls and actions
 // Zero API imports
 
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgFilters, EpgBouquet, EpgLoadState } from '../types';
 import { EPG_MAX_HORIZON_HOURS } from '../types';
+import { resolveHostEnvironment } from '../../../lib/hostBridge';
 import styles from '../EPG.module.css';
 
 export interface EpgToolbarProps {
@@ -29,6 +31,9 @@ export function EpgToolbar({
   onSearch,
 }: EpgToolbarProps) {
   const { t } = useTranslation();
+  const isTvHost = React.useMemo(() => resolveHostEnvironment().isTv, []);
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [tvSearchEditing, setTvSearchEditing] = React.useState(false);
   const loading = loadState === 'loading';
   const searchLoading = searchLoadState === 'loading';
   const rangeLabel = t('epg.rangeNowTo' + filters.timeRange + 'h', {
@@ -40,6 +45,18 @@ export function EpgToolbar({
     day: 'numeric',
     month: 'long',
   }).format(new Date());
+
+  React.useEffect(() => {
+    if (!isTvHost || !tvSearchEditing) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isTvHost, tvSearchEditing]);
 
   return (
     <section className={styles.toolbar}>
@@ -76,21 +93,66 @@ export function EpgToolbar({
 
       <div className={styles.search}>
         <div className={styles.searchLeft}>
-          <div className={styles.searchIcon}>⌕</div>
-          <input
-            type="text"
-            value={filters.query || ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              onFilterChange({ query: val });
-            }}
-            placeholder={t('epg.searchServices')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && filters.query?.trim() && onSearch) {
-                onSearch();
-              }
-            }}
-          />
+          {isTvHost ? (
+            tvSearchEditing ? (
+              <>
+                <div className={styles.searchIcon}>⌕</div>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={filters.query || ''}
+                  onChange={(e) => {
+                    onFilterChange({ query: e.target.value });
+                  }}
+                  placeholder={t('epg.searchServices')}
+                  onBlur={() => setTvSearchEditing(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (filters.query?.trim() && onSearch) {
+                        onSearch();
+                      }
+                      setTvSearchEditing(false);
+                      e.currentTarget.blur();
+                    }
+                    if (e.key === 'Escape') {
+                      setTvSearchEditing(false);
+                      e.currentTarget.blur();
+                    }
+                  }}
+                />
+              </>
+            ) : (
+              <button
+                type="button"
+                className={styles.tvSearchLauncher}
+                onClick={() => setTvSearchEditing(true)}
+                aria-label={t('epg.searchServices')}
+              >
+                <span className={styles.searchIcon} aria-hidden="true">⌕</span>
+                <span className={styles.actionLabel}>
+                  {filters.query?.trim() || t('epg.searchServices')}
+                </span>
+              </button>
+            )
+          ) : (
+            <>
+              <div className={styles.searchIcon}>⌕</div>
+              <input
+                type="text"
+                value={filters.query || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  onFilterChange({ query: val });
+                }}
+                placeholder={t('epg.searchServices')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && filters.query?.trim() && onSearch) {
+                    onSearch();
+                  }
+                }}
+              />
+            </>
+          )}
         </div>
         <div className={styles.searchRight}>
           <button

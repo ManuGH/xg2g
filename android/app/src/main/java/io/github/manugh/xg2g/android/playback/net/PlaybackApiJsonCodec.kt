@@ -12,6 +12,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal object PlaybackApiJsonCodec {
+    fun playbackCapabilitiesJson(
+        capabilities: NativePlaybackCapabilities
+    ): String = capabilitiesToJson(capabilities).toString()
+
     fun recordingPlaybackInfoRequestBody(
         capabilities: NativePlaybackCapabilities
     ): String = capabilitiesToJson(capabilities).toString()
@@ -132,6 +136,64 @@ internal object PlaybackApiJsonCodec {
         .put("capabilitiesVersion", capabilities.capabilitiesVersion)
         .put("container", JSONArray(capabilities.container))
         .put("videoCodecs", JSONArray(capabilities.videoCodecs))
+        .apply {
+            if (capabilities.videoCodecSignals.isNotEmpty()) {
+                put(
+                    "videoCodecSignals",
+                    JSONArray(
+                        capabilities.videoCodecSignals.map { signal ->
+                            JSONObject()
+                                .put("codec", signal.codec)
+                                .put("supported", signal.supported)
+                                .apply {
+                                    signal.smooth?.let { put("smooth", it) }
+                                    signal.powerEfficient?.let { put("powerEfficient", it) }
+                                }
+                        }
+                    )
+                )
+            }
+            capabilities.maxVideo?.let { maxVideo ->
+                put(
+                    "maxVideo",
+                    JSONObject()
+                        .put("width", maxVideo.width)
+                        .put("height", maxVideo.height)
+                        .apply {
+                            maxVideo.fps?.let { put("fps", it) }
+                        }
+                )
+            }
+            capabilities.deviceContext?.let { deviceContext ->
+                put(
+                    "deviceContext",
+                    JSONObject()
+                        .put("platform", deviceContext.platform)
+                        .apply {
+                            deviceContext.brand?.let { put("brand", it) }
+                            deviceContext.product?.let { put("product", it) }
+                            deviceContext.device?.let { put("device", it) }
+                            deviceContext.manufacturer?.let { put("manufacturer", it) }
+                            deviceContext.model?.let { put("model", it) }
+                            put("osName", deviceContext.osName)
+                            deviceContext.osVersion?.let { put("osVersion", it) }
+                            deviceContext.sdkInt?.let { put("sdkInt", it) }
+                        }
+                )
+            }
+            capabilities.networkContext?.let { networkContext ->
+                put(
+                    "networkContext",
+                    JSONObject()
+                        .put("kind", networkContext.kind)
+                        .apply {
+                            networkContext.downlinkKbps?.let { put("downlinkKbps", it) }
+                            networkContext.metered?.let { put("metered", it) }
+                            networkContext.internetValidated?.let { put("internetValidated", it) }
+                        }
+                )
+            }
+        }
         .put("audioCodecs", JSONArray(capabilities.audioCodecs))
         .put("supportsHls", capabilities.supportsHls)
         .put("supportsRange", capabilities.supportsRange)

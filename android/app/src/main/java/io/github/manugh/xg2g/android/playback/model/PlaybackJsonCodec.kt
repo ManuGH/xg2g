@@ -16,6 +16,7 @@ internal object PlaybackJsonCodec {
             .put("playbackDecisionToken", request.playbackDecisionToken)
             .put("hwaccel", request.hwaccel)
             .put("title", request.title)
+            .put("logoUrl", request.logoUrl)
             .put("correlationId", request.correlationId)
             .put("params", JSONObject(request.params))
             .applyOptionalAuthToken(request.authToken, includeAuthToken)
@@ -25,6 +26,7 @@ internal object PlaybackJsonCodec {
             .put("recordingId", request.recordingId)
             .put("startPositionMs", request.startPositionMs)
             .put("title", request.title)
+            .put("logoUrl", request.logoUrl)
             .put("correlationId", request.correlationId)
             .applyOptionalAuthToken(request.authToken, includeAuthToken)
     }
@@ -42,6 +44,7 @@ internal object PlaybackJsonCodec {
                     ?.toStringMap()
                     .orEmpty(),
                 title = obj.optNullableString("title"),
+                logoUrl = obj.optNullableString("logoUrl"),
                 correlationId = obj.optNullableString("correlationId"),
                 authToken = obj.optNullableString("authToken")
             )
@@ -52,6 +55,7 @@ internal object PlaybackJsonCodec {
                     ?: throw IllegalArgumentException("Missing recordingId"),
                 startPositionMs = obj.optLong("startPositionMs", 0L),
                 title = obj.optNullableString("title"),
+                logoUrl = obj.optNullableString("logoUrl"),
                 correlationId = obj.optNullableString("correlationId"),
                 authToken = obj.optNullableString("authToken")
             )

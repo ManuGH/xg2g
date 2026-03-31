@@ -505,6 +505,65 @@ func TestPostLivePlaybackInfo_RuntimeProbeThreadsClientCapabilityTrace(t *testin
 	assert.Equal(t, "safari_native", trace["clientFamily"])
 }
 
+func TestPostLivePlaybackInfo_AndroidNativeCopyableTSReturnsFMP4HLS(t *testing.T) {
+	svc := new(MockRecordingsService)
+	s := createTestServerDTO(svc)
+
+	body := `{
+		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
+		"capabilities":{
+			"capabilitiesVersion":3,
+			"container":["hls","fmp4","mpegts","ts","mp4"],
+			"videoCodecs":["h264"],
+			"audioCodecs":["aac","ac3"],
+			"supportsHls":true,
+			"supportsRange":true,
+			"deviceType":"android_tv",
+			"hlsEngines":["native"],
+			"preferredHlsEngine":"native",
+			"runtimeProbeUsed":true,
+			"runtimeProbeVersion":2,
+			"clientFamilyFallback":"android_tv_native",
+			"allowTranscode":true
+		}
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	s.PostLivePlaybackInfo(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+
+	assert.Equal(t, "hls", raw["mode"])
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "direct_stream", dec["mode"])
+	assert.Equal(t, "hls", dec["selectedOutputKind"])
+
+	selected, ok := dec["selected"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "fmp4", selected["container"])
+
+	trace, ok := dec["trace"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "compatible_hls_fmp4", trace["qualityRung"])
+
+	targetProfileRaw, ok := trace["targetProfile"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "fmp4", targetProfileRaw["container"])
+	assert.Equal(t, "fmp4", targetProfileRaw["packaging"])
+	hls, ok := targetProfileRaw["hls"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "fmp4", hls["segmentContainer"])
+}
+
 func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testing.T) {
 	svc := new(MockRecordingsService)
 	s := createTestServerDTO(svc)

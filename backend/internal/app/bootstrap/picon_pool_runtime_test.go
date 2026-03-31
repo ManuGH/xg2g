@@ -46,3 +46,30 @@ func TestContainerInitPiconPoolRegistersShutdownHook(t *testing.T) {
 		t.Fatalf("shutdown hooks = %v, want [picon_pool_stop]", mgr.hooks)
 	}
 }
+
+func TestContainerInitPiconPoolUsesReceiverBaseWithoutExplicitPiconBase(t *testing.T) {
+	tmp := t.TempDir()
+	mgr := &recordingManager{}
+	c := &Container{
+		Logger:  log.WithComponent("test"),
+		Manager: mgr,
+		snapshot: config.BuildSnapshot(config.AppConfig{
+			DataDir: tmp,
+			Enigma2: config.Enigma2Settings{
+				BaseURL: "http://receiver.local",
+			},
+		}, config.DefaultEnv()),
+	}
+
+	if err := c.initPiconPool(context.Background()); err != nil {
+		t.Fatalf("initPiconPool returned error: %v", err)
+	}
+	if c.piconPool == nil {
+		t.Fatal("expected picon pool to be initialized from receiver base URL")
+	}
+	defer c.piconPool.Stop()
+
+	if len(mgr.hooks) != 1 || mgr.hooks[0] != "picon_pool_stop" {
+		t.Fatalf("shutdown hooks = %v, want [picon_pool_stop]", mgr.hooks)
+	}
+}

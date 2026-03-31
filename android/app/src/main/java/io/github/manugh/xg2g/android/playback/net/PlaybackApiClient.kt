@@ -194,6 +194,26 @@ internal class PlaybackApiClient(
         executeJson(request) { response -> PlaybackApiJsonCodec.heartbeatSnapshot(sessionId, response) }
     }
 
+    override suspend fun reportPlaybackFeedback(sessionId: String, event: String, code: Int?, message: String?) {
+        withContext(Dispatchers.IO) {
+            val payload = JSONObject()
+                .put("event", event)
+            code?.let { payload.put("code", it) }
+            message?.takeIf { it.isNotBlank() }?.let { payload.put("message", it) }
+
+            val request = Request.Builder()
+                .url(apiUrl("sessions", sessionId, "feedback"))
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            execute(request).use { response ->
+                if (!response.isSuccessful) {
+                    throw errorMapper.toHttpException(response, response.body.string())
+                }
+            }
+        }
+    }
+
     override suspend fun stopSession(sessionId: String) {
         withContext(Dispatchers.IO) {
             val request = Request.Builder()

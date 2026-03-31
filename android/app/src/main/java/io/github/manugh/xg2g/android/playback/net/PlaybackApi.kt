@@ -12,6 +12,7 @@ internal interface PlaybackApi {
     suspend fun getRecordingPlaylistIfReady(recordingId: String): String?
     suspend fun getPlaybackUrlIfReady(playbackUrl: String): String?
     suspend fun heartbeat(sessionId: String): SessionSnapshot
+    suspend fun reportPlaybackFeedback(sessionId: String, event: String, code: Int?, message: String?)
     suspend fun stopSession(sessionId: String)
     fun sessionPlaylistUrl(sessionId: String): String
     fun recordingPlaylistUrl(recordingId: String): String

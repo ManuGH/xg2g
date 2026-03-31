@@ -8,7 +8,7 @@ import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
-type ReportErrorFn = (event: 'error' | 'warning', code: number, msg?: string) => Promise<void>;
+type ReportErrorFn = (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
 type PreferNativeFn = (videoEl?: VideoElementRef, hlsJsSupported?: boolean) => boolean;
 type WaitForSessionReadyFn = (sessionId: string, maxAttempts?: number) => Promise<V3SessionStatusResponse>;
 
@@ -61,6 +61,7 @@ export function usePlaybackEngine({
   const decodeRecoveryAttemptsRef = useRef(0);
   const pendingNativeAutoplayRef = useRef<(() => void) | null>(null);
   const nativeStallRecoveryTimerRef = useRef<number | null>(null);
+  const reportedPlayingSessionRef = useRef<string | null>(null);
 
   const clearPendingNativeAutoplay = useCallback(() => {
     const video = videoRef.current;
@@ -142,6 +143,7 @@ export function usePlaybackEngine({
       clearNativeStallRecovery();
       lastHlsUrlRef.current = null;
       lastHlsEngineRef.current = 'auto';
+      reportedPlayingSessionRef.current = null;
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -590,6 +592,11 @@ export function usePlaybackEngine({
       clearNativeStallRecovery();
       decodeRecoveryInFlightRef.current = false;
       decodeRecoveryAttemptsRef.current = 0;
+      const trackedSessionId = sessionIdRef.current;
+      if (trackedSessionId && reportedPlayingSessionRef.current !== trackedSessionId) {
+        reportedPlayingSessionRef.current = trackedSessionId;
+        void reportError('info', 200, 'playing');
+      }
       setStatus('playing');
       setError(null);
       setErrorDetails(null);

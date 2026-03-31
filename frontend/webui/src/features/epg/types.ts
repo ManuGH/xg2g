@@ -24,6 +24,8 @@ export interface EpgChannel {
   group?: string;
   logoUrl?: string;
   logo?: string;
+  resolution?: string;
+  codec?: string;
 }
 
 export interface EpgBouquet {

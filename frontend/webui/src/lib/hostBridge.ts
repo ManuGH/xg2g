@@ -25,6 +25,7 @@ export interface NativePlaybackRequestLive {
   hwaccel?: 'auto' | 'force' | 'off';
   correlationId?: string;
   title?: string;
+  logoUrl?: string;
   params?: Record<string, string>;
 }
 
@@ -35,6 +36,7 @@ export interface NativePlaybackRequestRecording {
   authToken?: string;
   correlationId?: string;
   title?: string;
+  logoUrl?: string;
 }
 
 export type NativePlaybackRequest = NativePlaybackRequestLive | NativePlaybackRequestRecording;
@@ -66,6 +68,7 @@ export interface NativePlaybackState {
 
 interface AndroidHostBridge {
   getCapabilitiesJson?: () => string;
+  getPlaybackCapabilitiesJson?: () => string;
   setPlaybackActive?: (active: boolean) => void;
   requestInputFocus?: () => void;
   startNativePlayback?: (payloadJson: string) => void;
@@ -196,6 +199,24 @@ export function getNativePlaybackState(): NativePlaybackState | null {
 
   try {
     return JSON.parse(raw) as NativePlaybackState;
+  } catch {
+    return null;
+  }
+}
+
+export function getNativePlaybackCapabilities(): Record<string, unknown> | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const raw = window.Xg2gHost?.getPlaybackCapabilitiesJson?.();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
   } catch {
     return null;
   }

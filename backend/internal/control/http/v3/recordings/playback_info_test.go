@@ -408,6 +408,79 @@ func TestService_ResolvePlaybackInfo_LiveInterlacedTruthRepairsVideoInsteadOfPas
 	assert.Equal(t, "aac", res.Decision.TargetProfile.Audio.Codec)
 }
 
+func TestService_ResolvePlaybackInfo_LiveAndroidNativeCopyableTSReturnsFMP4DirectStream(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return scan.Capability{
+				ServiceRef: serviceRef,
+				State:      scan.CapabilityStateOK,
+				Container:  "mpegts",
+				VideoCodec: "h264",
+				AudioCodec: "ac3",
+				Codec:      "h264",
+				Resolution: "1920x1080",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+				Interlaced: false,
+			}, true
+		},
+	}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	allowTranscode := true
+	supportsRange := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-android-native-fmp4",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "fmp4", "mpegts", "ts", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			SupportsRange:        &supportsRange,
+			DeviceType:           "android_tv",
+			HLSEngines:           []string{"native"},
+			PreferredHLSEngine:   "native",
+			ClientFamilyFallback: "android_tv_native",
+			AllowTranscode:       &allowTranscode,
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.NotNil(t, res.Decision.TargetProfile)
+	assert.Equal(t, decision.ModeDirectStream, res.Decision.Mode)
+	assert.Equal(t, "hls", res.Decision.SelectedOutputKind)
+	assert.Equal(t, []decision.ReasonCode{decision.ReasonDirectStreamMatch}, res.Decision.Reasons)
+	assert.Equal(t, "fmp4", res.Decision.Selected.Container)
+	assert.Equal(t, playbackprofile.PackagingFMP4, res.Decision.TargetProfile.Packaging)
+	assert.Equal(t, "fmp4", res.Decision.TargetProfile.Container)
+	assert.Equal(t, "fmp4", res.Decision.TargetProfile.HLS.SegmentContainer)
+	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Video.Mode)
+	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
+	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Audio.Mode)
+	assert.Equal(t, "ac3", res.Decision.TargetProfile.Audio.Codec)
+	assert.Equal(t, string(playbackprofile.RungCompatibleHLSFMP4), res.Decision.Trace.QualityRung)
+	assert.Equal(t, string(playbackprofile.IntentCompatible), res.Decision.Trace.ResolvedIntent)
+}
+
 func TestService_ResolvePlaybackInfo_LiveFallsBackWhenScanTruthIncomplete(t *testing.T) {
 	recSvc := &stubRecordingsService{
 		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
