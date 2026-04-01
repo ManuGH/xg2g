@@ -71,6 +71,20 @@ make backend-dev-ui
 make webui-dev
 ```
 
+For a production-like local smoke path against the embedded WebUI and the native
+TV shell, use the single helper from the repo root:
+
+```bash
+make android-local-smoke
+```
+
+That helper will:
+
+- build `frontend/webui/` and copy it into `backend/internal/control/http/dist/`
+- build the local backend binary
+- start the backend on `http://127.0.0.1:8080`
+- launch the installed Android `dev` app through `adb` with both `base_url` and `auth_token`
+
 Then run the Android app as `devDebug` inside the emulator.
 Use either the in-app setup screen or the intent override below to point the
 client at `http://10.0.2.2:8080/ui/`.
@@ -83,6 +97,15 @@ For ad-hoc testing, you can override the base UI URL through an intent extra:
 adb shell am start \
   -n io.github.manugh.xg2g.android.dev/io.github.manugh.xg2g.android.MainActivity \
   --es base_url http://10.0.2.2:8080/ui/
+```
+
+If the native guide should authenticate immediately as well, also pass the API token:
+
+```bash
+adb shell am start \
+  -n io.github.manugh.xg2g.android.dev/io.github.manugh.xg2g.android.MainActivity \
+  --es base_url http://10.0.2.2:8080/ui/ \
+  --es auth_token "$XG2G_API_TOKEN"
 ```
 
 The app also accepts a browser/app link for TV-friendly onboarding:

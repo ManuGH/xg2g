@@ -2,7 +2,7 @@
 # Backend Targets
 # ===================================================================================================
 
-.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build build-offline backend-dev backend-dev-ui webui-dev dev-ui dev
+.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev android-local-smoke
 
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
@@ -78,6 +78,9 @@ webui-dev: ## Start the Vite dev server for fast WebUI iteration
 
 dev-ui: ## Run Vite in the background and the dev-tagged backend in the foreground
 	@./run_ui_dev.sh
+
+android-local-smoke: ## Build embedded UI, run local backend on :8080, and launch Android dev app with auth if adb is connected
+	@./run_android_local.sh
 
 dev: ## Run development loop
 	@./run_dev.sh
