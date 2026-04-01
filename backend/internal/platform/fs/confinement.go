@@ -89,50 +89,43 @@ func ConfineAbsPath(rootAbs, targetAbs string) (string, error) {
 
 // resolveAndCheck resolves realPath symlinks and ensures it is within realRoot.
 func resolveAndCheck(realRoot, fullPath string) (string, error) {
-	fullPath, err := confineLexicalPath(realRoot, fullPath)
+	realPath, err := resolveWithExistingPrefix(fullPath)
 	if err != nil {
 		return "", err
 	}
 
-	var realPath string
-	if info, err := os.Lstat(fullPath); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			if rp, err := filepath.EvalSymlinks(fullPath); err == nil {
-				realPath = rp
-			} else {
-				// If resolving fails for an existing symlink, we should be conservative
-				return "", fmt.Errorf("failed to resolve symlink: %w", err)
-			}
-		} else {
-			if rp, err := filepath.EvalSymlinks(fullPath); err == nil {
-				realPath = rp
-			} else {
-				// If resolving fails for an existing regular file, deny access to be safe
+	return confineLexicalPath(realRoot, realPath)
+}
+
+func resolveWithExistingPrefix(path string) (string, error) {
+	cleanPath := filepath.Clean(path)
+
+	probe := cleanPath
+	missingParts := make([]string, 0, 4)
+	for {
+		_, err := os.Lstat(probe)
+		if err == nil {
+			resolved, err := filepath.EvalSymlinks(probe)
+			if err != nil {
 				return "", fmt.Errorf("failed to resolve path: %w", err)
 			}
-		}
-	} else {
-		// File does not exist? Check parent.
-		dir := filepath.Dir(fullPath)
-		dir, err = confineLexicalPath(realRoot, dir)
-		if err != nil {
-			return "", err
-		}
-		if rp, err := filepath.EvalSymlinks(dir); err == nil {
-			realPath = filepath.Join(rp, filepath.Base(fullPath))
-		} else {
-			// Parent exists?
-			if _, statErr := os.Stat(dir); statErr == nil {
-				// Parent exists but EvalSymlinks failed (permissions/loop?) -> Fail Closed
-				return "", fmt.Errorf("failed to resolve parent path: %v", err)
+			for i := len(missingParts) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missingParts[i])
 			}
-			// Parent doesn't exist either?
-			// Conservative: use fullPath and rely on Rel check.
-			realPath = fullPath
+			return resolved, nil
 		}
-	}
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
 
-	return confineLexicalPath(realRoot, realPath)
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return cleanPath, nil
+		}
+
+		missingParts = append(missingParts, filepath.Base(probe))
+		probe = parent
+	}
 }
 
 func confineLexicalPath(realRoot, candidate string) (string, error) {

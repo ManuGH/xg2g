@@ -194,6 +194,16 @@ func TestConfineAbsPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	rootAlias := filepath.Join(filepath.Dir(tmpDir), filepath.Base(tmpDir)+"_alias")
+	if err := os.Symlink(tmpDir, rootAlias); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Remove(rootAlias); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("cleanup root alias: %v", err)
+		}
+	})
+
 	tests := []struct {
 		name    string
 		root    string
@@ -222,6 +232,18 @@ func TestConfineAbsPath(t *testing.T) {
 			name:    "missing nested path inside root",
 			root:    tmpDir,
 			target:  filepath.Join(tmpDir, "missing", "nested", "safe.txt"),
+			wantErr: false,
+		},
+		{
+			name:    "path through root alias symlink",
+			root:    tmpDir,
+			target:  filepath.Join(rootAlias, "safe.txt"),
+			wantErr: false,
+		},
+		{
+			name:    "missing path through root alias symlink",
+			root:    tmpDir,
+			target:  filepath.Join(rootAlias, "missing", "nested", "safe.txt"),
 			wantErr: false,
 		},
 		{
