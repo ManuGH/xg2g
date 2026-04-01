@@ -55,6 +55,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 	l.mergeFileResilience(dst, src)
 	l.mergeFilePlayback(dst, src)
+	l.mergeFileMonetization(dst, src)
 	l.mergeFileVOD(dst, src)
 
 	return nil
@@ -136,6 +137,30 @@ func (l *Loader) mergeFileRecordingRoots(dst *AppConfig, src *FileConfig) {
 		for k, v := range src.Recording {
 			dst.RecordingRoots[k] = v
 		}
+	}
+}
+
+func (l *Loader) mergeFileMonetization(dst *AppConfig, src *FileConfig) {
+	if src.Monetization == nil {
+		return
+	}
+	if src.Monetization.Enabled != nil {
+		dst.Monetization.Enabled = *src.Monetization.Enabled
+	}
+	if src.Monetization.Model != "" {
+		dst.Monetization.Model = src.Monetization.Model
+	}
+	if src.Monetization.ProductName != "" {
+		dst.Monetization.ProductName = src.Monetization.ProductName
+	}
+	if src.Monetization.UnlockScope != "" {
+		dst.Monetization.UnlockScope = src.Monetization.UnlockScope
+	}
+	if src.Monetization.PurchaseURL != "" {
+		dst.Monetization.PurchaseURL = expandEnv(src.Monetization.PurchaseURL)
+	}
+	if src.Monetization.Enforcement != "" {
+		dst.Monetization.Enforcement = src.Monetization.Enforcement
 	}
 }
 

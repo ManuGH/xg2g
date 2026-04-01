@@ -38,17 +38,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		CapabilitiesVersion:  3,
 		ClientFamilyFallback: strPtr("safari"),
 		Container:            []string{"mpegts", "hls"},
-		DeviceContext: &struct {
-			Brand        *string `json:"brand,omitempty"`
-			Device       *string `json:"device,omitempty"`
-			Manufacturer *string `json:"manufacturer,omitempty"`
-			Model        *string `json:"model,omitempty"`
-			OsName       *string `json:"osName,omitempty"`
-			OsVersion    *string `json:"osVersion,omitempty"`
-			Platform     *string `json:"platform,omitempty"`
-			Product      *string `json:"product,omitempty"`
-			SdkInt       *int    `json:"sdkInt,omitempty"`
-		}{
+		DeviceContext: &PlaybackDeviceContext{
 			Brand:        strPtr("google"),
 			Device:       strPtr("foster"),
 			Manufacturer: strPtr("NVIDIA"),
@@ -73,12 +63,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		PreferredHlsEngine:  strPtr("native"),
 		RuntimeProbeUsed:    boolPtr(true),
 		RuntimeProbeVersion: intPtr(2),
-		NetworkContext: &struct {
-			DownlinkKbps      *int    `json:"downlinkKbps,omitempty"`
-			InternetValidated *bool   `json:"internetValidated,omitempty"`
-			Kind              *string `json:"kind,omitempty"`
-			Metered           *bool   `json:"metered,omitempty"`
-		}{
+		NetworkContext: &PlaybackNetworkContext{
 			DownlinkKbps:      intPtr(940000),
 			InternetValidated: boolPtr(true),
 			Kind:              strPtr("ethernet"),

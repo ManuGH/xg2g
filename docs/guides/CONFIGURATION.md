@@ -168,6 +168,17 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `metrics.enabled` | - | `false` | Active | Advanced |
 | `metrics.listenAddr` | `XG2G_METRICS_LISTEN` | `""` | Active | Advanced |
 
+### monetization
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `monetization.enabled` | `XG2G_MONETIZATION_ENABLED` | `false` | Active | Advanced |
+| `monetization.enforcement` | `XG2G_MONETIZATION_ENFORCEMENT` | `none` | Active | Advanced |
+| `monetization.model` | `XG2G_MONETIZATION_MODEL` | `free` | Active | Advanced |
+| `monetization.productName` | `XG2G_MONETIZATION_PRODUCT_NAME` | `xg2g Unlock` | Active | Advanced |
+| `monetization.purchaseUrl` | `XG2G_MONETIZATION_PURCHASE_URL` | `""` | Active | Advanced |
+| `monetization.unlockScope` | `XG2G_MONETIZATION_UNLOCK_SCOPE` | `xg2g:unlock` | Active | Advanced |
+
 ### network
 
 | Path | Env | Default | Status | Profile |

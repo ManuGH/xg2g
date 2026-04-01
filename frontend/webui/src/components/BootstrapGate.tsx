@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { ClientRequestError } from '../services/clientWrapper';
@@ -40,6 +40,7 @@ function getErrorMessage(error: unknown): string {
 export default function BootstrapGate() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const { auth, setToken, setPlayingChannel } = useAppContext();
   const queryClient = useQueryClient();
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
@@ -72,6 +73,12 @@ export default function BootstrapGate() {
   const bootstrapStatus = getErrorStatus(error);
   const isUnauthorized = bootstrapStatus === 401;
   const isSettingsRoute = normalizePathname(pathname) === ROUTE_MAP.settings;
+  const monetizationLocked = Boolean(
+    config?.monetization?.enabled &&
+    config.monetization.model === 'one_time_unlock' &&
+    config.monetization.enforcement === 'required' &&
+    config.monetization.unlocked === false
+  );
   const authReason: AuthPromptReason | null = useMemo(() => {
     if (forcedAuthPrompt) {
       return forcedAuthPrompt;
@@ -238,6 +245,44 @@ export default function BootstrapGate() {
 
   if (!isConfigured(config) && !isSettingsRoute) {
     return <Navigate to={ROUTE_MAP.settings} replace />;
+  }
+
+  if (monetizationLocked && !isSettingsRoute) {
+    const productName = config?.monetization?.productName?.trim() || 'xg2g Unlock';
+    const purchaseUrl = config?.monetization?.purchaseUrl?.trim();
+
+    return (
+      <AuthSurface
+        eyebrow={t('unlock.eyebrow', { defaultValue: 'Unlock Required' })}
+        title={t('unlock.title', {
+          defaultValue: `${productName} required`,
+        })}
+        copy={purchaseUrl
+          ? t('unlock.copyWithUrl', {
+            defaultValue: 'This app remains free to install, but this server requires a one-time unlock before playback surfaces open. Complete the unlock, then sign in again if needed.',
+          })
+          : t('unlock.copyNoUrl', {
+            defaultValue: 'This app remains free to install, but this server requires a one-time unlock before playback surfaces open. Contact the operator for access.',
+          })}
+        actions={(
+          <>
+            {purchaseUrl ? (
+              <Button href={purchaseUrl} target="_blank" rel="noreferrer">
+                {t('unlock.openInfo', { defaultValue: 'Open Unlock Info' })}
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              onClick={() => {
+                navigate(ROUTE_MAP.settings);
+              }}
+            >
+              {t('unlock.openSettings', { defaultValue: 'Open Settings' })}
+            </Button>
+          </>
+        )}
+      />
+    );
   }
 
   return <Outlet />;

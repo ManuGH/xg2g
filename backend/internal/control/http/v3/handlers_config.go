@@ -30,6 +30,7 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := deps.cfg
 
 	info := read.GetConfigInfo(cfg)
+	monetization := buildMonetizationStatus(cfg.Monetization, auth.PrincipalFromContext(r.Context()))
 
 	epgSource := EPGConfigSource(info.EPGSource)
 	deliveryPolicy := StreamingConfigDeliveryPolicy(info.DeliveryPolicy)
@@ -59,6 +60,7 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 		Streaming: &StreamingConfig{
 			DeliveryPolicy: &deliveryPolicy,
 		},
+		Monetization: monetization,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -248,4 +250,49 @@ func respondConfigValidationError(w http.ResponseWriter, r *http.Request, err er
 	}
 
 	RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, details)
+}
+
+func buildMonetizationStatus(cfg config.MonetizationConfig, principal *auth.Principal) *MonetizationStatus {
+	normalized := cfg.Normalized()
+	if !normalized.Enabled && normalized.Enforcement == config.MonetizationEnforcementNone {
+		return nil
+	}
+
+	enabled := normalized.Enabled
+	model := normalized.Model
+	productName := normalized.ProductName
+	unlockScope := normalized.UnlockScope
+	enforcement := normalized.Enforcement
+	unlocked := !normalized.RequiresUnlock() || principalHasScope(principal, unlockScope)
+
+	status := &MonetizationStatus{
+		Enabled:     &enabled,
+		Model:       &model,
+		ProductName: &productName,
+		UnlockScope: &unlockScope,
+		Enforcement: &enforcement,
+		Unlocked:    &unlocked,
+	}
+	if normalized.PurchaseURL != "" {
+		purchaseURL := normalized.PurchaseURL
+		status.PurchaseUrl = &purchaseURL
+	}
+	return status
+}
+
+func principalHasScope(principal *auth.Principal, scope string) bool {
+	if principal == nil {
+		return false
+	}
+	normalizedScope := strings.ToLower(strings.TrimSpace(scope))
+	if normalizedScope == "" {
+		return false
+	}
+	for _, candidate := range principal.Scopes {
+		value := strings.ToLower(strings.TrimSpace(candidate))
+		if value == "*" || value == normalizedScope {
+			return true
+		}
+	}
+	return false
 }

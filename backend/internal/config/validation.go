@@ -80,6 +80,7 @@ func Validate(cfg AppConfig) error {
 	validateBasicSettings(v, cfg)
 	validateNetworkSettings(v, cfg)
 	validateAuthAndPlaybackDecision(v, cfg)
+	validateMonetization(v, cfg)
 	validateEngineAndResilience(v, cfg)
 
 	if !v.IsValid() {
@@ -194,6 +195,7 @@ func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 		v.AddError("APITokens", cfg.apiTokensParseErr.Error(), "")
 	}
 
+	monetization := cfg.Monetization.Normalized()
 	validScopes := map[string]struct{}{
 		"*":         {},
 		"v3:*":      {},
@@ -201,6 +203,9 @@ func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 		"v3:write":  {},
 		"v3:admin":  {},
 		"v3:status": {},
+	}
+	if monetization.UnlockScope != "" {
+		validScopes[monetization.UnlockScope] = struct{}{}
 	}
 	isValidScope := func(scope string) bool {
 		scope = strings.ToLower(strings.TrimSpace(scope))
@@ -268,6 +273,34 @@ func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 	}
 
 	validatePlaybackOperatorRules(v, cfg.Playback.Operator.SourceRules)
+}
+
+func validateMonetization(v *validate.Validator, cfg AppConfig) {
+	monetization := cfg.Monetization.Normalized()
+
+	switch monetization.Model {
+	case MonetizationModelFree, MonetizationModelOneTimeUnlock:
+	default:
+		v.AddError("Monetization.Model", "must be free or one_time_unlock", monetization.Model)
+	}
+
+	switch monetization.Enforcement {
+	case MonetizationEnforcementNone, MonetizationEnforcementRequired:
+	default:
+		v.AddError("Monetization.Enforcement", "must be none or required", monetization.Enforcement)
+	}
+
+	if monetization.Enforcement == MonetizationEnforcementRequired && !monetization.RequiresUnlock() {
+		v.AddError("Monetization.Enforcement", "required enforcement needs monetization enabled with one_time_unlock model", monetization.Enforcement)
+	}
+
+	if monetization.RequiresUnlock() && strings.TrimSpace(monetization.UnlockScope) == "" {
+		v.AddError("Monetization.UnlockScope", "must not be empty when one_time_unlock is enabled", monetization.UnlockScope)
+	}
+
+	if monetization.PurchaseURL != "" {
+		v.URL("Monetization.PurchaseURL", monetization.PurchaseURL, []string{"http", "https"})
+	}
 }
 
 func validatePlaybackOperatorRules(v *validate.Validator, rules []PlaybackOperatorRuleConfig) {

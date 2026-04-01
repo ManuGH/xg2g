@@ -88,6 +88,13 @@ logService: ""
 metrics:
   enabled: false
   listenAddr: ""
+monetization:
+  enabled: false
+  enforcement: none
+  model: free
+  productName: xg2g Unlock
+  purchaseUrl: ""
+  unlockScope: xg2g:unlock
 network:
   lan:
     allow:
