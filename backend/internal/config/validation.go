@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	householddomain "github.com/ManuGH/xg2g/internal/household"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/validate"
 )
@@ -81,6 +82,7 @@ func Validate(cfg AppConfig) error {
 	validateNetworkSettings(v, cfg)
 	validateAuthAndPlaybackDecision(v, cfg)
 	validateMonetization(v, cfg)
+	validateHousehold(v, cfg)
 	validateEngineAndResilience(v, cfg)
 
 	if !v.IsValid() {
@@ -88,6 +90,21 @@ func Validate(cfg AppConfig) error {
 	}
 
 	return nil
+}
+
+func validateHousehold(v *validate.Validator, cfg AppConfig) {
+	if strings.TrimSpace(cfg.Household.PinHash) == "" {
+		if cfg.Household.UnlockTTL < 0 {
+			v.AddError("Household.UnlockTTL", "must be >= 0", "")
+		}
+		return
+	}
+	if err := householddomain.ValidateStoredPINHash(cfg.Household.PinHash); err != nil {
+		v.AddError("Household.PinHash", err.Error(), "")
+	}
+	if cfg.Household.UnlockTTL < 0 {
+		v.AddError("Household.UnlockTTL", "must be >= 0", "")
+	}
 }
 
 func validateBasicSettings(v *validate.Validator, cfg AppConfig) {

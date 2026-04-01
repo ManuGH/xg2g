@@ -95,6 +95,37 @@
   text-transform: uppercase;
 }
 
+.profileSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 6px 14px;
+  border-bottom: 1px solid var(--border-base);
+}
+
+.profileLabel {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.profileSelect {
+  min-height: 46px;
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  color: var(--text-primary);
+  padding: 0 14px;
+}
+
+.profileHint {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
 .desktopSection,
 .desktopFooter {
   display: flex;
@@ -336,6 +367,14 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+
+  .sheetProfileSection {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 2px 14px;
+    border-bottom: 1px solid var(--border-base);
   }
 
   .sheetSection {

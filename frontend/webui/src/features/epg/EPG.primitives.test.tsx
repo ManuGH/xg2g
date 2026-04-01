@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClientRequestError } from '../../services/clientWrapper';
+import { HouseholdProfilesProvider } from '../../context/HouseholdProfilesContext';
+import { ClientRequestError, setClientAuthToken } from '../../services/clientWrapper';
 import type { EpgEvent, Timer } from './types';
 
 const {
@@ -39,6 +41,14 @@ vi.mock('./components/EpgChannelList', () => ({
 
 import EPG from './EPG';
 
+function renderWithProviders(ui: ReactNode) {
+  return render(
+    <HouseholdProfilesProvider>
+      {ui}
+    </HouseholdProfilesProvider>
+  );
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -51,6 +61,7 @@ function createDeferred<T>() {
 
 describe('EPG shared primitives', () => {
   beforeEach(() => {
+    setClientAuthToken('');
     vi.stubGlobal('setInterval', vi.fn(() => 0 as unknown as ReturnType<typeof setInterval>));
     vi.stubGlobal('clearInterval', vi.fn());
   });
@@ -59,6 +70,8 @@ describe('EPG shared primitives', () => {
     cleanup();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    setClientAuthToken('');
+    window.localStorage.clear();
   });
 
   it('renders a section skeleton while the initial EPG load is in progress', async () => {
@@ -66,7 +79,7 @@ describe('EPG shared primitives', () => {
     const deferred = createDeferred<EpgEvent[]>();
     fetchEpgEvents.mockImplementation(() => deferred.promise);
 
-    render(<EPG channels={[]} />);
+    renderWithProviders(<EPG channels={[]} />);
 
     expect(screen.getByRole('status', { name: /Loading EPG/i })).toHaveAttribute(
       'data-loading-variant',
@@ -86,7 +99,7 @@ describe('EPG shared primitives', () => {
     fetchEpgEvents.mockResolvedValueOnce([]);
     fetchEpgEvents.mockImplementationOnce(() => deferred.promise);
 
-    render(<EPG channels={[]} />);
+    renderWithProviders(<EPG channels={[]} />);
 
     fireEvent.change(screen.getByPlaceholderText(/Search Services/i), {
       target: { value: 'news' },
@@ -115,7 +128,7 @@ describe('EPG shared primitives', () => {
       })
     );
 
-    render(<EPG channels={[]} />);
+    renderWithProviders(<EPG channels={[]} />);
 
     expect(await screen.findByRole('heading', { name: 'Service unavailable' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));

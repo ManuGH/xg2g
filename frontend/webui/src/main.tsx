@@ -10,6 +10,8 @@ import './index.css';
 import App from './App.tsx';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AppProvider } from './context/AppContext.tsx';
+import { HouseholdProfilesProvider } from './context/HouseholdProfilesContext.tsx';
+import { PendingChangesProvider } from './context/PendingChangesContext.tsx';
 import { UiOverlayProvider } from './context/UiOverlayContext.tsx';
 import { i18nReady } from './i18n';
 import { applyHostEnvironmentToDocument, resolveHostEnvironment } from './lib/hostBridge';
@@ -47,9 +49,13 @@ void i18nReady.finally(() => {
       >
         <QueryClientProvider client={queryClient}>
           <UiOverlayProvider>
-            <AppProvider>
-              <App />
-            </AppProvider>
+            <PendingChangesProvider>
+              <AppProvider>
+                <HouseholdProfilesProvider>
+                  <App />
+                </HouseholdProfilesProvider>
+              </AppProvider>
+            </PendingChangesProvider>
           </UiOverlayProvider>
         </QueryClientProvider>
       </ErrorBoundary>

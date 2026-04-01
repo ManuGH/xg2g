@@ -2,18 +2,44 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { client } from '../client-ts/client.gen';
 import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import {
+  CLIENT_AUTH_CHANGED_EVENT,
   ClientRequestError,
+  getClientAuthToken,
+  getClientHouseholdProfileId,
   isApiError,
   isProblemDetails,
   mapApiError,
   putJsonOrThrow,
+  setClientAuthToken,
+  setClientHouseholdProfileId,
   throwOnClientResultError,
   unwrapClientResultOrThrow
 } from './clientWrapper';
 
 describe('client-ts wrapper error mapping', () => {
   afterEach(() => {
+    setClientAuthToken('');
+    setClientHouseholdProfileId('');
     vi.restoreAllMocks();
+  });
+
+  it('updates auth and household headers independently', () => {
+    const authChanged = vi.fn();
+    window.addEventListener(CLIENT_AUTH_CHANGED_EVENT, authChanged);
+
+    try {
+      setClientHouseholdProfileId('child-profile');
+      setClientAuthToken('test-token');
+
+      expect(getClientHouseholdProfileId()).toBe('child-profile');
+      expect(getClientAuthToken()).toBe('test-token');
+      expect(authChanged).toHaveBeenCalledTimes(1);
+      const headers = new Headers(client.getConfig().headers as HeadersInit);
+      expect(headers.get('Authorization')).toBe('Bearer test-token');
+      expect(headers.get('X-Household-Profile')).toBe('child-profile');
+    } finally {
+      window.removeEventListener(CLIENT_AUTH_CHANGED_EVENT, authChanged);
+    }
   });
 
   it('maps RFC7807 problem details with typed fields', () => {

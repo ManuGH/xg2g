@@ -76,6 +76,9 @@ hls:
   readySegments: 3
   root: ""
   segmentSeconds: 6
+household:
+  pinHash: ""
+  unlockTTL: 4h
 library:
   db_path: ""
   enabled: false

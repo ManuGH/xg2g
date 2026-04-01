@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/read"
+	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
@@ -23,6 +25,47 @@ func (s *Server) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {
 	deps := s.systemModuleDeps()
 	cfg := deps.cfg
 	snap := deps.snap
+	profile := household.NormalizeProfile(s.currentHouseholdProfile(r.Context()))
+
+	if household.HasServiceRestrictionsNormalized(profile) {
+		visibleServices, err := s.householdVisibleServices(profile, deps)
+		if err != nil {
+			log.L().Error().Err(err).Msg("failed to get visible services for bouquets")
+			writeRegisteredProblem(w, r, http.StatusInternalServerError, "services/read_failed", "Failed to Read Bouquets", problemcode.CodeReadFailed, err.Error(), nil)
+			return
+		}
+
+		type bouquetCount struct {
+			Name  string
+			Count int
+		}
+		order := make([]string, 0)
+		counts := make(map[string]*bouquetCount)
+		for _, item := range visibleServices {
+			group := strings.TrimSpace(item.Group)
+			if group == "" {
+				continue
+			}
+			key := strings.ToLower(group)
+			if _, ok := counts[key]; !ok {
+				counts[key] = &bouquetCount{Name: group}
+				order = append(order, key)
+			}
+			counts[key].Count++
+		}
+
+		resp := make([]Bouquet, 0, len(order))
+		for _, key := range order {
+			entry := counts[key]
+			name := entry.Name
+			count := entry.Count
+			resp = append(resp, Bouquet{Name: &name, Services: &count})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
 
 	// Use Truthful Counting version
 	// Use Truthful Counting version
@@ -79,6 +122,7 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 	cfg := deps.cfg
 	snap := deps.snap
 	src := deps.servicesSource
+	profile := household.NormalizeProfile(s.currentHouseholdProfile(r.Context()))
 
 	q := read.ServicesQuery{}
 	if params.Bouquet != nil {
@@ -96,6 +140,9 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 	if res.Items != nil {
 		items = make([]Service, 0, len(res.Items))
 		for _, item := range res.Items {
+			if !household.IsServiceAllowedNormalized(profile, item.ServiceRef, item.Group) {
+				continue
+			}
 			// Scoping
 			item := item
 			svc := Service{
@@ -167,6 +214,10 @@ func (s *Server) PostSystemRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireHouseholdSettingsAccess(w, r); !ok {
+		return
+	}
+
 	deps := s.systemModuleDeps()
 	scan := deps.channelScanner
 

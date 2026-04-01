@@ -8,6 +8,7 @@ import "net/http"
 
 type authRoutes interface {
 	CreateSession(w http.ResponseWriter, r *http.Request)
+	DeleteSession(w http.ResponseWriter, r *http.Request)
 }
 
 type dvrRoutes interface {
@@ -17,6 +18,16 @@ type dvrRoutes interface {
 
 type epgRoutes interface {
 	GetEpg(w http.ResponseWriter, r *http.Request)
+}
+
+type householdRoutes interface {
+	GetHouseholdUnlock(w http.ResponseWriter, r *http.Request)
+	GetHouseholdProfiles(w http.ResponseWriter, r *http.Request)
+	PostHouseholdUnlock(w http.ResponseWriter, r *http.Request)
+	PostHouseholdProfiles(w http.ResponseWriter, r *http.Request)
+	DeleteHouseholdUnlock(w http.ResponseWriter, r *http.Request)
+	PutHouseholdProfile(w http.ResponseWriter, r *http.Request)
+	DeleteHouseholdProfile(w http.ResponseWriter, r *http.Request)
 }
 
 type intentRoutes interface {

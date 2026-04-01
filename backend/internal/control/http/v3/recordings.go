@@ -15,6 +15,7 @@ import (
 	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/problemcode"
@@ -30,6 +31,11 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Recordings service not available", nil)
 		return
 	}
+	profile, ok := s.requireHouseholdDVRPlaybackAccess(w, r)
+	if !ok {
+		return
+	}
+	profile = household.NormalizeProfile(profile)
 
 	// 1. Parse Query
 	var qRootID, qPath string
@@ -60,6 +66,9 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	// 3. Map to DTO
 	recordingsList := make([]RecordingItem, 0, len(listing.Recordings))
 	for _, m := range listing.Recordings {
+		if !household.IsServiceAllowedNormalized(profile, m.ServiceRef, "") {
+			continue
+		}
 		item := RecordingItem{
 			ServiceRef:       strPtr(m.ServiceRef),
 			RecordingId:      strPtr(m.RecordingID),
@@ -141,6 +150,9 @@ func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.R
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Recordings service not available", nil)
 		return
 	}
+	if _, ok := s.requireHouseholdRecordingAccess(w, r, recordingId); !ok {
+		return
+	}
 
 	status, err := deps.recordingsService.GetStatus(r.Context(), recservice.StatusInput{
 		RecordingID: recordingId,
@@ -179,6 +191,15 @@ func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordi
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Recordings service not available", nil)
 		return
 	}
+	profile, ok := s.requireHouseholdDVRManageAccess(w, r)
+	if !ok {
+		return
+	}
+	profile = household.NormalizeProfile(profile)
+	if serviceRef, decoded := recservice.DecodeRecordingID(recordingId); decoded && !household.IsServiceAllowedNormalized(profile, serviceRef, "") {
+		writeHouseholdForbidden(w, r, "household/recording_delete_forbidden", "Recording Delete Forbidden", "The active household profile is not allowed to delete this recording")
+		return
+	}
 
 	_, err := deps.recordingsService.Delete(r.Context(), recservice.DeleteInput{
 		RecordingID: recordingId,
@@ -205,6 +226,9 @@ func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, re
 	if deps.recordingsService == nil {
 		metrics.IncPlaybackError(playbackSchemaRecordingLabel, playbackStageStreamLabel, "SERVICE_UNAVAILABLE")
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Recordings service not available", nil)
+		return
+	}
+	if _, ok := s.requireHouseholdRecordingAccess(w, r, recordingId); !ok {
 		return
 	}
 

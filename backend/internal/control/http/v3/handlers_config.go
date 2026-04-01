@@ -15,6 +15,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/read"
+	householddomain "github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
@@ -26,6 +27,10 @@ import (
 
 // GetSystemConfig implements ServerInterface
 func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireHouseholdSettingsAccess(w, r); !ok {
+		return
+	}
+
 	deps := s.configModuleDeps()
 	cfg := deps.cfg
 
@@ -42,6 +47,7 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 	if info.Enigma2Username != "" {
 		openWebIF.Username = &info.Enigma2Username
 	}
+	householdPinConfigured := cfg.Household.PinConfigured()
 
 	resp := AppConfig{
 		Version:   &info.Version,
@@ -61,6 +67,9 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 			DeliveryPolicy: &deliveryPolicy,
 		},
 		Monetization: monetization,
+		Household: &HouseholdStatus{
+			PinConfigured: &householdPinConfigured,
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -69,6 +78,10 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 // PutSystemConfig implements ServerInterface
 func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireHouseholdSettingsAccess(w, r); !ok {
+		return
+	}
+
 	var req ConfigUpdate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Format", problemcode.CodeInvalidInput, "The request body could not be decoded as JSON", nil)
@@ -141,6 +154,20 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 	if req.LogLevel != nil {
 		next.LogLevel = *req.LogLevel
+	}
+
+	if req.Household != nil && req.Household.Pin != nil {
+		normalizedPIN := strings.TrimSpace(*req.Household.Pin)
+		if normalizedPIN == "" {
+			next.Household.PinHash = ""
+		} else {
+			hashedPIN, err := householddomain.HashPIN(normalizedPIN)
+			if err != nil {
+				writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Household Pin", problemcode.CodeInvalidInput, err.Error(), nil)
+				return
+			}
+			next.Household.PinHash = hashedPIN
+		}
 	}
 
 	// 3. Validate & Sanity Check

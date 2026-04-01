@@ -1,6 +1,8 @@
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClientRequestError } from '../../services/clientWrapper';
+import { HouseholdProfilesProvider } from '../../context/HouseholdProfilesContext';
+import { ClientRequestError, setClientAuthToken } from '../../services/clientWrapper';
 import type { EpgEvent, Timer } from './types';
 
 const {
@@ -43,8 +45,17 @@ vi.mock('./components/EpgChannelList', () => ({
 
 import EPG from './EPG';
 
+function renderWithProviders(ui: ReactNode) {
+  return render(
+    <HouseholdProfilesProvider>
+      {ui}
+    </HouseholdProfilesProvider>
+  );
+}
+
 describe('EPG auth handling', () => {
   beforeEach(() => {
+    setClientAuthToken('');
     vi.stubGlobal('setInterval', vi.fn(() => 0 as unknown as ReturnType<typeof setInterval>));
     vi.stubGlobal('clearInterval', vi.fn());
   });
@@ -53,6 +64,8 @@ describe('EPG auth handling', () => {
     cleanup();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    setClientAuthToken('');
+    window.localStorage.clear();
   });
 
   it('does not render a local error panel when the initial EPG load returns 401', async () => {
@@ -65,7 +78,7 @@ describe('EPG auth handling', () => {
       })
     );
 
-    render(<EPG channels={[]} />);
+    renderWithProviders(<EPG channels={[]} />);
 
     await waitFor(() => {
       expect(screen.getByRole('status', { name: /Loading EPG/i })).toBeInTheDocument();
@@ -87,7 +100,7 @@ describe('EPG auth handling', () => {
     const authRequiredHandler = vi.fn();
     window.addEventListener('auth-required', authRequiredHandler);
 
-    render(<EPG channels={[]} />);
+    renderWithProviders(<EPG channels={[]} />);
 
     await waitFor(() => {
       expect(screen.getByText('Forbidden')).toBeInTheDocument();

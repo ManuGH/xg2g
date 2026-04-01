@@ -19,6 +19,10 @@ type EPGServerInterface interface {
 {{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "epg"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
 }
 
+type HouseholdServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "household"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
 type ReceiverServerInterface interface {
 {{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "receiver"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
 }
@@ -56,6 +60,7 @@ type ServerInterface interface {
 	AuthServerInterface
 	DVRServerInterface
 	EPGServerInterface
+	HouseholdServerInterface
 	ReceiverServerInterface
 	RecordingsServerInterface
 	SeriesServerInterface

@@ -24,6 +24,7 @@ import (
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/entitlements"
 	"github.com/ManuGH/xg2g/internal/health"
+	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -140,6 +141,11 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		return nil, fmt.Errorf("initialize entitlement store: %w", err)
 	}
 	entitlementService := entitlements.NewService(entitlementStore)
+	householdStore, err := household.NewStore(cfg.Store.Backend, cfg.Store.Path)
+	if err != nil {
+		return nil, fmt.Errorf("initialize household store: %w", err)
+	}
+	householdService := household.NewService(householdStore)
 	receiptVerifiers := make([]receipts.Verifier, 0, 2)
 	normalizedMonetization := cfg.Monetization.Normalized()
 	if normalizedMonetization.GooglePlay.PackageName != "" || normalizedMonetization.GooglePlay.ServiceAccountCredentialsFile != "" {
@@ -213,6 +219,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		DecisionAudit:      decisionAuditStore,
 		CapabilityRegistry: capabilityRegistry,
 		Entitlements:       entitlementService,
+		Households:         householdService,
 		Receipts:           receiptService,
 	}, nil)
 

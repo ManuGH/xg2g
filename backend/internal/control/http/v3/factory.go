@@ -30,6 +30,7 @@ func newHandlerWithMiddlewares(svc *Server, _ config.AppConfig, extra []Middlewa
 	// Cross-cutting ingress middleware (CORS, security headers, tracing, logging, rate-limit)
 	// is applied by the top-level API server stack in internal/api/http.go.
 	stack := []MiddlewareFunc{
+		svc.householdMiddleware,
 		svc.ScopeMiddlewareFromContext,
 		svc.authMiddleware,
 	}

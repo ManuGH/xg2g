@@ -1,17 +1,23 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HouseholdProfilesProvider } from '../context/HouseholdProfilesContext';
+import { setClientAuthToken } from '../services/clientWrapper';
 
 const {
   getRecordings,
   deleteRecording,
   confirm,
   toast,
+  v3Player,
 } = vi.hoisted(() => ({
   getRecordings: vi.fn(),
   deleteRecording: vi.fn(),
   confirm: vi.fn(),
   toast: vi.fn(),
+  v3Player: vi.fn(({ recordingId, token }: { recordingId?: string; token?: string }) => (
+    <div data-testid="v3-player-props">{`${recordingId || ''}|${token || ''}`}</div>
+  )),
 }));
 
 vi.mock('../client-ts', () => ({
@@ -41,6 +47,11 @@ vi.mock('../features/resume/RecordingResumeBar', () => ({
   isResumeEligible: () => false,
 }));
 
+vi.mock('../features/player/components/V3Player', () => ({
+  __esModule: true,
+  default: v3Player,
+}));
+
 import RecordingsList from './RecordingsList';
 
 function renderWithQueryClient() {
@@ -57,7 +68,9 @@ function renderWithQueryClient() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RecordingsList />
+      <HouseholdProfilesProvider>
+        <RecordingsList />
+      </HouseholdProfilesProvider>
     </QueryClientProvider>
   );
 }
@@ -65,6 +78,8 @@ function renderWithQueryClient() {
 describe('RecordingsList', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    setClientAuthToken('');
+    window.localStorage.clear();
   });
 
   it('refetches recordings on explicit refresh', async () => {
@@ -250,5 +265,35 @@ describe('RecordingsList', () => {
     });
 
     expect(getTitles()).toEqual(['Active Recording']);
+  });
+
+  it('passes the auth token into recording playback', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a',
+        currentPath: '',
+        roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: [
+          {
+            recordingId: 'rec-token',
+            title: 'Token Recording',
+            beginUnixSeconds: 1710000000,
+            durationSeconds: 1800,
+            length: '30m',
+            description: 'Auth-sensitive playback',
+          },
+        ],
+      },
+    });
+
+    renderWithQueryClient();
+
+    fireEvent.click(await screen.findByText('Token Recording'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('v3-player-props')).toHaveTextContent('rec-token|test-token');
+    });
   });
 });

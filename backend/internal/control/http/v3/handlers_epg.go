@@ -15,6 +15,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
@@ -46,6 +47,22 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Services) == 0 {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "epg/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Request body must contain non-empty services list", nil)
 		return
+	}
+
+	profile := household.NormalizeProfile(s.currentHouseholdProfile(r.Context()))
+	if household.HasServiceRestrictionsNormalized(profile) {
+		visibleRefs, err := s.householdVisibleServiceRefSet(profile, s.systemModuleDeps())
+		if err != nil {
+			writeRegisteredProblem(w, r, http.StatusInternalServerError, "epg/read_failed", "Failed to Read EPG", problemcode.CodeReadFailed, "Failed to resolve visible household services", nil)
+			return
+		}
+		filtered := make([]string, 0, len(req.Services))
+		for _, serviceRef := range req.Services {
+			if _, ok := visibleRefs[read.CanonicalServiceRef(serviceRef)]; ok {
+				filtered = append(filtered, serviceRef)
+			}
+		}
+		req.Services = filtered
 	}
 
 	s.mu.RLock()
@@ -261,6 +278,7 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 	s.mu.RLock()
 	src := s.epgSource
 	s.mu.RUnlock()
+	profile := household.NormalizeProfile(s.currentHouseholdProfile(r.Context()))
 
 	q := read.EpgQuery{}
 	if params.From != nil {
@@ -283,8 +301,23 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 		return
 	}
 
+	var visibleRefs map[string]struct{}
+	if household.HasServiceRestrictionsNormalized(profile) {
+		visibleRefs, err = s.householdVisibleServiceRefSet(profile, s.systemModuleDeps())
+		if err != nil {
+			log.L().Error().Err(err).Msg("failed to resolve visible household services for epg")
+			writeRegisteredProblem(w, r, http.StatusInternalServerError, "epg/read_failed", "Failed to Read EPG", problemcode.CodeReadFailed, "Failed to resolve visible household services", nil)
+			return
+		}
+	}
+
 	resp := make([]EpgItem, 0, len(entries))
 	for _, e := range entries {
+		if visibleRefs != nil {
+			if _, ok := visibleRefs[e.ServiceRef]; !ok {
+				continue
+			}
+		}
 		// Capture variables for pointer assignment
 		id := e.ID
 		sRef := e.ServiceRef

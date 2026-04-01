@@ -146,6 +146,13 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `hls.root` | `XG2G_HLS_ROOT` | - | Active | Advanced |
 | `hls.segmentSeconds` | `XG2G_HLS_SEGMENT_SECONDS` | `6` | Active | Advanced |
 
+### household
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `household.pinHash` | - | `""` | Active | Advanced |
+| `household.unlockTTL` | - | `4h` | Active | Advanced |
+
 ### library
 
 | Path | Env | Default | Status | Profile |

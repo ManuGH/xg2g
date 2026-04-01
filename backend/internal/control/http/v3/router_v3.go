@@ -85,6 +85,7 @@ func registerAllRoutes(register routeRegistrar, wrapper *ServerInterfaceWrapper)
 	registerSessionsModuleRoutes(register, wrapper)
 	registerRecordingsModuleRoutes(register, wrapper)
 	registerDVRModuleRoutes(register, wrapper)
+	registerHouseholdModuleRoutes(register, wrapper)
 	registerConfigModuleRoutes(register, wrapper)
 	registerSystemModuleRoutes(register, wrapper)
 }

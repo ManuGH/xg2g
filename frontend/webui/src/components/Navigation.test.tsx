@@ -1,21 +1,72 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { useEffect } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HouseholdProfilesProvider } from '../context/HouseholdProfilesContext';
+import { PendingChangesProvider, usePendingChanges } from '../context/PendingChangesContext';
+import { setClientAuthToken } from '../services/clientWrapper';
 import Navigation from './Navigation';
 import { ROUTE_MAP } from '../routes';
 
+const { promptPin, toast } = vi.hoisted(() => ({
+  promptPin: vi.fn(),
+  toast: vi.fn(),
+}));
+
+vi.mock('../context/UiOverlayContext', () => ({
+  useUiOverlay: () => ({
+    promptPin,
+    toast,
+  }),
+}));
 
 function LocationProbe() {
   const { pathname } = useLocation();
   return <div data-testid="pathname">{pathname}</div>;
 }
 
+function DirtyGuardProbe({ allowNavigation }: { allowNavigation: boolean }) {
+  const { setPendingChangesGuard } = usePendingChanges();
+
+  useEffect(() => {
+    setPendingChangesGuard({
+      isDirty: true,
+      confirmDiscard: () => Promise.resolve(allowNavigation),
+    });
+
+    return () => {
+      setPendingChangesGuard(null);
+    };
+  }, [allowNavigation, setPendingChangesGuard]);
+
+  return null;
+}
+
+function renderWithProviders(children: ReactNode, initialEntries: string[] = [ROUTE_MAP.dashboard]) {
+  return render(
+    <PendingChangesProvider>
+      <HouseholdProfilesProvider>
+        <MemoryRouter initialEntries={initialEntries}>
+          {children}
+        </MemoryRouter>
+      </HouseholdProfilesProvider>
+    </PendingChangesProvider>
+  );
+}
+
 describe('Navigation', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    setClientAuthToken('');
+    window.localStorage.clear();
+  });
+
   it('renders translated section labels and sheet copy', () => {
-    render(
-      <MemoryRouter initialEntries={[ROUTE_MAP.dashboard]}>
+    renderWithProviders(
+      <>
         <Navigation onLogout={() => {}} />
-      </MemoryRouter>
+      </>
     );
 
     screen.getByRole('navigation', { name: 'Main navigation' });
@@ -32,10 +83,10 @@ describe('Navigation', () => {
   });
 
   it('keeps settings and timers in the more sheet while the primary row stays focused on core routes', () => {
-    render(
-      <MemoryRouter initialEntries={[ROUTE_MAP.dashboard]}>
+    renderWithProviders(
+      <>
         <Navigation />
-      </MemoryRouter>
+      </>
     );
 
     const mobileNav = screen.getByRole('navigation', { name: 'Mobile navigation', hidden: true });
@@ -52,46 +103,50 @@ describe('Navigation', () => {
     expect(screen.getByRole('link', { name: 'Timers' })).toHaveAttribute('href', ROUTE_MAP.timers);
   });
 
-  it('navigates via links and marks the active route', () => {
-    render(
-      <MemoryRouter initialEntries={[ROUTE_MAP.epg]}>
+  it('navigates via links and marks the active route', async () => {
+    renderWithProviders(
+      <>
         <Navigation />
         <LocationProbe />
-      </MemoryRouter>
+      </>,
+      [ROUTE_MAP.epg]
     );
 
     expect(screen.getByRole('link', { name: 'TV/EPG' })).toHaveAttribute('aria-current', 'page');
 
     fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }));
 
-    expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.dashboard);
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.dashboard);
+    });
   });
 
   it('does not mark the more button active when a primary route is active', () => {
-    render(
-      <MemoryRouter initialEntries={[ROUTE_MAP.dashboard]}>
+    renderWithProviders(
+      <>
         <Navigation />
-      </MemoryRouter>
+      </>
     );
 
     expect(screen.getByRole('button', { name: 'More', hidden: true })).not.toHaveAttribute('aria-current');
   });
 
   it('marks the more button active when an overflow route is active', () => {
-    render(
-      <MemoryRouter initialEntries={[ROUTE_MAP.logs]}>
+    renderWithProviders(
+      <>
         <Navigation />
-      </MemoryRouter>
+      </>,
+      [ROUTE_MAP.logs]
     );
 
     expect(screen.getByRole('button', { name: 'More', hidden: true })).toHaveAttribute('aria-current', 'page');
   });
 
   it('opens the more sheet as a dialog and focuses the close button', async () => {
-    render(
-      <MemoryRouter initialEntries={[ROUTE_MAP.dashboard]}>
+    renderWithProviders(
+      <>
         <Navigation />
-      </MemoryRouter>
+      </>
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
@@ -105,10 +160,10 @@ describe('Navigation', () => {
   });
 
   it('closes the more sheet on escape, restores focus, and releases scroll lock', async () => {
-    render(
-      <MemoryRouter initialEntries={[ROUTE_MAP.dashboard]}>
+    renderWithProviders(
+      <>
         <Navigation />
-      </MemoryRouter>
+      </>
     );
 
     const moreButton = screen.getByRole('button', { name: 'More', hidden: true });
@@ -125,11 +180,11 @@ describe('Navigation', () => {
   });
 
   it('closes the more sheet after navigating to an overflow route', async () => {
-    render(
-      <MemoryRouter initialEntries={[ROUTE_MAP.dashboard]}>
+    renderWithProviders(
+      <>
         <Navigation />
         <LocationProbe />
-      </MemoryRouter>
+      </>
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
@@ -138,6 +193,22 @@ describe('Navigation', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.timers);
       expect(screen.queryByRole('dialog', { name: 'More tools' })).toBeNull();
+    });
+  });
+
+  it('keeps the current route when pending changes reject navigation', async () => {
+    renderWithProviders(
+      <>
+        <DirtyGuardProbe allowNavigation={false} />
+        <Navigation />
+        <LocationProbe />
+      </>
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'TV/EPG' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.dashboard);
     });
   });
 });

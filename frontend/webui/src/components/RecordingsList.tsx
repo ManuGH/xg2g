@@ -8,6 +8,8 @@
 import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
+import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
+import { filterRecordingsForProfile } from '../features/household/model';
 import { useTranslation } from 'react-i18next';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
 import { usePlayerHistoryBridge } from '../features/player/usePlayerHistoryBridge';
@@ -89,9 +91,10 @@ function mapRecordingToChip(item: RecordingItem): { state: ChipState; label: str
 }
 
 export default function RecordingsList() {
-  const { auth } = useAppContext();
   const { t } = useTranslation();
+  const { auth } = useAppContext();
   const { confirm, toast } = useUiOverlay();
+  const { selectedProfile, canAccessDvrPlayback, canManageDvr } = useHouseholdProfiles();
 
   // State
   const [root, setRoot] = useState<string>(''); // Selected Root ID
@@ -128,6 +131,15 @@ export default function RecordingsList() {
   }, [root, path]);
 
   useEffect(() => {
+    if (canManageDvr) {
+      return;
+    }
+
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, [canManageDvr]);
+
+  useEffect(() => {
     if (!data || !initialLoad.current) return;
 
     initialLoad.current = false;
@@ -155,6 +167,7 @@ export default function RecordingsList() {
   };
 
   const handlePlay = async (item: RecordingItem) => {
+    if (!canAccessDvrPlayback) return;
     if (selectionMode) return;
     if (!item.recordingId) return;
 
@@ -166,6 +179,7 @@ export default function RecordingsList() {
   };
 
   const toggleSelectionMode = () => {
+    if (!canManageDvr) return;
     setSelectionMode(prev => {
       if (prev) {
         setSelectedIds(new Set());
@@ -187,6 +201,7 @@ export default function RecordingsList() {
   };
 
   const handleBulkDelete = async () => {
+    if (!canManageDvr) return;
     if (selectedIds.size === 0) return;
     const ok = await confirm({
       title: 'Delete recordings',
@@ -213,13 +228,23 @@ export default function RecordingsList() {
     return new Date(ts * 1000).toLocaleString();
   };
 
-  const visibleRecordings = [...(data?.recordings || [])]
+  const visibleRecordings = filterRecordingsForProfile(selectedProfile, [...(data?.recordings || [])])
     .filter((recording) => matchesRecordingsFilter(recording as RecordingItem, filterMode))
     .sort((left, right) => {
       const leftBegin = left.beginUnixSeconds || 0;
       const rightBegin = right.beginUnixSeconds || 0;
       return sortMode === 'oldest' ? leftBegin - rightBegin : rightBegin - leftBegin;
     });
+
+  if (!canAccessDvrPlayback) {
+    return (
+      <div className={[styles.container, 'animate-enter'].join(' ')}>
+        <div className={styles.emptyState}>
+          <p>{t('recordings.profileBlocked', { defaultValue: 'Dieses Profil darf keine Aufnahmen ansehen.' })}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading && !data) {
     return (
@@ -269,7 +294,7 @@ export default function RecordingsList() {
           >
             Refresh
           </Button>
-          {selectionMode ? (
+          {canManageDvr && selectionMode ? (
             <>
               <Button
                 variant="danger"
@@ -282,7 +307,7 @@ export default function RecordingsList() {
                 {t('recordings.cancelSelection')}
               </Button>
             </>
-          ) : (
+          ) : canManageDvr ? (
             <button
               className={styles.iconButton}
               title={t('recordings.selectionMode')}
@@ -290,7 +315,7 @@ export default function RecordingsList() {
             >
               <TrashIcon className={styles.iconSm} />
             </button>
-          )}
+          ) : null}
         </div>
 
         <div className={styles.workflowControls}>
@@ -327,7 +352,7 @@ export default function RecordingsList() {
       </div>
 
       {/* Content Grid */}
-      <div className={[styles.grid, selectionMode ? styles.selectionMode : null].filter(Boolean).join(' ')}>
+      <div className={[styles.grid, selectionMode && canManageDvr ? styles.selectionMode : null].filter(Boolean).join(' ')}>
         {/* Directories */}
         {data?.directories?.map((dir, i) => (
           <Card
@@ -358,7 +383,7 @@ export default function RecordingsList() {
               interactive
               className={[styles.recordingCard, isSelected ? styles.selected : null].filter(Boolean).join(' ')}
               variant={state === 'recording' || state === 'live' ? 'live' : 'standard'}
-              onClick={() => selectionMode && rec.recordingId ? toggleSelect(rec.recordingId) : handlePlay(rec)}
+              onClick={() => selectionMode && canManageDvr && rec.recordingId ? toggleSelect(rec.recordingId) : handlePlay(rec)}
             >
               <CardBody className={styles.itemContent}>
                 <div className={styles.iconWrapper}>
@@ -396,7 +421,7 @@ export default function RecordingsList() {
                   })()}
                 </div>
 
-                {selectionMode && (
+                {selectionMode && canManageDvr && (
                   <div className={styles.selectionIndicator}>
                     {isSelected && <CheckCircleIcon className={styles.checkIcon} />}
                   </div>
@@ -433,7 +458,7 @@ export default function RecordingsList() {
         }>
           <V3Player
             recordingId={playing.recordingId}
-            token={auth?.token || undefined}
+            token={auth.token || undefined}
             autoStart={true}
             onClose={handlePlayerClose}
             duration={playing.durationSeconds}

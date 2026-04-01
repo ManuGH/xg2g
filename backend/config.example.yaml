@@ -167,6 +167,15 @@ picons:
   # Example: https://github.com/picons/picons/raw/master/picons
   # ENV: XG2G_PICON_BASE
   baseUrl: ""
+
+# Household PIN Protection [OPTIONAL]
+# Leave this section unset if household profiles should remain pure convenience scoping.
+# household:
+#   # Operator input. The loader hashes this automatically; the persisted runtime form is pinHash.
+#   pin: "1234"
+#   # Optional: how long a successful household unlock remains active on the server.
+#   # Defaults to 4h and is capped by the authenticated session lifetime.
+#   unlockTTL: "4h"
 # ==============================================================================
 # Advanced Configuration Examples
 # ==============================================================================

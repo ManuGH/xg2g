@@ -8,6 +8,7 @@ import "net/http"
 
 func registerAuthRoutes(register routeRegistrar, handler authRoutes) {
 	register.add(http.MethodPost, "/auth/session", "CreateSession", handler.CreateSession)
+	register.add(http.MethodDelete, "/auth/session", "DeleteSession", handler.DeleteSession)
 }
 
 func registerDVRRoutes(register routeRegistrar, handler dvrRoutes) {

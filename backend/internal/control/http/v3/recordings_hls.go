@@ -35,6 +35,9 @@ func (s *Server) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Req
 
 func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string, isTimeshift bool, isHead bool) {
 	deps := s.recordingsModuleDeps()
+	if _, ok := s.requireHouseholdRecordingAccess(w, r, recordingId); !ok {
+		return
+	}
 	profile := detectClientProfile(r)
 	variant := v3recordings.NormalizeVariantHash(r.URL.Query().Get("variant"))
 	target, err := v3recordings.DecodeTargetProfileQuery(r.URL.Query().Get("target"))
@@ -158,6 +161,9 @@ func (s *Server) GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http
 
 func (s *Server) serveHLSSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string, isHead bool) {
 	deps := s.recordingsModuleDeps()
+	if _, ok := s.requireHouseholdRecordingAccess(w, r, recordingId); !ok {
+		return
+	}
 	variant := v3recordings.NormalizeVariantHash(r.URL.Query().Get("variant"))
 	artifact, artErr := s.artifacts.ResolveSegment(r.Context(), recordingId, segment, variant)
 	if artErr != nil {

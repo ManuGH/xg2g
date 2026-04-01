@@ -43,6 +43,7 @@ func sanitizeV3RuntimeDependencies(deps v3.Dependencies) v3.Dependencies {
 		DecisionAudit:      deps.DecisionAudit,
 		CapabilityRegistry: deps.CapabilityRegistry,
 		Entitlements:       deps.Entitlements,
+		Households:         deps.Households,
 		Receipts:           deps.Receipts,
 	}
 }
@@ -66,6 +67,7 @@ func (s *Server) syncV3HandlerDependencies() {
 		DecisionAudit:      deps.runtimeDeps.DecisionAudit,
 		CapabilityRegistry: deps.runtimeDeps.CapabilityRegistry,
 		Entitlements:       deps.runtimeDeps.Entitlements,
+		Households:         deps.runtimeDeps.Households,
 		Receipts:           deps.runtimeDeps.Receipts,
 		PathMapper:         deps.recordingPathMapper,
 		ChannelManager:     deps.channelManager,

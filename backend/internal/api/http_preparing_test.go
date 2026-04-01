@@ -15,9 +15,25 @@ import (
 type MockPreparingServer struct{}
 
 func (m *MockPreparingServer) CreateSession(w http.ResponseWriter, r *http.Request)      {}
+func (m *MockPreparingServer) DeleteSession(w http.ResponseWriter, r *http.Request, params v3.DeleteSessionParams) {
+}
 func (m *MockPreparingServer) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) GetDvrStatus(w http.ResponseWriter, r *http.Request)       {}
 func (m *MockPreparingServer) GetEpg(w http.ResponseWriter, r *http.Request, params v3.GetEpgParams) {
+}
+func (m *MockPreparingServer) GetHouseholdUnlock(w http.ResponseWriter, r *http.Request, params v3.GetHouseholdUnlockParams) {
+}
+func (m *MockPreparingServer) GetHouseholdProfiles(w http.ResponseWriter, r *http.Request, params v3.GetHouseholdProfilesParams) {
+}
+func (m *MockPreparingServer) PostHouseholdUnlock(w http.ResponseWriter, r *http.Request, params v3.PostHouseholdUnlockParams) {
+}
+func (m *MockPreparingServer) PostHouseholdProfiles(w http.ResponseWriter, r *http.Request, params v3.PostHouseholdProfilesParams) {
+}
+func (m *MockPreparingServer) DeleteHouseholdUnlock(w http.ResponseWriter, r *http.Request, params v3.DeleteHouseholdUnlockParams) {
+}
+func (m *MockPreparingServer) DeleteHouseholdProfile(w http.ResponseWriter, r *http.Request, profileId string, params v3.DeleteHouseholdProfileParams) {
+}
+func (m *MockPreparingServer) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, profileId string, params v3.PutHouseholdProfileParams) {
 }
 func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Request)         {}
 func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {}

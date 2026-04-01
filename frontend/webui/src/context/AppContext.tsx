@@ -104,9 +104,12 @@ export function AppProvider({ children }: AppProviderProps) {
       setBouquets(bouquetData);
       debugLog('[DEBUG] Bouquets loaded. Count:', bouquetData.length);
 
-      const channelData = await fetchChannels(selectedBouquet);
+      const nextSelectedBouquet = bouquetData.some((bouquet) => bouquet.name === selectedBouquet)
+        ? selectedBouquet
+        : (bouquetData[0]?.name || '');
+      const channelData = await fetchChannels(nextSelectedBouquet);
       setChannels(channelData);
-      setSelectedBouquet(selectedBouquet);
+      setSelectedBouquet(nextSelectedBouquet);
       debugLog('[DEBUG] Channels loaded. Count:', channelData.length);
       setDataLoaded(true);
     } catch (err) {

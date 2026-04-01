@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { epgReducer, createInitialEpgState } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';
 import { addTimer } from '../../client-ts';
+import { useHouseholdProfiles } from '../../context/HouseholdProfilesContext';
 import type { EpgChannel, EpgBouquet, Timer, EpgEvent, EpgFilters } from './types';
 import { EPG_MAX_HORIZON_HOURS } from './types';
 import { EpgToolbar } from './components/EpgToolbar';
@@ -70,8 +71,17 @@ export default function EPG({
 }: EpgProps) {
   const { t } = useTranslation();
   const { confirm, toast } = useUiOverlay();
+  const {
+    selectedProfile,
+    selectedProfileId,
+    isReady,
+    isFavoriteService,
+    toggleFavoriteService,
+    canManageDvr,
+  } = useHouseholdProfiles();
   const [state, dispatch] = useReducer(epgReducer, undefined, createInitialEpgState);
   const [timers, setTimers] = React.useState<Timer[]>([]);
+  const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
   // ============================================================================
@@ -79,19 +89,27 @@ export default function EPG({
   // ============================================================================
 
   const loadTimers = useCallback(async () => {
+    if (!isReady) {
+      return;
+    }
+
     try {
       const data = await fetchTimers();
       setTimers(data);
     } catch (err) {
       debugError('Failed to fetch timers for EPG', formatError(err));
     }
-  }, []);
+  }, [isReady]);
 
   useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+
     loadTimers();
     const interval = setInterval(loadTimers, 30000); // Poll every 30s
     return () => clearInterval(interval);
-  }, [loadTimers]);
+  }, [isReady, loadTimers]);
 
   const handleRecord = useCallback(
     async (event: EpgEvent) => {
@@ -147,6 +165,10 @@ export default function EPG({
   // ============================================================================
 
   const loadEpgEvents = useCallback(async () => {
+    if (!isReady) {
+      return;
+    }
+
     // Race Control: Abort previous request
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
@@ -198,20 +220,28 @@ export default function EPG({
         payload: { error: createEpgError(err, t, 'epg.loadError') }
       });
     }
-  }, [state.filters.timeRange, state.filters.bouquetId, t]);
+  }, [isReady, selectedProfileId, state.filters.timeRange, state.filters.bouquetId, t]);
 
   // Initial load + auto-refresh every 5 minutes
   useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+
     loadEpgEvents();
     const interval = setInterval(loadEpgEvents, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [loadEpgEvents]);
+  }, [isReady, loadEpgEvents]);
 
   // ============================================================================
   // Search Logic
   // ============================================================================
 
   const runSearch = useCallback(async () => {
+    if (!isReady) {
+      return;
+    }
+
     const query = state.filters.query?.trim();
     if (!query) return;
 
@@ -233,7 +263,7 @@ export default function EPG({
         payload: { error: createEpgError(err, t, 'epg.searchError') }
       });
     }
-  }, [state.filters.query, state.filters.bouquetId, t]);
+  }, [isReady, selectedProfileId, state.filters.query, state.filters.bouquetId, t]);
 
   // Clear search when query is emptied
   useEffect(() => {
@@ -284,6 +314,59 @@ export default function EPG({
     return map;
   }, [state.searchEvents]);
 
+  const favoriteServiceRefs = useMemo(
+    () => new Set(selectedProfile.favoriteServiceRefs),
+    [selectedProfile.favoriteServiceRefs]
+  );
+
+  const visibleChannels = useMemo(() => {
+    if (!showFavoritesOnly) {
+      return channels;
+    }
+
+    return channels.filter((channel) => isFavoriteService(channel.serviceRef || channel.id || ''));
+  }, [channels, isFavoriteService, showFavoritesOnly]);
+
+  const visibleFavoriteCount = useMemo(() => (
+    channels.reduce((count, channel) => (
+      isFavoriteService(channel.serviceRef || channel.id || '') ? count + 1 : count
+    ), 0)
+  ), [channels, isFavoriteService]);
+
+  const visibleServiceRefs = useMemo(() => new Set(
+    visibleChannels
+      .map((channel) => (channel.serviceRef || channel.id || '').toLowerCase())
+      .filter(Boolean)
+  ), [visibleChannels]);
+
+  const visibleMainEventsByServiceRef = useMemo(() => {
+    const map = new Map<string, EpgEvent[]>();
+    mainEventsByServiceRef.forEach((events, serviceRef) => {
+      if (visibleServiceRefs.has(serviceRef.toLowerCase())) {
+        map.set(serviceRef, events);
+      }
+    });
+    return map;
+  }, [mainEventsByServiceRef, visibleServiceRefs]);
+
+  const visibleSearchEventsByServiceRef = useMemo(() => {
+    const map = new Map<string, EpgEvent[]>();
+    searchEventsByServiceRef.forEach((events, serviceRef) => {
+      if (visibleServiceRefs.has(serviceRef.toLowerCase())) {
+        map.set(serviceRef, events);
+      }
+    });
+    return map;
+  }, [searchEventsByServiceRef, visibleServiceRefs]);
+
+  const visibleSearchEventCount = useMemo(() => {
+    let count = 0;
+    visibleSearchEventsByServiceRef.forEach((events) => {
+      count += events.length;
+    });
+    return count;
+  }, [visibleSearchEventsByServiceRef]);
+
   // ============================================================================
   // Render
   // ============================================================================
@@ -305,22 +388,31 @@ export default function EPG({
     dispatch({ type: 'TOGGLE_SEARCH_CHANNEL', payload: { channelId: serviceRef } });
   }, []);
 
-  const showSearchResults = state.searchLoadState === 'ready' && state.searchEvents.length > 0;
+  const showSearchResults = state.searchLoadState === 'ready' && visibleSearchEventCount > 0;
   const showMainList = state.loadState === 'ready' && !showSearchResults;
 
   return (
     <div className={[styles.page, 'animate-enter'].join(' ')}>
       {/* Toolbar */}
       <EpgToolbar
-        channelCount={channels.length}
+        channelCount={visibleChannels.length}
+        favoriteCount={visibleFavoriteCount}
+        showFavoritesOnly={showFavoritesOnly}
         filters={state.filters}
         bouquets={bouquets}
         loadState={state.loadState}
         searchLoadState={state.searchLoadState}
         onFilterChange={handleFilterChange}
         onRefresh={loadEpgEvents}
+        onToggleFavorites={() => setShowFavoritesOnly((current) => !current)}
         onSearch={runSearch}
       />
+
+      {showFavoritesOnly && visibleChannels.length === 0 && (
+        <div className={styles.card}>
+          {t('epg.noFavorites', { defaultValue: 'Dieses Profil hat noch keine Senderfavoriten.' })}
+        </div>
+      )}
 
       {/* Search Error */}
       {state.searchError && (
@@ -341,7 +433,7 @@ export default function EPG({
 
       {/* Search No Results */}
       {state.searchLoadState === 'ready' &&
-        state.searchEvents.length === 0 &&
+        visibleSearchEventCount === 0 &&
         !state.searchError &&
         state.filters.query?.trim() && (
           <div className={styles.card}>
@@ -362,14 +454,16 @@ export default function EPG({
           <div className={styles.programmes}>
             <EpgChannelList
               mode="search"
-              channels={channels}
-              eventsByServiceRef={searchEventsByServiceRef}
+              channels={visibleChannels}
+              eventsByServiceRef={visibleSearchEventsByServiceRef}
+              favoriteServiceRefs={favoriteServiceRefs}
               currentTime={state.currentTime}
               timeRangeHours={state.filters.timeRange}
               expandedChannels={state.expandedSearchChannels}
               onToggleExpand={handleToggleSearchChannel}
               onPlay={onPlay}
-              onRecord={RECORD_SUPPORTED ? handleRecord : undefined}
+              onToggleFavorite={toggleFavoriteService}
+              onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
               isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
             />
           </div>
@@ -395,14 +489,16 @@ export default function EPG({
       {showMainList && (
         <EpgChannelList
           mode="main"
-          channels={channels}
-          eventsByServiceRef={mainEventsByServiceRef}
+          channels={visibleChannels}
+          eventsByServiceRef={visibleMainEventsByServiceRef}
+          favoriteServiceRefs={favoriteServiceRefs}
           currentTime={state.currentTime}
           timeRangeHours={state.filters.timeRange}
           expandedChannels={state.expandedChannels}
           onToggleExpand={handleToggleChannel}
           onPlay={onPlay}
-          onRecord={RECORD_SUPPORTED ? handleRecord : undefined}
+          onToggleFavorite={toggleFavoriteService}
+          onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
           isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
         />
       )}

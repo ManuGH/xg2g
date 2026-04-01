@@ -468,6 +468,7 @@ export type ConfigUpdate = {
      * Log level to set (debug, info, warn, error)
      */
     logLevel?: string;
+    household?: HouseholdConfigUpdate;
 };
 
 export type AppConfig = {
@@ -481,6 +482,45 @@ export type AppConfig = {
     streaming?: StreamingConfig;
     monetization?: MonetizationStatus;
     verification?: VerificationConfig;
+    household?: HouseholdStatus;
+};
+
+export type HouseholdConfigUpdate = {
+    /**
+     * Optional numeric household PIN update. Omit to keep the current PIN. Send an empty string to clear the configured PIN.
+     *
+     */
+    pin?: string | null;
+};
+
+export type HouseholdStatus = {
+    pinConfigured?: boolean;
+};
+
+export type HouseholdUnlockRequest = {
+    pin: string;
+};
+
+export type HouseholdUnlockStatus = {
+    pinConfigured: boolean;
+    unlocked: boolean;
+};
+
+export type HouseholdProfilePermissions = {
+    dvrPlayback: boolean;
+    dvrManage: boolean;
+    settings: boolean;
+};
+
+export type HouseholdProfile = {
+    id: string;
+    name: string;
+    kind: 'adult' | 'child';
+    maxFsk?: number | null;
+    allowedBouquets: Array<string>;
+    allowedServiceRefs: Array<string>;
+    favoriteServiceRefs: Array<string>;
+    permissions: HouseholdProfilePermissions;
 };
 
 export type MonetizationStatus = {
@@ -1297,6 +1337,13 @@ export type SeriesRuleWritable = {
     lastRunSummary?: RunSummary;
 };
 
+/**
+ * Optional active household profile id. If omitted, the backend resolves the unrestricted
+ * default household profile for backward compatibility.
+ *
+ */
+export type HouseholdProfileHeader = string;
+
 export type GetErrorsData = {
     body?: never;
     path?: never;
@@ -1346,6 +1393,238 @@ export type GetSystemHealthzResponses = {
 };
 
 export type GetSystemHealthzResponse = GetSystemHealthzResponses[keyof GetSystemHealthzResponses];
+
+export type GetHouseholdProfilesData = {
+    body?: never;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/household/profiles';
+};
+
+export type GetHouseholdProfilesResponses = {
+    /**
+     * Household profiles
+     */
+    200: Array<HouseholdProfile>;
+};
+
+export type GetHouseholdProfilesResponse = GetHouseholdProfilesResponses[keyof GetHouseholdProfilesResponses];
+
+export type PostHouseholdProfilesData = {
+    body: HouseholdProfile;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/household/profiles';
+};
+
+export type PostHouseholdProfilesErrors = {
+    /**
+     * Invalid household profile
+     */
+    400: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Profile already exists
+     */
+    409: unknown;
+};
+
+export type PostHouseholdProfilesResponses = {
+    /**
+     * Household profile created
+     */
+    201: HouseholdProfile;
+};
+
+export type PostHouseholdProfilesResponse = PostHouseholdProfilesResponses[keyof PostHouseholdProfilesResponses];
+
+export type DeleteHouseholdUnlockData = {
+    body?: never;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/household/unlock';
+};
+
+export type DeleteHouseholdUnlockResponses = {
+    /**
+     * Household unlock cleared
+     */
+    204: void;
+};
+
+export type DeleteHouseholdUnlockResponse = DeleteHouseholdUnlockResponses[keyof DeleteHouseholdUnlockResponses];
+
+export type GetHouseholdUnlockData = {
+    body?: never;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/household/unlock';
+};
+
+export type GetHouseholdUnlockResponses = {
+    /**
+     * Household unlock status
+     */
+    200: HouseholdUnlockStatus;
+};
+
+export type GetHouseholdUnlockResponse = GetHouseholdUnlockResponses[keyof GetHouseholdUnlockResponses];
+
+export type PostHouseholdUnlockData = {
+    body: HouseholdUnlockRequest;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/household/unlock';
+};
+
+export type PostHouseholdUnlockErrors = {
+    /**
+     * Invalid PIN payload
+     */
+    400: unknown;
+    /**
+     * Invalid PIN
+     */
+    403: unknown;
+    /**
+     * No household PIN configured
+     */
+    409: unknown;
+};
+
+export type PostHouseholdUnlockResponses = {
+    /**
+     * Household unlock granted
+     */
+    200: HouseholdUnlockStatus;
+};
+
+export type PostHouseholdUnlockResponse = PostHouseholdUnlockResponses[keyof PostHouseholdUnlockResponses];
+
+export type DeleteHouseholdProfileData = {
+    body?: never;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path: {
+        profileId: string;
+    };
+    query?: never;
+    url: '/household/profiles/{profileId}';
+};
+
+export type DeleteHouseholdProfileErrors = {
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Profile not found
+     */
+    404: unknown;
+    /**
+     * Cannot delete the last profile
+     */
+    409: unknown;
+};
+
+export type DeleteHouseholdProfileResponses = {
+    /**
+     * Household profile deleted
+     */
+    204: void;
+};
+
+export type DeleteHouseholdProfileResponse = DeleteHouseholdProfileResponses[keyof DeleteHouseholdProfileResponses];
+
+export type PutHouseholdProfileData = {
+    body: HouseholdProfile;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path: {
+        profileId: string;
+    };
+    query?: never;
+    url: '/household/profiles/{profileId}';
+};
+
+export type PutHouseholdProfileErrors = {
+    /**
+     * Invalid household profile
+     */
+    400: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Profile not found
+     */
+    404: unknown;
+};
+
+export type PutHouseholdProfileResponses = {
+    /**
+     * Household profile updated
+     */
+    200: HouseholdProfile;
+};
+
+export type PutHouseholdProfileResponse = PutHouseholdProfileResponses[keyof PutHouseholdProfileResponses];
 
 export type GetSystemConfigData = {
     body?: never;
@@ -1600,6 +1879,14 @@ export type PostServicesNowNextResponse = PostServicesNowNextResponses[keyof Pos
 
 export type GetEpgData = {
     body?: never;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
     path?: never;
     query?: {
         /**
@@ -1641,6 +1928,14 @@ export type GetEpgResponse = GetEpgResponses[keyof GetEpgResponses];
 
 export type GetServicesData = {
     body?: never;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
     path?: never;
     query?: {
         /**
@@ -1749,6 +2044,14 @@ export type PostLivePlaybackInfoResponse = PostLivePlaybackInfoResponses[keyof P
 
 export type GetRecordingsData = {
     body?: never;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
     path?: never;
     query?: {
         /**
@@ -2156,6 +2459,37 @@ export type GetRecordingHlsCustomSegmentHeadResponses = {
      */
     200: unknown;
 };
+
+export type DeleteSessionData = {
+    body?: never;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/auth/session';
+};
+
+export type DeleteSessionErrors = {
+    /**
+     * Household PIN required for child-profile logout
+     */
+    403: unknown;
+};
+
+export type DeleteSessionResponses = {
+    /**
+     * Session deleted
+     */
+    204: void;
+};
+
+export type DeleteSessionResponse = DeleteSessionResponses[keyof DeleteSessionResponses];
 
 export type CreateSessionData = {
     body?: never;

@@ -339,6 +339,224 @@
   font-size: 14px;
 }
 
+.profileCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.profileCard {
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  border-radius: 16px;
+  padding: 16px;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.profileCardActive {
+  border-color: var(--accent-action);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-action) 35%, transparent);
+}
+
+.profileCardHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.profileCardEyebrow {
+  margin: 0 0 6px 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.profileCardTitle {
+  display: block;
+}
+
+.profileCardMeta {
+  margin: 10px 0 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.profileBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-action-subtle) 72%, transparent);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.profileToolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.profileEditor {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-input) 88%, transparent);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.profileEditorHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.profileEditorTitle {
+  margin: 0;
+}
+
+.profileEditorActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.profileField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profileField span {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.profileInput {
+  min-height: 46px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-stage);
+  color: var(--text-primary);
+  padding: 0 12px;
+}
+
+.permissionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.permissionToggle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: var(--surface-stage);
+  color: var(--text-primary);
+}
+
+.profilePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profilePanelHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.profilePanelActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.choiceGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.choiceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-stage);
+  color: var(--text-primary);
+}
+
+.channelChecklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.channelRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: var(--surface-stage);
+}
+
+.channelAccess,
+.channelFavorite {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--text-primary);
+}
+
+.channelAccess span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.channelAccess small {
+  color: var(--text-muted);
+}
+
+.profileEmptyState {
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-stage) 80%, transparent);
+}
+
 @media (max-width: 760px) {
   .onboardingHero,
   .onboardingMeta {
@@ -346,6 +564,18 @@
   }
 
   .onboardingButton {
+    width: 100%;
+  }
+
+  .profileEditorHeader,
+  .profilePanelHeader,
+  .channelRow {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .profileEditorActions,
+  .profilePanelActions {
     width: 100%;
   }
 }

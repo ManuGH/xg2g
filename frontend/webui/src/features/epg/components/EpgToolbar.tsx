@@ -10,6 +10,8 @@ import styles from '../EPG.module.css';
 
 export interface EpgToolbarProps {
   channelCount: number;
+  favoriteCount: number;
+  showFavoritesOnly: boolean;
   filters: EpgFilters;
   bouquets: EpgBouquet[];
   loadState: EpgLoadState;
@@ -17,17 +19,21 @@ export interface EpgToolbarProps {
 
   onFilterChange: (updates: Partial<EpgFilters>) => void;
   onRefresh: () => void;
+  onToggleFavorites: () => void;
   onSearch?: () => void;
 }
 
 export function EpgToolbar({
   channelCount,
+  favoriteCount,
+  showFavoritesOnly,
   filters,
   bouquets,
   loadState,
   searchLoadState,
   onFilterChange,
   onRefresh,
+  onToggleFavorites,
   onSearch,
 }: EpgToolbarProps) {
   const { t } = useTranslation();
@@ -69,6 +75,18 @@ export function EpgToolbar({
           </p>
         </div>
         <div className={styles.toolbarRight}>
+          <button
+            onClick={onToggleFavorites}
+            disabled={favoriteCount === 0}
+            aria-pressed={showFavoritesOnly}
+          >
+            <span className={styles.actionIcon} aria-hidden="true">{showFavoritesOnly ? '★' : '☆'}</span>
+            <span className={styles.actionLabel}>
+              {showFavoritesOnly
+                ? t('epg.favoritesOn', { defaultValue: 'Favoriten' })
+                : t('epg.favoritesOff', { defaultValue: 'Favoritenfilter' })}
+            </span>
+          </button>
           <button onClick={onRefresh} disabled={loading} aria-label={t('epg.reload')}>
             <span className={styles.actionIcon} aria-hidden="true">↻</span>
             <span className={styles.actionLabel}>{t('epg.reload')}</span>
@@ -88,6 +106,10 @@ export function EpgToolbar({
         <div className={styles.metaPill}>
           <span className={styles.metaLabel}>{t('epg.timeRange')}</span>
           <span className={styles.metaValue}>{rangeLabel}</span>
+        </div>
+        <div className={styles.metaPill}>
+          <span className={styles.metaLabel}>{t('epg.favorites', { defaultValue: 'Favoriten' })}</span>
+          <span className={styles.metaValue}>{favoriteCount}</span>
         </div>
       </div>
 

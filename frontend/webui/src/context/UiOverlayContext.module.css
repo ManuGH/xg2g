@@ -144,3 +144,18 @@
   justify-content: flex-end;
   gap: 10px;
 }
+
+.promptField {
+  margin-top: 16px;
+}
+
+.promptInput {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-stage);
+  color: var(--text-primary);
+  padding: 0 14px;
+  font-size: var(--text-md);
+}

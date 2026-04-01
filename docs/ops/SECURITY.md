@@ -48,6 +48,47 @@ Browser-based clients (integrations) must use the following flow to obtain acces
    - **Transport Rule**: `/api/v3/auth/session` rejects plain HTTP unless the request originates from loopback (`127.0.0.1` / `::1`)
 4. **Media Access**: Subsequent requests to `/api/v3/sessions/{id}/hls/*` will include the cookie automatically.
 
+## Household PIN Policy
+
+Household protection is optional and operator-controlled.
+
+- Without `household.pin` or `household.pinHash`, household profiles remain a
+  convenience and scoping feature only.
+- With a configured PIN, protected household actions are enforced server-side:
+  switching to adult profiles, household settings access, and logout from a
+  child profile.
+- Browser/UI prompts are only UX. The backend remains the source of truth.
+
+### Configuration Inputs
+
+Use exactly one of these YAML inputs:
+
+- `household.pin`: operator input in plaintext. The loader hashes it before the
+  runtime config is stored.
+- `household.pinHash`: pre-hashed form for deployments that never want the
+  plaintext PIN written to disk.
+
+`household.pinHash` is the only form that is persisted back out through config
+management surfaces. Do not place a plaintext PIN in screenshots, examples,
+support bundles, or logs.
+
+Optional tuning:
+
+- `household.unlockTTL`: duration string controlling how long a successful
+  household unlock stays active on the server. Default is `4h` and it is never
+  allowed to outlive the authenticated session lifetime.
+
+### Unlock Semantics
+
+- Unlock state is stored server-side and bound to the `xg2g_household_unlock`
+  cookie.
+- The cookie is session-scoped in the browser and is also invalidated by the
+  server-side unlock TTL.
+- Unlock state ends on logout, explicit relock, browser-session end, or TTL
+  expiry, whichever comes first.
+- This is a practical household gate, not a hardened boundary against an
+  already-unlocked and unattended client.
+
 ## Legacy Token Migration (X-API-Token)
 
 Legacy `X-API-Token` header/cookie sources are supported only for migration and can be disabled explicitly:

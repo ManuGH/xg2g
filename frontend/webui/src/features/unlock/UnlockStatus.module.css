@@ -16,13 +16,13 @@
   font-size: 0.82rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-muted, #667085);
+  color: var(--text-muted);
 }
 
 .subtitle {
   margin: 0.4rem 0 0;
   max-width: 46rem;
-  color: var(--text-muted, #667085);
+  color: var(--text-muted);
 }
 
 .grid {
@@ -49,7 +49,7 @@
   font-size: 0.8rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted, #667085);
+  color: var(--text-muted);
 }
 
 .cardTitle {
@@ -78,7 +78,7 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 0.9rem 1rem;
-  border: 1px solid var(--border-subtle, #d0d5dd);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.9rem;
   background: var(--surface-muted, rgba(15, 23, 42, 0.03));
 }
@@ -89,14 +89,14 @@
 
 .grantMeta {
   margin-top: 0.25rem;
-  color: var(--text-muted, #667085);
+  color: var(--text-muted);
   word-break: break-word;
 }
 
 .loading,
 .error,
 .empty {
-  color: var(--text-muted, #667085);
+  color: var(--text-muted);
 }
 
 @media (max-width: 768px) {

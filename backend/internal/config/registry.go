@@ -225,6 +225,8 @@ func buildRegistry() (*Registry, error) {
 		{Path: "monetization.amazon.sharedSecretFile", Env: "XG2G_MONETIZATION_AMAZON_SHARED_SECRET_FILE", FieldPath: "Monetization.Amazon.SharedSecretFile", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "monetization.amazon.useSandbox", Env: "XG2G_MONETIZATION_AMAZON_USE_SANDBOX", FieldPath: "Monetization.Amazon.UseSandbox", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "monetization.productMappings", Env: "", FieldPath: "Monetization.ProductMappings", Profile: ProfileAdvanced, Status: StatusActive, Default: []MonetizationProductMapping{}},
+		{Path: "household.pinHash", Env: "", FieldPath: "Household.PinHash", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "household.unlockTTL", Env: "", FieldPath: "Household.UnlockTTL", Profile: ProfileAdvanced, Status: StatusActive, Default: 4 * time.Hour},
 
 		// --- VERIFICATION ---
 		{Path: "verification.enabled", Env: "XG2G_VERIFY_ENABLED", FieldPath: "Verification.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true},

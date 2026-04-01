@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/read"
+	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -27,6 +28,12 @@ import (
 
 // GetTimers implements ServerInterface
 func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTimersParams) {
+	profile, ok := s.requireHouseholdDVRManageAccess(w, r)
+	if !ok {
+		return
+	}
+	profile = household.NormalizeProfile(profile)
+
 	s.mu.RLock()
 	src := s.timersSource
 	s.mu.RUnlock()
@@ -53,6 +60,9 @@ func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTim
 
 	mapped := make([]Timer, 0, len(timers))
 	for _, t := range timers {
+		if !household.IsServiceAllowedNormalized(profile, t.ServiceRef, "") {
+			continue
+		}
 		mapped = append(mapped, Timer{
 			TimerId:     t.TimerID,
 			ServiceRef:  t.ServiceRef,
@@ -71,6 +81,10 @@ func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTim
 
 // AddTimer implements ServerInterface
 func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireHouseholdDVRManageAccess(w, r); !ok {
+		return
+	}
+
 	var req TimerCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid Request Body", problemcode.CodeInvalidInput, "The request body is malformed or empty", nil)
@@ -153,6 +167,10 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	realEnd := req.End
 	if req.PaddingAfterSec != nil {
 		realEnd += int64(*req.PaddingAfterSec)
+	}
+
+	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, realSRef); !ok {
+		return
 	}
 
 	// 1. Duplicate/Conflict Check
@@ -249,6 +267,9 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", problemcode.CodeInvalidID, "The provided timer ID is invalid", nil)
 		return
 	}
+	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, sRef); !ok {
+		return
+	}
 
 	s.mu.RLock()
 	cfg := s.cfg
@@ -269,6 +290,10 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 
 // UpdateTimer implements ServerInterface (Edit)
 func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string) {
+	if _, ok := s.requireHouseholdDVRManageAccess(w, r); !ok {
+		return
+	}
+
 	var req TimerPatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid Request Body", problemcode.CodeInvalidInput, "The request body is malformed or empty", nil)
@@ -278,6 +303,9 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	oldSRef, oldBegin, oldEnd, err := read.ParseTimerID(timerId)
 	if err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", problemcode.CodeInvalidID, "The provided timer ID is invalid", nil)
+		return
+	}
+	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, oldSRef); !ok {
 		return
 	}
 
@@ -424,6 +452,10 @@ verifyUpdateLoop:
 
 // PreviewConflicts implements ServerInterface
 func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireHouseholdDVRManageAccess(w, r); !ok {
+		return
+	}
+
 	var req TimerConflictPreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid Request Body", problemcode.CodeInvalidInput, "The request body is malformed or empty", nil)
@@ -432,6 +464,9 @@ func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 
 	if req.Proposed.Begin >= req.Proposed.End {
 		writeRegisteredProblem(w, r, http.StatusUnprocessableEntity, "dvr/validation", "Invalid Timer Order", problemcode.CodeInvalidTime, "Begin time must be before end time", nil)
+		return
+	}
+	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, req.Proposed.ServiceRef); !ok {
 		return
 	}
 
@@ -476,6 +511,10 @@ func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 
 // GetDvrCapabilities implements ServerInterface
 func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireHouseholdDVRManageAccess(w, r); !ok {
+		return
+	}
+
 	s.mu.RLock()
 	ds := s.dvrSource
 	s.mu.RUnlock()
@@ -580,6 +619,9 @@ func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", problemcode.CodeInvalidID, "The provided timer ID is invalid", nil)
 		return
 	}
+	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, sRef); !ok {
+		return
+	}
 
 	s.mu.RLock()
 	cfg := s.cfg
@@ -622,6 +664,10 @@ func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string
 
 // GetDvrStatus implements ServerInterface
 func (s *Server) GetDvrStatus(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireHouseholdDVRManageAccess(w, r); !ok {
+		return
+	}
+
 	s.mu.RLock()
 	ds := s.dvrSource
 	s.mu.RUnlock()

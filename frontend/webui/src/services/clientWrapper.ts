@@ -2,6 +2,9 @@ import { client } from '../client-ts/client.gen';
 import type { ApiError, ProblemDetails } from '../client-ts/types.gen';
 import { isUnauthorizedStatus, requestAuthRequired } from '../features/player/sessionEvents';
 
+export const HOUSEHOLD_PROFILE_HEADER = 'X-Household-Profile';
+export const CLIENT_AUTH_CHANGED_EVENT = 'xg2g:client-auth-changed';
+
 export type MappedApiError = {
   status?: number;
   code?: string;
@@ -121,11 +124,55 @@ export function mapApiError(error: unknown, fallbackStatus?: number): MappedApiE
 }
 
 export function setClientAuthToken(token?: string | null): void {
+  const normalizedToken = normalizeToken(token);
   client.setConfig({
     headers: {
-      Authorization: token ? `Bearer ${token}` : null
+      Authorization: normalizedToken ? `Bearer ${normalizedToken}` : null
     }
   });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(CLIENT_AUTH_CHANGED_EVENT, {
+      detail: { token: normalizedToken }
+    }));
+  }
+}
+
+export function getClientAuthToken(): string | null {
+  const authorization = readClientHeader('Authorization');
+  if (!authorization) {
+    return null;
+  }
+
+  const trimmed = authorization.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.toLowerCase().startsWith('bearer ')) {
+    return trimmed.slice(7).trim() || null;
+  }
+
+  return trimmed;
+}
+
+export function setClientHouseholdProfileId(profileId?: string | null): void {
+  const normalizedProfileId = String(profileId || '').trim();
+  client.setConfig({
+    headers: {
+      [HOUSEHOLD_PROFILE_HEADER]: normalizedProfileId || null
+    }
+  });
+}
+
+export function getClientHouseholdProfileId(): string | null {
+  const profileId = readClientHeader(HOUSEHOLD_PROFILE_HEADER);
+  if (!profileId) {
+    return null;
+  }
+
+  const trimmed = profileId.trim();
+  return trimmed || null;
 }
 
 export function getApiBaseUrl(defaultBase: string = '/api/v3'): string {
@@ -191,4 +238,41 @@ export async function putJsonOrThrow<TBody>(url: string, body: TBody): Promise<v
   });
 
   throwOnClientResultError(result, { source: `PUT ${url}` });
+}
+
+function normalizeToken(token?: string | null): string | null {
+  const trimmed = String(token || '').trim();
+  return trimmed || null;
+}
+
+function readClientHeader(name: string): string | null {
+  const headers = client.getConfig().headers;
+  if (!headers) {
+    return null;
+  }
+
+  if (headers instanceof Headers) {
+    return headers.get(name);
+  }
+
+  if (Array.isArray(headers)) {
+    const match = headers.find(([key]) => key.toLowerCase() === name.toLowerCase());
+    return match?.[1] || null;
+  }
+
+  const recordHeaders = headers as Record<string, unknown>;
+  const direct = recordHeaders[name];
+  if (typeof direct === 'string') {
+    return direct;
+  }
+
+  const normalizedName = name.toLowerCase();
+  for (const [key, value] of Object.entries(recordHeaders)) {
+    if (key.toLowerCase() !== normalizedName || typeof value !== 'string') {
+      continue;
+    }
+    return value;
+  }
+
+  return null;
 }

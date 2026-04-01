@@ -78,6 +78,7 @@ This document governs the surface area of backend responses consumed by the WebU
 | `openWebIF.streamPort` | Normative | `Config` | Connection configuration |
 | `epg.*` | Normative | `Config` | EPG policy management |
 | `streaming.deliveryPolicy` | Normative | `Settings` | Read-only policy status |
+| `household.pinConfigured` | Normative | `Settings`, `Navigation`, `HouseholdProfilesProvider` | PIN-gated profile switching, child logout guard, household settings copy |
 
 ### `GET /api/v3/system/health`
 

@@ -6,6 +6,8 @@ import { useState } from 'react';
 import type { Timer } from '../client-ts';
 import EditTimerDialog from './EditTimerDialog';
 import { useAppContext } from '../context/AppContext';
+import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
+import { filterServicesForProfile, filterTimersForProfile } from '../features/household/model';
 import { debugWarn } from '../utils/logging';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useDeleteTimerMutation, useDvrCapabilities, useTimers } from '../hooks/useServerQueries';
@@ -27,6 +29,7 @@ function formatDateTime(ts: number | undefined): string {
 export default function Timers() {
   const { channels } = useAppContext();
   const { confirm, toast } = useUiOverlay();
+  const { selectedProfile, canManageDvr } = useHouseholdProfiles();
   const [editingTimer, setEditingTimer] = useState<Timer | null>(null);
   const [isCreatingTimer, setIsCreatingTimer] = useState<boolean>(false);
   const {
@@ -40,8 +43,14 @@ export default function Timers() {
   const deleteTimerMutation = useDeleteTimerMutation();
   const loading = isPending || isFetching;
   const errorMessage = error ? 'Failed to load timers. Ensure backend is running and authenticated.' : null;
+  const visibleTimers = filterTimersForProfile(selectedProfile, timers);
+  const availableServices = filterServicesForProfile(selectedProfile, channels.channels);
 
   const handleDelete = async (timer: Timer): Promise<void> => {
+    if (!canManageDvr) {
+      return;
+    }
+
     const ok = await confirm({
       title: 'Delete Timer',
       message: `Delete timer for "${timer.name}"?`,
@@ -71,6 +80,7 @@ export default function Timers() {
           <Button
             size="sm"
             onClick={() => setIsCreatingTimer(true)}
+            disabled={!canManageDvr}
           >
             New Timer
           </Button>
@@ -87,13 +97,16 @@ export default function Timers() {
 
       {loading && <div className={styles.loading}>Loading...</div>}
       {errorMessage && <div className={styles.errorBanner} role="alert">{errorMessage}</div>}
+      {!canManageDvr && !loading && !errorMessage && (
+        <div className={styles.empty}>Dieses Profil darf den DVR nicht bedienen.</div>
+      )}
 
-      {!loading && !errorMessage && timers.length === 0 && (
+      {!loading && !errorMessage && canManageDvr && visibleTimers.length === 0 && (
         <div className={styles.empty}>No timers scheduled.</div>
       )}
 
       <div className={styles.list}>
-        {timers.map((t, idx) => (
+        {visibleTimers.map((t, idx) => (
           <div key={t.timerId || idx} className={styles.card}>
             <div className={styles.info}>
               <div className={styles.name}>{t.name}</div>
@@ -115,6 +128,7 @@ export default function Timers() {
                 variant="secondary"
                 size="sm"
                 onClick={() => setEditingTimer(t)}
+                disabled={!canManageDvr}
               >
                 Edit
               </Button>
@@ -122,7 +136,7 @@ export default function Timers() {
                 variant="danger"
                 size="sm"
                 onClick={() => handleDelete(t)}
-                disabled={deleteTimerMutation.isPending}
+                disabled={deleteTimerMutation.isPending || !canManageDvr}
               >
                 Delete
               </Button>
@@ -135,7 +149,7 @@ export default function Timers() {
         <EditTimerDialog
           timer={editingTimer}
           capabilities={capabilities || undefined}
-          availableServices={channels.channels}
+          availableServices={availableServices}
           onClose={() => setEditingTimer(null)}
           onSave={async () => {
             await refetchTimers();
@@ -146,7 +160,7 @@ export default function Timers() {
       {isCreatingTimer && (
         <EditTimerDialog
           capabilities={capabilities || undefined}
-          availableServices={channels.channels}
+          availableServices={availableServices}
           onClose={() => setIsCreatingTimer(false)}
           onSave={async () => {
             await refetchTimers();

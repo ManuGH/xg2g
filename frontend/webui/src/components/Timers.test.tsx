@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HouseholdProfilesProvider } from '../context/HouseholdProfilesContext';
+import { setClientAuthToken } from '../services/clientWrapper';
 
 const {
   getTimers,
@@ -64,7 +66,9 @@ function renderWithQueryClient() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <Timers />
+      <HouseholdProfilesProvider>
+        <Timers />
+      </HouseholdProfilesProvider>
     </QueryClientProvider>
   );
 }
@@ -72,6 +76,8 @@ function renderWithQueryClient() {
 describe('Timers', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    setClientAuthToken('');
+    window.localStorage.clear();
   });
 
   it('loads timers and refetches them on refresh', async () => {

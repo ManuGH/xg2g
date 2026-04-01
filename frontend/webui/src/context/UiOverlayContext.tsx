@@ -24,6 +24,14 @@ export interface ConfirmInput {
   tone?: ConfirmTone;
 }
 
+export interface PinPromptInput {
+  title?: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  placeholder?: string;
+}
+
 interface Toast extends Required<Pick<ToastInput, 'message'>> {
   id: string;
   kind: ToastKind;
@@ -39,9 +47,17 @@ interface ActiveConfirm extends Required<Pick<ConfirmInput, 'message'>> {
   tone: ConfirmTone;
 }
 
+interface ActivePinPrompt extends Required<Pick<PinPromptInput, 'message'>> {
+  title: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  placeholder: string;
+}
+
 interface UiOverlayContextValue {
   toast: (input: ToastInput) => void;
   confirm: (input: ConfirmInput) => Promise<boolean>;
+  promptPin: (input: PinPromptInput) => Promise<string | null>;
 }
 
 const UiOverlayContext = createContext<UiOverlayContextValue | undefined>(undefined);
@@ -89,11 +105,16 @@ export function UiOverlayProvider({ children }: { children: ReactNode }) {
 
   const [activeConfirm, setActiveConfirm] = useState<ActiveConfirm | null>(null);
   const confirmResolveRef = useRef<((v: boolean) => void) | null>(null);
+  const [activePinPrompt, setActivePinPrompt] = useState<ActivePinPrompt | null>(null);
+  const pinPromptResolveRef = useRef<((v: string | null) => void) | null>(null);
 
   const confirm = useCallback((input: ConfirmInput) => {
     // Only support one modal at a time. If a new confirm is requested, cancel the previous one.
     confirmResolveRef.current?.(false);
     confirmResolveRef.current = null;
+    pinPromptResolveRef.current?.(null);
+    pinPromptResolveRef.current = null;
+    setActivePinPrompt(null);
 
     setActiveConfirm({
       title: input.title ?? 'Confirm',
@@ -105,6 +126,27 @@ export function UiOverlayProvider({ children }: { children: ReactNode }) {
 
     return new Promise<boolean>((resolve) => {
       confirmResolveRef.current = resolve;
+    });
+  }, []);
+
+  const promptPin = useCallback((input: PinPromptInput) => {
+    confirmResolveRef.current?.(false);
+    confirmResolveRef.current = null;
+    setActiveConfirm(null);
+
+    pinPromptResolveRef.current?.(null);
+    pinPromptResolveRef.current = null;
+
+    setActivePinPrompt({
+      title: input.title ?? 'PIN',
+      message: input.message,
+      confirmLabel: input.confirmLabel ?? 'Unlock',
+      cancelLabel: input.cancelLabel ?? 'Cancel',
+      placeholder: input.placeholder ?? 'PIN',
+    });
+
+    return new Promise<string | null>((resolve) => {
+      pinPromptResolveRef.current = resolve;
     });
   }, []);
 
@@ -121,7 +163,13 @@ export function UiOverlayProvider({ children }: { children: ReactNode }) {
     setActiveConfirm(null);
   }, []);
 
-  const value = useMemo<UiOverlayContextValue>(() => ({ toast, confirm }), [toast, confirm]);
+  const resolvePinPrompt = useCallback((value: string | null) => {
+    pinPromptResolveRef.current?.(value);
+    pinPromptResolveRef.current = null;
+    setActivePinPrompt(null);
+  }, []);
+
+  const value = useMemo<UiOverlayContextValue>(() => ({ toast, confirm, promptPin }), [toast, confirm, promptPin]);
 
   const [portalEl, setPortalEl] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -139,6 +187,8 @@ export function UiOverlayProvider({ children }: { children: ReactNode }) {
       toastTimeouts.clear();
       confirmResolveRef.current?.(false);
       confirmResolveRef.current = null;
+      pinPromptResolveRef.current?.(null);
+      pinPromptResolveRef.current = null;
 
       setPortalEl(null);
       el.remove();
@@ -182,10 +232,95 @@ export function UiOverlayProvider({ children }: { children: ReactNode }) {
               onConfirm={() => resolveConfirm(true)}
             />
           )}
+
+          {activePinPrompt && (
+            <PinPromptDialog
+              prompt={activePinPrompt}
+              onCancel={() => resolvePinPrompt(null)}
+              onConfirm={(value) => resolvePinPrompt(value)}
+            />
+          )}
         </>,
         portalEl
       )}
     </UiOverlayContext.Provider>
+  );
+}
+
+function PinPromptDialog({
+  prompt,
+  onCancel,
+  onConfirm,
+}: {
+  prompt: ActivePinPrompt;
+  onCancel: () => void;
+  onConfirm: (value: string) => void;
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const [value, setValue] = React.useState('');
+  const normalizedValue = value.trim();
+
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel();
+        return;
+      }
+      if (e.key === 'Enter' && normalizedValue) {
+        onConfirm(normalizedValue);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [normalizedValue, onCancel, onConfirm]);
+
+  useTvInitialFocus({
+    enabled: true,
+    targetRef: inputRef,
+  });
+
+  return (
+    <div
+      className={`${styles.confirmOverlay} animate-enter`.trim()}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div className={styles.confirmModal} role="dialog" aria-modal="true" aria-label={prompt.title}>
+        <div className={styles.confirmHeader}>
+          <h2 className={styles.confirmTitle}>{prompt.title}</h2>
+        </div>
+        <div className={styles.confirmBody}>
+          <p className={styles.confirmMessage}>{prompt.message}</p>
+          <div className={styles.promptField}>
+            <input
+              ref={inputRef}
+              className={styles.promptInput}
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              autoComplete="one-time-code"
+              placeholder={prompt.placeholder}
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </div>
+        </div>
+        <div className={styles.confirmActions}>
+          <Button variant="secondary" onClick={onCancel}>
+            {prompt.cancelLabel}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => onConfirm(normalizedValue)}
+            disabled={!normalizedValue}
+          >
+            {prompt.confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

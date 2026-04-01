@@ -28,6 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/entitlements"
+	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/receipts"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
@@ -58,6 +59,9 @@ type Server struct {
 	// Opaque auth session store for xg2g_session cookies.
 	authSessionStore ctrlauth.SessionTokenStore
 	authSessionTTL   time.Duration
+	// Opaque household unlock store for xg2g_household_unlock cookies.
+	householdUnlockStore household.UnlockStore
+	householdUnlockTTL   time.Duration
 
 	// Security
 	JWTSecret []byte // HMAC-SHA256 key for playbackDecisionToken (SSOT)
@@ -70,6 +74,7 @@ type Server struct {
 	decisionAudit          decisionaudit.EventSink
 	capabilityRegistry     capreg.Store
 	entitlementService     *entitlements.Service
+	householdService       *household.Service
 	receiptService         *receipts.Service
 	owiFactory             receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
 	recordingPathMapper    *recinfra.PathMapper
@@ -168,6 +173,8 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		playbackSLO:            newPlaybackSessionTracker(defaultPlaybackSLOSessionTTL),
 		authSessionStore:       ctrlauth.NewInMemorySessionTokenStore(),
 		authSessionTTL:         defaultAuthSessionTTL,
+		householdUnlockStore:   household.NewInMemoryUnlockStore(),
+		householdUnlockTTL:     cfg.Household.UnlockTTL,
 		// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
@@ -419,6 +426,7 @@ func (s *Server) UpdateConfig(cfg config.AppConfig, snap config.Snapshot) {
 	defer s.mu.Unlock()
 	s.cfg = cfg
 	s.snap = snap
+	s.householdUnlockTTL = cfg.Household.UnlockTTL
 	s.owiEpoch++ // Invalidate cached OWI client
 	if state, ok := s.admissionState.(*storeAdmissionState); ok {
 		state.SetTunerCount(len(cfg.Engine.TunerSlots))
@@ -448,6 +456,7 @@ type Dependencies struct {
 	DecisionAudit      decisionaudit.EventSink
 	CapabilityRegistry capreg.Store
 	Entitlements       *entitlements.Service
+	Households         *household.Service
 	Receipts           *receipts.Service
 	PathMapper         *recinfra.PathMapper
 	ChannelManager     *channels.Manager
@@ -510,6 +519,12 @@ func (s *Server) SetDependencies(deps Dependencies) {
 		s.entitlementService = deps.Entitlements
 	} else {
 		s.entitlementService = nil
+	}
+
+	if !isNil(deps.Households) {
+		s.householdService = deps.Households
+	} else {
+		s.householdService = nil
 	}
 
 	if !isNil(deps.Receipts) {

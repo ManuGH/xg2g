@@ -14,7 +14,9 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
+	householddomain "github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 const (
@@ -130,7 +132,7 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	setServerCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    sessionID,
 		Path:     "/api/v3/",
@@ -141,6 +143,30 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.WriteHeader(http.StatusOK) // 200 OK
+}
+
+// DeleteSession clears the auth session cookie and any active household unlock cookie.
+// DELETE /api/v3/auth/session
+func (s *Server) DeleteSession(w http.ResponseWriter, r *http.Request, params DeleteSessionParams) {
+	_ = params
+	profile := householdProfileFromRequestContext(r)
+	accessState := householdAccessStateFromRequestContext(r)
+	if accessState.PinConfigured && profile.Kind == householddomain.ProfileKindChild && !accessState.Unlocked {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "household/pin_required", "Household Pin Required", problemcode.CodeForbidden, "Logging out from the child profile requires the configured household pin", nil)
+		return
+	}
+
+	if existingCookie, err := r.Cookie(sessionCookieName); err == nil {
+		s.deleteAuthSession(existingCookie.Value)
+	}
+	if existingCookie, err := r.Cookie(householdUnlockCookieName); err == nil {
+		s.deleteHouseholdUnlock(existingCookie.Value)
+	}
+
+	secure := s.requestIsHTTPS(r)
+	clearServerCookie(w, sessionCookieName, "/api/v3/", secure)
+	clearServerCookie(w, householdUnlockCookieName, "/api/v3/", secure)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) authSessionStoreOrDefault() auth.SessionTokenStore {
@@ -220,4 +246,21 @@ func splitCSVNonEmpty(raw string) []string {
 		out = append(out, part)
 	}
 	return out
+}
+
+func householdProfileFromRequestContext(r *http.Request) householddomain.Profile {
+	if r == nil {
+		return householddomain.CreateDefaultProfile()
+	}
+	if profile := householddomain.ProfileFromContext(r.Context()); profile != nil {
+		return *profile
+	}
+	return householddomain.CreateDefaultProfile()
+}
+
+func householdAccessStateFromRequestContext(r *http.Request) householddomain.AccessState {
+	if r == nil {
+		return householddomain.AccessState{}
+	}
+	return householddomain.AccessStateFromContext(r.Context())
 }

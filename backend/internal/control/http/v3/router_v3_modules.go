@@ -44,8 +44,17 @@ type configModuleRoutes interface {
 	configRoutes
 }
 
+// householdModuleRoutes groups household profile management routes.
+type householdModuleRoutes interface {
+	householdRoutes
+}
+
 func registerConfigModuleRoutes(register routeRegistrar, handler configModuleRoutes) {
 	registerConfigRoutes(register, handler)
+}
+
+func registerHouseholdModuleRoutes(register routeRegistrar, handler householdModuleRoutes) {
+	registerHouseholdRoutes(register, handler)
 }
 
 // systemModuleRoutes groups system status, health, receiver, EPG, service and timer routes.

@@ -110,6 +110,59 @@ picons:
 	}
 }
 
+func TestLoadHouseholdPinAndUnlockTTLFromYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+enigma2:
+  baseUrl: http://custom.local
+household:
+  pin: "1234"
+  unlockTTL: "90m"
+`
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	loader := NewLoader(configPath, "1.0.0")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if !cfg.Household.PinConfigured() {
+		t.Fatal("expected household pin to be configured")
+	}
+	if cfg.Household.UnlockTTL != 90*time.Minute {
+		t.Fatalf("expected Household.UnlockTTL=90m, got %v", cfg.Household.UnlockTTL)
+	}
+}
+
+func TestLoadRejectsInvalidHouseholdUnlockTTL(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+enigma2:
+  baseUrl: http://custom.local
+household:
+  unlockTTL: "0s"
+`
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	loader := NewLoader(configPath, "1.0.0")
+	if _, err := loader.Load(); err == nil || !strings.Contains(err.Error(), "household.unlockTTL") {
+		t.Fatalf("expected household.unlockTTL validation error, got %v", err)
+	}
+}
+
 func TestLoadFromYAMLHLSReadySegments(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())

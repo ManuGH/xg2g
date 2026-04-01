@@ -605,6 +605,19 @@
       },
       "type": "object"
     },
+    "household": {
+      "properties": {
+        "pinHash": {
+          "default": "",
+          "type": "string"
+        },
+        "unlockTTL": {
+          "default": "4h",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "library": {
       "properties": {
         "db_path": {

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
+import { usePendingChanges } from '../context/PendingChangesContext';
 import { resolveHostEnvironment } from '../lib/hostBridge';
 import { ROUTE_MAP, normalizePathname, type AppView } from '../routes';
 import styles from './Navigation.module.css';
@@ -9,7 +11,7 @@ type NavSection = 'quick' | 'main' | 'footer';
 type IconName = AppView | 'more' | 'logout';
 
 interface NavigationProps {
-  onLogout?: () => void;
+  onLogout?: () => Promise<void> | void;
 }
 
 interface NavItem {
@@ -114,6 +116,19 @@ function NavIcon({ name, className = '' }: { name: IconName; className?: string 
 export default function Navigation({ onLogout }: NavigationProps) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const {
+    profiles,
+    selectedProfile,
+    selectProfile,
+    ensureUnlocked,
+    pinConfigured,
+    isUnlocked,
+    canAccessDvrPlayback,
+    canManageDvr,
+    canAccessSettings,
+  } = useHouseholdProfiles();
+  const { confirmPendingChanges } = usePendingChanges();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -140,10 +155,98 @@ export default function Navigation({ onLogout }: NavigationProps) {
     { id: 'system', label: t('nav.system', { defaultValue: 'System' }), section: 'footer' }
   ], [t]);
 
+  const visibleNavItems = useMemo(() => navItems.filter((item) => {
+    switch (item.id) {
+      case 'recordings':
+        return canAccessDvrPlayback;
+      case 'timers':
+      case 'series':
+        return canManageDvr;
+      case 'logs':
+      case 'settings':
+      case 'system':
+        return canAccessSettings;
+      default:
+        return true;
+    }
+  }), [canAccessDvrPlayback, canAccessSettings, canManageDvr, navItems]);
+
+  const profileAccessLabel = canManageDvr
+    ? t('nav.profileAccess.manage', { defaultValue: 'Live + DVR verwalten' })
+    : canAccessDvrPlayback
+      ? t('nav.profileAccess.playback', { defaultValue: 'Live + Aufnahmen ansehen' })
+      : t('nav.profileAccess.live', { defaultValue: 'Nur Live-TV' });
+
   const closeMoreMenu = useCallback((restoreFocus: boolean) => {
     restoreFocusRef.current = restoreFocus;
     setShowMoreMenu(false);
   }, []);
+
+  const handleProfileSelection = useCallback(async (profileId: string) => {
+    if (profileId === selectedProfile.id) {
+      return;
+    }
+
+    const ok = await confirmPendingChanges();
+    if (!ok) {
+      return;
+    }
+
+    await selectProfile(profileId);
+  }, [confirmPendingChanges, selectProfile, selectedProfile.id]);
+
+  const handleNavItemClick = useCallback(async (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    route: string,
+    appearance: 'desktop' | 'mobile' | 'sheet',
+  ) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    if (event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+      return;
+    }
+
+    if (normalizePathname(pathname) === route) {
+      if (appearance === 'sheet') {
+        closeMoreMenu(false);
+      }
+      return;
+    }
+
+    event.preventDefault();
+    const ok = await confirmPendingChanges();
+    if (!ok) {
+      return;
+    }
+
+    if (appearance === 'sheet') {
+      closeMoreMenu(false);
+    }
+
+    navigate(route);
+  }, [closeMoreMenu, confirmPendingChanges, navigate, pathname]);
+
+  const handleLogoutClick = useCallback(async () => {
+    const ok = await confirmPendingChanges();
+    if (!ok) {
+      return;
+    }
+
+    if (pinConfigured && selectedProfile.kind === 'child' && !isUnlocked) {
+      const unlocked = await ensureUnlocked({
+        title: 'Logout geschützt',
+        message: 'Abmelden aus dem Kinderprofil erfordert den Haushalt-PIN.',
+        confirmLabel: 'Abmelden',
+      });
+      if (!unlocked) {
+        return;
+      }
+    }
+
+    await onLogout?.();
+  }, [confirmPendingChanges, ensureUnlocked, isUnlocked, onLogout, pinConfigured, selectedProfile.kind]);
 
   useEffect(() => {
     showMoreMenuRef.current = showMoreMenu;
@@ -211,8 +314,8 @@ export default function Navigation({ onLogout }: NavigationProps) {
     activeNavItem?.focus();
   }, [pathname, showMoreMenu]);
 
-  const primaryMobileItems = navItems.filter((item) => mobilePrimaryViews.includes(item.id));
-  const overflowItems = navItems.filter((item) => !mobilePrimaryViews.includes(item.id));
+  const primaryMobileItems = visibleNavItems.filter((item) => mobilePrimaryViews.includes(item.id));
+  const overflowItems = visibleNavItems.filter((item) => !mobilePrimaryViews.includes(item.id));
   const overflowSections = (['quick', 'main', 'footer'] as NavSection[])
     .map((section) => ({
       id: section,
@@ -227,6 +330,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
     <NavLink
       key={`${appearance}-${item.id}`}
       to={ROUTE_MAP[item.id]}
+      onClick={(event) => { void handleNavItemClick(event, ROUTE_MAP[item.id], appearance); }}
       className={[
         styles.navItem,
         appearance === 'mobile' ? styles.mobileItem : null,
@@ -260,26 +364,43 @@ export default function Navigation({ onLogout }: NavigationProps) {
             </div>
           </div>
 
+          <div className={styles.profileSection}>
+            <span className={styles.profileLabel}>{t('nav.profile', { defaultValue: 'Profil' })}</span>
+            <select
+              className={styles.profileSelect}
+              value={selectedProfile.id}
+              onChange={(event) => { void handleProfileSelection(event.target.value); }}
+              aria-label={t('nav.profile', { defaultValue: 'Profil' })}
+            >
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}{profile.kind === 'child' ? ` · ${t('nav.profileChild', { defaultValue: 'Kind' })}` : ''}
+                </option>
+              ))}
+            </select>
+            <span className={styles.profileHint}>{profileAccessLabel}</span>
+          </div>
+
           <div className={styles.desktopSection}>
             <span className={styles.sectionTitle}>{sectionLabels.quick}</span>
             <div className={styles.navList}>
-              {navItems.filter((item) => item.section === 'quick').map((item) => renderNavItem(item, 'desktop'))}
+              {visibleNavItems.filter((item) => item.section === 'quick').map((item) => renderNavItem(item, 'desktop'))}
             </div>
           </div>
 
           <div className={styles.desktopSection}>
             <span className={styles.sectionTitle}>{sectionLabels.main}</span>
             <div className={styles.navList}>
-              {navItems.filter((item) => item.section === 'main').map((item) => renderNavItem(item, 'desktop'))}
+              {visibleNavItems.filter((item) => item.section === 'main').map((item) => renderNavItem(item, 'desktop'))}
             </div>
           </div>
 
           <div className={styles.desktopFooter}>
             <span className={styles.sectionTitle}>{sectionLabels.footer}</span>
             <div className={styles.navList}>
-              {navItems.filter((item) => item.section === 'footer').map((item) => renderNavItem(item, 'desktop'))}
+              {visibleNavItems.filter((item) => item.section === 'footer').map((item) => renderNavItem(item, 'desktop'))}
               {onLogout && (
-                <button type="button" className={styles.navItem} onClick={onLogout}>
+                <button type="button" className={styles.navItem} onClick={() => { void handleLogoutClick(); }}>
                   <span className={styles.iconShell}>
                     <NavIcon name="logout" className={styles.icon} />
                   </span>
@@ -357,6 +478,24 @@ export default function Navigation({ onLogout }: NavigationProps) {
               </div>
 
               <div className={styles.sheetSections}>
+                <div className={styles.sheetProfileSection}>
+                  <label className={styles.profileLabel} htmlFor={sheetId + '-profile'}>
+                    {t('nav.profile', { defaultValue: 'Profil' })}
+                  </label>
+                  <select
+                    id={sheetId + '-profile'}
+                    className={styles.profileSelect}
+                    value={selectedProfile.id}
+                    onChange={(event) => { void handleProfileSelection(event.target.value); }}
+                  >
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}{profile.kind === 'child' ? ` · ${t('nav.profileChild', { defaultValue: 'Kind' })}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={styles.profileHint}>{profileAccessLabel}</span>
+                </div>
                 {overflowSections.map((section) => (
                   <section key={section.id} className={styles.sheetSection} aria-label={section.label}>
                     <p className={styles.sheetSectionTitle}>{section.label}</p>
@@ -373,8 +512,10 @@ export default function Navigation({ onLogout }: NavigationProps) {
                     type="button"
                     className={styles.sheetAction}
                     onClick={() => {
-                      closeMoreMenu(false);
-                      onLogout();
+                      void (async () => {
+                        closeMoreMenu(false);
+                        await handleLogoutClick();
+                      })();
                     }}
                   >
                     <NavIcon name="logout" className={styles.icon} />

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	householddomain "github.com/ManuGH/xg2g/internal/household"
 )
 
 // mergeFileConfig merges file configuration into jobs.Config.
@@ -56,6 +58,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	l.mergeFileResilience(dst, src)
 	l.mergeFilePlayback(dst, src)
 	l.mergeFileMonetization(dst, src)
+	if err := l.mergeFileHousehold(dst, src); err != nil {
+		return err
+	}
 	l.mergeFileVOD(dst, src)
 
 	return nil
@@ -189,6 +194,38 @@ func (l *Loader) mergeFileMonetization(dst *AppConfig, src *FileConfig) {
 		}
 		dst.Monetization.ProductMappings = mappings
 	}
+}
+
+func (l *Loader) mergeFileHousehold(dst *AppConfig, src *FileConfig) error {
+	if src.Household == nil {
+		return nil
+	}
+
+	if strings.TrimSpace(src.Household.UnlockTTL) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(src.Household.UnlockTTL))
+		if err != nil {
+			return fmt.Errorf("invalid household.unlockTTL: %w", err)
+		}
+		if d <= 0 {
+			return fmt.Errorf("invalid household.unlockTTL: must be greater than 0")
+		}
+		dst.Household.UnlockTTL = d
+	}
+
+	if strings.TrimSpace(src.Household.Pin) != "" {
+		hash, err := householddomain.HashPIN(src.Household.Pin)
+		if err != nil {
+			return fmt.Errorf("invalid household.pin: %w", err)
+		}
+		dst.Household.PinHash = hash
+		return nil
+	}
+
+	if strings.TrimSpace(src.Household.PinHash) != "" {
+		dst.Household.PinHash = strings.TrimSpace(src.Household.PinHash)
+	}
+
+	return nil
 }
 
 func (l *Loader) mergeFileRecordingPlayback(dst *AppConfig, src *FileConfig) error {

@@ -105,6 +105,7 @@ func getSystemConfig_Legacy(s *Server, w http.ResponseWriter, r *http.Request) {
 	streaming := &StreamingConfig{
 		DeliveryPolicy: &deliveryPolicy,
 	}
+	householdPinConfigured := cfg.Household.PinConfigured()
 	resp := AppConfig{
 		Version:   &cfg.Version,
 		DataDir:   &cfg.DataDir,
@@ -118,6 +119,9 @@ func getSystemConfig_Legacy(s *Server, w http.ResponseWriter, r *http.Request) {
 		},
 		Picons:    picons,
 		Streaming: streaming,
+		Household: &HouseholdStatus{
+			PinConfigured: &householdPinConfigured,
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

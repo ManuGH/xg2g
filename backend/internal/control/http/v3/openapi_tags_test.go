@@ -16,6 +16,7 @@ var allowedOperationTags = map[string]struct{}{
 	"auth":       {},
 	"dvr":        {},
 	"epg":        {},
+	"household":  {},
 	"receiver":   {},
 	"recordings": {},
 	"series":     {},

@@ -47,7 +47,8 @@ import {
   type RecordingResponse,
   type ScanStatus
 } from '../client-ts';
-import { throwOnClientResultError, unwrapClientResultOrThrow } from '../services/clientWrapper';
+import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
+import { HOUSEHOLD_PROFILE_HEADER, throwOnClientResultError, unwrapClientResultOrThrow } from '../services/clientWrapper';
 import { setErrorCatalog } from '../lib/errorCatalog';
 
 /**
@@ -71,7 +72,11 @@ export const queryKeys = {
 };
 
 export async function fetchSystemConfigStrict(): Promise<AppConfig | null> {
-  const result = await getSystemConfig();
+  const result = await getSystemConfig({
+    headers: {
+      [HOUSEHOLD_PROFILE_HEADER]: null,
+    } as Record<string, unknown>,
+  });
   throwOnClientResultError(result, { source: 'useBootstrapConfig' });
   return result.data ?? null;
 }
@@ -83,8 +88,10 @@ export async function fetchSystemConfigStrict(): Promise<AppConfig | null> {
  * staleTime: 30s
  */
 export function useSystemConfig() {
+  const { selectedProfileId, isReady } = useHouseholdProfiles();
+
   return useQuery({
-    queryKey: queryKeys.systemConfig,
+    queryKey: [...queryKeys.systemConfig, { profileId: selectedProfileId }],
     queryFn: async () => {
       const result = await getSystemConfig();
       return unwrapClientResultOrThrow<AppConfig | null>(result, {
@@ -92,6 +99,7 @@ export function useSystemConfig() {
         silent: true
       }) ?? null;
     },
+    enabled: isReady,
     staleTime: 30_000,
   });
 }
@@ -184,12 +192,15 @@ export function useSystemInfo() {
  * staleTime: 1s
  */
 export function useSystemScanStatus() {
+  const { selectedProfileId, isReady } = useHouseholdProfiles();
+
   return useQuery({
-    queryKey: queryKeys.systemScanStatus,
+    queryKey: [...queryKeys.systemScanStatus, { profileId: selectedProfileId }],
     queryFn: async () => {
       const result = await getSystemScanStatus();
       return unwrapClientResultOrThrow<ScanStatus>(result, { source: 'useSystemScanStatus' });
     },
+    enabled: isReady,
     refetchInterval: 2_000,
     staleTime: 1_000,
   });
@@ -287,8 +298,10 @@ export function useStopStreamMutation() {
  * staleTime: 25s
  */
 export function useDvrStatus() {
+  const { selectedProfileId, isReady } = useHouseholdProfiles();
+
   return useQuery({
-    queryKey: queryKeys.dvrStatus,
+    queryKey: [...queryKeys.dvrStatus, { profileId: selectedProfileId }],
     queryFn: async () => {
       const result = await getDvrStatus();
       return unwrapClientResultOrThrow<{ isRecording?: boolean; serviceName?: string } | null>(result, {
@@ -296,6 +309,7 @@ export function useDvrStatus() {
         silent: true
       }) ?? null;
     },
+    enabled: isReady,
     refetchInterval: 30_000, // 30s polling
     staleTime: 25_000,
   });
@@ -308,8 +322,10 @@ export function useDvrStatus() {
  * staleTime: 5m
  */
 export function useDvrCapabilities() {
+  const { selectedProfileId, isReady } = useHouseholdProfiles();
+
   return useQuery({
-    queryKey: queryKeys.dvrCapabilities,
+    queryKey: [...queryKeys.dvrCapabilities, { profileId: selectedProfileId }],
     queryFn: async () => {
       const result = await getDvrCapabilities();
       return unwrapClientResultOrThrow<DvrCapabilities | null>(result, {
@@ -317,6 +333,7 @@ export function useDvrCapabilities() {
         silent: true
       }) ?? null;
     },
+    enabled: isReady,
     staleTime: 5 * 60_000,
   });
 }
@@ -328,13 +345,16 @@ export function useDvrCapabilities() {
  * staleTime: 10s
  */
 export function useTimers() {
+  const { selectedProfileId, isReady } = useHouseholdProfiles();
+
   return useQuery({
-    queryKey: queryKeys.timers,
+    queryKey: [...queryKeys.timers, { profileId: selectedProfileId }],
     queryFn: async () => {
       const result = await getTimers();
       const data = unwrapClientResultOrThrow<TimerList>(result, { source: 'useTimers' });
       return data.items ?? [];
     },
+    enabled: isReady,
     staleTime: 10_000,
   });
 }
@@ -363,12 +383,15 @@ export function useDeleteTimerMutation() {
  * staleTime: 10s
  */
 export function useRecordings(root: string, path: string) {
+  const { selectedProfileId, isReady } = useHouseholdProfiles();
+
   return useQuery({
-    queryKey: queryKeys.recordings(root, path),
+    queryKey: [...queryKeys.recordings(root, path), { profileId: selectedProfileId }],
     queryFn: async () => {
       const result = await getRecordings({ query: { root, path } });
       return unwrapClientResultOrThrow<RecordingResponse>(result, { source: 'useRecordings' });
     },
+    enabled: isReady,
     placeholderData: previousData => previousData,
     staleTime: 10_000,
   });

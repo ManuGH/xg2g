@@ -122,7 +122,22 @@ func ToFileConfig(cfg *AppConfig) FileConfig {
 			FailuresThreshold:    cfg.Breaker.FailuresThreshold,
 			ConsecutiveThreshold: cfg.Breaker.ConsecutiveThreshold,
 		},
+		Household: householdFileConfigFromRuntime(cfg.Household),
 	}
+}
+
+func householdFileConfigFromRuntime(cfg HouseholdConfig) *HouseholdFileConfig {
+	if strings.TrimSpace(cfg.PinHash) == "" && cfg.UnlockTTL <= 0 {
+		return nil
+	}
+
+	out := &HouseholdFileConfig{
+		PinHash: strings.TrimSpace(cfg.PinHash),
+	}
+	if cfg.UnlockTTL > 0 {
+		out.UnlockTTL = cfg.UnlockTTL.String()
+	}
+	return out
 }
 
 func splitCSV(s string) []string {

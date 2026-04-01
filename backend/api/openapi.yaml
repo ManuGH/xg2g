@@ -22,6 +22,17 @@ components:
       scheme: bearer
       bearerFormat: JWT
 
+  parameters:
+    HouseholdProfileHeader:
+      name: X-Household-Profile
+      in: header
+      required: false
+      description: |
+        Optional active household profile id. If omitted, the backend resolves the unrestricted
+        default household profile for backward compatibility.
+      schema:
+        type: string
+
   schemas:
     # ==================== V3 API Schemas ====================
     APIError:
@@ -692,6 +703,8 @@ components:
         logLevel:
           type: string
           description: Log level to set (debug, info, warn, error)
+        household:
+          $ref: "#/components/schemas/HouseholdConfigUpdate"
 
     AppConfig:
       type: object
@@ -718,6 +731,101 @@ components:
           $ref: "#/components/schemas/MonetizationStatus"
         verification:
           $ref: "#/components/schemas/VerificationConfig"
+        household:
+          $ref: "#/components/schemas/HouseholdStatus"
+
+    HouseholdConfigUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        pin:
+          type: string
+          nullable: true
+          description: >
+            Optional numeric household PIN update. Omit to keep the current PIN.
+            Send an empty string to clear the configured PIN. The plaintext value
+            is accepted only for update input; the server persists a hash only.
+
+    HouseholdStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        pinConfigured:
+          type: boolean
+          description: True when the server currently has a household PIN hash configured.
+
+    HouseholdUnlockRequest:
+      type: object
+      required: [pin]
+      additionalProperties: false
+      properties:
+        pin:
+          type: string
+          description: Plaintext household PIN used to unlock the current browser session.
+
+    HouseholdUnlockStatus:
+      type: object
+      required: [pinConfigured, unlocked]
+      additionalProperties: false
+      properties:
+        pinConfigured:
+          type: boolean
+        unlocked:
+          type: boolean
+          description: >
+            True when the current authenticated browser session is unlocked for
+            protected household actions. Unlock state ends on logout, relock,
+            browser-session end, or server-side unlock TTL expiry.
+
+    HouseholdProfilePermissions:
+      type: object
+      required: [dvrPlayback, dvrManage, settings]
+      additionalProperties: false
+      properties:
+        dvrPlayback:
+          type: boolean
+        dvrManage:
+          type: boolean
+        settings:
+          type: boolean
+
+    HouseholdProfile:
+      type: object
+      required:
+        - id
+        - name
+        - kind
+        - allowedBouquets
+        - allowedServiceRefs
+        - favoriteServiceRefs
+        - permissions
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [adult, child]
+        maxFsk:
+          type: integer
+          nullable: true
+          minimum: 0
+        allowedBouquets:
+          type: array
+          items:
+            type: string
+        allowedServiceRefs:
+          type: array
+          items:
+            type: string
+        favoriteServiceRefs:
+          type: array
+          items:
+            type: string
+        permissions:
+          $ref: "#/components/schemas/HouseholdProfilePermissions"
 
     MonetizationStatus:
       type: object
@@ -2090,6 +2198,162 @@ paths:
                     type: string
                     enum: [ok]
 
+  /household/profiles:
+    get:
+      summary: List household profiles
+      operationId: getHouseholdProfiles
+      tags:
+        - household
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "200":
+          description: Household profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HouseholdProfile"
+    post:
+      summary: Create household profile
+      operationId: postHouseholdProfiles
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HouseholdProfile"
+      responses:
+        "201":
+          description: Household profile created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdProfile"
+        "400":
+          description: Invalid household profile
+        "403":
+          description: Forbidden
+        "409":
+          description: Profile already exists
+
+  /household/unlock:
+    get:
+      summary: Get household unlock status
+      operationId: getHouseholdUnlock
+      tags:
+        - household
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "200":
+          description: Household unlock status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdUnlockStatus"
+    post:
+      summary: Unlock protected household profiles
+      operationId: postHouseholdUnlock
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:read]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HouseholdUnlockRequest"
+      responses:
+        "200":
+          description: Household unlock granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdUnlockStatus"
+        "400":
+          description: Invalid PIN payload
+        "403":
+          description: Invalid PIN
+        "409":
+          description: No household PIN configured
+    delete:
+      summary: Clear household unlock state
+      operationId: deleteHouseholdUnlock
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:read]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "204":
+          description: Household unlock cleared
+
+  /household/profiles/{profileId}:
+    parameters:
+      - name: profileId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Update household profile
+      operationId: putHouseholdProfile
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HouseholdProfile"
+      responses:
+        "200":
+          description: Household profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdProfile"
+        "400":
+          description: Invalid household profile
+        "403":
+          description: Forbidden
+        "404":
+          description: Profile not found
+    delete:
+      summary: Delete household profile
+      operationId: deleteHouseholdProfile
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "204":
+          description: Household profile deleted
+        "403":
+          description: Forbidden
+        "404":
+          description: Profile not found
+        "409":
+          description: Cannot delete the last profile
+
   /system/config:
     get:
       summary: Get system configuration
@@ -2333,6 +2597,7 @@ paths:
       tags:
         - epg
       parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
         - name: from
           in: query
           schema:
@@ -2384,6 +2649,7 @@ paths:
       tags:
         - services
       parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
         - in: query
           name: bouquet
           schema:
@@ -2498,6 +2764,7 @@ paths:
       tags:
         - recordings
       parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
         - name: root
           in: query
           schema:
@@ -2988,6 +3255,20 @@ paths:
           description: HTTPS required for session exchange
         "401":
           description: Unauthorized
+    delete:
+      summary: Delete auth session cookie
+      operationId: deleteSession
+      tags:
+        - auth
+      security:
+        - BearerAuth: [v3:read]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "204":
+          description: Session deleted
+        "403":
+          description: Household PIN required for child-profile logout
 
   /timers:
     get:

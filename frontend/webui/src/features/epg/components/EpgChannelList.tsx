@@ -247,15 +247,26 @@ interface ChannelHeaderProps {
   channelIndex?: number;
   displayName: string;
   playbackBadge?: ChannelPlaybackBadge | null;
+  isFavorite?: boolean;
   onPlay?: (channel: EpgChannel) => void;
+  onToggleFavorite?: (serviceRef: string) => void;
 }
 
-function ChannelHeader({ channel, channelIndex, displayName, playbackBadge, onPlay }: ChannelHeaderProps) {
+function ChannelHeader({
+  channel,
+  channelIndex,
+  displayName,
+  playbackBadge,
+  isFavorite = false,
+  onPlay,
+  onToggleFavorite,
+}: ChannelHeaderProps) {
   const { t } = useTranslation();
   const [imageFailed, setImageFailed] = React.useState(false);
   const logo = channel?.logoUrl || channel?.logoUrl || channel?.logo;
   const isPlayable = Boolean(onPlay);
   const fallbackLabel = buildChannelFallback(displayName, channel);
+  const favoriteServiceRef = channel.serviceRef || channel.id || '';
 
   const triggerPlay = (): void => {
     if (onPlay) {
@@ -321,6 +332,27 @@ function ChannelHeader({ channel, channelIndex, displayName, playbackBadge, onPl
           </div>
         )}
       </div>
+      {favoriteServiceRef && onToggleFavorite && (
+        <button
+          type="button"
+          className={[styles.favoriteButton, isFavorite ? styles.favoriteButtonActive : null].filter(Boolean).join(' ')}
+          aria-pressed={isFavorite}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleFavorite(favoriteServiceRef);
+          }}
+          title={isFavorite
+            ? t('epg.removeFavorite', { defaultValue: 'Favorit entfernen' })
+            : t('epg.addFavorite', { defaultValue: 'Zu Favoriten' })}
+        >
+          <span aria-hidden="true">{isFavorite ? '★' : '☆'}</span>
+          <span className={styles.favoriteLabel}>
+            {isFavorite
+              ? t('epg.favoriteOn', { defaultValue: 'Favorit' })
+              : t('epg.favoriteOff', { defaultValue: 'Merken' })}
+          </span>
+        </button>
+      )}
       {onPlay && (
         <Button
           className={styles.play}
@@ -345,12 +377,14 @@ interface ChannelCardProps {
   channelIndex: number;
   channel: EpgChannel;
   playbackBadge?: ChannelPlaybackBadge | null;
+  isFavorite?: boolean;
   events: EpgEvent[];
   currentTime: number;
   timeRangeHours: number;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onPlay?: (channel: EpgChannel) => void;
+  onToggleFavorite?: (serviceRef: string) => void;
   onRecord?: (event: EpgEvent) => void;
   isRecorded?: (event: EpgEvent) => boolean;
 }
@@ -359,12 +393,14 @@ function ChannelCard({
   channelIndex,
   channel,
   playbackBadge,
+  isFavorite,
   events,
   currentTime,
   timeRangeHours,
   isExpanded,
   onToggleExpand,
   onPlay,
+  onToggleFavorite,
   onRecord,
   isRecorded,
 }: ChannelCardProps) {
@@ -394,7 +430,9 @@ function ChannelCard({
         channelIndex={channelIndex}
         displayName={displayName}
         playbackBadge={playbackBadge}
+        isFavorite={isFavorite}
         onPlay={onPlay}
+        onToggleFavorite={onToggleFavorite}
       />
 
       <div className={styles.programmes}>
@@ -467,11 +505,13 @@ function ChannelCard({
 interface SearchGroupProps {
   channel: EpgChannel;
   playbackBadge?: ChannelPlaybackBadge | null;
+  isFavorite?: boolean;
   events: EpgEvent[];
   currentTime: number;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onPlay?: (channel: EpgChannel) => void;
+  onToggleFavorite?: (serviceRef: string) => void;
   onRecord?: (event: EpgEvent) => void;
   isRecorded?: (event: EpgEvent) => boolean;
 }
@@ -479,11 +519,13 @@ interface SearchGroupProps {
 function SearchGroup({
   channel,
   playbackBadge,
+  isFavorite,
   events,
   currentTime,
   isExpanded,
   onToggleExpand,
   onPlay,
+  onToggleFavorite,
   onRecord,
   isRecorded,
 }: SearchGroupProps) {
@@ -499,7 +541,14 @@ function SearchGroup({
 
   return (
     <div className={styles.searchGroup}>
-      <ChannelHeader channel={channel} displayName={displayName} playbackBadge={playbackBadge} onPlay={onPlay} />
+      <ChannelHeader
+        channel={channel}
+        displayName={displayName}
+        playbackBadge={playbackBadge}
+        isFavorite={isFavorite}
+        onPlay={onPlay}
+        onToggleFavorite={onToggleFavorite}
+      />
 
       <div className={styles.programmes}>
         {top2.map((event, index) => {
@@ -579,11 +628,13 @@ export interface EpgChannelListProps {
   mode: 'main' | 'search';
   channels: EpgChannel[];
   eventsByServiceRef: Map<string, EpgEvent[]>;
+  favoriteServiceRefs?: Set<string>;
   currentTime: number;
   timeRangeHours: number;
   expandedChannels: Set<string>;
   onToggleExpand: (serviceRef: string) => void;
   onPlay?: (channel: EpgChannel) => void;
+  onToggleFavorite?: (serviceRef: string) => void;
   onRecord?: (event: EpgEvent) => void;
   isRecorded?: (event: EpgEvent) => boolean;
 }
@@ -592,11 +643,13 @@ export function EpgChannelList({
   mode,
   channels,
   eventsByServiceRef,
+  favoriteServiceRefs,
   currentTime,
   timeRangeHours,
   expandedChannels,
   onToggleExpand,
   onPlay,
+  onToggleFavorite,
   onRecord,
   isRecorded,
 }: EpgChannelListProps) {
@@ -616,6 +669,15 @@ export function EpgChannelList({
   // Sort channels by number (LCN) then name
   const sortedChannels = React.useMemo(() => {
     return [...channels].sort((a, b) => {
+      const aRef = a.serviceRef || a.id || '';
+      const bRef = b.serviceRef || b.id || '';
+      const aFavorite = favoriteServiceRefs?.has(aRef.toLowerCase()) ?? false;
+      const bFavorite = favoriteServiceRefs?.has(bRef.toLowerCase()) ?? false;
+
+      if (aFavorite !== bFavorite) {
+        return aFavorite ? -1 : 1;
+      }
+
       const aNum = parseInt(a.number || '', 10);
       const bNum = parseInt(b.number || '', 10);
       const aNumValid = !Number.isNaN(aNum);
@@ -631,7 +693,7 @@ export function EpgChannelList({
       const bName = b.name || b.id || '';
       return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [channels]);
+  }, [channels, favoriteServiceRefs]);
 
   const channelNumberIndex = React.useMemo(() => {
     return sortedChannels.reduce<Map<string, number>>((acc, channel, index) => {
@@ -663,6 +725,12 @@ export function EpgChannelList({
 
     // Sort groups by channel number/name.
     groups.sort(([refA], [refB]) => {
+      const favoriteA = favoriteServiceRefs?.has(refA.toLowerCase()) ?? false;
+      const favoriteB = favoriteServiceRefs?.has(refB.toLowerCase()) ?? false;
+      if (favoriteA !== favoriteB) {
+        return favoriteA ? -1 : 1;
+      }
+
       const chA = channels.find((c) => c.serviceRef === refA || c.id === refA);
       const chB = channels.find((c) => c.serviceRef === refB || c.id === refB);
       const numA = parseInt(chA?.number || '', 10);
@@ -680,7 +748,7 @@ export function EpgChannelList({
     });
 
     return groups;
-  }, [eventsByServiceRef, currentTime, channels]);
+  }, [channels, currentTime, eventsByServiceRef, favoriteServiceRefs]);
 
   const searchChannels = React.useMemo(() => {
     return searchGroups.map(([serviceRef]) =>
@@ -1055,12 +1123,14 @@ export function EpgChannelList({
               channelIndex={channelIndex}
               channel={channel}
               playbackBadge={playbackBadges[ref] || null}
+              isFavorite={favoriteServiceRefs?.has(ref.toLowerCase()) ?? false}
               events={events}
               currentTime={currentTime}
               timeRangeHours={timeRangeHours}
               isExpanded={isExpanded}
               onToggleExpand={() => onToggleExpand(ref)}
               onPlay={onPlay}
+              onToggleFavorite={onToggleFavorite}
               onRecord={onRecord}
               isRecorded={isRecorded}
             />
@@ -1083,11 +1153,13 @@ export function EpgChannelList({
             key={serviceRef}
             channel={channel}
             playbackBadge={playbackBadges[serviceRef] || null}
+            isFavorite={favoriteServiceRefs?.has(serviceRef.toLowerCase()) ?? false}
             events={events}
             currentTime={currentTime}
             isExpanded={isExpanded}
             onToggleExpand={() => onToggleExpand(serviceRef)}
             onPlay={onPlay}
+            onToggleFavorite={onToggleFavorite}
             onRecord={onRecord}
             isRecorded={isRecorded}
           />

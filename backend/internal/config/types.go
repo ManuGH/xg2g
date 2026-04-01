@@ -57,6 +57,7 @@ type FileConfig struct {
 	Streaming    *StreamingConfig        `yaml:"streaming,omitempty"`
 	Playback     *PlaybackFileConfig     `yaml:"playback,omitempty"`
 	Monetization *MonetizationFileConfig `yaml:"monetization,omitempty"`
+	Household    *HouseholdFileConfig    `yaml:"household,omitempty"`
 	Limits       *LimitsConfig           `yaml:"limits,omitempty"`
 	Timeouts     *TimeoutsConfig         `yaml:"timeouts,omitempty"`
 	Breaker      *BreakerConfig          `yaml:"breaker,omitempty"`
@@ -287,6 +288,12 @@ type MonetizationProductMappingFileConfig struct {
 	Scopes    []string `yaml:"scopes,omitempty"`
 }
 
+type HouseholdFileConfig struct {
+	Pin       string `yaml:"pin,omitempty"`
+	PinHash   string `yaml:"pinHash,omitempty"`
+	UnlockTTL string `yaml:"unlockTTL,omitempty"`
+}
+
 // MonetizationConfig holds runtime commercialization settings.
 type MonetizationConfig struct {
 	Enabled         bool
@@ -314,6 +321,15 @@ type MonetizationProductMapping struct {
 	Provider  string
 	ProductID string
 	Scopes    []string
+}
+
+type HouseholdConfig struct {
+	PinHash   string
+	UnlockTTL time.Duration
+}
+
+func (c HouseholdConfig) PinConfigured() bool {
+	return strings.TrimSpace(c.PinHash) != ""
 }
 
 // Normalized returns a canonicalized monetization config with defaults applied.
@@ -545,6 +561,7 @@ type AppConfig struct {
 	Streaming    StreamingConfig
 	Playback     PlaybackConfig
 	Monetization MonetizationConfig
+	Household    HouseholdConfig
 
 	// ADR-009: Session Lease Configuration
 	Sessions SessionsConfig

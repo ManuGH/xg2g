@@ -119,6 +119,11 @@
   transform: translateY(-2px);
 }
 
+.toolbarRight button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent-action-subtle) 72%, var(--surface-muted) 28%);
+  border-color: color-mix(in srgb, var(--accent-action) 32%, transparent);
+}
+
 .toolbarRight button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -396,6 +401,28 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.favoriteButton {
+  min-height: 40px;
+  border: 1px solid var(--border-base);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.favoriteButtonActive {
+  background: color-mix(in srgb, var(--accent-live-subtle) 70%, var(--surface-muted) 30%);
+  border-color: color-mix(in srgb, var(--accent-live) 32%, transparent);
+}
+
+.favoriteLabel {
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .channelAux {
