@@ -167,7 +167,7 @@ func TestSystemEntitlementsStatusReflectsActiveAndMissingScopes(t *testing.T) {
 	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.NewPrincipal("token", "viewer", []string{"v3:read"})))
 	w := httptest.NewRecorder()
 
-	server.GetSystemEntitlements(w, req)
+	server.GetSystemEntitlements(w, req, v3.GetSystemEntitlementsParams{})
 
 	resp := w.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -231,7 +231,7 @@ func TestSystemEntitlementOverrideRoundTrip(t *testing.T) {
 	getReq = getReq.WithContext(auth.WithPrincipal(getReq.Context(), auth.NewPrincipal("token", "viewer", []string{"v3:read"})))
 	getRes := httptest.NewRecorder()
 
-	server.GetSystemEntitlements(getRes, getReq)
+	server.GetSystemEntitlements(getRes, getReq, v3.GetSystemEntitlementsParams{})
 	require.Equal(t, http.StatusOK, getRes.Code)
 
 	var unlockedBody v3.EntitlementStatus
@@ -252,7 +252,7 @@ func TestSystemEntitlementOverrideRoundTrip(t *testing.T) {
 	recheckReq = recheckReq.WithContext(auth.WithPrincipal(recheckReq.Context(), auth.NewPrincipal("token", "viewer", []string{"v3:read"})))
 	recheckRes := httptest.NewRecorder()
 
-	server.GetSystemEntitlements(recheckRes, recheckReq)
+	server.GetSystemEntitlements(recheckRes, recheckReq, v3.GetSystemEntitlementsParams{})
 	require.Equal(t, http.StatusOK, recheckRes.Code)
 
 	var lockedBody v3.EntitlementStatus

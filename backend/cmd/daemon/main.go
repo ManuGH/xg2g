@@ -39,6 +39,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "Usage:")
 	_, _ = fmt.Fprintln(w, "  xg2g [--config path] [--version]")
 	_, _ = fmt.Fprintln(w, "  xg2g config <command> [flags]")
+	_, _ = fmt.Fprintln(w, "  xg2g entitlements <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g storage verify [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g healthcheck [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g diagnostic [flags]")
@@ -46,6 +47,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Commands:")
 	_, _ = fmt.Fprintln(w, "  config       Validate, dump, and migrate config files")
+	_, _ = fmt.Fprintln(w, "  entitlements Inspect and manage commercial unlock overrides")
 	_, _ = fmt.Fprintln(w, "  storage      Manage and verify local storage (SQLite)")
 	_, _ = fmt.Fprintln(w, "  healthcheck  Probe API readiness/liveness endpoints")
 	_, _ = fmt.Fprintln(w, "  diagnostic   Trigger diagnostic actions against the API")
@@ -61,6 +63,8 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "Examples:")
 	_, _ = fmt.Fprintln(w, "  xg2g --config /etc/xg2g/config.yaml")
 	_, _ = fmt.Fprintln(w, "  xg2g config validate -f /etc/xg2g/config.yaml")
+	_, _ = fmt.Fprintln(w, "  xg2g entitlements list --token $XG2G_API_TOKEN --principal-id viewer")
+	_, _ = fmt.Fprintln(w, "  xg2g entitlements grant --token $XG2G_API_TOKEN --principal-id viewer --scope xg2g:unlock")
 	_, _ = fmt.Fprintln(w, "  xg2g storage verify --path /var/lib/xg2g/sessions.sqlite")
 	_, _ = fmt.Fprintln(w, "  xg2g storage decision-report --data-dir /var/lib/xg2g --bouquet Premium --format table")
 	_, _ = fmt.Fprintln(w, "  xg2g storage decision-sweep --config /etc/xg2g/config.yaml --data-dir /var/lib/xg2g --bouquet Premium --skip-scan")
@@ -77,6 +81,9 @@ func runHelp(args []string) int {
 	switch args[0] {
 	case "config":
 		printConfigUsage(os.Stdout)
+		return 0
+	case "entitlements":
+		printEntitlementsUsage(os.Stdout)
 		return 0
 	case "storage":
 		printStorageUsage(os.Stdout)
@@ -120,6 +127,8 @@ func main() {
 			os.Exit(runHelp(os.Args[2:]))
 		case "config":
 			os.Exit(runConfigCLI(os.Args[2:]))
+		case "entitlements":
+			os.Exit(runEntitlementsCLI(os.Args[2:]))
 		case "storage":
 			os.Exit(runStorageCLI(os.Args[2:]))
 		case "healthcheck":

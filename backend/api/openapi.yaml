@@ -2085,6 +2085,13 @@ paths:
         - system
       security:
         - BearerAuth: [v3:read]
+      parameters:
+        - in: query
+          name: principalId
+          required: false
+          description: Inspect another principal when authenticated with admin scope.
+          schema:
+            type: string
       responses:
         "200":
           description: Current entitlement status

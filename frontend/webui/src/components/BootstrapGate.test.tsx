@@ -267,6 +267,28 @@ describe('BootstrapGate', () => {
     expect(await screen.findByText('Settings view')).toBeInTheDocument();
   });
 
+  it('allows configured app routes once the unlock status is active', async () => {
+    mockUseBootstrapConfig.mockReturnValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        monetization: {
+          enabled: true,
+          model: 'one_time_unlock',
+          productName: 'xg2g Unlock',
+          enforcement: 'required',
+          unlocked: true,
+        },
+      },
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    renderGate([ROUTE_MAP.epg]);
+
+    expect(await screen.findByText('EPG view')).toBeInTheDocument();
+  });
+
   it('allows nested bypass routes while the unlock gate is active', async () => {
     mockUseBootstrapConfig.mockReturnValue({
       data: {

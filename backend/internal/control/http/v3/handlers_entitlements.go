@@ -8,22 +8,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/entitlements"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // GetSystemEntitlements implements ServerInterface.
-func (s *Server) GetSystemEntitlements(w http.ResponseWriter, r *http.Request) {
+func (s *Server) GetSystemEntitlements(w http.ResponseWriter, r *http.Request, params GetSystemEntitlementsParams) {
 	principal := auth.PrincipalFromContext(r.Context())
 	if principal == nil {
 		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 		return
 	}
 
-	status, err := s.buildEntitlementStatus(r.Context(), principal)
+	targetPrincipalID, baseScopes, err := s.resolveEntitlementStatusTarget(principal, params)
 	if err != nil {
-		log.FromContext(r.Context()).Error().Err(err).Str("principal_id", principal.ID).Msg("failed to build entitlement status")
+		RespondError(w, r, http.StatusForbidden, ErrForbidden, err.Error())
+		return
+	}
+
+	status, err := s.buildEntitlementStatus(r.Context(), targetPrincipalID, baseScopes)
+	if err != nil {
+		log.FromContext(r.Context()).Error().Err(err).Str("principal_id", targetPrincipalID).Msg("failed to build entitlement status")
 		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to resolve entitlement status")
 		return
 	}
@@ -116,14 +123,14 @@ func (s *Server) DeleteSystemEntitlementOverride(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) buildEntitlementStatus(ctx context.Context, principal *auth.Principal) (*EntitlementStatus, error) {
+func (s *Server) buildEntitlementStatus(ctx context.Context, principalID string, baseScopes []string) (*EntitlementStatus, error) {
 	cfg := s.GetConfig()
 	normalizedMonetization := cfg.Monetization.Normalized()
 	service := s.entitlementServiceSnapshot()
 
 	status, err := service.Status(ctx, entitlements.StatusRequest{
-		PrincipalID:    principal.ID,
-		BaseScopes:     principal.Scopes,
+		PrincipalID:    principalID,
+		BaseScopes:     baseScopes,
 		RequiredScopes: normalizedMonetization.RequiredScopes,
 		Model:          normalizedMonetization.Model,
 		ProductName:    normalizedMonetization.ProductName,
@@ -166,6 +173,29 @@ func (s *Server) buildEntitlementStatus(ctx context.Context, principal *auth.Pri
 		resp.Grants = &grants
 	}
 	return resp, nil
+}
+
+func (s *Server) resolveEntitlementStatusTarget(principal *auth.Principal, params GetSystemEntitlementsParams) (string, []string, error) {
+	if principal == nil {
+		return "", nil, fmt.Errorf("principal is required")
+	}
+
+	targetPrincipalID := principal.ID
+	baseScopes := append([]string(nil), principal.Scopes...)
+	if params.PrincipalId == nil {
+		return targetPrincipalID, baseScopes, nil
+	}
+
+	requestedPrincipalID := strings.TrimSpace(*params.PrincipalId)
+	if requestedPrincipalID == "" || requestedPrincipalID == principal.ID {
+		return targetPrincipalID, baseScopes, nil
+	}
+
+	if !newScopeSet(principal.Scopes).has(ScopeV3Admin) {
+		return "", nil, fmt.Errorf("admin scope required to inspect a different principal")
+	}
+
+	return requestedPrincipalID, configuredPrincipalScopes(s.GetConfig(), requestedPrincipalID), nil
 }
 
 func (s *Server) entitlementServiceSnapshot() *entitlements.Service {
@@ -212,4 +242,37 @@ func parseEntitlementOverrideExpiry(raw *time.Time) (*time.Time, error) {
 		return nil, fmt.Errorf("override expiresAt must be in the future")
 	}
 	return &expiresAt, nil
+}
+
+func configuredPrincipalScopes(cfg config.AppConfig, principalID string) []string {
+	targetPrincipalID := strings.TrimSpace(principalID)
+	if targetPrincipalID == "" {
+		return nil
+	}
+
+	scopes := make([]string, 0)
+	for _, entry := range cfg.APITokens {
+		if strings.TrimSpace(entry.User) != targetPrincipalID {
+			continue
+		}
+		scopes = append(scopes, entry.Scopes...)
+	}
+	return dedupeStringScopes(scopes)
+}
+
+func dedupeStringScopes(scopes []string) []string {
+	seen := make(map[string]struct{}, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		normalized := strings.ToLower(strings.TrimSpace(scope))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
 }
