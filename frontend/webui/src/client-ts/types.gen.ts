@@ -1358,7 +1358,12 @@ export type PutSystemConfigResponse = PutSystemConfigResponses[keyof PutSystemCo
 export type GetSystemEntitlementsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Inspect another principal when authenticated with admin scope.
+         */
+        principalId?: string;
+    };
     url: '/system/entitlements';
 };
 

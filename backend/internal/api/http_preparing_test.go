@@ -71,7 +71,8 @@ func (m *MockPreparingServer) DeleteStreamsId(w http.ResponseWriter, r *http.Req
 func (m *MockPreparingServer) GetErrors(w http.ResponseWriter, r *http.Request)                  {}
 func (m *MockPreparingServer) GetSystemConfig(w http.ResponseWriter, r *http.Request)            {}
 func (m *MockPreparingServer) PutSystemConfig(w http.ResponseWriter, r *http.Request)            {}
-func (m *MockPreparingServer) GetSystemEntitlements(w http.ResponseWriter, r *http.Request)      {}
+func (m *MockPreparingServer) GetSystemEntitlements(w http.ResponseWriter, r *http.Request, params v3.GetSystemEntitlementsParams) {
+}
 func (m *MockPreparingServer) PostSystemEntitlementOverride(w http.ResponseWriter, r *http.Request) {
 }
 func (m *MockPreparingServer) DeleteSystemEntitlementOverride(w http.ResponseWriter, r *http.Request, principalId string, scope string) {
