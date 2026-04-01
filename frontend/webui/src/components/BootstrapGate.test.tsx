@@ -219,6 +219,53 @@ describe('BootstrapGate', () => {
     expect(await screen.findByText('Settings view')).toBeInTheDocument();
   });
 
+  it('blocks configured app routes when monetization enforcement requires an unlock', () => {
+    mockUseBootstrapConfig.mockReturnValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        monetization: {
+          enabled: true,
+          model: 'one_time_unlock',
+          productName: 'xg2g Unlock',
+          purchaseUrl: 'https://example.com/unlock',
+          enforcement: 'required',
+          unlocked: false,
+        },
+      },
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    renderGate([ROUTE_MAP.epg]);
+
+    expect(screen.getByRole('heading', { name: 'xg2g Unlock required' })).toBeInTheDocument();
+    expect(screen.queryByText('EPG view')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Unlock Info' })).toHaveAttribute('href', 'https://example.com/unlock');
+  });
+
+  it('still allows the settings route while the unlock gate is active', async () => {
+    mockUseBootstrapConfig.mockReturnValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        monetization: {
+          enabled: true,
+          model: 'one_time_unlock',
+          productName: 'xg2g Unlock',
+          enforcement: 'required',
+          unlocked: false,
+        },
+      },
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    renderGate([ROUTE_MAP.settings]);
+
+    expect(await screen.findByText('Settings view')).toBeInTheDocument();
+  });
+
   it('converts bootstrap 401 responses into an auth prompt', async () => {
     const setToken = vi.fn();
     const setPlayingChannel = vi.fn();

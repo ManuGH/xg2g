@@ -34,6 +34,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvTrustedProxies(cfg)
 	l.mergeEnvStreaming(cfg)
 	l.mergeEnvPlayback(cfg)
+	l.mergeEnvMonetization(cfg)
 	l.mergeEnvRecordings(cfg)
 	l.mergeEnvVerification(cfg)
 }
@@ -239,6 +240,15 @@ func (l *Loader) mergeEnvPlayback(cfg *AppConfig) {
 	cfg.Playback.Operator.ForceIntent = l.envString("XG2G_PLAYBACK_FORCE_INTENT", cfg.Playback.Operator.ForceIntent)
 	cfg.Playback.Operator.MaxQualityRung = l.envString("XG2G_PLAYBACK_MAX_QUALITY_RUNG", cfg.Playback.Operator.MaxQualityRung)
 	cfg.Playback.Operator.DisableClientFallback = l.envBool("XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", cfg.Playback.Operator.DisableClientFallback)
+}
+
+func (l *Loader) mergeEnvMonetization(cfg *AppConfig) {
+	cfg.Monetization.Enabled = l.envBool("XG2G_MONETIZATION_ENABLED", cfg.Monetization.Enabled)
+	cfg.Monetization.Model = l.envString("XG2G_MONETIZATION_MODEL", cfg.Monetization.Model)
+	cfg.Monetization.ProductName = l.envString("XG2G_MONETIZATION_PRODUCT_NAME", cfg.Monetization.ProductName)
+	cfg.Monetization.UnlockScope = l.envString("XG2G_MONETIZATION_UNLOCK_SCOPE", cfg.Monetization.UnlockScope)
+	cfg.Monetization.PurchaseURL = l.envString("XG2G_MONETIZATION_PURCHASE_URL", cfg.Monetization.PurchaseURL)
+	cfg.Monetization.Enforcement = l.envString("XG2G_MONETIZATION_ENFORCEMENT", cfg.Monetization.Enforcement)
 }
 
 func (l *Loader) mergeEnvRecordings(cfg *AppConfig) {

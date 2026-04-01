@@ -323,3 +323,36 @@ func TestValidate_PlaybackOperatorSourceRules(t *testing.T) {
 		}
 	})
 }
+
+func TestValidate_MonetizationCustomUnlockScope(t *testing.T) {
+	cfg := baseValidationConfig()
+	cfg.Monetization = MonetizationConfig{
+		Enabled:     true,
+		Model:       MonetizationModelOneTimeUnlock,
+		Enforcement: MonetizationEnforcementRequired,
+		UnlockScope: "xg2g:unlock",
+	}
+	cfg.APITokens = []ScopedToken{
+		{
+			Token:  "unlock-token",
+			Scopes: []string{"v3:admin", "xg2g:unlock"},
+		},
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected monetization unlock scope to be accepted, got %v", err)
+	}
+}
+
+func TestValidate_MonetizationRequiredNeedsPaidModel(t *testing.T) {
+	cfg := baseValidationConfig()
+	cfg.Monetization = MonetizationConfig{
+		Enabled:     true,
+		Model:       MonetizationModelFree,
+		Enforcement: MonetizationEnforcementRequired,
+	}
+
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected monetization enforcement error")
+	}
+}

@@ -5,6 +5,7 @@
 package config
 
 import (
+	"strings"
 	"time"
 )
 
@@ -46,18 +47,19 @@ type FileConfig struct {
 	RecordingPathMappings []RecordingPathMapping  `yaml:"recordingPathMappings,omitempty"`
 
 	// Advanced/internal configuration (Registry-exposed)
-	FFmpeg       *FFmpegConfig       `yaml:"ffmpeg,omitempty"`
-	HLS          *HLSConfig          `yaml:"hls,omitempty"`
-	VOD          *VODConfig          `yaml:"vod,omitempty"`
-	RateLimit    *RateLimitConfig    `yaml:"rateLimit,omitempty"`
-	Sessions     *SessionsConfig     `yaml:"sessions,omitempty"`
-	Store        *StoreConfig        `yaml:"store,omitempty"`
-	Streaming    *StreamingConfig    `yaml:"streaming,omitempty"`
-	Playback     *PlaybackFileConfig `yaml:"playback,omitempty"`
-	Limits       *LimitsConfig       `yaml:"limits,omitempty"`
-	Timeouts     *TimeoutsConfig     `yaml:"timeouts,omitempty"`
-	Breaker      *BreakerConfig      `yaml:"breaker,omitempty"`
-	Verification *VerificationConfig `yaml:"verification,omitempty"`
+	FFmpeg       *FFmpegConfig           `yaml:"ffmpeg,omitempty"`
+	HLS          *HLSConfig              `yaml:"hls,omitempty"`
+	VOD          *VODConfig              `yaml:"vod,omitempty"`
+	RateLimit    *RateLimitConfig        `yaml:"rateLimit,omitempty"`
+	Sessions     *SessionsConfig         `yaml:"sessions,omitempty"`
+	Store        *StoreConfig            `yaml:"store,omitempty"`
+	Streaming    *StreamingConfig        `yaml:"streaming,omitempty"`
+	Playback     *PlaybackFileConfig     `yaml:"playback,omitempty"`
+	Monetization *MonetizationFileConfig `yaml:"monetization,omitempty"`
+	Limits       *LimitsConfig           `yaml:"limits,omitempty"`
+	Timeouts     *TimeoutsConfig         `yaml:"timeouts,omitempty"`
+	Breaker      *BreakerConfig          `yaml:"breaker,omitempty"`
+	Verification *VerificationConfig     `yaml:"verification,omitempty"`
 }
 
 // VerificationConfig holds drift verification settings
@@ -248,6 +250,62 @@ type StreamingConfig struct {
 	DeliveryPolicy string `yaml:"delivery_policy" env:"XG2G_STREAMING_POLICY"`
 }
 
+const (
+	MonetizationModelFree           = "free"
+	MonetizationModelOneTimeUnlock  = "one_time_unlock"
+	MonetizationEnforcementNone     = "none"
+	MonetizationEnforcementRequired = "required"
+)
+
+// MonetizationFileConfig holds operator-configured commercialization settings in YAML.
+type MonetizationFileConfig struct {
+	Enabled     *bool  `yaml:"enabled,omitempty"`
+	Model       string `yaml:"model,omitempty"`
+	ProductName string `yaml:"productName,omitempty"`
+	UnlockScope string `yaml:"unlockScope,omitempty"`
+	PurchaseURL string `yaml:"purchaseUrl,omitempty"`
+	Enforcement string `yaml:"enforcement,omitempty"`
+}
+
+// MonetizationConfig holds runtime commercialization settings.
+type MonetizationConfig struct {
+	Enabled     bool
+	Model       string
+	ProductName string
+	UnlockScope string
+	PurchaseURL string
+	Enforcement string
+}
+
+// Normalized returns a canonicalized monetization config with defaults applied.
+func (c MonetizationConfig) Normalized() MonetizationConfig {
+	out := c
+	out.Model = strings.ToLower(strings.TrimSpace(out.Model))
+	if out.Model == "" {
+		out.Model = MonetizationModelFree
+	}
+	out.ProductName = strings.TrimSpace(out.ProductName)
+	if out.ProductName == "" {
+		out.ProductName = "xg2g Unlock"
+	}
+	out.UnlockScope = strings.ToLower(strings.TrimSpace(out.UnlockScope))
+	if out.UnlockScope == "" {
+		out.UnlockScope = "xg2g:unlock"
+	}
+	out.PurchaseURL = strings.TrimSpace(out.PurchaseURL)
+	out.Enforcement = strings.ToLower(strings.TrimSpace(out.Enforcement))
+	if out.Enforcement == "" {
+		out.Enforcement = MonetizationEnforcementNone
+	}
+	return out
+}
+
+// RequiresUnlock reports whether the config describes a paid one-time unlock.
+func (c MonetizationConfig) RequiresUnlock() bool {
+	normalized := c.Normalized()
+	return normalized.Enabled && normalized.Model == MonetizationModelOneTimeUnlock
+}
+
 // PlaybackOperatorFileConfig holds operator-side playback overrides in YAML.
 type PlaybackOperatorFileConfig struct {
 	ForceIntent           string                           `yaml:"force_intent,omitempty"`
@@ -412,8 +470,9 @@ type AppConfig struct {
 	HDHR HDHRConfig
 
 	// Streaming Configuration
-	Streaming StreamingConfig
-	Playback  PlaybackConfig
+	Streaming    StreamingConfig
+	Playback     PlaybackConfig
+	Monetization MonetizationConfig
 
 	// ADR-009: Session Lease Configuration
 	Sessions SessionsConfig

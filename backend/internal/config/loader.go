@@ -123,6 +123,7 @@ func (l *Loader) Load() (AppConfig, error) {
 
 	// 3. Override with environment variables (highest priority)
 	l.mergeEnvConfig(&cfg)
+	cfg.Monetization = cfg.Monetization.Normalized()
 	// Resolve ffprobe path from canonical config (ENV -> derive from ffmpeg.bin -> PATH fallback).
 	cfg.FFmpeg.FFprobeBin = ResolveFFprobeBin(cfg.FFmpeg.FFprobeBin, cfg.FFmpeg.Bin)
 

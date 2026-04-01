@@ -714,8 +714,33 @@ components:
           $ref: "#/components/schemas/PiconsConfig"
         streaming:
           $ref: "#/components/schemas/StreamingConfig"
+        monetization:
+          $ref: "#/components/schemas/MonetizationStatus"
         verification:
           $ref: "#/components/schemas/VerificationConfig"
+
+    MonetizationStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        model:
+          type: string
+          description: Monetization model exposed to the client bootstrap flow.
+        productName:
+          type: string
+        unlockScope:
+          type: string
+          description: Scope name that marks a token as commercially unlocked.
+        purchaseUrl:
+          type: string
+          format: uri
+        enforcement:
+          type: string
+          description: Whether the client should enforce the unlock gate.
+        unlocked:
+          type: boolean
+          description: True when the authenticated principal is already unlocked.
 
     Bouquet:
       type: object
@@ -1093,6 +1118,10 @@ components:
             fps:
               type: integer
               example: 60
+        deviceContext:
+          $ref: "#/components/schemas/PlaybackDeviceContext"
+        networkContext:
+          $ref: "#/components/schemas/PlaybackNetworkContext"
         supportsHls:
           type: boolean
           description: Whether client supports HLS playlists
@@ -1154,6 +1183,42 @@ components:
           type: boolean
           description: Whether the browser reported hardware-efficient decode for this codec
           example: true
+
+    PlaybackDeviceContext:
+      type: object
+      additionalProperties: false
+      properties:
+        brand:
+          type: string
+        product:
+          type: string
+        device:
+          type: string
+        platform:
+          type: string
+        manufacturer:
+          type: string
+        model:
+          type: string
+        osName:
+          type: string
+        osVersion:
+          type: string
+        sdkInt:
+          type: integer
+
+    PlaybackNetworkContext:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        downlinkKbps:
+          type: integer
+        metered:
+          type: boolean
+        internetValidated:
+          type: boolean
 
     PlaybackDecision:
       type: object

@@ -672,6 +672,35 @@
       },
       "type": "object"
     },
+    "monetization": {
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "enforcement": {
+          "default": "none",
+          "type": "string"
+        },
+        "model": {
+          "default": "free",
+          "type": "string"
+        },
+        "productName": {
+          "default": "xg2g Unlock",
+          "type": "string"
+        },
+        "purchaseUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "unlockScope": {
+          "default": "xg2g:unlock",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "network": {
       "properties": {
         "lan": {

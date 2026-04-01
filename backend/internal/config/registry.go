@@ -214,6 +214,12 @@ func buildRegistry() (*Registry, error) {
 		{Path: "playback.operator.max_quality_rung", Env: "XG2G_PLAYBACK_MAX_QUALITY_RUNG", FieldPath: "Playback.Operator.MaxQualityRung", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "playback.operator.disable_client_fallback", Env: "XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", FieldPath: "Playback.Operator.DisableClientFallback", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "playback.operator.source_rules", Env: "", FieldPath: "Playback.Operator.SourceRules", Profile: ProfileAdvanced, Status: StatusActive, Default: []PlaybackOperatorRuleConfig{}},
+		{Path: "monetization.enabled", Env: "XG2G_MONETIZATION_ENABLED", FieldPath: "Monetization.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "monetization.model", Env: "XG2G_MONETIZATION_MODEL", FieldPath: "Monetization.Model", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationModelFree},
+		{Path: "monetization.productName", Env: "XG2G_MONETIZATION_PRODUCT_NAME", FieldPath: "Monetization.ProductName", Profile: ProfileAdvanced, Status: StatusActive, Default: "xg2g Unlock"},
+		{Path: "monetization.unlockScope", Env: "XG2G_MONETIZATION_UNLOCK_SCOPE", FieldPath: "Monetization.UnlockScope", Profile: ProfileAdvanced, Status: StatusActive, Default: "xg2g:unlock"},
+		{Path: "monetization.purchaseUrl", Env: "XG2G_MONETIZATION_PURCHASE_URL", FieldPath: "Monetization.PurchaseURL", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "monetization.enforcement", Env: "XG2G_MONETIZATION_ENFORCEMENT", FieldPath: "Monetization.Enforcement", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationEnforcementNone},
 
 		// --- VERIFICATION ---
 		{Path: "verification.enabled", Env: "XG2G_VERIFY_ENABLED", FieldPath: "Verification.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
