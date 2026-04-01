@@ -212,6 +212,19 @@ Observed live-host delta on March 24, 2026 (installation drift still present):
 - Runtime truth matched that older deployment: `docker inspect` reported image `ghcr.io/manugh/xg2g:v3.3.0`, and recent container logs reported `version":"v3.3.0-hotfix26"`.
 - Operational rule: for this host, treat the installed unit plus `/srv/xg2g/docker-compose.yml` as runtime truth and the GitHub docs as target-state documentation until `/srv/xg2g` and `/etc/systemd/system/xg2g.service` are redeployed together. The mere presence of `/srv/xg2g/scripts/compose-xg2g.sh` does not mean systemd is using the helper yet.
 
+Observed live-host delta on April 1, 2026 (runtime outage via stopped CT):
+- Public symptom: `https://xg2g.home.matrixcentral.de/ui/` returned `502`, and `/api/v3/services/bouquets` returned `503` through Caddy while the Proxmox guest itself was down.
+- Immediate runtime cause: Proxmox CT `110` (`hostname: xg2g`, `10.10.55.14`) was fully `stopped`; `pct start 110` restored the service path, after which `/ui/` returned `200` and the protected API returned `401`.
+- Proxmox audit trail showed a successful manual stop task on March 31, 2026: `vzstop:110:root@pam`. No crash evidence appeared in `xg2g.service` or Docker health logs after the container was brought back.
+- Installed systemd unit had mostly converged with the repo template again and now used `/srv/xg2g/scripts/compose-xg2g.sh`, but it still differed in one preflight gate:
+  - repo template still allowed legacy `XG2G_OWI_BASE` fallback alongside `XG2G_E2_HOST`
+  - installed unit required `XG2G_E2_HOST` only
+- `/srv/xg2g/docker-compose.yml` now pointed at `ghcr.io/manugh/xg2g:v3.4.3`, and `/srv/xg2g/docker-compose.gpu.yml` was present as the GPU-only overlay. Docker health was green after restart.
+- Runtime image metadata and application self-report still drifted:
+  - `docker inspect` / image labels reported `ghcr.io/manugh/xg2g:v3.4.3` with OCI version `v3.4.3-livepatch-20260331-demux2`
+  - container startup logs still emitted `version":"v3.3.0"` and `commit":"dev"`
+- Operational rule: for outages fronted by Caddy, check Proxmox guest state before assuming an app-level regression. A stopped CT can surface as proxy `502/503` even when the in-guest systemd unit, Compose file, and Docker health gates are all correct once the guest is up.
+
 If you see the March 11 metrics-only health mismatch, fix the live env first by setting:
 
 ```bash
