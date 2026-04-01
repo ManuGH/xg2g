@@ -357,6 +357,10 @@ func findMatchingLineItem(lineItems []productLineItem, productID string) (produc
 func mapPurchaseState(rawState string, refundableQuantity int) (receipts.PurchaseState, error) {
 	switch strings.TrimSpace(rawState) {
 	case "PURCHASED":
+		// One-time unlock products only use quantities 0 or 1 today. If Google Play
+		// ever exposes partial refunds for multi-quantity products here, this binary
+		// zero-check must become quantity-aware instead of treating all non-zero
+		// values as fully purchased.
 		if refundableQuantity == 0 {
 			return receipts.PurchaseStateRevoked, nil
 		}
