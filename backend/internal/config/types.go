@@ -267,12 +267,18 @@ type MonetizationFileConfig struct {
 	PurchaseURL     string                                 `yaml:"purchaseUrl,omitempty"`
 	Enforcement     string                                 `yaml:"enforcement,omitempty"`
 	GooglePlay      *MonetizationGooglePlayFileConfig      `yaml:"googlePlay,omitempty"`
+	Amazon          *MonetizationAmazonFileConfig          `yaml:"amazon,omitempty"`
 	ProductMappings []MonetizationProductMappingFileConfig `yaml:"productMappings,omitempty"`
 }
 
 type MonetizationGooglePlayFileConfig struct {
 	PackageName                   string `yaml:"packageName,omitempty"`
 	ServiceAccountCredentialsFile string `yaml:"serviceAccountCredentialsFile,omitempty"`
+}
+
+type MonetizationAmazonFileConfig struct {
+	SharedSecretFile string `yaml:"sharedSecretFile,omitempty"`
+	UseSandbox       *bool  `yaml:"useSandbox,omitempty"`
 }
 
 type MonetizationProductMappingFileConfig struct {
@@ -290,12 +296,18 @@ type MonetizationConfig struct {
 	PurchaseURL     string
 	Enforcement     string
 	GooglePlay      MonetizationGooglePlayConfig
+	Amazon          MonetizationAmazonConfig
 	ProductMappings []MonetizationProductMapping
 }
 
 type MonetizationGooglePlayConfig struct {
 	PackageName                   string
 	ServiceAccountCredentialsFile string
+}
+
+type MonetizationAmazonConfig struct {
+	SharedSecretFile string
+	UseSandbox       bool
 }
 
 type MonetizationProductMapping struct {
@@ -331,6 +343,10 @@ func (c MonetizationConfig) Normalized() MonetizationConfig {
 	out.GooglePlay = MonetizationGooglePlayConfig{
 		PackageName:                   strings.TrimSpace(out.GooglePlay.PackageName),
 		ServiceAccountCredentialsFile: strings.TrimSpace(out.GooglePlay.ServiceAccountCredentialsFile),
+	}
+	out.Amazon = MonetizationAmazonConfig{
+		SharedSecretFile: strings.TrimSpace(out.Amazon.SharedSecretFile),
+		UseSandbox:       out.Amazon.UseSandbox,
 	}
 	if len(out.ProductMappings) > 0 {
 		normalizedMappings := make([]MonetizationProductMapping, len(out.ProductMappings))

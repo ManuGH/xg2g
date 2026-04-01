@@ -674,6 +674,19 @@
     },
     "monetization": {
       "properties": {
+        "amazon": {
+          "properties": {
+            "sharedSecretFile": {
+              "default": "",
+              "type": "string"
+            },
+            "useSandbox": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
         "enabled": {
           "default": false,
           "type": "boolean"

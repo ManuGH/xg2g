@@ -257,6 +257,11 @@ func (l *Loader) mergeEnvMonetization(cfg *AppConfig) {
 		"XG2G_MONETIZATION_GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS_FILE",
 		cfg.Monetization.GooglePlay.ServiceAccountCredentialsFile,
 	)
+	cfg.Monetization.Amazon.SharedSecretFile = l.envString(
+		"XG2G_MONETIZATION_AMAZON_SHARED_SECRET_FILE",
+		cfg.Monetization.Amazon.SharedSecretFile,
+	)
+	cfg.Monetization.Amazon.UseSandbox = l.envBool("XG2G_MONETIZATION_AMAZON_USE_SANDBOX", cfg.Monetization.Amazon.UseSandbox)
 }
 
 func (l *Loader) mergeEnvRecordings(cfg *AppConfig) {

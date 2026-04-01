@@ -170,6 +170,14 @@ func (l *Loader) mergeFileMonetization(dst *AppConfig, src *FileConfig) {
 			dst.Monetization.GooglePlay.ServiceAccountCredentialsFile = expandEnv(src.Monetization.GooglePlay.ServiceAccountCredentialsFile)
 		}
 	}
+	if src.Monetization.Amazon != nil {
+		if src.Monetization.Amazon.SharedSecretFile != "" {
+			dst.Monetization.Amazon.SharedSecretFile = expandEnv(src.Monetization.Amazon.SharedSecretFile)
+		}
+		if src.Monetization.Amazon.UseSandbox != nil {
+			dst.Monetization.Amazon.UseSandbox = *src.Monetization.Amazon.UseSandbox
+		}
+	}
 	if src.Monetization.ProductMappings != nil {
 		mappings := make([]MonetizationProductMapping, 0, len(src.Monetization.ProductMappings))
 		for _, mapping := range src.Monetization.ProductMappings {

@@ -461,3 +461,24 @@ func TestValidate_MonetizationGooglePlayMappingsDuplicateFails(t *testing.T) {
 		t.Fatalf("expected Monetization.ProductMappings validation error, got %v", err)
 	}
 }
+
+func TestValidate_MonetizationAmazonMappingsRequireProviderConfig(t *testing.T) {
+	cfg := baseValidationConfig()
+	cfg.Monetization = MonetizationConfig{
+		Enabled:        true,
+		Model:          MonetizationModelOneTimeUnlock,
+		Enforcement:    MonetizationEnforcementRequired,
+		RequiredScopes: []string{"xg2g:unlock"},
+		ProductMappings: []MonetizationProductMapping{
+			{Provider: "amazon_appstore", ProductID: "xg2g.unlock.firetv", Scopes: []string{"xg2g:unlock"}},
+		},
+	}
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected validation error for missing Amazon config")
+	}
+	if !strings.Contains(err.Error(), "Monetization.Amazon.SharedSecretFile") {
+		t.Fatalf("expected Monetization.Amazon.SharedSecretFile validation error, got %v", err)
+	}
+}

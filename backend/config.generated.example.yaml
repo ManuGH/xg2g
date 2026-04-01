@@ -89,6 +89,9 @@ metrics:
   enabled: false
   listenAddr: ""
 monetization:
+  amazon:
+    sharedSecretFile: ""
+    useSandbox: false
   enabled: false
   enforcement: none
   googlePlay:

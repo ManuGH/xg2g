@@ -84,7 +84,7 @@ func TestReceiptRoundTripThroughRouter(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("partial mapping stays locked", func(t *testing.T) {
-		resp := postEntitlementReceipt(t, handler, "viewer-token", nil, "xg2g.partial", "token-partial")
+		resp := postEntitlementReceipt(t, handler, "viewer-token", nil, receipts.ProviderGooglePlay, "xg2g.partial", "token-partial", nil)
 		assert.Equal(t, "granted", resp.Action)
 		assert.Equal(t, "purchased", resp.PurchaseState)
 		require.NotNil(t, resp.EntitlementStatus.Unlocked)
@@ -98,7 +98,7 @@ func TestReceiptRoundTripThroughRouter(t *testing.T) {
 	})
 
 	t.Run("purchased receipt unlocks immediately", func(t *testing.T) {
-		resp := postEntitlementReceipt(t, handler, "viewer-token", nil, "xg2g.unlock", "token-full")
+		resp := postEntitlementReceipt(t, handler, "viewer-token", nil, receipts.ProviderGooglePlay, "xg2g.unlock", "token-full", nil)
 		assert.Equal(t, "granted", resp.Action)
 		assert.Equal(t, "purchased", resp.PurchaseState)
 		require.NotNil(t, resp.EntitlementStatus.Unlocked)
@@ -116,7 +116,7 @@ func TestReceiptRoundTripThroughRouter(t *testing.T) {
 	})
 
 	t.Run("revoked receipt relocks without waiting for ttl", func(t *testing.T) {
-		resp := postEntitlementReceipt(t, handler, "viewer-token", nil, "xg2g.unlock", "token-revoked")
+		resp := postEntitlementReceipt(t, handler, "viewer-token", nil, receipts.ProviderGooglePlay, "xg2g.unlock", "token-revoked", nil)
 		assert.Equal(t, "revoked", resp.Action)
 		assert.Equal(t, "revoked", resp.PurchaseState)
 		require.NotNil(t, resp.EntitlementStatus.Unlocked)
@@ -180,6 +180,7 @@ func TestReceiptRoundTripRejectsCrossPrincipalWritesWithoutAdminScope(t *testing
 		Provider:      receipts.ProviderGooglePlay,
 		ProductId:     "xg2g.unlock",
 		PurchaseToken: "token-full",
+		UserId:        nil,
 	})
 	require.NoError(t, err)
 
@@ -193,9 +194,67 @@ func TestReceiptRoundTripRejectsCrossPrincipalWritesWithoutAdminScope(t *testing
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
 
+func TestAmazonReceiptRoundTripThroughRouter(t *testing.T) {
+	cfg := config.AppConfig{
+		APITokens: []config.ScopedToken{
+			{Token: "viewer-token", User: "viewer", Scopes: []string{"v3:admin", "v3:read"}},
+		},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+		Monetization: config.MonetizationConfig{
+			Enabled:        true,
+			Model:          config.MonetizationModelOneTimeUnlock,
+			ProductName:    "xg2g Unlock",
+			RequiredScopes: []string{"xg2g:unlock"},
+			PurchaseURL:    "https://example.com/unlock",
+			Enforcement:    config.MonetizationEnforcementRequired,
+			ProductMappings: []config.MonetizationProductMapping{
+				{Provider: receipts.ProviderAmazonAppstore, ProductID: "xg2g.unlock.firetv", Scopes: []string{"xg2g:unlock"}},
+			},
+		},
+	}
+
+	entitlementService := entitlements.NewService(entitlements.NewMemoryStore())
+	receiptService, err := receipts.NewService(
+		cfg.Monetization.Normalized(),
+		entitlementService,
+		&mockReceiptVerifier{
+			provider:       receipts.ProviderAmazonAppstore,
+			expectedUserID: "amzn-user-1",
+			results: map[string]receipts.VerifyResult{
+				"amazon-receipt-1": {
+					Provider:  receipts.ProviderAmazonAppstore,
+					ProductID: "xg2g.unlock.firetv",
+					Source:    entitlements.SourceAmazonAppstore,
+					State:     receipts.PurchaseStatePurchased,
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	server := v3.NewServer(cfg, nil, nil)
+	server.SetDependencies(v3.Dependencies{
+		Entitlements: entitlementService,
+		Receipts:     receiptService,
+	})
+
+	handler, err := v3.NewHandler(server, cfg)
+	require.NoError(t, err)
+
+	resp := postEntitlementReceipt(t, handler, "viewer-token", nil, receipts.ProviderAmazonAppstore, "xg2g.unlock.firetv", "amazon-receipt-1", stringPtr("amzn-user-1"))
+	assert.Equal(t, "granted", resp.Action)
+	assert.Equal(t, "purchased", resp.PurchaseState)
+	require.NotNil(t, resp.EntitlementStatus.Unlocked)
+	assert.True(t, *resp.EntitlementStatus.Unlocked)
+	assert.Equal(t, []string{"xg2g:unlock"}, resp.MappedScopes)
+}
+
 type mockReceiptVerifier struct {
-	provider string
-	results  map[string]receipts.VerifyResult
+	provider       string
+	expectedUserID string
+	results        map[string]receipts.VerifyResult
 }
 
 func (m *mockReceiptVerifier) Provider() string {
@@ -203,6 +262,12 @@ func (m *mockReceiptVerifier) Provider() string {
 }
 
 func (m *mockReceiptVerifier) Verify(_ context.Context, req receipts.VerifyRequest) (receipts.VerifyResult, error) {
+	if m.expectedUserID != "" && req.UserID != m.expectedUserID {
+		return receipts.VerifyResult{}, &receipts.Error{
+			Kind:    receipts.ErrorKindInvalidInput,
+			Message: "unexpected test user id",
+		}
+	}
 	result, ok := m.results[req.PurchaseToken]
 	if !ok {
 		result, ok = m.results[req.ProductID]
@@ -216,12 +281,13 @@ func (m *mockReceiptVerifier) Verify(_ context.Context, req receipts.VerifyReque
 	return result, nil
 }
 
-func postEntitlementReceipt(t *testing.T, handler http.Handler, token string, principalID *string, productID, purchaseToken string) v3.EntitlementReceiptResponse {
+func postEntitlementReceipt(t *testing.T, handler http.Handler, token string, principalID *string, provider, productID, purchaseToken string, userID *string) v3.EntitlementReceiptResponse {
 	t.Helper()
 
 	body, err := json.Marshal(v3.PostSystemEntitlementReceiptJSONRequestBody{
 		PrincipalId:   principalID,
-		Provider:      receipts.ProviderGooglePlay,
+		UserId:        userID,
+		Provider:      provider,
 		ProductId:     productID,
 		PurchaseToken: purchaseToken,
 	})
@@ -238,4 +304,8 @@ func postEntitlementReceipt(t *testing.T, handler http.Handler, token string, pr
 	var resp v3.EntitlementReceiptResponse
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	return resp
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

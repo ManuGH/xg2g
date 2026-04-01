@@ -815,6 +815,9 @@ components:
         principalId:
           type: string
           description: Submit a verified purchase for another principal when authenticated with admin scope.
+        userId:
+          type: string
+          description: Provider-specific user identifier required by Amazon Appstore receipt verification.
         provider:
           type: string
           description: Receipt provider identifier.

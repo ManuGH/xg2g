@@ -36,6 +36,7 @@ func (s *Server) PostSystemEntitlementReceipt(w http.ResponseWriter, r *http.Req
 		Provider:      req.Provider,
 		ProductID:     req.ProductId,
 		PurchaseToken: req.PurchaseToken,
+		UserID:        derefString(req.UserId),
 	})
 	if err != nil {
 		statusCode, apiErr, detail := receiptErrorResponse(err)
