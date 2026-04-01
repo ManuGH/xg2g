@@ -682,8 +682,25 @@
           "default": "none",
           "type": "string"
         },
+        "googlePlay": {
+          "properties": {
+            "packageName": {
+              "default": "",
+              "type": "string"
+            },
+            "serviceAccountCredentialsFile": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "model": {
           "default": "free",
+          "type": "string"
+        },
+        "productMappings": {
+          "default": [],
           "type": "string"
         },
         "productName": {

@@ -162,6 +162,25 @@ func (l *Loader) mergeFileMonetization(dst *AppConfig, src *FileConfig) {
 	if src.Monetization.Enforcement != "" {
 		dst.Monetization.Enforcement = src.Monetization.Enforcement
 	}
+	if src.Monetization.GooglePlay != nil {
+		if src.Monetization.GooglePlay.PackageName != "" {
+			dst.Monetization.GooglePlay.PackageName = src.Monetization.GooglePlay.PackageName
+		}
+		if src.Monetization.GooglePlay.ServiceAccountCredentialsFile != "" {
+			dst.Monetization.GooglePlay.ServiceAccountCredentialsFile = expandEnv(src.Monetization.GooglePlay.ServiceAccountCredentialsFile)
+		}
+	}
+	if src.Monetization.ProductMappings != nil {
+		mappings := make([]MonetizationProductMapping, 0, len(src.Monetization.ProductMappings))
+		for _, mapping := range src.Monetization.ProductMappings {
+			mappings = append(mappings, MonetizationProductMapping{
+				Provider:  mapping.Provider,
+				ProductID: mapping.ProductID,
+				Scopes:    append([]string(nil), mapping.Scopes...),
+			})
+		}
+		dst.Monetization.ProductMappings = mappings
+	}
 }
 
 func (l *Loader) mergeFileRecordingPlayback(dst *AppConfig, src *FileConfig) error {

@@ -91,7 +91,11 @@ metrics:
 monetization:
   enabled: false
   enforcement: none
+  googlePlay:
+    packageName: ""
+    serviceAccountCredentialsFile: ""
   model: free
+  productMappings: []
   productName: xg2g Unlock
   purchaseUrl: ""
   requiredScopes:

@@ -90,6 +90,7 @@ type configRoutes interface {
 type systemRoutes interface {
 	GetErrors(w http.ResponseWriter, r *http.Request)
 	GetSystemEntitlements(w http.ResponseWriter, r *http.Request)
+	PostSystemEntitlementReceipt(w http.ResponseWriter, r *http.Request)
 	PostSystemEntitlementOverride(w http.ResponseWriter, r *http.Request)
 	DeleteSystemEntitlementOverride(w http.ResponseWriter, r *http.Request)
 	GetSystemHealth(w http.ResponseWriter, r *http.Request)

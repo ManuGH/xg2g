@@ -28,6 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/entitlements"
+	"github.com/ManuGH/xg2g/internal/receipts"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/vod"
@@ -69,6 +70,7 @@ type Server struct {
 	decisionAudit          decisionaudit.EventSink
 	capabilityRegistry     capreg.Store
 	entitlementService     *entitlements.Service
+	receiptService         *receipts.Service
 	owiFactory             receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
 	recordingPathMapper    *recinfra.PathMapper
 	channelManager         *channels.Manager
@@ -446,6 +448,7 @@ type Dependencies struct {
 	DecisionAudit      decisionaudit.EventSink
 	CapabilityRegistry capreg.Store
 	Entitlements       *entitlements.Service
+	Receipts           *receipts.Service
 	PathMapper         *recinfra.PathMapper
 	ChannelManager     *channels.Manager
 	SeriesManager      *dvr.Manager
@@ -507,6 +510,12 @@ func (s *Server) SetDependencies(deps Dependencies) {
 		s.entitlementService = deps.Entitlements
 	} else {
 		s.entitlementService = nil
+	}
+
+	if !isNil(deps.Receipts) {
+		s.receiptService = deps.Receipts
+	} else {
+		s.receiptService = nil
 	}
 
 	if !isNil(deps.ScanSource) {

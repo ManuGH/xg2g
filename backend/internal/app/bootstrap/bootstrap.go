@@ -32,6 +32,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
+	"github.com/ManuGH/xg2g/internal/receipts"
+	receiptgoogle "github.com/ManuGH/xg2g/internal/receipts/google"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/ManuGH/xg2g/internal/verification"
 	"github.com/ManuGH/xg2g/internal/verification/checks"
@@ -137,6 +139,22 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		return nil, fmt.Errorf("initialize entitlement store: %w", err)
 	}
 	entitlementService := entitlements.NewService(entitlementStore)
+	receiptVerifiers := make([]receipts.Verifier, 0, 1)
+	normalizedMonetization := cfg.Monetization.Normalized()
+	if normalizedMonetization.GooglePlay.PackageName != "" || normalizedMonetization.GooglePlay.ServiceAccountCredentialsFile != "" {
+		googleVerifier, err := receiptgoogle.NewVerifier(receiptgoogle.Config{
+			PackageName:                   normalizedMonetization.GooglePlay.PackageName,
+			ServiceAccountCredentialsFile: normalizedMonetization.GooglePlay.ServiceAccountCredentialsFile,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("initialize google play receipt verifier: %w", err)
+		}
+		receiptVerifiers = append(receiptVerifiers, googleVerifier)
+	}
+	receiptService, err := receipts.NewService(normalizedMonetization, entitlementService, receiptVerifiers...)
+	if err != nil {
+		return nil, fmt.Errorf("initialize receipt service: %w", err)
+	}
 
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
 	if err != nil {
@@ -184,6 +202,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		DecisionAudit:      decisionAuditStore,
 		CapabilityRegistry: capabilityRegistry,
 		Entitlements:       entitlementService,
+		Receipts:           receiptService,
 	}, nil)
 
 	driftStatePath, err := paths.ResolveDataFilePath(cfg.DataDir, "drift_state.json", true)

@@ -174,7 +174,10 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | --- | --- | --- | --- | --- |
 | `monetization.enabled` | `XG2G_MONETIZATION_ENABLED` | `false` | Active | Advanced |
 | `monetization.enforcement` | `XG2G_MONETIZATION_ENFORCEMENT` | `none` | Active | Advanced |
+| `monetization.googlePlay.packageName` | `XG2G_MONETIZATION_GOOGLE_PLAY_PACKAGE_NAME` | `""` | Active | Advanced |
+| `monetization.googlePlay.serviceAccountCredentialsFile` | `XG2G_MONETIZATION_GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS_FILE` | `""` | Active | Advanced |
 | `monetization.model` | `XG2G_MONETIZATION_MODEL` | `free` | Active | Advanced |
+| `monetization.productMappings` | - | `[]` | Active | Advanced |
 | `monetization.productName` | `XG2G_MONETIZATION_PRODUCT_NAME` | `xg2g Unlock` | Active | Advanced |
 | `monetization.purchaseUrl` | `XG2G_MONETIZATION_PURCHASE_URL` | `""` | Active | Advanced |
 | `monetization.requiredScopes` | `XG2G_MONETIZATION_REQUIRED_SCOPES` | `[xg2g:unlock]` | Active | Advanced |

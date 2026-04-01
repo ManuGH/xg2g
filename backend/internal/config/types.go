@@ -260,22 +260,48 @@ const (
 
 // MonetizationFileConfig holds operator-configured commercialization settings in YAML.
 type MonetizationFileConfig struct {
-	Enabled        *bool    `yaml:"enabled,omitempty"`
-	Model          string   `yaml:"model,omitempty"`
-	ProductName    string   `yaml:"productName,omitempty"`
-	RequiredScopes []string `yaml:"requiredScopes,omitempty"`
-	PurchaseURL    string   `yaml:"purchaseUrl,omitempty"`
-	Enforcement    string   `yaml:"enforcement,omitempty"`
+	Enabled         *bool                                  `yaml:"enabled,omitempty"`
+	Model           string                                 `yaml:"model,omitempty"`
+	ProductName     string                                 `yaml:"productName,omitempty"`
+	RequiredScopes  []string                               `yaml:"requiredScopes,omitempty"`
+	PurchaseURL     string                                 `yaml:"purchaseUrl,omitempty"`
+	Enforcement     string                                 `yaml:"enforcement,omitempty"`
+	GooglePlay      *MonetizationGooglePlayFileConfig      `yaml:"googlePlay,omitempty"`
+	ProductMappings []MonetizationProductMappingFileConfig `yaml:"productMappings,omitempty"`
+}
+
+type MonetizationGooglePlayFileConfig struct {
+	PackageName                   string `yaml:"packageName,omitempty"`
+	ServiceAccountCredentialsFile string `yaml:"serviceAccountCredentialsFile,omitempty"`
+}
+
+type MonetizationProductMappingFileConfig struct {
+	Provider  string   `yaml:"provider,omitempty"`
+	ProductID string   `yaml:"productId,omitempty"`
+	Scopes    []string `yaml:"scopes,omitempty"`
 }
 
 // MonetizationConfig holds runtime commercialization settings.
 type MonetizationConfig struct {
-	Enabled        bool
-	Model          string
-	ProductName    string
-	RequiredScopes []string
-	PurchaseURL    string
-	Enforcement    string
+	Enabled         bool
+	Model           string
+	ProductName     string
+	RequiredScopes  []string
+	PurchaseURL     string
+	Enforcement     string
+	GooglePlay      MonetizationGooglePlayConfig
+	ProductMappings []MonetizationProductMapping
+}
+
+type MonetizationGooglePlayConfig struct {
+	PackageName                   string
+	ServiceAccountCredentialsFile string
+}
+
+type MonetizationProductMapping struct {
+	Provider  string
+	ProductID string
+	Scopes    []string
 }
 
 // Normalized returns a canonicalized monetization config with defaults applied.
@@ -301,6 +327,31 @@ func (c MonetizationConfig) Normalized() MonetizationConfig {
 	out.Enforcement = strings.ToLower(strings.TrimSpace(out.Enforcement))
 	if out.Enforcement == "" {
 		out.Enforcement = MonetizationEnforcementNone
+	}
+	out.GooglePlay = MonetizationGooglePlayConfig{
+		PackageName:                   strings.TrimSpace(out.GooglePlay.PackageName),
+		ServiceAccountCredentialsFile: strings.TrimSpace(out.GooglePlay.ServiceAccountCredentialsFile),
+	}
+	if len(out.ProductMappings) > 0 {
+		normalizedMappings := make([]MonetizationProductMapping, len(out.ProductMappings))
+		for i, mapping := range out.ProductMappings {
+			normalizedMappings[i] = MonetizationProductMapping{
+				Provider:  strings.ToLower(strings.TrimSpace(mapping.Provider)),
+				ProductID: strings.TrimSpace(mapping.ProductID),
+				Scopes:    append([]string(nil), mapping.Scopes...),
+			}
+			for j, scope := range normalizedMappings[i].Scopes {
+				normalizedMappings[i].Scopes[j] = strings.ToLower(strings.TrimSpace(scope))
+			}
+			sort.Strings(normalizedMappings[i].Scopes)
+		}
+		sort.Slice(normalizedMappings, func(i, j int) bool {
+			if normalizedMappings[i].Provider != normalizedMappings[j].Provider {
+				return normalizedMappings[i].Provider < normalizedMappings[j].Provider
+			}
+			return normalizedMappings[i].ProductID < normalizedMappings[j].ProductID
+		})
+		out.ProductMappings = normalizedMappings
 	}
 	return out
 }

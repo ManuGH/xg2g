@@ -14,6 +14,8 @@ func Clone(in AppConfig) AppConfig {
 	out.APITokenScopes = cloneStringSlice(in.APITokenScopes)
 	out.PlaybackDecisionPreviousKeys = cloneStringSlice(in.PlaybackDecisionPreviousKeys)
 	out.RecordingPathMappings = cloneRecordingPathMappings(in.RecordingPathMappings)
+	out.Monetization.RequiredScopes = cloneStringSlice(in.Monetization.RequiredScopes)
+	out.Monetization.ProductMappings = cloneMonetizationProductMappings(in.Monetization.ProductMappings)
 
 	// --- Maps (preserve nil) ---
 	if in.RecordingRoots != nil {
@@ -114,6 +116,18 @@ func clonePlaybackOperatorRules(in []PlaybackOperatorRuleConfig) []PlaybackOpera
 			v := *in[i].DisableClientFallback
 			out[i].DisableClientFallback = &v
 		}
+	}
+	return out
+}
+
+func cloneMonetizationProductMappings(in []MonetizationProductMapping) []MonetizationProductMapping {
+	if in == nil {
+		return nil
+	}
+	out := make([]MonetizationProductMapping, len(in))
+	for i := range in {
+		out[i] = in[i]
+		out[i].Scopes = cloneStringSlice(in[i].Scopes)
 	}
 	return out
 }

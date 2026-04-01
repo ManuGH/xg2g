@@ -532,6 +532,39 @@ export type EntitlementOverrideRequest = {
     expiresAt?: string;
 };
 
+export type EntitlementReceiptRequest = {
+    /**
+     * Submit a verified purchase for another principal when authenticated with admin scope.
+     */
+    principalId?: string;
+    /**
+     * Receipt provider identifier.
+     */
+    provider: string;
+    productId: string;
+    purchaseToken: string;
+};
+
+export type EntitlementReceiptResponse = {
+    principalId?: string;
+    provider: string;
+    productId: string;
+    source?: string;
+    /**
+     * Verified purchase state returned by the provider.
+     */
+    purchaseState: string;
+    /**
+     * Entitlement mutation applied after verification.
+     */
+    action: string;
+    mappedScopes: Array<string>;
+    orderId?: string;
+    purchaseTime?: string;
+    testPurchase?: boolean;
+    entitlementStatus: EntitlementStatus;
+};
+
 export type Bouquet = {
     name?: string;
     services?: number;
@@ -1375,6 +1408,37 @@ export type GetSystemEntitlementsResponses = {
 };
 
 export type GetSystemEntitlementsResponse = GetSystemEntitlementsResponses[keyof GetSystemEntitlementsResponses];
+
+export type PostSystemEntitlementReceiptData = {
+    body: EntitlementReceiptRequest;
+    path?: never;
+    query?: never;
+    url: '/system/entitlements/receipts';
+};
+
+export type PostSystemEntitlementReceiptErrors = {
+    /**
+     * Invalid receipt submission
+     */
+    400: unknown;
+    /**
+     * Upstream verification failed
+     */
+    502: unknown;
+    /**
+     * Receipt verification unavailable
+     */
+    503: unknown;
+};
+
+export type PostSystemEntitlementReceiptResponses = {
+    /**
+     * Receipt verified and entitlements updated
+     */
+    200: EntitlementReceiptResponse;
+};
+
+export type PostSystemEntitlementReceiptResponse = PostSystemEntitlementReceiptResponses[keyof PostSystemEntitlementReceiptResponses];
 
 export type PostSystemEntitlementOverrideData = {
     body: EntitlementOverrideRequest;
