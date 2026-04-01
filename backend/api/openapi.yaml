@@ -744,6 +744,70 @@ components:
           type: boolean
           description: True when the authenticated principal is already unlocked.
 
+    EntitlementGrant:
+      type: object
+      properties:
+        scope:
+          type: string
+        source:
+          type: string
+        grantedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        active:
+          type: boolean
+
+    EntitlementStatus:
+      type: object
+      properties:
+        principalId:
+          type: string
+        model:
+          type: string
+        productName:
+          type: string
+        purchaseUrl:
+          type: string
+          format: uri
+        enforcement:
+          type: string
+        requiredScopes:
+          type: array
+          items:
+            type: string
+        grantedScopes:
+          type: array
+          items:
+            type: string
+        missingScopes:
+          type: array
+          items:
+            type: string
+        unlocked:
+          type: boolean
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntitlementGrant"
+
+    EntitlementOverrideRequest:
+      type: object
+      required: [scopes]
+      properties:
+        principalId:
+          type: string
+        scopes:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+
     Bouquet:
       type: object
       properties:
@@ -2012,6 +2076,67 @@ paths:
           description: Invalid configuration
         "500":
           description: Failed to save configuration
+
+  /system/entitlements:
+    get:
+      summary: Get current principal entitlement status
+      operationId: getSystemEntitlements
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: Current entitlement status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntitlementStatus"
+
+  /system/entitlements/overrides:
+    post:
+      summary: Grant admin entitlement overrides
+      operationId: postSystemEntitlementOverride
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EntitlementOverrideRequest"
+      responses:
+        "204":
+          description: Override granted
+        "400":
+          description: Invalid override request
+
+  /system/entitlements/overrides/{principalId}/{scope}:
+    delete:
+      summary: Revoke an admin entitlement override
+      operationId: deleteSystemEntitlementOverride
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - in: path
+          name: principalId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: scope
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Override revoked
+        "400":
+          description: Invalid revoke request
 
   /receiver/current:
     get:

@@ -13,6 +13,9 @@ func registerConfigRoutes(register routeRegistrar, handler configRoutes) {
 
 func registerSystemRoutes(register routeRegistrar, handler systemRoutes) {
 	register.add(http.MethodGet, "/errors", "GetErrors", handler.GetErrors)
+	register.add(http.MethodGet, "/system/entitlements", "GetSystemEntitlements", handler.GetSystemEntitlements)
+	register.add(http.MethodPost, "/system/entitlements/overrides", "PostSystemEntitlementOverride", handler.PostSystemEntitlementOverride)
+	register.add(http.MethodDelete, "/system/entitlements/overrides/{principalId}/{scope}", "DeleteSystemEntitlementOverride", handler.DeleteSystemEntitlementOverride)
 	register.add(http.MethodGet, "/system/health", "GetSystemHealth", handler.GetSystemHealth)
 	register.add(http.MethodGet, "/system/healthz", "GetSystemHealthz", handler.GetSystemHealthz)
 	register.add(http.MethodGet, "/system/info", "GetSystemInfo", handler.GetSystemInfo)

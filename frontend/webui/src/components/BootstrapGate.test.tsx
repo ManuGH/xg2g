@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ClientRequestError } from '../services/clientWrapper';
 import { requestAuthRequired } from '../features/player/sessionEvents';
 import BootstrapGate, { BOOTSTRAP_GATE_BYPASS_ROUTES } from './BootstrapGate';
-import { ROUTE_MAP } from '../routes';
+import { ROUTE_MAP, UNLOCK_ROUTE } from '../routes';
 
 const mockUseAppContext = vi.fn();
 const mockUseBootstrapConfig = vi.fn();
@@ -38,6 +38,7 @@ function renderGate(initialEntries: string[] = [ROUTE_MAP.epg]) {
         <Route element={<BootstrapGate />}>
           <Route path={ROUTE_MAP.epg} element={<div>EPG view</div>} />
           <Route path={`${ROUTE_MAP.settings}/*`} element={<div>Settings view</div>} />
+          <Route path={UNLOCK_ROUTE} element={<div>Unlock view</div>} />
         </Route>
       </Routes>
     </MemoryRouter>
@@ -286,6 +287,28 @@ describe('BootstrapGate', () => {
     renderGate([`${BOOTSTRAP_GATE_BYPASS_ROUTES[0]}/network`]);
 
     expect(await screen.findByText('Settings view')).toBeInTheDocument();
+  });
+
+  it('allows the unlock status route while the unlock gate is active', async () => {
+    mockUseBootstrapConfig.mockReturnValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        monetization: {
+          enabled: true,
+          model: 'one_time_unlock',
+          productName: 'xg2g Unlock',
+          enforcement: 'required',
+          unlocked: false,
+        },
+      },
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    renderGate([UNLOCK_ROUTE]);
+
+    expect(await screen.findByText('Unlock view')).toBeInTheDocument();
   });
 
   it('converts bootstrap 401 responses into an auth prompt', async () => {

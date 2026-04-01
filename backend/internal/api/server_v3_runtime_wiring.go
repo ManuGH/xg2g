@@ -42,6 +42,7 @@ func sanitizeV3RuntimeDependencies(deps v3.Dependencies) v3.Dependencies {
 		Scan:               deps.Scan,
 		DecisionAudit:      deps.DecisionAudit,
 		CapabilityRegistry: deps.CapabilityRegistry,
+		Entitlements:       deps.Entitlements,
 	}
 }
 
@@ -63,6 +64,7 @@ func (s *Server) syncV3HandlerDependencies() {
 		Scan:               deps.runtimeDeps.Scan,
 		DecisionAudit:      deps.runtimeDeps.DecisionAudit,
 		CapabilityRegistry: deps.runtimeDeps.CapabilityRegistry,
+		Entitlements:       deps.runtimeDeps.Entitlements,
 		PathMapper:         deps.recordingPathMapper,
 		ChannelManager:     deps.channelManager,
 		SeriesManager:      deps.seriesManager,

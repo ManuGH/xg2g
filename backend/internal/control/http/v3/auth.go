@@ -80,7 +80,7 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 		}
 
 		// Use constant-time comparison to prevent timing attacks
-		principal, ok := s.TokenPrincipal(reqToken)
+		principal, ok := s.TokenPrincipal(r.Context(), reqToken)
 		if !ok {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
@@ -107,7 +107,7 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 		return
 	} else {
-		if _, ok := s.TokenPrincipal(reqToken); !ok {
+		if _, ok := s.TokenPrincipal(r.Context(), reqToken); !ok {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}

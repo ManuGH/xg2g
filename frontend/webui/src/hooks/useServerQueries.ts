@@ -17,6 +17,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createIntent,
+  getSystemEntitlements,
   deleteRecording,
   getSystemConfig,
   getErrors,
@@ -34,6 +35,7 @@ import {
   triggerSystemScan,
   type AppConfig,
   type CreateIntentResponse,
+  type EntitlementStatus,
   type ErrorCatalogResponse,
   type SystemHealth,
   type SystemInfoData,
@@ -55,6 +57,7 @@ export const queryKeys = {
   bootstrapConfig: ['v3', 'bootstrap', 'config'] as const,
   errorsCatalog: ['v3', 'system', 'errors-catalog'] as const,
   systemConfig: ['v3', 'system', 'config'] as const,
+  systemEntitlements: ['v3', 'system', 'entitlements'] as const,
   health: ['v3', 'system', 'health'] as const,
   systemInfo: ['v3', 'system', 'info'] as const,
   systemScanStatus: ['v3', 'system', 'scan'] as const,
@@ -100,6 +103,20 @@ export function useBootstrapConfig(enabled: boolean) {
     enabled,
     retry: false,
     staleTime: 0,
+  });
+}
+
+export function useSystemEntitlements(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.systemEntitlements,
+    queryFn: async () => {
+      const result = await getSystemEntitlements();
+      return unwrapClientResultOrThrow<EntitlementStatus>(result, {
+        source: 'useSystemEntitlements',
+      });
+    },
+    enabled,
+    staleTime: 5_000,
   });
 }
 

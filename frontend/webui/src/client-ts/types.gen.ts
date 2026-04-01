@@ -505,6 +505,33 @@ export type MonetizationStatus = {
     unlocked?: boolean;
 };
 
+export type EntitlementGrant = {
+    scope?: string;
+    source?: string;
+    grantedAt?: string;
+    expiresAt?: string;
+    active?: boolean;
+};
+
+export type EntitlementStatus = {
+    principalId?: string;
+    model?: string;
+    productName?: string;
+    purchaseUrl?: string;
+    enforcement?: string;
+    requiredScopes?: Array<string>;
+    grantedScopes?: Array<string>;
+    missingScopes?: Array<string>;
+    unlocked?: boolean;
+    grants?: Array<EntitlementGrant>;
+};
+
+export type EntitlementOverrideRequest = {
+    principalId?: string;
+    scopes: Array<string>;
+    expiresAt?: string;
+};
+
 export type Bouquet = {
     name?: string;
     services?: number;
@@ -1327,6 +1354,71 @@ export type PutSystemConfigResponses = {
 };
 
 export type PutSystemConfigResponse = PutSystemConfigResponses[keyof PutSystemConfigResponses];
+
+export type GetSystemEntitlementsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/entitlements';
+};
+
+export type GetSystemEntitlementsResponses = {
+    /**
+     * Current entitlement status
+     */
+    200: EntitlementStatus;
+};
+
+export type GetSystemEntitlementsResponse = GetSystemEntitlementsResponses[keyof GetSystemEntitlementsResponses];
+
+export type PostSystemEntitlementOverrideData = {
+    body: EntitlementOverrideRequest;
+    path?: never;
+    query?: never;
+    url: '/system/entitlements/overrides';
+};
+
+export type PostSystemEntitlementOverrideErrors = {
+    /**
+     * Invalid override request
+     */
+    400: unknown;
+};
+
+export type PostSystemEntitlementOverrideResponses = {
+    /**
+     * Override granted
+     */
+    204: void;
+};
+
+export type PostSystemEntitlementOverrideResponse = PostSystemEntitlementOverrideResponses[keyof PostSystemEntitlementOverrideResponses];
+
+export type DeleteSystemEntitlementOverrideData = {
+    body?: never;
+    path: {
+        principalId: string;
+        scope: string;
+    };
+    query?: never;
+    url: '/system/entitlements/overrides/{principalId}/{scope}';
+};
+
+export type DeleteSystemEntitlementOverrideErrors = {
+    /**
+     * Invalid revoke request
+     */
+    400: unknown;
+};
+
+export type DeleteSystemEntitlementOverrideResponses = {
+    /**
+     * Override revoked
+     */
+    204: void;
+};
+
+export type DeleteSystemEntitlementOverrideResponse = DeleteSystemEntitlementOverrideResponses[keyof DeleteSystemEntitlementOverrideResponses];
 
 export type GetReceiverCurrentData = {
     body?: never;
