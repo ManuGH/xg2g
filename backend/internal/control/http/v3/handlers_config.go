@@ -261,17 +261,17 @@ func buildMonetizationStatus(cfg config.MonetizationConfig, principal *auth.Prin
 	enabled := normalized.Enabled
 	model := normalized.Model
 	productName := normalized.ProductName
-	unlockScope := normalized.UnlockScope
+	requiredScopes := append([]string(nil), normalized.RequiredScopes...)
 	enforcement := normalized.Enforcement
-	unlocked := !normalized.RequiresUnlock() || principalHasScope(principal, unlockScope)
+	unlocked := !normalized.RequiresUnlock() || principalHasAllScopes(principal, requiredScopes)
 
 	status := &MonetizationStatus{
-		Enabled:     &enabled,
-		Model:       &model,
-		ProductName: &productName,
-		UnlockScope: &unlockScope,
-		Enforcement: &enforcement,
-		Unlocked:    &unlocked,
+		Enabled:        &enabled,
+		Model:          &model,
+		ProductName:    &productName,
+		RequiredScopes: &requiredScopes,
+		Enforcement:    &enforcement,
+		Unlocked:       &unlocked,
 	}
 	if normalized.PurchaseURL != "" {
 		purchaseURL := normalized.PurchaseURL
@@ -280,19 +280,29 @@ func buildMonetizationStatus(cfg config.MonetizationConfig, principal *auth.Prin
 	return status
 }
 
-func principalHasScope(principal *auth.Principal, scope string) bool {
+func principalHasAllScopes(principal *auth.Principal, scopes []string) bool {
 	if principal == nil {
 		return false
 	}
-	normalizedScope := strings.ToLower(strings.TrimSpace(scope))
-	if normalizedScope == "" {
-		return false
-	}
+	normalizedCandidates := make(map[string]struct{}, len(principal.Scopes))
 	for _, candidate := range principal.Scopes {
 		value := strings.ToLower(strings.TrimSpace(candidate))
-		if value == "*" || value == normalizedScope {
+		if value == "*" {
 			return true
 		}
+		normalizedCandidates[value] = struct{}{}
 	}
-	return false
+	if len(scopes) == 0 {
+		return false
+	}
+	for _, scope := range scopes {
+		normalizedScope := strings.ToLower(strings.TrimSpace(scope))
+		if normalizedScope == "" {
+			return false
+		}
+		if _, ok := normalizedCandidates[normalizedScope]; !ok {
+			return false
+		}
+	}
+	return true
 }

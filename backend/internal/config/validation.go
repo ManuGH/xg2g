@@ -204,8 +204,11 @@ func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 		"v3:admin":  {},
 		"v3:status": {},
 	}
-	if monetization.UnlockScope != "" {
-		validScopes[monetization.UnlockScope] = struct{}{}
+	for _, scope := range monetization.RequiredScopes {
+		if scope == "" {
+			continue
+		}
+		validScopes[scope] = struct{}{}
 	}
 	isValidScope := func(scope string) bool {
 		scope = strings.ToLower(strings.TrimSpace(scope))
@@ -294,8 +297,21 @@ func validateMonetization(v *validate.Validator, cfg AppConfig) {
 		v.AddError("Monetization.Enforcement", "required enforcement needs monetization enabled with one_time_unlock model", monetization.Enforcement)
 	}
 
-	if monetization.RequiresUnlock() && strings.TrimSpace(monetization.UnlockScope) == "" {
-		v.AddError("Monetization.UnlockScope", "must not be empty when one_time_unlock is enabled", monetization.UnlockScope)
+	if monetization.RequiresUnlock() && len(monetization.RequiredScopes) == 0 {
+		v.AddError("Monetization.RequiredScopes", "must include at least one scope when one_time_unlock is enabled", monetization.RequiredScopes)
+	}
+
+	seenScopes := make(map[string]struct{}, len(monetization.RequiredScopes))
+	for _, scope := range monetization.RequiredScopes {
+		if scope == "" {
+			v.AddError("Monetization.RequiredScopes", "entries must not be empty", monetization.RequiredScopes)
+			continue
+		}
+		if _, ok := seenScopes[scope]; ok {
+			v.AddError("Monetization.RequiredScopes", "entries must be unique", monetization.RequiredScopes)
+			continue
+		}
+		seenScopes[scope] = struct{}{}
 	}
 
 	if monetization.PurchaseURL != "" {

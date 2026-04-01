@@ -5,6 +5,7 @@
 package config
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -259,22 +260,22 @@ const (
 
 // MonetizationFileConfig holds operator-configured commercialization settings in YAML.
 type MonetizationFileConfig struct {
-	Enabled     *bool  `yaml:"enabled,omitempty"`
-	Model       string `yaml:"model,omitempty"`
-	ProductName string `yaml:"productName,omitempty"`
-	UnlockScope string `yaml:"unlockScope,omitempty"`
-	PurchaseURL string `yaml:"purchaseUrl,omitempty"`
-	Enforcement string `yaml:"enforcement,omitempty"`
+	Enabled        *bool    `yaml:"enabled,omitempty"`
+	Model          string   `yaml:"model,omitempty"`
+	ProductName    string   `yaml:"productName,omitempty"`
+	RequiredScopes []string `yaml:"requiredScopes,omitempty"`
+	PurchaseURL    string   `yaml:"purchaseUrl,omitempty"`
+	Enforcement    string   `yaml:"enforcement,omitempty"`
 }
 
 // MonetizationConfig holds runtime commercialization settings.
 type MonetizationConfig struct {
-	Enabled     bool
-	Model       string
-	ProductName string
-	UnlockScope string
-	PurchaseURL string
-	Enforcement string
+	Enabled        bool
+	Model          string
+	ProductName    string
+	RequiredScopes []string
+	PurchaseURL    string
+	Enforcement    string
 }
 
 // Normalized returns a canonicalized monetization config with defaults applied.
@@ -288,9 +289,13 @@ func (c MonetizationConfig) Normalized() MonetizationConfig {
 	if out.ProductName == "" {
 		out.ProductName = "xg2g Unlock"
 	}
-	out.UnlockScope = strings.ToLower(strings.TrimSpace(out.UnlockScope))
-	if out.UnlockScope == "" {
-		out.UnlockScope = "xg2g:unlock"
+	if len(out.RequiredScopes) > 0 {
+		normalizedScopes := make([]string, len(out.RequiredScopes))
+		for i, scope := range out.RequiredScopes {
+			normalizedScopes[i] = strings.ToLower(strings.TrimSpace(scope))
+		}
+		sort.Strings(normalizedScopes)
+		out.RequiredScopes = normalizedScopes
 	}
 	out.PurchaseURL = strings.TrimSpace(out.PurchaseURL)
 	out.Enforcement = strings.ToLower(strings.TrimSpace(out.Enforcement))

@@ -28,7 +28,7 @@ func (l *Loader) setDefaults(cfg *AppConfig) error {
 	cfg.Verification.Interval = 60 * time.Second
 
 	// Default monetization surface: free install, unlock flow disabled until configured.
-	cfg.Monetization = MonetizationConfig{}.Normalized()
+	cfg.Monetization = cfg.Monetization.Normalized()
 
 	return nil
 }

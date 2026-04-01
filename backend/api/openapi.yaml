@@ -729,9 +729,11 @@ components:
           description: Monetization model exposed to the client bootstrap flow.
         productName:
           type: string
-        unlockScope:
-          type: string
-          description: Scope name that marks a token as commercially unlocked.
+        requiredScopes:
+          type: array
+          description: Scope names that the authenticated principal must all have before the client is commercially unlocked.
+          items:
+            type: string
         purchaseUrl:
           type: string
           format: uri

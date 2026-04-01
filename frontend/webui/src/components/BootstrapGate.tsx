@@ -16,6 +16,10 @@ import { Button } from './ui';
 
 type AuthPromptReason = 'missing' | 'expired';
 
+// Keep purchase and diagnostics routes in this list when they must remain reachable
+// while the monetization gate is locked, otherwise the user cannot complete unlock.
+export const BOOTSTRAP_GATE_BYPASS_ROUTES: readonly string[] = [ROUTE_MAP.settings];
+
 function getErrorStatus(error: unknown): number | undefined {
   if (error instanceof ClientRequestError) {
     return error.status;
@@ -35,6 +39,13 @@ function getErrorMessage(error: unknown): string {
   }
 
   return 'Unable to load the system configuration.';
+}
+
+function isBypassRoute(pathname: string): boolean {
+  const normalizedPath = normalizePathname(pathname);
+  return BOOTSTRAP_GATE_BYPASS_ROUTES.some((route) => (
+    normalizedPath === route || normalizedPath.startsWith(`${route}/`)
+  ));
 }
 
 export default function BootstrapGate() {
@@ -72,7 +83,7 @@ export default function BootstrapGate() {
 
   const bootstrapStatus = getErrorStatus(error);
   const isUnauthorized = bootstrapStatus === 401;
-  const isSettingsRoute = normalizePathname(pathname) === ROUTE_MAP.settings;
+  const bypassRoute = isBypassRoute(pathname);
   const monetizationLocked = Boolean(
     config?.monetization?.enabled &&
     config.monetization.model === 'one_time_unlock' &&
@@ -243,11 +254,11 @@ export default function BootstrapGate() {
     );
   }
 
-  if (!isConfigured(config) && !isSettingsRoute) {
+  if (!isConfigured(config) && !bypassRoute) {
     return <Navigate to={ROUTE_MAP.settings} replace />;
   }
 
-  if (monetizationLocked && !isSettingsRoute) {
+  if (monetizationLocked && !bypassRoute) {
     const productName = config?.monetization?.productName?.trim() || 'xg2g Unlock';
     const purchaseUrl = config?.monetization?.purchaseUrl?.trim();
 

@@ -94,7 +94,8 @@ monetization:
   model: free
   productName: xg2g Unlock
   purchaseUrl: ""
-  unlockScope: xg2g:unlock
+  requiredScopes:
+    - xg2g:unlock
 network:
   lan:
     allow:

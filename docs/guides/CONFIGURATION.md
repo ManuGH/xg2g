@@ -177,7 +177,7 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `monetization.model` | `XG2G_MONETIZATION_MODEL` | `free` | Active | Advanced |
 | `monetization.productName` | `XG2G_MONETIZATION_PRODUCT_NAME` | `xg2g Unlock` | Active | Advanced |
 | `monetization.purchaseUrl` | `XG2G_MONETIZATION_PURCHASE_URL` | `""` | Active | Advanced |
-| `monetization.unlockScope` | `XG2G_MONETIZATION_UNLOCK_SCOPE` | `xg2g:unlock` | Active | Advanced |
+| `monetization.requiredScopes` | `XG2G_MONETIZATION_REQUIRED_SCOPES` | `[xg2g:unlock]` | Active | Advanced |
 
 ### network
 

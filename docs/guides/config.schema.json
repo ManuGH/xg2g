@@ -694,9 +694,14 @@
           "default": "",
           "type": "string"
         },
-        "unlockScope": {
-          "default": "xg2g:unlock",
-          "type": "string"
+        "requiredScopes": {
+          "default": [
+            "xg2g:unlock"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"

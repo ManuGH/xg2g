@@ -491,9 +491,9 @@ export type MonetizationStatus = {
     model?: string;
     productName?: string;
     /**
-     * Scope name that marks a token as commercially unlocked.
+     * Scope names that the authenticated principal must all have before the client is commercially unlocked.
      */
-    unlockScope?: string;
+    requiredScopes?: Array<string>;
     purchaseUrl?: string;
     /**
      * Whether the client should enforce the unlock gate.

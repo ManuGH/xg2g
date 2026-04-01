@@ -254,6 +254,7 @@ func updateSchemaDefaults(root string, entries []config.ConfigEntry, allowCreate
 		}
 	}
 	stripLegacyOpenWebIFSchema(schema)
+	stripLegacyMonetizationSchema(schema)
 
 	out, err := marshalSortedJSON(schema)
 	if err != nil {
@@ -319,6 +320,22 @@ func stripLegacyOpenWebIFSchema(schema map[string]any) {
 		filtered = append(filtered, "enigma2")
 	}
 	schema["required"] = filtered
+}
+
+func stripLegacyMonetizationSchema(schema map[string]any) {
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return
+	}
+	monetization, ok := props["monetization"].(map[string]any)
+	if !ok {
+		return
+	}
+	monetizationProps, ok := monetization["properties"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(monetizationProps, "unlockScope")
 }
 
 func setSchemaDefault(schema map[string]any, entry config.ConfigEntry, path string, allowCreate bool) error {

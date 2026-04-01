@@ -217,7 +217,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "monetization.enabled", Env: "XG2G_MONETIZATION_ENABLED", FieldPath: "Monetization.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "monetization.model", Env: "XG2G_MONETIZATION_MODEL", FieldPath: "Monetization.Model", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationModelFree},
 		{Path: "monetization.productName", Env: "XG2G_MONETIZATION_PRODUCT_NAME", FieldPath: "Monetization.ProductName", Profile: ProfileAdvanced, Status: StatusActive, Default: "xg2g Unlock"},
-		{Path: "monetization.unlockScope", Env: "XG2G_MONETIZATION_UNLOCK_SCOPE", FieldPath: "Monetization.UnlockScope", Profile: ProfileAdvanced, Status: StatusActive, Default: "xg2g:unlock"},
+		{Path: "monetization.requiredScopes", Env: "XG2G_MONETIZATION_REQUIRED_SCOPES", FieldPath: "Monetization.RequiredScopes", Profile: ProfileAdvanced, Status: StatusActive, Default: []string{"xg2g:unlock"}},
 		{Path: "monetization.purchaseUrl", Env: "XG2G_MONETIZATION_PURCHASE_URL", FieldPath: "Monetization.PurchaseURL", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "monetization.enforcement", Env: "XG2G_MONETIZATION_ENFORCEMENT", FieldPath: "Monetization.Enforcement", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationEnforcementNone},
 
