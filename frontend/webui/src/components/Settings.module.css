@@ -1,16 +1,19 @@
 /* Settings page - scoped */
 
 .page {
-  max-width: 800px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 8px 0 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: 18px;
 }
 
 .kicker {
@@ -24,31 +27,42 @@
 .page h2 {
   margin: 0;
   color: var(--text-primary);
+  font-size: clamp(2rem, 3vw, 2.7rem);
+  letter-spacing: -0.04em;
+  line-height: 0.98;
 }
 
 .subtitle {
-  margin: 8px 0 0 0;
-  color: var(--text-muted);
+  margin: 10px 0 0 0;
+  max-width: 70ch;
+  color: var(--text-secondary);
   font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 .setup {
-  margin-bottom: 20px;
+  margin-bottom: 0;
 }
 
 .section {
-  background: var(--bg-card);
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 20px;
+  background: color-mix(in srgb, var(--surface-panel) 88%, var(--surface-stage) 12%);
+  border: 1px solid var(--border-base);
+  border-radius: 28px;
+  padding: 24px;
+  margin-bottom: 0;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .section h3 {
   margin-top: 0;
-  margin-bottom: 20px;
+  margin-bottom: 0;
   color: var(--text-primary);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-base);
+  padding-bottom: 12px;
+  font-size: 1.15rem;
 }
 
 .accordionHeader {
@@ -59,7 +73,7 @@
 }
 
 .group {
-  margin-bottom: 20px;
+  margin-bottom: 0;
 }
 
 .onboardingCard {
@@ -185,8 +199,8 @@
 .footer {
   margin-top: 30px;
   padding: 15px;
-  background: var(--bg-hover);
-  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface-stage) 84%, transparent);
+  border-radius: 14px;
   font-size: 0.9em;
 }
 
@@ -212,14 +226,14 @@
   color: var(--status-error);
   background: var(--status-error-subtle);
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: 12px;
   font-size: 0.9em;
 }
 
 .scanCard {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-stage) 88%, transparent);
+  border: 1px solid var(--border-base);
+  border-radius: 20px;
   padding: 20px;
   margin-top: 16px;
   transition:
@@ -331,11 +345,11 @@
 .inputReadonly {
   flex: 1;
   min-width: 220px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-stage) 86%, black 14%);
+  border: 1px solid var(--border-base);
+  border-radius: 14px;
   color: var(--text-primary);
-  padding: 10px 12px;
+  padding: 12px 14px;
   font-size: 14px;
 }
 
@@ -347,17 +361,35 @@
 }
 
 .profileCard {
-  border: 1px solid var(--border);
-  background: var(--bg-input);
-  border-radius: 16px;
-  padding: 16px;
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
+  border-radius: 20px;
+  padding: 18px;
   text-align: left;
   color: var(--text-primary);
+  transition:
+    border-color var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard),
+    background var(--motion-standard) var(--ease-standard);
+}
+
+.profileCard:hover {
+  border-color: var(--border-elevated);
+  background: color-mix(in srgb, var(--surface-highlight) 30%, var(--surface-muted) 70%);
+  transform: translateY(-2px);
+}
+
+.profileCard:focus-visible,
+.profileInput:focus-visible,
+.inputReadonly:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
 }
 
 .profileCardActive {
   border-color: var(--accent-action);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-action) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-action-subtle) 46%, var(--surface-muted) 54%);
 }
 
 .profileCardHeader {
@@ -405,10 +437,10 @@
 }
 
 .profileEditor {
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--bg-input) 88%, transparent);
-  padding: 18px;
+  border: 1px solid var(--border-elevated);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--surface-stage-strong) 86%, transparent);
+  padding: 22px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -449,13 +481,13 @@
 }
 
 .profileInput {
-  min-height: 46px;
+  min-height: 48px;
   width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-stage);
+  border: 1px solid var(--border-base);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-stage) 84%, black 16%);
   color: var(--text-primary);
-  padding: 0 12px;
+  padding: 0 14px;
 }
 
 .permissionGrid {
@@ -468,10 +500,10 @@
   display: flex;
   gap: 10px;
   align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 1px solid var(--border-base);
+  border-radius: 16px;
   padding: 12px 14px;
-  background: var(--surface-stage);
+  background: color-mix(in srgb, var(--surface-stage) 82%, transparent);
   color: var(--text-primary);
 }
 
@@ -506,8 +538,8 @@
   gap: 8px;
   padding: 10px 12px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface-stage);
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-stage) 82%, transparent);
   color: var(--text-primary);
 }
 
@@ -525,10 +557,10 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 1px solid var(--border-base);
+  border-radius: 16px;
   padding: 12px 14px;
-  background: var(--surface-stage);
+  background: color-mix(in srgb, var(--surface-stage) 80%, transparent);
 }
 
 .channelAccess,
@@ -550,14 +582,23 @@
 }
 
 .profileEmptyState {
-  border: 1px dashed var(--border);
-  border-radius: 14px;
+  border: 1px dashed var(--border-base);
+  border-radius: 16px;
   padding: 18px;
   color: var(--text-muted);
   background: color-mix(in srgb, var(--surface-stage) 80%, transparent);
 }
 
 @media (max-width: 760px) {
+  .page {
+    padding: 4px 0 20px;
+  }
+
+  .section {
+    padding: 18px;
+    border-radius: 24px;
+  }
+
   .onboardingHero,
   .onboardingMeta {
     grid-template-columns: 1fr;

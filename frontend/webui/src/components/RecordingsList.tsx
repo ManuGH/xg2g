@@ -58,36 +58,37 @@ interface PlayingState {
 
 type RecordingsFilter = 'all' | 'active' | 'resume' | 'unwatched';
 type RecordingsSort = 'newest' | 'oldest';
+type RecordingChipLabel = 'watched' | 'resume' | 'rec' | 'pending' | 'failed' | 'deleting' | 'new' | 'error';
 
 // mapRecordingToChip - CTO Contract: Deterministic mapping
-function mapRecordingToChip(item: RecordingItem): { state: ChipState; label: string } {
+function mapRecordingToChip(item: RecordingItem): { state: ChipState; labelKey: RecordingChipLabel } {
   // Priority 1: Resume State (High Value / Orthogonal)
   // "WATCHED" or partial progress overrides "Completed"/"New" status for display utility.
-  if (item.resume?.finished) return { state: 'success', label: 'WATCHED' };
-  if (item.resume?.posSeconds && item.resume.posSeconds > 0) return { state: 'warning', label: 'RESUME' };
+  if (item.resume?.finished) return { state: 'success', labelKey: 'watched' };
+  if (item.resume?.posSeconds && item.resume.posSeconds > 0) return { state: 'warning', labelKey: 'resume' };
 
   // Priority 2: Explicit Truth Status (P3-3)
   // Stop-the-line: If backend provides status, WE TRUST IT. Do not fallback to title parsing.
   if (item.status) {
     switch (item.status) {
-      case 'recording': return { state: 'recording', label: 'REC' };
-      case 'pending': return { state: 'warning', label: 'PENDING' };
-      case 'failed': return { state: 'error', label: 'FAILED' };
-      case 'deleting': return { state: 'idle', label: 'DELETING' };
-      case 'completed': return { state: 'success', label: 'NEW' }; // Completed + Unwatched = NEW
+      case 'recording': return { state: 'recording', labelKey: 'rec' };
+      case 'pending': return { state: 'warning', labelKey: 'pending' };
+      case 'failed': return { state: 'error', labelKey: 'failed' };
+      case 'deleting': return { state: 'idle', labelKey: 'deleting' };
+      case 'completed': return { state: 'success', labelKey: 'new' }; // Completed + Unwatched = NEW
       default:
         // Exhaustiveness check / Safety fallback
-        return { state: 'success', label: 'NEW' };
+        return { state: 'success', labelKey: 'new' };
     }
   }
 
   // Priority 3: Legacy Fallback (Title Tokens)
   // Only reachable if item.status is undefined (legacy backend or partial data)
-  if (item.title?.includes('[REC]')) return { state: 'recording', label: 'REC' };
-  if (item.title?.includes('[ERROR]')) return { state: 'error', label: 'ERROR' };
-  if (item.title?.includes('[WAIT]')) return { state: 'warning', label: 'PENDING' };
+  if (item.title?.includes('[REC]')) return { state: 'recording', labelKey: 'rec' };
+  if (item.title?.includes('[ERROR]')) return { state: 'error', labelKey: 'error' };
+  if (item.title?.includes('[WAIT]')) return { state: 'warning', labelKey: 'pending' };
 
-  return { state: 'success', label: 'NEW' };
+  return { state: 'success', labelKey: 'new' };
 }
 
 export default function RecordingsList() {
@@ -125,6 +126,7 @@ export default function RecordingsList() {
       fallbackDetail: 'Try again to refresh the current recordings listing.',
     })
     : null;
+  const profileRecordings = filterRecordingsForProfile(selectedProfile, [...(data?.recordings || [])]);
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -228,19 +230,35 @@ export default function RecordingsList() {
     return new Date(ts * 1000).toLocaleString();
   };
 
-  const visibleRecordings = filterRecordingsForProfile(selectedProfile, [...(data?.recordings || [])])
+  const visibleRecordings = profileRecordings
     .filter((recording) => matchesRecordingsFilter(recording as RecordingItem, filterMode))
     .sort((left, right) => {
       const leftBegin = left.beginUnixSeconds || 0;
       const rightBegin = right.beginUnixSeconds || 0;
       return sortMode === 'oldest' ? leftBegin - rightBegin : rightBegin - leftBegin;
     });
+  const activeCount = profileRecordings.filter((recording) => mapRecordingToChip(recording as RecordingItem).state === 'recording').length;
+  const resumeCount = profileRecordings.filter((recording) => {
+    const resume = (recording as RecordingItem).resume;
+    return Boolean(resume && isResumeEligible({
+      ...resume,
+      posSeconds: resume.posSeconds || 0,
+      durationSeconds: resume.durationSeconds || 0,
+      finished: resume.finished || false,
+    }, recording.durationSeconds));
+  }).length;
+  const libraryRootLabel = t('recordings.libraryRoot');
+  const currentRootLabel = resolveRecordingRootLabel(data?.roots, root || data?.currentRoot, libraryRootLabel);
+  const currentPathLabel = data?.currentPath?.trim() || '';
+  const librarySummary = currentPathLabel
+    ? t('recordings.browsingPath', { root: currentRootLabel, path: currentPathLabel })
+    : t('recordings.browsingRoot', { root: currentRootLabel });
 
   if (!canAccessDvrPlayback) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
         <div className={styles.emptyState}>
-          <p>{t('recordings.profileBlocked', { defaultValue: 'Dieses Profil darf keine Aufnahmen ansehen.' })}</p>
+          <p>{t('recordings.profileBlocked')}</p>
         </div>
       </div>
     );
@@ -249,7 +267,7 @@ export default function RecordingsList() {
   if (loading && !data) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
-        <LoadingSkeleton variant="page" label="Loading recordings..." />
+        <LoadingSkeleton variant="page" label={t('recordings.loading')} />
       </div>
     );
   }
@@ -264,19 +282,51 @@ export default function RecordingsList() {
 
   return (
     <div className={[styles.container, 'animate-enter'].join(' ')}>
+      <section className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <p className={styles.heroEyebrow}>{t('recordings.eyebrow')}</p>
+          <h2 className={styles.heroTitle}>{t('recordings.title')}</h2>
+          <p className={styles.heroSummary}>{t('recordings.summary')}</p>
+          <p className={styles.heroContext}>{librarySummary}</p>
+        </div>
+
+        <div className={styles.heroStats}>
+          <div className={styles.heroStat}>
+            <span className={styles.heroStatLabel}>{t('recordings.metricItems')}</span>
+            <span className={styles.heroStatValue}>{profileRecordings.length}</span>
+            <span className={styles.heroStatDetail}>{t('recordings.metricItemsDetail')}</span>
+          </div>
+          <div className={styles.heroStat}>
+            <span className={styles.heroStatLabel}>{t('recordings.metricFolders')}</span>
+            <span className={styles.heroStatValue}>{data?.directories?.length ?? 0}</span>
+            <span className={styles.heroStatDetail}>{t('recordings.metricFoldersDetail')}</span>
+          </div>
+          <div className={styles.heroStat}>
+            <span className={styles.heroStatLabel}>{t('recordings.metricRecording')}</span>
+            <span className={styles.heroStatValue}>{activeCount}</span>
+            <span className={styles.heroStatDetail}>{t('recordings.metricRecordingDetail')}</span>
+          </div>
+          <div className={styles.heroStat}>
+            <span className={styles.heroStatLabel}>{t('recordings.metricResume')}</span>
+            <span className={styles.heroStatValue}>{resumeCount}</span>
+            <span className={styles.heroStatDetail}>{t('recordings.metricResumeDetail')}</span>
+          </div>
+        </div>
+      </section>
+
       {/* Header / Toolbar */}
       <div className={styles.toolbar}>
         <div className={styles.toolbarGroup}>
-          <label className={styles.infoLabel}>Location:</label>
-          <select value={root} onChange={handleRootChange} disabled={loading || deleteLoading}>
-            {data?.roots?.map(r => (
-              <option key={r.id} value={r.id}>{r.name} ({r.id})</option>
+            <label className={styles.infoLabel}>{t('recordings.location')}</label>
+            <select value={root} onChange={handleRootChange} disabled={loading || deleteLoading}>
+              {data?.roots?.map(r => (
+              <option key={r.id} value={r.id}>{resolveRecordingRootLabel([r], r.id, libraryRootLabel)}</option>
             ))}
           </select>
         </div>
 
         <div className={styles.breadcrumbs}>
-          <span className={styles.crumb} onClick={() => handleNavigate('')}>Home</span>
+          <span className={styles.crumb} onClick={() => handleNavigate('')}>{t('common.home')}</span>
           {data?.breadcrumbs?.map((crumb, i) => (
             <React.Fragment key={i}>
               <span className={styles.separator}>/</span>
@@ -286,15 +336,15 @@ export default function RecordingsList() {
         </div>
 
         <div className={styles.toolbarActions}>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={loading || deleteLoading}
-          >
-            Refresh
-          </Button>
-          {canManageDvr && selectionMode ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={loading || deleteLoading}
+            >
+              {t('common.refresh')}
+            </Button>
+            {canManageDvr && selectionMode ? (
             <>
               <Button
                 variant="danger"
@@ -320,7 +370,7 @@ export default function RecordingsList() {
 
         <div className={styles.workflowControls}>
           <div className={styles.toolbarGroup}>
-            <label className={styles.infoLabel} htmlFor="recordings-filter-select">View:</label>
+            <label className={styles.infoLabel} htmlFor="recordings-filter-select">{t('recordings.view')}</label>
             <select
               id="recordings-filter-select"
               data-testid="recordings-filter-select"
@@ -328,15 +378,15 @@ export default function RecordingsList() {
               onChange={(e) => setFilterMode(e.target.value as RecordingsFilter)}
               disabled={deleteLoading}
             >
-              <option value="all">All recordings</option>
-              <option value="active">Active only</option>
-              <option value="resume">Resume only</option>
-              <option value="unwatched">Unwatched only</option>
+              <option value="all">{t('recordings.viewAll')}</option>
+              <option value="active">{t('recordings.viewActive')}</option>
+              <option value="resume">{t('recordings.viewResume')}</option>
+              <option value="unwatched">{t('recordings.viewUnwatched')}</option>
             </select>
           </div>
 
           <div className={styles.toolbarGroup}>
-            <label className={styles.infoLabel} htmlFor="recordings-sort-select">Sort:</label>
+            <label className={styles.infoLabel} htmlFor="recordings-sort-select">{t('recordings.sort')}</label>
             <select
               id="recordings-sort-select"
               data-testid="recordings-sort-select"
@@ -344,8 +394,8 @@ export default function RecordingsList() {
               onChange={(e) => setSortMode(e.target.value as RecordingsSort)}
               disabled={deleteLoading}
             >
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
+              <option value="newest">{t('recordings.sortNewest')}</option>
+              <option value="oldest">{t('recordings.sortOldest')}</option>
             </select>
           </div>
         </div>
@@ -364,18 +414,18 @@ export default function RecordingsList() {
               <div className={styles.iconWrapper}>
                 <FolderIcon className={styles.folderIcon} />
               </div>
-              <div className={styles.itemDetails}>
-                <span className={styles.itemName}>{dir.name}</span>
-                <StatusChip state="idle" label="Directory" showIcon={false} />
-              </div>
-            </CardBody>
-          </Card>
+                <div className={styles.itemDetails}>
+                  <span className={styles.itemName}>{dir.name}</span>
+                  <StatusChip state="idle" label={t('recordings.directory')} showIcon={false} />
+                </div>
+              </CardBody>
+            </Card>
         ))}
 
         {/* Recordings */}
         {visibleRecordings.map((rec, i) => {
           const isSelected = rec.recordingId ? selectedIds.has(rec.recordingId) : false;
-          const { state, label } = mapRecordingToChip(rec);
+          const { state, labelKey } = mapRecordingToChip(rec);
 
           return (
             <Card
@@ -393,12 +443,14 @@ export default function RecordingsList() {
                   <div className={styles.itemName} data-testid="recording-title">{rec.title}</div>
                   <div className={`${styles.itemMetaRow} tabular`.trim()}>
                     <span className={styles.metaDate}>{formatTime(rec.beginUnixSeconds)}</span>
-                    <span className={styles.metaLength}>{rec.length}</span>
+                    <span className={styles.metaLength}>{rec.length || formatRecordingLength(rec.durationSeconds)}</span>
                   </div>
-                  <p className={styles.itemDesc}>{rec.description}</p>
+                  <p className={styles.itemDesc}>
+                    {rec.description || t('recordings.descriptionFallback')}
+                  </p>
 
                   <div className={styles.badgeGroup}>
-                    <StatusChip state={state} label={label} />
+                    <StatusChip state={state} label={t(`recordings.badges.${labelKey}`)} />
                   </div>
 
                   {/* Resume Bar Integration */}
@@ -429,7 +481,7 @@ export default function RecordingsList() {
 
                 {!selectionMode && (
                   <div className={styles.playOverlay}>
-                    <span className={styles.playLabel}>Play</span>
+                    <span className={styles.playLabel}>{t('player.play')}</span>
                   </div>
                 )}
               </CardBody>
@@ -442,8 +494,8 @@ export default function RecordingsList() {
           <div className={styles.emptyState}>
             <p>
               {filterMode === 'all'
-                ? 'No recordings found in this location.'
-                : 'No recordings match the current view.'}
+                ? t('recordings.emptyLocation')
+                : t('recordings.emptyFilter')}
             </p>
           </div>
         )}
@@ -453,7 +505,7 @@ export default function RecordingsList() {
       {playing && (
         <Suspense fallback={
           <div className={styles.playerFallback}>
-            <LoadingSkeleton variant="section" label="Loading player..." />
+            <LoadingSkeleton variant="section" label={t('recordings.loadingPlayer')} />
           </div>
         }>
           <V3Player
@@ -467,6 +519,39 @@ export default function RecordingsList() {
       )}
     </div>
   );
+}
+
+function resolveRecordingRootLabel(
+  roots: Array<{ id?: string; name?: string }> | undefined,
+  currentRoot: string | undefined,
+  fallbackLabel: string
+): string {
+  const normalizedRoot = String(currentRoot || '').trim();
+  if (!normalizedRoot) {
+    return fallbackLabel;
+  }
+
+  const match = roots?.find((root) => String(root.id || '').trim() === normalizedRoot);
+  return String(match?.name || normalizedRoot).trim() || normalizedRoot;
+}
+
+function formatRecordingLength(durationSeconds?: number): string {
+  if (!durationSeconds || durationSeconds <= 0) {
+    return '0m';
+  }
+
+  const totalMinutes = Math.round(durationSeconds / 60);
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${minutes}m`;
 }
 
 function matchesRecordingsFilter(recording: RecordingItem, filterMode: RecordingsFilter): boolean {
@@ -492,7 +577,7 @@ function matchesRecordingsFilter(recording: RecordingItem, filterMode: Recording
   }
 
   if (filterMode === 'unwatched') {
-    return status.label === 'NEW';
+    return status.labelKey === 'new';
   }
 
   return true;
