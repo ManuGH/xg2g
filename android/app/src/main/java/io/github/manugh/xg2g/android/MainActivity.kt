@@ -17,6 +17,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import io.github.manugh.xg2g.android.guide.GuideActivity
 import io.github.manugh.xg2g.android.playback.PlaybackSessionRegistry
 import io.github.manugh.xg2g.android.playback.bridge.NativePlaybackBridge
 import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
@@ -32,6 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     private var lastRequestedUrl: String = ""
     private var playbackActive = false
+    private var sessionAuthToken: String? = null
     private var uiState: MainUiState = MainUiState.Loading()
 
     private val serverSettingsStore by lazy { ServerSettingsStore(this) }
@@ -101,6 +103,10 @@ class MainActivity : AppCompatActivity() {
                     return PlaybackSessionRegistry.currentStateJson()
                 }
 
+                override fun isWebUiVisible(): Boolean {
+                    return uiState == MainUiState.Content || uiState is MainUiState.Loading
+                }
+
                 override fun isSetupVisible(): Boolean = uiState is MainUiState.Setup
 
                 override fun isErrorVisible(): Boolean = uiState is MainUiState.Error
@@ -115,10 +121,16 @@ class MainActivity : AppCompatActivity() {
         installBackHandler()
         observeNativePlaybackState()
 
+        val existingBaseUrl = serverSettingsStore.getServerUrl()
         val configuredBaseUrl = ServerTargetResolver.resolveConfiguredBaseUrl(
-            existingBaseUrl = serverSettingsStore.getServerUrl(),
+            existingBaseUrl = existingBaseUrl,
             overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
             deepLinkUrl = intent.dataString
+        )
+        sessionAuthToken = resolveSessionAuthToken(
+            existingBaseUrl = existingBaseUrl,
+            configuredBaseUrl = configuredBaseUrl,
+            intent = intent
         )
         if (configuredBaseUrl != null) {
             serverSettingsStore.saveServerUrl(configuredBaseUrl)
@@ -129,12 +141,20 @@ class MainActivity : AppCompatActivity() {
             )
             lastRequestedUrl = startUrl
             if (savedInstanceState == null) {
-                loadAppUrl(startUrl)
+                if (shouldLaunchNativeTvHome(startUrl, configuredBaseUrl)) {
+                    showTvHomeUi()
+                } else {
+                    loadAppUrl(startUrl)
+                }
             } else {
                 lastRequestedUrl = savedInstanceState.getString(STATE_LAST_REQUESTED_URL) ?: startUrl
                 val restoredState = webViewController.restoreState(savedInstanceState)
                 if (restoredState == null || webView.url.isNullOrBlank()) {
-                    loadAppUrl(lastRequestedUrl)
+                    if (shouldLaunchNativeTvHome(lastRequestedUrl, configuredBaseUrl)) {
+                        showTvHomeUi()
+                    } else {
+                        loadAppUrl(lastRequestedUrl)
+                    }
                 } else if (!webViewController.hasCustomView()) {
                     setUiState(MainUiState.Content)
                 }
@@ -157,20 +177,29 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        val existingBaseUrl = serverSettingsStore.getServerUrl()
         val configuredBaseUrl = ServerTargetResolver.resolveConfiguredBaseUrl(
-            existingBaseUrl = serverSettingsStore.getServerUrl(),
+            existingBaseUrl = existingBaseUrl,
             overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
             deepLinkUrl = intent.dataString
         )
+        sessionAuthToken = resolveSessionAuthToken(
+            existingBaseUrl = existingBaseUrl,
+            configuredBaseUrl = configuredBaseUrl,
+            intent = intent
+        )
         if (configuredBaseUrl != null) {
             serverSettingsStore.saveServerUrl(configuredBaseUrl)
-            loadAppUrl(
-                ServerTargetResolver.resolveStartUrl(
-                    baseUrl = configuredBaseUrl,
-                    overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
-                    deepLinkUrl = intent.dataString
-                )
+            val startUrl = ServerTargetResolver.resolveStartUrl(
+                baseUrl = configuredBaseUrl,
+                overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
+                deepLinkUrl = intent.dataString
             )
+            if (shouldLaunchNativeTvHome(startUrl, configuredBaseUrl)) {
+                showTvHomeUi()
+            } else {
+                loadAppUrl(startUrl)
+            }
         }
     }
 
@@ -211,13 +240,21 @@ class MainActivity : AppCompatActivity() {
         screenUi.bindActions(
             onConnect = { input ->
                 if (validateAndSaveUrl(input)) {
-                    loadAppUrl(serverSettingsStore.getServerUrl()!!)
+                    if (isTvDevice) {
+                        showTvHomeUi()
+                    } else {
+                        loadAppUrl(serverSettingsStore.getServerUrl()!!)
+                    }
                 }
             },
             onCancelSetup = {
                 val savedUrl = serverSettingsStore.getServerUrl()
                 if (savedUrl != null) {
-                    loadAppUrl(savedUrl)
+                    if (isTvDevice) {
+                        showTvHomeUi()
+                    } else {
+                        loadAppUrl(savedUrl)
+                    }
                 }
             },
             onRetry = { loadAppUrl(lastRequestedUrl) },
@@ -225,7 +262,7 @@ class MainActivity : AppCompatActivity() {
             onOpenInBrowser = { openExternal(currentExternalUrl().toUri()) },
             onOpenTvMenu = { showTvQuickActions() },
             onOpenTvHome = { navigateToTvDestination(TvNavigationDestination.Home) },
-            onOpenTvGuide = { navigateToTvDestination(TvNavigationDestination.Guide) },
+            onOpenTvGuide = { openTvGuide() },
             onOpenTvRecordings = { navigateToTvDestination(TvNavigationDestination.Recordings) },
             onOpenTvTimers = { navigateToTvDestination(TvNavigationDestination.Timers) },
             onOpenTvSettings = { navigateToTvDestination(TvNavigationDestination.Settings) },
@@ -256,6 +293,7 @@ class MainActivity : AppCompatActivity() {
         }
         screenUi.clearServerUrlError()
         serverSettingsStore.saveServerUrl(normalizedUrl)
+        sessionAuthToken = null
         return true
     }
 
@@ -273,10 +311,19 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 when (uiState) {
+                    is MainUiState.TvHome -> {
+                        backgroundTaskOrFinish()
+                        return
+                    }
+
                     is MainUiState.Setup -> {
                         val savedUrl = serverSettingsStore.getServerUrl()
                         if (savedUrl != null) {
-                            loadAppUrl(savedUrl)
+                            if (isTvDevice) {
+                                showTvHomeUi()
+                            } else {
+                                loadAppUrl(savedUrl)
+                            }
                         } else {
                             backgroundTaskOrFinish()
                         }
@@ -284,7 +331,11 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     is MainUiState.Error -> {
-                        showSetupUi()
+                        if (isTvDevice && serverSettingsStore.getServerUrl() != null) {
+                            showTvHomeUi()
+                        } else {
+                            showSetupUi()
+                        }
                         return
                     }
 
@@ -292,6 +343,11 @@ class MainActivity : AppCompatActivity() {
                     MainUiState.Content -> {
                         if (webViewController.canGoBack()) {
                             webViewController.goBack()
+                            return
+                        }
+
+                        if (shouldReturnToTvHome()) {
+                            showTvHomeUi()
                             return
                         }
 
@@ -345,6 +401,19 @@ class MainActivity : AppCompatActivity() {
         setUiState(MainUiState.Setup(serverSettingsStore.getServerUrl()))
     }
 
+    private fun showTvHomeUi() {
+        val baseUrl = serverSettingsStore.getServerUrl()
+        if (!isTvDevice || baseUrl.isNullOrBlank()) {
+            showSetupUi()
+            return
+        }
+
+        setPlaybackActive(false)
+        hideTvQuickActions(restoreFocus = false)
+        lastRequestedUrl = baseUrl
+        setUiState(MainUiState.TvHome(serverLabel = describeServer(baseUrl)))
+    }
+
     private fun showErrorUi(title: String, detail: String) {
         setPlaybackActive(false)
         hideTvQuickActions(restoreFocus = false)
@@ -374,7 +443,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleMediaKey(keyCode: Int): Boolean {
-        if (uiState is MainUiState.Setup || uiState is MainUiState.Error) {
+        if (uiState is MainUiState.TvHome || uiState is MainUiState.Setup || uiState is MainUiState.Error) {
             return false
         }
 
@@ -442,6 +511,16 @@ class MainActivity : AppCompatActivity() {
         return isTvDevice && uiState == MainUiState.Content
     }
 
+    private fun shouldReturnToTvHome(): Boolean {
+        if (!isTvDevice || serverSettingsStore.getServerUrl() == null) {
+            return false
+        }
+        if (uiState != MainUiState.Content && uiState !is MainUiState.Loading) {
+            return false
+        }
+        return resolveActiveTvDestination(currentExternalUrl()) != null
+    }
+
     private fun showTvQuickActions() {
         if (!canOpenTvQuickActions()) {
             return
@@ -465,6 +544,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun reloadCurrentPage() {
         loadAppUrl(currentExternalUrl())
+    }
+
+    private fun openTvGuide() {
+        if (!isTvDevice) {
+            navigateToTvDestination(TvNavigationDestination.Guide)
+            return
+        }
+
+        hideTvQuickActions(restoreFocus = false)
+        val baseUrl = serverSettingsStore.getServerUrl()
+        if (baseUrl.isNullOrBlank()) {
+            showSetupUi()
+            return
+        }
+
+        startActivity(GuideActivity.createIntent(this, baseUrl, sessionAuthToken))
     }
 
     private fun navigateToTvDestination(destination: TvNavigationDestination) {
@@ -532,6 +627,42 @@ class MainActivity : AppCompatActivity() {
         val host = targetUri.host ?: return url
         val path = targetUri.encodedPath?.takeIf { it.isNotBlank() && it != "/" }
         return if (path != null) "$host$path" else host
+    }
+
+    private fun describeServer(url: String): String {
+        return describeDestination(url) ?: url
+    }
+
+    private fun shouldLaunchNativeTvHome(startUrl: String, baseUrl: String): Boolean {
+        if (!isTvDevice) {
+            return false
+        }
+
+        if (!ServerTargetResolver.isSameOrigin(startUrl, baseUrl)) {
+            return false
+        }
+
+        val startPath = runCatching { startUrl.toUri().encodedPath.orEmpty().trimEnd('/') }.getOrDefault("")
+        val basePath = runCatching { baseUrl.toUri().encodedPath.orEmpty().trimEnd('/') }.getOrDefault("")
+        return startPath == basePath
+    }
+
+    private fun resolveSessionAuthToken(
+        existingBaseUrl: String?,
+        configuredBaseUrl: String?,
+        intent: Intent
+    ): String? {
+        val explicitToken = ServerTargetResolver.resolveAuthToken(
+            overrideToken = intent.getStringExtra(ServerTargetResolver.EXTRA_AUTH_TOKEN),
+            deepLinkUrl = intent.dataString
+        )
+        if (explicitToken != null) {
+            return explicitToken
+        }
+        if (configuredBaseUrl != null && configuredBaseUrl != existingBaseUrl) {
+            return null
+        }
+        return sessionAuthToken
     }
 
     private fun openExternal(uri: Uri) {

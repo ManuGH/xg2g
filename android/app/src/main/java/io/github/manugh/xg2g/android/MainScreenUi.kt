@@ -23,6 +23,16 @@ internal class MainScreenUi(
     private val loadingContainer: View = activity.findViewById(R.id.loading_container)
     private val loadingDetail: TextView = activity.findViewById(R.id.loading_detail)
 
+    private val tvHomeContainer: View = activity.findViewById(R.id.tv_home_container)
+    private val tvHomeServerValue: TextView = activity.findViewById(R.id.tv_home_server_value)
+    private val tvHomeLiveButton: MaterialButton = activity.findViewById(R.id.tv_home_live_button)
+    private val tvHomeDashboardButton: MaterialButton = activity.findViewById(R.id.tv_home_dashboard_button)
+    private val tvHomeRecordingsButton: MaterialButton = activity.findViewById(R.id.tv_home_recordings_button)
+    private val tvHomeTimersButton: MaterialButton = activity.findViewById(R.id.tv_home_timers_button)
+    private val tvHomeSettingsButton: MaterialButton = activity.findViewById(R.id.tv_home_settings_button)
+    private val tvHomeChangeServerButton: MaterialButton = activity.findViewById(R.id.tv_home_change_server_button)
+    private val tvHomeBrowserButton: MaterialButton = activity.findViewById(R.id.tv_home_browser_button)
+
     private val setupContainer: View = activity.findViewById(R.id.setup_container)
     private val serverUrlLayout: TextInputLayout = activity.findViewById(R.id.server_url_layout)
     private val serverUrlEditText: TextInputEditText = activity.findViewById(R.id.server_url_edit_text)
@@ -81,6 +91,13 @@ internal class MainScreenUi(
             onConnect(serverUrlEditText.text?.toString()?.trim().orEmpty())
         }
         cancelSetupButton.setOnClickListener { onCancelSetup() }
+        tvHomeLiveButton.setOnClickListener { onOpenTvGuide() }
+        tvHomeDashboardButton.setOnClickListener { onOpenTvHome() }
+        tvHomeRecordingsButton.setOnClickListener { onOpenTvRecordings() }
+        tvHomeTimersButton.setOnClickListener { onOpenTvTimers() }
+        tvHomeSettingsButton.setOnClickListener { onOpenTvSettings() }
+        tvHomeChangeServerButton.setOnClickListener { onChangeServer() }
+        tvHomeBrowserButton.setOnClickListener { onOpenInBrowser() }
         retryButton.setOnClickListener { onRetry() }
         changeServerButton.setOnClickListener { onChangeServer() }
         openInBrowserButton.setOnClickListener { onOpenInBrowser() }
@@ -194,6 +211,7 @@ internal class MainScreenUi(
 
     fun render(state: MainUiState, webView: WebView, hasCustomView: Boolean) {
         when (state) {
+            is MainUiState.TvHome -> renderTvHome(state, webView)
             is MainUiState.Setup -> renderSetup(state, webView)
             is MainUiState.Error -> renderError(state, webView)
             is MainUiState.Loading -> renderLoading(state, webView)
@@ -201,10 +219,24 @@ internal class MainScreenUi(
         }
     }
 
+    private fun renderTvHome(state: MainUiState.TvHome, webView: WebView) {
+        clearServerUrlError()
+        hideTvQuickActions()
+        loadingContainer.isVisible = false
+        setupContainer.isVisible = false
+        errorContainer.isVisible = false
+        tvMenuButton.isVisible = false
+        tvHomeContainer.isVisible = true
+        webView.isVisible = false
+        tvHomeServerValue.text = state.serverLabel
+        tvHomeLiveButton.requestFocus()
+    }
+
     private fun renderSetup(state: MainUiState.Setup, webView: WebView) {
         clearServerUrlError()
         hideTvQuickActions()
         loadingContainer.isVisible = false
+        tvHomeContainer.isVisible = false
         tvMenuButton.isVisible = false
         setupContainer.isVisible = true
         cancelSetupButton.isVisible = state.savedUrl != null
@@ -226,6 +258,7 @@ internal class MainScreenUi(
     private fun renderError(state: MainUiState.Error, webView: WebView) {
         hideTvQuickActions()
         loadingContainer.isVisible = false
+        tvHomeContainer.isVisible = false
         tvMenuButton.isVisible = false
         errorTitle.text = state.title
         errorDetail.text = state.detail
@@ -238,6 +271,7 @@ internal class MainScreenUi(
     private fun renderLoading(state: MainUiState.Loading, webView: WebView) {
         hideTvQuickActions()
         tvMenuButton.isVisible = false
+        tvHomeContainer.isVisible = false
         setupContainer.isVisible = false
         errorContainer.isVisible = false
         loadingContainer.isVisible = true
@@ -249,6 +283,7 @@ internal class MainScreenUi(
 
     private fun renderContent(webView: WebView, hasCustomView: Boolean) {
         loadingContainer.isVisible = false
+        tvHomeContainer.isVisible = false
         setupContainer.isVisible = false
         errorContainer.isVisible = false
         tvMenuButton.isVisible = isTvDevice && !tvQuickActionsContainer.isVisible

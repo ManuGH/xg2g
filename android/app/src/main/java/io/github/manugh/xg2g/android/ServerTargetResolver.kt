@@ -6,9 +6,11 @@ import java.nio.charset.StandardCharsets
 
 internal object ServerTargetResolver {
     const val EXTRA_BASE_URL = "base_url"
+    const val EXTRA_AUTH_TOKEN = "auth_token"
 
     private const val CUSTOM_SCHEME = "xg2g"
     private const val QUERY_BASE_URL = "base_url"
+    private const val QUERY_AUTH_TOKEN = "auth_token"
     private const val UI_BASE_SEGMENT = "/ui"
 
     fun resolveConfiguredBaseUrl(
@@ -49,6 +51,24 @@ internal object ServerTargetResolver {
         }
 
         return normalizeServerUrl(overrideUrl.orEmpty()) ?: normalizedBaseUrl
+    }
+
+    fun resolveAuthToken(
+        overrideToken: String?,
+        deepLinkUrl: String?
+    ): String? {
+        overrideToken?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return it }
+
+        val deepLinkUri = parseUri(deepLinkUrl) ?: return null
+        if (!deepLinkUri.scheme.equals(CUSTOM_SCHEME, ignoreCase = true)) {
+            return null
+        }
+
+        return queryParameter(deepLinkUri.rawQuery, QUERY_AUTH_TOKEN)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
     }
 
     fun normalizeServerUrl(input: String): String? {

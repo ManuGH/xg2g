@@ -51,6 +51,7 @@ internal class WebViewHostController(
         fun startNativePlayback(request: NativePlaybackRequest)
         fun stopNativePlayback()
         fun currentNativePlaybackStateJson(): String
+        fun isWebUiVisible(): Boolean
         fun isSetupVisible(): Boolean
         fun isErrorVisible(): Boolean
         fun openExternal(uri: Uri)
@@ -66,7 +67,7 @@ internal class WebViewHostController(
         rootContainer = rootContainer,
         fullscreenContainer = fullscreenContainer,
         activeWebView = { webView },
-        shouldShowWebView = { !callbacks.isSetupVisible() && !callbacks.isErrorVisible() }
+        shouldShowWebView = { callbacks.isWebUiVisible() }
     )
     private val hostBridge = HostJavascriptBridge(
         activity = activity,
@@ -79,7 +80,7 @@ internal class WebViewHostController(
             }
 
             override fun shouldRequestInputFocus(): Boolean {
-                return !callbacks.isSetupVisible() && !callbacks.isErrorVisible()
+                return callbacks.isWebUiVisible()
             }
 
             override fun startNativePlayback(request: NativePlaybackRequest) {
@@ -107,7 +108,7 @@ internal class WebViewHostController(
         webView.onResume()
         webView.resumeTimers()
 
-        if (!callbacks.isSetupVisible() && !callbacks.isErrorVisible()) {
+        if (callbacks.isWebUiVisible()) {
             pendingRendererRecoveryUrl?.let { recoveryUrl ->
                 pendingRendererRecoveryUrl = null
                 Log.i(TAG, "Reloading deferred WebView state after background recovery")

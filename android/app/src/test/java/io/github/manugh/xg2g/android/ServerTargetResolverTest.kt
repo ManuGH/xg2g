@@ -91,4 +91,24 @@ class ServerTargetResolverTest {
             )
         )
     }
+
+    @Test
+    fun `resolveAuthToken reads custom scheme auth token`() {
+        val resolved = ServerTargetResolver.resolveAuthToken(
+            overrideToken = null,
+            deepLinkUrl = "xg2g://connect?base_url=https%3A%2F%2Ftv.example%2Fui%2F&auth_token=token-123"
+        )
+
+        assertEquals("token-123", resolved)
+    }
+
+    @Test
+    fun `resolveAuthToken prefers explicit override`() {
+        val resolved = ServerTargetResolver.resolveAuthToken(
+            overrideToken = "override-token",
+            deepLinkUrl = "xg2g://connect?auth_token=deep-link-token"
+        )
+
+        assertEquals("override-token", resolved)
+    }
 }

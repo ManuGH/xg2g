@@ -20,7 +20,7 @@ import {
   normalizeHouseholdProfile,
   type HouseholdProfile,
 } from '../features/household/model';
-import { unwrapClientResultOrThrow } from '../services/clientWrapper';
+import { getClientAuthToken, unwrapClientResultOrThrow } from '../services/clientWrapper';
 import { debugError, formatError } from '../utils/logging';
 import { Button } from './ui';
 import styles from './Settings.module.css';
@@ -69,6 +69,10 @@ function Settings() {
       return '';
     }
     const params = new URLSearchParams({ base_url: androidTvBaseUrl });
+    const authToken = getClientAuthToken();
+    if (authToken) {
+      params.set('auth_token', authToken);
+    }
     return `xg2g://connect?${params.toString()}`;
   }, [androidTvBaseUrl]);
 
