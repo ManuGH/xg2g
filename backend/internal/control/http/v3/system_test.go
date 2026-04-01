@@ -71,47 +71,60 @@ func TestSystemConfigIncludesMonetizationUnlockState(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 		Monetization: config.MonetizationConfig{
-			Enabled:     true,
-			Model:       config.MonetizationModelOneTimeUnlock,
-			ProductName: "xg2g Unlock",
-			UnlockScope: "xg2g:unlock",
-			PurchaseURL: "https://example.com/unlock",
-			Enforcement: config.MonetizationEnforcementRequired,
+			Enabled:        true,
+			Model:          config.MonetizationModelOneTimeUnlock,
+			ProductName:    "xg2g Unlock",
+			RequiredScopes: []string{"xg2g:unlock", "xg2g:dvr"},
+			PurchaseURL:    "https://example.com/unlock",
+			Enforcement:    config.MonetizationEnforcementRequired,
 		},
 	}
 
 	server := v3.NewServer(cfg, nil, nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/config", nil)
-	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.NewPrincipal("token", "viewer", []string{"v3:admin"})))
-	w := httptest.NewRecorder()
+	tests := []struct {
+		name     string
+		scopes   []string
+		unlocked bool
+	}{
+		{
+			name:     "locked without required scopes",
+			scopes:   []string{},
+			unlocked: false,
+		},
+		{
+			name:     "locked with partial required scopes",
+			scopes:   []string{"v3:admin", "xg2g:unlock"},
+			unlocked: false,
+		},
+		{
+			name:     "unlocked with all required scopes",
+			scopes:   []string{"v3:admin", "xg2g:unlock", "xg2g:dvr"},
+			unlocked: true,
+		},
+	}
 
-	server.GetSystemConfig(w, req)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v3/system/config", nil)
+			req = req.WithContext(auth.WithPrincipal(req.Context(), auth.NewPrincipal("token", "viewer", tt.scopes)))
+			w := httptest.NewRecorder()
 
-	resp := w.Result()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+			server.GetSystemConfig(w, req)
 
-	var body map[string]interface{}
-	err := json.NewDecoder(resp.Body).Decode(&body)
-	require.NoError(t, err)
+			resp := w.Result()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	monetization, ok := body["monetization"].(map[string]interface{})
-	require.True(t, ok, "response should include monetization object")
-	assert.Equal(t, "one_time_unlock", monetization["model"])
-	assert.Equal(t, "required", monetization["enforcement"])
-	assert.Equal(t, false, monetization["unlocked"])
-	assert.Equal(t, "https://example.com/unlock", monetization["purchaseUrl"])
+			var body map[string]interface{}
+			err := json.NewDecoder(resp.Body).Decode(&body)
+			require.NoError(t, err)
 
-	reqUnlocked := httptest.NewRequest(http.MethodGet, "/api/v3/system/config", nil)
-	reqUnlocked = reqUnlocked.WithContext(auth.WithPrincipal(reqUnlocked.Context(), auth.NewPrincipal("token", "viewer", []string{"v3:admin", "xg2g:unlock"})))
-	wUnlocked := httptest.NewRecorder()
-
-	server.GetSystemConfig(wUnlocked, reqUnlocked)
-
-	var unlockedBody map[string]interface{}
-	err = json.NewDecoder(wUnlocked.Result().Body).Decode(&unlockedBody)
-	require.NoError(t, err)
-
-	unlockedMonetization, ok := unlockedBody["monetization"].(map[string]interface{})
-	require.True(t, ok, "response should include monetization object")
-	assert.Equal(t, true, unlockedMonetization["unlocked"])
+			monetization, ok := body["monetization"].(map[string]interface{})
+			require.True(t, ok, "response should include monetization object")
+			assert.Equal(t, "one_time_unlock", monetization["model"])
+			assert.Equal(t, "required", monetization["enforcement"])
+			assert.Equal(t, "https://example.com/unlock", monetization["purchaseUrl"])
+			assert.Equal(t, tt.unlocked, monetization["unlocked"])
+			assert.ElementsMatch(t, []string{"xg2g:dvr", "xg2g:unlock"}, monetization["requiredScopes"])
+		})
+	}
 }

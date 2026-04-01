@@ -246,7 +246,10 @@ func (l *Loader) mergeEnvMonetization(cfg *AppConfig) {
 	cfg.Monetization.Enabled = l.envBool("XG2G_MONETIZATION_ENABLED", cfg.Monetization.Enabled)
 	cfg.Monetization.Model = l.envString("XG2G_MONETIZATION_MODEL", cfg.Monetization.Model)
 	cfg.Monetization.ProductName = l.envString("XG2G_MONETIZATION_PRODUCT_NAME", cfg.Monetization.ProductName)
-	cfg.Monetization.UnlockScope = l.envString("XG2G_MONETIZATION_UNLOCK_SCOPE", cfg.Monetization.UnlockScope)
+	cfg.Monetization.RequiredScopes = parseCommaSeparated(
+		l.envString("XG2G_MONETIZATION_REQUIRED_SCOPES", ""),
+		cfg.Monetization.RequiredScopes,
+	)
 	cfg.Monetization.PurchaseURL = l.envString("XG2G_MONETIZATION_PURCHASE_URL", cfg.Monetization.PurchaseURL)
 	cfg.Monetization.Enforcement = l.envString("XG2G_MONETIZATION_ENFORCEMENT", cfg.Monetization.Enforcement)
 }

@@ -5,6 +5,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -324,13 +325,13 @@ func TestValidate_PlaybackOperatorSourceRules(t *testing.T) {
 	})
 }
 
-func TestValidate_MonetizationCustomUnlockScope(t *testing.T) {
+func TestValidate_MonetizationRequiredScopes(t *testing.T) {
 	cfg := baseValidationConfig()
 	cfg.Monetization = MonetizationConfig{
-		Enabled:     true,
-		Model:       MonetizationModelOneTimeUnlock,
-		Enforcement: MonetizationEnforcementRequired,
-		UnlockScope: "xg2g:unlock",
+		Enabled:        true,
+		Model:          MonetizationModelOneTimeUnlock,
+		Enforcement:    MonetizationEnforcementRequired,
+		RequiredScopes: []string{"xg2g:unlock"},
 	}
 	cfg.APITokens = []ScopedToken{
 		{
@@ -340,7 +341,61 @@ func TestValidate_MonetizationCustomUnlockScope(t *testing.T) {
 	}
 
 	if err := Validate(cfg); err != nil {
-		t.Fatalf("expected monetization unlock scope to be accepted, got %v", err)
+		t.Fatalf("expected monetization required scopes to be accepted, got %v", err)
+	}
+}
+
+func TestValidate_MonetizationRequiredScopesEmptyFails(t *testing.T) {
+	cfg := baseValidationConfig()
+	cfg.Monetization = MonetizationConfig{
+		Enabled:        true,
+		Model:          MonetizationModelOneTimeUnlock,
+		Enforcement:    MonetizationEnforcementRequired,
+		RequiredScopes: []string{},
+	}
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected monetization required scopes error")
+	}
+	if !strings.Contains(err.Error(), "Monetization.RequiredScopes") {
+		t.Fatalf("expected required scopes validation error, got %v", err)
+	}
+}
+
+func TestValidate_MonetizationRequiredScopesDuplicateFails(t *testing.T) {
+	cfg := baseValidationConfig()
+	cfg.Monetization = MonetizationConfig{
+		Enabled:        true,
+		Model:          MonetizationModelOneTimeUnlock,
+		Enforcement:    MonetizationEnforcementRequired,
+		RequiredScopes: []string{"xg2g:unlock", "XG2G:UNLOCK"},
+	}
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected duplicate monetization required scopes error")
+	}
+	if !strings.Contains(err.Error(), "entries must be unique") {
+		t.Fatalf("expected duplicate scope validation error, got %v", err)
+	}
+}
+
+func TestValidate_MonetizationRequiredScopesEmptyEntryFails(t *testing.T) {
+	cfg := baseValidationConfig()
+	cfg.Monetization = MonetizationConfig{
+		Enabled:        true,
+		Model:          MonetizationModelOneTimeUnlock,
+		Enforcement:    MonetizationEnforcementRequired,
+		RequiredScopes: []string{"xg2g:unlock", "   "},
+	}
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected empty monetization required scope entry error")
+	}
+	if !strings.Contains(err.Error(), "entries must not be empty") {
+		t.Fatalf("expected empty scope validation error, got %v", err)
 	}
 }
 

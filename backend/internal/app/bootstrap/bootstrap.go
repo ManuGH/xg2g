@@ -368,7 +368,10 @@ func logLoadedConfigSource(logger zerolog.Logger, effectiveConfigPath string, ex
 }
 
 func logConfigFingerprint(logger zerolog.Logger, cfg config.AppConfig) {
-	configBytes, marshalErr := json.Marshal(cfg)
+	canonicalCfg := config.Clone(cfg)
+	canonicalCfg.Monetization = canonicalCfg.Monetization.Normalized()
+
+	configBytes, marshalErr := json.Marshal(canonicalCfg)
 	if marshalErr != nil {
 		return
 	}

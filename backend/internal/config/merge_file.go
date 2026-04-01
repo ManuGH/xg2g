@@ -153,8 +153,8 @@ func (l *Loader) mergeFileMonetization(dst *AppConfig, src *FileConfig) {
 	if src.Monetization.ProductName != "" {
 		dst.Monetization.ProductName = src.Monetization.ProductName
 	}
-	if src.Monetization.UnlockScope != "" {
-		dst.Monetization.UnlockScope = src.Monetization.UnlockScope
+	if src.Monetization.RequiredScopes != nil {
+		dst.Monetization.RequiredScopes = append([]string(nil), src.Monetization.RequiredScopes...)
 	}
 	if src.Monetization.PurchaseURL != "" {
 		dst.Monetization.PurchaseURL = expandEnv(src.Monetization.PurchaseURL)

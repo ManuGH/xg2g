@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useQueryClient } from '@tanstack/react-query';
 import { ClientRequestError } from '../services/clientWrapper';
 import { requestAuthRequired } from '../features/player/sessionEvents';
-import BootstrapGate from './BootstrapGate';
+import BootstrapGate, { BOOTSTRAP_GATE_BYPASS_ROUTES } from './BootstrapGate';
 import { ROUTE_MAP } from '../routes';
 
 const mockUseAppContext = vi.fn();
@@ -37,7 +37,7 @@ function renderGate(initialEntries: string[] = [ROUTE_MAP.epg]) {
       <Routes>
         <Route element={<BootstrapGate />}>
           <Route path={ROUTE_MAP.epg} element={<div>EPG view</div>} />
-          <Route path={ROUTE_MAP.settings} element={<div>Settings view</div>} />
+          <Route path={`${ROUTE_MAP.settings}/*`} element={<div>Settings view</div>} />
         </Route>
       </Routes>
     </MemoryRouter>
@@ -262,6 +262,28 @@ describe('BootstrapGate', () => {
     });
 
     renderGate([ROUTE_MAP.settings]);
+
+    expect(await screen.findByText('Settings view')).toBeInTheDocument();
+  });
+
+  it('allows nested bypass routes while the unlock gate is active', async () => {
+    mockUseBootstrapConfig.mockReturnValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        monetization: {
+          enabled: true,
+          model: 'one_time_unlock',
+          productName: 'xg2g Unlock',
+          enforcement: 'required',
+          unlocked: false,
+        },
+      },
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    renderGate([`${BOOTSTRAP_GATE_BYPASS_ROUTES[0]}/network`]);
 
     expect(await screen.findByText('Settings view')).toBeInTheDocument();
   });
