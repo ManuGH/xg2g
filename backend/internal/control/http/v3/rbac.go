@@ -5,9 +5,11 @@
 package v3
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -103,8 +105,9 @@ func (s scopeSet) has(scope Scope) bool {
 	return ok
 }
 
-// TokenPrincipal validates the token and returns the associated Principal.
-func (s *Server) TokenPrincipal(token string) (*auth.Principal, bool) {
+// TokenPrincipal validates the token, projects active commercial entitlements,
+// and returns the associated Principal.
+func (s *Server) TokenPrincipal(ctx context.Context, token string) (*auth.Principal, bool) {
 	if token == "" {
 		return nil, false
 	}
@@ -118,8 +121,8 @@ func (s *Server) TokenPrincipal(token string) (*auth.Principal, bool) {
 		if len(cfgTokenScopes) == 0 {
 			return nil, false
 		}
-		// Single token has no explicit user field in config, so we use empty user (hash-based ID)
-		return auth.NewPrincipal(token, "", cfgTokenScopes), true
+		principal := s.projectTokenPrincipal(ctx, auth.NewPrincipal(token, "", cfgTokenScopes), cfg)
+		return principal, principal != nil
 	}
 
 	// 2. Check scoped tokens list
@@ -128,7 +131,8 @@ func (s *Server) TokenPrincipal(token string) (*auth.Principal, bool) {
 			if len(entry.Scopes) == 0 {
 				return nil, false
 			}
-			return auth.NewPrincipal(token, entry.User, entry.Scopes), true
+			principal := s.projectTokenPrincipal(ctx, auth.NewPrincipal(token, entry.User, entry.Scopes), cfg)
+			return principal, principal != nil
 		}
 	}
 
@@ -145,13 +149,36 @@ func (s *Server) RequestScopes(r *http.Request) (scopeSet, bool) {
 	cfg := s.GetConfig()
 	token, _ := s.extractTokenDetailedWithLegacyPolicy(r, !cfg.APIDisableLegacyTokenSources)
 	if token != "" {
-		p, ok := s.TokenPrincipal(token)
+		p, ok := s.TokenPrincipal(r.Context(), token)
 		if ok {
 			return newScopeSet(p.Scopes), true
 		}
 		return nil, false
 	}
 	return nil, false
+}
+
+func (s *Server) projectTokenPrincipal(ctx context.Context, principal *auth.Principal, cfg config.AppConfig) *auth.Principal {
+	if principal == nil {
+		return nil
+	}
+
+	s.mu.RLock()
+	entitlementService := s.entitlementService
+	s.mu.RUnlock()
+	if entitlementService == nil {
+		return principal
+	}
+
+	requiredScopes := cfg.Monetization.Normalized().RequiredScopes
+	scopes, err := entitlementService.EffectiveScopes(ctx, principal.ID, principal.Scopes, requiredScopes)
+	if err != nil {
+		logger := log.FromContext(ctx).With().Str("component", "authz.entitlements").Logger()
+		logger.Error().Err(err).Str("principal_id", principal.ID).Msg("failed to project active entitlements onto principal")
+		return nil
+	}
+	principal.Scopes = scopes
+	return principal
 }
 
 // contextKey is a private type for context keys to avoid collisions.

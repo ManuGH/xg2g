@@ -9,7 +9,7 @@ import { useAppContext } from './context/AppContext';
 import AppShell from './AppShell';
 import BootstrapGate from './components/BootstrapGate';
 import { usePlayerHistoryBridge } from './features/player/usePlayerHistoryBridge';
-import { ROUTE_MAP } from './routes';
+import { ROUTE_MAP, UNLOCK_ROUTE } from './routes';
 
 // Lazy load feature views (Phase 4: Bundle optimization)
 // V3Player is lazy loaded because it includes heavy HLS.js dependency
@@ -23,6 +23,7 @@ const Timers = lazy(() => import('./components/Timers'));
 const RecordingsList = lazy(() => import('./components/RecordingsList'));
 const Settings = lazy(() => import('./components/Settings'));
 const SystemInfo = lazy(() => import('./features/system/SystemInfo').then(m => ({ default: m.SystemInfo })));
+const UnlockStatus = lazy(() => import('./features/unlock/UnlockStatus').then(m => ({ default: m.UnlockStatus })));
 
 function App() {
   const ctx = useAppContext();
@@ -84,6 +85,7 @@ function App() {
             <Route path={ROUTE_MAP.series} element={<SeriesManager />} />
             <Route path={ROUTE_MAP.settings} element={<Settings />} />
             <Route path={ROUTE_MAP.system} element={<SystemInfo />} />
+            <Route path={UNLOCK_ROUTE} element={<UnlockStatus />} />
             <Route path="/" element={<Navigate to={ROUTE_MAP.epg} replace />} />
             <Route path="*" element={<Navigate to={ROUTE_MAP.epg} replace />} />
           </Route>

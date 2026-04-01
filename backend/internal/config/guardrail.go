@@ -40,6 +40,7 @@ var legacyCompatEnvKeys = []string{
 	"XG2G_OWI_RETRIES",
 	"XG2G_OWI_BACKOFF_MS",
 	"XG2G_OWI_MAX_BACKOFF_MS",
+	"XG2G_MONETIZATION_UNLOCK_SCOPE",
 	"XG2G_STREAM_PORT",
 	"XG2G_USE_WEBIF_STREAMS",
 }
@@ -171,6 +172,18 @@ func legacyCompatEnvDiagnostic(key, value string) (legacyEnvDiagnostic, bool) {
 		return legacyEnvDiagnostic{key: key, lines: legacyDurationMigrationLines(key, value, "XG2G_E2_BACKOFF")}, true
 	case "XG2G_OWI_MAX_BACKOFF_MS":
 		return legacyEnvDiagnostic{key: key, lines: legacyDurationMigrationLines(key, value, "XG2G_E2_MAX_BACKOFF")}, true
+	case "XG2G_MONETIZATION_UNLOCK_SCOPE":
+		scopes := strings.ToLower(strings.TrimSpace(value))
+		if scopes == "" {
+			return legacyEnvDiagnostic{
+				key:   key,
+				lines: []string{"remove this key and migrate to: XG2G_MONETIZATION_REQUIRED_SCOPES=<scope>[,<scope>...]"},
+			}, true
+		}
+		return legacyEnvDiagnostic{
+			key:   key,
+			lines: []string{fmt.Sprintf("replace with: XG2G_MONETIZATION_REQUIRED_SCOPES=%s", scopes)},
+		}, true
 	case "XG2G_STREAM_PORT":
 		lines := []string{fmt.Sprintf("replace with: XG2G_E2_STREAM_PORT=%s", strings.TrimSpace(value))}
 		lines = append(lines, "note: XG2G_E2_STREAM_PORT / enigma2.streamPort is itself deprecated and should usually be left unset unless you intentionally override the receiver's direct stream port")

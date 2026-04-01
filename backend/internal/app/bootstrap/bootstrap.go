@@ -22,6 +22,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/daemon"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/entitlements"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
@@ -131,6 +132,11 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		logger.Warn().Err(err).Msg("failed to initialize capability registry, continuing without capability history")
 		capabilityRegistry = nil
 	}
+	entitlementStore, err := entitlements.NewStore(cfg.Store.Backend, cfg.Store.Path)
+	if err != nil {
+		return nil, fmt.Errorf("initialize entitlement store: %w", err)
+	}
+	entitlementService := entitlements.NewService(entitlementStore)
 
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
 	if err != nil {
@@ -177,6 +183,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		Scan:               v3Scan,
 		DecisionAudit:      decisionAuditStore,
 		CapabilityRegistry: capabilityRegistry,
+		Entitlements:       entitlementService,
 	}, nil)
 
 	driftStatePath, err := paths.ResolveDataFilePath(cfg.DataDir, "drift_state.json", true)

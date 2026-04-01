@@ -21,6 +21,8 @@ export const ROUTE_MAP: Record<AppView, string> = {
   system: '/system'
 };
 
+export const UNLOCK_ROUTE = '/unlock';
+
 export function normalizePathname(pathname: string): string {
   if (!pathname || pathname === '/') return '/';
   const trimmed = pathname.replace(/\/+$/, '');

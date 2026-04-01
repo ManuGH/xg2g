@@ -7,7 +7,7 @@ import LoadingSkeleton from './components/LoadingSkeleton';
 import { resetErrorCatalog } from './lib/errorCatalog';
 import { resolveHostEnvironment } from './lib/hostBridge';
 import { useErrorCatalog } from './hooks/useServerQueries';
-import { normalizePathname, ROUTE_MAP } from './routes';
+import { normalizePathname, ROUTE_MAP, UNLOCK_ROUTE } from './routes';
 
 interface AppShellProps {
   onLogout?: () => void;
@@ -19,8 +19,8 @@ export default function AppShell({ onLogout }: AppShellProps) {
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const usesNativeTvNavigation = hostEnvironment.platform === 'android-tv';
   const normalizedPathname = normalizePathname(pathname);
-  const isSettingsRoute = normalizedPathname === ROUTE_MAP.settings;
-  const isHydratingShell = !isSettingsRoute && channels.loading && !dataLoaded;
+  const isBootstrapBypassRoute = normalizedPathname === ROUTE_MAP.settings || normalizedPathname === UNLOCK_ROUTE;
+  const isHydratingShell = !isBootstrapBypassRoute && channels.loading && !dataLoaded;
   useErrorCatalog(auth.isAuthenticated);
 
   useEffect(() => {
@@ -28,12 +28,12 @@ export default function AppShell({ onLogout }: AppShellProps) {
       return;
     }
 
-    if (isSettingsRoute) {
+    if (isBootstrapBypassRoute) {
       return;
     }
 
     void loadBouquetsAndChannels();
-  }, [auth.isAuthenticated, channels.loading, dataLoaded, isSettingsRoute, loadBouquetsAndChannels]);
+  }, [auth.isAuthenticated, channels.loading, dataLoaded, isBootstrapBypassRoute, loadBouquetsAndChannels]);
 
   useEffect(() => {
     if (auth.isAuthenticated) {

@@ -8,7 +8,7 @@ import { useAppContext } from '../context/AppContext';
 import { queryKeys, useBootstrapConfig } from '../hooks/useServerQueries';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
 import { resolveHostEnvironment } from '../lib/hostBridge';
-import { normalizePathname, ROUTE_MAP } from '../routes';
+import { normalizePathname, ROUTE_MAP, UNLOCK_ROUTE } from '../routes';
 import { isConfigured } from './Config';
 import AuthSurface from './AuthSurface';
 import LoadingSkeleton from './LoadingSkeleton';
@@ -18,7 +18,7 @@ type AuthPromptReason = 'missing' | 'expired';
 
 // Keep purchase and diagnostics routes in this list when they must remain reachable
 // while the monetization gate is locked, otherwise the user cannot complete unlock.
-export const BOOTSTRAP_GATE_BYPASS_ROUTES: readonly string[] = [ROUTE_MAP.settings];
+export const BOOTSTRAP_GATE_BYPASS_ROUTES: readonly string[] = [ROUTE_MAP.settings, UNLOCK_ROUTE];
 
 function getErrorStatus(error: unknown): number | undefined {
   if (error instanceof ClientRequestError) {
@@ -284,6 +284,14 @@ export default function BootstrapGate() {
             ) : null}
             <Button
               variant="secondary"
+              onClick={() => {
+                navigate(UNLOCK_ROUTE);
+              }}
+            >
+              {t('unlock.viewStatus', { defaultValue: 'View Unlock Status' })}
+            </Button>
+            <Button
+              variant="ghost"
               onClick={() => {
                 navigate(ROUTE_MAP.settings);
               }}

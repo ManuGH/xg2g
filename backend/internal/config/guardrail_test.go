@@ -84,4 +84,14 @@ func TestCheckLegacyEnvWithEnviron(t *testing.T) {
 			t.Fatalf("expected deprecation note, got %v", err)
 		}
 	})
+
+	t.Run("legacy monetization unlock scope suggests required scopes", func(t *testing.T) {
+		err := CheckLegacyEnvWithEnviron([]string{"XG2G_MONETIZATION_UNLOCK_SCOPE=xg2g:unlock"})
+		if err == nil {
+			t.Fatalf("expected legacy key error")
+		}
+		if !strings.Contains(err.Error(), "XG2G_MONETIZATION_REQUIRED_SCOPES=xg2g:unlock") {
+			t.Fatalf("expected monetization migration line, got %v", err)
+		}
+	})
 }

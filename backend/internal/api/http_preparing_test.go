@@ -71,12 +71,17 @@ func (m *MockPreparingServer) DeleteStreamsId(w http.ResponseWriter, r *http.Req
 func (m *MockPreparingServer) GetErrors(w http.ResponseWriter, r *http.Request)                  {}
 func (m *MockPreparingServer) GetSystemConfig(w http.ResponseWriter, r *http.Request)            {}
 func (m *MockPreparingServer) PutSystemConfig(w http.ResponseWriter, r *http.Request)            {}
-func (m *MockPreparingServer) GetSystemHealth(w http.ResponseWriter, r *http.Request)            {}
-func (m *MockPreparingServer) GetSystemHealthz(w http.ResponseWriter, r *http.Request)           {}
-func (m *MockPreparingServer) GetSystemInfo(w http.ResponseWriter, r *http.Request)              {}
-func (m *MockPreparingServer) PostSystemRefresh(w http.ResponseWriter, r *http.Request)          {}
-func (m *MockPreparingServer) GetSystemScanStatus(w http.ResponseWriter, r *http.Request)        {}
-func (m *MockPreparingServer) TriggerSystemScan(w http.ResponseWriter, r *http.Request)          {}
+func (m *MockPreparingServer) GetSystemEntitlements(w http.ResponseWriter, r *http.Request)      {}
+func (m *MockPreparingServer) PostSystemEntitlementOverride(w http.ResponseWriter, r *http.Request) {
+}
+func (m *MockPreparingServer) DeleteSystemEntitlementOverride(w http.ResponseWriter, r *http.Request, principalId string, scope string) {
+}
+func (m *MockPreparingServer) GetSystemHealth(w http.ResponseWriter, r *http.Request)     {}
+func (m *MockPreparingServer) GetSystemHealthz(w http.ResponseWriter, r *http.Request)    {}
+func (m *MockPreparingServer) GetSystemInfo(w http.ResponseWriter, r *http.Request)       {}
+func (m *MockPreparingServer) PostSystemRefresh(w http.ResponseWriter, r *http.Request)   {}
+func (m *MockPreparingServer) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {}
+func (m *MockPreparingServer) TriggerSystemScan(w http.ResponseWriter, r *http.Request)   {}
 func (m *MockPreparingServer) GetTimers(w http.ResponseWriter, r *http.Request, params v3.GetTimersParams) {
 }
 func (m *MockPreparingServer) AddTimer(w http.ResponseWriter, r *http.Request)                    {}
