@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -16,18 +18,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -38,12 +42,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -61,6 +68,8 @@ import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
+import kotlin.math.max
 
 class GuideActivity : AppCompatActivity() {
     private lateinit var baseUrl: String
@@ -90,8 +99,10 @@ class GuideActivity : AppCompatActivity() {
                 GuideScreen(
                     state = state,
                     onSelectBouquet = viewModel::selectBouquet,
+                    onSelectChannel = viewModel::selectChannel,
                     onRefresh = viewModel::refresh,
-                    onPlayChannel = ::playChannel
+                    onPlayChannel = ::playChannel,
+                    onExit = ::finish
                 )
             }
         }
@@ -130,6 +141,11 @@ class GuideActivity : AppCompatActivity() {
     }
 }
 
+private enum class GuideFocusedPane {
+    BOUQUETS,
+    CHANNELS
+}
+
 @Composable
 private fun GuideTheme(content: @Composable () -> Unit) {
     MaterialTheme(
@@ -154,9 +170,18 @@ private fun GuideTheme(content: @Composable () -> Unit) {
 private fun GuideScreen(
     state: GuideScreenState,
     onSelectBouquet: (String) -> Unit,
+    onSelectChannel: (String) -> Unit,
     onRefresh: () -> Unit,
-    onPlayChannel: (GuideChannel) -> Unit
+    onPlayChannel: (GuideChannel) -> Unit,
+    onExit: () -> Unit
 ) {
+    val currentEpochSec by produceState(initialValue = Instant.now().epochSecond) {
+        while (true) {
+            value = Instant.now().epochSecond
+            delay(millisUntilNextProgressTick())
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -188,15 +213,23 @@ private fun GuideScreen(
                     bouquets = state.bouquets,
                     selectedBouquet = state.selectedBouquet,
                     channels = emptyList(),
+                    selectedChannelRef = null,
+                    currentEpochSec = currentEpochSec,
                     onSelectBouquet = onSelectBouquet,
-                    onPlayChannel = onPlayChannel
+                    onSelectChannel = onSelectChannel,
+                    onPlayChannel = onPlayChannel,
+                    onExit = onExit
                 )
                 is GuideScreenState.Ready -> GuideContentLayout(
                     bouquets = state.bouquets,
                     selectedBouquet = state.selectedBouquet,
                     channels = state.channels,
+                    selectedChannelRef = state.selectedChannelRef,
+                    currentEpochSec = currentEpochSec,
                     onSelectBouquet = onSelectBouquet,
-                    onPlayChannel = onPlayChannel
+                    onSelectChannel = onSelectChannel,
+                    onPlayChannel = onPlayChannel,
+                    onExit = onExit
                 )
             }
         }
@@ -249,6 +282,7 @@ private fun GuideHeader(
         ) {
             OutlinedButton(
                 onClick = onRefresh,
+                modifier = Modifier.focusProperties { canFocus = false },
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = colorFromRes(R.color.ide_surface_panel_soft),
@@ -341,16 +375,70 @@ private fun GuideContentLayout(
     bouquets: List<GuideBouquet>,
     selectedBouquet: String,
     channels: List<GuideChannel>,
+    selectedChannelRef: String?,
+    currentEpochSec: Long,
     onSelectBouquet: (String) -> Unit,
-    onPlayChannel: (GuideChannel) -> Unit
+    onSelectChannel: (String) -> Unit,
+    onPlayChannel: (GuideChannel) -> Unit,
+    onExit: () -> Unit
 ) {
+    val bouquetKeys = remember(bouquets) { bouquets.map(GuideBouquet::name) }
+    val channelKeys = remember(channels) { channels.map(GuideChannel::serviceRef) }
+    val bouquetRequesters = remember(bouquetKeys) {
+        bouquetKeys.associateWith { FocusRequester() }
+    }
+    val channelRequesters = remember(channelKeys) {
+        channelKeys.associateWith { FocusRequester() }
+    }
+    val bouquetListState = rememberLazyListState()
+    val channelListState = rememberLazyListState()
+    val selectedBouquetRequester = bouquetRequesters[selectedBouquet]
+        ?: bouquetKeys.firstOrNull()?.let(bouquetRequesters::get)
+    val selectedChannelKey = selectedChannelRef
+        ?: channelKeys.firstOrNull()
+    val selectedChannelRequester = selectedChannelKey?.let(channelRequesters::get)
+    var focusedPane by remember { mutableStateOf(GuideFocusedPane.CHANNELS) }
+
+    LaunchedEffect(selectedBouquet, bouquetKeys) {
+        val index = bouquetKeys.indexOf(selectedBouquet)
+        if (index >= 0) {
+            bouquetListState.scrollToItem(index)
+        }
+    }
+
+    LaunchedEffect(selectedChannelKey, channelKeys) {
+        if (channelKeys.isEmpty()) {
+            focusedPane = GuideFocusedPane.BOUQUETS
+            return@LaunchedEffect
+        }
+        val index = channelKeys.indexOf(selectedChannelKey)
+        if (index >= 0) {
+            channelListState.scrollToItem(max(0, index - 1))
+        }
+        selectedChannelRequester?.requestFocus()
+        focusedPane = GuideFocusedPane.CHANNELS
+    }
+
+    BackHandler {
+        if (focusedPane == GuideFocusedPane.CHANNELS && selectedBouquetRequester != null) {
+            selectedBouquetRequester.requestFocus()
+            focusedPane = GuideFocusedPane.BOUQUETS
+        } else {
+            onExit()
+        }
+    }
+
     Row(
         modifier = Modifier.fillMaxSize()
     ) {
         BouquetRail(
             bouquets = bouquets,
             selectedBouquet = selectedBouquet,
+            listState = bouquetListState,
+            requesters = bouquetRequesters,
+            channelFocusRequester = selectedChannelRequester,
             onSelectBouquet = onSelectBouquet,
+            onFocusedPane = { focusedPane = GuideFocusedPane.BOUQUETS },
             modifier = Modifier
                 .width(260.dp)
                 .fillMaxHeight()
@@ -358,8 +446,15 @@ private fun GuideContentLayout(
         Spacer(modifier = Modifier.width(20.dp))
         ChannelPane(
             channels = channels,
-            modifier = Modifier.weight(1f),
-            onPlayChannel = onPlayChannel
+            selectedChannelRef = selectedChannelRef,
+            currentEpochSec = currentEpochSec,
+            listState = channelListState,
+            requesters = channelRequesters,
+            bouquetFocusRequester = selectedBouquetRequester,
+            onSelectChannel = onSelectChannel,
+            onPlayChannel = onPlayChannel,
+            onFocusedPane = { focusedPane = GuideFocusedPane.CHANNELS },
+            modifier = Modifier.weight(1f)
         )
     }
 }
@@ -368,7 +463,11 @@ private fun GuideContentLayout(
 private fun BouquetRail(
     bouquets: List<GuideBouquet>,
     selectedBouquet: String,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    requesters: Map<String, FocusRequester>,
+    channelFocusRequester: FocusRequester?,
     onSelectBouquet: (String) -> Unit,
+    onFocusedPane: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -389,13 +488,25 @@ private fun BouquetRail(
             )
             Spacer(modifier = Modifier.height(14.dp))
             LazyColumn(
+                state = listState,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(bouquets, key = { it.name }) { bouquet ->
                     val selected = bouquet.name == selectedBouquet
+                    val requester = requesters.getValue(bouquet.name)
                     OutlinedButton(
                         onClick = { onSelectBouquet(bouquet.name) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(requester)
+                            .focusProperties {
+                                right = channelFocusRequester ?: FocusRequester.Default
+                            }
+                            .onFocusChanged {
+                                if (it.isFocused) {
+                                    onFocusedPane()
+                                }
+                            },
                         shape = RoundedCornerShape(22.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = if (selected) {
@@ -441,8 +552,15 @@ private fun BouquetRail(
 @Composable
 private fun ChannelPane(
     channels: List<GuideChannel>,
-    modifier: Modifier = Modifier,
-    onPlayChannel: (GuideChannel) -> Unit
+    selectedChannelRef: String?,
+    currentEpochSec: Long,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    requesters: Map<String, FocusRequester>,
+    bouquetFocusRequester: FocusRequester?,
+    onSelectChannel: (String) -> Unit,
+    onPlayChannel: (GuideChannel) -> Unit,
+    onFocusedPane: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier.fillMaxHeight(),
@@ -472,28 +590,31 @@ private fun ChannelPane(
             return@Surface
         }
 
-        val firstChannelRequester = remember { FocusRequester() }
-        LaunchedEffect(channels.firstOrNull()?.serviceRef) {
-            if (channels.isNotEmpty()) {
-                firstChannelRequester.requestFocus()
-            }
-        }
-
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            itemsIndexed(channels, key = { _, channel -> channel.serviceRef }) { index, channel ->
+            itemsIndexed(channels, key = { _, channel -> channel.serviceRef }) { _, channel ->
                 ChannelCard(
                     channel = channel,
-                    modifier = if (index == 0) {
-                        Modifier.focusRequester(firstChannelRequester)
-                    } else {
-                        Modifier
+                    currentEpochSec = currentEpochSec,
+                    selected = channel.serviceRef == selectedChannelRef,
+                    modifier = Modifier
+                        .focusRequester(requesters.getValue(channel.serviceRef))
+                        .focusProperties {
+                            left = bouquetFocusRequester ?: FocusRequester.Default
+                        },
+                    onFocus = {
+                        onFocusedPane()
+                        onSelectChannel(channel.serviceRef)
                     },
-                    onPlayChannel = onPlayChannel
+                    onPlayChannel = {
+                        onSelectChannel(channel.serviceRef)
+                        onPlayChannel(channel)
+                    }
                 )
             }
         }
@@ -503,97 +624,238 @@ private fun ChannelPane(
 @Composable
 private fun ChannelCard(
     channel: GuideChannel,
+    currentEpochSec: Long,
+    selected: Boolean,
     modifier: Modifier = Modifier,
-    onPlayChannel: (GuideChannel) -> Unit
+    onFocus: () -> Unit,
+    onPlayChannel: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.015f else 1f, label = "channelCardScale")
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            focused -> colorFromRes(R.color.ide_surface_panel_soft)
+            selected -> colorFromRes(R.color.ide_surface_strong)
+            else -> colorFromRes(R.color.ide_surface)
+        },
+        label = "channelCardBackground"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            focused -> colorFromRes(R.color.ide_blue)
+            selected -> colorFromRes(R.color.ide_outline_strong)
+            else -> colorFromRes(R.color.ide_outline_soft)
+        },
+        label = "channelCardBorder"
+    )
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .scale(scale)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                if (it.isFocused) {
+                    focused = true
+                    onFocus()
+                } else if (!it.hasFocus) {
+                    focused = false
+                }
+            }
             .focusable()
-            .clickable { onPlayChannel(channel) },
+            .clickable(onClick = onPlayChannel),
         shape = RoundedCornerShape(24.dp),
-        color = if (focused) {
-            colorFromRes(R.color.ide_surface_panel_soft)
-        } else {
-            colorFromRes(R.color.ide_surface)
-        },
+        color = backgroundColor,
         border = BorderStroke(
             width = if (focused) 2.dp else 1.dp,
-            color = if (focused) {
-                colorFromRes(R.color.ide_blue)
-            } else {
-                colorFromRes(R.color.ide_outline_soft)
-            }
+            color = borderColor
         )
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(20.dp)
         ) {
-            Column(
-                modifier = Modifier.weight(1f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = channel.displayName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.height(6.dp))
-                ProgramLine(
-                    label = stringResource(R.string.guide_now),
-                    program = channel.now
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                ProgramLine(
-                    label = stringResource(R.string.guide_next),
-                    program = channel.next
-                )
+                Spacer(modifier = Modifier.width(16.dp))
+                PlayBadge()
             }
-            Spacer(modifier = Modifier.width(18.dp))
-            Button(
-                onClick = { onPlayChannel(channel) },
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colorFromRes(R.color.ide_blue),
-                    contentColor = colorFromRes(R.color.ide_text_primary)
-                )
-            ) {
-                Text(stringResource(R.string.guide_play))
-            }
+            Spacer(modifier = Modifier.height(14.dp))
+            NowNextTimeline(
+                now = channel.now,
+                next = channel.next,
+                currentEpochSec = currentEpochSec
+            )
         }
     }
 }
 
 @Composable
-private fun ProgramLine(
-    label: String,
-    program: GuideProgram?
-) {
-    val text = if (program == null) {
-        stringResource(R.string.guide_no_program)
-    } else {
-        "${formatTime(program.startEpochSec)}-${formatTime(program.endEpochSec)}  ${program.title}"
+private fun PlayBadge() {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colorFromRes(R.color.ide_blue),
+        border = BorderStroke(1.dp, colorFromRes(R.color.ide_blue))
+    ) {
+        Text(
+            text = stringResource(R.string.guide_play),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = colorFromRes(R.color.ide_text_primary)
+        )
     }
-    Text(
-        text = "$label  $text",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-    )
+}
+
+@Composable
+private fun NowNextTimeline(
+    now: GuideProgram?,
+    next: GuideProgram?,
+    currentEpochSec: Long
+) {
+    if (now == null && next == null) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(82.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = colorFromRes(R.color.ide_surface_panel),
+            border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft))
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    text = stringResource(R.string.guide_no_program),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        return
+    }
+
+    val nowWeight = now?.let { programWeight(it) } ?: 0f
+    val nextWeight = next?.let { programWeight(it) } ?: 0f
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (now != null) {
+            TimelineSegment(
+                label = stringResource(R.string.guide_now),
+                program = now,
+                weight = if (next != null) nowWeight else 1f,
+                progress = programProgress(now, currentEpochSec),
+                backgroundColor = colorFromRes(R.color.ide_surface_panel),
+                fillBrush = Brush.horizontalGradient(
+                    colors = listOf(
+                        colorFromRes(R.color.ide_blue),
+                        colorFromRes(R.color.ide_live)
+                    )
+                )
+            )
+        }
+        if (next != null) {
+            TimelineSegment(
+                label = stringResource(R.string.guide_next),
+                program = next,
+                weight = if (now != null) nextWeight else 1f,
+                progress = null,
+                backgroundColor = colorFromRes(R.color.ide_surface_panel_soft),
+                fillBrush = null
+            )
+        }
+    }
+}
+
+@Composable
+private fun RowScope.TimelineSegment(
+    label: String,
+    program: GuideProgram,
+    weight: Float,
+    progress: Float?,
+    backgroundColor: Color,
+    fillBrush: Brush?
+) {
+    Box(
+        modifier = Modifier
+            .weight(weight)
+            .heightIn(min = 82.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(backgroundColor)
+    ) {
+        if (progress != null && fillBrush != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(fillBrush)
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = colorFromRes(R.color.ide_text_secondary)
+            )
+            Text(
+                text = program.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colorFromRes(R.color.ide_text_primary),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${formatTime(program.startEpochSec)}-${formatTime(program.endEpochSec)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colorFromRes(R.color.ide_text_primary),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }
 
 private fun formatTime(epochSec: Long): String =
     TIME_FORMATTER.format(Instant.ofEpochSecond(epochSec))
+
+private fun programWeight(program: GuideProgram): Float {
+    val durationSec = max(1L, program.endEpochSec - program.startEpochSec)
+    return durationSec.toFloat()
+}
+
+private fun programProgress(program: GuideProgram, currentEpochSec: Long): Float {
+    val duration = max(1L, program.endEpochSec - program.startEpochSec).toFloat()
+    val elapsed = (currentEpochSec - program.startEpochSec).toFloat()
+    return (elapsed / duration).coerceIn(0f, 1f)
+}
+
+private fun millisUntilNextProgressTick(): Long {
+    val now = System.currentTimeMillis()
+    val remainder = now % 30_000L
+    return if (remainder == 0L) 30_000L else 30_000L - remainder
+}
 
 @Composable
 private fun colorFromRes(resId: Int): Color =

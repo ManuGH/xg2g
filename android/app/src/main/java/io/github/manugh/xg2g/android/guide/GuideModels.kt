@@ -50,6 +50,7 @@ internal sealed interface GuideScreenState {
         val bouquets: List<GuideBouquet>,
         val selectedBouquet: String,
         val channels: List<GuideChannel>,
+        val selectedChannelRef: String?,
         val isRefreshing: Boolean = false
     ) : GuideScreenState
 

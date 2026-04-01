@@ -34,7 +34,12 @@ internal class GuideViewModel(
             is GuideScreenState.Ready -> current.bouquets
             else -> null
         }
-        load(selectedBouquet, knownBouquets)
+        val selectedChannelRef = (current as? GuideScreenState.Ready)?.selectedChannelRef
+        load(
+            bouquetName = selectedBouquet,
+            knownBouquets = knownBouquets,
+            preferredChannelRef = selectedChannelRef
+        )
     }
 
     fun selectBouquet(name: String) {
@@ -47,12 +52,28 @@ internal class GuideViewModel(
             is GuideScreenState.Ready -> current.bouquets
             else -> emptyList()
         }
-        load(name, knownBouquets)
+        load(
+            bouquetName = name,
+            knownBouquets = knownBouquets,
+            preferredChannelRef = null
+        )
+    }
+
+    fun selectChannel(serviceRef: String) {
+        val current = _state.value as? GuideScreenState.Ready ?: return
+        if (current.selectedChannelRef == serviceRef) {
+            return
+        }
+        if (current.channels.none { it.serviceRef == serviceRef }) {
+            return
+        }
+        _state.value = current.copy(selectedChannelRef = serviceRef)
     }
 
     private fun load(
         bouquetName: String,
-        knownBouquets: List<GuideBouquet>?
+        knownBouquets: List<GuideBouquet>?,
+        preferredChannelRef: String?
     ) {
         loadJob?.cancel()
         val previous = _state.value
@@ -70,6 +91,10 @@ internal class GuideViewModel(
                         knownBouquets = knownBouquets
                     )
                 }
+                val selectedChannelRef = content.channels
+                    .firstOrNull { it.serviceRef == preferredChannelRef }
+                    ?.serviceRef
+                    ?: content.channels.firstOrNull()?.serviceRef
                 _state.value = if (content.channels.isEmpty()) {
                     GuideScreenState.Empty(
                         serverLabel = serverLabel,
@@ -81,7 +106,8 @@ internal class GuideViewModel(
                         serverLabel = serverLabel,
                         bouquets = content.bouquets,
                         selectedBouquet = content.selectedBouquet,
-                        channels = content.channels
+                        channels = content.channels,
+                        selectedChannelRef = selectedChannelRef
                     )
                 }
             } catch (error: Throwable) {
