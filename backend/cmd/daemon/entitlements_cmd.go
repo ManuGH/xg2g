@@ -35,7 +35,7 @@ func runEntitlementsCLIWithIO(args []string, stdout, stderr io.Writer) int {
 	case "revoke":
 		return runEntitlementsRevoke(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "Unknown subcommand: %s\n\n", args[0])
+		_, _ = fmt.Fprintf(stderr, "Unknown subcommand: %s\n\n", args[0])
 		printEntitlementsUsage(stderr)
 		return 2
 	}
@@ -84,7 +84,7 @@ func runEntitlementsList(args []string, stdout, stderr io.Writer) int {
 
 	status, rawBody, err := getEntitlementStatusFromAPI(apiBaseURL, resolvedToken, strings.TrimSpace(principalID), timeout)
 	if err != nil {
-		fmt.Fprintf(stderr, "FAILED: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "FAILED: %v\n", err)
 		return 1
 	}
 
@@ -97,11 +97,11 @@ func runEntitlementsList(args []string, stdout, stderr io.Writer) int {
 	}
 
 	targetPrincipalID := derefStringOr(status.PrincipalId, "(current principal)")
-	fmt.Fprintf(stdout, "Principal: %s\n", targetPrincipalID)
-	fmt.Fprintf(stdout, "Unlocked: %t\n", derefBoolOr(status.Unlocked, false))
-	fmt.Fprintf(stdout, "Required: %s\n", formatCLIStringSlice(status.RequiredScopes))
-	fmt.Fprintf(stdout, "Granted:  %s\n", formatCLIStringSlice(status.GrantedScopes))
-	fmt.Fprintf(stdout, "Missing:  %s\n", formatCLIStringSlice(status.MissingScopes))
+	_, _ = fmt.Fprintf(stdout, "Principal: %s\n", targetPrincipalID)
+	_, _ = fmt.Fprintf(stdout, "Unlocked: %t\n", derefBoolOr(status.Unlocked, false))
+	_, _ = fmt.Fprintf(stdout, "Required: %s\n", formatCLIStringSlice(status.RequiredScopes))
+	_, _ = fmt.Fprintf(stdout, "Granted:  %s\n", formatCLIStringSlice(status.GrantedScopes))
+	_, _ = fmt.Fprintf(stdout, "Missing:  %s\n", formatCLIStringSlice(status.MissingScopes))
 	if grants := status.Grants; grants != nil && len(*grants) > 0 {
 		_, _ = fmt.Fprintln(stdout, "Grants:")
 		for _, grant := range *grants {
@@ -157,16 +157,16 @@ func runEntitlementsGrant(args []string, stdout, stderr io.Writer) int {
 
 	principalID = strings.TrimSpace(principalID)
 	if principalID == "" {
-		fmt.Fprintln(stderr, "Error: --principal-id is required")
+		_, _ = fmt.Fprintln(stderr, "Error: --principal-id is required")
 		return 2
 	}
 	normalizedScopes := scopes.Normalized()
 	if len(normalizedScopes) == 0 {
-		fmt.Fprintln(stderr, "Error: at least one --scope is required")
+		_, _ = fmt.Fprintln(stderr, "Error: at least one --scope is required")
 		return 2
 	}
 	if expires < 0 {
-		fmt.Fprintln(stderr, "Error: --expires must not be negative")
+		_, _ = fmt.Fprintln(stderr, "Error: --expires must not be negative")
 		return 2
 	}
 
@@ -177,11 +177,11 @@ func runEntitlementsGrant(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if err := postEntitlementOverrideToAPI(apiBaseURL, resolvedToken, principalID, normalizedScopes, expiresAt, timeout); err != nil {
-		fmt.Fprintf(stderr, "FAILED: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "FAILED: %v\n", err)
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "Granted %s to %s\n", strings.Join(normalizedScopes, ", "), principalID)
+	_, _ = fmt.Fprintf(stdout, "Granted %s to %s\n", strings.Join(normalizedScopes, ", "), principalID)
 	return 0
 }
 
@@ -217,30 +217,30 @@ func runEntitlementsRevoke(args []string, stdout, stderr io.Writer) int {
 
 	principalID = strings.TrimSpace(principalID)
 	if principalID == "" {
-		fmt.Fprintln(stderr, "Error: --principal-id is required")
+		_, _ = fmt.Fprintln(stderr, "Error: --principal-id is required")
 		return 2
 	}
 	normalizedScopes := scopes.Normalized()
 	if len(normalizedScopes) == 0 {
-		fmt.Fprintln(stderr, "Error: at least one --scope is required")
+		_, _ = fmt.Fprintln(stderr, "Error: at least one --scope is required")
 		return 2
 	}
 
 	for _, scope := range normalizedScopes {
 		if err := deleteEntitlementOverrideFromAPI(apiBaseURL, resolvedToken, principalID, scope, timeout); err != nil {
-			fmt.Fprintf(stderr, "FAILED: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "FAILED: %v\n", err)
 			return 1
 		}
 	}
 
-	fmt.Fprintf(stdout, "Revoked %s from %s\n", strings.Join(normalizedScopes, ", "), principalID)
+	_, _ = fmt.Fprintf(stdout, "Revoked %s from %s\n", strings.Join(normalizedScopes, ", "), principalID)
 	return 0
 }
 
 func resolveEntitlementsCLICommon(baseURL string, port int, token string, stderr io.Writer) (string, string, bool) {
 	apiBaseURL, err := resolveV3APIBaseURL(baseURL, port)
 	if err != nil {
-		fmt.Fprintf(stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error: %v\n", err)
 		return "", "", false
 	}
 
@@ -249,7 +249,7 @@ func resolveEntitlementsCLICommon(baseURL string, port int, token string, stderr
 		resolvedToken = strings.TrimSpace(config.ParseString("XG2G_API_TOKEN", ""))
 	}
 	if resolvedToken == "" {
-		fmt.Fprintln(stderr, "Error: authentication required: set --token or XG2G_API_TOKEN")
+		_, _ = fmt.Fprintln(stderr, "Error: authentication required: set --token or XG2G_API_TOKEN")
 		return "", "", false
 	}
 
@@ -270,10 +270,10 @@ func resolveV3APIBaseURL(rawBaseURL string, port int) (string, error) {
 	}
 
 	trimmedPath := strings.TrimRight(parsedURL.Path, "/")
-	switch {
-	case trimmedPath == "":
+	switch trimmedPath {
+	case "":
 		parsedURL.Path = "/api/v3"
-	case trimmedPath == "/api/v3":
+	case "/api/v3":
 		parsedURL.Path = trimmedPath
 	default:
 		parsedURL.Path = trimmedPath + "/api/v3"

@@ -3,6 +3,7 @@
 # ==============================================================================
 # All ephemeral build/test outputs must be routed to these directories.
 /artifacts/
+/build/
 tmp/
 logs/
 .runtime-bin/
@@ -33,6 +34,7 @@ pkg/
 # Specific Build Files (Repo Root)
 /xg2g
 /xg2g-*
+/backend/xg2g-daemon
 /daemon
 /daemon-*
 /v3probe

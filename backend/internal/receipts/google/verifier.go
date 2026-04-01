@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	defaultTokenURL         = "https://oauth2.googleapis.com/token"
+	defaultTokenURL         = "https://oauth2.googleapis.com/token" //nolint:gosec // G101: not a credential, just the OAuth token endpoint URL
 	defaultPublisherBaseURL = "https://androidpublisher.googleapis.com"
 	androidPublisherScope   = "https://www.googleapis.com/auth/androidpublisher"
 )
@@ -109,7 +109,7 @@ func NewVerifier(cfg Config) (*Verifier, error) {
 		return nil, fmt.Errorf("google play service account credentials file must not be empty")
 	}
 
-	data, err := os.ReadFile(credentialsFile)
+	data, err := os.ReadFile(credentialsFile) //nolint:gosec // G304: path from trusted server config, not user input
 	if err != nil {
 		return nil, fmt.Errorf("read google play service account credentials: %w", err)
 	}

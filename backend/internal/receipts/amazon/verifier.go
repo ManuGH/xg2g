@@ -46,7 +46,7 @@ func NewVerifier(cfg Config) (*Verifier, error) {
 	if sharedSecretFile == "" {
 		return nil, fmt.Errorf("amazon shared secret file must not be empty")
 	}
-	data, err := os.ReadFile(sharedSecretFile)
+	data, err := os.ReadFile(sharedSecretFile) //nolint:gosec // G304: path from trusted server config, not user input
 	if err != nil {
 		return nil, fmt.Errorf("read amazon shared secret file: %w", err)
 	}

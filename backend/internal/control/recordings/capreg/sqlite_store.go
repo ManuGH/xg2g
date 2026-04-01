@@ -633,13 +633,6 @@ func (s *SqliteStore) Close() error {
 	return s.DB.Close()
 }
 
-func unixMilliOrNow(t time.Time) int64 {
-	if t.IsZero() {
-		return time.Now().UTC().UnixMilli()
-	}
-	return t.UTC().UnixMilli()
-}
-
 func tableHasColumn(tx *sql.Tx, table string, column string) (bool, error) {
 	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
