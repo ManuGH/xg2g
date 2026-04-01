@@ -222,6 +222,8 @@ func buildRegistry() (*Registry, error) {
 		{Path: "monetization.enforcement", Env: "XG2G_MONETIZATION_ENFORCEMENT", FieldPath: "Monetization.Enforcement", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationEnforcementNone},
 		{Path: "monetization.googlePlay.packageName", Env: "XG2G_MONETIZATION_GOOGLE_PLAY_PACKAGE_NAME", FieldPath: "Monetization.GooglePlay.PackageName", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "monetization.googlePlay.serviceAccountCredentialsFile", Env: "XG2G_MONETIZATION_GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS_FILE", FieldPath: "Monetization.GooglePlay.ServiceAccountCredentialsFile", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "monetization.amazon.sharedSecretFile", Env: "XG2G_MONETIZATION_AMAZON_SHARED_SECRET_FILE", FieldPath: "Monetization.Amazon.SharedSecretFile", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "monetization.amazon.useSandbox", Env: "XG2G_MONETIZATION_AMAZON_USE_SANDBOX", FieldPath: "Monetization.Amazon.UseSandbox", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "monetization.productMappings", Env: "", FieldPath: "Monetization.ProductMappings", Profile: ProfileAdvanced, Status: StatusActive, Default: []MonetizationProductMapping{}},
 
 		// --- VERIFICATION ---

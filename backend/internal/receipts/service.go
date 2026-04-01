@@ -86,6 +86,7 @@ func (s *Service) VerifyAndApply(ctx context.Context, req ApplyRequest) (ApplyRe
 		Provider:      provider,
 		ProductID:     productID,
 		PurchaseToken: purchaseToken,
+		UserID:        normalizeUserID(req.UserID),
 	})
 	if err != nil {
 		return ApplyResult{}, err

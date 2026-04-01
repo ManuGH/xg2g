@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	SourceAdminOverride = "admin_override"
-	SourceGooglePlay    = "google_play"
+	SourceAdminOverride  = "admin_override"
+	SourceGooglePlay     = "google_play"
+	SourceAmazonAppstore = "amazon_appstore"
 )
 
 type Grant struct {

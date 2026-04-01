@@ -241,6 +241,43 @@ func TestServiceVerifyAndApplyPropagatesVerifierErrors(t *testing.T) {
 	}
 }
 
+func TestServiceVerifyAndApplyPassesAmazonUserIDToVerifier(t *testing.T) {
+	store := entitlements.NewMemoryStore()
+	entitlementService := entitlements.NewService(store, entitlements.WithCacheTTL(time.Hour))
+	service, err := NewService(config.MonetizationConfig{
+		ProductMappings: []config.MonetizationProductMapping{
+			{Provider: ProviderAmazonAppstore, ProductID: "xg2g.unlock.firetv", Scopes: []string{"xg2g:unlock"}},
+		},
+	}, entitlementService, &mockVerifier{
+		provider: ProviderAmazonAppstore,
+		verifyFn: func(ctx context.Context, req VerifyRequest) (VerifyResult, error) {
+			if req.UserID != "amzn-user-1" {
+				t.Fatalf("expected amazon user id to be passed through, got %q", req.UserID)
+			}
+			return VerifyResult{
+				Provider:  ProviderAmazonAppstore,
+				ProductID: req.ProductID,
+				Source:    entitlements.SourceAmazonAppstore,
+				State:     PurchaseStatePurchased,
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.VerifyAndApply(context.Background(), ApplyRequest{
+		PrincipalID:   "viewer",
+		Provider:      ProviderAmazonAppstore,
+		ProductID:     "xg2g.unlock.firetv",
+		PurchaseToken: "amazon-receipt-1",
+		UserID:        "amzn-user-1",
+	})
+	if err != nil {
+		t.Fatalf("VerifyAndApply: %v", err)
+	}
+}
+
 func requireGrant(t *testing.T, svc *entitlements.Service, grant entitlements.Grant) {
 	t.Helper()
 	if err := svc.Grant(context.Background(), grant); err != nil {

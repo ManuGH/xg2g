@@ -324,15 +324,18 @@ func validateMonetization(v *validate.Validator, cfg AppConfig) {
 		requiredScopes[scope] = struct{}{}
 	}
 	requiresGooglePlay := false
+	requiresAmazon := false
 	for _, mapping := range monetization.ProductMappings {
 		switch mapping.Provider {
 		case "google_play":
 			requiresGooglePlay = true
+		case "amazon_appstore":
+			requiresAmazon = true
 		case "":
 			v.AddError("Monetization.ProductMappings", "provider must not be empty", mapping)
 			continue
 		default:
-			v.AddError("Monetization.ProductMappings", "provider must be google_play", mapping.Provider)
+			v.AddError("Monetization.ProductMappings", "provider must be google_play or amazon_appstore", mapping.Provider)
 			continue
 		}
 
@@ -380,6 +383,16 @@ func validateMonetization(v *validate.Validator, cfg AppConfig) {
 		}
 		if monetization.GooglePlay.ServiceAccountCredentialsFile == "" {
 			v.AddError("Monetization.GooglePlay.ServiceAccountCredentialsFile", "must be set when google_play product mappings exist", monetization.GooglePlay.ServiceAccountCredentialsFile)
+		}
+	}
+	if monetization.Amazon.SharedSecretFile != "" || monetization.Amazon.UseSandbox {
+		if monetization.Amazon.SharedSecretFile == "" {
+			v.AddError("Monetization.Amazon.SharedSecretFile", "must be set when Amazon Appstore receipt verification is configured", monetization.Amazon.SharedSecretFile)
+		}
+	}
+	if requiresAmazon {
+		if monetization.Amazon.SharedSecretFile == "" {
+			v.AddError("Monetization.Amazon.SharedSecretFile", "must be set when amazon_appstore product mappings exist", monetization.Amazon.SharedSecretFile)
 		}
 	}
 }

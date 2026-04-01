@@ -172,6 +172,8 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
+| `monetization.amazon.sharedSecretFile` | `XG2G_MONETIZATION_AMAZON_SHARED_SECRET_FILE` | `""` | Active | Advanced |
+| `monetization.amazon.useSandbox` | `XG2G_MONETIZATION_AMAZON_USE_SANDBOX` | `false` | Active | Advanced |
 | `monetization.enabled` | `XG2G_MONETIZATION_ENABLED` | `false` | Active | Advanced |
 | `monetization.enforcement` | `XG2G_MONETIZATION_ENFORCEMENT` | `none` | Active | Advanced |
 | `monetization.googlePlay.packageName` | `XG2G_MONETIZATION_GOOGLE_PLAY_PACKAGE_NAME` | `""` | Active | Advanced |

@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-const ProviderGooglePlay = "google_play"
+const (
+	ProviderGooglePlay     = "google_play"
+	ProviderAmazonAppstore = "amazon_appstore"
+)
 
 type PurchaseState string
 
@@ -31,6 +34,7 @@ type VerifyRequest struct {
 	Provider      string
 	ProductID     string
 	PurchaseToken string
+	UserID        string
 }
 
 type VerifyResult struct {
@@ -50,6 +54,7 @@ type ApplyRequest struct {
 	Provider      string
 	ProductID     string
 	PurchaseToken string
+	UserID        string
 }
 
 type ApplyResult struct {
@@ -120,6 +125,10 @@ func normalizeProductID(productID string) string {
 
 func normalizePrincipalID(principalID string) string {
 	return strings.TrimSpace(principalID)
+}
+
+func normalizeUserID(userID string) string {
+	return strings.TrimSpace(userID)
 }
 
 func cloneTime(ts *time.Time) *time.Time {

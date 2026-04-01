@@ -538,6 +538,10 @@ export type EntitlementReceiptRequest = {
      */
     principalId?: string;
     /**
+     * Provider-specific user identifier required by Amazon Appstore receipt verification.
+     */
+    userId?: string;
+    /**
      * Receipt provider identifier.
      */
     provider: string;
