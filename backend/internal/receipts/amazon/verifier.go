@@ -66,6 +66,9 @@ func NewVerifier(cfg Config) (*Verifier, error) {
 
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
+		// Keep the default client transport plain here. Amazon RVS embeds the shared
+		// secret in the request path, so any injected client/transport must not log
+		// full request URLs without first redacting that segment.
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 	}
 
@@ -177,8 +180,11 @@ func classifyAmazonAPIError(statusCode int, body []byte) error {
 	case http.StatusBadRequest:
 		return &receipts.Error{Kind: receipts.ErrorKindInvalidInput, Message: message}
 	case http.StatusTooManyRequests, 496:
+		// 496: Amazon-specific non-standard status for shared-secret/app identity
+		// mismatch or temporarily unavailable receipt verification credentials.
 		return &receipts.Error{Kind: receipts.ErrorKindUnavailable, Message: message}
 	case 497:
+		// 497: Amazon-specific non-standard status for invalid or unknown userId.
 		return &receipts.Error{Kind: receipts.ErrorKindInvalidInput, Message: message}
 	default:
 		return &receipts.Error{Kind: receipts.ErrorKindUpstream, Message: message}
