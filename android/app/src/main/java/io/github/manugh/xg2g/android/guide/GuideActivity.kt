@@ -55,6 +55,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -661,6 +666,14 @@ private fun ChannelCard(
                     focused = false
                 }
             }
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp && event.key.isGuidePlayKey()) {
+                    onPlayChannel()
+                    true
+                } else {
+                    false
+                }
+            }
             .focusable()
             .clickable(onClick = onPlayChannel),
         shape = RoundedCornerShape(24.dp),
@@ -700,6 +713,8 @@ private fun ChannelCard(
         }
     }
 }
+
+private fun Key.isGuidePlayKey(): Boolean = this == Key.DirectionCenter || this == Key.Enter || this == Key.NumPadEnter
 
 @Composable
 private fun PlayBadge() {
