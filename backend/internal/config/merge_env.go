@@ -252,6 +252,11 @@ func (l *Loader) mergeEnvMonetization(cfg *AppConfig) {
 	)
 	cfg.Monetization.PurchaseURL = l.envString("XG2G_MONETIZATION_PURCHASE_URL", cfg.Monetization.PurchaseURL)
 	cfg.Monetization.Enforcement = l.envString("XG2G_MONETIZATION_ENFORCEMENT", cfg.Monetization.Enforcement)
+	cfg.Monetization.GooglePlay.PackageName = l.envString("XG2G_MONETIZATION_GOOGLE_PLAY_PACKAGE_NAME", cfg.Monetization.GooglePlay.PackageName)
+	cfg.Monetization.GooglePlay.ServiceAccountCredentialsFile = l.envString(
+		"XG2G_MONETIZATION_GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS_FILE",
+		cfg.Monetization.GooglePlay.ServiceAccountCredentialsFile,
+	)
 }
 
 func (l *Loader) mergeEnvRecordings(cfg *AppConfig) {

@@ -808,6 +808,59 @@ components:
           type: string
           format: date-time
 
+    EntitlementReceiptRequest:
+      type: object
+      required: [provider, productId, purchaseToken]
+      properties:
+        principalId:
+          type: string
+          description: Submit a verified purchase for another principal when authenticated with admin scope.
+        provider:
+          type: string
+          description: Receipt provider identifier.
+        productId:
+          type: string
+        purchaseToken:
+          type: string
+
+    EntitlementReceiptResponse:
+      type: object
+      required:
+        - provider
+        - productId
+        - purchaseState
+        - action
+        - mappedScopes
+        - entitlementStatus
+      properties:
+        principalId:
+          type: string
+        provider:
+          type: string
+        productId:
+          type: string
+        source:
+          type: string
+        purchaseState:
+          type: string
+          description: Verified purchase state returned by the provider.
+        action:
+          type: string
+          description: Entitlement mutation applied after verification.
+        mappedScopes:
+          type: array
+          items:
+            type: string
+        orderId:
+          type: string
+        purchaseTime:
+          type: string
+          format: date-time
+        testPurchase:
+          type: boolean
+        entitlementStatus:
+          $ref: "#/components/schemas/EntitlementStatus"
+
     Bouquet:
       type: object
       properties:
@@ -2099,6 +2152,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EntitlementStatus"
+
+  /system/entitlements/receipts:
+    post:
+      summary: Verify a purchase receipt and apply matching entitlements
+      operationId: postSystemEntitlementReceipt
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EntitlementReceiptRequest"
+      responses:
+        "200":
+          description: Receipt verified and entitlements updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntitlementReceiptResponse"
+        "400":
+          description: Invalid receipt submission
+        "502":
+          description: Upstream verification failed
+        "503":
+          description: Receipt verification unavailable
 
   /system/entitlements/overrides:
     post:

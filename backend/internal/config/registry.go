@@ -220,6 +220,9 @@ func buildRegistry() (*Registry, error) {
 		{Path: "monetization.requiredScopes", Env: "XG2G_MONETIZATION_REQUIRED_SCOPES", FieldPath: "Monetization.RequiredScopes", Profile: ProfileAdvanced, Status: StatusActive, Default: []string{"xg2g:unlock"}},
 		{Path: "monetization.purchaseUrl", Env: "XG2G_MONETIZATION_PURCHASE_URL", FieldPath: "Monetization.PurchaseURL", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "monetization.enforcement", Env: "XG2G_MONETIZATION_ENFORCEMENT", FieldPath: "Monetization.Enforcement", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationEnforcementNone},
+		{Path: "monetization.googlePlay.packageName", Env: "XG2G_MONETIZATION_GOOGLE_PLAY_PACKAGE_NAME", FieldPath: "Monetization.GooglePlay.PackageName", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "monetization.googlePlay.serviceAccountCredentialsFile", Env: "XG2G_MONETIZATION_GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS_FILE", FieldPath: "Monetization.GooglePlay.ServiceAccountCredentialsFile", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "monetization.productMappings", Env: "", FieldPath: "Monetization.ProductMappings", Profile: ProfileAdvanced, Status: StatusActive, Default: []MonetizationProductMapping{}},
 
 		// --- VERIFICATION ---
 		{Path: "verification.enabled", Env: "XG2G_VERIFY_ENABLED", FieldPath: "Verification.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true},

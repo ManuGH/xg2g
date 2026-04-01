@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-const SourceAdminOverride = "admin_override"
+const (
+	SourceAdminOverride = "admin_override"
+	SourceGooglePlay    = "google_play"
+)
 
 type Grant struct {
 	PrincipalID string

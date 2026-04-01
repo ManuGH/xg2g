@@ -411,3 +411,53 @@ func TestValidate_MonetizationRequiredNeedsPaidModel(t *testing.T) {
 		t.Fatal("expected monetization enforcement error")
 	}
 }
+
+func TestValidate_MonetizationGooglePlayMappingsRequireProviderConfig(t *testing.T) {
+	cfg := baseValidationConfig()
+	cfg.Monetization = MonetizationConfig{
+		Enabled:        true,
+		Model:          MonetizationModelOneTimeUnlock,
+		Enforcement:    MonetizationEnforcementRequired,
+		RequiredScopes: []string{"xg2g:unlock"},
+		ProductMappings: []MonetizationProductMapping{
+			{Provider: "google_play", ProductID: "xg2g.unlock", Scopes: []string{"xg2g:unlock"}},
+		},
+	}
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected validation error for missing google play config")
+	}
+	if !strings.Contains(err.Error(), "Monetization.GooglePlay.PackageName") {
+		t.Fatalf("expected Monetization.GooglePlay.PackageName validation error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Monetization.GooglePlay.ServiceAccountCredentialsFile") {
+		t.Fatalf("expected Monetization.GooglePlay.ServiceAccountCredentialsFile validation error, got %v", err)
+	}
+}
+
+func TestValidate_MonetizationGooglePlayMappingsDuplicateFails(t *testing.T) {
+	cfg := baseValidationConfig()
+	cfg.Monetization = MonetizationConfig{
+		Enabled:        true,
+		Model:          MonetizationModelOneTimeUnlock,
+		Enforcement:    MonetizationEnforcementRequired,
+		RequiredScopes: []string{"xg2g:unlock"},
+		GooglePlay: MonetizationGooglePlayConfig{
+			PackageName:                   "io.github.manugh.xg2g.android",
+			ServiceAccountCredentialsFile: "/tmp/google-play-service-account.json",
+		},
+		ProductMappings: []MonetizationProductMapping{
+			{Provider: "google_play", ProductID: "xg2g.unlock", Scopes: []string{"xg2g:unlock"}},
+			{Provider: "google_play", ProductID: "xg2g.unlock", Scopes: []string{"xg2g:dvr"}},
+		},
+	}
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected validation error for duplicate provider/product mapping")
+	}
+	if !strings.Contains(err.Error(), "Monetization.ProductMappings") {
+		t.Fatalf("expected Monetization.ProductMappings validation error, got %v", err)
+	}
+}

@@ -49,6 +49,7 @@ var operationScopes = map[string][]string{
 	"GetSystemConfig":                  {"v3:admin"},
 	"PutSystemConfig":                  {"v3:admin"},
 	"GetSystemEntitlements":            {"v3:read"},
+	"PostSystemEntitlementReceipt":     {"v3:read"},
 	"PostSystemEntitlementOverride":    {"v3:admin"},
 	"DeleteSystemEntitlementOverride":  {"v3:admin"},
 	"GetSystemHealth":                  {"v3:read"},

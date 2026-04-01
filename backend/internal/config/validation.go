@@ -317,6 +317,71 @@ func validateMonetization(v *validate.Validator, cfg AppConfig) {
 	if monetization.PurchaseURL != "" {
 		v.URL("Monetization.PurchaseURL", monetization.PurchaseURL, []string{"http", "https"})
 	}
+
+	seenMappings := make(map[string]struct{}, len(monetization.ProductMappings))
+	requiredScopes := make(map[string]struct{}, len(monetization.RequiredScopes))
+	for _, scope := range monetization.RequiredScopes {
+		requiredScopes[scope] = struct{}{}
+	}
+	requiresGooglePlay := false
+	for _, mapping := range monetization.ProductMappings {
+		switch mapping.Provider {
+		case "google_play":
+			requiresGooglePlay = true
+		case "":
+			v.AddError("Monetization.ProductMappings", "provider must not be empty", mapping)
+			continue
+		default:
+			v.AddError("Monetization.ProductMappings", "provider must be google_play", mapping.Provider)
+			continue
+		}
+
+		if mapping.ProductID == "" {
+			v.AddError("Monetization.ProductMappings", "productId must not be empty", mapping)
+		}
+		if len(mapping.Scopes) == 0 {
+			v.AddError("Monetization.ProductMappings", "scopes must include at least one entry", mapping)
+		}
+
+		key := mapping.Provider + "\x00" + mapping.ProductID
+		if _, ok := seenMappings[key]; ok {
+			v.AddError("Monetization.ProductMappings", "provider/productId pairs must be unique", mapping)
+		}
+		seenMappings[key] = struct{}{}
+
+		seenMappingScopes := make(map[string]struct{}, len(mapping.Scopes))
+		for _, scope := range mapping.Scopes {
+			if scope == "" {
+				v.AddError("Monetization.ProductMappings", "scopes entries must not be empty", mapping)
+				continue
+			}
+			if _, ok := seenMappingScopes[scope]; ok {
+				v.AddError("Monetization.ProductMappings", "scopes entries must be unique", mapping)
+				continue
+			}
+			if _, ok := requiredScopes[scope]; !ok {
+				v.AddError("Monetization.ProductMappings", "scopes must be declared in monetization.requiredScopes", mapping)
+			}
+			seenMappingScopes[scope] = struct{}{}
+		}
+	}
+
+	if monetization.GooglePlay.PackageName != "" || monetization.GooglePlay.ServiceAccountCredentialsFile != "" {
+		if monetization.GooglePlay.PackageName == "" {
+			v.AddError("Monetization.GooglePlay.PackageName", "must be set when Google Play receipt verification is configured", monetization.GooglePlay.PackageName)
+		}
+		if monetization.GooglePlay.ServiceAccountCredentialsFile == "" {
+			v.AddError("Monetization.GooglePlay.ServiceAccountCredentialsFile", "must be set when Google Play receipt verification is configured", monetization.GooglePlay.ServiceAccountCredentialsFile)
+		}
+	}
+	if requiresGooglePlay {
+		if monetization.GooglePlay.PackageName == "" {
+			v.AddError("Monetization.GooglePlay.PackageName", "must be set when google_play product mappings exist", monetization.GooglePlay.PackageName)
+		}
+		if monetization.GooglePlay.ServiceAccountCredentialsFile == "" {
+			v.AddError("Monetization.GooglePlay.ServiceAccountCredentialsFile", "must be set when google_play product mappings exist", monetization.GooglePlay.ServiceAccountCredentialsFile)
+		}
+	}
 }
 
 func validatePlaybackOperatorRules(v *validate.Validator, rules []PlaybackOperatorRuleConfig) {
