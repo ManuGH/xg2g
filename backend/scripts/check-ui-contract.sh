@@ -136,7 +136,7 @@ if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     if [[ "$file" == *.css ]]; then
       clean_file="${file#frontend/webui/src/}"
-      result=$(grep -HIn 'box-shadow: ' "$clean_file" | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css|Settings.module.css)" || true)
+      result=$(grep -HIn 'box-shadow: ' "$clean_file" | grep -v 'box-shadow: var(--' | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css)" || true)
       if [ -n "$result" ]; then
         V3="$V3$result"$'\n'
       fi
@@ -146,7 +146,8 @@ else
   V3=$(grep -RIn 'box-shadow: ' . \
     --include='*.css' \
     --exclude-dir=node_modules \
-    | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css|Settings.module.css)" || true)
+    | grep -v 'box-shadow: var(--' \
+    | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css)" || true)
 fi
 
 if [ -z "$V3" ]; then
