@@ -110,6 +110,7 @@
   --shadow-stage: 0 34px 84px rgba(0, 0, 0, 0.42);
   --shadow-accent-live: 0 18px 44px rgba(255, 155, 84, 0.16);
   --shadow-accent-action: 0 18px 44px rgba(88, 195, 255, 0.18);
+  --shadow-ring-action: 0 0 0 1px color-mix(in srgb, var(--accent-action) 35%, transparent);
   --shadow-status-success: 0 0 6px rgba(52, 211, 153, 0.4);
   --shadow-status-warning: 0 0 6px rgba(251, 191, 36, 0.4);
   --shadow-status-info: 0 0 6px rgba(96, 165, 250, 0.4);

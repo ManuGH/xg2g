@@ -388,7 +388,7 @@
 
 .profileCardActive {
   border-color: var(--accent-action);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-action) 35%, transparent);
+  box-shadow: var(--shadow-ring-action);
   background: color-mix(in srgb, var(--accent-action-subtle) 46%, var(--surface-muted) 54%);
 }
 
