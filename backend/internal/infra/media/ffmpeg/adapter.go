@@ -601,6 +601,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			if !firstFrameLogged {
 				if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
 					firstFrameLogged = true
+					wd.ObserveProgress()
 					a.writeFirstFrameMarker(sessionID)
 					a.Logger.Info().
 						Str("session_id", sessionID).
@@ -612,6 +613,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			if !firstSegmentLogged {
 				if segmentPath, ok := extractStartupSegmentPath(line); ok {
 					firstSegmentLogged = true
+					wd.ObserveProgress()
 					a.Logger.Info().
 						Str("session_id", sessionID).
 						Str("startup_phase", "first_segment_write").

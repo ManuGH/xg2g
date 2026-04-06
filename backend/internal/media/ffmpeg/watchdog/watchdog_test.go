@@ -105,7 +105,7 @@ func TestWatchdog_MeaningfulProgress(t *testing.T) {
 	w := New(2*time.Second, 5*time.Second)
 	w.clock = clock
 
-	// 1. Test out_time_ms vs total_size
+	// 1. Unknown log-like lines should not move the watchdog.
 	w.ParseLine("frame=10")
 	assert.Equal(t, StateStarting, w.State(), "frame= alone is not meaningful progress")
 
@@ -114,6 +114,17 @@ func TestWatchdog_MeaningfulProgress(t *testing.T) {
 
 	w.ParseLine("total_size=123")
 	assert.Equal(t, StateRunning, w.State(), "total_size > 0 IS meaningful progress")
+}
+
+func TestWatchdog_ObserveProgressTransitionsToRunning(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	w := New(2*time.Second, 5*time.Second)
+	w.clock = clock
+
+	w.ObserveProgress()
+
+	assert.Equal(t, StateRunning, w.State())
+	assert.True(t, w.hasProgress)
 }
 
 func TestWatchdog_ParserRobustness(t *testing.T) {
