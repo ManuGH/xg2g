@@ -487,22 +487,32 @@ export type AppConfig = {
 
 export type HouseholdConfigUpdate = {
     /**
-     * Optional numeric household PIN update. Omit to keep the current PIN. Send an empty string to clear the configured PIN.
+     * Optional numeric household PIN update. Omit to keep the current PIN. Send an empty string to clear the configured PIN. The plaintext value is accepted only for update input; the server persists a hash only.
      *
      */
     pin?: string | null;
 };
 
 export type HouseholdStatus = {
+    /**
+     * True when the server currently has a household PIN hash configured.
+     */
     pinConfigured?: boolean;
 };
 
 export type HouseholdUnlockRequest = {
+    /**
+     * Plaintext household PIN used to unlock the current browser session.
+     */
     pin: string;
 };
 
 export type HouseholdUnlockStatus = {
     pinConfigured: boolean;
+    /**
+     * True when the current authenticated browser session is unlocked for protected household actions. Unlock state ends on logout, relock, browser-session end, or server-side unlock TTL expiry.
+     *
+     */
     unlocked: boolean;
 };
 

@@ -23,6 +23,17 @@ components:
       scheme: bearer
       bearerFormat: JWT
 
+  parameters:
+    HouseholdProfileHeader:
+      name: X-Household-Profile
+      in: header
+      required: false
+      description: |
+        Optional active household profile id. If omitted, the backend resolves the unrestricted
+        default household profile for backward compatibility.
+      schema:
+        type: string
+
   schemas:
     # ==================== V3 API Schemas ====================
     APIError:
@@ -693,6 +704,8 @@ components:
         logLevel:
           type: string
           description: Log level to set (debug, info, warn, error)
+        household:
+          $ref: "#/components/schemas/HouseholdConfigUpdate"
 
     AppConfig:
       type: object
@@ -715,8 +728,250 @@ components:
           $ref: "#/components/schemas/PiconsConfig"
         streaming:
           $ref: "#/components/schemas/StreamingConfig"
+        monetization:
+          $ref: "#/components/schemas/MonetizationStatus"
         verification:
           $ref: "#/components/schemas/VerificationConfig"
+        household:
+          $ref: "#/components/schemas/HouseholdStatus"
+
+    HouseholdConfigUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        pin:
+          type: string
+          nullable: true
+          description: >
+            Optional numeric household PIN update. Omit to keep the current PIN.
+            Send an empty string to clear the configured PIN. The plaintext value
+            is accepted only for update input; the server persists a hash only.
+
+    HouseholdStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        pinConfigured:
+          type: boolean
+          description: True when the server currently has a household PIN hash configured.
+
+    HouseholdUnlockRequest:
+      type: object
+      required: [pin]
+      additionalProperties: false
+      properties:
+        pin:
+          type: string
+          description: Plaintext household PIN used to unlock the current browser session.
+
+    HouseholdUnlockStatus:
+      type: object
+      required: [pinConfigured, unlocked]
+      additionalProperties: false
+      properties:
+        pinConfigured:
+          type: boolean
+        unlocked:
+          type: boolean
+          description: >
+            True when the current authenticated browser session is unlocked for
+            protected household actions. Unlock state ends on logout, relock,
+            browser-session end, or server-side unlock TTL expiry.
+
+    HouseholdProfilePermissions:
+      type: object
+      required: [dvrPlayback, dvrManage, settings]
+      additionalProperties: false
+      properties:
+        dvrPlayback:
+          type: boolean
+        dvrManage:
+          type: boolean
+        settings:
+          type: boolean
+
+    HouseholdProfile:
+      type: object
+      required:
+        - id
+        - name
+        - kind
+        - allowedBouquets
+        - allowedServiceRefs
+        - favoriteServiceRefs
+        - permissions
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [adult, child]
+        maxFsk:
+          type: integer
+          nullable: true
+          minimum: 0
+        allowedBouquets:
+          type: array
+          items:
+            type: string
+        allowedServiceRefs:
+          type: array
+          items:
+            type: string
+        favoriteServiceRefs:
+          type: array
+          items:
+            type: string
+        permissions:
+          $ref: "#/components/schemas/HouseholdProfilePermissions"
+
+    MonetizationStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        model:
+          type: string
+          description: Monetization model exposed to the client bootstrap flow.
+        productName:
+          type: string
+        requiredScopes:
+          type: array
+          description: Scope names that the authenticated principal must all have before the client is commercially unlocked.
+          items:
+            type: string
+        purchaseUrl:
+          type: string
+          format: uri
+        enforcement:
+          type: string
+          description: Whether the client should enforce the unlock gate.
+        unlocked:
+          type: boolean
+          description: True when the authenticated principal is already unlocked.
+
+    EntitlementGrant:
+      type: object
+      properties:
+        scope:
+          type: string
+        source:
+          type: string
+        grantedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        active:
+          type: boolean
+
+    EntitlementStatus:
+      type: object
+      properties:
+        principalId:
+          type: string
+        model:
+          type: string
+        productName:
+          type: string
+        purchaseUrl:
+          type: string
+          format: uri
+        enforcement:
+          type: string
+        requiredScopes:
+          type: array
+          items:
+            type: string
+        grantedScopes:
+          type: array
+          items:
+            type: string
+        missingScopes:
+          type: array
+          items:
+            type: string
+        unlocked:
+          type: boolean
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntitlementGrant"
+
+    EntitlementOverrideRequest:
+      type: object
+      required: [scopes]
+      properties:
+        principalId:
+          type: string
+        scopes:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    EntitlementReceiptRequest:
+      type: object
+      required: [provider, productId, purchaseToken]
+      properties:
+        principalId:
+          type: string
+          description: Submit a verified purchase for another principal when authenticated with admin scope.
+        userId:
+          type: string
+          description: Provider-specific user identifier required by Amazon Appstore receipt verification.
+        provider:
+          type: string
+          description: Receipt provider identifier.
+        productId:
+          type: string
+        purchaseToken:
+          type: string
+
+    EntitlementReceiptResponse:
+      type: object
+      required:
+        - provider
+        - productId
+        - purchaseState
+        - action
+        - mappedScopes
+        - entitlementStatus
+      properties:
+        principalId:
+          type: string
+        provider:
+          type: string
+        productId:
+          type: string
+        source:
+          type: string
+        purchaseState:
+          type: string
+          description: Verified purchase state returned by the provider.
+        action:
+          type: string
+          description: Entitlement mutation applied after verification.
+        mappedScopes:
+          type: array
+          items:
+            type: string
+        orderId:
+          type: string
+        purchaseTime:
+          type: string
+          format: date-time
+        testPurchase:
+          type: boolean
+        entitlementStatus:
+          $ref: "#/components/schemas/EntitlementStatus"
 
     Bouquet:
       type: object
@@ -1094,6 +1349,10 @@ components:
             fps:
               type: integer
               example: 60
+        deviceContext:
+          $ref: "#/components/schemas/PlaybackDeviceContext"
+        networkContext:
+          $ref: "#/components/schemas/PlaybackNetworkContext"
         supportsHls:
           type: boolean
           description: Whether client supports HLS playlists
@@ -1155,6 +1414,42 @@ components:
           type: boolean
           description: Whether the browser reported hardware-efficient decode for this codec
           example: true
+
+    PlaybackDeviceContext:
+      type: object
+      additionalProperties: false
+      properties:
+        brand:
+          type: string
+        product:
+          type: string
+        device:
+          type: string
+        platform:
+          type: string
+        manufacturer:
+          type: string
+        model:
+          type: string
+        osName:
+          type: string
+        osVersion:
+          type: string
+        sdkInt:
+          type: integer
+
+    PlaybackNetworkContext:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        downlinkKbps:
+          type: integer
+        metered:
+          type: boolean
+        internetValidated:
+          type: boolean
 
     PlaybackDecision:
       type: object
@@ -1902,6 +2197,162 @@ paths:
                     type: string
                     enum: [ok]
 
+  /household/profiles:
+    get:
+      summary: List household profiles
+      operationId: getHouseholdProfiles
+      tags:
+        - household
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "200":
+          description: Household profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HouseholdProfile"
+    post:
+      summary: Create household profile
+      operationId: postHouseholdProfiles
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HouseholdProfile"
+      responses:
+        "201":
+          description: Household profile created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdProfile"
+        "400":
+          description: Invalid household profile
+        "403":
+          description: Forbidden
+        "409":
+          description: Profile already exists
+
+  /household/unlock:
+    get:
+      summary: Get household unlock status
+      operationId: getHouseholdUnlock
+      tags:
+        - household
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "200":
+          description: Household unlock status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdUnlockStatus"
+    post:
+      summary: Unlock protected household profiles
+      operationId: postHouseholdUnlock
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:read]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HouseholdUnlockRequest"
+      responses:
+        "200":
+          description: Household unlock granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdUnlockStatus"
+        "400":
+          description: Invalid PIN payload
+        "403":
+          description: Invalid PIN
+        "409":
+          description: No household PIN configured
+    delete:
+      summary: Clear household unlock state
+      operationId: deleteHouseholdUnlock
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:read]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "204":
+          description: Household unlock cleared
+
+  /household/profiles/{profileId}:
+    parameters:
+      - name: profileId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Update household profile
+      operationId: putHouseholdProfile
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HouseholdProfile"
+      responses:
+        "200":
+          description: Household profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdProfile"
+        "400":
+          description: Invalid household profile
+        "403":
+          description: Forbidden
+        "404":
+          description: Profile not found
+    delete:
+      summary: Delete household profile
+      operationId: deleteHouseholdProfile
+      tags:
+        - household
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "204":
+          description: Household profile deleted
+        "403":
+          description: Forbidden
+        "404":
+          description: Profile not found
+        "409":
+          description: Cannot delete the last profile
+
   /system/config:
     get:
       summary: Get system configuration
@@ -1944,6 +2395,102 @@ paths:
           description: Invalid configuration
         "500":
           description: Failed to save configuration
+
+  /system/entitlements:
+    get:
+      summary: Get current principal entitlement status
+      operationId: getSystemEntitlements
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:read]
+      parameters:
+        - in: query
+          name: principalId
+          required: false
+          description: Inspect another principal when authenticated with admin scope.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current entitlement status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntitlementStatus"
+
+  /system/entitlements/receipts:
+    post:
+      summary: Verify a purchase receipt and apply matching entitlements
+      operationId: postSystemEntitlementReceipt
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EntitlementReceiptRequest"
+      responses:
+        "200":
+          description: Receipt verified and entitlements updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntitlementReceiptResponse"
+        "400":
+          description: Invalid receipt submission
+        "502":
+          description: Upstream verification failed
+        "503":
+          description: Receipt verification unavailable
+
+  /system/entitlements/overrides:
+    post:
+      summary: Grant admin entitlement overrides
+      operationId: postSystemEntitlementOverride
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EntitlementOverrideRequest"
+      responses:
+        "204":
+          description: Override granted
+        "400":
+          description: Invalid override request
+
+  /system/entitlements/overrides/{principalId}/{scope}:
+    delete:
+      summary: Revoke an admin entitlement override
+      operationId: deleteSystemEntitlementOverride
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - in: path
+          name: principalId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: scope
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Override revoked
+        "400":
+          description: Invalid revoke request
 
   /receiver/current:
     get:
@@ -2049,6 +2596,7 @@ paths:
       tags:
         - epg
       parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
         - name: from
           in: query
           schema:
@@ -2100,6 +2648,7 @@ paths:
       tags:
         - services
       parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
         - in: query
           name: bouquet
           schema:
@@ -2214,6 +2763,7 @@ paths:
       tags:
         - recordings
       parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
         - name: root
           in: query
           schema:
@@ -2704,6 +3254,20 @@ paths:
           description: HTTPS required for session exchange
         "401":
           description: Unauthorized
+    delete:
+      summary: Delete auth session cookie
+      operationId: deleteSession
+      tags:
+        - auth
+      security:
+        - BearerAuth: [v3:read]
+      parameters:
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      responses:
+        "204":
+          description: Session deleted
+        "403":
+          description: Household PIN required for child-profile logout
 
   /timers:
     get:
