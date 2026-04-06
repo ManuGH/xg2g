@@ -49,7 +49,6 @@ ALLOWLIST=(
     "data/"
     "docker-compose.dev.yml"
     "docker-compose.monitoring.yml"
-    "docker-compose.yml"
     "docs/"
     "design/"
     "e2e/"

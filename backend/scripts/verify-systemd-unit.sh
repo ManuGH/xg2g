@@ -1,14 +1,17 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
+
+CANONICAL_UNIT="deploy/xg2g.service"
+
+fail() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
 
 if [ -f xg2g.service ]; then
-  echo "ERROR: repo root xg2g.service must not exist; canonical unit is docs/ops/xg2g.service" >&2
-  exit 1
+  fail "repo root xg2g.service must not exist; canonical unit is ${CANONICAL_UNIT}"
 fi
 
-if [ ! -f docs/ops/xg2g.service ]; then
-  echo "ERROR: missing canonical unit at docs/ops/xg2g.service" >&2
-  exit 1
-fi
+[[ -f "${CANONICAL_UNIT}" ]] || fail "missing canonical unit at ${CANONICAL_UNIT}"
 
-echo "OK: canonical systemd unit present and no duplicate exists"
+echo "OK: canonical deploy unit present and no duplicate exists"

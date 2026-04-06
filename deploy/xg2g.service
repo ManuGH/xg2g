@@ -1,9 +1,11 @@
-# GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/xg2g.service.tmpl
+# Canonical deploy bundle file for xg2g systemd installation.
 [Unit]
 Description=xg2g Hardened Daemon (Docker Compose)
 Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
+
+# Repo-side canonical source for this unit lives at deploy/xg2g.service.
 
 # Truth model: systemd orchestrates Compose only; Docker is runtime truth.
 # Base compose path is frozen to /srv/xg2g/docker-compose.yml.

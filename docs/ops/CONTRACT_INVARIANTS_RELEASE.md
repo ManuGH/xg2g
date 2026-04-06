@@ -12,8 +12,8 @@ invariants to guarantee that **Repository Truth = Runtime Truth**.
 
 ## 2. Documentation Drift Prevention (Docs-as-Code)
 
-- **Templates as Source**: All docs (`README.md`), units (`xg2g.service`), and
-  configurations (`docker-compose.yml`) MUST be generated from `templates/`.
+- **Templates as Source**: All docs (`README.md`), units (`deploy/xg2g.service`), and
+  configurations (`deploy/docker-compose.yml`) MUST be generated from `templates/`.
 - **No Direct Edits**: Direct modification of generated artifacts is PROHIBITED.
 - **Idempotency**: `make docs-render` must be idempotent and order-stable.
 

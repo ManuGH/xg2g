@@ -1,6 +1,7 @@
 #!/bin/bash
 # Best Practice 2026: Zero-Drift Document Renderer
-# Compiles templates into production artifacts using SSoT (VERSION, DIGESTS.lock).
+# Compiles templates into deploy bundle truth and generated docs using
+# SSoT inputs (VERSION, DIGESTS.lock).
 
 set -euo pipefail
 
@@ -49,15 +50,60 @@ render() {
     echo "✅ Rendered: ${dst}"
 }
 
+render_body() {
+    local src="$1"
+    local dst="$2"
+
+    sed -e "s/{{VERSION}}/${VERSION}/g" \
+        -e "s/{{DIGEST}}/${DIGEST_VAL}/g" \
+        "$src" > "$dst"
+}
+
+render_deploy_unit() {
+    local src="$1"
+    local deploy_dst="$2"
+    local body
+
+    body="$(mktemp)"
+    render_body "$src" "$body"
+
+    {
+        printf '%s\n' '# Canonical deploy bundle file for xg2g systemd installation.'
+        cat "$body"
+    } > "$deploy_dst"
+    echo "✅ Rendered: ${deploy_dst}"
+    rm -f "$body"
+}
+
+render_deploy_compose() {
+    local src="$1"
+    local deploy_dst="$2"
+    local body
+
+    body="$(mktemp)"
+
+    render_body "$src" "$body"
+
+    {
+        printf '%s\n' '# Canonical deploy bundle file for xg2g production compose.'
+        cat "$body"
+    } > "$deploy_dst"
+    echo "✅ Rendered: ${deploy_dst}"
+    rm -f "$body"
+}
+
 # 1. README.md
 render "${BACKEND_ROOT}/templates/README.md.tmpl" "${REPO_ROOT}/README.md" "md"
 
-# 2. systemd Unit
-render "${BACKEND_ROOT}/templates/docs/ops/xg2g.service.tmpl" "${REPO_ROOT}/docs/ops/xg2g.service" "shell"
+# 2. systemd Unit bundle
+render_deploy_unit \
+    "${BACKEND_ROOT}/templates/docs/ops/xg2g.service.tmpl" \
+    "${REPO_ROOT}/deploy/xg2g.service"
 
-# 3. docker-compose.yml
-render "${BACKEND_ROOT}/templates/docker-compose.yml.tmpl" "${REPO_ROOT}/docker-compose.yml" "shell"
-render "${BACKEND_ROOT}/templates/docker-compose.yml.tmpl" "${REPO_ROOT}/infrastructure/docker/docker-compose.yml" "shell"
+# 3. docker-compose bundle
+render_deploy_compose \
+    "${BACKEND_ROOT}/templates/docker-compose.yml.tmpl" \
+    "${REPO_ROOT}/deploy/docker-compose.yml"
 
 # 4. Deployment Runtime Contract
 render "${BACKEND_ROOT}/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl" "${REPO_ROOT}/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md" "md"

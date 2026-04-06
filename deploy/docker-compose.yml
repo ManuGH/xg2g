@@ -1,4 +1,4 @@
-# GENERATED FILE - DO NOT EDIT. Source: backend/templates/docker-compose.yml.tmpl
+# Canonical deploy bundle file for xg2g production compose.
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:v3.4.3

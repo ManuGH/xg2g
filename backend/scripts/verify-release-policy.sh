@@ -43,8 +43,12 @@ ALLOWLIST=(
     "RELEASE_MANIFEST.json"
     "CHANGELOG.md"
     "README.md"
-    "docker-compose.yml"
-    "docs/ops/xg2g.service"
+    "deploy/docker-compose.yml"
+    "deploy/xg2g.service"
+    "docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"
+    "docs/ops/OPERATIONS_MODEL.md"
+    "docs/ops/xg2g-verifier.service"
+    "docs/ops/xg2g-verifier.timer"
 )
 
 # 3. Get Diff

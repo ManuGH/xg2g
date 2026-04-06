@@ -5,30 +5,30 @@
 .PHONY: up down status ps logs restart prod-up prod-down prod-ps prod-logs prod-restart release-check release changelog setup build-ffmpeg repair-metadata
 
 up: ## Start docker-compose stack
-	@docker compose up -d
+	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d
 	@echo "✅ Stack started at http://localhost:8088"
 
 down: ## Stop docker-compose stack
-	@docker compose down
+	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml down
 	@echo "✅ Stack stopped"
 
 status: ## Check API status
 	@curl -fsS http://localhost:8088/healthz >/dev/null 2>&1 && echo "✅ OK" || echo "❌ Service not responding"
 
 ps: ## Show running containers
-	@docker compose ps
+	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml ps
 
 logs: ## Show service logs
-	@docker compose logs -f
+	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml logs -f
 
 restart: ## Restart service
-	@docker compose restart xg2g
+	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml restart xg2g
 
 prod-up: ## Start production stack
-	@docker compose -f infrastructure/docker/docker-compose.yml up -d
+	@docker compose -f deploy/docker-compose.yml up -d
 
 prod-down: ## Stop production stack
-	@docker compose -f infrastructure/docker/docker-compose.yml down
+	@docker compose -f deploy/docker-compose.yml down
 
 release-check: ## Validate release readiness
 	@$(MAKE) lint

@@ -8,14 +8,13 @@ DOC="${REPO_ROOT}/docs/ops/GENERATED_ARTIFACT_GOVERNANCE.md"
 
 GOVERNED_EXACT=(
   "README.md"
-  "docker-compose.yml"
-  "infrastructure/docker/docker-compose.yml"
+  "deploy/docker-compose.yml"
   "docs/guides/CONFIGURATION.md"
   "docs/guides/CONFIG_SURFACES.md"
   "docs/guides/config.schema.json"
   "docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"
   "docs/ops/OPERATIONS_MODEL.md"
-  "docs/ops/xg2g.service"
+  "deploy/xg2g.service"
   "docs/ops/xg2g-verifier.service"
   "docs/ops/xg2g-verifier.timer"
   "backend/config.generated.example.yaml"
@@ -92,6 +91,16 @@ detect_generated_reason() {
 
   if head -n 5 "${file}" | grep -Eq '^(#|<!--) GENERATED FILE - DO NOT EDIT\. Source:'; then
     printf 'rendered-generated-header\n'
+    return 0
+  fi
+
+  if head -n 5 "${file}" | grep -Fq '# Canonical deploy bundle file for xg2g systemd installation.'; then
+    printf 'deploy-unit-render-marker\n'
+    return 0
+  fi
+
+  if head -n 5 "${file}" | grep -Fq '# Canonical deploy bundle file for xg2g production compose.'; then
+    printf 'deploy-compose-render-marker\n'
     return 0
   fi
 
