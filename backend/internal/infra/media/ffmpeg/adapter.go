@@ -560,10 +560,6 @@ func (a *LocalAdapter) FinalizedProfile(handle ports.RunHandle) (ports.ProfileSp
 	return profile, true
 }
 
-func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, usesVAAPI bool) {
-	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, usesVAAPI, a.StartTimeout)
-}
-
 func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, usesVAAPI bool, startTimeout time.Duration) {
 	defer func() {
 		a.mu.Lock()
@@ -704,10 +700,6 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		return
 	}
 	a.clearProcessDetail(handle)
-}
-
-func (a *LocalAdapter) startTimeoutForSpec(spec ports.StreamSpec) time.Duration {
-	return a.startTimeoutForProfile(spec.Source.Type, spec.Profile)
 }
 
 func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profile ports.ProfileSpec) time.Duration {
