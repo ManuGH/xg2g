@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	codecdecision "github.com/ManuGH/xg2g/internal/decision"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
@@ -1280,7 +1281,7 @@ func shouldHardenSafariCopyBitstream(spec ports.StreamSpec, inputURL string) boo
 }
 
 func serviceRefEnvContains(envKey, targetRef string) bool {
-	raw := strings.TrimSpace(os.Getenv(envKey))
+	raw := strings.TrimSpace(config.ParseString(envKey, ""))
 	if raw == "" || targetRef == "" {
 		return false
 	}

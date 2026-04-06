@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/go-chi/chi/v5"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -298,7 +299,7 @@ func serviceRefEnvContainsNormalized(envKey, targetRef string) bool {
 	if targetRef == "" {
 		return false
 	}
-	raw := strings.TrimSpace(os.Getenv(envKey))
+	raw := strings.TrimSpace(config.ParseString(envKey, ""))
 	if raw == "" {
 		return false
 	}
