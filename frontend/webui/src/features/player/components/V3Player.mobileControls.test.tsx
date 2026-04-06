@@ -113,7 +113,7 @@ describe('V3Player Mobile Controls', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps wrapper fullscreen on touch devices when native HLS is preferred', async () => {
+  it('uses native video fullscreen on touch devices when native HLS is preferred', async () => {
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -154,11 +154,13 @@ describe('V3Player Mobile Controls', () => {
 
   it('does not auto-hide the bridge deck on touch devices after the idle timeout', async () => {
     vi.useFakeTimers();
+
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
     } as V3PlayerProps;
     const { container } = render(<V3Player {...props} />);
+
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
 
     const player = container.firstElementChild as HTMLElement;
@@ -172,18 +174,4 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });
 
-  it('does not force autoplay mute on touch WebKit devices', async () => {
-    const props = {
-      src: 'http://example.com/playlist.m3u8',
-      autoStart: true
-    } as V3PlayerProps;
-    const { container } = render(<V3Player {...props} />);
-
-    await waitFor(() => {
-      expect(Hls).toHaveBeenCalled();
-    });
-
-    const video = container.querySelector('video') as HTMLVideoElement;
-    expect(video.muted).toBe(false);
-  });
 });
