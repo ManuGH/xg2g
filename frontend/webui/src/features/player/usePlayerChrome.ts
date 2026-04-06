@@ -279,6 +279,15 @@ export function usePlayerChrome({
         }
       }
 
+      if (container?.requestFullscreen) {
+        try {
+          await container.requestFullscreen();
+          return;
+        } catch (err) {
+          debugWarn('Container fullscreen failed', err);
+        }
+      }
+
       if (allowNativeFullscreen && video && canUseDesktopWebKitFullscreen(video)) {
         try {
           video.controls = true;
@@ -286,15 +295,6 @@ export function usePlayerChrome({
           return;
         } catch (err) {
           debugWarn('WebKit fullscreen failed', err);
-        }
-      }
-
-      if (container?.requestFullscreen) {
-        try {
-          await container.requestFullscreen();
-          return;
-        } catch (err) {
-          debugWarn('Container fullscreen failed', err);
         }
       }
 
