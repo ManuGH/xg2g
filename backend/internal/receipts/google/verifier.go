@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	defaultTokenURL         = "https://oauth2.googleapis.com/token" //nolint:gosec // G101: not a credential, just the OAuth token endpoint URL
+	defaultTokenURL         = "https://oauth2.googleapis.com/token" // #nosec G101 -- not a credential, just the OAuth token endpoint URL
 	defaultPublisherBaseURL = "https://androidpublisher.googleapis.com"
 	androidPublisherScope   = "https://www.googleapis.com/auth/androidpublisher"
 )
