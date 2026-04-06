@@ -118,6 +118,11 @@ export function usePlayerChrome({
   const idleTimerRef = useRef<number | null>(null);
   const isTouchDevice = useMemo(() => hasTouchInput(), []);
 
+  const shouldUseTouchWebKitFullscreen = useCallback((videoEl?: VideoElementRef) => {
+    if (!videoEl?.webkitEnterFullscreen) return false;
+    return shouldForceNativeMobileHls(videoEl);
+  }, [shouldForceNativeMobileHls]);
+
   const formatClock = useCallback((value: number): string => {
     if (!Number.isFinite(value) || value < 0) return '--:--';
     const totalSeconds = Math.floor(value);
@@ -261,14 +266,35 @@ export function usePlayerChrome({
   const toggleFullscreen = useCallback(async () => {
     const video = videoRef.current;
     const container = containerRef.current;
+    const useTouchWebKitFullscreen = shouldUseTouchWebKitFullscreen(video);
 
     if (!document.fullscreenElement) {
+      if (video && useTouchWebKitFullscreen) {
+        try {
+          video.controls = true;
+          video.webkitEnterFullscreen?.();
+          return;
+        } catch (err) {
+          debugWarn('Touch WebKit fullscreen failed', err);
+        }
+      }
+
       if (container?.requestFullscreen) {
         try {
           await container.requestFullscreen();
           return;
         } catch (err) {
           debugWarn('Container fullscreen failed', err);
+        }
+      }
+
+      if (allowNativeFullscreen && video && canUseDesktopWebKitFullscreen(video)) {
+        try {
+          video.controls = true;
+          video.webkitEnterFullscreen?.();
+          return;
+        } catch (err) {
+          debugWarn('WebKit fullscreen failed', err);
         }
       }
 
@@ -288,7 +314,7 @@ export function usePlayerChrome({
     }
 
     await document.exitFullscreen();
-  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, videoRef]);
+  }, [allowNativeFullscreen, canUseDesktopWebKitFullscreen, containerRef, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
 
   const enterNativeFullscreen = useCallback((): boolean => {
     const video = videoRef.current;
@@ -373,9 +399,15 @@ export function usePlayerChrome({
     if (!autoStart) return;
     const video = videoRef.current;
     if (!video) return;
+    // Keep iPhone/iPad hardware volume working on the touch WebKit path.
+    if (shouldForceNativeMobileHls(video)) {
+      video.muted = false;
+      setIsMuted(false);
+      return;
+    }
     video.muted = true;
     setIsMuted(true);
-  }, [autoStart, videoRef]);
+  }, [autoStart, shouldForceNativeMobileHls, videoRef]);
 
   const toggleStats = useCallback(() => {
     setShowStats((prev) => !prev);
@@ -660,6 +692,7 @@ export function usePlayerChrome({
       !!video &&
       typeof video.requestPictureInPicture === 'function';
     const fullscreenAvailable =
+      shouldUseTouchWebKitFullscreen(video) ||
       (allowNativeFullscreen && !!video?.webkitEnterFullscreen) ||
       !!container?.requestFullscreen ||
       (typeof document !== 'undefined' && document.fullscreenEnabled === true);
@@ -671,14 +704,16 @@ export function usePlayerChrome({
     setCanToggleFullscreen(fullscreenAvailable);
     setCanToggleMute(!!video);
     setCanAdjustVolume(volumeAvailable);
-  }, [allowNativeFullscreen, containerRef, shouldForceNativeMobileHls, videoRef]);
+  }, [allowNativeFullscreen, containerRef, shouldForceNativeMobileHls, shouldUseTouchWebKitFullscreen, videoRef]);
 
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     const onPipChange = () => setIsPip(!!document.pictureInPictureElement);
 
     const video = videoRef.current;
-    const supportsWebkitFullscreen = allowNativeFullscreen && !!video?.webkitEnterFullscreen;
+    const supportsWebkitFullscreen =
+      !!video?.webkitEnterFullscreen &&
+      (allowNativeFullscreen || shouldUseTouchWebKitFullscreen(video));
 
     const onWebkitBeginFullscreen = () => {
       setIsFullscreen(true);
@@ -721,7 +756,7 @@ export function usePlayerChrome({
         }
       }
     };
-  }, [allowNativeFullscreen, logNativeFullscreenProbe, refreshSeekableState, videoRef]);
+  }, [allowNativeFullscreen, logNativeFullscreenProbe, refreshSeekableState, shouldUseTouchWebKitFullscreen, videoRef]);
 
   useEffect(() => {
     const container = containerRef.current;

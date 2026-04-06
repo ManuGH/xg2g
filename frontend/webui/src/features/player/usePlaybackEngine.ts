@@ -395,7 +395,6 @@ export function usePlaybackEngine({
         }
 
         const presentation = classifyHlsFatalError(data, t, lastHlsUrlRef.current);
-
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
             if (sessionIdRef.current) {
