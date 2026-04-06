@@ -1544,6 +1544,15 @@ components:
         resolvedIntent:
           type: string
           nullable: true
+        policyModeHint:
+          type: string
+          nullable: true
+        effectiveRuntimeMode:
+          type: string
+          nullable: true
+        effectiveModeSource:
+          type: string
+          nullable: true
         qualityRung:
           type: string
           nullable: true

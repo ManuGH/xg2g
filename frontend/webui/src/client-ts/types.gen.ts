@@ -965,6 +965,9 @@ export type PlaybackTrace = {
     requestProfile?: string | null;
     requestedIntent?: string | null;
     resolvedIntent?: string | null;
+    policyModeHint?: string | null;
+    effectiveRuntimeMode?: string | null;
+    effectiveModeSource?: string | null;
     qualityRung?: string | null;
     audioQualityRung?: string | null;
     videoQualityRung?: string | null;
