@@ -1,6 +1,6 @@
 // Application Context - Centralized State Management with TypeScript
 
-import { createContext, useContext, useState, useCallback, useLayoutEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { getServices, getServicesBouquets } from '../client-ts';
 import { setClientAuthToken, throwOnClientResultError } from '../services/clientWrapper';
@@ -35,6 +35,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const [selectedBouquet, setSelectedBouquet] = useState<string>('');
   const [channels, setChannels] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const selectedBouquetRef = useRef<string>('');
 
   // Playback State
   const [playingChannel, setPlayingChannel] = useState<Service | null>(null);
@@ -51,6 +52,10 @@ export function AppProvider({ children }: AppProviderProps) {
     setClientAuthToken(token);
     setAuthReady(true);
   }, [authReady, token]);
+
+  useEffect(() => {
+    selectedBouquetRef.current = selectedBouquet;
+  }, [selectedBouquet]);
 
   // Actions
   const setToken = useCallback((newToken: string) => {
@@ -104,11 +109,13 @@ export function AppProvider({ children }: AppProviderProps) {
       setBouquets(bouquetData);
       debugLog('[DEBUG] Bouquets loaded. Count:', bouquetData.length);
 
-      const nextSelectedBouquet = bouquetData.some((bouquet) => bouquet.name === selectedBouquet)
-        ? selectedBouquet
+      const currentSelectedBouquet = selectedBouquetRef.current;
+      const nextSelectedBouquet = bouquetData.some((bouquet) => bouquet.name === currentSelectedBouquet)
+        ? currentSelectedBouquet
         : (bouquetData[0]?.name || '');
       const channelData = await fetchChannels(nextSelectedBouquet);
       setChannels(channelData);
+      selectedBouquetRef.current = nextSelectedBouquet;
       setSelectedBouquet(nextSelectedBouquet);
       debugLog('[DEBUG] Channels loaded. Count:', channelData.length);
       setDataLoaded(true);
@@ -119,7 +126,7 @@ export function AppProvider({ children }: AppProviderProps) {
     } finally {
       setLoading(false);
     }
-  }, [fetchChannels, selectedBouquet]);
+  }, [fetchChannels]);
 
   const handlePlay = useCallback((channel: Service) => {
     flushSync(() => setPlayingChannel(channel));
