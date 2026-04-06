@@ -99,7 +99,9 @@ internal class GuideViewModel(
                     GuideScreenState.Empty(
                         serverLabel = serverLabel,
                         bouquets = content.bouquets,
-                        selectedBouquet = content.selectedBouquet
+                        selectedBouquet = content.selectedBouquet,
+                        health = content.health,
+                        timelineWindow = content.timelineWindow
                     )
                 } else {
                     GuideScreenState.Ready(
@@ -107,7 +109,9 @@ internal class GuideViewModel(
                         bouquets = content.bouquets,
                         selectedBouquet = content.selectedBouquet,
                         channels = content.channels,
-                        selectedChannelRef = selectedChannelRef
+                        selectedChannelRef = selectedChannelRef,
+                        health = content.health,
+                        timelineWindow = content.timelineWindow
                     )
                 }
             } catch (error: Throwable) {

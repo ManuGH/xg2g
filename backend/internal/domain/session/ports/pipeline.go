@@ -15,3 +15,9 @@ type MediaPipeline interface {
 	// Health checks the liveness and status of the process.
 	Health(ctx context.Context, handle RunHandle) HealthStatus
 }
+
+// FinalizedProfileProvider exposes the effective profile after the pipeline has
+// applied runtime overrides and finalized its launch plan.
+type FinalizedProfileProvider interface {
+	FinalizedProfile(handle RunHandle) (ProfileSpec, bool)
+}

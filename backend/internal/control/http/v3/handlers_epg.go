@@ -67,46 +67,57 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	epgCache := s.epgCache
+	epgSource := s.epgSource
 	s.mu.RUnlock()
 
-	if epgCache == nil {
-		items := make([]nowNextItem, len(req.Services))
-		for i, sref := range req.Services {
-			items[i] = nowNextItem{ServiceRef: sref}
+	programs := epgCachePrograms(epgCache)
+	if len(programs) == 0 && epgSource != nil {
+		var err error
+		programs, err = epgSource.GetPrograms(r.Context())
+		if err != nil {
+			log.L().Error().Err(err).Msg("failed to load EPG programs for now/next fallback")
+			writeRegisteredProblem(w, r, http.StatusInternalServerError, "epg/read_failed", "Failed to Read EPG", problemcode.CodeReadFailed, "Failed to load now/next EPG data", nil)
+			return
 		}
-		writeNowNextResponse(w, items)
-		return
 	}
 
-	// Phase 9-5: Pre-index programs by channel for faster lookup
+	writeNowNextResponse(w, buildNowNextItems(req.Services, programs, time.Now()))
+}
+
+func writeNowNextResponse(w http.ResponseWriter, items []nowNextItem) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"items": items,
+	})
+}
+
+func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []nowNextItem {
 	progMap := make(map[string][]epg.Programme)
-	for _, p := range epgCache.Programs {
-		progMap[p.Channel] = append(progMap[p.Channel], p)
+	for _, program := range programs {
+		canonicalRef := read.CanonicalServiceRef(program.Channel)
+		progMap[canonicalRef] = append(progMap[canonicalRef], program)
 	}
 
-	now := time.Now()
-	xmltvFormat := "20060102150405 -0700"
-	items := make([]nowNextItem, 0, len(req.Services))
-
-	for _, sref := range req.Services {
-		progs, ok := progMap[sref]
-		if !ok {
-			items = append(items, nowNextItem{ServiceRef: sref})
+	items := make([]nowNextItem, 0, len(serviceRefs))
+	for _, serviceRef := range serviceRefs {
+		progs := progMap[read.CanonicalServiceRef(serviceRef)]
+		if len(progs) == 0 {
+			items = append(items, nowNextItem{ServiceRef: serviceRef})
 			continue
 		}
 
 		var current *epgEntry
 		var next *epgEntry
 
-		for _, p := range progs {
-			start, serr := time.Parse(xmltvFormat, p.Start)
-			stop, perr := time.Parse(xmltvFormat, p.Stop)
+		for _, program := range progs {
+			start, serr := time.Parse(xmltvTimeFormat, program.Start)
+			stop, perr := time.Parse(xmltvTimeFormat, program.Stop)
 			if serr != nil || perr != nil {
 				continue
 			}
 
 			entry := &epgEntry{
-				Title: p.Title.Text,
+				Title: program.Title.Text,
 				Start: start.Unix(),
 				End:   stop.Unix(),
 			}
@@ -121,21 +132,23 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 		}
 
 		items = append(items, nowNextItem{
-			ServiceRef: sref,
+			ServiceRef: serviceRef,
 			Now:        current,
 			Next:       next,
 		})
 	}
 
-	writeNowNextResponse(w, items)
+	return items
 }
 
-func writeNowNextResponse(w http.ResponseWriter, items []nowNextItem) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items": items,
-	})
+func epgCachePrograms(cache *epg.TV) []epg.Programme {
+	if cache == nil {
+		return nil
+	}
+	return cache.Programs
 }
+
+const xmltvTimeFormat = "20060102150405 -0700"
 
 // EpgItem defines the JSON response structure for an EPG program
 type EpgItem struct {

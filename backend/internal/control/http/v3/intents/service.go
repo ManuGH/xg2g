@@ -211,9 +211,13 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 	}
 	resolution.idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, resolution.effectiveProfileID, resolution.bucket)
 
-	profileUserAgent := intent.UserAgent
-	if requestedPlaybackMode != "" {
-		profileUserAgent = ""
+	profileUserAgent := ""
+	switch requestedPlaybackMode {
+	case "", "native_hls":
+		// Explicit playback modes usually bypass UA sniffing, but native_hls
+		// still needs the real Safari UA to distinguish browser Safari
+		// (mpegts copy) from non-Safari/native clients.
+		profileUserAgent = intent.UserAgent
 	}
 	resolveProfileSpec := func(profileID string) model.ProfileSpec {
 		return s.resolveProfileSpec(profileID, profileUserAgent, capability, hw, hwaccelMode)
@@ -525,10 +529,14 @@ func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) st
 func mapPlaybackModeToProfile(mode string) (string, error) {
 	switch mode {
 	case "native_hls":
-		// native_hls should use the normal Safari profile first:
+		// native_hls is the Safari/iOS native HLS path:
 		// progressive inputs stay remux/copy, interlaced or unknown inputs transcode.
 		// More aggressive recovery (safari_dirty / repair) is handled after runtime errors.
 		return profiles.ProfileSafari, nil
+	case "android_native":
+		// Android ExoPlayer: video copy + AAC in mpegts.
+		// Separate from native_hls to avoid fMP4 codec-parameter issues.
+		return profiles.ProfileAndroid, nil
 	case "hlsjs", "direct_mp4":
 		return profiles.ProfileHigh, nil
 	case "transcode":

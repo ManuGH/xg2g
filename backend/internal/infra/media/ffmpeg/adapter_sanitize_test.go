@@ -34,3 +34,25 @@ func TestFFmpegLogLevel_ClassifiesPreambleAsInfo(t *testing.T) {
 	level := ffmpegLogLevel("Input #0, mpegts, from 'http://10.10.55.64:17999/stream':")
 	assert.Equal(t, zerolog.InfoLevel, level)
 }
+
+func TestSummarizeFFmpegFailureLine_ClassifiesMissingCodecParamsHeaderFailure(t *testing.T) {
+	detail := summarizeFFmpegFailureLine("[out#0/hls @ 0x9cec31200] Could not write header (incorrect codec parameters ?): Invalid argument")
+	assert.Equal(t, "copy output missing codec parameters", detail)
+}
+
+func TestSummarizeFFmpegFailureLine_ClassifiesMissingCodecParamsFromPPS(t *testing.T) {
+	detail := summarizeFFmpegFailureLine("[h264 @ 0x123] non-existing PPS 0 referenced")
+	assert.Equal(t, "copy output missing codec parameters", detail)
+}
+
+func TestSummarizeFFmpegFailureLine_ClassifiesMissingCodecParamsFromUnspecifiedSize(t *testing.T) {
+	detail := summarizeFFmpegFailureLine("[mpegts @ 0x123] Could not find codec parameters for stream 1 (Video: h264, none): unspecified size")
+	assert.Equal(t, "copy output missing codec parameters", detail)
+}
+
+func TestProcessDetailPriority_PrefersCodecParamsOverPrematureStreamEnd(t *testing.T) {
+	assert.Greater(t,
+		processDetailPriority("copy output missing codec parameters"),
+		processDetailPriority("upstream stream ended prematurely"),
+	)
+}

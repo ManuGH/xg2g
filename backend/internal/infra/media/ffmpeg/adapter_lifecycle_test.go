@@ -181,7 +181,62 @@ func TestMonitorProcess_KillsStalledProcessAndPreservesStallDetail(t *testing.T)
 	}
 }
 
-func TestHealth_ExitedProcessInMapIsUnhealthyAndCleanedUp(t *testing.T) {
+func TestHealth_MonitorRemovedHandleIsUnhealthy(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		5*time.Second,
+		"",
+	)
+
+	handle := ports.RunHandle("session-2-456")
+
+	// Handle not in activeProcs → monitorProcess has finished.
+	status := adapter.Health(context.Background(), handle)
+	assert.False(t, status.Healthy)
+	assert.Equal(t, "process not found", status.Message)
+}
+
+func TestHealth_MonitorRemovedHandleReturnsDetail(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		5*time.Second,
+		"",
+	)
+
+	handle := ports.RunHandle("session-3-789")
+	adapter.recordProcessDetail(handle, "copy output missing codec parameters")
+
+	// monitorProcess finished (handle removed) but detail was recorded.
+	status := adapter.Health(context.Background(), handle)
+	assert.False(t, status.Healthy)
+	assert.Equal(t, "copy output missing codec parameters", status.Message)
+}
+
+func TestHealth_ActiveHandleIsHealthy(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
 		"",
@@ -204,19 +259,14 @@ func TestHealth_ExitedProcessInMapIsUnhealthyAndCleanedUp(t *testing.T) {
 	require.NoError(t, cmd.Start())
 	require.NoError(t, cmd.Wait())
 
-	handle := ports.RunHandle("session-2-456")
+	handle := ports.RunHandle("session-4-101")
 	adapter.mu.Lock()
 	adapter.activeProcs[handle] = cmd
 	adapter.mu.Unlock()
 
+	// Handle still in activeProcs → monitorProcess not finished → healthy.
 	status := adapter.Health(context.Background(), handle)
-	assert.False(t, status.Healthy)
-	assert.Equal(t, "process exited", status.Message)
-
-	adapter.mu.Lock()
-	_, exists := adapter.activeProcs[handle]
-	adapter.mu.Unlock()
-	assert.False(t, exists)
+	assert.True(t, status.Healthy)
 }
 
 func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {

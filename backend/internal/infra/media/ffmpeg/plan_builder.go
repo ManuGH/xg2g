@@ -34,7 +34,13 @@ type codecPlan struct {
 }
 
 type outputPlan struct {
-	args []string
+	args             []string
+	effectiveProfile ports.ProfileSpec
+}
+
+type finalizedPlan struct {
+	args             []string
+	effectiveProfile ports.ProfileSpec
 }
 
 type liveSegmentLayout struct {
@@ -44,29 +50,42 @@ type liveSegmentLayout struct {
 }
 
 func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]string, error) {
-	codecPhase, err := a.planCodec(spec)
+	plan, err := a.buildArgsWithPlan(ctx, spec, inputURL)
 	if err != nil {
 		return nil, err
+	}
+	return plan.args, nil
+}
+
+func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamSpec, inputURL string) (finalizedPlan, error) {
+	codecPhase, err := a.planCodec(spec)
+	if err != nil {
+		return finalizedPlan{}, err
 	}
 
 	inputPhase, err := a.planInput(spec, inputURL)
 	if err != nil {
-		return nil, err
+		return finalizedPlan{}, err
 	}
 
 	args := append([]string{}, codecPhase.preInputArgs...)
 	args = append(args, inputPhase.args...)
 	args = append(args, "-progress", "pipe:2")
+	result := finalizedPlan{
+		args:             args,
+		effectiveProfile: spec.Profile,
+	}
 
 	if spec.Mode == ports.ModeLive {
 		liveOutput, err := a.planLiveOutput(ctx, spec, inputPhase, codecPhase)
 		if err != nil {
-			return nil, err
+			return finalizedPlan{}, err
 		}
-		args = append(args, liveOutput.args...)
+		result.args = append(result.args, liveOutput.args...)
+		result.effectiveProfile = liveOutput.effectiveProfile
 	}
 
-	return args, nil
+	return result, nil
 }
 
 func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
@@ -299,17 +318,18 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	if err != nil {
 		return outputPlan{}, err
 	}
+	spec = a.FinalizePlan(ctx, spec, input.inputURL)
 	fps := a.resolveLiveFPS(ctx, spec, input.inputURL)
-	spec = a.applySafariRuntimeRemuxOverride(ctx, spec, input.inputURL)
+	fps = a.adjustLiveFPSForRuntimeServiceOverride(spec, input.inputURL, fps)
 	gop := fps * layout.segmentDurationSec
 
-	out := outputPlan{}
+	out := outputPlan{effectiveProfile: spec.Profile}
 	out.args = append(out.args,
 		"-map", "0:v:0?",
 		"-map", "0:a:0?",
 	)
 
-	out.args = a.buildLiveVideoOutputArgs(out.args, spec, codec, gop, layout.segmentDurationSec)
+	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec)
 	out.args = appendLiveAudioArgs(out.args, spec)
 	out.args = a.appendLiveHLSArgs(out.args, spec, layout)
 	out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID))
@@ -520,10 +540,88 @@ func (a *LocalAdapter) isValidFPS(fps int) bool {
 	return fps >= a.FPSMin && fps <= a.FPSMax
 }
 
-func (a *LocalAdapter) applySafariRuntimeRemuxOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) ports.StreamSpec {
-	if !a.shouldPreferSafariRuntimeRemux(ctx, spec, inputURL) {
-		return spec
+func (a *LocalAdapter) FinalizePlan(ctx context.Context, spec ports.StreamSpec, inputURL string) ports.StreamSpec {
+	spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
+	if spec.Profile.EffectiveModeSource == "" || spec.Profile.EffectiveModeSource == ports.RuntimeModeSourceUnknown {
+		spec.Profile.EffectiveModeSource = ports.RuntimeModeSourceResolve
 	}
+
+	var (
+		overridden bool
+		source     ports.RuntimeModeSource
+	)
+
+	spec, overridden, source = a.applySafariRuntimeRemuxOverride(ctx, spec, inputURL)
+	if overridden {
+		spec.Profile.EffectiveRuntimeMode = ports.RuntimeModeCopy
+		spec.Profile.EffectiveModeSource = source
+	}
+
+	spec, overridden, source = a.applySafariRuntimeHQOverride(ctx, spec, inputURL)
+	if overridden {
+		spec.Profile.EffectiveRuntimeMode = safariHQRuntimeMode(spec.Profile)
+		spec.Profile.EffectiveModeSource = source
+	}
+
+	if !spec.Profile.TranscodeVideo && shouldHardenSafariCopyBitstream(spec, inputURL) {
+		spec.Profile.EffectiveRuntimeMode = ports.RuntimeModeCopyHardened
+		spec.Profile.EffectiveModeSource = ports.RuntimeModeSourceEnvOverride
+	}
+
+	if spec.Profile.EffectiveRuntimeMode == "" || spec.Profile.EffectiveRuntimeMode == ports.RuntimeModeUnknown {
+		spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
+	}
+	return spec
+}
+
+func (a *LocalAdapter) applySafariRuntimeRemuxOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {
+	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Name), profiles.ProfileSafari) {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if !spec.Profile.TranscodeVideo {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if strings.TrimSpace(inputURL) == "" {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if shouldForceSafariCopyForServiceRef(spec, inputURL) {
+		a.Logger.Warn().
+			Str("sessionId", spec.SessionID).
+			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
+			Msg("forcing safari remux path via service-ref allowlist")
+		spec.Profile.TranscodeVideo = false
+		spec.Profile.Deinterlace = false
+		spec.Profile.Container = "mpegts"
+		if spec.Profile.AudioBitrateK <= 0 {
+			spec.Profile.AudioBitrateK = 192
+		}
+		return spec, true, ports.RuntimeModeSourceEnvOverride
+	}
+
+	probeTimeout := a.SafariRuntimeProbeTimeout
+	if probeTimeout <= 0 {
+		probeTimeout = 6 * time.Second
+	}
+	info, err := a.runSafariRuntimeProbeWithRetry(ctx, spec.SessionID, inputURL, probeTimeout)
+	if err != nil {
+		a.Logger.Info().
+			Err(err).
+			Str("sessionId", spec.SessionID).
+			Str("input_url", sanitizeURLForLog(inputURL)).
+			Dur("probe_timeout", probeTimeout).
+			Msg("safari runtime probe failed; keeping transcode path")
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if !strings.EqualFold(strings.TrimSpace(info.Video.CodecName), "h264") || info.Video.Interlaced {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("video_codec", info.Video.CodecName).
+		Bool("interlaced", info.Video.Interlaced).
+		Str("container", info.Container).
+		Msg("safari runtime probe selected remux path")
 	spec.Profile.TranscodeVideo = false
 	spec.Profile.Deinterlace = false
 	// Native Safari is tolerant on MPEG-TS HLS, but remuxed broadcast H.264
@@ -533,12 +631,65 @@ func (a *LocalAdapter) applySafariRuntimeRemuxOverride(ctx context.Context, spec
 	if spec.Profile.AudioBitrateK <= 0 {
 		spec.Profile.AudioBitrateK = 192
 	}
-	return spec
+	return spec, true, ports.RuntimeModeSourceRuntimeHardening
 }
 
-func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.StreamSpec, codec codecPlan, gop, segmentDurationSec int) []string {
+func (a *LocalAdapter) applySafariRuntimeHQOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {
+	if !shouldForceSafariHQForServiceRef(spec, inputURL) {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if shouldForceSafariHQ25ForServiceRef(spec, inputURL) {
+		spec.Profile.ForceSafariHQ25 = true
+	}
+	progressiveHQ := shouldUseProgressiveSafariHQ(spec.Profile)
+
+	a.Logger.Warn().
+		Str("sessionId", spec.SessionID).
+		Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
+		Msg("forcing safari HQ transcode path via service-ref allowlist")
+
+	spec.Profile.Name = "safari_hq"
+	spec.Profile.TranscodeVideo = true
+	spec.Profile.Deinterlace = !progressiveHQ
+	spec.Profile.Container = "mpegts"
+	spec.Profile.HWAccel = ""
+	spec.Profile.VideoCodec = "libx264"
+	spec.Profile.VideoCRF = 16
+	spec.Profile.VideoMaxRateK = 12000
+	spec.Profile.VideoBufSizeK = 24000
+	spec.Profile.AudioBitrateK = 256
+	spec.Profile.Preset = "fast"
+	if progressiveHQ {
+		spec.Profile.Preset = "veryfast"
+	}
+	return spec, true, ports.RuntimeModeSourceEnvOverride
+}
+
+func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamSpec, inputURL string, fps int) int {
+	if !shouldForceSafariHQForServiceRef(spec, inputURL) {
+		return fps
+	}
+	if !shouldForce25FPSForSafariHQ(spec.Profile) {
+		return fps
+	}
+
+	targetFPS := 25
+	if fps == targetFPS {
+		return fps
+	}
+
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
+		Int("cached_or_detected_fps", fps).
+		Int("override_fps", targetFPS).
+		Msg("forcing 25fps for safari HQ service override")
+	return targetFPS
+}
+
+func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.StreamSpec, inputURL string, codec codecPlan, gop, segmentDurationSec int) []string {
 	if !spec.Profile.TranscodeVideo && !usesLegacyCPUDefaults(spec, codec.resolvedCodec) {
-		return a.buildCopyVideoArgs(args, spec)
+		return a.buildCopyVideoArgs(args, spec, inputURL)
 	}
 	if codec.useVAAPI {
 		if codec.fullVAAPI {
@@ -610,6 +761,13 @@ func (a *LocalAdapter) shouldPreferSafariRuntimeRemux(ctx context.Context, spec 
 	}
 	if strings.TrimSpace(inputURL) == "" {
 		return false
+	}
+	if shouldForceSafariCopyForServiceRef(spec, inputURL) {
+		a.Logger.Warn().
+			Str("sessionId", spec.SessionID).
+			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
+			Msg("forcing safari remux path via service-ref allowlist")
+		return true
 	}
 
 	probeTimeout := a.SafariRuntimeProbeTimeout
@@ -826,14 +984,30 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string 
 	return append(args, "-global_quality", "23")
 }
 
-func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec) []string {
+func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, inputURL string) []string {
+	hardenedBitstream := shouldHardenSafariCopyBitstream(spec, inputURL)
+
 	a.Logger.Info().
 		Str("sessionId", spec.SessionID).
 		Str("transcode.mode", "copy").
 		Str("video.codec", "copy").
+		Bool("bitstream_hardened", hardenedBitstream).
 		Msg("pipeline video: copy")
 
-	return append(args, "-c:v", "copy")
+	args = append(args, "-c:v", "copy")
+	// DVB stream-relay sources (port 17999) deliver non-monotonic DTS.
+	// -enc_time_base:v demux forces the muxer to derive timestamps from
+	// the demuxer timebase (which igndts+genpts have already cleaned)
+	// instead of the raw packet DTS, eliminating A/V desync in copy mode.
+	if spec.Source.Type != ports.SourceFile {
+		args = append(args, "-enc_time_base:v", "demux")
+	}
+	if hardenedBitstream {
+		// Repeat H.264 extradata on keyframes so Safari can recover SPS/PPS
+		// more reliably from dirty relay streams while staying in copy mode.
+		args = append(args, "-bsf:v", "dump_extra=freq=keyframe")
+	}
+	return args
 }
 
 func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
@@ -998,6 +1172,10 @@ func normalizeServiceRef(raw string) string {
 	if !isLikelyServiceRef(ref) {
 		return ""
 	}
+	ref = strings.TrimRight(ref, ":")
+	if isHexColonServiceRef(ref) {
+		return strings.ToUpper(ref)
+	}
 	return ref
 }
 
@@ -1021,4 +1199,95 @@ func extractServiceRefFromURL(inputURL string) string {
 
 func isLikelyServiceRef(value string) bool {
 	return strings.Count(value, ":") >= 5
+}
+
+func isHexColonServiceRef(ref string) bool {
+	if ref == "" || !strings.Contains(ref, ":") {
+		return false
+	}
+	for _, ch := range ref {
+		switch {
+		case ch == ':':
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func safariRuntimeServiceRef(spec ports.StreamSpec, inputURL string) string {
+	if ref := normalizeServiceRef(spec.Source.ID); ref != "" {
+		return ref
+	}
+	return extractServiceRefFromURL(inputURL)
+}
+
+func shouldForceSafariCopyForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+	if spec.Profile.DisableSafariForceCopy {
+		return false
+	}
+	targetRef := safariRuntimeServiceRef(spec, inputURL)
+	if targetRef == "" {
+		return false
+	}
+
+	return serviceRefEnvContains("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", targetRef)
+}
+
+func shouldForceSafariHQForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+	targetRef := safariRuntimeServiceRef(spec, inputURL)
+	if targetRef == "" {
+		return false
+	}
+	return serviceRefEnvContains("XG2G_SAFARI_HQ_SERVICE_REFS", targetRef)
+}
+
+func shouldForceSafariHQ25ForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+	targetRef := safariRuntimeServiceRef(spec, inputURL)
+	if targetRef == "" {
+		return false
+	}
+	return serviceRefEnvContains("XG2G_SAFARI_HQ25_SERVICE_REFS", targetRef)
+}
+
+func safariHQRuntimeMode(profile ports.ProfileSpec) ports.RuntimeMode {
+	if shouldForce25FPSForSafariHQ(profile) {
+		return ports.RuntimeModeHQ25
+	}
+	return ports.RuntimeModeHQ50
+}
+
+func shouldUseProgressiveSafariHQ(profile ports.ProfileSpec) bool {
+	hint := profile.PolicyModeHint
+	if hint == "" || hint == ports.RuntimeModeUnknown {
+		hint = profiles.RuntimeModeHintFromProfile(profile)
+	}
+	return hint == ports.RuntimeModeCopy || hint == ports.RuntimeModeCopyHardened
+}
+
+func shouldForce25FPSForSafariHQ(profile ports.ProfileSpec) bool {
+	if profile.ForceSafariHQ25 {
+		return true
+	}
+	return !shouldUseProgressiveSafariHQ(profile)
+}
+
+func shouldHardenSafariCopyBitstream(spec ports.StreamSpec, inputURL string) bool {
+	return shouldForceSafariCopyForServiceRef(spec, inputURL)
+}
+
+func serviceRefEnvContains(envKey, targetRef string) bool {
+	raw := strings.TrimSpace(os.Getenv(envKey))
+	if raw == "" || targetRef == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(raw, ",") {
+		if normalizeServiceRef(candidate) == targetRef {
+			return true
+		}
+	}
+	return false
 }

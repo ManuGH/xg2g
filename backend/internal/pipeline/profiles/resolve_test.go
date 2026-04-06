@@ -3,6 +3,7 @@ package profiles
 import (
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/stretchr/testify/assert"
 )
@@ -29,24 +30,29 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, false, specProg.TranscodeVideo, "Progressive should assume safe for copy")
 	assert.Equal(t, "mpegts", specProg.Container)
 	assert.Equal(t, 192, specProg.AudioBitrateK, "Audio should be normalized for Safari")
+	assert.Equal(t, ports.RuntimeModeCopy, specProg.PolicyModeHint)
 
 	// 2. Interlaced + GPU -> Transcode VAAPI
 	interCap := &scan.Capability{Interlaced: true}
 	specGPU := Resolve("auto", safariUA, 0, interCap, true, HWAccelAuto)
 	assert.Equal(t, true, specGPU.TranscodeVideo, "Interlaced should force transcode")
 	assert.Equal(t, true, specGPU.Deinterlace)
+	assert.Equal(t, "mpegts", specGPU.Container)
 	assert.Equal(t, "vaapi", specGPU.HWAccel)
 	assert.Equal(t, "h264", specGPU.VideoCodec)
 	assert.Equal(t, 20, specGPU.VideoQP)
+	assert.Equal(t, ports.RuntimeModeHQ25, specGPU.PolicyModeHint)
 
 	// 3. Interlaced + No GPU -> Transcode CPU
 	specCPU := Resolve("auto", safariUA, 0, interCap, false, HWAccelAuto)
 	assert.Equal(t, true, specCPU.TranscodeVideo)
 	assert.Equal(t, true, specCPU.Deinterlace)
+	assert.Equal(t, "mpegts", specCPU.Container)
 	assert.Equal(t, "", specCPU.HWAccel)
 	assert.Equal(t, "libx264", specCPU.VideoCodec)
-	assert.Equal(t, "slow", specCPU.Preset)
+	assert.Equal(t, "veryfast", specCPU.Preset)
 	assert.Equal(t, 20, specCPU.VideoCRF)
+	assert.Equal(t, ports.RuntimeModeHQ25, specCPU.PolicyModeHint)
 }
 
 func TestResolve_SafariWithoutUserAgentUsesFMP4ForNativeProgressiveClients(t *testing.T) {
@@ -79,6 +85,7 @@ func TestResolve_SafariDirtyExplicit(t *testing.T) {
 	assert.Equal(t, 16, specCPU.VideoCRF)
 	assert.Equal(t, 14000, specCPU.VideoMaxRateK)
 	assert.Equal(t, 28000, specCPU.VideoBufSizeK)
+	assert.Equal(t, ports.RuntimeModeSafe, specCPU.PolicyModeHint)
 
 	specAutoGPU := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
 	assert.Equal(t, "safari_dirty", specAutoGPU.Name)
@@ -156,7 +163,7 @@ func TestResolve_LiveVideoLadderBridge(t *testing.T) {
 		wantCRF    int
 		wantPreset string
 	}{
-		{name: "safari cpu fallback uses quality video ladder", profile: ProfileSafari, wantCRF: 20, wantPreset: "slow"},
+		{name: "safari cpu fallback keeps quality crf with live-safe preset", profile: ProfileSafari, wantCRF: 20, wantPreset: "veryfast"},
 		{name: "safari_dvr uses compatible video ladder", profile: ProfileSafariDVR, wantCRF: 23, wantPreset: "fast"},
 		{name: "dvr uses compatible video ladder", profile: ProfileDVR, wantCRF: 23, wantPreset: "fast"},
 		{name: "repair uses repair video ladder", profile: ProfileRepair, wantCRF: 28, wantPreset: "veryfast"},
@@ -171,6 +178,15 @@ func TestResolve_LiveVideoLadderBridge(t *testing.T) {
 			assert.Equal(t, tc.wantPreset, spec.Preset)
 		})
 	}
+}
+
+func TestResolve_ProfileSafariCPUFallbackPresetCanBeOverridden(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_CPU_PRESET", "fast")
+
+	spec := Resolve(ProfileSafari, "Mozilla/5.0 Version/17.0 Safari/605.1.15", 0, &scan.Capability{Interlaced: true}, false, HWAccelAuto)
+	assert.True(t, spec.TranscodeVideo)
+	assert.Equal(t, 20, spec.VideoCRF)
+	assert.Equal(t, "fast", spec.Preset)
 }
 
 func TestNormalizeRequestedProfileID_MapsPublicAliases(t *testing.T) {

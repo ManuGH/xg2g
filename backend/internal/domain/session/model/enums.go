@@ -139,6 +139,7 @@ const (
 	DUpstreamEndedPrematurely  ReasonDetailCode = "D_UPSTREAM_ENDED_PREMATURELY"
 	DUpstreamInputOpenFailed   ReasonDetailCode = "D_UPSTREAM_INPUT_OPEN_FAILED"
 	DInvalidUpstreamInput      ReasonDetailCode = "D_INVALID_UPSTREAM_INPUT"
+	DCopyOutputMissingCodec    ReasonDetailCode = "D_COPY_OUTPUT_MISSING_CODEC"
 )
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).

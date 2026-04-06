@@ -331,6 +331,8 @@ func TestReportPlaybackFeedback_SafariFallsBackToDirtyProfileBeforeRestart(t *te
 	updated, err := store.GetSession(context.Background(), sid)
 	require.NoError(t, err)
 	require.NotNil(t, updated)
+	require.Equal(t, model.SessionStarting, updated.State)
+	require.Equal(t, model.PipeStopRequested, updated.PipelineState)
 	require.Equal(t, profiles.ProfileSafariDirty, updated.Profile.Name)
 	require.Equal(t, "fmp4", updated.Profile.Container)
 	require.NotNil(t, updated.PlaybackTrace)
@@ -338,6 +340,165 @@ func TestReportPlaybackFeedback_SafariFallsBackToDirtyProfileBeforeRestart(t *te
 	require.Equal(t, "client_feedback", updated.PlaybackTrace.Fallbacks[0].Trigger)
 	require.Equal(t, "client_report:code=3", updated.PlaybackTrace.Fallbacks[0].Reason)
 	require.NotEmpty(t, updated.PlaybackTrace.TargetProfileHash)
+
+	store.setState(model.SessionStopped)
+
+	select {
+	case evt := <-eventBus.ch:
+		require.Equal(t, string(model.EventStartSession), evt.topic)
+	case <-time.After(time.Second):
+		t.Fatal("expected safari fallback restart event after terminal state")
+	}
+}
+
+func TestReportPlaybackFeedback_SafariForceCopyAllowlistFallsBackToBrowserTSBeforeRestart(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
+
+	sid := uuid.NewString()
+	hlsRoot := t.TempDir()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:19:11:6:85:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-safari-force-copy-001",
+			Profile: model.ProfileSpec{
+				Name:         profiles.ProfileSafari,
+				Container:    "fmp4",
+				DVRWindowSec: 2700,
+			},
+		},
+	}
+	eventBus := newFeedbackBus()
+
+	writeFirstFrameMarker(t, hlsRoot, sid)
+
+	s := &Server{cfg: config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}}, v3Store: store, v3Bus: eventBus}
+	runtimeCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	require.NoError(t, s.SetRuntimeContext(runtimeCtx))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"error","code":3,"message":"mediaError"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	select {
+	case evt := <-eventBus.ch:
+		require.Equal(t, string(model.EventStopSession), evt.topic)
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected safari fallback stop event")
+	}
+
+	select {
+	case evt := <-eventBus.ch:
+		t.Fatalf("unexpected restart event before terminal state: %s", evt.topic)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	updated, err := store.GetSession(context.Background(), sid)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, model.SessionStarting, updated.State)
+	require.Equal(t, model.PipeStopRequested, updated.PipelineState)
+	require.Equal(t, profiles.ProfileSafari, updated.Profile.Name)
+	require.Equal(t, "mpegts", updated.Profile.Container)
+	require.True(t, updated.Profile.DisableSafariForceCopy)
+	require.True(t, updated.Profile.TranscodeVideo)
+	require.True(t, updated.Profile.Deinterlace)
+	require.NotNil(t, updated.PlaybackTrace)
+	require.Len(t, updated.PlaybackTrace.Fallbacks, 1)
+	require.Equal(t, "client_feedback", updated.PlaybackTrace.Fallbacks[0].Trigger)
+	require.Equal(t, "client_report:code=3", updated.PlaybackTrace.Fallbacks[0].Reason)
+	require.NotEmpty(t, updated.PlaybackTrace.TargetProfileHash)
+
+	store.setState(model.SessionStopped)
+
+	select {
+	case evt := <-eventBus.ch:
+		require.Equal(t, string(model.EventStartSession), evt.topic)
+	case <-time.After(time.Second):
+		t.Fatal("expected safari fallback restart event after terminal state")
+	}
+}
+
+func TestReportPlaybackFeedback_SafariForceCopyAllowlistEscalatesToRepairAfterTSFallbackReFails(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
+
+	sid := uuid.NewString()
+	hlsRoot := t.TempDir()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:19:11:6:85:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-safari-force-copy-002",
+			Profile: model.ProfileSpec{
+				Name:                   profiles.ProfileSafari,
+				Container:              "mpegts",
+				DVRWindowSec:           2700,
+				DisableSafariForceCopy: true,
+				TranscodeVideo:         true,
+				Deinterlace:            true,
+				VideoCodec:             "libx264",
+				VideoCRF:               20,
+				VideoMaxRateK:          8000,
+				VideoBufSizeK:          16000,
+				AudioBitrateK:          192,
+				Preset:                 "veryfast",
+			},
+		},
+	}
+	eventBus := newFeedbackBus()
+
+	writeFirstFrameMarker(t, hlsRoot, sid)
+
+	s := &Server{cfg: config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}}, v3Store: store, v3Bus: eventBus}
+	runtimeCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	require.NoError(t, s.SetRuntimeContext(runtimeCtx))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"error","code":3,"message":"mediaError"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	select {
+	case evt := <-eventBus.ch:
+		require.Equal(t, string(model.EventStopSession), evt.topic)
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected safari fallback stop event")
+	}
+
+	select {
+	case evt := <-eventBus.ch:
+		t.Fatalf("unexpected restart event before terminal state: %s", evt.topic)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	updated, err := store.GetSession(context.Background(), sid)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, model.SessionStarting, updated.State)
+	require.Equal(t, model.PipeStopRequested, updated.PipelineState)
+	require.Equal(t, profiles.ProfileRepair, updated.Profile.Name)
+	require.Equal(t, "mpegts", updated.Profile.Container)
+	require.True(t, updated.Profile.TranscodeVideo)
+	require.True(t, updated.Profile.Deinterlace)
+	require.Equal(t, "libx264", updated.Profile.VideoCodec)
+	require.Equal(t, 24, updated.Profile.VideoCRF)
+	require.Equal(t, 1280, updated.Profile.VideoMaxWidth)
+	require.Equal(t, "veryfast", updated.Profile.Preset)
+	require.NotNil(t, updated.PlaybackTrace)
+	require.Len(t, updated.PlaybackTrace.Fallbacks, 1)
+	require.Equal(t, "client_feedback", updated.PlaybackTrace.Fallbacks[0].Trigger)
+	require.Equal(t, "client_report:code=3", updated.PlaybackTrace.Fallbacks[0].Reason)
+	require.NotEmpty(t, updated.PlaybackTrace.TargetProfileHash)
+	require.NotEqual(t, updated.PlaybackTrace.Fallbacks[0].FromProfileHash, updated.PlaybackTrace.Fallbacks[0].ToProfileHash)
 
 	store.setState(model.SessionStopped)
 

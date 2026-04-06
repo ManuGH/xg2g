@@ -31,6 +31,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	v3store "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
@@ -629,20 +630,23 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 			model.CtxKeySourceType: "tuner",
 		},
 		PlaybackTrace: &model.PlaybackTrace{
-			RequestProfile:      "compatible",
-			RequestedIntent:     "quality",
-			ResolvedIntent:      "compatible",
-			QualityRung:         "compatible_video_h264_crf23_fast",
-			AudioQualityRung:    "compatible_audio_aac_256_stereo",
-			VideoQualityRung:    "compatible_video_h264_crf23_fast",
-			DegradedFrom:        "quality",
-			HostPressureBand:    "constrained",
-			HostOverrideApplied: true,
-			ClientPath:          "hlsjs",
-			InputKind:           "tuner",
-			PreflightReason:     "invalid_ts",
-			PreflightDetail:     "sync_miss",
-			TargetProfileHash:   "trace-hash-1",
+			RequestProfile:       "compatible",
+			RequestedIntent:      "quality",
+			ResolvedIntent:       "compatible",
+			PolicyModeHint:       ports.RuntimeModeHQ25,
+			EffectiveRuntimeMode: ports.RuntimeModeCopyHardened,
+			EffectiveModeSource:  ports.RuntimeModeSourceEnvOverride,
+			QualityRung:          "compatible_video_h264_crf23_fast",
+			AudioQualityRung:     "compatible_audio_aac_256_stereo",
+			VideoQualityRung:     "compatible_video_h264_crf23_fast",
+			DegradedFrom:         "quality",
+			HostPressureBand:     "constrained",
+			HostOverrideApplied:  true,
+			ClientPath:           "hlsjs",
+			InputKind:            "tuner",
+			PreflightReason:      "invalid_ts",
+			PreflightDetail:      "sync_miss",
+			TargetProfileHash:    "trace-hash-1",
 			Operator: &model.PlaybackOperatorTrace{
 				ForcedIntent:           "repair",
 				MaxQualityRung:         "repair_audio_aac_192_stereo",
@@ -725,6 +729,12 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.Equal(t, "quality", *resp.Trace.RequestedIntent)
 	require.NotNil(t, resp.Trace.ResolvedIntent)
 	require.Equal(t, "compatible", *resp.Trace.ResolvedIntent)
+	require.NotNil(t, resp.Trace.PolicyModeHint)
+	require.Equal(t, "hq25", *resp.Trace.PolicyModeHint)
+	require.NotNil(t, resp.Trace.EffectiveRuntimeMode)
+	require.Equal(t, "copy_hardened", *resp.Trace.EffectiveRuntimeMode)
+	require.NotNil(t, resp.Trace.EffectiveModeSource)
+	require.Equal(t, "env_override", *resp.Trace.EffectiveModeSource)
 	require.NotNil(t, resp.Trace.QualityRung)
 	require.Equal(t, "compatible_video_h264_crf23_fast", *resp.Trace.QualityRung)
 	require.NotNil(t, resp.Trace.AudioQualityRung)
@@ -889,7 +899,7 @@ func TestV3Contract_HLS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rrTS.Code)
 	require.Equal(t, "video/mp2t", rrTS.Header().Get("Content-Type"))
-	require.Equal(t, "public, max-age=60", rrTS.Header().Get("Cache-Control"))
+	require.Equal(t, "no-store", rrTS.Header().Get("Cache-Control"))
 	require.Equal(t, "identity", rrTS.Header().Get("Content-Encoding"))
 	require.Equal(t, "bytes", rrTS.Header().Get("Accept-Ranges"))
 	require.NotEmpty(t, rrTS.Body.Bytes())
@@ -904,7 +914,7 @@ func TestV3Contract_HLS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rrInit.Code)
 	require.Equal(t, "video/mp4", rrInit.Header().Get("Content-Type"))
-	require.Equal(t, "public, max-age=3600", rrInit.Header().Get("Cache-Control"))
+	require.Equal(t, "no-store", rrInit.Header().Get("Cache-Control"))
 	require.Equal(t, "identity", rrInit.Header().Get("Content-Encoding"))
 	require.Equal(t, "bytes", rrInit.Header().Get("Accept-Ranges"))
 	require.Equal(t, initSeg, rrInit.Body.Bytes())
@@ -920,7 +930,7 @@ func TestV3Contract_HLS(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rrM4s.Code)
 	require.Equal(t, "video/mp4", rrM4s.Header().Get("Content-Type"))
-	require.Equal(t, "public, max-age=60", rrM4s.Header().Get("Cache-Control"))
+	require.Equal(t, "no-store", rrM4s.Header().Get("Cache-Control"))
 	require.Equal(t, "identity", rrM4s.Header().Get("Content-Encoding"))
 	require.Equal(t, "bytes", rrM4s.Header().Get("Accept-Ranges"))
 	require.Equal(t, mediaSeg, rrM4s.Body.Bytes())

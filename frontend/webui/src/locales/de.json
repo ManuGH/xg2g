@@ -104,6 +104,8 @@
     "goLive": "Live gehen",
     "fullscreenLabel": "Vollbild",
     "exitFullscreenLabel": "Vollbild beenden",
+    "nativeFullscreenLabel": "Native",
+    "nativeFullscreenTitle": "Apple-Player öffnen",
     "unmute": "Ton an",
     "mute": "Stumm",
     "deviceVolumeHint": "Lautstärke mit Seitentasten",

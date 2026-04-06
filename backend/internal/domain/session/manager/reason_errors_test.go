@@ -87,6 +87,13 @@ func TestClassifyReason(t *testing.T) {
 			wantDetail: "process died during startup: transcode stalled - no progress detected",
 		},
 		{
+			name:       "process ended during startup with missing codec parameters",
+			err:        newReasonError(model.RProcessEnded, "process died during startup: copy output missing codec parameters", nil),
+			wantReason: model.RProcessEnded,
+			wantCode:   model.DCopyOutputMissingCodec,
+			wantDetail: "process died during startup: copy output missing codec parameters",
+		},
+		{
 			name:       "context canceled",
 			err:        context.Canceled,
 			wantReason: model.RCancelled,

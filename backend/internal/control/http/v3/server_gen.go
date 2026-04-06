@@ -1153,17 +1153,20 @@ type PlaybackTrace struct {
 	QualityRung         *string                  `json:"qualityRung"`
 
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
-	RequestId         string                 `json:"requestId"`
-	RequestProfile    *string                `json:"requestProfile"`
-	RequestedIntent   *string                `json:"requestedIntent"`
-	ResolvedIntent    *string                `json:"resolvedIntent"`
-	SessionId         *string                `json:"sessionId"`
-	Source            *PlaybackSourceProfile `json:"source,omitempty"`
-	StopClass         *string                `json:"stopClass"`
-	StopReason        *string                `json:"stopReason"`
-	TargetProfile     *PlaybackTargetProfile `json:"targetProfile,omitempty"`
-	TargetProfileHash *string                `json:"targetProfileHash"`
-	VideoQualityRung  *string                `json:"videoQualityRung"`
+	RequestId            string                 `json:"requestId"`
+	RequestProfile       *string                `json:"requestProfile"`
+	RequestedIntent      *string                `json:"requestedIntent"`
+	ResolvedIntent       *string                `json:"resolvedIntent"`
+	PolicyModeHint       *string                `json:"policyModeHint"`
+	EffectiveRuntimeMode *string                `json:"effectiveRuntimeMode"`
+	EffectiveModeSource  *string                `json:"effectiveModeSource"`
+	SessionId            *string                `json:"sessionId"`
+	Source               *PlaybackSourceProfile `json:"source,omitempty"`
+	StopClass            *string                `json:"stopClass"`
+	StopReason           *string                `json:"stopReason"`
+	TargetProfile        *PlaybackTargetProfile `json:"targetProfile,omitempty"`
+	TargetProfileHash    *string                `json:"targetProfileHash"`
+	VideoQualityRung     *string                `json:"videoQualityRung"`
 }
 
 // PlaybackTraceFfmpegPlan defines model for PlaybackTraceFfmpegPlan.

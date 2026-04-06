@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
@@ -276,6 +278,151 @@ func TestRunExecutionLoop_RetriesEarlyUpstreamProcessExitOnceAndCleansStaleArtif
 		t.Fatal("expected successful second-attempt handle")
 	}
 
+	require.Equal(t, int32(2), pipe.startCount.Load())
+	require.Equal(t, int32(1), pipe.stopCount.Load())
+}
+
+type startupProfileFallbackPipeline struct {
+	hlsRoot    string
+	startCount atomic.Int32
+	stopCount  atomic.Int32
+	mu         sync.Mutex
+	profiles   []string
+}
+
+func (p *startupProfileFallbackPipeline) Start(ctx context.Context, spec ports.StreamSpec) (ports.RunHandle, error) {
+	attempt := int(p.startCount.Add(1))
+
+	p.mu.Lock()
+	p.profiles = append(p.profiles, spec.Profile.Name)
+	p.mu.Unlock()
+
+	if attempt == 2 {
+		if err := p.writeReadyArtifacts(spec.SessionID); err != nil {
+			return "", err
+		}
+	}
+
+	return ports.RunHandle(fmt.Sprintf("%s-attempt-%d", spec.SessionID, attempt)), nil
+}
+
+func (p *startupProfileFallbackPipeline) Stop(ctx context.Context, handle ports.RunHandle) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		p.stopCount.Add(1)
+		return nil
+	}
+}
+
+func (p *startupProfileFallbackPipeline) Health(ctx context.Context, handle ports.RunHandle) ports.HealthStatus {
+	select {
+	case <-ctx.Done():
+		return ports.HealthStatus{Healthy: false, Message: ctx.Err().Error()}
+	default:
+	}
+
+	if strings.HasSuffix(string(handle), "-attempt-1") {
+		return ports.HealthStatus{Healthy: false, Message: "copy output missing codec parameters"}
+	}
+	return ports.HealthStatus{Healthy: true}
+}
+
+func (p *startupProfileFallbackPipeline) writeReadyArtifacts(sessionID string) error {
+	sessionDir := filepath.Join(p.hlsRoot, "sessions", sessionID)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		return err
+	}
+
+	playlist := `#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-TARGETDURATION:6
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:6.000000,
+seg_000000.ts
+#EXTINF:6.000000,
+seg_000001.ts
+#EXTINF:6.000000,
+seg_000002.ts
+`
+	if err := os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), []byte(playlist), 0o600); err != nil {
+		return err
+	}
+	for _, name := range []string{"seg_000000.ts", "seg_000001.ts", "seg_000002.ts"} {
+		if err := os.WriteFile(filepath.Join(sessionDir, name), []byte("startup-recovery"), 0o600); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, model.SessionFirstFrameMarkerFilename), []byte("ready"), 0o600); err != nil {
+		return err
+	}
+	return nil
+}
+
+func TestRunExecutionLoop_PromotesSafariStartupFailureToSafariDirty(t *testing.T) {
+	ctx := context.Background()
+	hlsRoot := t.TempDir()
+	st := store.NewMemoryStore()
+	pipe := &startupProfileFallbackPipeline{hlsRoot: hlsRoot}
+	orch := &Orchestrator{
+		Store:               st,
+		Pipeline:            pipe,
+		HLSRoot:             hlsRoot,
+		LiveReadySegments:   3,
+		Platform:            NewTestPlatform(hlsRoot),
+		PipelineStopTimeout: time.Second,
+	}
+
+	const sid = "session-safari-recovery"
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  sid,
+		ServiceRef: "ref:safari",
+		State:      model.SessionStarting,
+		Profile: model.ProfileSpec{
+			Name:         profiles.ProfileSafari,
+			Container:    "fmp4",
+			DVRWindowSec: 2700,
+		},
+	}))
+
+	session, err := st.GetSession(ctx, sid)
+	require.NoError(t, err)
+	require.NotNil(t, session)
+
+	handle, finalProfile, err := orch.runExecutionLoop(
+		ctx,
+		ctx,
+		model.StartSessionEvent{
+			SessionID:  sid,
+			ServiceRef: "ref:safari",
+			ProfileID:  profiles.ProfileSafari,
+		},
+		&sessionContext{
+			Mode:       model.ModeLive,
+			ServiceRef: "ref:safari",
+		},
+		session,
+		time.Now(),
+		zerolog.Nop(),
+		func(string, model.ReasonCode) {},
+		0,
+	)
+	require.NoError(t, err)
+	require.Equal(t, ports.RunHandle("session-safari-recovery-attempt-2"), handle)
+	require.Equal(t, profiles.ProfileSafariDirty, finalProfile.Name)
+
+	updated, err := st.GetSession(ctx, sid)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, profiles.ProfileSafariDirty, updated.Profile.Name)
+	require.Equal(t, "startup_recovery:safari_dirty", updated.FallbackReason)
+	require.NotNil(t, updated.PlaybackTrace)
+	require.Len(t, updated.PlaybackTrace.Fallbacks, 1)
+	require.Equal(t, "startup_recovery", updated.PlaybackTrace.Fallbacks[0].Trigger)
+	require.Equal(t, "startup_recovery:safari_dirty", updated.PlaybackTrace.Fallbacks[0].Reason)
+	require.Equal(t, profiles.ProfileSafariDirty, pipe.profiles[1])
+	require.Equal(t, []string{profiles.ProfileSafari, profiles.ProfileSafariDirty}, pipe.profiles)
 	require.Equal(t, int32(2), pipe.startCount.Load())
 	require.Equal(t, int32(1), pipe.stopCount.Load())
 }

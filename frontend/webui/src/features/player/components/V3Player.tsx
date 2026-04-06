@@ -600,8 +600,13 @@ function V3Player(props: V3PlayerProps) {
 
   const {
     showStats,
+    currentPlaybackTime,
     seekableStart,
     seekableEnd,
+    supportsNativeFullscreen,
+    canEnterNativeFullscreen,
+    prefersDesktopNativeFullscreen,
+    isWebKitFullscreenActive,
     isPip,
     canTogglePiP,
     isFullscreen,
@@ -628,6 +633,7 @@ function V3Player(props: V3PlayerProps) {
     seekWhenReady,
     togglePlayPause,
     toggleFullscreen,
+    enterNativeFullscreen,
     enterDVRMode,
     togglePiP,
     toggleMute,
@@ -2373,6 +2379,32 @@ function V3Player(props: V3PlayerProps) {
                 <span className={styles.statsLabel}>{t('player.segDuration')}</span>
                 <span className={styles.statsValue}>{stats.buffer > 0 ? `${stats.buffer}s` : '-'}</span>
               </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.seekableRange', { defaultValue: 'Seekable' })}</span>
+                <span className={styles.statsValue}>{`${formatClock(seekableStart)} -> ${formatClock(seekableEnd)}`}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.playhead', { defaultValue: 'Playhead' })}</span>
+                <span className={styles.statsValue}>{formatClock(currentPlaybackTime)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.seekWindow', { defaultValue: 'Seek Window' })}</span>
+                <span className={styles.statsValue}>{hasSeekWindow ? formatClock(windowDuration) : '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.fullscreenPath', { defaultValue: 'Fullscreen Path' })}</span>
+                <span className={styles.statsValue}>
+                  {isWebKitFullscreenActive
+                    ? 'native-webkit'
+                    : isFullscreen
+                      ? 'container'
+                      : prefersDesktopNativeFullscreen
+                        ? 'desktop-webkit-ready'
+                        : supportsNativeFullscreen
+                          ? 'webkit-available'
+                          : 'web-only'}
+                </span>
+              </div>
             </Card.Content>
           </Card>
         </div>
@@ -2448,6 +2480,7 @@ function V3Player(props: V3PlayerProps) {
           controls={false}
           playsInline
           webkit-playsinline=""
+          x-webkit-airplay="allow"
           preload="metadata"
           autoPlay={!!autoStart}
           className={[
@@ -2616,6 +2649,17 @@ function V3Player(props: V3PlayerProps) {
           )}
 
           <div className={styles.utilityControls}>
+            {prefersDesktopNativeFullscreen && canEnterNativeFullscreen && !isFullscreen && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => enterNativeFullscreen()}
+                title={t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
+              >
+                TV {t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
+              </Button>
+            )}
+
             {canToggleFullscreen && (
               <Button
                 variant="ghost"

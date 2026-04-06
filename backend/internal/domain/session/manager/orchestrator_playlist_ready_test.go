@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
@@ -162,5 +163,39 @@ func TestPlaylistReadyTimeout_UsesExtendedTimeoutForRecoveryProfiles(t *testing.
 	timeout = orch.playlistReadyTimeout(model.ProfileSpec{Name: profiles.ProfileSafariDirty}, false)
 	if timeout != defaultRecoveryPlaylistReadyTimeout {
 		t.Fatalf("expected safari_dirty timeout %v, got %v", defaultRecoveryPlaylistReadyTimeout, timeout)
+	}
+}
+
+func TestPlaylistReadyTimeout_ExtendsSafariCPUTranscodeStartup(t *testing.T) {
+	orch := &Orchestrator{}
+
+	timeout := orch.playlistReadyTimeout(model.ProfileSpec{
+		Name:           profiles.ProfileSafari,
+		TranscodeVideo: true,
+	}, false)
+	if timeout != defaultSafariCPUPlaylistReadyTimeout {
+		t.Fatalf("expected safari cpu timeout %v, got %v", defaultSafariCPUPlaylistReadyTimeout, timeout)
+	}
+
+	timeout = orch.playlistReadyTimeout(model.ProfileSpec{
+		Name:           profiles.ProfileSafari,
+		TranscodeVideo: true,
+		HWAccel:        "vaapi",
+	}, false)
+	if timeout != defaultSafariPlaylistReadyTimeout {
+		t.Fatalf("expected safari gpu timeout %v, got %v", defaultSafariPlaylistReadyTimeout, timeout)
+	}
+}
+
+func TestPlaylistReadyTimeout_ExtendsSafariHQ50Startup(t *testing.T) {
+	orch := &Orchestrator{}
+
+	timeout := orch.playlistReadyTimeout(model.ProfileSpec{
+		Name:                 profiles.ProfileSafari,
+		TranscodeVideo:       true,
+		EffectiveRuntimeMode: ports.RuntimeModeHQ50,
+	}, false)
+	if timeout != defaultSafariHQ50PlaylistReadyTimeout {
+		t.Fatalf("expected safari hq50 timeout %v, got %v", defaultSafariHQ50PlaylistReadyTimeout, timeout)
 	}
 }

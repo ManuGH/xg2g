@@ -106,42 +106,77 @@ internal class GuideApiClient(
         }
     }
 
-    suspend fun fetchNowNext(
+    suspend fun fetchEpgWindow(
         authToken: String?,
-        serviceRefs: List<String>
-    ): Map<String, Pair<GuideProgram?, GuideProgram?>> = withContext(Dispatchers.IO) {
-        if (serviceRefs.isEmpty()) {
-            return@withContext emptyMap()
+        bouquetName: String?,
+        timelineWindow: GuideTimelineWindow
+    ): Map<String, List<GuideProgram>> = withContext(Dispatchers.IO) {
+        ensureAuthSession(authToken)
+        val urlBuilder = apiUrlBuilder("epg")
+            .addQueryParameter("from", timelineWindow.startEpochSec.toString())
+            .addQueryParameter("to", timelineWindow.endEpochSec.toString())
+        bouquetName?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { urlBuilder.addQueryParameter("bouquet", it) }
+        val request = Request.Builder()
+            .url(urlBuilder.build())
+            .get()
+            .build()
+
+        val byServiceRef = linkedMapOf<String, MutableList<GuideProgram>>()
+        executeJsonArray(request).forEach { item ->
+            val serviceRef = canonicalGuideServiceRef(item.optString("serviceRef"))
+            if (serviceRef.isEmpty()) {
+                return@forEach
+            }
+            parseProgram(
+                item = item,
+                titleKey = "title",
+                startKey = "start",
+                endKey = "end",
+                descriptionKey = "desc"
+            )?.let { program ->
+                byServiceRef.getOrPut(serviceRef) { mutableListOf() }.add(program)
+            }
         }
 
+        buildMap {
+            byServiceRef.forEach { (serviceRef, programs) ->
+                if (serviceRef.isEmpty()) {
+                    return@forEach
+                }
+                put(serviceRef, programs.sortedBy(GuideProgram::startEpochSec))
+            }
+        }
+    }
+
+    suspend fun fetchHealthStatus(authToken: String?): GuideHealthStatus = withContext(Dispatchers.IO) {
         ensureAuthSession(authToken)
-        val services = JSONArray()
-        serviceRefs.forEach(services::put)
         val request = Request.Builder()
-            .url(apiUrl("services", "now-next"))
-            .post(
-                JSONObject()
-                    .put("services", services)
-                    .toString()
-                    .toRequestBody(JSON_MEDIA_TYPE)
-            )
+            .url(apiUrl("system", "health"))
+            .get()
             .build()
 
         val root = executeJsonObject(request)
-        val items = root.optJSONArray("items") ?: JSONArray()
-        buildMap {
-            for (index in 0 until items.length()) {
-                val item = items.optJSONObject(index) ?: continue
-                val serviceRef = item.optString("serviceRef").trim()
-                if (serviceRef.isEmpty()) {
-                    continue
-                }
-                put(
-                    serviceRef,
-                    parseProgram(item.optJSONObject("now")) to parseProgram(item.optJSONObject("next"))
-                )
-            }
-        }
+        val receiverStatus = root.optJSONObject("receiver")
+            ?.optString("status")
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+        val epgNode = root.optJSONObject("epg")
+        val epgStatus = epgNode
+            ?.optString("status")
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+
+        GuideHealthStatus(
+            receiverHealthy = receiverStatus == "ok",
+            epgHealthy = epgStatus == "ok",
+            missingChannels = epgNode
+                ?.takeIf { it.has("missingChannels") }
+                ?.optInt("missingChannels")
+        )
     }
 
     private fun execute(request: Request) =
@@ -172,14 +207,20 @@ internal class GuideApiClient(
         }
     }
 
-    private fun parseProgram(item: JSONObject?): GuideProgram? {
+    private fun parseProgram(
+        item: JSONObject?,
+        titleKey: String = "title",
+        startKey: String = "start",
+        endKey: String = "end",
+        descriptionKey: String? = null
+    ): GuideProgram? {
         if (item == null) {
             return null
         }
 
-        val title = item.optString("title").trim()
-        val start = item.optLong("start")
-        val end = item.optLong("end")
+        val title = item.optString(titleKey).trim()
+        val start = item.optLong(startKey)
+        val end = item.optLong(endKey)
         if (title.isEmpty() || start <= 0L || end <= 0L) {
             return null
         }
@@ -187,7 +228,8 @@ internal class GuideApiClient(
         return GuideProgram(
             title = title,
             startEpochSec = start,
-            endEpochSec = end
+            endEpochSec = end,
+            description = descriptionKey?.let(item::optString)?.trim()?.takeIf { it.isNotEmpty() }
         )
     }
 
@@ -215,7 +257,6 @@ internal class GuideApiClient(
     }
 
     private companion object {
-        val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         const val SESSION_COOKIE_NAME = "xg2g_session"
     }
 }

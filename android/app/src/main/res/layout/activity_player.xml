@@ -28,6 +28,7 @@
             android:layout_height="160dp"
             android:layout_gravity="center"
             android:contentDescription="@string/app_name"
+            android:scaleType="fitCenter"
             android:visibility="gone" />
 
         <LinearLayout

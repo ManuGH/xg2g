@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strconv"
 	"testing"
 	"time"
 
@@ -174,12 +175,54 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 	assert.NotContains(t, args, "yadif", "runtime-probed remux path must not inject deinterlace filters")
 	assert.Contains(t, args, "-c:a")
 	assert.Contains(t, args, "aac")
+	assert.NotContains(t, args, "dump_extra=freq=keyframe", "normal safari runtime remux should not force the hardened copy bitstream filter")
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
 	require.True(t, ok)
 	assert.Equal(t, "mpegts", hlsSegmentType, "native safari remux path should stay on TS HLS")
 
 	assert.NotContains(t, args, "-hls_fmp4_init_filename", "native safari remux path must not emit fMP4 init segments")
+}
+
+func TestBuildArgsWithPlan_RecordsEffectiveRuntimeModeAfterRuntimeRemux(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		return &vod.StreamInfo{
+			Container: "ts",
+			Video: vod.VideoStreamInfo{
+				CodecName:  "h264",
+				Interlaced: false,
+			},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-runtime-remux-finalized",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:                "safari",
+			PolicyModeHint:      ports.RuntimeModeHQ25,
+			EffectiveModeSource: ports.RuntimeModeSourceResolve,
+			TranscodeVideo:      true,
+			Container:           "mpegts",
+			AudioBitrateK:       192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, plan.args)
+	assert.Equal(t, ports.RuntimeModeCopy, plan.effectiveProfile.EffectiveRuntimeMode)
+	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, plan.effectiveProfile.EffectiveModeSource)
 }
 
 func TestBuildArgs_SafariRuntimeProbeRetriesTransientStreamRelayStartup(t *testing.T) {
@@ -281,6 +324,373 @@ func TestBuildArgs_SafariRuntimeProbeRetryUsesFreshTimeoutPerAttempt(t *testing.
 	require.NoError(t, err)
 	require.Len(t, deadlines, 2)
 	assert.True(t, deadlines[1].After(deadlines[0]), "retry attempt should receive a fresh timeout budget")
+}
+
+func TestBuildArgs_SafariRuntimeProbeCanForceCopyForAllowlistedServiceRef(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		t.Fatal("allowlisted service ref should bypass safari runtime probe")
+		return nil, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-force-copy-allowlist",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			TranscodeVideo: true,
+			Container:      "mpegts",
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:11:6:85:C00000:0:0:0:",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:11:6:85:C00000:0:0:0:"
+	args, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-c:v")
+	assert.Contains(t, args, "copy", "allowlisted safari service ref should use video copy")
+	assert.NotContains(t, args, "libx264", "allowlisted safari service ref must not transcode video")
+	assert.NotContains(t, args, "yadif", "allowlisted safari service ref must not inject deinterlace filters")
+	bsf, ok := valueAfter(args, "-bsf:v")
+	require.True(t, ok)
+	assert.Equal(t, "dump_extra=freq=keyframe", bsf, "allowlisted safari copy path should harden H.264 SPS/PPS on keyframes")
+
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", hlsSegmentType)
+}
+
+func TestBuildArgs_SafariRuntimeProbeAllowlistMatchesCanonicalServiceRefWithoutTrailingColon(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		t.Fatal("canonical allowlisted service ref should bypass safari runtime probe")
+		return nil, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-force-copy-canonical-allowlist",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			TranscodeVideo: true,
+			Container:      "mpegts",
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:11:6:85:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:11:6:85:C00000:0:0:0"
+	args, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-c:v")
+	assert.Contains(t, args, "copy", "canonical allowlisted safari service ref should use video copy")
+	assert.NotContains(t, args, "libx264", "canonical allowlisted safari service ref must not transcode video")
+	assert.NotContains(t, args, "yadif", "canonical allowlisted safari service ref must not inject deinterlace filters")
+	bsf, ok := valueAfter(args, "-bsf:v")
+	require.True(t, ok)
+	assert.Equal(t, "dump_extra=freq=keyframe", bsf, "canonical allowlisted safari copy path should harden H.264 SPS/PPS on keyframes")
+
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", hlsSegmentType)
+}
+
+func TestBuildArgs_SafariForceCopyAllowlistCanBeDisabledByProfile(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-force-copy-disabled",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:                   "safari",
+			DisableSafariForceCopy: true,
+			TranscodeVideo:         true,
+			Container:              "mpegts",
+			AudioBitrateK:          192,
+			Deinterlace:            true,
+			VideoCodec:             "libx264",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:11:6:85:C00000:0:0:0:",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:11:6:85:C00000:0:0:0:"
+	args, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-c:v")
+	assert.Contains(t, args, "libx264", "client-feedback fallback should be able to disable the force-copy allowlist")
+	assert.NotContains(t, args, "dump_extra=freq=keyframe", "transcode fallback must not keep the hardened copy bitstream filter")
+}
+
+func TestBuildArgs_SafariHQAllowlistUsesHighBitrate25pTranscode(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_HQ_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-hq-skyf1",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			TranscodeVideo: true,
+			Container:      "mpegts",
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:11:6:85:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:11:6:85:C00000:0:0:0"
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 25)
+
+	args, err := adapter.buildArgs(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Equal(t, "yadif", vf)
+
+	preset, ok := valueAfter(args, "-preset")
+	require.True(t, ok)
+	assert.Equal(t, "fast", preset)
+
+	crf, ok := valueAfter(args, "-crf")
+	require.True(t, ok)
+	assert.Equal(t, "16", crf)
+
+	maxrate, ok := valueAfter(args, "-maxrate")
+	require.True(t, ok)
+	assert.Equal(t, "12000k", maxrate)
+
+	bufsize, ok := valueAfter(args, "-bufsize")
+	require.True(t, ok)
+	assert.Equal(t, "24000k", bufsize)
+
+	audioBitrate, ok := valueAfter(args, "-b:a")
+	require.True(t, ok)
+	assert.Equal(t, "256k", audioBitrate)
+
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, expectedGOP, gop, "hq safari path should keep the 25fps live GOP for corrupt relay inputs")
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok)
+	assert.Equal(t, "keyint="+expectedGOP+":min-keyint="+expectedGOP+":scenecut=0", x264Params)
+
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", hlsSegmentType)
+
+	assert.Contains(t, args, "libx264")
+	assert.NotContains(t, args, "copy")
+}
+
+func TestBuildArgs_SafariHQAllowlistKeepsProgressive50fpsSourcesProgressive(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_HQ_SERVICE_REFS", "1:0:19:132F:3EF:1:C00000:0:0:0:")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-hq-orf1",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			PolicyModeHint: ports.RuntimeModeCopy,
+			TranscodeVideo: false,
+			Container:      "mpegts",
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	args := plan.args
+
+	assert.Contains(t, args, "libx264")
+	assert.NotContains(t, args, "copy")
+	assert.NotContains(t, args, "yadif", "progressive HQ override must not deinterlace copy-hint sources")
+
+	preset, ok := valueAfter(args, "-preset")
+	require.True(t, ok)
+	assert.Equal(t, "veryfast", preset)
+
+	crf, ok := valueAfter(args, "-crf")
+	require.True(t, ok)
+	assert.Equal(t, "16", crf)
+
+	maxrate, ok := valueAfter(args, "-maxrate")
+	require.True(t, ok)
+	assert.Equal(t, "12000k", maxrate)
+
+	bufsize, ok := valueAfter(args, "-bufsize")
+	require.True(t, ok)
+	assert.Equal(t, "24000k", bufsize)
+
+	audioBitrate, ok := valueAfter(args, "-b:a")
+	require.True(t, ok)
+	assert.Equal(t, "256k", audioBitrate)
+
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 50)
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, expectedGOP, gop, "progressive HQ safari path should preserve 50fps GOP cadence")
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok)
+	assert.Equal(t, "keyint="+expectedGOP+":min-keyint="+expectedGOP+":scenecut=0", x264Params)
+
+	assert.Equal(t, ports.RuntimeModeHQ50, plan.effectiveProfile.EffectiveRuntimeMode)
+	assert.Equal(t, ports.RuntimeModeSourceEnvOverride, plan.effectiveProfile.EffectiveModeSource)
+}
+
+func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_HQ_SERVICE_REFS", "1:0:19:132F:3EF:1:C00000:0:0:0:")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-hq-orf1-hq25",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:             "safari_hq",
+			PolicyModeHint:   ports.RuntimeModeCopy,
+			ForceSafariHQ25:  true,
+			TranscodeVideo:   true,
+			Container:        "mpegts",
+			VideoCodec:       "libx264",
+			VideoCRF:         16,
+			VideoMaxRateK:    12000,
+			VideoBufSizeK:    24000,
+			AudioBitrateK:    256,
+			Preset:           "veryfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	args := plan.args
+
+	assert.NotContains(t, args, "yadif", "progressive HQ25 fallback must stay progressive")
+
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, expectedGOP, gop, "forced HQ25 should clamp progressive sources to 25fps GOP cadence")
+
+	x264Params, ok := valueAfter(args, "-x264-params")
+	require.True(t, ok)
+	assert.Equal(t, "keyint="+expectedGOP+":min-keyint="+expectedGOP+":scenecut=0", x264Params)
+
+	assert.Equal(t, ports.RuntimeModeHQ25, plan.effectiveProfile.EffectiveRuntimeMode)
+}
+
+func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_HQ_SERVICE_REFS", "1:0:19:132F:3EF:1:C00000:0:0:0:")
+	t.Setenv("XG2G_SAFARI_HQ25_SERVICE_REFS", "1:0:19:132F:3EF:1:C00000:0:0:0:")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-hq-orf1-env-hq25",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			PolicyModeHint: ports.RuntimeModeCopy,
+			TranscodeVideo: false,
+			Container:      "mpegts",
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	args := plan.args
+
+	assert.NotContains(t, args, "yadif", "progressive HQ25 env override must stay progressive")
+
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, expectedGOP, gop)
+
+	assert.Equal(t, ports.RuntimeModeHQ25, plan.effectiveProfile.EffectiveRuntimeMode)
+	assert.Equal(t, ports.RuntimeModeSourceEnvOverride, plan.effectiveProfile.EffectiveModeSource)
+	assert.True(t, plan.effectiveProfile.ForceSafariHQ25)
 }
 
 func TestShouldRetrySafariRuntimeProbe_TransientStreamRelayOnly(t *testing.T) {

@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -32,6 +33,8 @@ const (
 	fallbackRestartPollInterval = 50 * time.Millisecond
 	fallbackRestartTimeout      = 5 * time.Second
 )
+
+const safariFallbackBrowserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15"
 
 // handleV3SessionsDebug dumps all sessions from the store (Admin only).
 // Authorization: Requires v3:admin scope (enforced by route middleware).
@@ -170,11 +173,12 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 
 		switch s.Profile.Name {
 		case profiles.ProfileSafari:
-			// First recovery step for Safari is the stricter dirty-stream profile.
-			s.Profile = profiles.Resolve(profiles.ProfileSafariDirty, "", s.Profile.DVRWindowSec, nil, false, profiles.HWAccelOff)
+			s.Profile = nextSafariFeedbackProfile(s.Profile, s.ServiceRef)
 		default:
 			// Escalate all other failures, including safari_dirty re-failures, to repair.
 			s.Profile.Name = profiles.ProfileRepair
+			s.Profile.PolicyModeHint = ports.RuntimeModeSafe
+			s.Profile.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
 			s.Profile.TranscodeVideo = true
 			s.Profile.Deinterlace = false // Keep simple
 			s.Profile.HWAccel = ""        // Force CPU
@@ -187,11 +191,16 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 
 		s.FallbackReason = fmt.Sprintf("client_report:code=%d", derefInt(req.Code))
 		s.FallbackAtUnix = now.Unix()
+		s.State = model.SessionStarting
+		s.PipelineState = model.PipeStopRequested
+		s.StopReason = ""
 		toTarget := model.TraceTargetProfileFromProfile(s.Profile)
 		toHash := ""
 		if toTarget != nil {
 			toHash = toTarget.Hash()
 		}
+		trace.PolicyModeHint = s.Profile.PolicyModeHint
+		trace.EffectiveModeSource = s.Profile.EffectiveModeSource
 		trace.TargetProfile = toTarget
 		trace.TargetProfileHash = toHash
 		trace.StopReason = ""
@@ -221,7 +230,12 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 
 	// Trigger Restart only if we actually applied the fallback
 	sess = updatedSess
-	log.L().Warn().Str("sessionId", sess.SessionID).Msg("activating safari fallback (fmp4) due to client error")
+	log.L().
+		Warn().
+		Str("sessionId", sess.SessionID).
+		Str("fallback_profile", sess.Profile.Name).
+		Str("fallback_container", sess.Profile.Container).
+		Msg("activating safari fallback due to client error")
 
 	// Stop existing session
 	stopEvt := model.StopSessionEvent{
@@ -238,6 +252,91 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	s.scheduleFallbackRestart(bus, store, sess)
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func shouldPreferSafariTSFallbackForServiceRef(serviceRef string) bool {
+	return serviceRefEnvContainsNormalized("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", serviceRef)
+}
+
+func nextSafariFeedbackProfile(current model.ProfileSpec, serviceRef string) model.ProfileSpec {
+	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) && !current.DisableSafariForceCopy {
+		// First Safari recovery step for allowlisted dirty relay streams: disable the
+		// runtime copy experiment and restart as the browser-safe TS transcode path.
+		next := profiles.Resolve(profiles.ProfileSafari, safariFallbackBrowserUA, current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+		next.DisableSafariForceCopy = true
+		next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
+		return next
+	}
+
+	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) {
+		// If Safari already runs on the browser-safe TS transcode path and still
+		// reports a decode failure, escalate to a materially different low-complexity
+		// repair rung instead of restarting the exact same media profile again.
+		next := profiles.Resolve(profiles.ProfileRepair, safariFallbackBrowserUA, current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+		next.Container = "mpegts"
+		next.Deinterlace = true
+		next.HWAccel = ""
+		next.VideoCodec = "libx264"
+		next.VideoCRF = 24
+		next.VideoMaxWidth = 1280
+		next.Preset = "veryfast"
+		next.AudioBitrateK = 192
+		next.PolicyModeHint = ports.RuntimeModeSafe
+		next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
+		return next
+	}
+
+	// First recovery step for general Safari failures remains the stricter
+	// dirty-stream profile.
+	next := profiles.Resolve(profiles.ProfileSafariDirty, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+	next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
+	return next
+}
+
+func serviceRefEnvContainsNormalized(envKey, targetRef string) bool {
+	targetRef = normalizeServiceRefForEnv(targetRef)
+	if targetRef == "" {
+		return false
+	}
+	raw := strings.TrimSpace(os.Getenv(envKey))
+	if raw == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(raw, ",") {
+		if normalizeServiceRefForEnv(candidate) == targetRef {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeServiceRefForEnv(raw string) string {
+	ref := strings.TrimSpace(raw)
+	if ref == "" {
+		return ""
+	}
+	ref = strings.TrimRight(ref, ":")
+	if isHexColonServiceRefForEnv(ref) {
+		return strings.ToUpper(ref)
+	}
+	return ref
+}
+
+func isHexColonServiceRefForEnv(ref string) bool {
+	if ref == "" || !strings.Contains(ref, ":") {
+		return false
+	}
+	for _, ch := range ref {
+		switch {
+		case ch == ':':
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateStore, sess *model.SessionRecord) {
@@ -540,6 +639,19 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 	if resolvedIntent != "" {
 		dto.ResolvedIntent = &resolvedIntent
+	}
+
+	policyModeHint := strings.TrimSpace(string(trace.PolicyModeHint))
+	if policyModeHint != "" {
+		dto.PolicyModeHint = &policyModeHint
+	}
+	effectiveRuntimeMode := strings.TrimSpace(string(trace.EffectiveRuntimeMode))
+	if effectiveRuntimeMode != "" {
+		dto.EffectiveRuntimeMode = &effectiveRuntimeMode
+	}
+	effectiveModeSource := strings.TrimSpace(string(trace.EffectiveModeSource))
+	if effectiveModeSource != "" {
+		dto.EffectiveModeSource = &effectiveModeSource
 	}
 
 	qualityRung := strings.TrimSpace(trace.QualityRung)

@@ -64,7 +64,7 @@ value class PlaybackMode(val wireValue: String) {
     override fun toString(): String = wireValue
 
     companion object {
-        val NativeHls = PlaybackMode("native_hls")
+        val NativeHls = PlaybackMode("android_native")
         val HlsJs = PlaybackMode("hlsjs")
         val Transcode = PlaybackMode("transcode")
         val DirectMp4 = PlaybackMode("direct_mp4")

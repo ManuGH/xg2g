@@ -2,6 +2,7 @@ package v3
 
 import (
 	"context"
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -85,4 +86,80 @@ func TestGetEpg_ResponseShape(t *testing.T) {
 	assert.NoError(t, err, "Response should be a bare JSON array")
 	assert.Len(t, items, 1)
 	assert.Equal(t, "Test Show", items[0].Title)
+}
+
+func TestPostServicesNowNext_FallsBackToEpgSourceWhenCacheMissing(t *testing.T) {
+	mockSource := new(MockEpgSource)
+	server := &Server{
+		epgSource: mockSource,
+	}
+
+	now := time.Now()
+	serviceRef := "1:0:19:132F:3EF:1:C00000:0:0:0"
+	progs := []epg.Programme{
+		{
+			Channel: serviceRef,
+			Title:   epg.Title{Text: "ZIB Flash"},
+			Start:   now.Add(-5 * time.Minute).Format(xmltvTimeFormat),
+			Stop:    now.Add(10 * time.Minute).Format(xmltvTimeFormat),
+		},
+		{
+			Channel: serviceRef,
+			Title:   epg.Title{Text: "S.W.A.T."},
+			Start:   now.Add(10 * time.Minute).Format(xmltvTimeFormat),
+			Stop:    now.Add(55 * time.Minute).Format(xmltvTimeFormat),
+		},
+	}
+
+	mockSource.On("GetPrograms", mock.Anything).Return(progs, nil).Once()
+
+	body := bytes.NewBufferString(`{"services":["1:0:19:132F:3EF:1:C00000:0:0:0"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/services/now-next", body)
+	w := httptest.NewRecorder()
+
+	server.PostServicesNowNext(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var payload struct {
+		Items []nowNextItem `json:"items"`
+	}
+	err := json.NewDecoder(resp.Body).Decode(&payload)
+	assert.NoError(t, err)
+	assert.Len(t, payload.Items, 1)
+	assert.NotNil(t, payload.Items[0].Now)
+	assert.NotNil(t, payload.Items[0].Next)
+	assert.Equal(t, "ZIB Flash", payload.Items[0].Now.Title)
+	assert.Equal(t, "S.W.A.T.", payload.Items[0].Next.Title)
+
+	mockSource.AssertExpectations(t)
+}
+
+func TestBuildNowNextItems_CanonicalizesServiceRefs(t *testing.T) {
+	now := time.Now()
+	items := buildNowNextItems(
+		[]string{"1:0:19:132f:3ef:1:c00000:0:0:0:"},
+		[]epg.Programme{
+			{
+				Channel: "1:0:19:132F:3EF:1:C00000:0:0:0",
+				Title:   epg.Title{Text: "Current Show"},
+				Start:   now.Add(-10 * time.Minute).Format(xmltvTimeFormat),
+				Stop:    now.Add(20 * time.Minute).Format(xmltvTimeFormat),
+			},
+			{
+				Channel: "1:0:19:132F:3EF:1:C00000:0:0:0",
+				Title:   epg.Title{Text: "Next Show"},
+				Start:   now.Add(20 * time.Minute).Format(xmltvTimeFormat),
+				Stop:    now.Add(50 * time.Minute).Format(xmltvTimeFormat),
+			},
+		},
+		now,
+	)
+
+	assert.Len(t, items, 1)
+	assert.NotNil(t, items[0].Now)
+	assert.NotNil(t, items[0].Next)
+	assert.Equal(t, "Current Show", items[0].Now.Title)
+	assert.Equal(t, "Next Show", items[0].Next.Title)
 }

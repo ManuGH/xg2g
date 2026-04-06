@@ -11,6 +11,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
@@ -69,4 +70,48 @@ func firstFrameUnixFromArtifacts(hlsRoot, sessionID string) int64 {
 		return 0
 	}
 	return info.ModTime().Unix()
+}
+
+func tracePolicyModeHint(profile model.ProfileSpec) ports.RuntimeMode {
+	if profile.PolicyModeHint != "" && profile.PolicyModeHint != ports.RuntimeModeUnknown {
+		return profile.PolicyModeHint
+	}
+	return profiles.RuntimeModeHintFromProfile(profile)
+}
+
+func traceEffectiveRuntimeMode(profile model.ProfileSpec) ports.RuntimeMode {
+	if profile.EffectiveRuntimeMode != "" && profile.EffectiveRuntimeMode != ports.RuntimeModeUnknown {
+		return profile.EffectiveRuntimeMode
+	}
+	return tracePolicyModeHint(profile)
+}
+
+func traceEffectiveModeSource(profile model.ProfileSpec) ports.RuntimeModeSource {
+	if profile.EffectiveModeSource != "" && profile.EffectiveModeSource != ports.RuntimeModeSourceUnknown {
+		return profile.EffectiveModeSource
+	}
+	return ports.RuntimeModeSourceResolve
+}
+
+func applyTracePolicyProfile(trace *model.PlaybackTrace, profile model.ProfileSpec) {
+	if trace == nil {
+		return
+	}
+	trace.PolicyModeHint = tracePolicyModeHint(profile)
+}
+
+func applyTraceEffectiveProfile(trace *model.PlaybackTrace, profile model.ProfileSpec, inputKind string) {
+	if trace == nil {
+		return
+	}
+	trace.PolicyModeHint = tracePolicyModeHint(profile)
+	trace.EffectiveRuntimeMode = traceEffectiveRuntimeMode(profile)
+	trace.EffectiveModeSource = traceEffectiveModeSource(profile)
+	trace.TargetProfile = model.TraceTargetProfileFromProfile(profile)
+	if trace.TargetProfile != nil {
+		trace.TargetProfileHash = trace.TargetProfile.Hash()
+	} else {
+		trace.TargetProfileHash = ""
+	}
+	trace.FFmpegPlan = model.TraceFFmpegPlanFromProfile(profile, inputKind, 0)
 }

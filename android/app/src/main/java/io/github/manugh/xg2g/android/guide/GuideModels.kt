@@ -8,7 +8,8 @@ internal data class GuideBouquet(
 internal data class GuideProgram(
     val title: String,
     val startEpochSec: Long,
-    val endEpochSec: Long
+    val endEpochSec: Long,
+    val description: String? = null
 )
 
 internal data class GuideChannel(
@@ -20,7 +21,8 @@ internal data class GuideChannel(
     val resolution: String? = null,
     val codec: String? = null,
     val now: GuideProgram? = null,
-    val next: GuideProgram? = null
+    val next: GuideProgram? = null,
+    val schedule: List<GuideProgram> = emptyList()
 ) {
     val displayName: String
         get() = buildString {
@@ -32,10 +34,18 @@ internal data class GuideChannel(
         }
 }
 
+internal data class GuideHealthStatus(
+    val receiverHealthy: Boolean,
+    val epgHealthy: Boolean,
+    val missingChannels: Int? = null
+)
+
 internal data class GuideContent(
     val bouquets: List<GuideBouquet>,
     val selectedBouquet: String,
-    val channels: List<GuideChannel>
+    val channels: List<GuideChannel>,
+    val health: GuideHealthStatus? = null,
+    val timelineWindow: GuideTimelineWindow? = null
 )
 
 internal sealed interface GuideScreenState {
@@ -51,13 +61,17 @@ internal sealed interface GuideScreenState {
         val selectedBouquet: String,
         val channels: List<GuideChannel>,
         val selectedChannelRef: String?,
+        val health: GuideHealthStatus? = null,
+        val timelineWindow: GuideTimelineWindow? = null,
         val isRefreshing: Boolean = false
     ) : GuideScreenState
 
     data class Empty(
         override val serverLabel: String,
         val bouquets: List<GuideBouquet>,
-        val selectedBouquet: String
+        val selectedBouquet: String,
+        val health: GuideHealthStatus? = null,
+        val timelineWindow: GuideTimelineWindow? = null
     ) : GuideScreenState
 
     data class Error(

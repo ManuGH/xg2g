@@ -44,11 +44,13 @@ type finalOutcome struct {
 }
 
 const (
-	defaultPlaylistReadyTimeout         = 60 * time.Second
-	defaultSafariPlaylistReadyTimeout   = 30 * time.Second
-	defaultRecoveryPlaylistReadyTimeout = 35 * time.Second
-	defaultVODPlaylistReadyTimeout      = 2 * time.Minute
-	defaultStartupProcessRetryLimit     = 1
+	defaultPlaylistReadyTimeout           = 60 * time.Second
+	defaultSafariPlaylistReadyTimeout     = 30 * time.Second
+	defaultSafariCPUPlaylistReadyTimeout  = 45 * time.Second
+	defaultSafariHQ50PlaylistReadyTimeout = 75 * time.Second
+	defaultRecoveryPlaylistReadyTimeout   = 35 * time.Second
+	defaultVODPlaylistReadyTimeout        = 2 * time.Minute
+	defaultStartupProcessRetryLimit       = 1
 )
 
 func (o *Orchestrator) resolveSession(ctx context.Context, e model.StartSessionEvent) (string, *model.SessionRecord, context.Context, error) {
@@ -222,7 +224,7 @@ func (o *Orchestrator) startPipeline(
 	sessionCtx *sessionContext,
 	currentProfileSpec model.ProfileSpec,
 	tunerSlot int,
-) (ports.RunHandle, error) {
+) (ports.RunHandle, model.ProfileSpec, error) {
 	// Build StreamSpec (Domain Object)
 	spec := ports.StreamSpec{
 		SessionID: e.SessionID,
@@ -247,7 +249,7 @@ func (o *Orchestrator) startPipeline(
 	} else if u, ok := platformnet.ParseDirectHTTPURL(sessionCtx.ServiceRef); ok {
 		normalized, err := platformnet.ValidateOutboundURL(hbCtx, u.String(), o.OutboundPolicy)
 		if err != nil {
-			return "", newReasonError(model.RBadRequest, "outbound url rejected by policy", err)
+			return "", model.ProfileSpec{}, newReasonError(model.RBadRequest, "outbound url rejected by policy", err)
 		}
 		spec.Source.Type = ports.SourceURL
 		spec.Source.ID = normalized
@@ -267,6 +269,7 @@ func (o *Orchestrator) startPipeline(
 			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
 		}
 		trace.InputKind = string(spec.Source.Type)
+		applyTracePolicyProfile(trace, currentProfileSpec)
 		trace.TargetProfile = model.TraceTargetProfileFromProfile(currentProfileSpec)
 		if trace.TargetProfile != nil {
 			trace.TargetProfileHash = trace.TargetProfile.Hash()
@@ -283,10 +286,10 @@ func (o *Orchestrator) startPipeline(
 	handle, err := o.Pipeline.Start(hbCtx, spec)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return "", newReasonErrorWithDetail(model.RCancelled, model.DContextCanceled, "", err)
+			return "", model.ProfileSpec{}, newReasonErrorWithDetail(model.RCancelled, model.DContextCanceled, "", err)
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
-			return "", newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, "", err)
+			return "", model.ProfileSpec{}, newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, "", err)
 		}
 		if errors.Is(err, ports.ErrNoValidTS) {
 			pErr, ok, mappedErr := preflightStartReasonError(err)
@@ -296,11 +299,11 @@ func (o *Orchestrator) startPipeline(
 					trace.PreflightReason = string(result.Reason)
 					trace.PreflightDetail = result.FailureDetail()
 				})
-				return "", mappedErr
+				return "", model.ProfileSpec{}, mappedErr
 			}
-			return "", newReasonError(model.RPipelineStartFailed, "preflight failed no valid ts", err)
+			return "", model.ProfileSpec{}, newReasonError(model.RPipelineStartFailed, "preflight failed no valid ts", err)
 		}
-		return "", newReasonError(model.RPipelineStartFailed, "pipeline start failed", err)
+		return "", model.ProfileSpec{}, newReasonError(model.RPipelineStartFailed, "pipeline start failed", err)
 	}
 	startupLogger.Info().
 		Str("session_id", e.SessionID).
@@ -308,7 +311,18 @@ func (o *Orchestrator) startPipeline(
 		Str("run_handle", string(handle)).
 		Msg("pipeline start returned")
 
-	return handle, nil
+	effectiveProfile := currentProfileSpec
+	if provider, ok := o.Pipeline.(ports.FinalizedProfileProvider); ok {
+		if finalized, found := provider.FinalizedProfile(handle); found {
+			effectiveProfile = finalized
+		}
+	}
+	o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(_ *model.SessionRecord, trace *model.PlaybackTrace) {
+		trace.InputKind = string(spec.Source.Type)
+		applyTraceEffectiveProfile(trace, effectiveProfile, string(spec.Source.Type))
+	})
+
+	return handle, effectiveProfile, nil
 }
 
 func (o *Orchestrator) waitForReady(
@@ -370,8 +384,21 @@ func (o *Orchestrator) playlistReadyTimeout(currentProfileSpec model.ProfileSpec
 	if isStartupRecoveryProfile(currentProfileSpec.Name) {
 		return defaultIfZero(o.RecoveryPlaylistReadyTimeout, defaultRecoveryPlaylistReadyTimeout)
 	}
+	if currentProfileSpec.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {
+		timeout := defaultIfZero(o.SafariPlaylistReadyTimeout, defaultSafariPlaylistReadyTimeout)
+		if timeout < defaultSafariHQ50PlaylistReadyTimeout {
+			return defaultSafariHQ50PlaylistReadyTimeout
+		}
+		return timeout
+	}
 	if strings.EqualFold(strings.TrimSpace(currentProfileSpec.Name), profiles.ProfileSafari) {
-		return defaultIfZero(o.SafariPlaylistReadyTimeout, defaultSafariPlaylistReadyTimeout)
+		timeout := defaultIfZero(o.SafariPlaylistReadyTimeout, defaultSafariPlaylistReadyTimeout)
+		if currentProfileSpec.TranscodeVideo && strings.TrimSpace(currentProfileSpec.HWAccel) == "" {
+			if timeout < defaultSafariCPUPlaylistReadyTimeout {
+				return defaultSafariCPUPlaylistReadyTimeout
+			}
+		}
+		return timeout
 	}
 	return defaultIfZero(o.PlaylistReadyTimeout, defaultPlaylistReadyTimeout)
 }
@@ -414,6 +441,107 @@ func shouldRetryStartupWaitFailure(reason model.ReasonCode, detail string, attem
 	default:
 		return false
 	}
+}
+
+func startupRecoveryProfile(current model.ProfileSpec, reason model.ReasonCode, detail string) (model.ProfileSpec, bool) {
+	lower := strings.ToLower(strings.TrimSpace(detail))
+	if current.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {
+		if reason == model.RPackagerFailed && strings.Contains(lower, "playlist not ready timeout") {
+			next := current
+			next.ForceSafariHQ25 = true
+			next.EffectiveRuntimeMode = ports.RuntimeModeHQ25
+			next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
+			return next, true
+		}
+		if reason == model.RProcessEnded && strings.Contains(lower, "transcode stalled - no progress detected") {
+			next := current
+			next.ForceSafariHQ25 = true
+			next.EffectiveRuntimeMode = ports.RuntimeModeHQ25
+			next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
+			return next, true
+		}
+	}
+	if current.EffectiveRuntimeMode == ports.RuntimeModeHQ25 {
+		if reason == model.RPackagerFailed && strings.Contains(lower, "playlist not ready timeout") {
+			next := profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+			if current.DVRWindowSec > 0 {
+				next.DVRWindowSec = current.DVRWindowSec
+			}
+			next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
+			return next, true
+		}
+		if reason == model.RProcessEnded && strings.Contains(lower, "transcode stalled - no progress detected") {
+			next := profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+			if current.DVRWindowSec > 0 {
+				next.DVRWindowSec = current.DVRWindowSec
+			}
+			next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
+			return next, true
+		}
+	}
+
+	if reason != model.RProcessEnded {
+		return model.ProfileSpec{}, false
+	}
+
+	if !strings.Contains(lower, "copy output missing codec parameters") {
+		return model.ProfileSpec{}, false
+	}
+
+	withDVR := func(next model.ProfileSpec) model.ProfileSpec {
+		if current.DVRWindowSec > 0 {
+			next.DVRWindowSec = current.DVRWindowSec
+		}
+		next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
+		return next
+	}
+
+	switch strings.ToLower(strings.TrimSpace(current.Name)) {
+	case profiles.ProfileSafari:
+		return withDVR(profiles.Resolve(profiles.ProfileSafariDirty, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)), true
+	case profiles.ProfileSafariDirty:
+		return withDVR(profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)), true
+	default:
+		return model.ProfileSpec{}, false
+	}
+}
+
+func (o *Orchestrator) persistStartupRecoveryProfile(ctx context.Context, sessionID string, from, to model.ProfileSpec) error {
+	now := time.Now()
+	fromTarget := model.TraceTargetProfileFromProfile(from)
+	toTarget := model.TraceTargetProfileFromProfile(to)
+	fromHash := ""
+	if fromTarget != nil {
+		fromHash = fromTarget.Hash()
+	}
+	toHash := ""
+	if toTarget != nil {
+		toHash = toTarget.Hash()
+	}
+	fallbackReason := "startup_recovery:" + strings.TrimSpace(to.Name)
+
+	_, err := o.Store.UpdateSession(ctx, sessionID, func(r *model.SessionRecord) error {
+		r.Profile = to
+		r.FallbackReason = fallbackReason
+		r.FallbackAtUnix = now.Unix()
+		r.UpdatedAtUnix = now.Unix()
+
+		trace := ensurePlaybackTrace(r)
+		applyTraceEffectiveProfile(trace, to, sessionInputKindFromRecord(r))
+		trace.TargetProfile = toTarget
+		trace.TargetProfileHash = toHash
+		trace.StopReason = ""
+		trace.StopClass = model.PlaybackStopClassNone
+		trace.Fallbacks = append(trace.Fallbacks, model.PlaybackFallbackTrace{
+			AtUnix:          now.Unix(),
+			Trigger:         "startup_recovery",
+			Reason:          fallbackReason,
+			FromProfileHash: fromHash,
+			ToProfileHash:   toHash,
+		})
+		return nil
+	})
+	return err
 }
 
 func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunHandle) error {
@@ -642,6 +770,7 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
 		}
 		trace.InputKind = inputKind
+		applyTracePolicyProfile(trace, r.Profile)
 		trace.TargetProfile = model.TraceTargetProfileFromProfile(r.Profile)
 		if trace.TargetProfile != nil {
 			trace.TargetProfileHash = trace.TargetProfile.Hash()
@@ -684,6 +813,9 @@ func resetForFallbackRestart(r *model.SessionRecord, now time.Time) {
 	r.LastPlaylistAccessAt = time.Time{}
 	r.PlaylistPublishedAt = time.Time{}
 	if r.PlaybackTrace != nil {
+		r.PlaybackTrace.PolicyModeHint = ports.RuntimeModeUnknown
+		r.PlaybackTrace.EffectiveRuntimeMode = ports.RuntimeModeUnknown
+		r.PlaybackTrace.EffectiveModeSource = ports.RuntimeModeSourceUnknown
 		r.PlaybackTrace.StopReason = ""
 		r.PlaybackTrace.StopClass = model.PlaybackStopClassNone
 		r.PlaybackTrace.FirstFrameAtUnix = 0
@@ -776,10 +908,12 @@ func (o *Orchestrator) runExecutionLoop(
 	}
 
 	for attempt := 0; attempt <= defaultStartupProcessRetryLimit; attempt++ {
-		handle, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
+		var effectiveProfile model.ProfileSpec
+		handle, effectiveProfile, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
 		if err != nil {
 			return "", model.ProfileSpec{}, err
 		}
+		currentProfileSpec = effectiveProfile
 
 		playlistReadyResult := false
 		if playlistPath != "" {
@@ -804,18 +938,36 @@ func (o *Orchestrator) runExecutionLoop(
 			return handle, currentProfileSpec, nil
 		}
 
-		if shouldRetryStartupWaitFailure(failReason, failDetail, attempt) {
+		nextProfileSpec, promoteProfile := startupRecoveryProfile(currentProfileSpec, failReason, failDetail)
+		if attempt < defaultStartupProcessRetryLimit && (shouldRetryStartupWaitFailure(failReason, failDetail, attempt) || promoteProfile) {
+			if promoteProfile {
+				if err := o.persistStartupRecoveryProfile(ctx, e.SessionID, currentProfileSpec, nextProfileSpec); err != nil {
+					o.stopPipelineHandle(ctx, handle)
+					return "", model.ProfileSpec{}, err
+				}
+			}
+
 			logger.Warn().
 				Str("session_id", e.SessionID).
 				Int("attempt", attempt+1).
 				Int("max_retries", defaultStartupProcessRetryLimit).
 				Str("reason", string(failReason)).
 				Str("detail", failDetail).
+				Str("from_profile", currentProfileSpec.Name).
+				Str("to_profile", func() string {
+					if promoteProfile {
+						return nextProfileSpec.Name
+					}
+					return currentProfileSpec.Name
+				}()).
 				Msg("startup failed before ready; retrying once")
 
 			o.stopPipelineHandle(ctx, handle)
 			if o.HLSRoot != "" {
 				o.cleanupFiles(e.SessionID)
+			}
+			if promoteProfile {
+				currentProfileSpec = nextProfileSpec
 			}
 			ttfpRecorded = false
 			continue
@@ -883,6 +1035,15 @@ func (o *Orchestrator) finalizeDeferred(
 		}
 		if trace.InputKind == "" {
 			trace.InputKind = sessionInputKindFromRecord(r)
+		}
+		if trace.PolicyModeHint == "" || trace.PolicyModeHint == ports.RuntimeModeUnknown {
+			trace.PolicyModeHint = tracePolicyModeHint(r.Profile)
+		}
+		if trace.EffectiveRuntimeMode == "" || trace.EffectiveRuntimeMode == ports.RuntimeModeUnknown {
+			trace.EffectiveRuntimeMode = traceEffectiveRuntimeMode(r.Profile)
+		}
+		if trace.EffectiveModeSource == "" || trace.EffectiveModeSource == ports.RuntimeModeSourceUnknown {
+			trace.EffectiveModeSource = traceEffectiveModeSource(r.Profile)
 		}
 		if trace.TargetProfile == nil {
 			trace.TargetProfile = model.TraceTargetProfileFromProfile(r.Profile)

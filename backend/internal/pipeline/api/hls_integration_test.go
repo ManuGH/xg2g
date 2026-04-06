@@ -169,5 +169,5 @@ func TestSafariHLSSmoke(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, respSeg.StatusCode)
 	assert.Equal(t, "video/mp2t", respSeg.Header.Get("Content-Type"), "Strict lowercase content-type required")
-	assert.Equal(t, "public, max-age=60", respSeg.Header.Get("Cache-Control"))
+	assert.Equal(t, "no-store", respSeg.Header.Get("Cache-Control"))
 }

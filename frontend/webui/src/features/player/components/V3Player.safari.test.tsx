@@ -1,6 +1,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import V3Player from './V3Player';
 import Hls from '../lib/hlsRuntime';
 
@@ -35,6 +35,9 @@ describe('V3Player Safari Logic', () => {
   let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
   let webkitSupportsPresentationModeDescriptor: PropertyDescriptor | undefined;
   let maxTouchPointsDescriptor: PropertyDescriptor | undefined;
+  let requestFullscreenDescriptor: PropertyDescriptor | undefined;
+  const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+  const webkitEnterFullscreen = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,6 +46,12 @@ describe('V3Player Safari Logic', () => {
     webkitEnterFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
     webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode');
     maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    requestFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLDivElement.prototype, 'requestFullscreen');
+
+    Object.defineProperty(HTMLDivElement.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen
+    });
   });
 
   afterEach(() => {
@@ -58,6 +67,11 @@ describe('V3Player Safari Logic', () => {
     }
     if (maxTouchPointsDescriptor) {
       Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+    }
+    if (requestFullscreenDescriptor) {
+      Object.defineProperty(HTMLDivElement.prototype, 'requestFullscreen', requestFullscreenDescriptor);
+    } else {
+      delete (HTMLDivElement.prototype as any).requestFullscreen;
     }
     vi.restoreAllMocks();
   });
@@ -134,12 +148,44 @@ describe('V3Player Safari Logic', () => {
     expect(Hls).not.toHaveBeenCalled();
   });
 
+  it('uses container fullscreen by default on desktop Safari and keeps native fullscreen as a separate action', async () => {
+    userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15');
+
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
+      configurable: true,
+      value: webkitEnterFullscreen
+    });
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0
+    });
+
+    const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation(function (this: HTMLMediaElement, type: string) {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      return originalCanPlayType.call(this, type);
+    });
+
+    render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+
+    await waitFor(() => {
+      expect(Hls).not.toHaveBeenCalled();
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /fullscreen/i }));
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /native/i }));
+    expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+  });
+
   it('prefers native HLS on mobile WebKit when native fullscreen controls are available', () => {
     userAgentGetter.mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
 
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
       configurable: true,
-      value: vi.fn()
+      value: webkitEnterFullscreen
     });
     Object.defineProperty(window.navigator, 'maxTouchPoints', {
       configurable: true,

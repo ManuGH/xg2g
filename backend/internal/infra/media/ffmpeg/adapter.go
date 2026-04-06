@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -99,6 +98,8 @@ type LocalAdapter struct {
 	mu           sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
+	// finalizedProfiles keeps the finalized profile that actually launched for a handle.
+	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
 	// processDetails keeps the last meaningful failure summary for a handle.
 	processDetails map[ports.RunHandle]string
 }
@@ -255,6 +256,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		lastKnownFPS:              make(map[string]fpsCacheEntry),
 		FPSCacheTTL:               fpsCacheTTL,
 		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
+		finalizedProfiles:         make(map[ports.RunHandle]ports.ProfileSpec),
 		processDetails:            make(map[ports.RunHandle]string),
 	}
 }
@@ -500,10 +502,11 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		Str("startup_phase", "ffmpeg_args_build_started").
 		Str("input_url", sanitizeURLForLog(inputURL)).
 		Msg("ffmpeg args build started")
-	args, err := a.buildArgs(ctx, spec, inputURL)
+	plan, err := a.buildArgsWithPlan(ctx, spec, inputURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to build args: %w", err)
 	}
+	args := plan.args
 	a.Logger.Info().
 		Str("session_id", spec.SessionID).
 		Str("startup_phase", "ffmpeg_args_built").
@@ -533,10 +536,11 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
 	a.mu.Lock()
 	a.activeProcs[handle] = cmd
+	a.finalizedProfiles[handle] = plan.effectiveProfile
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
-	go a.monitorProcess(ctx, handle, cmd, stderr, spec.SessionID, argsUseVAAPI(args))
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsUseVAAPI(args), a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(sourceKey, spec.SessionID)
 	}
@@ -545,14 +549,30 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	return handle, nil
 }
 
+func (a *LocalAdapter) FinalizedProfile(handle ports.RunHandle) (ports.ProfileSpec, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	profile, ok := a.finalizedProfiles[handle]
+	if !ok {
+		return ports.ProfileSpec{}, false
+	}
+	return profile, true
+}
+
 func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, usesVAAPI bool) {
+	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, usesVAAPI, a.StartTimeout)
+}
+
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, usesVAAPI bool, startTimeout time.Duration) {
 	defer func() {
 		a.mu.Lock()
 		delete(a.activeProcs, handle)
+		delete(a.finalizedProfiles, handle)
 		a.mu.Unlock()
 	}()
 
-	wd := watchdog.New(a.StartTimeout, a.StallTimeout)
+	wd := watchdog.New(startTimeout, a.StallTimeout)
 
 	if parentCtx == nil {
 		parentCtx = context.Background()
@@ -682,6 +702,42 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 		return
 	}
 	a.clearProcessDetail(handle)
+}
+
+func (a *LocalAdapter) startTimeoutForSpec(spec ports.StreamSpec) time.Duration {
+	return a.startTimeoutForProfile(spec.Source.Type, spec.Profile)
+}
+
+func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profile ports.ProfileSpec) time.Duration {
+	timeout := a.StartTimeout
+	if timeout <= 0 {
+		return timeout
+	}
+	if sourceType == ports.SourceFile || !profile.TranscodeVideo {
+		return timeout
+	}
+	if strings.TrimSpace(profile.HWAccel) != "" {
+		return timeout
+	}
+
+	overrideFloor := 30 * time.Second
+	if profile.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {
+		overrideFloor = 60 * time.Second
+	} else if !strings.EqualFold(strings.TrimSpace(profile.Name), "safari") && !strings.EqualFold(strings.TrimSpace(profile.Name), "safari_hq") {
+		return timeout
+	}
+
+	overrideMs := envIntBounded(
+		"XG2G_SAFARI_CPU_START_TIMEOUT_MS",
+		int(overrideFloor/time.Millisecond),
+		int(timeout/time.Millisecond),
+		120000,
+	)
+	override := time.Duration(overrideMs) * time.Millisecond
+	if override > timeout {
+		return override
+	}
+	return timeout
 }
 
 func argsUseVAAPI(args []string) bool {
@@ -827,36 +883,13 @@ func (a *LocalAdapter) killProcessGroup(cmd *exec.Cmd) error {
 
 func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports.HealthStatus {
 	a.mu.Lock()
-	cmd, exists := a.activeProcs[handle]
+	_, exists := a.activeProcs[handle]
 	a.mu.Unlock()
 	if !exists {
+		// monitorProcess has finished — scanner drained, detail is final.
 		return ports.HealthStatus{
 			Healthy:   false,
 			Message:   a.processStatusMessage(handle, "process not found"),
-			LastCheck: time.Now(),
-		}
-	}
-	if cmd == nil || cmd.Process == nil {
-		a.mu.Lock()
-		delete(a.activeProcs, handle)
-		a.mu.Unlock()
-		return ports.HealthStatus{
-			Healthy:   false,
-			Message:   a.processStatusMessage(handle, "process not initialized"),
-			LastCheck: time.Now(),
-		}
-	}
-	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
-		a.mu.Lock()
-		delete(a.activeProcs, handle)
-		a.mu.Unlock()
-		msg := "process not running"
-		if errors.Is(err, os.ErrProcessDone) {
-			msg = "process exited"
-		}
-		return ports.HealthStatus{
-			Healthy:   false,
-			Message:   a.processStatusMessage(handle, msg),
 			LastCheck: time.Now(),
 		}
 	}
@@ -941,6 +974,8 @@ func processDetailPriority(detail string) int {
 	switch detail {
 	case "transcode stalled - no progress detected":
 		return 50
+	case "copy output missing codec parameters":
+		return 45
 	case "upstream stream ended prematurely":
 		return 40
 	case "failed to open upstream input", "upstream input/output error":
@@ -957,6 +992,12 @@ func processDetailPriority(detail string) int {
 func summarizeFFmpegFailureLine(line string) string {
 	lower := strings.ToLower(strings.TrimSpace(line))
 	switch {
+	case strings.Contains(lower, "non-existing pps"),
+		strings.Contains(lower, "non-existing sps"),
+		strings.Contains(lower, "could not find codec parameters for stream") && strings.Contains(lower, "unspecified size"),
+		strings.Contains(lower, "could not write header (incorrect codec parameters ?)"),
+		strings.Contains(lower, "dimensions not set"):
+		return "copy output missing codec parameters"
 	case strings.Contains(lower, "stream ends prematurely"):
 		return "upstream stream ended prematurely"
 	case strings.Contains(lower, "error opening input files"),

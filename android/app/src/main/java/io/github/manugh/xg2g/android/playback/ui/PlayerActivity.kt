@@ -148,8 +148,12 @@ class PlayerActivity : AppCompatActivity() {
     private fun showLoadingOverlay(state: NativePlaybackState) {
         loadingDismissed = false
         firstFrameRendered = false
+        logoLoaded = false
         loadingOverlay.alpha = 1f
         loadingOverlay.isVisible = true
+        loadingLogo.setImageResource(R.drawable.xg2g_logo_mono_dark)
+        loadingLogo.alpha = 0.9f
+        loadingLogo.isVisible = true
 
         val request = state.activeRequest
         loadingTitle.text = when (request) {
@@ -190,6 +194,7 @@ class PlayerActivity : AppCompatActivity() {
             }
             if (bitmap != null && !loadingDismissed) {
                 loadingLogo.setImageBitmap(bitmap)
+                loadingLogo.alpha = 1f
                 loadingLogo.isVisible = true
             }
         }

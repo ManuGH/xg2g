@@ -156,6 +156,8 @@ func inferReasonDetailCode(reason model.ReasonCode, detailDebug string) model.Re
 		return model.DUpstreamInputOpenFailed
 	case strings.Contains(lower, "invalid upstream input data"):
 		return model.DInvalidUpstreamInput
+	case strings.Contains(lower, "copy output missing codec parameters"):
+		return model.DCopyOutputMissingCodec
 	}
 
 	if reason == model.RProcessEnded {

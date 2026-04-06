@@ -318,11 +318,15 @@ func serveArtifact(w http.ResponseWriter, r *http.Request, req hlsRequest, rec *
 		} else {
 			w.Header().Set("Content-Type", httpx.ContentTypeHLSSegment)
 		}
-		w.Header().Set("Cache-Control", "public, max-age=60")
+		// Live session restarts reuse the same session directory and segment names.
+		// After a client-triggered fallback, cached seg_000000.ts / seg_000001.ts from
+		// the failed attempt can poison Safari recovery unless every live artifact is
+		// treated as volatile.
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Encoding", "identity")
 	} else if req.isInit {
 		w.Header().Set("Content-Type", httpx.ContentTypeFMP4Segment)
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Encoding", "identity")
 	}
 

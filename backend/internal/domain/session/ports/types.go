@@ -30,6 +30,29 @@ const (
 	QualityPassthrough QualityProfile = "passthrough"
 )
 
+// RuntimeMode describes the effective playback strategy for a session.
+type RuntimeMode string
+
+const (
+	RuntimeModeUnknown      RuntimeMode = "unknown"
+	RuntimeModeCopy         RuntimeMode = "copy"
+	RuntimeModeCopyHardened RuntimeMode = "copy_hardened"
+	RuntimeModeHQ25         RuntimeMode = "hq25"
+	RuntimeModeHQ50         RuntimeMode = "hq50"
+	RuntimeModeSafe         RuntimeMode = "safe"
+)
+
+// RuntimeModeSource explains which layer selected the effective runtime mode.
+type RuntimeModeSource string
+
+const (
+	RuntimeModeSourceUnknown          RuntimeModeSource = "unknown"
+	RuntimeModeSourceResolve          RuntimeModeSource = "resolve"
+	RuntimeModeSourceEnvOverride      RuntimeModeSource = "env_override"
+	RuntimeModeSourceFeedbackFallback RuntimeModeSource = "feedback_fallback"
+	RuntimeModeSourceRuntimeHardening RuntimeModeSource = "runtime_hardening"
+)
+
 // SourceType defines the nature of the media source.
 type SourceType string
 
@@ -62,23 +85,28 @@ type StreamSpec struct {
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
 type ProfileSpec struct {
-	Name           string `json:"name"`
-	LLHLS          bool   `json:"llhls"`
-	DVRWindowSec   int    `json:"dvrWindowSec"`
-	VOD            bool   `json:"vod,omitempty"`
-	TranscodeVideo bool   `json:"transcodeVideo"`
-	VideoCodec     string `json:"videoCodec,omitempty"` // "h264" (default) or "hevc"
-	HWAccel        string `json:"hwAccel,omitempty"`    // "vaapi", "vaapi_encode_only", "qsv", "nvenc", etc.
-	Deinterlace    bool   `json:"deinterlace,omitempty"`
-	VideoCRF       int    `json:"videoCrf,omitempty"`
-	VideoQP        int    `json:"videoQp,omitempty"`
-	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`
-	VideoMaxRateK  int    `json:"videoMaxRateK,omitempty"`
-	VideoBufSizeK  int    `json:"videoBufSizeK,omitempty"`
-	BFrames        int    `json:"bframes,omitempty"`
-	AudioBitrateK  int    `json:"audioBitrateK,omitempty"`
-	Preset         string `json:"preset,omitempty"`
-	Container      string `json:"container,omitempty"` // "ts" (default) or "fmp4"
+	Name                   string            `json:"name"`
+	PolicyModeHint         RuntimeMode       `json:"policyModeHint,omitempty"`
+	EffectiveRuntimeMode   RuntimeMode       `json:"effectiveRuntimeMode,omitempty"`
+	EffectiveModeSource    RuntimeModeSource `json:"effectiveModeSource,omitempty"`
+	LLHLS                  bool              `json:"llhls"`
+	DVRWindowSec           int               `json:"dvrWindowSec"`
+	VOD                    bool              `json:"vod,omitempty"`
+	DisableSafariForceCopy bool              `json:"disableSafariForceCopy,omitempty"`
+	ForceSafariHQ25        bool              `json:"forceSafariHq25,omitempty"`
+	TranscodeVideo         bool              `json:"transcodeVideo"`
+	VideoCodec             string            `json:"videoCodec,omitempty"` // "h264" (default) or "hevc"
+	HWAccel                string            `json:"hwAccel,omitempty"`    // "vaapi", "vaapi_encode_only", "qsv", "nvenc", etc.
+	Deinterlace            bool              `json:"deinterlace,omitempty"`
+	VideoCRF               int               `json:"videoCrf,omitempty"`
+	VideoQP                int               `json:"videoQp,omitempty"`
+	VideoMaxWidth          int               `json:"videoMaxWidth,omitempty"`
+	VideoMaxRateK          int               `json:"videoMaxRateK,omitempty"`
+	VideoBufSizeK          int               `json:"videoBufSizeK,omitempty"`
+	BFrames                int               `json:"bframes,omitempty"`
+	AudioBitrateK          int               `json:"audioBitrateK,omitempty"`
+	Preset                 string            `json:"preset,omitempty"`
+	Container              string            `json:"container,omitempty"` // "ts" (default) or "fmp4"
 }
 
 // RunHandle is an opaque token for a running pipeline.

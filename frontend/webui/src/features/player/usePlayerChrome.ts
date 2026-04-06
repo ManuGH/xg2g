@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
-import type { HlsInstanceRef, PlayerStats, PlayerStatus, VideoElementRef } from '../../types/v3-player';
+import type { HlsInstanceRef, PlayerStats, PlayerStatus, SafariVideoElement, VideoElementRef } from '../../types/v3-player';
 import { debugLog, debugWarn } from '../../utils/logging';
 import { onHostMediaKey } from '../../lib/hostBridge';
 import { hasTouchInput } from './utils/playerHelpers';
@@ -31,6 +31,10 @@ interface PlayerChromeController {
   currentPlaybackTime: number;
   seekableStart: number;
   seekableEnd: number;
+  supportsNativeFullscreen: boolean;
+  canEnterNativeFullscreen: boolean;
+  prefersDesktopNativeFullscreen: boolean;
+  isWebKitFullscreenActive: boolean;
   isPip: boolean;
   canTogglePiP: boolean;
   isFullscreen: boolean;
@@ -57,6 +61,7 @@ interface PlayerChromeController {
   seekWhenReady: (target: number) => void;
   togglePlayPause: () => void;
   toggleFullscreen: () => Promise<void>;
+  enterNativeFullscreen: () => boolean;
   enterDVRMode: () => void;
   togglePiP: () => Promise<void>;
   toggleMute: () => void;
@@ -97,6 +102,7 @@ export function usePlayerChrome({
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0);
   const [seekableStart, setSeekableStart] = useState(0);
   const [seekableEnd, setSeekableEnd] = useState(0);
+  const [isWebKitFullscreenActive, setIsWebKitFullscreenActive] = useState(false);
   const [isPip, setIsPip] = useState(false);
   const [canTogglePiP, setCanTogglePiP] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -128,10 +134,7 @@ export function usePlayerChrome({
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   }, []);
 
-  const refreshSeekableState = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
+  const readSeekableBounds = useCallback((video: SafariVideoElement) => {
     let start = 0;
     let end = 0;
     if (playbackMode === 'VOD' && durationSeconds && durationSeconds > 0) {
@@ -142,11 +145,41 @@ export function usePlayerChrome({
     } else if (durationSeconds && durationSeconds > 0) {
       end = durationSeconds;
     }
+    return { start, end };
+  }, [durationSeconds, playbackMode]);
 
+  const logNativeFullscreenProbe = useCallback((reason: string, video: SafariVideoElement) => {
+    const { start, end } = readSeekableBounds(video);
+    debugLog('[V3Player] Native fullscreen probe', {
+      reason,
+      playbackMode,
+      canSeek,
+      allowNativeFullscreen,
+      supportsNativeFullscreen: typeof video.webkitEnterFullscreen === 'function',
+      desktopWebKitEligible: canUseDesktopWebKitFullscreen(video),
+      webkitDisplayingFullscreen: video.webkitDisplayingFullscreen === true,
+      readyState: video.readyState,
+      paused: video.paused,
+      controls: video.controls,
+      currentTime: video.currentTime,
+      duration: Number.isFinite(video.duration) ? video.duration : null,
+      seekableStart: start,
+      seekableEnd: end,
+      seekableWindow: Math.max(0, end - start),
+      videoWidth: video.videoWidth || 0,
+      videoHeight: video.videoHeight || 0,
+    });
+  }, [allowNativeFullscreen, canSeek, canUseDesktopWebKitFullscreen, playbackMode, readSeekableBounds]);
+
+  const refreshSeekableState = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const { start, end } = readSeekableBounds(video);
     setSeekableStart(start);
     setSeekableEnd(end);
     setCurrentPlaybackTime(video.currentTime);
-  }, [durationSeconds, playbackMode, videoRef]);
+  }, [readSeekableBounds, videoRef]);
 
   const seekTo = useCallback((targetSeconds: number) => {
     const video = videoRef.current;
@@ -230,16 +263,6 @@ export function usePlayerChrome({
     const container = containerRef.current;
 
     if (!document.fullscreenElement) {
-      if (allowNativeFullscreen && video && canUseDesktopWebKitFullscreen(video)) {
-        try {
-          video.controls = true;
-          video.webkitEnterFullscreen?.();
-          return;
-        } catch (err) {
-          debugWarn('WebKit fullscreen failed', err);
-        }
-      }
-
       if (container?.requestFullscreen) {
         try {
           await container.requestFullscreen();
@@ -250,6 +273,7 @@ export function usePlayerChrome({
       }
 
       if (allowNativeFullscreen && video?.webkitEnterFullscreen) {
+        logNativeFullscreenProbe('webkit-request', video);
         video.controls = true;
         video.webkitEnterFullscreen();
         return;
@@ -264,17 +288,35 @@ export function usePlayerChrome({
     }
 
     await document.exitFullscreen();
-  }, [allowNativeFullscreen, canUseDesktopWebKitFullscreen, containerRef, videoRef]);
+  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, videoRef]);
+
+  const enterNativeFullscreen = useCallback((): boolean => {
+    const video = videoRef.current;
+    if (!allowNativeFullscreen || !video?.webkitEnterFullscreen) {
+      return false;
+    }
+
+    try {
+      logNativeFullscreenProbe('explicit-native-request', video);
+      video.controls = true;
+      video.webkitEnterFullscreen();
+      return true;
+    } catch (err) {
+      debugWarn('Explicit native fullscreen failed', err);
+      return false;
+    }
+  }, [allowNativeFullscreen, logNativeFullscreenProbe, videoRef]);
 
   const enterDVRMode = useCallback(() => {
     const video = videoRef.current;
     if (allowNativeFullscreen && video && video.webkitEnterFullscreen && shouldForceNativeMobileHls(video)) {
+      logNativeFullscreenProbe('dvr-native-request', video);
       video.controls = true;
       video.webkitEnterFullscreen();
       return;
     }
     void toggleFullscreen();
-  }, [allowNativeFullscreen, shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
+  }, [allowNativeFullscreen, logNativeFullscreenProbe, shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
 
   const togglePiP = useCallback(async () => {
     const video = videoRef.current;
@@ -640,10 +682,18 @@ export function usePlayerChrome({
 
     const onWebkitBeginFullscreen = () => {
       setIsFullscreen(true);
+      setIsWebKitFullscreenActive(true);
+      if (video) {
+        refreshSeekableState();
+        logNativeFullscreenProbe('webkit-beginfullscreen', video);
+      }
     };
     const onWebkitEndFullscreen = () => {
       setIsFullscreen(false);
+      setIsWebKitFullscreenActive(false);
       if (video) {
+        refreshSeekableState();
+        logNativeFullscreenProbe('webkit-endfullscreen', video);
         video.controls = false;
       }
     };
@@ -671,7 +721,7 @@ export function usePlayerChrome({
         }
       }
     };
-  }, [allowNativeFullscreen, videoRef]);
+  }, [allowNativeFullscreen, logNativeFullscreenProbe, refreshSeekableState, videoRef]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -717,6 +767,9 @@ export function usePlayerChrome({
   const isLiveMode = playbackMode === 'LIVE';
   const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
   const showDvrModeButton = allowNativeFullscreen && shouldForceNativeMobileHls(videoRef.current);
+  const supportsNativeFullscreen = allowNativeFullscreen && typeof videoRef.current?.webkitEnterFullscreen === 'function';
+  const canEnterNativeFullscreen = supportsNativeFullscreen && !isTouchDevice;
+  const prefersDesktopNativeFullscreen = !!videoRef.current && allowNativeFullscreen && canUseDesktopWebKitFullscreen(videoRef.current);
 
   const startTimeDisplay = startUnix
     ? formatTimeOfDay(startUnix + relativePosition)
@@ -731,6 +784,10 @@ export function usePlayerChrome({
     currentPlaybackTime,
     seekableStart,
     seekableEnd,
+    supportsNativeFullscreen,
+    canEnterNativeFullscreen,
+    prefersDesktopNativeFullscreen,
+    isWebKitFullscreenActive,
     isPip,
     canTogglePiP,
     isFullscreen,
@@ -757,6 +814,7 @@ export function usePlayerChrome({
     seekWhenReady,
     togglePlayPause,
     toggleFullscreen,
+    enterNativeFullscreen,
     enterDVRMode,
     togglePiP,
     toggleMute,
