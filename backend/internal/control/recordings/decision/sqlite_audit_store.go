@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	auditSchemaVersion       = 3
+	auditSchemaVersion       = 4
 	historyRetention         = 30 * 24 * time.Hour
 	historyEntriesPerKey     = 20
 	defaultUnknownEventValue = "unknown"
@@ -57,7 +57,7 @@ func (s *SqliteAuditStore) migrate() error {
 
 	switch {
 	case currentVersion <= 0:
-		if err := createAuditSchemaV3(tx); err != nil {
+		if err := createAuditSchemaV4(tx); err != nil {
 			return err
 		}
 	case currentVersion == 1:
@@ -67,12 +67,22 @@ func (s *SqliteAuditStore) migrate() error {
 		if err := migrateAuditSchemaV2ToV3(tx); err != nil {
 			return err
 		}
+		if err := migrateAuditSchemaV3ToV4(tx); err != nil {
+			return err
+		}
 	case currentVersion == 2:
 		if err := migrateAuditSchemaV2ToV3(tx); err != nil {
 			return err
 		}
+		if err := migrateAuditSchemaV3ToV4(tx); err != nil {
+			return err
+		}
+	case currentVersion == 3:
+		if err := migrateAuditSchemaV3ToV4(tx); err != nil {
+			return err
+		}
 	default:
-		if err := createAuditSchemaV3(tx); err != nil {
+		if err := createAuditSchemaV4(tx); err != nil {
 			return err
 		}
 	}
@@ -86,7 +96,7 @@ func (s *SqliteAuditStore) migrate() error {
 	return tx.Commit()
 }
 
-func createAuditSchemaV3(tx *sql.Tx) error {
+func createAuditSchemaV4(tx *sql.Tx) error {
 	if _, err := tx.Exec(`
 	CREATE TABLE IF NOT EXISTS decision_current (
 		service_ref TEXT NOT NULL,
@@ -108,6 +118,7 @@ func createAuditSchemaV3(tx *sql.Tx) error {
 		host_pressure_band TEXT,
 		client_caps_source TEXT,
 		device_type TEXT,
+		host_fingerprint TEXT,
 		changed_at_ms INTEGER NOT NULL,
 		last_seen_at_ms INTEGER NOT NULL,
 		PRIMARY KEY (service_ref, subject_kind, origin, client_family, requested_intent)
@@ -135,11 +146,14 @@ func createAuditSchemaV3(tx *sql.Tx) error {
 		host_pressure_band TEXT,
 		client_caps_source TEXT,
 		device_type TEXT,
+		host_fingerprint TEXT,
 		decided_at_ms INTEGER NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_decision_history_key_time
 		ON decision_history(service_ref, subject_kind, origin, client_family, requested_intent, decided_at_ms DESC, id DESC);
 	CREATE INDEX IF NOT EXISTS idx_decision_history_decided_at ON decision_history(decided_at_ms);
+	CREATE INDEX IF NOT EXISTS idx_decision_history_host_fingerprint ON decision_history(host_fingerprint);
+	CREATE INDEX IF NOT EXISTS idx_decision_history_basis_host ON decision_history(basis_hash, host_fingerprint);
 	`); err != nil {
 		return err
 	}
@@ -156,7 +170,7 @@ func migrateAuditSchemaV1ToV2(tx *sql.Tx) error {
 		return err
 	}
 	if currentHasOrigin && historyHasOrigin {
-		return createAuditSchemaV3(tx)
+		return nil
 	}
 
 	if _, err := tx.Exec(`
@@ -248,7 +262,7 @@ func migrateAuditSchemaV1ToV2(tx *sql.Tx) error {
 		return err
 	}
 
-	return createAuditSchemaV3(tx)
+	return nil
 }
 
 func migrateAuditSchemaV2ToV3(tx *sql.Tx) error {
@@ -272,7 +286,31 @@ func migrateAuditSchemaV2ToV3(tx *sql.Tx) error {
 		}
 	}
 
-	return createAuditSchemaV3(tx)
+	return nil
+}
+
+func migrateAuditSchemaV3ToV4(tx *sql.Tx) error {
+	currentHasHostFingerprint, err := tableHasColumn(tx, "decision_current", "host_fingerprint")
+	if err != nil {
+		return err
+	}
+	if !currentHasHostFingerprint {
+		if _, err := tx.Exec(`ALTER TABLE decision_current ADD COLUMN host_fingerprint TEXT`); err != nil {
+			return err
+		}
+	}
+
+	historyHasHostFingerprint, err := tableHasColumn(tx, "decision_history", "host_fingerprint")
+	if err != nil {
+		return err
+	}
+	if !historyHasHostFingerprint {
+		if _, err := tx.Exec(`ALTER TABLE decision_history ADD COLUMN host_fingerprint TEXT`); err != nil {
+			return err
+		}
+	}
+
+	return createAuditSchemaV4(tx)
 }
 
 func tableHasColumn(tx *sql.Tx, table string, column string) (bool, error) {
@@ -380,8 +418,8 @@ func upsertCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event, changed
 		`INSERT INTO decision_current (
 			service_ref, subject_kind, origin, client_family, requested_intent, basis_hash, truth_hash, output_hash,
 			mode, selected_container, selected_video_codec, selected_audio_codec, target_profile_json, reasons_json,
-			shadow_json, resolved_intent, host_pressure_band, client_caps_source, device_type, changed_at_ms, last_seen_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			shadow_json, resolved_intent, host_pressure_band, client_caps_source, device_type, host_fingerprint, changed_at_ms, last_seen_at_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(service_ref, subject_kind, origin, client_family, requested_intent) DO UPDATE SET
 			basis_hash = excluded.basis_hash,
 			truth_hash = excluded.truth_hash,
@@ -397,6 +435,7 @@ func upsertCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event, changed
 			host_pressure_band = excluded.host_pressure_band,
 			client_caps_source = excluded.client_caps_source,
 			device_type = excluded.device_type,
+			host_fingerprint = excluded.host_fingerprint,
 			changed_at_ms = excluded.changed_at_ms,
 			last_seen_at_ms = excluded.last_seen_at_ms`,
 		event.ServiceRef,
@@ -418,6 +457,7 @@ func upsertCurrentAuditRow(ctx context.Context, tx *sql.Tx, event Event, changed
 		normalizeNullableToken(event.HostPressureBand),
 		normalizeNullableToken(event.ClientCapsSource),
 		normalizeNullableToken(event.DeviceType),
+		normalizeNullableToken(event.HostFingerprint),
 		changedAtMS,
 		lastSeenAtMS,
 	)
@@ -435,8 +475,8 @@ func insertAuditHistory(ctx context.Context, tx *sql.Tx, event Event, decidedAtM
 		`INSERT INTO decision_history (
 			service_ref, subject_kind, origin, client_family, requested_intent, basis_hash, truth_hash, output_hash,
 			mode, selected_container, selected_video_codec, selected_audio_codec, target_profile_json, reasons_json,
-			shadow_json, resolved_intent, host_pressure_band, client_caps_source, device_type, decided_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			shadow_json, resolved_intent, host_pressure_band, client_caps_source, device_type, host_fingerprint, decided_at_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		event.ServiceRef,
 		normalizeSubjectKind(event.SubjectKind),
 		normalizeEventOrigin(event.Origin),
@@ -456,6 +496,7 @@ func insertAuditHistory(ctx context.Context, tx *sql.Tx, event Event, decidedAtM
 		normalizeNullableToken(event.HostPressureBand),
 		normalizeNullableToken(event.ClientCapsSource),
 		normalizeNullableToken(event.DeviceType),
+		normalizeNullableToken(event.HostFingerprint),
 		decidedAtMS,
 	)
 	return err

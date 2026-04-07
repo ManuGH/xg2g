@@ -14,12 +14,16 @@ import (
 )
 
 type Event struct {
-	ServiceRef       string                                 `json:"serviceRef"`
-	SubjectKind      string                                 `json:"subjectKind"`
-	Origin           string                                 `json:"origin"`
-	ClientFamily     string                                 `json:"clientFamily"`
-	ClientCapsSource string                                 `json:"clientCapsSource,omitempty"`
-	DeviceType       string                                 `json:"deviceType,omitempty"`
+	ServiceRef       string `json:"serviceRef"`
+	SubjectKind      string `json:"subjectKind"`
+	Origin           string `json:"origin"`
+	ClientFamily     string `json:"clientFamily"`
+	ClientCapsSource string `json:"clientCapsSource,omitempty"`
+	DeviceType       string `json:"deviceType,omitempty"`
+	// HostFingerprint is forensic metadata only. It MUST NOT be mixed into
+	// BasisHash because cross-host decision comparison depends on BasisHash
+	// remaining host-independent.
+	HostFingerprint  string                                 `json:"hostFingerprint,omitempty"`
 	RequestedIntent  string                                 `json:"requestedIntent,omitempty"`
 	ResolvedIntent   string                                 `json:"resolvedIntent,omitempty"`
 	Mode             Mode                                   `json:"mode"`
@@ -41,6 +45,7 @@ type EventMetadata struct {
 	ClientFamily     string
 	ClientCapsSource string
 	DeviceType       string
+	HostFingerprint  string
 	DecidedAt        time.Time
 }
 
@@ -89,6 +94,7 @@ func BuildEvent(meta EventMetadata, input DecisionInput, dec *Decision) (Event, 
 		ClientFamily:     normalizeTokenOrUnknown(meta.ClientFamily),
 		ClientCapsSource: normalize.Token(meta.ClientCapsSource),
 		DeviceType:       normalize.Token(firstNonEmpty(meta.DeviceType, input.Capabilities.DeviceType)),
+		HostFingerprint:  normalizeHostFingerprint(meta.HostFingerprint),
 		RequestedIntent:  string(playbackprofile.NormalizeRequestedIntent(string(input.RequestedIntent))),
 		ResolvedIntent:   normalize.Token(dec.Trace.ResolvedIntent),
 		Mode:             dec.Mode,
@@ -129,6 +135,7 @@ func (e Event) Normalized() Event {
 	e.ClientFamily = normalizeTokenOrUnknown(e.ClientFamily)
 	e.ClientCapsSource = normalize.Token(e.ClientCapsSource)
 	e.DeviceType = normalize.Token(e.DeviceType)
+	e.HostFingerprint = normalizeHostFingerprint(e.HostFingerprint)
 	e.RequestedIntent = string(playbackprofile.NormalizeRequestedIntent(e.RequestedIntent))
 	e.ResolvedIntent = normalize.Token(e.ResolvedIntent)
 	e.Selected = normalizeSelected(e.Selected)
@@ -250,6 +257,10 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func normalizeHostFingerprint(value string) string {
+	return strings.TrimSpace(value)
 }
 
 func sha256Hex(payload []byte) string {

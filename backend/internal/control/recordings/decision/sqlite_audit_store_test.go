@@ -206,6 +206,26 @@ func TestSqliteAuditStore_ShadowDivergenceAlwaysPersistsHistoryPerRequest(t *tes
 	require.Equal(t, []string{"codec_mismatch"}, shadow.NewReasons)
 }
 
+func TestSqliteAuditStore_PersistsHostFingerprint(t *testing.T) {
+	store, err := NewSqliteAuditStore(filepath.Join(t.TempDir(), "decision_audit.sqlite"))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.DB.Close()) }()
+
+	event := testDecisionEvent(time.Now().UTC(), "basis-host", "output-host")
+	event.HostFingerprint = "df1:host-class"
+	require.NoError(t, store.Record(context.Background(), event))
+
+	var currentHostFingerprint string
+	err = store.DB.QueryRow(`SELECT host_fingerprint FROM decision_current LIMIT 1`).Scan(&currentHostFingerprint)
+	require.NoError(t, err)
+	require.Equal(t, event.HostFingerprint, currentHostFingerprint)
+
+	var historyHostFingerprint string
+	err = store.DB.QueryRow(`SELECT host_fingerprint FROM decision_history LIMIT 1`).Scan(&historyHostFingerprint)
+	require.NoError(t, err)
+	require.Equal(t, event.HostFingerprint, historyHostFingerprint)
+}
+
 func TestSqliteAuditStore_MigratesV1RowsToRuntimeOrigin(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "decision_audit.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
@@ -305,6 +325,95 @@ func TestSqliteAuditStore_MigratesV1RowsToRuntimeOrigin(t *testing.T) {
 	historyHasShadow, err := tableHasColumn(tx, "decision_history", "shadow_json")
 	require.NoError(t, err)
 	require.True(t, historyHasShadow)
+
+	currentHasHostFingerprint, err := tableHasColumn(tx, "decision_current", "host_fingerprint")
+	require.NoError(t, err)
+	require.True(t, currentHasHostFingerprint)
+
+	historyHasHostFingerprint, err := tableHasColumn(tx, "decision_history", "host_fingerprint")
+	require.NoError(t, err)
+	require.True(t, historyHasHostFingerprint)
+
+	require.True(t, tableHasIndex(t, tx, "idx_decision_history_host_fingerprint"))
+	require.True(t, tableHasIndex(t, tx, "idx_decision_history_basis_host"))
+}
+
+func TestSqliteAuditStore_MigratesV3RowsToHostFingerprintSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "decision_audit.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`
+	PRAGMA user_version = 3;
+	CREATE TABLE decision_current (
+		service_ref TEXT NOT NULL,
+		subject_kind TEXT NOT NULL,
+		origin TEXT NOT NULL,
+		client_family TEXT NOT NULL,
+		requested_intent TEXT NOT NULL,
+		basis_hash TEXT NOT NULL,
+		truth_hash TEXT NOT NULL,
+		output_hash TEXT NOT NULL,
+		mode TEXT NOT NULL,
+		selected_container TEXT NOT NULL,
+		selected_video_codec TEXT NOT NULL,
+		selected_audio_codec TEXT NOT NULL,
+		target_profile_json TEXT,
+		reasons_json TEXT NOT NULL,
+		shadow_json TEXT,
+		resolved_intent TEXT,
+		host_pressure_band TEXT,
+		client_caps_source TEXT,
+		device_type TEXT,
+		changed_at_ms INTEGER NOT NULL,
+		last_seen_at_ms INTEGER NOT NULL,
+		PRIMARY KEY (service_ref, subject_kind, origin, client_family, requested_intent)
+	);
+	CREATE TABLE decision_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		service_ref TEXT NOT NULL,
+		subject_kind TEXT NOT NULL,
+		origin TEXT NOT NULL,
+		client_family TEXT NOT NULL,
+		requested_intent TEXT NOT NULL,
+		basis_hash TEXT NOT NULL,
+		truth_hash TEXT NOT NULL,
+		output_hash TEXT NOT NULL,
+		mode TEXT NOT NULL,
+		selected_container TEXT NOT NULL,
+		selected_video_codec TEXT NOT NULL,
+		selected_audio_codec TEXT NOT NULL,
+		target_profile_json TEXT,
+		reasons_json TEXT NOT NULL,
+		shadow_json TEXT,
+		resolved_intent TEXT,
+		host_pressure_band TEXT,
+		client_caps_source TEXT,
+		device_type TEXT,
+		decided_at_ms INTEGER NOT NULL
+	);
+	`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	store, err := NewSqliteAuditStore(dbPath)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.DB.Close()) }()
+
+	tx, err := store.DB.Begin()
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+
+	currentHasHostFingerprint, err := tableHasColumn(tx, "decision_current", "host_fingerprint")
+	require.NoError(t, err)
+	require.True(t, currentHasHostFingerprint)
+
+	historyHasHostFingerprint, err := tableHasColumn(tx, "decision_history", "host_fingerprint")
+	require.NoError(t, err)
+	require.True(t, historyHasHostFingerprint)
+
+	require.True(t, tableHasIndex(t, tx, "idx_decision_history_host_fingerprint"))
+	require.True(t, tableHasIndex(t, tx, "idx_decision_history_basis_host"))
 }
 
 func testDecisionEvent(decidedAt time.Time, basisHash, outputHash string) Event {
@@ -315,6 +424,7 @@ func testDecisionEvent(decidedAt time.Time, basisHash, outputHash string) Event 
 		ClientFamily:     "safari",
 		ClientCapsSource: "runtime_plus_family",
 		DeviceType:       "tv",
+		HostFingerprint:  "df1:test-host",
 		RequestedIntent:  "quality",
 		ResolvedIntent:   "quality",
 		Mode:             ModeTranscode,
@@ -358,4 +468,21 @@ func countDecisionHistoryRows(t *testing.T, store *SqliteAuditStore) int {
 
 func timeLabel(i int) string {
 	return fmt.Sprintf("%02d", i)
+}
+
+func tableHasIndex(t *testing.T, tx *sql.Tx, name string) bool {
+	t.Helper()
+	rows, err := tx.Query(`SELECT name FROM sqlite_master WHERE type = 'index'`)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var indexName string
+		require.NoError(t, rows.Scan(&indexName))
+		if indexName == name {
+			return true
+		}
+	}
+	require.NoError(t, rows.Err())
+	return false
 }
