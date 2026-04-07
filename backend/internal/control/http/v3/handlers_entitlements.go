@@ -176,18 +176,22 @@ func (s *Server) buildEntitlementStatus(ctx context.Context, principalID string,
 }
 
 func (s *Server) resolveEntitlementStatusTarget(principal *auth.Principal, params GetSystemEntitlementsParams) (string, []string, error) {
+	return s.resolveEntitlementTarget(principal, params.PrincipalId)
+}
+
+func (s *Server) resolveEntitlementTarget(principal *auth.Principal, requestedPrincipalID *string) (string, []string, error) {
 	if principal == nil {
 		return "", nil, fmt.Errorf("principal is required")
 	}
 
 	targetPrincipalID := principal.ID
 	baseScopes := append([]string(nil), principal.Scopes...)
-	if params.PrincipalId == nil {
+	if requestedPrincipalID == nil {
 		return targetPrincipalID, baseScopes, nil
 	}
 
-	requestedPrincipalID := strings.TrimSpace(*params.PrincipalId)
-	if requestedPrincipalID == "" || requestedPrincipalID == principal.ID {
+	targetOverride := strings.TrimSpace(*requestedPrincipalID)
+	if targetOverride == "" || targetOverride == principal.ID {
 		return targetPrincipalID, baseScopes, nil
 	}
 
@@ -195,7 +199,7 @@ func (s *Server) resolveEntitlementStatusTarget(principal *auth.Principal, param
 		return "", nil, fmt.Errorf("admin scope required to inspect a different principal")
 	}
 
-	return requestedPrincipalID, configuredPrincipalScopes(s.GetConfig(), requestedPrincipalID), nil
+	return targetOverride, configuredPrincipalScopes(s.GetConfig(), targetOverride), nil
 }
 
 func (s *Server) entitlementServiceSnapshot() *entitlements.Service {

@@ -131,14 +131,6 @@ func normalizeUserID(userID string) string {
 	return strings.TrimSpace(userID)
 }
 
-func cloneTime(ts *time.Time) *time.Time {
-	if ts == nil {
-		return nil
-	}
-	cloned := ts.UTC()
-	return &cloned
-}
-
 func wrapUnexpectedState(state PurchaseState) error {
 	return fmt.Errorf("unexpected purchase state %q", state)
 }

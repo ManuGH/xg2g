@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	codecdecision "github.com/ManuGH/xg2g/internal/decision"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
@@ -47,14 +48,6 @@ type liveSegmentLayout struct {
 	segmentDurationSec     int
 	initSegmentDurationSec int
 	listSize               int
-}
-
-func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]string, error) {
-	plan, err := a.buildArgsWithPlan(ctx, spec, inputURL)
-	if err != nil {
-		return nil, err
-	}
-	return plan.args, nil
 }
 
 func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamSpec, inputURL string) (finalizedPlan, error) {
@@ -752,56 +745,6 @@ func (a *LocalAdapter) prepareLiveOutputPath(sessionID string) string {
 	return outputPath
 }
 
-func (a *LocalAdapter) shouldPreferSafariRuntimeRemux(ctx context.Context, spec ports.StreamSpec, inputURL string) bool {
-	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Name), profiles.ProfileSafari) {
-		return false
-	}
-	if !spec.Profile.TranscodeVideo {
-		return false
-	}
-	if strings.TrimSpace(inputURL) == "" {
-		return false
-	}
-	if shouldForceSafariCopyForServiceRef(spec, inputURL) {
-		a.Logger.Warn().
-			Str("sessionId", spec.SessionID).
-			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
-			Msg("forcing safari remux path via service-ref allowlist")
-		return true
-	}
-
-	probeTimeout := a.SafariRuntimeProbeTimeout
-	if probeTimeout <= 0 {
-		probeTimeout = 6 * time.Second
-	}
-	var (
-		info *vod.StreamInfo
-		err  error
-	)
-	info, err = a.runSafariRuntimeProbeWithRetry(ctx, spec.SessionID, inputURL, probeTimeout)
-	if err != nil {
-		a.Logger.Info().
-			Err(err).
-			Str("sessionId", spec.SessionID).
-			Str("input_url", sanitizeURLForLog(inputURL)).
-			Dur("probe_timeout", probeTimeout).
-			Msg("safari runtime probe failed; keeping transcode path")
-		return false
-	}
-
-	if !strings.EqualFold(strings.TrimSpace(info.Video.CodecName), "h264") || info.Video.Interlaced {
-		return false
-	}
-
-	a.Logger.Info().
-		Str("sessionId", spec.SessionID).
-		Str("video_codec", info.Video.CodecName).
-		Bool("interlaced", info.Video.Interlaced).
-		Str("container", info.Container).
-		Msg("safari runtime probe selected remux path")
-	return true
-}
-
 func (a *LocalAdapter) runSafariRuntimeProbeWithRetry(ctx context.Context, sessionID, inputURL string, probeTimeout time.Duration) (*vod.StreamInfo, error) {
 	const maxAttempts = 2
 
@@ -1280,7 +1223,7 @@ func shouldHardenSafariCopyBitstream(spec ports.StreamSpec, inputURL string) boo
 }
 
 func serviceRefEnvContains(envKey, targetRef string) bool {
-	raw := strings.TrimSpace(os.Getenv(envKey))
+	raw := strings.TrimSpace(config.ParseString(envKey, ""))
 	if raw == "" || targetRef == "" {
 		return false
 	}

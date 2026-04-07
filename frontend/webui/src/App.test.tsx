@@ -4,9 +4,23 @@ import { MemoryRouter, Outlet } from 'react-router-dom';
 import { beforeEach, describe, it, vi } from 'vitest';
 
 const mockUseAppContext = vi.fn();
+const mockUseHouseholdProfiles = vi.fn();
+const mockToast = vi.fn();
 
 vi.mock('./context/AppContext', () => ({
   useAppContext: () => mockUseAppContext(),
+}));
+
+vi.mock('./context/HouseholdProfilesContext', () => ({
+  useHouseholdProfiles: () => mockUseHouseholdProfiles(),
+}));
+
+vi.mock('./context/UiOverlayContext', () => ({
+  useUiOverlay: () => ({
+    toast: mockToast,
+    confirm: vi.fn(),
+    promptPin: vi.fn(),
+  }),
 }));
 
 vi.mock('./hooks/useServerQueries', () => ({
@@ -35,6 +49,21 @@ vi.mock('./features/epg/EPG', () => ({
 
 describe('App', () => {
   beforeEach(() => {
+    const defaultProfile = {
+      id: 'household-default',
+      name: 'Haushalt',
+      kind: 'adult' as const,
+      maxFsk: null,
+      allowedBouquets: [],
+      allowedServiceRefs: [],
+      favoriteServiceRefs: [],
+      permissions: {
+        dvrPlayback: true,
+        dvrManage: true,
+        settings: true,
+      },
+    };
+
     mockUseAppContext.mockReturnValue({
       auth: { token: '', isAuthenticated: false },
       setToken: vi.fn(),
@@ -45,6 +74,23 @@ describe('App', () => {
       loadChannels: vi.fn(),
       loadBouquetsAndChannels: vi.fn(),
       handlePlay: vi.fn()
+    });
+    mockUseHouseholdProfiles.mockReturnValue({
+      profiles: [defaultProfile],
+      selectedProfile: defaultProfile,
+      selectedProfileId: defaultProfile.id,
+      isReady: true,
+      pinConfigured: false,
+      isUnlocked: true,
+      selectProfile: vi.fn().mockResolvedValue(true),
+      ensureUnlocked: vi.fn().mockResolvedValue(true),
+      saveProfile: vi.fn().mockResolvedValue(undefined),
+      deleteProfile: vi.fn().mockResolvedValue(undefined),
+      toggleFavoriteService: vi.fn(),
+      isFavoriteService: vi.fn().mockReturnValue(false),
+      canAccessDvrPlayback: true,
+      canManageDvr: true,
+      canAccessSettings: true,
     });
   });
 
