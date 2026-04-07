@@ -1,22 +1,40 @@
-# Deployment (Index)
+# Deployment Guide
 
-This document is now split into two canonical sources:
+xg2g ships as a single OCI image with a bundled FFmpeg runtime. The only
+supported deployment path is `deploy/sync.sh`:
 
-- Installation contract (host layout / shipped artifacts): `docs/ops/INSTALLATION_CONTRACT.md`
-- Runtime contract (GPU/FFmpeg/paths): `docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md`
-- Operator runbook (systemd + Compose): `docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md`
+```bash
+deploy/sync.sh --apply --ref <tag|sha>
+```
 
-If you are looking for systemd, start/stop/reload, or smoke checks, use the runbook.
-If you are looking for required host paths, shipped scripts, unit locations, or install-time artifacts, use the installation contract.
-If you are looking for FFmpeg, GPU, or runtime invariants, use the runtime contract.
+This copies repo truth into `/srv/xg2g` and `/etc/systemd/system`, reloads
+systemd, and runs verification checks.
 
-Repo-side deploy truth lives under `deploy/`.
+## Minimum Requirements
 
-- `deploy/sync.sh --check --ref <tag|sha>` compares a pinned repo ref against the host install root.
-- `deploy/sync.sh --apply --ref <tag|sha>` copies repo truth into `/srv/xg2g` and `/etc/systemd/system`, reloads systemd, and reruns the same checks.
-- `deploy/xg2g.env.schema.yaml` is the contract for validating `/etc/xg2g/xg2g.env` during sync.
+| Requirement | Value |
+| :--- | :--- |
+| **Runtime** | Docker or Podman |
+| **Supervisor** | systemd (manages container lifecycle) |
+| **Network** | Enigma2 receiver reachable from host |
+| **HTTPS** | Required for non-loopback browser access |
 
-`deploy/sync.sh --apply --ref <tag|sha>` is the only supported deployment path.
-Direct host edits, ad-hoc file copies, and manual `/srv/xg2g` drift are not supported deployment workflows.
+## Detailed Documentation
 
-The installation contract and runbook remain the live-host reference for target paths, verification, and runtime debugging after sync has applied the pinned ref.
+| Topic | Document |
+| :--- | :--- |
+| Host layout, shipped artifacts, unit locations | [Installation Contract](INSTALLATION_CONTRACT.md) |
+| FFmpeg paths, GPU passthrough, runtime invariants | [Runtime Contract](DEPLOYMENT_RUNTIME_CONTRACT.md) |
+| systemd start/stop/reload, Compose, smoke checks | [Operator Runbook](RUNBOOK_SYSTEMD_COMPOSE.md) |
+
+## Deployment Artifacts
+
+Repo-side deploy truth lives under `deploy/`:
+
+- `deploy/sync.sh --check --ref <tag|sha>` — dry-run comparison against host
+- `deploy/xg2g.env.schema.yaml` — contract for validating `/etc/xg2g/xg2g.env`
+- `deploy/docker-compose.yml` — production Compose template
+- `deploy/xg2g.service` — systemd unit
+
+Direct host edits, ad-hoc file copies, and manual `/srv/xg2g` drift are not
+supported deployment workflows.

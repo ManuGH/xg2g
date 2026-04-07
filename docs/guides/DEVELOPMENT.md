@@ -1,18 +1,6 @@
-# Development Policy: Safe Process Management
+# Development Guide
 
-To ensure development stability and prevent accidental session lockouts (SSH disconnects), all process termination within this repository must follow these safety guidelines.
-
-## 🛡️ SSH Stability Rules
-
-1. **Avoid `pkill` without filters**: Never use broad commands like `pkill -u $USER`. This will terminate your SSH agent and session.
-2. **Targeted Termination**: Always use the `-f` flag with a specific process name or use PID tracking.
-   - **Correct**: `pkill -f xg2g` (targets only the xg2g binary)
-   - **Correct**: `pkill -f run_dev.sh` (targets only the dev loop)
-3. **Control Plane Isolation**: When testing shutdowns, use the built-in diagnostic tools or container signals rather than host-wide process signals.
-
-## 🏗️ Execution Contexts: Dev vs. System
-
-It is critical to distinguish between development and production.
+## Development Workflow
 
 ### `run_dev.sh` (Development Loop)
 
@@ -107,10 +95,6 @@ The tagged release pipeline follows the same pattern via
 `ghcr.io/manugh/xg2g-ffmpeg:8.1`, so release cuts do not recompile FFmpeg
 from source on every tag.
 
-The tagged release pipeline follows the same pattern via
-`ghcr.io/manugh/xg2g-ffmpeg:7.1.3`, so release cuts do not recompile FFmpeg
-from source on every tag.
-
 If FFmpeg version or build flags change in `backend/scripts/build-ffmpeg.sh`, rebuild the base image first:
 
 ```bash
@@ -127,6 +111,14 @@ Use `docker stop` to leverage graceful SIGTERM propagation without affecting the
 docker stop $(docker ps -q --filter name=xg2g)
 ```
 
-## 📜 Continuous Verification
+## Process Safety
 
-Maintainers and AI Agents must verify that verification scripts (e.g., `test-shutdown.sh`) do not execute any commands that could compromise the interactive shell or connection.
+When stopping processes on a shared dev host, avoid broad signals that can
+kill your SSH session:
+
+- **Do**: `pkill -f xg2g` or `pkill -f run_dev.sh` (targeted)
+- **Do**: `./backend/scripts/safe-shutdown.sh` (scripted)
+- **Don't**: `pkill -u $USER` (kills SSH agent)
+
+For containers, use `docker stop` or `systemctl stop xg2g` instead of
+host-wide signals.
