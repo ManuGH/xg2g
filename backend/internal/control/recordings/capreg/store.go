@@ -60,6 +60,18 @@ type HostSnapshot struct {
 	UpdatedAt           time.Time
 }
 
+type decisionFingerprintInput struct {
+	Version      string                          `json:"version"`
+	OSName       string                          `json:"osName,omitempty"`
+	OSVersion    string                          `json:"osVersion,omitempty"`
+	Architecture string                          `json:"architecture,omitempty"`
+	EncoderKeys  []decisionFingerprintEncoderKey `json:"encoderKeys,omitempty"`
+}
+
+type decisionFingerprintEncoderKey struct {
+	Codec string `json:"codec"`
+}
+
 type ReceiverContext struct {
 	Platform            string `json:"platform,omitempty"`
 	Brand               string `json:"brand,omitempty"`
@@ -103,6 +115,36 @@ func (s SourceSnapshot) Fingerprint() string {
 		"interlaced":   canonical.Interlaced,
 		"problemFlags": canonical.ProblemFlags,
 		"receiver":     canonical.ReceiverContext,
+	})
+}
+
+func (s HostSnapshot) DecisionFingerprint() string {
+	canonical := canonicalHostSnapshot(s)
+	if canonical.Identity.OSName == "" && canonical.Identity.OSVersion == "" && canonical.Identity.Architecture == "" && len(canonical.EncoderCapabilities) == 0 {
+		return ""
+	}
+	keys := make([]decisionFingerprintEncoderKey, 0, len(canonical.EncoderCapabilities))
+	seen := make(map[string]struct{}, len(canonical.EncoderCapabilities))
+	for _, capability := range canonical.EncoderCapabilities {
+		codec := normalizeToken(capability.Codec)
+		if codec == "" {
+			continue
+		}
+		if _, ok := seen[codec]; ok {
+			continue
+		}
+		seen[codec] = struct{}{}
+		keys = append(keys, decisionFingerprintEncoderKey{Codec: codec})
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].Codec < keys[j].Codec
+	})
+	return "df1:" + sha256JSON(decisionFingerprintInput{
+		Version:      "df1",
+		OSName:       canonical.Identity.OSName,
+		OSVersion:    canonical.Identity.OSVersion,
+		Architecture: canonical.Identity.Architecture,
+		EncoderKeys:  keys,
 	})
 }
 
