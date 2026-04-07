@@ -1,9 +1,22 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import Navigation from '../src/components/Navigation';
 import { ROUTE_MAP } from '../src/routes';
+
+const mockUseHouseholdProfiles = vi.fn();
+const mockConfirmPendingChanges = vi.fn();
+
+vi.mock('../src/context/HouseholdProfilesContext', () => ({
+  useHouseholdProfiles: () => mockUseHouseholdProfiles(),
+}));
+
+vi.mock('../src/context/PendingChangesContext', () => ({
+  usePendingChanges: () => ({
+    confirmPendingChanges: mockConfirmPendingChanges,
+  }),
+}));
 
 function LocationProbe() {
   const { pathname } = useLocation();
@@ -11,7 +24,37 @@ function LocationProbe() {
 }
 
 describe('Navigation semantics', () => {
-  it('renders nav items as links and sets aria-current on the active route', () => {
+  beforeEach(() => {
+    const defaultProfile = {
+      id: 'household-default',
+      name: 'Haushalt',
+      kind: 'adult' as const,
+      maxFsk: null,
+      allowedBouquets: [],
+      allowedServiceRefs: [],
+      favoriteServiceRefs: [],
+      permissions: {
+        dvrPlayback: true,
+        dvrManage: true,
+        settings: true,
+      },
+    };
+
+    mockConfirmPendingChanges.mockResolvedValue(true);
+    mockUseHouseholdProfiles.mockReturnValue({
+      profiles: [defaultProfile],
+      selectedProfile: defaultProfile,
+      selectProfile: vi.fn().mockResolvedValue(true),
+      ensureUnlocked: vi.fn().mockResolvedValue(true),
+      pinConfigured: false,
+      isUnlocked: true,
+      canAccessDvrPlayback: true,
+      canManageDvr: true,
+      canAccessSettings: true,
+    });
+  });
+
+  it('renders nav items as links and sets aria-current on the active route', async () => {
     render(
       <MemoryRouter initialEntries={[ROUTE_MAP.epg]}>
         <Navigation />
@@ -29,10 +72,12 @@ describe('Navigation semantics', () => {
     expect(current).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('link', { name: /nav\.dashboard|dashboard/i }));
-    expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.dashboard);
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.dashboard);
+    });
   });
 
-  it('renders a logout action when provided', () => {
+  it('renders a logout action when provided', async () => {
     const onLogout = vi.fn();
 
     render(
@@ -42,6 +87,8 @@ describe('Navigation semantics', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /nav\.logout|logout/i }));
-    expect(onLogout).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(onLogout).toHaveBeenCalledTimes(1);
+    });
   });
 });

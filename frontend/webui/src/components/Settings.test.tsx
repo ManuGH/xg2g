@@ -166,7 +166,7 @@ describe('Settings', () => {
     fireEvent.change(await screen.findByDisplayValue('Haushalt'), {
       target: { value: 'Wohnzimmer' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Kinderprofil' }));
+    fireEvent.click(screen.getByRole('button', { name: /Child profile|Kinderprofil/i }));
 
     await waitFor(() => {
       expect(confirm).toHaveBeenCalledTimes(1);

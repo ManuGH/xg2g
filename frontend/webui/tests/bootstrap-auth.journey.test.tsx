@@ -13,12 +13,16 @@ const {
   mockGetServicesBouquets,
   mockGetServices,
   mockStoredToken,
+  mockToast,
+  mockUseHouseholdProfiles,
 } = vi.hoisted(() => ({
   mockNavigation: vi.fn(),
   mockGetSystemConfig: vi.fn(),
   mockGetServicesBouquets: vi.fn(),
   mockGetServices: vi.fn(),
   mockStoredToken: { value: '' },
+  mockToast: vi.fn(),
+  mockUseHouseholdProfiles: vi.fn(),
 }));
 
 vi.mock('../src/components/Navigation', () => ({
@@ -26,6 +30,18 @@ vi.mock('../src/components/Navigation', () => ({
     mockNavigation();
     return <div data-testid="journey-navigation" />;
   },
+}));
+
+vi.mock('../src/context/HouseholdProfilesContext', () => ({
+  useHouseholdProfiles: () => mockUseHouseholdProfiles(),
+}));
+
+vi.mock('../src/context/UiOverlayContext', () => ({
+  useUiOverlay: () => ({
+    toast: mockToast,
+    confirm: vi.fn(),
+    promptPin: vi.fn(),
+  }),
 }));
 
 vi.mock('../src/features/epg/EPG', () => ({
@@ -115,11 +131,44 @@ function renderJourney(initialEntry: string) {
 
 describe('Bootstrap and Auth journeys', () => {
   beforeEach(() => {
+    const defaultProfile = {
+      id: 'household-default',
+      name: 'Haushalt',
+      kind: 'adult' as const,
+      maxFsk: null,
+      allowedBouquets: [],
+      allowedServiceRefs: [],
+      favoriteServiceRefs: [],
+      permissions: {
+        dvrPlayback: true,
+        dvrManage: true,
+        settings: true,
+      },
+    };
+
     mockStoredToken.value = '';
     mockNavigation.mockClear();
+    mockToast.mockReset();
     mockGetServicesBouquets.mockReset();
     mockGetServices.mockReset();
     mockGetSystemConfig.mockReset();
+    mockUseHouseholdProfiles.mockReturnValue({
+      profiles: [defaultProfile],
+      selectedProfile: defaultProfile,
+      selectedProfileId: defaultProfile.id,
+      isReady: true,
+      pinConfigured: false,
+      isUnlocked: true,
+      selectProfile: vi.fn().mockResolvedValue(true),
+      ensureUnlocked: vi.fn().mockResolvedValue(true),
+      saveProfile: vi.fn().mockResolvedValue(undefined),
+      deleteProfile: vi.fn().mockResolvedValue(undefined),
+      toggleFavoriteService: vi.fn(),
+      isFavoriteService: vi.fn().mockReturnValue(false),
+      canAccessDvrPlayback: true,
+      canManageDvr: true,
+      canAccessSettings: true,
+    });
 
     mockGetServicesBouquets.mockResolvedValue({
       data: [{ name: 'Favorites', services: 1 }],

@@ -5,10 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AppShell from './AppShell';
 
 const mockUseAppContext = vi.fn();
+const mockUseHouseholdProfiles = vi.fn();
 
 
 vi.mock('./context/AppContext', () => ({
   useAppContext: () => mockUseAppContext(),
+}));
+
+vi.mock('./context/HouseholdProfilesContext', () => ({
+  useHouseholdProfiles: () => mockUseHouseholdProfiles(),
 }));
 
 vi.mock('./hooks/useServerQueries', () => ({
@@ -44,6 +49,10 @@ describe('AppShell', () => {
       channels: { bouquets: [], channels: [], selectedBouquet: '', loading: false },
       dataLoaded: true,
       loadBouquetsAndChannels: vi.fn(),
+    });
+    mockUseHouseholdProfiles.mockReturnValue({
+      isReady: true,
+      selectedProfileId: 'household-default',
     });
   });
 

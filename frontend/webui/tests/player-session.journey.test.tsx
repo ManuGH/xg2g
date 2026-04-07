@@ -16,6 +16,8 @@ const {
   mockStoredToken,
   mockConfirm,
   mockToast,
+  mockUseHouseholdProfiles,
+  mockConfirmPendingChanges,
 } = vi.hoisted(() => ({
   mockCreateSession: vi.fn(),
   mockGetSystemConfig: vi.fn(),
@@ -24,6 +26,8 @@ const {
   mockStoredToken: { value: 'valid-token' },
   mockConfirm: vi.fn(),
   mockToast: vi.fn(),
+  mockUseHouseholdProfiles: vi.fn(),
+  mockConfirmPendingChanges: vi.fn(),
 }));
 
 vi.mock('../src/features/player/lib/hlsRuntime', () => {
@@ -83,6 +87,16 @@ vi.mock('../src/context/UiOverlayContext', () => ({
     toast: mockToast,
   }),
   UiOverlayProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+vi.mock('../src/context/HouseholdProfilesContext', () => ({
+  useHouseholdProfiles: () => mockUseHouseholdProfiles(),
+}));
+
+vi.mock('../src/context/PendingChangesContext', () => ({
+  usePendingChanges: () => ({
+    confirmPendingChanges: mockConfirmPendingChanges,
+  }),
 }));
 
 vi.mock('../src/client-ts', async () => {
@@ -219,6 +233,21 @@ function installPlayerFetchMock(scenario: PlayerFetchScenario = {}) {
 
 describe('Player session journeys', () => {
   beforeEach(() => {
+    const defaultProfile = {
+      id: 'household-default',
+      name: 'Haushalt',
+      kind: 'adult' as const,
+      maxFsk: null,
+      allowedBouquets: [],
+      allowedServiceRefs: [],
+      favoriteServiceRefs: [],
+      permissions: {
+        dvrPlayback: true,
+        dvrManage: true,
+        settings: true,
+      },
+    };
+
     mockStoredToken.value = 'valid-token';
     mockCreateSession.mockReset();
     mockGetSystemConfig.mockReset();
@@ -226,6 +255,24 @@ describe('Player session journeys', () => {
     mockGetServices.mockReset();
     mockConfirm.mockReset();
     mockToast.mockReset();
+    mockConfirmPendingChanges.mockResolvedValue(true);
+    mockUseHouseholdProfiles.mockReturnValue({
+      profiles: [defaultProfile],
+      selectedProfile: defaultProfile,
+      selectedProfileId: defaultProfile.id,
+      isReady: true,
+      pinConfigured: false,
+      isUnlocked: true,
+      selectProfile: vi.fn().mockResolvedValue(true),
+      ensureUnlocked: vi.fn().mockResolvedValue(true),
+      saveProfile: vi.fn().mockResolvedValue(undefined),
+      deleteProfile: vi.fn().mockResolvedValue(undefined),
+      toggleFavoriteService: vi.fn(),
+      isFavoriteService: vi.fn().mockReturnValue(false),
+      canAccessDvrPlayback: true,
+      canManageDvr: true,
+      canAccessSettings: true,
+    });
 
     mockCreateSession.mockResolvedValue({
       data: {},
