@@ -57,6 +57,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		req.Headers,
 		req.Capabilities,
 	)
+	hostContext := s.buildRequestHostContext(ctx)
 
 	input := buildDecisionInput(
 		req,
@@ -85,8 +86,8 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	alignAutoCodecDecision(req, resolvedCaps, dec)
 	alignLiveNativePackaging(req, resolvedCaps, dec)
 	alignRecordingNativePackaging(req, resolvedCaps, dec)
-	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, sourceRef, req, truth, resolvedCaps)
-	s.recordDecisionAudit(ctx, sourceRef, req, resolvedCaps, input, dec)
+	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, resolvedCaps)
+	s.recordDecisionAudit(ctx, hostContext, sourceRef, req, resolvedCaps, input, dec)
 	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
 
 	return PlaybackInfoResult{
@@ -161,7 +162,7 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 	}
 }
 
-func (s *Service) recordDecisionAudit(ctx context.Context, sourceRef string, req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, input decision.DecisionInput, dec *decision.Decision) {
+func (s *Service) recordDecisionAudit(ctx context.Context, hostContext requestHostContext, sourceRef string, req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, input decision.DecisionInput, dec *decision.Decision) {
 	sink := s.deps.DecisionAuditSink()
 	if sink == nil || dec == nil {
 		return
@@ -179,6 +180,7 @@ func (s *Service) recordDecisionAudit(ctx context.Context, sourceRef string, req
 		ClientFamily:     clientFamily,
 		ClientCapsSource: resolvedCaps.ClientCapsSource,
 		DeviceType:       resolvedCaps.DeviceType,
+		HostFingerprint:  hostContext.DecisionFingerprint,
 		DecidedAt:        time.Now().UTC(),
 	}, input, dec)
 	if err != nil {
