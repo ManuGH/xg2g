@@ -99,50 +99,12 @@ Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 [Architecture](docs/arch/ARCHITECTURE.md) •
 [ADRs](docs/ADR/)
 
-## How Playback Is Selected
-
-xg2g uses a backend-driven playback decision model. Depending on source truth,
-client capabilities, and operator policy, a session can take one of four paths:
-
-| Path | When xg2g uses it | Typical output |
-| :--- | :--- | :--- |
-| **DirectPlay** | Client can consume the selected output as-is | `direct_mp4` / direct file playback |
-| **DirectStream** | Codecs are compatible but delivery needs a container/protocol bridge | HLS without full re-encode |
-| **Transcode** | Codec, container, or client constraints require repair | Browser-safe HLS |
-| **Deny** | No safe compatible path is available | Fail-closed error response |
-
-## Default `universal` Delivery Policy
-
-`streaming.delivery_policy=universal` is the current supported policy value.
-When xg2g needs a broad browser-compatibility path, it targets this default
-transcode/remux output:
-
-| Component | Specification |
-| :--- | :--- |
-| **Video** | H.264 (AVC) |
-| **Audio** | AAC |
-| **Container** | fMP4 (Fragmented MP4) |
-| **Protocol** | HLS |
-
-This is the default compatibility target, not the only playback outcome.
-DirectPlay and DirectStream remain valid outputs when the decision engine says
-they are safe, including HEVC and AV1 when the client advertises support.
-
-Tier-1 aligned with Apple HLS guidance for the compatibility path.
-
-**Non-Goals**
-
-- ❌ HEVC or AV1 as the default fallback encode target (compatibility first)
-- ❌ UI transcoding controls (fixed server policy)
-- ❌ Browser workarounds (Safari is the reference)
-- ❌ Forcing every session through HLS remux/transcode when a direct path is valid
-
 ## Built for operators
 
 - Structured logs, Prometheus metrics, OpenTelemetry hooks, and health probes
-- Fail-closed auth surfaces with token scopes and browser-safe session flow
-- Docker health checks and release artifacts ready for systemd + Compose setups
-- CI gates for lint, coverage, vulnerability scans, docs publishing, and release automation
+- Fail-closed auth with token scopes and browser-safe session flow
+- Docker health checks, systemd units, and Compose templates
+- CI gates for lint, coverage, vulnerability scans, and release automation
 
 ## Status
 
@@ -178,46 +140,8 @@ Tier-1 aligned with Apple HLS guidance for the compatibility path.
 
 ## FFmpeg
 
-xg2g requires FFmpeg for media processing. Docker images include a pinned
-FFmpeg build (8.1) - no manual configuration needed.
-
-For local development: `make setup` builds FFmpeg to `/opt/ffmpeg` (Linux)
-or your custom prefix. See [FFmpeg Build Guide](docs/ops/FFMPEG_BUILD.md) for
-details.
-
-To use your local build:
-
-```bash
-export XG2G_FFMPEG_BIN="/opt/ffmpeg/bin/ffmpeg"
-export LD_LIBRARY_PATH="/opt/ffmpeg/lib"
-```
-
-## Development Tools
-
-Ad-hoc inspection helpers live in `backend/cmd/tools/` and are run directly
-from the repo root:
-
-```bash
-go run ./backend/cmd/tools/verify-bin         # print configured FFmpeg binary path (reads data/config.yaml)
-go run ./backend/cmd/tools/verify-config      # parse ./config.yaml and print timeout fields
-go run ./backend/cmd/tools/verify-app-config  # load data/config.yaml via production loader
-```
-
-> **Note:** `make verify-config` is a CI gate (configgen diff check) — unrelated to the above.
-
-## Offline Testing
-
-This repository supports deterministic offline testing (air-gap capable).
-
-See: [docs/ops/EXTERNAL_AUDIT_MODE.md](docs/ops/EXTERNAL_AUDIT_MODE.md)
-
-Quick check:
-
-```bash
-export GOTOOLCHAIN=local
-export GOPROXY=off GOSUMDB=off GOVCS="*:off"
-make quality-gates-offline
-```
+Docker images include a pinned FFmpeg build (8.1) — no manual setup needed.
+For local development see the [FFmpeg Build Guide](docs/ops/FFMPEG_BUILD.md).
 
 ## License
 
