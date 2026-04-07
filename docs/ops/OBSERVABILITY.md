@@ -54,8 +54,8 @@ Rebuffer proxy thresholds:
 
 ## Health & Readiness
 
-- **Liveness:** `/health` – basic process alive check
-- **Readiness:** `/ready` – dependencies (DB, receiver) reachable
+- **Liveness:** `/healthz` – basic process alive check
+- **Readiness:** `/readyz` – dependencies (DB, receiver) reachable
 
 ---
 
