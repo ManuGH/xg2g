@@ -96,11 +96,14 @@ The decision engine normalizes floating-point FPS to rational values:
 
 | Float | Rational | Common Source |
 | :--- | :--- | :--- |
-| 23.976 | 24000/1001 | Film content |
+| 23.976 | 24000/1001 | Film content (NTSC pulldown) |
+| 24.0 | 24/1 | Film content |
 | 25.0 | 25/1 | PAL DVB (most Enigma2 sources) |
 | 29.97 | 30000/1001 | NTSC |
+| 30.0 | 30/1 | NTSC progressive |
 | 50.0 | 50/1 | PAL interlaced → progressive |
 | 59.94 | 60000/1001 | NTSC high frame rate |
+| 60.0 | 60/1 | High frame rate progressive |
 
 ## How to Read This
 
