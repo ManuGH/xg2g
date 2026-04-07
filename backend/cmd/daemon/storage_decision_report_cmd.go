@@ -32,6 +32,7 @@ const (
 	reportTruthSourceFallback      = "fallback"
 	reportTruthSourceUnresolved    = "unresolved"
 	reportTruthSourceEventInactive = "event_inactive"
+	reportUnknownHost              = "unknown_host"
 )
 
 type storageDecisionReportOptions struct {
@@ -52,6 +53,7 @@ type storageDecisionReport struct {
 	Bouquet     string                       `json:"bouquet,omitempty"`
 	Filters     storageDecisionReportFilters `json:"filters"`
 	Summary     storageDecisionReportSummary `json:"summary"`
+	Warnings    []string                     `json:"warnings,omitempty"`
 	Rows        []storageDecisionReportRow   `json:"rows"`
 }
 
@@ -75,6 +77,10 @@ type storageDecisionReportSummary struct {
 	TruthSourceFallback      int `json:"truthSourceFallback"`
 	TruthSourceUnresolved    int `json:"truthSourceUnresolved"`
 	TruthSourceEventInactive int `json:"truthSourceEventInactive"`
+	DistinctHostFingerprints int `json:"distinctHostFingerprints"`
+	DistinctBasisHostPairs   int `json:"distinctBasisHostPairs"`
+	BasisHashesWithMultiHost int `json:"basisHashesWithMultiHost"`
+	UnknownHostRows          int `json:"unknownHostRows"`
 }
 
 type storageDecisionReportRow struct {
@@ -94,6 +100,7 @@ type storageDecisionReportRow struct {
 	ClientFamily         string                                 `json:"clientFamily,omitempty"`
 	ClientCapsSource     string                                 `json:"clientCapsSource,omitempty"`
 	ClientCapsSourceCode string                                 `json:"clientCapsSourceCode,omitempty"`
+	HostFingerprint      string                                 `json:"hostFingerprint,omitempty"`
 	RequestedIntent      string                                 `json:"requestedIntent,omitempty"`
 	EffectiveIntent      string                                 `json:"effectiveIntent,omitempty"`
 	Mode                 string                                 `json:"mode,omitempty"`
@@ -111,6 +118,7 @@ type storageDecisionAuditRow struct {
 	Origin           string
 	ClientFamily     string
 	ClientCapsSource string
+	HostFingerprint  string
 	RequestedIntent  string
 	EffectiveIntent  string
 	Mode             string
@@ -283,6 +291,7 @@ func buildStorageDecisionReport(opts storageDecisionReportOptions) (storageDecis
 	})
 
 	report.Summary = summarizeStorageDecisionReport(report.Rows)
+	report.Warnings = buildStorageDecisionReportWarnings(report.Summary)
 	return report, nil
 }
 
@@ -313,6 +322,7 @@ func buildStorageDecisionReportRow(service read.Service, capability scan.Capabil
 	row.DecisionOrigin = decisionRow.Origin
 	row.ClientCapsSourceCode = decisionRow.ClientCapsSource
 	row.ClientCapsSource = presentClientCapsSource(decisionRow.ClientCapsSource)
+	row.HostFingerprint = presentHostFingerprint(decisionRow.HostFingerprint)
 	row.RequestedIntent = decisionRow.RequestedIntent
 	row.EffectiveIntent = decisionRow.EffectiveIntent
 	row.ModeCode = decisionRow.Mode
@@ -333,6 +343,9 @@ func summarizeStorageDecisionReport(rows []storageDecisionReportRow) storageDeci
 	servicesSeen := make(map[string]bool)
 	servicesWithDecision := make(map[string]bool)
 	serviceTruthCounted := make(map[string]bool)
+	hostFingerprintsSeen := make(map[string]bool)
+	basisHostPairs := make(map[string]bool)
+	basisHosts := make(map[string]map[string]bool)
 
 	for _, row := range rows {
 		if !servicesSeen[row.ServiceRef] {
@@ -341,6 +354,20 @@ func summarizeStorageDecisionReport(rows []storageDecisionReportRow) storageDeci
 		}
 		if row.DecisionPresent {
 			servicesWithDecision[row.ServiceRef] = true
+			hostFingerprint := presentHostFingerprint(row.HostFingerprint)
+			hostFingerprintsSeen[hostFingerprint] = true
+			if hostFingerprint == reportUnknownHost {
+				summary.UnknownHostRows++
+			}
+			if row.BasisHash != "" {
+				basisHostPairs[row.BasisHash+"\x00"+hostFingerprint] = true
+				if hostFingerprint != reportUnknownHost {
+					if _, ok := basisHosts[row.BasisHash]; !ok {
+						basisHosts[row.BasisHash] = make(map[string]bool)
+					}
+					basisHosts[row.BasisHash][hostFingerprint] = true
+				}
+			}
 		}
 		if !serviceTruthCounted[row.ServiceRef] {
 			serviceTruthCounted[row.ServiceRef] = true
@@ -369,7 +396,22 @@ func summarizeStorageDecisionReport(rows []storageDecisionReportRow) storageDeci
 
 	summary.ServicesWithDecision = len(servicesWithDecision)
 	summary.ServicesWithoutDecision = summary.ServicesTotal - summary.ServicesWithDecision
+	summary.DistinctHostFingerprints = len(hostFingerprintsSeen)
+	summary.DistinctBasisHostPairs = len(basisHostPairs)
+	for _, hosts := range basisHosts {
+		if len(hosts) > 1 {
+			summary.BasisHashesWithMultiHost++
+		}
+	}
 	return summary
+}
+
+func buildStorageDecisionReportWarnings(summary storageDecisionReportSummary) []string {
+	warnings := make([]string, 0, 1)
+	if summary.UnknownHostRows > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d decision row(s) are bucketed as %s; these rows predate decision_audit schema v4 or were written without host fingerprints", summary.UnknownHostRows, reportUnknownHost))
+	}
+	return warnings
 }
 
 func renderStorageDecisionReportTable(w io.Writer, report storageDecisionReport) {
@@ -387,7 +429,7 @@ func renderStorageDecisionReportTable(w io.Writer, report storageDecisionReport)
 			report.Filters.SubjectKind,
 		)
 	}
-	_, _ = fmt.Fprintf(w, "Summary:   services=%d rows=%d with_decision=%d without_decision=%d truth_complete=%d truth_incomplete=%d truth_missing=%d truth_event_inactive=%d\n\n",
+	_, _ = fmt.Fprintf(w, "Summary:   services=%d rows=%d with_decision=%d without_decision=%d truth_complete=%d truth_incomplete=%d truth_missing=%d truth_event_inactive=%d host_fingerprints=%d basis_host_pairs=%d multi_host_basis=%d unknown_host_rows=%d\n",
 		report.Summary.ServicesTotal,
 		report.Summary.RowsTotal,
 		report.Summary.ServicesWithDecision,
@@ -396,16 +438,24 @@ func renderStorageDecisionReportTable(w io.Writer, report storageDecisionReport)
 		report.Summary.TruthIncomplete,
 		report.Summary.TruthMissing,
 		report.Summary.TruthEventInactive,
+		report.Summary.DistinctHostFingerprints,
+		report.Summary.DistinctBasisHostPairs,
+		report.Summary.BasisHashesWithMultiHost,
+		report.Summary.UnknownHostRows,
 	)
+	for _, warning := range report.Warnings {
+		_, _ = fmt.Fprintf(w, "Warning:   %s\n", warning)
+	}
+	_, _ = fmt.Fprintln(w)
 
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SERVICE_REF\tCHANNEL\tBOUQUET\tTRUTH_SOURCE\tTRUTH_STATUS\tORIGIN\tCLIENT\tCAPS_SOURCE\tREQUESTED_INTENT\tEFFECTIVE_INTENT\tMODE\tTARGET_PROFILE\tREASONS\tCHANGED_AT")
+	_, _ = fmt.Fprintln(tw, "SERVICE_REF\tCHANNEL\tBOUQUET\tTRUTH_SOURCE\tTRUTH_STATUS\tORIGIN\tCLIENT\tCAPS_SOURCE\tHOST_FINGERPRINT\tREQUESTED_INTENT\tEFFECTIVE_INTENT\tMODE\tTARGET_PROFILE\tREASONS\tCHANGED_AT")
 	for _, row := range report.Rows {
 		changedAt := ""
 		if row.ChangedAt != nil {
 			changedAt = row.ChangedAt.Format(time.RFC3339)
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			row.ServiceRef,
 			row.ChannelName,
 			row.Bouquet,
@@ -414,6 +464,7 @@ func renderStorageDecisionReportTable(w io.Writer, report storageDecisionReport)
 			emptyDash(row.DecisionOrigin),
 			emptyDash(row.ClientFamily),
 			emptyDash(row.ClientCapsSource),
+			emptyDash(row.HostFingerprint),
 			emptyDash(row.RequestedIntent),
 			emptyDash(row.EffectiveIntent),
 			emptyDash(row.Mode),
@@ -587,7 +638,7 @@ func queryDecisionCurrentRows(db *sql.DB, columns map[string]bool, serviceRef st
 	var args []any
 	// #nosec G202 -- dynamic fragments are fixed internal column expressions selected from an allowlist, not user input.
 	query := `
-	SELECT service_ref, ` + sqliteSelectExpr(columns, "origin") + `, client_family, requested_intent, resolved_intent, ` + sqliteSelectExpr(columns, "client_caps_source") + `, mode, target_profile_json, reasons_json, basis_hash, changed_at_ms, last_seen_at_ms
+	SELECT service_ref, ` + sqliteSelectExpr(columns, "origin") + `, client_family, requested_intent, resolved_intent, ` + sqliteSelectExpr(columns, "client_caps_source") + `, ` + sqliteSelectExpr(columns, "host_fingerprint") + `, mode, target_profile_json, reasons_json, basis_hash, changed_at_ms, last_seen_at_ms
 	FROM decision_current
 	WHERE service_ref = ? AND subject_kind = 'live'
 	`
@@ -619,6 +670,7 @@ func queryDecisionCurrentRows(db *sql.DB, columns map[string]bool, serviceRef st
 		var decisionOrigin sql.NullString
 		var effectiveIntent sql.NullString
 		var clientCapsSource sql.NullString
+		var hostFingerprint sql.NullString
 		var targetProfileJSON sql.NullString
 		var reasonsJSON string
 		var changedAtMS int64
@@ -630,6 +682,7 @@ func queryDecisionCurrentRows(db *sql.DB, columns map[string]bool, serviceRef st
 			&row.RequestedIntent,
 			&effectiveIntent,
 			&clientCapsSource,
+			&hostFingerprint,
 			&row.Mode,
 			&targetProfileJSON,
 			&reasonsJSON,
@@ -651,6 +704,9 @@ func queryDecisionCurrentRows(db *sql.DB, columns map[string]bool, serviceRef st
 		}
 		if clientCapsSource.Valid {
 			row.ClientCapsSource = clientCapsSource.String
+		}
+		if hostFingerprint.Valid {
+			row.HostFingerprint = hostFingerprint.String
 		}
 		if targetProfileJSON.Valid && strings.TrimSpace(targetProfileJSON.String) != "" {
 			var targetProfile playbackprofile.TargetPlaybackProfile
@@ -678,6 +734,13 @@ func queryDecisionCurrentRows(db *sql.DB, columns map[string]bool, serviceRef st
 		return nil, err
 	}
 	return out, nil
+}
+
+func presentHostFingerprint(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return reportUnknownHost
+	}
+	return value
 }
 
 func normalizeDecisionReportOrigin(value string) string {
