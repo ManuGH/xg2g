@@ -17,6 +17,12 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 )
 
+type requestHostContext struct {
+	Snapshot            capreg.HostSnapshot
+	DecisionFingerprint string
+	BuiltAt             time.Time
+}
+
 func (s *Service) applyCapabilityRegistryFallback(ctx context.Context, req PlaybackInfoRequest) PlaybackInfoRequest {
 	registry := s.deps.CapabilityRegistry()
 	if registry == nil {
@@ -49,13 +55,22 @@ func (s *Service) applyCapabilityRegistryFallback(ctx context.Context, req Playb
 	return req
 }
 
-func (s *Service) rememberCapabilitySnapshots(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, resolved capabilities.PlaybackCapabilities) (string, string, string) {
+func (s *Service) buildRequestHostContext(ctx context.Context) requestHostContext {
+	hostSnapshot := hostSnapshotForRequest(s.deps.HostRuntime(ctx))
+	return requestHostContext{
+		Snapshot:            hostSnapshot,
+		DecisionFingerprint: hostSnapshot.DecisionFingerprint(),
+		BuiltAt:             hostSnapshot.UpdatedAt,
+	}
+}
+
+func (s *Service) rememberCapabilitySnapshots(ctx context.Context, hostContext requestHostContext, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, resolved capabilities.PlaybackCapabilities) (string, string, string) {
 	registry := s.deps.CapabilityRegistry()
 	if registry == nil {
 		return "", "", ""
 	}
 
-	hostSnapshot := hostSnapshotForRequest(s.deps.HostRuntime(ctx))
+	hostSnapshot := hostContext.Snapshot
 	hostFingerprint := hostSnapshot.Identity.Fingerprint()
 	if err := registry.RememberHost(ctx, hostSnapshot); err != nil {
 		log.L().Warn().Err(err).Str("requestId", req.RequestID).Msg("capability registry host snapshot failed")
