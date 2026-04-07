@@ -26,9 +26,7 @@ fail-closed auth, and operator-friendly health checks are built in.
 [Releases](https://github.com/ManuGH/xg2g/releases) •
 [Discussions](https://github.com/ManuGH/xg2g/discussions)
 
-## What xg2g fixes
-
-### The Problem It Solves
+## Why xg2g
 
 | Without xg2g | With xg2g |
 | :--- | :--- |
@@ -38,29 +36,19 @@ fail-closed auth, and operator-friendly health checks are built in.
 | DIY proxies hide failures until users complain | Health checks, logs, metrics, and clear startup gates |
 | Ad hoc setups drift over time | Versioned images, release automation, and CI-backed changes |
 
-## Compatibility at a glance
+## What goes in, what comes out
 
-| Input | Delivery | Good First Targets |
+| Input | Delivery | Targets |
 | :--- | :--- | :--- |
-| Enigma2 live MPEG-TS | HLS with native `.ts` or fMP4 segments | Safari, iPhone, iPad, Chrome, current desktop browsers |
-| Enigma2 VOD / Recordings | HLS or Direct Play | Local app instances, smart TVs |
+| Enigma2 live MPEG-TS | HLS (`.ts` or fMP4 segments) | Safari, iPhone, iPad, Chrome, desktop browsers |
+| Enigma2 VOD / Recordings | HLS or DirectPlay | App instances, smart TVs |
 
-## Codec & Container Support
+The decision engine evaluates **H.264, HEVC, AV1, MPEG-2, VP9** (video) and
+**AAC, AC3, E-AC3, MP2, MP3** (audio) at runtime. When no direct path is safe,
+the `universal` policy transcodes to **H.264 + AAC**. Safari families
+additionally get DirectPlay for HEVC and AC3.
 
-xg2g recognizes a broader codec vocabulary than the default delivery policy
-implies. The decision engine evaluates these codecs at runtime:
-
-| Kind | Codecs | Notes |
-| :--- | :--- | :--- |
-| **Video** | H.264, HEVC, AV1, MPEG-2, VP9 | DirectPlay/DirectStream when the client advertises support |
-| **Audio** | AAC, AC3, E-AC3, MP2, MP3 | AC3/E-AC3 native on Safari; others get AAC transcode |
-| **Containers** | MPEGTS, fMP4/MP4, MKV | Carry matrix determines valid codec/container pairings |
-
-The `universal` delivery policy transcodes to **H.264 + AAC** when no direct
-path is safe. Safari families additionally get DirectPlay for HEVC and AC3.
-
-Full matrix with alias mappings, container carry rules, and transcode targets:
-[Codec & Container Matrix](docs/arch/CODEC_MATRIX.md)
+[Full codec matrix with alias mappings, container carry rules, and transcode targets](docs/arch/CODEC_MATRIX.md)
 
 ## Quickstart
 
@@ -100,13 +88,6 @@ Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 [Architecture](docs/arch/ARCHITECTURE.md) •
 [ADRs](docs/ADR/)
 
-## Built for operators
-
-- Structured logs, Prometheus metrics, OpenTelemetry hooks, and health probes
-- Fail-closed auth with token scopes and browser-safe session flow
-- Docker health checks, systemd units, and Compose templates
-- CI gates for lint, coverage, vulnerability scans, and release automation
-
 ## Status
 
 | Component | Status | Guarantee |
@@ -114,35 +95,18 @@ Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 | **API** | Stable (v3) | SemVer |
 | **WebUI** | Stable | Thin Client |
 | **Streaming** | Production | Universal Policy |
+| **FFmpeg** | Pinned (8.1) | Bundled in Docker image |
+
+Structured logs, Prometheus metrics, OpenTelemetry traces, fail-closed auth,
+Docker health checks, and CI-backed release automation are built in.
 
 ## Documentation
 
-**Evaluate xg2g**
-
-- [Start Here (10 Minutes)](backend/NEW_HERE.md)
-- [Architecture Overview](docs/arch/ARCHITECTURE.md)
-- [Codec & Container Matrix](docs/arch/CODEC_MATRIX.md)
-- [API Reference (GitHub Pages)](https://manugh.github.io/xg2g/)
-- [ADRs](docs/ADR/)
-
-**Operate xg2g**
-
-- [Configuration Guide](docs/guides/CONFIGURATION.md)
-- [Deployment Guide](docs/ops/DEPLOYMENT.md)
-- [Observability](docs/ops/OBSERVABILITY.md)
-- [Security Invariants](docs/ops/SECURITY.md)
-
-**Build on xg2g**
-
-- [Development Guide](docs/guides/DEVELOPMENT.md)
-- [Developer Setup](docs/dev/SETUP.md)
-- [Contributing](CONTRIBUTING.md)
-- [CI Failure Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md)
-
-## FFmpeg
-
-Docker images include a pinned FFmpeg build (8.1) — no manual setup needed.
-For local development see the [FFmpeg Build Guide](docs/ops/FFMPEG_BUILD.md).
+| | |
+| :--- | :--- |
+| **Get started** | [10-Minute Intro](backend/NEW_HERE.md) · [Architecture](docs/arch/ARCHITECTURE.md) · [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [API Reference](https://manugh.github.io/xg2g/) · [ADRs](docs/ADR/) |
+| **Operate** | [Configuration](docs/guides/CONFIGURATION.md) · [Deployment](docs/ops/DEPLOYMENT.md) · [Observability](docs/ops/OBSERVABILITY.md) · [Security](docs/ops/SECURITY.md) · [FFmpeg Build](docs/ops/FFMPEG_BUILD.md) |
+| **Develop** | [Dev Guide](docs/guides/DEVELOPMENT.md) · [Setup](docs/dev/SETUP.md) · [Contributing](CONTRIBUTING.md) · [CI Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) |
 
 ## License
 
