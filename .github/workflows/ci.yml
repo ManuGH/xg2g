@@ -106,12 +106,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           check-jsonschema --version
 
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          which ffmpeg
-          ffmpeg -version
-          echo "PATH=$PATH"
-
       - name: Run PR gate bundle
+        # The default PR gate is intentionally deterministic and must not
+        # depend on optional ffmpeg/system-package availability.
         run: make ci-pr
