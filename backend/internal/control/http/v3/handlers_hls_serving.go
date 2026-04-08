@@ -6,6 +6,7 @@ package v3
 
 import (
 	"net/http"
+	"regexp"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,6 +14,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/metrics"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 )
+
+var safeHLSSessionIDRouteRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:index\.m3u8|stream\.m3u8|init\.mp4|seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|stream[A-Za-z0-9_-]*\.ts)$`)
 
 // Responsibility: Serves HLS playlists and segments from disk.
 // Non-goals: Playback lifecycle or session management.
@@ -31,6 +35,14 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	// 2. Extract Params
 	sessionID := chi.URLParam(r, "sessionID")
 	filename := chi.URLParam(r, "filename")
+	if !safeHLSSessionIDRouteRe.MatchString(sessionID) {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
+	if !safeHLSFilenameRouteRe.MatchString(filename) {
+		http.Error(w, "file type not allowed", http.StatusForbidden)
+		return
+	}
 	stage := playbackStageLabelFromLiveFilename(filename)
 
 	// 3. Serve via HLS helper

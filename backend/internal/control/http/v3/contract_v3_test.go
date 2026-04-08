@@ -941,6 +941,50 @@ func TestV3Contract_HLS(t *testing.T) {
 	})
 }
 
+func TestV3Contract_HLSRejectsUnsafeRouteParams(t *testing.T) {
+	hlsRoot := t.TempDir()
+	s, _ := newV3TestServer(t, hlsRoot)
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
+	})
+	sessionCookie := issueSessionCookie(t, handler, "test-token")
+
+	tests := []struct {
+		name   string
+		path   string
+		status int
+		body   string
+	}{
+		{
+			name:   "reject invalid session id at route boundary",
+			path:   V3BaseURL + "/sessions/bad..sid/hls/index.m3u8",
+			status: http.StatusBadRequest,
+			body:   "",
+		},
+		{
+			name:   "reject unexpected artifact at route boundary",
+			path:   V3BaseURL + "/sessions/550e8400-e29b-41d4-a716-446655440000/hls/evil.txt",
+			status: http.StatusForbidden,
+			body:   "file type not allowed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.AddCookie(sessionCookie)
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			require.Equal(t, tt.status, rr.Code)
+			if tt.body != "" {
+				require.Contains(t, rr.Body.String(), tt.body)
+			}
+		})
+	}
+}
+
 func TestV3Contract_HLSTerminalTranscodeStalledHintHeader(t *testing.T) {
 	hlsRoot := t.TempDir()
 	s, st := newV3TestServer(t, hlsRoot)
