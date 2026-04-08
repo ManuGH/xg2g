@@ -1,4 +1,4 @@
-FROM golang:1.25.8-bookworm
+FROM golang:1.25.9-bookworm
 
 ARG USERNAME=vscode
 ARG USER_UID=1000

@@ -42,7 +42,7 @@ Go
 	•	GOTOOLCHAIN darf nicht hart überschrieben werden
 	•	Makefile muss kompatibel mit:
 
-GOTOOLCHAIN ?= go1.25.6
+GOTOOLCHAIN ?= go1.25.9
 export GOTOOLCHAIN
 GO := go
 

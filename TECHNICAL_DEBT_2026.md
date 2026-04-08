@@ -126,7 +126,7 @@
 - Offline Gates bleiben gruen
 
 **Result**
-- `go.mod`, `go.work`, and default build pins aligned on Go `1.25.8`.
+- `go.mod`, `go.work`, and default build pins aligned on Go `1.25.9`.
 
 ---
 

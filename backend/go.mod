@@ -1,6 +1,6 @@
 module github.com/ManuGH/xg2g
 
-go 1.25.8
+go 1.25.9
 
 require (
 	github.com/alicebob/miniredis/v2 v2.36.1

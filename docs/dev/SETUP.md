@@ -4,7 +4,7 @@
 
 | Tool | Version | Notes |
 | :--- | :--- | :--- |
-| **Go** | 1.25.8+ | Pinned in `backend/go.mod` |
+| **Go** | 1.25.9+ | Pinned in `backend/go.mod` |
 | **Node.js** | 22+ | Used for WebUI build and tests |
 | **Docker** | Recent | Required for container builds and integration tests |
 | **Make** | GNU Make | Build orchestration |
