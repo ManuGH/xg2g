@@ -1,14 +1,18 @@
 # Deployment Guide
 
-xg2g ships as a single OCI image with a bundled FFmpeg runtime. The only
-supported deployment path is `deploy/sync.sh`:
+xg2g ships as a single OCI image with a bundled FFmpeg runtime. The only supported deployment path is `deploy/sync.sh`:
 
 ```bash
+deploy/sync.sh --check --ref <tag|sha>
 deploy/sync.sh --apply --ref <tag|sha>
 ```
 
 This copies repo truth into `/srv/xg2g` and `/etc/systemd/system`, reloads
 systemd, and runs verification checks.
+
+Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
+Use `deploy/sync.sh --check --ref <tag|sha>` for drift checks and
+`deploy/sync.sh --apply --ref <tag|sha>` for the actual deployment.
 
 ## Minimum Requirements
 
@@ -29,11 +33,15 @@ systemd, and runs verification checks.
 
 ## Deployment Artifacts
 
-Repo-side deploy truth lives under `deploy/`:
+Repo-side deploy truth lives under `deploy/`.
+
+Deployment artifacts:
 
 - `deploy/sync.sh --check --ref <tag|sha>` — dry-run comparison against host
 - `deploy/xg2g.env.schema.yaml` — contract for validating `/etc/xg2g/xg2g.env`
 - `deploy/docker-compose.yml` — production Compose template
+- `deploy/docker-compose.gpu.yml` — optional `/dev/dri` marker overlay (expanded into render-node-only binds by `compose-xg2g.sh`)
+- `deploy/docker-compose.nvidia.yml` — optional NVIDIA runtime overlay
 - `deploy/xg2g.service` — systemd unit
 
 Direct host edits, ad-hoc file copies, and manual `/srv/xg2g` drift are not

@@ -6,7 +6,8 @@ This is the deploy-SSoT migration slice:
 
 - `deploy/xg2g.service` is the intended canonical systemd unit bundle file.
 - `deploy/docker-compose.yml` is the intended canonical base compose file.
-- `deploy/docker-compose.gpu.yml` is the intended canonical GPU overlay.
+- `deploy/docker-compose.gpu.yml` is the intended canonical `/dev/dri` GPU overlay marker; `compose-xg2g.sh` expands it into render-node-only device entries at runtime.
+- `deploy/docker-compose.nvidia.yml` is the intended canonical NVIDIA runtime / NVENC overlay.
 - `deploy/xg2g.env.schema.yaml` is the initial machine-readable contract for `/etc/xg2g/xg2g.env`.
 - `deploy/sync.sh` is the idempotent host sync entrypoint.
 
@@ -34,3 +35,4 @@ Remaining tail after this slice:
 
 - live hosts still need to adopt `deploy/sync.sh` as the normal deployment entrypoint everywhere
 - some historical docs still describe previously observed host drift against older layouts
+- NVIDIA / NVENC hosts still use a different runtime class than `/dev/dri`, but the repo now ships that contract as `deploy/docker-compose.nvidia.yml`

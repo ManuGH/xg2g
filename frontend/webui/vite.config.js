@@ -6,29 +6,33 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { configDefaults } from 'vitest/config'
 
+const proxyTarget = process.env.XG2G_WEBUI_PROXY_TARGET || 'http://localhost:8080'
+const devPort = Number(process.env.XG2G_WEBUI_DEV_PORT || '5173')
+const uiBase = process.env.XG2G_WEBUI_BASE || '/ui/'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/ui/',
+  base: uiBase,
   server: {
-    port: 5173,
+    port: devPort,
     host: '0.0.0.0', // Listen on all network interfaces
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: proxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/auth': {
-        target: 'http://localhost:8080',
+        target: proxyTarget,
         changeOrigin: true,
       },
       '/stream': {
-        target: 'http://localhost:8080',
+        target: proxyTarget,
         changeOrigin: true,
       },
       '/logos': {
-        target: 'http://localhost:8080',
+        target: proxyTarget,
         changeOrigin: true,
       },
     },

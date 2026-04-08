@@ -1,0 +1,9 @@
+[tools]
+go = "1.25.8"
+node = "22"
+
+[env]
+_.path = [
+  "./node_modules/.bin",
+  "./frontend/webui/node_modules/.bin",
+]

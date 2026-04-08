@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
 func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]string, error) {
@@ -18,7 +19,11 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 }
 
 func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, usesVAAPI bool) {
-	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, usesVAAPI, a.StartTimeout)
+	backend := profiles.GPUBackendNone
+	if usesVAAPI {
+		backend = profiles.GPUBackendVAAPI
+	}
+	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, backend, a.StartTimeout)
 }
 
 func (a *LocalAdapter) startTimeoutForSpec(spec ports.StreamSpec) time.Duration {

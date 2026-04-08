@@ -463,7 +463,7 @@ func startupRecoveryProfile(current model.ProfileSpec, reason model.ReasonCode, 
 	}
 	if current.EffectiveRuntimeMode == ports.RuntimeModeHQ25 {
 		if reason == model.RPackagerFailed && strings.Contains(lower, "playlist not ready timeout") {
-			next := profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+			next := profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 			if current.DVRWindowSec > 0 {
 				next.DVRWindowSec = current.DVRWindowSec
 			}
@@ -471,7 +471,7 @@ func startupRecoveryProfile(current model.ProfileSpec, reason model.ReasonCode, 
 			return next, true
 		}
 		if reason == model.RProcessEnded && strings.Contains(lower, "transcode stalled - no progress detected") {
-			next := profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+			next := profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 			if current.DVRWindowSec > 0 {
 				next.DVRWindowSec = current.DVRWindowSec
 			}
@@ -498,9 +498,9 @@ func startupRecoveryProfile(current model.ProfileSpec, reason model.ReasonCode, 
 
 	switch strings.ToLower(strings.TrimSpace(current.Name)) {
 	case profiles.ProfileSafari:
-		return withDVR(profiles.Resolve(profiles.ProfileSafariDirty, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)), true
+		return withDVR(profiles.Resolve(profiles.ProfileSafariDirty, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)), true
 	case profiles.ProfileSafariDirty:
-		return withDVR(profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)), true
+		return withDVR(profiles.Resolve(profiles.ProfileRepair, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)), true
 	default:
 		return model.ProfileSpec{}, false
 	}

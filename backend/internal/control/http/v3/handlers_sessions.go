@@ -263,7 +263,7 @@ func nextSafariFeedbackProfile(current model.ProfileSpec, serviceRef string) mod
 	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) && !current.DisableSafariForceCopy {
 		// First Safari recovery step for allowlisted dirty relay streams: disable the
 		// runtime copy experiment and restart as the browser-safe TS transcode path.
-		next := profiles.Resolve(profiles.ProfileSafari, safariFallbackBrowserUA, current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+		next := profiles.Resolve(profiles.ProfileSafari, safariFallbackBrowserUA, current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 		next.DisableSafariForceCopy = true
 		next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
 		return next
@@ -273,7 +273,7 @@ func nextSafariFeedbackProfile(current model.ProfileSpec, serviceRef string) mod
 		// If Safari already runs on the browser-safe TS transcode path and still
 		// reports a decode failure, escalate to a materially different low-complexity
 		// repair rung instead of restarting the exact same media profile again.
-		next := profiles.Resolve(profiles.ProfileRepair, safariFallbackBrowserUA, current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+		next := profiles.Resolve(profiles.ProfileRepair, safariFallbackBrowserUA, current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 		next.Container = "mpegts"
 		next.Deinterlace = true
 		next.HWAccel = ""
@@ -289,7 +289,7 @@ func nextSafariFeedbackProfile(current model.ProfileSpec, serviceRef string) mod
 
 	// First recovery step for general Safari failures remains the stricter
 	// dirty-stream profile.
-	next := profiles.Resolve(profiles.ProfileSafariDirty, "", current.DVRWindowSec, nil, false, profiles.HWAccelOff)
+	next := profiles.Resolve(profiles.ProfileSafariDirty, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 	next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
 	return next
 }

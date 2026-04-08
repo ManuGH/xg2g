@@ -127,18 +127,6 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
     if (!hasNativeHls) return false;
     if (shouldForceNativeMobileHls(videoEl)) return true;
 
-    const webkitVideo = videoEl as unknown as {
-      webkitSupportsPresentationMode?: unknown;
-      webkitSetPresentationMode?: unknown;
-    };
-    const hasDesktopPresentationMode =
-      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
-      typeof webkitVideo.webkitSetPresentationMode === 'function';
-
-    if (!hasTouchInput() && (canUseDesktopWebKitFullscreen(videoEl) || hasDesktopPresentationMode)) {
-      return true;
-    }
-
     return !hlsJsSupported;
   } catch {
     return false;

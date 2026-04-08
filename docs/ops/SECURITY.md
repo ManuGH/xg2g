@@ -134,7 +134,7 @@ openssl rand -hex 32
 openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'
 ```
 
-Add to `/etc/xg2g/xg2g.env` (mode 0600):
+Add to `/etc/xg2g/xg2g.env` (`root:root`, mode `0600`):
 ```
 XG2G_DECISION_SECRET=<openssl-output>
 ```

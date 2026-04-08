@@ -6,7 +6,8 @@ Run as root (or with sudo) on the host.
 ## Preconditions
 - Unit installed at `/etc/systemd/system/xg2g.service`
 - Compose file at `/srv/xg2g/docker-compose.yml`
-- Optional GPU overlay at `/srv/xg2g/docker-compose.gpu.yml`
+- Optional `/dev/dri` overlay at `/srv/xg2g/docker-compose.gpu.yml`
+- Optional NVIDIA overlay at `/srv/xg2g/docker-compose.nvidia.yml`
 - Env file at `/etc/xg2g/xg2g.env`
 
 ## Quick Run (Canonical)
@@ -18,6 +19,11 @@ sudo /srv/xg2g/scripts/run-service-smoke.sh
 After a real deploy, run the playback verifier as a second step:
 ```bash
 sudo /srv/xg2g/scripts/verify-post-deploy-playback.sh
+```
+
+On NVIDIA-only hosts, you can pin the expected hardware backend explicitly:
+```bash
+sudo XG2G_POST_DEPLOY_EXPECT_ENCODER_BACKEND=nvenc /srv/xg2g/scripts/verify-post-deploy-playback.sh
 ```
 
 The script implements the matrix below; use the manual steps for troubleshooting.

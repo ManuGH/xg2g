@@ -24,6 +24,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 )
@@ -37,10 +38,15 @@ const (
 	// Relative startup-cost thresholds for automatic codec promotion above H.264.
 	defaultHEVCVAAPIAutoRatioMax = 1.75
 	defaultAV1VAAPIAutoRatioMax  = 2.50
+	defaultHEVCNVENCAutoRatioMax = 1.75
+	defaultAV1NVENCAutoRatioMax  = 2.50
 )
 
 // vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
 var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi", "av1_vaapi"}
+
+// nvencEncodersToTest is the list of NVENC encoders verified during preflight.
+var nvencEncodersToTest = []string{"h264_nvenc", "hevc_nvenc", "av1_nvenc"}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
@@ -85,8 +91,12 @@ type LocalAdapter struct {
 	VaapiDevice               string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
 	vaapiEncoders             map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
 	vaapiEncoderCaps          map[string]hardware.VAAPIEncoderCapability
-	vaapiDeviceChecked        bool  // device-level preflight ran
-	vaapiDeviceErr            error // device-level preflight error
+	vaapiDeviceChecked        bool            // device-level preflight ran
+	vaapiDeviceErr            error           // device-level preflight error
+	nvencEncoders             map[string]bool // per-encoder preflight results ("h264_nvenc" -> true)
+	nvencEncoderCaps          map[string]hardware.NVENCEncoderCapability
+	nvencChecked              bool
+	nvencErr                  error
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
@@ -358,6 +368,87 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 	return nil
 }
 
+// PreflightNVENC validates that the visible NVIDIA runtime can execute real NVENC encodes.
+func (a *LocalAdapter) PreflightNVENC() error {
+	if !hardware.HasNVENC() {
+		return nil
+	}
+	if a.nvencChecked {
+		return a.nvencErr
+	}
+
+	a.nvencEncoders = make(map[string]bool)
+	a.nvencEncoderCaps = make(map[string]hardware.NVENCEncoderCapability)
+	a.nvencChecked = true
+
+	a.Logger.Info().Msg("nvenc preflight: starting")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// #nosec G204 -- BinPath is trusted from config
+	checkCmd := exec.CommandContext(ctx, a.BinPath, "-hide_banner", "-encoders")
+	checkOut, err := checkCmd.Output()
+	if err != nil {
+		a.nvencErr = fmt.Errorf("nvenc preflight: ffmpeg -encoders failed: %w", err)
+		a.Logger.Error().Err(a.nvencErr).Msg("nvenc preflight: encoder check failed")
+		hardware.SetNVENCEncoderCapabilities(nil)
+		hardware.SetNVENCPreflightResult(false)
+		return a.nvencErr
+	}
+	encoderList := string(checkOut)
+
+	verifiedElapsed := make(map[string]time.Duration, len(nvencEncodersToTest))
+	for _, enc := range nvencEncodersToTest {
+		if !strings.Contains(encoderList, enc) {
+			a.Logger.Info().Str("encoder", enc).Msg("nvenc preflight: encoder not in ffmpeg build, skipping")
+			continue
+		}
+		elapsed, err := a.testNVENCEncoder(enc)
+		if err != nil {
+			a.Logger.Warn().Err(err).Str("encoder", enc).Msg("nvenc preflight: encoder test failed")
+		} else {
+			a.nvencEncoders[enc] = true
+			verifiedElapsed[enc] = elapsed
+			a.Logger.Info().
+				Str("encoder", enc).
+				Dur("probe_elapsed", elapsed).
+				Msg("nvenc preflight: encoder verified")
+		}
+	}
+
+	if len(a.nvencEncoders) == 0 {
+		a.nvencErr = fmt.Errorf("nvenc preflight: no working NVENC encoders found")
+		a.Logger.Error().Err(a.nvencErr).Msg("nvenc preflight: failed")
+		hardware.SetNVENCEncoderCapabilities(nil)
+		hardware.SetNVENCPreflightResult(false)
+		return a.nvencErr
+	}
+
+	a.nvencEncoderCaps = deriveNVENCEncoderCapabilities(
+		verifiedElapsed,
+		envFloatBounded("XG2G_HEVC_NVENC_AUTO_RATIO_MAX", defaultHEVCNVENCAutoRatioMax, 1.0, 10.0),
+		envFloatBounded("XG2G_AV1_NVENC_AUTO_RATIO_MAX", defaultAV1NVENCAutoRatioMax, 1.0, 10.0),
+	)
+	for _, enc := range nvencEncodersToTest {
+		cap, ok := a.nvencEncoderCaps[enc]
+		if !ok || !cap.Verified {
+			continue
+		}
+		a.Logger.Info().
+			Str("encoder", enc).
+			Dur("probe_elapsed", cap.ProbeElapsed).
+			Bool("auto_eligible", cap.AutoEligible).
+			Msg("nvenc preflight: encoder capability")
+	}
+
+	hardware.SetNVENCEncoderCapabilities(a.nvencEncoderCaps)
+	hardware.SetNVENCPreflightResult(true)
+	a.Logger.Info().
+		Int("verified_encoders", len(a.nvencEncoders)).
+		Msg("nvenc preflight: passed")
+	return nil
+}
+
 // testVaapiEncoder runs a real 5-frame encode test for a specific VAAPI encoder.
 func (a *LocalAdapter) testVaapiEncoder(encoder string) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -369,6 +460,25 @@ func (a *LocalAdapter) testVaapiEncoder(encoder string) (time.Duration, error) {
 		"-f", "lavfi",
 		"-i", "testsrc=duration=0.2:size=1280x720:rate=25",
 		"-vf", "format=nv12,hwupload",
+		"-c:v", encoder,
+		"-frames:v", "5",
+		"-f", "null", "-",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
+	}
+	return time.Since(start), nil
+}
+
+func (a *LocalAdapter) testNVENCEncoder(encoder string) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	// #nosec G204 -- BinPath is trusted from config
+	cmd := exec.CommandContext(ctx, a.BinPath,
+		"-f", "lavfi",
+		"-i", "testsrc=duration=0.2:size=1280x720:rate=25",
 		"-c:v", encoder,
 		"-frames:v", "5",
 		"-f", "null", "-",
@@ -392,29 +502,46 @@ func (a *LocalAdapter) VaapiEncoderAutoEligible(encoder string) bool {
 	return ok && cap.Verified && cap.AutoEligible
 }
 
+func (a *LocalAdapter) NVENCEncoderVerified(encoder string) bool {
+	return a.nvencEncoders[encoder]
+}
+
+func (a *LocalAdapter) NVENCEncoderAutoEligible(encoder string) bool {
+	cap, ok := a.nvencEncoderCaps[encoder]
+	return ok && cap.Verified && cap.AutoEligible
+}
+
 func deriveVAAPIEncoderCapabilities(samples map[string]time.Duration, hevcRatioMax, av1RatioMax float64) map[string]hardware.VAAPIEncoderCapability {
+	return deriveHardwareEncoderCapabilities(samples, hevcRatioMax, av1RatioMax)
+}
+
+func deriveNVENCEncoderCapabilities(samples map[string]time.Duration, hevcRatioMax, av1RatioMax float64) map[string]hardware.NVENCEncoderCapability {
+	return deriveHardwareEncoderCapabilities(samples, hevcRatioMax, av1RatioMax)
+}
+
+func deriveHardwareEncoderCapabilities(samples map[string]time.Duration, hevcRatioMax, av1RatioMax float64) map[string]hardware.HardwareEncoderCapability {
 	if len(samples) == 0 {
 		return nil
 	}
 
-	caps := make(map[string]hardware.VAAPIEncoderCapability, len(samples))
-	baseline, ok := selectVAAPIAutoBaseline(samples)
+	caps := make(map[string]hardware.HardwareEncoderCapability, len(samples))
+	baseline, ok := selectHardwareAutoBaseline(samples)
 	if !ok {
 		return caps
 	}
 
 	for encoder, elapsed := range samples {
-		cap := hardware.VAAPIEncoderCapability{
+		cap := hardware.HardwareEncoderCapability{
 			Verified:     true,
 			ProbeElapsed: elapsed,
-			AutoEligible: encoder == "h264_vaapi",
+			AutoEligible: strings.HasPrefix(encoder, "h264_"),
 		}
 		if !cap.AutoEligible {
 			ratio := float64(elapsed) / float64(baseline)
 			switch encoder {
-			case "hevc_vaapi":
+			case "hevc_vaapi", "hevc_nvenc":
 				cap.AutoEligible = ratio <= hevcRatioMax
-			case "av1_vaapi":
+			case "av1_vaapi", "av1_nvenc":
 				cap.AutoEligible = ratio <= av1RatioMax
 			default:
 				cap.AutoEligible = true
@@ -427,8 +554,14 @@ func deriveVAAPIEncoderCapabilities(samples map[string]time.Duration, hevcRatioM
 }
 
 func selectVAAPIAutoBaseline(samples map[string]time.Duration) (time.Duration, bool) {
-	if elapsed, ok := samples["h264_vaapi"]; ok && elapsed > 0 {
-		return elapsed, true
+	return selectHardwareAutoBaseline(samples)
+}
+
+func selectHardwareAutoBaseline(samples map[string]time.Duration) (time.Duration, bool) {
+	for _, key := range []string{"h264_vaapi", "h264_nvenc"} {
+		if elapsed, ok := samples[key]; ok && elapsed > 0 {
+			return elapsed, true
+		}
 	}
 	var baseline time.Duration
 	for _, elapsed := range samples {
@@ -440,6 +573,146 @@ func selectVAAPIAutoBaseline(samples map[string]time.Duration) (time.Duration, b
 		}
 	}
 	return baseline, baseline > 0
+}
+
+func (a *LocalAdapter) hardwareEncoderVerified(backend profiles.GPUBackend, encoder string) bool {
+	switch backend {
+	case profiles.GPUBackendVAAPI:
+		return a.VaapiEncoderVerified(encoder)
+	case profiles.GPUBackendNVENC:
+		return a.NVENCEncoderVerified(encoder)
+	default:
+		return false
+	}
+}
+
+func (a *LocalAdapter) hardwareEncoderAutoEligible(backend profiles.GPUBackend, encoder string) bool {
+	switch backend {
+	case profiles.GPUBackendVAAPI:
+		return a.VaapiEncoderAutoEligible(encoder)
+	case profiles.GPUBackendNVENC:
+		return a.NVENCEncoderAutoEligible(encoder)
+	default:
+		return false
+	}
+}
+
+func (a *LocalAdapter) hardwareEncoderCapability(backend profiles.GPUBackend, encoder string) (hardware.HardwareEncoderCapability, bool) {
+	switch backend {
+	case profiles.GPUBackendVAAPI:
+		cap, ok := a.vaapiEncoderCaps[encoder]
+		return cap, ok
+	case profiles.GPUBackendNVENC:
+		cap, ok := a.nvencEncoderCaps[encoder]
+		return cap, ok
+	default:
+		return hardware.HardwareEncoderCapability{}, false
+	}
+}
+
+func (a *LocalAdapter) preferredHardwareBackendForCodec(codec string) profiles.GPUBackend {
+	var (
+		bestBackend profiles.GPUBackend
+		bestCap     hardware.HardwareEncoderCapability
+		ok          bool
+	)
+	for _, backend := range []profiles.GPUBackend{profiles.GPUBackendVAAPI, profiles.GPUBackendNVENC} {
+		encoder, exists := encoderNameForBackend(codec, backend)
+		if !exists || !a.hardwareEncoderVerified(backend, encoder) {
+			continue
+		}
+		cap, exists := a.hardwareEncoderCapability(backend, encoder)
+		if !exists {
+			cap = hardware.HardwareEncoderCapability{Verified: true}
+		}
+		if !ok || betterLocalHardwareCapability(backend, cap, bestBackend, bestCap) {
+			bestBackend = backend
+			bestCap = cap
+			ok = true
+		}
+	}
+	if !ok {
+		return profiles.GPUBackendNone
+	}
+	return bestBackend
+}
+
+func betterLocalHardwareCapability(candidateBackend profiles.GPUBackend, candidateCap hardware.HardwareEncoderCapability, bestBackend profiles.GPUBackend, bestCap hardware.HardwareEncoderCapability) bool {
+	if candidateCap.AutoEligible != bestCap.AutoEligible {
+		return candidateCap.AutoEligible
+	}
+
+	candidateMeasured := candidateCap.ProbeElapsed > 0
+	bestMeasured := bestCap.ProbeElapsed > 0
+	if candidateMeasured != bestMeasured {
+		return candidateMeasured
+	}
+	if candidateMeasured && candidateCap.ProbeElapsed != bestCap.ProbeElapsed {
+		return candidateCap.ProbeElapsed < bestCap.ProbeElapsed
+	}
+
+	switch candidateBackend {
+	case profiles.GPUBackendVAAPI:
+		return bestBackend != profiles.GPUBackendVAAPI
+	case profiles.GPUBackendNVENC:
+		return bestBackend == profiles.GPUBackendNone
+	default:
+		return false
+	}
+}
+
+func encoderNameForBackend(codec string, backend profiles.GPUBackend) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "h264":
+		switch backend {
+		case profiles.GPUBackendVAAPI:
+			return "h264_vaapi", true
+		case profiles.GPUBackendNVENC:
+			return "h264_nvenc", true
+		}
+	case "hevc":
+		switch backend {
+		case profiles.GPUBackendVAAPI:
+			return "hevc_vaapi", true
+		case profiles.GPUBackendNVENC:
+			return "hevc_nvenc", true
+		}
+	case "av1":
+		switch backend {
+		case profiles.GPUBackendVAAPI:
+			return "av1_vaapi", true
+		case profiles.GPUBackendNVENC:
+			return "av1_nvenc", true
+		}
+	}
+	return "", false
+}
+
+func (a *LocalAdapter) supportedHWCodecsLocal() []string {
+	codecs := make([]string, 0, 3)
+	for _, codec := range []string{"h264", "hevc", "av1"} {
+		if a.preferredHardwareBackendForCodec(codec) != profiles.GPUBackendNone {
+			codecs = append(codecs, codec)
+		}
+	}
+	return codecs
+}
+
+func (a *LocalAdapter) autoHWCodecsLocal() []string {
+	codecs := make([]string, 0, 3)
+	for _, codec := range []string{"h264", "hevc", "av1"} {
+		for _, backend := range []profiles.GPUBackend{profiles.GPUBackendVAAPI, profiles.GPUBackendNVENC} {
+			encoder, ok := encoderNameForBackend(codec, backend)
+			if !ok {
+				continue
+			}
+			if a.hardwareEncoderAutoEligible(backend, encoder) {
+				codecs = append(codecs, codec)
+				break
+			}
+		}
+	}
+	return codecs
 }
 
 // Start initiates the media process.
@@ -540,7 +813,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsUseVAAPI(args), a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(sourceKey, spec.SessionID)
 	}
@@ -560,7 +833,7 @@ func (a *LocalAdapter) FinalizedProfile(handle ports.RunHandle) (ports.ProfileSp
 	return profile, true
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, usesVAAPI bool, startTimeout time.Duration) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, startTimeout time.Duration) {
 	defer func() {
 		a.mu.Lock()
 		delete(a.activeProcs, handle)
@@ -581,7 +854,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		wdErrCh <- wd.Run(wdCtx)
 	}()
 
-	vaapiRuntimeFailureLine := ""
+	runtimeFailureLine := ""
 	scanDone := make(chan struct{})
 	go func() {
 		defer close(scanDone)
@@ -621,8 +894,17 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
 				a.recordProcessDetail(handle, detail)
 			}
-			if usesVAAPI && vaapiRuntimeFailureLine == "" && isVAAPIRuntimeFailureLine(sanitizedLine) {
-				vaapiRuntimeFailureLine = sanitizedLine
+			if runtimeFailureLine == "" {
+				switch hwBackend {
+				case profiles.GPUBackendVAAPI:
+					if isVAAPIRuntimeFailureLine(sanitizedLine) {
+						runtimeFailureLine = sanitizedLine
+					}
+				case profiles.GPUBackendNVENC:
+					if isNVENCRuntimeFailureLine(sanitizedLine) {
+						runtimeFailureLine = sanitizedLine
+					}
+				}
 			}
 			switch ffmpegLogLevel(sanitizedLine) {
 			case zerolog.WarnLevel:
@@ -687,8 +969,13 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 
 	<-scanDone
 
-	if usesVAAPI && vaapiRuntimeFailureLine != "" && (procErr != nil || resultErr != nil) {
-		a.recordVAAPIRuntimeFailure(sessionID, vaapiRuntimeFailureLine)
+	if runtimeFailureLine != "" && (procErr != nil || resultErr != nil) {
+		switch hwBackend {
+		case profiles.GPUBackendVAAPI:
+			a.recordVAAPIRuntimeFailure(sessionID, runtimeFailureLine)
+		case profiles.GPUBackendNVENC:
+			a.recordNVENCRuntimeFailure(sessionID, runtimeFailureLine)
+		}
 	}
 
 	if procErr != nil {
@@ -734,13 +1021,17 @@ func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profi
 	return timeout
 }
 
-func argsUseVAAPI(args []string) bool {
+func argsHardwareBackend(args []string) profiles.GPUBackend {
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-vaapi_device" {
-			return true
+			return profiles.GPUBackendVAAPI
+		}
+		switch args[i] {
+		case "h264_nvenc", "hevc_nvenc", "av1_nvenc":
+			return profiles.GPUBackendNVENC
 		}
 	}
-	return false
+	return profiles.GPUBackendNone
 }
 
 func (a *LocalAdapter) writeFirstFrameMarker(sessionID string) {
@@ -1036,6 +1327,32 @@ func isVAAPIRuntimeFailureLine(line string) bool {
 	return false
 }
 
+func isNVENCRuntimeFailureLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return false
+	}
+	if strings.Contains(lower, "nvenc") && looksLikeFFmpegWarning(lower) {
+		return true
+	}
+	definitiveKeywords := []string{
+		"cannot load libnvidia-encode.so.1",
+		"driver does not support the required nvenc api version",
+		"no capable devices found",
+		"no nvenc capable devices found",
+		"openencode session failed",
+		"provided device doesn't support required nvenc features",
+		"cannot init encoder",
+		"nvidia",
+	}
+	for _, keyword := range definitiveKeywords {
+		if strings.Contains(lower, keyword) && looksLikeFFmpegWarning(lower) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *LocalAdapter) recordVAAPIRuntimeFailure(sessionID, failureLine string) {
 	if !hardware.IsVAAPIReady() {
 		return
@@ -1052,6 +1369,24 @@ func (a *LocalAdapter) recordVAAPIRuntimeFailure(sessionID, failureLine string) 
 		return
 	}
 	event.Msg("recorded vaapi runtime failure")
+}
+
+func (a *LocalAdapter) recordNVENCRuntimeFailure(sessionID, failureLine string) {
+	if !hardware.IsNVENCReady() {
+		return
+	}
+	failures, demoted := hardware.RecordNVENCRuntimeFailure()
+	event := a.Logger.Warn().
+		Str("session_id", sessionID).
+		Int("nvenc_runtime_failures", failures)
+	if failureLine != "" {
+		event = event.Str("ffmpeg_log", failureLine)
+	}
+	if demoted {
+		event.Msg("nvenc runtime failure threshold reached; gpu demoted to cpu fallback")
+		return
+	}
+	event.Msg("recorded nvenc runtime failure")
 }
 
 func ffmpegLogLevel(line string) zerolog.Level {

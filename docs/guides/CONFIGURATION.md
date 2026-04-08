@@ -124,6 +124,12 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `ffmpeg.killTimeout` | `XG2G_FFMPEG_KILL_TIMEOUT` | `5s` | Active | Advanced |
 | `ffmpeg.vaapiDevice` | `XG2G_VAAPI_DEVICE` | `""` | Active | Advanced |
 
+When `ffmpeg.vaapiDevice` is left unset, xg2g auto-detects the first visible
+`/dev/dri/renderD*` node at startup. Set `XG2G_VAAPI_DEVICE=` explicitly empty
+to disable that auto-detect path on GPU-capable hosts. NVIDIA / NVENC detection
+does not use this setting; it follows the visible NVIDIA container runtime
+contract instead.
+
 ### hdhr
 
 | Path | Env | Default | Status | Profile |

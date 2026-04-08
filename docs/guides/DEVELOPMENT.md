@@ -2,20 +2,66 @@
 
 ## Development Workflow
 
+Optional bootstrap helpers:
+
+- `mise install` reads [mise.toml](../../mise.toml) and provisions the pinned
+  local Go and Node versions on host machines.
+- Reopening the repo in
+  [.devcontainer/devcontainer.json](../../.devcontainer/devcontainer.json)
+  starts a containerized workstation that runs `make install`,
+  `make dev-tools`, and `make doctor` on first create. The devcontainer expects
+  access to the host Docker socket for the `make start*` container paths.
+
+### First-Time Setup
+
+Before using any of the development paths below:
+
+```bash
+make install
+make dev-tools
+make start
+```
+
+- `make install` bootstraps `.env` and WebUI dependencies.
+- `make dev-tools` installs the pinned local CLI tools used by repo workflows.
+- `make doctor` verifies only the local workspace.
+- `make start` is the standard local entrypoint. It runs `make doctor`, checks
+  the Docker runtime, and then starts the default local Compose stack.
+
+### Recommended Paths
+
+Pick one path and stay on it for the task at hand:
+
+- `make start` for the default local container path
+- `make start-gpu` for Linux `/dev/dri` hardware acceleration in containers
+- `make start-nvidia` for the NVIDIA / NVENC container path
+- `make backend-dev` for backend-only work
+- `make dev-ui` for frontend-heavy work with Vite HMR
+- `make dev` only when you explicitly want the crash-restart loop
+
+Use `make stop`, `make stop-gpu`, or `make stop-nvidia` to shut down the
+matching container path again.
+
+### Port Map
+
+- `make start`, `make start-gpu`, `make start-nvidia`: `http://localhost:8088`
+- `make backend-dev`: whatever `XG2G_LISTEN` resolves to in `.env` (the default
+  local path is typically `:8088`)
+- `make dev-ui`: `http://localhost:8080/ui/`
+
 ### `run_dev.sh` (Development Loop)
 
 - **Purpose**: Rapid iteration and local debugging.
 - **Behavior**: Infinite loop; auto-rebuilds and restarts on crash.
 - **Logs**: Captured in `logs/dev.log`.
-- **Usage**: Internal dev only; not valid for audit verification.
+- **Usage**: Internal dev only; not valid for audit verification. Prefer `make backend-dev` for a single foreground run.
 
 ### Fast UI Development
 
 For frontend-heavy work, use the dev-tagged backend instead of rebuilding the embedded production UI:
 
 ```bash
-make backend-dev-ui
-make webui-dev
+make dev-ui
 ```
 
 - Backend runs on `http://localhost:8080` with `-tags=dev`
@@ -28,10 +74,11 @@ Open:
 http://localhost:8080/ui/
 ```
 
-Single-command helper:
+Advanced two-terminal variant:
 
 ```bash
-make dev-ui
+make backend-dev-ui
+make webui-dev
 ```
 
 Optional overrides:
@@ -68,16 +115,51 @@ systemctl stop xg2g
 
 ### Local Compose Overrides
 
-For local development with Compose, apply the dev override:
+For standard local development with Compose:
+
+```bash
+make start
+```
+
+Equivalent raw command:
 
 ```bash
 docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
-Optional (VAAPI / Intel+AMD iGPU):
+Advanced or scriptable alias:
 
 ```bash
-docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml -f deploy/docker-compose.gpu.yml up -d
+make up
+```
+
+Hardware-specific one-command variants:
+
+```bash
+make start-gpu
+make start-nvidia
+```
+
+Manual VAAPI helper equivalent:
+
+```bash
+COMPOSE_FILE=docker-compose.yml:../docker-compose.dev.yml:docker-compose.gpu.yml \
+  XG2G_COMPOSE_ROOT="$PWD/deploy" \
+  XG2G_ENV_FILE="$PWD/.env" \
+  backend/scripts/compose-xg2g.sh up -d
+```
+
+The checked-in `deploy/docker-compose.gpu.yml` file is a marker overlay. For
+`/dev/dri` hosts, use `backend/scripts/compose-xg2g.sh` so visible
+`renderD*` nodes are expanded into device entries at runtime.
+
+Manual NVIDIA helper equivalent:
+
+```bash
+COMPOSE_FILE=docker-compose.yml:../docker-compose.dev.yml:docker-compose.nvidia.yml \
+  XG2G_COMPOSE_ROOT="$PWD/deploy" \
+  XG2G_ENV_FILE="$PWD/.env" \
+  backend/scripts/compose-xg2g.sh up -d
 ```
 
 ### Fast Container Rebuilds

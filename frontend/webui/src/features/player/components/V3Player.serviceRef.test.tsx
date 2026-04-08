@@ -174,7 +174,7 @@ describe('V3Player ServiceRef Input', () => {
       const [, streamInfoOptions] = streamInfoCall;
       const streamInfoBody = JSON.parse(streamInfoOptions.body);
       expect(streamInfoBody.capabilities?.capabilitiesVersion).toBe(3);
-      expect(streamInfoBody.capabilities?.preferredHlsEngine).toBe('native');
+      expect(streamInfoBody.capabilities?.preferredHlsEngine).toBe('hlsjs');
       expect(streamInfoBody.capabilities?.videoCodecSignals).toEqual([
         { codec: 'av1', supported: false },
         { codec: 'hevc', supported: false },
@@ -185,7 +185,7 @@ describe('V3Player ServiceRef Input', () => {
       expect(intentCall).toBeDefined();
       const [, options] = intentCall;
       const body = JSON.parse(options.body);
-      expect(body.params?.playback_mode).toBe('native_hls');
+      expect(body.params?.playback_mode).toBe('hlsjs');
       expect(body.params?.codecs).toBe('h264');
     } finally {
       if (webkitSupportsPresentationModeDescriptor) {

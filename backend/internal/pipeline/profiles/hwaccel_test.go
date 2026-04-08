@@ -10,12 +10,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func testGPUBackend(hasGPU bool) GPUBackend {
+	if hasGPU {
+		return GPUBackendVAAPI
+	}
+	return GPUBackendNone
+}
+
 // TestHWAccelForceWithoutGPU verifies that force mode with no GPU available
 // is handled gracefully (in this case, by the handler rejecting the request).
 // The resolver still returns HWAccel="vaapi" which will fail at FFmpeg init,
 // but the handler should prevent this from reaching FFmpeg.
 func TestHWAccelForceWithoutGPU(t *testing.T) {
-	spec := Resolve("safari", "Safari/17.0", 10800, nil, false, HWAccelForce)
+	spec := Resolve("safari", "Safari/17.0", 10800, nil, GPUBackendNone, HWAccelForce)
 
 	// Resolver allows force even without GPU (handler validates)
 	assert.True(t, spec.TranscodeVideo, "Safari interlaced should transcode")
@@ -38,7 +45,7 @@ func TestHWAccelOffAlwaysCPU(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spec := Resolve("safari", "Safari/17.0", 10800, nil, tt.hasGPU, HWAccelOff)
+			spec := Resolve("safari", "Safari/17.0", 10800, nil, testGPUBackend(tt.hasGPU), HWAccelOff)
 
 			assert.True(t, spec.TranscodeVideo, "Safari interlaced should transcode")
 			assert.Empty(t, spec.HWAccel, "off mode must disable HWAccel")
@@ -62,7 +69,7 @@ func TestHWAccelAutoRespectGPU(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spec := Resolve("safari", "Safari/17.0", 10800, nil, tt.hasGPU, HWAccelAuto)
+			spec := Resolve("safari", "Safari/17.0", 10800, nil, testGPUBackend(tt.hasGPU), HWAccelAuto)
 
 			assert.True(t, spec.TranscodeVideo, "Safari interlaced should transcode")
 			assert.Equal(t, tt.expectedHWAccel, spec.HWAccel, "auto mode respects GPU availability")
@@ -89,7 +96,7 @@ func TestHWAccelHEVCProfiles(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spec := Resolve(tt.profile, "Safari/17.0", 10800, nil, tt.hasGPU, tt.hwaccel)
+			spec := Resolve(tt.profile, "Safari/17.0", 10800, nil, testGPUBackend(tt.hasGPU), tt.hwaccel)
 
 			assert.Equal(t, tt.expectedHWAccel, spec.HWAccel, "hwaccel mode")
 			assert.Equal(t, tt.expectedCodec, spec.VideoCodec, "codec")
@@ -103,7 +110,7 @@ func TestHWAccelHEVCProfiles(t *testing.T) {
 
 // TestHWAccelPassthroughIgnored verifies that hwaccel is ignored for passthrough (copy) mode
 func TestHWAccelPassthroughIgnored(t *testing.T) {
-	spec := Resolve("copy", "Safari/17.0", 10800, nil, true, HWAccelForce)
+	spec := Resolve("copy", "Safari/17.0", 10800, nil, GPUBackendVAAPI, HWAccelForce)
 
 	assert.False(t, spec.TranscodeVideo, "copy profile is passthrough")
 	assert.Empty(t, spec.HWAccel, "passthrough ignores hwaccel")
@@ -112,8 +119,8 @@ func TestHWAccelPassthroughIgnored(t *testing.T) {
 // TestHWAccelDeterminism verifies that same inputs produce same outputs (reproducibility)
 func TestHWAccelDeterminism(t *testing.T) {
 	// Same inputs → same outputs (deterministic)
-	spec1 := Resolve("safari", "Safari/17.0", 10800, nil, false, HWAccelOff)
-	spec2 := Resolve("safari", "Safari/17.0", 10800, nil, false, HWAccelOff)
+	spec1 := Resolve("safari", "Safari/17.0", 10800, nil, GPUBackendNone, HWAccelOff)
+	spec2 := Resolve("safari", "Safari/17.0", 10800, nil, GPUBackendNone, HWAccelOff)
 
 	assert.Equal(t, spec1.HWAccel, spec2.HWAccel, "deterministic hwaccel")
 	assert.Equal(t, spec1.VideoCodec, spec2.VideoCodec, "deterministic codec")

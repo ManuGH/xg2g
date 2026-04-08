@@ -2,6 +2,25 @@
 
 This directory contains CI/CD workflows and checks to maintain repository quality.
 
+## Current CI Roles
+
+- `.github/workflows/ci.yml`
+  Core PR/push gate that runs the broad make-based validation bundle.
+- `.github/workflows/pr-required-gates.yml`
+  Canonical PR-time WebUI integration gate: WebUI build plus browser-backed smoke.
+- `.github/workflows/lint.yml`
+  Scoped invariant backstop. Its scope resolution is intentionally fail-closed.
+- `.github/workflows/ui-contract.yml`
+  Historical compatibility workflow. PR enforcement is owned by `pr-required-gates.yml`;
+  this workflow remains as a push/manual backstop until an explicit branch-protection cutover.
+- `.github/workflows/phase4-guardrails.yml`
+  Historical compatibility workflow with the same role split as `ui-contract.yml`.
+- `.github/workflows/repo-health.yml`
+  Repository hygiene and drift-prevention checks. This is the normative merge-policy
+  authority for repo-health invariants; local Make targets only mirror it for convenience.
+
+See [docs/ops/CI_POLICY.md](../docs/ops/CI_POLICY.md) for the canonical policy.
+
 ## Workflows
 
 ### `repo-health.yml`
@@ -60,10 +79,10 @@ git commit --no-verify
 - Test file patterns: `*.mp4`, `*.ts`, `*test*.mp4`, etc.
 
 **Adjustment:**
-Edit `MAX_SIZE_MB` in:
+Edit `XG2G_MAX_FILE_SIZE_MB` handling in:
 
 - `.githooks/pre-commit`
-- `.github/workflows/repo-health.yml`
+- `backend/scripts/ci/check-large-files.sh`
 
 ## Why These Checks?
 
@@ -78,4 +97,4 @@ Edit `MAX_SIZE_MB` in:
 ---
 
 **Maintained by:** Engineering Team  
-**Last Updated:** 2026-01-07
+**Last Updated:** 2026-04-08

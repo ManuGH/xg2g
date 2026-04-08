@@ -35,6 +35,7 @@ const (
 	HWAccelUnknown = ports.HWAccelUnknown
 	HWAccelNone    = ports.HWAccelNone
 	HWAccelVAAPI   = ports.HWAccelVAAPI
+	HWAccelNVENC   = ports.HWAccelNVENC
 )
 
 // VideoConstraints captures upper bounds provided by the client.

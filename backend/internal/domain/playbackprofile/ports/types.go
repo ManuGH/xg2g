@@ -31,6 +31,7 @@ const (
 	HWAccelUnknown HWAccel = ""
 	HWAccelNone    HWAccel = "none"
 	HWAccelVAAPI   HWAccel = "vaapi"
+	HWAccelNVENC   HWAccel = "nvenc"
 )
 
 // VideoConstraints captures upper bounds provided by the client.
@@ -74,6 +75,8 @@ type ServerTranscodeCapabilities struct {
 	HLSAvailable       bool     `json:"hlsAvailable"`
 	HasVAAPI           bool     `json:"hasVaapi"`
 	VAAPIReady         bool     `json:"vaapiReady"`
+	HasNVENC           bool     `json:"hasNvenc"`
+	NVENCReady         bool     `json:"nvencReady"`
 	HardwareVideoCodec []string `json:"hardwareVideoCodecs"`
 }
 

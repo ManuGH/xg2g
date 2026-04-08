@@ -8,6 +8,7 @@ MODE=""
 SOURCE_REF=""
 INSTALL_ROOT="/"
 GPU_OVERLAY_MODE="auto"
+NVIDIA_OVERLAY_MODE="auto"
 VERIFIER_BUNDLE_MODE="auto"
 FETCH_REMOTE="origin"
 
@@ -15,6 +16,7 @@ SOURCE_ROOT=""
 SOURCE_LABEL=""
 SOURCE_COMMIT=""
 GPU_OVERLAY_ENABLED=0
+NVIDIA_OVERLAY_ENABLED=0
 VERIFIER_BUNDLE_ENABLED=0
 DRIFT_DETECTED=0
 TEMP_DIRS=()
@@ -32,6 +34,10 @@ CORE_SPECS=(
 
 GPU_SPECS=(
   "deploy/docker-compose.gpu.yml|/srv/xg2g/docker-compose.gpu.yml|644"
+)
+
+NVIDIA_SPECS=(
+  "deploy/docker-compose.nvidia.yml|/srv/xg2g/docker-compose.nvidia.yml|644"
 )
 
 VERIFIER_SPECS=(
@@ -57,8 +63,8 @@ VERIFIER_TARGETS=(
 usage() {
   cat <<'EOF'
 Usage:
-  deploy/sync.sh --check [--ref <tag|sha>] [--install-root <path>] [--gpu-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
-  deploy/sync.sh --apply --ref <tag|sha> [--install-root <path>] [--gpu-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
+  deploy/sync.sh --check [--ref <tag|sha>] [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
+  deploy/sync.sh --apply --ref <tag|sha> [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
 
 Modes:
   --check   Compare repo truth (current checkout or pinned ref) against the host install root.
@@ -73,6 +79,7 @@ Options:
   --ref <tag|sha>         Pinned git ref to archive from the local repo. Required for --apply.
   --install-root <path>   Prefix host targets with a test root. Defaults to /.
   --gpu-overlay <mode>    auto (preserve host intent), enable, or disable.
+  --nvidia-overlay <mode> auto (preserve host intent), enable, or disable.
   --verifier-bundle <mode>
                           auto (preserve host intent), enable, or disable.
   --repo-root <path>      Override repo root. Intended for tests only.
@@ -92,6 +99,15 @@ warn() {
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
   exit 1
+}
+
+stat_mode() {
+  local path="$1"
+  if stat -c '%a' "${path}" >/dev/null 2>&1; then
+    stat -c '%a' "${path}"
+    return 0
+  fi
+  stat -f '%Lp' "${path}"
 }
 
 cleanup() {
@@ -153,6 +169,14 @@ parse_args() {
         case "$2" in
           auto|enable|disable) GPU_OVERLAY_MODE="$2" ;;
           *) fail "invalid --gpu-overlay mode: $2" ;;
+        esac
+        shift 2
+        ;;
+      --nvidia-overlay)
+        [[ "$#" -ge 2 ]] || fail "--nvidia-overlay requires a value"
+        case "$2" in
+          auto|enable|disable) NVIDIA_OVERLAY_MODE="$2" ;;
+          *) fail "invalid --nvidia-overlay mode: $2" ;;
         esac
         shift 2
         ;;
@@ -278,6 +302,32 @@ gpu_overlay_enabled() {
   esac
 }
 
+nvidia_overlay_enabled() {
+  local env_file compose_file
+
+  case "${NVIDIA_OVERLAY_MODE}" in
+    enable)
+      return 0
+      ;;
+    disable)
+      return 1
+      ;;
+    auto)
+      if [[ ! -f "${SOURCE_ROOT}/deploy/docker-compose.nvidia.yml" ]]; then
+        return 1
+      fi
+
+      env_file="$(host_path "/etc/xg2g/xg2g.env")"
+      compose_file="$(read_env_value "${env_file}" COMPOSE_FILE 2>/dev/null || true)"
+      if [[ "${compose_file}" == *"docker-compose.nvidia.yml"* ]]; then
+        return 0
+      fi
+
+      [[ -e "$(host_path "/srv/xg2g/docker-compose.nvidia.yml")" ]]
+      ;;
+  esac
+}
+
 verifier_bundle_enabled() {
   local target
 
@@ -302,11 +352,17 @@ verifier_bundle_enabled() {
 build_manifest() {
   CURRENT_SPECS=("${CORE_SPECS[@]}")
   GPU_OVERLAY_ENABLED=0
+  NVIDIA_OVERLAY_ENABLED=0
   VERIFIER_BUNDLE_ENABLED=0
 
   if gpu_overlay_enabled; then
     GPU_OVERLAY_ENABLED=1
     CURRENT_SPECS+=("${GPU_SPECS[@]}")
+  fi
+
+  if nvidia_overlay_enabled; then
+    NVIDIA_OVERLAY_ENABLED=1
+    CURRENT_SPECS+=("${NVIDIA_SPECS[@]}")
   fi
 
   if verifier_bundle_enabled; then
@@ -339,7 +395,7 @@ compare_spec() {
     diff -u --label "${SOURCE_LABEL}:${rel}" --label "${target_file}" "${source_file}" "${target_file}" || true
   fi
 
-  actual_mode="$(stat -c '%a' "${target_file}")"
+  actual_mode="$(stat_mode "${target_file}")"
   if [[ "${actual_mode}" != "${expected_mode}" ]]; then
     DRIFT_DETECTED=1
     warn "mode drift: ${target_file} expected ${expected_mode}, got ${actual_mode}"
@@ -576,6 +632,13 @@ remove_disabled_optionals() {
     done
   fi
 
+  if [[ "${NVIDIA_OVERLAY_ENABLED}" -eq 0 ]]; then
+    for spec in "${NVIDIA_SPECS[@]}"; do
+      IFS='|' read -r rel target mode <<< "${spec}"
+      remove_target_if_present "${target}"
+    done
+  fi
+
   if [[ "${VERIFIER_BUNDLE_ENABLED}" -eq 0 ]]; then
     for spec in "${VERIFIER_SPECS[@]}"; do
       IFS='|' read -r rel target mode <<< "${spec}"
@@ -597,6 +660,13 @@ run_check() {
 
   if [[ "${GPU_OVERLAY_ENABLED}" -eq 0 ]]; then
     for spec in "${GPU_SPECS[@]}"; do
+      IFS='|' read -r rel target mode <<< "${spec}"
+      compare_absent_target "${target}"
+    done
+  fi
+
+  if [[ "${NVIDIA_OVERLAY_ENABLED}" -eq 0 ]]; then
+    for spec in "${NVIDIA_SPECS[@]}"; do
       IFS='|' read -r rel target mode <<< "${spec}"
       compare_absent_target "${target}"
     done

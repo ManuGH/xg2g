@@ -15,6 +15,8 @@ interface AuthSurfaceFormProps {
   hint?: string;
   inputType?: 'password' | 'text';
   inputActions?: ReactNode;
+  inputTestId?: string;
+  submitTestId?: string;
 }
 
 interface AuthSurfaceProps {
@@ -24,6 +26,7 @@ interface AuthSurfaceProps {
   children?: ReactNode;
   actions?: ReactNode;
   form?: AuthSurfaceFormProps;
+  testId?: string;
 }
 
 export default function AuthSurface({
@@ -33,6 +36,7 @@ export default function AuthSurface({
   children,
   actions,
   form,
+  testId,
 }: AuthSurfaceProps) {
   const titleId = useId();
   const inputId = useId();
@@ -40,7 +44,7 @@ export default function AuthSurface({
 
   return (
     <div className={styles.overlay}>
-      <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testId}>
         {eyebrow ? <span className={styles.eyebrow}>{eyebrow}</span> : null}
         <h2 id={titleId}>{title}</h2>
         {copy ? <p className={styles.copy}>{copy}</p> : null}
@@ -65,6 +69,7 @@ export default function AuthSurface({
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
+                  data-testid={form.inputTestId}
                 />
                 {form.inputActions ? <div className={styles.inputActions}>{form.inputActions}</div> : null}
               </div>
@@ -75,7 +80,7 @@ export default function AuthSurface({
               ) : null}
             </div>
             <div className={styles.formActions}>
-              <Button type="submit" disabled={form.submitDisabled}>
+              <Button type="submit" disabled={form.submitDisabled} data-testid={form.submitTestId}>
                 {form.submitLabel}
               </Button>
             </div>

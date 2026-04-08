@@ -4,9 +4,15 @@
 - Manual refresh via the v3 API now forces a background scan instead of being
   skipped by cached scan state, which makes operator-triggered refreshes
   deterministic.
-- Live GPU transcoding now requires an explicit VAAPI device setting
-  (`ffmpeg.vaapiDevice` or `XG2G_VAAPI_DEVICE`); a mounted `/dev/dri/renderD128`
-  alone is no longer operationally sufficient.
+- Live GPU transcoding required an explicit VAAPI device setting on the v3.4.0
+  image line (`ffmpeg.vaapiDevice` or `XG2G_VAAPI_DEVICE`). That requirement was
+  later relaxed by startup auto-detect in the 2026 Docker runtime.
+- The FFmpeg image line now also includes NVENC build support and runs a real
+  startup NVENC preflight when the NVIDIA container runtime exposes encoder
+  devices. GTX 1080-class hosts therefore move onto the same fail-closed
+  hardware negotiation path as VAAPI/QuickSync hosts, but through the NVIDIA
+  runtime contract instead of `/dev/dri`. The deploy bundle now ships that path
+  as `deploy/docker-compose.nvidia.yml`.
 - Cleartext token-auth startup warnings are suppressed when xg2g is explicitly
   configured behind trusted HTTPS proxies, while direct non-loopback HTTP access
   remains warned and unsupported for browser auth flows.

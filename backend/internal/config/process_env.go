@@ -7,9 +7,10 @@ package config
 import "os"
 
 var (
-	processLookupEnv envLookupFunc       = os.LookupEnv
-	processGetEnv    func(string) string = os.Getenv
-	processEnviron   func() []string     = os.Environ
+	processLookupEnv envLookupFunc                       = os.LookupEnv
+	processGetEnv    func(string) string                 = os.Getenv
+	processEnviron   func() []string                     = os.Environ
+	processReadDir   func(string) ([]os.DirEntry, error) = os.ReadDir
 )
 
 func currentProcessLookupEnv() envLookupFunc {
@@ -31,4 +32,11 @@ func currentProcessEnviron() func() []string {
 		return func() []string { return nil }
 	}
 	return processEnviron
+}
+
+func currentProcessReadDir() func(string) ([]os.DirEntry, error) {
+	if processReadDir == nil {
+		return func(string) ([]os.DirEntry, error) { return nil, os.ErrNotExist }
+	}
+	return processReadDir
 }

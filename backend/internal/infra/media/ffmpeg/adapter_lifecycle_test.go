@@ -15,6 +15,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -30,6 +31,18 @@ func prepareVAAPIRuntimeState(t *testing.T) {
 	t.Cleanup(func() {
 		hardware.SetVAAPIPreflightResult(false)
 		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+}
+
+func prepareNVENCRuntimeState(t *testing.T) {
+	t.Helper()
+	hardware.SetNVENCPreflightResult(true)
+	hardware.SetNVENCEncoderCapabilities(map[string]hardware.NVENCEncoderCapability{
+		"h264_nvenc": {Verified: true, AutoEligible: true},
+	})
+	t.Cleanup(func() {
+		hardware.SetNVENCPreflightResult(false)
+		hardware.SetNVENCEncoderCapabilities(nil)
 	})
 }
 
@@ -465,4 +478,54 @@ func TestMonitorProcess_DoesNotRecordVAAPIRuntimeFailureForGenericExit(t *testin
 	_, demoted = hardware.RecordVAAPIRuntimeFailure()
 	require.False(t, demoted, "generic upstream exits must not consume the VAAPI demotion budget")
 	assert.True(t, hardware.IsVAAPIReady())
+}
+
+func TestMonitorProcess_RecordsNVENCRuntimeFailureForNVENCError(t *testing.T) {
+	prepareNVENCRuntimeState(t)
+
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		5*time.Second,
+		"",
+	)
+
+	cmd := exec.Command("sh", "-c", "printf '[h264_nvenc @ 0x1] OpenEncodeSessionEx failed: no capable devices found\\n' 1>&2; exit 1")
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+
+	handle := ports.RunHandle("session-nvenc-runtime-123")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", profiles.GPUBackendNVENC, adapter.StartTimeout)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitorProcess did not finish in time")
+	}
+
+	_, demoted := hardware.RecordNVENCRuntimeFailure()
+	require.False(t, demoted, "runtime failure should already have been counted once")
+	_, demoted = hardware.RecordNVENCRuntimeFailure()
+	require.True(t, demoted, "third observed runtime failure should demote NVENC readiness")
+	assert.False(t, hardware.IsNVENCReady())
 }

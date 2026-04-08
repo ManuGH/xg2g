@@ -17,7 +17,7 @@ graph TD
     end
 
     subgraph "Kernel Boundary (ABI)"
-        DRM["/dev/dri/renderD128 (DRM/VAAPI)"]
+        GPUDEV["GPU Device ABI (/dev/dri/renderD* or /dev/nvidia*)"]
         FDS["Unix Domain Sockets / Pipes (IPC)"]
         SYSCALL["Seccomp-Locked Syscalls"]
     end
@@ -29,10 +29,10 @@ graph TD
 
     DAEMON -->|Spawn| TRANS
     TRANS -->|LD_PRELOAD / RPATH| LIBS
-    TRANS <-->|ioctl / mmap| DRM
+    TRANS <-->|ioctl / mmap| GPUDEV
     TRANS <-->|read/write| FDS
     FDS <--> DAEMON
-    DRM -->|Talks To| DRIVER
+    GPUDEV -->|Talks To| DRIVER
     LIBS -->|Syscalls| SYSCALL
     SYSCALL -->|Delegates| KERNEL
 ```
@@ -42,7 +42,7 @@ graph TD
 ### What MUST Cross the Boundary (Permitted)
 
 - **File Descriptors**: Only fds for pipes (stdin/stdout) and unix sockets for IPC synchronization.
-- **DRM Render Nodes**: `/dev/dri/renderD128` (or similar) requested via explicit VAAPI context.
+- **GPU Device Nodes**: `/dev/dri/renderD*` for VAAPI/QuickSync-class hosts or `/dev/nvidia*` for NVENC-class hosts, requested via an explicit hardware backend.
 - **IPC Synchronicity**: Signal handling (SIGTERM/SIGKILL) for lifecycle management.
 - **Mapped Memory**: Only for DMA-BUF sharing between transcoder and GPU driver (as allowed by kernel).
 

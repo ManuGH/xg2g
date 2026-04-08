@@ -689,11 +689,12 @@ type FFmpegConfig struct {
 	FFprobeBin  string        `yaml:"ffprobeBin,omitempty"`
 	KillTimeout time.Duration `yaml:"killTimeout"`
 	// VaapiDevice is the DRM render node for VAAPI GPU transcoding.
-	// Set to e.g. "/dev/dri/renderD128" (or XG2G_VAAPI_DEVICE env) to enable.
-	// Empty (default) = VAAPI disabled; all transcoding uses CPU (libx264).
-	// When set, a real 5-frame encode preflight runs at startup. Profiles
-	// with HWAccel="vaapi" are only produced when the preflight passes;
-	// otherwise sessions requesting VAAPI will fail-closed.
+	// Explicit values (file or XG2G_VAAPI_DEVICE env) stay authoritative.
+	// When left unset, xg2g auto-detects the first visible /dev/dri/renderD*
+	// node at startup so containerized GPU/iGPU deployments work by default
+	// once the render device is mounted. An explicitly empty XG2G_VAAPI_DEVICE
+	// disables that auto-detect path for CPU-only operation.
+	// Any selected device still runs a real encode preflight at startup.
 	VaapiDevice string `yaml:"vaapiDevice,omitempty"`
 }
 

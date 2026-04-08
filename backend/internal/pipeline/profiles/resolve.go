@@ -79,9 +79,18 @@ const (
 	HWAccelOff   HWAccelMode = "off"   // Force CPU
 )
 
+type GPUBackend string
+
+const (
+	GPUBackendNone  GPUBackend = ""
+	GPUBackendVAAPI GPUBackend = "vaapi"
+	GPUBackendNVENC GPUBackend = "nvenc"
+)
+
 const (
 	profileHWAccelVAAPI           = "vaapi"
 	profileHWAccelVAAPIEncodeOnly = "vaapi_encode_only"
+	profileHWAccelNVENC           = "nvenc"
 
 	safariDirtyHWModeNone       = "none"
 	safariDirtyHWModeEncodeOnly = "encode_only"
@@ -89,23 +98,23 @@ const (
 )
 
 // shouldUseGPU determines whether to use GPU acceleration based on availability and user override
-func shouldUseGPU(hasGPU bool, mode HWAccelMode) bool {
+func shouldUseGPU(backend GPUBackend, mode HWAccelMode) bool {
 	switch mode {
 	case HWAccelForce:
 		return true // Force GPU (will fail later if unavailable)
 	case HWAccelOff:
 		return false // Force CPU
 	case HWAccelAuto:
-		return hasGPU // Auto: use GPU if available
+		return backend != GPUBackendNone // Auto: use GPU if available
 	default:
-		return hasGPU
+		return backend != GPUBackendNone
 	}
 }
 
 // IsGPUBackedProfile reports whether the resolved profile uses VAAPI anywhere in the pipeline.
 func IsGPUBackedProfile(hwaccel string) bool {
 	switch strings.TrimSpace(hwaccel) {
-	case profileHWAccelVAAPI, profileHWAccelVAAPIEncodeOnly:
+	case profileHWAccelVAAPI, profileHWAccelVAAPIEncodeOnly, profileHWAccelNVENC:
 		return true
 	default:
 		return false
@@ -117,7 +126,7 @@ func IsFullVAAPIProfile(hwaccel string) bool {
 	return strings.TrimSpace(hwaccel) == profileHWAccelVAAPI
 }
 
-func resolveSafariDirtyHWMode(hasGPU bool, hwaccelMode HWAccelMode) string {
+func resolveSafariDirtyHWMode(backend GPUBackend, hwaccelMode HWAccelMode) string {
 	switch hwaccelMode {
 	case HWAccelOff:
 		return safariDirtyHWModeNone
@@ -128,18 +137,53 @@ func resolveSafariDirtyHWMode(hasGPU bool, hwaccelMode HWAccelMode) string {
 	mode := normalize.Token(config.ParseString("XG2G_SAFARI_DIRTY_HWACCEL_MODE", ""))
 	switch mode {
 	case safariDirtyHWModeNone, safariDirtyHWModeEncodeOnly, safariDirtyHWModeFull:
-		if hasGPU {
+		if backend != GPUBackendNone {
 			return mode
 		}
 		return safariDirtyHWModeNone
 	case "":
-		if hasGPU && envBool("XG2G_SAFARI_DIRTY_USE_GPU", false) {
+		if backend != GPUBackendNone && envBool("XG2G_SAFARI_DIRTY_USE_GPU", false) {
 			return safariDirtyHWModeFull
 		}
 		return safariDirtyHWModeNone
 	default:
 		return safariDirtyHWModeNone
 	}
+}
+
+func hwAccelProfileForBackend(backend GPUBackend) string {
+	switch backend {
+	case GPUBackendNVENC:
+		return profileHWAccelNVENC
+	case GPUBackendVAAPI:
+		return profileHWAccelVAAPI
+	default:
+		return ""
+	}
+}
+
+func requestedHWAccelProfile(backend GPUBackend, hwaccelMode HWAccelMode) string {
+	if profile := hwAccelProfileForBackend(backend); profile != "" {
+		return profile
+	}
+	if hwaccelMode == HWAccelForce {
+		return profileHWAccelVAAPI
+	}
+	return ""
+}
+
+func requestedEncodeOnlyHWAccelProfile(backend GPUBackend, hwaccelMode HWAccelMode) string {
+	switch backend {
+	case GPUBackendNVENC:
+		return profileHWAccelNVENC
+	case GPUBackendVAAPI:
+		return profileHWAccelVAAPIEncodeOnly
+	case GPUBackendNone:
+		if hwaccelMode == HWAccelForce {
+			return profileHWAccelVAAPIEncodeOnly
+		}
+	}
+	return ""
 }
 
 // NormalizeRequestedProfileID maps known aliases to the stable internal profile IDs
@@ -212,7 +256,7 @@ func PublicProfileName(profile string) string {
 // Resolve maps a requested profile and user agent to a concrete ProfileSpec.
 // dvrWindowSec controls the DVR window for DVR profiles; <=0 disables DVR.
 // hwaccelMode allows explicit GPU/CPU override (default: auto).
-func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, hasGPU bool, hwaccelMode HWAccelMode) model.ProfileSpec {
+func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode) model.ProfileSpec {
 	requested = normalize.Token(requested)
 	canonical, ok := aliasMap[requested]
 	if !ok {
@@ -301,13 +345,13 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			spec.AudioBitrateK = 192
 
 			// HWAccel Decision (respects override)
-			useGPU := shouldUseGPU(hasGPU, hwaccelMode)
+			useGPU := shouldUseGPU(gpuBackend, hwaccelMode)
 
 			if useGPU {
 				// GPU acceleration uses an explicit VAAPI QP target as the primary
 				// quality knob. The bitrate fields remain available as optional
 				// safety ceilings in the FFmpeg builder.
-				spec.HWAccel = "vaapi"
+				spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 				spec.VideoCodec = "h264"
 				spec.VideoQP = envIntBounded("XG2G_SAFARI_VAAPI_QP", 20, 10, 40)
 				spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_VAAPI_MAXRATE_K", 20000, 4000, 60000)
@@ -334,22 +378,29 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		// Quality-first profile for dirty DVB inputs.
 		spec.TranscodeVideo = true
 		spec.Deinterlace = true
-		spec.Container = "fmp4"
+		// Browser Safari has shown black-video / freeze regressions on dirty live
+		// transcodes packaged as fMP4. Keep TS HLS there; other MSE clients can
+		// stay on fMP4.
+		if isSafari {
+			spec.Container = "mpegts"
+		} else {
+			spec.Container = "fmp4"
+		}
 		spec.AudioBitrateK = envIntBounded("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", 192, 96, 384)
 
 		// Dirty DVB sources need finer-grained control than a simple CPU/GPU split.
 		// none        -> CPU decode + CPU deinterlace + CPU encode
 		// encode_only -> CPU decode + CPU deinterlace + VAAPI encode
 		// full        -> full VAAPI decode/deinterlace/encode path
-		switch resolveSafariDirtyHWMode(hasGPU, hwaccelMode) {
+		switch resolveSafariDirtyHWMode(gpuBackend, hwaccelMode) {
 		case safariDirtyHWModeFull:
-			spec.HWAccel = profileHWAccelVAAPI
+			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 			spec.VideoCodec = "h264"
 			spec.VideoQP = envIntBounded("XG2G_SAFARI_DIRTY_VAAPI_QP", 20, 10, 40)
 			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
 			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 40000, 8000, 120000)
 		case safariDirtyHWModeEncodeOnly:
-			spec.HWAccel = profileHWAccelVAAPIEncodeOnly
+			spec.HWAccel = requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode)
 			spec.VideoCodec = "h264"
 			spec.VideoQP = envIntBounded("XG2G_SAFARI_DIRTY_VAAPI_QP", 20, 10, 40)
 			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
@@ -389,9 +440,9 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		}
 
 		// HWAccel Decision (respects override)
-		useGPU := shouldUseGPU(hasGPU, hwaccelMode)
+		useGPU := shouldUseGPU(gpuBackend, hwaccelMode)
 		if useGPU {
-			spec.HWAccel = "vaapi"
+			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 			spec.VideoCodec = "h264"
 			spec.VideoCRF = 16
 			spec.VideoMaxRateK = 20000
@@ -441,8 +492,8 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		// Note: VAAPI doesn't use CRF, uses constant quality mode instead
 
 		// HWAccel Decision (respects override)
-		if shouldUseGPU(hasGPU, hwaccelMode) {
-			spec.HWAccel = "vaapi"
+		if shouldUseGPU(gpuBackend, hwaccelMode) {
+			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 		} else {
 			// CPU Fallback: x265
 			spec.VideoCodec = "hevc"
@@ -463,8 +514,8 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.AudioBitrateK = 192
 
 		// HWAccel Decision (respects override)
-		if shouldUseGPU(hasGPU, hwaccelMode) {
-			spec.HWAccel = "vaapi"
+		if shouldUseGPU(gpuBackend, hwaccelMode) {
+			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 		} else {
 			// CPU Fallback: x265 with LL-HLS
 			spec.VideoCodec = "hevc"
@@ -486,8 +537,8 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.VideoBufSizeK = 12000
 		spec.AudioBitrateK = 192
 
-		if shouldUseGPU(hasGPU, hwaccelMode) {
-			spec.HWAccel = "vaapi"
+		if shouldUseGPU(gpuBackend, hwaccelMode) {
+			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 		}
 
 		if dvrWindowSec > 0 {

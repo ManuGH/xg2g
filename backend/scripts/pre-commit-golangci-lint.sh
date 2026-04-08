@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 gobin="$(go env GOBIN)"
@@ -17,9 +17,9 @@ if [[ ! -x "$tool" ]]; then
   exit 1
 fi
 
-expected="$(sed -nE 's/^GOLANGCI_LINT_VERSION[[:space:]]*:?=[[:space:]]*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/p' Makefile | head -1)"
+expected="$(sed -nE 's/^GOLANGCI_LINT_VERSION[[:space:]]*:?=[[:space:]]*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/p' mk/variables.mk | head -1)"
 if [[ -z "$expected" ]]; then
-  echo "ERROR: could not read GOLANGCI_LINT_VERSION from Makefile"
+  echo "ERROR: could not read GOLANGCI_LINT_VERSION from mk/variables.mk"
   exit 1
 fi
 

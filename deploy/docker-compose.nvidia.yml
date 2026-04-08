@@ -1,0 +1,13 @@
+# Canonical deploy bundle file for the optional NVIDIA / NVENC GPU overlay.
+# This overlay requests an NVIDIA GPU through the Docker Compose deploy device
+# reservation contract. It is intended for hosts with the NVIDIA Container
+# Toolkit / CDI runtime installed; /dev/dri is not required for this path.
+services:
+  xg2g:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

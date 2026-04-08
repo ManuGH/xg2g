@@ -9,21 +9,23 @@
 # ==============================================================================
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BACKEND_ROOT="${REPO_ROOT}/backend"
+GO_MOD_RELATIVE_PATH="${BACKEND_ROOT#${REPO_ROOT}/}/go.mod"
 FAIL=0
 
 # 1. Source of Truth: go.mod
-if [[ ! -f "$ROOT/go.mod" ]]; then
-    echo "❌ ERROR: go.mod not found at $ROOT" >&2
+if [[ ! -f "${BACKEND_ROOT}/go.mod" ]]; then
+    echo "❌ ERROR: go.mod not found at ${BACKEND_ROOT}" >&2
     exit 1
 fi
-EXPECTED_GO_VERSION=$(awk '/^go /{print $2}' "$ROOT/go.mod")
+EXPECTED_GO_VERSION=$(awk '/^go /{print $2}' "${BACKEND_ROOT}/go.mod")
 echo "🔍 Source of Truth (go.mod): Go $EXPECTED_GO_VERSION"
 
 # 2. Anti-Auto Check (Grep for GOTOOLCHAIN_DISABLED_AUTO)
 echo "🔍 Checking for disallowed GOTOOLCHAIN_DISABLED_AUTO..."
 # Exclude the script itself and vendor/ if it exists
-AUTO_MATCHES=$(grep -rnH "GOTOOLCHAIN_DISABLED_AUTO" "$ROOT" \
+AUTO_MATCHES=$(grep -rnH "GOTOOLCHAIN_DISABLED_AUTO" "${REPO_ROOT}" \
     --exclude-dir=.git \
     --exclude-dir=vendor \
     --exclude="$(basename "$0")" \
@@ -80,11 +82,12 @@ check_dockerfile() {
     done <<< "$tags"
 }
 
-check_dockerfile "$ROOT/Dockerfile" "$EXPECTED_GO_VERSION"
-check_dockerfile "$ROOT/Dockerfile.distroless" "$EXPECTED_GO_VERSION"
+check_dockerfile "${REPO_ROOT}/Dockerfile" "$EXPECTED_GO_VERSION"
+check_dockerfile "${REPO_ROOT}/Dockerfile.distroless" "$EXPECTED_GO_VERSION"
 
 # 5. Workflow Version Verification
 echo "🔍 Checking CI workflows..."
+if [[ -d "${REPO_ROOT}/.github/workflows" ]]; then
 while IFS= read -r -d '' wf; do
     # Check go-version (if hardcoded)
     VERSIONS=$(grep -E '^[[:space:]]*go-version:[[:space:]]*' "$wf" | \
@@ -102,19 +105,20 @@ while IFS= read -r -d '' wf; do
         done <<< "$VERSIONS"
     fi
 
-    # Check go-version-file (must be go.mod)
+    # Check go-version-file (must point at the repo's canonical backend go.mod)
     GO_MOD_FILES=$(grep -E '^[[:space:]]*go-version-file:[[:space:]]*' "$wf" | \
       sed -E 's/^[[:space:]]*go-version-file:[[:space:]]*"?([^" ]+)"?.*/\1/' || true)
     if [[ -n "$GO_MOD_FILES" ]]; then
         while read -r f; do
             [[ -z "$f" ]] && continue
-            if [[ "$f" != "go.mod" ]]; then
-                echo "❌ ERROR: $wf: go-version-file must be 'go.mod', found '$f'" >&2
+            if [[ "$f" != "$GO_MOD_RELATIVE_PATH" ]]; then
+                echo "❌ ERROR: $wf: go-version-file must be '$GO_MOD_RELATIVE_PATH', found '$f'" >&2
                 FAIL=1
             fi
         done <<< "$GO_MOD_FILES"
     fi
-done < <(find "$ROOT/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -print0)
+done < <(find "${REPO_ROOT}/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -print0)
+fi
 
 if [[ "$FAIL" -ne 0 ]]; then
     echo "❌ Toolchain policy verification FAILED." >&2

@@ -1,4 +1,8 @@
 name: Lint Invariants
+# Role:
+# - PRs: scoped invariant backstop with stable historical job names for branch protection.
+# - Scope resolution is fail-closed via backend/scripts/ci/resolve-lint-scope.sh.
+# - workflow_dispatch: full manual run.
 
 on:
   workflow_dispatch:
@@ -15,12 +19,54 @@ permissions:
   contents: read
 
 jobs:
-  check-env-access:
+  scope:
+    name: Resolve Lint Scope
     runs-on: ubuntu-latest
+    outputs:
+      env_access_needed: ${{ steps.scope.outputs.env_access_needed }}
+      deprecations_needed: ${{ steps.scope.outputs.deprecations_needed }}
+      webui_lint_needed: ${{ steps.scope.outputs.webui_lint_needed }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Resolve changed files
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./backend/scripts/ci/resolve-lint-scope.sh \
+            "${{ github.event_name }}" \
+            "${{ github.event.pull_request.base.sha || '' }}" \
+            "${{ github.sha }}" \
+            "${{ github.event.before || '' }}" \
+            "${{ github.sha }}" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Log scope decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "env_access_needed=${{ steps.scope.outputs.env_access_needed }}"
+          echo "deprecations_needed=${{ steps.scope.outputs.deprecations_needed }}"
+          echo "webui_lint_needed=${{ steps.scope.outputs.webui_lint_needed }}"
+          echo "forced_full_scope=${{ steps.scope.outputs.forced_full_scope }}"
+          echo "reason=${{ steps.scope.outputs.reason }}"
+
+  check-env-access:
+    runs-on: ubuntu-latest
+    needs: scope
+    steps:
+      - name: Skip by scope
+        if: needs.scope.outputs.env_access_needed != 'true'
+        run: echo "Env access invariant skipped by scope."
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        if: needs.scope.outputs.env_access_needed == 'true'
 
       - name: Enforce Config Determinism (Env Reads)
+        if: needs.scope.outputs.env_access_needed == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -47,23 +93,40 @@ jobs:
 
   check-deprecations:
     runs-on: ubuntu-latest
+    needs: scope
     steps:
+      - name: Skip by scope
+        if: needs.scope.outputs.deprecations_needed != 'true'
+        run: echo "Deprecation registry check skipped by scope."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        if: needs.scope.outputs.deprecations_needed == 'true'
 
       - name: Check Deprecation Registry
+        if: needs.scope.outputs.deprecations_needed == 'true'
         run: python3 backend/scripts/check_deprecations.py
 
   webui-lint:
     runs-on: ubuntu-latest
+    needs: scope
     defaults:
       run:
         working-directory: frontend/webui
     steps:
+      - name: Skip by scope
+        if: needs.scope.outputs.webui_lint_needed != 'true'
+        working-directory: ${{ github.workspace }}
+        run: echo "WebUI lint skipped by scope."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        if: needs.scope.outputs.webui_lint_needed == 'true'
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        if: needs.scope.outputs.webui_lint_needed == 'true'
         with:
           node-version: 22
           cache: "npm"
           cache-dependency-path: frontend/webui/package-lock.json
-      - run: npm ci
-      - run: npm run lint
+      - if: needs.scope.outputs.webui_lint_needed == 'true'
+        run: npm ci
+      - if: needs.scope.outputs.webui_lint_needed == 'true'
+        run: npm run lint

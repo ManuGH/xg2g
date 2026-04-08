@@ -25,8 +25,10 @@ The UTI is invoked via an opaque configuration object (JSON or Proto) passed thr
     "segment_duration_s": 1
   },
   "strategy": {
-    "profile": "vaapi_lowlatency",
-    "hw_device": "/dev/dri/renderD128",
+    "profile": "gpu_lowlatency",
+    "hw_backend": "auto",
+    "hw_device": "/dev/dri/renderD129",
+    "encoder": "h264_nvenc",
     "max_cpu_percent": 15,
     "degradation_policy": "drop_fps"
   }
@@ -37,8 +39,8 @@ The UTI is invoked via an opaque configuration object (JSON or Proto) passed thr
 
 The transcoder MUST provide a discovery mechanism to the daemon on startup (`uti --info`):
 
-- **Encoders**: `h264_vaapi`, `hevc_vaapi`, `libx264` (fallback)
-- **Decoders**: Hardware-aware list based on `DRI` probing.
+- **Encoders**: `h264_vaapi`, `hevc_vaapi`, `h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `libx264` (fallback)
+- **Decoders**: Hardware-aware list based on `/dev/dri/renderD*` or NVIDIA runtime probing.
 - **Limits**: Max concurrent hardware contexts, memory overhead per session.
 - **ABI Version**: Current contract version (e.g., `1.0.2`).
 

@@ -20,6 +20,17 @@ func resetVaapiState(t *testing.T) {
 	vaapiEncCaps = nil
 	vaapiEncMu.Unlock()
 
+	nvencMu.Lock()
+	nvencChecked = false
+	nvencPassed = false
+	nvencRuntimeFailures = 0
+	nvencMu.Unlock()
+
+	nvencEncMu.Lock()
+	nvencEncChecked = false
+	nvencEncCaps = nil
+	nvencEncMu.Unlock()
+
 	t.Cleanup(func() {
 		vaapiMu.Lock()
 		vaapiChecked = false
@@ -31,6 +42,17 @@ func resetVaapiState(t *testing.T) {
 		vaapiEncChecked = false
 		vaapiEncCaps = nil
 		vaapiEncMu.Unlock()
+
+		nvencMu.Lock()
+		nvencChecked = false
+		nvencPassed = false
+		nvencRuntimeFailures = 0
+		nvencMu.Unlock()
+
+		nvencEncMu.Lock()
+		nvencEncChecked = false
+		nvencEncCaps = nil
+		nvencEncMu.Unlock()
 	})
 }
 
@@ -166,7 +188,7 @@ func TestRuntimeVAAPIDemotion_FallbacksToCPUProfile(t *testing.T) {
 	})
 
 	capInterlaced := &scan.Capability{Interlaced: true}
-	specGPU := profiles.Resolve("safari", "Safari/17.0", 0, capInterlaced, IsVAAPIEncoderReady("h264_vaapi"), profiles.HWAccelAuto)
+	specGPU := profiles.Resolve("safari", "Safari/17.0", 0, capInterlaced, profiles.GPUBackendVAAPI, profiles.HWAccelAuto)
 	if specGPU.HWAccel != "vaapi" {
 		t.Fatalf("expected GPU profile before runtime failure, got hwaccel=%q", specGPU.HWAccel)
 	}
@@ -175,11 +197,31 @@ func TestRuntimeVAAPIDemotion_FallbacksToCPUProfile(t *testing.T) {
 		_, _ = RecordVAAPIRuntimeFailure()
 	}
 
-	specCPU := profiles.Resolve("safari", "Safari/17.0", 0, capInterlaced, IsVAAPIEncoderReady("h264_vaapi"), profiles.HWAccelAuto)
+	specCPU := profiles.Resolve("safari", "Safari/17.0", 0, capInterlaced, profiles.GPUBackendNone, profiles.HWAccelAuto)
 	if specCPU.HWAccel != "" {
 		t.Fatalf("expected CPU fallback profile after runtime demotion, got hwaccel=%q", specCPU.HWAccel)
 	}
 	if specCPU.VideoCodec != "libx264" {
 		t.Fatalf("expected CPU fallback codec libx264, got %q", specCPU.VideoCodec)
+	}
+}
+
+func TestPreferredGPUBackendForCodec_PrefersFasterVerifiedBackend(t *testing.T) {
+	resetVaapiState(t)
+
+	SetVAAPIPreflightResult(true)
+	SetVAAPIEncoderCapabilities(map[string]VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 120},
+	})
+	SetNVENCPreflightResult(true)
+	SetNVENCEncoderCapabilities(map[string]NVENCEncoderCapability{
+		"h264_nvenc": {Verified: true, AutoEligible: true, ProbeElapsed: 80},
+	})
+
+	if got := PreferredGPUBackendForCodec("h264"); got != profiles.GPUBackendNVENC {
+		t.Fatalf("expected NVENC to win for h264, got %q", got)
+	}
+	if got := PreferredGPUBackend(); got != profiles.GPUBackendNVENC {
+		t.Fatalf("expected PreferredGPUBackend to follow the fastest common codec, got %q", got)
 	}
 }

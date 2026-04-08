@@ -2,7 +2,7 @@
 # Backend Targets
 # ===================================================================================================
 
-.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev android-local-smoke
+.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev android-local-smoke install doctor check-tools dev-tools
 
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
@@ -45,42 +45,42 @@ generate-config: ## Generate config surfaces from registry
 	@cd $(BACKEND_DIR) && $(GO) run ./cmd/configgen --allow-create
 	@echo "✅ Config surfaces generated"
 
-backend-dev: ## Run daemon locally for development (once)
-	@echo "Starting xg2g in development mode..."
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BACKEND_DIR) && \
-	if [ ! -f ../.env ]; then \
-		cp ../.env.example ../.env; \
-	fi && \
-	set -a; . ../.env; set +a; \
-	$(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o ../$(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
-	../$(BUILD_DIR)/$(BINARY_NAME)
+backend-dev: ## Run the backend in the foreground (advanced, no containers)
+	@echo "Starting xg2g backend in the foreground..."
+	@./$(BACKEND_DIR)/scripts/run-local-backend.sh
 
-backend-dev-ui: ## Run daemon locally with dev-tagged UI proxy on http://localhost:8080/ui/
-	@echo "Starting xg2g backend with dev UI proxy on http://localhost:8080/ui/ ..."
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BACKEND_DIR) && \
-	if [ ! -f ../.env ]; then \
-		cp ../.env.example ../.env; \
-	fi && \
-	set -a; . ../.env; set +a; \
-	export XG2G_LISTEN="$${XG2G_LISTEN:-:8080}"; \
-	export XG2G_UI_DEV_PROXY_URL="$${XG2G_UI_DEV_PROXY_URL:-http://127.0.0.1:5173}"; \
-	$(GO) build -tags=dev $(BUILD_FLAGS) $(LDFLAGS) -o ../$(BUILD_DIR)/$(BINARY_NAME)-dev ./cmd/daemon && \
-	../$(BUILD_DIR)/$(BINARY_NAME)-dev
+backend-dev-ui: ## Run the dev-tagged backend in the foreground on http://localhost:8080/ui/ (advanced)
+	@echo "Starting xg2g backend with the dev UI proxy on http://localhost:8080/ui/ ..."
+	@./$(BACKEND_DIR)/scripts/run-local-backend.sh --ui
 
-webui-dev: ## Start the Vite dev server for fast WebUI iteration
+webui-dev: ## Start only the Vite dev server (advanced, second terminal)
 	@cd $(FRONTEND_DIR)/webui && \
 	if [ ! -d node_modules ]; then \
 		npm ci; \
 	fi && \
 	npm run dev
 
-dev-ui: ## Run Vite in the background and the dev-tagged backend in the foreground
+dev-ui: ## Run the frontend HMR path (Vite background + foreground backend on :8080)
 	@./run_ui_dev.sh
 
 android-local-smoke: ## Build embedded UI, run local backend on :8080, and launch Android dev app with auth if adb is connected
 	@./run_android_local.sh
 
-dev: ## Run development loop
+dev: ## Run the crash-restart development loop (advanced/internal)
 	@./run_dev.sh
+
+install: ## Bootstrap local developer workspace (.env + WebUI dependencies)
+	@./$(BACKEND_DIR)/scripts/dev-install.sh
+
+doctor: ## Verify the local developer workspace
+	@$(MAKE) check-tools
+
+check-tools: ## Verify required local developer tools and workspace state
+	@./$(BACKEND_DIR)/scripts/check-dev-setup.sh
+
+dev-tools: ## Install pinned local developer CLI tools
+	@echo "Installing pinned Go developer tools..."
+	@GOFLAGS= GOWORK=off $(GO) install $(GOLANGCI_LINT_MODULE)@$(GOLANGCI_LINT_VERSION)
+	@GOFLAGS= GOWORK=off $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	@$(MAKE) bootstrap-python-tools
+	@echo "✅ Developer CLI tools ready"

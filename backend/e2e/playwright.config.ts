@@ -1,5 +1,14 @@
 
+import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+
+const fixtureServerPort = 3001;
+const webuiPort = 4173;
+const fixtureServerUrl = `http://127.0.0.1:${fixtureServerPort}`;
+const baseURL = `http://127.0.0.1:${webuiPort}`;
+const configDir = __dirname;
+const fixtureServerDir = path.resolve(configDir, 'fixture-server');
+const webuiDir = path.resolve(configDir, '../../frontend/webui');
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -28,7 +37,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:3000',
+    baseURL,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -38,25 +47,28 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+      },
     },
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: {
-    command: 'npm start',
-    cwd: './fixture-server',
-    port: 3001,
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    {
+      command: 'npm start',
+      cwd: fixtureServerDir,
+      port: fixtureServerPort,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command: `XG2G_WEBUI_BASE=/ XG2G_WEBUI_PROXY_TARGET=${fixtureServerUrl} XG2G_WEBUI_DEV_PORT=${webuiPort} npm run dev -- --host 127.0.0.1 --port ${webuiPort} --strictPort`,
+      cwd: webuiDir,
+      port: webuiPort,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 });

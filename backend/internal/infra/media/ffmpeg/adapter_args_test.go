@@ -94,7 +94,7 @@ func TestBuildArgs_EmptyProfileLegacy(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 	assert.Contains(t, args, "libx264", "legacy path must use libx264")
-	assert.Contains(t, args, "yadif", "legacy path must use yadif deinterlace")
+	assert.Contains(t, args, "bwdif=mode=send_field:parity=auto:deint=all", "legacy live HLS path must preserve field-rate motion")
 	assert.Contains(t, args, "-crf", "legacy path must use CRF")
 	assert.Contains(t, args, "20", "legacy path CRF=20")
 	assert.Contains(t, args, "-preset", "legacy path must have preset")
@@ -485,7 +485,7 @@ func TestBuildArgs_SafariHQAllowlistUsesHighBitrate25pTranscode(t *testing.T) {
 
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Equal(t, "yadif", vf)
+	assert.Equal(t, "bwdif=mode=send_field:parity=auto:deint=all", vf)
 
 	preset, ok := valueAfter(args, "-preset")
 	require.True(t, ok)
@@ -608,17 +608,17 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:             "safari_hq",
-			PolicyModeHint:   ports.RuntimeModeCopy,
-			ForceSafariHQ25:  true,
-			TranscodeVideo:   true,
-			Container:        "mpegts",
-			VideoCodec:       "libx264",
-			VideoCRF:         16,
-			VideoMaxRateK:    12000,
-			VideoBufSizeK:    24000,
-			AudioBitrateK:    256,
-			Preset:           "veryfast",
+			Name:            "safari_hq",
+			PolicyModeHint:  ports.RuntimeModeCopy,
+			ForceSafariHQ25: true,
+			TranscodeVideo:  true,
+			Container:       "mpegts",
+			VideoCodec:      "libx264",
+			VideoCRF:        16,
+			VideoMaxRateK:   12000,
+			VideoBufSizeK:   24000,
+			AudioBitrateK:   256,
+			Preset:          "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -870,6 +870,51 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 	assert.NotContains(t, args, "yadif")
 }
 
+func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.nvencEncoders = map[string]bool{"h264_nvenc": true, "hevc_nvenc": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "nvenc-encode-only",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_dirty",
+			TranscodeVideo: true,
+			HWAccel:        "nvenc",
+			VideoCodec:     "h264",
+			VideoQP:        20,
+			Deinterlace:    true,
+			VideoMaxRateK:  20000,
+			VideoBufSizeK:  40000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	assert.NotContains(t, args, "-vaapi_device")
+	assert.NotContains(t, args, "-hwaccel")
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "bwdif=mode=send_field:parity=auto:deint=all")
+	assert.Contains(t, args, "h264_nvenc")
+	assert.Contains(t, args, "-rc")
+	assert.Contains(t, args, "constqp")
+	assert.Contains(t, args, "-qp")
+	assert.Contains(t, args, "20")
+	assert.NotContains(t, args, "h264_vaapi")
+}
+
 func TestBuildArgs_VaapiNoPreflightFails(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
@@ -959,6 +1004,7 @@ func TestBuildArgs_CPUProfileDriven(t *testing.T) {
 	spec := ports.StreamSpec{
 		SessionID: "cpu-profile",
 		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
 		Profile: model.ProfileSpec{
 			TranscodeVideo: true,
 			VideoCodec:     "libx264",
@@ -978,7 +1024,7 @@ func TestBuildArgs_CPUProfileDriven(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 	assert.Contains(t, args, "libx264")
-	assert.Contains(t, args, "yadif")
+	assert.Contains(t, args, "bwdif=mode=send_field:parity=auto:deint=all")
 	assert.Contains(t, args, "veryfast")
 	assert.Contains(t, args, "18")
 	assert.Contains(t, args, "-maxrate")

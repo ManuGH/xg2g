@@ -28,10 +28,11 @@ type Service struct {
 }
 
 type startHardwareState struct {
-	hasGPU       bool
-	av1Verified  bool
-	hevcVerified bool
-	h264Verified bool
+	hasGPU      bool
+	defaultGPU  profiles.GPUBackend
+	av1Backend  profiles.GPUBackend
+	hevcBackend profiles.GPUBackend
+	h264Backend profiles.GPUBackend
 }
 
 type startProfileResolution struct {
@@ -123,11 +124,13 @@ func (s *Service) lookupStartCapability(serviceRef string) *scan.Capability {
 }
 
 func detectStartHardwareState() startHardwareState {
+	defaultBackend := hardware.PreferredGPUBackend()
 	return startHardwareState{
-		hasGPU:       hardware.IsVAAPIReady(),
-		av1Verified:  hardware.IsVAAPIEncoderReady("av1_vaapi"),
-		hevcVerified: hardware.IsVAAPIEncoderReady("hevc_vaapi"),
-		h264Verified: hardware.IsVAAPIEncoderReady("h264_vaapi"),
+		hasGPU:      defaultBackend != profiles.GPUBackendNone,
+		defaultGPU:  defaultBackend,
+		av1Backend:  hardware.PreferredGPUBackendForCodec("av1"),
+		hevcBackend: hardware.PreferredGPUBackendForCodec("hevc"),
+		h264Backend: hardware.PreferredGPUBackendForCodec("h264"),
 	}
 }
 
@@ -151,9 +154,14 @@ func (s *Service) resolveStartHWAccelMode(intent Intent, hw startHardwareState) 
 	}
 
 	if hwaccelMode == profiles.HWAccelForce && !hw.hasGPU {
-		reason := "no /dev/dri/renderD128"
-		if hardware.HasVAAPI() {
+		reason := "no hardware encoder device exposed"
+		switch {
+		case hardware.HasVAAPI() && hardware.HasNVENC():
+			reason = "VAAPI/NVENC preflight encode tests failed"
+		case hardware.HasVAAPI():
 			reason = "VAAPI preflight encode test failed"
+		case hardware.HasNVENC():
+			reason = "NVENC preflight encode test failed"
 		}
 		s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hwaccel_unavailable")
 		return "", &Error{
@@ -168,6 +176,7 @@ func (s *Service) resolveStartHWAccelMode(intent Intent, hw startHardwareState) 
 func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profiles.HWAccelMode) (string, string, *Error) {
 	reqProfileID := "universal"
 	requestedPlaybackMode := normalize.Token(intent.Params["playback_mode"])
+	clientFamily := normalize.Token(intent.Params[model.CtxKeyClientFamily])
 	if requestedPlaybackMode != "" {
 		_, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.Params)
 		if tokenErr != nil {
@@ -175,7 +184,7 @@ func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profil
 			return "", "", &Error{Kind: ErrorInvalidInput, Message: tokenErr.Error()}
 		}
 		s.deps.IncLivePlaybackKey(keyLabel, resultLabel)
-		mappedProfile, mapErr := mapPlaybackModeToProfile(requestedPlaybackMode)
+		mappedProfile, mapErr := mapPlaybackModeToProfile(requestedPlaybackMode, clientFamily)
 		if mapErr != nil {
 			return "", "", &Error{Kind: ErrorInvalidInput, Message: mapErr.Error()}
 		}
@@ -212,12 +221,19 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 	resolution.idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, resolution.effectiveProfileID, resolution.bucket)
 
 	profileUserAgent := ""
+	clientFamily := normalize.Token(intent.Params[model.CtxKeyClientFamily])
 	switch requestedPlaybackMode {
 	case "", "native_hls":
 		// Explicit playback modes usually bypass UA sniffing, but native_hls
 		// still needs the real Safari UA to distinguish browser Safari
 		// (mpegts copy) from non-Safari/native clients.
 		profileUserAgent = intent.UserAgent
+	case "hlsjs":
+		// Desktop Safari can prefer hls.js while still requiring Safari-specific
+		// packaging choices for dirty live transcodes.
+		if clientFamily == playbackprofile.ClientSafariNative || clientFamily == playbackprofile.ClientIOSSafariNative {
+			profileUserAgent = intent.UserAgent
+		}
 	}
 	resolveProfileSpec := func(profileID string) model.ProfileSpec {
 		return s.resolveProfileSpec(profileID, profileUserAgent, capability, hw, hwaccelMode)
@@ -235,7 +251,7 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 			resolution.hostOverrideApplied = true
 		}
 	}
-	if requiredEncoder, ok := requiredVerifiedVAAPIEncoderForProfile(resolution.effectiveProfileID); ok {
+	if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(resolution.effectiveProfileID); ok {
 		if hwaccelMode == profiles.HWAccelOff {
 			s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hw_profile_conflict")
 			return startProfileResolution{}, &Error{
@@ -243,11 +259,11 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 				Message: fmt.Sprintf("profile %q requires verified hardware acceleration; hwaccel=off is incompatible", resolution.effectiveProfileID),
 			}
 		}
-		if !hardware.IsVAAPIEncoderReady(requiredEncoder) {
+		if !hardware.IsHardwareEncoderReady(requiredCodec) {
 			s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hw_profile_unavailable")
 			return startProfileResolution{}, &Error{
 				Kind:    ErrorInvalidInput,
-				Message: fmt.Sprintf("profile %q requires verified %s on this host", resolution.effectiveProfileID, requiredEncoder),
+				Message: fmt.Sprintf("profile %q requires verified %s hardware encoding on this host", resolution.effectiveProfileID, requiredCodec),
 			}
 		}
 	}
@@ -259,16 +275,16 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 }
 
 func (s *Service) resolveProfileSpec(profileID, userAgent string, capability *scan.Capability, hw startHardwareState, hwaccelMode profiles.HWAccelMode) model.ProfileSpec {
-	resolveHasGPU := hw.hasGPU
+	resolveBackend := hw.defaultGPU
 	switch profileID {
 	case profiles.ProfileAV1HW:
-		resolveHasGPU = hw.av1Verified
+		resolveBackend = hw.av1Backend
 	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
-		resolveHasGPU = hw.hevcVerified
+		resolveBackend = hw.hevcBackend
 	case profiles.ProfileH264FMP4:
-		resolveHasGPU = hw.h264Verified
+		resolveBackend = hw.h264Backend
 	}
-	return profiles.Resolve(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveHasGPU, hwaccelMode)
+	return profiles.Resolve(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveBackend, hwaccelMode)
 }
 
 func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profileSpec model.ProfileSpec) *Error {
@@ -309,7 +325,10 @@ func deriveStartHWAccelSummary(profileSpec model.ProfileSpec, hwaccelMode profil
 	if profileSpec.TranscodeVideo {
 		if profiles.IsGPUBackedProfile(profileSpec.HWAccel) {
 			effective = "gpu"
-			backend = "vaapi"
+			backend = string(hardware.BackendForHWAccel(profileSpec.HWAccel))
+			if backend == "" {
+				backend = "gpu"
+			}
 			if hwaccelMode == profiles.HWAccelForce {
 				reason = "forced"
 			} else {
@@ -526,7 +545,7 @@ func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) st
 	return hex.EncodeToString(hash[:])
 }
 
-func mapPlaybackModeToProfile(mode string) (string, error) {
+func mapPlaybackModeToProfile(mode, clientFamily string) (string, error) {
 	switch mode {
 	case "native_hls":
 		// native_hls is the Safari/iOS native HLS path:
@@ -537,7 +556,16 @@ func mapPlaybackModeToProfile(mode string) (string, error) {
 		// Android ExoPlayer: video copy + AAC in mpegts.
 		// Separate from native_hls to avoid fMP4 codec-parameter issues.
 		return profiles.ProfileAndroid, nil
-	case "hlsjs", "direct_mp4":
+	case "hlsjs":
+		// Desktop Safari can prefer hls.js while still reporting the Safari native
+		// client family. Starting those sessions on the generic copy-first "high"
+		// ladder causes dirty 1080i sports feeds to bounce into repair fallback.
+		// Route them straight onto the robust Safari dirty transcode path.
+		if clientFamily == playbackprofile.ClientSafariNative {
+			return profiles.ProfileSafariDirty, nil
+		}
+		return profiles.ProfileHigh, nil
+	case "direct_mp4":
 		return profiles.ProfileHigh, nil
 	case "transcode":
 		return profiles.ProfileH264FMP4, nil
@@ -571,12 +599,12 @@ func pickProfileForCodecs(raw string, hwaccelMode profiles.HWAccelMode) string {
 	return autocodec.PickProfileForCodecs(raw, hwaccelMode)
 }
 
-func requiredVerifiedVAAPIEncoderForProfile(profileID string) (string, bool) {
+func requiredVerifiedHardwareCodecForProfile(profileID string) (string, bool) {
 	switch profiles.NormalizeRequestedProfileID(profileID) {
 	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
-		return "hevc_vaapi", true
+		return "hevc", true
 	case profiles.ProfileAV1HW:
-		return "av1_vaapi", true
+		return "av1", true
 	default:
 		return "", false
 	}

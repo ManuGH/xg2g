@@ -1,6 +1,9 @@
 package hardware
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestSnapshotTranscodeCapabilities_ReflectsVerifiedEncoders(t *testing.T) {
 	resetVaapiState(t)
@@ -10,6 +13,10 @@ func TestSnapshotTranscodeCapabilities_ReflectsVerifiedEncoders(t *testing.T) {
 		"hevc_vaapi": true,
 		"h264_vaapi": true,
 		"av1_vaapi":  false,
+	})
+	SetNVENCPreflightResult(true)
+	SetNVENCEncoderCapabilities(map[string]NVENCEncoderCapability{
+		"av1_nvenc": {Verified: true, AutoEligible: false},
 	})
 
 	got := SnapshotTranscodeCapabilities(true, true)
@@ -23,7 +30,10 @@ func TestSnapshotTranscodeCapabilities_ReflectsVerifiedEncoders(t *testing.T) {
 	if got.HasVAAPI != HasVAAPI() {
 		t.Fatalf("expected HasVAAPI to mirror runtime probe: got=%v runtime=%v", got.HasVAAPI, HasVAAPI())
 	}
-	if len(got.HardwareVideoCodec) != 2 || got.HardwareVideoCodec[0] != "h264" || got.HardwareVideoCodec[1] != "hevc" {
+	if !got.NVENCReady {
+		t.Fatalf("expected NVENCReady after successful preflight: %#v", got)
+	}
+	if !slices.Equal(got.HardwareVideoCodec, []string{"av1", "h264", "hevc"}) {
 		t.Fatalf("unexpected hardware codec snapshot: %#v", got.HardwareVideoCodec)
 	}
 }

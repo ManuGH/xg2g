@@ -72,6 +72,10 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 				Msg("VAAPI preflight failed; GPU transcoding will be unavailable for sessions requesting it")
 		}
 	}
+	if err := adapter.PreflightNVENC(); err != nil {
+		logger.Warn().Err(err).
+			Msg("NVENC preflight failed; NVIDIA GPU transcoding will be unavailable for sessions requesting it")
+	}
 
 	return adapter
 }

@@ -52,14 +52,14 @@ func PickProfileForCapabilities(caps capabilities.PlaybackCapabilities, hwaccelM
 }
 
 func PickProfileForCodecs(raw string, hwaccelMode profiles.HWAccelMode) string {
-	return PickProfileForCodecsWithCapabilities(raw, hwaccelMode, map[string]hardware.VAAPIEncoderCapability{
-		"h264_vaapi": capabilityForAutoCodec("h264_vaapi"),
-		"hevc_vaapi": capabilityForAutoCodec("hevc_vaapi"),
-		"av1_vaapi":  capabilityForAutoCodec("av1_vaapi"),
+	return PickProfileForCodecsWithCapabilities(raw, hwaccelMode, map[string]hardware.HardwareEncoderCapability{
+		"h264": capabilityForAutoCodec("h264"),
+		"hevc": capabilityForAutoCodec("hevc"),
+		"av1":  capabilityForAutoCodec("av1"),
 	})
 }
 
-func PickProfileForCodecsWithCapabilities(raw string, hwaccelMode profiles.HWAccelMode, encoderCaps map[string]hardware.VAAPIEncoderCapability) string {
+func PickProfileForCodecsWithCapabilities(raw string, hwaccelMode profiles.HWAccelMode, encoderCaps map[string]hardware.HardwareEncoderCapability) string {
 	codecs := ParseCodecList(raw)
 	if len(codecs) == 0 {
 		return ""
@@ -74,7 +74,7 @@ func PickProfileForCodecsWithCapabilities(raw string, hwaccelMode profiles.HWAcc
 	hwAllowed := hwaccelMode != profiles.HWAccelOff
 
 	if _, ok := requested["h264"]; ok {
-		if cap, exists := encoderCaps["h264_vaapi"]; exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
+		if cap, exists := capabilityForRequestedCodec(encoderCaps, "h264"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
 			candidates = append(candidates, candidate{
 				profileID:    profiles.ProfileH264FMP4,
 				probeElapsed: cap.ProbeElapsed,
@@ -91,7 +91,7 @@ func PickProfileForCodecsWithCapabilities(raw string, hwaccelMode profiles.HWAcc
 
 	if hwAllowed {
 		if _, ok := requested["hevc"]; ok {
-			if cap, exists := encoderCaps["hevc_vaapi"]; exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
+			if cap, exists := capabilityForRequestedCodec(encoderCaps, "hevc"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
 				candidates = append(candidates, candidate{
 					profileID:    profiles.ProfileSafariHEVCHW,
 					probeElapsed: cap.ProbeElapsed,
@@ -100,7 +100,7 @@ func PickProfileForCodecsWithCapabilities(raw string, hwaccelMode profiles.HWAcc
 			}
 		}
 		if _, ok := requested["av1"]; ok {
-			if cap, exists := encoderCaps["av1_vaapi"]; exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
+			if cap, exists := capabilityForRequestedCodec(encoderCaps, "av1"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
 				candidates = append(candidates, candidate{
 					profileID:    profiles.ProfileAV1HW,
 					probeElapsed: cap.ProbeElapsed,
@@ -156,12 +156,24 @@ func ParseCodecList(raw string) []string {
 	return out
 }
 
-func capabilityForAutoCodec(encoder string) hardware.VAAPIEncoderCapability {
-	cap, ok := hardware.VAAPIEncoderCapabilityFor(encoder)
+func capabilityForAutoCodec(codec string) hardware.HardwareEncoderCapability {
+	cap, _, ok := hardware.HardwareEncoderCapabilityFor(codec)
 	if !ok {
-		return hardware.VAAPIEncoderCapability{}
+		return hardware.HardwareEncoderCapability{}
 	}
 	return cap
+}
+
+func capabilityForRequestedCodec(encoderCaps map[string]hardware.HardwareEncoderCapability, codec string) (hardware.HardwareEncoderCapability, bool) {
+	if cap, ok := encoderCaps[codec]; ok {
+		return cap, true
+	}
+	for _, legacyKey := range []string{codec + "_vaapi", codec + "_nvenc"} {
+		if cap, ok := encoderCaps[legacyKey]; ok {
+			return cap, true
+		}
+	}
+	return hardware.HardwareEncoderCapability{}, false
 }
 
 func containsCodec(codecs []string, want string) bool {

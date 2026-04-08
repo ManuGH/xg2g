@@ -10,6 +10,10 @@ Purpose: keep merges unblocked for a single maintainer while preserving hard saf
 
 Required checks stay mandatory. Solo flow removes only human-review deadlocks.
 
+Observed live GitHub state on `2026-04-08`: `main` currently does not have required status checks enabled.
+Treat the bullets below as intended target policy, not as proof of current GitHub enforcement.
+See `BRANCH_PROTECTION_CUTOVER.md` for the live inventory and the planned cutover path.
+
 - `required_status_checks`: enabled (strict)
 - `required_approving_review_count`: `0`
 - `require_code_owner_reviews`: `false`
@@ -48,4 +52,3 @@ Mandatory PR comment before merge:
 - [ ] `required_conversation_resolution` remains `false` in solo mode.
 - [ ] `enforce_admins` remains `true`.
 - [ ] Any change is documented in PR/issue with timestamp.
-

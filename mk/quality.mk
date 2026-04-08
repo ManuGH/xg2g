@@ -2,7 +2,7 @@
 # Quality Assurance Targets
 # ===================================================================================================
 
-.PHONY: lint lint-fix test test-race test-cover cover test-all test-integration smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test ci-pr ci-nightly bootstrap-python-tools
+.PHONY: lint lint-fix test test-race test-cover cover test-all test-integration smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools
 
 lint: ## Run golangci-lint with all checks
 	@echo "Running golangci-lint..."
@@ -70,6 +70,14 @@ webui-test: ## Run WebUI unit tests
 	@cd $(FRONTEND_DIR)/webui && npm run test
 	@echo "✅ WebUI unit tests passed"
 
+webui-browser-smoke: ## Run the Playwright browser smoke against the fixture-backed WebUI
+	@echo "Running WebUI browser smoke..."
+	@[ -d node_modules/@playwright/test ] || npm ci
+	@[ -d $(FRONTEND_DIR)/webui/node_modules/vite ] || (cd $(FRONTEND_DIR)/webui && npm ci)
+	@[ -d $(BACKEND_DIR)/e2e/fixture-server/node_modules/fastify ] || (cd $(BACKEND_DIR)/e2e/fixture-server && npm ci)
+	@npx playwright test --config $(BACKEND_DIR)/e2e/playwright.config.ts --project=chromium
+	@echo "✅ WebUI browser smoke passed"
+
 codex: quality-gates ## Run Codex review bundle (lint + race/coverage + govulncheck)
 	@echo "✅ Codex review bundle completed"
 
@@ -82,14 +90,16 @@ security-closure: ## Rebuild images fresh and run local security closure proofs
 	@./$(BACKEND_DIR)/scripts/verify-image-runtime.sh
 	@echo "NOTE: Re-run GitHub CodeQL, Trivy, and Scorecard workflows to close scanner evidence."
 
-security-scan: dev-tools ## Run container vulnerability scanning
+security-scan: ## Run container vulnerability scanning
 	@echo "Running container vulnerability scan..."
+	@command -v "$(GRYPE)" >/dev/null 2>&1 || (echo "❌ grype not found. Install it before running 'make security-scan'." && exit 1)
 	@mkdir -p $(ARTIFACTS_DIR)
 	@"$(GRYPE)" dir:. -o table -o json=$(ARTIFACTS_DIR)/vulnerabilities.json || echo "⚠️  Grype scan completed with findings"
 	@echo "✅ Vulnerability scan completed: $(ARTIFACTS_DIR)/vulnerabilities.json"
 
 security-audit: ## Run dependency vulnerability audit
 	@echo "Running dependency security audit..."
+	@command -v nancy >/dev/null 2>&1 || (echo "❌ nancy not found. Install it before running 'make security-audit'." && exit 1)
 	@cd $(BACKEND_DIR) && $(GO) list -json -deps ./... | nancy sleuth || echo "⚠️  Nancy audit completed with findings"
 	@echo "✅ Dependency audit completed"
 
@@ -100,8 +110,9 @@ security-vulncheck: ## Run Go vulnerability checker
 	@cd $(BACKEND_DIR) && $(GOVULNCHECK) ./...
 	@echo "✅ Go vulnerability check passed"
 
-sbom: dev-tools ## Generate Software Bill of Materials
+sbom: ## Generate Software Bill of Materials
 	@echo "Generating SBOM..."
+	@command -v "$(SYFT)" >/dev/null 2>&1 || (echo "❌ syft not found. Install it before running 'make sbom'." && exit 1)
 	@mkdir -p $(ARTIFACTS_DIR)
 	@"$(SYFT)" scan dir:. -o spdx-json --source-name xg2g --source-version $(VERSION) > $(ARTIFACTS_DIR)/sbom.spdx.json
 	@"$(SYFT)" scan dir:. -o cyclonedx-json --source-name xg2g --source-version $(VERSION) > $(ARTIFACTS_DIR)/sbom.cyclonedx.json
@@ -119,7 +130,7 @@ quality-gates-online: verify-generated-artifacts verify-release-output-contract 
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract gate-repo-hygiene verify-client-wrapper webui-test ## Run the local PR validation bundle used by CI
+ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-client-wrapper webui-test ## Run the local PR validation bundle used by CI
 	@echo "✅ PR gate bundle passed"
 
 ci-nightly: quality-gates-online webui-test ## Run the nightly validation bundle used by CI

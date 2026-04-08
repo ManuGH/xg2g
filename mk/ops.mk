@@ -2,26 +2,63 @@
 # Operations and Orchestration
 # ===================================================================================================
 
-.PHONY: up down status ps logs restart prod-up prod-down prod-ps prod-logs prod-restart release-check release changelog setup build-ffmpeg repair-metadata
+.PHONY: start stop start-gpu stop-gpu start-nvidia stop-nvidia up down status ps logs restart prod-up prod-down prod-ps prod-logs prod-restart release-check release changelog setup build-ffmpeg repair-metadata
 
-up: ## Start docker-compose stack
+start: doctor ## Start the default local container stack on http://localhost:8088
+	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh base
+	@$(MAKE) up
+
+stop: ## Stop the default local container stack
+	@$(MAKE) down
+
+start-gpu: doctor ## Start the local container stack with /dev/dri render-node passthrough (Linux)
+	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh vaapi
+	@XG2G_COMPOSE_ROOT="$(CURDIR)/deploy" \
+	XG2G_ENV_FILE="$(CURDIR)/.env" \
+	COMPOSE_FILE="docker-compose.yml:../docker-compose.dev.yml:docker-compose.gpu.yml" \
+	./$(BACKEND_DIR)/scripts/compose-xg2g.sh up -d
+	@echo "✅ GPU stack started at http://localhost:8088"
+
+stop-gpu: ## Stop the /dev/dri-backed local container stack
+	@XG2G_COMPOSE_ROOT="$(CURDIR)/deploy" \
+	XG2G_ENV_FILE="$(CURDIR)/.env" \
+	COMPOSE_FILE="docker-compose.yml:../docker-compose.dev.yml:docker-compose.gpu.yml" \
+	./$(BACKEND_DIR)/scripts/compose-xg2g.sh down
+	@echo "✅ GPU stack stopped"
+
+start-nvidia: doctor ## Start the local container stack with the NVIDIA overlay
+	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh nvidia
+	@XG2G_COMPOSE_ROOT="$(CURDIR)/deploy" \
+	XG2G_ENV_FILE="$(CURDIR)/.env" \
+	COMPOSE_FILE="docker-compose.yml:../docker-compose.dev.yml:docker-compose.nvidia.yml" \
+	./$(BACKEND_DIR)/scripts/compose-xg2g.sh up -d
+	@echo "✅ NVIDIA stack started at http://localhost:8088"
+
+stop-nvidia: ## Stop the NVIDIA-backed local container stack
+	@XG2G_COMPOSE_ROOT="$(CURDIR)/deploy" \
+	XG2G_ENV_FILE="$(CURDIR)/.env" \
+	COMPOSE_FILE="docker-compose.yml:../docker-compose.dev.yml:docker-compose.nvidia.yml" \
+	./$(BACKEND_DIR)/scripts/compose-xg2g.sh down
+	@echo "✅ NVIDIA stack stopped"
+
+up: ## Advanced raw Compose alias used by `make start`
 	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d
 	@echo "✅ Stack started at http://localhost:8088"
 
-down: ## Stop docker-compose stack
+down: ## Advanced raw Compose alias used by `make stop`
 	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml down
 	@echo "✅ Stack stopped"
 
-status: ## Check API status
+status: ## Check the default local container stack on http://localhost:8088
 	@curl -fsS http://localhost:8088/healthz >/dev/null 2>&1 && echo "✅ OK" || echo "❌ Service not responding"
 
-ps: ## Show running containers
+ps: ## Show running containers for the local Compose project
 	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml ps
 
-logs: ## Show service logs
+logs: ## Show logs for the local Compose project
 	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml logs -f
 
-restart: ## Restart service
+restart: ## Restart the default local Compose service (advanced)
 	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml restart xg2g
 
 prod-up: ## Start production stack

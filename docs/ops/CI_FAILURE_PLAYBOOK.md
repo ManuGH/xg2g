@@ -3,10 +3,13 @@
 This playbook defines the only allowed troubleshooting path when the required PR checks fail.
 Goal: restore green deterministically without weakening guardrails.
 
-## Required Checks (Branch Protection)
+## Required Checks (Intended Baseline, Not Live Proof)
 - CI / PR Gate (Fast & Deterministic)
 - Prevent Large Files
 - Verify Test Assets in testdata/
+
+Observed live GitHub state on `2026-04-08`: `main` currently has no required status checks configured.
+See [BRANCH_PROTECTION_CUTOVER.md](./BRANCH_PROTECTION_CUTOVER.md) for the inventory and cutover plan.
 
 Non-required workflows (security scans, UI contracts, etc.) are informational unless explicitly promoted.
 

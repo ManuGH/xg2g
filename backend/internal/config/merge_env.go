@@ -212,7 +212,11 @@ func (l *Loader) mergeEnvCanonicalFFmpeg(cfg *AppConfig) {
 	cfg.FFmpeg.Bin = l.envString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)
 	cfg.FFmpeg.FFprobeBin = l.envString("XG2G_FFPROBE_BIN", cfg.FFmpeg.FFprobeBin)
 	cfg.FFmpeg.KillTimeout = l.envDuration("XG2G_FFMPEG_KILL_TIMEOUT", cfg.FFmpeg.KillTimeout)
-	cfg.FFmpeg.VaapiDevice = l.envString("XG2G_VAAPI_DEVICE", cfg.FFmpeg.VaapiDevice)
+	if raw, ok := l.envLookup(vaapiDeviceEnvKey); ok {
+		cfg.FFmpeg.VaapiDevice = strings.TrimSpace(raw)
+	} else {
+		cfg.FFmpeg.VaapiDevice = strings.TrimSpace(cfg.FFmpeg.VaapiDevice)
+	}
 }
 
 func (l *Loader) mergeEnvRateLimiting(cfg *AppConfig) {

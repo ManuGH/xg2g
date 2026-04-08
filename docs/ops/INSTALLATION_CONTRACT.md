@@ -18,7 +18,7 @@ These paths are required for a start-ready installation.
 | `/srv/xg2g/scripts/verify-systemd-runtime-contract.sh` | Repo-deployed operator verifier | Yes | `0755` | Repo `backend/scripts/verify-systemd-runtime-contract.sh` | Runtime env contract audit |
 | `/srv/xg2g/scripts/verify-installation-contract.sh` | Repo-deployed operator verifier | Yes | `0755` | Repo `backend/scripts/verify-installation-contract.sh` | Installation contract audit |
 | `/etc/systemd/system/xg2g.service` | Installed unit | Yes | `0644` | Copied from `/srv/xg2g/docs/ops/xg2g.service` | Installed unit must byte-match canonical host copy |
-| `/etc/xg2g/xg2g.env` | Operator-provided input | Yes before start | `0600` | Operator-managed | Required secrets and env surface |
+| `/etc/xg2g/xg2g.env` | Operator-provided input | Yes before start | `0600` | Operator-managed | Required secrets and env surface; must be `root:root` |
 | `/var/lib/xg2g` | Host runtime state | Yes before start | Writable directory | Operator / package | Data root must exist before service start |
 
 ## Optional Host Artifacts
@@ -27,7 +27,8 @@ These paths are optional and host-specific. Absence is valid unless otherwise no
 
 | Target Path | Class | Required | Expected Mode | Source / Truth | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `/srv/xg2g/docker-compose.gpu.yml` | Repo-deployed optional overlay | GPU hosts only | `0644` | Repo deploy bundle `deploy/docker-compose.gpu.yml` | Install only when the host should auto-load that GPU overlay |
+| `/srv/xg2g/docker-compose.gpu.yml` | Repo-deployed optional overlay | GPU hosts only | `0644` | Repo deploy bundle `deploy/docker-compose.gpu.yml` | Install only when the host should auto-load that marker overlay for render-node-only `/dev/dri` bindings |
+| `/srv/xg2g/docker-compose.nvidia.yml` | Repo-deployed optional overlay | NVIDIA GPU hosts only | `0644` | Repo deploy bundle `deploy/docker-compose.nvidia.yml` | Install only when the host should auto-load the NVIDIA runtime overlay |
 | `/etc/xg2g/config.yaml` | Operator-provided input | Optional | Operator-defined | Operator-managed | Optional explicit config file |
 
 Repo-side canonical deploy truth now lives under `deploy/`. Files under `/srv/xg2g/`
@@ -51,9 +52,9 @@ all of them must be present in the same installation.
 
 ## Rules
 
-1. Core daemon installation must not depend on the optional GPU overlay or the optional periodic verifier bundle.
+1. Core daemon installation must not depend on the optional hardware overlays or the optional periodic verifier bundle.
 2. `/etc/systemd/system/xg2g.service` must byte-match `/srv/xg2g/docs/ops/xg2g.service`.
 3. If the periodic verifier bundle is installed, all bundle members above must be present.
-4. `/etc/xg2g/xg2g.env` is mandatory before `systemctl start xg2g` and must remain mode `0600`.
+4. `/etc/xg2g/xg2g.env` is mandatory before `systemctl start xg2g` and must remain `root:root` with mode `0600`.
 5. The installation verifier for this contract is `backend/scripts/verify-installation-contract.sh`.
 6. Live-host validation uses `/srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /`.

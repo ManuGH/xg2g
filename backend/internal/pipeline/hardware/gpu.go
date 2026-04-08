@@ -14,17 +14,22 @@ package hardware
 
 import (
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
 
 const vaapiRuntimeFailureThreshold = 3
+const nvencRuntimeFailureThreshold = 3
 
-type VAAPIEncoderCapability struct {
+type HardwareEncoderCapability struct {
 	Verified     bool
 	ProbeElapsed time.Duration
 	AutoEligible bool
 }
+
+type VAAPIEncoderCapability = HardwareEncoderCapability
+type NVENCEncoderCapability = HardwareEncoderCapability
 
 var (
 	vaapiMu      sync.RWMutex
@@ -38,7 +43,17 @@ var (
 	// (e.g. AV1 only if av1_vaapi verified).
 	vaapiEncMu      sync.RWMutex
 	vaapiEncChecked bool
-	vaapiEncCaps    map[string]VAAPIEncoderCapability
+	vaapiEncCaps    map[string]HardwareEncoderCapability
+
+	nvencMu      sync.RWMutex
+	nvencChecked bool
+	nvencPassed  bool
+	// Runtime NVENC encode failures observed after successful startup preflight.
+	nvencRuntimeFailures int
+
+	nvencEncMu      sync.RWMutex
+	nvencEncChecked bool
+	nvencEncCaps    map[string]HardwareEncoderCapability
 )
 
 // HasVAAPI checks if the VAAPI render device exists
@@ -46,6 +61,16 @@ func HasVAAPI() bool {
 	// Check for /dev/dri/renderD128
 	if _, err := os.Stat("/dev/dri/renderD128"); err == nil {
 		return true
+	}
+	return false
+}
+
+// HasNVENC checks if the NVIDIA container runtime exposed an encoder-capable device.
+func HasNVENC() bool {
+	for _, path := range []string{"/dev/nvidiactl", "/dev/nvidia0"} {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
 	}
 	return false
 }
@@ -64,12 +89,12 @@ func SetVAAPIPreflightResult(passed bool) {
 // SetVAAPIEncoderPreflight records per-encoder preflight status (e.g. "av1_vaapi" -> true).
 // Called once at startup by the FFmpeg adapter after running encoder-specific encode tests.
 func SetVAAPIEncoderPreflight(verified map[string]bool) {
-	caps := make(map[string]VAAPIEncoderCapability, len(verified))
+	caps := make(map[string]HardwareEncoderCapability, len(verified))
 	for k, v := range verified {
 		if !v {
 			continue
 		}
-		caps[k] = VAAPIEncoderCapability{
+		caps[k] = HardwareEncoderCapability{
 			Verified:     true,
 			AutoEligible: true,
 		}
@@ -80,7 +105,7 @@ func SetVAAPIEncoderPreflight(verified map[string]bool) {
 // SetVAAPIEncoderCapabilities records per-encoder capability state from startup
 // preflight, including verification, elapsed probe time, and whether the codec
 // is considered auto-eligible for generic negotiation on this host.
-func SetVAAPIEncoderCapabilities(capabilities map[string]VAAPIEncoderCapability) {
+func SetVAAPIEncoderCapabilities(capabilities map[string]HardwareEncoderCapability) {
 	vaapiEncMu.Lock()
 	defer vaapiEncMu.Unlock()
 	vaapiEncChecked = true
@@ -88,10 +113,36 @@ func SetVAAPIEncoderCapabilities(capabilities map[string]VAAPIEncoderCapability)
 		vaapiEncCaps = nil
 		return
 	}
-	vaapiEncCaps = make(map[string]VAAPIEncoderCapability, len(capabilities))
+	vaapiEncCaps = make(map[string]HardwareEncoderCapability, len(capabilities))
 	for k, v := range capabilities {
 		if v.Verified {
 			vaapiEncCaps[k] = v
+		}
+	}
+}
+
+// SetNVENCPreflightResult records the result of the real NVENC encode preflight.
+func SetNVENCPreflightResult(passed bool) {
+	nvencMu.Lock()
+	defer nvencMu.Unlock()
+	nvencChecked = true
+	nvencPassed = passed
+	nvencRuntimeFailures = 0
+}
+
+// SetNVENCEncoderCapabilities records per-encoder NVENC capability state from startup preflight.
+func SetNVENCEncoderCapabilities(capabilities map[string]HardwareEncoderCapability) {
+	nvencEncMu.Lock()
+	defer nvencEncMu.Unlock()
+	nvencEncChecked = true
+	if capabilities == nil {
+		nvencEncCaps = nil
+		return
+	}
+	nvencEncCaps = make(map[string]HardwareEncoderCapability, len(capabilities))
+	for k, v := range capabilities {
+		if v.Verified {
+			nvencEncCaps[k] = v
 		}
 	}
 }
@@ -105,6 +156,13 @@ func IsVAAPIReady() bool {
 	return vaapiChecked && vaapiPassed
 }
 
+// IsNVENCReady returns true only if startup NVENC preflight ran and passed.
+func IsNVENCReady() bool {
+	nvencMu.RLock()
+	defer nvencMu.RUnlock()
+	return nvencChecked && nvencPassed
+}
+
 // IsVAAPIEncoderReady returns true only if per-encoder preflight has run AND the given encoder
 // was verified. Fail-closed: returns false if encoder preflight hasn't run yet.
 func IsVAAPIEncoderReady(encoder string) bool {
@@ -114,6 +172,16 @@ func IsVAAPIEncoderReady(encoder string) bool {
 		return false
 	}
 	return vaapiEncCaps[encoder].Verified
+}
+
+// IsNVENCEncoderReady returns true only if NVENC encoder preflight has run AND the encoder was verified.
+func IsNVENCEncoderReady(encoder string) bool {
+	nvencEncMu.RLock()
+	defer nvencEncMu.RUnlock()
+	if !nvencEncChecked || nvencEncCaps == nil {
+		return false
+	}
+	return nvencEncCaps[encoder].Verified
 }
 
 // IsVAAPIEncoderAutoEligible returns true only if startup preflight verified the
@@ -129,6 +197,18 @@ func IsVAAPIEncoderAutoEligible(encoder string) bool {
 	return ok && cap.Verified && cap.AutoEligible
 }
 
+// IsNVENCEncoderAutoEligible returns true only if startup preflight verified the
+// NVENC encoder and classified it as suitable for generic automatic selection.
+func IsNVENCEncoderAutoEligible(encoder string) bool {
+	nvencEncMu.RLock()
+	defer nvencEncMu.RUnlock()
+	if !nvencEncChecked || nvencEncCaps == nil {
+		return false
+	}
+	cap, ok := nvencEncCaps[encoder]
+	return ok && cap.Verified && cap.AutoEligible
+}
+
 // VAAPIEncoderCapabilityFor returns the stored startup capability for a VAAPI
 // encoder. The bool is false if preflight has not run or the encoder was not
 // verified.
@@ -136,11 +216,25 @@ func VAAPIEncoderCapabilityFor(encoder string) (VAAPIEncoderCapability, bool) {
 	vaapiEncMu.RLock()
 	defer vaapiEncMu.RUnlock()
 	if !vaapiEncChecked || vaapiEncCaps == nil {
-		return VAAPIEncoderCapability{}, false
+		return HardwareEncoderCapability{}, false
 	}
 	cap, ok := vaapiEncCaps[encoder]
 	if !ok || !cap.Verified {
-		return VAAPIEncoderCapability{}, false
+		return HardwareEncoderCapability{}, false
+	}
+	return cap, true
+}
+
+// NVENCEncoderCapabilityFor returns the stored startup capability for an NVENC encoder.
+func NVENCEncoderCapabilityFor(encoder string) (NVENCEncoderCapability, bool) {
+	nvencEncMu.RLock()
+	defer nvencEncMu.RUnlock()
+	if !nvencEncChecked || nvencEncCaps == nil {
+		return HardwareEncoderCapability{}, false
+	}
+	cap, ok := nvencEncCaps[encoder]
+	if !ok || !cap.Verified {
+		return HardwareEncoderCapability{}, false
 	}
 	return cap, true
 }
@@ -165,7 +259,44 @@ func RecordVAAPIRuntimeFailure() (failures int, demoted bool) {
 
 	vaapiEncMu.Lock()
 	vaapiEncChecked = true
-	vaapiEncCaps = map[string]VAAPIEncoderCapability{}
+	vaapiEncCaps = map[string]HardwareEncoderCapability{}
 	vaapiEncMu.Unlock()
 	return failures, true
+}
+
+// RecordNVENCRuntimeFailure increments the runtime failure counter after startup preflight.
+func RecordNVENCRuntimeFailure() (failures int, demoted bool) {
+	nvencMu.Lock()
+	if !nvencChecked || !nvencPassed {
+		failures = nvencRuntimeFailures
+		nvencMu.Unlock()
+		return failures, false
+	}
+	nvencRuntimeFailures++
+	failures = nvencRuntimeFailures
+	if nvencRuntimeFailures < nvencRuntimeFailureThreshold {
+		nvencMu.Unlock()
+		return failures, false
+	}
+	nvencPassed = false
+	nvencMu.Unlock()
+
+	nvencEncMu.Lock()
+	nvencEncChecked = true
+	nvencEncCaps = map[string]HardwareEncoderCapability{}
+	nvencEncMu.Unlock()
+	return failures, true
+}
+
+func codecNameForEncoder(encoder string) string {
+	switch strings.ToLower(strings.TrimSpace(encoder)) {
+	case "h264_vaapi", "h264_nvenc":
+		return "h264"
+	case "hevc_vaapi", "hevc_nvenc":
+		return "hevc"
+	case "av1_vaapi", "av1_nvenc":
+		return "av1"
+	default:
+		return ""
+	}
 }

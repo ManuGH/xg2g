@@ -15,14 +15,16 @@ Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
 
 **Path invariants (fail-closed):**
 - Base compose file path is frozen to `/srv/xg2g/docker-compose.yml`.
-- Optional GPU overlay path is `/srv/xg2g/docker-compose.gpu.yml`.
+- Optional hardware overlay paths are `/srv/xg2g/docker-compose.gpu.yml` and `/srv/xg2g/docker-compose.nvidia.yml`.
 - Working directory must be `/srv/xg2g`.
 - Data directory must exist and be writable at `/var/lib/xg2g`.
 - Compose service name must remain `xg2g` (health gate relies on it).
 
 Production compose is deterministic. For local development, apply the override:
 `docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d`.
-Add `-f deploy/docker-compose.gpu.yml` on GPU hosts.
+On `/dev/dri` hosts, use `compose-xg2g.sh` for GPU-aware operations so the checked-in
+`docker-compose.gpu.yml` marker expands into render-node-only device entries at runtime.
+On NVIDIA runtime hosts, add `-f deploy/docker-compose.nvidia.yml` or use the helper.
 
 Drift guard: `backend/scripts/verify-systemd-unit.sh` and `backend/scripts/verify-systemd-runtime-contract.sh` must pass before release.
 Canonical repo-side unit is `deploy/xg2g.service`; no repo-root `xg2g.service` is permitted.
@@ -42,7 +44,7 @@ Post-deploy playback verification (operator-grade):
 - `verify-post-deploy-playback.sh` starts real live sessions against the local host and proves three runtime paths:
   - tokenized HLS manifest works without cookie/header auth
   - live DVR manifest stays sliding-window (`EXT-X-START`, no `PLAYLIST-TYPE`)
-  - forced transcode reaches `h264_vaapi` on `/dev/dri/renderD128`
+  - forced transcode reaches a verified hardware encoder (`h264_vaapi` on `/dev/dri/renderD*` or `h264_nvenc` on an NVIDIA runtime host)
 - The script stops its probe sessions on exit and is intended for deploy-time verification, not for periodic timer-driven runtime truth checks.
 
 ### Lifecycle Management
@@ -91,6 +93,7 @@ Legacy receiver env aliases such as `XG2G_OWI_*`, `XG2G_STREAM_PORT`, and `XG2G_
 
 ### Security Notes (Minimum)
 - `/etc/xg2g/xg2g.env` must be `root:root` and `0600` (contains secrets).
+- `/srv/xg2g/scripts/compose-xg2g.sh` now fails closed if the canonical env file is not `root:root` with mode `0600`.
 - `/srv/xg2g/scripts/compose-xg2g.sh config` redacts secret env values by default before printing rendered Compose. Use `XG2G_COMPOSE_CONFIG_REDACT=0` only when you explicitly need raw output on a controlled terminal.
 - Credentials embedded in URLs are a known risk; prefer separate user/pass variables or secret files when available.
 - Browser-facing deployments must use HTTPS directly or a trusted HTTPS proxy.
@@ -141,6 +144,7 @@ When a future AI or operator debugs a failed `systemctl start xg2g` or `systemct
    - `/etc/systemd/system/xg2g.service`
    - `/srv/xg2g/docker-compose.yml`
    - `/srv/xg2g/docker-compose.gpu.yml` (if present)
+   - `/srv/xg2g/docker-compose.nvidia.yml` (if present)
    - `/etc/xg2g/xg2g.env`
 3. Only after that, compare against the repo-side canonical unit `deploy/xg2g.service`.
 
@@ -177,7 +181,7 @@ Observed live-host delta on March 17, 2026 (GPU contract drift):
 - The old repo contract effectively assumed a device mount in the base production compose.
 - That made CPU-only hosts impossible to start cleanly and left the runtime CPU fallback unreachable at infrastructure level.
 - Symptom: `hwaccel=force` playback probes fail with `GPU not available (no /dev/dri/renderD128)` even though the host itself exposes the render node.
-- Current rule: keep `/srv/xg2g/docker-compose.yml` device-neutral and load `/srv/xg2g/docker-compose.gpu.yml` only on GPU hosts. If VAAPI verification fails with that exact error, inspect the GPU overlay selection first; auto-discovery inside the app cannot recover from a missing container device mount.
+- Current rule: keep `/srv/xg2g/docker-compose.yml` device-neutral and load `/srv/xg2g/docker-compose.gpu.yml` only on `/dev/dri` hosts and `/srv/xg2g/docker-compose.nvidia.yml` only on NVIDIA runtime hosts. If VAAPI or NVENC verification fails with an infrastructure-shaped error, inspect overlay selection first; app-side auto-detection cannot recover from a missing container device contract.
 
 Observed live-host delta on March 17, 2026 (playback/runtime):
 - Safari-native media requests could not be trusted to carry header auth on `.m3u8` fetches; tokenized media URLs became the runtime-safe source of truth for HLS auth.
@@ -187,21 +191,24 @@ Observed live-host delta on March 17, 2026 (playback/runtime):
   - no fresh `POST /api/v3/live/stream-info`, no fresh `POST /api/v3/intents`, and no new `playlist ready - transitioning to READY state`
   In that case, do not debug startup first. Hard-reload Safari (`Cmd+Option+R`) or reopen the tab, then start a new stream and inspect the fresh session instead of the stale `410` noise.
 
-Observed live-host delta on March 23, 2026 (VAAPI runtime truth):
-- Container-level GPU visibility is necessary but not sufficient. A live host with `/dev/dri/renderD128` mounted into the container still fell back to CPU for Safari transcode sessions until `ffmpeg.vaapiDevice` was explicitly configured.
-- Current runtime rule: if GPU transcoding is desired, set exactly one of:
+Observed live-host delta on March 23, 2026 (VAAPI runtime truth, later relaxed by image auto-detect):
+- At that time, container-level GPU visibility was necessary but not sufficient. A live host with `/dev/dri/renderD128` mounted into the container still fell back to CPU for Safari transcode sessions until `ffmpeg.vaapiDevice` was explicitly configured.
+- Historical rule on that image line was to set exactly one of:
   - `/var/lib/xg2g/config.yaml`:
     ```yaml
     ffmpeg:
       vaapiDevice: /dev/dri/renderD128
     ```
   - `/etc/xg2g/xg2g.env`: `XG2G_VAAPI_DEVICE=/dev/dri/renderD128`
-- Without that config key, VAAPI preflight is skipped during wiring/bootstrap and live playback decisions fail-closed to CPU (`libx264`) even when FFmpeg inside the container can encode with `h264_vaapi`.
+- Without that config key on the March 2026 image line, VAAPI preflight was skipped during wiring/bootstrap and live playback decisions failed closed to CPU (`libx264`) even when FFmpeg inside the container could encode with `h264_vaapi`.
 - Verification rule: do not trust only `docker exec ... ls /dev/dri` or ad-hoc FFmpeg smoke tests. Also run a real transcode-capable live session and confirm log evidence such as:
   - `gpu_available:true`
   - `decision.summary ... "path":"transcode_hw"`
-  - `pipeline video: vaapi`
-- Operational shorthand: `ffmpeg.vaapiDevice` is currently not optional for GPU transcoding. A fresh deploy that omits it should be expected to fall back silently to CPU for eligible live transcode paths.
+  - `pipeline video: vaapi` or `pipeline video: nvenc`
+- Current 2026 rule: a visible `/dev/dri/renderD*` inside the container is enough by default. If `XG2G_VAAPI_DEVICE` is unset, xg2g auto-detects the first render node at startup and feeds it into the normal VAAPI preflight.
+- Intel QuickSync-class Linux hosts follow that same `/dev/dri` contract. There is currently no separate operator-facing QSV toggle in xg2g.
+- NVIDIA / NVENC hosts are still not covered by the `/dev/dri` shortcut, but they are now first-class runtime targets with a repo-managed overlay at `/srv/xg2g/docker-compose.nvidia.yml`. That overlay requests the NVIDIA runtime device reservation contract, after which xg2g performs NVENC startup preflight and auto-selects verified `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` encoders where available.
+- Current CPU-only escape hatch for `/dev/dri` hosts: set `XG2G_VAAPI_DEVICE=` explicitly empty in `/etc/xg2g/xg2g.env` to disable VAAPI auto-detect without removing the Compose overlay.
 
 Observed live-host delta on March 24, 2026 (installation drift still present):
 - `/etc/systemd/system/xg2g.service` did not byte-match either `/srv/xg2g/docs/ops/xg2g.service` or the repo-side canonical unit `deploy/xg2g.service`.

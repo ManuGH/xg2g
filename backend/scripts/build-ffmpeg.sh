@@ -1,10 +1,12 @@
 #!/bin/bash
 # FFmpeg Auto-Build Script for xg2g
-# Builds pinned FFmpeg 8.1 with HLS/VAAPI/x264/AAC support
+# Builds pinned FFmpeg 8.1 with HLS/VAAPI/NVENC/x264/AAC support
 set -euo pipefail
 
 FFMPEG_VERSION="8.1"
 FFMPEG_URL="https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"
+NVCODEC_HEADERS_VERSION="n13.0.19.0"
+NVCODEC_HEADERS_REPO="https://git.videolan.org/git/ffmpeg/nv-codec-headers.git"
 TARGET_DIR="${TARGET_DIR:-/opt/ffmpeg}"
 BUILD_DIR="${BUILD_DIR:-/tmp/ffmpeg-build}"
 
@@ -49,6 +51,14 @@ fi
 # Extract
 echo "Extracting..."
 tar xf "ffmpeg-${FFMPEG_VERSION}.tar.xz"
+
+# Install pinned NVENC headers required by FFmpeg's ffnvcodec detection.
+rm -rf nv-codec-headers
+echo "Cloning nv-codec-headers ${NVCODEC_HEADERS_VERSION}..."
+git clone --branch "${NVCODEC_HEADERS_VERSION}" --depth 1 "${NVCODEC_HEADERS_REPO}" nv-codec-headers
+echo "Installing nv-codec-headers ${NVCODEC_HEADERS_VERSION}..."
+make -C nv-codec-headers PREFIX=/usr/local install
+
 cd "ffmpeg-${FFMPEG_VERSION}"
 
 # Configure
@@ -59,6 +69,7 @@ echo "Configuring FFmpeg..."
   --enable-libx264 \
   --enable-libx265 \
   --enable-vaapi \
+  --enable-nvenc \
   --enable-protocol=hls \
   --enable-protocol=file \
   --enable-protocol=http \

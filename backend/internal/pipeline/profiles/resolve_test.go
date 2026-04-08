@@ -13,10 +13,10 @@ func TestResolve_AutoSafari(t *testing.T) {
 	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
 	// Existing behavior (no cap, no GPU, auto hwaccel)
-	spec := Resolve("", safariUA, 0, nil, false, HWAccelAuto)
+	spec := Resolve("", safariUA, 0, nil, GPUBackendNone, HWAccelAuto)
 	assert.Equal(t, "safari", spec.Name)
 
-	spec2 := Resolve("auto", safariUA, 0, nil, false, HWAccelAuto)
+	spec2 := Resolve("auto", safariUA, 0, nil, GPUBackendNone, HWAccelAuto)
 	assert.Equal(t, "safari", spec2.Name)
 }
 
@@ -26,7 +26,7 @@ func TestResolve_SmartScan(t *testing.T) {
 	// 1. Progressive -> Copy (Direct Remux)
 	// Even if GPU is available, progressive should use Copy for efficiency/quality
 	progCap := &scan.Capability{Interlaced: false}
-	specProg := Resolve("auto", safariUA, 0, progCap, true, HWAccelAuto)
+	specProg := Resolve("auto", safariUA, 0, progCap, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, false, specProg.TranscodeVideo, "Progressive should assume safe for copy")
 	assert.Equal(t, "mpegts", specProg.Container)
 	assert.Equal(t, 192, specProg.AudioBitrateK, "Audio should be normalized for Safari")
@@ -34,7 +34,7 @@ func TestResolve_SmartScan(t *testing.T) {
 
 	// 2. Interlaced + GPU -> Transcode VAAPI
 	interCap := &scan.Capability{Interlaced: true}
-	specGPU := Resolve("auto", safariUA, 0, interCap, true, HWAccelAuto)
+	specGPU := Resolve("auto", safariUA, 0, interCap, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, true, specGPU.TranscodeVideo, "Interlaced should force transcode")
 	assert.Equal(t, true, specGPU.Deinterlace)
 	assert.Equal(t, "mpegts", specGPU.Container)
@@ -44,7 +44,7 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, ports.RuntimeModeHQ25, specGPU.PolicyModeHint)
 
 	// 3. Interlaced + No GPU -> Transcode CPU
-	specCPU := Resolve("auto", safariUA, 0, interCap, false, HWAccelAuto)
+	specCPU := Resolve("auto", safariUA, 0, interCap, GPUBackendNone, HWAccelAuto)
 	assert.Equal(t, true, specCPU.TranscodeVideo)
 	assert.Equal(t, true, specCPU.Deinterlace)
 	assert.Equal(t, "mpegts", specCPU.Container)
@@ -56,7 +56,7 @@ func TestResolve_SmartScan(t *testing.T) {
 }
 
 func TestResolve_SafariWithoutUserAgentUsesFMP4ForNativeProgressiveClients(t *testing.T) {
-	spec := Resolve("safari", "", 0, &scan.Capability{Interlaced: false}, false, HWAccelAuto)
+	spec := Resolve("safari", "", 0, &scan.Capability{Interlaced: false}, GPUBackendNone, HWAccelAuto)
 
 	assert.False(t, spec.TranscodeVideo)
 	assert.Equal(t, "fmp4", spec.Container)
@@ -67,7 +67,7 @@ func TestResolve_UnknownCap(t *testing.T) {
 	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
 	// Unknown capability -> Conservative Interlaced assumption (Safety first)
-	specUnknown := Resolve("auto", safariUA, 0, nil, true, HWAccelAuto)
+	specUnknown := Resolve("auto", safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, true, specUnknown.TranscodeVideo)
 	assert.Equal(t, true, specUnknown.Deinterlace)
 }
@@ -75,11 +75,11 @@ func TestResolve_UnknownCap(t *testing.T) {
 func TestResolve_SafariDirtyExplicit(t *testing.T) {
 	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
-	specCPU := Resolve("safari_dirty", safariUA, 0, nil, false, HWAccelAuto)
+	specCPU := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendNone, HWAccelAuto)
 	assert.Equal(t, "safari_dirty", specCPU.Name)
 	assert.True(t, specCPU.TranscodeVideo)
 	assert.True(t, specCPU.Deinterlace)
-	assert.Equal(t, "fmp4", specCPU.Container)
+	assert.Equal(t, "mpegts", specCPU.Container)
 	assert.Equal(t, "libx264", specCPU.VideoCodec)
 	assert.Equal(t, "fast", specCPU.Preset)
 	assert.Equal(t, 16, specCPU.VideoCRF)
@@ -87,26 +87,29 @@ func TestResolve_SafariDirtyExplicit(t *testing.T) {
 	assert.Equal(t, 28000, specCPU.VideoBufSizeK)
 	assert.Equal(t, ports.RuntimeModeSafe, specCPU.PolicyModeHint)
 
-	specAutoGPU := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	specAutoGPU := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "safari_dirty", specAutoGPU.Name)
 	assert.Equal(t, "", specAutoGPU.HWAccel, "auto mode should stay on CPU unless safari_dirty GPU is explicitly enabled")
 	assert.Equal(t, "libx264", specAutoGPU.VideoCodec)
 
 	t.Setenv("XG2G_SAFARI_DIRTY_USE_GPU", "true")
-	specGPUOptIn := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	specGPUOptIn := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "safari_dirty", specGPUOptIn.Name)
 	assert.Equal(t, "vaapi", specGPUOptIn.HWAccel)
 	assert.Equal(t, "h264", specGPUOptIn.VideoCodec)
 	assert.Equal(t, 20, specGPUOptIn.VideoQP)
 	assert.Equal(t, 20000, specGPUOptIn.VideoMaxRateK)
 	assert.Equal(t, 40000, specGPUOptIn.VideoBufSizeK)
+
+	specNative := Resolve("safari_dirty", "", 0, nil, GPUBackendNone, HWAccelAuto)
+	assert.Equal(t, "fmp4", specNative.Container)
 }
 
 func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
 	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "encode_only")
-	specEncodeOnly := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	specEncodeOnly := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "vaapi_encode_only", specEncodeOnly.HWAccel)
 	assert.Equal(t, "h264", specEncodeOnly.VideoCodec)
 	assert.Equal(t, 20, specEncodeOnly.VideoQP)
@@ -114,20 +117,20 @@ func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 	assert.Equal(t, 40000, specEncodeOnly.VideoBufSizeK)
 
 	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "full")
-	specFull := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	specFull := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "vaapi", specFull.HWAccel)
 	assert.Equal(t, "h264", specFull.VideoCodec)
 
 	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "invalid")
-	specInvalid := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelAuto)
+	specInvalid := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Empty(t, specInvalid.HWAccel)
 	assert.Equal(t, "libx264", specInvalid.VideoCodec)
 
 	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "encode_only")
-	specForced := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelForce)
+	specForced := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelForce)
 	assert.Equal(t, "vaapi", specForced.HWAccel, "hwaccel=force should request the full VAAPI path")
 
-	specDisabled := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelOff)
+	specDisabled := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelOff)
 	assert.Empty(t, specDisabled.HWAccel, "hwaccel=off should disable safari_dirty GPU modes")
 	assert.Equal(t, "libx264", specDisabled.VideoCodec)
 }
@@ -141,7 +144,7 @@ func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", "224")
 
 	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-	spec := Resolve("safari_dirty", safariUA, 0, nil, false, HWAccelAuto)
+	spec := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendNone, HWAccelAuto)
 
 	assert.Equal(t, 15, spec.VideoCRF)
 	assert.Equal(t, "medium", spec.Preset)
@@ -149,7 +152,7 @@ func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	assert.Equal(t, 36000, spec.VideoBufSizeK)
 	assert.Equal(t, 224, spec.AudioBitrateK)
 
-	specGPU := Resolve("safari_dirty", safariUA, 0, nil, true, HWAccelForce)
+	specGPU := Resolve("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelForce)
 	assert.Equal(t, "vaapi", specGPU.HWAccel)
 	assert.Equal(t, 19, specGPU.VideoQP)
 	assert.Equal(t, 18000, specGPU.VideoMaxRateK)
@@ -172,7 +175,7 @@ func TestResolve_LiveVideoLadderBridge(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			spec := Resolve(tc.profile, "Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36", 0, &scan.Capability{Interlaced: true}, false, HWAccelAuto)
+			spec := Resolve(tc.profile, "Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36", 0, &scan.Capability{Interlaced: true}, GPUBackendNone, HWAccelAuto)
 			assert.True(t, spec.TranscodeVideo)
 			assert.Equal(t, tc.wantCRF, spec.VideoCRF)
 			assert.Equal(t, tc.wantPreset, spec.Preset)
@@ -183,7 +186,7 @@ func TestResolve_LiveVideoLadderBridge(t *testing.T) {
 func TestResolve_ProfileSafariCPUFallbackPresetCanBeOverridden(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_CPU_PRESET", "fast")
 
-	spec := Resolve(ProfileSafari, "Mozilla/5.0 Version/17.0 Safari/605.1.15", 0, &scan.Capability{Interlaced: true}, false, HWAccelAuto)
+	spec := Resolve(ProfileSafari, "Mozilla/5.0 Version/17.0 Safari/605.1.15", 0, &scan.Capability{Interlaced: true}, GPUBackendNone, HWAccelAuto)
 	assert.True(t, spec.TranscodeVideo)
 	assert.Equal(t, 20, spec.VideoCRF)
 	assert.Equal(t, "fast", spec.Preset)

@@ -31,6 +31,7 @@ REQUIRED_REPO_EXECUTABLES=(
 
 OPTIONAL_REPO_FILES=(
   "deploy/docker-compose.gpu.yml"
+  "deploy/docker-compose.nvidia.yml"
   "docs/ops/xg2g-verifier.service"
   "docs/ops/xg2g-verifier.timer"
   "backend/scripts/verify-runtime.sh"
@@ -66,13 +67,40 @@ assert_contains() {
   grep -Fq -- "${needle}" "${file}" || fail "${label}: expected '${needle}' in ${file}"
 }
 
+stat_mode() {
+  local path="$1"
+  if stat -c '%a' "${path}" >/dev/null 2>&1; then
+    stat -c '%a' "${path}"
+    return 0
+  fi
+  stat -f '%Lp' "${path}"
+}
+
+stat_owner() {
+  local path="$1"
+  if stat -c '%u:%g' "${path}" >/dev/null 2>&1; then
+    stat -c '%u:%g' "${path}"
+    return 0
+  fi
+  stat -f '%u:%g' "${path}"
+}
+
 assert_mode() {
   local path="$1"
   local expected="$2"
   local label="$3"
   local actual
-  actual="$(stat -c '%a' "${path}")"
+  actual="$(stat_mode "${path}")"
   [[ "${actual}" == "${expected}" ]] || fail "${label}: expected mode ${expected}, got ${actual} for ${path}"
+}
+
+assert_owner() {
+  local path="$1"
+  local expected="$2"
+  local label="$3"
+  local actual
+  actual="$(stat_owner "${path}")"
+  [[ "${actual}" == "${expected}" ]] || fail "${label}: expected owner ${expected}, got ${actual} for ${path}"
 }
 
 assert_executable() {
@@ -129,12 +157,15 @@ verify_installation_doc() {
   assert_file "${INSTALL_DOC}"
   assert_contains "${INSTALL_DOC}" "## Required Host Layout" "installation contract section"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/docker-compose.yml`' "installation contract base compose"
+  assert_contains "${INSTALL_DOC}" '`/srv/xg2g/docker-compose.nvidia.yml`' "installation contract nvidia overlay"
   assert_contains "${INSTALL_DOC}" '`deploy/docker-compose.yml`' "installation contract canonical base compose source"
+  assert_contains "${INSTALL_DOC}" '`deploy/docker-compose.nvidia.yml`' "installation contract canonical nvidia overlay source"
   assert_contains "${INSTALL_DOC}" '`deploy/xg2g.service`' "installation contract canonical unit source"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/compose-xg2g.sh`' "installation contract compose helper"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/verify-installation-contract.sh`' "installation contract verifier script"
   assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g.service`' "installation contract installed unit"
   assert_contains "${INSTALL_DOC}" '`/etc/xg2g/xg2g.env`' "installation contract env file"
+  assert_contains "${INSTALL_DOC}" '`root:root`' "installation contract env owner"
   assert_contains "${INSTALL_DOC}" '`/var/lib/xg2g`' "installation contract data dir"
   assert_contains "${INSTALL_DOC}" "## Optional Periodic Verifier Bundle" "installation contract optional verifier bundle"
   assert_contains "${INSTALL_DOC}" "all-or-nothing" "installation contract bundle rule"
@@ -224,9 +255,15 @@ verify_install_tree() {
 
   assert_file "${etc_root}/xg2g.env"
   assert_mode "${etc_root}/xg2g.env" "600" "env file mode"
+  if [[ "${root}" == "/" || "${XG2G_ENFORCE_ENV_OWNER:-0}" == "1" ]]; then
+    assert_owner "${etc_root}/xg2g.env" "0:0" "env file owner"
+  fi
 
   if [[ -e "${srv_root}/docker-compose.gpu.yml" ]]; then
     assert_mode "${srv_root}/docker-compose.gpu.yml" "644" "gpu overlay mode"
+  fi
+  if [[ -e "${srv_root}/docker-compose.nvidia.yml" ]]; then
+    assert_mode "${srv_root}/docker-compose.nvidia.yml" "644" "nvidia overlay mode"
   fi
 
   local verifier_bundle=(
@@ -276,6 +313,9 @@ build_reference_install_tree() {
   if [[ -f "${DEPLOY_ROOT}/docker-compose.gpu.yml" ]]; then
     install -m 0644 "${DEPLOY_ROOT}/docker-compose.gpu.yml" "${install_root}/srv/xg2g/docker-compose.gpu.yml"
   fi
+  if [[ -f "${DEPLOY_ROOT}/docker-compose.nvidia.yml" ]]; then
+    install -m 0644 "${DEPLOY_ROOT}/docker-compose.nvidia.yml" "${install_root}/srv/xg2g/docker-compose.nvidia.yml"
+  fi
   install -m 0644 "${DEPLOY_ROOT}/xg2g.service" "${install_root}/srv/xg2g/docs/ops/xg2g.service"
   install -m 0644 "${DEPLOY_ROOT}/xg2g.service" "${install_root}/etc/systemd/system/xg2g.service"
 
@@ -307,6 +347,14 @@ verify_negative_drift_guard() {
   chmod 644 "$(join_path "${root}" "/etc/xg2g/xg2g.env")"
   if "${BASH_SOURCE[0]}" --verify-install-root "${root}" >/dev/null 2>&1; then
     fail "negative drift guard failed: mis-moded env file unexpectedly passed"
+  fi
+
+  if [[ "${EUID}" -eq 0 ]]; then
+    chmod 600 "$(join_path "${root}" "/etc/xg2g/xg2g.env")"
+    chown 1:1 "$(join_path "${root}" "/etc/xg2g/xg2g.env")"
+    if XG2G_ENFORCE_ENV_OWNER=1 "${BASH_SOURCE[0]}" --verify-install-root "${root}" >/dev/null 2>&1; then
+      fail "negative drift guard failed: wrong env owner unexpectedly passed"
+    fi
   fi
 
   rm -rf "${root}"

@@ -97,32 +97,56 @@ docker exec xg2g-prod id
 
 Missing wrapper = hard fail.
 
-### [P2] GPU Device Contract (VAAPI)
+### [P2] GPU Device Contracts (VAAPI / NVENC)
 
 ```bash
-# Verify dri access
-docker exec xg2g-prod ls -l /dev/dri/renderD128
+# /dev/dri hosts
+docker exec xg2g-prod sh -lc 'ls -1 /dev/dri/renderD* 2>/dev/null || true'
+
+# NVIDIA hosts
+docker exec xg2g-prod sh -lc 'ls -1 /dev/nvidia* 2>/dev/null || true'
 ```
 
 **Container Runtime**:
 
 ```yaml
 services:
-  xg2g:
-    devices:
-      - /dev/dri/renderD128:/dev/dri/renderD128
+  xg2g: {}
 ```
 
 Base production compose stays device-neutral.
-GPU hosts opt in through `docker-compose.gpu.yml`, which `compose-xg2g.sh`
-auto-loads when present. Operators may also set `COMPOSE_FILE` in
-`/etc/xg2g/xg2g.env` for explicit file selection.
+Hardware-enabled hosts opt in through repo-managed overlays:
+
+- `docker-compose.gpu.yml` for `/dev/dri` / VAAPI / QuickSync-class Linux hosts
+- `docker-compose.nvidia.yml` for NVIDIA runtime / NVENC hosts
+
+`compose-xg2g.sh` auto-loads whichever optional overlays are present, after the
+base compose. Operators may also set `COMPOSE_FILE` in `/etc/xg2g/xg2g.env`
+for explicit file selection. For `/dev/dri` hosts, the checked-in GPU overlay
+is a marker: the helper expands it into render-node-only device entries for
+every visible `/dev/dri/renderD*` path at runtime.
 
 **Runtime Config Requirement**:
 
-Container device mounts alone do not enable GPU transcoding in the live path.
-For VAAPI-backed session decisions, operators must also configure the render
-node explicitly through one of:
+For containerized deployments, mounting `/dev/dri` is now sufficient by
+default. When `ffmpeg.vaapiDevice` and `XG2G_VAAPI_DEVICE` are both unset,
+xg2g auto-detects the first visible `/dev/dri/renderD*` node at startup and
+uses it for the normal VAAPI preflight.
+
+On Linux, that same `/dev/dri` path is the intended operator contract for
+Intel iGPU / QuickSync-class deployments as well. xg2g currently standardizes
+those hosts onto the VAAPI-backed path instead of maintaining a separate QSV
+runtime branch.
+
+NVIDIA / NVENC remains a different container contract: it depends on the
+NVIDIA Container Toolkit / GPU runtime and device reservation or injection, not
+on `/dev/dri` alone. The repo now ships that path as
+`docker-compose.nvidia.yml`. On those hosts, xg2g runs a startup NVENC
+preflight and automatically routes hardware-backed profiles onto verified
+`*_nvenc` encoders when the FFmpeg build and the visible NVIDIA runtime support
+them.
+
+Operators can still pin or override the render node explicitly through one of:
 
 ```yaml
 ffmpeg:
@@ -135,14 +159,17 @@ or:
 XG2G_VAAPI_DEVICE=/dev/dri/renderD128
 ```
 
-Without that config key, VAAPI preflight is skipped and eligible live sessions
-fall back fail-closed to CPU even when `/dev/dri/renderD128` is visible inside
-the container and FFmpeg can encode with `h264_vaapi` manually.
+In Docker/Compose, an explicitly empty `XG2G_VAAPI_DEVICE=` disables that
+auto-detect path and forces CPU fallback even if `/dev/dri/renderD*` is
+mounted. That gives operators a deterministic CPU-only escape hatch without
+removing the `/dev/dri` overlay.
 
 **Detection Logic**:
 
-- GPU override loaded + device present + `ffmpeg.vaapiDevice` configured + preflight passed → GPU available
-- GPU override absent, device absent, config absent, or preflight failed → GPU unavailable (fail-closed, use CPU)
+- GPU override configured + device present + preflight passed → GPU available
+- GPU override unset + `/dev/dri/renderD*` visible + preflight passed → GPU available
+- NVIDIA runtime visible + NVENC preflight passed → GPU available
+- GPU override explicitly empty, device absent, or preflight failed → GPU unavailable (fail-closed, use CPU)
 - **Test**: `hwaccel=force` without override/device → MUST return 400
 
 ## 4. Homelab SOA Setup - Golden Path
@@ -182,25 +209,37 @@ services:
       resources:
         limits:
           memory: 4G
-        reservations:
-          devices:
-            - driver: nvidia  # if NVIDIA, use nvidia-docker
-              count: 1
-              capabilities: [gpu]
 ```
 
-**Optional GPU Overlay (`docker-compose.gpu.yml`)**:
+**Optional `/dev/dri` Overlay (`docker-compose.gpu.yml`)**:
+
+```yaml
+services:
+  xg2g: {}
+```
+
+Use the overlay only on hosts that actually expose one or more render nodes and
+invoke it through `compose-xg2g.sh`. The helper turns this marker into
+render-node-only device entries at runtime. The base compose must stay valid on
+CPU-only systems so runtime CPU fallback remains reachable.
+
+**Optional NVIDIA Overlay (`docker-compose.nvidia.yml`)**:
 
 ```yaml
 services:
   xg2g:
-    devices:
-      - /dev/dri/renderD128:/dev/dri/renderD128
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 ```
 
-Use the overlay only on hosts that actually expose that render node. The
-base compose must stay valid on CPU-only systems so runtime CPU fallback
-remains reachable.
+Use this overlay only on hosts with the NVIDIA Container Toolkit / CDI
+runtime configured. For multi-GPU hosts, operators may replace `count: 1`
+with explicit `device_ids`.
 
 ### Directory Structure
 
@@ -216,9 +255,9 @@ remains reachable.
 
 ### Permissions
 
-- Container user: `xg2g:xg2g` (UID/GID 1000)
 - Container user: `xg2g:xg2g` (UID/GID 10001)
-- `/dev/dri/renderD128`: Group `video` (container user must be member)
+- `/dev/dri/renderD*`: Group `video` (container user must be member)
+- NVIDIA hosts: runtime injection must expose `/dev/nvidia*` into the container; no separate `/dev/dri` mount is required
 
 ## 5. Verification - Mechanical Checks
 
@@ -256,31 +295,33 @@ docker run --rm -e FFMPEG_HOME=/nonexistent xg2g:{{VERSION}} ffmpeg -version
 
 **Expected**: `ERROR: FFmpeg binary not found or not executable: /nonexistent/bin/ffmpeg` (exit 1)
 
-### Check 2: GPU Detection
+### Check 2A: `/dev/dri` / VAAPI Detection
 
-**Command** (with GPU device):
+**Command** (with `/dev/dri` contract):
 
 ```bash
-docker run --rm --device /dev/dri/renderD128 xg2g:{{VERSION}} ls -l /dev/dri/
+docker run --rm --device /dev/dri:/dev/dri xg2g:{{VERSION}} \
+  sh -lc 'ls -1 /dev/dri/renderD*'
 ```
 
-**Expected**: `renderD128` present
+**Expected**: at least one `renderD*` path is printed
 
 Live-runtime note: this check alone is insufficient. It only proves the device
-is mounted, not that xg2g will choose GPU for session startup.
+tree is mounted, not that xg2g will choose GPU for session startup.
 
 Command (hwaccel test):
 
 ```bash
-docker run --rm --device /dev/dri/renderD128 xg2g:{{VERSION}} \
-  ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -f lavfi -i testsrc -t 1 -f null -
+docker run --rm --device /dev/dri:/dev/dri xg2g:{{VERSION}} \
+  sh -lc 'node="$(ls /dev/dri/renderD* | head -n1)"; test -n "$node"; ffmpeg -hwaccel vaapi -hwaccel_device "$node" -f lavfi -i testsrc -t 1 -f null -'
 ```
 
 Expected: Success (exit 0)
 
-Live-runtime requirement: also verify that the runtime config points at the same
-device (`ffmpeg.vaapiDevice` or `XG2G_VAAPI_DEVICE`). A manual FFmpeg success
-without that setting can still leave xg2g session decisions on CPU.
+Live-runtime requirement: also verify that the runtime config resolves to the
+same device. Manual FFmpeg success alone does not prove the live playback path
+will choose GPU, but a visible `/dev/dri/renderD*` no longer needs an extra
+container env override on the 2026 image line.
 
 #### Failure
 
@@ -293,10 +334,39 @@ Test (no device):
 
 ```bash
 docker run --rm xg2g:{{VERSION}} \
-  ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -f lavfi -i testsrc -t 1 -f null -
+  ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD999 -f lavfi -i testsrc -t 1 -f null -
 ```
 
-**Expected**: Failure (exit non-zero, "Cannot open /dev/dri/renderD128")
+**Expected**: Failure (exit non-zero, "Cannot open /dev/dri/renderD...")
+
+### Check 2B: NVIDIA / NVENC Detection
+
+**Command** (with NVIDIA runtime):
+
+```bash
+docker run --rm --gpus all xg2g:{{VERSION}} \
+  sh -lc 'ls -1 /dev/nvidia* 2>/dev/null'
+```
+
+**Expected**: `/dev/nvidiactl` and at least one `/dev/nvidiaN` path are printed
+
+Command (NVENC encode test):
+
+```bash
+docker run --rm --gpus all xg2g:{{VERSION}} \
+  ffmpeg -f lavfi -i testsrc=duration=0.2:size=1280x720:rate=25 -c:v h264_nvenc -frames:v 5 -f null -
+```
+
+Expected: Success (exit 0)
+
+Failure (runtime absent):
+
+```bash
+docker run --rm xg2g:{{VERSION}} \
+  ffmpeg -f lavfi -i testsrc=duration=0.2:size=1280x720:rate=25 -c:v h264_nvenc -frames:v 5 -f null -
+```
+
+**Expected**: Failure (exit non-zero, "no capable devices found", "OpenEncodeSessionEx failed", or a similar NVENC runtime error)
 
 ### Check 3: VOD Safety (Phase-9 Gates)
 
@@ -344,12 +414,17 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 ### GPU Force Behavior (Optional, needs GPU runner)
 
 ```yaml
-- name: GPU Fail-Closed Test
+- name: VAAPI Fail-Closed Test
   run: |
     # Without device, hwaccel=force MUST fail
     docker run --rm xg2g:{{VERSION}} \
-      ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 \
+      ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD999 \
       -f lavfi -i testsrc -t 1 -f null - 2>&1 | grep -q "Cannot open"
+
+- name: NVENC Runtime Smoke
+  run: |
+    docker run --rm --gpus all xg2g:{{VERSION}} \
+      ffmpeg -f lavfi -i testsrc=duration=0.2:size=1280x720:rate=25 -c:v h264_nvenc -frames:v 5 -f null -
 ```
 
 ## 7. Troubleshooting
@@ -359,13 +434,23 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 **Cause**: Wrapper cannot find `/opt/ffmpeg/bin/ffmpeg`
 **Fix**: Verify `FFMPEG_HOME` is set correctly, rebuild image if needed
 
-### "Cannot open /dev/dri/renderD128"
+### "Cannot open /dev/dri/renderD..."
 
 **Cause**: GPU device not mounted or permissions wrong
 **Fix**:
 
-- Add `--device /dev/dri/renderD128` to docker run
+- Add the `/dev/dri` overlay or `--device /dev/dri:/dev/dri` to `docker run`
 - Ensure container user in `video` group
+- If the host exposes multiple render nodes, pin the intended one through `XG2G_VAAPI_DEVICE`
+
+### "OpenEncodeSessionEx failed" / "no capable devices found"
+
+**Cause**: NVIDIA runtime not injected, driver/toolkit mismatch, or GPU lacks the required NVENC feature set
+**Fix**:
+
+- Add the NVIDIA overlay or run with `--gpus all`
+- Verify the host runtime with `nvidia-smi`
+- Verify the image still reports `h264_nvenc` / `hevc_nvenc` in `ffmpeg -encoders`
 
 ### "Partial VOD output after crash"
 

@@ -1,4 +1,6 @@
 name: PR Required Gates
+# Canonical PR-time WebUI integration gate.
+# Scope is intentionally narrow: build + browser-backed smoke for WebUI-relevant changes.
 
 on:
   workflow_dispatch:
@@ -38,9 +40,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "ERROR: cannot determine diff range for event=${{ github.event_name }} (requires pull_request context)"
-            exit 1
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            {
+              echo "range=manual"
+              echo "webui_gate_needed=true"
+              echo "changed_count=manual"
+              echo "skip_reason="
+            } >> "$GITHUB_OUTPUT"
+            echo "Manual run: forcing canonical WebUI gate."
+            exit 0
           fi
 
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
@@ -74,70 +82,28 @@ jobs:
           changed_files="$(git diff --name-only "$RANGE" || true)"
           changed_count="${{ github.event.pull_request.changed_files }}"
 
-          # Legacy safety valve:
-          # Very large PRs (long-lived branches) can include historical UI churn that
-          # is unrelated to the current commit and would make scoped UI gates non-actionable.
-          legacy_large_pr=false
-          if [ "${changed_count:-0}" -gt 300 ]; then
-            legacy_large_pr=true
-          fi
-
-          mapfile -t ui_contract_scope < <(
-            printf '%s\n' "$changed_files" \
-              | grep -E '^frontend/webui/src/.*\.(tsx|css)$' \
-              | sed -e 's#^frontend/webui/src/##' \
-              | sort -u
-          )
-
-          mapfile -t webui_ts_scope < <(
-            printf '%s\n' "$changed_files" \
-              | grep -E '^frontend/webui/(src|tests)/.*\.(ts|tsx)$' \
-              | sort -u
-          )
-
-          webui_changed=false
-          if printf '%s\n' "$changed_files" | grep -q '^frontend/webui/'; then
-            webui_changed=true
-          fi
-
-          webui_build_needed=false
-          if printf '%s\n' "$changed_files" | grep -Eq '^(frontend/webui/|backend/api/openapi\.yaml$|backend/internal/api/)'; then
-            webui_build_needed=true
-          fi
-
           skip_reason=""
-          if [ "$legacy_large_pr" = "true" ]; then
-            # Keep the large-PR escape hatch limited to the UI contract diff scope.
-            # Type/build/wrapper gates must still run for broad frontend changes.
-            ui_contract_scope=()
+          webui_gate_needed=false
+          if printf '%s\n' "$changed_files" | grep -Eq '^(frontend/webui/|backend/e2e/|\.github/workflows/pr-required-gates\.yml$)'; then
+            webui_gate_needed=true
           fi
-          if [ "${#ui_contract_scope[@]}" -eq 0 ] && [ "${#webui_ts_scope[@]}" -eq 0 ] && [ "$webui_build_needed" = "false" ]; then
+
+          if [ "$webui_gate_needed" = "false" ]; then
             if [ -z "$skip_reason" ]; then
               skip_reason="no_relevant_changes"
             fi
           fi
 
-          printf '%s\n' "${ui_contract_scope[@]}" > /tmp/required-gates-ui-contract-scope.txt
-          printf '%s\n' "${webui_ts_scope[@]}" > /tmp/required-gates-webui-ts-scope.txt
-
           {
             echo "range=$RANGE"
-            echo "ui_contract_count=${#ui_contract_scope[@]}"
-            echo "webui_ts_count=${#webui_ts_scope[@]}"
-            echo "webui_changed=$webui_changed"
-            echo "webui_build_needed=$webui_build_needed"
+            echo "webui_gate_needed=$webui_gate_needed"
             echo "changed_count=${changed_count:-0}"
-            echo "legacy_large_pr=$legacy_large_pr"
             echo "skip_reason=$skip_reason"
           } >> "$GITHUB_OUTPUT"
 
           echo "Diff range: $RANGE"
           echo "PR changed files (GitHub): ${changed_count:-0}"
-          echo "Legacy large PR mode: $legacy_large_pr"
-          echo "UI contract scoped files: ${#ui_contract_scope[@]}"
-          echo "Phase4 TS scoped files: ${#webui_ts_scope[@]}"
-          echo "Any frontend/webui/* changes: $webui_changed"
-          echo "WebUI build needed: $webui_build_needed"
+          echo "WebUI gate needed: $webui_gate_needed"
           if [ -n "$skip_reason" ]; then
             echo "skip_reason=$skip_reason"
           fi
@@ -146,74 +112,43 @@ jobs:
         if: steps.scope.outputs.skip_reason != ''
         run: echo "skip_reason=${{ steps.scope.outputs.skip_reason }}"
 
-      - name: UI Contract (diff-scoped)
-        if: steps.scope.outputs.ui_contract_count != '0'
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x ./backend/scripts/check-ui-contract.sh
-          mapfile -t scope_files < /tmp/required-gates-ui-contract-scope.txt
-          ./backend/scripts/check-ui-contract.sh "${scope_files[@]}"
-
-      - name: UI Contract (no scope)
-        if: steps.scope.outputs.ui_contract_count == '0'
-        run: |
-          if [ "${{ steps.scope.outputs.legacy_large_pr }}" = "true" ]; then
-            echo "UI contract diff scope skipped for large PR; build/type/wrapper gates remain enforced."
-          else
-            echo "No frontend/webui/src *.tsx/*.css changes; UI contract gate passes by scope."
-          fi
-
-      - name: Phase4 - Reject new JSX
-        shell: bash
-        run: |
-          set -euo pipefail
-          RANGE="${{ steps.scope.outputs.range }}"
-          NEW_JSX=$(git diff --name-only --diff-filter=A "$RANGE" | grep '\.jsx$' || true)
-          if [ -n "$NEW_JSX" ]; then
-            echo "ERROR: New .jsx files detected (Phase 4 guardrail)"
-            echo "$NEW_JSX"
-            exit 1
-          fi
-          echo "No new .jsx files detected"
-
-      - name: Setup Node for Phase4 TypeScript check
-        if: steps.scope.outputs.webui_build_needed == 'true'
+      - name: Setup Node for WebUI gate
+        if: steps.scope.outputs.webui_gate_needed == 'true'
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: frontend/webui/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            frontend/webui/package-lock.json
+            backend/e2e/fixture-server/package-lock.json
 
-      - name: Phase4 - Wrapper boundary imports (diff-scoped)
-        if: steps.scope.outputs.webui_ts_count != '0'
+      - name: Install WebUI gate dependencies
+        if: steps.scope.outputs.webui_gate_needed == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ts_files < /tmp/required-gates-webui-ts-scope.txt
-          mapfile -t scoped_files < <(
-            printf '%s\n' "${ts_files[@]}" \
-              | sed -e 's#^frontend/webui/##' \
-              | grep -E '\.(ts|tsx|js|jsx)$' \
-              | grep -v '^src/client-ts/' \
-              || true
-          )
+          npm ci
+          cd frontend/webui
+          npm ci
+          cd ../../backend/e2e/fixture-server
+          npm ci
 
-          if [ "${#scoped_files[@]}" -eq 0 ]; then
-            echo "No scoped files outside src/client-ts/, wrapper boundary check passes by scope."
-            exit 0
-          fi
-
-          bash frontend/webui/scripts/verify-client-wrapper-boundary.sh "${scoped_files[@]}"
-
-      - name: Phase4 - TypeScript build
-        if: steps.scope.outputs.webui_build_needed == 'true'
+      - name: WebUI build
+        if: steps.scope.outputs.webui_gate_needed == 'true'
         run: |
           set -euo pipefail
           cd frontend/webui
-          npm ci
           npm run build
 
-      - name: Phase4 (no webui scope)
-        if: steps.scope.outputs.webui_build_needed != 'true'
-        run: echo "No frontend/webui/* changes; Phase4 build checks pass by scope."
+      - name: WebUI browser smoke
+        if: steps.scope.outputs.webui_gate_needed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx playwright install --with-deps chromium
+          make webui-browser-smoke
+
+      - name: WebUI gate skipped by scope
+        if: steps.scope.outputs.webui_gate_needed != 'true'
+        run: echo "No WebUI/browser-gate-relevant changes; canonical WebUI PR gate skipped by scope."

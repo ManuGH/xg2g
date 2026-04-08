@@ -72,6 +72,8 @@ verify_runtime_image() {
 		test -x /usr/local/bin/ffprobe
 		/usr/local/bin/ffmpeg -version >/dev/null
 		/usr/local/bin/ffprobe -version >/dev/null
+		/usr/local/bin/ffmpeg -hide_banner -encoders 2>/dev/null | grep -q "h264_nvenc"
+		/usr/local/bin/ffmpeg -hide_banner -encoders 2>/dev/null | grep -q "hevc_nvenc"
 	'
 }
 

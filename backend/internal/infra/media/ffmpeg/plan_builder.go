@@ -29,7 +29,8 @@ type inputPlan struct {
 
 type codecPlan struct {
 	resolvedCodec string
-	useVAAPI      bool
+	useHW         bool
+	hwBackend     profiles.GPUBackend
 	fullVAAPI     bool
 	preInputArgs  []string
 }
@@ -109,22 +110,24 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 
 		return codecPlan{
 			resolvedCodec: resolvedCodec,
-			useVAAPI:      false,
+			useHW:         false,
+			hwBackend:     profiles.GPUBackendNone,
 			fullVAAPI:     false,
 			preInputArgs:  nil,
 		}, nil
 	}
 
-	useHWPath := profiles.IsGPUBackedProfile(spec.Profile.HWAccel)
-	if isPreferHWProfile(spec.Profile.Name) {
+	requestedBackend := backendForHWAccel(spec.Profile.HWAccel)
+	useHWPath := requestedBackend != profiles.GPUBackendNone
+	if isPreferHWProfile(spec.Profile.Name) && len(a.supportedHWCodecs()) > 0 {
 		useHWPath = true
 	}
 
-	hardVAAPIRequest := profiles.IsGPUBackedProfile(spec.Profile.HWAccel) && !isPreferHWProfile(spec.Profile.Name)
+	hardHWRequest := requestedBackend != profiles.GPUBackendNone && !isPreferHWProfile(spec.Profile.Name)
 	decisionIn := codecdecision.Input{
 		Profile:        spec.Profile.Name,
 		RequestedCodec: spec.Profile.VideoCodec,
-		RequireHW:      hardVAAPIRequest,
+		RequireHW:      hardHWRequest,
 		Server: codecdecision.ServerCapabilities{
 			HWAccelAvailable:  useHWPath,
 			SupportedHWCodecs: a.supportedHWCodecs(),
@@ -155,48 +158,72 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		Str("reason", decisionOutSummary.Reason).
 		Msg("decision summary")
 
-	if neg.Path == codecdecision.PathReject && !hardVAAPIRequest {
+	if neg.Path == codecdecision.PathReject && !hardHWRequest {
 		return codecPlan{}, fmt.Errorf("codec negotiation rejected (profile=%s codec=%s reason=%s)", spec.Profile.Name, spec.Profile.VideoCodec, neg.Reason)
 	}
 
 	resolvedCodec := neg.OutputCodec
-	if resolvedCodec == "" && hardVAAPIRequest {
+	if resolvedCodec == "" && hardHWRequest {
 		resolvedCodec = normalizeRequestedCodec(spec.Profile.VideoCodec)
 	}
 	if resolvedCodec == "" {
 		resolvedCodec = "h264"
 	}
 
-	useVAAPI := neg.Path == codecdecision.PathTranscodeHW
-	if hardVAAPIRequest {
-		useVAAPI = true
+	useHW := neg.Path == codecdecision.PathTranscodeHW
+	if hardHWRequest {
+		useHW = true
 	}
-	fullVAAPI := profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
+	hwBackend := profiles.GPUBackendNone
+	fullVAAPI := false
 
 	preInputArgs := make([]string, 0, 6)
-	if useVAAPI {
-		if a.VaapiDevice == "" {
-			return codecPlan{}, fmt.Errorf("vaapi requested by profile but no vaapi device configured on adapter")
+	if useHW {
+		hwBackend = requestedBackend
+		if hwBackend == profiles.GPUBackendNone {
+			hwBackend = a.preferredHardwareBackendForCodec(resolvedCodec)
 		}
-		reqEncoder, ok := codecToVAAPIEncoder(resolvedCodec)
-		if !ok {
-			return codecPlan{}, fmt.Errorf("unsupported vaapi codec resolved by decision engine: %s", resolvedCodec)
+		if hwBackend == profiles.GPUBackendNone {
+			return codecPlan{}, fmt.Errorf("hardware path selected but no verified backend is available for codec %s", resolvedCodec)
 		}
-		if !a.VaapiEncoderVerified(reqEncoder) {
-			return codecPlan{}, fmt.Errorf("vaapi encoder %s not verified by preflight (device=%s, deviceErr=%v)", reqEncoder, a.VaapiDevice, a.vaapiDeviceErr)
-		}
-		preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
-		if fullVAAPI {
-			preInputArgs = append(preInputArgs,
-				"-hwaccel", "vaapi",
-				"-hwaccel_output_format", "vaapi",
-			)
+
+		switch hwBackend {
+		case profiles.GPUBackendVAAPI:
+			if a.VaapiDevice == "" {
+				return codecPlan{}, fmt.Errorf("vaapi requested by profile but no vaapi device configured on adapter")
+			}
+			reqEncoder, ok := codecToVAAPIEncoder(resolvedCodec)
+			if !ok {
+				return codecPlan{}, fmt.Errorf("unsupported vaapi codec resolved by decision engine: %s", resolvedCodec)
+			}
+			if !a.VaapiEncoderVerified(reqEncoder) {
+				return codecPlan{}, fmt.Errorf("vaapi encoder %s not verified by preflight (device=%s, deviceErr=%v)", reqEncoder, a.VaapiDevice, a.vaapiDeviceErr)
+			}
+			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
+			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
+			if fullVAAPI {
+				preInputArgs = append(preInputArgs,
+					"-hwaccel", "vaapi",
+					"-hwaccel_output_format", "vaapi",
+				)
+			}
+		case profiles.GPUBackendNVENC:
+			reqEncoder, ok := codecToNVENCEncoder(resolvedCodec)
+			if !ok {
+				return codecPlan{}, fmt.Errorf("unsupported nvenc codec resolved by decision engine: %s", resolvedCodec)
+			}
+			if !a.NVENCEncoderVerified(reqEncoder) {
+				return codecPlan{}, fmt.Errorf("nvenc encoder %s not verified by preflight (nvencErr=%v)", reqEncoder, a.nvencErr)
+			}
+		default:
+			return codecPlan{}, fmt.Errorf("unsupported hardware backend %q", hwBackend)
 		}
 	}
 
 	return codecPlan{
 		resolvedCodec: resolvedCodec,
-		useVAAPI:      useVAAPI,
+		useHW:         useHW,
+		hwBackend:     hwBackend,
 		fullVAAPI:     fullVAAPI,
 		preInputArgs:  preInputArgs,
 	}, nil
@@ -684,11 +711,16 @@ func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.Stream
 	if !spec.Profile.TranscodeVideo && !usesLegacyCPUDefaults(spec, codec.resolvedCodec) {
 		return a.buildCopyVideoArgs(args, spec, inputURL)
 	}
-	if codec.useVAAPI {
-		if codec.fullVAAPI {
-			return a.buildVaapiVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+	if codec.useHW {
+		switch codec.hwBackend {
+		case profiles.GPUBackendVAAPI:
+			if codec.fullVAAPI {
+				return a.buildVaapiVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+			}
+			return a.buildVaapiEncodeOnlyVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+		case profiles.GPUBackendNVENC:
+			return a.buildNVENCVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
 		}
-		return a.buildVaapiEncodeOnlyVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
 	}
 	return a.buildCPUVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
 }
@@ -927,6 +959,71 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string 
 	return append(args, "-global_quality", "23")
 }
 
+func (a *LocalAdapter) buildNVENCVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
+	prof := spec.Profile
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("transcode.mode", "nvenc").
+		Str("video.codec", outputCodec).
+		Int("video.qp", prof.VideoQP).
+		Int("video.maxRateK", prof.VideoMaxRateK).
+		Int("video.bufSizeK", prof.VideoBufSizeK).
+		Bool("deinterlace", prof.Deinterlace).
+		Msg("pipeline video: nvenc")
+
+	if prof.Deinterlace {
+		args = append(args, "-vf", a.deinterlaceFilterForProfile(spec))
+	}
+
+	encoder := "h264_nvenc"
+	switch outputCodec {
+	case "hevc":
+		encoder = "hevc_nvenc"
+	case "av1":
+		encoder = "av1_nvenc"
+	}
+	args = append(args, "-c:v", encoder)
+	args = appendNVENCRateControlArgs(args, prof)
+	args = append(args,
+		"-g", strconv.Itoa(gop),
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
+		"-flags", "+cgop",
+	)
+	if outputCodec != "av1" {
+		args = append(args, "-profile:v", "main")
+	}
+	return args
+}
+
+func appendNVENCRateControlArgs(args []string, prof ports.ProfileSpec) []string {
+	if prof.VideoQP > 0 {
+		args = append(args,
+			"-rc", "constqp",
+			"-qp", strconv.Itoa(prof.VideoQP),
+		)
+		if prof.VideoMaxRateK > 0 {
+			args = append(args, "-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK))
+		}
+		if prof.VideoBufSizeK > 0 {
+			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+		return args
+	}
+
+	if prof.VideoMaxRateK > 0 {
+		args = append(args,
+			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+		)
+		if prof.VideoBufSizeK > 0 {
+			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+		return args
+	}
+
+	return append(args, "-cq", "23")
+}
+
 func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, inputURL string) []string {
 	hardenedBitstream := shouldHardenSafariCopyBitstream(spec, inputURL)
 
@@ -1030,36 +1127,20 @@ func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string
 	deinterlaceFilter := "yadif"
 	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
 		deinterlaceFilter = strings.TrimSpace(a.SafariDirtyFilter)
+	} else if spec.Mode == ports.ModeLive && spec.Format == ports.FormatHLS {
+		// Generic live HLS transcodes should preserve sports motion on interlaced
+		// broadcast sources instead of collapsing them to 25p.
+		deinterlaceFilter = "bwdif=mode=send_field:parity=auto:deint=all"
 	}
 	return deinterlaceFilter
 }
 
 func (a *LocalAdapter) supportedHWCodecs() []string {
-	codecs := make([]string, 0, 3)
-	if a.VaapiEncoderVerified("h264_vaapi") {
-		codecs = append(codecs, "h264")
-	}
-	if a.VaapiEncoderVerified("hevc_vaapi") {
-		codecs = append(codecs, "hevc")
-	}
-	if a.VaapiEncoderVerified("av1_vaapi") {
-		codecs = append(codecs, "av1")
-	}
-	return codecs
+	return a.supportedHWCodecsLocal()
 }
 
 func (a *LocalAdapter) autoHWCodecs() []string {
-	codecs := make([]string, 0, 3)
-	if a.VaapiEncoderAutoEligible("h264_vaapi") {
-		codecs = append(codecs, "h264")
-	}
-	if a.VaapiEncoderAutoEligible("hevc_vaapi") {
-		codecs = append(codecs, "hevc")
-	}
-	if a.VaapiEncoderAutoEligible("av1_vaapi") {
-		codecs = append(codecs, "av1")
-	}
-	return codecs
+	return a.autoHWCodecsLocal()
 }
 
 func isPreferHWProfile(profileName string) bool {
@@ -1080,14 +1161,38 @@ func codecToVAAPIEncoder(codec string) (string, bool) {
 	}
 }
 
+func codecToNVENCEncoder(codec string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "h264":
+		return "h264_nvenc", true
+	case "hevc":
+		return "hevc_nvenc", true
+	case "av1":
+		return "av1_nvenc", true
+	default:
+		return "", false
+	}
+}
+
+func backendForHWAccel(hwaccel string) profiles.GPUBackend {
+	switch strings.ToLower(strings.TrimSpace(hwaccel)) {
+	case "vaapi", "vaapi_encode_only":
+		return profiles.GPUBackendVAAPI
+	case "nvenc":
+		return profiles.GPUBackendNVENC
+	default:
+		return profiles.GPUBackendNone
+	}
+}
+
 func normalizeRequestedCodec(codec string) string {
 	c := strings.ToLower(strings.TrimSpace(codec))
 	switch c {
-	case "", "h264", "avc", "avc1", "libx264", "h264_vaapi":
+	case "", "h264", "avc", "avc1", "libx264", "h264_vaapi", "h264_nvenc":
 		return "h264"
-	case "hevc", "h265", "h.265", "libx265", "hevc_vaapi":
+	case "hevc", "h265", "h.265", "libx265", "hevc_vaapi", "hevc_nvenc":
 		return "hevc"
-	case "av1", "av01", "av1_vaapi", "libsvtav1", "libaom-av1":
+	case "av1", "av01", "av1_vaapi", "av1_nvenc", "libsvtav1", "libaom-av1":
 		return "av1"
 	default:
 		return c

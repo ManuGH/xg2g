@@ -186,6 +186,7 @@ export default function BootstrapGate() {
 
     return (
       <AuthSurface
+        testId="auth-surface"
         eyebrow={authEyebrow}
         title={authTitle}
         copy={authCopy}
@@ -201,6 +202,8 @@ export default function BootstrapGate() {
           inputRef,
           hint: authHint,
           inputType: isTokenVisible ? 'text' : 'password',
+          inputTestId: 'auth-token-input',
+          submitTestId: 'auth-submit',
           inputActions: (
             <>
               <Button

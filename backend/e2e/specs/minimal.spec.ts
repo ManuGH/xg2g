@@ -1,23 +1,26 @@
 
-import { test, expect, request } from '@playwright/test';
-const fs = require('fs');
-const path = require('path');
+import { test, expect } from '@playwright/test';
 
-test.describe('E2E Harness / Fixture Wiring', () => {
+const fixtureServerUrl = 'http://127.0.0.1:3001';
 
-  // 1. Reset Fixture State
-  test.beforeAll(async ({ request }) => {
-    // Assume API available at localhost:3001
-    const response = await request.post('http://localhost:3001/__admin/scenario', {
+test.describe('WebUI browser smoke', () => {
+  test.beforeEach(async ({ request }) => {
+    const response = await request.post(`${fixtureServerUrl}/__admin/scenario`, {
       data: { id: 'minimal-boot' }
     });
     expect(response.ok()).toBeTruthy();
   });
 
-  test('Fixture Server serves capabilities', async ({ request }) => {
-    const response = await request.get('http://localhost:3001/api/v3/system/capabilities');
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body['contracts.playbackInfoDecision']).toBe('absent');
+  test('authenticates and renders the dashboard with fixture data', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    await expect(page.getByTestId('auth-surface')).toBeVisible();
+    await page.getByTestId('auth-token-input').fill('smoke-token');
+    await page.getByTestId('auth-submit').click();
+
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByTestId('dashboard-view')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Das Erste HD' })).toBeVisible();
+    await expect(page.getByText('Control summary')).toBeVisible();
   });
 });

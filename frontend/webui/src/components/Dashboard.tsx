@@ -123,7 +123,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className={`${styles.page} animate-enter`.trim()}>
+    <div className={`${styles.page} animate-enter`.trim()} data-testid="dashboard-view">
       <Card variant="action" className={[styles.summaryCard, styles[`summary${capitalize(summaryTone)}`]].join(' ')}>
         <div className={styles.summaryHeader}>
           <div className={styles.summaryIdentity}>

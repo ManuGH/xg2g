@@ -356,22 +356,15 @@ func hostSnapshotForRequest(runtimeSnapshot playbackprofile.HostRuntimeSnapshot)
 }
 
 func hostEncoderCapabilities() []capreg.EncoderCapability {
-	encoders := []struct {
-		codec   string
-		encoder string
-	}{
-		{codec: "h264", encoder: "h264_vaapi"},
-		{codec: "hevc", encoder: "hevc_vaapi"},
-		{codec: "av1", encoder: "av1_vaapi"},
-	}
-	out := make([]capreg.EncoderCapability, 0, len(encoders))
-	for _, entry := range encoders {
-		capability, ok := hardware.VAAPIEncoderCapabilityFor(entry.encoder)
+	codecs := []string{"h264", "hevc", "av1"}
+	out := make([]capreg.EncoderCapability, 0, len(codecs))
+	for _, codec := range codecs {
+		capability, _, ok := hardware.HardwareEncoderCapabilityFor(codec)
 		if !ok {
 			continue
 		}
 		out = append(out, capreg.EncoderCapability{
-			Codec:          entry.codec,
+			Codec:          codec,
 			Verified:       capability.Verified,
 			AutoEligible:   capability.AutoEligible,
 			ProbeElapsedMS: capability.ProbeElapsed.Milliseconds(),

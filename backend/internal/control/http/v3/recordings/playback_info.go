@@ -213,7 +213,7 @@ func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.P
 		return
 	}
 
-	profileSpec := profiles.Resolve(profileID, "", 0, nil, hardware.IsVAAPIReady(), profiles.HWAccelAuto)
+	profileSpec := profiles.Resolve(profileID, "", 0, nil, resolvePlaybackInfoGPUBackend(profileID), profiles.HWAccelAuto)
 	target := model.TraceTargetProfileFromProfile(profileSpec)
 	if target != nil {
 		dec.TargetProfile = target
@@ -238,6 +238,19 @@ func shouldApplyAutoCodecDecision(requestedProfile string) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+func resolvePlaybackInfoGPUBackend(profileID string) profiles.GPUBackend {
+	switch profiles.NormalizeRequestedProfileID(profileID) {
+	case profiles.ProfileAV1HW:
+		return hardware.PreferredGPUBackendForCodec("av1")
+	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
+		return hardware.PreferredGPUBackendForCodec("hevc")
+	case profiles.ProfileH264FMP4:
+		return hardware.PreferredGPUBackendForCodec("h264")
+	default:
+		return hardware.PreferredGPUBackend()
 	}
 }
 

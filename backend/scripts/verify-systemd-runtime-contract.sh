@@ -108,7 +108,10 @@ verify_helper_semantics() {
   assert_exact_line "${COMPOSE_HELPER}" "ENV_FILE=\"\${XG2G_ENV_FILE:-${CANONICAL_ENV_FILE}}\"" "compose helper env default"
   assert_exact_line "${COMPOSE_HELPER}" "BASE_FILE=\"\${ROOT}/docker-compose.yml\"" "compose helper base compose"
   assert_exact_line "${COMPOSE_HELPER}" "GPU_FILE=\"\${ROOT}/docker-compose.gpu.yml\"" "compose helper gpu overlay"
+  assert_exact_line "${COMPOSE_HELPER}" "NVIDIA_FILE=\"\${ROOT}/docker-compose.nvidia.yml\"" "compose helper nvidia overlay"
   assert_contains "${COMPOSE_HELPER}" "COMPOSE_FILE" "compose helper COMPOSE_FILE support"
+  assert_contains "${COMPOSE_HELPER}" "assert_secure_env_file" "compose helper secure env guard"
+  assert_contains "${COMPOSE_HELPER}" "build_dri_render_overlay" "compose helper render overlay materialization"
 
   assert_exact_line "${COMPOSE_CONTRACT}" "ROOT=\"${CANONICAL_ROOT}\"" "compose contract root"
   assert_exact_line "${COMPOSE_CONTRACT}" "COMPOSE_HELPER=\"\$ROOT/scripts/compose-xg2g.sh\"" "compose contract helper path"
@@ -118,10 +121,11 @@ verify_runbook_semantics() {
   assert_file "${RUNBOOK}"
 
   assert_contains "${RUNBOOK}" "Base compose file path is frozen to \`${CANONICAL_ROOT}/docker-compose.yml\`." "runbook base compose invariant"
-  assert_contains "${RUNBOOK}" "Optional GPU overlay path is \`${CANONICAL_ROOT}/docker-compose.gpu.yml\`." "runbook gpu overlay invariant"
+  assert_contains "${RUNBOOK}" "Optional hardware overlay paths are \`${CANONICAL_ROOT}/docker-compose.gpu.yml\` and \`${CANONICAL_ROOT}/docker-compose.nvidia.yml\`." "runbook hardware overlay invariant"
   assert_contains "${RUNBOOK}" "Working directory must be \`${CANONICAL_ROOT}\`." "runbook working directory invariant"
   assert_contains "${RUNBOOK}" "Use \`${CANONICAL_HELPER}\` for manual compose operations" "runbook helper invariant"
   assert_contains "${RUNBOOK}" "\`${CANONICAL_ENV_FILE}\` must be \`root:root\` and \`0600\`" "runbook env permissions"
+  assert_contains "${RUNBOOK}" "fails closed if the canonical env file is not \`root:root\` with mode \`0600\`" "runbook env fail-closed note"
   assert_contains "${RUNBOOK}" "${CANONICAL_ROOT}/scripts/verify-systemd-runtime-contract.sh" "runbook runtime contract verifier"
   assert_contains "${RUNBOOK}" "XG2G_E2_HOST" "runbook required env host"
   assert_contains "${RUNBOOK}" "XG2G_API_TOKEN" "runbook required env token"

@@ -134,11 +134,13 @@ docker run --rm <image> sh -c 'echo $XG2G_FFMPEG_BIN'
 ### FFmpeg 8.1 Configure Flags
 
 ```bash
+# Install pinned nv-codec-headers first (required for NVENC / ffnvcodec)
 --prefix=/opt/ffmpeg
 --enable-gpl
 --enable-libx264
 --enable-libx265
 --enable-vaapi
+--enable-nvenc
 --enable-protocol=hls,file,http,tcp
 --enable-demuxer=mpegts,hls
 --enable-muxer=hls,mpegts

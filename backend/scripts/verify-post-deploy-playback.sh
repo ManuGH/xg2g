@@ -7,6 +7,7 @@ CONTAINER_NAME="${XG2G_CONTAINER_NAME:-xg2g}"
 READY_TIMEOUT_SEC="${XG2G_POST_DEPLOY_READY_TIMEOUT_SEC:-60}"
 SERVICE_NAME_OVERRIDE="${XG2G_POST_DEPLOY_SERVICE_NAME:-}"
 SERVICE_REF_OVERRIDE="${XG2G_POST_DEPLOY_SERVICE_REF:-}"
+CANONICAL_ENV_FILE="/etc/xg2g/xg2g.env"
 TMPDIR_ROOT="$(mktemp -d)"
 STARTED_SESSIONS=()
 
@@ -28,6 +29,91 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
 }
 
+trim_ascii_whitespace() {
+  local value="$1"
+
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+stat_mode() {
+  local path="$1"
+
+  if stat -c '%a' "${path}" >/dev/null 2>&1; then
+    stat -c '%a' "${path}"
+    return 0
+  fi
+  stat -f '%Lp' "${path}"
+}
+
+stat_owner() {
+  local path="$1"
+
+  if stat -c '%u:%g' "${path}" >/dev/null 2>&1; then
+    stat -c '%u:%g' "${path}"
+    return 0
+  fi
+  stat -f '%u:%g' "${path}"
+}
+
+assert_secure_env_file() {
+  local path="$1"
+  local mode owner
+
+  [[ "${path}" == "${CANONICAL_ENV_FILE}" ]] || return 0
+
+  mode="$(stat_mode "${path}")"
+  [[ "${mode}" == "600" ]] || fail "insecure ${path} mode ${mode}; expected 600"
+
+  owner="$(stat_owner "${path}")"
+  [[ "${owner}" == "0:0" ]] || fail "insecure ${path} owner ${owner}; expected 0:0 (root:root)"
+}
+
+read_env_value() {
+  local env_file="$1"
+  local wanted="$2"
+  local raw line key value first_char last_char
+
+  [[ -f "${env_file}" ]] || return 1
+
+  while IFS= read -r raw || [[ -n "${raw}" ]]; do
+    line="$(trim_ascii_whitespace "${raw}")"
+    [[ -n "${line}" ]] || continue
+    [[ "${line:0:1}" == "#" ]] && continue
+
+    if [[ ! "${line}" =~ ^(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+      continue
+    fi
+
+    key="${BASH_REMATCH[2]}"
+    [[ "${key}" == "${wanted}" ]] || continue
+
+    value="$(trim_ascii_whitespace "${BASH_REMATCH[3]}")"
+    if [[ ${#value} -ge 2 ]]; then
+      first_char="${value:0:1}"
+      last_char="${value: -1}"
+      if [[ ("${first_char}" == '"' || "${first_char}" == "'") && "${last_char}" == "${first_char}" ]]; then
+        printf '%s\n' "${value:1:${#value}-2}"
+        return 0
+      fi
+    fi
+
+    if [[ "${value}" =~ ^#.*$ ]]; then
+      printf '\n'
+      return 0
+    fi
+    if [[ "${value}" =~ ^(.*[^[:space:]])[[:space:]]+#.*$ ]]; then
+      value="${BASH_REMATCH[1]}"
+    fi
+
+    printf '%s\n' "$(trim_ascii_whitespace "${value}")"
+    return 0
+  done < "${env_file}"
+
+  return 1
+}
+
 for cmd in curl jq docker awk sed grep base64; do
   need_cmd "$cmd"
 done
@@ -37,14 +123,36 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 if [[ -f "${ENV_FILE}" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  . "${ENV_FILE}"
-  set +a
+  assert_secure_env_file "${ENV_FILE}"
+  if api_token_from_file="$(read_env_value "${ENV_FILE}" XG2G_API_TOKEN 2>/dev/null)"; then
+    XG2G_API_TOKEN="${api_token_from_file}"
+  fi
+  if listen_from_file="$(read_env_value "${ENV_FILE}" XG2G_LISTEN 2>/dev/null)"; then
+    XG2G_LISTEN="${listen_from_file}"
+  fi
 fi
 
 API_TOKEN="${XG2G_API_TOKEN:-}"
 [[ -n "${API_TOKEN}" ]] || fail "XG2G_API_TOKEN is required (load ${ENV_FILE} or export it)"
+
+normalize_expected_encoder_backend() {
+  local backend="${XG2G_POST_DEPLOY_EXPECT_ENCODER_BACKEND:-auto}"
+  backend="${backend,,}"
+
+  case "${backend}" in
+    ""|auto)
+      printf 'auto'
+      ;;
+    vaapi|nvenc)
+      printf '%s' "${backend}"
+      ;;
+    *)
+      fail "invalid XG2G_POST_DEPLOY_EXPECT_ENCODER_BACKEND=${backend} (expected auto, vaapi, or nvenc)"
+      ;;
+  esac
+}
+
+EXPECTED_ENCODER_BACKEND="$(normalize_expected_encoder_backend)"
 
 resolve_api_origin() {
   local listen="${1:-127.0.0.1:8088}"
@@ -284,8 +392,9 @@ verify_direct_live_hls() {
   echo "✅ Live HLS tokenized manifest OK (${sid}, ${SERVICE_NAME})"
 }
 
-verify_hw_transcode_vaapi() {
-  local caps info_body token cap_hash start_body sid session_json request_id intent_request_id log_line ffmpeg_line
+verify_hw_transcode_gpu() {
+  local caps info_body token cap_hash start_body sid session_json request_id intent_request_id intent_log_line
+  local pipeline_log_line ffmpeg_line encoder_backend expected_video_encoder pipeline_pattern
 
   caps="$(jq -nc '{
     capabilitiesVersion: 2,
@@ -334,24 +443,49 @@ verify_hw_transcode_vaapi() {
   request_id="$(printf '%s' "${session_json}" | jq -r '.requestId // empty')"
   sleep 2
 
-  log_line="$(docker logs --since 5m "${CONTAINER_NAME}" 2>&1 | grep -F "${intent_request_id}" | grep 'intent profile resolved' | tail -n1 || true)"
-  [[ -n "${log_line}" ]] || fail "missing intent profile resolved log for request ${intent_request_id}"
-  printf '%s\n' "${log_line}" | grep -q '"gpu_available":true' || fail "intent log missing gpu_available=true"
-  printf '%s\n' "${log_line}" | grep -q '"hwaccel_effective":"gpu"' || fail "intent log missing hwaccel_effective=gpu"
-  printf '%s\n' "${log_line}" | grep -q '"encoder_backend":"vaapi"' || fail "intent log missing encoder_backend=vaapi"
+  intent_log_line="$(docker logs --since 5m "${CONTAINER_NAME}" 2>&1 | grep -F "${intent_request_id}" | grep 'intent profile resolved' | tail -n1 || true)"
+  [[ -n "${intent_log_line}" ]] || fail "missing intent profile resolved log for request ${intent_request_id}"
+  printf '%s\n' "${intent_log_line}" | grep -q '"gpu_available":true' || fail "intent log missing gpu_available=true"
+  printf '%s\n' "${intent_log_line}" | grep -q '"hwaccel_effective":"gpu"' || fail "intent log missing hwaccel_effective=gpu"
+  encoder_backend="$(printf '%s\n' "${intent_log_line}" | jq -r '.encoder_backend // empty')"
+  case "${encoder_backend}" in
+    vaapi)
+      expected_video_encoder="h264_vaapi"
+      pipeline_pattern='pipeline video: vaapi'
+      ;;
+    nvenc)
+      expected_video_encoder="h264_nvenc"
+      pipeline_pattern='pipeline video: nvenc'
+      ;;
+    *)
+      fail "intent log reported unexpected encoder_backend=${encoder_backend:-empty}"
+      ;;
+  esac
+  if [[ "${EXPECTED_ENCODER_BACKEND}" != "auto" && "${encoder_backend}" != "${EXPECTED_ENCODER_BACKEND}" ]]; then
+    fail "intent log selected encoder_backend=${encoder_backend}, expected ${EXPECTED_ENCODER_BACKEND}"
+  fi
 
-  log_line="$(docker logs --since 5m "${CONTAINER_NAME}" 2>&1 | grep -F "\"sessionId\":\"${sid}\"" | grep 'pipeline video: vaapi' | tail -n1 || true)"
-  [[ -n "${log_line}" ]] || fail "missing pipeline video: vaapi log for session ${sid}"
+  pipeline_log_line="$(docker logs --since 5m "${CONTAINER_NAME}" 2>&1 | grep -F "\"sessionId\":\"${sid}\"" | grep "${pipeline_pattern}" | tail -n1 || true)"
+  [[ -n "${pipeline_log_line}" ]] || fail "missing ${pipeline_pattern} log for session ${sid}"
 
   ffmpeg_line="$(docker top "${CONTAINER_NAME}" -eo pid,args | grep -F "${sid}" | grep -F '/opt/ffmpeg/bin/ffmpeg' | tail -n1 || true)"
   [[ -n "${ffmpeg_line}" ]] || fail "missing ffmpeg process line for session ${sid}"
-  printf '%s\n' "${ffmpeg_line}" | grep -q -- '-vaapi_device /dev/dri/renderD128' || fail "ffmpeg line missing -vaapi_device"
-  printf '%s\n' "${ffmpeg_line}" | grep -q -- '-c:v h264_vaapi' || fail "ffmpeg line missing h264_vaapi"
-  if printf '%s\n' "${log_line}" | grep -q '"deinterlace":true'; then
-    printf '%s\n' "${ffmpeg_line}" | grep -q -- 'deinterlace_vaapi' || fail "ffmpeg line missing deinterlace_vaapi despite deinterlace=true"
+  printf '%s\n' "${ffmpeg_line}" | grep -q -- "-c:v ${expected_video_encoder}" || fail "ffmpeg line missing ${expected_video_encoder}"
+  case "${encoder_backend}" in
+    vaapi)
+      printf '%s\n' "${ffmpeg_line}" | grep -Eq -- '-vaapi_device /dev/dri/renderD[0-9]+' || fail "ffmpeg line missing -vaapi_device /dev/dri/renderD*"
+      ;;
+    nvenc)
+      if printf '%s\n' "${ffmpeg_line}" | grep -q -- '-vaapi_device '; then
+        fail "nvenc ffmpeg line unexpectedly contains -vaapi_device"
+      fi
+      ;;
+  esac
+  if printf '%s\n' "${pipeline_log_line}" | grep -q '"deinterlace":true'; then
+    printf '%s\n' "${ffmpeg_line}" | grep -Eq -- 'deinterlace_vaapi|yadif|bwdif=mode=send_field:parity=auto:deint=all' || fail "ffmpeg line missing expected deinterlace filter despite deinterlace=true"
   fi
 
-  echo "✅ Forced VAAPI transcode OK (${sid}, request ${request_id:-unknown})"
+  echo "✅ Forced ${encoder_backend^^} transcode OK (${sid}, request ${request_id:-unknown})"
 }
 
 echo "== Post-deploy playback verifier =="
@@ -362,6 +496,6 @@ docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}
   | grep -q '^running healthy$' || fail "container ${CONTAINER_NAME} is not running healthy"
 
 verify_direct_live_hls
-verify_hw_transcode_vaapi
+verify_hw_transcode_gpu
 
 echo "OK: post-deploy playback verifier passed."

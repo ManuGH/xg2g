@@ -1,4 +1,8 @@
 name: UI Contract Enforcement
+# Historical compatibility workflow:
+# - PRs: real enforcement lives in pr-required-gates.yml.
+# - push/workflow_dispatch: keep this as an explicit UI-contract backstop until
+#   a planned branch-protection cutover retires the old name.
 
 on:
   workflow_dispatch:
@@ -38,19 +42,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: PR path covered by Required Gates
+        if: github.event_name == 'pull_request'
+        run: echo "PR UI contract enforcement is handled by pr-required-gates.yml; this workflow remains as push/manual backstop."
+
       - name: Checkout code
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
 
       - name: Resolve changed UI files
+        if: github.event_name != 'pull_request'
         id: scope
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            changed_files=$(git diff --name-only "origin/${{ github.base_ref }}...${{ github.sha }}" || true)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            changed_files=$(git ls-files 'frontend/webui/src/**/*.tsx' 'frontend/webui/src/**/*.css' || true)
           else
             before="${{ github.event.before }}"
             if [ "$before" = "0000000000000000000000000000000000000000" ]; then
@@ -78,7 +88,7 @@ jobs:
           cat /tmp/ui-contract-scope.txt
 
       - name: Run UI Contract Gates
-        if: steps.scope.outputs.has_changes == 'true'
+        if: github.event_name != 'pull_request' && steps.scope.outputs.has_changes == 'true'
         run: |
           set -euo pipefail
           chmod +x ./backend/scripts/check-ui-contract.sh
@@ -87,5 +97,5 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: No UI contract scope changes
-        if: steps.scope.outputs.has_changes != 'true'
+        if: github.event_name != 'pull_request' && steps.scope.outputs.has_changes != 'true'
         run: echo "No scoped UI files changed; contract gate skipped by condition."

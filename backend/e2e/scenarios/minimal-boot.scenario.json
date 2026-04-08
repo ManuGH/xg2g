@@ -1,7 +1,7 @@
 {
   "meta": {
     "id": "minimal-boot",
-    "description": "Minimal scenario to verify E2E harness wiring."
+    "description": "Minimal authenticated dashboard boot for browser smoke."
   },
   "capabilities": {
     "contracts.playbackInfoDecision": "absent"
@@ -14,6 +14,153 @@
         "status": 200,
         "body": {
           "contracts.playbackInfoDecision": "absent"
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/errors",
+      "response": {
+        "status": 200,
+        "body": {
+          "items": []
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/system/config",
+      "response": {
+        "status": 200,
+        "body": {
+          "openWebIF": {
+            "baseUrl": "http://receiver.local",
+            "streamPort": 8001
+          }
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/household/profiles",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "id": "household-default",
+            "name": "Household",
+            "kind": "adult",
+            "maxFsk": null,
+            "allowedBouquets": [],
+            "allowedServiceRefs": [],
+            "favoriteServiceRefs": [],
+            "permissions": {
+              "dvrPlayback": true,
+              "dvrManage": true,
+              "settings": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/household/unlock",
+      "response": {
+        "status": 200,
+        "body": {
+          "pinConfigured": false,
+          "unlocked": false
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/services/bouquets",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "name": "Favorites",
+            "services": 1
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/services?bouquet=Favorites",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "id": "srv-ard-hd",
+            "name": "Das Erste HD",
+            "group": "Favorites",
+            "enabled": true,
+            "serviceRef": "1:0:1:6DCA:44D:1:C00000:0:0:0:"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/system/health",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "receiver": {
+            "status": "ok",
+            "lastCheck": "2026-04-08T10:00:00Z"
+          },
+          "epg": {
+            "status": "ok",
+            "missingChannels": 0
+          },
+          "version": "v3.0.0",
+          "uptimeSeconds": 3600
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/receiver/current",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "channel": {
+            "name": "Das Erste HD",
+            "ref": "1:0:1:6DCA:44D:1:C00000:0:0:0:"
+          },
+          "now": {
+            "title": "Tagesschau",
+            "description": "Fixture-driven dashboard smoke run",
+            "beginTimestamp": 1775641200,
+            "durationSec": 1800
+          },
+          "next": {
+            "title": "Brennpunkt"
+          }
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/streams",
+      "response": {
+        "status": 200,
+        "body": []
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/dvr/status",
+      "response": {
+        "status": 200,
+        "body": {
+          "isRecording": false
         }
       }
     }

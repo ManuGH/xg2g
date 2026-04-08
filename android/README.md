@@ -67,6 +67,12 @@ server and permits cleartext `http://10.0.2.2/...` URLs when needed.
 Typical local flow:
 
 ```bash
+make dev-ui
+```
+
+Advanced two-terminal variant:
+
+```bash
 make backend-dev-ui
 make webui-dev
 ```

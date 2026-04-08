@@ -107,7 +107,7 @@ The following files still have violations - they are **not part of this PR** and
 - `Settings.css`, `Recordings.css`, `V3Player.css`: Rogue animations
 - `App.css`: Custom shadows/gradients
 
-**Mitigation:** GitHub Action blocks only Dashboard + Primitives (see `.github/workflows/ui-contract.yml`)
+**Mitigation:** PR-time UI contract enforcement now runs through `.github/workflows/pr-required-gates.yml`; `.github/workflows/ui-contract.yml` remains only as a push/manual compatibility backstop.
 
 ---
 
@@ -123,9 +123,9 @@ Automated mechanical gates:
 4. Gradient discipline (no hardcoded gradients)
 5. Inline style check (warning only)
 
-### GitHub Action: `.github/workflows/ui-contract.yml`
+### GitHub Action: `.github/workflows/pr-required-gates.yml`
 
-- Runs on all PRs touching `frontend/webui/src/components/Dashboard.*` or `frontend/webui/src/components/ui/*`
+- Runs on PRs with relevant `frontend/webui` changes
 - Blocks merge if gates fail
 - Scoped to refactored files only (legacy files allowed to fail)
 

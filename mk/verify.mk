@@ -86,7 +86,9 @@ gate-a: ## Gate A: Control Layer Store Purity
 gate-webui: ## Gate B: Thin-Client Audit
 	@./$(BACKEND_DIR)/scripts/ci_gate_webui_audit.sh
 
-gate-repo-hygiene: ## Gate C: Repository Hygiene
+gate-repo-hygiene: ## Local wrapper for repository health checks; GitHub repo-health.yml is authoritative
+	@./$(BACKEND_DIR)/scripts/ci/check-large-files.sh
+	@./$(BACKEND_DIR)/scripts/ci/check-test-assets-location.sh
 	@./$(BACKEND_DIR)/scripts/ci_gate_repo_hygiene.sh
 
 gate-v3-contract: bootstrap-python-tools ## Gate V3: OpenAPI v3 Contract Governance

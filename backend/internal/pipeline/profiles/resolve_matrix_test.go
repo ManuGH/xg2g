@@ -139,7 +139,7 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			spec := Resolve(tc.requestedProfile, userAgentForClientFixture(t, tc.clientFixture), 0, tc.cap, tc.hasGPU, tc.hwaccelMode)
+			spec := Resolve(tc.requestedProfile, userAgentForClientFixture(t, tc.clientFixture), 0, tc.cap, testGPUBackend(tc.hasGPU), tc.hwaccelMode)
 
 			assert.Equal(t, tc.wantInternalProfile, spec.Name)
 			assert.Equal(t, tc.wantPublicProfile, PublicProfileName(spec.Name))

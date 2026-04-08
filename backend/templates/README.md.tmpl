@@ -87,6 +87,21 @@ Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 [Architecture](docs/arch/ARCHITECTURE.md) •
 [ADRs](docs/ADR/)
 
+**Local development:**
+
+```bash
+make install
+make dev-tools
+make start
+```
+
+Optional host bootstrap: `mise install` uses [mise.toml](mise.toml) to install
+the pinned Go and Node versions. Optional containerized bootstrap: reopen the
+repo in [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json).
+
+Then switch to `make start-gpu`, `make start-nvidia`, or `make dev-ui` only
+when you explicitly need a hardware-specific container path or frontend HMR.
+
 ## Status
 
 | Component | Status | Guarantee |

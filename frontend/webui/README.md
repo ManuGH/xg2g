@@ -11,28 +11,34 @@ Web frontend for xg2g (`/ui/`) built with React + TypeScript + Vite.
 ## Quick Start
 
 ```bash
-cd frontend/webui
-npm ci
-npm run dev
+make install
+make dev-ui
 ```
 
-Open: `http://localhost:5173/ui/`
+Open: `http://localhost:8080/ui/`
 
 ## Fast Local UI Iteration
 
 For backend + UI development without rebuilding the production container image:
 
+`make install` ensures `.env` exists, generates a local playback decision
+secret, and installs `frontend/webui` dependencies.
+
+`make doctor` is available when you want a standalone workspace check before
+starting the dev path.
+
+If you want the advanced two-terminal variant:
+
 ```bash
-make backend-dev-ui   # backend on http://localhost:8080 with -tags=dev
-make webui-dev        # Vite with HMR on http://localhost:5173
+make backend-dev-ui
+make webui-dev
 ```
 
-Then open `http://localhost:8080/ui/`.
-
-One-command variant:
+If you want raw Vite only:
 
 ```bash
-make dev-ui
+cd frontend/webui
+npm run dev
 ```
 
 Useful overrides:

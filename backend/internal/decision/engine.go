@@ -300,11 +300,11 @@ func normalizedTokens(values []string) []string {
 func canonicalCodec(raw string) string {
 	v := normalizeToken(raw)
 	switch v {
-	case "h264", "avc", "avc1", "libx264", "h264_vaapi":
+	case "h264", "avc", "avc1", "libx264", "h264_vaapi", "h264_nvenc":
 		return "h264"
-	case "hevc", "h265", "h.265", "libx265", "hevc_vaapi":
+	case "hevc", "h265", "h.265", "libx265", "hevc_vaapi", "hevc_nvenc":
 		return "hevc"
-	case "av1", "av01", "av1_vaapi", "libsvtav1", "libaom-av1":
+	case "av1", "av01", "av1_vaapi", "av1_nvenc", "libsvtav1", "libaom-av1":
 		return "av1"
 	default:
 		return v

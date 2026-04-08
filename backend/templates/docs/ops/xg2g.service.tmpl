@@ -8,8 +8,9 @@ Requires=docker.service
 
 # Truth model: systemd orchestrates Compose only; Docker is runtime truth.
 # Base compose path is frozen to /srv/xg2g/docker-compose.yml.
-# Optional GPU overlay lives at /srv/xg2g/docker-compose.gpu.yml and is loaded
-# by compose-xg2g.sh when present (or via COMPOSE_FILE in /etc/xg2g/xg2g.env).
+# Optional hardware overlays live at /srv/xg2g/docker-compose.gpu.yml and
+# /srv/xg2g/docker-compose.nvidia.yml and are auto-loaded by compose-xg2g.sh
+# when present (or explicitly selected via COMPOSE_FILE in /etc/xg2g/xg2g.env).
 
 # Fail fast if working dir / compose file missing
 ConditionPathIsDirectory=/srv/xg2g
