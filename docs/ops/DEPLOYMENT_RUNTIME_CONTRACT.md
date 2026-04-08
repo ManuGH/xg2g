@@ -60,6 +60,10 @@
 - Mid-build crash → `StateFailed` + `ReasonCrash` + Cleanup
 - **Policy**: No build tools (curl, git, gcc) in final stage. Minimal
   packages for VAAPI/FFmpeg only.
+- **Architecture Truth**: `amd64` images include Intel iHD userspace
+  (`intel-media-va-driver`) plus Mesa VAAPI drivers. `arm64` images intentionally
+  omit Intel userspace because Debian trixie does not ship that package there;
+  they keep the generic VAAPI libs and Mesa path only.
 - **Never** leave partial artifacts
 
 ## 3. Runtime Contract (Docker + Host)

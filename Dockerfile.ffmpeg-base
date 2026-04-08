@@ -23,20 +23,27 @@ RUN ./build-ffmpeg.sh
 
 FROM debian:trixie-slim AS ffmpeg-runtime-base
 
+ARG TARGETARCH
+
 ENV DEBIAN_FRONTEND=noninteractive \
     XG2G_LISTEN=":8088" \
     FFMPEG_HOME="/opt/ffmpeg" \
     XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg" \
     XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"
 
+# Intel's iHD userspace is only shipped for x86_64-class Debian targets. Keep the
+# runtime truth explicit: amd64 gets Intel + Mesa VAAPI drivers; arm64 gets the
+# generic VAAPI libs and Mesa path without pretending Intel userspace exists there.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    intel-media-va-driver \
     mesa-va-drivers \
     libva-drm2 \
     libva2 \
     libx264-164 \
     libx265-215 \
+    && if [ "${TARGETARCH}" = "amd64" ]; then \
+        apt-get install -y --no-install-recommends intel-media-va-driver; \
+      fi \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 

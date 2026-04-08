@@ -14,7 +14,6 @@ package hardware
 
 import (
 	"os"
-	"strings"
 	"sync"
 	"time"
 )
@@ -286,17 +285,4 @@ func RecordNVENCRuntimeFailure() (failures int, demoted bool) {
 	nvencEncCaps = map[string]HardwareEncoderCapability{}
 	nvencEncMu.Unlock()
 	return failures, true
-}
-
-func codecNameForEncoder(encoder string) string {
-	switch strings.ToLower(strings.TrimSpace(encoder)) {
-	case "h264_vaapi", "h264_nvenc":
-		return "h264"
-	case "hevc_vaapi", "hevc_nvenc":
-		return "hevc"
-	case "av1_vaapi", "av1_nvenc":
-		return "av1"
-	default:
-		return ""
-	}
 }

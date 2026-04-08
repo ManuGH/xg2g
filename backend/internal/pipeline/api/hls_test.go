@@ -174,6 +174,84 @@ func TestTouchPlaylistAccessTime_ThrottlesRepeatedPlaylistTouch(t *testing.T) {
 	require.True(t, store.Session.LastPlaylistAccessAt.Equal(now))
 }
 
+func TestValidateRequest_AllowsOnlyKnownHLSArtifacts(t *testing.T) {
+	tests := []struct {
+		name      string
+		sessionID string
+		filename  string
+		ok        bool
+	}{
+		{
+			name:      "playlist index",
+			sessionID: "safe_session-1",
+			filename:  "index.m3u8",
+			ok:        true,
+		},
+		{
+			name:      "playlist stream",
+			sessionID: "safe_session-1",
+			filename:  "stream.m3u8",
+			ok:        true,
+		},
+		{
+			name:      "transport stream segment",
+			sessionID: "safe_session-1",
+			filename:  "seg_000000.ts",
+			ok:        true,
+		},
+		{
+			name:      "fmp4 segment",
+			sessionID: "safe_session-1",
+			filename:  "seg_000001.m4s",
+			ok:        true,
+		},
+		{
+			name:      "legacy segment",
+			sessionID: "safe_session-1",
+			filename:  "stream0.ts",
+			ok:        true,
+		},
+		{
+			name:      "init segment",
+			sessionID: "safe_session-1",
+			filename:  "init.mp4",
+			ok:        true,
+		},
+		{
+			name:      "reject invalid session id",
+			sessionID: "../unsafe",
+			filename:  "index.m3u8",
+			ok:        false,
+		},
+		{
+			name:      "reject path traversal filename",
+			sessionID: "safe_session-1",
+			filename:  "../seg_000000.ts",
+			ok:        false,
+		},
+		{
+			name:      "reject unexpected extension",
+			sessionID: "safe_session-1",
+			filename:  "seg_000000.txt",
+			ok:        false,
+		},
+		{
+			name:      "reject legacy wildcard name",
+			sessionID: "safe_session-1",
+			filename:  "stream../../evil.ts",
+			ok:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			_, ok := validateRequest(w, tt.sessionID, tt.filename)
+			require.Equal(t, tt.ok, ok)
+		})
+	}
+}
+
 func TestServeHLS_DVRWithStartTag(t *testing.T) {
 	// Setup temp directory
 	tmpDir := t.TempDir()

@@ -51,6 +51,13 @@ assert_contains() {
   grep -Fq -- "${needle}" "${file}" || fail "${label}: expected '${needle}' in ${file}"
 }
 
+assert_matches() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+  grep -Eq -- "${pattern}" "${file}" || fail "${label}: expected pattern '${pattern}' in ${file}"
+}
+
 assert_not_contains() {
   local file="$1"
   local needle="$2"
@@ -151,7 +158,7 @@ verify_release_workflow_contract() {
 
   assert_contains "${RELEASE_WORKFLOW}" 'tags:' "release workflow trigger"
   assert_contains "${RELEASE_WORKFLOW}" '- "v*"' "release workflow tag trigger"
-  assert_contains "${RELEASE_WORKFLOW}" 'goreleaser/goreleaser-action@v7' "release workflow goreleaser action"
+  assert_matches "${RELEASE_WORKFLOW}" 'goreleaser/goreleaser-action@([[:xdigit:]]{40}|v7)([[:space:]]*#.*v7)?' "release workflow goreleaser action"
   assert_contains "${RELEASE_WORKFLOW}" 'args: release --clean' "release workflow goreleaser args"
   assert_contains "${RELEASE_WORKFLOW}" 'Verify FFmpeg base image availability' "release workflow ffmpeg base gate"
   assert_contains "${RELEASE_WORKFLOW}" 'docker/login-action@' "release workflow ghcr login"
@@ -274,7 +281,7 @@ assert_release_bundle_dir() {
   actual_checksums="${tmpdir}/actual-checksums.txt"
   expected_archives="${tmpdir}/expected-archives.txt"
 
-  find "${bundle_dir}" -maxdepth 1 -mindepth 1 -type f -printf '%f\n' | LC_ALL=C sort > "${actual_files}"
+  find "${bundle_dir}" -maxdepth 1 -mindepth 1 -type f -exec basename '{}' ';' | LC_ALL=C sort > "${actual_files}"
   expected_bundle_files "${version}" | LC_ALL=C sort > "${expected_files}"
   compare_exact_file_set "${actual_files}" "${expected_files}"
 

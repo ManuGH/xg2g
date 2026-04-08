@@ -76,7 +76,7 @@ describe('V3Player Safari Logic', () => {
     vi.restoreAllMocks();
   });
 
-  it('prefers native HLS on desktop Safari when WebKit playback controls are available', () => {
+  it('prefers hls.js on desktop Safari when WebKit playback controls are available', () => {
     // Simulate Safari
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15');
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
@@ -98,10 +98,9 @@ describe('V3Player Safari Logic', () => {
       return el;
     });
 
-    const { container } = render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+    render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
-    expect(Hls).not.toHaveBeenCalled();
-    expect(container.querySelector('video')?.getAttribute('src')).toBe('http://example.com/playlist.m3u8');
+    expect(Hls).toHaveBeenCalledTimes(1);
   });
 
   it('should initialize HLS.js on Chrome (Non-Safari)', () => {
@@ -148,7 +147,7 @@ describe('V3Player Safari Logic', () => {
     expect(Hls).not.toHaveBeenCalled();
   });
 
-  it('uses container fullscreen by default on desktop Safari and keeps native fullscreen as a separate action', async () => {
+  it('uses container fullscreen by default on desktop Safari when hls.js stays active', async () => {
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15');
 
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
@@ -169,15 +168,13 @@ describe('V3Player Safari Logic', () => {
     render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
     await waitFor(() => {
-      expect(Hls).not.toHaveBeenCalled();
+      expect(Hls).toHaveBeenCalledTimes(1);
     });
 
     fireEvent.click(await screen.findByRole('button', { name: /fullscreen/i }));
     expect(requestFullscreen).toHaveBeenCalledTimes(1);
     expect(webkitEnterFullscreen).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: /native/i }));
-    expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /native/i })).not.toBeInTheDocument();
   });
 
   it('prefers native HLS on mobile WebKit when native fullscreen controls are available', () => {

@@ -553,10 +553,6 @@ func deriveHardwareEncoderCapabilities(samples map[string]time.Duration, hevcRat
 	return caps
 }
 
-func selectVAAPIAutoBaseline(samples map[string]time.Duration) (time.Duration, bool) {
-	return selectHardwareAutoBaseline(samples)
-}
-
 func selectHardwareAutoBaseline(samples map[string]time.Duration) (time.Duration, bool) {
 	for _, key := range []string{"h264_vaapi", "h264_nvenc"} {
 		if elapsed, ok := samples[key]; ok && elapsed > 0 {

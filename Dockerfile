@@ -30,6 +30,8 @@ RUN ./build-ffmpeg.sh
 # Stage 1b: Runtime base with FFmpeg and VAAPI dependencies.
 FROM debian:trixie-slim AS ffmpeg-runtime-base-internal
 
+ARG TARGETARCH
+
 # Set production runtime defaults shared by release and local base images.
 ENV DEBIAN_FRONTEND=noninteractive \
     XG2G_LISTEN=":8088" \
@@ -38,16 +40,19 @@ ENV DEBIAN_FRONTEND=noninteractive \
     XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"
 
 # Install minimal runtime dependencies for FFmpeg and VAAPI.
-# Include both Intel (iHD) and AMD/older-Intel (Mesa radeonsi/i965) VA-API drivers
-# so the image works regardless of GPU vendor.
+# Intel iHD userspace is only shipped for x86_64-class Debian targets, so keep
+# the multi-arch truth explicit: amd64 gets Intel + Mesa; arm64 keeps the
+# generic VAAPI libs and Mesa path without a fake Intel package dependency.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    intel-media-va-driver \
     mesa-va-drivers \
     libva-drm2 \
     libva2 \
     libx264-164 \
     libx265-215 \
+    && if [ "${TARGETARCH}" = "amd64" ]; then \
+        apt-get install -y --no-install-recommends intel-media-va-driver; \
+      fi \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 

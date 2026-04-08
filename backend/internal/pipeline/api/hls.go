@@ -36,6 +36,9 @@ const (
 )
 
 var pdtRe = regexp.MustCompile(`^#EXT-X-PROGRAM-DATE-TIME:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(Z|[+-]\d{4})\s*$`)
+var safeHLSSessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var safeHLSSegmentRe = regexp.MustCompile(`^seg_[A-Za-z0-9_-]+\.(?:ts|m4s)$`)
+var safeHLSLegacySegmentRe = regexp.MustCompile(`^stream[A-Za-z0-9_-]*\.ts$`)
 
 func preferredLiveStartOffsetSeconds(content []byte) int {
 	const (
@@ -120,16 +123,24 @@ func validateRequest(w http.ResponseWriter, sessionID, filename string) (hlsRequ
 		http.Error(w, "invalid filename path", http.StatusBadRequest)
 		return hlsRequest{}, false
 	}
-	if !model.IsSafeSessionID(sessionID) {
+	// Keep the path-component allowlist local so static analyzers can see that both
+	// URL params are constrained before they ever participate in path construction.
+	if !safeHLSSessionIDRe.MatchString(sessionID) || !model.IsSafeSessionID(sessionID) {
 		http.Error(w, "invalid session id", http.StatusBadRequest)
 		return hlsRequest{}, false
 	}
 
 	req.cleanName = cleanName
-	req.isPlaylist = filename == "index.m3u8" || filename == "stream.m3u8"
-	req.isSegment = strings.HasPrefix(filename, "seg_") && (strings.HasSuffix(filename, ".ts") || strings.HasSuffix(filename, ".m4s"))
-	req.isLegacySegment = strings.HasPrefix(filename, "stream") && strings.HasSuffix(filename, ".ts")
-	req.isInit = filename == "init.mp4"
+	switch {
+	case filename == "index.m3u8" || filename == "stream.m3u8":
+		req.isPlaylist = true
+	case safeHLSSegmentRe.MatchString(filename):
+		req.isSegment = true
+	case safeHLSLegacySegmentRe.MatchString(filename):
+		req.isLegacySegment = true
+	case filename == "init.mp4":
+		req.isInit = true
+	}
 
 	if !req.isPlaylist && !req.isSegment && !req.isLegacySegment && !req.isInit {
 		http.Error(w, "file type not allowed", http.StatusForbidden)
