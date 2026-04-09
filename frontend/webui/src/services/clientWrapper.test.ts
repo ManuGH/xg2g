@@ -56,9 +56,40 @@ describe('client-ts wrapper error mapping', () => {
     expect(mapApiError(problem)).toEqual({
       status: 409,
       code: 'LEASE_BUSY',
+      type: 'about:blank',
       title: 'Lease busy',
       detail: 'Stream lease already in use',
       requestId: 'req-409'
+    });
+  });
+
+  it('preserves stable live truth problem fields from RFC7807 responses', () => {
+    const problem = {
+      type: '/problems/live/partial_truth',
+      title: 'Live media truth incomplete',
+      status: 503,
+      requestId: 'req-live',
+      code: 'UNAVAILABLE',
+      detail: 'Live media truth is incomplete',
+      retryAfterSeconds: 5,
+      truthState: 'partial',
+      truthReason: 'partial_scan_truth',
+      truthOrigin: 'live_unverified',
+      problemFlags: ['live_truth_unverified', 'partial_scan_truth']
+    };
+
+    expect(mapApiError(problem)).toEqual({
+      status: 503,
+      code: 'UNAVAILABLE',
+      type: '/problems/live/partial_truth',
+      title: 'Live media truth incomplete',
+      detail: 'Live media truth is incomplete',
+      requestId: 'req-live',
+      retryAfterSeconds: 5,
+      truthState: 'partial',
+      truthReason: 'partial_scan_truth',
+      truthOrigin: 'live_unverified',
+      problemFlags: ['live_truth_unverified', 'partial_scan_truth']
     });
   });
 

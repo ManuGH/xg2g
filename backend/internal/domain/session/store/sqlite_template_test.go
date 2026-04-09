@@ -51,7 +51,9 @@ func TestSqliteStore_CRUD_Roundtrip_INV_SQLITE_001(t *testing.T) {
 		Profile:            model.ProfileSpec{Name: "test-profile"},
 		State:              model.SessionNew,
 		PipelineState:      model.PipeInit,
-		Reason:             model.RNone,
+		Reason:             model.RInternalInvariantBreach,
+		ReasonDetailCode:   model.DInternalInvariantBreach,
+		ReasonDetailDebug:  "crud-roundtrip-debug",
 		CorrelationID:      "corr-001",
 		CreatedAtUnix:      1000,
 		UpdatedAtUnix:      1000,
@@ -89,10 +91,21 @@ func TestSqliteStore_CRUD_Roundtrip_INV_SQLITE_001(t *testing.T) {
 	if retrieved.CreatedAtUnix != session.CreatedAtUnix {
 		t.Errorf("CreatedAtUnix mismatch: got %d, want %d", retrieved.CreatedAtUnix, session.CreatedAtUnix)
 	}
+	if retrieved.Reason != session.Reason {
+		t.Errorf("Reason mismatch: got %q, want %q", retrieved.Reason, session.Reason)
+	}
+	if retrieved.ReasonDetailCode != session.ReasonDetailCode {
+		t.Errorf("ReasonDetailCode mismatch: got %q, want %q", retrieved.ReasonDetailCode, session.ReasonDetailCode)
+	}
+	if retrieved.ReasonDetailDebug != session.ReasonDetailDebug {
+		t.Errorf("ReasonDetailDebug mismatch: got %q, want %q", retrieved.ReasonDetailDebug, session.ReasonDetailDebug)
+	}
 
 	// 3. UPDATE: Modify session via UpdateSession
 	updated, err := store.UpdateSession(ctx, "sess-crud-001", func(s *model.SessionRecord) error {
 		s.State = model.SessionReady
+		s.ReasonDetailCode = model.DTranscodeStalled
+		s.ReasonDetailDebug = "crud-roundtrip-updated"
 		return nil
 	})
 	if err != nil {
@@ -100,6 +113,12 @@ func TestSqliteStore_CRUD_Roundtrip_INV_SQLITE_001(t *testing.T) {
 	}
 	if updated.State != model.SessionReady {
 		t.Errorf("UpdateSession state mismatch: got %q, want %q", updated.State, model.SessionReady)
+	}
+	if updated.ReasonDetailCode != model.DTranscodeStalled {
+		t.Errorf("UpdateSession reason detail code mismatch: got %q, want %q", updated.ReasonDetailCode, model.DTranscodeStalled)
+	}
+	if updated.ReasonDetailDebug != "crud-roundtrip-updated" {
+		t.Errorf("UpdateSession reason detail debug mismatch: got %q", updated.ReasonDetailDebug)
 	}
 	// Note: UpdatedAtUnix is set automatically by UpdateSession to time.Now()
 
@@ -131,15 +150,25 @@ func TestSqliteStore_ListSessions_DeterministicOrder_INV_SQLITE_002(t *testing.T
 
 	ctx := context.Background()
 
-	// Insert sessions in random order
-	sessions := []string{"sess-003", "sess-001", "sess-005", "sess-002", "sess-004"}
-	for i, sid := range sessions {
+	sessions := []struct {
+		id      string
+		created int64
+		updated int64
+	}{
+		{id: "sess-zeta", created: 100, updated: 400},
+		{id: "sess-alpha", created: 100, updated: 400},
+		{id: "sess-theta", created: 200, updated: 300},
+		{id: "sess-beta", created: 200, updated: 300},
+		{id: "sess-delta", created: 10, updated: 0},
+	}
+	for _, session := range sessions {
 		if err := store.PutSession(ctx, &model.SessionRecord{
-			SessionID:     sid,
+			SessionID:     session.id,
 			State:         model.SessionNew,
-			CreatedAtUnix: int64(i * 100),
+			CreatedAtUnix: session.created,
+			UpdatedAtUnix: session.updated,
 		}); err != nil {
-			t.Fatalf("PutSession(%s) failed: %v", sid, err)
+			t.Fatalf("PutSession(%s) failed: %v", session.id, err)
 		}
 	}
 
@@ -160,11 +189,13 @@ func TestSqliteStore_ListSessions_DeterministicOrder_INV_SQLITE_002(t *testing.T
 		t.Fatalf("ListSessions length mismatch: first=%d, second=%d", len(list1), len(list2))
 	}
 
-	// Verify deterministic order
-	for i := range list1 {
-		if list1[i].SessionID != list2[i].SessionID {
-			t.Errorf("ListSessions order mismatch at index %d: first=%s, second=%s",
-				i, list1[i].SessionID, list2[i].SessionID)
+	expected := []string{"sess-alpha", "sess-zeta", "sess-beta", "sess-theta", "sess-delta"}
+	for i := range expected {
+		if list1[i].SessionID != expected[i] {
+			t.Errorf("ListSessions order mismatch at index %d: got=%s, want=%s", i, list1[i].SessionID, expected[i])
+		}
+		if list2[i].SessionID != expected[i] {
+			t.Errorf("ListSessions second read order mismatch at index %d: got=%s, want=%s", i, list2[i].SessionID, expected[i])
 		}
 	}
 }
@@ -390,79 +421,80 @@ func TestSqliteStore_Schema_TablesExist_INV_SQLITE_007(t *testing.T) {
 func TestSqliteStore_WAL_ConcurrentReaders_INV_SQLITE_008(t *testing.T) {
 	t.Parallel()
 	dbPath := filepath.Join(t.TempDir(), "wal_readers.db")
-	store, err := NewSqliteStore(dbPath)
+	writerStore, err := NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("NewSqliteStore failed: %v", err)
 	}
-	defer store.Close()
+	defer writerStore.Close()
+	readerStore, err := NewSqliteStore(dbPath)
+	if err != nil {
+		t.Fatalf("reader NewSqliteStore failed: %v", err)
+	}
+	defer readerStore.Close()
 
 	ctx := context.Background()
 
 	// Insert baseline data
-	if err := store.PutSession(ctx, &model.SessionRecord{
+	if err := writerStore.PutSession(ctx, &model.SessionRecord{
 		SessionID:     "wal-baseline",
 		State:         model.SessionNew,
 		CreatedAtUnix: 1000,
+		UpdatedAtUnix: 1000,
 	}); err != nil {
 		t.Fatalf("Baseline PutSession failed: %v", err)
 	}
 
-	// Start a long-running write transaction
-	var wg sync.WaitGroup
-	wg.Add(1)
+	writerReady := make(chan struct{})
+	releaseWriter := make(chan struct{})
+	writerErr := make(chan error, 1)
 	go func() {
-		defer wg.Done()
-		tx, _ := store.DB.Begin()
-		defer func() { _ = tx.Rollback() }()
-
-		// Simulate slow write
-		_, _ = tx.Exec(`
-			INSERT INTO sessions (session_id, service_ref, profile_json, state, pipeline_state, reason, correlation_id, created_at_ms, updated_at_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval)
-			VALUES (?, 'svc', '{}', 'NEW', 'INIT', 'R_NONE', 'id', 0, 0, 0, 0, 0)
-		`, "wal-writer")
-		time.Sleep(150 * time.Millisecond)
-		_ = tx.Commit()
+		tx, err := writerStore.DB.BeginTx(ctx, nil)
+		if err != nil {
+			writerErr <- err
+			return
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO sessions (
+				session_id, service_ref, profile_json, state, pipeline_state, reason,
+				correlation_id, created_at_ms, updated_at_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval
+			) VALUES (?, 'svc', '{}', 'NEW', 'INIT', 'R_NONE', 'id', 0, 0, 0, 0, 0)
+		`, "wal-writer"); err != nil {
+			_ = tx.Rollback()
+			writerErr <- err
+			return
+		}
+		close(writerReady)
+		<-releaseWriter
+		writerErr <- tx.Commit()
 	}()
 
-	// Allow writer to start
-	time.Sleep(20 * time.Millisecond)
+	<-writerReady
 
 	// Start concurrent readers
 	readerCount := 5
-	var readerErrors atomic.Int32
-	var readerWg sync.WaitGroup
+	readerDone := make(chan error, readerCount)
 
 	for i := 0; i < readerCount; i++ {
-		readerWg.Add(1)
-		go func(id int) {
-			defer readerWg.Done()
-			start := time.Now()
-
-			// Read should not block (WAL allows concurrent reads)
-			_, err := store.GetSession(ctx, "wal-baseline")
-			duration := time.Since(start)
-
-			if err != nil {
-				t.Errorf("Reader %d failed: %v", id, err)
-				readerErrors.Add(1)
-				return
-			}
-
-			// Verify read was not blocked by writer
-			// WAL allows reads to proceed while write is in progress
-			// If blocked, duration would be >= 150ms (writer sleep time)
-			if duration > 100*time.Millisecond {
-				t.Errorf("Reader %d was blocked by writer (took %v)", id, duration)
-				readerErrors.Add(1)
-			}
-		}(i)
+		go func() {
+			_, err := readerStore.GetSession(ctx, "wal-baseline")
+			readerDone <- err
+		}()
 	}
 
-	readerWg.Wait()
-	wg.Wait()
+	for i := 0; i < readerCount; i++ {
+		select {
+		case err := <-readerDone:
+			if err != nil {
+				t.Fatalf("reader failed while writer tx open: %v", err)
+			}
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("reader blocked while writer transaction remained open")
+		}
+	}
 
-	if readerErrors.Load() > 0 {
-		t.Errorf("WAL concurrent read test failed with %d reader errors", readerErrors.Load())
+	close(releaseWriter)
+	if err := <-writerErr; err != nil {
+		t.Fatalf("writer failed: %v", err)
 	}
 }
 
@@ -483,11 +515,13 @@ func TestSqliteStore_WAL_ParallelWrites_INV_SQLITE_009(t *testing.T) {
 	writerCount := 5
 	var wg sync.WaitGroup
 	var writeErrors atomic.Int32
+	startWrites := make(chan struct{})
 
 	for i := 0; i < writerCount; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
+			<-startWrites
 
 			sessionID := sql.NullString{String: "parallel-writer-" + string(rune('A'+id)), Valid: true}
 			session := &model.SessionRecord{
@@ -503,6 +537,7 @@ func TestSqliteStore_WAL_ParallelWrites_INV_SQLITE_009(t *testing.T) {
 		}(i)
 	}
 
+	close(startWrites)
 	wg.Wait()
 
 	if writeErrors.Load() > 0 {

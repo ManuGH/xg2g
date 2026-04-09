@@ -44,7 +44,7 @@ type RootConfig struct {
 type Root struct {
 	ID             string     `json:"id"`
 	Type           string     `json:"type"`
-	LastScanTime   *time.Time `json:"last_scan_time,omitempty"`
+	LastScanTime   *time.Time `json:"last_scan_time,omitempty"` // Time of the last completed scan, never mere scan start.
 	LastScanStatus RootStatus `json:"last_scan_status"`
 	TotalItems     int        `json:"total_items"`
 }

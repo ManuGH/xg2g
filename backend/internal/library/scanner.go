@@ -59,13 +59,14 @@ func (sc *Scanner) ScanRoot(ctx context.Context, cfg RootConfig) (*ScanResult, e
 		result.LastError = fmt.Sprintf("begin transaction: %v", err)
 		return result, fmt.Errorf("begin tx: %w", err)
 	}
+	if err := sc.store.prepareScanSeenTable(ctx, tx); err != nil {
+		result.Finished = time.Now()
+		result.FinalStatus = RootStatusFailed
+		result.LastError = fmt.Sprintf("prepare scan state: %v", err)
+		return result, fmt.Errorf("prepare scan state: %w", err)
+	}
 
-	// Ensure rollback on error
-	defer func() {
-		if result.FinalStatus == RootStatusFailed || result.ErrorCount > 0 {
-			_ = tx.Rollback()
-		}
-	}()
+	defer func() { _ = tx.Rollback() }()
 
 	// Walk filesystem
 	scanTime := time.Now()
@@ -175,6 +176,11 @@ func (sc *Scanner) ScanRoot(ctx context.Context, cfg RootConfig) (*ScanResult, e
 			logScanError(cfg.ID, "db", err, path)
 			return nil
 		}
+		if err := sc.store.rememberSeenPath(ctx, tx, rel); err != nil {
+			result.ErrorCount++
+			logScanError(cfg.ID, "db_seen", err, path)
+			return nil
+		}
 
 		result.TotalScanned++
 		return nil
@@ -193,6 +199,14 @@ func (sc *Scanner) ScanRoot(ctx context.Context, cfg RootConfig) (*ScanResult, e
 		result.FinalStatus = RootStatusDegraded
 	}
 
+	finishedAt := time.Now()
+	if _, err := sc.store.finalizeRootScan(ctx, tx, cfg.ID, result.FinalStatus, finishedAt, result.FinalStatus == RootStatusOK); err != nil {
+		result.FinalStatus = RootStatusFailed
+		result.LastError = fmt.Sprintf("finalize scan: %v", err)
+		result.Finished = finishedAt
+		return result, fmt.Errorf("finalize scan: %w", err)
+	}
+
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		result.FinalStatus = RootStatusFailed
@@ -201,7 +215,7 @@ func (sc *Scanner) ScanRoot(ctx context.Context, cfg RootConfig) (*ScanResult, e
 		return result, fmt.Errorf("commit tx: %w", err)
 	}
 
-	result.Finished = time.Now()
+	result.Finished = finishedAt
 	return result, nil
 }
 

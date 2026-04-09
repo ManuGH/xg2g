@@ -2,8 +2,11 @@ package resume
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+var ErrNilState = errors.New("resume state must not be nil")
 
 // State represents the saved playback state for a user and recording.
 type State struct {
@@ -12,9 +15,6 @@ type State struct {
 
 	// DurationSeconds is the total duration at the time of saving (optional, for validation).
 	DurationSeconds int64 `json:"duration_seconds,omitempty"`
-
-	// PlayCount tracks how many times this was played/resumed (optional metrics).
-	PlayCount int `json:"play_count,omitempty"`
 
 	// UpdatedAt is the timestamp when this state was last saved.
 	UpdatedAt time.Time `json:"updated_at"`
@@ -29,15 +29,25 @@ type State struct {
 
 // Store defines the interface for persisting resume state.
 type Store interface {
-	// Put saves the resume state for a principal and recording.
-	Put(ctx context.Context, principalID, recordingID string, state *State) error
+	// Put saves and fully replaces the persisted resume state for a principal and
+	// canonical recording key. The most recent write for a key is authoritative.
+	Put(ctx context.Context, principalID, recordingKey string, state *State) error
 
-	// Get retrieves the resume state. Returns nil if not found.
-	Get(ctx context.Context, principalID, recordingID string) (*State, error)
+	// Get retrieves the full persisted resume state for a canonical recording
+	// key. Returns nil if not found.
+	Get(ctx context.Context, principalID, recordingKey string) (*State, error)
 
 	// Delete removes the resume state.
-	Delete(ctx context.Context, principalID, recordingID string) error
+	Delete(ctx context.Context, principalID, recordingKey string) error
 
 	// Close cleans up resources.
 	Close() error
+}
+
+func cloneState(state *State) *State {
+	if state == nil {
+		return nil
+	}
+	cloned := *state
+	return &cloned
 }

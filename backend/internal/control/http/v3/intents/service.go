@@ -67,6 +67,10 @@ func (s *Service) ProcessIntent(ctx context.Context, intent Intent) (*Result, *E
 func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Error) {
 	store := s.deps.SessionStore()
 	bus := s.deps.EventBus()
+	// Watchpoint: start intents may use scan capability as a profile hint source
+	// (for example interlaced/progressive handling), but they are not a second
+	// SSOT for live container/codec readiness. Any future readiness/media-truth
+	// branching must go through the live truth resolver used by /live/stream-info.
 	capability := s.lookupStartCapability(intent.ServiceRef)
 	hardwareState := detectStartHardwareState()
 	hwaccelMode, err := s.resolveStartHWAccelMode(intent, hardwareState)

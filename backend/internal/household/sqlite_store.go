@@ -10,7 +10,7 @@ import (
 	sqlitepkg "github.com/ManuGH/xg2g/internal/persistence/sqlite"
 )
 
-const sqliteSchemaVersion = 1
+const sqliteSchemaVersion = 2
 
 type SqliteStore struct {
 	DB *sql.DB
@@ -65,6 +65,7 @@ func (s *SqliteStore) List(ctx context.Context) ([]Profile, error) {
 		}
 		profiles = append(profiles, profile)
 	}
+	sortProfiles(profiles)
 	return profiles, rows.Err()
 }
 
@@ -190,10 +191,165 @@ func (s *SqliteStore) migrate() error {
 		return err
 	}
 
+	if currentVersion < sqliteSchemaVersion {
+		if err := normalizeProfilesTable(tx); err != nil {
+			return err
+		}
+	}
+
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, sqliteSchemaVersion)); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// normalizeProfilesTable rewrites legacy rows into canonical storage form.
+// If multiple legacy rows collapse to the same normalized ID, the newest row is
+// treated as authoritative. "Newest" is defined deterministically as the row
+// that sorts first by updated_at_ms DESC and raw id ASC; later collisions are
+// discarded.
+func normalizeProfilesTable(tx *sql.Tx) error {
+	if _, err := tx.Exec(`
+		CREATE TABLE household_profiles_v2 (
+			id TEXT NOT NULL PRIMARY KEY,
+			name TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			max_fsk INTEGER,
+			allowed_bouquets_json TEXT NOT NULL,
+			allowed_service_refs_json TEXT NOT NULL,
+			favorite_service_refs_json TEXT NOT NULL,
+			dvr_playback INTEGER NOT NULL,
+			dvr_manage INTEGER NOT NULL,
+			settings_access INTEGER NOT NULL,
+			updated_at_ms INTEGER NOT NULL
+		);
+	`); err != nil {
+		return err
+	}
+
+	rows, err := tx.Query(`
+		SELECT
+			id,
+			name,
+			kind,
+			max_fsk,
+			allowed_bouquets_json,
+			allowed_service_refs_json,
+			favorite_service_refs_json,
+			dvr_playback,
+			dvr_manage,
+			settings_access,
+			updated_at_ms
+		FROM household_profiles
+		ORDER BY updated_at_ms DESC, id ASC
+	`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	seen := make(map[string]struct{})
+	for rows.Next() {
+		var (
+			id                      string
+			name                    string
+			kind                    string
+			maxFSK                  sql.NullInt64
+			allowedBouquetsJSON     string
+			allowedServiceRefsJSON  string
+			favoriteServiceRefsJSON string
+			dvrPlayback             int
+			dvrManage               int
+			settingsAccess          int
+			updatedAtMS             int64
+		)
+		if err := rows.Scan(&id, &name, &kind, &maxFSK, &allowedBouquetsJSON, &allowedServiceRefsJSON, &favoriteServiceRefsJSON, &dvrPlayback, &dvrManage, &settingsAccess, &updatedAtMS); err != nil {
+			return err
+		}
+		allowedBouquets, err := unmarshalStringList(allowedBouquetsJSON)
+		if err != nil {
+			return fmt.Errorf("normalize household row %q bouquets: %w", id, err)
+		}
+		allowedServiceRefs, err := unmarshalStringList(allowedServiceRefsJSON)
+		if err != nil {
+			return fmt.Errorf("normalize household row %q service refs: %w", id, err)
+		}
+		favoriteServiceRefs, err := unmarshalStringList(favoriteServiceRefsJSON)
+		if err != nil {
+			return fmt.Errorf("normalize household row %q favorites: %w", id, err)
+		}
+
+		var normalizedMaxFSK *int
+		if maxFSK.Valid {
+			value := int(maxFSK.Int64)
+			normalizedMaxFSK = &value
+		}
+		profile := NormalizeProfile(Profile{
+			ID:                  id,
+			Name:                name,
+			Kind:                ProfileKind(kind),
+			MaxFSK:              normalizedMaxFSK,
+			AllowedBouquets:     allowedBouquets,
+			AllowedServiceRefs:  allowedServiceRefs,
+			FavoriteServiceRefs: favoriteServiceRefs,
+			Permissions: Permissions{
+				DVRPlayback: dvrPlayback != 0,
+				DVRManage:   dvrManage != 0,
+				Settings:    settingsAccess != 0,
+			},
+		})
+		if _, ok := seen[profile.ID]; ok {
+			continue
+		}
+		seen[profile.ID] = struct{}{}
+
+		allowedBouquetsJSON, err = marshalStringList(profile.AllowedBouquets)
+		if err != nil {
+			return err
+		}
+		allowedServiceRefsJSON, err = marshalStringList(profile.AllowedServiceRefs)
+		if err != nil {
+			return err
+		}
+		favoriteServiceRefsJSON, err = marshalStringList(profile.FavoriteServiceRefs)
+		if err != nil {
+			return err
+		}
+
+		var normalizedMaxFSKValue any
+		if profile.MaxFSK != nil {
+			normalizedMaxFSKValue = *profile.MaxFSK
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO household_profiles_v2 (
+				id,
+				name,
+				kind,
+				max_fsk,
+				allowed_bouquets_json,
+				allowed_service_refs_json,
+				favorite_service_refs_json,
+				dvr_playback,
+				dvr_manage,
+				settings_access,
+				updated_at_ms
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, profile.ID, profile.Name, profile.Kind, normalizedMaxFSKValue, allowedBouquetsJSON, allowedServiceRefsJSON, favoriteServiceRefsJSON, boolToInt(profile.Permissions.DVRPlayback), boolToInt(profile.Permissions.DVRManage), boolToInt(profile.Permissions.Settings), updatedAtMS); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		DROP TABLE household_profiles;
+		ALTER TABLE household_profiles_v2 RENAME TO household_profiles;
+		CREATE INDEX IF NOT EXISTS idx_household_profiles_kind ON household_profiles(kind, name);
+	`); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *SqliteStore) seedDefaultProfile(ctx context.Context) error {

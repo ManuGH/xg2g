@@ -2,6 +2,7 @@ package capreg
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -216,6 +217,33 @@ func TestSqliteStore_MigratesV1ObservationSchemaToLatest(t *testing.T) {
 	db, err := sqlitepkg.Open(dbPath, sqlitepkg.DefaultConfig())
 	require.NoError(t, err)
 
+	identity := DeviceIdentity{
+		ClientFamily:     "android_tv_native",
+		ClientCapsSource: "runtime",
+		DeviceType:       "tv",
+		DeviceContext: &capabilities.DeviceContext{
+			Brand:        "Google",
+			Product:      "darcy",
+			Device:       "foster",
+			Platform:     "android-tv",
+			Manufacturer: "NVIDIA",
+			Model:        "Shield",
+			OSName:       "Android",
+			OSVersion:    "14",
+			SDKInt:       34,
+		},
+	}
+	legacyCaps := capabilities.PlaybackCapabilities{
+		CapabilitiesVersion: 3,
+		Containers:          []string{"mp4", "hls"},
+		VideoCodecs:         []string{"hevc", "h264"},
+		AudioCodecs:         []string{"ac3", "aac"},
+		SupportsHLS:         true,
+		DeviceType:          "tv",
+	}
+	capsJSON, err := json.Marshal(legacyCaps)
+	require.NoError(t, err)
+
 	_, err = db.Exec(`
 	CREATE TABLE capability_hosts (
 		host_fingerprint TEXT PRIMARY KEY,
@@ -265,8 +293,20 @@ func TestSqliteStore_MigratesV1ObservationSchemaToLatest(t *testing.T) {
 		network_metered INTEGER,
 		network_downlink_kbps INTEGER NOT NULL
 	);
+	INSERT INTO capability_devices(
+		device_fingerprint, client_family, client_caps_source, device_type, platform, manufacturer, model,
+		os_name, os_version, sdk_int, capabilities_json, capabilities_hash, network_json, updated_at_ms
+	) VALUES (?, 'android_tv_native', 'runtime', 'tv', 'android-tv', 'nvidia', 'shield', 'android', '14', 34, ?, 'legacy-hash', NULL, 1700000000000);
+	INSERT INTO capability_observations(
+		observed_at_ms, request_id, source_ref, subject_kind, requested_intent, resolved_intent, mode,
+		selected_container, selected_video_codec, selected_audio_codec, source_width, source_height, source_fps,
+		host_fingerprint, device_fingerprint, client_caps_hash, network_kind, network_metered, network_downlink_kbps
+	) VALUES (
+		1700000005000, 'req-legacy', '1:0:1:ABCD', 'live', 'quality', 'quality', 'transcode',
+		'fmp4', 'hevc', 'aac', 1920, 1080, 25, 'host-fp', ?, 'legacy-caps-hash', 'ethernet', 1, 950000
+	);
 	PRAGMA user_version = 1;
-	`)
+	`, identity.Fingerprint(), string(capsJSON), identity.Fingerprint())
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
@@ -309,4 +349,66 @@ func TestSqliteStore_MigratesV1ObservationSchemaToLatest(t *testing.T) {
 		WHERE name IN ('brand', 'product', 'device_name')
 	`).Scan(&deviceColumnCount))
 	assert.Equal(t, 3, deviceColumnCount)
+
+	gotCaps, ok, err := store.LookupCapabilities(context.Background(), identity)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, []string{"aac", "ac3"}, gotCaps.AudioCodecs)
+	assert.Equal(t, []string{"h264", "hevc"}, gotCaps.VideoCodecs)
+	assert.Equal(t, []string{"hls", "mp4"}, gotCaps.Containers)
+
+	observation, ok, err := store.LookupDecisionObservation(context.Background(), "req-legacy")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "decision", observation.ObservationKind)
+	assert.Equal(t, "predicted", observation.Outcome)
+	assert.Equal(t, "", observation.SessionID)
+	assert.Equal(t, "", observation.SourceFingerprint)
+	require.NotNil(t, observation.Network)
+	assert.Equal(t, "ethernet", observation.Network.Kind)
+	require.NotNil(t, observation.Network.Metered)
+	assert.True(t, *observation.Network.Metered)
+	assert.Equal(t, 950000, observation.Network.DownlinkKbps)
+
+	sourceSnapshot := SourceSnapshot{
+		SubjectKind: "live",
+		Origin:      "live_scan",
+		Container:   "ts",
+		VideoCodec:  "h264",
+		AudioCodec:  "aac",
+		Width:       1280,
+		Height:      720,
+		FPS:         50,
+		UpdatedAt:   time.Unix(1_700_000_300, 0).UTC(),
+	}
+	require.NoError(t, store.RememberSource(context.Background(), sourceSnapshot))
+	require.NoError(t, store.RecordObservation(context.Background(), PlaybackObservation{
+		ObservedAt:         time.Unix(1_700_000_400, 0).UTC(),
+		RequestID:          "req-legacy",
+		ObservationKind:    "decision",
+		Outcome:            "confirmed",
+		SessionID:          "sess-legacy",
+		SourceRef:          "1:0:1:ABCD",
+		SourceFingerprint:  sourceSnapshot.Fingerprint(),
+		SubjectKind:        "live",
+		RequestedIntent:    "quality",
+		ResolvedIntent:     "quality",
+		Mode:               "transcode",
+		SelectedContainer:  "fmp4",
+		SelectedVideoCodec: "h264",
+		SelectedAudioCodec: "aac",
+		SourceWidth:        1280,
+		SourceHeight:       720,
+		SourceFPS:          50,
+		HostFingerprint:    "host-fp",
+		DeviceFingerprint:  identity.Fingerprint(),
+		ClientCapsHash:     "legacy-caps-hash",
+	}))
+
+	rewrittenObservation, ok, err := store.LookupDecisionObservation(context.Background(), "req-legacy")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "confirmed", rewrittenObservation.Outcome)
+	assert.Equal(t, "sess-legacy", rewrittenObservation.SessionID)
+	assert.Equal(t, sourceSnapshot.Fingerprint(), rewrittenObservation.SourceFingerprint)
 }

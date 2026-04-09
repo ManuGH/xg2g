@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestService_SourceSnapshotForRequest_LiveFallback(t *testing.T) {
+func TestService_SourceSnapshotForRequest_LiveUnverified(t *testing.T) {
 	svc := NewService(stubDeps{
 		receiver: &capreg.ReceiverContext{
 			Platform:  "enigma2",
@@ -31,13 +31,13 @@ func TestService_SourceSnapshotForRequest_LiveFallback(t *testing.T) {
 	})
 
 	assert.Equal(t, "live", snapshot.SubjectKind)
-	assert.Equal(t, "live_fallback", snapshot.Origin)
+	assert.Equal(t, "live_unverified", snapshot.Origin)
 	assert.Equal(t, "mpegts", snapshot.Container)
 	assert.NotNil(t, snapshot.ReceiverContext)
 	assert.Equal(t, "openatv", snapshot.ReceiverContext.OSName)
 	assert.Equal(t, "7.4", snapshot.ReceiverContext.OSVersion)
 	assert.ElementsMatch(t, []string{
-		"legacy_live_assumption",
+		"live_truth_unverified",
 		"scanner_unavailable",
 		"missing_dimensions",
 		"missing_fps",

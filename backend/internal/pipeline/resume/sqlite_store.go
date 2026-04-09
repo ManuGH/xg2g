@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	schemaVersion = 2 // Incremented for migration_history
+	schemaVersion = 3 // v3 persists fingerprint in resume truth
 )
 
 // SqliteStore implements Store using SQLite.
@@ -58,6 +58,7 @@ func (s *SqliteStore) migrate() error {
 		pos_seconds INTEGER NOT NULL,
 		duration_seconds INTEGER,
 		finished BOOLEAN NOT NULL DEFAULT 0,
+		fingerprint TEXT NOT NULL DEFAULT '',
 		updated_at TEXT NOT NULL,
 		PRIMARY KEY (principal_id, recording_id)
 	);
@@ -77,6 +78,18 @@ func (s *SqliteStore) migrate() error {
 		return err
 	}
 
+	if currentVersion < schemaVersion {
+		hasFingerprint, err := tableHasColumn(tx, "resume_states", "fingerprint")
+		if err != nil {
+			return err
+		}
+		if !hasFingerprint {
+			if _, err := tx.Exec(`ALTER TABLE resume_states ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+
 	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return err
 	}
@@ -84,28 +97,34 @@ func (s *SqliteStore) migrate() error {
 	return tx.Commit()
 }
 
-func (s *SqliteStore) Put(ctx context.Context, principalID, recordingID string, state *State) error {
+func (s *SqliteStore) Put(ctx context.Context, principalID, recordingKey string, state *State) error {
+	if state == nil {
+		return ErrNilState
+	}
+
 	query := `
-	INSERT INTO resume_states (principal_id, recording_id, pos_seconds, duration_seconds, finished, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?)
+	INSERT INTO resume_states (principal_id, recording_id, pos_seconds, duration_seconds, finished, fingerprint, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(principal_id, recording_id) DO UPDATE SET
 		pos_seconds = excluded.pos_seconds,
 		duration_seconds = excluded.duration_seconds,
 		finished = excluded.finished,
+		fingerprint = excluded.fingerprint,
 		updated_at = excluded.updated_at
 	`
 	_, err := s.DB.ExecContext(ctx, query,
-		principalID, recordingID, state.PosSeconds, state.DurationSeconds, state.Finished, state.UpdatedAt.Format(time.RFC3339),
+		principalID, recordingKey, state.PosSeconds, state.DurationSeconds, state.Finished, state.Fingerprint, state.UpdatedAt.Format(time.RFC3339),
 	)
 	return err
 }
 
-func (s *SqliteStore) Get(ctx context.Context, principalID, recordingID string) (*State, error) {
-	query := `SELECT pos_seconds, duration_seconds, finished, updated_at FROM resume_states WHERE principal_id = ? AND recording_id = ?`
+func (s *SqliteStore) Get(ctx context.Context, principalID, recordingKey string) (*State, error) {
+	query := `SELECT pos_seconds, duration_seconds, finished, fingerprint, updated_at FROM resume_states WHERE principal_id = ? AND recording_id = ?`
 	var state State
+	var fingerprint string
 	var updatedAtStr string
-	err := s.DB.QueryRowContext(ctx, query, principalID, recordingID).Scan(
-		&state.PosSeconds, &state.DurationSeconds, &state.Finished, &updatedAtStr,
+	err := s.DB.QueryRowContext(ctx, query, principalID, recordingKey).Scan(
+		&state.PosSeconds, &state.DurationSeconds, &state.Finished, &fingerprint, &updatedAtStr,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -117,14 +136,41 @@ func (s *SqliteStore) Get(ctx context.Context, principalID, recordingID string) 
 	if err != nil {
 		return nil, fmt.Errorf("resume store: invalid updated_at %q: %w", updatedAtStr, err)
 	}
+	state.Fingerprint = fingerprint
 	return &state, nil
 }
 
-func (s *SqliteStore) Delete(ctx context.Context, principalID, recordingID string) error {
-	_, err := s.DB.ExecContext(ctx, "DELETE FROM resume_states WHERE principal_id = ? AND recording_id = ?", principalID, recordingID)
+func (s *SqliteStore) Delete(ctx context.Context, principalID, recordingKey string) error {
+	_, err := s.DB.ExecContext(ctx, "DELETE FROM resume_states WHERE principal_id = ? AND recording_id = ?", principalID, recordingKey)
 	return err
 }
 
 func (s *SqliteStore) Close() error {
 	return s.DB.Close()
+}
+
+func tableHasColumn(tx *sql.Tx, table string, column string) (bool, error) {
+	rows, err := tx.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }

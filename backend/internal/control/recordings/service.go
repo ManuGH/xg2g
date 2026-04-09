@@ -16,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/recordings/model"
+	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 )
 
 // PlaybackResolution represents the truthful resolution of how to play a recording.
@@ -346,13 +347,13 @@ func (s *service) GetStatus(ctx context.Context, in StatusInput) (StatusResult, 
 		return StatusResult{}, ErrInvalidArgument{Field: "recordingID", Reason: "invalid format"}
 	}
 
-	cacheDir, err := RecordingCacheDir(s.cfg.HLS.Root, serviceRef)
+	// Status tracks the same default HLS build that /recordings/{id}/playlist.m3u8 resolves
+	// when no explicit variant is requested.
+	defaultVariant := DefaultRecordingVariantHash()
+	job, jobOk, meta, metaOk, err := LoadRecordingBuildState(ctx, s.cfg.HLS.Root, s.vodManager, serviceRef, defaultVariant)
 	if err != nil {
-		return StatusResult{}, ErrUpstream{Op: "CacheDir", Cause: err}
+		return StatusResult{}, ErrUpstream{Op: "LoadBuildState", Cause: err}
 	}
-
-	job, jobOk := s.vodManager.Get(ctx, cacheDir)
-	meta, metaOk := s.vodManager.GetMetadata(serviceRef)
 
 	state := s.mapState(job, jobOk, &meta, metaOk)
 	var errStr *string
@@ -387,6 +388,14 @@ func (s *service) Stream(ctx context.Context, in StreamInput) (StreamResult, err
 
 	// 1. Artifact State Machine Check
 	meta, exists := s.vodManager.GetMetadata(serviceRef)
+	if !exists || meta.State != vod.ArtifactStateReady {
+		// Direct stream has its own durable truth boundary: an existing locally mapped
+		// source file may reconstruct READY metadata, but HLS disk artifacts must not.
+		if repaired, ok := s.rehydrateDirectSourceFromLocalPath(serviceRef); ok {
+			meta = repaired
+			exists = true
+		}
+	}
 
 	if !exists || (meta.State != vod.ArtifactStateReady) {
 		// Not ready: Trigger probe/build and return Not Ready
@@ -448,6 +457,26 @@ func (s *service) Stream(ctx context.Context, in StreamInput) (StreamResult, err
 		ContentType: contentType,
 		CachePolicy: cachePolicy,
 	}, nil
+}
+
+func (s *service) rehydrateDirectSourceFromLocalPath(serviceRef string) (vod.Metadata, bool) {
+	if s == nil || s.cfg == nil {
+		return vod.Metadata{}, false
+	}
+	// Only a real locally mapped recording source is durable truth for stream.mp4.
+	// This intentionally does not consult HLS playlists or cache directories.
+	if strings.EqualFold(strings.TrimSpace(s.cfg.RecordingPlaybackPolicy), config.PlaybackPolicyReceiverOnly) {
+		return vod.Metadata{}, false
+	}
+
+	mapper := internalrecordings.NewPathMapper(s.cfg.RecordingPathMappings)
+	localPath, ok := mapper.ResolveLocalExisting(internalrecordings.ExtractPathFromServiceRef(serviceRef))
+	if !ok || localPath == "" {
+		return vod.Metadata{}, false
+	}
+
+	s.vodManager.MarkProbed(serviceRef, localPath, nil, nil)
+	return s.vodManager.GetMetadata(serviceRef)
 }
 
 func recordingDirectContentType(meta vod.Metadata, localPath string) string {

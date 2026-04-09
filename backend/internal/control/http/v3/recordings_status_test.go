@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -36,7 +38,7 @@ func TestRecordingsStatusHTTP_MetaFailedIncludesError(t *testing.T) {
 	srv, vodMgr := newStatusTestServer(t)
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/test.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
-	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
+	vodMgr.SeedMetadata(recservice.RecordingVariantMetadataKey(serviceRef, recservice.DefaultRecordingVariantHash()), vod.Metadata{
 		State: vod.ArtifactStateFailed,
 		Error: "oops",
 	})
@@ -52,6 +54,32 @@ func TestRecordingsStatusHTTP_MetaFailedIncludesError(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
 	require.Equal(t, "FAILED", body["state"])
 	require.Equal(t, "oops", body["error"])
+}
+
+func TestRecordingsStatusHTTP_RehydratesDefaultPlaylistFromDisk(t *testing.T) {
+	srv, vodMgr := newStatusTestServer(t)
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/test.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	cacheDir, err := recservice.RecordingVariantCacheDir(srv.cfg.HLS.Root, serviceRef, recservice.DefaultRecordingVariantHash())
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(cacheDir, 0750))
+	playlistPath := filepath.Join(cacheDir, "index.m3u8")
+	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U\n#EXT-X-ENDLIST\n"), 0600))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/status", nil)
+	rr := httptest.NewRecorder()
+	srv.GetRecordingsRecordingIdStatus(rr, req, recordingID)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+	require.Equal(t, "READY", body["state"])
+
+	meta, ok := vodMgr.GetMetadata(recservice.RecordingVariantMetadataKey(serviceRef, recservice.DefaultRecordingVariantHash()))
+	require.True(t, ok)
+	require.Equal(t, vod.ArtifactStateReady, meta.State)
+	require.Equal(t, playlistPath, meta.PlaylistPath)
 }
 
 func newStatusTestServer(t *testing.T) (*Server, *vod.Manager) {

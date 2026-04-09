@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,10 +25,27 @@ func TestVerifyIntegrity_Corruption_INV_SQLITE_012(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
+	payload := strings.Repeat("A", 100)
 	for i := 0; i < 100; i++ {
-		_, _ = db.Exec("INSERT INTO test (data) VALUES (REPLICATE('A', 100));")
+		if _, err := db.Exec("INSERT INTO test (data) VALUES (?);", payload); err != nil {
+			t.Fatalf("Failed to seed row %d: %v", i, err)
+		}
 	}
-	db.Close()
+
+	var pageSize int64
+	if err := db.QueryRow("PRAGMA page_size;").Scan(&pageSize); err != nil {
+		t.Fatalf("Failed to query page_size: %v", err)
+	}
+	var pageCount int64
+	if err := db.QueryRow("PRAGMA page_count;").Scan(&pageCount); err != nil {
+		t.Fatalf("Failed to query page_count: %v", err)
+	}
+	if pageCount < 2 {
+		t.Fatalf("Expected at least two pages before corruption, got %d", pageCount)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Failed to close seeded database: %v", err)
+	}
 
 	// 2. Initial verification (should pass)
 	issues, err := VerifyIntegrity(dbPath, "quick")
@@ -38,17 +56,21 @@ func TestVerifyIntegrity_Corruption_INV_SQLITE_012(t *testing.T) {
 		t.Fatalf("Initial verification failed: %v", issues)
 	}
 
-	// 3. Simulate corruption: Overwrite 100 bytes at offset 4096 (usually second page)
+	// 3. Simulate corruption: overwrite bytes at the start of the second page.
 	f, err := os.OpenFile(dbPath, os.O_RDWR, 0644)
 	if err != nil {
 		t.Fatalf("Failed to open file for corruption: %v", err)
 	}
 
 	corruptData := make([]byte, 100)
-	rand.Read(corruptData)
+	if _, err := rand.Read(corruptData); err != nil {
+		t.Fatalf("Failed to generate corruption payload: %v", err)
+	}
 
-	_, err = f.WriteAt(corruptData, 4096)
-	f.Close()
+	_, err = f.WriteAt(corruptData, pageSize)
+	if closeErr := f.Close(); closeErr != nil {
+		t.Fatalf("Failed to close corrupted file: %v", closeErr)
+	}
 	if err != nil {
 		t.Fatalf("Failed to write corrupt data: %v", err)
 	}

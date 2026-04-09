@@ -313,9 +313,9 @@
       "watched": "WATCHED",
       "resume": "RESUME",
       "rec": "REC",
-      "pending": "PENDING",
+      "scheduled": "SCHEDULED",
       "failed": "FAILED",
-      "deleting": "DELETING",
+      "unknown": "UNKNOWN",
       "new": "NEW",
       "error": "ERROR"
     },

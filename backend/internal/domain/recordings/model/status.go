@@ -1,7 +1,12 @@
 package model
 
-// RecordingStatus represents the authoritative state of a recording.
+// RecordingStatus represents the authoritative coarse-grained state of a recording.
 // JSON values are lower-case to match API conventions.
+//
+// RecordingStatusUnknown is an explicit truth-gap state: the system currently lacks
+// confirmed recording truth and clients must not infer sub-causes from it. If finer
+// causes become product-relevant, they must travel in a separate reason field rather
+// than by overloading this status enum.
 type RecordingStatus string
 
 const (

@@ -75,10 +75,12 @@ type StateStore interface {
 	// GetSession returns the session record. If not found, it returns (nil, nil).
 	// Callers must check for nil record before using it.
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
-	// ADR-009: QuerySessions returns sessions matching filter criteria (efficient, no full scan)
+	// ADR-009: QuerySessions returns sessions matching filter criteria (efficient, no full scan).
+	// Results are ordered by UpdatedAtUnix DESC, then CreatedAtUnix DESC, then SessionID ASC.
 	// CTO Patch 2: For lease expiry - filter by state + lease_expires_at
 	QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error)
 	UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error)
+	// ListSessions returns all sessions ordered by UpdatedAtUnix DESC, then CreatedAtUnix DESC, then SessionID ASC.
 	ListSessions(ctx context.Context) ([]*model.SessionRecord, error)
 	// ScanSessions iterates over all sessions calling fn. Safest for large datasets.
 	ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error

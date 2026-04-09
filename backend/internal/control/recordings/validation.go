@@ -154,6 +154,28 @@ func DecodeRecordingID(id string) (string, bool) {
 	return decoded, true
 }
 
+// CanonicalResumeKeyFromServiceRef returns the single canonical resume key for a
+// recording service reference. Resume persistence is keyed by the public
+// recording ID encoding, not by raw serviceRef strings.
+func CanonicalResumeKeyFromServiceRef(serviceRef string) (string, bool) {
+	serviceRef = strings.TrimSpace(serviceRef)
+	if err := ValidateRecordingRef(serviceRef); err != nil {
+		return "", false
+	}
+	return EncodeRecordingID(serviceRef), true
+}
+
+// CanonicalResumeKeyFromRecordingID returns the single canonical resume key for
+// a recording ID. Invalid IDs are rejected instead of silently producing a
+// competing technical key.
+func CanonicalResumeKeyFromRecordingID(recordingID string) (string, bool) {
+	serviceRef, ok := DecodeRecordingID(recordingID)
+	if !ok {
+		return "", false
+	}
+	return CanonicalResumeKeyFromServiceRef(serviceRef)
+}
+
 // SanitizeRecordingRelPath implementation for POSIX paths.
 func SanitizeRecordingRelPath(p string) (string, bool) {
 	if p == "" {

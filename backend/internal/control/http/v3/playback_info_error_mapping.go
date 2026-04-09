@@ -85,6 +85,55 @@ func problemSpecForPlaybackInfoError(schemaType string, err *v3recordings.Playba
 			problem:    spec,
 			retryAfter: &retryAfter,
 		}
+	case v3recordings.PlaybackInfoErrorUnverified:
+		retryAfter := err.RetryAfterSeconds
+		if retryAfter <= 0 {
+			retryAfter = 5
+		}
+		problemType := "live/unverified"
+		title := "Live media truth unavailable"
+		code := problemcode.CodeUnavailable
+		switch err.TruthReason {
+		case "scanner_unavailable":
+			problemType = "live/scan_unavailable"
+			title = "Live scan unavailable"
+			code = problemcode.CodeScanUnavailable
+		case "missing_scan_truth":
+			problemType = "live/missing_scan_truth"
+			title = "Live media truth missing"
+		case "inactive_event_feed":
+			problemType = "live/inactive_event_feed"
+			title = "Live event feed inactive"
+		case "partial_scan_truth", "incomplete_scan_truth":
+			problemType = "live/partial_truth"
+			title = "Live media truth incomplete"
+		case "failed_scan_truth":
+			problemType = "live/failed_scan_truth"
+			title = "Live media truth failed"
+		}
+		spec := problemSpecForCode(code, title, err.Error())
+		spec.problemType = problemType
+		extra := map[string]any{
+			"retryAfterSeconds": retryAfter,
+		}
+		if err.TruthState != "" {
+			extra["truthState"] = err.TruthState
+		}
+		if err.TruthReason != "" {
+			extra["truthReason"] = err.TruthReason
+		}
+		if err.TruthOrigin != "" {
+			extra["truthOrigin"] = err.TruthOrigin
+		}
+		if len(err.ProblemFlags) > 0 {
+			extra["problemFlags"] = append([]string(nil), err.ProblemFlags...)
+		}
+		return playbackInfoHTTPProblemSpec{
+			status:     http.StatusServiceUnavailable,
+			problem:    spec,
+			retryAfter: &retryAfter,
+			extra:      extra,
+		}
 	case v3recordings.PlaybackInfoErrorUnsupported:
 		spec := problemSpecForCode(problemcode.CodeRemoteProbeUnsupported, "Remote Probe Unsupported", err.Error())
 		spec.problemType = "recordings/remote-probe-unsupported"

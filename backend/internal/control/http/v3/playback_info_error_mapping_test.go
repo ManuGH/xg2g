@@ -60,6 +60,32 @@ func TestProblemSpecForPlaybackInfoError_PreparingWithMetadata(t *testing.T) {
 	}, spec.extra)
 }
 
+func TestProblemSpecForPlaybackInfoError_LiveUnverified(t *testing.T) {
+	spec := problemSpecForPlaybackInfoError("live", &v3recordings.PlaybackInfoError{
+		Kind:              v3recordings.PlaybackInfoErrorUnverified,
+		Message:           "Live media truth incomplete",
+		RetryAfterSeconds: 9,
+		TruthState:        "partial",
+		TruthReason:       "partial_scan_truth",
+		TruthOrigin:       "live_unverified",
+		ProblemFlags:      []string{"live_truth_unverified", "incomplete_scan_truth", "partial_scan_truth"},
+	})
+
+	require.Equal(t, http.StatusServiceUnavailable, spec.status)
+	require.NotNil(t, spec.retryAfter)
+	assert.Equal(t, 9, *spec.retryAfter)
+	assert.Equal(t, "live/partial_truth", spec.problem.problemType)
+	assert.Equal(t, problemcode.CodeUnavailable, spec.problem.code)
+	assert.Equal(t, "Live media truth incomplete", spec.problem.detail)
+	assert.Equal(t, map[string]any{
+		"retryAfterSeconds": 9,
+		"truthState":        "partial",
+		"truthReason":       "partial_scan_truth",
+		"truthOrigin":       "live_unverified",
+		"problemFlags":      []string{"live_truth_unverified", "incomplete_scan_truth", "partial_scan_truth"},
+	}, spec.extra)
+}
+
 func TestWritePlaybackInfoServiceError_PassthroughProblem(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)

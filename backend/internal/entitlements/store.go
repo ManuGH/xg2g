@@ -24,6 +24,8 @@ type Grant struct {
 }
 
 type Store interface {
+	// ListByPrincipal returns the canonical grant order used for snapshots and
+	// cross-store comparisons within one principal: Scope ASC, then Source ASC.
 	ListByPrincipal(ctx context.Context, principalID string) ([]Grant, error)
 	Upsert(ctx context.Context, grant Grant) error
 	Delete(ctx context.Context, principalID, scope, source string) error

@@ -217,6 +217,7 @@ describe('RecordingsList', () => {
             beginUnixSeconds: 1700000000,
             length: '45m',
             description: 'Older item',
+            status: 'completed',
           },
           {
             recordingId: 'rec-active',
@@ -232,6 +233,7 @@ describe('RecordingsList', () => {
             beginUnixSeconds: 1720000000,
             length: '90m',
             description: 'Newest item',
+            status: 'completed',
           },
         ],
       },
@@ -283,6 +285,7 @@ describe('RecordingsList', () => {
             durationSeconds: 1800,
             length: '30m',
             description: 'Auth-sensitive playback',
+            status: 'completed',
           },
         ],
       },
@@ -295,5 +298,32 @@ describe('RecordingsList', () => {
     await waitFor(() => {
       expect(screen.getByTestId('v3-player-props')).toHaveTextContent('rec-token|test-token');
     });
+  });
+
+  it('does not infer recording status from legacy title tokens', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a',
+        currentPath: '',
+        roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: [
+          {
+            recordingId: 'rec-legacy',
+            title: '[WAIT] Legacy Token',
+            beginUnixSeconds: 1710000000,
+            length: '30m',
+            description: 'No explicit recording truth',
+          },
+        ],
+      },
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText('[WAIT] Legacy Token')).toBeInTheDocument();
+    expect(screen.getByText('UNKNOWN')).toBeInTheDocument();
+    expect(screen.queryByText('SCHEDULED')).not.toBeInTheDocument();
   });
 });

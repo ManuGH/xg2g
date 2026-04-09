@@ -22,6 +22,7 @@ const (
 	MediaStatusPreparing           MediaStatus = "preparing"
 	MediaStatusNotFound            MediaStatus = "not_found"
 	MediaStatusUpstreamUnavailable MediaStatus = "upstream_unavailable"
+	MediaStatusUnverified          MediaStatus = "unverified"
 )
 
 const (
