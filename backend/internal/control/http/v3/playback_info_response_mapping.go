@@ -237,17 +237,7 @@ func (s *Server) buildLivePlaybackDecisionToken(id string, dec *decision.Decisio
 	}
 
 	now := time.Now().Unix()
-	var capHash string
-	if caps != nil {
-		if capBytes, err := json.Marshal(caps); err == nil {
-			var capMap map[string]any
-			if err := json.Unmarshal(capBytes, &capMap); err == nil {
-				if hash, err := normalize.MapHash(capMap); err == nil {
-					capHash = hash
-				}
-			}
-		}
-	}
+	capHash := hashV3Capabilities(caps)
 
 	claims := v3auth.TokenClaims{
 		Iss:     "xg2g",

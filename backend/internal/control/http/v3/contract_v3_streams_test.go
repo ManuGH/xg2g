@@ -210,10 +210,24 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 			{
 				SessionID: "1",
 				State:     model.SessionNew,
-				ContextData: map[string]string{
-					model.CtxKeyClientFamily:    "chromium_hlsjs",
-					model.CtxKeyPreferredEngine: "hlsjs",
-					model.CtxKeyDeviceType:      "web",
+				PlaybackTrace: &model.PlaybackTrace{
+					Client: &model.PlaybackClientSnapshot{
+						CapHash:             "cap-hash-1",
+						ClientCapsSource:    "runtime_plus_family",
+						ClientFamily:        "chromium_hlsjs",
+						PreferredHLSEngine:  "hlsjs",
+						DeviceType:          "web",
+						RuntimeProbeVersion: 2,
+						DeviceContext: &model.PlaybackClientDeviceContext{
+							Platform:  "browser",
+							OSName:    "macos",
+							OSVersion: "15.4",
+							Model:     "macbookpro",
+						},
+						NetworkContext: &model.PlaybackClientNetworkContext{
+							Kind: "wifi",
+						},
+					},
 				},
 			},
 		}
@@ -237,6 +251,21 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 		assert.Equal(t, "hlsjs", *list[0].PreferredHlsEngine)
 		require.NotNil(t, list[0].DeviceType)
 		assert.Equal(t, "web", *list[0].DeviceType)
+		require.NotNil(t, list[0].Client)
+		require.NotNil(t, list[0].Client.CapHash)
+		assert.Equal(t, "cap-hash-1", *list[0].Client.CapHash)
+		require.NotNil(t, list[0].Client.ClientCapsSource)
+		assert.Equal(t, "runtime_plus_family", *list[0].Client.ClientCapsSource)
+		require.NotNil(t, list[0].Client.Platform)
+		assert.Equal(t, "browser", *list[0].Client.Platform)
+		require.NotNil(t, list[0].Client.OsName)
+		assert.Equal(t, "macos", *list[0].Client.OsName)
+		require.NotNil(t, list[0].Client.Model)
+		assert.Equal(t, "macbookpro", *list[0].Client.Model)
+		require.NotNil(t, list[0].Client.NetworkKind)
+		assert.Equal(t, "wifi", *list[0].Client.NetworkKind)
+		require.NotNil(t, list[0].Client.RuntimeProbeVersion)
+		assert.Equal(t, 2, *list[0].Client.RuntimeProbeVersion)
 	})
 
 	t.Run("Terminal_States_Filtered", func(t *testing.T) {

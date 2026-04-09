@@ -680,6 +680,16 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 		hostOverrideApplied := true
 		dto.HostOverrideApplied = &hostOverrideApplied
 	}
+	clientSnapshot := sessionPlaybackClientSnapshot(session)
+	if clientSnapshot != nil {
+		dto.Client = mapPlaybackClientSnapshot(clientSnapshot)
+		if clientFamily := strings.TrimSpace(clientSnapshot.ClientFamily); clientFamily != "" {
+			dto.ClientFamily = &clientFamily
+		}
+		if clientCapsSource := strings.TrimSpace(clientSnapshot.ClientCapsSource); clientCapsSource != "" {
+			dto.ClientCapsSource = &clientCapsSource
+		}
+	}
 
 	if trace.Source != nil {
 		dto.Source = mapSourceProfile(trace.Source)

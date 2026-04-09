@@ -16,7 +16,8 @@ ui-build: ## Build WebUI assets
 build: ## Build xg2g binary (Go-only, offline-safe)
 	@echo "▶ build (Go-only, offline-safe)"
 	@mkdir -p $(BUILD_DIR)
-	@cd $(BACKEND_DIR) && GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS="*:off" $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -mod=vendor -o ../$(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && \
+		GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS="*:off" "$$GO_BIN" build $(BUILD_FLAGS) $(LDFLAGS) -mod=vendor -o ../$(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
 	@echo "✅ Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 build-with-ui: ui-build ## Build WebUI assets and then build the daemon
@@ -27,8 +28,8 @@ generate: ## Generate Go code from OpenAPI spec (v3 only)
 	@echo "Generating API server code (v3)..."
 	@mkdir -p $(BACKEND_DIR)/internal/api
 	@mkdir -p $(BACKEND_DIR)/internal/control/http/v3
-	@cd $(BACKEND_DIR) && $(GO) run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-api.yaml -o internal/api/server_gen.go api/openapi.yaml
-	@cd $(BACKEND_DIR) && $(GO) run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-v3.yaml -o internal/control/http/v3/server_gen.go api/openapi.yaml
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-api.yaml -o internal/api/server_gen.go api/openapi.yaml
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-v3.yaml -o internal/control/http/v3/server_gen.go api/openapi.yaml
 	@echo "✅ Code generation complete (single source: api/openapi.yaml):"
 	@echo "   - $(BACKEND_DIR)/internal/control/http/v3/server_gen.go"
 
@@ -42,7 +43,7 @@ gen-openapi-hard: ## Generate OpenAPI hard-mode artifacts (snapshot + TS client 
 
 generate-config: ## Generate config surfaces from registry
 	@echo "Generating config surfaces from registry..."
-	@cd $(BACKEND_DIR) && $(GO) run ./cmd/configgen --allow-create
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run ./cmd/configgen --allow-create
 	@echo "✅ Config surfaces generated"
 
 backend-dev: ## Run the backend in the foreground (advanced, no containers)
@@ -80,7 +81,7 @@ check-tools: ## Verify required local developer tools and workspace state
 
 dev-tools: ## Install pinned local developer CLI tools
 	@echo "Installing pinned Go developer tools..."
-	@GOFLAGS= GOWORK=off $(GO) install $(GOLANGCI_LINT_MODULE)@$(GOLANGCI_LINT_VERSION)
-	@GOFLAGS= GOWORK=off $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	@$(RESOLVE_GO_BIN_SH) && GOFLAGS= GOWORK=off GOTOOLCHAIN=local "$$GO_BIN" install $(GOLANGCI_LINT_MODULE)@$(GOLANGCI_LINT_VERSION)
+	@$(RESOLVE_GO_BIN_SH) && GOFLAGS= GOWORK=off GOTOOLCHAIN=local "$$GO_BIN" install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	@$(MAKE) bootstrap-python-tools
 	@echo "✅ Developer CLI tools ready"

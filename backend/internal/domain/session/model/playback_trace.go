@@ -47,6 +47,54 @@ type PlaybackOperatorTrace struct {
 	OverrideApplied        bool   `json:"overrideApplied,omitempty"`
 }
 
+type PlaybackClientDeviceContext struct {
+	Brand        string `json:"brand,omitempty"`
+	Device       string `json:"device,omitempty"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Model        string `json:"model,omitempty"`
+	OSName       string `json:"osName,omitempty"`
+	OSVersion    string `json:"osVersion,omitempty"`
+	Platform     string `json:"platform,omitempty"`
+	Product      string `json:"product,omitempty"`
+	SDKInt       int    `json:"sdkInt,omitempty"`
+}
+
+type PlaybackClientNetworkContext struct {
+	DownlinkKbps      int    `json:"downlinkKbps,omitempty"`
+	InternetValidated *bool  `json:"internetValidated,omitempty"`
+	Kind              string `json:"kind,omitempty"`
+	Metered           *bool  `json:"metered,omitempty"`
+}
+
+type PlaybackClientSnapshot struct {
+	CapturedAtUnix      int64                         `json:"capturedAtUnix,omitempty"`
+	CapHash             string                        `json:"capHash,omitempty"`
+	ClientCapsSource    string                        `json:"clientCapsSource,omitempty"`
+	ClientFamily        string                        `json:"clientFamily,omitempty"`
+	PreferredHLSEngine  string                        `json:"preferredHlsEngine,omitempty"`
+	DeviceType          string                        `json:"deviceType,omitempty"`
+	RuntimeProbeUsed    bool                          `json:"runtimeProbeUsed,omitempty"`
+	RuntimeProbeVersion int                           `json:"runtimeProbeVersion,omitempty"`
+	DeviceContext       *PlaybackClientDeviceContext  `json:"deviceContext,omitempty"`
+	NetworkContext      *PlaybackClientNetworkContext `json:"networkContext,omitempty"`
+}
+
+func (s *PlaybackClientSnapshot) Clone() *PlaybackClientSnapshot {
+	if s == nil {
+		return nil
+	}
+	cp := *s
+	if s.DeviceContext != nil {
+		device := *s.DeviceContext
+		cp.DeviceContext = &device
+	}
+	if s.NetworkContext != nil {
+		network := *s.NetworkContext
+		cp.NetworkContext = &network
+	}
+	return &cp
+}
+
 type PlaybackTrace struct {
 	Source               *playbackprofile.SourceProfile         `json:"source,omitempty"`
 	RequestProfile       string                                 `json:"requestProfile,omitempty"`
@@ -67,6 +115,7 @@ type PlaybackTrace struct {
 	TargetProfile        *playbackprofile.TargetPlaybackProfile `json:"targetProfile,omitempty"`
 	FFmpegPlan           *FFmpegPlanTrace                       `json:"ffmpegPlan,omitempty"`
 	Operator             *PlaybackOperatorTrace                 `json:"operator,omitempty"`
+	Client               *PlaybackClientSnapshot                `json:"client,omitempty"`
 	HostPressureBand     string                                 `json:"hostPressureBand,omitempty"`
 	HostOverrideApplied  bool                                   `json:"hostOverrideApplied,omitempty"`
 	FirstFrameAtUnix     int64                                  `json:"firstFrameAtUnix,omitempty"`
@@ -96,6 +145,18 @@ func (t *PlaybackTrace) Clone() *PlaybackTrace {
 	if t.Operator != nil {
 		operator := *t.Operator
 		cp.Operator = &operator
+	}
+	if t.Client != nil {
+		client := *t.Client
+		if t.Client.DeviceContext != nil {
+			device := *t.Client.DeviceContext
+			client.DeviceContext = &device
+		}
+		if t.Client.NetworkContext != nil {
+			network := *t.Client.NetworkContext
+			client.NetworkContext = &network
+		}
+		cp.Client = &client
 	}
 	if len(t.Fallbacks) > 0 {
 		cp.Fallbacks = append([]PlaybackFallbackTrace(nil), t.Fallbacks...)

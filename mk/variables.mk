@@ -14,6 +14,13 @@ GOTOOLCHAIN ?= go1.25.9
 export GOTOOLCHAIN
 export GOWORK := off
 GO := go
+define RESOLVE_GO_BIN_SH
+GO_BIN="$$($(GO) env GOROOT)/bin/go"; \
+if [ ! -x "$$GO_BIN" ]; then \
+	echo "❌ Selected Go toolchain binary not found: $$GO_BIN"; \
+	exit 1; \
+fi
+endef
 PYTHON ?= python3
 PYTHON_TOOLS_VENV := .venv
 PYTHON_TOOLS_BIN := $(PYTHON_TOOLS_VENV)/bin

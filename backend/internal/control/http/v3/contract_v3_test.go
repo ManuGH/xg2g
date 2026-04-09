@@ -643,10 +643,30 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 			HostPressureBand:     "constrained",
 			HostOverrideApplied:  true,
 			ClientPath:           "hlsjs",
-			InputKind:            "tuner",
-			PreflightReason:      "invalid_ts",
-			PreflightDetail:      "sync_miss",
-			TargetProfileHash:    "trace-hash-1",
+			Client: &model.PlaybackClientSnapshot{
+				CapturedAtUnix:      1700000001,
+				CapHash:             "cap-hash-1",
+				ClientCapsSource:    "runtime_plus_family",
+				ClientFamily:        "chromium_hlsjs",
+				PreferredHLSEngine:  "hlsjs",
+				DeviceType:          "web",
+				RuntimeProbeUsed:    true,
+				RuntimeProbeVersion: 2,
+				DeviceContext: &model.PlaybackClientDeviceContext{
+					Platform:  "browser",
+					OSName:    "macos",
+					OSVersion: "15.4",
+					Model:     "macbookpro",
+				},
+				NetworkContext: &model.PlaybackClientNetworkContext{
+					Kind:         "wifi",
+					DownlinkKbps: 54000,
+				},
+			},
+			InputKind:         "tuner",
+			PreflightReason:   "invalid_ts",
+			PreflightDetail:   "sync_miss",
+			TargetProfileHash: "trace-hash-1",
 			Operator: &model.PlaybackOperatorTrace{
 				ForcedIntent:           "repair",
 				MaxQualityRung:         "repair_audio_aac_192_stereo",
@@ -747,6 +767,35 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.Equal(t, "constrained", *resp.Trace.HostPressureBand)
 	require.NotNil(t, resp.Trace.HostOverrideApplied)
 	require.True(t, *resp.Trace.HostOverrideApplied)
+	require.NotNil(t, resp.Trace.Client)
+	require.NotNil(t, resp.Trace.Client.CapHash)
+	require.Equal(t, "cap-hash-1", *resp.Trace.Client.CapHash)
+	require.NotNil(t, resp.Trace.Client.ClientCapsSource)
+	require.Equal(t, "runtime_plus_family", *resp.Trace.Client.ClientCapsSource)
+	require.NotNil(t, resp.Trace.Client.ClientFamily)
+	require.Equal(t, "chromium_hlsjs", *resp.Trace.Client.ClientFamily)
+	require.NotNil(t, resp.Trace.Client.PreferredHlsEngine)
+	require.Equal(t, "hlsjs", *resp.Trace.Client.PreferredHlsEngine)
+	require.NotNil(t, resp.Trace.Client.DeviceType)
+	require.Equal(t, "web", *resp.Trace.Client.DeviceType)
+	require.NotNil(t, resp.Trace.Client.RuntimeProbeUsed)
+	require.True(t, *resp.Trace.Client.RuntimeProbeUsed)
+	require.NotNil(t, resp.Trace.Client.RuntimeProbeVersion)
+	require.Equal(t, 2, *resp.Trace.Client.RuntimeProbeVersion)
+	require.NotNil(t, resp.Trace.Client.CapturedAtMs)
+	require.EqualValues(t, 1700000001000, *resp.Trace.Client.CapturedAtMs)
+	require.NotNil(t, resp.Trace.Client.DeviceContext)
+	require.NotNil(t, resp.Trace.Client.DeviceContext.Platform)
+	require.Equal(t, "browser", *resp.Trace.Client.DeviceContext.Platform)
+	require.NotNil(t, resp.Trace.Client.DeviceContext.OsName)
+	require.Equal(t, "macos", *resp.Trace.Client.DeviceContext.OsName)
+	require.NotNil(t, resp.Trace.Client.NetworkContext)
+	require.NotNil(t, resp.Trace.Client.NetworkContext.Kind)
+	require.Equal(t, "wifi", *resp.Trace.Client.NetworkContext.Kind)
+	require.NotNil(t, resp.Trace.ClientFamily)
+	require.Equal(t, "chromium_hlsjs", *resp.Trace.ClientFamily)
+	require.NotNil(t, resp.Trace.ClientCapsSource)
+	require.Equal(t, "runtime_plus_family", *resp.Trace.ClientCapsSource)
 	require.NotNil(t, resp.Trace.Operator)
 	require.NotNil(t, resp.Trace.Operator.ForcedIntent)
 	require.Equal(t, "repair", *resp.Trace.Operator.ForcedIntent)
@@ -950,22 +999,28 @@ func TestV3Contract_HLSRejectsUnsafeRouteParams(t *testing.T) {
 	sessionCookie := issueSessionCookie(t, handler, "test-token")
 
 	tests := []struct {
-		name   string
-		path   string
-		status int
-		body   string
+		name        string
+		path        string
+		status      int
+		problemType string
+		code        string
+		detail      string
 	}{
 		{
-			name:   "reject invalid session id at route boundary",
-			path:   V3BaseURL + "/sessions/bad..sid/hls/index.m3u8",
-			status: http.StatusBadRequest,
-			body:   "",
+			name:        "reject invalid session id at route boundary",
+			path:        V3BaseURL + "/sessions/bad..sid/hls/index.m3u8",
+			status:      http.StatusBadRequest,
+			problemType: "/problems/system/invalid_input",
+			code:        "INVALID_INPUT",
+			detail:      "Invalid format for parameter sessionID",
 		},
 		{
-			name:   "reject unexpected artifact at route boundary",
-			path:   V3BaseURL + "/sessions/550e8400-e29b-41d4-a716-446655440000/hls/evil.txt",
-			status: http.StatusForbidden,
-			body:   "file type not allowed",
+			name:        "reject unexpected artifact at route boundary",
+			path:        V3BaseURL + "/sessions/550e8400-e29b-41d4-a716-446655440000/hls/evil.txt",
+			status:      http.StatusForbidden,
+			problemType: "/problems/sessions/hls_forbidden_artifact",
+			code:        "FORBIDDEN",
+			detail:      "The requested HLS artifact is not allowed",
 		},
 	}
 
@@ -978,9 +1033,15 @@ func TestV3Contract_HLSRejectsUnsafeRouteParams(t *testing.T) {
 			handler.ServeHTTP(rr, req)
 
 			require.Equal(t, tt.status, rr.Code)
-			if tt.body != "" {
-				require.Contains(t, rr.Body.String(), tt.body)
-			}
+			require.Contains(t, rr.Header().Get("Content-Type"), "application/problem+json")
+
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+			require.Equal(t, tt.problemType, body["type"])
+			require.Equal(t, tt.code, body["code"])
+			require.Equal(t, float64(tt.status), body["status"])
+			require.Contains(t, body["detail"], tt.detail)
+			require.Equal(t, tt.path, body["instance"])
 		})
 	}
 }

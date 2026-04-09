@@ -8,7 +8,7 @@ verify: verify-generated-artifacts verify-doc-links verify-capabilities contract
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
-	@cd $(BACKEND_DIR) && $(GO) run ./cmd/configgen
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run ./cmd/configgen
 	@git diff --exit-code docs/guides/CONFIGURATION.md docs/guides/config.schema.json $(BACKEND_DIR)/config.generated.example.yaml docs/guides/CONFIG_SURFACES.md || (echo "❌ Config surfaces are out of sync. Run 'make generate-config' and commit changes." && exit 1)
 	@echo "✅ Config surfaces are up-to-date"
 

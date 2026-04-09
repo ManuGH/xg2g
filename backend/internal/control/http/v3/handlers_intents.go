@@ -7,8 +7,10 @@ package v3
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	controlauth "github.com/ManuGH/xg2g/internal/control/auth"
@@ -17,7 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
-	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
+	pipelineapi "github.com/ManuGH/xg2g/internal/pipeline/api"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
@@ -39,7 +41,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req v3api.IntentRequest
+	var req IntentRequest
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
@@ -47,7 +49,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	correlationID, err := v3api.NormalizeCorrelationID(req.CorrelationID)
+	correlationID, err := pipelineapi.NormalizeCorrelationID(derefString(req.CorrelationId))
 	if err != nil {
 		respondIntentFailure(w, r, IntentErrInvalidInput, err.Error())
 		return
@@ -59,19 +61,20 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		logger = logger.With().Str("correlationId", correlationID).Logger()
 	}
 
-	intentType := req.Type
+	intentType := model.IntentType(derefStringIntentType(req.Type))
 	if intentType == "" {
 		intentType = model.IntentTypeStreamStart
 	}
 
+	serviceRef := strings.TrimSpace(derefString(req.ServiceRef))
 	if intentType == model.IntentTypeStreamStart {
-		if u, ok := platformnet.ParseDirectHTTPURL(req.ServiceRef); ok {
+		if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
 			normalized, err := platformnet.ValidateOutboundURL(r.Context(), u.String(), outboundPolicyFromConfig(cfg))
 			if err != nil {
 				respondIntentFailure(w, r, IntentErrInvalidInput, "direct URL serviceRef rejected by outbound policy")
 				return
 			}
-			req.ServiceRef = normalized
+			serviceRef = normalized
 		}
 	}
 
@@ -83,11 +86,11 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			correlationID = uuid.New().String()
 		}
 	case model.IntentTypeStreamStop:
-		if req.SessionID == "" {
+		if req.SessionId == nil {
 			respondIntentFailure(w, r, IntentErrInvalidInput, "sessionId required for stop")
 			return
 		}
-		sessionID = req.SessionID
+		sessionID = req.SessionId.String()
 		if correlationID == "" {
 			if session, err := store.GetSession(r.Context(), sessionID); err == nil && session != nil {
 				correlationID = session.CorrelationID
@@ -106,7 +109,10 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	modeRecording := normalize.Token(model.ModeRecording)
 	modeLive := normalize.Token(model.ModeLive)
 	decisionTraceID := ""
-	if raw := normalize.Token(req.Params["mode"]); raw != "" {
+	clientCaps := normalizeIntentClientCaps(req.Client)
+	clientCapHash := hashV3Capabilities(req.Client)
+	params := normalizeIntentParams(req.Params, clientCaps, clientCapHash)
+	if raw := normalize.Token(params["mode"]); raw != "" {
 		if raw == modeRecording {
 			respondIntentFailure(w, r, IntentErrInvalidInput, "recording playback uses /recordings")
 			return
@@ -142,31 +148,28 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			logger = logger.With().Str("traceId", claims.TraceID).Logger()
 		}
 
-		normRef := normalize.ServiceRef(req.ServiceRef)
+		normRef := normalize.ServiceRef(serviceRef)
 		normTokenSub := normalize.ServiceRef(claims.Sub)
 		if normRef != normTokenSub {
 			writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this service_ref", nil)
 			return
 		}
 
-		var reqMode string
-		if req.Params != nil {
-			reqMode = req.Params["mode"]
-		}
+		reqMode := params["mode"]
 		if raw := normalize.Token(reqMode); raw != "" && raw != claims.Mode {
 			writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this playback mode", nil)
 			return
 		}
 
-		var expectedHash string
-		if req.Params != nil {
-			if rawCapHash := normalize.Token(req.Params["capHash"]); rawCapHash != "" {
+		expectedHash := clientCapHash
+		if expectedHash == "" {
+			if rawCapHash := normalize.Token(params["capHash"]); rawCapHash != "" {
 				expectedHash = rawCapHash
-			} else if rawCapHash := normalize.Token(req.Params["cap_hash"]); rawCapHash != "" {
+			} else if rawCapHash := normalize.Token(params["cap_hash"]); rawCapHash != "" {
 				expectedHash = rawCapHash
 			} else {
-				genericMap := make(map[string]interface{}, len(req.Params))
-				for k, v := range req.Params {
+				genericMap := make(map[string]interface{}, len(params))
+				for k, v := range params {
 					genericMap[k] = v
 				}
 				if cHash, err := normalize.MapHash(genericMap); err == nil {
@@ -179,7 +182,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if enforcePreflight(r.Context(), w, r, deps, req.ServiceRef) {
+		if enforcePreflight(r.Context(), w, r, deps, serviceRef) {
 			return
 		}
 	}
@@ -192,14 +195,16 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	result, intentErr := s.intentProcessor().ProcessIntent(r.Context(), v3intents.Intent{
 		Type:          intentType,
 		SessionID:     sessionID,
-		ServiceRef:    req.ServiceRef,
-		Params:        req.Params,
+		ServiceRef:    serviceRef,
+		Params:        params,
 		StartMs:       req.StartMs,
 		CorrelationID: correlationID,
 		DecisionTrace: decisionTraceID,
 		Mode:          mode,
 		UserAgent:     r.UserAgent(),
 		PrincipalID:   principalID,
+		ClientCaps:    clientCaps,
+		ClientCapHash: clientCapHash,
 		Logger:        logger,
 	})
 	if intentErr != nil {
@@ -211,11 +216,23 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
-		SessionID:     result.SessionID,
-		Status:        result.Status,
-		CorrelationID: result.CorrelationID,
-	})
+	status := IntentAcceptedResponseStatus(result.Status)
+	sessionUUID := openapi_types.UUID(parseUUID(result.SessionID))
+	resp := IntentAcceptedResponse{
+		SessionId: &sessionUUID,
+		Status:    &status,
+	}
+	if result.CorrelationID != "" {
+		resp.CorrelationId = &result.CorrelationID
+	}
+	writeJSON(w, http.StatusAccepted, &resp)
+}
+
+func derefStringIntentType(value *IntentRequestType) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
 }
 
 func (s *Server) intentProcessor() *v3intents.Service {

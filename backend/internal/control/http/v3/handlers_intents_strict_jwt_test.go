@@ -172,6 +172,42 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 			expectedStatus: http.StatusForbidden,
 			expectedCode:   "CLAIM_MISMATCH",
 		},
+		{
+			name: "Capabilities_Client_Object_Manipulated_->_403_Forbidden",
+			reqFunc: func() *http.Request {
+				expectedCaps := map[string]any{
+					"capabilitiesVersion": 3,
+					"container":           []string{"ts"},
+					"videoCodecs":         []string{"h264"},
+					"audioCodecs":         []string{"aac"},
+				}
+				expectedHash, err := normalize.MapHash(expectedCaps)
+				if err != nil {
+					t.Fatalf("failed to hash expected capabilities: %v", err)
+				}
+
+				modClaims := validClaims
+				modClaims.CapHash = expectedHash
+				tokenStr, _ := v3auth.GenerateHS256(jwtSecret, modClaims, "kid-v1")
+
+				reqBody := map[string]any{
+					"type":                  "stream.start",
+					"serviceRef":            "1:0:1:C35C:271A:F001:FFFF0000:0:0:0:",
+					"playbackDecisionToken": tokenStr,
+					"params":                map[string]string{"mode": "live"},
+					"client": map[string]any{
+						"capabilitiesVersion": 3,
+						"container":           []string{"ts"},
+						"videoCodecs":         []string{"hevc"},
+						"audioCodecs":         []string{"aac"},
+					},
+				}
+				b, _ := json.Marshal(reqBody)
+				return httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(b))
+			},
+			expectedStatus: http.StatusForbidden,
+			expectedCode:   "CLAIM_MISMATCH",
+		},
 
 		// ---- Gate B: JWT Parser Strictness (no panic on malformed input) ----
 		{

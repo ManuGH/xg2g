@@ -91,3 +91,20 @@ export_env_file_safely() {
     export "${PARSED_ENV_KEY}"
   done < "${env_file}"
 }
+
+resolve_selected_go_bin() {
+  local go_bin
+
+  if ! command -v go >/dev/null 2>&1; then
+    echo "ERROR: missing required command: go" >&2
+    return 1
+  fi
+
+  go_bin="$(go env GOROOT)/bin/go" || return 1
+  if [[ ! -x "${go_bin}" ]]; then
+    echo "ERROR: selected Go toolchain binary not found: ${go_bin}" >&2
+    return 1
+  fi
+
+  printf '%s\n' "${go_bin}"
+}

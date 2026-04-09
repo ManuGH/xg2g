@@ -7,7 +7,6 @@ package problemcode
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"testing"
 
@@ -72,14 +71,34 @@ func TestProblemCodeRegistry_OpenAPIErrorSeverityEnum(t *testing.T) {
 func loadOpenAPIProblemDoc(t *testing.T) openAPIDoc {
 	t.Helper()
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	require.True(t, ok, "runtime.Caller failed")
-
-	path := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "api", "openapi.yaml"))
+	path := locateOpenAPIProblemDoc(t)
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 
 	var doc openAPIDoc
 	require.NoError(t, yaml.Unmarshal(data, &doc))
 	return doc
+}
+
+func locateOpenAPIProblemDoc(t *testing.T) string {
+	t.Helper()
+
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+
+	for {
+		candidate := filepath.Join(dir, "api", "openapi.yaml")
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+			return candidate
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	require.FailNowf(t, "openapi.yaml not found", "searched upward from %s", dir)
+	return ""
 }

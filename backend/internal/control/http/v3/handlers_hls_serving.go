@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 var safeHLSSessionIDRouteRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -36,11 +37,11 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 	filename := chi.URLParam(r, "filename")
 	if !safeHLSSessionIDRouteRe.MatchString(sessionID) {
-		http.Error(w, "invalid session id", http.StatusBadRequest)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/invalid_id", "Invalid Session ID", problemcode.CodeInvalidSessionID, "The provided session ID contains unsafe characters", nil)
 		return
 	}
 	if !safeHLSFilenameRouteRe.MatchString(filename) {
-		http.Error(w, "file type not allowed", http.StatusForbidden)
+		writeRegisteredProblem(w, r, http.StatusForbidden, "sessions/hls_forbidden_artifact", "Access Denied", problemcode.CodeForbidden, "The requested HLS artifact is not allowed", nil)
 		return
 	}
 	stage := playbackStageLabelFromLiveFilename(filename)

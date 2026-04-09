@@ -65,6 +65,7 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 		name := st.ChannelName
 		ip := st.ClientIP
 		clientFamily := st.ClientFamily
+		client := st.Client
 		preferredHLSEngine := st.PreferredHLSEngine
 		deviceType := st.DeviceType
 		start := st.StartedAt
@@ -113,6 +114,9 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 		}
 		if clientFamily != "" {
 			dto.ClientFamily = &clientFamily
+		}
+		if client != nil {
+			dto.Client = mapPlaybackClientSummary(client)
 		}
 		if preferredHLSEngine != "" {
 			dto.PreferredHlsEngine = &preferredHLSEngine
