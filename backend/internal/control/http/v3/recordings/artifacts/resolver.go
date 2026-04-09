@@ -325,10 +325,6 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 	return err
 }
 
-func recordingVariantMetadataKey(ref, variant string) string {
-	return recservice.RecordingVariantMetadataKey(ref, variant)
-}
-
 func recordingTarget(profile, variant string, target *playbackprofile.TargetPlaybackProfile) (*playbackprofile.TargetPlaybackProfile, string, *ArtifactError) {
 	variant = v3recordings.NormalizeVariantHash(variant)
 	if target == nil {

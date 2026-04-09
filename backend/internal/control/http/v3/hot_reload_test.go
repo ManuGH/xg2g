@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -43,11 +45,28 @@ func (s *safeBuffer) Reset() {
 	s.buf.Reset()
 }
 
-func createTestConfig() config.AppConfig {
+func createTestConfig(t *testing.T) config.AppConfig {
+	t.Helper()
+
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	storeDir := filepath.Join(root, "store")
+	hlsRoot := filepath.Join(root, "hls")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("create data dir: %v", err)
+	}
+
 	return config.AppConfig{
 		LogLevel:           "info",
-		DataDir:            "/tmp",
+		DataDir:            dataDir,
 		VODCacheMaxEntries: 100,
+		HLS: config.HLSConfig{
+			Root: hlsRoot,
+		},
+		Store: config.StoreConfig{
+			Backend: "sqlite",
+			Path:    storeDir,
+		},
 		Enigma2: config.Enigma2Settings{
 			BaseURL: "http://localhost:8001",
 		},
@@ -82,7 +101,7 @@ func TestHotReload_LogLevel_Hardened(t *testing.T) {
 		t.Fatalf("global level should be info, got %v", zerolog.GlobalLevel())
 	}
 
-	cfg := createTestConfig()
+	cfg := createTestConfig(t)
 	cm := config.NewManager("/tmp/xg2g-test-config-hardened.yaml")
 	srv := NewServer(cfg, cm, nil)
 
@@ -141,7 +160,7 @@ func TestHotReload_AuditGating_Killer(t *testing.T) {
 		Output: &buf,
 	})
 
-	cfg := createTestConfig()
+	cfg := createTestConfig(t)
 	srv := NewServer(cfg, config.NewManager("/tmp/xg2g-audit-gate.yaml"), nil)
 
 	// Setting level to ERROR
@@ -174,7 +193,7 @@ func TestHotReload_AuditGating_Killer(t *testing.T) {
 
 func TestHotReload_SliceNormalization_Hardened(t *testing.T) {
 	// GIVEN: Config with nil vs empty AllowedOrigins ([]string)
-	old := createTestConfig()
+	old := createTestConfig(t)
 	old.AllowedOrigins = nil
 
 	next := old
@@ -194,7 +213,7 @@ func TestHotReload_SliceNormalization_Hardened(t *testing.T) {
 
 func TestHotReload_EmptyBouquets_CSVNormalization(t *testing.T) {
 	// GIVEN: Config with empty bouquet (string)
-	cfg := createTestConfig()
+	cfg := createTestConfig(t)
 	cfg.Bouquet = ""
 
 	srv := NewServer(cfg, config.NewManager("/tmp/xg2g-csv-norm.yaml"), nil)
@@ -225,7 +244,7 @@ func TestHotReload_EmptyBouquets_CSVNormalization(t *testing.T) {
 }
 
 func TestHotReload_ConcurrencyStress(t *testing.T) {
-	cfg := createTestConfig()
+	cfg := createTestConfig(t)
 	srv := NewServer(cfg, config.NewManager("/tmp/xg2g-stress.yaml"), nil)
 
 	const count = 50

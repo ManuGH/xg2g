@@ -5,7 +5,7 @@
 
 **Status**: CANONICAL - Single Source of Truth
 **Last Updated**: 2026-03-26
-**Applies To**: v3.4.5+
+**Applies To**: v3.4.6+
 
 > [!IMPORTANT]
 > This document defines **non-negotiable** behavior. No bauchgefühl, no interpretation.
@@ -186,7 +186,7 @@ version: '3.8'
 
 services:
   xg2g:
-    image: ghcr.io/manugh/xg2g:v3.4.5
+    image: ghcr.io/manugh/xg2g:v3.4.6
     container_name: xg2g
     restart: unless-stopped
 
@@ -274,7 +274,7 @@ with explicit `device_ids`.
 **Command**:
 
 ```bash
-docker run --rm xg2g:v3.4.5 which ffmpeg
+docker run --rm xg2g:v3.4.6 which ffmpeg
 ```
 
 **Expected**: `/usr/local/bin/ffmpeg`
@@ -282,7 +282,7 @@ docker run --rm xg2g:v3.4.5 which ffmpeg
 **Command**:
 
 ```bash
-docker run --rm xg2g:v3.4.5 ffmpeg -version | head -1
+docker run --rm xg2g:v3.4.6 ffmpeg -version | head -1
 ```
 
 **Expected**: `ffmpeg version 8.1`
@@ -290,7 +290,7 @@ docker run --rm xg2g:v3.4.5 ffmpeg -version | head -1
 **Command**:
 
 ```bash
-docker run --rm xg2g:v3.4.5 sh -c 'echo $XG2G_FFMPEG_BIN'
+docker run --rm xg2g:v3.4.6 sh -c 'echo $XG2G_FFMPEG_BIN'
 ```
 
 **Expected**: `/usr/local/bin/ffmpeg`
@@ -298,7 +298,7 @@ docker run --rm xg2g:v3.4.5 sh -c 'echo $XG2G_FFMPEG_BIN'
 **Failure Test**:
 
 ```bash
-docker run --rm -e FFMPEG_HOME=/nonexistent xg2g:v3.4.5 ffmpeg -version
+docker run --rm -e FFMPEG_HOME=/nonexistent xg2g:v3.4.6 ffmpeg -version
 ```
 
 **Expected**: `ERROR: FFmpeg binary not found or not executable: /nonexistent/bin/ffmpeg` (exit 1)
@@ -308,7 +308,7 @@ docker run --rm -e FFMPEG_HOME=/nonexistent xg2g:v3.4.5 ffmpeg -version
 **Command** (with `/dev/dri` contract):
 
 ```bash
-docker run --rm --device /dev/dri:/dev/dri xg2g:v3.4.5 \
+docker run --rm --device /dev/dri:/dev/dri xg2g:v3.4.6 \
   sh -lc 'ls -1 /dev/dri/renderD*'
 ```
 
@@ -320,7 +320,7 @@ tree is mounted, not that xg2g will choose GPU for session startup.
 Command (hwaccel test):
 
 ```bash
-docker run --rm --device /dev/dri:/dev/dri xg2g:v3.4.5 \
+docker run --rm --device /dev/dri:/dev/dri xg2g:v3.4.6 \
   sh -lc 'node="$(ls /dev/dri/renderD* | head -n1)"; test -n "$node"; ffmpeg -hwaccel vaapi -hwaccel_device "$node" -f lavfi -i testsrc -t 1 -f null -'
 ```
 
@@ -335,13 +335,13 @@ container env override on the 2026 image line.
 
 ```bash
 # Verify non-root user (UID 10001)
-docker inspect --format='{{.Config.User}}' xg2g:v3.4.5
+docker inspect --format='{{.Config.User}}' xg2g:v3.4.6
 ```
 
 Test (no device):
 
 ```bash
-docker run --rm xg2g:v3.4.5 \
+docker run --rm xg2g:v3.4.6 \
   ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD999 -f lavfi -i testsrc -t 1 -f null -
 ```
 
@@ -352,7 +352,7 @@ docker run --rm xg2g:v3.4.5 \
 **Command** (with NVIDIA runtime):
 
 ```bash
-docker run --rm --gpus all xg2g:v3.4.5 \
+docker run --rm --gpus all xg2g:v3.4.6 \
   sh -lc 'ls -1 /dev/nvidia* 2>/dev/null'
 ```
 
@@ -361,7 +361,7 @@ docker run --rm --gpus all xg2g:v3.4.5 \
 Command (NVENC encode test):
 
 ```bash
-docker run --rm --gpus all xg2g:v3.4.5 \
+docker run --rm --gpus all xg2g:v3.4.6 \
   ffmpeg -f lavfi -i testsrc=duration=0.2:size=1280x720:rate=25 -c:v h264_nvenc -frames:v 5 -f null -
 ```
 
@@ -370,7 +370,7 @@ Expected: Success (exit 0)
 Failure (runtime absent):
 
 ```bash
-docker run --rm xg2g:v3.4.5 \
+docker run --rm xg2g:v3.4.6 \
   ffmpeg -f lavfi -i testsrc=duration=0.2:size=1280x720:rate=25 -c:v h264_nvenc -frames:v 5 -f null -
 ```
 
@@ -409,7 +409,7 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 - name: Verify Deployment Contract
   run: |
     # FFmpeg wrapper
-    docker run --rm xg2g:v3.4.5 sh -c '
+    docker run --rm xg2g:v3.4.6 sh -c '
       [ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ] || exit 1
       ffmpeg -version | grep -q "8.1" || exit 1
       [ "$XG2G_FFMPEG_BIN" = "/usr/local/bin/ffmpeg" ] || exit 1
@@ -425,13 +425,13 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 - name: VAAPI Fail-Closed Test
   run: |
     # Without device, hwaccel=force MUST fail
-    docker run --rm xg2g:v3.4.5 \
+    docker run --rm xg2g:v3.4.6 \
       ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD999 \
       -f lavfi -i testsrc -t 1 -f null - 2>&1 | grep -q "Cannot open"
 
 - name: NVENC Runtime Smoke
   run: |
-    docker run --rm --gpus all xg2g:v3.4.5 \
+    docker run --rm --gpus all xg2g:v3.4.6 \
       ffmpeg -f lavfi -i testsrc=duration=0.2:size=1280x720:rate=25 -c:v h264_nvenc -frames:v 5 -f null -
 ```
 

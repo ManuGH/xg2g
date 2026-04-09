@@ -36,13 +36,6 @@ func (r liveTruthResolution) Verified() bool {
 	return r.State == liveTruthStateVerified
 }
 
-// resolveLiveTruth prefers persisted scan truth and degrades explicitly when
-// that truth is unavailable or incomplete. It never synthesizes container or
-// codec facts that were not confirmed by the scan SSOT.
-func resolveLiveTruth(serviceRef string, source ChannelTruthSource) playback.MediaTruth {
-	return resolveLiveTruthState(serviceRef, source).Truth
-}
-
 func resolveLiveTruthState(serviceRef string, source ChannelTruthSource) liveTruthResolution {
 	if source == nil {
 		return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "scanner_unavailable", scan.Capability{}, []string{

@@ -42,11 +42,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify FFmpeg base image availability
+      - name: Resolve FFmpeg base image reference
         run: |
           version="$(sed -n 's/^FFMPEG_VERSION := //p' mk/variables.mk | head -n 1 | tr -d '[:space:]')"
           test -n "${version}"
-          docker buildx imagetools inspect "ghcr.io/manugh/xg2g-ffmpeg:${version}" >/dev/null
+          echo "FFMPEG_BASE_IMAGE=ghcr.io/manugh/xg2g-ffmpeg:${version}" >> "$GITHUB_ENV"
+          echo "FFmpeg base image: ghcr.io/manugh/xg2g-ffmpeg:${version}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@9a127d869fb706213d29cdf8eef3a4ea2b869415 # v7

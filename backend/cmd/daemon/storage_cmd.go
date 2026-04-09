@@ -229,6 +229,7 @@ func doVerifyJSON(path string, label string) int {
 
 	fmt.Fprintf(os.Stderr, "🔍 Verifying JSON state %s...\n", path)
 
+	// #nosec G304 -- the verify command intentionally reads an operator-supplied local path.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Verification interrupted by system error: %v\n", err)

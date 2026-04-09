@@ -7,6 +7,7 @@ package v3
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -34,7 +35,7 @@ func mapSessionStateResponse(reqID string, hlsRoot string, result v3sessions.Get
 		Profile:                  &session.Profile.Name,
 		ProfileReason:            sessionProfileReason(session),
 		UpdatedAtMs:              toPtr(int(session.UpdatedAtUnix * 1000)),
-		HeartbeatIntervalSeconds: int32(session.HeartbeatInterval),
+		HeartbeatIntervalSeconds: boundedHeartbeatIntervalSeconds(session.HeartbeatInterval),
 		LeaseExpiresAt:           time.Unix(session.LeaseExpiresAtUnix, 0).UTC(),
 		RequestId:                reqID,
 		CorrelationId:            &session.CorrelationID,
@@ -66,6 +67,17 @@ func mapSessionStateResponse(reqID string, hlsRoot string, result v3sessions.Get
 
 func toPtr[T any](v T) *T {
 	return &v
+}
+
+func boundedHeartbeatIntervalSeconds(v int) int32 {
+	switch {
+	case v <= 0:
+		return 0
+	case v > math.MaxInt32:
+		return math.MaxInt32
+	default:
+		return int32(v)
+	}
 }
 
 func toFloat32Ptr(v *float64) *float32 {

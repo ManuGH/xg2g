@@ -160,7 +160,7 @@ verify_release_workflow_contract() {
   assert_contains "${RELEASE_WORKFLOW}" '- "v*"' "release workflow tag trigger"
   assert_matches "${RELEASE_WORKFLOW}" 'goreleaser/goreleaser-action@([[:xdigit:]]{40}|v7)([[:space:]]*#.*v7)?' "release workflow goreleaser action"
   assert_contains "${RELEASE_WORKFLOW}" 'args: release --clean' "release workflow goreleaser args"
-  assert_contains "${RELEASE_WORKFLOW}" 'Verify FFmpeg base image availability' "release workflow ffmpeg base gate"
+  assert_contains "${RELEASE_WORKFLOW}" 'Resolve FFmpeg base image reference' "release workflow ffmpeg base gate"
   assert_contains "${RELEASE_WORKFLOW}" 'docker/login-action@' "release workflow ghcr login"
   assert_contains "${DOCKER_WORKFLOW}" 'branches:' "docker workflow trigger"
   assert_contains "${DOCKER_WORKFLOW}" '- main' "docker workflow main trigger"
