@@ -1534,6 +1534,7 @@ function V3Player(props: V3PlayerProps) {
             type: 'stream.start',
             serviceRef: ref,
             playbackDecisionToken: liveDecisionToken,
+            client: requestCaps,
             ...(Object.keys(intentParams).length > 0 ? { params: intentParams } : {})
           })
         });

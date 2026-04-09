@@ -754,7 +754,8 @@ func shouldScanFile(path string) bool {
 	// Generated UI bundles can contain incidental "XG2G_" substrings and cause
 	// nondeterministic inventory drift across environments. Keep inventory focused
 	// on source/config surfaces, not compiled embed artifacts.
-	if strings.HasPrefix(normalized, "internal/control/http/dist/assets/") {
+	if strings.HasPrefix(normalized, "internal/control/http/dist/assets/") ||
+		strings.HasPrefix(normalized, "backend/internal/control/http/dist/assets/") {
 		return false
 	}
 

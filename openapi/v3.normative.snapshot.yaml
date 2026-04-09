@@ -84,6 +84,10 @@ components:
         correlationId:
           type: string
           description: Optional correlation ID for end-to-end tracing
+        startMs:
+          type: integer
+          format: int64
+          description: Optional live playback start offset in milliseconds.
         sessionId:
           type: string
           format: uuid
@@ -96,6 +100,20 @@ components:
           additionalProperties:
             type: string
           description: Additional parameters
+        client:
+          $ref: "#/components/schemas/PlaybackCapabilities"
+
+    IntentAcceptedResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [accepted, idempotent_replay]
+        correlationId:
+          type: string
 
     SessionResponse:
       type: object
@@ -1438,6 +1456,78 @@ components:
         sdkInt:
           type: integer
 
+    PlaybackClientSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        capturedAtMs:
+          type: integer
+          format: int64
+          nullable: true
+        capHash:
+          type: string
+          nullable: true
+        clientCapsSource:
+          type: string
+          nullable: true
+        clientFamily:
+          type: string
+          nullable: true
+        preferredHlsEngine:
+          type: string
+          nullable: true
+        deviceType:
+          type: string
+          nullable: true
+        runtimeProbeUsed:
+          type: boolean
+          nullable: true
+        runtimeProbeVersion:
+          type: integer
+          nullable: true
+        deviceContext:
+          $ref: "#/components/schemas/PlaybackDeviceContext"
+        networkContext:
+          $ref: "#/components/schemas/PlaybackNetworkContext"
+
+    PlaybackClientSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        capHash:
+          type: string
+          nullable: true
+        clientCapsSource:
+          type: string
+          nullable: true
+        clientFamily:
+          type: string
+          nullable: true
+        preferredHlsEngine:
+          type: string
+          nullable: true
+        deviceType:
+          type: string
+          nullable: true
+        platform:
+          type: string
+          nullable: true
+        osName:
+          type: string
+          nullable: true
+        osVersion:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        networkKind:
+          type: string
+          nullable: true
+        runtimeProbeVersion:
+          type: integer
+          nullable: true
+
     PlaybackNetworkContext:
       type: object
       additionalProperties: false
@@ -1577,6 +1667,8 @@ components:
         clientFamily:
           type: string
           nullable: true
+        client:
+          $ref: "#/components/schemas/PlaybackClientSnapshot"
         sessionId:
           type: string
           nullable: true
@@ -2041,6 +2133,8 @@ components:
         clientFamily:
           type: string
           description: Coarse browser/player family reported by the client (e.g. chromium_hlsjs).
+        client:
+          $ref: "#/components/schemas/PlaybackClientSummary"
         channelName:
           type: string
         preferredHlsEngine:
@@ -3756,16 +3850,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  sessionId:
-                    type: string
-                    format: uuid
-                  status:
-                    type: string
-                    enum: [accepted, idempotent_replay]
-                  correlationId:
-                    type: string
+                $ref: "#/components/schemas/IntentAcceptedResponse"
         "400":
           description: Invalid request
           content:

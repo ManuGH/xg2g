@@ -2,6 +2,7 @@ package intents
 
 import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/rs/zerolog"
 )
@@ -18,6 +19,8 @@ type Intent struct {
 	Mode          string
 	UserAgent     string
 	PrincipalID   string
+	ClientCaps    *capabilities.PlaybackCapabilities
+	ClientCapHash string
 	Logger        zerolog.Logger
 }
 

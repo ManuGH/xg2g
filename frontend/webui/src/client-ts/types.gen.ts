@@ -46,6 +46,10 @@ export type IntentRequest = {
      */
     correlationId?: string;
     /**
+     * Optional live playback start offset in milliseconds.
+     */
+    startMs?: number;
+    /**
      * Required for stream.stop intent
      */
     sessionId?: string;
@@ -59,6 +63,13 @@ export type IntentRequest = {
     params?: {
         [key: string]: string;
     };
+    client?: PlaybackCapabilities;
+};
+
+export type IntentAcceptedResponse = {
+    sessionId?: string;
+    status?: 'accepted' | 'idempotent_replay';
+    correlationId?: string;
 };
 
 export type SessionResponse = {
@@ -908,6 +919,33 @@ export type PlaybackDeviceContext = {
     sdkInt?: number;
 };
 
+export type PlaybackClientSnapshot = {
+    capturedAtMs?: number | null;
+    capHash?: string | null;
+    clientCapsSource?: string | null;
+    clientFamily?: string | null;
+    preferredHlsEngine?: string | null;
+    deviceType?: string | null;
+    runtimeProbeUsed?: boolean | null;
+    runtimeProbeVersion?: number | null;
+    deviceContext?: PlaybackDeviceContext;
+    networkContext?: PlaybackNetworkContext;
+};
+
+export type PlaybackClientSummary = {
+    capHash?: string | null;
+    clientCapsSource?: string | null;
+    clientFamily?: string | null;
+    preferredHlsEngine?: string | null;
+    deviceType?: string | null;
+    platform?: string | null;
+    osName?: string | null;
+    osVersion?: string | null;
+    model?: string | null;
+    networkKind?: string | null;
+    runtimeProbeVersion?: number | null;
+};
+
 export type PlaybackNetworkContext = {
     kind?: string;
     downlinkKbps?: number;
@@ -976,6 +1014,7 @@ export type PlaybackTrace = {
     hostOverrideApplied?: boolean | null;
     clientCapsSource?: string | null;
     clientFamily?: string | null;
+    client?: PlaybackClientSnapshot;
     sessionId?: string | null;
     source?: PlaybackSourceProfile;
     clientPath?: string | null;
@@ -1237,6 +1276,7 @@ export type StreamSession = {
      * Coarse browser/player family reported by the client (e.g. chromium_hlsjs).
      */
     clientFamily?: string;
+    client?: PlaybackClientSummary;
     channelName?: string;
     /**
      * Preferred HLS playback engine reported by the client (e.g. native, hlsjs).
@@ -3012,11 +3052,7 @@ export type CreateIntentResponses = {
     /**
      * Intent accepted
      */
-    202: {
-        sessionId?: string;
-        status?: 'accepted' | 'idempotent_replay';
-        correlationId?: string;
-    };
+    202: IntentAcceptedResponse;
 };
 
 export type CreateIntentResponse = CreateIntentResponses[keyof CreateIntentResponses];

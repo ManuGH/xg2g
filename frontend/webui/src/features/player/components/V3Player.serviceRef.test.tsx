@@ -104,6 +104,7 @@ describe('V3Player ServiceRef Input', () => {
     const body = JSON.parse(options.body);
     expect(body.serviceRef).toBe(newRef);
     expect(body.playbackDecisionToken).toBe('live-token-1');
+    expect(body.client?.capabilitiesVersion).toBe(3);
     expect(body.params?.playback_decision_id).toBeUndefined();
   });
 
@@ -133,6 +134,7 @@ describe('V3Player ServiceRef Input', () => {
     const body = JSON.parse(options.body);
     expect(body.serviceRef).toBe(newRef);
     expect(body.playbackDecisionToken).toBe('live-token-1');
+    expect(body.client?.capabilitiesVersion).toBe(3);
     expect(body.params?.playback_decision_id).toBeUndefined();
   });
 

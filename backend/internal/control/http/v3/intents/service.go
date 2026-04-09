@@ -176,7 +176,7 @@ func (s *Service) resolveStartHWAccelMode(intent Intent, hw startHardwareState) 
 func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profiles.HWAccelMode) (string, string, *Error) {
 	reqProfileID := "universal"
 	requestedPlaybackMode := normalize.Token(intent.Params["playback_mode"])
-	clientFamily := normalize.Token(intent.Params[model.CtxKeyClientFamily])
+	clientFamily := clientFamilyForIntent(intent)
 	if requestedPlaybackMode != "" {
 		_, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.Params)
 		if tokenErr != nil {
@@ -221,7 +221,7 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 	resolution.idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, resolution.effectiveProfileID, resolution.bucket)
 
 	profileUserAgent := ""
-	clientFamily := normalize.Token(intent.Params[model.CtxKeyClientFamily])
+	clientFamily := clientFamilyForIntent(intent)
 	switch requestedPlaybackMode {
 	case "", "native_hls":
 		// Explicit playback modes usually bypass UA sniffing, but native_hls
@@ -383,17 +383,20 @@ func buildStartRequestParams(intent Intent, resolution startProfileResolution) m
 	if resolution.requestedPlaybackMode != "" {
 		requestParams[model.CtxKeyClientPath] = resolution.requestedPlaybackMode
 	}
-	if clientFamily := normalize.Token(intent.Params[model.CtxKeyClientFamily]); clientFamily != "" {
+	if clientFamily := clientFamilyForIntent(intent); clientFamily != "" {
 		requestParams[model.CtxKeyClientFamily] = clientFamily
 	}
-	if preferredEngine := normalize.Token(intent.Params[model.CtxKeyPreferredEngine]); preferredEngine != "" {
+	if preferredEngine := preferredEngineForIntent(intent); preferredEngine != "" {
 		requestParams[model.CtxKeyPreferredEngine] = preferredEngine
 	}
-	if deviceType := normalize.Token(intent.Params[model.CtxKeyDeviceType]); deviceType != "" {
+	if deviceType := deviceTypeForIntent(intent); deviceType != "" {
 		requestParams[model.CtxKeyDeviceType] = deviceType
 	}
 	if raw := intent.Params["codecs"]; raw != "" {
 		requestParams["codecs"] = raw
+	}
+	if capHash := clientCapHashForIntent(intent); capHash != "" {
+		requestParams["capHash"] = capHash
 	}
 	if intent.CorrelationID != "" {
 		requestParams["correlationId"] = intent.CorrelationID
@@ -423,12 +426,13 @@ func buildStartOperatorTrace(snapshot profiles.OperatorOverrideSnapshot) *model.
 
 func (s *Service) buildStartSession(intent Intent, resolution startProfileResolution) *model.SessionRecord {
 	videoQualityRung := model.TraceVideoQualityRungFromProfile(resolution.profileSpec)
-	session := lifecycle.NewSessionRecord(time.Now())
+	now := time.Now()
+	session := lifecycle.NewSessionRecord(now)
 	session.SessionID = intent.SessionID
 	session.ServiceRef = intent.ServiceRef
 	session.Profile = resolution.profileSpec
 	session.CorrelationID = intent.CorrelationID
-	session.LeaseExpiresAtUnix = time.Now().Add(s.deps.SessionLeaseTTL()).Unix()
+	session.LeaseExpiresAtUnix = now.Add(s.deps.SessionLeaseTTL()).Unix()
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
 	session.ContextData = buildStartRequestParams(intent, resolution)
 	session.PlaybackTrace = &model.PlaybackTrace{
@@ -440,6 +444,7 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 		DegradedFrom:        resolution.degradedFrom,
 		ClientPath:          resolution.requestedPlaybackMode,
 		Operator:            buildStartOperatorTrace(resolution.operatorSnapshot),
+		Client:              buildStartClientSnapshot(intent, now),
 		HostPressureBand:    string(resolution.hostPressureBand),
 		HostOverrideApplied: resolution.hostOverrideApplied,
 	}

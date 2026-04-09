@@ -30,6 +30,7 @@ type StreamSession struct {
 	ServiceRef         string
 	ClientIP           string
 	ClientFamily       string
+	Client             *model.PlaybackClientSnapshot
 	PreferredHLSEngine string
 	DeviceType         string
 	StartedAt          time.Time
@@ -134,13 +135,14 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 				ip = val
 			}
 		}
+		clientSnapshot := streamClientSnapshot(r)
 		clientFamily := ""
 		preferredHLSEngine := ""
 		deviceType := ""
-		if r.ContextData != nil {
-			clientFamily = strings.TrimSpace(r.ContextData[model.CtxKeyClientFamily])
-			preferredHLSEngine = strings.TrimSpace(r.ContextData[model.CtxKeyPreferredEngine])
-			deviceType = strings.TrimSpace(r.ContextData[model.CtxKeyDeviceType])
+		if clientSnapshot != nil {
+			clientFamily = strings.TrimSpace(clientSnapshot.ClientFamily)
+			preferredHLSEngine = strings.TrimSpace(clientSnapshot.PreferredHLSEngine)
+			deviceType = strings.TrimSpace(clientSnapshot.DeviceType)
 		}
 
 		// StartedAt
@@ -155,6 +157,7 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 			ServiceRef:         serviceRef,
 			ClientIP:           ip,
 			ClientFamily:       clientFamily,
+			Client:             clientSnapshot,
 			PreferredHLSEngine: preferredHLSEngine,
 			DeviceType:         deviceType,
 			StartedAt:          startedAt,
@@ -196,3 +199,25 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 // Local helper duplicated from services.go to capture service ref logic if needed.
 // Only used if we want precise URL based mapping.
 // For now, we rely on TvgID map above.
+
+func streamClientSnapshot(session *model.SessionRecord) *model.PlaybackClientSnapshot {
+	if session == nil {
+		return nil
+	}
+	if session.PlaybackTrace != nil && session.PlaybackTrace.Client != nil {
+		return session.PlaybackTrace.Client.Clone()
+	}
+	if session.ContextData == nil {
+		return nil
+	}
+
+	snapshot := &model.PlaybackClientSnapshot{
+		ClientFamily:       strings.TrimSpace(session.ContextData[model.CtxKeyClientFamily]),
+		PreferredHLSEngine: strings.TrimSpace(session.ContextData[model.CtxKeyPreferredEngine]),
+		DeviceType:         strings.TrimSpace(session.ContextData[model.CtxKeyDeviceType]),
+	}
+	if snapshot.ClientFamily == "" && snapshot.PreferredHLSEngine == "" && snapshot.DeviceType == "" {
+		return nil
+	}
+	return snapshot
+}

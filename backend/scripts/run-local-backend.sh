@@ -37,7 +37,7 @@ build_ldflags() {
 }
 
 main() {
-  local output_bin ldflags
+  local output_bin ldflags go_bin
   local -a cmd
 
   if [[ "${1:-}" == "--ui" ]]; then
@@ -46,16 +46,15 @@ main() {
   fi
   [[ "$#" -eq 0 ]] || fail "unexpected arguments: $*"
 
-  command -v go >/dev/null 2>&1 || fail "missing required command: go"
-
   mkdir -p "${OUTPUT_DIR}"
   ensure_env_file
   export_env_file_safely "${ENV_FILE}"
+  go_bin="$(resolve_selected_go_bin)" || fail "unable to resolve selected Go toolchain binary"
 
   ldflags="$(build_ldflags)"
   output_bin="${OUTPUT_DIR}/xg2g"
 
-  cmd=(go build -trimpath -buildvcs=false -ldflags "${ldflags}")
+  cmd=(env GOTOOLCHAIN=local "${go_bin}" build -trimpath -buildvcs=false -ldflags "${ldflags}")
   if [[ "${UI_MODE}" -eq 1 ]]; then
     export XG2G_LISTEN="${XG2G_LISTEN:-:8080}"
     export XG2G_UI_DEV_PROXY_URL="${XG2G_UI_DEV_PROXY_URL:-http://127.0.0.1:5173}"

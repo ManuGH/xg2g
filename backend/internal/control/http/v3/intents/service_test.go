@@ -8,6 +8,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
@@ -290,6 +291,91 @@ func TestService_ProcessIntent_StartAcceptedPublishesEvent(t *testing.T) {
 	}
 	if deps.store.putSession.PlaybackTrace.RequestProfile != "compatible" {
 		t.Fatalf("expected compatible public request profile, got %q", deps.store.putSession.PlaybackTrace.RequestProfile)
+	}
+}
+
+func TestService_ProcessIntent_StartPersistsCanonicalClientSnapshot(t *testing.T) {
+	deps := newMockDeps()
+	svc := NewService(deps)
+	metered := false
+	internetValidated := true
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-client",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "high"},
+		CorrelationID: "corr-client",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"ts"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "web",
+			PreferredHLSEngine:   "hlsjs",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "browser",
+				Model:     "MacBookPro",
+				OSName:    "macos",
+				OSVersion: "15.4",
+			},
+			NetworkContext: &capabilities.NetworkContext{
+				Kind:              "wifi",
+				DownlinkKbps:      54000,
+				Metered:           &metered,
+				InternetValidated: &internetValidated,
+			},
+		},
+		ClientCapHash: "cap-hash-1",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil || deps.store.putSession.PlaybackTrace == nil {
+		t.Fatal("expected playback trace to be persisted")
+	}
+
+	client := deps.store.putSession.PlaybackTrace.Client
+	if client == nil {
+		t.Fatal("expected client snapshot to be persisted")
+	}
+	if client.CapHash != "cap-hash-1" {
+		t.Fatalf("expected cap hash to be persisted, got %#v", client)
+	}
+	if client.ClientFamily != "chromium_hlsjs" {
+		t.Fatalf("expected canonical client family, got %#v", client)
+	}
+	if client.ClientCapsSource != capabilities.ClientCapsSourceRuntimePlusFam {
+		t.Fatalf("expected runtime_plus_family client caps source, got %#v", client)
+	}
+	if client.PreferredHLSEngine != "hlsjs" {
+		t.Fatalf("expected preferred engine to be persisted, got %#v", client)
+	}
+	if client.DeviceType != "web" {
+		t.Fatalf("expected device type to be persisted, got %#v", client)
+	}
+	if !client.RuntimeProbeUsed || client.RuntimeProbeVersion != 2 {
+		t.Fatalf("expected runtime probe fields to be persisted, got %#v", client)
+	}
+	if client.DeviceContext == nil || client.DeviceContext.Platform != "browser" || client.DeviceContext.Model != "macbookpro" {
+		t.Fatalf("expected canonical device context to be persisted, got %#v", client.DeviceContext)
+	}
+	if client.NetworkContext == nil || client.NetworkContext.Kind != "wifi" || client.NetworkContext.DownlinkKbps != 54000 {
+		t.Fatalf("expected network context to be persisted, got %#v", client.NetworkContext)
+	}
+	if client.CapturedAtUnix == 0 {
+		t.Fatalf("expected capture timestamp to be persisted, got %#v", client)
 	}
 }
 
