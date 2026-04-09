@@ -15,6 +15,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
@@ -54,7 +55,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 		return ArtifactOK{}, artErr
 	}
 	variant = resolvedVariant
-	metaID := recordingVariantMetadataKey(ref, variant)
+	metaID := recservice.RecordingVariantMetadataKey(ref, variant)
 
 	// Canonical Validation
 	if err := v3recordings.ValidateRecordingRef(ref); err != nil {
@@ -62,22 +63,9 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	}
 
 	// 2. State Check
-	meta, exists := r.vodManager.GetMetadata(metaID)
-	if !exists {
-		// Restart/self-heal path: if the HLS artifact is already on disk, rebuild the
-		// minimal READY metadata from the canonical final playlist path instead of
-		// forcing the client through a fresh PREPARING loop.
-		cacheDir, err := v3recordings.RecordingVariantCacheDir(r.cfg.HLS.Root, ref, variant)
-		if err == nil {
-			finalPath := filepath.Join(cacheDir, "index.m3u8")
-			if info, statErr := os.Stat(finalPath); statErr == nil && !info.IsDir() {
-				r.vodManager.MarkProbed(metaID, finalPath, nil, nil)
-				if repaired, ok := r.vodManager.GetMetadata(metaID); ok {
-					meta = repaired
-					exists = true
-				}
-			}
-		}
+	_, _, meta, exists, err := recservice.LoadRecordingBuildState(ctx, r.cfg.HLS.Root, r.vodManager, ref, variant)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err, Detail: "load build state failed"}
 	}
 	if !exists {
 		if artifact, ok := r.resolveLivePlaylistArtifact(ref, variant); ok {
@@ -202,13 +190,16 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 		return ArtifactOK{}, artErr
 	}
 	variant = resolvedVariant
-	metaID := recordingVariantMetadataKey(ref, variant)
+	metaID := recservice.RecordingVariantMetadataKey(ref, variant)
 
 	if err := v3recordings.ValidateRecordingRef(ref); err != nil {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Err: err, Detail: "invalid recording ref"}
 	}
 
-	meta, exists := r.vodManager.GetMetadata(metaID)
+	_, _, meta, exists, err := recservice.LoadRecordingBuildState(ctx, r.cfg.HLS.Root, r.vodManager, ref, variant)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err, Detail: "load build state failed"}
+	}
 	if !exists || meta.State != vod.ArtifactStateReady {
 		// Timeshift piggybacks on VOD build.
 		if !exists || meta.State == vod.ArtifactStateFailed {
@@ -335,11 +326,7 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 }
 
 func recordingVariantMetadataKey(ref, variant string) string {
-	variant = v3recordings.NormalizeVariantHash(variant)
-	if variant == "" {
-		return ref
-	}
-	return ref + "#variant:" + variant
+	return recservice.RecordingVariantMetadataKey(ref, variant)
 }
 
 func recordingTarget(profile, variant string, target *playbackprofile.TargetPlaybackProfile) (*playbackprofile.TargetPlaybackProfile, string, *ArtifactError) {

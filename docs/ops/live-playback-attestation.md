@@ -29,6 +29,29 @@ Beispiel:
 - `POST /api/v3/intents` akzeptiert Live-Playback nur mit `params.playback_mode` und `params.playback_decision_token` (kanonisch im Client; enthaelt Token-Wert).
 - Backend akzeptiert zusaetzlich Alias `params.playback_decision_id`.
 
+## Live-Truth Problemvertrag
+- `POST /api/v3/live/stream-info` kann `503 application/problem+json` fuer unbestaetigte Live-Medienwahrheit liefern.
+- Stabile Problemtypen:
+  - `/problems/live/scan_unavailable`
+  - `/problems/live/missing_scan_truth`
+  - `/problems/live/partial_truth`
+  - `/problems/live/inactive_event_feed`
+  - `/problems/live/failed_scan_truth`
+- Stabile Retry-/Truth-Felder fuer diese Problemtypen:
+  - `Retry-After`
+  - `retryAfterSeconds`
+  - `truthState`
+  - `truthReason`
+- Nur diagnostisch:
+  - `truthOrigin`
+  - `problemFlags`
+- Clients muessen auf `type` verzweigen und duerfen `title`/`detail` nur als Fallback-Text behandeln.
+
+## Intent-Watchpoint
+- `/api/v3/intents` nutzt `scan.Capability` derzeit nur fuer Profilauflösung und Start-Parameter, nicht als zweite SSOT fuer Live-Container- oder Codec-Wahrheit.
+- Der aktuelle Pfad bleibt unkritisch, solange er nur Signale wie `Interlaced` oder Profil-Hints konsumiert.
+- Gefaehrliche kuenftige Aenderung: Wenn `/api/v3/intents` Container-, Codec- oder Readiness-Wahrheit direkt aus `scan.Capability` ableitet, muss derselbe Live-Truth-Resolver wie `/live/stream-info` verwendet werden. Kein zweiter impliziter Fallback-Pfad.
+
 ## Deployment-Check
 1. Secret ist in allen Pods/Instanzen identisch.
 2. Aktiver `kid` ist ueber alle Instanzen konsistent.

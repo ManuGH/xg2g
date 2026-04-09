@@ -1141,6 +1141,48 @@ export type ProblemDecisionAmbiguous = ProblemDetails & {
     code?: 'decision_ambiguous';
 };
 
+export type LivePlaybackTruthProblem = {
+    /**
+     * Stable live-truth problem type. Clients MUST branch on this field, not on free-text title/detail.
+     */
+    type: '/problems/live/scan_unavailable' | '/problems/live/missing_scan_truth' | '/problems/live/partial_truth' | '/problems/live/inactive_event_feed' | '/problems/live/failed_scan_truth';
+    /**
+     * Human-readable fallback title. Not for decision branching.
+     */
+    title: string;
+    status: 503;
+    /**
+     * Correlation ID (UUID or prefixed string like req_abc123)
+     */
+    requestId: string;
+    code: ProblemCode;
+    /**
+     * Optional human-readable detail. Not for decision branching.
+     */
+    detail?: string;
+    instance?: string;
+    /**
+     * JSON mirror of the Retry-After header.
+     */
+    retryAfterSeconds: number;
+    /**
+     * Stable degraded-state classifier for live truth.
+     */
+    truthState: 'unverified' | 'partial' | 'failed' | 'inactive_event_feed';
+    /**
+     * Stable machine-readable reason for the degraded live truth state.
+     */
+    truthReason: 'scanner_unavailable' | 'missing_scan_truth' | 'partial_scan_truth' | 'inactive_event_feed' | 'failed_scan_truth';
+    /**
+     * Diagnostic provenance only. Clients SHOULD NOT branch on this field.
+     */
+    truthOrigin?: 'live_unverified';
+    /**
+     * Diagnostic flags only. Clients MUST NOT use these as the sole UX branch.
+     */
+    problemFlags?: Array<string>;
+};
+
 export type SessionTerminalProblem = {
     type: string;
     title: string;
@@ -1340,9 +1382,9 @@ export type RecordingItem = {
     length?: string;
     filename?: string;
     /**
-     * Consolidated recording status. Becomes required in P3-3.
+     * Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
      */
-    status?: 'pending' | 'recording' | 'completed' | 'failed' | 'deleting';
+    status: 'scheduled' | 'recording' | 'completed' | 'failed' | 'unknown';
     resume?: ResumeSummary;
 };
 
@@ -2079,9 +2121,9 @@ export type PostLivePlaybackInfoErrors = {
      */
     403: unknown;
     /**
-     * Attestation unavailable
+     * Live playback unavailable. Responses with `/problems/live*` indicate unverified or degraded live media truth and MUST NOT be treated as confirmed playback readiness.
      */
-    503: ProblemDetails;
+    503: LivePlaybackTruthProblem | ProblemDetails;
 };
 
 export type PostLivePlaybackInfoError = PostLivePlaybackInfoErrors[keyof PostLivePlaybackInfoErrors];

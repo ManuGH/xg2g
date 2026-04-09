@@ -1,14 +1,12 @@
 package recordings
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
@@ -16,47 +14,33 @@ import (
 // RecordingCacheDir returns the canonical directory for a recording's assets.
 // It follows the layout: <hlsRoot>/recordings/<sha256(serviceRef)>
 func RecordingCacheDir(hlsRoot, serviceRef string) (string, error) {
-	return RecordingVariantCacheDir(hlsRoot, serviceRef, "")
+	return recservice.RecordingCacheDir(hlsRoot, serviceRef)
 }
 
 // RecordingVariantCacheDir returns the canonical directory for a recording variant's assets.
 // It follows the layout: <hlsRoot>/recordings/<sha256(serviceRef|variant)>.
 func RecordingVariantCacheDir(hlsRoot, serviceRef, variant string) (string, error) {
-	if strings.TrimSpace(hlsRoot) == "" {
-		return "", fmt.Errorf("hls root not configured")
-	}
-	return filepath.Join(hlsRoot, "recordings", RecordingVariantCacheKey(serviceRef, variant)), nil
+	return recservice.RecordingVariantCacheDir(hlsRoot, serviceRef, variant)
 }
 
 // RecordingCacheKey returns the stable hash key for a serviceRef.
 func RecordingCacheKey(serviceRef string) string {
-	return RecordingVariantCacheKey(serviceRef, "")
+	return recservice.RecordingCacheKey(serviceRef)
 }
 
 // RecordingVariantCacheKey returns the stable hash key for a serviceRef plus concrete playback variant.
 func RecordingVariantCacheKey(serviceRef, variant string) string {
-	serviceRef = strings.TrimSpace(serviceRef)
-	variant = NormalizeVariantHash(variant)
-	if variant == "" {
-		sum := sha256.Sum256([]byte(serviceRef))
-		return hex.EncodeToString(sum[:])
-	}
-	sum := sha256.Sum256([]byte(serviceRef + "\x1f" + variant))
-	return hex.EncodeToString(sum[:])
+	return recservice.RecordingVariantCacheKey(serviceRef, variant)
 }
 
 // NormalizeVariantHash normalizes the query-facing variant hash token.
 func NormalizeVariantHash(variant string) string {
-	return normalize.Token(variant)
+	return recservice.NormalizeVariantHash(variant)
 }
 
 // TargetVariantHash returns the stable variant hash for a target playback profile.
 func TargetVariantHash(target *playbackprofile.TargetPlaybackProfile) string {
-	if target == nil {
-		return ""
-	}
-	canonical := playbackprofile.CanonicalizeTarget(*target)
-	return canonical.Hash()
+	return recservice.RecordingTargetVariantHash(target)
 }
 
 // EncodeTargetProfileQuery encodes a canonical target playback profile for URL transport.

@@ -7,6 +7,7 @@ package store
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -191,6 +192,7 @@ func (m *MemoryStore) ListSessions(ctx context.Context) ([]*model.SessionRecord,
 	for _, rec := range m.sessions {
 		list = append(list, cloneSessionRecord(rec))
 	}
+	sortSessionRecords(list)
 	return list, nil
 }
 
@@ -222,7 +224,20 @@ func (m *MemoryStore) QuerySessions(ctx context.Context, filter SessionFilter) (
 		result = append(result, cloneSessionRecord(rec))
 	}
 
+	sortSessionRecords(result)
 	return result, nil
+}
+
+func sortSessionRecords(list []*model.SessionRecord) {
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].UpdatedAtUnix != list[j].UpdatedAtUnix {
+			return list[i].UpdatedAtUnix > list[j].UpdatedAtUnix
+		}
+		if list[i].CreatedAtUnix != list[j].CreatedAtUnix {
+			return list[i].CreatedAtUnix > list[j].CreatedAtUnix
+		}
+		return list[i].SessionID < list[j].SessionID
+	})
 }
 
 func (m *MemoryStore) PutSession(ctx context.Context, rec *model.SessionRecord) error {

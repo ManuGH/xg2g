@@ -2,8 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -142,38 +142,207 @@ func TestSqliteStore_PlaybackTraceRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSqliteStore_Concurrency_WAL(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "test_concurrency.db")
-	store, _ := NewSqliteStore(dbPath)
+func TestSqliteStore_ReasonDetailRoundTrip_UsesExplicitColumns(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_reason_detail.db")
+	store, err := NewSqliteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer store.Close()
 
 	ctx := context.Background()
+	rec := &model.SessionRecord{
+		SessionID:         "sess-reason-detail",
+		State:             model.SessionFailed,
+		Reason:            model.RUpstreamCorrupt,
+		ReasonDetailCode:  model.DInvalidUpstreamInput,
+		ReasonDetailDebug: "invalid PAT/PMT sequence",
+		CreatedAtUnix:     111,
+		UpdatedAtUnix:     222,
+	}
+	if err := store.PutSession(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
 
-	// Start a writer that takes some time in a transaction
-	var wg sync.WaitGroup
-	wg.Add(1)
+	got, err := store.GetSession(ctx, rec.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("expected stored session")
+	}
+	if got.Reason != rec.Reason {
+		t.Fatalf("reason mismatch: got %q want %q", got.Reason, rec.Reason)
+	}
+	if got.ReasonDetailCode != rec.ReasonDetailCode {
+		t.Fatalf("reason detail code mismatch: got %q want %q", got.ReasonDetailCode, rec.ReasonDetailCode)
+	}
+	if got.ReasonDetailDebug != rec.ReasonDetailDebug {
+		t.Fatalf("reason detail debug mismatch: got %q want %q", got.ReasonDetailDebug, rec.ReasonDetailDebug)
+	}
+
+	var legacyDetail sql.NullString
+	var detailCode sql.NullString
+	var detailDebug sql.NullString
+	if err := store.DB.QueryRowContext(ctx, `
+		SELECT reason_detail, reason_detail_code, reason_detail_debug
+		FROM sessions
+		WHERE session_id = ?
+	`, rec.SessionID).Scan(&legacyDetail, &detailCode, &detailDebug); err != nil {
+		t.Fatal(err)
+	}
+	if legacyDetail.Valid {
+		t.Fatalf("expected legacy reason_detail column to stay NULL on new writes, got %q", legacyDetail.String)
+	}
+	if !detailCode.Valid || detailCode.String != string(rec.ReasonDetailCode) {
+		t.Fatalf("unexpected reason_detail_code column: %#v", detailCode)
+	}
+	if !detailDebug.Valid || detailDebug.String != rec.ReasonDetailDebug {
+		t.Fatalf("unexpected reason_detail_debug column: %#v", detailDebug)
+	}
+}
+
+func TestSqliteStore_ReasonDetailLegacyFallbackAndRewrite(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_reason_legacy.db")
+	store, err := NewSqliteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	legacyDebug := "legacy free-text detail"
+	if _, err := store.DB.ExecContext(ctx, `
+		INSERT INTO sessions (
+			session_id, service_ref, profile_json, state, pipeline_state, reason,
+			reason_detail, reason_detail_code, reason_detail_debug,
+			fallback_reason, correlation_id, created_at_ms, updated_at_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval, stop_reason
+		) VALUES (?, 'svc', '{}', 'FAILED', 'INIT', 'R_INTERNAL_INVARIANT_BREACH', ?, NULL, NULL, '', 'corr', 1000, 1000, 0, 0, 0, '')
+	`, "sess-legacy-reason", legacyDebug); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.GetSession(ctx, "sess-legacy-reason")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("expected legacy session")
+	}
+	if got.ReasonDetailDebug != legacyDebug {
+		t.Fatalf("legacy fallback mismatch: got %q want %q", got.ReasonDetailDebug, legacyDebug)
+	}
+	if got.ReasonDetailCode != "" {
+		t.Fatalf("expected empty reason detail code for legacy row, got %q", got.ReasonDetailCode)
+	}
+
+	if _, err := store.UpdateSession(ctx, got.SessionID, func(rec *model.SessionRecord) error {
+		rec.State = model.SessionStopped
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var legacyColumn sql.NullString
+	var debugColumn sql.NullString
+	if err := store.DB.QueryRowContext(ctx, `
+		SELECT reason_detail, reason_detail_debug
+		FROM sessions
+		WHERE session_id = ?
+	`, got.SessionID).Scan(&legacyColumn, &debugColumn); err != nil {
+		t.Fatal(err)
+	}
+	if legacyColumn.Valid {
+		t.Fatalf("expected legacy reason_detail column to be cleared on rewrite, got %q", legacyColumn.String)
+	}
+	if !debugColumn.Valid || debugColumn.String != legacyDebug {
+		t.Fatalf("expected rewritten reason_detail_debug to preserve legacy detail, got %#v", debugColumn)
+	}
+
+	rewritten, err := store.GetSession(ctx, got.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rewritten == nil || rewritten.ReasonDetailDebug != legacyDebug {
+		t.Fatalf("rewritten session lost debug detail: %#v", rewritten)
+	}
+}
+
+func TestSqliteStore_Concurrency_WAL(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_concurrency.db")
+	writerStore, err := NewSqliteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writerStore.Close()
+	readerStore, err := NewSqliteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readerStore.Close()
+
+	ctx := context.Background()
+	if err := writerStore.PutSession(ctx, &model.SessionRecord{
+		SessionID:     "wal-baseline",
+		State:         model.SessionNew,
+		CreatedAtUnix: 1,
+		UpdatedAtUnix: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	writerReady := make(chan struct{})
+	releaseWriter := make(chan struct{})
+	writerErr := make(chan error, 1)
 	go func() {
-		defer wg.Done()
-		tx, _ := store.DB.Begin()
-		_, _ = tx.Exec("INSERT INTO sessions (session_id, service_ref, profile_json, state, pipeline_state, reason, correlation_id, created_at_unix, updated_at_unix, expires_at_unix, lease_expires_at_unix, heartbeat_interval) VALUES (?, 'svc', '{}', 'NEW', 'INIT', 'NONE', 'id', 0, 0, 0, 0, 0)", "concurrent-1")
-		time.Sleep(100 * time.Millisecond) // Simulate slow write
-		_ = tx.Commit()
+		tx, err := writerStore.DB.BeginTx(ctx, nil)
+		if err != nil {
+			writerErr <- err
+			return
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO sessions (
+				session_id, service_ref, profile_json, state, pipeline_state, reason,
+				fallback_reason, correlation_id, created_at_ms, updated_at_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval, stop_reason
+			) VALUES (?, 'svc', '{}', 'NEW', 'INIT', 'R_NONE', '', 'id', 0, 0, 0, 0, 0, '')
+		`, "concurrent-1"); err != nil {
+			_ = tx.Rollback()
+			writerErr <- err
+			return
+		}
+		close(writerReady)
+		<-releaseWriter
+		writerErr <- tx.Commit()
 	}()
 
-	// Readers should not be blocked by the writer (WAL behavior)
-	time.Sleep(20 * time.Millisecond) // Ensure writer started
-	start := time.Now()
-	_, err := store.GetSession(ctx, "non-existent")
-	duration := time.Since(start)
+	<-writerReady
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := readerStore.GetSession(ctx, "wal-baseline")
+		readDone <- err
+	}()
 
+	select {
+	case err := <-readDone:
+		if err != nil {
+			t.Fatalf("reader failed while writer tx open: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("reader blocked while writer transaction was still open")
+	}
+
+	close(releaseWriter)
+	if err := <-writerErr; err != nil {
+		t.Fatalf("writer failed: %v", err)
+	}
+
+	got, err := readerStore.GetSession(ctx, "concurrent-1")
 	if err != nil {
-		t.Errorf("reader failed: %v", err)
+		t.Fatal(err)
 	}
-	if duration > 50*time.Millisecond {
-		t.Errorf("reader was likely blocked by writer, took %v", duration)
+	if got == nil {
+		t.Fatal("expected committed writer row to be visible after commit")
 	}
-
-	wg.Wait()
 }
 
 func TestSqliteStore_Idempotency_monotonic(t *testing.T) {

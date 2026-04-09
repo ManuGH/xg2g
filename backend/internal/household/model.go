@@ -204,10 +204,12 @@ func defaultNameForProfile(id string, kind ProfileKind) string {
 }
 
 func normalizeKind(kind ProfileKind) ProfileKind {
-	if kind == ProfileKindChild {
+	switch strings.ToLower(strings.TrimSpace(string(kind))) {
+	case string(ProfileKindChild):
 		return ProfileKindChild
+	default:
+		return ProfileKindAdult
 	}
-	return ProfileKindAdult
 }
 
 func normalizeName(value string) string {

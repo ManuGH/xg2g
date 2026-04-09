@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
@@ -35,7 +36,12 @@ func loadPlaybackResumeState(ctx context.Context, store resume.Store, principalI
 		return nil
 	}
 
-	stored, err := store.Get(ctx, principalID, recordingID)
+	resumeKey, ok := recservice.CanonicalResumeKeyFromRecordingID(recordingID)
+	if !ok {
+		return nil
+	}
+
+	stored, err := store.Get(ctx, principalID, resumeKey)
 	if err != nil {
 		return nil
 	}

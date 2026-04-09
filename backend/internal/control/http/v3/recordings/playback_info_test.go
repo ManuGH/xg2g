@@ -262,7 +262,18 @@ func TestService_ResolvePlaybackInfo_RecordingNativePrefersDirectStreamForCopyab
 	assert.Equal(t, string(playbackprofile.IntentCompatible), res.Decision.Trace.ResolvedIntent)
 }
 
-func TestService_ResolvePlaybackInfo_LiveSuccess(t *testing.T) {
+func verifiedLiveTruthSource(cap scan.Capability) *stubTruthSource {
+	return &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			if cap.ServiceRef == "" {
+				cap.ServiceRef = serviceRef
+			}
+			return cap, true
+		},
+	}
+}
+
+func TestService_ResolvePlaybackInfo_LiveScannerUnavailableFailsClosed(t *testing.T) {
 	recSvc := &stubRecordingsService{
 		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
 			t.Fatal("GetMediaTruth must not be called for live playback")
@@ -277,19 +288,20 @@ func TestService_ResolvePlaybackInfo_LiveSuccess(t *testing.T) {
 		},
 	})
 
-	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+	_, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
 		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
 		SubjectKind: PlaybackSubjectLive,
 		APIVersion:  "v3.1",
 		SchemaType:  "live",
 		RequestID:   "req-live",
 	})
-	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	assert.Equal(t, "1:0:1:2B66:3F3:1:C00000:0:0:0:", res.SourceRef)
-	assert.Equal(t, "mpegts", res.Truth.Container)
-	assert.Equal(t, "h264", res.Truth.VideoCodec)
-	assert.Equal(t, "aac", res.Truth.AudioCodec)
+	require.NotNil(t, err)
+	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
+	assert.Equal(t, "unverified", err.TruthState)
+	assert.Equal(t, "scanner_unavailable", err.TruthReason)
+	assert.Equal(t, "live_unverified", err.TruthOrigin)
+	assert.Contains(t, err.ProblemFlags, "live_truth_unverified")
+	assert.Contains(t, err.ProblemFlags, "scanner_unavailable")
 	assert.Equal(t, 0, recSvc.truthCalls)
 }
 
@@ -481,7 +493,45 @@ func TestService_ResolvePlaybackInfo_LiveAndroidNativeCopyableTSReturnsFMP4Direc
 	assert.Equal(t, string(playbackprofile.IntentCompatible), res.Decision.Trace.ResolvedIntent)
 }
 
-func TestService_ResolvePlaybackInfo_LiveFallsBackWhenScanTruthIncomplete(t *testing.T) {
+func TestService_ResolvePlaybackInfo_LiveMissingScanTruthFailsClosed(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return scan.Capability{}, false
+		},
+	}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	_, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-missing",
+	})
+	require.NotNil(t, err)
+	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
+	assert.Equal(t, "unverified", err.TruthState)
+	assert.Equal(t, "missing_scan_truth", err.TruthReason)
+	assert.Equal(t, "live_unverified", err.TruthOrigin)
+	assert.Contains(t, err.ProblemFlags, "missing_scan_truth")
+	assert.Equal(t, 0, recSvc.truthCalls)
+	assert.Equal(t, 1, truthSource.calls)
+}
+
+func TestService_ResolvePlaybackInfo_LiveIncompleteScanTruthFailsClosed(t *testing.T) {
 	recSvc := &stubRecordingsService{
 		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
 			t.Fatal("GetMediaTruth must not be called for live playback")
@@ -492,7 +542,7 @@ func TestService_ResolvePlaybackInfo_LiveFallsBackWhenScanTruthIncomplete(t *tes
 		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
 			return scan.Capability{
 				ServiceRef: serviceRef,
-				State:      scan.CapabilityStateOK,
+				State:      scan.CapabilityStatePartial,
 				VideoCodec: "hevc",
 				Codec:      "hevc",
 				Resolution: "1920x1080",
@@ -510,20 +560,54 @@ func TestService_ResolvePlaybackInfo_LiveFallsBackWhenScanTruthIncomplete(t *tes
 		},
 	})
 
-	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+	_, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
 		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
 		SubjectKind: PlaybackSubjectLive,
 		APIVersion:  "v3.1",
 		SchemaType:  "live",
-		RequestID:   "req-live-fallback",
+		RequestID:   "req-live-partial",
 	})
-	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	assert.Equal(t, "mpegts", res.Truth.Container)
-	assert.Equal(t, "h264", res.Truth.VideoCodec)
-	assert.Equal(t, "aac", res.Truth.AudioCodec)
+	require.NotNil(t, err)
+	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
+	assert.Equal(t, "partial", err.TruthState)
+	assert.Equal(t, "partial_scan_truth", err.TruthReason)
+	assert.Equal(t, "live_unverified", err.TruthOrigin)
+	assert.Contains(t, err.ProblemFlags, "incomplete_scan_truth")
+	assert.Contains(t, err.ProblemFlags, "partial_scan_truth")
 	assert.Equal(t, 0, recSvc.truthCalls)
 	assert.Equal(t, 1, truthSource.calls)
+}
+
+func TestService_ResolvePlaybackInfo_LiveInactiveEventFeedFailsClosed(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: verifiedLiveTruthSource(scan.Capability{State: scan.CapabilityStateInactiveEventFeed, FailureReason: "inactive_event_feed_no_media_metadata"}),
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	_, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-inactive",
+	})
+	require.NotNil(t, err)
+	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
+	assert.Equal(t, "inactive_event_feed", err.TruthState)
+	assert.Equal(t, "inactive_event_feed", err.TruthReason)
+	assert.Equal(t, "live_unverified", err.TruthOrigin)
+	assert.Contains(t, err.ProblemFlags, "inactive_event_feed")
+	assert.Equal(t, 0, recSvc.truthCalls)
 }
 
 func TestService_ResolvePlaybackInfo_LiveTranscodeUsesMeasuredAutoCodecProfile(t *testing.T) {
@@ -544,7 +628,8 @@ func TestService_ResolvePlaybackInfo_LiveTranscodeUsesMeasuredAutoCodecProfile(t
 		},
 	}
 	svc := NewService(stubDeps{
-		svc: recSvc,
+		svc:         recSvc,
+		truthSource: verifiedLiveTruthSource(scan.Capability{State: scan.CapabilityStateOK, Container: "ts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 25}),
 		cfg: config.AppConfig{
 			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
 			HLS:    config.HLSConfig{Root: "/tmp/hls"},
@@ -605,7 +690,8 @@ func TestService_ResolvePlaybackInfo_LiveRepairIntentSkipsAutoCodecUpgrade(t *te
 		},
 	}
 	svc := NewService(stubDeps{
-		svc: recSvc,
+		svc:         recSvc,
+		truthSource: verifiedLiveTruthSource(scan.Capability{State: scan.CapabilityStateOK, Container: "ts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 25}),
 		cfg: config.AppConfig{
 			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
 			HLS:    config.HLSConfig{Root: "/tmp/hls"},
@@ -666,8 +752,9 @@ func TestService_ResolvePlaybackInfo_RecordsDecisionAuditAfterFinalAlignment(t *
 		},
 	}
 	svc := NewService(stubDeps{
-		svc:       recSvc,
-		auditSink: auditSink,
+		svc:         recSvc,
+		truthSource: verifiedLiveTruthSource(scan.Capability{State: scan.CapabilityStateOK, Container: "ts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 25}),
+		auditSink:   auditSink,
 		cfg: config.AppConfig{
 			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
 			HLS:    config.HLSConfig{Root: "/tmp/hls"},

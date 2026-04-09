@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/problemcode"
@@ -69,6 +70,11 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 	// Handlers are thin adapters: we treat IDs as opaque and don't decode them here.
 	// Ownership: recordings.Service (domain layer) is the sole owner of decoding.
 	// If needed, the domain will return InvalidArgument on malformed IDs.
+	resumeKey, ok := recservice.CanonicalResumeKeyFromRecordingID(recordingID)
+	if !ok {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Invalid recording ID", nil)
+		return
+	}
 
 	principal := auth.PrincipalFromContext(r.Context())
 	if principal == nil {
@@ -96,7 +102,7 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 	// Fingerprint generation
 	// Ideally we check the file stats if local for a strong fingerprint.
 	// For MVP, we use the recordingID which is the Hex-encoded service reference.
-	fingerprint := "id:" + recordingID
+	fingerprint := "id:" + resumeKey
 
 	state := &resume.State{
 		PosSeconds:      int64(req.Position),
@@ -114,7 +120,7 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 		Float64("pos", req.Position).
 		Msg("saving resume point")
 
-	if err := resumeStore.Put(r.Context(), principal.ID, recordingID, state); err != nil {
+	if err := resumeStore.Put(r.Context(), principal.ID, resumeKey, state); err != nil {
 		log.L().Error().Err(err).Msg("failed to save resume point")
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", problemcode.CodeSaveFailed, "Failed to save resume point", nil)
 		return

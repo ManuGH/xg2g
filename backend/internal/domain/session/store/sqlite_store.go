@@ -16,6 +16,8 @@ const (
 	schemaVersion = 5 // Incremented for playback trace persistence
 )
 
+const sessionListOrderBy = " ORDER BY updated_at_ms DESC, created_at_ms DESC, session_id ASC"
+
 // SqliteStore implements StateStore using SQLite.
 type SqliteStore struct {
 	DB *sql.DB
@@ -182,7 +184,7 @@ func (s *SqliteStore) PutSession(ctx context.Context, rec *model.SessionRecord) 
 	`
 
 	_, err := s.DB.ExecContext(ctx, query,
-		rec.SessionID, rec.ServiceRef, profileJSON, rec.State, rec.PipelineState, rec.Reason, rec.ReasonDetailDebug, rec.ReasonDetailCode, rec.ReasonDetailDebug,
+		rec.SessionID, rec.ServiceRef, profileJSON, rec.State, rec.PipelineState, rec.Reason, sql.NullString{}, rec.ReasonDetailCode, rec.ReasonDetailDebug,
 		rec.FallbackReason, s2ms(rec.FallbackAtUnix), rec.CorrelationID, s2ms(rec.CreatedAtUnix), s2ms(rec.UpdatedAtUnix),
 		s2ms(rec.LastAccessUnix), s2ms(rec.ExpiresAtUnix), s2ms(rec.LeaseExpiresAtUnix), rec.HeartbeatInterval,
 		s2ms(rec.LastHeartbeatUnix), rec.StopReason, timeToNullString(rec.LatestSegmentAt),
@@ -251,7 +253,7 @@ func (s *SqliteStore) PutSessionWithIdempotency(ctx context.Context, rec *model.
 	`
 
 	_, err = tx.ExecContext(ctx, query,
-		rec.SessionID, rec.ServiceRef, profileJSON, rec.State, rec.PipelineState, rec.Reason, rec.ReasonDetailDebug, rec.ReasonDetailCode, rec.ReasonDetailDebug,
+		rec.SessionID, rec.ServiceRef, profileJSON, rec.State, rec.PipelineState, rec.Reason, sql.NullString{}, rec.ReasonDetailCode, rec.ReasonDetailDebug,
 		rec.FallbackReason, s2ms(rec.FallbackAtUnix), rec.CorrelationID, s2ms(rec.CreatedAtUnix), s2ms(rec.UpdatedAtUnix),
 		s2ms(rec.LastAccessUnix), s2ms(rec.ExpiresAtUnix), s2ms(rec.LeaseExpiresAtUnix), rec.HeartbeatInterval,
 		s2ms(rec.LastHeartbeatUnix), rec.StopReason, timeToNullString(rec.LatestSegmentAt),
@@ -297,6 +299,7 @@ func (s *SqliteStore) QuerySessions(ctx context.Context, filter SessionFilter) (
 		query += " AND lease_expires_at_ms < ?"
 		args = append(args, s2ms(filter.LeaseExpiresBefore))
 	}
+	query += sessionListOrderBy
 
 	rows, err := s.DB.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -312,7 +315,7 @@ func (s *SqliteStore) QuerySessions(ctx context.Context, filter SessionFilter) (
 		}
 		results = append(results, rec)
 	}
-	return results, nil
+	return results, rows.Err()
 }
 
 func (s *SqliteStore) UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error) {
@@ -350,7 +353,7 @@ func (s *SqliteStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 		WHERE session_id = ?
 		`
 	_, err = tx.ExecContext(ctx, updateQuery,
-		rec.ServiceRef, profileJSON, rec.State, rec.PipelineState, rec.Reason, rec.ReasonDetailDebug, rec.ReasonDetailCode, rec.ReasonDetailDebug,
+		rec.ServiceRef, profileJSON, rec.State, rec.PipelineState, rec.Reason, sql.NullString{}, rec.ReasonDetailCode, rec.ReasonDetailDebug,
 		rec.FallbackReason, s2ms(rec.FallbackAtUnix), rec.CorrelationID, s2ms(rec.UpdatedAtUnix),
 		s2ms(rec.LastAccessUnix), s2ms(rec.ExpiresAtUnix), s2ms(rec.LeaseExpiresAtUnix), rec.HeartbeatInterval,
 		s2ms(rec.LastHeartbeatUnix), rec.StopReason, timeToNullString(rec.LatestSegmentAt),
@@ -387,7 +390,7 @@ func (s *SqliteStore) ScanSessions(ctx context.Context, fn func(*model.SessionRe
 			return err
 		}
 	}
-	return nil
+	return rows.Err()
 }
 
 func (s *SqliteStore) DeleteSession(ctx context.Context, id string) error {

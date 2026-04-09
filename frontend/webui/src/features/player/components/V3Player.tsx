@@ -1375,6 +1375,8 @@ function V3Player(props: V3PlayerProps) {
         }
 
         if (!liveResponse.ok) {
+          const retryAfterHeader = liveResponse.headers.get('Retry-After');
+          const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : undefined;
           if (notifyAuthRequiredIfUnauthorizedResponse(liveResponse, 'V3Player.liveStreamInfo')) {
             setStatus('error');
             setPlayerError(normalizePlayerError(liveError ?? {
@@ -1405,6 +1407,7 @@ function V3Player(props: V3PlayerProps) {
             status: liveResponse.status,
             title: `${t('player.apiError')}: ${liveResponse.status}`,
             requestId: liveRequestId,
+            retryAfterSeconds,
           }, {
             fallbackTitle: `${t('player.apiError')}: ${liveResponse.status}`,
             status: liveResponse.status,

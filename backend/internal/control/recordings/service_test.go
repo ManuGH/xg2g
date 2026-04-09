@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 )
 
 // Unique Mocks for service_test.go
@@ -250,13 +251,53 @@ func TestService_GetStatus_Ready(t *testing.T) {
 
 	hexID := EncodeRecordingID(validTestRef)
 
-	vm.SeedMetadata(validTestRef, vod.Metadata{
+	vm.SeedMetadata(RecordingVariantMetadataKey(validTestRef, DefaultRecordingVariantHash()), vod.Metadata{
 		State: vod.ArtifactStateReady,
 	})
 
 	result, err := s.GetStatus(context.Background(), StatusInput{RecordingID: hexID})
 	assert.NoError(t, err)
 	assert.Equal(t, "READY", result.State)
+}
+
+func TestService_GetStatus_RehydratesDefaultPlaylistFromDisk(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{
+			Root: t.TempDir(),
+		},
+	}
+	owi := new(MockOWIClient)
+	resumeStore := new(MockResumeStore)
+	resolver := new(MockResolverForService)
+	runner := new(MockRunnerForService)
+	prober := new(MockProber)
+	vm, err := vod.NewManager(runner, prober, new(MockPathMapper))
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	svc, err := NewService(cfg, vm, resolver, owi, resumeStore)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+
+	recordingID := EncodeRecordingID(validTestRef)
+	defaultVariant := DefaultRecordingVariantHash()
+	cacheDir, err := RecordingVariantCacheDir(cfg.HLS.Root, validTestRef, defaultVariant)
+	assert.NoError(t, err)
+	assert.NoError(t, os.MkdirAll(cacheDir, 0750))
+
+	playlistPath := filepath.Join(cacheDir, "index.m3u8")
+	assert.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U\n#EXT-X-ENDLIST\n"), 0600))
+
+	result, err := svc.GetStatus(context.Background(), StatusInput{RecordingID: recordingID})
+	assert.NoError(t, err)
+	assert.Equal(t, "READY", result.State)
+
+	meta, ok := vm.GetMetadata(RecordingVariantMetadataKey(validTestRef, defaultVariant))
+	assert.True(t, ok)
+	assert.Equal(t, vod.ArtifactStateReady, meta.State)
+	assert.Equal(t, playlistPath, meta.PlaylistPath)
 }
 
 func TestService_Stream_NotReady_TriggersProbe(t *testing.T) {
@@ -300,6 +341,85 @@ func TestService_Stream_ReadyLocalTsUsesResolvedPath(t *testing.T) {
 	assert.Equal(t, localPath, result.LocalPath)
 	assert.Equal(t, "video/mp2t", result.ContentType)
 	assert.Equal(t, CacheNoStore, result.CachePolicy)
+}
+
+func TestService_Stream_RehydratesLocalSourceWithoutMetadata(t *testing.T) {
+	localRoot := t.TempDir()
+	localPath := filepath.Join(localRoot, "test.ts")
+	assert.NoError(t, os.WriteFile(localPath, []byte("ts-data"), 0644))
+	resolvedPath, err := filepath.EvalSymlinks(localPath)
+	assert.NoError(t, err)
+
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{
+			Root: t.TempDir(),
+		},
+		RecordingPathMappings: []config.RecordingPathMapping{
+			{ReceiverRoot: "/media/hdd/movie", LocalRoot: localRoot},
+		},
+	}
+	owi := new(MockOWIClient)
+	resumeStore := new(MockResumeStore)
+	resolver := new(MockResolverForService)
+	runner := new(MockRunnerForService)
+	prober := new(MockProber)
+	mapper := internalrecordings.NewPathMapper(cfg.RecordingPathMappings)
+	vm, err := vod.NewManager(runner, prober, mapper)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	svc, err := NewService(cfg, vm, resolver, owi, resumeStore)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+
+	result, err := svc.Stream(context.Background(), StreamInput{RecordingID: EncodeRecordingID(validTestRef)})
+	assert.NoError(t, err)
+	assert.True(t, result.Ready)
+	assert.Equal(t, resolvedPath, result.LocalPath)
+	assert.Equal(t, "video/mp2t", result.ContentType)
+	assert.Equal(t, CacheNoStore, result.CachePolicy)
+
+	meta, ok := vm.GetMetadata(validTestRef)
+	assert.True(t, ok)
+	assert.Equal(t, vod.ArtifactStateReady, meta.State)
+	assert.Equal(t, resolvedPath, meta.ResolvedPath)
+}
+
+func TestService_Stream_DoesNotTreatHLSPlaylistAsDirectStreamTruth(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{
+			Root: t.TempDir(),
+		},
+	}
+	owi := new(MockOWIClient)
+	resumeStore := new(MockResumeStore)
+	resolver := new(MockResolverForService)
+	runner := new(MockRunnerForService)
+	prober := new(MockProber)
+	vm, err := vod.NewManager(runner, prober, new(MockPathMapper))
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	svc, err := NewService(cfg, vm, resolver, owi, resumeStore)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+
+	cacheDir, err := RecordingVariantCacheDir(cfg.HLS.Root, validTestRef, DefaultRecordingVariantHash())
+	assert.NoError(t, err)
+	assert.NoError(t, os.MkdirAll(cacheDir, 0750))
+	assert.NoError(t, os.WriteFile(filepath.Join(cacheDir, "index.m3u8"), []byte("#EXTM3U\n#EXT-X-ENDLIST\n"), 0600))
+
+	result, err := svc.Stream(context.Background(), StreamInput{RecordingID: EncodeRecordingID(validTestRef)})
+	assert.NoError(t, err)
+	assert.False(t, result.Ready)
+	assert.Equal(t, "UNKNOWN", result.State)
+
+	_, variantMetaOk := vm.GetMetadata(RecordingVariantMetadataKey(validTestRef, DefaultRecordingVariantHash()))
+	assert.False(t, variantMetaOk, "direct stream must not silently adopt HLS-ready metadata")
 }
 
 func TestService_Delete_Success(t *testing.T) {

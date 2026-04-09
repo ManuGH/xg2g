@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -59,6 +60,41 @@ func createTestServerDTO(svc recservice.Service) *Server {
 	cfg.HLS.Root = "/tmp/hls"
 	s := &Server{cfg: cfg, recordingsService: svc}
 	return s
+}
+
+type fixedPlaybackInfoScanner struct {
+	capability scan.Capability
+	found      bool
+}
+
+func (s *fixedPlaybackInfoScanner) GetCapability(serviceRef string) (scan.Capability, bool) {
+	if !s.found {
+		return scan.Capability{}, false
+	}
+	capability := s.capability
+	if capability.ServiceRef == "" {
+		capability.ServiceRef = serviceRef
+	}
+	return capability, true
+}
+
+func (s *fixedPlaybackInfoScanner) RunBackground() bool { return false }
+
+func (s *fixedPlaybackInfoScanner) RunBackgroundForce() bool { return false }
+
+func verifiedLivePlaybackScanner() ChannelScanner {
+	return &fixedPlaybackInfoScanner{
+		found: true,
+		capability: scan.Capability{
+			State:      scan.CapabilityStateOK,
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "aac",
+			Width:      1920,
+			Height:     1080,
+			FPS:        25,
+		},
+	}
 }
 
 func requireVariantAwareRecordingURL(t *testing.T, rawURL, recordingID string) {
@@ -463,9 +499,46 @@ func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "Invalid recording ID format")
 }
 
+func TestPostLivePlaybackInfo_WithoutVerifiedScanTruthReturnsServiceUnavailable(t *testing.T) {
+	svc := new(MockRecordingsService)
+	s := createTestServerDTO(svc)
+
+	body := `{
+		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
+		"capabilities":{
+			"capabilitiesVersion":2,
+			"container":["mpegts","ts"],
+			"videoCodecs":["h264"],
+			"audioCodecs":["aac"],
+			"hlsEngines":["native"],
+			"preferredHlsEngine":"native",
+			"runtimeProbeUsed":true,
+			"runtimeProbeVersion":1,
+			"clientFamilyFallback":"safari_native"
+		}
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	s.PostLivePlaybackInfo(w, r)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+	assert.Equal(t, "SCAN_UNAVAILABLE", raw["code"])
+	assert.Equal(t, "unverified", raw["truthState"])
+	assert.Equal(t, "scanner_unavailable", raw["truthReason"])
+	assert.Equal(t, "live_unverified", raw["truthOrigin"])
+}
+
 func TestPostLivePlaybackInfo_RuntimeProbeThreadsClientCapabilityTrace(t *testing.T) {
 	svc := new(MockRecordingsService)
 	s := createTestServerDTO(svc)
+	s.SetDependencies(Dependencies{Scan: verifiedLivePlaybackScanner(), RecordingsService: svc})
 
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
@@ -508,6 +581,7 @@ func TestPostLivePlaybackInfo_RuntimeProbeThreadsClientCapabilityTrace(t *testin
 func TestPostLivePlaybackInfo_AndroidNativeCopyableTSReturnsFMP4HLS(t *testing.T) {
 	svc := new(MockRecordingsService)
 	s := createTestServerDTO(svc)
+	s.SetDependencies(Dependencies{Scan: verifiedLivePlaybackScanner(), RecordingsService: svc})
 
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
@@ -567,6 +641,7 @@ func TestPostLivePlaybackInfo_AndroidNativeCopyableTSReturnsFMP4HLS(t *testing.T
 func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testing.T) {
 	svc := new(MockRecordingsService)
 	s := createTestServerDTO(svc)
+	s.SetDependencies(Dependencies{Scan: verifiedLivePlaybackScanner(), RecordingsService: svc})
 
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",

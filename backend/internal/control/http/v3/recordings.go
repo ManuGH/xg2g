@@ -15,6 +15,7 @@ import (
 	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	recordingsmodel "github.com/ManuGH/xg2g/internal/domain/recordings/model"
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -77,12 +78,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			BeginUnixSeconds: int64Ptr(m.BeginUnixSeconds),
 			Length:           strPtr(m.Length),
 			Filename:         strPtr(m.Filename),
-		}
-
-		// P3-3-4: Status Mapping
-		if m.Status != "" && m.Status != "unknown" {
-			apiStatus := RecordingItemStatus(m.Status)
-			item.Status = &apiStatus
+			Status:           mapRecordingItemStatus(m.Status),
 		}
 
 		if m.DurationSeconds != nil {
@@ -139,6 +135,23 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.L().Error().Err(err).Msg("failed to encode recordings response")
+	}
+}
+
+func mapRecordingItemStatus(status recordingsmodel.RecordingStatus) RecordingItemStatus {
+	switch status {
+	case recordingsmodel.RecordingStatusScheduled:
+		return RecordingItemStatusScheduled
+	case recordingsmodel.RecordingStatusRecording:
+		return RecordingItemStatusRecording
+	case recordingsmodel.RecordingStatusCompleted:
+		return RecordingItemStatusCompleted
+	case recordingsmodel.RecordingStatusFailed:
+		return RecordingItemStatusFailed
+	case recordingsmodel.RecordingStatusUnknown, "":
+		return RecordingItemStatusUnknown
+	default:
+		return RecordingItemStatusUnknown
 	}
 }
 

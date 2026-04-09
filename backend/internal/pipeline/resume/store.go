@@ -48,31 +48,37 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (s *MemoryStore) Put(ctx context.Context, principalID, recordingID string, state *State) error {
+func (s *MemoryStore) Put(ctx context.Context, principalID, recordingKey string, state *State) error {
+	_ = ctx
+	if state == nil {
+		return ErrNilState
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	key := compositeKey(principalID, recordingID)
-	// Copy to avoid race if caller modifies state later
-	clone := *state
-	s.data[key] = &clone
+	key := compositeKey(principalID, recordingKey)
+	s.data[key] = cloneState(state)
 	return nil
 }
 
-func (s *MemoryStore) Get(ctx context.Context, principalID, recordingID string) (*State, error) {
+func (s *MemoryStore) Get(ctx context.Context, principalID, recordingKey string) (*State, error) {
+	_ = ctx
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	key := compositeKey(principalID, recordingID)
+	key := compositeKey(principalID, recordingKey)
 	if val, ok := s.data[key]; ok {
-		clone := *val
-		return &clone, nil
+		return cloneState(val), nil
 	}
 	return nil, nil
 }
 
-func (s *MemoryStore) Delete(ctx context.Context, principalID, recordingID string) error {
+func (s *MemoryStore) Delete(ctx context.Context, principalID, recordingKey string) error {
+	_ = ctx
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.data, compositeKey(principalID, recordingID))
+	delete(s.data, compositeKey(principalID, recordingKey))
 	return nil
 }
 

@@ -119,7 +119,11 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 				Cause:   err,
 			}
 		}
-		return subjectID, resolveLiveTruth(subjectID, s.deps.ChannelTruthSource()), nil
+		truthResolution := resolveLiveTruthState(subjectID, s.deps.ChannelTruthSource())
+		if !truthResolution.Verified() {
+			return "", playback.MediaTruth{}, playbackInfoErrorForLiveTruth(truthResolution)
+		}
+		return subjectID, truthResolution.Truth, nil
 	case PlaybackSubjectRecording:
 		sourceRef, ok := domainrecordings.DecodeRecordingID(subjectID)
 		if !ok {
@@ -159,6 +163,32 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 			Kind:    PlaybackInfoErrorInvalidInput,
 			Message: "unsupported playback subject kind",
 		}
+	}
+}
+
+func playbackInfoErrorForLiveTruth(resolution liveTruthResolution) *PlaybackInfoError {
+	message := "Live media truth unavailable"
+	switch resolution.Reason {
+	case "scanner_unavailable":
+		message = "Live scan truth unavailable"
+	case "missing_scan_truth":
+		message = "Live media truth missing"
+	case "inactive_event_feed":
+		message = "Live event feed inactive"
+	case "partial_scan_truth", "incomplete_scan_truth":
+		message = "Live media truth incomplete"
+	case "failed_scan_truth":
+		message = "Live media truth failed"
+	}
+
+	return &PlaybackInfoError{
+		Kind:              PlaybackInfoErrorUnverified,
+		Message:           message,
+		RetryAfterSeconds: 5,
+		TruthState:        string(resolution.State),
+		TruthReason:       resolution.Reason,
+		TruthOrigin:       resolution.Origin,
+		ProblemFlags:      append([]string(nil), resolution.ProblemFlags...),
 	}
 }
 

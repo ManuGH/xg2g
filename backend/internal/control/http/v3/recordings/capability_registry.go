@@ -14,7 +14,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 )
 
 type requestHostContext struct {
@@ -166,38 +165,15 @@ func (s *Service) sourceSnapshotForRequest(ctx context.Context, sourceRef string
 }
 
 func liveSourceOriginAndFlags(sourceRef string, source ChannelTruthSource) (string, []string) {
-	if source == nil {
-		return "live_fallback", []string{"legacy_live_assumption", "scanner_unavailable"}
-	}
-
-	capability, found := source.GetCapability(sourceRef)
-	if !found {
-		return "live_fallback", []string{"legacy_live_assumption", "missing_scan_truth"}
-	}
-
-	normalized := capability.Normalized()
-	if normalized.IsInactiveEventFeed() {
-		return "live_fallback", []string{"legacy_live_assumption", "inactive_event_feed"}
-	}
-	if !normalized.HasMediaTruth() {
-		flags := []string{"legacy_live_assumption", "incomplete_scan_truth"}
-		switch normalized.State {
-		case scan.CapabilityStatePartial:
-			flags = append(flags, "partial_scan_truth")
-		case scan.CapabilityStateFailed:
-			flags = append(flags, "failed_scan_truth")
-		}
-		if strings.TrimSpace(normalized.FailureReason) != "" {
-			flags = append(flags, "scan_failure_reason_set")
-		}
-		return "live_fallback", flags
-	}
-
-	return "live_scan", nil
+	resolution := resolveLiveTruthState(sourceRef, source)
+	return resolution.Origin, append([]string(nil), resolution.ProblemFlags...)
 }
 
 func sourceTruthProblemFlags(truth playback.MediaTruth) []string {
 	flags := make([]string, 0, 5)
+	if truth.Status == playback.MediaStatusUnverified {
+		flags = append(flags, "truth_unverified")
+	}
 	if truth.Interlaced {
 		flags = append(flags, "interlaced")
 	}

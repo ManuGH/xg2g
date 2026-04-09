@@ -1930,6 +1930,77 @@ components:
             code: "decision_ambiguous"
             detail: "No compatible playback path available"
 
+    LivePlaybackTruthProblem:
+      type: object
+      required: [type, title, status, requestId, code, retryAfterSeconds, truthState, truthReason]
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - /problems/live/scan_unavailable
+            - /problems/live/missing_scan_truth
+            - /problems/live/partial_truth
+            - /problems/live/inactive_event_feed
+            - /problems/live/failed_scan_truth
+          description: Stable live-truth problem type. Clients MUST branch on this field, not on free-text title/detail.
+        title:
+          type: string
+          description: Human-readable fallback title. Not for decision branching.
+        status:
+          type: integer
+          enum: [503]
+        requestId:
+          type: string
+          description: Correlation ID (UUID or prefixed string like req_abc123)
+        code:
+          $ref: "#/components/schemas/ProblemCode"
+        detail:
+          type: string
+          description: Optional human-readable detail. Not for decision branching.
+        instance:
+          type: string
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+          description: JSON mirror of the Retry-After header.
+        truthState:
+          type: string
+          enum: [unverified, partial, failed, inactive_event_feed]
+          description: Stable degraded-state classifier for live truth.
+        truthReason:
+          type: string
+          enum:
+            - scanner_unavailable
+            - missing_scan_truth
+            - partial_scan_truth
+            - inactive_event_feed
+            - failed_scan_truth
+          description: Stable machine-readable reason for the degraded live truth state.
+        truthOrigin:
+          type: string
+          enum: [live_unverified]
+          description: Diagnostic provenance only. Clients SHOULD NOT branch on this field.
+        problemFlags:
+          type: array
+          description: Diagnostic flags only. Clients MUST NOT use these as the sole UX branch.
+          items:
+            type: string
+      example:
+        type: /problems/live/partial_truth
+        title: Live media truth incomplete
+        status: 503
+        requestId: req_live_123
+        code: UNAVAILABLE
+        detail: Live media truth is incomplete
+        retryAfterSeconds: 5
+        truthState: partial
+        truthReason: partial_scan_truth
+        truthOrigin: live_unverified
+        problemFlags:
+          - live_truth_unverified
+          - partial_scan_truth
+
     SessionTerminalProblem:
       type: object
       required: [type, title, status, requestId, session, state, reason_detail]
@@ -2181,6 +2252,7 @@ components:
 
     RecordingItem:
       type: object
+      required: [status]
       properties:
         serviceRef:
           type: string
@@ -2208,8 +2280,8 @@ components:
         filename: { type: string }
         status:
           type: string
-          description: Consolidated recording status. Becomes required in P3-3.
-          enum: [pending, recording, completed, failed, deleting]
+          description: Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
+          enum: [scheduled, recording, completed, failed, unknown]
         resume: { $ref: "#/components/schemas/ResumeSummary" }
 
     ResumeSummary:
@@ -2853,11 +2925,19 @@ paths:
         "403":
           description: Forbidden
         "503":
-          description: Attestation unavailable
+          description: Live playback unavailable. Responses with `/problems/live/*` indicate unverified or degraded live media truth and MUST NOT be treated as confirmed playback readiness.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying a degraded or unverified live truth response.
+              schema:
+                type: string
+                example: "5"
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ProblemDetails"
+                oneOf:
+                  - $ref: "#/components/schemas/LivePlaybackTruthProblem"
+                  - $ref: "#/components/schemas/ProblemDetails"
 
   /recordings:
     get:

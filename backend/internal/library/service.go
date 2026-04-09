@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -108,6 +107,14 @@ func (s *Service) TriggerScan(ctx context.Context, rootID string) error {
 		return fmt.Errorf("root config not found: %s", rootID)
 	}
 
+	root, err := s.store.GetRoot(ctx, rootID)
+	if err != nil {
+		return fmt.Errorf("get root before scan: %w", err)
+	}
+	if root == nil {
+		return fmt.Errorf("%w: %s", ErrRootNotFound, rootID)
+	}
+
 	// Acquire scan lock (singleflight)
 	lockKey := "scan:" + rootID
 	mu, _ := s.activeScans.LoadOrStore(lockKey, &sync.Mutex{})
@@ -124,24 +131,24 @@ func (s *Service) TriggerScan(ctx context.Context, rootID string) error {
 	}()
 
 	// Mark scan as running
-	scanStartTime := time.Now()
-	if err := s.store.UpdateRootScanStatus(ctx, rootID, RootStatusRunning, scanStartTime, 0); err != nil {
+	if err := s.store.MarkRootScanRunning(ctx, rootID); err != nil {
 		return fmt.Errorf("mark scan running: %w", err)
 	}
 
 	// Perform scan
-	result, err := s.scanner.ScanRoot(ctx, *cfg)
-	if err != nil {
+	result, scanErr := s.scanner.ScanRoot(ctx, *cfg)
+	if scanErr != nil {
 		log.L().Error().
-			Err(err).
+			Err(scanErr).
 			Str("root_id", rootID).
 			Int("errors", result.ErrorCount).
 			Msg("library scan failed")
 	}
 
-	// Update root status
-	if err := s.store.UpdateRootScanStatus(ctx, rootID, result.FinalStatus, result.Finished, result.TotalScanned); err != nil {
-		return fmt.Errorf("update scan status: %w", err)
+	if result.FinalStatus == RootStatusFailed {
+		if err := s.store.UpdateRootScanStatus(ctx, rootID, result.FinalStatus, result.Finished, root.TotalItems); err != nil {
+			return fmt.Errorf("update scan status: %w", err)
+		}
 	}
 
 	log.L().Info().
@@ -151,6 +158,10 @@ func (s *Service) TriggerScan(ctx context.Context, rootID string) error {
 		Int("errors", result.ErrorCount).
 		Dur("duration", result.Finished.Sub(result.Started)).
 		Msg("library scan complete")
+
+	if scanErr != nil {
+		return fmt.Errorf("scan root: %w", scanErr)
+	}
 
 	return nil
 }

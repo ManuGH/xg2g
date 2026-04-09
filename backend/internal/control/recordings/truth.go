@@ -349,14 +349,7 @@ func (s *LibraryDurationStore) GetDuration(ctx context.Context, rootID, relPath 
 	if s == nil || s.store == nil {
 		return 0, false, nil
 	}
-	item, err := s.store.GetItem(ctx, rootID, relPath)
-	if err != nil {
-		return 0, false, err
-	}
-	if item == nil || item.DurationSeconds <= 0 {
-		return 0, false, nil
-	}
-	return item.DurationSeconds, true, nil
+	return s.store.GetItemDuration(ctx, rootID, relPath)
 }
 
 func (s *LibraryDurationStore) SetDuration(ctx context.Context, rootID, relPath string, seconds int64) error {

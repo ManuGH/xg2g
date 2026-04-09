@@ -9,6 +9,9 @@ import (
 )
 
 type Store interface {
+	// List returns the canonical profile enumeration used by snapshots and cross-store
+	// consumers: the default profile first, then remaining profiles by case-insensitive
+	// display name ASC, then normalized ID ASC.
 	List(ctx context.Context) ([]Profile, error)
 	Get(ctx context.Context, id string) (Profile, bool, error)
 	Upsert(ctx context.Context, profile Profile) error
@@ -53,6 +56,7 @@ func (s *MemoryStore) List(ctx context.Context) ([]Profile, error) {
 	for _, profile := range s.data {
 		profiles = append(profiles, CloneProfile(profile))
 	}
+	sortProfiles(profiles)
 	return cloneProfiles(profiles), nil
 }
 

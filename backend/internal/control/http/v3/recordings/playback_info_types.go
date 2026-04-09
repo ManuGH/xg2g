@@ -54,6 +54,7 @@ const (
 	PlaybackInfoErrorForbidden
 	PlaybackInfoErrorNotFound
 	PlaybackInfoErrorPreparing
+	PlaybackInfoErrorUnverified
 	PlaybackInfoErrorUnsupported
 	PlaybackInfoErrorUpstreamUnavailable
 	PlaybackInfoErrorInternal
@@ -66,6 +67,10 @@ type PlaybackInfoError struct {
 	Message           string
 	RetryAfterSeconds int
 	ProbeState        string
+	TruthState        string
+	TruthReason       string
+	TruthOrigin       string
+	ProblemFlags      []string
 	Problem           *PlaybackInfoProblem
 	Cause             error
 }

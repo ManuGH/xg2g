@@ -123,6 +123,65 @@ function stringifyDetail(value: unknown): string | undefined {
   }
 }
 
+function liveProblemKey(type?: string): string {
+  if (!type) {
+    return '';
+  }
+  return type.startsWith('/problems/') ? type.slice('/problems/'.length) : type;
+}
+
+function formatRetryAdvice(retryAfterSeconds?: number): string {
+  if (typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0) {
+    return ` Try again in about ${retryAfterSeconds} seconds.`;
+  }
+  return ' Please try again shortly.';
+}
+
+function getLiveProblemCopy(mapped: {
+  type?: string;
+  retryAfterSeconds?: number;
+}): Partial<AppError> {
+  switch (liveProblemKey(mapped.type)) {
+    case 'live/scan_unavailable':
+      return {
+        title: 'Live stream is being verified',
+        detail: `xg2g cannot confirm live media details right now.${formatRetryAdvice(mapped.retryAfterSeconds)}`,
+        retryable: true,
+        severity: 'warning',
+      };
+    case 'live/missing_scan_truth':
+      return {
+        title: 'Live stream is still being checked',
+        detail: `The receiver has not published verified media details for this channel yet.${formatRetryAdvice(mapped.retryAfterSeconds)}`,
+        retryable: true,
+        severity: 'warning',
+      };
+    case 'live/partial_truth':
+      return {
+        title: 'Live stream details are incomplete',
+        detail: `xg2g has only partial media details for this channel and will not start playback until they are complete.${formatRetryAdvice(mapped.retryAfterSeconds)}`,
+        retryable: true,
+        severity: 'warning',
+      };
+    case 'live/inactive_event_feed':
+      return {
+        title: 'Live stream is unavailable',
+        detail: `The receiver is not publishing active media details for this channel right now.${formatRetryAdvice(mapped.retryAfterSeconds)}`,
+        retryable: true,
+        severity: 'warning',
+      };
+    case 'live/failed_scan_truth':
+      return {
+        title: 'Live stream details could not be verified',
+        detail: `xg2g could not confirm the live media details for this channel.${formatRetryAdvice(mapped.retryAfterSeconds)}`,
+        retryable: true,
+        severity: 'warning',
+      };
+    default:
+      return {};
+  }
+}
+
 export function toAppError(error: unknown, options: AppErrorOptions = {}): AppError {
   if (isAppError(error)) {
     return enrichAppError(error);
@@ -133,21 +192,30 @@ export function toAppError(error: unknown, options: AppErrorOptions = {}): AppEr
       ? {
         status: error.status,
         code: error.code,
+        type: error.type,
         title: error.title === 'Request failed' ? undefined : error.title,
         detail: error.detail,
         requestId: error.requestId,
+        retryAfterSeconds: error.retryAfterSeconds,
+        truthState: error.truthState,
+        truthReason: error.truthReason,
+        truthOrigin: error.truthOrigin,
+        problemFlags: error.problemFlags,
       }
       : mapApiError(error);
 
   const catalog = getCatalogCopy(mapped.code);
+  const liveProblemCopy = getLiveProblemCopy(mapped);
   const statusCopy = typeof mapped.status === 'number' ? getStatusCopy(mapped.status) : null;
   const title =
+    liveProblemCopy.title ??
     mapped.title ??
     catalog.title ??
     statusCopy?.title ??
     options.fallbackTitle ??
     'Something went wrong';
   const detail =
+    liveProblemCopy.detail ??
     mapped.detail ??
     options.fallbackDetail ??
     catalog.detail ??
@@ -155,6 +223,7 @@ export function toAppError(error: unknown, options: AppErrorOptions = {}): AppEr
     statusCopy?.detail;
   const retryable =
     options.retryable ??
+    liveProblemCopy.retryable ??
     catalog.retryable ??
     statusCopy?.retryable ??
     (typeof mapped.status === 'number' ? mapped.status >= 500 || mapped.status === 408 || mapped.status === 429 : true);
@@ -166,7 +235,7 @@ export function toAppError(error: unknown, options: AppErrorOptions = {}): AppEr
     retryable,
     code: mapped.code,
     requestId: mapped.requestId,
-    severity: catalog.severity ?? statusCopy?.severity,
+    severity: liveProblemCopy.severity ?? catalog.severity ?? statusCopy?.severity,
     operatorHint: catalog.operatorHint,
     runbookUrl: catalog.runbookUrl,
   };

@@ -135,10 +135,14 @@ enigma2:
 		// 3. Verify Persistence in Store
 		libSvc := container.Server.LibraryService()
 		require.NotNil(t, libSvc)
+		duration, ok, err := recservice.NewLibraryDurationStore(libSvc.GetStore()).GetDuration(ctx, "root1", "film.ts")
+		require.NoError(t, err)
+		require.True(t, ok, "Duration should be persisted as auxiliary truth")
+		assert.Equal(t, int64(123), duration, "Duration should be persisted")
+
 		item, err := libSvc.GetStore().GetItem(ctx, "root1", "film.ts")
 		require.NoError(t, err)
-		require.NotNil(t, item)
-		assert.Equal(t, int64(123), item.DurationSeconds, "Duration should be persisted")
+		assert.Nil(t, item, "Duration persistence must not create catalog rows before scan")
 	})
 
 	t.Run("SuccessPath_FromStore", func(t *testing.T) {

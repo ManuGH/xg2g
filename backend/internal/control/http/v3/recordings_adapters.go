@@ -108,7 +108,11 @@ func (a *ResumeAdapter) GetResume(ctx context.Context, principalID, serviceRef s
 	if a.store == nil {
 		return recordings.ResumeData{}, false, nil
 	}
-	res, err := a.store.Get(ctx, principalID, serviceRef)
+	resumeKey, ok := recordings.CanonicalResumeKeyFromServiceRef(serviceRef)
+	if !ok {
+		return recordings.ResumeData{}, false, nil
+	}
+	res, err := a.store.Get(ctx, principalID, resumeKey)
 	if err != nil {
 		return recordings.ResumeData{}, false, err
 	}

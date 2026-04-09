@@ -8,26 +8,44 @@ export const CLIENT_AUTH_CHANGED_EVENT = 'xg2g:client-auth-changed';
 export type MappedApiError = {
   status?: number;
   code?: string;
+  type?: string;
   title?: string;
   detail?: string;
   requestId?: string;
+  retryAfterSeconds?: number;
+  truthState?: string;
+  truthReason?: string;
+  truthOrigin?: string;
+  problemFlags?: string[];
 };
 
 export class ClientRequestError extends Error {
   readonly status?: number;
   readonly code?: string;
+  readonly type?: string;
   readonly requestId?: string;
   readonly detail?: string;
   readonly title: string;
+  readonly retryAfterSeconds?: number;
+  readonly truthState?: string;
+  readonly truthReason?: string;
+  readonly truthOrigin?: string;
+  readonly problemFlags?: string[];
 
   constructor(mapped: MappedApiError) {
     super(mapped.detail ?? mapped.title ?? 'Request failed');
     this.name = 'ClientRequestError';
     this.status = mapped.status;
     this.code = mapped.code;
+    this.type = mapped.type;
     this.requestId = mapped.requestId;
     this.detail = mapped.detail;
     this.title = mapped.title ?? 'Request failed';
+    this.retryAfterSeconds = mapped.retryAfterSeconds;
+    this.truthState = mapped.truthState;
+    this.truthReason = mapped.truthReason;
+    this.truthOrigin = mapped.truthOrigin;
+    this.problemFlags = mapped.problemFlags;
   }
 }
 
@@ -49,6 +67,28 @@ const readNumber = (value: Record<string, unknown>, key: string): number | undef
   const candidate = value[key];
   return typeof candidate === 'number' ? candidate : undefined;
 };
+
+const readStringArray = (value: Record<string, unknown>, key: string): string[] | undefined => {
+  const candidate = value[key];
+  if (!Array.isArray(candidate)) {
+    return undefined;
+  }
+  const items = candidate.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  return items.length > 0 ? items : undefined;
+};
+
+function mapProblemExtensionFields(value: Record<string, unknown>): Pick<
+  MappedApiError,
+  'retryAfterSeconds' | 'truthState' | 'truthReason' | 'truthOrigin' | 'problemFlags'
+> {
+  return {
+    retryAfterSeconds: readNumber(value, 'retryAfterSeconds'),
+    truthState: readString(value, 'truthState'),
+    truthReason: readString(value, 'truthReason'),
+    truthOrigin: readString(value, 'truthOrigin'),
+    problemFlags: readStringArray(value, 'problemFlags')
+  };
+}
 
 export function isProblemDetails(value: unknown): value is ProblemDetails {
   if (!isObject(value)) {
@@ -75,12 +115,15 @@ export function isApiError(value: unknown): value is ApiError {
 
 export function mapApiError(error: unknown, fallbackStatus?: number): MappedApiError {
   if (isProblemDetails(error)) {
+    const extensions = mapProblemExtensionFields(error as Record<string, unknown>);
     return {
       status: error.status,
       code: error.code,
+      type: error.type,
       title: error.title,
       detail: error.detail,
-      requestId: error.requestId
+      requestId: error.requestId,
+      ...extensions
     };
   }
 
@@ -109,12 +152,15 @@ export function mapApiError(error: unknown, fallbackStatus?: number): MappedApiE
   }
 
   if (isObject(error)) {
+    const extensions = mapProblemExtensionFields(error);
     return {
       status: readNumber(error, 'status') ?? fallbackStatus,
       code: readString(error, 'code'),
+      type: readString(error, 'type'),
       title: readString(error, 'title') ?? readString(error, 'message'),
       detail: readString(error, 'detail'),
-      requestId: readString(error, 'requestId')
+      requestId: readString(error, 'requestId'),
+      ...extensions
     };
   }
 

@@ -313,9 +313,9 @@
       "watched": "GESEHEN",
       "resume": "WEITER",
       "rec": "REC",
-      "pending": "WARTET",
+      "scheduled": "GEPLANT",
       "failed": "FEHLER",
-      "deleting": "LÖSCHT",
+      "unknown": "UNBEKANNT",
       "new": "NEU",
       "error": "FEHLER"
     },

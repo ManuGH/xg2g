@@ -58,7 +58,7 @@ interface PlayingState {
 
 type RecordingsFilter = 'all' | 'active' | 'resume' | 'unwatched';
 type RecordingsSort = 'newest' | 'oldest';
-type RecordingChipLabel = 'watched' | 'resume' | 'rec' | 'pending' | 'failed' | 'deleting' | 'new' | 'error';
+type RecordingChipLabel = 'watched' | 'resume' | 'rec' | 'scheduled' | 'failed' | 'unknown' | 'new';
 
 // mapRecordingToChip - CTO Contract: Deterministic mapping
 function mapRecordingToChip(item: RecordingItem): { state: ChipState; labelKey: RecordingChipLabel } {
@@ -68,27 +68,18 @@ function mapRecordingToChip(item: RecordingItem): { state: ChipState; labelKey: 
   if (item.resume?.posSeconds && item.resume.posSeconds > 0) return { state: 'warning', labelKey: 'resume' };
 
   // Priority 2: Explicit Truth Status (P3-3)
-  // Stop-the-line: If backend provides status, WE TRUST IT. Do not fallback to title parsing.
-  if (item.status) {
-    switch (item.status) {
-      case 'recording': return { state: 'recording', labelKey: 'rec' };
-      case 'pending': return { state: 'warning', labelKey: 'pending' };
-      case 'failed': return { state: 'error', labelKey: 'failed' };
-      case 'deleting': return { state: 'idle', labelKey: 'deleting' };
-      case 'completed': return { state: 'success', labelKey: 'new' }; // Completed + Unwatched = NEW
-      default:
-        // Exhaustiveness check / Safety fallback
-        return { state: 'success', labelKey: 'new' };
-    }
+  // Stop-the-line: If backend provides status, WE TRUST IT. Missing status fails closed to unknown.
+  switch (item.status) {
+    case 'recording': return { state: 'recording', labelKey: 'rec' };
+    case 'scheduled': return { state: 'warning', labelKey: 'scheduled' };
+    case 'failed': return { state: 'error', labelKey: 'failed' };
+    case 'completed': return { state: 'success', labelKey: 'new' }; // Completed + Unwatched = NEW
+    case 'unknown':
+    case undefined:
+      return { state: 'idle', labelKey: 'unknown' };
+    default:
+      return { state: 'idle', labelKey: 'unknown' };
   }
-
-  // Priority 3: Legacy Fallback (Title Tokens)
-  // Only reachable if item.status is undefined (legacy backend or partial data)
-  if (item.title?.includes('[REC]')) return { state: 'recording', labelKey: 'rec' };
-  if (item.title?.includes('[ERROR]')) return { state: 'error', labelKey: 'error' };
-  if (item.title?.includes('[WAIT]')) return { state: 'warning', labelKey: 'pending' };
-
-  return { state: 'success', labelKey: 'new' };
 }
 
 export default function RecordingsList() {
