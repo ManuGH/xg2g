@@ -300,22 +300,22 @@ func mergeFileConfigPaths(paths *RuntimePaths) {
 		return
 	}
 
-	if _, ok := os.LookupEnv("XG2G_STORE_PATH"); !ok && fileCfg.Store != nil {
+	if !config.HasProcessEnv("XG2G_STORE_PATH") && fileCfg.Store != nil {
 		if value := strings.TrimSpace(fileCfg.Store.Path); value != "" {
 			paths.StorePath = value
 		}
 	}
-	if _, ok := os.LookupEnv("XG2G_STORE_BACKEND"); !ok && fileCfg.Store != nil {
+	if !config.HasProcessEnv("XG2G_STORE_BACKEND") && fileCfg.Store != nil {
 		if value := strings.TrimSpace(fileCfg.Store.Backend); value != "" {
 			paths.StoreBackend = normalizeStoreBackend(value)
 		}
 	}
-	if _, ok := os.LookupEnv("XG2G_XMLTV"); !ok {
+	if !config.HasProcessEnv("XG2G_XMLTV") {
 		if value := strings.TrimSpace(fileCfg.EPG.XMLTVPath); value != "" {
 			paths.XMLTVPath = value
 		}
 	}
-	if _, ok := os.LookupEnv(platformpaths.EnvHLSRoot); !ok && fileCfg.HLS != nil {
+	if !config.HasProcessEnv(platformpaths.EnvHLSRoot) && fileCfg.HLS != nil {
 		if value := strings.TrimSpace(fileCfg.HLS.Root); value != "" {
 			paths.HLSRoot = value
 		}

@@ -20,6 +20,14 @@ func currentProcessLookupEnv() envLookupFunc {
 	return processLookupEnv
 }
 
+// HasProcessEnv reports whether the given environment key is explicitly present
+// in the current process environment. This keeps direct environment inspection
+// inside internal/config.
+func HasProcessEnv(key string) bool {
+	_, ok := currentProcessLookupEnv()(key)
+	return ok
+}
+
 func currentProcessGetEnv() func(string) string {
 	if processGetEnv == nil {
 		return func(string) string { return "" }

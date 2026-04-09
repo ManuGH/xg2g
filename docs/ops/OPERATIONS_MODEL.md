@@ -10,7 +10,7 @@ This document defines the immutable operational contract for the `xg2g` service.
 - **Repo Truth**: The repo-side canonical deploy bundle lives under `deploy/`. For the systemd unit, the canonical source is `deploy/xg2g.service`; the installed host unit must strictly match the deployed host copy under `/srv/xg2g/docs/ops/xg2g.service`.
 - **Identity Isolation**: The service MUST run as UID `10001` (xg2g) within the container.
 - **Fail-Closed Auth**: No endpoint beyond `/healthz` and `/readyz` is accessible without a valid `XG2G_API_TOKEN`.
-- **Resource Pinning**: The container MUST use the pinned image `ghcr.io/manugh/xg2g:v3.4.4`.
+- **Resource Pinning**: The container MUST use the pinned image `ghcr.io/manugh/xg2g:v3.4.5`.
 
 ## 2. What Is Allowed To Fail (Controlled Transients)
 
