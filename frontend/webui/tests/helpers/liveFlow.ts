@@ -56,7 +56,7 @@ export function mockLiveFlowFetch(options: LiveFlowOptions = {}): FetchMock {
 
     if (url.includes('/intents')) {
       return Promise.resolve(
-        mockJsonResponse(url, 200, {
+        mockJsonResponse(url, 202, {
           sessionId,
           requestId: `${requestId}-intent`,
         }),
@@ -69,7 +69,7 @@ export function mockLiveFlowFetch(options: LiveFlowOptions = {}): FetchMock {
           state: sessionState,
           requestId: sessionRequestId,
           playbackUrl,
-          heartbeat_interval: heartbeatInterval,
+          heartbeatIntervalSeconds: heartbeatInterval,
           trace: sessionTrace,
         }),
       );
@@ -78,7 +78,9 @@ export function mockLiveFlowFetch(options: LiveFlowOptions = {}): FetchMock {
     if (url.includes('/heartbeat')) {
       return Promise.resolve(
         mockJsonResponse(url, 200, {
-          lease_expires_at: 'next',
+          sessionId,
+          acknowledged: true,
+          leaseExpiresAt: 'next',
         }),
       );
     }

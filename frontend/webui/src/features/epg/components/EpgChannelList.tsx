@@ -1,10 +1,10 @@
 // EPG Channel List - Main view and search results rendering
-// Zero API imports
+// Typed API consumption only; no shadow JSON contracts.
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
-import type { PlaybackInfo, PlaybackSourceProfile } from '../../../client-ts';
+import { postLivePlaybackInfo, type PlaybackInfo } from '../../../client-ts';
 import { isEventVisible } from '../epgModel';
 import { EpgEventRow } from './EpgEventList';
 import { Button } from '../../../components/ui';
@@ -17,7 +17,6 @@ import {
   type PlaybackRequestProfile,
 } from '../../player/utils/playbackRequestProfile';
 import { resolveHostEnvironment } from '../../../lib/hostBridge';
-import { getApiBaseUrl } from '../../../services/clientWrapper';
 import { getStoredToken } from '../../../utils/tokenStorage';
 import styles from '../EPG.module.css';
 
@@ -57,16 +56,7 @@ function buildCapabilityCacheKey(capabilities: CapabilitySnapshot, requestProfil
   });
 }
 
-function formatResolutionLabel(
-  resolution?: string | null,
-  source?: PlaybackSourceProfile | null
-): string | null {
-  const sourceHeight = source?.height;
-  const sourceWidth = source?.width;
-  if (typeof sourceWidth === 'number' && typeof sourceHeight === 'number' && sourceWidth > 0 && sourceHeight > 0) {
-    return `${sourceHeight}p`;
-  }
-
+function formatResolutionLabel(resolution?: string | null): string | null {
   if (!resolution) {
     return null;
   }
@@ -81,21 +71,16 @@ function formatResolutionLabel(
 }
 
 function buildChannelPlaybackDetail(channel: EpgChannel, info: PlaybackInfo): string | null {
-  const source = info.decision?.trace?.source;
-  const resolution = formatResolutionLabel(channel.resolution, source);
-  const videoCodec = source?.videoCodec || info.videoCodec || channel.codec || null;
-  const audioCodec = source?.audioCodec || info.audioCodec || null;
+  const resolution = formatResolutionLabel(channel.resolution);
+  const videoCodec = info.videoCodec || channel.codec || null;
+  const audioCodec = info.audioCodec || null;
   const codecSummary = [videoCodec, audioCodec].filter(Boolean).join('/');
   const detail = [resolution, codecSummary || null].filter(Boolean).join(' · ');
   return detail || null;
 }
 
 function buildChannelPlaybackBadge(channel: EpgChannel, info: PlaybackInfo): ChannelPlaybackBadge | null {
-  const rawMode = typeof info.decision?.mode === 'string'
-    ? info.decision.mode
-    : typeof info.mode === 'string'
-      ? info.mode
-      : null;
+  const rawMode = info.decision?.mode;
 
   if (rawMode !== 'direct_play' && rawMode !== 'direct_stream' && rawMode !== 'transcode' && rawMode !== 'deny') {
     return null;
@@ -135,7 +120,6 @@ function buildChannelPlaybackBadge(channel: EpgChannel, info: PlaybackInfo): Cha
 }
 
 async function fetchChannelPlaybackBadge(
-  apiBase: string,
   channel: EpgChannel,
   capabilities: CapabilitySnapshot,
   capabilityCacheKey: string,
@@ -159,36 +143,27 @@ async function fetchChannelPlaybackBadge(
 
   const request = (async () => {
     const authToken = getStoredToken().trim();
-    const response = await fetch(`${apiBase}/live/stream-info`, {
-      method: 'POST',
+    const result = await postLivePlaybackInfo({
       headers: {
-        'Content-Type': 'application/json',
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...buildPlaybackProfileHeaders(requestProfile),
       },
-      body: JSON.stringify({
+      body: {
         serviceRef,
         capabilities,
-      }),
+      },
     });
 
-    let payload: PlaybackInfo | null = null;
-    try {
-      payload = await response.json() as PlaybackInfo;
-    } catch {
-      payload = null;
-    }
-
-    if (response.status === 401) {
+    if (result.response?.status === 401) {
       requestAuthRequired({ source: 'EPG.channelPlaybackBadge', status: 401 });
       return null;
     }
 
-    if (!response.ok || !payload) {
+    if (result.error || !result.data) {
       return null;
     }
 
-    const badge = buildChannelPlaybackBadge(channel, payload);
+    const badge = buildChannelPlaybackBadge(channel, result.data);
     if (badge) {
       channelPlaybackBadgeCache.set(cacheKey, badge);
     }
@@ -654,7 +629,6 @@ export function EpgChannelList({
   isRecorded,
 }: EpgChannelListProps) {
   const isTvHost = React.useMemo(() => resolveHostEnvironment().isTv, []);
-  const apiBase = React.useMemo(() => getApiBaseUrl('/api/v3'), []);
   const listRef = React.useRef<HTMLDivElement | null>(null);
   const [channelJumpBuffer, setChannelJumpBuffer] = React.useState('');
   const [focusedChannelIndex, setFocusedChannelIndex] = React.useState(0);
@@ -813,7 +787,7 @@ export function EpgChannelList({
         return;
       }
 
-      void fetchChannelPlaybackBadge(apiBase, channel, capabilitySnapshot, capabilityCacheKey, playbackRequestProfile)
+      void fetchChannelPlaybackBadge(channel, capabilitySnapshot, capabilityCacheKey, playbackRequestProfile)
         .then((badge) => {
           if (!badge) {
             return;
@@ -824,7 +798,7 @@ export function EpgChannelList({
         })
         .catch(() => {});
     });
-  }, [apiBase, capabilityCacheKey, capabilitySnapshot, orderedDisplayChannels, playbackRequestProfile]);
+  }, [capabilityCacheKey, capabilitySnapshot, orderedDisplayChannels, playbackRequestProfile]);
 
   React.useEffect(() => {
     if (orderedDisplayChannels.length === 0) {

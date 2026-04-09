@@ -9,19 +9,20 @@ import (
 
 // Intent carries normalized input used by intent processing.
 type Intent struct {
-	Type          model.IntentType
-	SessionID     string
-	ServiceRef    string
-	Params        map[string]string
-	StartMs       *int64
-	CorrelationID string
-	DecisionTrace string
-	Mode          string
-	UserAgent     string
-	PrincipalID   string
-	ClientCaps    *capabilities.PlaybackCapabilities
-	ClientCapHash string
-	Logger        zerolog.Logger
+	Type                  model.IntentType
+	SessionID             string
+	ServiceRef            string
+	PlaybackDecisionToken string
+	Params                map[string]string
+	StartMs               *int64
+	CorrelationID         string
+	DecisionTrace         string
+	Mode                  string
+	UserAgent             string
+	PrincipalID           string
+	ClientCaps            *capabilities.PlaybackCapabilities
+	ClientCapHash         string
+	Logger                zerolog.Logger
 }
 
 // Result is the normalized outcome consumed by the v3 HTTP adapter.

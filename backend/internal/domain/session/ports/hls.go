@@ -7,7 +7,8 @@ package ports
 import (
 	"path/filepath"
 	"regexp"
-	"strings"
+
+	platformpaths "github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 var sessionIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -20,10 +21,7 @@ func IsSafeSessionID(id string) bool {
 const SessionFirstFrameMarkerFilename = ".first_frame"
 
 func SessionHLSDir(hlsRoot, sessionID string) string {
-	if strings.TrimSpace(hlsRoot) == "" || strings.TrimSpace(sessionID) == "" {
-		return ""
-	}
-	return filepath.Join(hlsRoot, "sessions", sessionID)
+	return platformpaths.LiveSessionDir(hlsRoot, sessionID)
 }
 
 func SessionFirstFrameMarkerPath(hlsRoot, sessionID string) string {

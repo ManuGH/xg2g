@@ -35,6 +35,14 @@
     },
     {
       "endpoint": "/playbackinfo",
+      "fieldPath": "decision.selectedOutputKind",
+      "category": "normative",
+      "component": "V3Player",
+      "rationale": "Single normative output kind provided by backend for engine selection and observability.",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
       "fieldPath": "decision.selectedOutputUrl",
       "category": "normative",
       "component": "V3Player",
@@ -43,10 +51,34 @@
     },
     {
       "endpoint": "/playbackinfo",
+      "fieldPath": "durationSeconds",
+      "category": "normative",
+      "component": "V3Player",
+      "rationale": "Canonical playback duration unit exposed by the API for VOD duration truth.",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
+      "fieldPath": "isSeekable",
+      "category": "normative",
+      "component": "V3Player",
+      "rationale": "Authoritative seekability flag; missing values must fail closed in the client.",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
       "fieldPath": "mode",
       "category": "legacy",
       "component": "V3Player",
       "rationale": "Fallback for P3-x backends",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
+      "fieldPath": "resume",
+      "category": "normative",
+      "component": "V3Player",
+      "rationale": "Server-provided resume state used for overlay prompts and resume persistence.",
       "introducedIn": "5.0.0"
     },
     {

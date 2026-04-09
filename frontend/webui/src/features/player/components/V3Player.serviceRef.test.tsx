@@ -5,6 +5,11 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import V3Player from './V3Player';
 import type { V3PlayerProps } from '../../../types/v3-player';
 
+const { createSessionMock, postRecordingPlaybackInfoMock } = vi.hoisted(() => ({
+  createSessionMock: vi.fn(),
+  postRecordingPlaybackInfoMock: vi.fn(),
+}));
+
 vi.mock('../lib/hlsRuntime', () => {
   const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
@@ -33,15 +38,21 @@ vi.mock('../lib/hlsRuntime', () => {
   return { default: HlsMock };
 });
 
-vi.mock('../client-ts', () => ({
-  createSession: vi.fn(),
-  postRecordingPlaybackInfo: vi.fn(),
+vi.mock('../../../client-ts', () => ({
+  createSession: createSessionMock,
+  postRecordingPlaybackInfo: postRecordingPlaybackInfoMock,
 }));
 
 describe('V3Player ServiceRef Input', () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
+    createSessionMock.mockReset();
+    postRecordingPlaybackInfoMock.mockReset();
+    createSessionMock.mockResolvedValue({
+      data: {},
+      response: { status: 200 }
+    });
     originalFetch = globalThis.fetch;
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/live/stream-info')) {
@@ -59,10 +70,10 @@ describe('V3Player ServiceRef Input', () => {
       }
       if (url.includes('/intents')) {
         return Promise.resolve({
-          status: 409,
+          status: 503,
           ok: false,
-          headers: { get: vi.fn().mockReturnValue(null) },
-          json: vi.fn().mockResolvedValue({ code: 'LEASE_BUSY', requestId: 'test' })
+          headers: { get: vi.fn().mockImplementation((name: string) => name === 'content-type' ? 'application/problem+json' : null) },
+          json: vi.fn().mockResolvedValue({ type: '/problems/admission/state-unknown', title: 'Unavailable', status: 503, code: 'ADMISSION_STATE_UNKNOWN', requestId: 'test' })
         });
       }
       return Promise.resolve({
@@ -105,6 +116,7 @@ describe('V3Player ServiceRef Input', () => {
     expect(body.serviceRef).toBe(newRef);
     expect(body.playbackDecisionToken).toBe('live-token-1');
     expect(body.client?.capabilitiesVersion).toBe(3);
+    expect(body.params?.playback_decision_token).toBeUndefined();
     expect(body.params?.playback_decision_id).toBeUndefined();
   });
 
@@ -135,6 +147,7 @@ describe('V3Player ServiceRef Input', () => {
     expect(body.serviceRef).toBe(newRef);
     expect(body.playbackDecisionToken).toBe('live-token-1');
     expect(body.client?.capabilitiesVersion).toBe(3);
+    expect(body.params?.playback_decision_token).toBeUndefined();
     expect(body.params?.playback_decision_id).toBeUndefined();
   });
 
@@ -261,7 +274,7 @@ describe('V3Player ServiceRef Input', () => {
           state: 'READY',
           mode: 'LIVE',
           playbackUrl: 'http://example.com/live-1.m3u8',
-          heartbeat_interval: 600
+          heartbeatIntervalSeconds: 600
         }));
       }
       if (url.includes('/sessions/sid-live-2') && !url.includes('/heartbeat')) {
@@ -270,7 +283,7 @@ describe('V3Player ServiceRef Input', () => {
           state: 'READY',
           mode: 'LIVE',
           playbackUrl: 'http://example.com/live-2.m3u8',
-          heartbeat_interval: 600
+          heartbeatIntervalSeconds: 600
         }));
       }
       return Promise.resolve(response(200, {}));
@@ -456,6 +469,195 @@ describe('V3Player ServiceRef Input', () => {
     }
   });
 
+  it('re-mints the session cookie when session readiness returns 401 after restart', async () => {
+    const authRequiredHandler = vi.fn();
+    window.addEventListener('auth-required', authRequiredHandler);
+
+    let sessionPollCount = 0;
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'hls',
+            requestId: 'live-decision-recover-1',
+            playbackDecisionToken: 'live-token-recover-1',
+            decision: { reasons: ['hls'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            sessionId: 'sid-live-recover-1',
+            requestId: 'intent-req-recover-1'
+          })
+        });
+      }
+      if (url.includes('/sessions/sid-live-recover-1') && !url.includes('/heartbeat')) {
+        sessionPollCount += 1;
+        if (sessionPollCount === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 401,
+            url: String(url),
+            headers: { get: vi.fn().mockReturnValue('req-session-401') },
+            json: vi.fn().mockResolvedValue({
+              title: 'Authentication required',
+              code: 'AUTH_REQUIRED',
+              requestId: 'req-session-401'
+            }),
+            text: vi.fn().mockResolvedValue('{"title":"Authentication required"}')
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          url: String(url),
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            id: 'sid-live-recover-1',
+            state: 'READY',
+            mode: 'LIVE',
+            playbackUrl: 'http://example.com/live-recover.m3u8',
+            heartbeatIntervalSeconds: 600
+          })
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+
+    try {
+      const props = { autoStart: false, token: 'dev-token' } as unknown as V3PlayerProps;
+      render(<V3Player {...props} />);
+
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: '1:0:1:555:444:333:0:0:0:0:' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+      await waitFor(() => {
+        expect(createSessionMock).toHaveBeenCalledTimes(2);
+        expect(sessionPollCount).toBe(2);
+      });
+
+      expect(authRequiredHandler).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('auth-required', authRequiredHandler);
+    }
+  });
+
+  it('shows session expired instead of auth failed when recovery succeeds but the session is gone', async () => {
+    const authRequiredHandler = vi.fn();
+    window.addEventListener('auth-required', authRequiredHandler);
+
+    let sessionPollCount = 0;
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'hls',
+            requestId: 'live-decision-expired-1',
+            playbackDecisionToken: 'live-token-expired-1',
+            decision: { reasons: ['hls'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            sessionId: 'sid-live-expired-1',
+            requestId: 'intent-req-expired-1'
+          })
+        });
+      }
+      if (url.includes('/sessions/sid-live-expired-1') && !url.includes('/heartbeat')) {
+        sessionPollCount += 1;
+        if (sessionPollCount === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 401,
+            url: String(url),
+            headers: { get: vi.fn().mockReturnValue('req-session-expired-401') },
+            json: vi.fn().mockResolvedValue({
+              title: 'Authentication required',
+              code: 'AUTH_REQUIRED',
+              requestId: 'req-session-expired-401'
+            }),
+            text: vi.fn().mockResolvedValue('{"title":"Authentication required"}')
+          });
+        }
+        return Promise.resolve({
+          ok: false,
+          status: 410,
+          url: String(url),
+          headers: { get: vi.fn().mockImplementation((name: string) => name === 'X-Request-ID' ? 'req-session-expired-410' : 'application/json') },
+          json: vi.fn().mockResolvedValue({
+            title: 'Session expired',
+            status: 410,
+            requestId: 'req-session-expired-410',
+            state: 'FAILED',
+            reason: 'SESSION_GONE',
+            reason_detail: 'server restarted',
+            session: 'sid-live-expired-1'
+          }),
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            title: 'Session expired',
+            status: 410,
+            requestId: 'req-session-expired-410',
+            state: 'FAILED',
+            reason: 'SESSION_GONE',
+            reason_detail: 'server restarted',
+            session: 'sid-live-expired-1'
+          }))
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+
+    try {
+      const props = { autoStart: false, token: 'dev-token' } as unknown as V3PlayerProps;
+      render(<V3Player {...props} />);
+
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: '1:0:1:666:555:444:0:0:0:0:' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+      await waitFor(() => {
+        expect(createSessionMock).toHaveBeenCalledTimes(2);
+        expect(sessionPollCount).toBe(2);
+      });
+
+      await screen.findByText(/Session expired\. Please restart\./i);
+      expect(screen.queryByText(/Authentication required/i)).not.toBeInTheDocument();
+      expect(authRequiredHandler).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('auth-required', authRequiredHandler);
+    }
+  });
+
   it('keeps 403 intent failures local without dispatching auth-required', async () => {
     const authRequiredHandler = vi.fn();
     window.addEventListener('auth-required', authRequiredHandler);
@@ -597,7 +799,7 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live.m3u8',
-            heartbeat_interval: 600
+            heartbeatIntervalSeconds: 600
           })
         });
       }
@@ -667,7 +869,7 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live2.m3u8',
-            heartbeat_interval: 600
+            heartbeatIntervalSeconds: 600
           })
         });
       }
@@ -742,7 +944,7 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live3.m3u8',
-            heartbeat_interval: 600
+            heartbeatIntervalSeconds: 600
           })
         });
       }
@@ -817,7 +1019,7 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live4.m3u8',
-            heartbeat_interval: 600
+            heartbeatIntervalSeconds: 600
           })
         });
       }

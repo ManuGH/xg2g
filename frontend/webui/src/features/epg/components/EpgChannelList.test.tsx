@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EpgChannelList } from './EpgChannelList';
+import * as sdk from '../../../client-ts';
 
 vi.mock('../../player/utils/playbackCapabilities', () => ({
   gatherPlaybackCapabilities: vi.fn().mockResolvedValue({
@@ -20,6 +21,14 @@ vi.mock('../../player/utils/playbackCapabilities', () => ({
     preferredHlsEngine: 'hlsjs',
   }),
 }));
+
+vi.mock('../../../client-ts', async () => {
+  const actual = await vi.importActual<typeof import('../../../client-ts')>('../../../client-ts');
+  return {
+    ...actual,
+    postLivePlaybackInfo: vi.fn(),
+  };
+});
 
 function setTvHostEnvironment() {
   (window as Window & {
@@ -70,17 +79,17 @@ function buildEventsByChannel(count: number) {
 }
 
 async function renderChannelList(props: ComponentProps<typeof EpgChannelList>) {
-  render(<EpgChannelList {...props} />);
-  await act(async () => {});
+  await act(async () => {
+    render(<EpgChannelList {...props} />);
+  });
 }
 
 describe('EpgChannelList playback affordance', () => {
+  const mockedPostLivePlaybackInfo = vi.mocked(sdk.postLivePlaybackInfo);
+
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        mode: 'direct_stream',
+    mockedPostLivePlaybackInfo.mockResolvedValue({
+      data: {
         videoCodec: 'h264',
         audioCodec: 'ac3',
         decision: {
@@ -94,15 +103,17 @@ describe('EpgChannelList playback affordance', () => {
             },
           },
         },
-      }),
-    }));
+      },
+      error: undefined,
+      response: { status: 200 } as Response,
+    } as Awaited<ReturnType<typeof sdk.postLivePlaybackInfo>>);
   });
 
   afterEach(() => {
     clearHostEnvironment();
     window.localStorage.clear();
     vi.useRealTimers();
-    vi.unstubAllGlobals();
+    vi.clearAllMocks();
   });
 
   it('starts playback when the channel header is clicked', async () => {
@@ -168,18 +179,49 @@ describe('EpgChannelList playback affordance', () => {
 
     expect(await screen.findByText('Remux')).toBeTruthy();
     expect(screen.getByText('1080p · h264/ac3')).toBeTruthy();
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/live/stream-info'),
+    expect(mockedPostLivePlaybackInfo).toHaveBeenCalledWith(
       expect.objectContaining({
-        method: 'POST',
         headers: expect.objectContaining({
           Authorization: 'Bearer dev-token',
+        }),
+        body: expect.objectContaining({
+          serviceRef: 'svc-badge-auth',
         }),
       })
     );
   });
 
+  it('fails closed when live playback info omits decision.mode', async () => {
+    mockedPostLivePlaybackInfo.mockResolvedValueOnce({
+      data: {
+        mode: 'direct_stream',
+        videoCodec: 'h264',
+        audioCodec: 'ac3',
+      },
+      error: undefined,
+      response: { status: 200 } as Response,
+    } as unknown as Awaited<ReturnType<typeof sdk.postLivePlaybackInfo>>);
+
+    await renderChannelList({
+      mode: 'main',
+      channels: [{ id: 'svc-badge-failclosed', serviceRef: 'svc-badge-failclosed', name: 'Das Erste', number: '101', resolution: '1920x1080', codec: 'h264' }],
+      eventsByServiceRef: new Map([
+        ['svc-badge-failclosed', [{ serviceRef: 'svc-badge-failclosed', start: 100, end: 200, title: 'Tagesschau' }]],
+      ]),
+      currentTime: 120,
+      timeRangeHours: 6,
+      expandedChannels: new Set(),
+      onToggleExpand: () => {},
+      onPlay: () => {},
+    });
+
+    expect(screen.queryByText('Remux')).toBeNull();
+    expect(screen.queryByText('Direct')).toBeNull();
+    expect(screen.queryByText('Encode')).toBeNull();
+  });
+
   it('jumps directly to a channel when digits are entered on TV hosts', async () => {
+    vi.useFakeTimers();
     setTvHostEnvironment();
 
     await renderChannelList({
@@ -196,8 +238,8 @@ describe('EpgChannelList playback affordance', () => {
     const firstChannel = screen.getByText('1 · Channel 1').closest('[data-xg2g-channel-focus="true"]') as HTMLElement;
     const targetChannel = screen.getByText('133 · Channel 133').closest('[data-xg2g-channel-focus="true"]') as HTMLElement;
 
-    firstChannel.focus();
     await act(async () => {
+      firstChannel.focus();
       fireEvent.keyDown(window, { key: '1' });
       fireEvent.keyDown(window, { key: '3' });
       fireEvent.keyDown(window, { key: '3' });
@@ -205,6 +247,10 @@ describe('EpgChannelList playback affordance', () => {
 
     expect(document.activeElement).toBe(targetChannel);
     expect(screen.getByText('CH 133')).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(901);
+    });
 
   });
 
@@ -226,8 +272,8 @@ describe('EpgChannelList playback affordance', () => {
     const firstChannel = screen.getByText('1 · Channel 1').closest('[data-xg2g-channel-focus="true"]') as HTMLElement;
     const acceleratedTarget = screen.getByText('10 · Channel 10').closest('[data-xg2g-channel-focus="true"]') as HTMLElement;
 
-    firstChannel.focus();
     await act(async () => {
+      firstChannel.focus();
       fireEvent.keyDown(window, { key: 'ArrowDown' });
       vi.advanceTimersByTime(360);
     });

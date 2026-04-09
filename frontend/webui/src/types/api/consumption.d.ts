@@ -8,8 +8,17 @@ export interface NormativeDecision {
     // Forbidden fields like 'outputs' are NOT here.
 }
 
+export interface NormativeResumeSummary {
+    posSeconds: number;
+    durationSeconds?: number;
+    finished?: boolean;
+}
+
 export interface NormativePlaybackInfo {
     decision: NormativeDecision;
+    isSeekable: boolean;
+    durationSeconds?: number;
+    resume?: NormativeResumeSummary;
     requestId: string;
     // Legacy URL is NOT here.
 }

@@ -1,7 +1,12 @@
 // Type definitions for V3 Player component
 
 import type Hls from 'hls.js';
-import type { PlaybackTrace, Service } from '../client-ts';
+import type {
+  IntentAcceptedResponse,
+  SessionHeartbeatResponse,
+  SessionResponse,
+  Service,
+} from '../client-ts';
 
 export type PlayerStatus =
   | 'idle'
@@ -64,46 +69,12 @@ export interface SessionCookieState {
   token: string | null;
   pending: Promise<void> | null;
 }
-
-export interface V3Intent {
-  type: 'stream.start' | 'stream.stop';
-
-  serviceRef?: string;
-  sessionId?: string;
-}
-
-export interface V3SessionResponse {
-  sessionId: string;
-  requestId?: string; // P3-5: Traceability
-  status?: string;
-  correlationId?: string;
-}
-
-export interface V3SessionStatusResponse {
-  sessionId: string;
-  requestId?: string; // P3-5: Traceability
-  state: string;
-  reason?: string;
-  reasonDetail?: string;
-  profileReason?: string;
-  correlationId?: string;
-  trace?: PlaybackTrace;
-  updatedAtMs?: number;
-  mode?: 'LIVE' | 'RECORDING';
-  durationSeconds?: number;
-  seekableStartSeconds?: number;
-  seekableEndSeconds?: number;
-  liveEdgeSeconds?: number;
-  playbackUrl?: string;
-  // ADR-009: Session Lease Semantics
-  heartbeat_interval?: number; // seconds
-  heartbeatInterval?: number; // seconds (camelCase compatibility)
-  lease_expires_at?: string; // ISO 8601
-  leaseExpiresAt?: string; // ISO 8601 (camelCase compatibility)
-  leaseExpiresAtUnix?: number; // unix seconds (legacy compatibility)
-  last_heartbeat?: string; // ISO 8601
-  stop_reason?: string; // USER_STOPPED, LEASE_EXPIRED, FAILED, CLEANUP
-}
+export type V3SessionResponse = IntentAcceptedResponse;
+export type V3SessionStatusResponse = SessionResponse;
+export type V3SessionHeartbeatResponse = SessionHeartbeatResponse;
+export type V3SessionSnapshot =
+  Pick<SessionResponse, 'sessionId' | 'state'> &
+  Partial<Pick<SessionResponse, 'requestId' | 'reason' | 'reasonDetail' | 'profileReason' | 'trace'>>;
 
 
 // HLS-specific types

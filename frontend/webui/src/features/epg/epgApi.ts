@@ -1,10 +1,21 @@
 // EPG Data Layer - API calls and DTO→Domain mapping
 // Zero React dependencies, zero legacy client imports
 
-import { getEpg, getServices, getServicesBouquets, getTimers } from '../../client-ts';
+import {
+  getEpg,
+  getServices,
+  getServicesBouquets,
+  getTimers,
+  type Bouquet as ApiBouquet,
+  type GetEpgResponse,
+  type Service as ApiService,
+  type TimerList,
+} from '../../client-ts';
 import { throwOnClientResultError, unwrapClientResultOrThrow } from '../../services/clientWrapper';
 import type { EpgEvent, EpgChannel, EpgBouquet, Timer } from './types';
 import { debugError } from '../../utils/logging';
+
+type EpgDto = NonNullable<GetEpgResponse>[number];
 
 /**
  * Fetch all bouquets from the API
@@ -58,17 +69,11 @@ export async function fetchEpgEvents(params: {
     return [];
   }
 
-  // API returns direct array for EPG, unlike TimerList.
-  // We handle both legacy object-wrapped and new direct array for robustness,
-  // but typed strictly to avoid unchecked casting.
-  let items: any[] = [];
-  if (Array.isArray(data)) {
-    items = data;
-  } else if (data && typeof data === 'object' && 'items' in data) {
-    items = (data as { items: any[] }).items || [];
+  if (!Array.isArray(data)) {
+    throw new Error('Contract violation: EPG response must be a bare JSON array');
   }
 
-  return items.map(mapSdkEvent);
+  return data.map(mapSdkEvent);
 }
 
 /**
@@ -76,7 +81,7 @@ export async function fetchEpgEvents(params: {
  */
 export async function fetchTimers(): Promise<Timer[]> {
   const result = await getTimers();
-  const data = unwrapClientResultOrThrow<{ items?: Timer[] }>(result, {
+  const data = unwrapClientResultOrThrow<TimerList>(result, {
     source: 'EPG.fetchTimers',
     silent: true
   });
@@ -87,24 +92,19 @@ export async function fetchTimers(): Promise<Timer[]> {
 // DTO Mapping Functions (SDK → Domain)
 // ============================================================================
 
-function mapSdkBouquet(dto: any): EpgBouquet {
+function mapSdkBouquet(dto: unknown): EpgBouquet {
   if (typeof dto !== 'object' || dto === null) {
     debugError('Invalid bouquet DTO (legacy string?):', dto);
-    // Strict contract: Ignore invalid items or throw?
-    // Throwing here might fail the whole fetch. Returning a dummy might hide it.
-    // User wants "rejects it". If filtered out, it's rejected.
-    // But map expects EpgBouquet.
-    // Let's return a "Invalid" marker or throw.
-    // Throwing ensures we don't silently accept.
     throw new Error(`Contract violation: Bouquet must be object, got ${typeof dto}`);
   }
+  const bouquet = dto as ApiBouquet;
   return {
-    name: dto.name || '',
-    services: typeof dto.services === 'number' ? dto.services : 0
+    name: bouquet.name || '',
+    services: typeof bouquet.services === 'number' ? bouquet.services : 0
   };
 }
 
-function mapSdkChannel(dto: any): EpgChannel {
+function mapSdkChannel(dto: ApiService): EpgChannel {
   return {
     id: dto.id || dto.serviceRef || '',
     serviceRef: dto.serviceRef || dto.id || '',
@@ -112,13 +112,12 @@ function mapSdkChannel(dto: any): EpgChannel {
     number: dto.number,
     group: dto.group,
     logoUrl: dto.logoUrl,
-    logo: dto.logo,
     resolution: dto.resolution,
     codec: dto.codec,
   };
 }
 
-function mapSdkEvent(dto: any): EpgEvent {
+function mapSdkEvent(dto: EpgDto): EpgEvent {
   return {
     serviceRef: dto.serviceRef || '',
     start: dto.start || 0,

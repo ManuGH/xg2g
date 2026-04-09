@@ -742,10 +742,11 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec) []string {
 
 func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, layout liveSegmentLayout) []string {
 	segmentType := "mpegts"
-	segmentFilename := filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.ts")
+	sessionDir := ports.SessionHLSDir(a.HLSRoot, spec.SessionID)
+	segmentFilename := filepath.Join(sessionDir, "seg_%06d.ts")
 	if strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
 		segmentType = "fmp4"
-		segmentFilename = filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.m4s")
+		segmentFilename = filepath.Join(sessionDir, "seg_%06d.m4s")
 	}
 	args = append(args,
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
@@ -764,7 +765,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 }
 
 func (a *LocalAdapter) prepareLiveOutputPath(sessionID string) string {
-	outputPath := filepath.Join(a.HLSRoot, "sessions", sessionID, "index.m3u8")
+	outputPath := filepath.Join(ports.SessionHLSDir(a.HLSRoot, sessionID), "index.m3u8")
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
 	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID); markerPath != "" {
 		_ = os.Remove(markerPath)

@@ -24,6 +24,7 @@ import (
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
@@ -33,6 +34,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	v3store "github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/log"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	v3bus "github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -109,6 +111,36 @@ func validateOpenAPIResponse(t *testing.T, doc *openapi3.T, req *http.Request, r
 	input.SetBodyBytes(rr.Body.Bytes())
 
 	require.NoError(t, openapi3filter.ValidateResponse(context.Background(), input), "openapi response validation")
+}
+
+func TestV3Contract_GetEpg_ResponseMatchesOpenAPIArrayContract(t *testing.T) {
+	doc := loadOpenAPIDoc(t)
+
+	mockSource := new(MockEpgSource)
+	server := &Server{epgSource: mockSource}
+
+	now := time.Now()
+	mockSource.On("GetPrograms", mock.Anything).Return([]epg.Programme{
+		{
+			Channel: "1:0:19:132F:3EF:1:C00000:0:0:0:",
+			Title:   epg.Title{Text: "Test Show"},
+			Start:   now.Format("20060102150405 -0700"),
+			Stop:    now.Add(time.Hour).Format("20060102150405 -0700"),
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/epg", nil)
+	rr := httptest.NewRecorder()
+
+	server.GetEpg(rr, req, GetEpgParams{})
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	validateOpenAPIResponse(t, doc, req, rr, &openapi3filter.Options{})
+
+	var payload []map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &payload))
+	require.Len(t, payload, 1)
+	require.Equal(t, "Test Show", payload[0]["title"])
 }
 
 func issueSessionCookie(t *testing.T, handler http.Handler, token string) *http.Cookie {
@@ -262,6 +294,9 @@ func TestV3Contract_Intents(t *testing.T) {
 	rawID, ok := got["sessionId"].(string)
 	require.True(t, ok, "sessionId missing")
 	require.NoError(t, validateUUID(rawID))
+	reqID, ok := got["requestId"].(string)
+	require.True(t, ok, "requestId missing")
+	require.NotEmpty(t, reqID)
 
 	session, err := st.GetSession(context.Background(), rawID)
 	require.NoError(t, err)
@@ -269,6 +304,7 @@ func TestV3Contract_Intents(t *testing.T) {
 	require.Equal(t, "corr-intent-001", session.CorrelationID)
 
 	got["sessionId"] = "<sessionId>"
+	got["requestId"] = "<requestId>"
 	gotJSON, err := json.Marshal(got)
 	require.NoError(t, err)
 
@@ -301,6 +337,30 @@ func TestV3Contract_Intents_AdmissionRejected(t *testing.T) {
 	reqID, ok := got[problem.JSONKeyRequestID].(string)
 	require.True(t, ok)
 	require.NotEmpty(t, reqID)
+}
+
+func TestV3Contract_Intents_TokenMissing(t *testing.T) {
+	s, _ := newV3TestServer(t, t.TempDir())
+	body := []byte(`{"type":"stream.start","serviceRef":"1:0:1:445D:453:1:C00000:0:0:0:","params":{"playback_mode":"live"}}`)
+
+	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/intents", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
+	}).ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	validateOpenAPIResponse(t, loadOpenAPIDoc(t), req, rr, nil)
+	require.Contains(t, rr.Header().Get("Content-Type"), "application/problem+json")
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	require.Equal(t, float64(http.StatusUnauthorized), got["status"])
+	require.Equal(t, "/problems/intent/token-missing", got["type"])
+	require.Equal(t, "TOKEN_MISSING", got["code"])
 }
 
 func TestV3Contract_IntentLeaseBusy(t *testing.T) {
@@ -380,15 +440,17 @@ func TestV3Contract_SessionState(t *testing.T) {
 	updatedAtUnix := int64(1700000000)
 
 	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
-		SessionID:         sessionID,
-		ServiceRef:        serviceRef,
-		Profile:           model.ProfileSpec{Name: "high"},
-		State:             model.SessionReady,
-		Reason:            model.RNone,
-		ReasonDetailCode:  model.DNone,
-		ReasonDetailDebug: "baseline",
-		CorrelationID:     "corr-test-001",
-		UpdatedAtUnix:     updatedAtUnix,
+		SessionID:          sessionID,
+		ServiceRef:         serviceRef,
+		Profile:            model.ProfileSpec{Name: "high"},
+		State:              model.SessionReady,
+		Reason:             model.RNone,
+		ReasonDetailCode:   model.DNone,
+		ReasonDetailDebug:  "baseline",
+		CorrelationID:      "corr-test-001",
+		UpdatedAtUnix:      updatedAtUnix,
+		HeartbeatInterval:  30,
+		LeaseExpiresAtUnix: updatedAtUnix + 30,
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID, nil)
@@ -566,16 +628,52 @@ func TestV3Contract_SessionHeartbeat_TerminalTranscodeStalledProblem(t *testing.
 	require.Equal(t, "transcode stalled - no progress detected", body["reason_detail"])
 }
 
+func TestV3Contract_SessionHeartbeat_AcknowledgesLeaseRenewal(t *testing.T) {
+	s, st := newV3TestServer(t, t.TempDir())
+	sessionID := "550e8400-e29b-41d4-a716-446655440042"
+	now := time.Now()
+
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:          sessionID,
+		State:              model.SessionReady,
+		ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:            model.ProfileSpec{Name: "high"},
+		HeartbeatInterval:  30,
+		LeaseExpiresAtUnix: now.Add(30 * time.Second).Unix(),
+		LastHeartbeatUnix:  now.Add(-31 * time.Second).Unix(),
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/sessions/"+sessionID+"/heartbeat", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+
+	rr := httptest.NewRecorder()
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
+	})
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	validateOpenAPIResponse(t, loadOpenAPIDoc(t), req, rr, nil)
+
+	var resp SessionHeartbeatResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Equal(t, sessionID, uuid.UUID(resp.SessionId).String())
+	require.True(t, resp.Acknowledged)
+	require.False(t, resp.LeaseExpiresAt.IsZero())
+}
+
 func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 	hlsRoot := t.TempDir()
 	s, st := newV3TestServer(t, hlsRoot)
 	sessionID := "550e8400-e29b-41d4-a716-446655440000"
 
 	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
-		SessionID:  sessionID,
-		State:      model.SessionReady,
-		ServiceRef: "1:0:1:445D:453:1:C00000:0:0:0:",
-		Profile:    model.ProfileSpec{Name: "high"},
+		SessionID:          sessionID,
+		State:              model.SessionReady,
+		ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:            model.ProfileSpec{Name: "high"},
+		HeartbeatInterval:  30,
+		LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
 	}))
 
 	_, _, _ = writeHLSFixtures(t, hlsRoot, sessionID)
@@ -621,10 +719,12 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	sessionID := "550e8400-e29b-41d4-a716-446655440001"
 
 	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
-		SessionID:  sessionID,
-		State:      model.SessionReady,
-		ServiceRef: "1:0:1:445D:453:1:C00000:0:0:0:",
-		Profile:    model.ProfileSpec{Name: "high"},
+		SessionID:          sessionID,
+		State:              model.SessionReady,
+		ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:            model.ProfileSpec{Name: "high"},
+		HeartbeatInterval:  30,
+		LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
 		ContextData: map[string]string{
 			model.CtxKeyClientPath: "hlsjs",
 			model.CtxKeySourceType: "tuner",

@@ -79,6 +79,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var sessionID string
+	rawPlaybackDecisionToken := derefString(req.PlaybackDecisionToken)
 	switch intentType {
 	case model.IntentTypeStreamStart:
 		sessionID = uuid.New().String()
@@ -124,7 +125,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if intentType == model.IntentTypeStreamStart {
-		if req.PlaybackDecisionToken == nil || *req.PlaybackDecisionToken == "" {
+		if strings.TrimSpace(rawPlaybackDecisionToken) == "" {
 			writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/token-missing", "Missing Decision Token", problemcode.CodeTokenMissing, "A valid playbackDecisionToken is required to start a live stream", nil)
 			return
 		}
@@ -137,7 +138,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		claims, err := auth.VerifyStrict(*req.PlaybackDecisionToken, jwtSecret, "xg2g/v3/intents", "xg2g")
+		claims, err := auth.VerifyStrict(rawPlaybackDecisionToken, jwtSecret, "xg2g/v3/intents", "xg2g")
 		if err != nil {
 			code := auth.ClassifyError(err)
 			writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/unauthorized", "Unauthorized Intent", code, err.Error(), nil)
@@ -193,19 +194,20 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, intentErr := s.intentProcessor().ProcessIntent(r.Context(), v3intents.Intent{
-		Type:          intentType,
-		SessionID:     sessionID,
-		ServiceRef:    serviceRef,
-		Params:        params,
-		StartMs:       req.StartMs,
-		CorrelationID: correlationID,
-		DecisionTrace: decisionTraceID,
-		Mode:          mode,
-		UserAgent:     r.UserAgent(),
-		PrincipalID:   principalID,
-		ClientCaps:    clientCaps,
-		ClientCapHash: clientCapHash,
-		Logger:        logger,
+		Type:                  intentType,
+		SessionID:             sessionID,
+		ServiceRef:            serviceRef,
+		PlaybackDecisionToken: rawPlaybackDecisionToken,
+		Params:                params,
+		StartMs:               req.StartMs,
+		CorrelationID:         correlationID,
+		DecisionTrace:         decisionTraceID,
+		Mode:                  mode,
+		UserAgent:             r.UserAgent(),
+		PrincipalID:           principalID,
+		ClientCaps:            clientCaps,
+		ClientCapHash:         clientCapHash,
+		Logger:                logger,
 	})
 	if intentErr != nil {
 		writeIntentProcessingError(w, r, intentErr)
@@ -219,8 +221,9 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	status := IntentAcceptedResponseStatus(result.Status)
 	sessionUUID := openapi_types.UUID(parseUUID(result.SessionID))
 	resp := IntentAcceptedResponse{
-		SessionId: &sessionUUID,
-		Status:    &status,
+		SessionId: sessionUUID,
+		RequestId: effectiveRequestID(w, r.Context()),
+		Status:    status,
 	}
 	if result.CorrelationID != "" {
 		resp.CorrelationId = &result.CorrelationID

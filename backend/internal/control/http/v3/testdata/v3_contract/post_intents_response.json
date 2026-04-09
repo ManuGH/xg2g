@@ -1,5 +1,6 @@
 {
   "correlationId": "corr-intent-001",
+  "requestId": "<requestId>",
   "sessionId": "<sessionId>",
   "status": "accepted"
 }

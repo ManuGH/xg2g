@@ -15,7 +15,8 @@ func TestPlaybackInfo_SchemaCompliance(t *testing.T) {
 	info := PlaybackInfo{
 		RequestId: reqID,
 		SessionId: "sess_123",
-		Mode:      PlaybackInfoModeHlsjs,
+		Mode:      PlaybackInfoModeHls,
+		IsSeekable: true,
 		Url:       strPtr("/test.m3u8"),
 	}
 
@@ -40,10 +41,7 @@ func TestPlaybackInfo_SchemaCompliance(t *testing.T) {
 		"liveEdgeUnix":       true,
 		"startUnix":          true,
 		"durationSeconds":    true,
-		"durationMs":         true,
 		"durationSource":     true,
-		"durationConfidence": true,
-		"durationReasons":    true,
 		"resume":             true,
 		"container":          true,
 		"videoCodec":         true,

@@ -41,7 +41,7 @@ func Write(w http.ResponseWriter, r *http.Request, status int, problemType, titl
 	if reqID == "" {
 		// Stop-the-line: Every V3 response must have a Request ID.
 		// If we reach here, the middleware or context propagation failed.
-		reqID = "FALLBACK-TRUTH-MISSING"
+		reqID = FallbackRequestID
 	}
 
 	// 2. Stabilize type as a URI path (RFC 7807 §3.1: type SHOULD be a URI)

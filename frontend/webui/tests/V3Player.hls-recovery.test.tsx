@@ -123,7 +123,7 @@ describe('V3Player hls.js decode recovery', () => {
           return jsonResponse(url, 200, {
             state: 'READY',
             playbackUrl,
-            heartbeat_interval: 1
+            heartbeatIntervalSeconds: 1
           });
         }
         if (sessionStatusCalls === 2) {
@@ -132,12 +132,16 @@ describe('V3Player hls.js decode recovery', () => {
         return jsonResponse(url, 200, {
           state: 'READY',
           playbackUrl,
-          heartbeat_interval: 1
+          heartbeatIntervalSeconds: 1
         });
       }
 
       if (url.includes('/heartbeat')) {
-        return jsonResponse(url, 200, { lease_expires_at: 'later' });
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-hls-recovery',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
       }
 
       return jsonResponse(url, 200, {});

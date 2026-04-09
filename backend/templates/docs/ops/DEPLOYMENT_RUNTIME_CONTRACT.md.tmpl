@@ -249,9 +249,12 @@ with explicit `device_ids`.
 
 ```
 /var/lib/xg2g/
-├── recordings/     # VOD outputs (persistent)
-├── tmp/            # HLS segments (ephemeral)
-└── sessions/       # Session state (ephemeral)
+├── store/          # Durable SQLite product state
+├── hls/
+│   ├── recordings/ # Materialized recording artifacts (evictable / rehydratable)
+│   └── sessions/   # Live session HLS artifacts (ephemeral)
+├── channels.json   # Durable channel enable/disable state
+└── series_rules.json # Durable DVR rule state
 
 /etc/xg2g/
 └── config.yaml     # Read-only config

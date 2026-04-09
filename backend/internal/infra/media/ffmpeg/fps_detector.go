@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	infraffmpeg "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 )
 
@@ -26,7 +27,7 @@ func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string) {
 	if sourceKey == "" || sessionID == "" {
 		return
 	}
-	sessionDir := filepath.Join(a.HLSRoot, "sessions", sessionID)
+	sessionDir := ports.SessionHLSDir(a.HLSRoot, sessionID)
 	deadline := time.Now().Add(25 * time.Second)
 	for time.Now().Before(deadline) {
 		segment, ok := findFirstOutputSegment(sessionDir)

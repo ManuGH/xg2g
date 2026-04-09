@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/platform/httpx"
+	platformpaths "github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/rs/zerolog"
 )
 
@@ -186,7 +187,7 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 }
 
 func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath string, err error) {
-	relPath := filepath.Join("sessions", req.sessionID, req.filename)
+	relPath := platformpaths.LiveSessionArtifactRelPath(req.sessionID, req.filename)
 	var legacyRelPath string
 	if req.isLegacySegment || req.filename == "stream.m3u8" {
 		relPath = filepath.Join(req.sessionID, req.filename)

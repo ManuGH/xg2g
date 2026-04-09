@@ -48,6 +48,24 @@ describe('fetchEpgEvents', () => {
     ]);
   });
 
+  it('rejects legacy object-wrapped payloads', async () => {
+    (client.getEpg as any).mockResolvedValue({
+      data: {
+        items: [
+          {
+            serviceRef: '1:0:19:132F:3EF:1:C00000:0:0:0',
+            start: 100,
+            end: 200,
+            title: 'Wrapped',
+          },
+        ],
+      },
+      error: null,
+    });
+
+    await expect(fetchEpgEvents({})).rejects.toThrow(/EPG response must be a bare JSON array/i);
+  });
+
   it('preserves HTTP status for auth failures', async () => {
     (client.getEpg as any).mockResolvedValue({
       data: null,

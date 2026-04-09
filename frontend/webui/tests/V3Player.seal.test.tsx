@@ -82,8 +82,9 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
     const intentsCall = findFetchCall((global.fetch as any), '/intents');
     const intentsBody = JSON.parse(String(intentsCall?.[1]?.body ?? '{}'));
     expect(intentsBody.serviceRef).toBe('1:0:1:ABCD');
+    expect(intentsBody.playbackDecisionToken).toBe('live-token-seal-1');
     expect(intentsBody.params.playback_mode).toBe('native_hls');
-    expect(intentsBody.params.playback_decision_token).toBe('live-token-seal-1');
+    expect(intentsBody.params.playback_decision_token).toBeUndefined();
     expect(intentsBody.params.playback_decision_id).toBeUndefined();
   });
 
@@ -300,7 +301,11 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
           status: 200,
           url,
           headers: { get: () => 'application/json' },
-          json: async () => ({ lease_expires_at: 'next' }),
+          json: async () => ({
+            sessionId: 'sess-live-stop-1',
+            acknowledged: true,
+            leaseExpiresAt: 'next'
+          }),
           text: async () => '',
         });
       }

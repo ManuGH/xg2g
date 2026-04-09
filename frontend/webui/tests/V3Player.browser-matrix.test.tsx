@@ -118,8 +118,9 @@ describe('V3Player Browser Family Matrix', () => {
 
       const intentCall = findFetchCall(global.fetch as any, '/intents');
       const intentBody = JSON.parse(String(intentCall?.[1]?.body ?? '{}'));
+      expect(intentBody.playbackDecisionToken).toBe(`token-${fixture.id}`);
       expect(intentBody.params.playback_mode).toBe(fixture.liveMode);
-      expect(intentBody.params.playback_decision_token).toBe(`token-${fixture.id}`);
+      expect(intentBody.params.playback_decision_token).toBeUndefined();
     } finally {
       restoreBrowserFamily();
     }

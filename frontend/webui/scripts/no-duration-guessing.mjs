@@ -15,7 +15,7 @@ const excludedFilePattern = [/\.test\./, /\.spec\./, /\.stories\./, /__tests__/]
 const checks = [
   {
     id: 'duration_property_access',
-    reason: 'UI must not use *.duration as playback truth input. Use backend durationMs/isSeekable DTO.',
+    reason: 'UI must not use *.duration as playback truth input. Use backend durationSeconds/isSeekable DTO.',
     regex: /\.\s*duration\b/g,
     allowlisted: true,
   },

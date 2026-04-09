@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
+	"github.com/ManuGH/xg2g/internal/storageinventory"
 )
 
 func presentDecisionMode(value string) string {
@@ -36,40 +38,7 @@ func presentClientCapsSource(value string) string {
 }
 
 func resolveStorageDBPath(dataDir string, dbName string) string {
-	dataDir = strings.TrimSpace(dataDir)
-	dbName = strings.TrimSpace(dbName)
-	if dbName == "" {
-		return ""
-	}
-
-	candidates := make([]string, 0, 3)
-	seen := make(map[string]bool, 3)
-	addCandidate := func(dir string) {
-		dir = strings.TrimSpace(dir)
-		if dir == "" {
-			return
-		}
-		path := filepath.Join(dir, dbName)
-		if seen[path] {
-			return
-		}
-		seen[path] = true
-		candidates = append(candidates, path)
-	}
-
-	addCandidate(config.ParseString("XG2G_STORE_PATH", ""))
-	addCandidate(filepath.Join(dataDir, "store"))
-	addCandidate(dataDir)
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	if len(candidates) > 0 {
-		return candidates[0]
-	}
-	return dbName
+	return storageinventory.ResolveSQLiteArtifactPath(dataDir, config.ParseString("XG2G_STORE_PATH", ""), dbName)
 }
 
 func runStorageCLI(args []string) int {
@@ -99,12 +68,12 @@ func printStorageUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g storage decision-sweep [flags]")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Flags:")
-	_, _ = fmt.Fprintln(w, "  --path string  Path to a specific SQLite database file")
-	_, _ = fmt.Fprintln(w, "  --all          Verify all known databases in $XG2G_DATA_DIR")
+	_, _ = fmt.Fprintln(w, "  --path string  Path to a specific verifiable storage artifact (.sqlite or .json)")
+	_, _ = fmt.Fprintln(w, "  --all          Verify all known storage artifacts from XG2G_DATA_DIR/XG2G_STORE_PATH")
 	_, _ = fmt.Fprintln(w, "  --mode string  Verification mode: quick (default) or full")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Subcommands:")
-	_, _ = fmt.Fprintln(w, "  verify           Check database integrity")
+	_, _ = fmt.Fprintln(w, "  verify           Check storage integrity")
 	_, _ = fmt.Fprintln(w, "  decision-report  Read-only report over local playlist + scan + audit storage")
 	_, _ = fmt.Fprintln(w, "  decision-sweep   Evaluate selected live senders and persist sweep-origin decisions")
 	_, _ = fmt.Fprintln(w, "")
@@ -151,9 +120,9 @@ func runStorageVerify(args []string) int {
 	var mode string
 	var all bool
 
-	fs.StringVar(&path, "path", "", "Path to the SQLite database file")
+	fs.StringVar(&path, "path", "", "Path to the verifiable storage artifact")
 	fs.StringVar(&mode, "mode", "quick", "Verification mode: quick or full")
-	fs.BoolVar(&all, "all", false, "Verify all known databases in $XG2G_DATA_DIR")
+	fs.BoolVar(&all, "all", false, "Verify all known storage artifacts from XG2G_DATA_DIR/XG2G_STORE_PATH")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -171,38 +140,68 @@ func runStorageVerify(args []string) int {
 	}
 
 	if all {
-		dataDir := config.ResolveDataDirFromEnv()
-		if dataDir == "" {
+		paths := storageinventory.ResolveRuntimePathsFromEnv()
+		if paths.DataDir == "" {
 			fmt.Fprintln(os.Stderr, "Error: --all requires XG2G_DATA_DIR (or XG2G_DATA) to be set.")
 			return 2
 		}
 
-		dbs := []string{"sessions.sqlite", "resume.sqlite", "capabilities.sqlite", "decision_audit.sqlite"}
+		artifacts := storageinventory.VerifiableArtifacts(paths)
 		exitCode := 0
 		checkedCount := 0
-		for _, dbName := range dbs {
-			dbPath := resolveStorageDBPath(dataDir, dbName)
-			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		for _, artifact := range artifacts {
+			if _, err := os.Stat(artifact.Path); os.IsNotExist(err) {
 				continue
 			}
 			checkedCount++
-			if code := doVerify(dbPath, mode); code != 0 {
+			if code := doVerifyArtifact(artifact, mode); code != 0 {
 				exitCode = code
 			}
 		}
 
 		if checkedCount == 0 {
-			fmt.Fprintf(os.Stderr, "Error: No databases found in %s\n", dataDir)
-			fmt.Fprintf(os.Stderr, "Expected at least one of: %s\n", strings.Join(dbs, ", "))
+			fmt.Fprintf(os.Stderr, "Error: No verifiable storage artifacts found under data dir %s\n", paths.DataDir)
+			names := make([]string, 0, len(artifacts))
+			for _, artifact := range artifacts {
+				names = append(names, filepath.Base(artifact.Path))
+			}
+			fmt.Fprintf(os.Stderr, "Expected at least one of: %s\n", strings.Join(names, ", "))
 			return 2
 		}
 		return exitCode
 	}
 
-	return doVerify(path, mode)
+	return doVerifyPath(path, mode)
 }
 
-func doVerify(path string, mode string) int {
+func doVerifyArtifact(artifact storageinventory.Artifact, mode string) int {
+	switch artifact.Verify {
+	case storageinventory.VerifyJSON:
+		return doVerifyJSON(artifact.Path, artifact.ID)
+	case storageinventory.VerifySQLite:
+		return doVerifySQLite(artifact.Path, mode, artifact.ID)
+	default:
+		fmt.Fprintf(os.Stderr, "⚠️ Skipping %s: unsupported verification kind %q\n", artifact.Path, artifact.Verify)
+		return 0
+	}
+}
+
+func doVerifyPath(path string, mode string) int {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(path))) {
+	case ".json":
+		return doVerifyJSON(path, filepath.Base(path))
+	case ".sqlite":
+		return doVerifySQLite(path, mode, filepath.Base(path))
+	default:
+		fmt.Fprintf(os.Stderr, "Error: unsupported artifact type for %s (expected .sqlite or .json)\n", path)
+		return 2
+	}
+}
+
+func doVerifySQLite(path string, mode string, label string) int {
+	if strings.TrimSpace(label) == "" {
+		label = filepath.Base(path)
+	}
 	fmt.Fprintf(os.Stderr, "🔍 Verifying integrity of %s (mode: %s)...\n", path, mode)
 
 	issues, err := sqlite.VerifyIntegrity(path, mode)
@@ -219,6 +218,27 @@ func doVerify(path string, mode string) int {
 		return 1
 	}
 
-	fmt.Println("✅ Integrity Verified: ok")
+	fmt.Printf("✅ %s: integrity verified\n", label)
+	return 0
+}
+
+func doVerifyJSON(path string, label string) int {
+	if strings.TrimSpace(label) == "" {
+		label = filepath.Base(path)
+	}
+
+	fmt.Fprintf(os.Stderr, "🔍 Verifying JSON state %s...\n", path)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Verification interrupted by system error: %v\n", err)
+		return 1
+	}
+	if !json.Valid(data) {
+		fmt.Fprintf(os.Stderr, "🚨 INVALID JSON DETECTED in %s\n", path)
+		return 1
+	}
+
+	fmt.Printf("✅ %s: valid json\n", label)
 	return 0
 }

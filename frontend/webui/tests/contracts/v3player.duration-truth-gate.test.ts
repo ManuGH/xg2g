@@ -16,8 +16,9 @@ describe('V3Player Duration Truth Gate', () => {
     expect(resumeSource).not.toMatch(/\bvideoElement\.duration\b/);
   });
 
-  it('consumes durationMs from playback info contract', () => {
+  it('consumes durationSeconds from playback info contract', () => {
     const playerSource = fs.readFileSync(playerPath, 'utf-8');
-    expect(playerSource).toMatch(/\bdurationMs\b/);
+    expect(playerSource).toMatch(/\bdurationSeconds\b/);
+    expect(playerSource).not.toMatch(/\bdurationMs\b/);
   });
 });

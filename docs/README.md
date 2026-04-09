@@ -23,6 +23,7 @@ contributors can reach the right surface quickly.
 - [Configuration Guide](guides/CONFIGURATION.md)
 - [Deployment Guide](ops/DEPLOYMENT.md)
 - [Observability](ops/OBSERVABILITY.md)
+- [Runtime/state/session consolidation milestone](ops/RUNTIME_STATE_SESSION_CONSOLIDATION_2026-04-09.md)
 - [Security Policy](../SECURITY.md)
 - [Systemd + Compose runbook](ops/RUNBOOK_SYSTEMD_COMPOSE.md)
 

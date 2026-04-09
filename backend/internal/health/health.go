@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -424,15 +425,26 @@ func (c *FileChecker) Check(ctx context.Context) CheckResult {
 
 // WritableDirChecker checks if a directory exists and is writable (touch test)
 type WritableDirChecker struct {
-	name string
-	path string
+	name            string
+	path            string
+	createIfMissing bool
 }
 
 // NewWritableDirChecker creates a checker for directory writeability
 func NewWritableDirChecker(name, path string) *WritableDirChecker {
 	return &WritableDirChecker{
-		name: name,
-		path: path,
+		name:            name,
+		path:            path,
+		createIfMissing: true,
+	}
+}
+
+// NewExistingWritableDirChecker creates a checker that fails if the directory is missing.
+func NewExistingWritableDirChecker(name, path string) *WritableDirChecker {
+	return &WritableDirChecker{
+		name:            name,
+		path:            path,
+		createIfMissing: false,
 	}
 }
 
@@ -453,54 +465,15 @@ func (c *WritableDirChecker) Check(ctx context.Context) CheckResult {
 		}
 	}
 
-	created := false
-	info, err := os.Stat(c.path)
+	created, err := probeWritableDir(c.path, c.createIfMissing)
 	if err != nil {
-		if os.IsNotExist(err) {
-			if err := os.MkdirAll(c.path, 0750); err != nil {
-				return CheckResult{
-					Status:  StatusUnhealthy,
-					Error:   fmt.Sprintf("failed to create directory: %v", err),
-					Message: c.path,
-				}
-			}
-			created = true
-			info, err = os.Stat(c.path)
-			if err != nil {
-				return CheckResult{
-					Status:  StatusUnhealthy,
-					Error:   fmt.Sprintf("failed to stat created directory: %v", err),
-					Message: c.path,
-				}
-			}
-		}
-		if err != nil {
-			return CheckResult{
-				Status: StatusUnhealthy,
-				Error:  err.Error(),
-			}
-		}
-	}
-
-	if !info.IsDir() {
-		return CheckResult{
-			Status: StatusUnhealthy,
-			Error:  "expected directory, got file",
-		}
-	}
-
-	// Touch Test
-	f, err := os.CreateTemp(c.path, ".health_probe_*")
-	if err != nil {
+		msg := err.Error()
 		return CheckResult{
 			Status:  StatusUnhealthy,
-			Error:   fmt.Sprintf("write probe failed: %v", err),
-			Message: "directory not writable",
+			Error:   msg,
+			Message: c.path,
 		}
 	}
-	probeFile := f.Name()
-	_ = f.Close()
-	_ = os.Remove(probeFile) // cleanup
 
 	if created {
 		return CheckResult{
@@ -512,6 +485,46 @@ func (c *WritableDirChecker) Check(ctx context.Context) CheckResult {
 		Status:  StatusHealthy,
 		Message: "directory writable",
 	}
+}
+
+func probeWritableDir(path string, createIfMissing bool) (bool, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false, fmt.Errorf("directory path cannot be empty")
+	}
+
+	created := false
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if !createIfMissing {
+				return false, fmt.Errorf("directory does not exist")
+			}
+			if err := os.MkdirAll(path, 0750); err != nil {
+				return false, fmt.Errorf("failed to create directory: %w", err)
+			}
+			created = true
+			info, err = os.Stat(path)
+			if err != nil {
+				return created, fmt.Errorf("failed to stat created directory: %w", err)
+			}
+		} else {
+			return false, err
+		}
+	}
+
+	if !info.IsDir() {
+		return false, fmt.Errorf("expected directory, got file")
+	}
+
+	f, err := os.CreateTemp(path, ".health_probe_*")
+	if err != nil {
+		return created, fmt.Errorf("write probe failed: %w", err)
+	}
+	probeFile := f.Name()
+	_ = f.Close()
+	_ = os.Remove(probeFile)
+	return created, nil
 }
 
 // LastRunChecker checks if the last job run was successful

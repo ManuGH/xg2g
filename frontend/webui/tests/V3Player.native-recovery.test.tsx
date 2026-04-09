@@ -73,7 +73,7 @@ describe('V3Player native Safari recovery', () => {
           return jsonResponse(url, 200, {
             state: 'READY',
             playbackUrl,
-            heartbeat_interval: 1
+            heartbeatIntervalSeconds: 1
           });
         }
         if (sessionStatusCalls === 2) {
@@ -82,12 +82,16 @@ describe('V3Player native Safari recovery', () => {
         return jsonResponse(url, 200, {
           state: 'READY',
           playbackUrl,
-          heartbeat_interval: 1
+          heartbeatIntervalSeconds: 1
         });
       }
 
       if (url.includes('/heartbeat')) {
-        return jsonResponse(url, 200, { lease_expires_at: 'later' });
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-native-recovery',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
       }
 
       return jsonResponse(url, 200, {});
@@ -168,7 +172,7 @@ describe('V3Player native Safari recovery', () => {
           return jsonResponse(url, 200, {
             state: 'READY',
             playbackUrl,
-            heartbeat_interval: 1
+            heartbeatIntervalSeconds: 1
           });
         }
         if (sessionStatusCalls === 2) {
@@ -177,12 +181,16 @@ describe('V3Player native Safari recovery', () => {
         return jsonResponse(url, 200, {
           state: 'READY',
           playbackUrl,
-          heartbeat_interval: 1
+          heartbeatIntervalSeconds: 1
         });
       }
 
       if (url.includes('/heartbeat')) {
-        return jsonResponse(url, 200, { lease_expires_at: 'later' });
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-native-stall',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
       }
 
       return jsonResponse(url, 200, {});

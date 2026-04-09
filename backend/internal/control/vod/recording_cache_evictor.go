@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	platformpaths "github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // CacheEvictionResult captures a single eviction pass outcome.
@@ -31,7 +33,8 @@ type cacheEntry struct {
 
 var recordingCacheEvictionLocks sync.Map // map[string]*sync.Mutex
 
-// EvictRecordingCache removes stale recording cache directories under the HLS root.
+// EvictRecordingCache removes stale materialized recording artifact directories
+// under the dedicated recordings subtree of the HLS root.
 // Policy: TTL eviction first, then oldest-first to enforce maxEntries.
 // Oldest is defined by directory modTime (filesystem metadata), not access time.
 func EvictRecordingCache(hlsRoot string, ttl time.Duration, maxEntries int, clock Clock) (CacheEvictionResult, error) {
@@ -69,7 +72,7 @@ func evictRecordingCache(
 		clock = RealClock{}
 	}
 
-	cacheRoot := filepath.Join(hlsRoot, "recordings")
+	cacheRoot := platformpaths.RecordingArtifactsRoot(hlsRoot)
 	evictionLock(cacheRoot).Lock()
 	defer evictionLock(cacheRoot).Unlock()
 

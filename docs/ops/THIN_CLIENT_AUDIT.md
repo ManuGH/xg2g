@@ -62,7 +62,7 @@ Findings from `rg "fetch\\(" frontend/webui/src`:
 
 ## Contract Fidelity Notes
 
-- Duration truth remains DTO-first (`durationMs`, `isSeekable`, reasons) and guarded by Gate K.
+- Duration truth remains DTO-first (`durationSeconds`, `isSeekable`) and guarded by Gate K.
 - Live mode bridge is centralized:
   - `frontend/webui/src/components/v3playerModeBridge.ts`
   - exhaustive backend mode table

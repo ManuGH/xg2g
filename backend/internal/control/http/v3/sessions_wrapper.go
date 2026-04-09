@@ -30,6 +30,13 @@ func (s *Server) GetSessionState(w http.ResponseWriter, r *http.Request, session
 	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(s.handleV3SessionState)).ServeHTTP(w, r)
 }
 
+// PostSessionHeartbeat implements POST /sessions/{sessionID}/heartbeat.
+func (s *Server) PostSessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
+	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.handleSessionHeartbeat(w, r, sessionID.String())
+	})).ServeHTTP(w, r)
+}
+
 // ServeHLS implements GET /sessions/{sessionID}/hls/{filename}.
 func (s *Server) ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string) {
 	_ = sessionID

@@ -26,9 +26,9 @@ This document governs the surface area of backend responses consumed by the WebU
 | `url` | Legacy | `V3Player` | Fallback for P3-x backends |
 | `mode` | Legacy | `V3Player` | Fallback for P3-x (hls, direct_mp4) |
 | `requestId` | Telemetry | `V3Player` | Diagnostic trace display |
-| `isSeekable` | Normative | `V3Player` | Controls UI seek bar gating |
-| `durationMs` | Normative | `V3Player` | Authoritative VOD duration truth |
-| `durationSeconds` | Legacy | `V3Player` | Derived compatibility field only |
+| `isSeekable` | Normative | `V3Player` | Authoritative seekability gate. Missing values must fail closed instead of enabling seek/resume affordances. |
+| `durationSeconds` | Normative | `V3Player` | Authoritative playback duration truth in the only supported API unit. |
+| `durationMs` | **Forbidden** | `V3Player` | Removed legacy duration field. UI must not read or reconstruct it. |
 | `resume` | Normative | `V3Player` | Populates resume overlay state |
 
 ### `POST /api/v3/intents`
@@ -36,7 +36,12 @@ This document governs the surface area of backend responses consumed by the WebU
 | Field | Category | Component | Usage |
 | :--- | :--- | :--- | :--- |
 | `sessionId` | Normative | `V3Player` | Global session tracking |
+| `status` | Telemetry | `V3Player` | Accepted vs idempotent replay. UI must not derive playback state from this alone. |
 | `requestId` | Telemetry | `V3Player` | Trace Id initialization |
+
+Request governance:
+- `V3Player` MUST send the live attestation token via root-level `playbackDecisionToken`.
+- `params.playback_decision_token` and `params.playback_decision_id` are deprecated compatibility aliases and forbidden in new WebUI code.
 
 ### `POST /api/v3/live/stream-info` (`503 application/problem+json`)
 
@@ -54,14 +59,35 @@ This document governs the surface area of backend responses consumed by the WebU
 | `problemFlags` | Telemetry | `V3Player` | Diagnostic-only flags; do not use as the primary decision gate. |
 | `requestId` | Telemetry | `V3Player`, `EPG` | Correlates operator reports and backend traces. |
 
+### `POST /api/v3/live/stream-info` (`200 application/json`)
+
+| Field | Category | Component | Usage |
+| :--- | :--- | :--- | :--- |
+| `decision.mode` | Normative | `V3Player`, `EPG` | Authoritative playback-mode truth. `EPG` channel badges may classify only from this field. |
+| `decision.selectedOutputUrl` | Normative | `V3Player` | Authoritative live playback URL. |
+| `decision.selectedOutputKind` | Normative | `V3Player` | Engine selection for live playback. |
+| `videoCodec` | Normative | `EPG` | Optional codec badge detail. |
+| `audioCodec` | Normative | `EPG` | Optional codec badge detail. |
+| `mode` | Legacy | `V3Player` | Compatibility fallback only. `EPG` must not branch on it. |
+| `decision.trace.*` | **Forbidden** | `EPG` | Diagnostic trace only. Channel badges must not derive product semantics from trace internals. |
+
 ### `GET /api/v3/sessions/:id`
 
 | Field | Category | Component | Usage |
 | :--- | :--- | :--- | :--- |
 | `state` | Normative | `V3Player` | Lifecycle management (READY, FAILED) |
 | `playbackUrl` | Normative | `V3Player` | Live engine source |
-| `heartbeat_interval` | Normative | `V3Player` | Lease management timing |
-| `lease_expires_at` | Normative | `V3Player` | Display/Countdown (ADR-009) |
+| `heartbeatIntervalSeconds` | Normative | `V3Player` | Canonical server heartbeat cadence for lease renewal. No alias fields are allowed. |
+| `leaseExpiresAt` | Normative | `V3Player` | Observed session lease snapshot for countdown/display. |
+| `reason`, `reasonDetail` | Normative | `V3Player` | Terminal/degraded session explanation when the state leaves the serving path. |
+
+### `POST /api/v3/sessions/:id/heartbeat`
+
+| Field | Category | Component | Usage |
+| :--- | :--- | :--- | :--- |
+| `acknowledged` | Normative | `V3Player` | Confirms the heartbeat was accepted for the addressed session. |
+| `leaseExpiresAt` | Normative | `V3Player` | Renewed lease expiry after a successful heartbeat. |
+| `sessionId` | Normative | `V3Player` | Heartbeat acknowledgement identity. Must match the tracked session. |
 
 ---
 
@@ -86,6 +112,17 @@ This document governs the surface area of backend responses consumed by the WebU
 | `state` | Normative | `Timers` | Status badge rendering |
 | `begin`, `end` | Normative | `Timers` | Schedule display |
 | `name`, `description` | Normative | `Timers` | Metadata display |
+
+### `GET /api/v3/epg`
+
+| Field | Category | Component | Usage |
+| :--- | :--- | :--- | :--- |
+| `[]` | Normative | `EPG` | The response is a bare array. UI must not expect or accept an `{ items: ... }` wrapper. |
+| `[].serviceRef` | Normative | `EPG` | Channel identity for grouping and playback handoff. |
+| `[].start`, `[].end` | Normative | `EPG` | Event time window in unix seconds. |
+| `[].title` | Normative | `EPG` | Primary programme label. |
+| `[].desc` | Normative | `EPG` | Secondary programme detail when present. |
+| `[].id`, `[].duration` | Telemetry | `EPG` | Optional diagnostics only; current UI must not branch on them. |
 
 ### `POST /api/v3/timers/preview`
 

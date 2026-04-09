@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	httpproblem "github.com/ManuGH/xg2g/internal/control/http/problem"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -26,4 +27,19 @@ func ensureTraceHeader(w http.ResponseWriter, ctx context.Context) {
 			w.Header().Set(controlhttp.HeaderRequestID, id)
 		}
 	}
+}
+
+// effectiveRequestID returns the non-empty request correlation value that should
+// be serialized in successful JSON responses. It mirrors RFC7807 fallback
+// behavior so success and error contracts do not drift on traceability.
+func effectiveRequestID(w http.ResponseWriter, ctx context.Context) string {
+	if id := requestID(ctx); id != "" {
+		w.Header().Set(controlhttp.HeaderRequestID, id)
+		return id
+	}
+	if id := w.Header().Get(controlhttp.HeaderRequestID); id != "" {
+		return id
+	}
+	w.Header().Set(controlhttp.HeaderRequestID, httpproblem.FallbackRequestID)
+	return httpproblem.FallbackRequestID
 }

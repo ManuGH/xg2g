@@ -63,6 +63,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     const mockInfo: any = {
       url: '/legacy/url.m3u8',
       mode: 'transcode',
+      isSeekable: true,
       decision: {
         mode: 'transcode',
         selectedOutputUrl: '/normative/url.m3u8',
@@ -106,6 +107,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
 
     const mockInfo: any = {
       mode: 'transcode',
+      isSeekable: true,
       decision: {
         mode: 'transcode',
         selectedOutputUrl: '/recordings/rec-audio/index.m3u8',
@@ -150,19 +152,11 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     const mockInfo: any = {
       mode: 'transcode',
       requestId: 'req-observe-1',
+      isSeekable: true,
       decision: {
         mode: 'transcode',
         selectedOutputUrl: '/recordings/rec-observe/index.m3u8?profile=compatible',
         selectedOutputKind: 'hls',
-        targetProfileHash: 'hash-observe-1',
-        targetProfile: {
-          container: 'mpegts',
-          packaging: 'ts',
-          hwAccel: 'none',
-          video: { mode: 'transcode', codec: 'h264', crf: 23, preset: 'fast', width: 0, height: 0, fps: 0 },
-          audio: { mode: 'transcode', codec: 'aac', channels: 2, bitrateKbps: 256, sampleRate: 48000 },
-          hls: { enabled: true, segmentContainer: 'mpegts', segmentSeconds: 6 }
-        },
         trace: {
           requestId: 'req-observe-1',
           requestProfile: 'compatible',
@@ -175,6 +169,14 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
           hostPressureBand: 'constrained',
           hostOverrideApplied: true,
           targetProfileHash: 'hash-observe-1',
+          targetProfile: {
+            container: 'mpegts',
+            packaging: 'ts',
+            hwAccel: 'none',
+            video: { mode: 'transcode', codec: 'h264', crf: 23, preset: 'fast', width: 0, height: 0, fps: 0 },
+            audio: { mode: 'transcode', codec: 'aac', channels: 2, bitrateKbps: 256, sampleRate: 48000 },
+            hls: { enabled: true, segmentContainer: 'mpegts', segmentSeconds: 6 }
+          },
           operator: {
             forcedIntent: 'repair',
             maxQualityRung: 'repair_audio_aac_192_stereo',
@@ -227,23 +229,23 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     const mockInfo: any = {
       mode: 'transcode',
       requestId: 'req-observe-2',
+      isSeekable: true,
       decision: {
         mode: 'transcode',
         selectedOutputUrl: '/recordings/rec-observe/index.m3u8?profile=high',
         selectedOutputKind: 'hls',
-        targetProfileHash: 'hash-observe-2',
-        targetProfile: {
-          container: 'mpegts',
-          packaging: 'ts',
-          hwAccel: 'none',
-          video: { mode: 'copy', codec: 'h264', width: 0, height: 0, fps: 0 },
-          audio: { mode: 'copy', codec: 'aac', channels: 2, bitrateKbps: 0, sampleRate: 48000 },
-          hls: { enabled: true, segmentContainer: 'mpegts', segmentSeconds: 6 }
-        },
         trace: {
           requestId: 'req-observe-2',
           requestProfile: 'high',
-          targetProfileHash: 'hash-observe-2'
+          targetProfileHash: 'hash-observe-2',
+          targetProfile: {
+            container: 'mpegts',
+            packaging: 'ts',
+            hwAccel: 'none',
+            video: { mode: 'copy', codec: 'h264', width: 0, height: 0, fps: 0 },
+            audio: { mode: 'copy', codec: 'aac', channels: 2, bitrateKbps: 0, sampleRate: 48000 },
+            hls: { enabled: true, segmentContainer: 'mpegts', segmentSeconds: 6 }
+          }
         }
       }
     };

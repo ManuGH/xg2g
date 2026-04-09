@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import Hls from '../lib/hlsRuntime';
 import {
   postRecordingPlaybackInfo,
+  type IntentRequest,
   type PlaybackInfo,
   type PlaybackSourceProfile,
   type PlaybackTrace as PlaybackTraceContract,
@@ -17,7 +18,7 @@ import type {
   V3PlayerProps,
   PlayerStatus,
   V3SessionResponse,
-  V3SessionStatusResponse,
+  V3SessionSnapshot,
   HlsInstanceRef,
   VideoElementRef
 } from '../../../types/v3-player';
@@ -63,13 +64,6 @@ import type {
 } from '../../../lib/hostBridge';
 import type { AppError } from '../../../types/errors';
 import styles from './V3Player.module.css';
-
-interface ApiErrorResponse {
-  code?: string;
-  message?: string;
-  requestId?: string;
-  details?: unknown;
-}
 
 type PlaybackObservability = {
   clientPath: string | null;
@@ -173,27 +167,6 @@ function extractPlaybackTrace(value: unknown): PlaybackTraceContract | null {
   }
 
   return null;
-}
-
-function readLegacyTargetProfileHash(decision: PlaybackInfo['decision']): string | null {
-  if (!decision || typeof decision !== 'object') {
-    return null;
-  }
-  const value = (decision as Record<string, unknown>).targetProfileHash;
-  return typeof value === 'string' ? value : null;
-}
-
-function readLegacyTargetProfile(decision: PlaybackInfo['decision']): PlaybackTargetProfile | null {
-  if (!decision || typeof decision !== 'object') {
-    return null;
-  }
-  const value = (decision as Record<string, unknown>).targetProfile;
-  return value && typeof value === 'object' ? value as PlaybackTargetProfile : null;
-}
-
-function readLegacyDurationMs(playbackInfo: PlaybackInfo): number | null {
-  const value = (playbackInfo as Record<string, unknown>).durationMs;
-  return typeof value === 'number' && value > 0 ? value : null;
 }
 
 function formatClientPath(snapshot: CapabilitySnapshot | null): string {
@@ -313,18 +286,14 @@ function extractPlaybackObservability(
     degradedFrom: decision.trace?.degradedFrom ?? null,
     hostPressureBand: decision.trace?.hostPressureBand ?? null,
     hostOverrideApplied: decision.trace?.hostOverrideApplied ?? false,
-    targetProfileHash: readLegacyTargetProfileHash(decision) ?? decision.trace?.targetProfileHash ?? null,
-    targetProfile: readLegacyTargetProfile(decision) ?? decision.trace?.targetProfile ?? null,
+    targetProfileHash: decision.trace?.targetProfileHash ?? null,
+    targetProfile: decision.trace?.targetProfile ?? null,
     operator: decision.trace?.operator ?? null,
     selectedOutputKind: decision.selectedOutputKind ?? null,
   };
 }
 
 function resolvePlaybackDurationSeconds(playbackInfo: PlaybackInfo): number | null {
-  const legacyDurationMs = readLegacyDurationMs(playbackInfo);
-  if (legacyDurationMs) {
-    return legacyDurationMs / 1000;
-  }
   if (typeof playbackInfo.durationSeconds === 'number' && playbackInfo.durationSeconds > 0) {
     return playbackInfo.durationSeconds;
   }
@@ -560,7 +529,7 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
-  const handleSessionSnapshot = useCallback((session: V3SessionStatusResponse) => {
+  const handleSessionSnapshot = useCallback((session: V3SessionSnapshot) => {
     if (session.requestId) {
       setTraceId(session.requestId);
     }
@@ -1156,7 +1125,13 @@ function V3Player(props: V3PlayerProps) {
           pInfo,
           requestCaps.preferredHlsEngine ?? null
         ));
-        const recordingIsSeekable = pInfo.isSeekable !== undefined ? Boolean(pInfo.isSeekable) : true;
+        const recordingIsSeekable = typeof pInfo.isSeekable === 'boolean' ? pInfo.isSeekable : false;
+        if (typeof pInfo.isSeekable !== 'boolean') {
+          telemetry.emit('ui.failclosed', {
+            context: 'V3Player.isSeekable.missing',
+            reason: 'IS_SEEKABLE_MISSING'
+          });
+        }
         setCanSeek(recordingIsSeekable);
         if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
 
@@ -1508,8 +1483,6 @@ function V3Player(props: V3PlayerProps) {
 
         const intentParams: Record<string, string> = {
           playback_mode: liveMode,
-          // Keep canonical contract key for downstream compatibility checks.
-          playback_decision_token: liveDecisionToken
         };
         if (requestCaps.clientFamilyFallback) {
           intentParams.client_family = requestCaps.clientFamilyFallback;
@@ -1529,17 +1502,19 @@ function V3Player(props: V3PlayerProps) {
           intentParams.capHash = capHash;
         }
 
+        const intentBody: IntentRequest = {
+          type: 'stream.start',
+          serviceRef: ref,
+          playbackDecisionToken: liveDecisionToken,
+          client: requestCaps,
+          ...(Object.keys(intentParams).length > 0 ? { params: intentParams } : {})
+        };
+
         // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
         const res = await fetch(`${apiBase}/intents`, {
           method: 'POST',
           headers: authHeaders(true),
-          body: JSON.stringify({
-            type: 'stream.start',
-            serviceRef: ref,
-            playbackDecisionToken: liveDecisionToken,
-            client: requestCaps,
-            ...(Object.keys(intentParams).length > 0 ? { params: intentParams } : {})
-          })
+          body: JSON.stringify(intentBody)
         });
 
         if (res.status === 401 || res.status === 403) {
@@ -1575,27 +1550,6 @@ function V3Player(props: V3PlayerProps) {
           return;
         }
 
-        if (res.status === 409) {
-          const retryAfterHeader = res.headers.get('Retry-After');
-          const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
-          const retryHint = retryAfter > 0 ? ` ${t('player.retryAfter', { seconds: retryAfter })}` : '';
-          let apiErr: ApiErrorResponse | null = null;
-          try {
-            apiErr = await res.json();
-          } catch {
-            apiErr = null;
-          }
-          setStatus('error');
-          setPlayerError(normalizePlayerError(apiErr ?? {
-            status: 409,
-            title: `${t('player.leaseBusy')}${retryHint}`,
-          }, {
-            fallbackTitle: `${t('player.leaseBusy')}${retryHint}`,
-            status: 409,
-            retryable: true,
-          }));
-          return;
-        }
         if (!res.ok) {
           let errorMsg = `${t('player.apiError')}: ${res.status}`;
           let errorPayload: unknown = null;
@@ -1649,7 +1603,10 @@ function V3Player(props: V3PlayerProps) {
         }
 
         const data: V3SessionResponse = await res.json();
-        newSessionId = data.sessionId;
+        newSessionId = data.sessionId ?? null;
+        if (!newSessionId) {
+          throw new Error('Intent response missing sessionId');
+        }
         if (data.requestId) setTraceId(data.requestId);
         setActiveSessionId(newSessionId);
         const session = await waitForSessionReady(newSessionId);

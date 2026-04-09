@@ -57,6 +57,7 @@ components:
 
     IntentRequest:
       type: object
+      additionalProperties: false
       properties:
         type:
           type: string
@@ -104,10 +105,15 @@ components:
 
     IntentAcceptedResponse:
       type: object
+      additionalProperties: false
+      required: [sessionId, requestId, status]
       properties:
         sessionId:
           type: string
           format: uuid
+        requestId:
+          type: string
+          description: Request ID for debugging/tracing.
         status:
           type: string
           enum: [accepted, idempotent_replay]
@@ -116,7 +122,8 @@ components:
 
     SessionResponse:
       type: object
-      required: [sessionId, requestId, state]
+      additionalProperties: false
+      required: [sessionId, requestId, state, heartbeatIntervalSeconds, leaseExpiresAt]
       properties:
         sessionId:
           type: string
@@ -136,18 +143,12 @@ components:
         state:
           type: string
           description: |
-            Session lifecycle state. STARTING guarantees a session ticket is allocated.
-            READY/ACTIVE guarantees a playable HLS stream.
+            Session lifecycle state for GET /sessions/{sessionID}. STARTING guarantees a
+            session ticket is allocated. READY/DRAINING guarantees a playable HLS stream.
           enum:
             [
               STARTING,
-              BUFFERING,
-              ACTIVE,
-              STALLED,
-              ENDING,
               IDLE,
-              ERROR,
-              NEW,
               PRIMING,
               READY,
               DRAINING,
@@ -181,6 +182,14 @@ components:
           type: string
         updatedAtMs:
           type: integer
+        heartbeatIntervalSeconds:
+          type: integer
+          format: int32
+          description: Canonical server heartbeat cadence for renewing the session lease.
+        leaseExpiresAt:
+          type: string
+          format: date-time
+          description: Current observed lease expiry for the session.
         mode:
           type: string
           description: Playback mode for the session.
@@ -207,6 +216,22 @@ components:
           format: uri
         trace:
           $ref: "#/components/schemas/PlaybackTrace"
+
+    SessionHeartbeatResponse:
+      type: object
+      additionalProperties: false
+      required: [sessionId, acknowledged, leaseExpiresAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        acknowledged:
+          type: boolean
+          description: True when the heartbeat was accepted for the addressed session.
+        leaseExpiresAt:
+          type: string
+          format: date-time
+          description: Renewed lease expiry after the heartbeat acknowledgement.
 
     Service:
       type: object
@@ -1235,7 +1260,7 @@ components:
 
     PlaybackInfo:
       type: object
-      required: [mode, requestId, sessionId]
+      required: [mode, requestId, sessionId, isSeekable]
       additionalProperties: false
       properties:
         requestId:
@@ -1254,10 +1279,10 @@ components:
           description: Relative URL for the selected playback strategy. Optional for deny or decision-led cases.
         seekable:
           type: boolean
-          description: Whether the stream is seekable. Omitted if unknown. Deprecated in favor of isSeekable.
+          description: Deprecated compatibility mirror of `isSeekable`. Omitted if not emitted.
         isSeekable:
           type: boolean
-          description: Authoritative flag if the stream is seekable. Becomes required in P3-4.
+          description: Authoritative seekability flag. Always present on successful PlaybackInfo responses and must be consumed fail-closed if absent at runtime.
         dvrWindowSeconds:
           type: integer
           format: int64
@@ -1274,7 +1299,7 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: Duration in seconds. Omitted if unknown or preparing.
+          description: Canonical playback duration in seconds. Omitted if unknown or still preparing.
         durationSource:
           $ref: "#/components/schemas/PlaybackInfoDurationSource"
         resume:
@@ -2799,23 +2824,25 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        serviceRef:
-                          type: string
-                        title:
-                          type: string
-                        desc:
-                          type: string
-                        start:
-                          type: integer
-                        end:
-                          type: integer
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    id:
+                      type: string
+                    serviceRef:
+                      type: string
+                    title:
+                      type: string
+                    desc:
+                      type: string
+                    start:
+                      type: integer
+                    end:
+                      type: integer
+                    duration:
+                      type: integer
 
   /services:
     get:
@@ -3935,26 +3962,32 @@ paths:
         "400":
           description: Invalid request
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: "#/components/schemas/APIError"
-        "409":
-          description: Lease busy (capacity rejection; no session created)
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Missing or invalid decision token
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Decision token does not authorize the requested action
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: V3 control plane unavailable
           headers:
             Retry-After:
               schema:
                 type: integer
-              description: Seconds to wait before retry
+              description: Seconds to wait before retry when capacity or admission backoff is known
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: "#/components/schemas/APIError"
-        "503":
-          description: V3 control plane unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIError"
+                $ref: "#/components/schemas/ProblemDetails"
 
   /sessions:
     get:
@@ -4050,6 +4083,61 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/SessionTerminalProblem"
+
+  /sessions/{sessionID}/heartbeat:
+    parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Renew session lease
+      operationId: postSessionHeartbeat
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: Session heartbeat acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionHeartbeatResponse"
+        "400":
+          description: Invalid session ID
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Session not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "410":
+          description: Session cannot be renewed because it is terminal or its lease already expired.
+          content:
+            application/problem+json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ProblemDetails"
+                  - $ref: "#/components/schemas/SessionTerminalProblem"
+        "500":
+          description: Session lease update failed
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Session subsystem unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /sessions/{sessionID}/hls/{filename}:
     parameters:

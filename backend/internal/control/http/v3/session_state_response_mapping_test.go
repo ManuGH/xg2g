@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
@@ -27,15 +28,17 @@ func TestWriteSessionStateResponse_WritesJSONAndTraceHeader(t *testing.T) {
 
 	writeSessionStateResponse(w, r, "", v3sessions.GetSessionResult{
 		Session: &model.SessionRecord{
-			SessionID:      "550e8400-e29b-41d4-a716-446655440001",
-			ServiceRef:     "1:0:1:445D:453:1:C00000:0:0:0:",
-			Profile:        model.ProfileSpec{Name: "compatible"},
-			State:          model.SessionReady,
-			CorrelationID:  "corr-123",
-			UpdatedAtUnix:  1700000000,
-			ContextData:    map[string]string{model.CtxKeyClientPath: "hlsjs"},
-			PlaybackTrace:  &model.PlaybackTrace{RequestProfile: "compatible"},
-			LastAccessUnix: 1700000000,
+			SessionID:          "550e8400-e29b-41d4-a716-446655440001",
+			ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+			Profile:            model.ProfileSpec{Name: "compatible"},
+			State:              model.SessionReady,
+			CorrelationID:      "corr-123",
+			UpdatedAtUnix:      1700000000,
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: 1700000030,
+			ContextData:        map[string]string{model.CtxKeyClientPath: "hlsjs"},
+			PlaybackTrace:      &model.PlaybackTrace{RequestProfile: "compatible"},
+			LastAccessUnix:     1700000000,
 		},
 		Outcome: lifecycle.PublicOutcome{
 			State:      model.SessionReady,
@@ -67,16 +70,20 @@ func TestWriteSessionStateResponse_WritesJSONAndTraceHeader(t *testing.T) {
 	assert.Equal(t, V3BaseURL+"/sessions/550e8400-e29b-41d4-a716-446655440001/hls/index.m3u8", *body.PlaybackUrl)
 	require.NotNil(t, body.DurationSeconds)
 	assert.Equal(t, float32(3600), *body.DurationSeconds)
+	assert.Equal(t, int32(30), body.HeartbeatIntervalSeconds)
+	assert.Equal(t, "2023-11-14T22:13:50Z", body.LeaseExpiresAt.Format(time.RFC3339))
 }
 
 func TestMapSessionStateResponse_IncludesProfileReasonForSafariTranscode(t *testing.T) {
 	resp := mapSessionStateResponse("req-profile-reason", "", v3sessions.GetSessionResult{
 		Session: &model.SessionRecord{
-			SessionID:     "550e8400-e29b-41d4-a716-446655440002",
-			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
-			Profile:       model.ProfileSpec{Name: profiles.ProfileSafari, TranscodeVideo: true},
-			State:         model.SessionPriming,
-			CorrelationID: "corr-safari",
+			SessionID:          "550e8400-e29b-41d4-a716-446655440002",
+			ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+			Profile:            model.ProfileSpec{Name: profiles.ProfileSafari, TranscodeVideo: true},
+			State:              model.SessionPriming,
+			CorrelationID:      "corr-safari",
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: 1700000030,
 		},
 		Outcome: lifecycle.PublicOutcome{
 			State:      model.SessionPriming,

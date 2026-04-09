@@ -13,7 +13,7 @@ interface UseResumeProps {
   isSeekable?: boolean;
 }
 
-export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekable = true }: UseResumeProps) {
+export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekable = false }: UseResumeProps) {
   const lastSavedTime = useRef<number>(0);
   const saveTimerRef = useRef<number | null>(null);
   const finishedRef = useRef(false);

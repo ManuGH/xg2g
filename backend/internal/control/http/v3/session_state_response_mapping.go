@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -28,14 +29,16 @@ func mapSessionStateResponse(reqID string, hlsRoot string, result v3sessions.Get
 	out := result.Outcome
 
 	resp := SessionResponse{
-		SessionId:     openapi_types.UUID(parseUUID(session.SessionID)),
-		ServiceRef:    &session.ServiceRef,
-		Profile:       &session.Profile.Name,
-		ProfileReason: sessionProfileReason(session),
-		UpdatedAtMs:   toPtr(int(session.UpdatedAtUnix * 1000)),
-		RequestId:     reqID,
-		CorrelationId: &session.CorrelationID,
-		Trace:         mapSessionPlaybackTrace(reqID, session, hlsRoot),
+		SessionId:                openapi_types.UUID(parseUUID(session.SessionID)),
+		ServiceRef:               &session.ServiceRef,
+		Profile:                  &session.Profile.Name,
+		ProfileReason:            sessionProfileReason(session),
+		UpdatedAtMs:              toPtr(int(session.UpdatedAtUnix * 1000)),
+		HeartbeatIntervalSeconds: int32(session.HeartbeatInterval),
+		LeaseExpiresAt:           time.Unix(session.LeaseExpiresAtUnix, 0).UTC(),
+		RequestId:                reqID,
+		CorrelationId:            &session.CorrelationID,
+		Trace:                    mapSessionPlaybackTrace(reqID, session, hlsRoot),
 	}
 
 	resp.State = mapSessionState(out.State)

@@ -1,116 +1,163 @@
-# SQLite Operations: Backup and Restore
+# Storage Operations: Backup, Restore, and Verify
 
-As of xg2g v3.0.0, SQLite is the **Single Durable Truth** for all stateful components. Legacy BoltDB and JSON backends have been removed.
+`xg2g` does not persist state in one place.
 
-## Durable Database Inventory
+- Store-backed SQLite state lives under `XG2G_STORE_PATH`.
+- File-backed product and operator state lives under `XG2G_DATA_DIR` / `XG2G_DATA`.
+- Generated outputs such as playlist, XMLTV, and picons are reconstructable and should not be treated as primary backup targets.
 
-The following databases persist xg2g state (paths relative to `XG2G_DATA_DIR`):
+## State Inventory
 
-| Component | Database File | Description |
-| :--- | :--- | :--- |
-| Sessions | `sessions.sqlite` | Active and historical session state |
-| Resumes | `resume.sqlite` | Pipeline resumption metadata |
-| Capabilities | `capabilities.sqlite` | Hardware/Transcode scan results |
+### Primary durable state
+
+These artifacts should be preserved across restart, upgrade, and restore.
+
+| Class | Path | Backup | Verify | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| SQLite | `$XG2G_STORE_PATH/sessions.sqlite` | Yes | Yes | Active and historical playback session state |
+| SQLite | `$XG2G_STORE_PATH/resume.sqlite` | Yes | Yes | Recording resume positions |
+| SQLite | `$XG2G_STORE_PATH/capabilities.sqlite` | Yes | Yes | Source and receiver capability scan truth |
+| SQLite | `$XG2G_STORE_PATH/decision_audit.sqlite` | Yes | Yes | Playback decision history |
+| SQLite | `$XG2G_STORE_PATH/capability_registry.sqlite` | Yes | Yes | Observed host/device/source capability registry |
+| SQLite | `$XG2G_STORE_PATH/entitlements.sqlite` | Yes | Yes | Purchased and granted playback entitlements |
+| SQLite | `$XG2G_STORE_PATH/household.sqlite` | Yes | Yes | Household profile and unlock state |
+| JSON | `$XG2G_DATA_DIR/channels.json` | Yes | Yes, if present | Persisted channel enable/disable state |
+| JSON | `$XG2G_DATA_DIR/series_rules.json` | Yes | Yes, if present | Persisted DVR series rules |
+
+### Operational state
+
+These files are useful operational truth, but are not primary product state.
+
+| Class | Path | Backup | Verify | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| JSON | `$XG2G_DATA_DIR/drift_state.json` | Optional | Yes, if present | Last verification drift snapshot |
+| JSON | `$XG2G_STORE_PATH/last_sweep.json` | Optional | Yes, if present | `storage decision-sweep` diff baseline |
+
+### HLS artifact classes
+
+These artifacts live under `XG2G_HLS_ROOT` and are intentionally not treated as authoritative product state.
+
+| Class | Path | Backup | Verify | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| Transient dir | `$XG2G_HLS_ROOT/sessions/` | No | No | Ephemeral live session playlists, segments, and first-frame markers |
+| Materialized dir | `$XG2G_HLS_ROOT/recordings/` | No | No | Materialized recording HLS artifacts with eviction and rehydration semantics |
+
+### Reconstructable outputs
+
+These are runtime or generated artifacts. They are usually better rebuilt than backed up.
+
+| Class | Path | Backup | Verify | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| Generated file | `$XG2G_DATA_DIR/$XG2G_PLAYLIST_FILENAME` | No | No | Generated playlist output |
+| Generated file | `$XG2G_DATA_DIR/$XG2G_XMLTV` | No | No | Generated XMLTV output |
+| Cache dir | `$XG2G_DATA_DIR/picons/` | No | No | Downloaded picon cache |
+| SQLite | `library.db_path` from `config.yaml` | Optional | Yes, if configured | Rebuildable library scan and duration cache |
 
 ## Backup Strategy
 
-Always take a backup before upgrading xg2g versions.
+Always take a backup before upgrading `xg2g`.
 
-### 1. Online Backup (Recommended)
+### 1. Online SQLite backup
 
-This is the fastest and safest method to take a consistent snapshot while the daemon is running. It uses SQLite's internal backup mechanism.
+This is the safest way to snapshot live SQLite state while the daemon is running.
 
 ```bash
-# Example: Online backup of sessions database
-sqlite3 /var/lib/xg2g/sessions.sqlite ".backup '/var/backups/xg2g/sessions-$(date +%F).sqlite'"
+sqlite3 "$XG2G_STORE_PATH/sessions.sqlite" ".backup '/var/backups/xg2g/sessions-$(date +%F).sqlite'"
 ```
 
-### 2. Online Backup (Compacted)
+### 2. Online SQLite backup (compacted)
 
-Produces a smaller, defragmented backup file using `VACUUM INTO`.
+Produces a smaller, defragmented copy with `VACUUM INTO`.
+
 > [!IMPORTANT]
-> This requires free disk space equal to the size of the database. If it fails mid-way, the operator must manually delete the partial backup file.
+> This requires free disk space roughly equal to the database size. If it fails midway, delete the partial output manually.
 
 ```bash
-sqlite3 /var/lib/xg2g/sessions.sqlite "VACUUM INTO '/var/backups/xg2g/sessions-compact.sqlite'"
+sqlite3 "$XG2G_STORE_PATH/sessions.sqlite" "VACUUM INTO '/var/backups/xg2g/sessions-compact.sqlite'"
 ```
 
-### 3. Cold Backup (Stop Service First)
+### 3. Cold backup
 
-If the daemon is stopped, follow this ritual to ensure WAL files are safely merged:
-
-1. Stop the `xg2g` daemon.
-2. **Mandatory**: Merge WAL logs before copying.
-
-   ```bash
-   sqlite3 /var/lib/xg2g/sessions.sqlite ".backup '/var/backups/xg2g/sessions-cold.sqlite'"
-   ```
-
-3. Alternatively, copy the main `.sqlite` file **along with** its `-wal` and `-shm` side-files.
+1. Stop `xg2g`.
+2. Use `.backup` or copy the main `.sqlite` file together with its `-wal` and `-shm` side files.
+3. Copy the file-backed state from `XG2G_DATA_DIR` that you want to preserve.
 
 ## Restore Strategy
 
-1. Stop the `xg2g` daemon.
-2. Replace the target `.sqlite` file with the backup (and delete any existing `-wal`/`-shm` files to avoid corruption).
-3. Start the `xg2g` daemon. The built-in auto-migration will handle any structural updates.
+1. Stop `xg2g`.
+2. Restore the target `.sqlite` files under `XG2G_STORE_PATH`.
+3. Remove stale `-wal` and `-shm` side files if you replaced the main `.sqlite` file from backup media.
+4. Restore `channels.json` and `series_rules.json` under `XG2G_DATA_DIR` when you want user-visible state carried forward.
+5. Start `xg2g`. Built-in migrations will handle structural SQLite updates.
 
 ## Integrity Verification
 
-Operators should verify health regularly or after an unclean shutdown.
+### Built-in tool
 
-### Built-in Tool
+`xg2g storage verify --all` verifies:
+
+- all known SQLite state under `XG2G_STORE_PATH`
+- `library.db_path` from `config.yaml` when library mode is enabled
+- `channels.json`, `series_rules.json`, `drift_state.json`, and `last_sweep.json` when present
+- it intentionally does not verify `sessions/` or `recordings/` under `XG2G_HLS_ROOT`, because those are runtime/materialized artifacts rather than authoritative state
 
 ```bash
-# Verify all databases in $XG2G_DATA_DIR (routine)
+# Routine health pass
 xg2g storage verify --all --mode quick
 
-# Deep diagnosis of a specific file
-xg2g storage verify --path "$XG2G_DATA_DIR/sessions.sqlite" --mode full
+# Deep diagnosis of one SQLite file
+xg2g storage verify --path "$XG2G_STORE_PATH/sessions.sqlite" --mode full
+
+# Validate one JSON state file
+xg2g storage verify --path "$XG2G_DATA_DIR/channels.json"
 ```
 
-### Manual Verification
+### Manual SQLite verification
 
 ```bash
-# Fast check
-sqlite3 "$XG2G_DATA_DIR/sessions.sqlite" "PRAGMA quick_check;"
-
-# Deep check
-sqlite3 "$XG2G_DATA_DIR/sessions.sqlite" "PRAGMA integrity_check;"
+sqlite3 "$XG2G_STORE_PATH/sessions.sqlite" "PRAGMA quick_check;"
+sqlite3 "$XG2G_STORE_PATH/sessions.sqlite" "PRAGMA integrity_check;"
 ```
 
-If the output is `ok`, the database is sound.
+If the output is `ok`, the SQLite file is structurally sound.
 
 ## Automation Examples
 
-### Iterate and Backup All Databases
-
-Operators can use this loop to snapshot the entire state:
+### Backup all primary durable state
 
 ```bash
-DBS=("sessions.sqlite" "resume.sqlite" "capabilities.sqlite")
+DBS=(
+  "sessions.sqlite"
+  "resume.sqlite"
+  "capabilities.sqlite"
+  "decision_audit.sqlite"
+  "capability_registry.sqlite"
+  "entitlements.sqlite"
+  "household.sqlite"
+)
 BACKUP_DIR="/var/backups/xg2g/$(date +%F)"
 mkdir -p "$BACKUP_DIR"
 
 for DB in "${DBS[@]}"; do
-    sqlite3 "$XG2G_DATA_DIR/$DB" ".backup '$BACKUP_DIR/$DB'"
+  sqlite3 "$XG2G_STORE_PATH/$DB" ".backup '$BACKUP_DIR/$DB'"
+done
+
+for FILE in channels.json series_rules.json; do
+  if [ -f "$XG2G_DATA_DIR/$FILE" ]; then
+    cp "$XG2G_DATA_DIR/$FILE" "$BACKUP_DIR/$FILE"
+  fi
 done
 ```
 
-### Iterate and Verify All Databases
+### Verify all known state
 
 ```bash
-# Using the built-in batch mode (requires $XG2G_DATA_DIR)
 xg2g storage verify --all --mode quick
-
-# Or using a manual loop
-for DB in "$XG2G_DATA_DIR"/*.sqlite; do
-    xg2g storage verify --path "$DB" --mode quick
-done
 ```
 
 ## Upgrade Path
 
-1. **Safety Ritual**: Take an online backup of all `.sqlite` files.
-2. Install new xg2g version.
-3. Restart `xg2g`. Auto-migrations run within transactions.
-4. Verify success: run `xg2g storage verify` on all databases.
+1. Take an online backup of all primary durable state.
+2. Install the new `xg2g` version.
+3. Restart `xg2g`.
+4. Run `xg2g storage verify --all --mode quick`.

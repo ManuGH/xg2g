@@ -463,6 +463,20 @@ func TestWritableDirChecker_CreatesMissingDir(t *testing.T) {
 	assert.True(t, info.IsDir())
 }
 
+func TestExistingWritableDirChecker_FailsWhenDirMissing(t *testing.T) {
+	baseDir := t.TempDir()
+	targetDir := filepath.Join(baseDir, "missing")
+
+	checker := NewExistingWritableDirChecker("test", targetDir)
+	result := checker.Check(context.Background())
+
+	assert.Equal(t, StatusUnhealthy, result.Status)
+	assert.Contains(t, result.Error, "directory does not exist")
+	if _, err := os.Stat(targetDir); !os.IsNotExist(err) {
+		t.Fatalf("expected checker to avoid creating missing dir, got err=%v", err)
+	}
+}
+
 // Mock checker for testing
 type mockChecker struct {
 	name      string

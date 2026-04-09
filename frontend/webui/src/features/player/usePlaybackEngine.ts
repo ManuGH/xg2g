@@ -38,6 +38,16 @@ interface PlaybackEngineController {
   waitForDirectStream: (url: string) => Promise<void>;
 }
 
+function extractHlsHttpStatus(data: ErrorData): number | undefined {
+  const candidates = [
+    (data as { response?: { code?: number; status?: number } }).response?.code,
+    (data as { response?: { code?: number; status?: number } }).response?.status,
+    (data as { networkDetails?: { status?: number } }).networkDetails?.status,
+  ];
+
+  return candidates.find((value): value is number => typeof value === 'number');
+}
+
 export function usePlaybackEngine({
   videoRef,
   hlsRef,
@@ -395,10 +405,32 @@ export function usePlaybackEngine({
         }
 
         const presentation = classifyHlsFatalError(data, t, lastHlsUrlRef.current);
+        const httpStatus = extractHlsHttpStatus(data);
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
             if (sessionIdRef.current) {
               void reportError('error', 0, `${data.type}: ${data.details}`);
+            }
+            if (httpStatus === 401 && sessionIdRef.current) {
+              debugWarn('[V3Player] NETWORK_ERROR 401: attempting session recovery before failing');
+              const started = beginSessionDecodeRecovery(0, `${data.type}: ${data.details}`, (recoveryErr) => {
+                debugError('[V3Player] NETWORK_ERROR 401: session recovery failed', recoveryErr);
+                hlsRef.current?.destroy();
+                setStatus('error');
+                setError(
+                  recoveryErr instanceof Error && recoveryErr.message
+                    ? recoveryErr.message
+                    : presentation.title
+                );
+                setErrorDetails(presentation.details);
+              });
+              if (!started) {
+                hlsRef.current?.destroy();
+                setStatus('error');
+                setError(presentation.title);
+                setErrorDetails(presentation.details);
+              }
+              return;
             }
             if (networkRetryCount < maxNetworkRetries) {
               const backoffMs = Math.min(1000 * Math.pow(2, networkRetryCount), networkBackoffCapMs);

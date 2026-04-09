@@ -41,27 +41,7 @@ func PerformStartupChecks(ctx context.Context, cfg config.AppConfig) error {
 }
 
 func checkDataDir(logger zerolog.Logger, path string) error {
-	// Check if directory exists
-	info, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("directory does not exist: %s", path)
-		}
-		return err
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("path is not a directory: %s", path)
-	}
-
-	// Check write permissions by creating a temp file
-	testFile := filepath.Join(path, ".write_test")
-	if err := os.WriteFile(testFile, []byte("ok"), 0600); err != nil {
-		return fmt.Errorf("directory is not writable: %s (error: %v)", path, err)
-	}
-	_ = os.Remove(testFile)
-
-	logger.Info().Str("path", path).Msg("✓ Data directory is writable")
-	return nil
+	return checkWritableDir(logger, "data directory", path, false)
 }
 
 // checkTargetedValidations performs security and runtime-critical validations
@@ -117,20 +97,26 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 			if !filepath.IsAbs(path) {
 				return fmt.Errorf("recording root '%s' must be an absolute path: %s", id, path)
 			}
-			// Ensure existence with 0750
-			// MkdirAll returns nil if exists
-			if err := os.MkdirAll(path, 0750); err != nil {
-				return fmt.Errorf("failed to ensure recording root '%s' (%s): %w", id, path, err)
+			if err := checkWritableDir(logger, fmt.Sprintf("recording root '%s'", id), path, true); err != nil {
+				return fmt.Errorf("recording root '%s' check failed: %w", id, err)
 			}
-			// We could check writability similar to data dir, but existence is the main requirement here.
-			// Ideally we chown/chmod if it was just created, but MkdirAll doesn't tell us if it created it.
-			// Just ensuring it exists is enough for "startup".
 		}
 		logger.Info().Int("count", len(cfg.RecordingRoots)).Msg("✓ Recording roots validated")
 	}
 
+	storeBackend := strings.ToLower(strings.TrimSpace(cfg.Store.Backend))
+	if storeBackend != "memory" {
+		if err := checkWritableDir(logger, "store path", cfg.Store.Path, true); err != nil {
+			return fmt.Errorf("store path check failed: %w", err)
+		}
+	}
+
 	// e. Engine dependencies + persistence safety
 	if cfg.Engine.Enabled {
+		if err := checkWritableDir(logger, "HLS root", cfg.HLS.Root, true); err != nil {
+			return fmt.Errorf("HLS root check failed: %w", err)
+		}
+
 		if strings.EqualFold(cfg.Engine.Mode, "virtual") {
 			logger.Info().Msg("Engine in virtual mode; skipping ffmpeg/curl dependency checks")
 		} else {
@@ -158,8 +144,27 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 				Str("data_dir", cfg.DataDir).
 				Msg("data directory is under temp; cached data and sessions may be lost on reboot")
 		}
+		storePath := filepath.Clean(cfg.Store.Path)
+		if storeBackend != "memory" && tempDir != "." && (storePath == tempDir || strings.HasPrefix(storePath, tempDir+string(filepath.Separator))) {
+			logger.Warn().
+				Str("store_path", cfg.Store.Path).
+				Msg("store path is under temp; durable state may be lost on reboot")
+		}
 	}
 
+	return nil
+}
+
+func checkWritableDir(logger zerolog.Logger, label, path string, createIfMissing bool) error {
+	created, err := probeWritableDir(path, createIfMissing)
+	if err != nil {
+		return err
+	}
+	if created {
+		logger.Info().Str("path", path).Msgf("✓ %s created and writable", label)
+		return nil
+	}
+	logger.Info().Str("path", path).Msgf("✓ %s is writable", label)
 	return nil
 }
 

@@ -124,9 +124,11 @@ func TestTraceability_GetSession_Real(t *testing.T) {
 	sessionID := uuid.New().String()
 	store := &MockTraceabilityStore{
 		Session: &model.SessionRecord{
-			SessionID:     sessionID,
-			State:         model.SessionReady,
-			CreatedAtUnix: time.Now().Unix(),
+			SessionID:          sessionID,
+			State:              model.SessionReady,
+			CreatedAtUnix:      time.Now().Unix(),
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
 		},
 	}
 

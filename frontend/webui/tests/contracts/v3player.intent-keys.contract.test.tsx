@@ -40,7 +40,7 @@ describe('V3Player Intent Keys Contract', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('sends canonical playback_decision_token and not deprecated playback_decision_id', async () => {
+  it('sends canonical playbackDecisionToken and no deprecated params token aliases', async () => {
     render(<V3Player autoStart={true} channel={{ id: 'ch-keys-1', serviceRef: '1:0:1:AA:BB:CC:0:0:0:0:' } as any} />);
 
     await waitFor(() => {
@@ -58,7 +58,8 @@ describe('V3Player Intent Keys Contract', () => {
     expect(intentCall).toBeDefined();
 
     const body = JSON.parse(String(intentCall?.[1]?.body ?? '{}'));
-    expect(body.params.playback_decision_token).toBe('token-intent-keys-1');
+    expect(body.playbackDecisionToken).toBe('token-intent-keys-1');
+    expect(body.params.playback_decision_token).toBeUndefined();
     expect(body.params.playback_decision_id).toBeUndefined();
   });
 });

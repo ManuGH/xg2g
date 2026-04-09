@@ -57,11 +57,11 @@ describe('Gate O Phase 2: Seek/Resume Proof', () => {
 
   async function renderRecordingPlayer(options: {
     recordingId: string;
-    isSeekable: boolean;
-    durationMs: number;
+    isSeekable?: boolean;
+    durationSeconds: number;
     resumePosSeconds?: number;
   }) {
-    const { recordingId, isSeekable, durationMs, resumePosSeconds } = options;
+    const { recordingId, isSeekable, durationSeconds, resumePosSeconds } = options;
 
     (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       data: {
@@ -69,11 +69,11 @@ describe('Gate O Phase 2: Seek/Resume Proof', () => {
         sessionId: `sess-${recordingId}`,
         mode: 'direct_mp4',
         isSeekable,
-        durationMs,
+        durationSeconds,
         resume: resumePosSeconds
           ? {
               posSeconds: resumePosSeconds,
-              durationSeconds: Math.floor(durationMs / 1000),
+              durationSeconds,
               finished: false
             }
           : undefined,
@@ -104,7 +104,28 @@ describe('Gate O Phase 2: Seek/Resume Proof', () => {
     const video = await renderRecordingPlayer({
       recordingId: 'rec-gate-o-1',
       isSeekable: false,
-      durationMs: 60_000,
+      durationSeconds: 60,
+      resumePosSeconds: 42
+    });
+
+    expect(screen.queryByText(/player\.resumeTitle|Resume Playback\?/i)).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/player\.seekBack15s|Back 15s/i)).not.toBeInTheDocument();
+
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 35
+    });
+    fireEvent.pause(video);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(resumeApi.saveResume).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when isSeekable is missing and does not save resume', async () => {
+    const video = await renderRecordingPlayer({
+      recordingId: 'rec-gate-o-1b',
+      durationSeconds: 60,
       resumePosSeconds: 42
     });
 
@@ -126,7 +147,7 @@ describe('Gate O Phase 2: Seek/Resume Proof', () => {
     const video = await renderRecordingPlayer({
       recordingId: 'rec-gate-o-2',
       isSeekable: true,
-      durationMs: 60_000,
+      durationSeconds: 60,
       resumePosSeconds: 120
     });
 

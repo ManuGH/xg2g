@@ -182,7 +182,7 @@ func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profil
 	requestedPlaybackMode := normalize.Token(intent.Params["playback_mode"])
 	clientFamily := clientFamilyForIntent(intent)
 	if requestedPlaybackMode != "" {
-		_, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.Params)
+		_, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.PlaybackDecisionToken, intent.Params)
 		if tokenErr != nil {
 			s.deps.IncLivePlaybackKey(keyLabel, resultLabel)
 			return "", "", &Error{Kind: ErrorInvalidInput, Message: tokenErr.Error()}
@@ -585,22 +585,31 @@ func mapPlaybackModeToProfile(mode, clientFamily string) (string, error) {
 	}
 }
 
-func resolvePlaybackDecisionToken(params map[string]string) (token, keyLabel, resultLabel string, err error) {
-	playbackDecisionToken := strings.TrimSpace(params["playback_decision_token"])
-	playbackDecisionID := strings.TrimSpace(params["playback_decision_id"])
+func resolvePlaybackDecisionToken(requestToken string, params map[string]string) (token, keyLabel, resultLabel string, err error) {
+	canonicalToken := strings.TrimSpace(requestToken)
+	paramToken := strings.TrimSpace(params["playback_decision_token"])
+	paramID := strings.TrimSpace(params["playback_decision_id"])
 
 	switch {
-	case playbackDecisionToken == "" && playbackDecisionID == "":
-		return "", "none", "rejected_missing", fmt.Errorf("playback_decision_id or playback_decision_token is required when playback_mode is provided")
-	case playbackDecisionToken != "" && playbackDecisionID != "":
-		if playbackDecisionToken != playbackDecisionID {
-			return "", "both", "mismatch", fmt.Errorf("playback_decision_id and playback_decision_token mismatch")
+	case canonicalToken == "":
+		switch {
+		case paramToken == "" && paramID == "":
+			return "", "none", "rejected_missing", fmt.Errorf("playbackDecisionToken is required when playback_mode is provided")
+		default:
+			return "", "params_only", "rejected_missing", fmt.Errorf("playbackDecisionToken is required when playback_mode is provided")
 		}
-		return playbackDecisionToken, "both", "equal", nil
-	case playbackDecisionToken != "":
-		return playbackDecisionToken, "playback_decision_token", "accepted", nil
+	case paramToken != "" && paramToken != canonicalToken:
+		return "", "request+playback_decision_token", "mismatch", fmt.Errorf("params.playback_decision_token must match playbackDecisionToken")
+	case paramID != "" && paramID != canonicalToken:
+		return "", "request+playback_decision_id", "mismatch", fmt.Errorf("params.playback_decision_id must match playbackDecisionToken")
+	case paramToken != "" && paramID != "":
+		return canonicalToken, "all", "equal", nil
+	case paramToken != "":
+		return canonicalToken, "request+playback_decision_token", "equal", nil
+	case paramID != "":
+		return canonicalToken, "request+playback_decision_id", "equal", nil
 	default:
-		return playbackDecisionID, "playback_decision_id", "accepted", nil
+		return canonicalToken, "request", "accepted", nil
 	}
 }
 

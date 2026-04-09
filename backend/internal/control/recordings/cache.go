@@ -4,29 +4,29 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	platformpaths "github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // This file is the single source of truth for recording build identity.
 // Any new HLS/status/build path must derive cache keys, metadata keys, and
 // canonical target variants from these helpers instead of open-coding them.
 
-// RecordingCacheDir returns the canonical directory for the default recording build.
+// RecordingCacheDir returns the canonical directory for the default materialized recording build.
 func RecordingCacheDir(hlsRoot, serviceRef string) (string, error) {
 	return RecordingVariantCacheDir(hlsRoot, serviceRef, "")
 }
 
-// RecordingVariantCacheDir returns the canonical directory for a recording build variant.
+// RecordingVariantCacheDir returns the canonical directory for a materialized recording build variant.
 func RecordingVariantCacheDir(hlsRoot, serviceRef, variant string) (string, error) {
 	if strings.TrimSpace(hlsRoot) == "" {
 		return "", fmt.Errorf("hls root not configured")
 	}
-	return filepath.Join(hlsRoot, "recordings", RecordingVariantCacheKey(serviceRef, variant)), nil
+	return platformpaths.RecordingArtifactDir(hlsRoot, RecordingVariantCacheKey(serviceRef, variant)), nil
 }
 
 // RecordingCacheKey returns the stable key for the default recording build.

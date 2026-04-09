@@ -230,9 +230,17 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
           response(200, {
             state: 'READY',
             playbackUrl: '/live.m3u8',
-            heartbeat_interval: 1
+            heartbeatIntervalSeconds: 1
           })
         );
+      }
+
+      if (url.includes('/sessions/sess-503/heartbeat')) {
+        return Promise.resolve(response(200, {
+          sessionId: 'sess-503',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        }));
       }
 
       return Promise.resolve(response(200, {}));
@@ -332,7 +340,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
               response(200, {
                 state: 'READY',
                 playbackUrl,
-                heartbeat_interval: 1
+                heartbeatIntervalSeconds: 1
               })
             );
           }
@@ -343,13 +351,17 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
             response(200, {
               state: 'READY',
               playbackUrl,
-              heartbeat_interval: 1
+              heartbeatIntervalSeconds: 1
             })
           );
         }
 
         if (url.includes('/heartbeat')) {
-          return Promise.resolve(response(200, { lease_expires_at: 'later' }));
+          return Promise.resolve(response(200, {
+            sessionId: 'sess-decode',
+            acknowledged: true,
+            leaseExpiresAt: 'later'
+          }));
         }
 
         return Promise.resolve(response(200, {}));
@@ -454,13 +466,23 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
           json: async () => ({
             state: 'READY',
             playbackUrl: '/live.m3u8',
-            heartbeat_interval: 1
+            heartbeatIntervalSeconds: 1
           })
         });
       }
       if (url.includes('/heartbeat')) {
         heartbeatCount++;
-        if (heartbeatCount === 1) return Promise.resolve({ ok: true, status: 200, json: async () => ({ lease_expires_at: '...' }) });
+        if (heartbeatCount === 1) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              sessionId: 'sess-123',
+              acknowledged: true,
+              leaseExpiresAt: '...'
+            })
+          });
+        }
         return Promise.resolve({ ok: false, status: 410, json: async () => ({ detail: 'Expired' }) });
       }
       return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });

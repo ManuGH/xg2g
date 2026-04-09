@@ -14,20 +14,12 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/problemcode"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
-
-// SessionHeartbeat handles POST /api/v3/sessions/{id}/heartbeat (ADR-009)
-// Renews session lease if not expired. Returns 410 if already expired.
-// Idempotent: multiple heartbeats within interval = no-op.
-func (s *Server) SessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID string) {
-	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		s.handleSessionHeartbeat(w, r, sessionID)
-	})).ServeHTTP(w, r)
-}
 
 func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID string) {
 	log.L().Info().Str("sessionId", sessionID).Msg("Session heartbeat received")
+	w.Header().Set("Cache-Control", "no-store")
 
 	ctx := r.Context()
 	logger := log.WithComponentFromContext(ctx, "api")
@@ -88,12 +80,7 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 			Int64("time_since_last", timeSinceLastHB).
 			Msg("heartbeat idempotent (within interval)")
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"sessionId":        sessionID,
-			"lease_expires_at": time.Unix(session.LeaseExpiresAtUnix, 0).Format(time.RFC3339),
-			"acknowledged":     true,
-		})
+		writeSessionHeartbeatResponse(w, sessionID, session.LeaseExpiresAtUnix)
 		return
 	}
 
@@ -119,10 +106,14 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 		Msg("session lease extended")
 
 	// 5. Return new expiry
+	writeSessionHeartbeatResponse(w, sessionID, newExpiry)
+}
+
+func writeSessionHeartbeatResponse(w http.ResponseWriter, sessionID string, leaseExpiresAtUnix int64) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"sessionId":        sessionID,
-		"lease_expires_at": time.Unix(newExpiry, 0).Format(time.RFC3339),
-		"acknowledged":     true,
+	_ = json.NewEncoder(w).Encode(SessionHeartbeatResponse{
+		SessionId:       openapi_types.UUID(parseUUID(sessionID)),
+		Acknowledged:    true,
+		LeaseExpiresAt:  time.Unix(leaseExpiresAtUnix, 0).UTC(),
 	})
 }

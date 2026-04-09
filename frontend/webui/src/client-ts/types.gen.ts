@@ -67,8 +67,12 @@ export type IntentRequest = {
 };
 
 export type IntentAcceptedResponse = {
-    sessionId?: string;
-    status?: 'accepted' | 'idempotent_replay';
+    sessionId: string;
+    /**
+     * Request ID for debugging/tracing.
+     */
+    requestId: string;
+    status: 'accepted' | 'idempotent_replay';
     correlationId?: string;
 };
 
@@ -85,11 +89,11 @@ export type SessionResponse = {
      */
     profileReason?: string;
     /**
-     * Session lifecycle state. STARTING guarantees a session ticket is allocated.
-     * READY/ACTIVE guarantees a playable HLS stream.
+     * Session lifecycle state for GET /sessions/{sessionID}. STARTING guarantees a
+     * session ticket is allocated. READY/DRAINING guarantees a playable HLS stream.
      *
      */
-    state: 'STARTING' | 'BUFFERING' | 'ACTIVE' | 'STALLED' | 'ENDING' | 'IDLE' | 'ERROR' | 'NEW' | 'PRIMING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    state: 'STARTING' | 'IDLE' | 'PRIMING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
     /**
      * Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
      */
@@ -97,6 +101,14 @@ export type SessionResponse = {
     reasonDetail?: string;
     correlationId?: string;
     updatedAtMs?: number;
+    /**
+     * Canonical server heartbeat cadence for renewing the session lease.
+     */
+    heartbeatIntervalSeconds: number;
+    /**
+     * Current observed lease expiry for the session.
+     */
+    leaseExpiresAt: string;
     /**
      * Playback mode for the session.
      */
@@ -122,6 +134,18 @@ export type SessionResponse = {
      */
     playbackUrl?: string;
     trace?: PlaybackTrace;
+};
+
+export type SessionHeartbeatResponse = {
+    sessionId: string;
+    /**
+     * True when the heartbeat was accepted for the addressed session.
+     */
+    acknowledged: boolean;
+    /**
+     * Renewed lease expiry after the heartbeat acknowledgement.
+     */
+    leaseExpiresAt: string;
 };
 
 export type Service = {
@@ -756,13 +780,13 @@ export type PlaybackInfo = {
      */
     url?: string;
     /**
-     * Whether the stream is seekable. Omitted if unknown. Deprecated in favor of isSeekable.
+     * Deprecated compatibility mirror of `isSeekable`. Omitted if not emitted.
      */
     seekable?: boolean;
     /**
-     * Authoritative flag if the stream is seekable. Becomes required in P3-4.
+     * Authoritative seekability flag. Always present on successful PlaybackInfo responses and must be consumed fail-closed if absent at runtime.
      */
-    isSeekable?: boolean;
+    isSeekable: boolean;
     /**
      * Absolute DVR window length in seconds. Becomes required in P3-4.
      */
@@ -776,7 +800,7 @@ export type PlaybackInfo = {
      */
     startUnix?: number;
     /**
-     * Duration in seconds. Omitted if unknown or preparing.
+     * Canonical playback duration in seconds. Omitted if unknown or still preparing.
      */
     durationSeconds?: number;
     durationSource?: PlaybackInfoDurationSource;
@@ -2008,15 +2032,15 @@ export type GetEpgResponses = {
     /**
      * EPG data
      */
-    200: {
-        items?: Array<{
-            serviceRef?: string;
-            title?: string;
-            desc?: string;
-            start?: number;
-            end?: number;
-        }>;
-    };
+    200: Array<{
+        id?: string;
+        serviceRef?: string;
+        title?: string;
+        desc?: string;
+        start?: number;
+        end?: number;
+        duration?: number;
+    }>;
 };
 
 export type GetEpgResponse = GetEpgResponses[keyof GetEpgResponses];
@@ -3077,15 +3101,19 @@ export type CreateIntentErrors = {
     /**
      * Invalid request
      */
-    400: ApiError;
+    400: ProblemDetails;
     /**
-     * Lease busy (capacity rejection; no session created)
+     * Missing or invalid decision token
      */
-    409: ApiError;
+    401: ProblemDetails;
+    /**
+     * Decision token does not authorize the requested action
+     */
+    403: ProblemDetails;
     /**
      * V3 control plane unavailable
      */
-    503: ApiError;
+    503: ProblemDetails;
 };
 
 export type CreateIntentError = CreateIntentErrors[keyof CreateIntentErrors];
@@ -3175,6 +3203,49 @@ export type GetSessionStateResponses = {
 };
 
 export type GetSessionStateResponse = GetSessionStateResponses[keyof GetSessionStateResponses];
+
+export type PostSessionHeartbeatData = {
+    body?: never;
+    path: {
+        sessionID: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/heartbeat';
+};
+
+export type PostSessionHeartbeatErrors = {
+    /**
+     * Invalid session ID
+     */
+    400: ProblemDetails;
+    /**
+     * Session not found
+     */
+    404: ProblemDetails;
+    /**
+     * Session cannot be renewed because it is terminal or its lease already expired.
+     */
+    410: ProblemDetails | SessionTerminalProblem;
+    /**
+     * Session lease update failed
+     */
+    500: ProblemDetails;
+    /**
+     * Session subsystem unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type PostSessionHeartbeatError = PostSessionHeartbeatErrors[keyof PostSessionHeartbeatErrors];
+
+export type PostSessionHeartbeatResponses = {
+    /**
+     * Session heartbeat acknowledged
+     */
+    200: SessionHeartbeatResponse;
+};
+
+export type PostSessionHeartbeatResponse = PostSessionHeartbeatResponses[keyof PostSessionHeartbeatResponses];
 
 export type ServeHlsData = {
     body?: never;

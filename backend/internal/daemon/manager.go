@@ -352,7 +352,7 @@ func (m *manager) RegisterShutdownHook(name string, hook ShutdownHook) {
 }
 
 // registerV3Checks registers health and readiness checks for V3 components.
-func (m *manager) registerV3Checks(cfg *config.AppConfig, receiverHealthCheck func(context.Context) error) {
+func (m *manager) registerV3Checks(_ *config.AppConfig, receiverHealthCheck func(context.Context) error) {
 	if m.deps.APIServerSetter == nil {
 		m.logger.Warn().Msg("API server hooks not available, skipping V3 checks")
 		return
@@ -364,13 +364,10 @@ func (m *manager) registerV3Checks(cfg *config.AppConfig, receiverHealthCheck fu
 		return
 	}
 
-	// 1. Storage Checks (Runtime Writeability)
-	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_store_path", cfg.Store.Path)))
-	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_hls_root", cfg.HLS.Root)))
-
-	// 2. Connectivity Checks (Upstream/Receiver)
-	// Use the injected health check port to keep daemon package decoupled
-	// from concrete receiver client types.
+	// Connectivity checks stay informational because receiver outages should not
+	// hide local runtime dependency failures such as missing writable paths.
+	// Use the injected health check port to keep daemon package decoupled from
+	// concrete receiver client types.
 	hm.RegisterChecker(health.Informational(health.NewNamedReceiverChecker("v3_receiver_connection", func(ctx context.Context) error {
 		if receiverHealthCheck == nil {
 			return fmt.Errorf("receiver health check is not available")

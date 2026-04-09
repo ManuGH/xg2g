@@ -18,8 +18,20 @@ const telemetryFields = new Set(
 if (!normativeFields.has('decision.selectedOutputUrl')) {
   throw new Error('ui_consumption.manifest.json is missing normative field decision.selectedOutputUrl');
 }
+if (!normativeFields.has('decision.selectedOutputKind')) {
+  throw new Error('ui_consumption.manifest.json is missing normative field decision.selectedOutputKind');
+}
 if (!normativeFields.has('decision.mode')) {
   throw new Error('ui_consumption.manifest.json is missing normative field decision.mode');
+}
+if (!normativeFields.has('durationSeconds')) {
+  throw new Error('ui_consumption.manifest.json is missing normative field durationSeconds');
+}
+if (!normativeFields.has('isSeekable')) {
+  throw new Error('ui_consumption.manifest.json is missing normative field isSeekable');
+}
+if (!normativeFields.has('resume')) {
+  throw new Error('ui_consumption.manifest.json is missing normative field resume');
 }
 if (!telemetryFields.has('requestId')) {
   throw new Error('ui_consumption.manifest.json is missing telemetry field requestId');
@@ -35,8 +47,17 @@ export interface NormativeDecision {
     // Forbidden fields like 'outputs' are NOT here.
 }
 
+export interface NormativeResumeSummary {
+    posSeconds: number;
+    durationSeconds?: number;
+    finished?: boolean;
+}
+
 export interface NormativePlaybackInfo {
     decision: NormativeDecision;
+    isSeekable: boolean;
+    durationSeconds?: number;
+    resume?: NormativeResumeSummary;
     requestId: string;
     // Legacy URL is NOT here.
 }

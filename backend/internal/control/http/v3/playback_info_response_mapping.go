@@ -70,7 +70,6 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		Mode:                  mode,
 		DecisionReason:        (*string)(&primaryStr),
 		Url:                   finalURL,
-		DurationSeconds:       &durSec,
 		DurationSource:        nil,
 		Container:             &container,
 		VideoCodec:            &videoCodec,
@@ -81,6 +80,9 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		RequestId:             dec.Trace.RequestID,
 		SessionId:             fmt.Sprintf("rec:%s", id),
 		PlaybackDecisionToken: s.buildLivePlaybackDecisionToken(id, dec, schemaType, caps),
+	}
+	if durSec > 0 {
+		info.DurationSeconds = &durSec
 	}
 
 	applySegmentTruth(&info, truth, attemptedTruth)
@@ -379,6 +381,6 @@ func applySegmentTruth(info *PlaybackInfo, truth *hls.SegmentTruth, attempted bo
 		}
 	}
 
-	info.IsSeekable = &isSeekable
+	info.IsSeekable = isSeekable
 	info.Seekable = &canSeek
 }

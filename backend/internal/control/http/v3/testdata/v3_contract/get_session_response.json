@@ -36,6 +36,8 @@
   },
   "correlationId": "corr-test-001",
   "updatedAtMs": 1700000000000,
+  "heartbeatIntervalSeconds": 30,
+  "leaseExpiresAt": "2023-11-14T22:13:50Z",
   "mode": "LIVE",
   "seekableStartSeconds": 0,
   "seekableEndSeconds": 0,

@@ -2,21 +2,24 @@
 
 ## Objective
 
-`durationMs` for recordings is resolved once in backend, transported as structured truth, and consumed by WebUI without local duration guessing.
+Finite recording duration is resolved once in backend, exported in `PlaybackInfo` as `durationSeconds`, and consumed by WebUI without local duration guessing.
 
 ## Single Source Of Truth
 
-Authoritative DTO fields (`PlaybackInfo`):
+Authoritative external DTO fields (`PlaybackInfo`):
 
-- `durationMs` (authoritative finite duration)
-- `durationSource` (`source_metadata | ffprobe | container | heuristic | unknown`)
-- `durationConfidence` (`high | medium | low`)
-- `durationReasons[]` (frozen reason vocabulary)
-- `isSeekable` / `seekable` (server-authoritative seek policy)
+- `durationSeconds` (canonical finite playback duration in seconds)
+- `isSeekable` (authoritative seek policy)
+
+Optional external provenance field:
+
+- `durationSource` exists in the schema for duration provenance when emitted, but it is not part of the current WebUI gating contract.
 
 Compatibility field:
 
-- `durationSeconds` remains derived from `durationMs`.
+- `seekable` remains a deprecated mirror of `isSeekable`
+
+Internal resolver truth still uses millisecond precision in `internal/control/recordings/duration_truth.go`; the HTTP contract canonicalizes that to seconds before it leaves the backend.
 
 ## Resolution Priority
 
@@ -64,7 +67,7 @@ Observability contract:
 - Resolver tests:
   - `internal/control/recordings/duration_truth_resolver_test.go`
 - Playback DTO mapping and seek policy:
-  - `internal/control/http/v3/handlers_playback_info.go`
+- `internal/control/http/v3/playback_info_response_mapping.go`
 - Contract allowlist:
   - `internal/control/http/v3/schema_compliance_test.go`
 

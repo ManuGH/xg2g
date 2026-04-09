@@ -165,6 +165,17 @@ func (s *Server) initHDHR(cfg config.AppConfig, cm *channels.Manager) {
 func (s *Server) registerHealthCheckers(cfg config.AppConfig) {
 	receiverProbeClient := httpx.NewClient(5 * time.Second)
 
+	s.healthManager.RegisterChecker(health.NewExistingWritableDirChecker("data_dir", cfg.DataDir))
+	if !strings.EqualFold(strings.TrimSpace(cfg.Store.Backend), "memory") {
+		s.healthManager.RegisterChecker(health.NewExistingWritableDirChecker("store_path", cfg.Store.Path))
+	}
+	if cfg.Engine.Enabled {
+		s.healthManager.RegisterChecker(health.NewExistingWritableDirChecker("hls_root", cfg.HLS.Root))
+	}
+	for id, path := range cfg.RecordingRoots {
+		s.healthManager.RegisterChecker(health.NewExistingWritableDirChecker("recording_root:"+id, path))
+	}
+
 	playlistName := s.snap.Runtime.PlaylistFilename
 	playlistPath := filepath.Join(cfg.DataDir, playlistName)
 	s.healthManager.RegisterChecker(health.NewFileChecker("playlist", playlistPath))

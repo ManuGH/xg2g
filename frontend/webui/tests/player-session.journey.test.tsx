@@ -214,13 +214,15 @@ function installPlayerFetchMock(scenario: PlayerFetchScenario = {}) {
       return jsonResponse(url, scenario.sessionStatus ?? 200, scenario.sessionBody ?? {
         state: 'READY',
         playbackUrl: '/live.m3u8',
-        heartbeat_interval: 1,
+        heartbeatIntervalSeconds: 1,
       });
     }
 
     if (url.includes(`/sessions/${sessionId}/heartbeat`)) {
       return jsonResponse(url, scenario.heartbeatStatus ?? 200, scenario.heartbeatBody ?? {
-        lease_expires_at: 'next',
+        sessionId,
+        acknowledged: true,
+        leaseExpiresAt: 'next',
       });
     }
 
