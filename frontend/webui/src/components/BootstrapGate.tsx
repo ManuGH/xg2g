@@ -52,11 +52,12 @@ export default function BootstrapGate() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { auth, setToken, setPlayingChannel } = useAppContext();
+  const { auth, setToken, setPlayingChannel, setServerSessionAuthenticated } = useAppContext();
   const queryClient = useQueryClient();
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const isTvHost = hostEnvironment.isTv;
   const authReady = auth.isReady ?? true;
+  const hasToken = Boolean(auth.token?.trim());
   const [tokenValue, setTokenValue] = useState('');
   const [forcedAuthPrompt, setForcedAuthPrompt] = useState<AuthPromptReason | null>(null);
   const [isTokenVisible, setIsTokenVisible] = useState<boolean>(() => isTvHost);
@@ -66,14 +67,18 @@ export default function BootstrapGate() {
     error,
     isLoading,
     refetch,
-  } = useBootstrapConfig(auth.isAuthenticated && authReady);
+  } = useBootstrapConfig(authReady);
 
   const handleAuthRequired = useCallback(() => {
-    setForcedAuthPrompt('expired');
+    setForcedAuthPrompt(auth.isAuthenticated ? 'expired' : 'missing');
     setTokenValue((current) => current.trim() || auth.token || '');
     setPlayingChannel(null);
-    setToken('');
-  }, [auth.token, setPlayingChannel, setToken]);
+    if (hasToken) {
+      setToken('');
+      return;
+    }
+    setServerSessionAuthenticated(false);
+  }, [auth.isAuthenticated, auth.token, hasToken, setPlayingChannel, setServerSessionAuthenticated, setToken]);
 
   useEffect(() => {
     return subscribeAuthRequired(() => {
@@ -98,20 +103,27 @@ export default function BootstrapGate() {
       return null;
     }
     if (isUnauthorized) {
-      return 'expired';
+      return auth.isAuthenticated ? 'expired' : 'missing';
+    }
+    if (error) {
+      return null;
+    }
+    if (config) {
+      return null;
     }
     if (!auth.isAuthenticated) {
       return 'missing';
     }
     return null;
-  }, [auth.isAuthenticated, authReady, forcedAuthPrompt, isUnauthorized]);
+  }, [auth.isAuthenticated, authReady, config, error, forcedAuthPrompt, isUnauthorized]);
 
   useEffect(() => {
-    if (auth.isAuthenticated && !isUnauthorized && config) {
+    if (config && !isUnauthorized) {
+      setServerSessionAuthenticated(true);
       setForcedAuthPrompt(null);
       setTokenValue('');
     }
-  }, [auth.isAuthenticated, config, isUnauthorized]);
+  }, [config, isUnauthorized, setServerSessionAuthenticated]);
 
   useEffect(() => {
     if (isUnauthorized) {

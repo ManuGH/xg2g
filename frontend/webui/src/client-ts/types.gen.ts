@@ -23,6 +23,190 @@ export type ApiError = {
     details?: unknown;
 };
 
+export type DeviceAuthDeviceType = 'android_phone' | 'android_tablet' | 'android_tv' | 'browser' | 'unknown';
+
+export type PairingStatus = 'pending' | 'approved' | 'expired' | 'consumed' | 'revoked';
+
+export type PublishedEndpointKind = 'public_https' | 'local_https' | 'local_http';
+
+export type PublishedEndpointTlsMode = 'required' | 'prohibited';
+
+export type PublishedEndpointSource = 'config' | 'env' | 'operator';
+
+export type ConnectivityDeploymentProfile = 'lan' | 'reverse_proxy' | 'tunnel' | 'vps';
+
+export type PublishedEndpoint = {
+    url: string;
+    kind: PublishedEndpointKind;
+    priority: number;
+    tlsMode: PublishedEndpointTlsMode;
+    allowPairing: boolean;
+    allowStreaming: boolean;
+    allowWeb: boolean;
+    allowNative: boolean;
+    advertiseReason: string;
+    source: PublishedEndpointSource;
+};
+
+export type ConnectivityConfig = {
+    profile: ConnectivityDeploymentProfile;
+    allowLocalHTTP: boolean;
+    publishedEndpoints: Array<PublishedEndpoint>;
+};
+
+export type ConnectivitySelection = {
+    endpoint?: PublishedEndpoint;
+    reason?: string;
+};
+
+export type ConnectivitySelections = {
+    web: ConnectivitySelection;
+    webPublic: ConnectivitySelection;
+    native: ConnectivitySelection;
+    nativePublic: ConnectivitySelection;
+    pairing: ConnectivitySelection;
+    pairingPublic: ConnectivitySelection;
+    streaming: ConnectivitySelection;
+};
+
+export type ConnectivityFinding = {
+    code: string;
+    severity: 'ok' | 'warn' | 'degraded' | 'fatal';
+    scopes: Array<string>;
+    field?: string;
+    summary: string;
+    detail?: string;
+    endpointUrl?: string;
+};
+
+export type ConnectivityRequest = {
+    remoteAddr?: string;
+    remoteIp?: string;
+    remoteIsLoopback: boolean;
+    tlsDirect: boolean;
+    trustedProxyMatch: boolean;
+    effectiveHttps: boolean;
+    schemeSource: string;
+    acceptedProxyHeaders: Array<string>;
+    xForwardedProto?: string;
+    xForwardedHost?: string;
+    xForwardedFor?: string;
+    origin?: string;
+    originAllowed?: boolean;
+    originAllowAll: boolean;
+};
+
+export type ConnectivityContract = {
+    profile: ConnectivityDeploymentProfile;
+    public: boolean;
+    status: 'ok' | 'warn' | 'degraded' | 'fatal';
+    startupFatal: boolean;
+    readinessBlocked: boolean;
+    pairingBlocked: boolean;
+    webBlocked: boolean;
+    allowLocalHTTP: boolean;
+    tlsEnabled: boolean;
+    forceHTTPS: boolean;
+    allowedOrigins: Array<string>;
+    trustedProxies: Array<string>;
+    publishedEndpoints: Array<PublishedEndpoint>;
+    selections: ConnectivitySelections;
+    findings: Array<ConnectivityFinding>;
+    request: ConnectivityRequest;
+};
+
+export type StartPairingRequest = {
+    deviceName?: string;
+    deviceType?: DeviceAuthDeviceType;
+    requestedPolicyProfile?: string;
+};
+
+export type PairingSecretRequest = {
+    pairingSecret: string;
+};
+
+export type ApprovePairingRequest = {
+    ownerId?: string;
+    approvedPolicyProfile?: string;
+};
+
+export type StartPairingResponse = {
+    pairingId: string;
+    pairingSecret: string;
+    userCode: string;
+    qrPayload: string;
+    expiresAt: string;
+};
+
+export type PairingStatusResponse = {
+    pairingId: string;
+    status: PairingStatus;
+    userCode: string;
+    deviceName: string;
+    deviceType: DeviceAuthDeviceType;
+    requestedPolicyProfile?: string;
+    approvedPolicyProfile?: string;
+    expiresAt: string;
+    approvedAt?: string;
+    consumedAt?: string;
+};
+
+export type ApprovePairingResponse = {
+    pairingId: string;
+    status: PairingStatus;
+    ownerId: string;
+    approvedPolicyProfile?: string;
+    approvedAt?: string;
+    expiresAt: string;
+};
+
+export type ExchangePairingResponse = {
+    pairingId: string;
+    deviceId: string;
+    deviceGrantId: string;
+    deviceGrant: string;
+    deviceGrantExpiresAt: string;
+    accessSessionId: string;
+    accessToken: string;
+    accessTokenExpiresAt: string;
+    policyVersion: string;
+    scopes: Array<string>;
+    endpoints: Array<PublishedEndpoint>;
+};
+
+export type CreateDeviceSessionRequest = {
+    deviceGrantId: string;
+    deviceGrant: string;
+};
+
+export type CreateDeviceSessionResponse = {
+    deviceId: string;
+    rotatedDeviceGrantId?: string;
+    rotatedDeviceGrant?: string;
+    rotatedDeviceGrantExpiresAt?: string;
+    accessSessionId: string;
+    accessToken: string;
+    accessTokenExpiresAt: string;
+    policyVersion: string;
+    scopes: Array<string>;
+    endpoints: Array<PublishedEndpoint>;
+};
+
+export type CreateWebBootstrapRequest = {
+    /**
+     * Absolute same-origin path inside the xg2g web UI.
+     */
+    targetPath: string;
+};
+
+export type CreateWebBootstrapResponse = {
+    bootstrapId: string;
+    bootstrapToken: string;
+    completePath: string;
+    targetPath: string;
+    expiresAt: string;
+};
+
 export type IntentRequest = {
     type?: 'stream.start' | 'stream.stop';
     /**
@@ -242,6 +426,7 @@ export type Error = {
 
 export type SystemHealth = {
     status?: 'ok' | 'degraded' | 'error';
+    serverTime?: string;
     receiver?: ComponentStatus;
     epg?: EpgStatus;
     version?: string;
@@ -518,6 +703,7 @@ export type AppConfig = {
     monetization?: MonetizationStatus;
     verification?: VerificationConfig;
     household?: HouseholdStatus;
+    connectivity?: ConnectivityConfig;
 };
 
 export type HouseholdConfigUpdate = {
@@ -673,6 +859,14 @@ export type NowNextEntry = {
      * Unix timestamp (seconds)
      */
     end: number;
+    /**
+     * Original XMLTV start timestamp including offset
+     */
+    startXmltv?: string;
+    /**
+     * Original XMLTV end timestamp including offset
+     */
+    endXmltv?: string;
 };
 
 export type NowNextItem = {
@@ -1513,6 +1707,22 @@ export type GetSystemHealthzResponses = {
 
 export type GetSystemHealthzResponse = GetSystemHealthzResponses[keyof GetSystemHealthzResponses];
 
+export type GetSystemConnectivityData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/connectivity';
+};
+
+export type GetSystemConnectivityResponses = {
+    /**
+     * Connectivity contract diagnostics
+     */
+    200: ConnectivityContract;
+};
+
+export type GetSystemConnectivityResponse = GetSystemConnectivityResponses[keyof GetSystemConnectivityResponses];
+
 export type GetHouseholdProfilesData = {
     body?: never;
     headers?: {
@@ -2040,6 +2250,14 @@ export type GetEpgResponses = {
         start?: number;
         end?: number;
         duration?: number;
+        /**
+         * Original XMLTV start timestamp including offset
+         */
+        startXmltv?: string;
+        /**
+         * Original XMLTV end timestamp including offset
+         */
+        endXmltv?: string;
     }>;
 };
 
@@ -2634,6 +2852,307 @@ export type CreateSessionResponses = {
      */
     200: unknown;
 };
+
+export type StartPairingData = {
+    body?: StartPairingRequest;
+    path?: never;
+    query?: never;
+    url: '/pairing/start';
+};
+
+export type StartPairingErrors = {
+    /**
+     * Invalid pairing request
+     */
+    400: ProblemDetails;
+    /**
+     * Pairing state store unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type StartPairingError = StartPairingErrors[keyof StartPairingErrors];
+
+export type StartPairingResponses = {
+    /**
+     * Pairing enrollment created
+     */
+    201: StartPairingResponse;
+};
+
+export type StartPairingResponse2 = StartPairingResponses[keyof StartPairingResponses];
+
+export type GetPairingStatusData = {
+    body: PairingSecretRequest;
+    path: {
+        pairingId: string;
+    };
+    query?: never;
+    url: '/pairing/{pairingId}/status';
+};
+
+export type GetPairingStatusErrors = {
+    /**
+     * Invalid pairing request
+     */
+    400: ProblemDetails;
+    /**
+     * Pairing secret mismatch
+     */
+    403: ProblemDetails;
+    /**
+     * Pairing not found
+     */
+    404: ProblemDetails;
+    /**
+     * Pairing has expired or was revoked
+     */
+    410: ProblemDetails;
+    /**
+     * Pairing state store unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type GetPairingStatusError = GetPairingStatusErrors[keyof GetPairingStatusErrors];
+
+export type GetPairingStatusResponses = {
+    /**
+     * Pairing enrollment status
+     */
+    200: PairingStatusResponse;
+};
+
+export type GetPairingStatusResponse = GetPairingStatusResponses[keyof GetPairingStatusResponses];
+
+export type ApprovePairingData = {
+    body?: ApprovePairingRequest;
+    path: {
+        pairingId: string;
+    };
+    query?: never;
+    url: '/pairing/{pairingId}/approve';
+};
+
+export type ApprovePairingErrors = {
+    /**
+     * Invalid pairing approval request
+     */
+    400: ProblemDetails;
+    /**
+     * Authentication required
+     */
+    401: ProblemDetails;
+    /**
+     * Pairing not found
+     */
+    404: ProblemDetails;
+    /**
+     * Pairing is still pending or otherwise cannot transition
+     */
+    409: ProblemDetails;
+    /**
+     * Pairing has expired, been revoked, or was already exchanged
+     */
+    410: ProblemDetails;
+    /**
+     * Pairing state store unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type ApprovePairingError = ApprovePairingErrors[keyof ApprovePairingErrors];
+
+export type ApprovePairingResponses = {
+    /**
+     * Pairing enrollment approved
+     */
+    200: ApprovePairingResponse;
+};
+
+export type ApprovePairingResponse2 = ApprovePairingResponses[keyof ApprovePairingResponses];
+
+export type ExchangePairingData = {
+    body: PairingSecretRequest;
+    path: {
+        pairingId: string;
+    };
+    query?: never;
+    url: '/pairing/{pairingId}/exchange';
+};
+
+export type ExchangePairingErrors = {
+    /**
+     * Invalid pairing exchange request
+     */
+    400: ProblemDetails;
+    /**
+     * Pairing secret mismatch
+     */
+    403: ProblemDetails;
+    /**
+     * Pairing not found
+     */
+    404: ProblemDetails;
+    /**
+     * Pairing is pending and not yet approved
+     */
+    409: ProblemDetails;
+    /**
+     * Pairing has expired, been revoked, or was already exchanged
+     */
+    410: ProblemDetails;
+    /**
+     * Pairing state store unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type ExchangePairingError = ExchangePairingErrors[keyof ExchangePairingErrors];
+
+export type ExchangePairingResponses = {
+    /**
+     * Pairing exchanged for device grant and access session
+     */
+    200: ExchangePairingResponse;
+};
+
+export type ExchangePairingResponse2 = ExchangePairingResponses[keyof ExchangePairingResponses];
+
+export type CreateDeviceSessionData = {
+    body: CreateDeviceSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/auth/device/session';
+};
+
+export type CreateDeviceSessionErrors = {
+    /**
+     * Invalid device session request
+     */
+    400: ProblemDetails;
+    /**
+     * Invalid or missing device grant secret
+     */
+    401: ProblemDetails;
+    /**
+     * Device grant forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Device grant not found
+     */
+    404: ProblemDetails;
+    /**
+     * Device session conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Device grant expired or revoked
+     */
+    410: ProblemDetails;
+    /**
+     * Device session store unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type CreateDeviceSessionError = CreateDeviceSessionErrors[keyof CreateDeviceSessionErrors];
+
+export type CreateDeviceSessionResponses = {
+    /**
+     * Device access session issued
+     */
+    200: CreateDeviceSessionResponse;
+};
+
+export type CreateDeviceSessionResponse2 = CreateDeviceSessionResponses[keyof CreateDeviceSessionResponses];
+
+export type CreateWebBootstrapData = {
+    body: CreateWebBootstrapRequest;
+    path?: never;
+    query?: never;
+    url: '/auth/web-bootstrap';
+};
+
+export type CreateWebBootstrapErrors = {
+    /**
+     * Invalid web bootstrap request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Web bootstrap forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Source access session not found
+     */
+    404: ProblemDetails;
+    /**
+     * Web bootstrap conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Source session expired or revoked
+     */
+    410: ProblemDetails;
+    /**
+     * Web bootstrap store unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type CreateWebBootstrapError = CreateWebBootstrapErrors[keyof CreateWebBootstrapErrors];
+
+export type CreateWebBootstrapResponses = {
+    /**
+     * Web bootstrap created
+     */
+    201: CreateWebBootstrapResponse;
+};
+
+export type CreateWebBootstrapResponse2 = CreateWebBootstrapResponses[keyof CreateWebBootstrapResponses];
+
+export type CompleteWebBootstrapData = {
+    body?: never;
+    headers: {
+        'X-XG2G-Web-Bootstrap': string;
+    };
+    path: {
+        bootstrapId: string;
+    };
+    query?: never;
+    url: '/auth/web-bootstrap/{bootstrapId}';
+};
+
+export type CompleteWebBootstrapErrors = {
+    /**
+     * Invalid bootstrap completion request or HTTPS required
+     */
+    400: ProblemDetails;
+    /**
+     * Web bootstrap token mismatch
+     */
+    403: ProblemDetails;
+    /**
+     * Web bootstrap not found
+     */
+    404: ProblemDetails;
+    /**
+     * Web bootstrap expired, consumed, or revoked
+     */
+    410: ProblemDetails;
+    /**
+     * Web bootstrap store unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type CompleteWebBootstrapError = CompleteWebBootstrapErrors[keyof CompleteWebBootstrapErrors];
 
 export type GetTimersData = {
     body?: never;

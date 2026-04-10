@@ -28,6 +28,7 @@ export function AppProvider({ children }: AppProviderProps) {
 
   // Auth State
   const [token, setTokenState] = useState<string>(initialToken);
+  const [hasServerSession, setHasServerSession] = useState<boolean>(false);
   const [authReady, setAuthReady] = useState<boolean>(() => !initialToken);
 
   // Channel State
@@ -57,24 +58,37 @@ export function AppProvider({ children }: AppProviderProps) {
     selectedBouquetRef.current = selectedBouquet;
   }, [selectedBouquet]);
 
-  // Actions
-  const setToken = useCallback((newToken: string) => {
-    const normalizedToken = newToken.trim();
-    setTokenState(normalizedToken);
-    if (normalizedToken) {
-      setStoredToken(normalizedToken);
-      setAuthReady(false);
-    } else {
-      clearStoredToken();
-      setClientAuthToken('');
-      setAuthReady(true);
-    }
+  const resetAuthenticatedState = useCallback(() => {
     setBouquets([]);
     setSelectedBouquet('');
     setChannels([]);
     setLoading(false);
     setDataLoaded(false);
   }, []);
+
+  // Actions
+  const setToken = useCallback((newToken: string) => {
+    const normalizedToken = newToken.trim();
+    setTokenState(normalizedToken);
+    if (normalizedToken) {
+      setStoredToken(normalizedToken);
+      setHasServerSession(false);
+      setAuthReady(false);
+    } else {
+      clearStoredToken();
+      setClientAuthToken('');
+      setHasServerSession(false);
+      setAuthReady(true);
+    }
+    resetAuthenticatedState();
+  }, [resetAuthenticatedState]);
+
+  const setServerSessionAuthenticated = useCallback((authenticated: boolean) => {
+    setHasServerSession(authenticated);
+    if (!authenticated && !token) {
+      resetAuthenticatedState();
+    }
+  }, [resetAuthenticatedState, token]);
 
   const fetchChannels = useCallback(async (bouquetName: string): Promise<Service[]> => {
     debugLog('[DEBUG] Fetching channels for:', bouquetName);
@@ -136,7 +150,8 @@ export function AppProvider({ children }: AppProviderProps) {
     // State
     auth: {
       token,
-      isAuthenticated: !!token,
+      hasServerSession,
+      isAuthenticated: !!token || hasServerSession,
       isReady: authReady,
     },
     channels: {
@@ -152,6 +167,7 @@ export function AppProvider({ children }: AppProviderProps) {
 
     // Actions
     setToken,
+    setServerSessionAuthenticated,
     setBouquets,
     setSelectedBouquet,
     setChannels,

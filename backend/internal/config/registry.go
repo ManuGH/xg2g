@@ -143,6 +143,11 @@ func buildRegistry() (*Registry, error) {
 		{Path: "api.playbackDecisionRotationWindow", Env: "XG2G_PLAYBACK_DECISION_ROTATION_WINDOW", FieldPath: "PlaybackDecisionRotationWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Minute},
 		{Path: "api.allowedOrigins", Env: "XG2G_ALLOWED_ORIGINS", FieldPath: "AllowedOrigins", Profile: ProfileAdvanced, Status: StatusActive},
 
+		// --- CONNECTIVITY ---
+		{Path: "connectivity.profile", Env: "XG2G_CONNECTIVITY_PROFILE", FieldPath: "Connectivity.Profile", Profile: ProfileAdvanced, Status: StatusActive, Default: "lan"},
+		{Path: "connectivity.allowLocalHTTP", Env: "XG2G_CONNECTIVITY_ALLOW_LOCAL_HTTP", FieldPath: "Connectivity.AllowLocalHTTP", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "connectivity.publishedEndpoints", Env: "XG2G_PUBLISHED_ENDPOINTS", FieldPath: "Connectivity.PublishedEndpoints", Profile: ProfileAdvanced, Status: StatusActive, Default: []PublishedEndpointConfig{}, Type: TypeAny},
+
 		// --- EPG ---
 		{Path: "epg.enabled", Env: "XG2G_EPG_ENABLED", FieldPath: "EPGEnabled", Profile: ProfileSimple, Status: StatusActive, Default: true},
 		{Path: "epg.days", Env: "XG2G_EPG_DAYS", FieldPath: "EPGDays", Profile: ProfileSimple, Status: StatusActive, Default: 14},
@@ -193,7 +198,6 @@ func buildRegistry() (*Registry, error) {
 		{Path: "network.outbound.allow.cidrs", Env: "XG2G_OUTBOUND_ALLOW_CIDRS", FieldPath: "Network.Outbound.Allow.CIDRs", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "network.outbound.allow.ports", Env: "XG2G_OUTBOUND_ALLOW_PORTS", FieldPath: "Network.Outbound.Allow.Ports", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "network.outbound.allow.schemes", Env: "XG2G_OUTBOUND_ALLOW_SCHEMES", FieldPath: "Network.Outbound.Allow.Schemes", Profile: ProfileAdvanced, Status: StatusActive},
-
 		// --- METRICS ---
 		{Path: "metrics.enabled", Env: "", FieldPath: "MetricsEnabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "metrics.listenAddr", Env: "XG2G_METRICS_LISTEN", FieldPath: "MetricsAddr", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},

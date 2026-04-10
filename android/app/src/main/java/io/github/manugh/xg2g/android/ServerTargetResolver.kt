@@ -7,10 +7,18 @@ import java.nio.charset.StandardCharsets
 internal object ServerTargetResolver {
     const val EXTRA_BASE_URL = "base_url"
     const val EXTRA_AUTH_TOKEN = "auth_token"
+    const val EXTRA_DEVICE_GRANT_ID = "device_grant_id"
+    const val EXTRA_DEVICE_GRANT = "device_grant"
+    const val EXTRA_ACCESS_TOKEN = "access_token"
+    const val EXTRA_ACCESS_TOKEN_EXPIRES_AT = "access_token_expires_at"
 
     private const val CUSTOM_SCHEME = "xg2g"
     private const val QUERY_BASE_URL = "base_url"
     private const val QUERY_AUTH_TOKEN = "auth_token"
+    private const val QUERY_DEVICE_GRANT_ID = "device_grant_id"
+    private const val QUERY_DEVICE_GRANT = "device_grant"
+    private const val QUERY_ACCESS_TOKEN = "access_token"
+    private const val QUERY_ACCESS_TOKEN_EXPIRES_AT = "access_token_expires_at"
     private const val UI_BASE_SEGMENT = "/ui"
 
     fun resolveConfiguredBaseUrl(
@@ -69,6 +77,62 @@ internal object ServerTargetResolver {
         return queryParameter(deepLinkUri.rawQuery, QUERY_AUTH_TOKEN)
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+    }
+
+    fun resolveAccessToken(
+        overrideToken: String?,
+        deepLinkUrl: String?
+    ): String? {
+        overrideToken?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return it }
+
+        val deepLinkUri = parseUri(deepLinkUrl) ?: return null
+        if (!deepLinkUri.scheme.equals(CUSTOM_SCHEME, ignoreCase = true)) {
+            return null
+        }
+
+        return queryParameter(deepLinkUri.rawQuery, QUERY_ACCESS_TOKEN)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    fun resolveDeviceAuthLaunchCredentials(
+        overrideDeviceGrantId: String?,
+        overrideDeviceGrant: String?,
+        overrideAccessToken: String?,
+        overrideAccessTokenExpiresAt: String?,
+        deepLinkUrl: String?
+    ): DeviceAuthLaunchCredentials? {
+        val deepLinkUri = parseUri(deepLinkUrl)
+        val deviceGrantId = overrideDeviceGrantId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: queryParameter(deepLinkUri?.rawQuery, QUERY_DEVICE_GRANT_ID)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+        val deviceGrant = overrideDeviceGrant?.trim()?.takeIf { it.isNotEmpty() }
+            ?: queryParameter(deepLinkUri?.rawQuery, QUERY_DEVICE_GRANT)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+        val accessToken = resolveAccessToken(overrideAccessToken, deepLinkUrl)
+        val accessTokenExpiresAtEpochMs = parseDeviceAuthExpiryEpochMs(
+            overrideAccessTokenExpiresAt?.trim()?.takeIf { it.isNotEmpty() }
+                ?: queryParameter(deepLinkUri?.rawQuery, QUERY_ACCESS_TOKEN_EXPIRES_AT)
+        )
+
+        if (deviceGrantId == null &&
+            deviceGrant == null &&
+            accessToken == null &&
+            accessTokenExpiresAtEpochMs == null
+        ) {
+            return null
+        }
+
+        return DeviceAuthLaunchCredentials(
+            deviceGrantId = deviceGrantId,
+            deviceGrant = deviceGrant,
+            accessToken = accessToken,
+            accessTokenExpiresAtEpochMs = accessTokenExpiresAtEpochMs
+        )
     }
 
     fun normalizeServerUrl(input: String): String? {

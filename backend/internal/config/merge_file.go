@@ -43,6 +43,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 	l.mergeFileServer(dst, src)
 	l.mergeFileNetwork(dst, src)
+	l.mergeFileConnectivity(dst, src)
 	l.mergeFileMetrics(dst, src)
 	l.mergeFilePicons(dst, src)
 	l.mergeFileHDHR(dst, src)
@@ -341,6 +342,21 @@ func (l *Loader) mergeFileNetwork(dst *AppConfig, src *FileConfig) {
 	}
 	if src.Network.LAN.Allow.CIDRs != nil {
 		dst.Network.LAN.Allow.CIDRs = append([]string(nil), src.Network.LAN.Allow.CIDRs...)
+	}
+}
+
+func (l *Loader) mergeFileConnectivity(dst *AppConfig, src *FileConfig) {
+	if src.Connectivity == nil {
+		return
+	}
+	if src.Connectivity.Profile != "" {
+		dst.Connectivity.Profile = src.Connectivity.Profile
+	}
+	if src.Connectivity.AllowLocalHTTP != nil {
+		dst.Connectivity.AllowLocalHTTP = *src.Connectivity.AllowLocalHTTP
+	}
+	if len(src.Connectivity.PublishedEndpoints) > 0 {
+		dst.Connectivity.PublishedEndpoints = clonePublishedEndpointConfigs(src.Connectivity.PublishedEndpoints)
 	}
 }
 

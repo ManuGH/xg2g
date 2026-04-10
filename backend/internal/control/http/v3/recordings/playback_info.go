@@ -119,7 +119,20 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 				Cause:   err,
 			}
 		}
-		truthResolution := resolveLiveTruthState(subjectID, s.deps.ChannelTruthSource())
+		source := s.deps.ChannelTruthSource()
+		truthResolution := resolveLiveTruthState(subjectID, source)
+		if !truthResolution.Verified() && truthResolution.Reason == "missing_scan_truth" {
+			if probeSource, ok := source.(channelTruthProbeSource); ok {
+				probedCap, found, probeErr := probeSource.ProbeCapability(ctx, subjectID)
+				if probeErr != nil {
+					log.L().Warn().
+						Err(probeErr).
+						Str("serviceRef", subjectID).
+						Msg("live playback truth probe failed")
+				}
+				truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found)
+			}
+		}
 		if !truthResolution.Verified() {
 			return "", playback.MediaTruth{}, playbackInfoErrorForLiveTruth(truthResolution)
 		}

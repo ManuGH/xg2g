@@ -109,6 +109,107 @@ func (m *Manager) GetCapability(serviceRef string) (Capability, bool) {
 	return cap, true
 }
 
+func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capability, bool, error) {
+	if m == nil {
+		return Capability{}, false, fmt.Errorf("scan: manager unavailable")
+	}
+
+	serviceRef = normalize.ServiceRef(serviceRef)
+	if serviceRef == "" {
+		return Capability{}, false, fmt.Errorf("scan: service ref required")
+	}
+	if err := m.waitForPlaybackIdle(ctx); err != nil {
+		return Capability{}, false, err
+	}
+
+	channel, found, err := m.lookupChannel(serviceRef)
+	if err != nil {
+		return Capability{}, false, err
+	}
+	if !found {
+		return Capability{}, false, nil
+	}
+
+	existingCap, existingFound := m.store.Get(serviceRef)
+	probeURL := channel.URL
+	resolved := false
+
+	if m.e2Client != nil {
+		resCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		freshURL, err := m.e2Client.ResolveStreamURL(resCtx, serviceRef)
+		cancel()
+
+		if err == nil && freshURL != "" {
+			probeURL = freshURL
+			resolved = true
+			log.L().Debug().Str("sref", serviceRef).Str("fresh_url", freshURL).Msg("scan: resolved fresh stream url for targeted probe")
+		} else {
+			log.L().Warn().Err(err).Str("sref", serviceRef).Msg("scan: failed to resolve fresh url for targeted probe, falling back")
+		}
+	}
+
+	if !resolved {
+		resCtx, cancel := context.WithTimeout(ctx, resolveM3UTimeout)
+		resolvedURL, err := resolveStreamURL(resCtx, channel.URL)
+		cancel()
+		if err == nil && resolvedURL != "" {
+			probeURL = resolvedURL
+		}
+	}
+
+	log.L().Info().Str("sref", serviceRef).Msg("scan: probing targeted channel capability")
+	res, successfulProbeURL, err := m.probeWithFallbacks(ctx, serviceRef, channel.URL, probeURL, infra.ProbeOptions{}, defaultProbeTimeout)
+	if shouldAttemptExtendedRetry(existingCap, existingFound, res, err) {
+		retryInitialURL := successfulProbeURL
+		if strings.TrimSpace(retryInitialURL) == "" {
+			retryInitialURL = probeURL
+		}
+		log.L().Info().
+			Str("sref", serviceRef).
+			Dur("timeout", extendedProbeTimeout).
+			Dur("analyzeduration", extendedProbeAnalyzeDuration).
+			Int64("probesize_bytes", extendedProbeSizeBytes).
+			Msg("scan: targeted probe retrying with extended ffprobe budget")
+
+		retryRes, _, retryErr := m.probeWithFallbacks(
+			ctx,
+			serviceRef,
+			channel.URL,
+			retryInitialURL,
+			infra.ProbeOptions{
+				AnalyzeDuration: extendedProbeAnalyzeDuration,
+				ProbeSizeBytes:  extendedProbeSizeBytes,
+			},
+			extendedProbeTimeout,
+		)
+		retryBase := res
+		if retryBase == nil && existingFound {
+			retryBase = streamInfoFromCapability(existingCap)
+		}
+		switch {
+		case retryErr != nil:
+			log.L().Warn().Err(retryErr).Str("sref", serviceRef).Msg("scan: targeted extended probe retry failed")
+		case isRicherMediaTruth(retryBase, retryRes):
+			res = retryRes
+			err = nil
+			log.L().Info().Str("sref", serviceRef).Msg("scan: targeted extended probe retry enriched media truth")
+		default:
+			log.L().Warn().Str("sref", serviceRef).Msg("scan: targeted extended probe returned conflicting or non-additive media truth; keeping original result")
+		}
+	}
+
+	now := time.Now()
+	if err != nil {
+		cap := m.mergeFailedAttempt(existingCap, existingFound, serviceRef, channel.Name, now, err)
+		m.store.Update(cap)
+		return cap, true, err
+	}
+
+	cap := m.capabilityFromProbe(existingCap, existingFound, serviceRef, channel.Name, now, res)
+	m.store.Update(cap)
+	return cap, true, nil
+}
+
 func (m *Manager) GetStatus() ScanStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -765,6 +866,20 @@ func (m *Manager) shouldProbeService(serviceRef string, now time.Time) bool {
 		return true
 	}
 	return cap.RetryDue(now)
+}
+
+func (m *Manager) lookupChannel(serviceRef string) (m3u.Channel, bool, error) {
+	content, err := os.ReadFile(m.m3uPath)
+	if err != nil {
+		return m3u.Channel{}, false, err
+	}
+	channels := m3u.Parse(string(content))
+	for _, ch := range channels {
+		if ExtractServiceRef(ch.URL) == serviceRef {
+			return ch, true, nil
+		}
+	}
+	return m3u.Channel{}, false, nil
 }
 
 func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRef string, channelName string, now time.Time, info *vod.StreamInfo) Capability {

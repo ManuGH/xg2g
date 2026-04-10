@@ -7,6 +7,7 @@ import { setClientAuthToken } from '../services/clientWrapper';
 
 const {
   getSystemConfig,
+  getSystemConnectivity,
   getSystemScanStatus,
   triggerSystemScan,
   confirm,
@@ -14,6 +15,7 @@ const {
   loadChannels,
 } = vi.hoisted(() => ({
   getSystemConfig: vi.fn(),
+  getSystemConnectivity: vi.fn(),
   getSystemScanStatus: vi.fn(),
   triggerSystemScan: vi.fn(),
   confirm: vi.fn(),
@@ -23,6 +25,7 @@ const {
 
 vi.mock('../client-ts', () => ({
   getSystemConfig,
+  getSystemConnectivity,
   getSystemScanStatus,
   triggerSystemScan,
 }));
@@ -53,6 +56,45 @@ vi.mock('./Config', () => ({
 }));
 
 import Settings from './Settings';
+
+function createConnectivityContract(overrides: Record<string, unknown> = {}) {
+  return {
+    profile: 'lan',
+    public: false,
+    status: 'ok',
+    startupFatal: false,
+    readinessBlocked: false,
+    pairingBlocked: false,
+    webBlocked: false,
+    allowLocalHTTP: false,
+    tlsEnabled: false,
+    forceHTTPS: false,
+    allowedOrigins: [],
+    trustedProxies: [],
+    publishedEndpoints: [],
+    selections: {
+      web: {},
+      webPublic: {},
+      native: {},
+      nativePublic: {},
+      pairing: {},
+      pairingPublic: {},
+      streaming: {},
+    },
+    findings: [],
+    request: {
+      remoteIsLoopback: true,
+      tlsDirect: false,
+      trustedProxyMatch: false,
+      effectiveHttps: false,
+      schemeSource: 'direct',
+      acceptedProxyHeaders: [],
+      originAllowed: false,
+      originAllowAll: false,
+    },
+    ...overrides,
+  };
+}
 
 function renderWithQueryClient() {
   const queryClient = new QueryClient({
@@ -91,6 +133,9 @@ describe('Settings', () => {
         streaming: { deliveryPolicy: 'universal' },
       },
     });
+    getSystemConnectivity.mockResolvedValue({
+      data: createConnectivityContract(),
+    });
     getSystemScanStatus.mockResolvedValue({
       data: {
         state: 'idle',
@@ -116,6 +161,9 @@ describe('Settings', () => {
         openWebIF: { baseUrl: 'http://receiver.local' },
         streaming: { deliveryPolicy: 'universal' },
       },
+    });
+    getSystemConnectivity.mockResolvedValue({
+      data: createConnectivityContract(),
     });
     getSystemScanStatus.mockImplementation(async () => ({
       data: {
@@ -151,6 +199,9 @@ describe('Settings', () => {
         streaming: { deliveryPolicy: 'universal' },
       },
     });
+    getSystemConnectivity.mockResolvedValue({
+      data: createConnectivityContract(),
+    });
     getSystemScanStatus.mockResolvedValue({
       data: {
         state: 'idle',
@@ -174,5 +225,158 @@ describe('Settings', () => {
 
     expect(screen.getByDisplayValue('Wohnzimmer')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 4, name: 'Haushalt' })).toBeInTheDocument();
+  });
+
+  it('disables the Android TV handoff when public connectivity has no native endpoint', async () => {
+    getSystemConfig.mockResolvedValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        connectivity: {
+          profile: 'reverse_proxy',
+          allowLocalHTTP: false,
+          publishedEndpoints: [
+            {
+              url: 'https://tv.example.net',
+              kind: 'public_https',
+              priority: 10,
+              tlsMode: 'required',
+              allowPairing: true,
+              allowStreaming: true,
+              allowWeb: true,
+              allowNative: false,
+              advertiseReason: 'public reverse proxy',
+              source: 'config',
+            },
+          ],
+        },
+        streaming: { deliveryPolicy: 'universal' },
+      },
+    });
+    getSystemConnectivity.mockResolvedValue({
+      data: createConnectivityContract({
+        profile: 'reverse_proxy',
+        public: true,
+        status: 'degraded',
+        pairingBlocked: true,
+        publishedEndpoints: [
+          {
+            url: 'https://tv.example.net',
+            kind: 'public_https',
+            priority: 10,
+            tlsMode: 'required',
+            allowPairing: true,
+            allowStreaming: true,
+            allowWeb: true,
+            allowNative: false,
+            advertiseReason: 'public reverse proxy',
+            source: 'config',
+          },
+        ],
+        selections: {
+          web: {
+            endpoint: {
+              url: 'https://tv.example.net',
+              kind: 'public_https',
+              priority: 10,
+              tlsMode: 'required',
+              allowPairing: true,
+              allowStreaming: true,
+              allowWeb: true,
+              allowNative: false,
+              advertiseReason: 'public reverse proxy',
+              source: 'config',
+            },
+            reason: 'highest-priority endpoint with allow_web=true',
+          },
+          webPublic: {
+            endpoint: {
+              url: 'https://tv.example.net',
+              kind: 'public_https',
+              priority: 10,
+              tlsMode: 'required',
+              allowPairing: true,
+              allowStreaming: true,
+              allowWeb: true,
+              allowNative: false,
+              advertiseReason: 'public reverse proxy',
+              source: 'config',
+            },
+            reason: 'highest-priority public_https endpoint with allow_web=true',
+          },
+          native: {},
+          nativePublic: {},
+          pairing: {
+            endpoint: {
+              url: 'https://tv.example.net',
+              kind: 'public_https',
+              priority: 10,
+              tlsMode: 'required',
+              allowPairing: true,
+              allowStreaming: true,
+              allowWeb: true,
+              allowNative: false,
+              advertiseReason: 'public reverse proxy',
+              source: 'config',
+            },
+            reason: 'highest-priority endpoint with allow_pairing=true',
+          },
+          pairingPublic: {
+            endpoint: {
+              url: 'https://tv.example.net',
+              kind: 'public_https',
+              priority: 10,
+              tlsMode: 'required',
+              allowPairing: true,
+              allowStreaming: true,
+              allowWeb: true,
+              allowNative: false,
+              advertiseReason: 'public reverse proxy',
+              source: 'config',
+            },
+            reason: 'highest-priority public_https endpoint with allow_pairing=true',
+          },
+          streaming: {
+            endpoint: {
+              url: 'https://tv.example.net',
+              kind: 'public_https',
+              priority: 10,
+              tlsMode: 'required',
+              allowPairing: true,
+              allowStreaming: true,
+              allowWeb: true,
+              allowNative: false,
+              advertiseReason: 'public reverse proxy',
+              source: 'config',
+            },
+            reason: 'highest-priority endpoint with allow_streaming=true',
+          },
+        },
+        findings: [
+          {
+            code: 'connectivity.public.native_endpoint_missing',
+            severity: 'degraded',
+            scopes: ['pairing'],
+            field: 'Connectivity.PublishedEndpoints',
+            summary: 'no public native endpoint is published',
+            detail: 'Native clients cannot be handed an externally valid origin because no public_https endpoint allows native access.',
+          },
+        ],
+      }),
+    });
+    getSystemScanStatus.mockResolvedValue({
+      data: {
+        state: 'idle',
+        scannedChannels: 0,
+        totalChannels: 20,
+        updatedCount: 0,
+      },
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText('No published native endpoint')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open in xg2g App' })).toBeDisabled();
+    expect(screen.queryByRole('link', { name: 'Open in xg2g App' })).not.toBeInTheDocument();
+    expect(screen.getByText('Native clients cannot be handed an externally valid origin because no public_https endpoint allows native access.')).toBeInTheDocument();
   });
 });

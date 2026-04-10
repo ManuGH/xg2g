@@ -531,6 +531,109 @@ func TestService_ResolvePlaybackInfo_LiveMissingScanTruthFailsClosed(t *testing.
 	assert.Equal(t, 1, truthSource.calls)
 }
 
+func TestService_ResolvePlaybackInfo_LiveMissingScanTruthUsesTargetedProbe(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+
+	capability := scan.Capability{
+		ServiceRef: "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		State:      scan.CapabilityStateOK,
+		Container:  "ts",
+		VideoCodec: "h264",
+		AudioCodec: "aac",
+		Codec:      "h264",
+		Resolution: "1920x1080",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+	}
+
+	truthSource := &stubTruthSource{}
+	truthSource.getCapabilityFn = func(serviceRef string) (scan.Capability, bool) {
+		if truthSource.probeCalls == 0 {
+			return scan.Capability{}, false
+		}
+		return capability, true
+	}
+	truthSource.probeCapabilityFn = func(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+		return capability, true, nil
+	}
+
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-targeted-probe",
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "ts", res.Truth.Container)
+	assert.Equal(t, "h264", res.Truth.VideoCodec)
+	assert.Equal(t, "aac", res.Truth.AudioCodec)
+	assert.Equal(t, 1, truthSource.calls)
+	assert.Equal(t, 1, truthSource.probeCalls)
+	assert.Equal(t, "1:0:1:2B66:3F3:1:C00000:0:0:0:", truthSource.lastProbeRef)
+}
+
+func TestService_ResolvePlaybackInfo_LiveTargetedProbeFailureStillFailsClosed(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return scan.Capability{}, false
+		},
+		probeCapabilityFn: func(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+			return scan.Capability{
+				ServiceRef:    serviceRef,
+				State:         scan.CapabilityStateFailed,
+				FailureReason: "ffprobe failed: signal: killed",
+			}, true, errors.New("ffprobe failed: signal: killed")
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	_, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-targeted-probe-fail",
+	})
+	require.NotNil(t, err)
+	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
+	assert.Equal(t, "failed", err.TruthState)
+	assert.Equal(t, "failed_scan_truth", err.TruthReason)
+	assert.Contains(t, err.ProblemFlags, "failed_scan_truth")
+	assert.Equal(t, 1, truthSource.probeCalls)
+}
+
 func TestService_ResolvePlaybackInfo_LiveIncompleteScanTruthFailsClosed(t *testing.T) {
 	recSvc := &stubRecordingsService{
 		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {

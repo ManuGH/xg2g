@@ -18,26 +18,34 @@ internal class GuideRepository(
         bouquetName: String,
         knownBouquets: List<GuideBouquet>? = null
     ): GuideContent = coroutineScope {
-        val currentEpochSec = Instant.now().epochSecond
-        val timelineWindow = buildGuideTimelineWindow(currentEpochSec)
-        val bouquets = knownBouquets ?: apiClient.fetchBouquets(authToken)
+        val deviceEpochSec = Instant.now().epochSecond
+        val bouquetsDeferred = async {
+            knownBouquets ?: apiClient.fetchBouquets(authToken)
+        }
+        val health = runCatching { apiClient.fetchHealthStatus(authToken) }.getOrNull()
+        val referenceEpochSec = health?.serverTimeEpochSec ?: deviceEpochSec
+        val timelineWindow = buildGuideTimelineWindow(referenceEpochSec)
+        val bouquets = bouquetsDeferred.await()
         val selectedBouquet = when {
             bouquetName.isNotBlank() -> bouquetName
             bouquets.isNotEmpty() -> bouquets.first().name
             else -> ""
         }
-        val healthDeferred = async {
-            runCatching { apiClient.fetchHealthStatus(authToken) }.getOrNull()
+        val channelsDeferred = async {
+            apiClient.fetchChannels(
+                authToken = authToken,
+                bouquetName = selectedBouquet.ifBlank { null }
+            )
         }
-        val channels = apiClient.fetchChannels(
-            authToken = authToken,
-            bouquetName = selectedBouquet.ifBlank { null }
-        )
-        val scheduleByServiceRef = apiClient.fetchEpgWindow(
-            authToken = authToken,
-            bouquetName = selectedBouquet.ifBlank { null },
-            timelineWindow = timelineWindow
-        )
+        val scheduleDeferred = async {
+            apiClient.fetchEpgWindow(
+                authToken = authToken,
+                bouquetName = selectedBouquet.ifBlank { null },
+                timelineWindow = timelineWindow
+            )
+        }
+        val channels = channelsDeferred.await()
+        val scheduleByServiceRef = scheduleDeferred.await()
 
         GuideContent(
             bouquets = bouquets,
@@ -46,15 +54,17 @@ internal class GuideRepository(
                 val schedule = scheduleByServiceRef[canonicalGuideServiceRef(channel.serviceRef)]
                     .orEmpty()
                     .filter { it.overlaps(timelineWindow) }
-                val entry = deriveGuideNowNext(schedule, currentEpochSec)
+                val entry = deriveGuideNowNext(schedule, referenceEpochSec)
                 channel.copy(
                     now = entry.first,
                     next = entry.second,
                     schedule = schedule
                 )
             },
-            health = healthDeferred.await(),
-            timelineWindow = timelineWindow
+            health = health,
+            timelineWindow = timelineWindow,
+            referenceEpochSec = referenceEpochSec,
+            displayZoneOffsetSeconds = health?.serverTimeOffsetSeconds
         )
     }
 }

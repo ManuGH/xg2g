@@ -4,6 +4,7 @@ import type { Service, Bouquet } from '../client-ts';
 
 export interface AuthState {
   token: string | null;
+  hasServerSession?: boolean;
   isAuthenticated: boolean;
   isReady?: boolean;
 }
@@ -36,6 +37,7 @@ export interface AppState {
 export interface AppActions {
   // Authentication
   setToken: (token: string) => void;
+  setServerSessionAuthenticated: (authenticated: boolean) => void;
 
   // Channel Operations
   setBouquets: (bouquets: Bouquet[]) => void;

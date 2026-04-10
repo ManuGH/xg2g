@@ -11,6 +11,7 @@ import (
 
 const (
 	schemaVersion = 5 // Includes persisted media truth for live decision reuse.
+	SchemaVersion = schemaVersion
 )
 
 // SqliteStore implements Capability storage using SQLite.

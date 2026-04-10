@@ -9,7 +9,9 @@ internal data class GuideProgram(
     val title: String,
     val startEpochSec: Long,
     val endEpochSec: Long,
-    val description: String? = null
+    val description: String? = null,
+    val startXmltv: String? = null,
+    val endXmltv: String? = null
 )
 
 internal data class GuideChannel(
@@ -37,7 +39,9 @@ internal data class GuideChannel(
 internal data class GuideHealthStatus(
     val receiverHealthy: Boolean,
     val epgHealthy: Boolean,
-    val missingChannels: Int? = null
+    val missingChannels: Int? = null,
+    val serverTimeEpochSec: Long? = null,
+    val serverTimeOffsetSeconds: Int? = null
 )
 
 internal data class GuideContent(
@@ -45,7 +49,9 @@ internal data class GuideContent(
     val selectedBouquet: String,
     val channels: List<GuideChannel>,
     val health: GuideHealthStatus? = null,
-    val timelineWindow: GuideTimelineWindow? = null
+    val timelineWindow: GuideTimelineWindow? = null,
+    val referenceEpochSec: Long,
+    val displayZoneOffsetSeconds: Int? = null
 )
 
 internal sealed interface GuideScreenState {
@@ -63,6 +69,8 @@ internal sealed interface GuideScreenState {
         val selectedChannelRef: String?,
         val health: GuideHealthStatus? = null,
         val timelineWindow: GuideTimelineWindow? = null,
+        val referenceEpochSec: Long,
+        val displayZoneOffsetSeconds: Int? = null,
         val isRefreshing: Boolean = false
     ) : GuideScreenState
 
@@ -71,7 +79,9 @@ internal sealed interface GuideScreenState {
         val bouquets: List<GuideBouquet>,
         val selectedBouquet: String,
         val health: GuideHealthStatus? = null,
-        val timelineWindow: GuideTimelineWindow? = null
+        val timelineWindow: GuideTimelineWindow? = null,
+        val referenceEpochSec: Long,
+        val displayZoneOffsetSeconds: Int? = null
     ) : GuideScreenState
 
     data class Error(

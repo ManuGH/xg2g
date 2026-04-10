@@ -39,6 +39,7 @@ type FileConfig struct {
 	API                   APIConfig               `yaml:"api"`
 	Server                *ServerFileConfig       `yaml:"server,omitempty"`
 	Network               NetworkFileConfig       `yaml:"network,omitempty"`
+	Connectivity          *ConnectivityFileConfig `yaml:"connectivity,omitempty"`
 	Metrics               MetricsConfig           `yaml:"metrics,omitempty"`
 	Picons                PiconsConfig            `yaml:"picons,omitempty"`
 	HDHR                  HDHRConfig              `yaml:"hdhr,omitempty"`
@@ -221,6 +222,37 @@ type LANFileConfig struct {
 // LANAllowlist defines LAN CIDR allowlist rules.
 type LANAllowlist struct {
 	CIDRs []string `yaml:"cidrs,omitempty"`
+}
+
+// ConnectivityFileConfig defines operator-published endpoint truth for native
+// and browser clients in YAML/env-backed config surfaces.
+type ConnectivityFileConfig struct {
+	Profile            string                    `yaml:"profile,omitempty" json:"profile,omitempty"`
+	AllowLocalHTTP     *bool                     `yaml:"allowLocalHTTP,omitempty" json:"allowLocalHTTP,omitempty"`
+	PublishedEndpoints []PublishedEndpointConfig `yaml:"publishedEndpoints,omitempty" json:"publishedEndpoints,omitempty"`
+}
+
+// ConnectivityConfig holds runtime-published endpoint truth.
+type ConnectivityConfig struct {
+	Profile            string                    `yaml:"profile" json:"profile"`
+	AllowLocalHTTP     bool                      `yaml:"allowLocalHTTP" json:"allowLocalHTTP"`
+	PublishedEndpoints []PublishedEndpointConfig `yaml:"publishedEndpoints" json:"publishedEndpoints"`
+}
+
+// PublishedEndpointConfig is the config/runtime representation of one
+// operator-published connectivity candidate. The domain package performs the
+// final normalization and policy validation.
+type PublishedEndpointConfig struct {
+	URL             string `yaml:"url,omitempty" json:"url"`
+	Kind            string `yaml:"kind,omitempty" json:"kind"`
+	Priority        int    `yaml:"priority,omitempty" json:"priority"`
+	TLSMode         string `yaml:"tlsMode,omitempty" json:"tlsMode"`
+	AllowPairing    bool   `yaml:"allowPairing,omitempty" json:"allowPairing"`
+	AllowStreaming  bool   `yaml:"allowStreaming,omitempty" json:"allowStreaming"`
+	AllowWeb        bool   `yaml:"allowWeb,omitempty" json:"allowWeb"`
+	AllowNative     bool   `yaml:"allowNative,omitempty" json:"allowNative"`
+	AdvertiseReason string `yaml:"advertiseReason,omitempty" json:"advertiseReason"`
+	Source          string `yaml:"source,omitempty" json:"source"`
 }
 
 // MetricsConfig holds Prometheus metrics configuration
@@ -528,13 +560,15 @@ type AppConfig struct {
 	FFmpeg FFmpegConfig
 
 	// Global / Feature Flags
-	RateLimitEnabled   bool // Enable rate limiting
-	RateLimitGlobal    int  // Requests per second (global)
-	RateLimitAuth      int  // Requests per minute (auth)
-	RateLimitBurst     int
-	RateLimitWhitelist []string
-	AllowedOrigins     []string
-	Network            NetworkConfig
+	RateLimitEnabled     bool // Enable rate limiting
+	RateLimitGlobal      int  // Requests per second (global)
+	RateLimitAuth        int  // Requests per minute (auth)
+	RateLimitBurst       int
+	RateLimitWhitelist   []string
+	AllowedOrigins       []string
+	Network              NetworkConfig
+	Connectivity         ConnectivityConfig
+	connectivityParseErr error
 
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
 

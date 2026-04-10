@@ -19,7 +19,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
+	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
+	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
@@ -33,6 +35,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -105,9 +108,13 @@ type Server struct {
 	liveDecisionSigningKey []byte
 	liveDecisionTTL        time.Duration
 	playbackSLO            *playbackSessionTracker
+	exposureLimiter        *exposureRateLimiter
 	intentService          *v3intents.Service
+	pairingV3Service       *v3pairing.Service
+	deviceAuthV3Service    *v3deviceauth.Service
 	recordingsV3Service    *v3recordings.Service
 	sessionsV3Service      *v3sessions.Service
+	deviceAuthStateStore   deviceauthstore.StateStore
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -171,6 +178,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		liveDecisionSigningKey: signingKey,
 		liveDecisionTTL:        defaultLivePlaybackDecisionTTL,
 		playbackSLO:            newPlaybackSessionTracker(defaultPlaybackSLOSessionTTL),
+		exposureLimiter:        newExposureRateLimiter(),
 		authSessionStore:       ctrlauth.NewInMemorySessionTokenStore(),
 		authSessionTTL:         defaultAuthSessionTTL,
 		householdUnlockStore:   household.NewInMemoryUnlockStore(),
@@ -451,6 +459,7 @@ func (s *Server) SetPreflightCheck(fn PreflightProvider) {
 type Dependencies struct {
 	Bus                bus.Bus
 	Store              SessionStateStore
+	DeviceAuthStore    deviceauthstore.StateStore
 	ResumeStore        resume.Store
 	Scan               ChannelScanner
 	DecisionAudit      decisionaudit.EventSink
@@ -489,6 +498,18 @@ func (s *Server) SetDependencies(deps Dependencies) {
 		s.v3Store = deps.Store
 	} else {
 		s.v3Store = nil
+	}
+
+	if !isNil(deps.DeviceAuthStore) {
+		s.deviceAuthStateStore = deps.DeviceAuthStore
+		s.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
+			StateStore:                 deps.DeviceAuthStore,
+			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
+		})
+		s.deviceAuthV3Service = v3deviceauth.NewService(v3deviceauth.Deps{
+			StateStore:                 deps.DeviceAuthStore,
+			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
+		})
 	}
 
 	if !isNil(deps.ResumeStore) {

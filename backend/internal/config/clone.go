@@ -14,6 +14,7 @@ func Clone(in AppConfig) AppConfig {
 	out.APITokenScopes = cloneStringSlice(in.APITokenScopes)
 	out.PlaybackDecisionPreviousKeys = cloneStringSlice(in.PlaybackDecisionPreviousKeys)
 	out.RecordingPathMappings = cloneRecordingPathMappings(in.RecordingPathMappings)
+	out.Connectivity.PublishedEndpoints = clonePublishedEndpointConfigs(in.Connectivity.PublishedEndpoints)
 	out.Monetization.RequiredScopes = cloneStringSlice(in.Monetization.RequiredScopes)
 	out.Monetization.ProductMappings = cloneMonetizationProductMappings(in.Monetization.ProductMappings)
 
@@ -101,6 +102,15 @@ func cloneRecordingPathMappings(in []RecordingPathMapping) []RecordingPathMappin
 		return nil
 	}
 	out := make([]RecordingPathMapping, len(in))
+	copy(out, in)
+	return out
+}
+
+func clonePublishedEndpointConfigs(in []PublishedEndpointConfig) []PublishedEndpointConfig {
+	if in == nil {
+		return nil
+	}
+	out := make([]PublishedEndpointConfig, len(in))
 	copy(out, in)
 	return out
 }

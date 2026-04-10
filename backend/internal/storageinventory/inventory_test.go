@@ -45,3 +45,28 @@ func TestInventoryIncludesSeparatedHLSArtifactClasses(t *testing.T) {
 		t.Fatalf("recording_artifacts_root path = %q", recordingsPath)
 	}
 }
+
+func TestBackupArtifactsIncludeDeviceAuthState(t *testing.T) {
+	dataDir := t.TempDir()
+	storePath := filepath.Join(dataDir, "store")
+
+	artifacts := BackupArtifacts(RuntimePaths{
+		DataDir:      dataDir,
+		StorePath:    storePath,
+		StoreBackend: "sqlite",
+	})
+
+	for _, artifact := range artifacts {
+		if artifact.ID == "deviceauth" {
+			if artifact.Path != filepath.Join(storePath, "deviceauth.sqlite") {
+				t.Fatalf("deviceauth backup path = %q", artifact.Path)
+			}
+			if artifact.Class != ClassPersistent || artifact.Verify != VerifySQLite || !artifact.Backup {
+				t.Fatalf("unexpected deviceauth artifact: %+v", artifact)
+			}
+			return
+		}
+	}
+
+	t.Fatalf("expected deviceauth backup artifact, got %+v", artifacts)
+}

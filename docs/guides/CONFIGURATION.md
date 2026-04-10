@@ -64,6 +64,14 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 | `breaker.min_attempts` | - | `10` | Active | Advanced |
 | `breaker.window` | - | `5m` | Active | Advanced |
 
+### connectivity
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `connectivity.allowLocalHTTP` | `XG2G_CONNECTIVITY_ALLOW_LOCAL_HTTP` | `false` | Active | Advanced |
+| `connectivity.profile` | `XG2G_CONNECTIVITY_PROFILE` | `lan` | Active | Advanced |
+| `connectivity.publishedEndpoints` | `XG2G_PUBLISHED_ENDPOINTS` | `[]` | Active | Advanced |
+
 ### engine
 
 | Path | Env | Default | Status | Profile |
@@ -316,6 +324,51 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `vod.stallTimeout` | - | `1m` | Active | Advanced |
 
 <!-- END GENERATED CONFIG OPTIONS -->
+
+## Published Endpoint Example
+
+For reverse-proxy, tunnel, VPS, and mixed LAN/public installs, publish the
+backend-truth endpoints explicitly instead of relying on client-side guessing:
+
+```yaml
+trustedProxies: "10.0.0.0/8,192.168.0.0/16"
+tls:
+  forceHTTPS: true
+connectivity:
+  profile: reverse_proxy
+  allowLocalHTTP: false
+  publishedEndpoints:
+    - url: "https://tv.example.net"
+      kind: public_https
+      priority: 10
+      allowPairing: true
+      allowStreaming: true
+      allowWeb: true
+      allowNative: true
+      advertiseReason: "public reverse proxy"
+    - url: "https://xg2g.lan.example"
+      kind: local_https
+      priority: 20
+      allowPairing: true
+      allowStreaming: true
+      allowWeb: true
+      allowNative: true
+      advertiseReason: "split-dns lan tls"
+```
+
+Clients receive this ordered list from the backend during pairing/device session
+flows and the WebUI can reuse it for Android launch setup.
+
+`connectivity.profile` is a policy bundle, not a second source of truth:
+
+- `lan`: local-only or same-network setup
+- `reverse_proxy`: public HTTPS via Caddy/Nginx/Traefik or similar
+- `tunnel`: public HTTPS via Cloudflare Tunnel or similar
+- `vps`: direct public TLS on xg2g itself
+
+Use `GET /api/v3/system/connectivity` after rollout to verify the effective
+profile, blocking findings, selected public/native endpoints, and current
+forwarded-header trust evaluation.
 
 ## Summary
 

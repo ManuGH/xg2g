@@ -13,6 +13,7 @@ import (
 
 const (
 	auditSchemaVersion       = 4
+	SQLiteAuditSchemaVersion = auditSchemaVersion
 	historyRetention         = 30 * 24 * time.Hour
 	historyEntriesPerKey     = 20
 	defaultUnknownEventValue = "unknown"

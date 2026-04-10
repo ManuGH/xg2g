@@ -24,16 +24,72 @@ To protect against Cross-Site Request Forgery (CSRF) while maintaining API usabi
   plain HTTP for smoke tests and one-box development.
 - Any browser-facing deployment reached from another device or hostname must be
   served over HTTPS, either directly in xg2g or through a trusted HTTPS proxy.
+- Public/native reachability candidates for Android, TV, and browser-adjacent
+  bootstrap flows must come from explicit `connectivity.publishedEndpoints`
+  configuration. Clients do not invent origins from forwarded headers or Docker
+  topology.
+- Public deployment contract evaluation is fail-closed:
+  - fatal findings fail startup
+  - degraded public findings block the affected runtime flow (`pairing` or `web`)
+  - warnings stay visible through diagnostics without silently changing behavior
 - When xg2g is intentionally deployed behind a trusted HTTPS proxy, the backend
   hop from proxy to xg2g may remain plain HTTP on an internal network. Startup
   cleartext-token warnings are therefore suppressed when `trustedProxies` is
   configured. Direct cleartext access to the xg2g listener is still an operator
   responsibility and should remain LAN-scoped or otherwise blocked.
+- `local_http` published endpoints remain opt-in only via
+  `connectivity.allowLocalHTTP` / `XG2G_CONNECTIVITY_ALLOW_LOCAL_HTTP` and are
+  never advertised for browser cookie bootstrap.
+- `trustedProxies` must never be world-open in public profiles. `0.0.0.0/0`
+  and `::/0` are rejected by the contract because they let untrusted clients
+  spoof HTTPS-offload headers.
 - If xg2g sees a non-loopback browser request as plain HTTP,
   `POST /api/v3/auth/session` fails closed with `400 HTTPS required`. The
   `xg2g_session` cookie is not minted, native HLS media requests to
   `/api/v3/sessions/{id}/hls/*` fail authorization, and Safari/native players
   can collapse into generic playback errors such as `Video Error: 4`.
+
+## Public Deployment Contract
+
+Use `connectivity.profile` to declare which invariants must hold:
+
+- `lan`: no public origin required
+- `reverse_proxy`: public HTTPS must exist and `trustedProxies` is mandatory
+- `tunnel`: public HTTPS must exist and `trustedProxies` is mandatory
+- `vps`: public HTTPS must exist and xg2g must terminate TLS directly
+
+The canonical operator diagnostic for this contract is:
+
+- `GET /api/v3/system/connectivity`
+
+It reports:
+
+- effective profile and severity
+- startup/readiness/pairing/web blocking state
+- trusted proxy configuration
+- selected published endpoints for web/native/pairing
+- request-scoped forwarded-header trust and effective HTTPS truth
+
+## Public Exposure Security Contract
+
+Public reachability also activates an exposure policy model. Every v3 operation
+has an explicit exposure class, auth kind, browser-trust rule, rate-limit class,
+and audit requirement.
+
+Public profiles additionally require:
+
+- no wildcard browser origins
+- published public web origins listed in `allowedOrigins`
+- at least one scoped API token
+- API tokens with at least 32 non-default characters
+- legacy token sources disabled
+- a playback decision secret when public streaming endpoints are published
+- dedicated abuse-control limits and audit events for Pairing and DeviceAuth
+- single-winner replay semantics for pairing exchange, web bootstrap completion, and rotating device grants
+- versioned exposure audit events with trusted-proxy-resolved client IPs
+
+See `docs/ops/PUBLIC_EXPOSURE_SECURITY_CONTRACT.md` for the endpoint exposure
+policy model.
 
 Browser-based clients (integrations) must use the following flow to obtain access to the Data Plane:
 

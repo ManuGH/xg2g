@@ -5,9 +5,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Config, { isConfigured } from './Config';
-import { putSystemConfig, type ConfigUpdate } from '../client-ts';
+import {
+  putSystemConfig,
+  type AppConfig,
+  type ConfigUpdate,
+  type ConnectivityContract,
+} from '../client-ts';
 import {
   useSystemConfig,
+  useSystemConnectivity,
   useSystemScanStatus,
   useTriggerSystemScanMutation,
 } from '../hooks/useServerQueries';
@@ -24,6 +30,43 @@ import { getClientAuthToken, unwrapClientResultOrThrow } from '../services/clien
 import { debugError, formatError } from '../utils/logging';
 import { Button } from './ui';
 import styles from './Settings.module.css';
+
+function resolveAndroidTvBaseUrl(
+  config: AppConfig | null,
+  contract: ConnectivityContract | null,
+): string {
+  const contractNativeUrl = contract?.public
+    ? contract.selections.nativePublic.endpoint?.url
+    : contract?.selections.native.endpoint?.url;
+  if (contractNativeUrl) {
+    try {
+      return new URL('/ui/', contractNativeUrl).toString();
+    } catch {
+      return '';
+    }
+  }
+
+  const profile = config?.connectivity?.profile ?? 'lan';
+  const configuredNativeUrl = config?.connectivity?.publishedEndpoints
+    ?.find((endpoint) => endpoint.allowNative && (profile === 'lan' || endpoint.kind === 'public_https'))
+    ?.url;
+  if (configuredNativeUrl) {
+    try {
+      return new URL('/ui/', configuredNativeUrl).toString();
+    } catch {
+      return '';
+    }
+  }
+
+  if (profile !== 'lan' || contract?.public) {
+    return '';
+  }
+
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  return new URL('/ui/', window.location.origin).toString();
+}
 
 function Settings() {
   const { t } = useTranslation();
@@ -52,6 +95,7 @@ function Settings() {
     data: config = null,
     refetch: refetchConfig,
   } = useSystemConfig();
+  const { data: connectivity = null } = useSystemConnectivity();
   const {
     data: scanStatus = null,
     error: scanStatusError,
@@ -59,11 +103,8 @@ function Settings() {
   } = useSystemScanStatus();
   const triggerScanMutation = useTriggerSystemScanMutation();
   const androidTvBaseUrl = useMemo(() => {
-    if (typeof window === 'undefined') {
-      return '';
-    }
-    return new URL('/ui/', window.location.origin).toString();
-  }, []);
+    return resolveAndroidTvBaseUrl(config, connectivity);
+  }, [config, connectivity]);
   const androidTvLaunchUrl = useMemo(() => {
     if (!androidTvBaseUrl) {
       return '';
@@ -75,6 +116,29 @@ function Settings() {
     }
     return `xg2g://connect?${params.toString()}`;
   }, [androidTvBaseUrl]);
+  const androidTvBlockingFinding = useMemo(() => {
+    if (!connectivity?.pairingBlocked) {
+      return null;
+    }
+    return connectivity.findings.find((finding) => {
+      return (finding.severity === 'fatal' || finding.severity === 'degraded')
+        && finding.scopes.includes('pairing');
+    }) ?? null;
+  }, [connectivity]);
+  const androidTvPublicMode = connectivity?.public ?? ((config?.connectivity?.profile ?? 'lan') !== 'lan');
+  const androidTvBaseUrlDisplay = androidTvBaseUrl || t('settings.androidTv.unavailableValue', {
+    defaultValue: 'No published native endpoint',
+  });
+  const androidTvLaunchDisabled = !androidTvLaunchUrl || Boolean(androidTvBlockingFinding);
+  const androidTvLaunchHint = androidTvBlockingFinding?.detail
+    ?? androidTvBlockingFinding?.summary
+    ?? (
+      !androidTvLaunchUrl && androidTvPublicMode
+        ? t('settings.androidTv.unavailableReason', {
+          defaultValue: 'No published native endpoint is available for the current deployment contract.',
+        })
+        : t('settings.androidTv.hint')
+    );
 
   const configured = isConfigured(config);
   const householdPinConfigured = Boolean(config?.household?.pinConfigured);
@@ -839,19 +903,28 @@ function Settings() {
           <div className={styles.onboardingMeta}>
             <div className={styles.group}>
               <label>{t('settings.androidTv.currentServer')}</label>
-              <code className={`${styles.launchValue} tabular`.trim()}>{androidTvBaseUrl}</code>
+              <code className={`${styles.launchValue} tabular`.trim()}>{androidTvBaseUrlDisplay}</code>
               <span className={styles.hint}>{t('settings.androidTv.currentServerHint')}</span>
             </div>
 
             <div className={styles.onboardingActions}>
-              <Button
-                href={androidTvLaunchUrl}
-                className={styles.onboardingButton}
-                rel="noopener noreferrer"
-              >
-                {t('settings.androidTv.openApp')}
-              </Button>
-              <p className={styles.hint}>{t('settings.androidTv.hint')}</p>
+              {androidTvLaunchDisabled ? (
+                <Button
+                  className={styles.onboardingButton}
+                  disabled
+                >
+                  {t('settings.androidTv.openApp')}
+                </Button>
+              ) : (
+                <Button
+                  href={androidTvLaunchUrl}
+                  className={styles.onboardingButton}
+                  rel="noopener noreferrer"
+                >
+                  {t('settings.androidTv.openApp')}
+                </Button>
+              )}
+              <p className={androidTvLaunchDisabled ? styles.errorInline : styles.hint}>{androidTvLaunchHint}</p>
             </div>
           </div>
         </div>

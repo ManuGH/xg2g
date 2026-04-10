@@ -14,7 +14,7 @@ import (
 // MockPreparingServer handles v3 API calls for the preparing test.
 type MockPreparingServer struct{}
 
-func (m *MockPreparingServer) CreateSession(w http.ResponseWriter, r *http.Request)      {}
+func (m *MockPreparingServer) CreateSession(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) DeleteSession(w http.ResponseWriter, r *http.Request, params v3.DeleteSessionParams) {
 }
 func (m *MockPreparingServer) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {}
@@ -47,6 +47,17 @@ func (m *MockPreparingServer) DeleteRecording(w http.ResponseWriter, r *http.Req
 func (m *MockPreparingServer) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
 func (m *MockPreparingServer) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
+}
+func (m *MockPreparingServer) StartPairing(w http.ResponseWriter, r *http.Request) {}
+func (m *MockPreparingServer) GetPairingStatus(w http.ResponseWriter, r *http.Request, pairingId string) {
+}
+func (m *MockPreparingServer) ApprovePairing(w http.ResponseWriter, r *http.Request, pairingId string) {
+}
+func (m *MockPreparingServer) ExchangePairing(w http.ResponseWriter, r *http.Request, pairingId string) {
+}
+func (m *MockPreparingServer) CreateDeviceSession(w http.ResponseWriter, r *http.Request) {}
+func (m *MockPreparingServer) CreateWebBootstrap(w http.ResponseWriter, r *http.Request)  {}
+func (m *MockPreparingServer) CompleteWebBootstrap(w http.ResponseWriter, r *http.Request, bootstrapId string, params v3.CompleteWebBootstrapParams) {
 }
 func (m *MockPreparingServer) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request, recordingId string) {
 }

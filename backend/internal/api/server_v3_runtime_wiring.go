@@ -38,6 +38,7 @@ func sanitizeV3RuntimeDependencies(deps v3.Dependencies) v3.Dependencies {
 	return v3.Dependencies{
 		Bus:                deps.Bus,
 		Store:              deps.Store,
+		DeviceAuthStore:    deps.DeviceAuthStore,
 		ResumeStore:        deps.ResumeStore,
 		Scan:               deps.Scan,
 		DecisionAudit:      deps.DecisionAudit,
@@ -62,6 +63,7 @@ func (s *Server) syncV3HandlerDependencies() {
 	deps.handler.SetDependencies(v3.Dependencies{
 		Bus:                deps.runtimeDeps.Bus,
 		Store:              deps.runtimeDeps.Store,
+		DeviceAuthStore:    deps.runtimeDeps.DeviceAuthStore,
 		ResumeStore:        deps.runtimeDeps.ResumeStore,
 		Scan:               deps.runtimeDeps.Scan,
 		DecisionAudit:      deps.runtimeDeps.DecisionAudit,

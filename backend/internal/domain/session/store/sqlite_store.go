@@ -14,6 +14,7 @@ import (
 
 const (
 	schemaVersion = 5 // Incremented for playback trace persistence
+	SchemaVersion = schemaVersion
 )
 
 const sessionListOrderBy = " ORDER BY updated_at_ms DESC, created_at_ms DESC, session_id ASC"

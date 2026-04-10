@@ -1,6 +1,10 @@
 package io.github.manugh.xg2g.android.guide
 
 import android.webkit.CookieManager
+import io.github.manugh.xg2g.android.DeviceAuthReenrollRequiredException
+import io.github.manugh.xg2g.android.DeviceAuthRepository
+import io.github.manugh.xg2g.android.DeviceAuthSignInRequiredException
+import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
 import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
@@ -13,10 +17,13 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
+import java.time.OffsetDateTime
 
 internal class GuideApiClient(
     private val baseUrl: String,
-    private val cookieSession: CookieBackedAuthSession = CookieBackedAuthSession(CookieManager.getInstance()),
+    private val deviceAuthRepository: DeviceAuthRepository? = null,
+    private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addNetworkInterceptor { chain ->
             val original = chain.request()
@@ -31,20 +38,30 @@ internal class GuideApiClient(
     suspend fun ensureAuthSession(authToken: String?) {
         withContext(Dispatchers.IO) {
             val sessionUrl = apiUrl("auth", "session")
-            val bearerToken = authToken?.trim().takeIf { !it.isNullOrEmpty() }
-            if (bearerToken == null && cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
+            val repository = deviceAuthRepository
+            if (repository != null) {
+                try {
+                    repository.ensureAuthSession(baseUrl, authToken)
+                    return@withContext
+                } catch (error: DeviceAuthReenrollRequiredException) {
+                    throw GuideAuthRequiredException(410, error.message)
+                } catch (error: DeviceAuthSignInRequiredException) {
+                    throw GuideAuthRequiredException(401, error.message)
+                }
+            }
+
+            if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
                 return@withContext
             }
 
-            val requestBuilder = Request.Builder()
+            val bearerToken = authToken?.trim().takeIf { !it.isNullOrEmpty() } ?: return@withContext
+            val request = Request.Builder()
                 .url(sessionUrl)
+                .header("Authorization", "Bearer $bearerToken")
                 .post(ByteArray(0).toRequestBody(null))
+                .build()
 
-            if (bearerToken != null) {
-                requestBuilder.header("Authorization", "Bearer $bearerToken")
-            }
-
-            execute(requestBuilder.build()).use { response ->
+            execute(request).use { response ->
                 if (!response.isSuccessful) {
                     throw mapHttpException(response.code, response.message, response.body.string())
                 }
@@ -169,18 +186,30 @@ internal class GuideApiClient(
             ?.trim()
             ?.lowercase()
             .orEmpty()
+        val serverTime = root.optString("serverTime")
+            .trim()
+            .takeIf { it.isNotEmpty() }
+            ?.let { raw ->
+                runCatching { OffsetDateTime.parse(raw) }.getOrNull()
+            }
 
         GuideHealthStatus(
             receiverHealthy = receiverStatus == "ok",
             epgHealthy = epgStatus == "ok",
             missingChannels = epgNode
                 ?.takeIf { it.has("missingChannels") }
-                ?.optInt("missingChannels")
+                ?.optInt("missingChannels"),
+            serverTimeEpochSec = serverTime?.toEpochSecond(),
+            serverTimeOffsetSeconds = serverTime?.offset?.totalSeconds
         )
     }
 
     private fun execute(request: Request) =
-        okHttpClient.newCall(request.withSameOriginHeaders(requireBaseUrl())).execute()
+        okHttpClient.newCall(request.withSameOriginHeaders(requireBaseUrl())).execute().also { response ->
+            if (response.code == 401 || response.code == 403) {
+                clearSessionCookie()
+            }
+        }
 
     private fun executeJsonArray(request: Request): List<JSONObject> {
         execute(request).use { response ->
@@ -188,12 +217,27 @@ internal class GuideApiClient(
             if (!response.isSuccessful) {
                 throw mapHttpException(response.code, response.message, body)
             }
-            val array = JSONArray(body.ifBlank { "[]" })
+            val array = decodeJsonArray(body, request.url.encodedPath)
             return buildList {
                 for (index in 0 until array.length()) {
                     array.optJSONObject(index)?.let(::add)
                 }
             }
+        }
+    }
+
+    private fun decodeJsonArray(body: String, path: String): JSONArray {
+        val raw = body.trim()
+        if (raw.isEmpty()) {
+            return JSONArray()
+        }
+
+        return when (val parsed = JSONTokener(raw).nextValue()) {
+            JSONObject.NULL -> JSONArray()
+            is JSONArray -> parsed
+            is JSONObject -> parsed.optJSONArray("items")
+                ?: throw IllegalStateException("Guide API expected array response for $path")
+            else -> throw IllegalStateException("Guide API expected array response for $path")
         }
     }
 
@@ -229,7 +273,9 @@ internal class GuideApiClient(
             title = title,
             startEpochSec = start,
             endEpochSec = end,
-            description = descriptionKey?.let(item::optString)?.trim()?.takeIf { it.isNotEmpty() }
+            description = descriptionKey?.let(item::optString)?.trim()?.takeIf { it.isNotEmpty() },
+            startXmltv = item.optString("startXmltv").trim().takeIf { it.isNotEmpty() },
+            endXmltv = item.optString("endXmltv").trim().takeIf { it.isNotEmpty() }
         )
     }
 
@@ -249,11 +295,26 @@ internal class GuideApiClient(
             ?: throw IllegalStateException("Invalid xg2g server URL: $baseUrl")
 
     private fun mapHttpException(code: Int, message: String, body: String?): Throwable {
+        val problemDetail = extractProblemDetail(body)
         if (code == 401 || code == 403) {
-            return GuideAuthRequiredException(code)
+            return GuideAuthRequiredException(code, problemDetail)
         }
-        val detail = body?.trim().takeIf { !it.isNullOrEmpty() }?.let { " · $it" }.orEmpty()
+        val detail = problemDetail?.let { " · $it" }.orEmpty()
         return IllegalStateException("Guide API $code: $message$detail")
+    }
+
+    private fun clearSessionCookie() {
+        cookieSession.clearSessionCookie(
+            url = apiUrl("auth", "session"),
+            cookieName = SESSION_COOKIE_NAME
+        )
+    }
+
+    private fun extractProblemDetail(body: String?): String? {
+        val raw = body?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching {
+            JSONObject(raw).optString("detail").takeIf { it.isNotBlank() }
+        }.getOrNull() ?: raw
     }
 
     private companion object {
@@ -262,5 +323,6 @@ internal class GuideApiClient(
 }
 
 internal class GuideAuthRequiredException(
-    val statusCode: Int
-) : IllegalStateException("Guide auth required ($statusCode)")
+    val statusCode: Int,
+    detail: String? = null
+) : IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "Guide auth required ($statusCode)")

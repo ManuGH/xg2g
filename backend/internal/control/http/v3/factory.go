@@ -33,6 +33,7 @@ func newHandlerWithMiddlewares(svc *Server, _ config.AppConfig, extra []Middlewa
 		svc.householdMiddleware,
 		svc.ScopeMiddlewareFromContext,
 		svc.authMiddleware,
+		svc.ExposureSecurityMiddleware,
 	}
 	if len(extra) > 0 {
 		// server_gen applies wrapper middlewares in declaration order, where the last

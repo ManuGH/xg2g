@@ -13,6 +13,7 @@ func registerConfigRoutes(register routeRegistrar, handler configRoutes) {
 
 func registerSystemRoutes(register routeRegistrar, handler systemRoutes) {
 	register.add(http.MethodGet, "/errors", "GetErrors", handler.GetErrors)
+	register.add(http.MethodGet, "/system/connectivity", "GetSystemConnectivity", handler.GetSystemConnectivity)
 	register.add(http.MethodGet, "/system/entitlements", "GetSystemEntitlements", handler.GetSystemEntitlements)
 	register.add(http.MethodPost, "/system/entitlements/receipts", "PostSystemEntitlementReceipt", handler.PostSystemEntitlementReceipt)
 	register.add(http.MethodPost, "/system/entitlements/overrides", "PostSystemEntitlementOverride", handler.PostSystemEntitlementOverride)

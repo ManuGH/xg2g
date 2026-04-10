@@ -132,6 +132,75 @@ func TestSystemConfigIncludesMonetizationUnlockState(t *testing.T) {
 	}
 }
 
+func TestSystemConfigSanitizesAdminFieldsForReadScope(t *testing.T) {
+	cfg := config.AppConfig{
+		DataDir:  "/srv/xg2g/data",
+		LogLevel: "debug",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://receiver.local",
+			Username:   "operator",
+			StreamPort: 8001,
+		},
+	}
+
+	server := v3.NewServer(cfg, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/config", nil)
+	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.NewPrincipal("token", "reader", []string{"v3:read"})))
+	w := httptest.NewRecorder()
+
+	server.GetSystemConfig(w, req)
+
+	resp := w.Result()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	_, hasDataDir := body["dataDir"]
+	assert.False(t, hasDataDir, "read scope must not receive dataDir")
+	_, hasLogLevel := body["logLevel"]
+	assert.False(t, hasLogLevel, "read scope must not receive logLevel")
+
+	openWebIF, ok := body["openWebIF"].(map[string]any)
+	require.True(t, ok, "response should include openWebIF")
+	assert.Equal(t, "http://receiver.local", openWebIF["baseUrl"])
+	assert.EqualValues(t, 8001, openWebIF["streamPort"])
+	_, hasUsername := openWebIF["username"]
+	assert.False(t, hasUsername, "read scope must not receive openWebIF.username")
+}
+
+func TestSystemConfigKeepsAdminFieldsForAdminScope(t *testing.T) {
+	cfg := config.AppConfig{
+		DataDir:  "/srv/xg2g/data",
+		LogLevel: "debug",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://receiver.local",
+			Username:   "operator",
+			StreamPort: 8001,
+		},
+	}
+
+	server := v3.NewServer(cfg, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/config", nil)
+	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.NewPrincipal("token", "admin", []string{"v3:admin"})))
+	w := httptest.NewRecorder()
+
+	server.GetSystemConfig(w, req)
+
+	resp := w.Result()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	assert.Equal(t, "/srv/xg2g/data", body["dataDir"])
+	assert.Equal(t, "debug", body["logLevel"])
+
+	openWebIF, ok := body["openWebIF"].(map[string]any)
+	require.True(t, ok, "response should include openWebIF")
+	assert.Equal(t, "operator", openWebIF["username"])
+}
+
 func TestSystemEntitlementsStatusReflectsActiveAndMissingScopes(t *testing.T) {
 	now := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
 	store := entitlements.NewMemoryStore()

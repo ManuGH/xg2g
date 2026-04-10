@@ -11,6 +11,7 @@ import (
 
 const (
 	schemaVersion = 3 // v3 persists fingerprint in resume truth
+	SchemaVersion = schemaVersion
 )
 
 // SqliteStore implements Store using SQLite.

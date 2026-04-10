@@ -3,6 +3,7 @@ package io.github.manugh.xg2g.android.guide
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.ZoneId
 
 class GuideTimelineTest {
 
@@ -55,5 +56,27 @@ class GuideTimelineTest {
         val program = GuideProgram("Film", startEpochSec = 1_000L, endEpochSec = 1_500L)
 
         assertEquals(300L, program.visibleDurationSeconds(window))
+    }
+
+    @Test
+    fun `buildGuideTimelineWindow aligns server reference time`() {
+        val window = buildGuideTimelineWindow(nowEpochSec = 1_775_773_890L)
+
+        assertEquals(1_775_773_800L, window.startEpochSec)
+        assertEquals(1_775_784_600L, window.endEpochSec)
+    }
+
+    @Test
+    fun `programme display time prefers xmltv offset over fallback zone`() {
+        val program = GuideProgram(
+            title = "DST Special",
+            startEpochSec = 1_000L,
+            endEpochSec = 2_000L,
+            startXmltv = "20260329013000 +0100",
+            endXmltv = "20260329033000 +0200"
+        )
+
+        assertEquals("01:30", program.displayStartTime(ZoneId.of("UTC")))
+        assertEquals("03:30", program.displayEndTime(ZoneId.of("UTC")))
     }
 }

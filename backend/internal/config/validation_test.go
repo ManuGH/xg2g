@@ -217,6 +217,152 @@ func TestValidate_OutboundPolicy(t *testing.T) {
 	})
 }
 
+func TestValidate_ConnectivityPublishedEndpoints(t *testing.T) {
+	t.Run("valid public https endpoint", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Connectivity.PublishedEndpoints = []PublishedEndpointConfig{
+			{
+				URL:             "https://public.example",
+				Kind:            "public_https",
+				Priority:        10,
+				AllowPairing:    true,
+				AllowStreaming:  true,
+				AllowWeb:        true,
+				AllowNative:     true,
+				AdvertiseReason: "public reverse proxy",
+			},
+		}
+		if err := Validate(cfg); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+
+	t.Run("local http requires explicit opt in", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Connectivity.PublishedEndpoints = []PublishedEndpointConfig{
+			{
+				URL:             "http://192.168.1.10:8088",
+				Kind:            "local_http",
+				Priority:        20,
+				AllowPairing:    true,
+				AllowStreaming:  true,
+				AllowNative:     true,
+				AdvertiseReason: "lan direct fallback",
+			},
+		}
+		err := Validate(cfg)
+		if err == nil || !strings.Contains(err.Error(), "local_http") {
+			t.Fatalf("expected local_http validation error, got %v", err)
+		}
+	})
+
+	t.Run("reverse proxy profile requires trusted proxies", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Connectivity.Profile = "reverse_proxy"
+		cfg.Connectivity.PublishedEndpoints = []PublishedEndpointConfig{
+			{
+				URL:             "https://public.example",
+				Kind:            "public_https",
+				Priority:        10,
+				AllowPairing:    true,
+				AllowStreaming:  true,
+				AllowWeb:        true,
+				AllowNative:     true,
+				AdvertiseReason: "public reverse proxy",
+			},
+		}
+		err := Validate(cfg)
+		if err == nil || !strings.Contains(err.Error(), "TrustedProxies") {
+			t.Fatalf("expected trustedProxies validation error, got %v", err)
+		}
+	})
+
+	t.Run("vps profile requires tls", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Connectivity.Profile = "vps"
+		cfg.Connectivity.PublishedEndpoints = []PublishedEndpointConfig{
+			{
+				URL:             "https://public.example",
+				Kind:            "public_https",
+				Priority:        10,
+				AllowPairing:    true,
+				AllowStreaming:  true,
+				AllowWeb:        true,
+				AllowNative:     true,
+				AdvertiseReason: "public vps origin",
+			},
+		}
+		err := Validate(cfg)
+		if err == nil || !strings.Contains(err.Error(), "TLSEnabled") {
+			t.Fatalf("expected tls validation error, got %v", err)
+		}
+	})
+}
+
+func TestValidate_PublicExposureSecurityPolicy(t *testing.T) {
+	validPublicSecret := "abcdefghijklmnopqrstuvwxyz0123456789ABCDEF"
+
+	t.Run("public profile rejects wildcard allowed origins and weak secrets", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.TrustedProxies = "127.0.0.1/32"
+		cfg.AllowedOrigins = []string{"*"}
+		cfg.APIToken = "short"
+		cfg.APITokenScopes = []string{"v3:admin"}
+		cfg.PlaybackDecisionSecret = "short"
+		cfg.APIDisableLegacyTokenSources = false
+		cfg.Connectivity.Profile = "reverse_proxy"
+		cfg.Connectivity.PublishedEndpoints = []PublishedEndpointConfig{
+			{
+				URL:             "https://public.example",
+				Kind:            "public_https",
+				Priority:        10,
+				AllowPairing:    true,
+				AllowStreaming:  true,
+				AllowWeb:        true,
+				AllowNative:     true,
+				AdvertiseReason: "public reverse proxy",
+			},
+		}
+
+		err := Validate(cfg)
+		if err == nil {
+			t.Fatal("expected public exposure security validation errors")
+		}
+		for _, want := range []string{"AllowedOrigins", "APIToken", "PlaybackDecisionSecret", "APIDisableLegacyTokenSources"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("expected %s validation error, got %v", want, err)
+			}
+		}
+	})
+
+	t.Run("public profile accepts explicit origins and strong separated secrets", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.TrustedProxies = "127.0.0.1/32"
+		cfg.AllowedOrigins = []string{"https://public.example"}
+		cfg.APIToken = validPublicSecret
+		cfg.APITokenScopes = []string{"v3:admin"}
+		cfg.PlaybackDecisionSecret = "ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210"
+		cfg.APIDisableLegacyTokenSources = true
+		cfg.Connectivity.Profile = "reverse_proxy"
+		cfg.Connectivity.PublishedEndpoints = []PublishedEndpointConfig{
+			{
+				URL:             "https://public.example",
+				Kind:            "public_https",
+				Priority:        10,
+				AllowPairing:    true,
+				AllowStreaming:  true,
+				AllowWeb:        true,
+				AllowNative:     true,
+				AdvertiseReason: "public reverse proxy",
+			},
+		}
+
+		if err := Validate(cfg); err != nil {
+			t.Fatalf("expected public exposure security config to pass, got %v", err)
+		}
+	})
+}
+
 func TestValidate_PlaybackOperatorSourceRules(t *testing.T) {
 	t.Run("valid exact rule", func(t *testing.T) {
 		cfg := baseValidationConfig()

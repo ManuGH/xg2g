@@ -1,0 +1,690 @@
+openapi: 3.0.3
+info:
+  title: xg2g Device Enrollment and Connectivity Contract
+  version: 0.1.0-proposed
+  description: |
+    Proposed normative contract for device enrollment, device/session bootstrap,
+    and published connectivity truth.
+
+    This file is intentionally separate from `backend/api/openapi.yaml` until
+    the runtime implementation is ready. It follows the repository-wide version
+    prefix rule from ADR-001 and therefore assumes `/api/v3`.
+servers:
+  - url: /api/v3
+    description: Proposed v3 control-plane contract
+
+tags:
+  - name: pairing
+  - name: auth
+  - name: devices
+  - name: connectivity
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-or-jwt
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: xg2g_session
+
+  schemas:
+    APIError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        detail:
+          type: string
+
+    PairingStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceName:
+          type: string
+          maxLength: 128
+        deviceType:
+          type: string
+          enum: [android_phone, android_tablet, android_tv, browser, unknown]
+        requestedPolicyProfile:
+          type: string
+      required: [deviceType]
+
+    PairingStartResponse:
+      type: object
+      additionalProperties: false
+      required: [pairingId, pairingSecret, userCode, qrPayload, expiresAt]
+      properties:
+        pairingId:
+          type: string
+          format: uuid
+        pairingSecret:
+          type: string
+          description: Opaque device-held secret used only for polling and exchange.
+        userCode:
+          type: string
+        qrPayload:
+          type: string
+          description: QR-safe opaque payload for approval/enrollment UX.
+        expiresAt:
+          type: string
+          format: date-time
+
+    PairingStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [pairingId, status, expiresAt]
+      properties:
+        pairingId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, approved, expired, consumed, revoked]
+        expiresAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+        deviceName:
+          type: string
+        deviceType:
+          type: string
+        policyProfile:
+          type: string
+
+    PairingApproveRequest:
+      type: object
+      additionalProperties: false
+      required: [userCode]
+      properties:
+        userCode:
+          type: string
+        deviceName:
+          type: string
+          maxLength: 128
+        deviceType:
+          type: string
+          enum: [android_phone, android_tablet, android_tv, browser, unknown]
+        policyProfile:
+          type: string
+
+    PairingExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [pairingSecret]
+      properties:
+        pairingSecret:
+          type: string
+
+    DeviceGrant:
+      type: object
+      additionalProperties: false
+      required: [deviceId, grant, issuedAt, expiresAt]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        grant:
+          type: string
+          description: Revocable device-bound credential for session bootstrap only.
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        rotateAfter:
+          type: string
+          format: date-time
+
+    AccessSession:
+      type: object
+      additionalProperties: false
+      required: [sessionId, accessToken, expiresAt, deviceId]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        accessToken:
+          type: string
+          description: Short-lived native/API access credential.
+        expiresAt:
+          type: string
+          format: date-time
+        deviceId:
+          type: string
+          format: uuid
+        policyVersion:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+
+    PairingExchangeResponse:
+      type: object
+      additionalProperties: false
+      required: [device, deviceGrant, accessSession]
+      properties:
+        device:
+          $ref: "#/components/schemas/DeviceRecord"
+        deviceGrant:
+          $ref: "#/components/schemas/DeviceGrant"
+        accessSession:
+          $ref: "#/components/schemas/AccessSession"
+
+    DeviceSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [deviceId, deviceGrant]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        deviceGrant:
+          type: string
+        lastKnownEndpoint:
+          type: string
+          format: uri
+
+    DeviceSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [accessSession, endpoints]
+      properties:
+        accessSession:
+          $ref: "#/components/schemas/AccessSession"
+        endpoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedEndpoint"
+        effectivePolicyProfile:
+          type: string
+
+    WebBootstrapRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        targetPath:
+          type: string
+          default: /ui/
+        endpointUrl:
+          type: string
+          format: uri
+
+    WebBootstrapResponse:
+      type: object
+      additionalProperties: false
+      required: [bootstrapUrl, expiresAt]
+      properties:
+        bootstrapUrl:
+          type: string
+          format: uri
+          description: |
+            Single-use same-origin bootstrap URL. When opened by WebView it must
+            issue a secure HttpOnly cookie-backed web session and redirect into
+            the requested target path.
+        expiresAt:
+          type: string
+          format: date-time
+
+    DeviceRecord:
+      type: object
+      additionalProperties: false
+      required:
+        [deviceId, ownerId, deviceName, deviceType, policyProfile, createdAt]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        ownerId:
+          type: string
+        deviceName:
+          type: string
+        deviceType:
+          type: string
+          enum: [android_phone, android_tablet, android_tv, browser, unknown]
+        policyProfile:
+          type: string
+        capabilities:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+
+    DevicePatchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceName:
+          type: string
+        policyProfile:
+          type: string
+
+    DeviceRestrictRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        policyProfile:
+          type: string
+        capabilities:
+          type: object
+          additionalProperties: true
+
+    DeviceGrantRotateResponse:
+      type: object
+      additionalProperties: false
+      required: [deviceGrant]
+      properties:
+        deviceGrant:
+          $ref: "#/components/schemas/DeviceGrant"
+
+    PublishedEndpoint:
+      type: object
+      additionalProperties: false
+      required:
+        [url, kind, priority, tlsMode, allowPairing, allowStreaming, allowWeb, allowNative, advertiseReason]
+      properties:
+        url:
+          type: string
+          format: uri
+        kind:
+          type: string
+          enum: [public_https, local_https, local_http]
+        priority:
+          type: integer
+          format: int32
+        tlsMode:
+          type: string
+          enum: [required, optional, prohibited]
+        allowPairing:
+          type: boolean
+        allowStreaming:
+          type: boolean
+        allowWeb:
+          type: boolean
+        allowNative:
+          type: boolean
+        advertiseReason:
+          type: string
+
+    ConnectivityReportRequest:
+      type: object
+      additionalProperties: false
+      required: [endpointUrl, result]
+      properties:
+        endpointUrl:
+          type: string
+          format: uri
+        result:
+          type: string
+          enum: [success, timeout, tls_error, unauthorized, unreachable, rejected]
+        latencyMs:
+          type: integer
+          format: int64
+        observedAt:
+          type: string
+          format: date-time
+        clientType:
+          type: string
+        detail:
+          type: string
+
+    ConnectivityReportResponse:
+      type: object
+      additionalProperties: false
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+
+paths:
+  /pairing/start:
+    post:
+      tags: [pairing]
+      summary: Start a new device enrollment pairing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairingStartRequest"
+      responses:
+        "201":
+          description: Pairing created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingStartResponse"
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /pairing/{pairingId}:
+    get:
+      tags: [pairing]
+      summary: Get pairing status
+      parameters:
+        - name: pairingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pairing_secret
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pairing status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingStatusResponse"
+        "404":
+          description: Unknown pairing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /pairing/{pairingId}/approve:
+    post:
+      tags: [pairing]
+      summary: Approve a pending pairing from an authenticated control surface
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      parameters:
+        - name: pairingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairingApproveRequest"
+      responses:
+        "204":
+          description: Pairing approved
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /pairing/{pairingId}/exchange:
+    post:
+      tags: [pairing]
+      summary: Exchange an approved pairing for a device grant and first access session
+      parameters:
+        - name: pairingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairingExchangeRequest"
+      responses:
+        "200":
+          description: Pairing consumed and device enrolled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingExchangeResponse"
+        "409":
+          description: Pairing not approved or already consumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /auth/device/session:
+    post:
+      tags: [auth]
+      summary: Exchange a device grant for a short-lived native access session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSessionRequest"
+      responses:
+        "200":
+          description: Access session issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSessionResponse"
+        "401":
+          description: Device grant rejected or revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /auth/web-bootstrap:
+    post:
+      tags: [auth]
+      summary: Request a single-use WebView bootstrap URL from an authenticated native session
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebBootstrapRequest"
+      responses:
+        "200":
+          description: Bootstrap URL created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebBootstrapResponse"
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: End the current access session
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      responses:
+        "204":
+          description: Session terminated
+
+  /devices:
+    get:
+      tags: [devices]
+      summary: List enrolled devices visible to the current authenticated user/admin
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Device list
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DeviceRecord"
+
+  /devices/{deviceId}:
+    patch:
+      tags: [devices]
+      summary: Update mutable device metadata
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DevicePatchRequest"
+      responses:
+        "200":
+          description: Device updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceRecord"
+
+  /devices/{deviceId}/revoke:
+    post:
+      tags: [devices]
+      summary: Revoke a device and all derived sessions
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Device revoked
+
+  /devices/{deviceId}/rotate-grant:
+    post:
+      tags: [devices]
+      summary: Rotate the stored device grant for one device
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: New device grant issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceGrantRotateResponse"
+
+  /devices/{deviceId}/restrict:
+    post:
+      tags: [devices]
+      summary: Update restrictive policy/capability settings for one device
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRestrictRequest"
+      responses:
+        "200":
+          description: Device restrictions updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceRecord"
+
+  /connectivity/endpoints:
+    get:
+      tags: [connectivity]
+      summary: Return backend-published canonical connectivity candidates
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Ordered endpoint candidates
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [endpoints]
+                properties:
+                  endpoints:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PublishedEndpoint"
+
+  /connectivity/report:
+    post:
+      tags: [connectivity]
+      summary: Submit client-side connectivity probe telemetry
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectivityReportRequest"
+      responses:
+        "202":
+          description: Telemetry accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectivityReportResponse"

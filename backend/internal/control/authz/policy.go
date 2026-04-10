@@ -8,13 +8,17 @@ package authz
 // This is the single source of truth for required scopes.
 var operationScopes = map[string][]string{
 	"CreateSession":                    {"v3:read"},
+	"CreateDeviceSession":              {},
 	"DeleteSession":                    {"v3:read"},
+	"ExchangePairing":                  {},
 	"GetErrors":                        {"v3:read"},
+	"GetSystemConnectivity":            {"v3:admin"},
 	"GetDvrCapabilities":               {"v3:read"},
 	"GetDvrStatus":                     {"v3:read"},
 	"GetEpg":                           {"v3:read"},
 	"GetHouseholdUnlock":               {"v3:read"},
 	"GetHouseholdProfiles":             {"v3:read"},
+	"GetPairingStatus":                 {},
 	"CreateIntent":                     {"v3:write"},
 	"GetLogs":                          {"v3:admin"},
 	"GetReceiverCurrent":               {"v3:read"},
@@ -54,8 +58,10 @@ var operationScopes = map[string][]string{
 	"DeleteHouseholdProfile":           {"v3:admin"},
 	"DeleteHouseholdUnlock":            {"v3:read"},
 	"GetStreams":                       {"v3:admin"},
+	"ApprovePairing":                   {"v3:admin"},
 	"DeleteStreamsId":                  {"v3:write"},
-	"GetSystemConfig":                  {"v3:admin"},
+	"StartPairing":                     {},
+	"GetSystemConfig":                  {"v3:read"},
 	"PutSystemConfig":                  {"v3:admin"},
 	"GetSystemEntitlements":            {"v3:read"},
 	"PostSystemEntitlementReceipt":     {"v3:read"},
@@ -73,11 +79,19 @@ var operationScopes = map[string][]string{
 	"DeleteTimer":                      {"v3:write"},
 	"GetTimer":                         {"v3:read"},
 	"UpdateTimer":                      {"v3:write"},
+	"CreateWebBootstrap":               {"v3:read"},
+	"CompleteWebBootstrap":             {},
 }
 
 // Operations allowed to be unscoped.
 // Hardened default keeps this empty; entries require explicit security review.
-var unscopedOperations = map[string]struct{}{}
+var unscopedOperations = map[string]struct{}{
+	"CompleteWebBootstrap": {},
+	"CreateDeviceSession":  {},
+	"ExchangePairing":      {},
+	"GetPairingStatus":     {},
+	"StartPairing":         {},
+}
 
 // RequiredScopes returns the required scopes for an operation ID.
 func RequiredScopes(operationID string) ([]string, bool) {

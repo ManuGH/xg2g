@@ -1,0 +1,4 @@
+[Unit]
+Description=xg2g
+[Service]
+EnvironmentFile=/etc/xg2g/xg2g.env

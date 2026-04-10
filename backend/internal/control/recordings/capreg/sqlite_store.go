@@ -12,7 +12,10 @@ import (
 	sqlitepkg "github.com/ManuGH/xg2g/internal/persistence/sqlite"
 )
 
-const sqliteSchemaVersion = 5
+const (
+	sqliteSchemaVersion = 5
+	SQLiteSchemaVersion = sqliteSchemaVersion
+)
 
 type SqliteStore struct {
 	DB *sql.DB

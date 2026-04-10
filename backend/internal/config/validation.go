@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	connectivitydomain "github.com/ManuGH/xg2g/internal/domain/connectivity"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	householddomain "github.com/ManuGH/xg2g/internal/household"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
@@ -80,6 +81,7 @@ func Validate(cfg AppConfig) error {
 
 	validateBasicSettings(v, cfg)
 	validateNetworkSettings(v, cfg)
+	validateConnectivity(v, cfg)
 	validateAuthAndPlaybackDecision(v, cfg)
 	validateMonetization(v, cfg)
 	validateHousehold(v, cfg)
@@ -207,6 +209,38 @@ func validateNetworkSettings(v *validate.Validator, cfg AppConfig) {
 	}
 }
 
+func validateConnectivity(v *validate.Validator, cfg AppConfig) {
+	if cfg.connectivityParseErr != nil {
+		v.AddError("Connectivity.PublishedEndpoints", cfg.connectivityParseErr.Error(), "")
+		return
+	}
+
+	report, err := BuildConnectivityContract(cfg)
+	if err != nil {
+		v.AddError("Connectivity.PublishedEndpoints", err.Error(), "")
+		return
+	}
+
+	for _, finding := range report.Findings {
+		if finding.Severity != connectivitydomain.FindingSeverityFatal {
+			continue
+		}
+		field := finding.Field
+		if strings.TrimSpace(field) == "" {
+			field = "Connectivity"
+		}
+		value := any("")
+		if finding.EndpointURL != "" {
+			value = finding.EndpointURL
+		}
+		message := finding.Summary
+		if strings.TrimSpace(finding.Detail) != "" {
+			message = finding.Detail
+		}
+		v.AddError(field, message, value)
+	}
+}
+
 func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 	if cfg.apiTokensParseErr != nil {
 		v.AddError("APITokens", cfg.apiTokensParseErr.Error(), "")
@@ -290,6 +324,10 @@ func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 				v.AddError("APITokens", "unknown scope", scope)
 			}
 		}
+	}
+
+	for _, err := range PublicExposureSecurityFindings(cfg) {
+		v.AddError(err.Field, err.Message, err.Value)
 	}
 
 	validatePlaybackOperatorRules(v, cfg.Playback.Operator.SourceRules)

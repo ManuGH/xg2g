@@ -7,6 +7,7 @@
 package v3
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -35,8 +36,13 @@ type ctxPrincipalKey struct{}
 // authMiddlewareImpl is the implementation of the API token authentication middleware.
 func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if raw, ok := r.Context().Value(bearerAuthScopesKey).([]string); ok && len(raw) == 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		cfg := s.GetConfig()
-		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
+		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0 || s.hasDeviceAuthStore()
 
 		if !hasTokens {
 			// Fail-Closed: token-only access
@@ -115,32 +121,14 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	effectiveHTTPS := s.requestIsHTTPS(r)
-	if !effectiveHTTPS && !requestRemoteIsLoopback(r) {
-		RespondError(w, r, http.StatusBadRequest, ErrHTTPSRequired, "session exchange requires HTTPS or a trusted HTTPS proxy; plain HTTP is only accepted from loopback")
-		return
-	}
-
-	store := s.authSessionStoreOrDefault()
-	if existingCookie, err := r.Cookie(sessionCookieName); err == nil {
-		s.deleteAuthSession(existingCookie.Value)
-	}
-
-	sessionID, err := store.CreateSession(reqToken, s.authSessionTTLOrDefault())
-	if err != nil {
+	if _, err := s.issueCookieSession(w, r, reqToken, s.authSessionTTLOrDefault()); err != nil {
+		if errors.Is(err, ErrHTTPSRequired) {
+			RespondError(w, r, http.StatusBadRequest, ErrHTTPSRequired, "session exchange requires HTTPS or a trusted HTTPS proxy; plain HTTP is only accepted from loopback")
+			return
+		}
 		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to create session")
 		return
 	}
-
-	setServerCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    sessionID,
-		Path:     "/api/v3/",
-		HttpOnly: true,
-		Secure:   effectiveHTTPS,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   sessionCookieMaxAgeSeconds,
-	})
 
 	w.WriteHeader(http.StatusOK) // 200 OK
 }
@@ -194,6 +182,44 @@ func (s *Server) resolveSessionToken(sessionID string) (string, bool) {
 
 func (s *Server) deleteAuthSession(sessionID string) {
 	s.authSessionStoreOrDefault().InvalidateSession(sessionID)
+}
+
+func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) (string, error) {
+	if strings.TrimSpace(token) == "" {
+		return "", auth.ErrInvalidSessionToken
+	}
+	if ttl <= 0 {
+		return "", auth.ErrInvalidSessionTTL
+	}
+
+	effectiveHTTPS := s.requestIsHTTPS(r)
+	if !effectiveHTTPS && !requestRemoteIsLoopback(r) {
+		return "", ErrHTTPSRequired
+	}
+
+	if existingCookie, err := r.Cookie(sessionCookieName); err == nil {
+		s.deleteAuthSession(existingCookie.Value)
+	}
+
+	sessionID, err := s.authSessionStoreOrDefault().CreateSession(token, ttl)
+	if err != nil {
+		return "", err
+	}
+
+	maxAge := int(ttl / time.Second)
+	if maxAge <= 0 {
+		maxAge = sessionCookieMaxAgeSeconds
+	}
+	setServerCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    sessionID,
+		Path:     "/api/v3/",
+		HttpOnly: true,
+		Secure:   effectiveHTTPS,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   maxAge,
+	})
+	return sessionID, nil
 }
 
 func (s *Server) requestIsHTTPS(r *http.Request) bool {

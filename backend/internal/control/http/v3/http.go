@@ -79,9 +79,14 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 	if info.EpgStatus != string(health.StatusHealthy) {
 		epgStatus = EPGStatusStatusMissing
 	}
+	// EPG wall-clock display must follow the server/XMLTV timezone rather than UTC,
+	// otherwise clients with a skewed or foreign device clock show the right events
+	// with the wrong visible times.
+	serverNow := time.Now()
 
 	resp := SystemHealth{
-		Status: &status,
+		Status:     &status,
+		ServerTime: &serverNow,
 		Receiver: &ComponentStatus{
 			Status:    &receiverStatus,
 			LastCheck: &info.Timestamp,

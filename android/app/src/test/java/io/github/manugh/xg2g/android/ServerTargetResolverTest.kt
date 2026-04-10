@@ -2,6 +2,8 @@ package io.github.manugh.xg2g.android
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -110,5 +112,45 @@ class ServerTargetResolverTest {
         )
 
         assertEquals("override-token", resolved)
+    }
+
+    @Test
+    fun `resolveAccessToken reads custom scheme access token`() {
+        val resolved = ServerTargetResolver.resolveAccessToken(
+            overrideToken = null,
+            deepLinkUrl = "xg2g://connect?access_token=device-access-token"
+        )
+
+        assertEquals("device-access-token", resolved)
+    }
+
+    @Test
+    fun `resolveDeviceAuthLaunchCredentials reads device grant and expiry`() {
+        val resolved = ServerTargetResolver.resolveDeviceAuthLaunchCredentials(
+            overrideDeviceGrantId = null,
+            overrideDeviceGrant = null,
+            overrideAccessToken = null,
+            overrideAccessTokenExpiresAt = null,
+            deepLinkUrl = "xg2g://connect?device_grant_id=dgr-123&device_grant=grant-secret&access_token=device-access-token&access_token_expires_at=Thu,%2009%20Apr%202026%2012:00:00%20GMT"
+        )
+
+        assertNotNull(resolved)
+        assertEquals("dgr-123", resolved?.deviceGrantId)
+        assertEquals("grant-secret", resolved?.deviceGrant)
+        assertEquals("device-access-token", resolved?.accessToken)
+        assertEquals(1775736000000L, resolved?.accessTokenExpiresAtEpochMs)
+    }
+
+    @Test
+    fun `resolveDeviceAuthLaunchCredentials returns null when no device auth params are present`() {
+        val resolved = ServerTargetResolver.resolveDeviceAuthLaunchCredentials(
+            overrideDeviceGrantId = null,
+            overrideDeviceGrant = null,
+            overrideAccessToken = null,
+            overrideAccessTokenExpiresAt = null,
+            deepLinkUrl = "xg2g://connect?base_url=https%3A%2F%2Ftv.example%2Fui%2F"
+        )
+
+        assertNull(resolved)
     }
 }

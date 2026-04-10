@@ -5,6 +5,7 @@
 package config
 
 import (
+	"encoding/json"
 	"strings"
 )
 
@@ -22,6 +23,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvPicons(cfg)
 	l.mergeEnvTLS(cfg)
 	l.mergeEnvNetwork(cfg)
+	l.mergeEnvConnectivity(cfg)
 	l.mergeEnvFeatureFlags(cfg)
 	l.mergeEnvCanonicalEngine(cfg)
 	l.mergeEnvCanonicalEnigma2(cfg)
@@ -133,6 +135,30 @@ func (l *Loader) mergeEnvNetwork(cfg *AppConfig) {
 	cfg.Network.Outbound.Allow.Ports = parseCommaSeparatedInts(l.envString("XG2G_OUTBOUND_ALLOW_PORTS", ""), cfg.Network.Outbound.Allow.Ports)
 	cfg.Network.Outbound.Allow.Schemes = parseCommaSeparated(l.envString("XG2G_OUTBOUND_ALLOW_SCHEMES", ""), cfg.Network.Outbound.Allow.Schemes)
 	cfg.Network.LAN.Allow.CIDRs = parseCommaSeparated(l.envString("XG2G_LAN_ALLOW_CIDRS", ""), cfg.Network.LAN.Allow.CIDRs)
+}
+
+func (l *Loader) mergeEnvConnectivity(cfg *AppConfig) {
+	cfg.Connectivity.Profile = l.envString("XG2G_CONNECTIVITY_PROFILE", cfg.Connectivity.Profile)
+	cfg.Connectivity.AllowLocalHTTP = l.envBool("XG2G_CONNECTIVITY_ALLOW_LOCAL_HTTP", cfg.Connectivity.AllowLocalHTTP)
+
+	raw, ok := l.envLookup("XG2G_PUBLISHED_ENDPOINTS")
+	if !ok || strings.TrimSpace(raw) == "" {
+		return
+	}
+
+	var parsed []PublishedEndpointConfig
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		cfg.connectivityParseErr = err
+		return
+	}
+
+	for i := range parsed {
+		if strings.TrimSpace(parsed[i].Source) == "" {
+			parsed[i].Source = "env"
+		}
+	}
+	cfg.connectivityParseErr = nil
+	cfg.Connectivity.PublishedEndpoints = clonePublishedEndpointConfigs(parsed)
 }
 
 func (l *Loader) mergeEnvFeatureFlags(cfg *AppConfig) {

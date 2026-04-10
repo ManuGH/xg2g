@@ -63,8 +63,10 @@ func getSystemHealth_Legacy(s *Server, w http.ResponseWriter, r *http.Request) {
 	}
 	int64Ptr := func(i int64) *int64 { return &i }
 	missing := 0
+	serverNow := time.Now().UTC()
 	resp := SystemHealth{
-		Status: &status,
+		Status:     &status,
+		ServerTime: &serverNow,
 		Receiver: &ComponentStatus{
 			Status:    &receiverStatus,
 			LastCheck: &respH.Timestamp,
@@ -555,7 +557,7 @@ func getEpg_Legacy(s *Server, w http.ResponseWriter, r *http.Request, params Get
 		allowedRefs = nil
 	}
 
-	var items []EpgItem
+	items := make([]EpgItem, 0)
 	for _, p := range tv.Programs {
 		if bouquetFilter != "" {
 			_, ok1 := allowedRefs[p.Channel]
@@ -595,6 +597,8 @@ func getEpg_Legacy(s *Server, w http.ResponseWriter, r *http.Request, params Get
 		startUnix := int(startTime.Unix())
 		endUnix := int(endTime.Unix())
 		dur := int(endUnix - startUnix)
+		startXMLTV := p.Start
+		endXMLTV := p.Stop
 
 		items = append(items, EpgItem{
 			Id:         &id,
@@ -604,6 +608,8 @@ func getEpg_Legacy(s *Server, w http.ResponseWriter, r *http.Request, params Get
 			Start:      startUnix,
 			End:        endUnix,
 			Duration:   &dur,
+			StartXMLTV: &startXMLTV,
+			EndXMLTV:   &endXMLTV,
 		})
 	}
 
@@ -624,7 +630,7 @@ func normalizeJSON(v any) any {
 		newMap := make(map[string]any)
 		for k, v := range x {
 			// Normalize unstable timestamps
-			if k == "lastCheck" {
+			if k == "lastCheck" || k == "serverTime" {
 				newMap[k] = "STABLE_TIMESTAMP"
 				continue
 			}

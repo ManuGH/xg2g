@@ -22,6 +22,10 @@ type ChannelTruthSource interface {
 	GetCapability(serviceRef string) (scan.Capability, bool)
 }
 
+type channelTruthProbeSource interface {
+	ProbeCapability(ctx context.Context, serviceRef string) (scan.Capability, bool, error)
+}
+
 type DecisionAuditSink interface {
 	Record(ctx context.Context, event decision.Event) error
 }

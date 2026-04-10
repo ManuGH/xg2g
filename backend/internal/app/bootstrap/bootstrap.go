@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/daemon"
+	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/entitlements"
@@ -107,6 +108,10 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	v3Store, err := sessionstore.OpenStateStore(cfg.Store.Backend, filepath.Join(cfg.Store.Path, "sessions.sqlite"))
 	if err != nil {
 		return nil, fmt.Errorf("initialize session store: %w", err)
+	}
+	deviceAuthStore, err := deviceauthstore.OpenStateStore(cfg.Store.Backend, filepath.Join(cfg.Store.Path, "deviceauth.sqlite"))
+	if err != nil {
+		return nil, fmt.Errorf("initialize device auth store: %w", err)
 	}
 
 	resumeStore, err := resume.NewStore(cfg.Store.Backend, cfg.Store.Path)
@@ -214,6 +219,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	s.WireV3Runtime(v3.Dependencies{
 		Bus:                v3Bus,
 		Store:              v3Store,
+		DeviceAuthStore:    deviceAuthStore,
 		ResumeStore:        resumeStore,
 		Scan:               v3Scan,
 		DecisionAudit:      decisionAuditStore,
@@ -297,6 +303,12 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	hm := s.HealthManager()
 	if hm != nil {
 		hm.SetReadyStrict(cfg.ReadyStrict)
+		hm.RegisterChecker(health.NewConnectivityContractChecker("public_connectivity_contract", func() config.AppConfig {
+			if cfgHolder == nil {
+				return cfg
+			}
+			return cfgHolder.Get()
+		}))
 		if cfg.ReadyStrict {
 			if strings.TrimSpace(cfg.Enigma2.BaseURL) == "" {
 				return nil, fmt.Errorf("strict readiness enabled but OpenWebIF base URL is missing")

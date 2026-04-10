@@ -390,6 +390,8 @@
       "headline": "Gib den aktuellen Server in einem Schritt an deinen TV weiter.",
       "currentServer": "Aktueller Server",
       "currentServerHint": "Öffne den App-Link unten auf demselben Android-TV- oder Fire-TV-Gerät, auf dem die xg2g-App installiert ist.",
+      "unavailableValue": "Kein veröffentlichter Native-Endpoint",
+      "unavailableReason": "Für den aktuellen Deployment-Contract ist kein veröffentlichter Native-Endpoint verfügbar.",
       "openApp": "In xg2g App öffnen",
       "hint": "Falls der Browser nach einer App fragt, xg2g auswählen und die Auswahl dauerhaft erlauben.",
       "steps": {

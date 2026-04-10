@@ -213,6 +213,23 @@
       ],
       "type": "string"
     },
+    "connectivity": {
+      "properties": {
+        "allowLocalHTTP": {
+          "default": false,
+          "type": "boolean"
+        },
+        "profile": {
+          "default": "lan",
+          "type": "string"
+        },
+        "publishedEndpoints": {
+          "default": [],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "dataDir": {
       "default": "/tmp",
       "description": "Base directory for generated XMLTV files and cache. Environment variables like ${HOME} are expanded.",

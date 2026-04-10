@@ -161,6 +161,7 @@ func Inventory(paths RuntimePaths) []Artifact {
 			description string
 		}{
 			{id: "sessions", file: "sessions.sqlite", description: "Active and historical playback session state"},
+			{id: "deviceauth", file: "deviceauth.sqlite", description: "DeviceAuth grants, pairings, and device binding state"},
 			{id: "resume", file: "resume.sqlite", description: "Playback resume positions for recordings"},
 			{id: "capabilities", file: "capabilities.sqlite", description: "Receiver/source capability scan results"},
 			{id: "decision_audit", file: "decision_audit.sqlite", description: "Persisted playback decision history"},

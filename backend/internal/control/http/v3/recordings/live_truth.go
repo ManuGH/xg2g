@@ -45,6 +45,10 @@ func resolveLiveTruthState(serviceRef string, source ChannelTruthSource) liveTru
 	}
 
 	cap, found := source.GetCapability(serviceRef)
+	return resolveLiveTruthCapability(serviceRef, cap, found)
+}
+
+func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bool) liveTruthResolution {
 	if !found {
 		return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "missing_scan_truth", scan.Capability{}, []string{
 			"live_truth_unverified",

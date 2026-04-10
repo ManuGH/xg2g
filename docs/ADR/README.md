@@ -13,6 +13,8 @@ ADRs are stable reference points for maintainers.
 | [005](005-Architecture-Invariants.md) | Architecture Invariants | ✅ ACTIVE |
 | [006](006-Concurrency-Manifest.md) | Concurrency Manifest | ✅ ACTIVE |
 | [007](007-Global-Health-Death-Line.md) | Health & Death Line | ✅ ACTIVE |
+| [ADR-023](023-device-enrollment-session-model.md) | Device Enrollment and Session Model | ✅ ACTIVE |
+| [ADR-024](024-published-endpoint-connectivity-truth.md) | Published Endpoint Connectivity Truth | ✅ ACTIVE |
 
 ## Decision Rules
 

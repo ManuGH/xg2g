@@ -95,6 +95,33 @@ Then run the Android app as `devDebug` inside the emulator.
 Use either the in-app setup screen or the intent override below to point the
 client at `http://10.0.2.2:8080/ui/`.
 
+For a deterministic paired-device TV regression check, use the dedicated smoke:
+
+```bash
+make android-tv-smoke
+```
+
+That runner will:
+
+- boot or reuse an Android TV adb target (defaults to the `Television_4K` AVD when needed)
+- build and install the Android `devDebug` app
+- start a local backend on `http://127.0.0.1:8080` with an isolated smoke-only store and HLS root
+- create a real device grant through `pairing/start -> approve -> exchange`
+- clear the Android `dev` app state, launch with `device_grant_id` + `device_grant`, and assert:
+  - TV home renders
+  - native guide loads through `device/session` + `auth/session`
+  - playback reaches `intents`, `sessions`, HLS, and heartbeat
+  - `Open web tools` completes the Web bootstrap without hitting `Authentication Required`
+
+Artifacts are written to `logs/android-tv-smoke/` for post-failure inspection.
+
+If `127.0.0.1:8080` is already occupied on the host, override the local backend
+port for the smoke and the corresponding emulator URL together:
+
+```bash
+XG2G_TV_SMOKE_PORT=18080 make android-tv-smoke
+```
+
 ## Runtime URL Override
 
 For ad-hoc testing, you can override the base UI URL through an intent extra:

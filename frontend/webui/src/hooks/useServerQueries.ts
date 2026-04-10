@@ -20,6 +20,7 @@ import {
   getSystemEntitlements,
   deleteRecording,
   getSystemConfig,
+  getSystemConnectivity,
   getErrors,
   getSystemHealth,
   getSystemInfo,
@@ -34,6 +35,7 @@ import {
   getRecordings,
   triggerSystemScan,
   type AppConfig,
+  type ConnectivityContract,
   type CreateIntentResponse,
   type EntitlementStatus,
   type ErrorCatalogResponse,
@@ -58,6 +60,7 @@ export const queryKeys = {
   bootstrapConfig: ['v3', 'bootstrap', 'config'] as const,
   errorsCatalog: ['v3', 'system', 'errors-catalog'] as const,
   systemConfig: ['v3', 'system', 'config'] as const,
+  systemConnectivity: ['v3', 'system', 'connectivity'] as const,
   systemEntitlements: ['v3', 'system', 'entitlements'] as const,
   health: ['v3', 'system', 'health'] as const,
   systemInfo: ['v3', 'system', 'info'] as const,
@@ -101,6 +104,23 @@ export function useSystemConfig() {
     },
     enabled: isReady,
     staleTime: 30_000,
+  });
+}
+
+export function useSystemConnectivity() {
+  const { isReady } = useHouseholdProfiles();
+
+  return useQuery({
+    queryKey: queryKeys.systemConnectivity,
+    queryFn: async () => {
+      const result = await getSystemConnectivity();
+      return unwrapClientResultOrThrow<ConnectivityContract>(result, {
+        source: 'useSystemConnectivity',
+        silent: true,
+      });
+    },
+    enabled: isReady,
+    staleTime: 5_000,
   });
 }
 

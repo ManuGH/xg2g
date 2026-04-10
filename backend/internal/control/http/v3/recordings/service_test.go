@@ -61,9 +61,12 @@ func (d stubDeps) ReceiverContext(context.Context) *capreg.ReceiverContext {
 }
 
 type stubTruthSource struct {
-	getCapabilityFn func(serviceRef string) (scan.Capability, bool)
-	lastServiceRef  string
-	calls           int
+	getCapabilityFn   func(serviceRef string) (scan.Capability, bool)
+	probeCapabilityFn func(ctx context.Context, serviceRef string) (scan.Capability, bool, error)
+	lastServiceRef    string
+	lastProbeRef      string
+	calls             int
+	probeCalls        int
 }
 
 func (s *stubTruthSource) GetCapability(serviceRef string) (scan.Capability, bool) {
@@ -73,6 +76,15 @@ func (s *stubTruthSource) GetCapability(serviceRef string) (scan.Capability, boo
 		return scan.Capability{}, false
 	}
 	return s.getCapabilityFn(serviceRef)
+}
+
+func (s *stubTruthSource) ProbeCapability(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+	s.probeCalls++
+	s.lastProbeRef = serviceRef
+	if s.probeCapabilityFn == nil {
+		return scan.Capability{}, false, nil
+	}
+	return s.probeCapabilityFn(ctx, serviceRef)
 }
 
 type stubDecisionAuditSink struct {

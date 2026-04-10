@@ -3,6 +3,7 @@ package io.github.manugh.xg2g.android.playback.net
 import android.content.Context
 import android.util.Log
 import android.util.Base64
+import io.github.manugh.xg2g.android.DeviceAuthRepository
 import io.github.manugh.xg2g.android.ServerSettingsStore
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
@@ -27,6 +28,10 @@ internal class PlaybackApiClient(
     private val serverSettingsStore: ServerSettingsStore = ServerSettingsStore(context.applicationContext),
     private val errorMapper: PlaybackErrorMapper = PlaybackErrorMapper(),
     private val cookieSession: CookieBackedAuthSession = CookieBackedAuthSession(),
+    private val deviceAuthRepository: DeviceAuthRepository = DeviceAuthRepository(
+        context = context.applicationContext,
+        cookieSession = cookieSession
+    ),
     private val nativeCapabilities: NativePlaybackCapabilities = NativePlaybackCapabilities.create(context.applicationContext),
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addNetworkInterceptor { chain ->
@@ -43,34 +48,15 @@ internal class PlaybackApiClient(
     override suspend fun ensureAuthSession(authToken: String?) {
         withContext(Dispatchers.IO) {
             val sessionUrl = apiUrl("auth", "session")
-            val bearerToken = authToken?.trim().takeIf { !it.isNullOrEmpty() }
             Log.d(
                 TAG,
-                "ensureAuthSession path=${sessionUrl.encodedPath} hasBearer=${bearerToken != null} hasSessionCookieBefore=${cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)}"
+                "ensureAuthSession path=${sessionUrl.encodedPath} hasBearer=${!authToken.isNullOrBlank()} hasSessionCookieBefore=${cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)}"
             )
-            if (bearerToken == null && cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
-                return@withContext
-            }
-
-            val requestBuilder = Request.Builder()
-                .url(sessionUrl)
-                .post(ByteArray(0).toRequestBody(null))
-
-            if (bearerToken != null) {
-                requestBuilder.header("Authorization", "Bearer $bearerToken")
-            }
-
-            val request = requestBuilder.build()
-
-            execute(request).use { response ->
-                Log.d(
-                    TAG,
-                    "ensureAuthSession response code=${response.code} hasSetCookie=${response.headers.values("Set-Cookie").isNotEmpty()} hasSessionCookieAfter=${cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)}"
-                )
-                if (!response.isSuccessful) {
-                    throw errorMapper.toHttpException(response, response.body.string())
-                }
-            }
+            deviceAuthRepository.ensureAuthSession(requireUiBaseUrl().toString(), authToken)
+            Log.d(
+                TAG,
+                "ensureAuthSession completed hasSessionCookieAfter=${cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)}"
+            )
         }
     }
 
@@ -259,6 +245,12 @@ internal class PlaybackApiClient(
             "execute request method=${contextualRequest.method} path=${contextualRequest.url.encodedPath} hasCookie=${contextualRequest.header("Cookie") != null} hasAuthorization=${contextualRequest.header("Authorization") != null} hasOrigin=${contextualRequest.header("Origin") != null} hasReferer=${contextualRequest.header("Referer") != null}"
         )
         return okHttpClient.newCall(contextualRequest).execute().also { response ->
+            if (response.code == 401 || response.code == 403) {
+                cookieSession.clearSessionCookie(
+                    url = apiUrl("auth", "session"),
+                    cookieName = SESSION_COOKIE_NAME
+                )
+            }
             Log.d(
                 TAG,
                 "execute response method=${contextualRequest.method} path=${contextualRequest.url.encodedPath} code=${response.code}"

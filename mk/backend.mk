@@ -2,7 +2,7 @@
 # Backend Targets
 # ===================================================================================================
 
-.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev android-local-smoke install doctor check-tools dev-tools
+.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev android-local-smoke android-tv-smoke install doctor check-tools dev-tools
 
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
@@ -66,6 +66,9 @@ dev-ui: ## Run the frontend HMR path (Vite background + foreground backend on :8
 
 android-local-smoke: ## Build embedded UI, run local backend on :8080, and launch Android dev app with auth if adb is connected
 	@./run_android_local.sh
+
+android-tv-smoke: ## Run the paired-device Android TV smoke with backend, guide, playback, and WebUI assertions
+	@./run_android_tv_smoke.sh
 
 dev: ## Run the crash-restart development loop (advanced/internal)
 	@./run_dev.sh

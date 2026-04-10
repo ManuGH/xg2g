@@ -2,7 +2,7 @@
 # Governance and Verification Gates
 # ===================================================================================================
 
-.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout
+.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-public-deployment gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout
 
 verify: verify-generated-artifacts verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract ## Run all governance verification gates
 
@@ -45,6 +45,9 @@ verify-generated-artifacts: verify-config verify-docs-compiled verify-generate v
 
 verify-release-output-contract: ## Verify the normative release/package output contract
 	@./$(BACKEND_DIR)/scripts/verify-release-output-contract.sh
+
+verify-public-deployment: ## Verify live public web/native contract against a running deployment
+	@./$(BACKEND_DIR)/scripts/verify-public-deployment.sh
 
 verify-purity: bootstrap-python-tools ## Verify UI purity, decision ownership, OpenAPI hygiene
 	@./$(BACKEND_DIR)/scripts/verify-ui-purity.sh

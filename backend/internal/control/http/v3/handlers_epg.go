@@ -30,9 +30,11 @@ type nowNextRequest struct {
 }
 
 type epgEntry struct {
-	Title string `json:"title,omitempty"`
-	Start int64  `json:"start,omitempty"` // unix seconds
-	End   int64  `json:"end,omitempty"`   // unix seconds
+	Title      string `json:"title,omitempty"`
+	Start      int64  `json:"start,omitempty"` // unix seconds
+	End        int64  `json:"end,omitempty"`   // unix seconds
+	StartXMLTV string `json:"startXmltv,omitempty"`
+	EndXMLTV   string `json:"endXmltv,omitempty"`
 }
 
 type nowNextItem struct {
@@ -117,9 +119,11 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 			}
 
 			entry := &epgEntry{
-				Title: program.Title.Text,
-				Start: start.Unix(),
-				End:   stop.Unix(),
+				Title:      program.Title.Text,
+				Start:      start.Unix(),
+				End:        stop.Unix(),
+				StartXMLTV: program.Start,
+				EndXMLTV:   program.Stop,
 			}
 
 			if now.After(start) && now.Before(stop) {
@@ -159,6 +163,8 @@ type EpgItem struct {
 	Start      int     `json:"start,omitempty"`
 	End        int     `json:"end,omitempty"`
 	Duration   *int    `json:"duration,omitempty"`
+	StartXMLTV *string `json:"startXmltv,omitempty"`
+	EndXMLTV   *string `json:"endXmltv,omitempty"`
 }
 
 // Helper to parse XMLTV dates "20080715003000 +0200"
@@ -339,6 +345,8 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 		start := int(e.Start)
 		end := int(e.End)
 		dur := int(e.Duration)
+		startXMLTV := stringPtrOrNil(strings.TrimSpace(e.StartXMLTV))
+		endXMLTV := stringPtrOrNil(strings.TrimSpace(e.EndXMLTV))
 
 		resp = append(resp, EpgItem{
 			Id:         &id,
@@ -348,14 +356,13 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 			Start:      start,
 			End:        end,
 			Duration:   &dur,
+			StartXMLTV: startXMLTV,
+			EndXMLTV:   endXMLTV,
 		})
 	}
 
-	if len(resp) == 0 {
-		resp = nil
-	}
-
 	w.Header().Set("Content-Type", "application/json")
+	// Contract: list endpoints return arrays, even when no entries are visible.
 	_ = json.NewEncoder(w).Encode(resp)
 }
 

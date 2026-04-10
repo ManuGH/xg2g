@@ -15,8 +15,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/read"
-	householddomain "github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/health"
+	householddomain "github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 	cfgvalidate "github.com/ManuGH/xg2g/internal/validate"
@@ -33,9 +33,11 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 	deps := s.configModuleDeps()
 	cfg := deps.cfg
+	principal := auth.PrincipalFromContext(r.Context())
+	isAdminScope := principal == nil || principalHasScope(principal, "v3:admin")
 
 	info := read.GetConfigInfo(cfg)
-	monetization := buildMonetizationStatus(cfg.Monetization, auth.PrincipalFromContext(r.Context()))
+	monetization := buildMonetizationStatus(cfg.Monetization, principal)
 
 	epgSource := EPGConfigSource(info.EPGSource)
 	deliveryPolicy := StreamingConfigDeliveryPolicy(info.DeliveryPolicy)
@@ -44,15 +46,18 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 		BaseUrl:    &info.Enigma2BaseURL,
 		StreamPort: &info.Enigma2StreamPort,
 	}
-	if info.Enigma2Username != "" {
+	if isAdminScope && info.Enigma2Username != "" {
 		openWebIF.Username = &info.Enigma2Username
 	}
 	householdPinConfigured := cfg.Household.PinConfigured()
+	connectivityConfig, err := buildConnectivityConfigResponse(cfg)
+	if err != nil {
+		writeProblem(w, r, http.StatusInternalServerError, "system/config/internal_error", "Config Internal Error", "SYSTEM_CONFIG_INTERNAL_ERROR", "The system config response could not be assembled.", nil)
+		return
+	}
 
 	resp := AppConfig{
 		Version:   &info.Version,
-		DataDir:   &info.DataDir,
-		LogLevel:  &info.LogLevel,
 		OpenWebIF: openWebIF,
 		Bouquets:  &info.Bouquets,
 		Epg: &EPGConfig{
@@ -70,6 +75,13 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 		Household: &HouseholdStatus{
 			PinConfigured: &householdPinConfigured,
 		},
+	}
+	if isAdminScope {
+		resp.DataDir = &info.DataDir
+		resp.LogLevel = &info.LogLevel
+	}
+	if connectivityConfig.AllowLocalHTTP || len(connectivityConfig.PublishedEndpoints) > 0 {
+		resp.Connectivity = connectivityConfig
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -277,6 +289,18 @@ func respondConfigValidationError(w http.ResponseWriter, r *http.Request, err er
 	}
 
 	RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, details)
+}
+
+func principalHasScope(principal *auth.Principal, scope string) bool {
+	if principal == nil || scope == "" {
+		return false
+	}
+	for _, candidate := range principal.Scopes {
+		if candidate == scope {
+			return true
+		}
+	}
+	return false
 }
 
 func buildMonetizationStatus(cfg config.MonetizationConfig, principal *auth.Principal) *MonetizationStatus {

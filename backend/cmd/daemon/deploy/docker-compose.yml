@@ -1,0 +1,9 @@
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:v3.4.6
+    env_file:
+      - /etc/xg2g/xg2g.env
+    environment:
+      - XG2G_DATA=/var/folders/99/p3_dnc890xbcy_8qdw4024wh0000gn/T/TestRunPreflightCLIRestoreIncludesAssessmentJSON187633477/004
+    volumes:
+      - /var/folders/99/p3_dnc890xbcy_8qdw4024wh0000gn/T/TestRunPreflightCLIRestoreIncludesAssessmentJSON187633477/004:/var/folders/99/p3_dnc890xbcy_8qdw4024wh0000gn/T/TestRunPreflightCLIRestoreIncludesAssessmentJSON187633477/004

@@ -1,8 +1,10 @@
 package io.github.manugh.xg2g.android.guide
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.manugh.xg2g.android.DeviceAuthRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,7 +103,9 @@ internal class GuideViewModel(
                         bouquets = content.bouquets,
                         selectedBouquet = content.selectedBouquet,
                         health = content.health,
-                        timelineWindow = content.timelineWindow
+                        timelineWindow = content.timelineWindow,
+                        referenceEpochSec = content.referenceEpochSec,
+                        displayZoneOffsetSeconds = content.displayZoneOffsetSeconds
                     )
                 } else {
                     GuideScreenState.Ready(
@@ -111,7 +115,9 @@ internal class GuideViewModel(
                         channels = content.channels,
                         selectedChannelRef = selectedChannelRef,
                         health = content.health,
-                        timelineWindow = content.timelineWindow
+                        timelineWindow = content.timelineWindow,
+                        referenceEpochSec = content.referenceEpochSec,
+                        displayZoneOffsetSeconds = content.displayZoneOffsetSeconds
                     )
                 }
             } catch (error: Throwable) {
@@ -125,6 +131,7 @@ internal class GuideViewModel(
     }
 
     internal class Factory(
+        private val context: Context,
         private val serverLabel: String,
         private val baseUrl: String,
         private val authToken: String?
@@ -132,7 +139,10 @@ internal class GuideViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val repository = GuideRepository(
-                apiClient = GuideApiClient(baseUrl),
+                apiClient = GuideApiClient(
+                    baseUrl = baseUrl,
+                    deviceAuthRepository = DeviceAuthRepository(context.applicationContext)
+                ),
                 authToken = authToken
             )
             return GuideViewModel(

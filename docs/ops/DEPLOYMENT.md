@@ -28,6 +28,7 @@ Use `deploy/sync.sh --check --ref <tag|sha>` for drift checks and
 | Topic | Document |
 | :--- | :--- |
 | Host layout, shipped artifacts, unit locations | [Installation Contract](INSTALLATION_CONTRACT.md) |
+| Lifecycle preflight, shared operator/startup gates | [Operational Lifecycle Contract](OPERATIONAL_LIFECYCLE_CONTRACT.md) |
 | FFmpeg paths, GPU passthrough, runtime invariants | [Runtime Contract](DEPLOYMENT_RUNTIME_CONTRACT.md) |
 | systemd start/stop/reload, Compose, smoke checks | [Operator Runbook](RUNBOOK_SYSTEMD_COMPOSE.md) |
 

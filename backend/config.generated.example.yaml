@@ -19,6 +19,10 @@ breaker:
   min_attempts: 10
   window: 5m
 configStrict: true
+connectivity:
+  allowLocalHTTP: false
+  profile: lan
+  publishedEndpoints: []
 dataDir: /tmp
 engine:
   cpuThresholdScale: 1.5

@@ -129,3 +129,22 @@ func TestEmptyTunerSlotsEnvPreservesConfig(t *testing.T) {
 		t.Errorf("expected TunerSlots to remain [5], got %v", cfg.Engine.TunerSlots)
 	}
 }
+
+func TestPublishedEndpointsEnvMerge(t *testing.T) {
+	loader := NewLoader("", "test")
+	cfg := AppConfig{}
+	if err := loader.setDefaults(&cfg); err != nil {
+		t.Fatalf("setDefaults() failed: %v", err)
+	}
+
+	t.Setenv("XG2G_PUBLISHED_ENDPOINTS", `[{"url":"https://public.example","kind":"public_https","priority":10,"allowPairing":true,"allowStreaming":true,"allowWeb":true,"allowNative":true,"advertiseReason":"public reverse proxy"}]`)
+
+	loader.mergeEnvConfig(&cfg)
+
+	if len(cfg.Connectivity.PublishedEndpoints) != 1 {
+		t.Fatalf("expected one published endpoint, got %d", len(cfg.Connectivity.PublishedEndpoints))
+	}
+	if cfg.Connectivity.PublishedEndpoints[0].Source != "env" {
+		t.Fatalf("expected env source default, got %q", cfg.Connectivity.PublishedEndpoints[0].Source)
+	}
+}

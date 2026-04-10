@@ -84,7 +84,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -97,6 +96,7 @@ class GuideActivity : AppCompatActivity() {
     private val playbackBridge by lazy(LazyThreadSafetyMode.NONE) { NativePlaybackBridge(this) }
     private val viewModel: GuideViewModel by viewModels {
         GuideViewModel.Factory(
+            context = applicationContext,
             serverLabel = describeServer(baseUrl),
             baseUrl = baseUrl,
             authToken = authToken
@@ -197,10 +197,34 @@ private fun GuideScreen(
     onPlayChannel: (GuideChannel) -> Unit,
     onExit: () -> Unit
 ) {
-    val currentEpochSec by produceState(initialValue = Instant.now().epochSecond) {
-        while (true) {
-            value = Instant.now().epochSecond
-            delay(millisUntilNextProgressTick())
+    val referenceEpochSec = when (state) {
+        is GuideScreenState.Empty -> state.referenceEpochSec
+        is GuideScreenState.Ready -> state.referenceEpochSec
+        else -> null
+    }
+    val displayZoneId = when (state) {
+        is GuideScreenState.Empty -> guideDisplayZoneId(state.displayZoneOffsetSeconds)
+        is GuideScreenState.Ready -> guideDisplayZoneId(state.displayZoneOffsetSeconds)
+        else -> ZoneId.systemDefault()
+    }
+    val currentEpochSec by produceState(
+        initialValue = referenceEpochSec ?: Instant.now().epochSecond,
+        referenceEpochSec
+    ) {
+        if (referenceEpochSec == null) {
+            while (true) {
+                value = Instant.now().epochSecond
+                delay(millisUntilNextProgressTick())
+            }
+        } else {
+            var current = referenceEpochSec
+            value = current
+            while (true) {
+                val tickMillis = millisUntilNextProgressTick()
+                delay(tickMillis)
+                current += (tickMillis / 1_000L).coerceAtLeast(1L)
+                value = current
+            }
         }
     }
 
@@ -234,6 +258,7 @@ private fun GuideScreen(
                     is GuideScreenState.Ready -> state.timelineWindow
                     else -> null
                 },
+                displayZoneId = displayZoneId,
                 isRefreshing = state is GuideScreenState.Ready && state.isRefreshing,
                 onRefresh = onRefresh
             )
@@ -250,6 +275,7 @@ private fun GuideScreen(
                     timelineWindow = state.timelineWindow,
                     selectedChannelRef = null,
                     currentEpochSec = currentEpochSec,
+                    displayZoneId = displayZoneId,
                     assetBaseUrl = assetBaseUrl,
                     onSelectBouquet = onSelectBouquet,
                     onSelectChannel = onSelectChannel,
@@ -264,6 +290,7 @@ private fun GuideScreen(
                     timelineWindow = state.timelineWindow,
                     selectedChannelRef = state.selectedChannelRef,
                     currentEpochSec = currentEpochSec,
+                    displayZoneId = displayZoneId,
                     assetBaseUrl = assetBaseUrl,
                     onSelectBouquet = onSelectBouquet,
                     onSelectChannel = onSelectChannel,
@@ -294,6 +321,7 @@ private fun GuideHeader(
     serverLabel: String,
     health: GuideHealthStatus?,
     timelineWindow: GuideTimelineWindow?,
+    displayZoneId: ZoneId,
     isRefreshing: Boolean,
     onRefresh: () -> Unit
 ) {
@@ -329,7 +357,7 @@ private fun GuideHeader(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 GuideServerChip(serverLabel)
-                GuideWindowChip(timelineWindow)
+                GuideWindowChip(timelineWindow, displayZoneId)
                 GuideHealthChip(health)
             }
         }
@@ -364,7 +392,7 @@ private fun GuideHeader(
 }
 
 @Composable
-private fun GuideWindowChip(timelineWindow: GuideTimelineWindow?) {
+private fun GuideWindowChip(timelineWindow: GuideTimelineWindow?, displayZoneId: ZoneId) {
     if (timelineWindow == null) {
         return
     }
@@ -378,8 +406,8 @@ private fun GuideWindowChip(timelineWindow: GuideTimelineWindow?) {
         Text(
             text = stringResource(
                 R.string.guide_window_label,
-                formatTime(timelineWindow.startEpochSec),
-                formatTime(timelineWindow.endEpochSec)
+                formatGuideEpochTime(timelineWindow.startEpochSec, displayZoneId),
+                formatGuideEpochTime(timelineWindow.endEpochSec, displayZoneId)
             ),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelLarge,
@@ -498,7 +526,7 @@ private fun GuideError(state: GuideScreenState.Error) {
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = if (state.authRequired) {
-                    stringResource(R.string.guide_auth_detail)
+                    state.detail.ifBlank { stringResource(R.string.guide_auth_detail) }
                 } else {
                     state.detail.ifBlank { stringResource(R.string.guide_generic_detail) }
                 },
@@ -518,6 +546,7 @@ private fun GuideContentLayout(
     timelineWindow: GuideTimelineWindow?,
     selectedChannelRef: String?,
     currentEpochSec: Long,
+    displayZoneId: ZoneId,
     assetBaseUrl: String,
     onSelectBouquet: (String) -> Unit,
     onSelectChannel: (String) -> Unit,
@@ -594,6 +623,7 @@ private fun GuideContentLayout(
             timelineWindow = timelineWindow,
             selectedChannelRef = selectedChannelRef,
             currentEpochSec = currentEpochSec,
+            displayZoneId = displayZoneId,
             listState = channelListState,
             requesters = channelRequesters,
             bouquetControlRequester = bouquetControlRequester,
@@ -740,6 +770,7 @@ private fun ChannelPane(
     timelineWindow: GuideTimelineWindow?,
     selectedChannelRef: String?,
     currentEpochSec: Long,
+    displayZoneId: ZoneId,
     listState: androidx.compose.foundation.lazy.LazyListState,
     requesters: Map<String, FocusRequester>,
     bouquetControlRequester: FocusRequester,
@@ -791,6 +822,7 @@ private fun ChannelPane(
                 GuideSelectionPanel(
                     channel = channel,
                     currentEpochSec = currentEpochSec,
+                    displayZoneId = displayZoneId,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 14.dp, end = 14.dp, top = 12.dp)
@@ -831,6 +863,7 @@ private fun ChannelPane(
                             health = health,
                             timelineWindow = timelineWindow,
                             currentEpochSec = currentEpochSec,
+                            displayZoneId = displayZoneId,
                             selected = channel.serviceRef == selectedChannelRef,
                             modifier = Modifier
                                 .focusRequester(requesters.getValue(channel.serviceRef))
@@ -906,6 +939,7 @@ private fun ChannelCard(
     health: GuideHealthStatus?,
     timelineWindow: GuideTimelineWindow?,
     currentEpochSec: Long,
+    displayZoneId: ZoneId,
     selected: Boolean,
     modifier: Modifier = Modifier,
     onFocus: () -> Unit,
@@ -1003,7 +1037,8 @@ private fun ChannelCard(
             GuideProgramSummary(
                 now = channel.now,
                 next = channel.next,
-                currentEpochSec = currentEpochSec
+                currentEpochSec = currentEpochSec,
+                displayZoneId = displayZoneId
             )
             Spacer(modifier = Modifier.height(10.dp))
             GuideScheduleTimeline(
@@ -1012,7 +1047,8 @@ private fun ChannelCard(
                 next = channel.next,
                 health = health,
                 timelineWindow = timelineWindow,
-                currentEpochSec = currentEpochSec
+                currentEpochSec = currentEpochSec,
+                displayZoneId = displayZoneId
             )
         }
     }
@@ -1022,6 +1058,7 @@ private fun ChannelCard(
 private fun GuideSelectionPanel(
     channel: GuideChannel,
     currentEpochSec: Long,
+    displayZoneId: ZoneId,
     modifier: Modifier = Modifier
 ) {
     val primaryProgram = channelPrimaryProgram(channel, currentEpochSec) ?: return
@@ -1056,7 +1093,7 @@ private fun GuideSelectionPanel(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "${formatTime(primaryProgram.startEpochSec)}-${formatTime(primaryProgram.endEpochSec)}",
+                text = "${primaryProgram.displayStartTime(displayZoneId)}-${primaryProgram.displayEndTime(displayZoneId)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = colorFromRes(R.color.ide_live)
             )
@@ -1140,7 +1177,8 @@ private fun GuideChannelLogo(
 private fun GuideProgramSummary(
     now: GuideProgram?,
     next: GuideProgram?,
-    currentEpochSec: Long
+    currentEpochSec: Long,
+    displayZoneId: ZoneId
 ) {
     val liveProgram = now?.takeIf { currentEpochSec < it.endEpochSec }
     if (liveProgram == null && next == null) {
@@ -1181,7 +1219,7 @@ private fun GuideProgramSummary(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${formatTime(liveProgram.startEpochSec)}-${formatTime(liveProgram.endEpochSec)}",
+                        text = "${liveProgram.displayStartTime(displayZoneId)}-${liveProgram.displayEndTime(displayZoneId)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1217,7 +1255,8 @@ private fun GuideScheduleTimeline(
     next: GuideProgram?,
     health: GuideHealthStatus?,
     timelineWindow: GuideTimelineWindow?,
-    currentEpochSec: Long
+    currentEpochSec: Long,
+    displayZoneId: ZoneId
 ) {
     val visiblePrograms = remember(schedule, now, next, timelineWindow) {
         buildGuideTimelinePrograms(
@@ -1268,7 +1307,8 @@ private fun GuideScheduleTimeline(
                 } else {
                     programWeight(program)
                 },
-                active = currentEpochSec >= program.startEpochSec && currentEpochSec < program.endEpochSec
+                active = currentEpochSec >= program.startEpochSec && currentEpochSec < program.endEpochSec,
+                displayZoneId = displayZoneId
             )
         }
     }
@@ -1311,7 +1351,8 @@ private fun normalizeGuideDescription(raw: String): String? =
 private fun RowScope.GuideScheduleSegment(
     program: GuideProgram,
     weight: Float,
-    active: Boolean
+    active: Boolean,
+    displayZoneId: ZoneId
 ) {
     val backgroundColor = if (active) {
         colorFromRes(R.color.ide_surface_panel)
@@ -1348,7 +1389,7 @@ private fun RowScope.GuideScheduleSegment(
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = if (active) stringResource(R.string.guide_now) else formatTime(program.startEpochSec),
+                text = if (active) stringResource(R.string.guide_now) else program.displayStartTime(displayZoneId),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (active) {
                     colorFromRes(R.color.ide_live)
@@ -1365,7 +1406,7 @@ private fun RowScope.GuideScheduleSegment(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "${formatTime(program.startEpochSec)}-${formatTime(program.endEpochSec)}",
+                text = "${program.displayStartTime(displayZoneId)}-${program.displayEndTime(displayZoneId)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = colorFromRes(R.color.ide_text_primary),
                 maxLines = 1,
@@ -1374,9 +1415,6 @@ private fun RowScope.GuideScheduleSegment(
         }
     }
 }
-
-private fun formatTime(epochSec: Long): String =
-    TIME_FORMATTER.format(Instant.ofEpochSecond(epochSec))
 
 private fun programWeight(program: GuideProgram): Float {
     val durationSec = max(1L, program.endEpochSec - program.startEpochSec)
@@ -1433,6 +1471,3 @@ private fun millisUntilNextProgressTick(): Long {
 @Composable
 private fun colorFromRes(resId: Int): Color =
     Color(ContextCompat.getColor(LocalContext.current, resId))
-
-private val TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-    .withZone(ZoneId.systemDefault())

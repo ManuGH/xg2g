@@ -75,6 +75,7 @@ internal class MainScreenUi(
         onCancelSetup: () -> Unit,
         onRetry: () -> Unit,
         onChangeServer: () -> Unit,
+        onOpenWebTools: () -> Unit,
         onOpenInBrowser: () -> Unit,
         onOpenTvMenu: () -> Unit,
         onOpenTvHome: () -> Unit,
@@ -97,7 +98,7 @@ internal class MainScreenUi(
         tvHomeTimersButton.setOnClickListener { onOpenTvTimers() }
         tvHomeSettingsButton.setOnClickListener { onOpenTvSettings() }
         tvHomeChangeServerButton.setOnClickListener { onChangeServer() }
-        tvHomeBrowserButton.setOnClickListener { onOpenInBrowser() }
+        tvHomeBrowserButton.setOnClickListener { onOpenWebTools() }
         retryButton.setOnClickListener { onRetry() }
         changeServerButton.setOnClickListener { onChangeServer() }
         openInBrowserButton.setOnClickListener { onOpenInBrowser() }
@@ -137,6 +138,11 @@ internal class MainScreenUi(
         tvQuickActionsContainer.isVisible = true
         preferredQuickActionsFocusTarget = buttonForDestination(activeDestination)
         preferredQuickActionsFocusTarget?.requestFocus()
+    }
+
+    fun setExternalBrowserActionVisible(visible: Boolean) {
+        openInBrowserButton.isVisible = visible
+        tvOpenInBrowserButton.isVisible = visible
     }
 
     fun hideTvQuickActions() {
@@ -209,7 +215,13 @@ internal class MainScreenUi(
         button.alpha = 0.92f
     }
 
-    fun render(state: MainUiState, webView: WebView, hasCustomView: Boolean) {
+    fun render(
+        state: MainUiState,
+        webView: WebView,
+        hasCustomView: Boolean,
+        externalBrowserAvailable: Boolean
+    ) {
+        setExternalBrowserActionVisible(externalBrowserAvailable)
         when (state) {
             is MainUiState.TvHome -> renderTvHome(state, webView)
             is MainUiState.Setup -> renderSetup(state, webView)

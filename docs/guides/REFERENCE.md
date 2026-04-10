@@ -71,6 +71,14 @@ Legacy receiver env aliases are no longer accepted at startup. Use the canonical
 | `XG2G_TRUSTED_PROXIES`| - | CSV of CIDRs for `X-Forwarded-For` trust |
 | `XG2G_RECORDINGS_STABLE_WINDOW` | `10s` | File stability wait duration |
 
+### Published Endpoint Truth
+
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `XG2G_CONNECTIVITY_PROFILE` | `lan` | Policy bundle: `lan`, `reverse_proxy`, `tunnel`, or `vps` |
+| `XG2G_CONNECTIVITY_ALLOW_LOCAL_HTTP` | `false` | Explicit opt-in for `local_http` published endpoints |
+| `XG2G_PUBLISHED_ENDPOINTS` | `[]` | JSON array of backend-published endpoint candidates for Android/Web/TV clients |
+
 ## 2. Configuration File (YAML)
 
 Default location: `config.yaml`. Strict validation is enabled by default.
@@ -88,7 +96,30 @@ recording_playback:
   mappings:
     - receiver_root: /media/hdd/movie
       local_root: /mnt/recordings
+connectivity:
+  profile: reverse_proxy
+  allowLocalHTTP: false
+  publishedEndpoints:
+    - url: "https://tv.example.net"
+      kind: public_https
+      priority: 10
+      allowPairing: true
+      allowStreaming: true
+      allowWeb: true
+      allowNative: true
+      advertiseReason: "public reverse proxy"
 ```
+
+Public deployment profiles are policy bundles, not hidden runtime modes:
+
+- `lan`: local-first setup, public origin not required
+- `reverse_proxy`: public HTTPS is terminated by an explicit reverse proxy; `trustedProxies` is mandatory
+- `tunnel`: public HTTPS is terminated by a tunnel ingress; `trustedProxies` is mandatory
+- `vps`: xg2g terminates public TLS directly; `tls.enabled` is mandatory
+
+The operator-grade diagnostics endpoint is `GET /api/v3/system/connectivity`.
+It returns the effective profile, blocking findings, selected published
+endpoints, trusted proxy truth, and request-scoped header evaluation.
 
 ## 3. Health Endpoints
 
@@ -98,6 +129,7 @@ Endpoints return JSON and do not require authentication.
 | :--- | :--- | :--- | :--- | :--- |
 | `/healthz` | GET | `200` | - | Liveness: Process is alive |
 | `/readyz` | GET | `200` | `503` | Readiness: Dependencies available |
+| `/api/v3/system/connectivity` | GET | `200` | `503` | Authenticated connectivity contract diagnostics (`v3:admin`) |
 
 > [!TIP]
 > Use `/readyz?verbose=true` for detailed component status.

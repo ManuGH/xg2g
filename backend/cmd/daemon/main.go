@@ -41,6 +41,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g config <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g entitlements <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g storage verify [flags]")
+	_, _ = fmt.Fprintln(w, "  xg2g preflight [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g healthcheck [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g diagnostic [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g help [command]")
@@ -49,6 +50,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  config       Validate, dump, and migrate config files")
 	_, _ = fmt.Fprintln(w, "  entitlements Inspect and manage commercial unlock overrides")
 	_, _ = fmt.Fprintln(w, "  storage      Manage and verify local storage (SQLite)")
+	_, _ = fmt.Fprintln(w, "  preflight    Run lifecycle preflight checks against effective config")
 	_, _ = fmt.Fprintln(w, "  healthcheck  Probe API readiness/liveness endpoints")
 	_, _ = fmt.Fprintln(w, "  diagnostic   Trigger diagnostic actions against the API")
 	_, _ = fmt.Fprintln(w, "  help         Show help for a command")
@@ -68,6 +70,8 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g storage verify --path /var/lib/xg2g/sessions.sqlite")
 	_, _ = fmt.Fprintln(w, "  xg2g storage decision-report --data-dir /var/lib/xg2g --bouquet Premium --format table")
 	_, _ = fmt.Fprintln(w, "  xg2g storage decision-sweep --config /etc/xg2g/config.yaml --data-dir /var/lib/xg2g --bouquet Premium --skip-scan")
+	_, _ = fmt.Fprintln(w, "  xg2g preflight --config /etc/xg2g/config.yaml --operation=startup --json")
+	_, _ = fmt.Fprintln(w, "  xg2g preflight --config /etc/xg2g/config.yaml --runtime-snapshot --json")
 	_, _ = fmt.Fprintln(w, "  xg2g healthcheck --mode=ready --port=8088")
 	_, _ = fmt.Fprintln(w, "  xg2g diagnostic --action=refresh --token $XG2G_API_TOKEN")
 }
@@ -87,6 +91,9 @@ func runHelp(args []string) int {
 		return 0
 	case "storage":
 		printStorageUsage(os.Stdout)
+		return 0
+	case "preflight":
+		printPreflightUsage(os.Stdout)
 		return 0
 	case "healthcheck":
 		printHealthcheckUsage(os.Stdout)
@@ -131,6 +138,8 @@ func main() {
 			os.Exit(runEntitlementsCLI(os.Args[2:]))
 		case "storage":
 			os.Exit(runStorageCLI(os.Args[2:]))
+		case "preflight":
+			os.Exit(runPreflightCLI(os.Args[2:]))
 		case "healthcheck":
 			os.Exit(runHealthcheckCLI(os.Args[2:]))
 		case "diagnostic":

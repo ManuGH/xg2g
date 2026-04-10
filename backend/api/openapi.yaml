@@ -55,6 +55,419 @@ components:
           description: Optional additional context
           example: "Invalid token format"
 
+    DeviceAuthDeviceType:
+      type: string
+      enum: [android_phone, android_tablet, android_tv, browser, unknown]
+
+    PairingStatus:
+      type: string
+      enum: [pending, approved, expired, consumed, revoked]
+
+    PublishedEndpointKind:
+      type: string
+      enum: [public_https, local_https, local_http]
+
+    PublishedEndpointTLSMode:
+      type: string
+      enum: [required, prohibited]
+
+    PublishedEndpointSource:
+      type: string
+      enum: [config, env, operator]
+
+    ConnectivityDeploymentProfile:
+      type: string
+      enum: [lan, reverse_proxy, tunnel, vps]
+
+    PublishedEndpoint:
+      type: object
+      additionalProperties: false
+      required:
+        [url, kind, priority, tlsMode, allowPairing, allowStreaming, allowWeb, allowNative, advertiseReason, source]
+      properties:
+        url:
+          type: string
+          format: uri
+        kind:
+          $ref: "#/components/schemas/PublishedEndpointKind"
+        priority:
+          type: integer
+          format: int32
+        tlsMode:
+          $ref: "#/components/schemas/PublishedEndpointTLSMode"
+        allowPairing:
+          type: boolean
+        allowStreaming:
+          type: boolean
+        allowWeb:
+          type: boolean
+        allowNative:
+          type: boolean
+        advertiseReason:
+          type: string
+        source:
+          $ref: "#/components/schemas/PublishedEndpointSource"
+
+    ConnectivityConfig:
+      type: object
+      additionalProperties: false
+      required: [profile, allowLocalHTTP, publishedEndpoints]
+      properties:
+        profile:
+          $ref: "#/components/schemas/ConnectivityDeploymentProfile"
+        allowLocalHTTP:
+          type: boolean
+        publishedEndpoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedEndpoint"
+
+    ConnectivitySelection:
+      type: object
+      additionalProperties: false
+      properties:
+        endpoint:
+          $ref: "#/components/schemas/PublishedEndpoint"
+        reason:
+          type: string
+
+    ConnectivitySelections:
+      type: object
+      additionalProperties: false
+      required: [web, webPublic, native, nativePublic, pairing, pairingPublic, streaming]
+      properties:
+        web:
+          $ref: "#/components/schemas/ConnectivitySelection"
+        webPublic:
+          $ref: "#/components/schemas/ConnectivitySelection"
+        native:
+          $ref: "#/components/schemas/ConnectivitySelection"
+        nativePublic:
+          $ref: "#/components/schemas/ConnectivitySelection"
+        pairing:
+          $ref: "#/components/schemas/ConnectivitySelection"
+        pairingPublic:
+          $ref: "#/components/schemas/ConnectivitySelection"
+        streaming:
+          $ref: "#/components/schemas/ConnectivitySelection"
+
+    ConnectivityFinding:
+      type: object
+      additionalProperties: false
+      required: [code, severity, scopes, summary]
+      properties:
+        code:
+          type: string
+        severity:
+          type: string
+          enum: [ok, warn, degraded, fatal]
+        scopes:
+          type: array
+          items:
+            type: string
+        field:
+          type: string
+        summary:
+          type: string
+        detail:
+          type: string
+        endpointUrl:
+          type: string
+
+    ConnectivityRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [remoteIsLoopback, tlsDirect, trustedProxyMatch, effectiveHttps, schemeSource, acceptedProxyHeaders, originAllowAll]
+      properties:
+        remoteAddr:
+          type: string
+        remoteIp:
+          type: string
+        remoteIsLoopback:
+          type: boolean
+        tlsDirect:
+          type: boolean
+        trustedProxyMatch:
+          type: boolean
+        effectiveHttps:
+          type: boolean
+        schemeSource:
+          type: string
+        acceptedProxyHeaders:
+          type: array
+          items:
+            type: string
+        xForwardedProto:
+          type: string
+        xForwardedHost:
+          type: string
+        xForwardedFor:
+          type: string
+        origin:
+          type: string
+        originAllowed:
+          type: boolean
+        originAllowAll:
+          type: boolean
+
+    ConnectivityContract:
+      type: object
+      additionalProperties: false
+      required:
+        [profile, public, status, startupFatal, readinessBlocked, pairingBlocked, webBlocked, allowLocalHTTP, tlsEnabled, forceHTTPS, allowedOrigins, trustedProxies, publishedEndpoints, selections, findings, request]
+      properties:
+        profile:
+          $ref: "#/components/schemas/ConnectivityDeploymentProfile"
+        public:
+          type: boolean
+        status:
+          type: string
+          enum: [ok, warn, degraded, fatal]
+        startupFatal:
+          type: boolean
+        readinessBlocked:
+          type: boolean
+        pairingBlocked:
+          type: boolean
+        webBlocked:
+          type: boolean
+        allowLocalHTTP:
+          type: boolean
+        tlsEnabled:
+          type: boolean
+        forceHTTPS:
+          type: boolean
+        allowedOrigins:
+          type: array
+          items:
+            type: string
+        trustedProxies:
+          type: array
+          items:
+            type: string
+        publishedEndpoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedEndpoint"
+        selections:
+          $ref: "#/components/schemas/ConnectivitySelections"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectivityFinding"
+        request:
+          $ref: "#/components/schemas/ConnectivityRequest"
+
+    StartPairingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceName:
+          type: string
+        deviceType:
+          $ref: "#/components/schemas/DeviceAuthDeviceType"
+        requestedPolicyProfile:
+          type: string
+
+    PairingSecretRequest:
+      type: object
+      additionalProperties: false
+      required: [pairingSecret]
+      properties:
+        pairingSecret:
+          type: string
+
+    ApprovePairingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ownerId:
+          type: string
+        approvedPolicyProfile:
+          type: string
+
+    StartPairingResponse:
+      type: object
+      additionalProperties: false
+      required: [pairingId, pairingSecret, userCode, qrPayload, expiresAt]
+      properties:
+        pairingId:
+          type: string
+        pairingSecret:
+          type: string
+        userCode:
+          type: string
+        qrPayload:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    PairingStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [pairingId, status, userCode, deviceName, deviceType, expiresAt]
+      properties:
+        pairingId:
+          type: string
+        status:
+          $ref: "#/components/schemas/PairingStatus"
+        userCode:
+          type: string
+        deviceName:
+          type: string
+        deviceType:
+          $ref: "#/components/schemas/DeviceAuthDeviceType"
+        requestedPolicyProfile:
+          type: string
+        approvedPolicyProfile:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+        consumedAt:
+          type: string
+          format: date-time
+
+    ApprovePairingResponse:
+      type: object
+      additionalProperties: false
+      required: [pairingId, status, ownerId, expiresAt]
+      properties:
+        pairingId:
+          type: string
+        status:
+          $ref: "#/components/schemas/PairingStatus"
+        ownerId:
+          type: string
+        approvedPolicyProfile:
+          type: string
+        approvedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    ExchangePairingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          pairingId,
+          deviceId,
+          deviceGrantId,
+          deviceGrant,
+          deviceGrantExpiresAt,
+          accessSessionId,
+          accessToken,
+          accessTokenExpiresAt,
+          policyVersion,
+          scopes,
+          endpoints,
+        ]
+      properties:
+        pairingId:
+          type: string
+        deviceId:
+          type: string
+        deviceGrantId:
+          type: string
+        deviceGrant:
+          type: string
+        deviceGrantExpiresAt:
+          type: string
+          format: date-time
+        accessSessionId:
+          type: string
+        accessToken:
+          type: string
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+        policyVersion:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        endpoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedEndpoint"
+
+    CreateDeviceSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [deviceGrantId, deviceGrant]
+      properties:
+        deviceGrantId:
+          type: string
+        deviceGrant:
+          type: string
+
+    CreateDeviceSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [deviceId, accessSessionId, accessToken, accessTokenExpiresAt, policyVersion, scopes, endpoints]
+      properties:
+        deviceId:
+          type: string
+        rotatedDeviceGrantId:
+          type: string
+        rotatedDeviceGrant:
+          type: string
+        rotatedDeviceGrantExpiresAt:
+          type: string
+          format: date-time
+        accessSessionId:
+          type: string
+        accessToken:
+          type: string
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+        policyVersion:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        endpoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedEndpoint"
+
+    CreateWebBootstrapRequest:
+      type: object
+      additionalProperties: false
+      required: [targetPath]
+      properties:
+        targetPath:
+          type: string
+          description: Absolute same-origin path inside the xg2g web UI.
+
+    CreateWebBootstrapResponse:
+      type: object
+      additionalProperties: false
+      required: [bootstrapId, bootstrapToken, completePath, targetPath, expiresAt]
+      properties:
+        bootstrapId:
+          type: string
+        bootstrapToken:
+          type: string
+        completePath:
+          type: string
+        targetPath:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
     IntentRequest:
       type: object
       additionalProperties: false
@@ -391,6 +804,9 @@ components:
         status:
           type: string
           enum: [ok, degraded, error]
+        serverTime:
+          type: string
+          format: date-time
         receiver:
           $ref: "#/components/schemas/ComponentStatus"
         epg:
@@ -776,6 +1192,8 @@ components:
           $ref: "#/components/schemas/VerificationConfig"
         household:
           $ref: "#/components/schemas/HouseholdStatus"
+        connectivity:
+          $ref: "#/components/schemas/ConnectivityConfig"
 
     HouseholdConfigUpdate:
       type: object
@@ -1045,6 +1463,12 @@ components:
         end:
           type: integer
           description: Unix timestamp (seconds)
+        startXmltv:
+          type: string
+          description: Original XMLTV start timestamp including offset
+        endXmltv:
+          type: string
+          description: Original XMLTV end timestamp including offset
 
     NowNextItem:
       type: object
@@ -2398,6 +2822,20 @@ paths:
                     type: string
                     enum: [ok]
 
+  /system/connectivity:
+    get:
+      summary: Get effective public deployment contract diagnostics
+      operationId: getSystemConnectivity
+      tags:
+        - system
+      responses:
+        "200":
+          description: Connectivity contract diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectivityContract"
+
   /household/profiles:
     get:
       summary: List household profiles
@@ -2843,6 +3281,12 @@ paths:
                       type: integer
                     duration:
                       type: integer
+                    startXmltv:
+                      type: string
+                      description: Original XMLTV start timestamp including offset
+                    endXmltv:
+                      type: string
+                      description: Original XMLTV end timestamp including offset
 
   /services:
     get:
@@ -3479,6 +3923,409 @@ paths:
           description: Session deleted
         "403":
           description: Household PIN required for child-profile logout
+
+  /pairing/start:
+    post:
+      summary: Start device pairing enrollment
+      operationId: StartPairing
+      tags:
+        - auth
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartPairingRequest"
+      responses:
+        "201":
+          description: Pairing enrollment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartPairingResponse"
+        "400":
+          description: Invalid pairing request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Pairing state store unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /pairing/{pairingId}/status:
+    post:
+      summary: Read pairing enrollment status
+      operationId: GetPairingStatus
+      tags:
+        - auth
+      security: []
+      parameters:
+        - name: pairingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairingSecretRequest"
+      responses:
+        "200":
+          description: Pairing enrollment status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingStatusResponse"
+        "400":
+          description: Invalid pairing request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Pairing secret mismatch
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Pairing not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "410":
+          description: Pairing has expired or was revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Pairing state store unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /pairing/{pairingId}/approve:
+    post:
+      summary: Approve a pending pairing enrollment
+      operationId: ApprovePairing
+      tags:
+        - auth
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - name: pairingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovePairingRequest"
+      responses:
+        "200":
+          description: Pairing enrollment approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovePairingResponse"
+        "400":
+          description: Invalid pairing approval request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Pairing not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Pairing is still pending or otherwise cannot transition
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "410":
+          description: Pairing has expired, been revoked, or was already exchanged
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Pairing state store unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /pairing/{pairingId}/exchange:
+    post:
+      summary: Exchange an approved pairing for device credentials
+      operationId: ExchangePairing
+      tags:
+        - auth
+      security: []
+      parameters:
+        - name: pairingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairingSecretRequest"
+      responses:
+        "200":
+          description: Pairing exchanged for device grant and access session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangePairingResponse"
+        "400":
+          description: Invalid pairing exchange request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Pairing secret mismatch
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Pairing not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Pairing is pending and not yet approved
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "410":
+          description: Pairing has expired, been revoked, or was already exchanged
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Pairing state store unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /auth/device/session:
+    post:
+      summary: Refresh a device access session from a device grant
+      operationId: CreateDeviceSession
+      tags:
+        - auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeviceSessionRequest"
+      responses:
+        "200":
+          description: Device access session issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateDeviceSessionResponse"
+        "400":
+          description: Invalid device session request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Invalid or missing device grant secret
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Device grant forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Device grant not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Device session conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "410":
+          description: Device grant expired or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Device session store unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /auth/web-bootstrap:
+    post:
+      summary: Create a one-time web bootstrap for an authenticated device session
+      operationId: CreateWebBootstrap
+      tags:
+        - auth
+      security:
+        - BearerAuth: [v3:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebBootstrapRequest"
+      responses:
+        "201":
+          description: Web bootstrap created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWebBootstrapResponse"
+        "400":
+          description: Invalid web bootstrap request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Web bootstrap forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Source access session not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Web bootstrap conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "410":
+          description: Source session expired or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Web bootstrap store unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /auth/web-bootstrap/{bootstrapId}:
+    get:
+      summary: Complete a one-time web bootstrap and mint a normal session cookie
+      operationId: CompleteWebBootstrap
+      tags:
+        - auth
+      security: []
+      parameters:
+        - name: bootstrapId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-XG2G-Web-Bootstrap
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "303":
+          description: Web bootstrap completed; the caller is redirected to the target path with a session cookie set
+          headers:
+            Location:
+              schema:
+                type: string
+            Set-Cookie:
+              schema:
+                type: string
+        "400":
+          description: Invalid bootstrap completion request or HTTPS required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Web bootstrap token mismatch
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Web bootstrap not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "410":
+          description: Web bootstrap expired, consumed, or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Web bootstrap store unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /timers:
     get:

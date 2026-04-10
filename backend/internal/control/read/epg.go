@@ -35,6 +35,8 @@ type EpgEntry struct {
 	Start      int64  `json:"start"`
 	End        int64  `json:"end"`
 	Duration   int64  `json:"duration"`
+	StartXMLTV string `json:"startXmltv,omitempty"`
+	EndXMLTV   string `json:"endXmltv,omitempty"`
 }
 
 // GetEpg filters and processes EPG data.
@@ -141,9 +143,11 @@ func GetEpg(ctx context.Context, src EpgSource, q EpgQuery, clock Clock) ([]EpgE
 				}
 				return ""
 			}(),
-			Start:    startTime.Unix(),
-			End:      endTime.Unix(),
-			Duration: int64(endTime.Sub(startTime).Seconds()),
+			Start:      startTime.Unix(),
+			End:        endTime.Unix(),
+			Duration:   int64(endTime.Sub(startTime).Seconds()),
+			StartXMLTV: p.Start,
+			EndXMLTV:   p.Stop,
 		})
 	}
 

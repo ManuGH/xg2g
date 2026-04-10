@@ -8,9 +8,11 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	deviceauthmodel "github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -136,7 +138,37 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) (*auth.Princi
 		}
 	}
 
+	if principal, ok := s.deviceAccessPrincipal(ctx, token, cfg); ok {
+		return principal, true
+	}
+
 	return nil, false
+}
+
+func (s *Server) deviceAccessPrincipal(ctx context.Context, token string, cfg config.AppConfig) (*auth.Principal, bool) {
+	store := s.deviceAuthStore()
+	if store == nil || token == "" {
+		return nil, false
+	}
+
+	session, err := store.GetAccessSessionByTokenHash(ctx, deviceauthmodel.HashOpaqueSecret(token))
+	if err != nil || session == nil {
+		return nil, false
+	}
+
+	now := time.Now().UTC()
+	if !session.IsActive(now) {
+		return nil, false
+	}
+
+	device, err := store.GetDevice(ctx, session.DeviceID)
+	if err != nil || device == nil || !device.CanIssueSessions(now) {
+		return nil, false
+	}
+
+	principal := auth.NewPrincipal(token, session.SubjectID, session.Scopes)
+	principal = s.projectTokenPrincipal(ctx, principal, cfg)
+	return principal, principal != nil
 }
 
 func (s *Server) RequestScopes(r *http.Request) (scopeSet, bool) {
@@ -185,6 +217,11 @@ func (s *Server) projectTokenPrincipal(ctx context.Context, principal *auth.Prin
 type contextKey string
 
 const bearerAuthScopesKey contextKey = contextKey(BearerAuthScopes)
+
+const (
+	operationIDKey    contextKey = "operation_id"
+	exposurePolicyKey contextKey = "exposure_policy"
+)
 
 // ScopeMiddleware enforces that a request has at least one required scope.
 func (s *Server) ScopeMiddleware(required ...Scope) func(http.Handler) http.Handler {

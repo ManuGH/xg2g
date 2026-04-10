@@ -15,6 +15,7 @@ These artifacts should be preserved across restart, upgrade, and restore.
 | Class | Path | Backup | Verify | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
 | SQLite | `$XG2G_STORE_PATH/sessions.sqlite` | Yes | Yes | Active and historical playback session state |
+| SQLite | `$XG2G_STORE_PATH/deviceauth.sqlite` | Yes | Yes | DeviceAuth grants, pairings, and device binding state |
 | SQLite | `$XG2G_STORE_PATH/resume.sqlite` | Yes | Yes | Recording resume positions |
 | SQLite | `$XG2G_STORE_PATH/capabilities.sqlite` | Yes | Yes | Source and receiver capability scan truth |
 | SQLite | `$XG2G_STORE_PATH/decision_audit.sqlite` | Yes | Yes | Playback decision history |
@@ -90,6 +91,18 @@ sqlite3 "$XG2G_STORE_PATH/sessions.sqlite" "VACUUM INTO '/var/backups/xg2g/sessi
 4. Restore `channels.json` and `series_rules.json` under `XG2G_DATA_DIR` when you want user-visible state carried forward.
 5. Start `xg2g`. Built-in migrations will handle structural SQLite updates.
 
+Before starting the daemon, assess the backup set against the current runtime
+and public/security contracts:
+
+```bash
+xg2g preflight \
+  --config /etc/xg2g/config.yaml \
+  --operation=restore \
+  --runtime-snapshot \
+  --restore-root /var/backups/xg2g/2026-04-10 \
+  --json
+```
+
 ## Integrity Verification
 
 ### Built-in tool
@@ -128,6 +141,7 @@ If the output is `ok`, the SQLite file is structurally sound.
 ```bash
 DBS=(
   "sessions.sqlite"
+  "deviceauth.sqlite"
   "resume.sqlite"
   "capabilities.sqlite"
   "decision_audit.sqlite"

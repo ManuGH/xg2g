@@ -1,8 +1,8 @@
 package v3
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -86,6 +86,33 @@ func TestGetEpg_ResponseShape(t *testing.T) {
 	assert.NoError(t, err, "Response should be a bare JSON array")
 	assert.Len(t, items, 1)
 	assert.Equal(t, "Test Show", items[0].Title)
+	assert.NotNil(t, items[0].StartXMLTV)
+	assert.NotNil(t, items[0].EndXMLTV)
+	assert.Equal(t, progs[0].Start, *items[0].StartXMLTV)
+	assert.Equal(t, progs[0].Stop, *items[0].EndXMLTV)
+}
+
+func TestGetEpg_EmptyResponseIsArray(t *testing.T) {
+	mockSource := new(MockEpgSource)
+	server := &Server{
+		epgSource: mockSource,
+	}
+
+	mockSource.On("GetPrograms", mock.Anything).Return([]epg.Programme{}, nil)
+
+	req := httptest.NewRequest("GET", "/api/v3/epg", nil)
+	w := httptest.NewRecorder()
+
+	server.GetEpg(w, req, GetEpgParams{})
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "[]\n", w.Body.String())
+
+	var items []EpgItem
+	err := json.NewDecoder(resp.Body).Decode(&items)
+	assert.NoError(t, err)
+	assert.Len(t, items, 0)
 }
 
 func TestPostServicesNowNext_FallsBackToEpgSourceWhenCacheMissing(t *testing.T) {
@@ -162,4 +189,26 @@ func TestBuildNowNextItems_CanonicalizesServiceRefs(t *testing.T) {
 	assert.NotNil(t, items[0].Next)
 	assert.Equal(t, "Current Show", items[0].Now.Title)
 	assert.Equal(t, "Next Show", items[0].Next.Title)
+}
+
+func TestBuildNowNextItems_PreservesXmltvOffsets(t *testing.T) {
+	serviceRef := "1:0:19:132F:3EF:1:C00000:0:0:0"
+	items := buildNowNextItems(
+		[]string{serviceRef},
+		[]epg.Programme{
+			{
+				Channel: serviceRef,
+				Title:   epg.Title{Text: "DST Special"},
+				Start:   "20260329013000 +0100",
+				Stop:    "20260329033000 +0200",
+			},
+		},
+		time.Date(2026, time.March, 29, 1, 0, 0, 0, time.UTC),
+	)
+
+	assert.Len(t, items, 1)
+	if assert.NotNil(t, items[0].Now) {
+		assert.Equal(t, "20260329013000 +0100", items[0].Now.StartXMLTV)
+		assert.Equal(t, "20260329033000 +0200", items[0].Now.EndXMLTV)
+	}
 }

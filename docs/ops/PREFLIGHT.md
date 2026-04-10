@@ -1,5 +1,10 @@
 # Operational Guide: FFmpeg Preflight Troubleshooting
 
+This document covers media-source FFmpeg preflight only.
+For lifecycle/operator preflight covering startup, public deployment policy, and
+shared install/upgrade/restore/rollback gates, use
+`docs/ops/OPERATIONAL_LIFECYCLE_CONTRACT.md`.
+
 This guide explains how to interpret and resolve issues related to the FFmpeg preflight check in `xg2g`.
 
 ## 1. Understanding Preflight

@@ -98,8 +98,22 @@ type configRoutes interface {
 	PutSystemConfig(w http.ResponseWriter, r *http.Request)
 }
 
+type pairingRoutes interface {
+	StartPairing(w http.ResponseWriter, r *http.Request)
+	GetPairingStatus(w http.ResponseWriter, r *http.Request)
+	ApprovePairing(w http.ResponseWriter, r *http.Request)
+	ExchangePairing(w http.ResponseWriter, r *http.Request)
+}
+
+type deviceAuthRoutes interface {
+	CreateDeviceSession(w http.ResponseWriter, r *http.Request)
+	CreateWebBootstrap(w http.ResponseWriter, r *http.Request)
+	CompleteWebBootstrap(w http.ResponseWriter, r *http.Request)
+}
+
 type systemRoutes interface {
 	GetErrors(w http.ResponseWriter, r *http.Request)
+	GetSystemConnectivity(w http.ResponseWriter, r *http.Request)
 	GetSystemEntitlements(w http.ResponseWriter, r *http.Request)
 	PostSystemEntitlementReceipt(w http.ResponseWriter, r *http.Request)
 	PostSystemEntitlementOverride(w http.ResponseWriter, r *http.Request)

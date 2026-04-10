@@ -52,8 +52,9 @@ describe('BootstrapGate', () => {
     } as unknown as ReturnType<typeof useQueryClient>);
     mockResetQueries.mockReset();
     mockUseAppContext.mockReturnValue({
-      auth: { token: 'stored-token', isAuthenticated: true, isReady: true },
+      auth: { token: 'stored-token', hasServerSession: false, isAuthenticated: true, isReady: true },
       setToken: vi.fn(),
+      setServerSessionAuthenticated: vi.fn(),
       setPlayingChannel: vi.fn(),
     });
     mockUseBootstrapConfig.mockReturnValue({
@@ -71,9 +72,21 @@ describe('BootstrapGate', () => {
 
   it('shows the auth surface when no token is available', () => {
     mockUseAppContext.mockReturnValue({
-      auth: { token: '', isAuthenticated: false, isReady: true },
+      auth: { token: '', hasServerSession: false, isAuthenticated: false, isReady: true },
       setToken: vi.fn(),
+      setServerSessionAuthenticated: vi.fn(),
       setPlayingChannel: vi.fn(),
+    });
+    mockUseBootstrapConfig.mockReturnValue({
+      data: null,
+      error: new ClientRequestError({
+        status: 401,
+        code: 'UNAUTHORIZED',
+        title: 'Authentication required',
+        requestId: 'req-bootstrap-missing',
+      }),
+      isLoading: false,
+      refetch: vi.fn(),
     });
 
     renderGate();
@@ -81,16 +94,28 @@ describe('BootstrapGate', () => {
     expect(screen.getByRole('heading', { name: 'Authentication Required' })).toBeInTheDocument();
     expect(screen.getByText('Enter your API token to open the xg2g control surface.')).toBeInTheDocument();
     expect(screen.getByLabelText('API Token')).toHaveFocus();
-    expect(mockUseBootstrapConfig).toHaveBeenCalledWith(false);
+    expect(mockUseBootstrapConfig).toHaveBeenCalledWith(true);
   });
 
   it('submits a trimmed token from the auth surface', () => {
     const setToken = vi.fn();
 
     mockUseAppContext.mockReturnValue({
-      auth: { token: '', isAuthenticated: false, isReady: true },
+      auth: { token: '', hasServerSession: false, isAuthenticated: false, isReady: true },
       setToken,
+      setServerSessionAuthenticated: vi.fn(),
       setPlayingChannel: vi.fn(),
+    });
+    mockUseBootstrapConfig.mockReturnValue({
+      data: null,
+      error: new ClientRequestError({
+        status: 401,
+        code: 'UNAUTHORIZED',
+        title: 'Authentication required',
+        requestId: 'req-bootstrap-missing',
+      }),
+      isLoading: false,
+      refetch: vi.fn(),
     });
 
     renderGate();
@@ -116,11 +141,12 @@ describe('BootstrapGate', () => {
       title: 'Authentication required',
       requestId: 'req-bootstrap-401',
     });
-    const authState = { token: 'stale-token', isAuthenticated: true, isReady: true };
+    const authState = { token: 'stale-token', hasServerSession: false, isAuthenticated: true, isReady: true };
     const setToken = vi.fn((nextToken: string) => {
       authState.token = nextToken;
       authState.isAuthenticated = nextToken.length > 0;
       authState.isReady = nextToken.length === 0;
+      authState.hasServerSession = false;
     });
 
     let bootstrapError: ClientRequestError | null = unauthorized;
@@ -130,6 +156,7 @@ describe('BootstrapGate', () => {
     mockUseAppContext.mockImplementation(() => ({
       auth: { ...authState },
       setToken,
+      setServerSessionAuthenticated: vi.fn(),
       setPlayingChannel,
     }));
     mockUseBootstrapConfig.mockImplementation(() => ({
@@ -192,6 +219,31 @@ describe('BootstrapGate', () => {
     renderGate([ROUTE_MAP.epg]);
 
     expect(await screen.findByText('Settings view')).toBeInTheDocument();
+  });
+
+  it('accepts a cookie-backed bootstrap session without a stored token', async () => {
+    const setServerSessionAuthenticated = vi.fn();
+
+    mockUseAppContext.mockReturnValue({
+      auth: { token: '', hasServerSession: false, isAuthenticated: false, isReady: true },
+      setToken: vi.fn(),
+      setServerSessionAuthenticated,
+      setPlayingChannel: vi.fn(),
+    });
+    mockUseBootstrapConfig.mockReturnValue({
+      data: { openWebIF: { baseUrl: 'http://receiver.local' } },
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    renderGate();
+
+    expect(await screen.findByText('EPG view')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Authentication Required' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(setServerSessionAuthenticated).toHaveBeenCalledWith(true);
+    });
   });
 
   it('shows the gate skeleton while bootstrap validation is loading', () => {
@@ -338,8 +390,9 @@ describe('BootstrapGate', () => {
     const setPlayingChannel = vi.fn();
 
     mockUseAppContext.mockReturnValue({
-      auth: { token: 'stale-token', isAuthenticated: true, isReady: true },
+      auth: { token: 'stale-token', hasServerSession: false, isAuthenticated: true, isReady: true },
       setToken,
+      setServerSessionAuthenticated: vi.fn(),
       setPlayingChannel,
     });
     mockUseBootstrapConfig.mockReturnValue({
@@ -371,8 +424,9 @@ describe('BootstrapGate', () => {
     const setPlayingChannel = vi.fn();
 
     mockUseAppContext.mockReturnValue({
-      auth: { token: 'live-token', isAuthenticated: true, isReady: true },
+      auth: { token: 'live-token', hasServerSession: false, isAuthenticated: true, isReady: true },
       setToken,
+      setServerSessionAuthenticated: vi.fn(),
       setPlayingChannel,
     });
 
@@ -400,9 +454,21 @@ describe('BootstrapGate', () => {
     };
 
     mockUseAppContext.mockReturnValue({
-      auth: { token: '', isAuthenticated: false, isReady: true },
+      auth: { token: '', hasServerSession: false, isAuthenticated: false, isReady: true },
       setToken: vi.fn(),
+      setServerSessionAuthenticated: vi.fn(),
       setPlayingChannel: vi.fn(),
+    });
+    mockUseBootstrapConfig.mockReturnValue({
+      data: null,
+      error: new ClientRequestError({
+        status: 401,
+        code: 'UNAUTHORIZED',
+        title: 'Authentication required',
+        requestId: 'req-bootstrap-tv-missing',
+      }),
+      isLoading: false,
+      refetch: vi.fn(),
     });
 
     renderGate();
@@ -442,8 +508,9 @@ describe('BootstrapGate', () => {
 
   it('waits for auth header synchronization before starting bootstrap validation', () => {
     mockUseAppContext.mockReturnValue({
-      auth: { token: 'stored-token', isAuthenticated: true, isReady: false },
+      auth: { token: 'stored-token', hasServerSession: false, isAuthenticated: true, isReady: false },
       setToken: vi.fn(),
+      setServerSessionAuthenticated: vi.fn(),
       setPlayingChannel: vi.fn(),
     });
     mockUseBootstrapConfig.mockReturnValue({
