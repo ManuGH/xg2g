@@ -141,3 +141,6 @@ test_walk.go
 fix_helpers.sh
 cosign.bundle
 *.bundle
+
+# Red-team / security test matrices (keep local, not in public repo)
+red/

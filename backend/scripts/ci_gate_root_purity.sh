@@ -49,7 +49,6 @@ ALLOWLIST=(
     "DIGESTS.lock"
     "Makefile"
     "mk/"
-    "build.sh"
     "cliff.toml"
     "mise.toml"
     "RELEASE_MANIFEST.json"
@@ -87,9 +86,6 @@ ALLOWLIST=(
     "run_ui_dev.sh"
     "run_android_local.sh"
     "run_android_tv_smoke.sh"
-
-    # Testing
-    "red/"
 )
 
 echo "🔍 Verifying Repository Root Purity..."
