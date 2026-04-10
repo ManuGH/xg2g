@@ -9,9 +9,12 @@ set -e
 # Only these files and directories are allowed in repo root.
 # Directories MUST end with /
 ALLOWLIST=(
+    # Dotfiles & config
     ".claude/"
+    ".dev/"
     ".dev-notes/"
     ".dev-setup"
+    ".devcontainer/"
     ".dockerignore"
     ".editorconfig"
     ".env"
@@ -22,60 +25,71 @@ ALLOWLIST=(
     ".github/"
     ".gitignore"
     ".gitleaks.toml"
-    ".golangci.yml"
     ".goreleaser.yml"
     ".markdownlint.json"
     ".pre-commit-config.yaml"
     ".secrets.baseline"
+    ".trivyignore"
+
+    # Top-level documentation
+    "AGENTS.md"
     "ARCHITECTURE.md"
-    "BUILD.md"
-    "CHANGELOG_V3.md"
+    "CHANGELOG.md"
+    "CODE_OF_CONDUCT.md"
+    "CONTRIBUTING.md"
+    "LICENSE"
+    "README.md"
+    "SECURITY.md"
+    "TECHNICAL_DEBT_2026.md"
+
+    # Build & container
     "Dockerfile"
     "Dockerfile.distroless"
-    "LICENSE"
+    "Dockerfile.ffmpeg-base"
+    "DIGESTS.lock"
     "Makefile"
-    "README.md"
-    "api/"
-    "artifacts/"
-    "bin/"
+    "mk/"
     "build.sh"
-    "cmd/"
-    "config.example.yaml"
-    "config.generated.example.yaml"
-    "config.yaml"
-    "contracts/"
-    "cosign.bundle"
-    "cspell.json"
-    "data/"
-    "docker-compose.dev.yml"
-    "docker-compose.monitoring.yml"
-    "docs/"
+    "cliff.toml"
+    "mise.toml"
+    "RELEASE_MANIFEST.json"
+
+    # Source directories
+    "android/"
+    "backend/"
+    "frontend/"
+    "hack/"
+
+    # Infrastructure & deployment
+    "deploy/"
     "design/"
-    "e2e/"
-    "fixtures/"
-    "go.mod"
-    "go.sum"
-    "grafana-dashboard.json"
-    "internal/"
+    "docs/"
+    "infrastructure/"
     "monitoring/"
     "openapi/"
+    "support/"
+
+    # Docker Compose
+    "docker-compose.dev.yml"
+    "docker-compose.monitoring.yml"
+
+    # Go workspace
+    "go.work"
+    "go.work.sum"
+
+    # Node / frontend tooling
+    "cspell.json"
     "package-lock.json"
     "package.json"
-    "panic_allowlist.txt"
-    "red/"
-    "renovate.json"
+
+    # Dev scripts
     "run_dev.sh"
-    "scripts/"
-    "support/"
-    "templates/"
-    "test/"
-    "testdata/"
-    "tmp/"
-    "tools/"
-    "tools.go"
-    "vendor/"
-    "VERSION"
-    "frontend/webui/"
+    "run_ui_dev.sh"
+    "run_android_local.sh"
+    "run_android_tv_smoke.sh"
+
+    # Testing
+    "red/"
 )
 
 echo "🔍 Verifying Repository Root Purity..."

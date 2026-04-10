@@ -29,7 +29,7 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./grafana-dashboard.json:/etc/grafana/provisioning/dashboards/xg2g.json:ro
+      - ./monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/xg2g.json:ro
     networks:
       - monitoring
     restart: unless-stopped

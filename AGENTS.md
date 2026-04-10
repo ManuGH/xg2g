@@ -10,7 +10,7 @@ Capture and compare these three files before patching anything:
 - `/srv/xg2g/docker-compose.gpu.yml` — optional GPU overlay; compare it too when present
 - `/etc/xg2g/xg2g.env` — live environment file loaded by both systemd and Compose; may also select compose files via `COMPOSE_FILE`
 
-The checked-in canonical unit is [deploy/xg2g.service](/root/xg2g/deploy/xg2g.service), rendered from [backend/templates/docs/ops/xg2g.service.tmpl](/root/xg2g/backend/templates/docs/ops/xg2g.service.tmpl). The live unit may drift from both the repo truth and the deployed host copy under `/srv/xg2g/docs/ops/xg2g.service`.
+The checked-in canonical unit is [deploy/xg2g.service](deploy/xg2g.service), rendered from [backend/templates/docs/ops/xg2g.service.tmpl](backend/templates/docs/ops/xg2g.service.tmpl). The live unit may drift from both the repo truth and the deployed host copy under `/srv/xg2g/docs/ops/xg2g.service`.
 
 ## Restart Failure Order
 
@@ -26,7 +26,7 @@ docker logs --since 5m xg2g
 Then classify the failure before editing:
 
 - `ExecStartPre` fails with `No such image`: the live unit is likely checking a stale hardcoded tag. Treat `services.xg2g.image` in `/srv/xg2g/docker-compose.yml` as image truth, not an old registry tag.
-- Container logs fail with `XG2G_DECISION_SECRET is required but not set`: `/etc/xg2g/xg2g.env` is missing a mandatory live-stream signing secret. Required length is at least 32 ASCII bytes; see [docs/ops/SECURITY.md](/root/xg2g/docs/ops/SECURITY.md).
+- Container logs fail with `XG2G_DECISION_SECRET is required but not set`: `/etc/xg2g/xg2g.env` is missing a mandatory live-stream signing secret. Required length is at least 32 ASCII bytes; see [docs/ops/SECURITY.md](docs/ops/SECURITY.md).
 - `systemctl start` or `restart` fails at `ExecStartPost` with `Container is unhealthy`: inspect Docker health details, not just `/readyz`.
 
 ## Health Nuance
@@ -47,4 +47,4 @@ That symptom means the service is running far enough to answer readiness, but sy
 
 ## Documentation Rule
 
-If the repo template, the checked-in runbook, and the live host disagree, update [docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md](/root/xg2g/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md) with the exact observed delta before doing larger cleanup work.
+If the repo template, the checked-in runbook, and the live host disagree, update [docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md](docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md) with the exact observed delta before doing larger cleanup work.

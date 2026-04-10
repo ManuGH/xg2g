@@ -33,3 +33,25 @@ dist/
 internal/control/http/dist/
 # 3. Ignore Android client sources; server images do not consume them
 android/
+
+# Documentation & non-build files
+docs/
+red/
+design/
+infrastructure/
+support/
+monitoring/
+*.md
+!backend/**/*.md
+LICENSE
+TECHNICAL_DEBT_2026.md
+RELEASE_MANIFEST.json
+
+# Build artifacts & logs
+build/
+logs/
+tmp/
+artifacts/
+
+# Vendor (re-downloaded via go mod download in multi-stage)
+backend/vendor/

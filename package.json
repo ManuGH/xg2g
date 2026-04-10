@@ -1,8 +1,6 @@
 {
   "devDependencies": {
+    "@playwright/test": "^1.58.0",
     "@types/hls.js": "^0.13.3"
-  },
-  "dependencies": {
-    "@playwright/test": "^1.58.0"
   }
 }
