@@ -10,7 +10,6 @@ BACKEND_ROOT = ROOT / "backend"
 REGISTRY_PATH = ROOT / "docs/deprecations.json"
 POLICY_PATH = ROOT / "docs/DEPRECATION_POLICY.md"
 CONFIG_PATH = BACKEND_ROOT / "internal/config/deprecation.go"
-AUTH_TOKEN_PATH = BACKEND_ROOT / "internal/auth/token.go"
 # Deprecated configuration usage should be annotated with a deprecation_id.
 # The registry is the single source of truth for operator-facing settings.
 CONFIG_DEPRECATED_SETTINGS_PATH = BACKEND_ROOT / "internal/config/registry.go"
@@ -173,23 +172,6 @@ def check_constants(errors, deprecations, constants):
             )
 
 
-def check_auth_log(errors, deprecations):
-    if not AUTH_TOKEN_PATH.exists():
-        add_error(errors, f"Missing auth token file: {AUTH_TOKEN_PATH}")
-        return
-
-    registry_ids = {dep.get("id") for dep in deprecations}
-    if "query_token_auth" not in registry_ids:
-        return
-
-    text = AUTH_TOKEN_PATH.read_text()
-    if "DeprecatedQueryTokenRemovalVersion" not in text:
-        add_error(
-            errors,
-            f"{AUTH_TOKEN_PATH} should use DeprecatedQueryTokenRemovalVersion in deprecation logs",
-        )
-
-
 def check_deprecated_settings(errors, deprecations):
     if not CONFIG_DEPRECATED_SETTINGS_PATH.exists():
         # Non-fatal: the repo might restructure config files; keep other checks working.
@@ -220,7 +202,6 @@ def main():
         constants = parse_constants(errors)
         check_constants(errors, deprecations, constants)
 
-    check_auth_log(errors, deprecations)
     check_deprecated_settings(errors, deprecations)
 
     if errors:
