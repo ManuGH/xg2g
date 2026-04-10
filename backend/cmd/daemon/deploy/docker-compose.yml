@@ -4,6 +4,6 @@ services:
     env_file:
       - /etc/xg2g/xg2g.env
     environment:
-      - XG2G_DATA=/var/folders/99/p3_dnc890xbcy_8qdw4024wh0000gn/T/TestRunPreflightCLIRestoreIncludesAssessmentJSON187633477/004
+      - XG2G_DATA=/var/lib/xg2g
     volumes:
-      - /var/folders/99/p3_dnc890xbcy_8qdw4024wh0000gn/T/TestRunPreflightCLIRestoreIncludesAssessmentJSON187633477/004:/var/folders/99/p3_dnc890xbcy_8qdw4024wh0000gn/T/TestRunPreflightCLIRestoreIncludesAssessmentJSON187633477/004
+      - /var/lib/xg2g:/var/lib/xg2g

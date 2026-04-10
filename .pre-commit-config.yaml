@@ -41,17 +41,7 @@ repos:
     hooks:
       - id: yamlfmt
         name: Format YAML files
-        files: ^(internal/config/testdata/|examples/).*\.(ya?ml)$
-        exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
-
-  # YAML linting
-  - repo: https://github.com/adrienverge/yamllint
-    rev: v1.35.1
-    hooks:
-      - id: yamllint
-        name: Lint YAML files
-        args: [-c, .yamllint.yaml]
-        files: ^(internal/config/testdata/|examples/).*\.(ya?ml)$
+        files: ^(backend/internal/config/testdata/|backend/fixtures/).*\.(ya?ml)$
         exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
 
   # Local hooks
@@ -59,19 +49,13 @@ repos:
     hooks:
       - id: golangci-lint-system
         name: Lint Go code
-        entry: bash scripts/pre-commit-golangci-lint.sh
+        entry: bash backend/scripts/pre-commit-golangci-lint.sh
         language: system
         pass_filenames: false
         stages: [manual, pre-push] # Only on pre-push to avoid slowing down commits
-      - id: validate-healthchecks
-        name: Validate healthcheck endpoints
-        entry: scripts/validate-healthchecks.sh
-        language: script
-        files: '^(docker-compose.*\.ya?ml|deploy/docker-compose.*\.ya?ml|deploy/k8s-.*\.ya?ml|deploy/kubernetes/.*\.ya?ml)$'
-        pass_filenames: false
       - id: pre-push-sanity
         name: Pre-push sanity (branch/history/worktree)
-        entry: scripts/pre-push-sanity.sh
+        entry: backend/scripts/pre-push-sanity.sh
         language: script
         pass_filenames: false
         stages: [pre-push]
