@@ -50,7 +50,7 @@ jobs:
           echo "FFmpeg base image: ghcr.io/manugh/xg2g-ffmpeg:${version}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@9a127d869fb706213d29cdf8eef3a4ea2b869415 # v7
+        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7
         with:
           distribution: goreleaser
           version: "~> 2" # pin to v2.x; bump intentionally when v3 ships
