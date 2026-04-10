@@ -118,4 +118,4 @@ Never publish:
 
 - [ADR-005](005-Architecture-Invariants.md)
 - [ADR-023](023-device-enrollment-session-model.md)
-- [Proposed Device/OpenAPI Contract](/Users/manuel/StudioProjects/xg2g/openapi/device-enrollment-connectivity.proposed.yaml)
+- [Proposed Device/OpenAPI Contract](openapi/device-enrollment-connectivity.proposed.yaml)

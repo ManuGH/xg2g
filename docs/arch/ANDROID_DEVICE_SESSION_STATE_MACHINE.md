@@ -214,6 +214,6 @@ Rules:
 
 ## References
 
-- [ADR-023](/Users/manuel/StudioProjects/xg2g/docs/ADR/023-device-enrollment-session-model.md)
-- [ADR-024](/Users/manuel/StudioProjects/xg2g/docs/ADR/024-published-endpoint-connectivity-truth.md)
-- [Proposed Device/OpenAPI Contract](/Users/manuel/StudioProjects/xg2g/openapi/device-enrollment-connectivity.proposed.yaml)
+- [ADR-023](docs/ADR/023-device-enrollment-session-model.md)
+- [ADR-024](docs/ADR/024-published-endpoint-connectivity-truth.md)
+- [Proposed Device/OpenAPI Contract](openapi/device-enrollment-connectivity.proposed.yaml)

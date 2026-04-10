@@ -44,7 +44,6 @@ monitoring/
 *.md
 !backend/**/*.md
 LICENSE
-TECHNICAL_DEBT_2026.md
 RELEASE_MANIFEST.json
 
 # Build artifacts & logs

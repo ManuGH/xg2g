@@ -155,5 +155,5 @@ policy system.
 
 - [ADR-005](005-Architecture-Invariants.md)
 - [ADR-024](024-published-endpoint-connectivity-truth.md)
-- [Proposed Device/OpenAPI Contract](/Users/manuel/StudioProjects/xg2g/openapi/device-enrollment-connectivity.proposed.yaml)
-- [Android Device State Machine](/Users/manuel/StudioProjects/xg2g/docs/arch/ANDROID_DEVICE_SESSION_STATE_MACHINE.md)
+- [Proposed Device/OpenAPI Contract](openapi/device-enrollment-connectivity.proposed.yaml)
+- [Android Device State Machine](docs/arch/ANDROID_DEVICE_SESSION_STATE_MACHINE.md)

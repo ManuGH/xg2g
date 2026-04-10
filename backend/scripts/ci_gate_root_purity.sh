@@ -40,13 +40,11 @@ ALLOWLIST=(
     "LICENSE"
     "README.md"
     "SECURITY.md"
-    "TECHNICAL_DEBT_2026.md"
 
     # Build & container
     "Dockerfile"
     "Dockerfile.distroless"
     "Dockerfile.ffmpeg-base"
-    "DIGESTS.lock"
     "Makefile"
     "mk/"
     "cliff.toml"

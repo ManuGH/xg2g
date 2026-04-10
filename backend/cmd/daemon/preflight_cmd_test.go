@@ -147,8 +147,10 @@ func writePreflightRuntimeFixture(t *testing.T, installRoot, repoRoot, dataDir s
 		t.Fatalf("write env file: %v", err)
 	}
 
-	mustWritePreflightFile(t, filepath.Join(repoRoot, "deploy/xg2g.service"), unit)
-	mustWritePreflightFile(t, filepath.Join(repoRoot, "deploy/docker-compose.yml"), repoCompose)
+	if repoRoot != "" {
+		mustWritePreflightFile(t, filepath.Join(repoRoot, "deploy/xg2g.service"), unit)
+		mustWritePreflightFile(t, filepath.Join(repoRoot, "deploy/docker-compose.yml"), repoCompose)
+	}
 }
 
 func mustWritePreflightFile(t *testing.T, path, body string) {
