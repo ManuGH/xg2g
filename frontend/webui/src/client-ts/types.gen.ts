@@ -1253,7 +1253,7 @@ export type PlaybackTrace = {
 
 /**
  * Operator-oriented HLS delivery debug view. These fields are observational only and
- * must not be treated as authoritative playback policy.
+ * must not be treated as authoritative playback policy or client playback input.
  *
  */
 export type PlaybackTraceHlsDebug = {
@@ -1270,15 +1270,15 @@ export type PlaybackTraceHlsDebug = {
      */
     stallHint?: string | null;
     /**
-     * Small operator-facing label for the current server-side HLS startup policy mode.
+     * Small operator-facing label for the current server-side HLS startup policy mode. Debug only; must not drive client playback decisions.
      */
     startupMode?: string | null;
     /**
-     * Effective startup headroom selected by the server-side HLS startup policy.
+     * Effective startup headroom selected by the server-side HLS startup policy. Debug only; must not drive client playback decisions.
      */
     startupHeadroomSec?: number | null;
     /**
-     * Stable operator-facing reason codes that explain why the startup headroom was chosen.
+     * Stable operator-facing reason codes that explain why the startup headroom was chosen. Debug only; must not be used as a client-side policy input.
      */
     startupReasons?: Array<string> | null;
 };

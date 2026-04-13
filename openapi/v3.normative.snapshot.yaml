@@ -2167,7 +2167,7 @@ components:
       additionalProperties: false
       description: |
         Operator-oriented HLS delivery debug view. These fields are observational only and
-        must not be treated as authoritative playback policy.
+        must not be treated as authoritative playback policy or client playback input.
       properties:
         playlistRequestCount:
           type: integer
@@ -2200,15 +2200,15 @@ components:
         startupMode:
           type: string
           nullable: true
-          description: Small operator-facing label for the current server-side HLS startup policy mode.
+          description: Small operator-facing label for the current server-side HLS startup policy mode. Debug only; must not drive client playback decisions.
         startupHeadroomSec:
           type: integer
           nullable: true
-          description: Effective startup headroom selected by the server-side HLS startup policy.
+          description: Effective startup headroom selected by the server-side HLS startup policy. Debug only; must not drive client playback decisions.
         startupReasons:
           type: array
           nullable: true
-          description: Stable operator-facing reason codes that explain why the startup headroom was chosen.
+          description: Stable operator-facing reason codes that explain why the startup headroom was chosen. Debug only; must not be used as a client-side policy input.
           items:
             type: string
 
