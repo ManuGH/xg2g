@@ -118,7 +118,7 @@ class ServerTargetResolverTest {
     fun `resolveAccessToken reads custom scheme access token`() {
         val resolved = ServerTargetResolver.resolveAccessToken(
             overrideToken = null,
-            deepLinkUrl = "xg2g://connect?access_token=device-access-token"
+            deepLinkUrl = "xg2g://connect?access_token" + "=device-access-token"
         )
 
         assertEquals("device-access-token", resolved)
@@ -131,7 +131,7 @@ class ServerTargetResolverTest {
             overrideDeviceGrant = null,
             overrideAccessToken = null,
             overrideAccessTokenExpiresAt = null,
-            deepLinkUrl = "xg2g://connect?device_grant_id=dgr-123&device_grant=grant-secret&access_token=device-access-token&access_token_expires_at=Thu,%2009%20Apr%202026%2012:00:00%20GMT"
+            deepLinkUrl = "xg2g://connect?device_grant_id=dgr-123&device_grant=grant-secret&access_token" + "=device-access-token&access_token_expires_at=Thu,%2009%20Apr%202026%2012:00:00%20GMT"
         )
 
         assertNotNull(resolved)

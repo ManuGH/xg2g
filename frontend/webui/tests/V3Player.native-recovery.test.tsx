@@ -252,7 +252,7 @@ describe('V3Player native Safari recovery', () => {
     const playSpy = vi.mocked(HTMLMediaElement.prototype.play);
     let currentTime = 1;
     let readyState = 4;
-    let paused = false;
+    const paused = false;
     let bufferedRanges = [{ start: 0, end: 4 }];
 
     vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -439,9 +439,9 @@ describe('V3Player native Safari recovery', () => {
     }
 
     let currentTime = 8;
-    let readyState = 2;
-    let paused = false;
-    let bufferedRanges: Array<{ start: number; end: number }> = [];
+    const readyState = 2;
+    const paused = false;
+    const bufferedRanges: Array<{ start: number; end: number }> = [];
 
     Object.defineProperty(video, 'currentSrc', {
       configurable: true,
