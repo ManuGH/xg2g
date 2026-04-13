@@ -68,7 +68,10 @@ class PlaybackJsonCodecTest {
         assertTrue(!root.getJSONObject("activeRequest").has("authToken"))
         assertEquals("READY", root.getJSONObject("session").getString("state"))
         assertEquals("RECORDING", root.getJSONObject("session").getString("mode"))
-        assertEquals("native_hls", root.getJSONObject("diagnostics").getString("playbackMode"))
+        assertEquals(
+            PlaybackMode.NativeHls.wireValue,
+            root.getJSONObject("diagnostics").getString("playbackMode")
+        )
         assertTrue(root.getJSONObject("diagnostics").has("playbackInfo"))
     }
 }
