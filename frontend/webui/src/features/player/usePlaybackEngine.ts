@@ -29,6 +29,7 @@ interface UsePlaybackEngineProps {
   setError: Dispatch<SetStateAction<string | null>>;
   setErrorDetails: Dispatch<SetStateAction<string | null>>;
   setShowErrorDetails: Dispatch<SetStateAction<boolean>>;
+  dispatchPlayerAction?: (action: any) => void;
 }
 
 interface PlaybackEngineController {

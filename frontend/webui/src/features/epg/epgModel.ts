@@ -10,7 +10,8 @@ function nowSeconds(): number {
 }
 
 // Create a fully-initialized state with no React/API dependencies.
-export function createInitialEpgState(currentTime: number = nowSeconds()): EpgState {
+export function createInitialEpgState(init?: { filters?: Partial<EpgFilters> }): EpgState {
+  const currentTime = nowSeconds();
   // Keep defaults centralized to avoid "magic numbers" across UI.
   const defaultFilters: EpgFilters = {
     query: '',
@@ -29,7 +30,7 @@ export function createInitialEpgState(currentTime: number = nowSeconds()): EpgSt
     searchEvents: [],
 
     // Filters
-    filters: defaultFilters,
+    filters: { ...defaultFilters, ...init?.filters },
 
     // Load States
     loadState: 'idle',

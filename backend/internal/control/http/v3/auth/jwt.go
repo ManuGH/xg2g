@@ -207,3 +207,82 @@ func VerifyStrictAt(token string, secret []byte, expectedAud, expectedIss string
 
 	return &claims, nil
 }
+
+// VerifyStrictAtWithMaxTTL is like VerifyStrictAt but accepts a custom maximum TTL
+// instead of the hardcoded 120-second default.
+func VerifyStrictAtWithMaxTTL(token string, secret []byte, expectedAud, expectedIss string, now int64, maxTTL int64) (*TokenClaims, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil, ErrTokenMalformed
+	}
+
+	payload := parts[0] + "." + parts[1]
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(payload))
+	expectedSig := mac.Sum(nil)
+
+	actualSig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return nil, ErrInvalidSig
+	}
+
+	if !hmac.Equal(expectedSig, actualSig) {
+		return nil, ErrInvalidSig
+	}
+
+	hJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, ErrTokenMalformed
+	}
+	var header JWTHeader
+	if err := json.Unmarshal(hJSON, &header); err != nil {
+		return nil, ErrTokenMalformed
+	}
+	if header.Alg != "HS256" {
+		return nil, ErrInvalidAlg
+	}
+
+	cJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, ErrTokenMalformed
+	}
+	var claims TokenClaims
+	if err := json.Unmarshal(cJSON, &claims); err != nil {
+		return nil, ErrTokenMalformed
+	}
+
+	if claims.Iat == 0 {
+		return nil, ErrMissingIAT
+	}
+	if claims.Exp == 0 {
+		return nil, ErrMissingExp
+	}
+	if claims.Nbf == 0 {
+		return nil, ErrMissingNbf
+	}
+
+	const skew = 30
+	if now < (claims.Nbf - skew) {
+		return nil, ErrTokenNotActive
+	}
+	if now > (claims.Exp + skew) {
+		return nil, ErrTokenExpired
+	}
+
+	ttl := claims.Exp - claims.Iat
+	if ttl <= 0 {
+		return nil, ErrTokenExpired
+	}
+	if ttl > maxTTL {
+		return nil, ErrTokenTTLTooLong
+	}
+
+	if claims.Iss != expectedIss {
+		return nil, ErrMismatchIss
+	}
+	if claims.Aud != expectedAud {
+		return nil, ErrMismatchAud
+	}
+
+	return &claims, nil
+}

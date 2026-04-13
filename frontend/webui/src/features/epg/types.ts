@@ -94,3 +94,11 @@ export type EpgAction =
   | { type: 'TOGGLE_CHANNEL'; payload: { channelId: string } }
   | { type: 'TOGGLE_SEARCH_CHANNEL'; payload: { channelId: string } }
   | { type: 'UPDATE_TIME'; payload: { currentTime: number } };
+
+export interface EpgProps {
+  channels: EpgChannel[];
+  bouquets?: EpgBouquet[];
+  selectedBouquet?: string;
+  onSelectBouquet?: (bouquetId: string) => void;
+  onPlay?: (channel: EpgChannel) => void;
+}
