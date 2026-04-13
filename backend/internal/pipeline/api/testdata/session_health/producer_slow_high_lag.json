@@ -1,0 +1,32 @@
+{
+  "name": "producer_slow_high_lag",
+  "context": {
+    "clientFamily": "chromium_hlsjs",
+    "sessionMode": "live"
+  },
+  "trace": {
+    "client": {
+      "clientFamily": "chromium_hlsjs"
+    },
+    "hls": {
+      "playlistRequestCount": 5,
+      "lastPlaylistAtUnix": 1713000201,
+      "segmentRequestCount": 4,
+      "lastSegmentAtUnix": 1713000202,
+      "lastSegmentName": "seg_000200.ts",
+      "lastSegmentGapMs": 2400,
+      "latestSegmentLagMs": 11200,
+      "stallRisk": "low",
+      "startupMode": "trace_guarded",
+      "startupHeadroomSec": 10
+    }
+  },
+  "expected": {
+    "health": "producer_slow",
+    "reasonCodes": [
+      "playlist_progress_observed",
+      "segment_progress_observed",
+      "high_segment_lag"
+    ]
+  }
+}

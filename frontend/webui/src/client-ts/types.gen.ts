@@ -1270,6 +1270,14 @@ export type PlaybackTraceHlsDebug = {
      */
     stallHint?: string | null;
     /**
+     * Derived server-side HLS session health classification. Debug only; observational and not a client playback policy input.
+     */
+    health?: string | null;
+    /**
+     * Stable operator-facing reason codes that explain the derived HLS session health. Debug only; must not drive client playback decisions.
+     */
+    healthReasons?: Array<string> | null;
+    /**
      * Small operator-facing label for the current server-side HLS startup policy mode. Debug only; must not drive client playback decisions.
      */
     startupMode?: string | null;

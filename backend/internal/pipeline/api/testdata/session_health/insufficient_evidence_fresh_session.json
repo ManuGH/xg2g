@@ -1,0 +1,29 @@
+{
+  "name": "insufficient_evidence_fresh_session",
+  "context": {
+    "clientFamily": "safari_native",
+    "sessionMode": "live"
+  },
+  "trace": {
+    "client": {
+      "clientFamily": "safari_native"
+    },
+    "hls": {
+      "playlistRequestCount": 1,
+      "lastPlaylistAtUnix": 1713000501,
+      "segmentRequestCount": 0,
+      "stallRisk": "playlist_only",
+      "startupMode": "native_guarded",
+      "startupHeadroomSec": 8
+    }
+  },
+  "expected": {
+    "health": "insufficient_evidence",
+    "reasonCodes": [
+      "playlist_progress_observed",
+      "low_startup_headroom",
+      "client_family_webkit",
+      "insufficient_trace_depth"
+    ]
+  }
+}

@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
+	pipelineapi "github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -658,6 +659,16 @@ func mapPlaybackTraceHLSDebug(trace *model.PlaybackTrace) *PlaybackTraceHlsDebug
 		reasons := append([]string(nil), hls.StartupReasons...)
 		dto.StartupReasons = &reasons
 		hasValue = true
+	}
+	if hasValue {
+		assessment := pipelineapi.DeriveSessionPlaybackHealth(trace, pipelineapi.SessionPlaybackHealthContext{})
+		if health := strings.TrimSpace(string(assessment.Health)); health != "" {
+			dto.Health = &health
+		}
+		if len(assessment.ReasonCodes) > 0 {
+			reasons := append([]string(nil), assessment.ReasonCodes...)
+			dto.HealthReasons = &reasons
+		}
 	}
 
 	if !hasValue {

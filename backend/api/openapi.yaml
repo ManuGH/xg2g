@@ -2198,6 +2198,16 @@ components:
           type: string
           nullable: true
           description: Advisory hint derived from recent HLS delivery observations.
+        health:
+          type: string
+          nullable: true
+          description: Derived server-side HLS session health classification. Debug only; observational and not a client playback policy input.
+        healthReasons:
+          type: array
+          nullable: true
+          description: Stable operator-facing reason codes that explain the derived HLS session health. Debug only; must not drive client playback decisions.
+          items:
+            type: string
         startupMode:
           type: string
           nullable: true
