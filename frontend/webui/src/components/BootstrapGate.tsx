@@ -154,16 +154,13 @@ export default function BootstrapGate() {
       return;
     }
 
-    // Clear stale 401 bootstrap state before we apply the replacement token.
-    // Otherwise the old unauthorized query error can immediately trip the
-    // auth-required effect again and wipe the fresh token during re-auth.
-    void queryClient.resetQueries({
-      queryKey: queryKeys.bootstrapConfig,
-      exact: true,
-    });
     setForcedAuthPrompt(null);
     setTokenValue(token);
     setToken(token);
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.bootstrapConfig,
+      exact: true,
+    });
   };
 
   if (authReason) {

@@ -72,8 +72,9 @@ export function AppProvider({ children }: AppProviderProps) {
     setTokenState(normalizedToken);
     if (normalizedToken) {
       setStoredToken(normalizedToken);
+      setClientAuthToken(normalizedToken);
       setHasServerSession(false);
-      setAuthReady(false);
+      setAuthReady(true);
     } else {
       clearStoredToken();
       setClientAuthToken('');

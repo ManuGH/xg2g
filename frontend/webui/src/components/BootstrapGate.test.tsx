@@ -9,7 +9,7 @@ import { ROUTE_MAP, UNLOCK_ROUTE } from '../routes';
 
 const mockUseAppContext = vi.fn();
 const mockUseBootstrapConfig = vi.fn();
-const mockResetQueries = vi.fn();
+const mockInvalidateQueries = vi.fn();
 
 
 vi.mock('../context/AppContext', () => ({
@@ -48,9 +48,9 @@ function renderGate(initialEntries: string[] = [ROUTE_MAP.epg]) {
 describe('BootstrapGate', () => {
   beforeEach(() => {
     vi.mocked(useQueryClient).mockReturnValue({
-      resetQueries: mockResetQueries,
+      invalidateQueries: mockInvalidateQueries,
     } as unknown as ReturnType<typeof useQueryClient>);
-    mockResetQueries.mockReset();
+    mockInvalidateQueries.mockReset();
     mockUseAppContext.mockReturnValue({
       auth: { token: 'stored-token', hasServerSession: false, isAuthenticated: true, isReady: true },
       setToken: vi.fn(),
@@ -125,7 +125,7 @@ describe('BootstrapGate', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
 
-    expect(mockResetQueries).toHaveBeenCalledWith({
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ['v3', 'bootstrap', 'config'],
       exact: true,
     });
@@ -145,13 +145,14 @@ describe('BootstrapGate', () => {
     const setToken = vi.fn((nextToken: string) => {
       authState.token = nextToken;
       authState.isAuthenticated = nextToken.length > 0;
-      authState.isReady = nextToken.length === 0;
+      authState.isReady = true;
       authState.hasServerSession = false;
     });
 
     let bootstrapError: ClientRequestError | null = unauthorized;
-    mockResetQueries.mockImplementation(() => {
+    mockInvalidateQueries.mockImplementation(() => {
       bootstrapError = null;
+      return Promise.resolve();
     });
     mockUseAppContext.mockImplementation(() => ({
       auth: { ...authState },
@@ -200,7 +201,7 @@ describe('BootstrapGate', () => {
       </MemoryRouter>
     );
 
-    expect(mockResetQueries).toHaveBeenCalledWith({
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ['v3', 'bootstrap', 'config'],
       exact: true,
     });
