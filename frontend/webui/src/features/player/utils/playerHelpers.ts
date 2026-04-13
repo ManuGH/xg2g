@@ -12,11 +12,26 @@ import type { VideoElementRef } from '../../../types/v3-player';
 
 export class PlayerError extends Error {
   details?: unknown;
+  status?: number;
+  code?: string;
+  requestId?: string;
 
   constructor(message: string, details?: unknown) {
     super(message);
     this.name = 'PlayerError';
     this.details = details;
+    if (details && typeof details === 'object') {
+      const record = details as Record<string, unknown>;
+      if (typeof record.status === 'number') {
+        this.status = record.status;
+      }
+      if (typeof record.code === 'string') {
+        this.code = record.code;
+      }
+      if (typeof record.requestId === 'string') {
+        this.requestId = record.requestId;
+      }
+    }
     Object.setPrototypeOf(this, PlayerError.prototype);
   }
 }

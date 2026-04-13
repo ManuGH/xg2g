@@ -10,7 +10,12 @@ export type TelemetryEventType =
   | 'ui.contract.violation'
   | 'ui.error'
   | 'ui.auth_error'
-  | 'ui.failclosed';
+  | 'ui.failclosed'
+  | 'playback_auth_blocked'
+  | 'playback_session_failed'
+  | 'playback_contract_blocked'
+  | 'playback_media_error'
+  | 'playback_advisory';
 
 export interface TelemetryEvent {
   type: TelemetryEventType;
