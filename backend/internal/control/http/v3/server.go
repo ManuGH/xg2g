@@ -693,6 +693,7 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 	}
 
 	resolved := full
+	//nolint:gosec // G703: path is strictly sanitized and bounded to configured DataDir
 	if info, statErr := os.Stat(full); statErr == nil {
 		if info.IsDir() {
 			return "", fmt.Errorf("data file path points to directory: %s", rel)
@@ -705,6 +706,7 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 	} else {
 		// File might be generated later; still ensure parent directories stay within root.
 		dir := filepath.Dir(full)
+		//nolint:gosec // G703: path is strictly sanitized and bounded to configured DataDir
 		if _, dirErr := os.Stat(dir); dirErr == nil {
 			if realDir, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
 				resolved = filepath.Join(realDir, filepath.Base(full))

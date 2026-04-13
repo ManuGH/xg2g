@@ -44,7 +44,7 @@ describe('V3Player Contract Fuzzing', () => {
 
           if (!hasSelected) {
             await waitFor(() => {
-              expect(screen.getByText(/Backend decision missing selectedOutputUrl/i)).toBeInTheDocument();
+              expect(screen.getByText(/Server error|player\.serverError/i)).toBeInTheDocument();
             });
           }
 

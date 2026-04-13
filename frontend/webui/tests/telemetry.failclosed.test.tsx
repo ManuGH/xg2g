@@ -36,14 +36,15 @@ describe('Telemetry Fail-Closed', () => {
     render(<V3Player autoStart={true} recordingId="rec-fail-1" />);
 
     await waitFor(() => {
-      // Check UI error
-      expect(screen.getByText(/Backend decision missing selectedOutputUrl|player.playbackError/i)).toBeInTheDocument();
+      expect(screen.getByText(/Server error|player\.serverError/i)).toBeInTheDocument();
 
-      // Check Telemetry
       const events = telemetry.getEvents();
       const failEvent = events.find(e => e.type === 'ui.failclosed');
+      const semanticEvent = events.find(e => e.type === 'playback_contract_blocked');
       expect(failEvent).toBeDefined();
-      expect(failEvent?.payload.context).toContain('V3Player.decision.selectionMissing');
+      expect(semanticEvent).toBeDefined();
+      expect(failEvent?.payload.context).toBe('V3Player.recording.contract.blocked');
+      expect(failEvent?.payload.reason).toBe('missing_output_url');
     });
   });
 
@@ -69,8 +70,10 @@ describe('Telemetry Fail-Closed', () => {
     await waitFor(() => {
       expect(screen.getByText(/player\.playbackDenied|Playback denied/i)).toBeInTheDocument();
       const events = telemetry.getEvents();
-      const denyEvent = events.find(e => e.type === 'ui.failclosed' && e.payload?.context === 'V3Player.mode.deny');
+      const denyEvent = events.find(e => e.type === 'ui.failclosed' && e.payload?.context === 'V3Player.recording.contract.blocked');
+      const semanticEvent = events.find(e => e.type === 'playback_contract_blocked' && e.payload?.code === 'playback_denied');
       expect(denyEvent).toBeDefined();
+      expect(semanticEvent).toBeDefined();
       expect(denyEvent?.payload.reason).toBe('policy_denies_transcode');
     });
   });

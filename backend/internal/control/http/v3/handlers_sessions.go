@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
+	pipelineapi "github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -602,6 +603,80 @@ func firstNonEmptyFeedback(values ...string) string {
 	return ""
 }
 
+func mapPlaybackTraceHLSDebug(trace *model.PlaybackTrace) *PlaybackTraceHlsDebug {
+	if trace == nil || trace.HLS == nil {
+		return nil
+	}
+	hls := trace.HLS
+	dto := &PlaybackTraceHlsDebug{}
+	hasValue := false
+
+	if hls.PlaylistRequestCount > 0 {
+		dto.PlaylistRequestCount = optionalIntPtr(hls.PlaylistRequestCount)
+		hasValue = true
+	}
+	if hls.LastPlaylistAtUnix > 0 {
+		dto.LastPlaylistAtMs = optionalIntPtr(int(hls.LastPlaylistAtUnix * 1000))
+		hasValue = true
+	}
+	if hls.LastPlaylistIntervalMs > 0 {
+		dto.LastPlaylistIntervalMs = optionalIntPtr(hls.LastPlaylistIntervalMs)
+		hasValue = true
+	}
+	if hls.SegmentRequestCount > 0 {
+		dto.SegmentRequestCount = optionalIntPtr(hls.SegmentRequestCount)
+		hasValue = true
+	}
+	if hls.LastSegmentAtUnix > 0 {
+		dto.LastSegmentAtMs = optionalIntPtr(int(hls.LastSegmentAtUnix * 1000))
+		hasValue = true
+	}
+	if lastSegmentName := strings.TrimSpace(hls.LastSegmentName); lastSegmentName != "" {
+		dto.LastSegmentName = &lastSegmentName
+		hasValue = true
+	}
+	if hls.LastSegmentGapMs > 0 {
+		dto.LastSegmentGapMs = optionalIntPtr(hls.LastSegmentGapMs)
+		hasValue = true
+	}
+	if hls.LatestSegmentLagMs > 0 {
+		dto.LatestSegmentLagMs = optionalIntPtr(hls.LatestSegmentLagMs)
+		hasValue = true
+	}
+	if stallHint := strings.TrimSpace(hls.StallRisk); stallHint != "" {
+		dto.StallHint = &stallHint
+		hasValue = true
+	}
+	if startupMode := strings.TrimSpace(hls.StartupMode); startupMode != "" {
+		dto.StartupMode = &startupMode
+		hasValue = true
+	}
+	if hls.StartupHeadroomSec > 0 {
+		dto.StartupHeadroomSec = optionalIntPtr(hls.StartupHeadroomSec)
+		hasValue = true
+	}
+	if len(hls.StartupReasons) > 0 {
+		reasons := append([]string(nil), hls.StartupReasons...)
+		dto.StartupReasons = &reasons
+		hasValue = true
+	}
+	if hasValue {
+		assessment := pipelineapi.DeriveSessionPlaybackHealth(trace, pipelineapi.SessionPlaybackHealthContext{})
+		if health := strings.TrimSpace(string(assessment.Health)); health != "" {
+			dto.Health = &health
+		}
+		if len(assessment.ReasonCodes) > 0 {
+			reasons := append([]string(nil), assessment.ReasonCodes...)
+			dto.HealthReasons = &reasons
+		}
+	}
+
+	if !hasValue {
+		return nil
+	}
+	return dto
+}
+
 func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hlsRoot string) *PlaybackTrace {
 	if session == nil {
 		return nil
@@ -759,6 +834,10 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 			AudioMode:  strPtr(trace.FFmpegPlan.AudioMode),
 			AudioCodec: strPtr(trace.FFmpegPlan.AudioCodec),
 		}
+	}
+
+	if hlsDebug := mapPlaybackTraceHLSDebug(trace); hlsDebug != nil {
+		dto.HlsDebug = hlsDebug
 	}
 
 	firstFrameAtUnix := trace.FirstFrameAtUnix

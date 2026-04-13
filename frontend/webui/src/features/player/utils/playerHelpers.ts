@@ -12,11 +12,26 @@ import type { VideoElementRef } from '../../../types/v3-player';
 
 export class PlayerError extends Error {
   details?: unknown;
+  status?: number;
+  code?: string;
+  requestId?: string;
 
   constructor(message: string, details?: unknown) {
     super(message);
     this.name = 'PlayerError';
     this.details = details;
+    if (details && typeof details === 'object') {
+      const record = details as Record<string, unknown>;
+      if (typeof record.status === 'number') {
+        this.status = record.status;
+      }
+      if (typeof record.code === 'string') {
+        this.code = record.code;
+      }
+      if (typeof record.requestId === 'string') {
+        this.requestId = record.requestId;
+      }
+    }
     Object.setPrototypeOf(this, PlayerError.prototype);
   }
 }
@@ -88,8 +103,17 @@ export function canUseDesktopWebKitFullscreen(videoEl?: VideoElementRef): boolea
   try {
     const webkitVideo = videoEl as unknown as {
       webkitEnterFullscreen?: unknown;
+      webkitSupportsPresentationMode?: unknown;
+      webkitSetPresentationMode?: unknown;
     };
-    return typeof webkitVideo.webkitEnterFullscreen === 'function' && !hasTouchInput();
+    if (hasTouchInput()) {
+      return false;
+    }
+    return (
+      typeof webkitVideo.webkitEnterFullscreen === 'function' ||
+      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
+      typeof webkitVideo.webkitSetPresentationMode === 'function'
+    );
   } catch {
     return false;
   }
@@ -126,6 +150,7 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
     if (!hasNativeHls) return false;
     if (shouldForceNativeMobileHls(videoEl)) return true;
+    if (canUseDesktopWebKitFullscreen(videoEl)) return true;
 
     return !hlsJsSupported;
   } catch {

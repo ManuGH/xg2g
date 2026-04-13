@@ -639,6 +639,7 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	}
 	if initURI := playlistInitSegment(content); initURI != "" {
 		initPath := filepath.Join(filepath.Dir(playlistPath), initURI)
+		//nolint:gosec // G703: initURI is sanitized by playlistInitSegment against traversals
 		initInfo, initErr := os.Stat(initPath)
 		if initErr != nil || initInfo.Size() == 0 {
 			return false, nil

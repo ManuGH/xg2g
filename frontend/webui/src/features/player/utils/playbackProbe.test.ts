@@ -92,7 +92,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     ]);
   });
 
-  it('prefers hls.js on desktop WebKit when hls.js is available', async () => {
+  it('prefers native HLS on desktop WebKit when native playback is available', async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     Object.defineProperty(navigator, 'maxTouchPoints', {
       configurable: true,
@@ -114,9 +114,9 @@ describe('probeRuntimePlaybackCapabilities', () => {
 
     expect(probe.nativeHls).toBe(true);
     expect(probe.hlsJs).toBe(true);
-    expect(probe.preferredHlsEngine).toBe('hlsjs');
-    expect(probe.hlsEngines).toEqual(['hlsjs', 'native']);
-    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
+    expect(probe.preferredHlsEngine).toBe('native');
+    expect(probe.hlsEngines).toEqual(['native']);
+    expect(probe.containers).toEqual(['mp4', 'ts']);
     expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
   });
 

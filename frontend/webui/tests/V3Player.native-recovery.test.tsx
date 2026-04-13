@@ -245,4 +245,242 @@ describe('V3Player native Safari recovery', () => {
     ).toBe(true);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('treats native rebuffering as buffering without injecting a synthetic pause', async () => {
+    const playbackUrl = `${window.location.origin}/api/v3/sessions/sess-native-buffering/hls/index.m3u8`;
+    const pauseSpy = vi.mocked(HTMLMediaElement.prototype.pause);
+    const playSpy = vi.mocked(HTMLMediaElement.prototype.play);
+    let currentTime = 1;
+    let readyState = 4;
+    const paused = false;
+    let bufferedRanges = [{ start: 0, end: 4 }];
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes('/live/stream-info')) {
+        return jsonResponse(url, 200, {
+          mode: 'native_hls',
+          requestId: 'live-decision-native-buffering',
+          playbackDecisionToken: 'live-token-native-buffering',
+          decision: { reasons: ['direct_stream_match'] }
+        });
+      }
+
+      if (url.includes('/intents')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (body?.type === 'stream.start') {
+          return jsonResponse(url, 200, { sessionId: 'sess-native-buffering' });
+        }
+        return jsonResponse(url, 200, {});
+      }
+
+      if (url.includes('/sessions/sess-native-buffering') && !url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          state: 'READY',
+          playbackUrl,
+          heartbeatIntervalSeconds: 600
+        });
+      }
+
+      if (url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-native-buffering',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
+      }
+
+      if (url.includes('/feedback')) {
+        return jsonResponse(url, 202, {});
+      }
+
+      return jsonResponse(url, 200, {});
+    }) as unknown as typeof globalThis.fetch);
+
+    const { container } = render(<V3Player autoStart={true} channel={{ id: 'ch-native-buffering', serviceRef: '1:0:1:buffer...' } as any} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement | null;
+    expect(video).toBeTruthy();
+    if (!video) {
+      return;
+    }
+
+    Object.defineProperty(video, 'currentSrc', {
+      configurable: true,
+      get: () => playbackUrl,
+    });
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => paused,
+    });
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
+    });
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState,
+    });
+    Object.defineProperty(video, 'buffered', {
+      configurable: true,
+      get: () => ({
+        length: bufferedRanges.length,
+        start: (index: number) => bufferedRanges[index].start,
+        end: (index: number) => bufferedRanges[index].end,
+      }),
+    });
+
+    await act(async () => {
+      fireEvent.playing(video);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(800);
+      await Promise.resolve();
+    });
+
+    const pausesBeforeRebuffer = pauseSpy.mock.calls.length;
+    const playsBeforeRebuffer = playSpy.mock.calls.length;
+
+    await act(async () => {
+      currentTime = 8;
+      readyState = 2;
+      bufferedRanges = [];
+      fireEvent.waiting(video);
+
+      currentTime = 8.5;
+      readyState = 4;
+      bufferedRanges = [{ start: 8, end: 10 }];
+      fireEvent.playing(video);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(500);
+      await Promise.resolve();
+    });
+
+    expect(pauseSpy.mock.calls.length).toBe(pausesBeforeRebuffer);
+    expect(playSpy.mock.calls.length).toBe(playsBeforeRebuffer);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not reattach the session for a waiting-only native rebuffer', async () => {
+    let sessionStatusCalls = 0;
+    const playbackUrl = `${window.location.origin}/api/v3/sessions/sess-native-waiting/hls/index.m3u8`;
+    const feedbackCalls: string[] = [];
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes('/live/stream-info')) {
+        return jsonResponse(url, 200, {
+          mode: 'native_hls',
+          requestId: 'live-decision-native-waiting',
+          playbackDecisionToken: 'live-token-native-waiting',
+          decision: { reasons: ['direct_stream_match'] }
+        });
+      }
+
+      if (url.includes('/intents')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (body?.type === 'stream.start') {
+          return jsonResponse(url, 200, { sessionId: 'sess-native-waiting' });
+        }
+        return jsonResponse(url, 200, {});
+      }
+
+      if (url.includes('/sessions/sess-native-waiting/feedback')) {
+        feedbackCalls.push(url);
+        return jsonResponse(url, 202, {});
+      }
+
+      if (url.includes('/sessions/sess-native-waiting') && !url.includes('/heartbeat')) {
+        sessionStatusCalls++;
+        return jsonResponse(url, 200, {
+          state: 'READY',
+          playbackUrl,
+          heartbeatIntervalSeconds: 600
+        });
+      }
+
+      if (url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-native-waiting',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
+      }
+
+      return jsonResponse(url, 200, {});
+    }) as unknown as typeof globalThis.fetch);
+
+    const { container } = render(<V3Player autoStart={true} channel={{ id: 'ch-native-waiting', serviceRef: '1:0:1:waiting...' } as any} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement | null;
+    expect(video).toBeTruthy();
+    if (!video) {
+      return;
+    }
+
+    let currentTime = 8;
+    const readyState = 2;
+    const paused = false;
+    const bufferedRanges: Array<{ start: number; end: number }> = [];
+
+    Object.defineProperty(video, 'currentSrc', {
+      configurable: true,
+      get: () => playbackUrl,
+    });
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => paused,
+    });
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
+    });
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState,
+    });
+    Object.defineProperty(video, 'buffered', {
+      configurable: true,
+      get: () => ({
+        length: bufferedRanges.length,
+        start: (index: number) => bufferedRanges[index].start,
+        end: (index: number) => bufferedRanges[index].end,
+      }),
+    });
+
+    await act(async () => {
+      fireEvent.waiting(video);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(3100);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(sessionStatusCalls).toBe(1);
+    expect(feedbackCalls).toHaveLength(0);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

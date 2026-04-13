@@ -384,10 +384,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            onBackPressedDispatcher.onBackPressed()
-            return true
-        }
         if (event?.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             if (handleAppControlKey(keyCode)) {
                 return true

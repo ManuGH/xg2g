@@ -23,8 +23,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
@@ -818,6 +818,20 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 				AudioMode:  "transcode",
 				AudioCodec: "aac",
 			},
+			HLS: &model.HLSAccessTrace{
+				PlaylistRequestCount:   4,
+				LastPlaylistAtUnix:     1700000001,
+				LastPlaylistIntervalMs: 2100,
+				SegmentRequestCount:    3,
+				LastSegmentAtUnix:      1700000002,
+				LastSegmentName:        "seg_000077.ts",
+				LastSegmentGapMs:       1800,
+				LatestSegmentLagMs:     1200,
+				StallRisk:              "segment_stale",
+				StartupMode:            "trace_conservative",
+				StartupHeadroomSec:     12,
+				StartupReasons:         []string{"client_family_native", "trace_segment_gap"},
+			},
 			FirstFrameAtUnix: 1700000000,
 			Fallbacks: []model.PlaybackFallbackTrace{
 				{Reason: "client_report:code=3"},
@@ -958,6 +972,33 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.Equal(t, 1, *resp.Trace.FallbackCount)
 	require.NotNil(t, resp.Trace.LastFallbackReason)
 	require.Equal(t, "client_report:code=3", *resp.Trace.LastFallbackReason)
+	require.NotNil(t, resp.Trace.HlsDebug)
+	require.NotNil(t, resp.Trace.HlsDebug.PlaylistRequestCount)
+	require.Equal(t, 4, *resp.Trace.HlsDebug.PlaylistRequestCount)
+	require.NotNil(t, resp.Trace.HlsDebug.LastPlaylistAtMs)
+	require.Equal(t, 1700000001000, *resp.Trace.HlsDebug.LastPlaylistAtMs)
+	require.NotNil(t, resp.Trace.HlsDebug.SegmentRequestCount)
+	require.Equal(t, 3, *resp.Trace.HlsDebug.SegmentRequestCount)
+	require.NotNil(t, resp.Trace.HlsDebug.LastSegmentAtMs)
+	require.Equal(t, 1700000002000, *resp.Trace.HlsDebug.LastSegmentAtMs)
+	require.NotNil(t, resp.Trace.HlsDebug.LastSegmentName)
+	require.Equal(t, "seg_000077.ts", *resp.Trace.HlsDebug.LastSegmentName)
+	require.NotNil(t, resp.Trace.HlsDebug.LastSegmentGapMs)
+	require.Equal(t, 1800, *resp.Trace.HlsDebug.LastSegmentGapMs)
+	require.NotNil(t, resp.Trace.HlsDebug.LatestSegmentLagMs)
+	require.Equal(t, 1200, *resp.Trace.HlsDebug.LatestSegmentLagMs)
+	require.NotNil(t, resp.Trace.HlsDebug.StallHint)
+	require.Equal(t, "segment_stale", *resp.Trace.HlsDebug.StallHint)
+	require.NotNil(t, resp.Trace.HlsDebug.Health)
+	require.Equal(t, "healthy", *resp.Trace.HlsDebug.Health)
+	require.NotNil(t, resp.Trace.HlsDebug.HealthReasons)
+	require.Equal(t, []string{"playlist_progress_observed", "segment_progress_observed"}, *resp.Trace.HlsDebug.HealthReasons)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupMode)
+	require.Equal(t, "trace_conservative", *resp.Trace.HlsDebug.StartupMode)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupHeadroomSec)
+	require.Equal(t, 12, *resp.Trace.HlsDebug.StartupHeadroomSec)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupReasons)
+	require.Equal(t, []string{"client_family_native", "trace_segment_gap"}, *resp.Trace.HlsDebug.StartupReasons)
 }
 
 func TestV3Contract_TerminalSessionGoneIncludesPreflightTrace(t *testing.T) {

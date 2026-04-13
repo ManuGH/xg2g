@@ -64,6 +64,7 @@ func TestWriteSessionStateResponse_WritesJSONAndTraceHeader(t *testing.T) {
 	require.NotNil(t, body.Trace)
 	require.NotNil(t, body.Trace.SessionId)
 	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440001", *body.Trace.SessionId)
+	assert.Nil(t, body.Trace.HlsDebug)
 	require.NotNil(t, body.Mode)
 	assert.Equal(t, RECORDING, *body.Mode)
 	require.NotNil(t, body.PlaybackUrl)
@@ -95,6 +96,73 @@ func TestMapSessionStateResponse_IncludesProfileReasonForSafariTranscode(t *test
 
 	require.NotNil(t, resp.ProfileReason)
 	assert.Equal(t, sessionProfileReasonSafariCompatTranscode, *resp.ProfileReason)
+}
+
+func TestMapSessionStateResponse_IncludesControlledHLSDebugView(t *testing.T) {
+	resp := mapSessionStateResponse("req-hls-debug", "", v3sessions.GetSessionResult{
+		Session: &model.SessionRecord{
+			SessionID:          "550e8400-e29b-41d4-a716-446655440003",
+			ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+			Profile:            model.ProfileSpec{Name: "safari"},
+			State:              model.SessionReady,
+			CorrelationID:      "corr-hls-debug",
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: 1700000030,
+			PlaybackTrace: &model.PlaybackTrace{
+				HLS: &model.HLSAccessTrace{
+					PlaylistRequestCount:   4,
+					LastPlaylistAtUnix:     1700000001,
+					LastPlaylistIntervalMs: 2100,
+					SegmentRequestCount:    3,
+					LastSegmentAtUnix:      1700000002,
+					LastSegmentName:        "seg_000077.ts",
+					LastSegmentGapMs:       1800,
+					LatestSegmentLagMs:     1200,
+					StallRisk:              "segment_stale",
+					StartupMode:            "trace_conservative",
+					StartupHeadroomSec:     12,
+					StartupReasons:         []string{"client_family_native", "trace_segment_gap"},
+				},
+			},
+		},
+		Outcome: lifecycle.PublicOutcome{
+			State:      model.SessionReady,
+			Reason:     model.RNone,
+			DetailCode: model.DNone,
+		},
+		PlaybackInfo: v3sessions.SessionPlaybackInfo{Mode: model.ModeLive},
+	})
+
+	require.NotNil(t, resp.Trace)
+	require.NotNil(t, resp.Trace.HlsDebug)
+	require.NotNil(t, resp.Trace.HlsDebug.PlaylistRequestCount)
+	assert.Equal(t, 4, *resp.Trace.HlsDebug.PlaylistRequestCount)
+	require.NotNil(t, resp.Trace.HlsDebug.LastPlaylistAtMs)
+	assert.Equal(t, 1700000001000, *resp.Trace.HlsDebug.LastPlaylistAtMs)
+	require.NotNil(t, resp.Trace.HlsDebug.LastPlaylistIntervalMs)
+	assert.Equal(t, 2100, *resp.Trace.HlsDebug.LastPlaylistIntervalMs)
+	require.NotNil(t, resp.Trace.HlsDebug.SegmentRequestCount)
+	assert.Equal(t, 3, *resp.Trace.HlsDebug.SegmentRequestCount)
+	require.NotNil(t, resp.Trace.HlsDebug.LastSegmentAtMs)
+	assert.Equal(t, 1700000002000, *resp.Trace.HlsDebug.LastSegmentAtMs)
+	require.NotNil(t, resp.Trace.HlsDebug.LastSegmentName)
+	assert.Equal(t, "seg_000077.ts", *resp.Trace.HlsDebug.LastSegmentName)
+	require.NotNil(t, resp.Trace.HlsDebug.LastSegmentGapMs)
+	assert.Equal(t, 1800, *resp.Trace.HlsDebug.LastSegmentGapMs)
+	require.NotNil(t, resp.Trace.HlsDebug.LatestSegmentLagMs)
+	assert.Equal(t, 1200, *resp.Trace.HlsDebug.LatestSegmentLagMs)
+	require.NotNil(t, resp.Trace.HlsDebug.StallHint)
+	assert.Equal(t, "segment_stale", *resp.Trace.HlsDebug.StallHint)
+	require.NotNil(t, resp.Trace.HlsDebug.Health)
+	assert.Equal(t, "healthy", *resp.Trace.HlsDebug.Health)
+	require.NotNil(t, resp.Trace.HlsDebug.HealthReasons)
+	assert.Equal(t, []string{"playlist_progress_observed", "segment_progress_observed"}, *resp.Trace.HlsDebug.HealthReasons)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupMode)
+	assert.Equal(t, "trace_conservative", *resp.Trace.HlsDebug.StartupMode)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupHeadroomSec)
+	assert.Equal(t, 12, *resp.Trace.HlsDebug.StartupHeadroomSec)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupReasons)
+	assert.Equal(t, []string{"client_family_native", "trace_segment_gap"}, *resp.Trace.HlsDebug.StartupReasons)
 }
 
 func float64Ptr(v float64) *float64 { return &v }

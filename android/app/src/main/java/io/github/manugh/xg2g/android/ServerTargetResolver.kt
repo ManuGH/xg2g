@@ -253,7 +253,7 @@ internal object ServerTargetResolver {
     }
 
     private fun decode(value: String): String {
-        return URLDecoder.decode(value, StandardCharsets.UTF_8)
+        return URLDecoder.decode(value, StandardCharsets.UTF_8.name())
     }
 
     private fun effectivePort(uri: URI): Int {

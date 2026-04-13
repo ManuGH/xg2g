@@ -2144,6 +2144,8 @@ components:
           $ref: "#/components/schemas/PlaybackTraceFfmpegPlan"
         operator:
           $ref: "#/components/schemas/PlaybackTraceOperator"
+        hlsDebug:
+          $ref: "#/components/schemas/PlaybackTraceHlsDebug"
         firstFrameAtMs:
           type: integer
           nullable: true
@@ -2159,6 +2161,66 @@ components:
         stopClass:
           type: string
           nullable: true
+
+    PlaybackTraceHlsDebug:
+      type: object
+      additionalProperties: false
+      description: |
+        Operator-oriented HLS delivery debug view. These fields are observational only and
+        must not be treated as authoritative playback policy or client playback input.
+      properties:
+        playlistRequestCount:
+          type: integer
+          nullable: true
+        lastPlaylistAtMs:
+          type: integer
+          nullable: true
+        lastPlaylistIntervalMs:
+          type: integer
+          nullable: true
+        segmentRequestCount:
+          type: integer
+          nullable: true
+        lastSegmentAtMs:
+          type: integer
+          nullable: true
+        lastSegmentName:
+          type: string
+          nullable: true
+        lastSegmentGapMs:
+          type: integer
+          nullable: true
+        latestSegmentLagMs:
+          type: integer
+          nullable: true
+        stallHint:
+          type: string
+          nullable: true
+          description: Advisory hint derived from recent HLS delivery observations.
+        health:
+          type: string
+          nullable: true
+          description: Derived server-side HLS session health classification. Debug only; observational and not a client playback policy input.
+        healthReasons:
+          type: array
+          nullable: true
+          description: Stable operator-facing reason codes that explain the derived HLS session health. Debug only; must not drive client playback decisions.
+          items:
+            type: string
+        startupMode:
+          type: string
+          nullable: true
+          description: Small operator-facing label for the current server-side HLS startup policy mode. Debug only; must not drive client playback decisions.
+        startupHeadroomSec:
+          type: integer
+          nullable: true
+          description: Effective startup headroom selected by the server-side HLS startup policy. Debug only; must not drive client playback decisions.
+        startupReasons:
+          type: array
+          nullable: true
+          description: Stable operator-facing reason codes that explain why the startup headroom was chosen. Debug only; must not be used as a client-side policy input.
+          items:
+            type: string
 
     PlaybackTraceOperator:
       type: object

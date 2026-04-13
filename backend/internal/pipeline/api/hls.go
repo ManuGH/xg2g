@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -41,37 +40,15 @@ var safeHLSSessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var safeHLSSegmentRe = regexp.MustCompile(`^seg_[A-Za-z0-9_-]+\.(?:ts|m4s)$`)
 var safeHLSLegacySegmentRe = regexp.MustCompile(`^stream[A-Za-z0-9_-]*\.ts$`)
 
-func preferredLiveStartOffsetSeconds(content []byte) int {
-	const (
-		defaultOffset = 3
-		minOffset     = 2
-		maxOffset     = 4
-	)
-
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
-			continue
-		}
-		raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
-		target, err := strconv.Atoi(raw)
-		if err != nil || target <= 0 {
-			return defaultOffset
-		}
-
-		offset := (target + 1) / 2
-		if offset < minOffset {
-			offset = minOffset
-		}
-		if offset > maxOffset {
-			offset = maxOffset
-		}
-		return offset
-	}
-
-	return defaultOffset
-}
+const (
+	minPlaylistAccessUpdateInterval = time.Second
+	minSegmentAccessUpdateInterval  = time.Second
+	hlsRecentPlaylistWindow         = 8 * time.Second
+	hlsSegmentStaleAfter            = 8 * time.Second
+	hlsProducerSlowLag              = 8 * time.Second
+	hlsProducerLateLag              = 15 * time.Second
+	hlsPlaylistOnlyPollThreshold    = 2
+)
 
 func normalizeProgramDateTimeLine(line string) string {
 	m := pdtRe.FindStringSubmatch(line)
@@ -155,15 +132,12 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 	if !req.isPlaylist || rec == nil {
 		return
 	}
-	const minAccessUpdateIntervalSec = int64(5)
 
 	now := time.Now()
-	nowUnix := now.Unix()
 	// The first successful playlist GET after READY must always win, even if the
 	// session just transitioned to READY and LastAccessUnix was set during startup.
 	if !rec.LastPlaylistAccessAt.IsZero() &&
-		rec.LastAccessUnix != 0 &&
-		nowUnix-rec.LastAccessUnix < minAccessUpdateIntervalSec {
+		now.Sub(rec.LastPlaylistAccessAt) < minPlaylistAccessUpdateInterval {
 		return
 	}
 
@@ -176,14 +150,149 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 			return nil
 		}
 		if !r.LastPlaylistAccessAt.IsZero() &&
-			r.LastAccessUnix != 0 &&
-			nowUnix-r.LastAccessUnix < minAccessUpdateIntervalSec {
+			now.Sub(r.LastPlaylistAccessAt) < minPlaylistAccessUpdateInterval {
 			return nil
 		}
-		r.LastAccessUnix = nowUnix
+		trace := ensureHLSAccessTrace(r)
+		if !r.LastPlaylistAccessAt.IsZero() {
+			trace.LastPlaylistIntervalMs = durationToMilliseconds(now.Sub(r.LastPlaylistAccessAt))
+		}
+		r.LastAccessUnix = now.Unix()
 		r.LastPlaylistAccessAt = now // PR-P3-2: Deterministic idle truth
+		trace.PlaylistRequestCount++
+		trace.LastPlaylistAtUnix = now.Unix()
+		updateHLSStallRisk(r, trace, now)
 		return nil
 	})
+}
+
+func touchSegmentAccessTime(ctx context.Context, store HLSStore, req hlsRequest, rec *model.SessionRecord) {
+	if rec == nil || (!req.isSegment && !req.isLegacySegment) {
+		return
+	}
+
+	updater, ok := store.(hlsSessionUpdater)
+	if !ok {
+		return
+	}
+
+	now := time.Now()
+	_, _ = updater.UpdateSession(ctx, req.sessionID, func(r *model.SessionRecord) error {
+		if r == nil {
+			return nil
+		}
+		trace := ensureHLSAccessTrace(r)
+		if trace.LastSegmentName == req.cleanName && trace.LastSegmentAtUnix > 0 {
+			lastSegmentAt := time.Unix(trace.LastSegmentAtUnix, 0)
+			if now.Sub(lastSegmentAt) < minSegmentAccessUpdateInterval {
+				return nil
+			}
+		}
+		if trace.LastSegmentAtUnix > 0 {
+			trace.LastSegmentGapMs = durationToMilliseconds(now.Sub(time.Unix(trace.LastSegmentAtUnix, 0)))
+		}
+		trace.SegmentRequestCount++
+		trace.LastSegmentAtUnix = now.Unix()
+		trace.LastSegmentName = req.cleanName
+		updateHLSStallRisk(r, trace, now)
+		return nil
+	})
+}
+
+func ensureHLSAccessTrace(rec *model.SessionRecord) *model.HLSAccessTrace {
+	if rec.PlaybackTrace == nil {
+		rec.PlaybackTrace = &model.PlaybackTrace{}
+	}
+	if rec.PlaybackTrace.HLS == nil {
+		rec.PlaybackTrace.HLS = &model.HLSAccessTrace{}
+	}
+	return rec.PlaybackTrace.HLS
+}
+
+func durationToMilliseconds(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	return int(d / time.Millisecond)
+}
+
+func latestProducerActivity(rec *model.SessionRecord) time.Time {
+	if rec == nil {
+		return time.Time{}
+	}
+	latest := rec.LatestSegmentAt
+	if rec.PlaylistPublishedAt.After(latest) {
+		latest = rec.PlaylistPublishedAt
+	}
+	return latest
+}
+
+func updateHLSStallRisk(rec *model.SessionRecord, trace *model.HLSAccessTrace, now time.Time) {
+	if rec == nil || trace == nil {
+		return
+	}
+
+	producerAt := latestProducerActivity(rec)
+	if !producerAt.IsZero() {
+		trace.LatestSegmentLagMs = durationToMilliseconds(now.Sub(producerAt))
+	} else {
+		trace.LatestSegmentLagMs = 0
+	}
+
+	lastPlaylistAt := rec.LastPlaylistAccessAt
+	var lastSegmentAt time.Time
+	if trace.LastSegmentAtUnix > 0 {
+		lastSegmentAt = time.Unix(trace.LastSegmentAtUnix, 0)
+	}
+
+	switch {
+	case trace.LatestSegmentLagMs >= durationToMilliseconds(hlsProducerLateLag):
+		trace.StallRisk = "producer_late"
+	case trace.LatestSegmentLagMs >= durationToMilliseconds(hlsProducerSlowLag):
+		trace.StallRisk = "producer_slow"
+	case !lastPlaylistAt.IsZero() && trace.PlaylistRequestCount >= hlsPlaylistOnlyPollThreshold && lastSegmentAt.IsZero():
+		trace.StallRisk = "playlist_only"
+	case !lastPlaylistAt.IsZero() && !lastSegmentAt.IsZero() &&
+		now.Sub(lastPlaylistAt) <= hlsRecentPlaylistWindow &&
+		now.Sub(lastSegmentAt) >= hlsSegmentStaleAfter:
+		trace.StallRisk = "segment_stale"
+	default:
+		trace.StallRisk = "low"
+	}
+}
+
+func persistHLSStartupPolicy(ctx context.Context, store HLSStore, sessionID string, policy hlsStartupPolicy) {
+	updater, ok := store.(hlsSessionUpdater)
+	if !ok || strings.TrimSpace(sessionID) == "" || policy.StartupHeadroomSec <= 0 {
+		return
+	}
+	_, _ = updater.UpdateSession(ctx, sessionID, func(r *model.SessionRecord) error {
+		if r == nil {
+			return nil
+		}
+		trace := ensureHLSAccessTrace(r)
+		if trace.StartupHeadroomSec == policy.StartupHeadroomSec &&
+			trace.StartupMode == policy.Mode &&
+			stringSlicesEqual(trace.StartupReasons, policy.Reasons) {
+			return nil
+		}
+		trace.StartupHeadroomSec = policy.StartupHeadroomSec
+		trace.StartupMode = policy.Mode
+		trace.StartupReasons = append([]string(nil), policy.Reasons...)
+		return nil
+	})
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath string, err error) {
@@ -278,9 +387,10 @@ func awaitArtifact(ctx context.Context, filePath string, req hlsRequest, rec *mo
 	return info, err
 }
 
-func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.Logger) (*bytes.Reader, error) {
+func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, error) {
 	forcePlaylistType := ""
 	insertStartTag := ""
+	var startupPolicy *hlsStartupPolicy
 	if rec.Profile.VOD {
 		forcePlaylistType = "VOD"
 	} else if rec.Profile.DVRWindowSec > 0 {
@@ -289,12 +399,15 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 
 	raw, err := io.ReadAll(io.LimitReader(source, 1024*1024))
 	if err != nil {
-		return nil, fmt.Errorf("read playlist: %w", err)
+		return nil, nil, fmt.Errorf("read playlist: %w", err)
 	}
 	if forcePlaylistType == "EVENT" {
-		// Start Safari near live edge instead of the beginning of the full DVR window.
-		// This avoids replaying fragile bootstrap segments when a live attach begins mid-GOP.
-		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", preferredLiveStartOffsetSeconds(raw))
+		// Start Safari with explicit headroom behind live instead of at the full DVR window head.
+		// The reserve absorbs playlist polling and segment timing jitter that otherwise shows up as
+		// immediate rebuffering after a seemingly clean start on fragile/native HLS clients.
+		policy := deriveHLSStartupPolicy(rec, raw)
+		startupPolicy = &policy
+		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", startupPolicy.StartupHeadroomSec)
 	}
 
 	insertedPlaylistType := false
@@ -331,20 +444,24 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan playlist: %w", err)
+		return nil, startupPolicy, fmt.Errorf("scan playlist: %w", err)
 	}
 
-	if insertStartTag != "" && insertedStartTag {
+	if insertStartTag != "" && insertedStartTag && startupPolicy != nil {
 		logger.Debug().
 			Int("dvr_window_sec", rec.Profile.DVRWindowSec).
+			Str("startup_mode", startupPolicy.Mode).
+			Str("client_family", startupPolicy.ClientFamily).
+			Int("startup_headroom_sec", startupPolicy.StartupHeadroomSec).
+			Strs("startup_reasons", startupPolicy.Reasons).
 			Str("start_tag", insertStartTag).
-			Msg("injected EXT-X-START tag for Safari DVR")
+			Msg("injected EXT-X-START tag from HLS startup policy")
 	}
 
-	return bytes.NewReader(b.Bytes()), nil
+	return bytes.NewReader(b.Bytes()), startupPolicy, nil
 }
 
-func serveArtifact(w http.ResponseWriter, r *http.Request, req hlsRequest, rec *model.SessionRecord, info os.FileInfo, filePath string, logger zerolog.Logger) {
+func serveArtifact(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, info os.FileInfo, filePath string, logger zerolog.Logger) {
 	if req.isPlaylist {
 		w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
 		w.Header().Set("Cache-Control", "no-store")
@@ -374,11 +491,14 @@ func serveArtifact(w http.ResponseWriter, r *http.Request, req hlsRequest, rec *
 	defer func() { _ = f.Close() }()
 
 	if req.isPlaylist {
-		playlist, rewriteErr := rewritePlaylist(f, rec, logger)
+		playlist, startupPolicy, rewriteErr := rewritePlaylist(f, rec, logger)
 		if rewriteErr != nil {
 			log.L().Error().Err(rewriteErr).Msg("failed to process playlist")
 			http.Error(w, "failed to process file", http.StatusInternalServerError)
 			return
+		}
+		if startupPolicy != nil {
+			persistHLSStartupPolicy(r.Context(), store, req.sessionID, *startupPolicy)
 		}
 		http.ServeContent(w, r, req.cleanName, info.ModTime(), playlist)
 		return
@@ -488,5 +608,6 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		return
 	}
 
-	serveArtifact(w, r, req, rec, info, filePath, logger)
+	touchSegmentAccessTime(r.Context(), store, req, rec)
+	serveArtifact(w, r, store, req, rec, info, filePath, logger)
 }

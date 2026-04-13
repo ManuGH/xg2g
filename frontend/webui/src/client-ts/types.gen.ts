@@ -1243,11 +1243,52 @@ export type PlaybackTrace = {
     targetProfile?: PlaybackTargetProfile;
     ffmpegPlan?: PlaybackTraceFfmpegPlan;
     operator?: PlaybackTraceOperator;
+    hlsDebug?: PlaybackTraceHlsDebug;
     firstFrameAtMs?: number | null;
     fallbackCount?: number | null;
     lastFallbackReason?: string | null;
     stopReason?: string | null;
     stopClass?: string | null;
+};
+
+/**
+ * Operator-oriented HLS delivery debug view. These fields are observational only and
+ * must not be treated as authoritative playback policy or client playback input.
+ *
+ */
+export type PlaybackTraceHlsDebug = {
+    playlistRequestCount?: number | null;
+    lastPlaylistAtMs?: number | null;
+    lastPlaylistIntervalMs?: number | null;
+    segmentRequestCount?: number | null;
+    lastSegmentAtMs?: number | null;
+    lastSegmentName?: string | null;
+    lastSegmentGapMs?: number | null;
+    latestSegmentLagMs?: number | null;
+    /**
+     * Advisory hint derived from recent HLS delivery observations.
+     */
+    stallHint?: string | null;
+    /**
+     * Derived server-side HLS session health classification. Debug only; observational and not a client playback policy input.
+     */
+    health?: string | null;
+    /**
+     * Stable operator-facing reason codes that explain the derived HLS session health. Debug only; must not drive client playback decisions.
+     */
+    healthReasons?: Array<string> | null;
+    /**
+     * Small operator-facing label for the current server-side HLS startup policy mode. Debug only; must not drive client playback decisions.
+     */
+    startupMode?: string | null;
+    /**
+     * Effective startup headroom selected by the server-side HLS startup policy. Debug only; must not drive client playback decisions.
+     */
+    startupHeadroomSec?: number | null;
+    /**
+     * Stable operator-facing reason codes that explain why the startup headroom was chosen. Debug only; must not be used as a client-side policy input.
+     */
+    startupReasons?: Array<string> | null;
 };
 
 export type PlaybackTraceOperator = {

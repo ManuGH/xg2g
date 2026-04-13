@@ -118,12 +118,16 @@ export default function BootstrapGate() {
   }, [auth.isAuthenticated, authReady, config, error, forcedAuthPrompt, isUnauthorized]);
 
   useEffect(() => {
+    if (forcedAuthPrompt) {
+      return;
+    }
+
     if (config && !isUnauthorized) {
       setServerSessionAuthenticated(true);
       setForcedAuthPrompt(null);
       setTokenValue('');
     }
-  }, [config, isUnauthorized, setServerSessionAuthenticated]);
+  }, [config, forcedAuthPrompt, isUnauthorized, setServerSessionAuthenticated]);
 
   useEffect(() => {
     if (isUnauthorized) {

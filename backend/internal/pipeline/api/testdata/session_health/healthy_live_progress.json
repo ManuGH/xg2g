@@ -1,0 +1,31 @@
+{
+  "name": "healthy_live_progress",
+  "context": {
+    "clientFamily": "chromium_hlsjs",
+    "sessionMode": "live"
+  },
+  "trace": {
+    "client": {
+      "clientFamily": "chromium_hlsjs"
+    },
+    "hls": {
+      "playlistRequestCount": 7,
+      "lastPlaylistAtUnix": 1713000001,
+      "segmentRequestCount": 6,
+      "lastSegmentAtUnix": 1713000002,
+      "lastSegmentName": "seg_000120.ts",
+      "lastSegmentGapMs": 1100,
+      "latestSegmentLagMs": 800,
+      "stallRisk": "producer_late",
+      "startupMode": "balanced",
+      "startupHeadroomSec": 10
+    }
+  },
+  "expected": {
+    "health": "healthy",
+    "reasonCodes": [
+      "playlist_progress_observed",
+      "segment_progress_observed"
+    ]
+  }
+}

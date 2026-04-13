@@ -95,6 +95,21 @@ func (s *PlaybackClientSnapshot) Clone() *PlaybackClientSnapshot {
 	return &cp
 }
 
+type HLSAccessTrace struct {
+	PlaylistRequestCount   int      `json:"playlistRequestCount,omitempty"`
+	LastPlaylistAtUnix     int64    `json:"lastPlaylistAtUnix,omitempty"`
+	LastPlaylistIntervalMs int      `json:"lastPlaylistIntervalMs,omitempty"`
+	SegmentRequestCount    int      `json:"segmentRequestCount,omitempty"`
+	LastSegmentAtUnix      int64    `json:"lastSegmentAtUnix,omitempty"`
+	LastSegmentName        string   `json:"lastSegmentName,omitempty"`
+	LastSegmentGapMs       int      `json:"lastSegmentGapMs,omitempty"`
+	LatestSegmentLagMs     int      `json:"latestSegmentLagMs,omitempty"`
+	StallRisk              string   `json:"stallRisk,omitempty"`
+	StartupMode            string   `json:"startupMode,omitempty"`
+	StartupHeadroomSec     int      `json:"startupHeadroomSec,omitempty"`
+	StartupReasons         []string `json:"startupReasons,omitempty"`
+}
+
 type PlaybackTrace struct {
 	Source               *playbackprofile.SourceProfile         `json:"source,omitempty"`
 	RequestProfile       string                                 `json:"requestProfile,omitempty"`
@@ -116,6 +131,7 @@ type PlaybackTrace struct {
 	FFmpegPlan           *FFmpegPlanTrace                       `json:"ffmpegPlan,omitempty"`
 	Operator             *PlaybackOperatorTrace                 `json:"operator,omitempty"`
 	Client               *PlaybackClientSnapshot                `json:"client,omitempty"`
+	HLS                  *HLSAccessTrace                        `json:"hls,omitempty"`
 	HostPressureBand     string                                 `json:"hostPressureBand,omitempty"`
 	HostOverrideApplied  bool                                   `json:"hostOverrideApplied,omitempty"`
 	FirstFrameAtUnix     int64                                  `json:"firstFrameAtUnix,omitempty"`
@@ -157,6 +173,13 @@ func (t *PlaybackTrace) Clone() *PlaybackTrace {
 			client.NetworkContext = &network
 		}
 		cp.Client = &client
+	}
+	if t.HLS != nil {
+		hls := *t.HLS
+		if len(t.HLS.StartupReasons) > 0 {
+			hls.StartupReasons = append([]string(nil), t.HLS.StartupReasons...)
+		}
+		cp.HLS = &hls
 	}
 	if len(t.Fallbacks) > 0 {
 		cp.Fallbacks = append([]PlaybackFallbackTrace(nil), t.Fallbacks...)
