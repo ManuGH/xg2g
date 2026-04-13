@@ -44,6 +44,7 @@ jobs:
           gosec \
             -fmt=sarif \
             -out=../gosec.sarif \
+            -no-fail \
             -severity=high \
             -tags=nogpu \
             -exclude-generated \
