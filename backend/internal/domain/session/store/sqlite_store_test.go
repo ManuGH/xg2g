@@ -104,6 +104,9 @@ func TestSqliteStore_PlaybackTraceRoundTrip(t *testing.T) {
 				LastSegmentGapMs:       1900,
 				LatestSegmentLagMs:     1200,
 				StallRisk:              "low",
+				StartupMode:            "trace_guarded",
+				StartupHeadroomSec:     10,
+				StartupReasons:         []string{"client_family_native", "segment_cadence_guard"},
 			},
 			TargetProfile: &playbackprofile.TargetPlaybackProfile{
 				Container: "mpegts",
@@ -154,7 +157,15 @@ func TestSqliteStore_PlaybackTraceRoundTrip(t *testing.T) {
 	if got.PlaybackTrace.HLS == nil {
 		t.Fatalf("expected hls trace roundtrip, got %#v", got.PlaybackTrace)
 	}
-	if got.PlaybackTrace.HLS.LastSegmentName != "seg_000042.ts" || got.PlaybackTrace.HLS.StallRisk != "low" {
+	if got.PlaybackTrace.HLS.LastSegmentName != "seg_000042.ts" ||
+		got.PlaybackTrace.HLS.StallRisk != "low" ||
+		got.PlaybackTrace.HLS.StartupMode != "trace_guarded" ||
+		got.PlaybackTrace.HLS.StartupHeadroomSec != 10 {
+		t.Fatalf("unexpected hls trace: %#v", got.PlaybackTrace.HLS)
+	}
+	if len(got.PlaybackTrace.HLS.StartupReasons) != 2 ||
+		got.PlaybackTrace.HLS.StartupReasons[0] != "client_family_native" ||
+		got.PlaybackTrace.HLS.StartupReasons[1] != "segment_cadence_guard" {
 		t.Fatalf("unexpected hls trace: %#v", got.PlaybackTrace.HLS)
 	}
 }

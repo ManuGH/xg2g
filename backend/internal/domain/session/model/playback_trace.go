@@ -96,15 +96,18 @@ func (s *PlaybackClientSnapshot) Clone() *PlaybackClientSnapshot {
 }
 
 type HLSAccessTrace struct {
-	PlaylistRequestCount   int    `json:"playlistRequestCount,omitempty"`
-	LastPlaylistAtUnix     int64  `json:"lastPlaylistAtUnix,omitempty"`
-	LastPlaylistIntervalMs int    `json:"lastPlaylistIntervalMs,omitempty"`
-	SegmentRequestCount    int    `json:"segmentRequestCount,omitempty"`
-	LastSegmentAtUnix      int64  `json:"lastSegmentAtUnix,omitempty"`
-	LastSegmentName        string `json:"lastSegmentName,omitempty"`
-	LastSegmentGapMs       int    `json:"lastSegmentGapMs,omitempty"`
-	LatestSegmentLagMs     int    `json:"latestSegmentLagMs,omitempty"`
-	StallRisk              string `json:"stallRisk,omitempty"`
+	PlaylistRequestCount   int      `json:"playlistRequestCount,omitempty"`
+	LastPlaylistAtUnix     int64    `json:"lastPlaylistAtUnix,omitempty"`
+	LastPlaylistIntervalMs int      `json:"lastPlaylistIntervalMs,omitempty"`
+	SegmentRequestCount    int      `json:"segmentRequestCount,omitempty"`
+	LastSegmentAtUnix      int64    `json:"lastSegmentAtUnix,omitempty"`
+	LastSegmentName        string   `json:"lastSegmentName,omitempty"`
+	LastSegmentGapMs       int      `json:"lastSegmentGapMs,omitempty"`
+	LatestSegmentLagMs     int      `json:"latestSegmentLagMs,omitempty"`
+	StallRisk              string   `json:"stallRisk,omitempty"`
+	StartupMode            string   `json:"startupMode,omitempty"`
+	StartupHeadroomSec     int      `json:"startupHeadroomSec,omitempty"`
+	StartupReasons         []string `json:"startupReasons,omitempty"`
 }
 
 type PlaybackTrace struct {
@@ -173,6 +176,9 @@ func (t *PlaybackTrace) Clone() *PlaybackTrace {
 	}
 	if t.HLS != nil {
 		hls := *t.HLS
+		if len(t.HLS.StartupReasons) > 0 {
+			hls.StartupReasons = append([]string(nil), t.HLS.StartupReasons...)
+		}
 		cp.HLS = &hls
 	}
 	if len(t.Fallbacks) > 0 {

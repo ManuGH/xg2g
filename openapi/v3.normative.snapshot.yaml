@@ -2197,6 +2197,20 @@ components:
           type: string
           nullable: true
           description: Advisory hint derived from recent HLS delivery observations.
+        startupMode:
+          type: string
+          nullable: true
+          description: Small operator-facing label for the current server-side HLS startup policy mode.
+        startupHeadroomSec:
+          type: integer
+          nullable: true
+          description: Effective startup headroom selected by the server-side HLS startup policy.
+        startupReasons:
+          type: array
+          nullable: true
+          description: Stable operator-facing reason codes that explain why the startup headroom was chosen.
+          items:
+            type: string
 
     PlaybackTraceOperator:
       type: object

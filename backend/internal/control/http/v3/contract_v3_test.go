@@ -828,6 +828,9 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 				LastSegmentGapMs:       1800,
 				LatestSegmentLagMs:     1200,
 				StallRisk:              "segment_stale",
+				StartupMode:            "trace_conservative",
+				StartupHeadroomSec:     12,
+				StartupReasons:         []string{"client_family_native", "trace_segment_gap"},
 			},
 			FirstFrameAtUnix: 1700000000,
 			Fallbacks: []model.PlaybackFallbackTrace{
@@ -986,6 +989,12 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.Equal(t, 1200, *resp.Trace.HlsDebug.LatestSegmentLagMs)
 	require.NotNil(t, resp.Trace.HlsDebug.StallHint)
 	require.Equal(t, "segment_stale", *resp.Trace.HlsDebug.StallHint)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupMode)
+	require.Equal(t, "trace_conservative", *resp.Trace.HlsDebug.StartupMode)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupHeadroomSec)
+	require.Equal(t, 12, *resp.Trace.HlsDebug.StartupHeadroomSec)
+	require.NotNil(t, resp.Trace.HlsDebug.StartupReasons)
+	require.Equal(t, []string{"client_family_native", "trace_segment_gap"}, *resp.Trace.HlsDebug.StartupReasons)
 }
 
 func TestV3Contract_TerminalSessionGoneIncludesPreflightTrace(t *testing.T) {

@@ -10,12 +10,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -51,74 +49,6 @@ const (
 	hlsProducerLateLag              = 15 * time.Second
 	hlsPlaylistOnlyPollThreshold    = 2
 )
-
-func preferredLiveStartOffsetSeconds(content []byte) int {
-	const (
-		defaultOffset      = 8
-		minOffset          = 6
-		maxOffset          = 12
-		targetSafetyFactor = 2
-		recentSegmentCount = 6
-		segmentSafetyCount = 4
-	)
-
-	targetDuration := 0
-	recentDurations := make([]float64, 0, recentSegmentCount)
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
-			raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
-			target, err := strconv.Atoi(raw)
-			if err == nil && target > 0 {
-				targetDuration = target
-			}
-			continue
-		}
-		if !strings.HasPrefix(line, "#EXTINF:") {
-			continue
-		}
-
-		raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXTINF:"))
-		raw = strings.TrimSuffix(raw, ",")
-		duration, err := strconv.ParseFloat(raw, 64)
-		if err != nil || duration <= 0 {
-			continue
-		}
-		if len(recentDurations) == recentSegmentCount {
-			copy(recentDurations, recentDurations[1:])
-			recentDurations[len(recentDurations)-1] = duration
-		} else {
-			recentDurations = append(recentDurations, duration)
-		}
-	}
-
-	offset := defaultOffset
-	if targetDuration > 0 {
-		targetOffset := targetDuration * targetSafetyFactor
-		if targetOffset > offset {
-			offset = targetOffset
-		}
-	}
-	if len(recentDurations) > 0 {
-		sum := 0.0
-		for _, duration := range recentDurations {
-			sum += duration
-		}
-		avgDuration := sum / float64(len(recentDurations))
-		segmentOffset := int(math.Ceil(avgDuration * segmentSafetyCount))
-		if segmentOffset > offset {
-			offset = segmentOffset
-		}
-	}
-	if offset < minOffset {
-		offset = minOffset
-	}
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-	return offset
-}
 
 func normalizeProgramDateTimeLine(line string) string {
 	m := pdtRe.FindStringSubmatch(line)
@@ -331,6 +261,40 @@ func updateHLSStallRisk(rec *model.SessionRecord, trace *model.HLSAccessTrace, n
 	}
 }
 
+func persistHLSStartupPolicy(ctx context.Context, store HLSStore, sessionID string, policy hlsStartupPolicy) {
+	updater, ok := store.(hlsSessionUpdater)
+	if !ok || strings.TrimSpace(sessionID) == "" || policy.StartupHeadroomSec <= 0 {
+		return
+	}
+	_, _ = updater.UpdateSession(ctx, sessionID, func(r *model.SessionRecord) error {
+		if r == nil {
+			return nil
+		}
+		trace := ensureHLSAccessTrace(r)
+		if trace.StartupHeadroomSec == policy.StartupHeadroomSec &&
+			trace.StartupMode == policy.Mode &&
+			stringSlicesEqual(trace.StartupReasons, policy.Reasons) {
+			return nil
+		}
+		trace.StartupHeadroomSec = policy.StartupHeadroomSec
+		trace.StartupMode = policy.Mode
+		trace.StartupReasons = append([]string(nil), policy.Reasons...)
+		return nil
+	})
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath string, err error) {
 	relPath := platformpaths.LiveSessionArtifactRelPath(req.sessionID, req.filename)
 	var legacyRelPath string
@@ -423,9 +387,10 @@ func awaitArtifact(ctx context.Context, filePath string, req hlsRequest, rec *mo
 	return info, err
 }
 
-func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.Logger) (*bytes.Reader, error) {
+func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, error) {
 	forcePlaylistType := ""
 	insertStartTag := ""
+	var startupPolicy *hlsStartupPolicy
 	if rec.Profile.VOD {
 		forcePlaylistType = "VOD"
 	} else if rec.Profile.DVRWindowSec > 0 {
@@ -434,13 +399,15 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 
 	raw, err := io.ReadAll(io.LimitReader(source, 1024*1024))
 	if err != nil {
-		return nil, fmt.Errorf("read playlist: %w", err)
+		return nil, nil, fmt.Errorf("read playlist: %w", err)
 	}
 	if forcePlaylistType == "EVENT" {
 		// Start Safari with explicit headroom behind live instead of at the full DVR window head.
 		// The reserve absorbs playlist polling and segment timing jitter that otherwise shows up as
-		// immediate rebuffering after a seemingly clean start on native HLS clients.
-		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", preferredLiveStartOffsetSeconds(raw))
+		// immediate rebuffering after a seemingly clean start on fragile/native HLS clients.
+		policy := deriveHLSStartupPolicy(rec, raw)
+		startupPolicy = &policy
+		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", startupPolicy.StartupHeadroomSec)
 	}
 
 	insertedPlaylistType := false
@@ -477,20 +444,24 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan playlist: %w", err)
+		return nil, startupPolicy, fmt.Errorf("scan playlist: %w", err)
 	}
 
-	if insertStartTag != "" && insertedStartTag {
+	if insertStartTag != "" && insertedStartTag && startupPolicy != nil {
 		logger.Debug().
 			Int("dvr_window_sec", rec.Profile.DVRWindowSec).
+			Str("startup_mode", startupPolicy.Mode).
+			Str("client_family", startupPolicy.ClientFamily).
+			Int("startup_headroom_sec", startupPolicy.StartupHeadroomSec).
+			Strs("startup_reasons", startupPolicy.Reasons).
 			Str("start_tag", insertStartTag).
-			Msg("injected EXT-X-START tag for Safari DVR")
+			Msg("injected EXT-X-START tag from HLS startup policy")
 	}
 
-	return bytes.NewReader(b.Bytes()), nil
+	return bytes.NewReader(b.Bytes()), startupPolicy, nil
 }
 
-func serveArtifact(w http.ResponseWriter, r *http.Request, req hlsRequest, rec *model.SessionRecord, info os.FileInfo, filePath string, logger zerolog.Logger) {
+func serveArtifact(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, info os.FileInfo, filePath string, logger zerolog.Logger) {
 	if req.isPlaylist {
 		w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
 		w.Header().Set("Cache-Control", "no-store")
@@ -520,11 +491,14 @@ func serveArtifact(w http.ResponseWriter, r *http.Request, req hlsRequest, rec *
 	defer func() { _ = f.Close() }()
 
 	if req.isPlaylist {
-		playlist, rewriteErr := rewritePlaylist(f, rec, logger)
+		playlist, startupPolicy, rewriteErr := rewritePlaylist(f, rec, logger)
 		if rewriteErr != nil {
 			log.L().Error().Err(rewriteErr).Msg("failed to process playlist")
 			http.Error(w, "failed to process file", http.StatusInternalServerError)
 			return
+		}
+		if startupPolicy != nil {
+			persistHLSStartupPolicy(r.Context(), store, req.sessionID, *startupPolicy)
 		}
 		http.ServeContent(w, r, req.cleanName, info.ModTime(), playlist)
 		return
@@ -635,5 +609,5 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	}
 
 	touchSegmentAccessTime(r.Context(), store, req, rec)
-	serveArtifact(w, r, req, rec, info, filePath, logger)
+	serveArtifact(w, r, store, req, rec, info, filePath, logger)
 }

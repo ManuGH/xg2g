@@ -646,6 +646,19 @@ func mapPlaybackTraceHLSDebug(trace *model.PlaybackTrace) *PlaybackTraceHlsDebug
 		dto.StallHint = &stallHint
 		hasValue = true
 	}
+	if startupMode := strings.TrimSpace(hls.StartupMode); startupMode != "" {
+		dto.StartupMode = &startupMode
+		hasValue = true
+	}
+	if hls.StartupHeadroomSec > 0 {
+		dto.StartupHeadroomSec = optionalIntPtr(hls.StartupHeadroomSec)
+		hasValue = true
+	}
+	if len(hls.StartupReasons) > 0 {
+		reasons := append([]string(nil), hls.StartupReasons...)
+		dto.StartupReasons = &reasons
+		hasValue = true
+	}
 
 	if !hasValue {
 		return nil

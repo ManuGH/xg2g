@@ -1269,6 +1269,18 @@ export type PlaybackTraceHlsDebug = {
      * Advisory hint derived from recent HLS delivery observations.
      */
     stallHint?: string | null;
+    /**
+     * Small operator-facing label for the current server-side HLS startup policy mode.
+     */
+    startupMode?: string | null;
+    /**
+     * Effective startup headroom selected by the server-side HLS startup policy.
+     */
+    startupHeadroomSec?: number | null;
+    /**
+     * Stable operator-facing reason codes that explain why the startup headroom was chosen.
+     */
+    startupReasons?: Array<string> | null;
 };
 
 export type PlaybackTraceOperator = {

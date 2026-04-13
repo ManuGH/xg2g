@@ -452,25 +452,25 @@ seg_000001.ts
 	assert.True(t, extM3UIdx < playlistTypeIdx && playlistTypeIdx < startTagIdx, "Semantic tags must follow header in order")
 }
 
-func TestPreferredLiveStartOffsetSeconds(t *testing.T) {
+func TestDeriveHLSStartupPolicy(t *testing.T) {
 	t.Run("uses recent segment cadence with conservative headroom", func(t *testing.T) {
 		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000000,\nseg_000000.ts\n")
-		assert.Equal(t, 12, preferredLiveStartOffsetSeconds(raw))
+		assert.Equal(t, 12, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 
 	t.Run("keeps small targets away from the live edge", func(t *testing.T) {
 		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1.000000,\nseg_000000.ts\n")
-		assert.Equal(t, 8, preferredLiveStartOffsetSeconds(raw))
+		assert.Equal(t, 8, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 
 	t.Run("clamps very large targets", func(t *testing.T) {
 		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.000000,\nseg_000000.ts\n")
-		assert.Equal(t, 12, preferredLiveStartOffsetSeconds(raw))
+		assert.Equal(t, 12, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 
 	t.Run("tracks ORF1 style short segments with extra reserve", func(t *testing.T) {
 		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:3\n#EXTINF:2.080000,\nseg_000001.ts\n#EXTINF:1.920000,\nseg_000002.ts\n#EXTINF:2.200000,\nseg_000003.ts\n#EXTINF:1.920000,\nseg_000004.ts\n#EXTINF:2.000000,\nseg_000005.ts\n#EXTINF:2.480000,\nseg_000006.ts\n")
-		assert.Equal(t, 9, preferredLiveStartOffsetSeconds(raw))
+		assert.Equal(t, 9, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 }
 

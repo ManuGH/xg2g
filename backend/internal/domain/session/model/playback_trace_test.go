@@ -82,6 +82,9 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 			LastSegmentGapMs:       1900,
 			LatestSegmentLagMs:     1200,
 			StallRisk:              "low",
+			StartupMode:            "trace_guarded",
+			StartupHeadroomSec:     10,
+			StartupReasons:         []string{"client_family_native", "segment_cadence_guard"},
 		},
 		HostPressureBand:    "constrained",
 		HostOverrideApplied: true,
@@ -116,6 +119,7 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 	cloned.Client.DeviceContext.Platform = "android"
 	cloned.HLS.LastSegmentName = "seg_000777.ts"
 	cloned.HLS.StallRisk = "segment_stale"
+	cloned.HLS.StartupReasons[0] = "trace_segment_gap"
 	cloned.HostPressureBand = "critical"
 	cloned.HostOverrideApplied = false
 	cloned.Fallbacks[0].Reason = "networkError"
@@ -129,6 +133,7 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 	assert.Equal(t, "browser", trace.Client.DeviceContext.Platform)
 	assert.Equal(t, "seg_000001.ts", trace.HLS.LastSegmentName)
 	assert.Equal(t, "low", trace.HLS.StallRisk)
+	assert.Equal(t, []string{"client_family_native", "segment_cadence_guard"}, trace.HLS.StartupReasons)
 	assert.Equal(t, "constrained", trace.HostPressureBand)
 	assert.True(t, trace.HostOverrideApplied)
 	assert.Equal(t, "bufferAppendError", trace.Fallbacks[0].Reason)
