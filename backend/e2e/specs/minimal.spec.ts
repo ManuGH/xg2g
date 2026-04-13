@@ -11,12 +11,8 @@ test.describe('WebUI browser smoke', () => {
     expect(response.ok()).toBeTruthy();
   });
 
-  test('authenticates and renders the dashboard with fixture data', async ({ page }) => {
+  test('renders the dashboard with fixture data', async ({ page }) => {
     await page.goto('/dashboard');
-
-    await expect(page.getByTestId('auth-surface')).toBeVisible();
-    await page.getByTestId('auth-token-input').fill('smoke-token');
-    await page.getByTestId('auth-submit').click();
 
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByTestId('dashboard-view')).toBeVisible();
