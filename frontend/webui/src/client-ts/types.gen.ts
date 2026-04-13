@@ -1243,11 +1243,32 @@ export type PlaybackTrace = {
     targetProfile?: PlaybackTargetProfile;
     ffmpegPlan?: PlaybackTraceFfmpegPlan;
     operator?: PlaybackTraceOperator;
+    hlsDebug?: PlaybackTraceHlsDebug;
     firstFrameAtMs?: number | null;
     fallbackCount?: number | null;
     lastFallbackReason?: string | null;
     stopReason?: string | null;
     stopClass?: string | null;
+};
+
+/**
+ * Operator-oriented HLS delivery debug view. These fields are observational only and
+ * must not be treated as authoritative playback policy.
+ *
+ */
+export type PlaybackTraceHlsDebug = {
+    playlistRequestCount?: number | null;
+    lastPlaylistAtMs?: number | null;
+    lastPlaylistIntervalMs?: number | null;
+    segmentRequestCount?: number | null;
+    lastSegmentAtMs?: number | null;
+    lastSegmentName?: string | null;
+    lastSegmentGapMs?: number | null;
+    latestSegmentLagMs?: number | null;
+    /**
+     * Advisory hint derived from recent HLS delivery observations.
+     */
+    stallHint?: string | null;
 };
 
 export type PlaybackTraceOperator = {

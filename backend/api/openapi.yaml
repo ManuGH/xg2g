@@ -2145,6 +2145,8 @@ components:
           $ref: "#/components/schemas/PlaybackTraceFfmpegPlan"
         operator:
           $ref: "#/components/schemas/PlaybackTraceOperator"
+        hlsDebug:
+          $ref: "#/components/schemas/PlaybackTraceHlsDebug"
         firstFrameAtMs:
           type: integer
           nullable: true
@@ -2160,6 +2162,42 @@ components:
         stopClass:
           type: string
           nullable: true
+
+    PlaybackTraceHlsDebug:
+      type: object
+      additionalProperties: false
+      description: |
+        Operator-oriented HLS delivery debug view. These fields are observational only and
+        must not be treated as authoritative playback policy.
+      properties:
+        playlistRequestCount:
+          type: integer
+          nullable: true
+        lastPlaylistAtMs:
+          type: integer
+          nullable: true
+        lastPlaylistIntervalMs:
+          type: integer
+          nullable: true
+        segmentRequestCount:
+          type: integer
+          nullable: true
+        lastSegmentAtMs:
+          type: integer
+          nullable: true
+        lastSegmentName:
+          type: string
+          nullable: true
+        lastSegmentGapMs:
+          type: integer
+          nullable: true
+        latestSegmentLagMs:
+          type: integer
+          nullable: true
+        stallHint:
+          type: string
+          nullable: true
+          description: Advisory hint derived from recent HLS delivery observations.
 
     PlaybackTraceOperator:
       type: object

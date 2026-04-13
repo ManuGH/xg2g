@@ -103,8 +103,17 @@ export function canUseDesktopWebKitFullscreen(videoEl?: VideoElementRef): boolea
   try {
     const webkitVideo = videoEl as unknown as {
       webkitEnterFullscreen?: unknown;
+      webkitSupportsPresentationMode?: unknown;
+      webkitSetPresentationMode?: unknown;
     };
-    return typeof webkitVideo.webkitEnterFullscreen === 'function' && !hasTouchInput();
+    if (hasTouchInput()) {
+      return false;
+    }
+    return (
+      typeof webkitVideo.webkitEnterFullscreen === 'function' ||
+      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
+      typeof webkitVideo.webkitSetPresentationMode === 'function'
+    );
   } catch {
     return false;
   }
@@ -141,6 +150,7 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
     if (!hasNativeHls) return false;
     if (shouldForceNativeMobileHls(videoEl)) return true;
+    if (canUseDesktopWebKitFullscreen(videoEl)) return true;
 
     return !hlsJsSupported;
   } catch {

@@ -72,6 +72,17 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 				DownlinkKbps: 54000,
 			},
 		},
+		HLS: &HLSAccessTrace{
+			PlaylistRequestCount:   2,
+			LastPlaylistAtUnix:     111,
+			LastPlaylistIntervalMs: 2100,
+			SegmentRequestCount:    1,
+			LastSegmentAtUnix:      112,
+			LastSegmentName:        "seg_000001.ts",
+			LastSegmentGapMs:       1900,
+			LatestSegmentLagMs:     1200,
+			StallRisk:              "low",
+		},
 		HostPressureBand:    "constrained",
 		HostOverrideApplied: true,
 		FirstFrameAtUnix:    123,
@@ -94,6 +105,7 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 	require.NotSame(t, trace.FFmpegPlan, cloned.FFmpegPlan)
 	require.NotSame(t, trace.Operator, cloned.Operator)
 	require.NotSame(t, trace.Client, cloned.Client)
+	require.NotSame(t, trace.HLS, cloned.HLS)
 
 	cloned.Source.AudioCodec = "ac3"
 	cloned.TargetProfile.Audio.Codec = "mp3"
@@ -102,6 +114,8 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 	cloned.Operator.RuleName = "different-channel"
 	cloned.Client.ClientFamily = "safari_native"
 	cloned.Client.DeviceContext.Platform = "android"
+	cloned.HLS.LastSegmentName = "seg_000777.ts"
+	cloned.HLS.StallRisk = "segment_stale"
 	cloned.HostPressureBand = "critical"
 	cloned.HostOverrideApplied = false
 	cloned.Fallbacks[0].Reason = "networkError"
@@ -113,6 +127,8 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 	assert.Equal(t, "problem-channel", trace.Operator.RuleName)
 	assert.Equal(t, "chromium_hlsjs", trace.Client.ClientFamily)
 	assert.Equal(t, "browser", trace.Client.DeviceContext.Platform)
+	assert.Equal(t, "seg_000001.ts", trace.HLS.LastSegmentName)
+	assert.Equal(t, "low", trace.HLS.StallRisk)
 	assert.Equal(t, "constrained", trace.HostPressureBand)
 	assert.True(t, trace.HostOverrideApplied)
 	assert.Equal(t, "bufferAppendError", trace.Fallbacks[0].Reason)

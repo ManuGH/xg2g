@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -41,36 +42,82 @@ var safeHLSSessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var safeHLSSegmentRe = regexp.MustCompile(`^seg_[A-Za-z0-9_-]+\.(?:ts|m4s)$`)
 var safeHLSLegacySegmentRe = regexp.MustCompile(`^stream[A-Za-z0-9_-]*\.ts$`)
 
+const (
+	minPlaylistAccessUpdateInterval = time.Second
+	minSegmentAccessUpdateInterval  = time.Second
+	hlsRecentPlaylistWindow         = 8 * time.Second
+	hlsSegmentStaleAfter            = 8 * time.Second
+	hlsProducerSlowLag              = 8 * time.Second
+	hlsProducerLateLag              = 15 * time.Second
+	hlsPlaylistOnlyPollThreshold    = 2
+)
+
 func preferredLiveStartOffsetSeconds(content []byte) int {
 	const (
-		defaultOffset = 3
-		minOffset     = 2
-		maxOffset     = 4
+		defaultOffset      = 8
+		minOffset          = 6
+		maxOffset          = 12
+		targetSafetyFactor = 2
+		recentSegmentCount = 6
+		segmentSafetyCount = 4
 	)
 
+	targetDuration := 0
+	recentDurations := make([]float64, 0, recentSegmentCount)
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
+		if strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
+			raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
+			target, err := strconv.Atoi(raw)
+			if err == nil && target > 0 {
+				targetDuration = target
+			}
 			continue
 		}
-		raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
-		target, err := strconv.Atoi(raw)
-		if err != nil || target <= 0 {
-			return defaultOffset
+		if !strings.HasPrefix(line, "#EXTINF:") {
+			continue
 		}
 
-		offset := (target + 1) / 2
-		if offset < minOffset {
-			offset = minOffset
+		raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXTINF:"))
+		raw = strings.TrimSuffix(raw, ",")
+		duration, err := strconv.ParseFloat(raw, 64)
+		if err != nil || duration <= 0 {
+			continue
 		}
-		if offset > maxOffset {
-			offset = maxOffset
+		if len(recentDurations) == recentSegmentCount {
+			copy(recentDurations, recentDurations[1:])
+			recentDurations[len(recentDurations)-1] = duration
+		} else {
+			recentDurations = append(recentDurations, duration)
 		}
-		return offset
 	}
 
-	return defaultOffset
+	offset := defaultOffset
+	if targetDuration > 0 {
+		targetOffset := targetDuration * targetSafetyFactor
+		if targetOffset > offset {
+			offset = targetOffset
+		}
+	}
+	if len(recentDurations) > 0 {
+		sum := 0.0
+		for _, duration := range recentDurations {
+			sum += duration
+		}
+		avgDuration := sum / float64(len(recentDurations))
+		segmentOffset := int(math.Ceil(avgDuration * segmentSafetyCount))
+		if segmentOffset > offset {
+			offset = segmentOffset
+		}
+	}
+	if offset < minOffset {
+		offset = minOffset
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	return offset
 }
 
 func normalizeProgramDateTimeLine(line string) string {
@@ -155,15 +202,12 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 	if !req.isPlaylist || rec == nil {
 		return
 	}
-	const minAccessUpdateIntervalSec = int64(5)
 
 	now := time.Now()
-	nowUnix := now.Unix()
 	// The first successful playlist GET after READY must always win, even if the
 	// session just transitioned to READY and LastAccessUnix was set during startup.
 	if !rec.LastPlaylistAccessAt.IsZero() &&
-		rec.LastAccessUnix != 0 &&
-		nowUnix-rec.LastAccessUnix < minAccessUpdateIntervalSec {
+		now.Sub(rec.LastPlaylistAccessAt) < minPlaylistAccessUpdateInterval {
 		return
 	}
 
@@ -176,14 +220,115 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 			return nil
 		}
 		if !r.LastPlaylistAccessAt.IsZero() &&
-			r.LastAccessUnix != 0 &&
-			nowUnix-r.LastAccessUnix < minAccessUpdateIntervalSec {
+			now.Sub(r.LastPlaylistAccessAt) < minPlaylistAccessUpdateInterval {
 			return nil
 		}
-		r.LastAccessUnix = nowUnix
+		trace := ensureHLSAccessTrace(r)
+		if !r.LastPlaylistAccessAt.IsZero() {
+			trace.LastPlaylistIntervalMs = durationToMilliseconds(now.Sub(r.LastPlaylistAccessAt))
+		}
+		r.LastAccessUnix = now.Unix()
 		r.LastPlaylistAccessAt = now // PR-P3-2: Deterministic idle truth
+		trace.PlaylistRequestCount++
+		trace.LastPlaylistAtUnix = now.Unix()
+		updateHLSStallRisk(r, trace, now)
 		return nil
 	})
+}
+
+func touchSegmentAccessTime(ctx context.Context, store HLSStore, req hlsRequest, rec *model.SessionRecord) {
+	if rec == nil || (!req.isSegment && !req.isLegacySegment) {
+		return
+	}
+
+	updater, ok := store.(hlsSessionUpdater)
+	if !ok {
+		return
+	}
+
+	now := time.Now()
+	_, _ = updater.UpdateSession(ctx, req.sessionID, func(r *model.SessionRecord) error {
+		if r == nil {
+			return nil
+		}
+		trace := ensureHLSAccessTrace(r)
+		if trace.LastSegmentName == req.cleanName && trace.LastSegmentAtUnix > 0 {
+			lastSegmentAt := time.Unix(trace.LastSegmentAtUnix, 0)
+			if now.Sub(lastSegmentAt) < minSegmentAccessUpdateInterval {
+				return nil
+			}
+		}
+		if trace.LastSegmentAtUnix > 0 {
+			trace.LastSegmentGapMs = durationToMilliseconds(now.Sub(time.Unix(trace.LastSegmentAtUnix, 0)))
+		}
+		trace.SegmentRequestCount++
+		trace.LastSegmentAtUnix = now.Unix()
+		trace.LastSegmentName = req.cleanName
+		updateHLSStallRisk(r, trace, now)
+		return nil
+	})
+}
+
+func ensureHLSAccessTrace(rec *model.SessionRecord) *model.HLSAccessTrace {
+	if rec.PlaybackTrace == nil {
+		rec.PlaybackTrace = &model.PlaybackTrace{}
+	}
+	if rec.PlaybackTrace.HLS == nil {
+		rec.PlaybackTrace.HLS = &model.HLSAccessTrace{}
+	}
+	return rec.PlaybackTrace.HLS
+}
+
+func durationToMilliseconds(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	return int(d / time.Millisecond)
+}
+
+func latestProducerActivity(rec *model.SessionRecord) time.Time {
+	if rec == nil {
+		return time.Time{}
+	}
+	latest := rec.LatestSegmentAt
+	if rec.PlaylistPublishedAt.After(latest) {
+		latest = rec.PlaylistPublishedAt
+	}
+	return latest
+}
+
+func updateHLSStallRisk(rec *model.SessionRecord, trace *model.HLSAccessTrace, now time.Time) {
+	if rec == nil || trace == nil {
+		return
+	}
+
+	producerAt := latestProducerActivity(rec)
+	if !producerAt.IsZero() {
+		trace.LatestSegmentLagMs = durationToMilliseconds(now.Sub(producerAt))
+	} else {
+		trace.LatestSegmentLagMs = 0
+	}
+
+	lastPlaylistAt := rec.LastPlaylistAccessAt
+	var lastSegmentAt time.Time
+	if trace.LastSegmentAtUnix > 0 {
+		lastSegmentAt = time.Unix(trace.LastSegmentAtUnix, 0)
+	}
+
+	switch {
+	case trace.LatestSegmentLagMs >= durationToMilliseconds(hlsProducerLateLag):
+		trace.StallRisk = "producer_late"
+	case trace.LatestSegmentLagMs >= durationToMilliseconds(hlsProducerSlowLag):
+		trace.StallRisk = "producer_slow"
+	case !lastPlaylistAt.IsZero() && trace.PlaylistRequestCount >= hlsPlaylistOnlyPollThreshold && lastSegmentAt.IsZero():
+		trace.StallRisk = "playlist_only"
+	case !lastPlaylistAt.IsZero() && !lastSegmentAt.IsZero() &&
+		now.Sub(lastPlaylistAt) <= hlsRecentPlaylistWindow &&
+		now.Sub(lastSegmentAt) >= hlsSegmentStaleAfter:
+		trace.StallRisk = "segment_stale"
+	default:
+		trace.StallRisk = "low"
+	}
 }
 
 func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath string, err error) {
@@ -292,8 +437,9 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 		return nil, fmt.Errorf("read playlist: %w", err)
 	}
 	if forcePlaylistType == "EVENT" {
-		// Start Safari near live edge instead of the beginning of the full DVR window.
-		// This avoids replaying fragile bootstrap segments when a live attach begins mid-GOP.
+		// Start Safari with explicit headroom behind live instead of at the full DVR window head.
+		// The reserve absorbs playlist polling and segment timing jitter that otherwise shows up as
+		// immediate rebuffering after a seemingly clean start on native HLS clients.
 		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", preferredLiveStartOffsetSeconds(raw))
 	}
 
@@ -488,5 +634,6 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		return
 	}
 
+	touchSegmentAccessTime(r.Context(), store, req, rec)
 	serveArtifact(w, r, req, rec, info, filePath, logger)
 }

@@ -644,7 +644,7 @@ export function usePlaybackEngine({
 
       debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
       setStatus('buffering');
-      scheduleNativeStallRecovery(videoEl, 'waiting');
+      clearNativeStallRecovery();
     };
 
     const onStalled = () => {
@@ -691,10 +691,6 @@ export function usePlaybackEngine({
 
     const onPause = () => {
       if (isTeardownRef.current) {
-        return;
-      }
-      if (videoEl.dataset.xg2gManagedPause === '1') {
-        debugLog('[V3Player] Event: pause (managed native veil hold ignored)');
         return;
       }
       clearNativeStallRecovery();

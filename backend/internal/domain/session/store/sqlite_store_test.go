@@ -94,6 +94,17 @@ func TestSqliteStore_PlaybackTraceRoundTrip(t *testing.T) {
 			ClientPath:        "hlsjs",
 			InputKind:         "receiver",
 			TargetProfileHash: "hash-trace",
+			HLS: &model.HLSAccessTrace{
+				PlaylistRequestCount:   3,
+				LastPlaylistAtUnix:     101,
+				LastPlaylistIntervalMs: 2100,
+				SegmentRequestCount:    2,
+				LastSegmentAtUnix:      102,
+				LastSegmentName:        "seg_000042.ts",
+				LastSegmentGapMs:       1900,
+				LatestSegmentLagMs:     1200,
+				StallRisk:              "low",
+			},
 			TargetProfile: &playbackprofile.TargetPlaybackProfile{
 				Container: "mpegts",
 				Packaging: playbackprofile.PackagingTS,
@@ -139,6 +150,12 @@ func TestSqliteStore_PlaybackTraceRoundTrip(t *testing.T) {
 	}
 	if got.PlaybackTrace.StopClass != model.PlaybackStopClassPackager {
 		t.Fatalf("unexpected stop class: %q", got.PlaybackTrace.StopClass)
+	}
+	if got.PlaybackTrace.HLS == nil {
+		t.Fatalf("expected hls trace roundtrip, got %#v", got.PlaybackTrace)
+	}
+	if got.PlaybackTrace.HLS.LastSegmentName != "seg_000042.ts" || got.PlaybackTrace.HLS.StallRisk != "low" {
+		t.Fatalf("unexpected hls trace: %#v", got.PlaybackTrace.HLS)
 	}
 }
 

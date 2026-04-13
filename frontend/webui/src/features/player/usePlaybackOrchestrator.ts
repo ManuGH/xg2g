@@ -667,7 +667,6 @@ export function usePlaybackOrchestrator(
   const nativeVideoShownRef = useRef(false);
   const nativeVideoHoldPositionRef = useRef<number | null>(null);
   const nativeVideoTempMutedRef = useRef(false);
-  const nativeManagedPauseRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
   const nativePlaybackWasActiveRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
@@ -2633,33 +2632,6 @@ export function usePlaybackOrchestrator(
       return;
     }
 
-    if (isNativeEngine && showNativeVideoVeil && showNativeVideo) {
-      if (nativeVeilResumeArmed) {
-        return;
-      }
-      if (!nativeManagedPauseRef.current && !video.paused) {
-        video.dataset.xg2gManagedPause = '1';
-        nativeManagedPauseRef.current = true;
-        video.pause();
-      }
-      return;
-    }
-
-    if (nativeManagedPauseRef.current) {
-      delete video.dataset.xg2gManagedPause;
-      nativeManagedPauseRef.current = false;
-      if (isNativeEngine && !hasTerminalStatus && status !== 'paused') {
-        void video.play().catch((err) => debugWarn('[V3Player] Native veil resume play blocked', err));
-      }
-    }
-  }, [hasTerminalStatus, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, status, videoRef]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
     if (!(isNativeEngine && showNativeVideoVeil && showNativeVideo && nativeVeilResumeArmed)) {
       return;
     }
@@ -2676,6 +2648,11 @@ export function usePlaybackOrchestrator(
     const handlePlaying = () => {
       releaseVeil();
     };
+    const handleProgress = () => {
+      if (!video.paused && video.readyState >= 3) {
+        releaseVeil();
+      }
+    };
 
     if (!video.paused && video.readyState >= 3) {
       releaseVeil();
@@ -2683,16 +2660,13 @@ export function usePlaybackOrchestrator(
     }
 
     video.addEventListener('playing', handlePlaying, { once: true });
-
-    delete video.dataset.xg2gManagedPause;
-    nativeManagedPauseRef.current = false;
-    void video.play().catch((err) => {
-      debugWarn('[V3Player] Native veil resume play blocked', err);
-      setNativeVeilResumeArmed(false);
-    });
+    video.addEventListener('timeupdate', handleProgress);
+    video.addEventListener('canplay', handleProgress);
 
     return () => {
       video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('timeupdate', handleProgress);
+      video.removeEventListener('canplay', handleProgress);
     };
   }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, videoRef]);
 
