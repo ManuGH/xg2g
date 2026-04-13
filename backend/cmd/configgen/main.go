@@ -132,7 +132,7 @@ func updateConfigDoc(root string, entries []config.ConfigEntry) error {
 	if err != nil {
 		return fmt.Errorf("update config doc: %w", err)
 	}
-
+	//nolint:gosec // G304, G703: CLI tool, paths are deterministic and within repo
 	if err := os.WriteFile(path, []byte(out), 0600); err != nil {
 		return fmt.Errorf("write config doc: %w", err)
 	}
@@ -199,6 +199,7 @@ func replaceGeneratedSection(content string, generated string) (string, error) {
 	return content[:start] + generated + content[end:], nil
 }
 
+//nolint:gosec // G101: this is a configuration schema key mapping, not a hardcoded credential
 var openWebIFAliases = map[string]string{
 	"enigma2.baseUrl":         "openWebIF.baseUrl",
 	"enigma2.username":        "openWebIF.username",

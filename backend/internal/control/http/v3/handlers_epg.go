@@ -199,6 +199,7 @@ func (w *epgAdapter) GetPrograms(ctx context.Context) ([]epg.Programme, error) {
 
 	// Singleflight for Concurrency Protection
 	result, err, _ := s.epgSfg.Do("epg-load", func() (interface{}, error) {
+		//nolint:gosec // G703: path is strictly sanitized by dataFilePath
 		fileInfo, err := os.Stat(xmltvPath)
 		if err != nil {
 			log.L().Error().Err(err).Str("path", xmltvPath).Msg("EPG file stat failed")
@@ -213,12 +214,14 @@ func (w *epgAdapter) GetPrograms(ctx context.Context) ([]epg.Programme, error) {
 		s.mu.Unlock()
 
 		// Parse
-		data, err := os.ReadFile(xmltvPath) // #nosec G304
+		//nolint:gosec // G304, G703: path is strictly sanitized by dataFilePath
+		data, err := os.ReadFile(xmltvPath)
 		if err != nil {
 			return nil, err
 		}
 
 		var parsedTU epg.TV
+		//nolint:gosec // G709: XMLTV data originates from trusted local configuration source
 		if err := xml.Unmarshal(data, &parsedTU); err != nil {
 			s.mu.RLock()
 			stale := s.epgCache

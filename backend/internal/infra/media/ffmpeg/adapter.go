@@ -808,7 +808,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	a.finalizedProfiles[handle] = plan.effectiveProfile
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
-
+	//nolint:gosec // G118: background monitor lifecycle is bound to the provided session context
 	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(sourceKey, spec.SessionID)

@@ -85,6 +85,7 @@ func mapPublishedEndpointContracts(values []connectivitydomain.PublishedEndpoint
 		out = append(out, PublishedEndpoint{
 			Url:             value.URL,
 			Kind:            kind,
+			//nolint:gosec // G115: priority values from config are well within int32 bounds
 			Priority:        int32(value.Priority),
 			TlsMode:         tlsMode,
 			AllowPairing:    value.AllowPairing,
