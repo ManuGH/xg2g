@@ -229,7 +229,7 @@ func (s *SqliteStore) ListDevicesByOwner(ctx context.Context, ownerID string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]model.DeviceRecord, 0)
 	for rows.Next() {
 		record, err := scanDevice(rows)
@@ -311,7 +311,7 @@ func (s *SqliteStore) ListDeviceGrantsByDevice(ctx context.Context, deviceID str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]model.DeviceGrantRecord, 0)
 	for rows.Next() {
 		record, err := scanGrant(rows)
@@ -390,7 +390,7 @@ func (s *SqliteStore) ListAccessSessionsByDevice(ctx context.Context, deviceID s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]model.AccessSessionRecord, 0)
 	for rows.Next() {
 		record, err := scanAccessSession(rows)

@@ -98,7 +98,7 @@ func fileExists(path string) bool {
 }
 
 func fail(err error) {
-	fmt.Fprintf(os.Stderr, "configgen: %v\n", err)
+	_, _ = fmt.Fprintf(os.Stderr, "configgen: %v\n", err)
 	os.Exit(1)
 }
 

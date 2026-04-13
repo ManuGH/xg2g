@@ -5,7 +5,6 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 //go:build integration || integration_fast
-// +build integration integration_fast
 
 package contract
 
