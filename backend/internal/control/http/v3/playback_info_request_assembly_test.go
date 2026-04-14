@@ -39,15 +39,18 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		ClientFamilyFallback: strPtr("safari"),
 		Container:            []string{"mpegts", "hls"},
 		DeviceContext: &PlaybackDeviceContext{
-			Brand:        strPtr("google"),
-			Device:       strPtr("foster"),
-			Manufacturer: strPtr("NVIDIA"),
-			Model:        strPtr("Shield"),
-			OsName:       strPtr("Android"),
-			OsVersion:    strPtr("14"),
-			Platform:     strPtr("android-tv"),
-			Product:      strPtr("mdarcy"),
-			SdkInt:       intPtr(34),
+			Brand:          strPtr("google"),
+			Device:         strPtr("foster"),
+			Manufacturer:   strPtr("NVIDIA"),
+			Model:          strPtr("Shield"),
+			BrowserName:    strPtr("chrome"),
+			BrowserVersion: strPtr("126.0"),
+			OsName:         strPtr("Android"),
+			OsVersion:      strPtr("14"),
+			Platform:       strPtr("android-tv"),
+			PlatformClass:  strPtr("android_tv_native_host"),
+			Product:        strPtr("mdarcy"),
+			SdkInt:         intPtr(34),
 		},
 		DeviceType: strPtr("tv"),
 		HlsEngines: &hlsEngines,
@@ -122,8 +125,11 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	assert.Equal(t, "android-tv", got.Capabilities.DeviceContext.Platform)
 	assert.Equal(t, "NVIDIA", got.Capabilities.DeviceContext.Manufacturer)
 	assert.Equal(t, "Shield", got.Capabilities.DeviceContext.Model)
+	assert.Equal(t, "chrome", got.Capabilities.DeviceContext.BrowserName)
+	assert.Equal(t, "126.0", got.Capabilities.DeviceContext.BrowserVersion)
 	assert.Equal(t, "Android", got.Capabilities.DeviceContext.OSName)
 	assert.Equal(t, "14", got.Capabilities.DeviceContext.OSVersion)
+	assert.Equal(t, "android_tv_native_host", got.Capabilities.DeviceContext.PlatformClass)
 	assert.Equal(t, 34, got.Capabilities.DeviceContext.SDKInt)
 	require.NotNil(t, got.Capabilities.NetworkContext)
 	assert.Equal(t, "ethernet", got.Capabilities.NetworkContext.Kind)

@@ -6,10 +6,16 @@
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
 import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
-import { type RecordingItem } from '../client-ts';
+import { postRecordingPlaybackInfo, type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import { filterRecordingsForProfile } from '../features/household/model';
+import { gatherPlaybackCapabilities } from '../features/player/utils/playbackCapabilities';
+import {
+  buildPlaybackProfileHeaders,
+  gatherPlaybackClientContext,
+  resolvePlaybackRequestProfile,
+} from '../features/player/utils/playbackRequestProfile';
 import { useTranslation } from 'react-i18next';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
 import { usePlayerHistoryBridge } from '../features/player/usePlayerHistoryBridge';
@@ -54,6 +60,8 @@ interface PlayingState {
   recordingId: string;
   title: string;
   durationSeconds: number;
+  startPositionSeconds?: number;
+  suppressResumePrompt?: boolean;
 }
 
 type RecordingsFilter = 'all' | 'active' | 'resume' | 'unwatched';
@@ -80,6 +88,16 @@ function mapRecordingToChip(item: RecordingItem): { state: ChipState; labelKey: 
     default:
       return { state: 'idle', labelKey: 'unknown' };
   }
+}
+
+function formatResumeClock(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return '--:--';
+  const total = Math.floor(value);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
 
 export default function RecordingsList() {
@@ -159,15 +177,106 @@ export default function RecordingsList() {
     setPath(newPath);
   };
 
-  const handlePlay = async (item: RecordingItem) => {
+  const probeResumeState = async (item: RecordingItem) => {
+    if (!item.recordingId) {
+          return null;
+              }
+              
+    const listedResume = item.resume
+          ? {
+                  ...item.resume,
+                          posSeconds: item.resume.posSeconds || 0,
+                                  durationSeconds: item.resume.durationSeconds || 0,
+                                          finished: item.resume.finished || false,
+                                                }
+                                                      : null;
+                                                      
+    if (listedResume && isResumeEligible(listedResume, item.durationSeconds)) {
+          return listedResume;
+              }
+              
+    try {
+          const capabilities = await gatherPlaybackCapabilities('recording');
+                const requestProfile = resolvePlaybackRequestProfile(
+                        gatherPlaybackClientContext(),
+                                capabilities,
+                                        'recording'
+                                              );
+                                              
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+              const { data, error, response } = await postRecordingPlaybackInfo({
+                        path: { recordingId: item.recordingId },
+                                  body: capabilities,
+                                            headers: buildPlaybackProfileHeaders(requestProfile),
+                                                    });
+                                                    
+        if (!error) {
+                  if (!data?.isSeekable || !data.resume) {
+                              return null;
+                                        }
+                                        
+          const safeResume = {
+                      ...data.resume,
+                                  posSeconds: data.resume.posSeconds || 0,
+                                              durationSeconds: data.resume.durationSeconds || 0,
+                                                          finished: data.resume.finished || false,
+                                                                    };
+                                                                    
+          return isResumeEligible(safeResume, item.durationSeconds) ? safeResume : null;
+                  }
+                  
+        if (response?.status === 503 && attempt < 4) {
+                  const retryAfterHeader = response.headers.get('Retry-After');
+                            const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
+                                      const safeRetrySeconds = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds : 1;
+                                                await new Promise((resolve) => window.setTimeout(resolve, safeRetrySeconds * 1000));
+                                                          continue;
+                                                                  }
+                                                                  
+        return null;
+              }
+              
+      return null;
+          } catch (_error) {
+                return null;
+                    }
+                      };
+                      
+  const handlePlay = async (
+  
+    item: RecordingItem,
+    options?: {
+      startPositionSeconds?: number;
+      suppressResumePrompt?: boolean;
+    }
+  ) => {
     if (!canAccessDvrPlayback) return;
     if (selectionMode) return;
     if (!item.recordingId) return;
 
+    let startPositionSeconds = options?.startPositionSeconds;
+    let suppressResumePrompt = options?.suppressResumePrompt ?? false;
+
+    if (!suppressResumePrompt) {
+      const resume = await probeResumeState(item);
+      if (resume) {
+        const shouldResume = await confirm({
+          title: t('player.resumeTitle'),
+          message: t('player.resumePrompt', { time: formatResumeClock(resume.posSeconds) }),
+          confirmLabel: t('player.resumeAction'),
+          cancelLabel: t('player.startOver'),
+        });
+        startPositionSeconds = shouldResume ? resume.posSeconds : 0;
+        suppressResumePrompt = true;
+      }
+    }
+
     setPlaying({
       recordingId: item.recordingId,
       title: item.title || 'Recording',
-      durationSeconds: item.durationSeconds ?? 0
+      durationSeconds: item.durationSeconds ?? 0,
+      startPositionSeconds,
+      suppressResumePrompt,
     });
   };
 
@@ -417,14 +526,31 @@ export default function RecordingsList() {
         {visibleRecordings.map((rec, i) => {
           const isSelected = rec.recordingId ? selectedIds.has(rec.recordingId) : false;
           const { state, labelKey } = mapRecordingToChip(rec);
+          const resume = rec.resume
+            ? {
+              ...rec.resume,
+              posSeconds: rec.resume.posSeconds || 0,
+              durationSeconds: rec.resume.durationSeconds || 0,
+              finished: rec.resume.finished || false
+            }
+            : null;
+          const hasResumeChoice = Boolean(resume && isResumeEligible(resume, rec.durationSeconds));
 
           return (
             <Card
               key={`rec-${i}`}
-              interactive
+              interactive={selectionMode && canManageDvr}
               className={[styles.recordingCard, isSelected ? styles.selected : null].filter(Boolean).join(' ')}
               variant={state === 'recording' || state === 'live' ? 'live' : 'standard'}
-              onClick={() => selectionMode && canManageDvr && rec.recordingId ? toggleSelect(rec.recordingId) : handlePlay(rec)}
+              onClick={
+                selectionMode && canManageDvr && rec.recordingId
+                  ? () => toggleSelect(rec.recordingId as string)
+                  : !hasResumeChoice
+                    ? () => {
+                      void handlePlay(rec);
+                    }
+                    : undefined
+              }
             >
               <CardBody className={styles.itemContent}>
                 <div className={styles.iconWrapper}>
@@ -445,20 +571,42 @@ export default function RecordingsList() {
                   </div>
 
                   {/* Resume Bar Integration */}
-                  {(rec as RecordingItem).resume && (() => {
-                    const r = (rec as RecordingItem).resume!;
-                    const safeResume = {
-                      ...r,
-                      posSeconds: r.posSeconds || 0,
-                      durationSeconds: r.durationSeconds || 0,
-                      finished: r.finished || false
-                    };
-                    return isResumeEligible(safeResume, rec.durationSeconds) && (
+                  {resume && (() => {
+                    return hasResumeChoice && (
                       <div className={styles.resumeContainer}>
                         <RecordingResumeBar
-                          resume={safeResume}
+                          resume={resume}
                           durationSeconds={rec.durationSeconds}
                         />
+                        {!selectionMode && rec.recordingId ? (
+                          <div className={styles.resumeActions}>
+                            <Button
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handlePlay(rec, {
+                                  startPositionSeconds: resume.posSeconds,
+                                  suppressResumePrompt: true,
+                                });
+                              }}
+                            >
+                              {t('player.resumeAction')}
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handlePlay(rec, {
+                                  startPositionSeconds: 0,
+                                  suppressResumePrompt: true,
+                                });
+                              }}
+                            >
+                              {t('player.startOver')}
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })()}
@@ -470,9 +618,17 @@ export default function RecordingsList() {
                   </div>
                 )}
 
-                {!selectionMode && (
+                {!selectionMode && !hasResumeChoice && (
                   <div className={styles.playOverlay}>
-                    <span className={styles.playLabel}>{t('player.play')}</span>
+                    <span
+                      className={styles.playLabel}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handlePlay(rec);
+                      }}
+                    >
+                      {t('player.play')}
+                    </span>
                   </div>
                 )}
               </CardBody>
@@ -505,6 +661,8 @@ export default function RecordingsList() {
             autoStart={true}
             onClose={handlePlayerClose}
             duration={playing.durationSeconds}
+            startPositionSeconds={playing.startPositionSeconds}
+            suppressResumePrompt={playing.suppressResumePrompt}
           />
         </Suspense>
       )}

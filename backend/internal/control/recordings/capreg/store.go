@@ -446,12 +446,15 @@ func canonicalDeviceContext(in *capabilities.DeviceContext) *capabilities.Device
 	out.Platform = normalizeToken(out.Platform)
 	out.Manufacturer = normalizeToken(out.Manufacturer)
 	out.Model = normalizeToken(out.Model)
+	out.BrowserName = normalizeToken(out.BrowserName)
+	out.BrowserVersion = strings.TrimSpace(strings.ToLower(out.BrowserVersion))
 	out.OSName = normalizeToken(out.OSName)
 	out.OSVersion = strings.TrimSpace(strings.ToLower(out.OSVersion))
+	out.PlatformClass = normalizeToken(out.PlatformClass)
 	if out.SDKInt < 0 {
 		out.SDKInt = 0
 	}
-	if out.Brand == "" && out.Product == "" && out.Device == "" && out.Platform == "" && out.Manufacturer == "" && out.Model == "" && out.OSName == "" && out.OSVersion == "" && out.SDKInt == 0 {
+	if out.Brand == "" && out.Product == "" && out.Device == "" && out.Platform == "" && out.Manufacturer == "" && out.Model == "" && out.BrowserName == "" && out.BrowserVersion == "" && out.OSName == "" && out.OSVersion == "" && out.PlatformClass == "" && out.SDKInt == 0 {
 		return nil
 	}
 	return &out

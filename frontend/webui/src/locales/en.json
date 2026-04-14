@@ -33,9 +33,24 @@
     "initializing": "Initializing..."
   },
   "auth": {
+    "title": "Authentication Required",
+    "placeholder": "Enter API Token",
+    "submit": "Authenticate",
     "requiredTitle": "Authentication Required",
+    "requiredEyebrow": "Sign in",
+    "requiredCopy": "Enter your API token to open the xg2g control surface.",
+    "requiredHint": "The token is stored locally in this browser after successful sign-in.",
+    "expiredTitle": "Session Expired",
+    "expiredEyebrow": "Re-authenticate",
+    "expiredCopy": "Your saved API token was rejected. Enter a valid token to continue.",
+    "expiredHint": "Submitting a new token will retry startup automatically.",
+    "tokenLabel": "API Token",
     "tokenPlaceholder": "Enter API Token",
-    "authenticate": "Authenticate"
+    "authenticate": "Authenticate",
+    "showToken": "Show token",
+    "hideToken": "Hide token",
+    "clearToken": "Clear",
+    "tvHint": "On TV the token can stay visible while typing so you can spot mistakes immediately."
   },
   "common": {
     "language": "Language",
@@ -130,16 +145,24 @@
     "startupHints": {
       "safariCompatTranscode": "Preparing Safari-compatible stream…",
       "repairTranscode": "Repairing and transcoding stream…",
-      "transcodeStartup": "Preparing transcoded stream…"
+      "transcodeStartup": "Preparing transcoded stream…",
+      "recordingStartup": "Opening recording…",
+      "recordingProgressiveHls": "Preparing recording for stable seeking…",
+      "liveDvrStartup": "Preparing live stream with timeshift…",
+      "directSourceStartup": "Opening direct source…"
     },
     "startupSupport": {
       "default": "Playback starts automatically as soon as the first stable segments are ready.",
       "safariCompatTranscode": "Safari needs a compatible stream variant first. This can take a little longer.",
       "repairTranscode": "The incoming stream is being stabilized before playback starts.",
-      "transcodeStartup": "The stream is being prepared for this device and will start automatically."
+      "transcodeStartup": "The stream is being prepared for this device and will start automatically.",
+      "recordingDefault": "This finished recording starts automatically as soon as the first stable segments are ready.",
+      "recordingProgressiveHls": "This is a finished recording. Safari uses a progressive HLS path here so seeking and fast-forward stay stable.",
+      "liveDvrDefault": "The live stream is opened with a seekable window so you can jump within the current buffer.",
+      "directSourceDefault": "The direct source is opened without a live session bridge and starts as soon as the target device accepts it."
     },
     "startupElapsed": "Wait {{seconds}}s",
-    "startupSurfaceEyebrow": "Live startup",
+    "startupSurfaceEyebrow": "Playback",
     "playlistNotReady": "Playlist not ready",
     "readyButNotPlayable": "READY reported, but playlist is not available",
     "sessionNotReadyInTime": "Session did not become ready in time",
@@ -173,7 +196,31 @@
     "playbackError": "Playback error",
     "streamUrlMissing": "Stream URL missing",
     "sessionExpired": "Session expired. Please restart.",
-    "sessionNotFound": "Session no longer exists."
+    "sessionNotFound": "Session no longer exists.",
+    "content": "Content",
+    "transport": "Transport",
+    "presentationKinds": {
+      "live": "Live TV",
+      "live_dvr": "Live TV with timeshift",
+      "vod": "Recording",
+      "direct": "Direct source",
+      "unknown": "Playback"
+    },
+    "transportKinds": {
+      "native_hls": "Safari HLS",
+      "progressive_hls": "Safari progressive",
+      "hlsjs": "HLS.js",
+      "direct_mp4": "Direct MP4",
+      "native_host": "Native bridge",
+      "unknown": "Pending"
+    },
+    "startupSurfaceEyebrows": {
+      "live": "Live startup",
+      "live_dvr": "Live with timeshift",
+      "vod": "Recording",
+      "direct": "Direct source",
+      "unknown": "Playback"
+    }
   },
   "dashboard": {
     "controlSummary": "Control summary",
@@ -663,25 +710,5 @@
       "unknown": "Unknown",
       "skipped": "Skipped"
     }
-  },
-  "auth": {
-    "title": "Authentication Required",
-    "placeholder": "Enter API Token",
-    "submit": "Authenticate",
-    "requiredTitle": "Authentication Required",
-    "requiredEyebrow": "Sign in",
-    "requiredCopy": "Enter your API token to open the xg2g control surface.",
-    "requiredHint": "The token is stored locally in this browser after successful sign-in.",
-    "expiredTitle": "Session Expired",
-    "expiredEyebrow": "Re-authenticate",
-    "expiredCopy": "Your saved API token was rejected. Enter a valid token to continue.",
-    "expiredHint": "Submitting a new token will retry startup automatically.",
-    "tokenLabel": "API Token",
-    "tokenPlaceholder": "Enter API Token",
-    "authenticate": "Authenticate",
-    "showToken": "Show token",
-    "hideToken": "Hide token",
-    "clearToken": "Clear",
-    "tvHint": "On TV the token can stay visible while typing so you can spot mistakes immediately."
   }
 }

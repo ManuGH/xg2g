@@ -46,6 +46,11 @@ describe('playbackClientFamily', () => {
     expect(detectPlaybackClientFamily(null)).toBe('firefox_hlsjs');
   });
 
+  it('keeps iPhone WebKit browsers in the native mobile family even without a video element', () => {
+    setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/135.0.7049.83 Mobile/15E148 Safari/604.1');
+    expect(detectPlaybackClientFamily(null)).toBe('ios_safari_native');
+  });
+
   it('keeps family fallback capability variants scoped by playback type', () => {
     const live = fallbackPlaybackCapabilitiesForClientFamily('safari_native', 'live');
     const recording = fallbackPlaybackCapabilitiesForClientFamily('safari_native', 'recording');

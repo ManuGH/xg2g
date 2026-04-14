@@ -129,15 +129,18 @@ func mapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 	}
 	if v3.DeviceContext != nil {
 		c.DeviceContext = &capabilities.DeviceContext{
-			Brand:        derefString(v3.DeviceContext.Brand),
-			Product:      derefString(v3.DeviceContext.Product),
-			Device:       derefString(v3.DeviceContext.Device),
-			Platform:     derefString(v3.DeviceContext.Platform),
-			Manufacturer: derefString(v3.DeviceContext.Manufacturer),
-			Model:        derefString(v3.DeviceContext.Model),
-			OSName:       derefString(v3.DeviceContext.OsName),
-			OSVersion:    derefString(v3.DeviceContext.OsVersion),
-			SDKInt:       derefInt(v3.DeviceContext.SdkInt),
+			Brand:          derefString(v3.DeviceContext.Brand),
+			Product:        derefString(v3.DeviceContext.Product),
+			Device:         derefString(v3.DeviceContext.Device),
+			Platform:       derefString(v3.DeviceContext.Platform),
+			Manufacturer:   derefString(v3.DeviceContext.Manufacturer),
+			Model:          derefString(v3.DeviceContext.Model),
+			BrowserName:    derefString(v3.DeviceContext.BrowserName),
+			BrowserVersion: derefString(v3.DeviceContext.BrowserVersion),
+			OSName:         derefString(v3.DeviceContext.OsName),
+			OSVersion:      derefString(v3.DeviceContext.OsVersion),
+			PlatformClass:  derefString(v3.DeviceContext.PlatformClass),
+			SDKInt:         derefInt(v3.DeviceContext.SdkInt),
 		}
 	}
 	if v3.NetworkContext != nil {

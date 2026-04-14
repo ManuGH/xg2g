@@ -62,10 +62,13 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 			RuntimeProbeUsed:    true,
 			RuntimeProbeVersion: 2,
 			DeviceContext: &PlaybackClientDeviceContext{
-				Platform:  "browser",
-				OSName:    "macos",
-				OSVersion: "15.4",
-				Model:     "macbookpro",
+				Platform:       "browser",
+				BrowserName:    "safari",
+				BrowserVersion: "17.4",
+				OSName:         "macos",
+				OSVersion:      "15.4",
+				PlatformClass:  "macos_safari",
+				Model:          "macbookpro",
 			},
 			NetworkContext: &PlaybackClientNetworkContext{
 				Kind:         "wifi",

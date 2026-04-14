@@ -110,15 +110,18 @@ func cloneClientDeviceContext(in *capabilities.DeviceContext) *model.PlaybackCli
 		return nil
 	}
 	return &model.PlaybackClientDeviceContext{
-		Brand:        strings.TrimSpace(in.Brand),
-		Device:       strings.TrimSpace(in.Device),
-		Manufacturer: strings.TrimSpace(in.Manufacturer),
-		Model:        strings.TrimSpace(in.Model),
-		OSName:       strings.TrimSpace(in.OSName),
-		OSVersion:    strings.TrimSpace(in.OSVersion),
-		Platform:     strings.TrimSpace(in.Platform),
-		Product:      strings.TrimSpace(in.Product),
-		SDKInt:       in.SDKInt,
+		Brand:          strings.TrimSpace(in.Brand),
+		Device:         strings.TrimSpace(in.Device),
+		Manufacturer:   strings.TrimSpace(in.Manufacturer),
+		Model:          strings.TrimSpace(in.Model),
+		BrowserName:    strings.TrimSpace(in.BrowserName),
+		BrowserVersion: strings.TrimSpace(in.BrowserVersion),
+		OSName:         strings.TrimSpace(in.OSName),
+		OSVersion:      strings.TrimSpace(in.OSVersion),
+		Platform:       strings.TrimSpace(in.Platform),
+		PlatformClass:  strings.TrimSpace(in.PlatformClass),
+		Product:        strings.TrimSpace(in.Product),
+		SDKInt:         in.SDKInt,
 	}
 }
 

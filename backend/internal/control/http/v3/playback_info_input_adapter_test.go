@@ -29,8 +29,11 @@ func TestParseRecordingPlaybackPostInput_Success(t *testing.T) {
 			"platform":"android-tv",
 			"manufacturer":"NVIDIA",
 			"model":"Shield",
+			"browserName":"webview",
+			"browserVersion":"126.0",
 			"osName":"Android",
 			"osVersion":"14",
+			"platformClass":"android_tv_native_host",
 			"sdkInt":34
 		},
 		"networkContext":{
@@ -56,6 +59,9 @@ func TestParseRecordingPlaybackPostInput_Success(t *testing.T) {
 	assert.Equal(t, "mdarcy", *caps.DeviceContext.Product)
 	assert.Equal(t, "foster", *caps.DeviceContext.Device)
 	assert.Equal(t, "android-tv", *caps.DeviceContext.Platform)
+	assert.Equal(t, "webview", *caps.DeviceContext.BrowserName)
+	assert.Equal(t, "126.0", *caps.DeviceContext.BrowserVersion)
+	assert.Equal(t, "android_tv_native_host", *caps.DeviceContext.PlatformClass)
 	require.NotNil(t, caps.NetworkContext)
 	assert.Equal(t, "ethernet", *caps.NetworkContext.Kind)
 }
@@ -88,8 +94,11 @@ func TestParseLivePlaybackPostInput_NormalizesServiceRef(t *testing.T) {
 			"audioCodecs":["aac"],
 			"deviceContext":{
 				"platform":"browser",
+				"browserName":"chrome",
+				"browserVersion":"135.0",
 				"osName":"windows",
-				"osVersion":"11"
+				"osVersion":"11",
+				"platformClass":"chromium_desktop"
 			}
 		}
 	}`))
@@ -103,6 +112,9 @@ func TestParseLivePlaybackPostInput_NormalizesServiceRef(t *testing.T) {
 	assert.Equal(t, []string{"mpegts"}, input.capabilities.Container)
 	require.NotNil(t, input.capabilities.DeviceContext)
 	assert.Equal(t, "browser", *input.capabilities.DeviceContext.Platform)
+	assert.Equal(t, "chrome", *input.capabilities.DeviceContext.BrowserName)
+	assert.Equal(t, "135.0", *input.capabilities.DeviceContext.BrowserVersion)
+	assert.Equal(t, "chromium_desktop", *input.capabilities.DeviceContext.PlatformClass)
 }
 
 func TestParseLivePlaybackPostInput_InvalidJSON(t *testing.T) {

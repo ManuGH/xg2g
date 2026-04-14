@@ -1132,8 +1132,11 @@ export type PlaybackDeviceContext = {
     platform?: string;
     manufacturer?: string;
     model?: string;
+    browserName?: string;
+    browserVersion?: string;
     osName?: string;
     osVersion?: string;
+    platformClass?: string;
     sdkInt?: number;
 };
 
@@ -1156,7 +1159,10 @@ export type PlaybackClientSummary = {
     clientFamily?: string | null;
     preferredHlsEngine?: string | null;
     deviceType?: string | null;
+    browserName?: string | null;
+    browserVersion?: string | null;
     platform?: string | null;
+    platformClass?: string | null;
     osName?: string | null;
     osVersion?: string | null;
     model?: string | null;

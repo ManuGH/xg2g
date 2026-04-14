@@ -63,14 +63,17 @@ func mapPlaybackClientSnapshot(snapshot *model.PlaybackClientSnapshot) *Playback
 	}
 	if snapshot.DeviceContext != nil {
 		dto.DeviceContext = &PlaybackDeviceContext{
-			Brand:        optionalStringPtr(snapshot.DeviceContext.Brand),
-			Device:       optionalStringPtr(snapshot.DeviceContext.Device),
-			Manufacturer: optionalStringPtr(snapshot.DeviceContext.Manufacturer),
-			Model:        optionalStringPtr(snapshot.DeviceContext.Model),
-			OsName:       optionalStringPtr(snapshot.DeviceContext.OSName),
-			OsVersion:    optionalStringPtr(snapshot.DeviceContext.OSVersion),
-			Platform:     optionalStringPtr(snapshot.DeviceContext.Platform),
-			Product:      optionalStringPtr(snapshot.DeviceContext.Product),
+			Brand:          optionalStringPtr(snapshot.DeviceContext.Brand),
+			Device:         optionalStringPtr(snapshot.DeviceContext.Device),
+			Manufacturer:   optionalStringPtr(snapshot.DeviceContext.Manufacturer),
+			Model:          optionalStringPtr(snapshot.DeviceContext.Model),
+			BrowserName:    optionalStringPtr(snapshot.DeviceContext.BrowserName),
+			BrowserVersion: optionalStringPtr(snapshot.DeviceContext.BrowserVersion),
+			OsName:         optionalStringPtr(snapshot.DeviceContext.OSName),
+			OsVersion:      optionalStringPtr(snapshot.DeviceContext.OSVersion),
+			Platform:       optionalStringPtr(snapshot.DeviceContext.Platform),
+			PlatformClass:  optionalStringPtr(snapshot.DeviceContext.PlatformClass),
+			Product:        optionalStringPtr(snapshot.DeviceContext.Product),
 		}
 		if snapshot.DeviceContext.SDKInt > 0 {
 			sdkInt := snapshot.DeviceContext.SDKInt
@@ -112,7 +115,10 @@ func mapPlaybackClientSummary(snapshot *model.PlaybackClientSnapshot) *PlaybackC
 	}
 
 	if snapshot.DeviceContext != nil {
+		dto.BrowserName = optionalStringPtr(snapshot.DeviceContext.BrowserName)
+		dto.BrowserVersion = optionalStringPtr(snapshot.DeviceContext.BrowserVersion)
 		dto.Platform = optionalStringPtr(snapshot.DeviceContext.Platform)
+		dto.PlatformClass = optionalStringPtr(snapshot.DeviceContext.PlatformClass)
 		dto.OsName = optionalStringPtr(snapshot.DeviceContext.OSName)
 		dto.OsVersion = optionalStringPtr(snapshot.DeviceContext.OSVersion)
 		dto.Model = optionalStringPtr(snapshot.DeviceContext.Model)
@@ -121,7 +127,7 @@ func mapPlaybackClientSummary(snapshot *model.PlaybackClientSnapshot) *PlaybackC
 		dto.NetworkKind = optionalStringPtr(snapshot.NetworkContext.Kind)
 	}
 
-	if dto.CapHash == nil && dto.ClientCapsSource == nil && dto.ClientFamily == nil && dto.PreferredHlsEngine == nil && dto.DeviceType == nil && dto.Platform == nil && dto.OsName == nil && dto.OsVersion == nil && dto.Model == nil && dto.NetworkKind == nil && dto.RuntimeProbeVersion == nil {
+	if dto.CapHash == nil && dto.ClientCapsSource == nil && dto.ClientFamily == nil && dto.PreferredHlsEngine == nil && dto.DeviceType == nil && dto.BrowserName == nil && dto.BrowserVersion == nil && dto.Platform == nil && dto.PlatformClass == nil && dto.OsName == nil && dto.OsVersion == nil && dto.Model == nil && dto.NetworkKind == nil && dto.RuntimeProbeVersion == nil {
 		return nil
 	}
 	return dto

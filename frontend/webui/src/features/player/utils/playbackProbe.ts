@@ -5,6 +5,7 @@ import {
   type PreferredCodec,
   type VideoCodecSignal
 } from './codecDetection';
+import { detectBrowserIdentity } from './browserIdentity';
 import { shouldPreferNativeWebKitHls } from './playerHelpers';
 
 export type RuntimePlaybackProbeScope = 'live' | 'recording';
@@ -56,8 +57,21 @@ export async function probeRuntimePlaybackCapabilities(
   ]);
   const hlsJsSupported = Hls.isSupported();
   const nativeHls = probeNativeHls(videoEl);
-  const supportsAc3 = scope === 'live' && probeAc3(videoEl);
-  const preferNativeHls = shouldPreferNativeWebKitHls(videoEl, hlsJsSupported);
+  const browserIdentity = detectBrowserIdentity();
+  const supportsAc3 = probeAc3(videoEl);
+  const shouldAdvertiseAc3 = supportsAc3 && (
+    scope !== 'recording' ||
+    (
+      browserIdentity.platformClass !== 'macos_safari' &&
+      browserIdentity.platformClass !== 'ios_webkit' &&
+      browserIdentity.platformClass !== 'ipados_webkit' &&
+      browserIdentity.platformClass !== 'tvos_webkit'
+    )
+  );
+  // Desktop WebKit recordings are more stable via native HLS than via hls.js+MSE copy paths.
+  const preferNativeHls = scope === 'recording' && nativeHls
+    ? true
+    : shouldPreferNativeWebKitHls(videoEl, hlsJsSupported);
   const preferredHlsEngine: RuntimeHlsEngine | null =
     hlsJsSupported && !preferNativeHls ? 'hlsjs' :
       nativeHls ? 'native' :
@@ -80,7 +94,7 @@ export async function probeRuntimePlaybackCapabilities(
   }
 
   const audioCodecs = ['aac', 'mp3'];
-  if (supportsAc3) {
+  if (shouldAdvertiseAc3) {
     audioCodecs.push('ac3');
   }
 

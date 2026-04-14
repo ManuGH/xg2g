@@ -1277,6 +1277,8 @@ type PlaybackClientSnapshot struct {
 // PlaybackClientSummary defines model for PlaybackClientSummary.
 type PlaybackClientSummary struct {
 	CapHash             *string `json:"capHash"`
+	BrowserName         *string `json:"browserName"`
+	BrowserVersion      *string `json:"browserVersion"`
 	ClientCapsSource    *string `json:"clientCapsSource"`
 	ClientFamily        *string `json:"clientFamily"`
 	DeviceType          *string `json:"deviceType"`
@@ -1285,6 +1287,7 @@ type PlaybackClientSummary struct {
 	OsName              *string `json:"osName"`
 	OsVersion           *string `json:"osVersion"`
 	Platform            *string `json:"platform"`
+	PlatformClass       *string `json:"platformClass"`
 	PreferredHlsEngine  *string `json:"preferredHlsEngine"`
 	RuntimeProbeVersion *int    `json:"runtimeProbeVersion"`
 }
@@ -1328,15 +1331,18 @@ type PlaybackDecisionSelectedOutputKind string
 
 // PlaybackDeviceContext defines model for PlaybackDeviceContext.
 type PlaybackDeviceContext struct {
-	Brand        *string `json:"brand,omitempty"`
-	Device       *string `json:"device,omitempty"`
-	Manufacturer *string `json:"manufacturer,omitempty"`
-	Model        *string `json:"model,omitempty"`
-	OsName       *string `json:"osName,omitempty"`
-	OsVersion    *string `json:"osVersion,omitempty"`
-	Platform     *string `json:"platform,omitempty"`
-	Product      *string `json:"product,omitempty"`
-	SdkInt       *int    `json:"sdkInt,omitempty"`
+	Brand          *string `json:"brand,omitempty"`
+	BrowserName    *string `json:"browserName,omitempty"`
+	BrowserVersion *string `json:"browserVersion,omitempty"`
+	Device         *string `json:"device,omitempty"`
+	Manufacturer   *string `json:"manufacturer,omitempty"`
+	Model          *string `json:"model,omitempty"`
+	OsName         *string `json:"osName,omitempty"`
+	OsVersion      *string `json:"osVersion,omitempty"`
+	Platform       *string `json:"platform,omitempty"`
+	PlatformClass  *string `json:"platformClass,omitempty"`
+	Product        *string `json:"product,omitempty"`
+	SdkInt         *int    `json:"sdkInt,omitempty"`
 }
 
 // PlaybackFeedbackRequest defines model for PlaybackFeedbackRequest.

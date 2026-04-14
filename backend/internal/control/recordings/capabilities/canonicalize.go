@@ -47,15 +47,18 @@ type MaxVideo struct {
 }
 
 type DeviceContext struct {
-	Brand        string `json:"brand,omitempty"`
-	Product      string `json:"product,omitempty"`
-	Device       string `json:"device,omitempty"`
-	Platform     string `json:"platform,omitempty"`
-	Manufacturer string `json:"manufacturer,omitempty"`
-	Model        string `json:"model,omitempty"`
-	OSName       string `json:"osName,omitempty"`
-	OSVersion    string `json:"osVersion,omitempty"`
-	SDKInt       int    `json:"sdkInt,omitempty"`
+	Brand          string `json:"brand,omitempty"`
+	Product        string `json:"product,omitempty"`
+	Device         string `json:"device,omitempty"`
+	Platform       string `json:"platform,omitempty"`
+	Manufacturer   string `json:"manufacturer,omitempty"`
+	Model          string `json:"model,omitempty"`
+	BrowserName    string `json:"browserName,omitempty"`
+	BrowserVersion string `json:"browserVersion,omitempty"`
+	OSName         string `json:"osName,omitempty"`
+	OSVersion      string `json:"osVersion,omitempty"`
+	PlatformClass  string `json:"platformClass,omitempty"`
+	SDKInt         int    `json:"sdkInt,omitempty"`
 }
 
 type NetworkContext struct {
@@ -120,12 +123,15 @@ func canonicalDeviceContext(in *DeviceContext) *DeviceContext {
 	out.Platform = strings.ToLower(strings.TrimSpace(out.Platform))
 	out.Manufacturer = strings.ToLower(strings.TrimSpace(out.Manufacturer))
 	out.Model = strings.ToLower(strings.TrimSpace(out.Model))
+	out.BrowserName = strings.ToLower(strings.TrimSpace(out.BrowserName))
+	out.BrowserVersion = strings.TrimSpace(out.BrowserVersion)
 	out.OSName = strings.ToLower(strings.TrimSpace(out.OSName))
 	out.OSVersion = strings.TrimSpace(out.OSVersion)
+	out.PlatformClass = strings.ToLower(strings.TrimSpace(out.PlatformClass))
 	if out.SDKInt < 0 {
 		out.SDKInt = 0
 	}
-	if out.Brand == "" && out.Product == "" && out.Device == "" && out.Platform == "" && out.Manufacturer == "" && out.Model == "" && out.OSName == "" && out.OSVersion == "" && out.SDKInt == 0 {
+	if out.Brand == "" && out.Product == "" && out.Device == "" && out.Platform == "" && out.Manufacturer == "" && out.Model == "" && out.BrowserName == "" && out.BrowserVersion == "" && out.OSName == "" && out.OSVersion == "" && out.PlatformClass == "" && out.SDKInt == 0 {
 		return nil
 	}
 	return &out

@@ -266,6 +266,13 @@
   margin-top: 12px;
 }
 
+.resumeActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 .recordingCard {
   position: relative;
   overflow: hidden;
@@ -330,6 +337,8 @@
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .emptyState {
