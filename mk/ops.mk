@@ -2,7 +2,7 @@
 # Operations and Orchestration
 # ===================================================================================================
 
-.PHONY: start stop start-gpu stop-gpu start-nvidia stop-nvidia up down status ps logs restart prod-up prod-down prod-ps prod-logs prod-restart release-check release changelog setup build-ffmpeg repair-metadata
+.PHONY: start stop start-gpu stop-gpu start-nvidia stop-nvidia up down status ps logs restart prod-up prod-down prod-ps prod-logs prod-restart release-check release changelog setup build-ffmpeg repair-metadata runtime-sync-check runtime-sync-apply
 
 start: doctor ## Start the default local container stack on http://localhost:8088
 	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh base
@@ -103,3 +103,9 @@ repair-metadata: ## Remove macOS metadata
 	@if [ -f $(BACKEND_DIR)/scripts/ops/repair-metadata.sh ]; then \
 		bash ./$(BACKEND_DIR)/scripts/ops/repair-metadata.sh; \
 	fi
+
+runtime-sync-check: ## Compare the clean source checkout against the runtime workspace (default target: /opt/xg2g)
+	@./deploy/runtime-sync.sh --check $(if $(source),--source $(source),) $(if $(target),--target $(target),) $(if $(ref),--ref $(ref),)
+
+runtime-sync-apply: ## Sync the clean source checkout into the runtime workspace (use force=1 for a dirty target)
+	@./deploy/runtime-sync.sh --apply $(if $(source),--source $(source),) $(if $(target),--target $(target),) $(if $(ref),--ref $(ref),) $(if $(filter 1,$(allow_dirty)),--allow-source-dirty,) $(if $(filter 1,$(force)),--force-target-dirty,)

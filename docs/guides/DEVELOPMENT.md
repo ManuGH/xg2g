@@ -42,6 +42,16 @@ Pick one path and stay on it for the task at hand:
 Use `make stop`, `make stop-gpu`, or `make stop-nvidia` to shut down the
 matching container path again.
 
+### Single Writable Checkout
+
+If you keep a separate runtime workspace on the same host, do not treat it as a
+second development checkout.
+
+- Keep exactly one writable git checkout.
+- Sync any separate runtime workspace from that checkout with
+  `make runtime-sync-check` and `make runtime-sync-apply`.
+- Do not commit, branch, or review drift from the runtime workspace.
+
 ### Port Map
 
 - `make start`, `make start-gpu`, `make start-nvidia`: `http://localhost:8088`

@@ -47,3 +47,27 @@ Deployment artifacts:
 
 Direct host edits, ad-hoc file copies, and manual `/srv/xg2g` drift are not
 supported deployment workflows.
+
+## Local Runtime Workspace Sync
+
+If a host keeps a separate runtime workspace beside the writable source checkout
+(for example source in `/root/xg2g` and runtime in `/opt/xg2g`), keep the
+workflow one-way:
+
+```bash
+make runtime-sync-check
+make runtime-sync-apply
+```
+
+Rules:
+
+- Keep exactly one writable git checkout.
+- Treat the runtime workspace as deploy-only, even if it still contains `.git/`
+  during migration.
+- `deploy/runtime-sync.sh` compares or applies a pinned source ref (defaults to
+  clean `HEAD`) into the runtime workspace.
+- Overwritten or removed runtime files are backed up under
+  `.runtime-bin/runtime-sync/backups/`.
+- Use `deploy/runtime-sync.sh --check` as the drift signal for the runtime
+  workspace. `git status` inside the runtime workspace is transitional noise,
+  not the source of truth.
