@@ -174,6 +174,9 @@ ensure_target_root() {
 
 check_target_workspace() {
   if git -C "${TARGET_ROOT}" rev-parse --show-toplevel >/dev/null 2>&1; then
+    if [[ "${MODE}" == "check" ]]; then
+      return 0
+    fi
     if [[ -n "$(git -C "${TARGET_ROOT}" status --porcelain)" ]]; then
       if [[ "${FORCE_TARGET_DIRTY}" -eq 0 ]]; then
         fail "target git workspace is dirty: ${TARGET_ROOT} (rerun with --force-target-dirty if this workspace is deploy-only)"
