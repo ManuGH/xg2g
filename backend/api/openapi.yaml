@@ -1897,9 +1897,15 @@ components:
           type: string
         model:
           type: string
+        browserName:
+          type: string
+        browserVersion:
+          type: string
         osName:
           type: string
         osVersion:
+          type: string
+        platformClass:
           type: string
         sdkInt:
           type: integer
@@ -1957,7 +1963,16 @@ components:
         deviceType:
           type: string
           nullable: true
+        browserName:
+          type: string
+          nullable: true
+        browserVersion:
+          type: string
+          nullable: true
         platform:
+          type: string
+          nullable: true
+        platformClass:
           type: string
           nullable: true
         osName:

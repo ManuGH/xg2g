@@ -1,8 +1,10 @@
 import type { PlaybackCapabilities as PlaybackCapabilitiesContract } from "../../../client-ts";
 import {
   getNativePlaybackCapabilities,
+  type HostEnvironment,
   resolveHostEnvironment,
 } from "../../../lib/hostBridge";
+import { detectBrowserIdentity } from "./browserIdentity";
 import { detectPlaybackClientFamily } from "./playbackClientFamily";
 import {
   probeRuntimePlaybackCapabilities,
@@ -31,8 +33,11 @@ export type CapabilitySnapshot = Pick<
     product?: string;
     manufacturer?: string;
     model?: string;
+    browserName?: string;
+    browserVersion?: string;
     osName?: string;
     osVersion?: string;
+    platformClass?: string;
     sdkInt?: number;
   };
   networkContext?: {
@@ -58,8 +63,38 @@ function sanitizeStringArray(value: unknown): string[] | undefined {
   return strings.length > 0 ? Array.from(new Set(strings)) : undefined;
 }
 
+function sanitizeString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function sanitizeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function inferNativePlatformClass(
+  environment: HostEnvironment,
+  deviceContext?: CapabilitySnapshot["deviceContext"],
+): string | undefined {
+  if (deviceContext?.platformClass) {
+    return deviceContext.platformClass;
+  }
+  if (deviceContext?.osName?.toLowerCase() === "tvos") {
+    return "tvos_native_host";
+  }
+  if (environment.platform === "android-tv") {
+    return "android_tv_native_host";
+  }
+  if (environment.platform === "android") {
+    return "android_native_host";
+  }
+  return undefined;
+}
+
 function sanitizeNativePlaybackCapabilities(
   value: unknown,
+  environment: HostEnvironment,
 ): CapabilitySnapshot | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -77,107 +112,43 @@ function sanitizeNativePlaybackCapabilities(
   const maxVideo =
     record.maxVideo && typeof record.maxVideo === "object"
       ? {
-          width:
-            typeof (record.maxVideo as Record<string, unknown>).width ===
-            "number"
-              ? ((record.maxVideo as Record<string, unknown>).width as number)
-              : undefined,
-          height:
-            typeof (record.maxVideo as Record<string, unknown>).height ===
-            "number"
-              ? ((record.maxVideo as Record<string, unknown>).height as number)
-              : undefined,
-          fps:
-            typeof (record.maxVideo as Record<string, unknown>).fps === "number"
-              ? ((record.maxVideo as Record<string, unknown>).fps as number)
-              : undefined,
+          width: sanitizeNumber((record.maxVideo as Record<string, unknown>).width),
+          height: sanitizeNumber((record.maxVideo as Record<string, unknown>).height),
+          fps: sanitizeNumber((record.maxVideo as Record<string, unknown>).fps),
         }
       : undefined;
   const deviceContext =
     record.deviceContext && typeof record.deviceContext === "object"
       ? {
-          brand:
-            typeof (record.deviceContext as Record<string, unknown>).brand ===
-            "string"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .brand as string)
-              : undefined,
-          device:
-            typeof (record.deviceContext as Record<string, unknown>).device ===
-            "string"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .device as string)
-              : undefined,
-          platform:
-            typeof (record.deviceContext as Record<string, unknown>)
-              .platform === "string"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .platform as string)
-              : undefined,
-          product:
-            typeof (record.deviceContext as Record<string, unknown>)
-              .product === "string"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .product as string)
-              : undefined,
-          manufacturer:
-            typeof (record.deviceContext as Record<string, unknown>)
-              .manufacturer === "string"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .manufacturer as string)
-              : undefined,
-          model:
-            typeof (record.deviceContext as Record<string, unknown>).model ===
-            "string"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .model as string)
-              : undefined,
-          osName:
-            typeof (record.deviceContext as Record<string, unknown>).osName ===
-            "string"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .osName as string)
-              : undefined,
-          osVersion:
-            typeof (record.deviceContext as Record<string, unknown>)
-              .osVersion === "string"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .osVersion as string)
-              : undefined,
-          sdkInt:
-            typeof (record.deviceContext as Record<string, unknown>).sdkInt ===
-            "number"
-              ? ((record.deviceContext as Record<string, unknown>)
-                  .sdkInt as number)
-              : undefined,
+          brand: sanitizeString((record.deviceContext as Record<string, unknown>).brand),
+          device: sanitizeString((record.deviceContext as Record<string, unknown>).device),
+          platform: sanitizeString((record.deviceContext as Record<string, unknown>).platform),
+          product: sanitizeString((record.deviceContext as Record<string, unknown>).product),
+          manufacturer: sanitizeString((record.deviceContext as Record<string, unknown>).manufacturer),
+          model: sanitizeString((record.deviceContext as Record<string, unknown>).model),
+          browserName: sanitizeString((record.deviceContext as Record<string, unknown>).browserName),
+          browserVersion: sanitizeString((record.deviceContext as Record<string, unknown>).browserVersion),
+          osName: sanitizeString((record.deviceContext as Record<string, unknown>).osName),
+          osVersion: sanitizeString((record.deviceContext as Record<string, unknown>).osVersion),
+          platformClass: sanitizeString((record.deviceContext as Record<string, unknown>).platformClass),
+          sdkInt: sanitizeNumber((record.deviceContext as Record<string, unknown>).sdkInt),
         }
       : undefined;
+  if (deviceContext) {
+    deviceContext.platformClass = inferNativePlatformClass(environment, deviceContext);
+  }
   const networkContext =
     record.networkContext && typeof record.networkContext === "object"
       ? {
-          kind:
-            typeof (record.networkContext as Record<string, unknown>).kind ===
-            "string"
-              ? ((record.networkContext as Record<string, unknown>)
-                  .kind as string)
-              : undefined,
-          downlinkKbps:
-            typeof (record.networkContext as Record<string, unknown>)
-              .downlinkKbps === "number"
-              ? ((record.networkContext as Record<string, unknown>)
-                  .downlinkKbps as number)
-              : undefined,
+          kind: sanitizeString((record.networkContext as Record<string, unknown>).kind),
+          downlinkKbps: sanitizeNumber((record.networkContext as Record<string, unknown>).downlinkKbps),
           metered:
-            typeof (record.networkContext as Record<string, unknown>)
-              .metered === "boolean"
-              ? ((record.networkContext as Record<string, unknown>)
-                  .metered as boolean)
+            typeof (record.networkContext as Record<string, unknown>).metered === "boolean"
+              ? ((record.networkContext as Record<string, unknown>).metered as boolean)
               : undefined,
           internetValidated:
-            typeof (record.networkContext as Record<string, unknown>)
-              .internetValidated === "boolean"
-              ? ((record.networkContext as Record<string, unknown>)
-                  .internetValidated as boolean)
+            typeof (record.networkContext as Record<string, unknown>).internetValidated === "boolean"
+              ? ((record.networkContext as Record<string, unknown>).internetValidated as boolean)
               : undefined,
         }
       : undefined;
@@ -222,47 +193,15 @@ function sanitizeNativePlaybackCapabilities(
 }
 
 function inferBrowserDeviceContext(): CapabilitySnapshot["deviceContext"] {
-  const nav = navigator as Navigator & {
-    userAgentData?: {
-      platform?: string;
-      platformVersion?: string;
-    };
-  };
-  const ua = navigator.userAgent;
-  const platform = nav.userAgentData?.platform || navigator.platform || "browser";
-  const platformVersion =
-    typeof nav.userAgentData?.platformVersion === "string"
-      ? nav.userAgentData.platformVersion.trim()
-      : undefined;
-
-  let osName = "browser";
-  let osVersion: string | undefined;
-  const patterns: Array<[RegExp, string]> = [
-    [/Android\s+([\d.]+)/i, "android"],
-    [/(?:iPhone|iPad|CPU (?:iPhone )?OS)\s+([\d_]+)/i, "ios"],
-    [/Windows NT\s+([\d.]+)/i, "windows"],
-    [/Mac OS X\s+([\d_]+)/i, "macos"],
-    [/CrOS\s+[\w_]+\s+([\d.]+)/i, "chromeos"],
-  ];
-  for (const [pattern, candidate] of patterns) {
-    const match = ua.match(pattern);
-    if (match) {
-      osName = candidate;
-      osVersion = match[1]?.replace(/_/g, ".");
-      break;
-    }
-  }
-  if (osName === "browser" && /Linux/i.test(ua)) {
-    osName = "linux";
-  }
-  if (!osVersion && platformVersion) {
-    osVersion = platformVersion;
-  }
+  const identity = detectBrowserIdentity();
 
   return {
-    platform: String(platform).toLowerCase(),
-    osName,
-    osVersion,
+    platform: identity.platform,
+    browserName: identity.browserName,
+    browserVersion: identity.browserVersion,
+    osName: identity.osName,
+    osVersion: identity.osVersion,
+    platformClass: identity.platformClass,
   };
 }
 
@@ -298,6 +237,7 @@ export async function gatherPlaybackCapabilities(
   if (environment.supportsNativePlayback) {
     const nativeCapabilities = sanitizeNativePlaybackCapabilities(
       getNativePlaybackCapabilities(),
+      environment,
     );
     if (nativeCapabilities) {
       return nativeCapabilities;

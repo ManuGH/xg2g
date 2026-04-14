@@ -179,6 +179,13 @@ func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.R
 		RequestId: requestID(r.Context()),
 		State:     RecordingBuildStatusStateIDLE,
 	}
+	progressiveReady := false
+	if serviceRef, decoded := recservice.DecodeRecordingID(recordingId); decoded {
+		if cacheDir, cacheErr := recservice.RecordingVariantCacheDir(s.cfg.HLS.Root, serviceRef, recservice.DefaultRecordingVariantHash()); cacheErr == nil {
+			_, progressiveReady = v3recordings.RecordingLivePlaylistReady(cacheDir)
+		}
+	}
+	resp.ProgressiveReady = &progressiveReady
 	ensureTraceHeader(w, r.Context())
 
 	switch status.State {

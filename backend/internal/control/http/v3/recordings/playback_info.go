@@ -328,14 +328,17 @@ func alignRecordingNativePackaging(req PlaybackInfoRequest, resolvedCaps capabil
 	if req.SubjectKind != PlaybackSubjectRecording || dec == nil || dec.TargetProfile == nil {
 		return
 	}
-	if !clientWantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
-		return
-	}
 	if shouldPreferNativeDirectStream(dec) {
 		if recordingClientSupportsDirectTransportStream(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
 			return
 		}
 		rewriteDecisionToDirectStream(dec)
+	}
+	if shouldPreserveNativeSafariRecordingTransport(resolvedCaps) {
+		return
+	}
+	if !clientWantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
+		return
 	}
 	if dec.SelectedOutputKind != "hls" || !dec.TargetProfile.HLS.Enabled {
 		return
@@ -433,6 +436,38 @@ func recordingClientSupportsDirectTransportStream(requestedProfile string, clien
 	default:
 		return false
 	}
+}
+
+func shouldPreserveNativeSafariRecordingTransport(resolvedCaps capabilities.PlaybackCapabilities) bool {
+	if !strings.EqualFold(strings.TrimSpace(resolvedCaps.PreferredHLSEngine), "native") {
+		return false
+	}
+	switch recordingPlatformClass(resolvedCaps) {
+	case "ios_webkit", "ipados_webkit", "tvos_native_host":
+		return true
+	case "macos_safari":
+		return false
+	}
+	if strings.ToLower(strings.TrimSpace(resolvedCaps.ClientFamilyFallback)) != "ios_safari_native" {
+		return false
+	}
+	if resolvedCaps.DeviceContext == nil {
+		return true
+	}
+
+	switch strings.ToLower(strings.TrimSpace(resolvedCaps.DeviceContext.OSName)) {
+	case "", "ios", "ipados":
+		return true
+	default:
+		return false
+	}
+}
+
+func recordingPlatformClass(resolvedCaps capabilities.PlaybackCapabilities) string {
+	if resolvedCaps.DeviceContext == nil {
+		return ""
+	}
+	return normalize.Token(resolvedCaps.DeviceContext.PlatformClass)
 }
 
 func classifyPlaybackInfoError(err error) *PlaybackInfoError {

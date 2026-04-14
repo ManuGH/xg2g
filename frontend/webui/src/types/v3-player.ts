@@ -44,6 +44,8 @@ export interface V3PlayerBaseProps {
   autoStart?: boolean;
   onClose?: () => void;
   duration?: number; // Duration in seconds (enables VOD mode)
+  startPositionSeconds?: number;
+  suppressResumePrompt?: boolean;
 }
 
 export interface V3PlayerLiveProps extends V3PlayerBaseProps {
@@ -64,6 +66,10 @@ export interface V3PlayerRecordingProps extends V3PlayerBaseProps {
 
 export type V3PlayerProps = V3PlayerLiveProps | V3PlayerDirectProps | V3PlayerRecordingProps;
 
+export type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
+export type PlaybackContentKind = 'live' | 'recording' | 'direct' | 'unknown';
+export type PlaybackPresentationKind = 'live' | 'live_dvr' | 'vod' | 'direct' | 'unknown';
+export type PlaybackTransportKind = 'native_hls' | 'progressive_hls' | 'hlsjs' | 'direct_mp4' | 'native_host' | 'unknown';
 
 export interface SessionCookieState {
   token: string | null;

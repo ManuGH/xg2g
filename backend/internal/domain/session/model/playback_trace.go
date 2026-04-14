@@ -48,15 +48,18 @@ type PlaybackOperatorTrace struct {
 }
 
 type PlaybackClientDeviceContext struct {
-	Brand        string `json:"brand,omitempty"`
-	Device       string `json:"device,omitempty"`
-	Manufacturer string `json:"manufacturer,omitempty"`
-	Model        string `json:"model,omitempty"`
-	OSName       string `json:"osName,omitempty"`
-	OSVersion    string `json:"osVersion,omitempty"`
-	Platform     string `json:"platform,omitempty"`
-	Product      string `json:"product,omitempty"`
-	SDKInt       int    `json:"sdkInt,omitempty"`
+	Brand          string `json:"brand,omitempty"`
+	Device         string `json:"device,omitempty"`
+	Manufacturer   string `json:"manufacturer,omitempty"`
+	Model          string `json:"model,omitempty"`
+	BrowserName    string `json:"browserName,omitempty"`
+	BrowserVersion string `json:"browserVersion,omitempty"`
+	OSName         string `json:"osName,omitempty"`
+	OSVersion      string `json:"osVersion,omitempty"`
+	Platform       string `json:"platform,omitempty"`
+	PlatformClass  string `json:"platformClass,omitempty"`
+	Product        string `json:"product,omitempty"`
+	SDKInt         int    `json:"sdkInt,omitempty"`
 }
 
 type PlaybackClientNetworkContext struct {

@@ -140,13 +140,17 @@ export function usePlayerChrome({
   }, []);
 
   const readSeekableBounds = useCallback((video: SafariVideoElement) => {
+    if (video.seekable && video.seekable.length > 0) {
+      return {
+        start: video.seekable.start(0),
+        end: video.seekable.end(video.seekable.length - 1),
+      };
+    }
+
     let start = 0;
     let end = 0;
     if (playbackMode === 'VOD' && durationSeconds && durationSeconds > 0) {
       end = durationSeconds;
-    } else if (video.seekable && video.seekable.length > 0) {
-      start = video.seekable.start(0);
-      end = video.seekable.end(video.seekable.length - 1);
     } else if (durationSeconds && durationSeconds > 0) {
       end = durationSeconds;
     }
@@ -206,18 +210,27 @@ export function usePlayerChrome({
   const seekWhenReady = useCallback((target: number) => {
     const video = videoRef.current;
     if (!video) return;
+    userPauseIntentRef.current = false;
+
+    const resumePlayback = () => {
+      if (!video.paused) return;
+      video.play().catch((err) => debugWarn('Seek play failed', err));
+    };
 
     const doSeek = () => {
       seekTo(target);
-      video.play().catch((err) => debugWarn('Seek play failed', err));
+      resumePlayback();
     };
 
     if (video.readyState >= 1) {
       doSeek();
     } else {
+      // Preserve the user gesture from the resume action so browsers do not
+      // block playback while we wait for metadata before applying the seek.
+      resumePlayback();
       video.addEventListener('loadedmetadata', doSeek, { once: true });
     }
-  }, [seekTo, videoRef]);
+  }, [seekTo, userPauseIntentRef, videoRef]);
 
   const play = useCallback(() => {
     const video = videoRef.current;
@@ -523,6 +536,7 @@ export function usePlayerChrome({
     video.addEventListener('durationchange', handleTimeUpdate);
     video.addEventListener('progress', handleTimeUpdate);
     video.addEventListener('seeking', handleTimeUpdate);
+    video.addEventListener('seeked', handleTimeUpdate);
 
     refreshSeekableState();
 
@@ -532,6 +546,7 @@ export function usePlayerChrome({
       video.removeEventListener('durationchange', handleTimeUpdate);
       video.removeEventListener('progress', handleTimeUpdate);
       video.removeEventListener('seeking', handleTimeUpdate);
+      video.removeEventListener('seeked', handleTimeUpdate);
     };
   }, [refreshSeekableState, videoRef]);
 

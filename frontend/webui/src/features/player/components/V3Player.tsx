@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from '../lib/hlsRuntime';
 import {
+  getRecordingsRecordingIdStatus,
   postRecordingPlaybackInfo,
   type IntentRequest,
   type PlaybackInfo,
@@ -16,6 +17,10 @@ import { getApiBaseUrl } from '../../../services/clientWrapper';
 import { telemetry } from '../../../services/TelemetryService';
 import type {
   V3PlayerProps,
+  PlaybackContentKind,
+  PlaybackMode,
+  PlaybackPresentationKind,
+  PlaybackTransportKind,
   PlayerStatus,
   V3SessionResponse,
   V3SessionSnapshot,
@@ -48,6 +53,7 @@ import {
 import { normalizePlayerError } from '../../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
 import { useTvInitialFocus } from '../../../hooks/useTvInitialFocus';
+import { rewriteRecordingTimeshiftUrl, shouldUseProgressiveRecordingPath } from '../recordingPath';
 import {
   getNativePlaybackState,
   onNativePlaybackState,
@@ -364,12 +370,52 @@ function resolveNativePlaybackStatus(state: HostNativePlaybackState | null): Pla
   }
 }
 
+function resolvePlaybackPresentationKind(
+  contentKind: PlaybackContentKind,
+  playbackMode: PlaybackMode,
+  canSeek: boolean,
+): PlaybackPresentationKind {
+  switch (contentKind) {
+    case 'recording':
+      return 'vod';
+    case 'live':
+      return canSeek ? 'live_dvr' : 'live';
+    case 'direct':
+      return playbackMode === 'VOD' ? 'vod' : 'direct';
+    case 'unknown':
+    default:
+      if (playbackMode === 'LIVE') return canSeek ? 'live_dvr' : 'live';
+      if (playbackMode === 'VOD') return 'vod';
+      return 'unknown';
+  }
+}
+
+function resolveHlsTransportKind(
+  engine: 'native' | 'hlsjs',
+  progressive: boolean,
+): PlaybackTransportKind {
+  if (engine === 'native') {
+    return progressive ? 'progressive_hls' : 'native_hls';
+  }
+  return 'hlsjs';
+}
+
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
-  const { token, autoStart, onClose, duration } = props;
+  const {
+    token,
+    autoStart,
+    onClose,
+    duration,
+    startPositionSeconds,
+    suppressResumePrompt = false,
+  } = props;
   const channel = 'channel' in props ? props.channel : undefined;
   const src = 'src' in props ? props.src : undefined;
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
+  const requestedRecordingStartPosition = recordingId
+    ? Math.max(0, Number(startPositionSeconds || 0))
+    : 0;
 
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
@@ -404,6 +450,7 @@ function V3Player(props: V3PlayerProps) {
   const vodFetchRef = useRef<AbortController | null>(null);
   const activeRecordingRef = useRef<string | null>(null);
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
+  const pendingInitialSeekRef = useRef<number | null>(requestedRecordingStartPosition > 0 ? requestedRecordingStartPosition : null);
   const startIntentInFlight = useRef<boolean>(false);
   // ADR-00X: Profile-related refs removed (universal policy only)
   const isTeardownRef = useRef<boolean>(false);
@@ -424,8 +471,9 @@ function V3Player(props: V3PlayerProps) {
   const [durationSeconds, setDurationSeconds] = useState<number | null>(
     duration && duration > 0 ? duration : null
   );
-  const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
-  const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>(null);
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('UNKNOWN');
+  const [playbackContentKind, setPlaybackContentKind] = useState<PlaybackContentKind>('unknown');
+  const [playbackTransportKind, setPlaybackTransportKind] = useState<PlaybackTransportKind>('unknown');
   const [activeHlsEngine, setActiveHlsEngine] = useState<'native' | 'hlsjs' | null>(null);
 
   // P3-4: Truth State
@@ -658,6 +706,47 @@ function V3Player(props: V3PlayerProps) {
     setShowErrorDetails
   });
 
+  useEffect(() => {
+    pendingInitialSeekRef.current = recordingId && requestedRecordingStartPosition > 0
+      ? requestedRecordingStartPosition
+      : null;
+  }, [recordingId, requestedRecordingStartPosition]);
+
+  useEffect(() => {
+    const target = pendingInitialSeekRef.current;
+    if (!recordingId || !target || target <= 0) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video || !video.currentSrc) {
+      return;
+    }
+
+    let cancelled = false;
+    const applySeek = () => {
+      if (cancelled || pendingInitialSeekRef.current == null) {
+        return;
+      }
+      pendingInitialSeekRef.current = null;
+      seekWhenReady(target);
+    };
+
+    if (video.readyState >= 1) {
+      const frame = window.requestAnimationFrame(applySeek);
+      return () => {
+        cancelled = true;
+        window.cancelAnimationFrame(frame);
+      };
+    }
+
+    video.addEventListener('loadedmetadata', applySeek, { once: true });
+    return () => {
+      cancelled = true;
+      video.removeEventListener('loadedmetadata', applySeek);
+    };
+  }, [activeHlsEngine, recordingId, seekWhenReady, status]);
+
   // --- Core Helpers & Wrappers (Memoized) ---
 
   const clearRecordingTimeout = useCallback(() => {
@@ -702,7 +791,9 @@ function V3Player(props: V3PlayerProps) {
     setNativePlaybackState(null);
     setNativeSessionId(null);
     setActiveRecordingId(null);
-    setVodStreamMode(null);
+    setPlaybackMode('UNKNOWN');
+    setPlaybackContentKind('unknown');
+    setPlaybackTransportKind('unknown');
     setActiveHlsEngine(null);
     setShowNativeVideo(true);
     setShowNativeVideoVeil(false);
@@ -844,21 +935,26 @@ function V3Player(props: V3PlayerProps) {
     });
     clearPlayerError();
     setActiveHlsEngine(null);
+    setPlaybackTransportKind('native_host');
     if (request.kind === 'recording') {
       activeRecordingRef.current = request.recordingId;
       setActiveRecordingId(request.recordingId);
+      setPlaybackContentKind('recording');
       setPlaybackMode('VOD');
     } else {
       activeRecordingRef.current = null;
       setActiveRecordingId(null);
+      setPlaybackContentKind('live');
       setPlaybackMode('LIVE');
     }
     setStatus('starting');
   }, [clearPlayerError, setPlaybackMode, setStatus]);
 
-  const prepareFreshPlayback = useCallback((mode: 'LIVE' | 'VOD') => {
+  const prepareFreshPlayback = useCallback((mode: PlaybackMode, contentKind: PlaybackContentKind) => {
     setDurationSeconds(requestedDuration);
     setPlaybackMode(mode);
+    setPlaybackContentKind(contentKind);
+    setPlaybackTransportKind('unknown');
   }, [requestedDuration]);
 
   const syncNativePlaybackState = useCallback((nextState: HostNativePlaybackState | null) => {
@@ -880,6 +976,8 @@ function V3Player(props: V3PlayerProps) {
         setActiveRecordingId(null);
         setActiveHlsEngine(null);
         setPlaybackMode('UNKNOWN');
+        setPlaybackContentKind('unknown');
+        setPlaybackTransportKind('unknown');
         if (nextState?.lastError) {
           setPlayerError({
             title: nextState.lastError,
@@ -933,12 +1031,15 @@ function V3Player(props: V3PlayerProps) {
     if (activeRequest.kind === 'recording') {
       activeRecordingRef.current = activeRequest.recordingId;
       setActiveRecordingId(activeRequest.recordingId);
+      setPlaybackContentKind('recording');
       setPlaybackMode('VOD');
     } else {
       activeRecordingRef.current = null;
       setActiveRecordingId(null);
+      setPlaybackContentKind('live');
       setPlaybackMode('LIVE');
     }
+    setPlaybackTransportKind('native_host');
     setActiveHlsEngine(null);
 
     const mappedStatus = resolveNativePlaybackStatus(nextState);
@@ -949,9 +1050,59 @@ function V3Player(props: V3PlayerProps) {
 
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
-    return gatherPlaybackCapabilities(scope, video);
-  }, []);
-
+        return gatherPlaybackCapabilities(scope, video);
+          }, []);
+          
+  const waitForRecordingStreamReady = useCallback(async (
+      id: string,
+          streamUrl: string,
+              controller: AbortController
+                ): Promise<void> => {
+                    for (let attempt = 0; attempt < 10; attempt += 1) {
+                          if (activeRecordingRef.current !== id) {
+                                  return;
+                                        }
+                                        
+      const res = await fetch(streamUrl, {
+              method: 'HEAD',
+                      cache: 'no-store',
+                              signal: controller.signal,
+                                    });
+                                    
+      if (res.ok || res.status === 206) {
+              return;
+                    }
+                    
+      if (res.status === 401) {
+              await ensureSessionCookie();
+                      await sleep(250);
+                              continue;
+                                    }
+                                    
+      if (res.status === 403) {
+              throw new Error(t('player.forbidden'));
+                    }
+                    
+      if (res.status === 404) {
+              throw new Error(t('player.recordingNotFound'));
+                    }
+                    
+      if (res.status === 503) {
+              const retryAfterHeader = res.headers.get('Retry-After');
+                      const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
+                              const safeRetrySeconds = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds : 1;
+                                      setStatus('building');
+                                              setLegacyErrorDetails(`${t('player.preparing')} (${safeRetrySeconds}s)`);
+                                                      await sleep(safeRetrySeconds * 1000);
+                                                              continue;
+                                                                    }
+                                                                    
+      throw new Error(`Unexpected status: ${res.status}`);
+          }
+          
+    throw new Error(t('player.timeout'));
+      }, [ensureSessionCookie, setLegacyErrorDetails, setStatus, sleep, t]);
+      
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
     if (hasActivePlayback()) {
       await teardownActivePlayback();
@@ -964,6 +1115,8 @@ function V3Player(props: V3PlayerProps) {
     clearPlayerError();
     setTraceId('-');
     setPlaybackMode('VOD');
+    setPlaybackContentKind('recording');
+    setPlaybackTransportKind('unknown');
 
     let abortController: AbortController | null = null;
     let requestCaps: CapabilitySnapshot | null = null;
@@ -974,6 +1127,8 @@ function V3Player(props: V3PlayerProps) {
       // Determine Playback Mode from backend PlaybackInfo (single source of truth).
       let streamUrl = '';
       let mode: 'native_hls' | 'hlsjs' | 'direct_mp4' | 'transcode' | 'deny' = 'deny';
+      let recordingHlsEngine: 'native' | 'hlsjs' = 'hlsjs';
+      let usesProgressiveRecordingPath = false;
 
       try {
         const maxMetaRetries = 20;
@@ -1105,15 +1260,6 @@ function V3Player(props: V3PlayerProps) {
           fields: ['mode', 'decision.selectedOutputUrl']
         });
 
-        if (streamUrl.startsWith('/')) {
-          streamUrl = `${window.location.origin}${streamUrl}`;
-        }
-
-        // Add Cache Busting to prevent sticky 503s
-        streamUrl += (streamUrl.includes('?') ? '&' : '?') + `cb=${Date.now()}`;
-
-        setVodStreamMode(mode as any);
-
         // Truth Consumption
         const playbackDurationSeconds = resolvePlaybackDurationSeconds(pInfo);
         if (playbackDurationSeconds && playbackDurationSeconds > 0) {
@@ -1132,11 +1278,69 @@ function V3Player(props: V3PlayerProps) {
             reason: 'IS_SEEKABLE_MISSING'
           });
         }
+        recordingHlsEngine = mode === 'native_hls'
+          ? 'native'
+          : resolvePreferredHlsEngineForCapabilities(requestCaps);
+        let progressiveReady = false;
+        if (recordingIsSeekable && recordingHlsEngine === 'native') {
+          try {
+            const { data, error, response } = await getRecordingsRecordingIdStatus({
+              path: { recordingId: id },
+            });
+            if (!error && response.status === 200) {
+              progressiveReady = data?.progressiveReady === true;
+            } else {
+              debugWarn('[V3Player] Recording build status unavailable; keeping canonical playlist', {
+                recordingId: id,
+                status: response.status,
+              });
+            }
+          } catch (statusError) {
+            debugWarn('[V3Player] Recording build status request failed; keeping canonical playlist', {
+              recordingId: id,
+              error: statusError instanceof Error ? statusError.message : String(statusError),
+            });
+          }
+        }
+        if (shouldUseProgressiveRecordingPath({
+          streamUrl,
+          isSeekable: recordingIsSeekable,
+          recordingHlsEngine,
+          progressiveReady,
+        })) {
+          const timeshiftUrl = rewriteRecordingTimeshiftUrl(streamUrl);
+          if (timeshiftUrl !== streamUrl) {
+            usesProgressiveRecordingPath = true;
+            debugLog('[V3Player] Using timeshift playlist for native recording playback', {
+              recordingId: id,
+              playbackMode: mode,
+            });
+            streamUrl = timeshiftUrl;
+          }
+        } else if (recordingIsSeekable && recordingHlsEngine === 'native') {
+          debugLog('[V3Player] Using canonical playlist for native recording playback', {
+            recordingId: id,
+            playbackMode: mode,
+            progressiveReady,
+          });
+        }
+        if (streamUrl.startsWith('/')) {
+          streamUrl = `${window.location.origin}${streamUrl}`;
+        }
+
+        // Add Cache Busting to prevent sticky 503s
+        streamUrl += (streamUrl.includes('?') ? '&' : '?') + `cb=${Date.now()}`;
+
+        setPlaybackTransportKind(
+          mode === 'direct_mp4'
+            ? 'direct_mp4'
+            : resolveHlsTransportKind(recordingHlsEngine, usesProgressiveRecordingPath)
+        );
         setCanSeek(recordingIsSeekable);
         if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
 
         // Resume State
-        if (recordingIsSeekable && pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
+        if (!suppressResumePrompt && recordingIsSeekable && pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
           const d = pInfo.resume.durationSeconds || (playbackDurationSeconds || 0);
           if (!d || pInfo.resume.posSeconds < d - 10) {
             setResumeState({
@@ -1183,40 +1387,17 @@ function V3Player(props: V3PlayerProps) {
         abortController = controller;
         vodFetchRef.current = controller;
         try {
-          const res = await fetch(streamUrl, {
-            method: 'HEAD',
-            signal: controller.signal
-          });
-
-          if (res.status === 404) {
-            throw new Error(t('player.recordingNotFound'));
-          }
-
-          if (res.status === 503) {
-            const retryAfter = res.headers.get('Retry-After');
-            if (retryAfter) {
-              const delay = parseInt(retryAfter, 10) * 1000;
-              setStatus('building');
-              vodRetryRef.current = window.setTimeout(() => {
-                if (activeRecordingRef.current === id) startRecordingPlayback(id);
-              }, delay);
-              return;
-            }
-            throw new Error('503 Service Unavailable (No Retry-After)');
-          }
+          await waitForRecordingStreamReady(id, streamUrl, controller);
 
           if (activeRecordingRef.current !== id) return;
           setStatus('buffering');
-          const engine: 'native' | 'hlsjs' = mode === 'native_hls'
-            ? 'native'
-            : resolvePreferredHlsEngineForCapabilities(requestCaps);
-          playHls(streamUrl, engine);
-          setActiveHlsEngine(engine);
+          playHls(streamUrl, recordingHlsEngine);
+          setActiveHlsEngine(recordingHlsEngine);
         } finally {
           if (vodFetchRef.current === controller) vodFetchRef.current = null;
         }
       }
-    } catch (err: unknown) {
+                                                                                                              } catch (err: unknown) {
       if (activeRecordingRef.current !== id) return;
       debugError(err);
       mergeSessionPlaybackTrace(extractPlaybackTrace(err));
@@ -1227,7 +1408,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilitiesForPlayer, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
+  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilitiesForPlayer, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, requestedRecordingStartPosition, resolvePreferredHlsEngineForCapabilities, seekWhenReady, setLegacyErrorDetails, setPlayerError, sleep, suppressResumePrompt, t, teardownActivePlayback, waitForRecordingStreamReady, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -1250,12 +1431,12 @@ function V3Player(props: V3PlayerProps) {
           } else {
             clearPlaybackState();
           }
-          prepareFreshPlayback('VOD');
+          prepareFreshPlayback('VOD', 'recording');
           beginNativePlayback({
             kind: 'recording',
             recordingId,
             authToken: token || undefined,
-            startPositionMs: 0,
+            startPositionMs: Math.round(requestedRecordingStartPosition * 1000),
             title: channel?.name ?? recordingId,
           });
           return;
@@ -1271,10 +1452,11 @@ function V3Player(props: V3PlayerProps) {
         } else {
           clearPlaybackState();
         }
-        prepareFreshPlayback(requestedDuration ? 'VOD' : 'LIVE');
+        prepareFreshPlayback(requestedDuration ? 'VOD' : 'LIVE', 'direct');
         setStatus('buffering');
         setTraceId('-');
         const srcEngine = resolvePreferredHlsEngine();
+        setPlaybackTransportKind(resolveHlsTransportKind(srcEngine, false));
         playHls(src, srcEngine);
         setActiveHlsEngine(srcEngine);
         return;
@@ -1294,7 +1476,7 @@ function V3Player(props: V3PlayerProps) {
       } else {
         clearPlaybackState();
       }
-      prepareFreshPlayback('LIVE');
+      prepareFreshPlayback('LIVE', 'live');
       let newSessionId: string | null = null;
       setStatus('starting');
       clearPlayerError();
@@ -1616,6 +1798,7 @@ function V3Player(props: V3PlayerProps) {
         if (!streamUrl) {
           throw new Error(t('player.streamUrlMissing'));
         }
+        setPlaybackTransportKind(resolveHlsTransportKind(liveEngine, false));
         playHls(streamUrl, liveEngine);
         setActiveHlsEngine(liveEngine);
 
@@ -1634,7 +1817,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback, beginNativePlayback, channel?.name, isNativePlaybackHost, nativePlaybackState]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, requestedRecordingStartPosition, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback, beginNativePlayback, channel?.name, isNativePlaybackHost, nativePlaybackState, token]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -1976,20 +2159,40 @@ function V3Player(props: V3PlayerProps) {
   // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css
   // Static layout styles are in V3Player.module.css (scoped)
 
+  const playbackPresentationKind = resolvePlaybackPresentationKind(playbackContentKind, playbackMode, canSeek);
+  const playbackPresentationLabel = playbackPresentationKind === 'unknown'
+    ? '-'
+    : t(`player.presentationKinds.${playbackPresentationKind}`, { defaultValue: playbackPresentationKind });
+  const playbackTransportLabel = playbackTransportKind === 'unknown'
+    ? '-'
+    : t(`player.transportKinds.${playbackTransportKind}`, { defaultValue: playbackTransportKind });
+  const overlayTitle = channel?.name ?? (playbackPresentationKind !== 'unknown' ? playbackPresentationLabel : null);
+  const spinnerEyebrowLabel = t(`player.startupSurfaceEyebrows.${playbackPresentationKind}`, {
+    defaultValue: t('player.startupSurfaceEyebrow', { defaultValue: 'Playback' }),
+  });
+  const playbackKindChipState = playbackPresentationKind === 'live'
+    ? 'live'
+    : playbackPresentationKind === 'live_dvr'
+      ? 'warning'
+      : playbackPresentationKind === 'vod'
+        ? 'recording'
+        : 'idle';
   const spinnerLabel =
     isOverlayStartupStatus
-      ? (overlayStatus === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current && vodStreamMode === 'direct_mp4')
-        ? t('player.preparingDirectPlay') // Show explicit preparing for VOD buffering
+      ? (overlayStatus === 'buffering' && playbackContentKind === 'recording' && playbackTransportKind === 'direct_mp4')
+        ? t('player.preparingDirectPlay')
         : resolveStartupOverlayLabel(
           overlayStatus,
           `${t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}…`,
           sessionProfileReason,
+          playbackPresentationKind,
+          playbackTransportKind,
           t,
         )
       : '';
   const spinnerSupport =
     isOverlayStartupStatus
-      ? resolveStartupOverlaySupport(sessionProfileReason, t)
+      ? resolveStartupOverlaySupport(sessionProfileReason, playbackPresentationKind, playbackTransportKind, t)
       : '';
   const showStartupOverlay =
     isImmediateStartupStatus ||
@@ -2199,6 +2402,17 @@ function V3Player(props: V3PlayerProps) {
                 />
               </div>
               <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.content', { defaultValue: 'Content' })}</span>
+                <StatusChip
+                  state={playbackKindChipState}
+                  label={playbackPresentationLabel}
+                />
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.transport', { defaultValue: 'Transport' })}</span>
+                <span className={styles.statsValue}>{playbackTransportLabel}</span>
+              </div>
+              <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('common.session', { defaultValue: 'Session' })}</span>
                 <span className={styles.statsValue}>{effectiveSessionId || '-'}</span>
               </div>
@@ -2377,7 +2591,7 @@ function V3Player(props: V3PlayerProps) {
           showNativeBufferingMask ? styles.videoWrapperMasked : null,
         ].filter(Boolean).join(' ')}
       >
-        {channel && showPlaybackChrome && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
+        {overlayTitle && showPlaybackChrome && <h3 className={styles.overlayTitle}>{overlayTitle}</h3>}
         {showNativeBufferingMask && (
           <div
             className={styles.nativeBufferingMask}
@@ -2388,7 +2602,7 @@ function V3Player(props: V3PlayerProps) {
           <div className={styles.startupBackdrop} aria-hidden="true"></div>
         )}
 
-        {/* PREPARING Overlay (VOD Remux) */}
+        {/* Startup Overlay */}
         {showStartupOverlay && (
           <div
             className={[
@@ -2403,14 +2617,26 @@ function V3Player(props: V3PlayerProps) {
             </div>
             <div className={styles.spinnerContent}>
               <div className={styles.spinnerEyebrow}>
-                {t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' })}
+                {spinnerEyebrowLabel}
               </div>
-              {channel && <h2 className={styles.spinnerTitle}>{channel.name}</h2>}
+              {overlayTitle && <h2 className={styles.spinnerTitle}>{overlayTitle}</h2>}
               <div className={styles.spinnerStatusRow}>
                 <StatusChip
                   state={overlayStatus === 'buffering' ? 'live' : 'idle'}
                   label={t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}
                 />
+                {playbackPresentationKind !== 'unknown' && (
+                  <StatusChip
+                    state={playbackKindChipState}
+                    label={playbackPresentationLabel}
+                  />
+                )}
+                {playbackTransportKind !== 'unknown' && (
+                  <StatusChip
+                    state="idle"
+                    label={playbackTransportLabel}
+                  />
+                )}
               </div>
               <div className={styles.spinnerLabel}>{spinnerLabel}</div>
               <div className={styles.spinnerSupport}>{spinnerSupport}</div>
@@ -2603,7 +2829,7 @@ function V3Player(props: V3PlayerProps) {
           )}
 
           {/* DVR Mode Button (Safari Only / Fallback) */}
-          {showDvrModeButton && !canToggleFullscreen && (
+          {showDvrModeButton && playbackContentKind === 'live' && !canToggleFullscreen && (
             <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
               📺 DVR
             </Button>

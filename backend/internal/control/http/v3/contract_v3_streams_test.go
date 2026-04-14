@@ -219,10 +219,13 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 						DeviceType:          "web",
 						RuntimeProbeVersion: 2,
 						DeviceContext: &model.PlaybackClientDeviceContext{
-							Platform:  "browser",
-							OSName:    "macos",
-							OSVersion: "15.4",
-							Model:     "macbookpro",
+							Platform:       "browser",
+							BrowserName:    "safari",
+							BrowserVersion: "17.4",
+							OSName:         "macos",
+							OSVersion:      "15.4",
+							PlatformClass:  "macos_safari",
+							Model:          "macbookpro",
 						},
 						NetworkContext: &model.PlaybackClientNetworkContext{
 							Kind: "wifi",
@@ -258,6 +261,12 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 		assert.Equal(t, "runtime_plus_family", *list[0].Client.ClientCapsSource)
 		require.NotNil(t, list[0].Client.Platform)
 		assert.Equal(t, "browser", *list[0].Client.Platform)
+		require.NotNil(t, list[0].Client.BrowserName)
+		assert.Equal(t, "safari", *list[0].Client.BrowserName)
+		require.NotNil(t, list[0].Client.BrowserVersion)
+		assert.Equal(t, "17.4", *list[0].Client.BrowserVersion)
+		require.NotNil(t, list[0].Client.PlatformClass)
+		assert.Equal(t, "macos_safari", *list[0].Client.PlatformClass)
 		require.NotNil(t, list[0].Client.OsName)
 		assert.Equal(t, "macos", *list[0].Client.OsName)
 		require.NotNil(t, list[0].Client.Model)

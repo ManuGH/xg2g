@@ -78,6 +78,7 @@ describe("gatherPlaybackCapabilities", () => {
           device: "foster",
           platform: "android-tv",
           manufacturer: "NVIDIA",
+          platformClass: "android_tv_native_host",
         }),
         networkContext: expect.objectContaining({
           kind: "ethernet",

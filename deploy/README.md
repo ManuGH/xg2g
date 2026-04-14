@@ -10,6 +10,7 @@ This is the deploy-SSoT migration slice:
 - `deploy/docker-compose.nvidia.yml` is the intended canonical NVIDIA runtime / NVENC overlay.
 - `deploy/xg2g.env.schema.yaml` is the initial machine-readable contract for `/etc/xg2g/xg2g.env`.
 - `deploy/sync.sh` is the idempotent host sync entrypoint.
+- `deploy/runtime-sync.sh` keeps a separate runtime workspace (for example `/opt/xg2g`) aligned with one writable git checkout.
 
 Current deployment boundary:
 
@@ -22,8 +23,17 @@ Sync workflow:
 - `deploy/sync.sh --check --ref <tag|sha>` compares a pinned repo ref against the host install root.
 - `deploy/sync.sh --apply --ref <tag|sha>` copies the bundle to the host, reloads systemd, and reruns `--check`.
 - `deploy/sync.sh --apply --ref <tag|sha>` is the only supported deployment path. Manual file copies and direct host edits are drift by definition.
+- `deploy/runtime-sync.sh --check` compares a separate runtime workspace against the pinned source ref (defaults to the clean current `HEAD`).
+- `deploy/runtime-sync.sh --apply` backs up overwritten files, copies the pinned source ref into the runtime workspace, and reruns `--check`.
+- `deploy/runtime-sync.sh` is the only supported local sync path when a host keeps both a writable source checkout and a separate runtime workspace.
 - Exit `0` means synced, `1` means drift, `2` means `/etc/xg2g/xg2g.env` violates the deploy contract.
 - `--install-root <path>` is available for local dry-runs and fixture-style tests.
+
+Local workspace rule:
+
+- Keep exactly one writable git checkout.
+- Treat the runtime workspace as deploy-only, even if it still has a `.git/` directory during migration.
+- Use `deploy/runtime-sync.sh --check` as the authority for runtime drift instead of `git status` inside the runtime workspace.
 
 Why the env schema is intentionally narrow:
 

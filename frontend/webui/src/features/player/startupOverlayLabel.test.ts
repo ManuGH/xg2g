@@ -15,23 +15,23 @@ describe('resolveStartupOverlayLabel', () => {
   };
 
   it('returns the Safari-specific hint when the backend flags Safari compatibility transcoding', () => {
-    expect(resolveStartupOverlayLabel('priming', 'Preparing playback…', 'safari_compat_transcode', t as any)).toBe(
+    expect(resolveStartupOverlayLabel('priming', 'Preparing playback…', 'safari_compat_transcode', 'unknown', 'unknown', t as any)).toBe(
       'Preparing Safari-compatible stream…',
     );
   });
 
   it('falls back to the generic label when no specific profile reason exists', () => {
-    expect(resolveStartupOverlayLabel('starting', 'Starting…', null, t as any)).toBe('Starting…');
+    expect(resolveStartupOverlayLabel('starting', 'Starting…', null, 'unknown', 'unknown', t as any)).toBe('Starting…');
   });
 
   it('returns the Safari-specific support copy for the startup card', () => {
-    expect(resolveStartupOverlaySupport('safari_compat_transcode', t as any)).toBe(
+    expect(resolveStartupOverlaySupport('safari_compat_transcode', 'unknown', 'unknown', t as any)).toBe(
       'Safari needs a compatible stream variant first. This can take a little longer.',
     );
   });
 
   it('returns the generic support copy when no specific profile reason exists', () => {
-    expect(resolveStartupOverlaySupport(null, t as any)).toBe(
+    expect(resolveStartupOverlaySupport(null, 'unknown', 'unknown', t as any)).toBe(
       'Playback starts automatically as soon as the first stable segments are ready.',
     );
   });

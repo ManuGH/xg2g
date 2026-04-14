@@ -1,5 +1,6 @@
 import type { RuntimePlaybackProbeScope } from './playbackProbe';
-import { hasTouchInput, shouldForceNativeMobileHls } from './playerHelpers';
+import { detectBrowserIdentity } from './browserIdentity';
+import { shouldForceNativeMobileHls } from './playerHelpers';
 
 export type PlaybackClientFamily =
   | 'safari_native'
@@ -94,26 +95,21 @@ const PLAYBACK_CLIENT_FAMILY_CAPABILITIES: Record<
   },
 };
 
-function currentUserAgent(): string {
-  try {
-    return navigator.userAgent || '';
-  } catch {
-    return '';
-  }
-}
-
-function isFirefoxUserAgent(): boolean {
-  return /firefox/i.test(currentUserAgent());
-}
-
 function isIOSUserAgent(): boolean {
-  const ua = currentUserAgent();
-  return /(iphone|ipad|ipod)/i.test(ua) || (/macintosh/i.test(ua) && hasTouchInput());
+  const identity = detectBrowserIdentity();
+  return identity.osName === 'ios' || identity.osName === 'ipados';
 }
 
 export function detectPlaybackClientFamily(
   videoEl: HTMLVideoElement | null
 ): PlaybackClientFamily {
+  const identity = detectBrowserIdentity();
+  if (identity.platformClass === 'ios_webkit' || identity.platformClass === 'ipados_webkit' || identity.platformClass === 'tvos_webkit') {
+    return 'ios_safari_native';
+  }
+  if (identity.platformClass === 'macos_safari') {
+    return 'safari_native';
+  }
   if (videoEl) {
     try {
       const nativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
@@ -128,7 +124,7 @@ export function detectPlaybackClientFamily(
     }
   }
 
-  return isFirefoxUserAgent() ? 'firefox_hlsjs' : 'chromium_hlsjs';
+  return identity.browserName === 'firefox' ? 'firefox_hlsjs' : 'chromium_hlsjs';
 }
 
 export function fallbackPlaybackCapabilitiesForClientFamily(

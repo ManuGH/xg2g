@@ -262,6 +262,157 @@ func TestService_ResolvePlaybackInfo_RecordingNativePrefersDirectStreamForCopyab
 	assert.Equal(t, string(playbackprofile.IntentCompatible), res.Decision.Trace.ResolvedIntent)
 }
 
+func TestService_ResolvePlaybackInfo_RecordingIOSSafariNativeKeepsTSDirectStreamForCopyableTS(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/demo.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return playback.MediaTruth{
+				Status:     playback.MediaStatusReady,
+				Container:  "mpegts",
+				VideoCodec: "h264",
+				AudioCodec: "ac3",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+			}, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc: recSvc,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	allowTranscode := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   recordingID,
+		SubjectKind: PlaybackSubjectRecording,
+		APIVersion:  "v3.1",
+		SchemaType:  "compact",
+		RequestID:   "req-safari-native-direct-stream",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mpegts", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			DeviceType:           "safari",
+			HLSEngines:           []string{"native"},
+			PreferredHLSEngine:   "native",
+			ClientFamilyFallback: "ios_safari_native",
+			DeviceContext: &capabilities.DeviceContext{
+				OSName:        "ios",
+				PlatformClass: "ios_webkit",
+			},
+			AllowTranscode: &allowTranscode,
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.NotNil(t, res.Decision.TargetProfile)
+	assert.Equal(t, decision.ModeDirectStream, res.Decision.Mode)
+	assert.Equal(t, "hls", res.Decision.SelectedOutputKind)
+	assert.Equal(t, []decision.ReasonCode{decision.ReasonDirectStreamMatch}, res.Decision.Reasons)
+	assert.Equal(t, playbackprofile.PackagingTS, res.Decision.TargetProfile.Packaging)
+	assert.Equal(t, "mpegts", res.Decision.TargetProfile.Container)
+	assert.Equal(t, "mpegts", res.Decision.TargetProfile.HLS.SegmentContainer)
+	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Video.Mode)
+	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
+	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Audio.Mode)
+	assert.Equal(t, "ac3", res.Decision.TargetProfile.Audio.Codec)
+	assert.Equal(t, string(playbackprofile.RungCompatibleHLSTS), res.Decision.Trace.QualityRung)
+	assert.Equal(t, string(playbackprofile.IntentCompatible), res.Decision.Trace.ResolvedIntent)
+}
+
+func TestService_ResolvePlaybackInfo_RecordingSafariNativeWithoutAC3FallsBackToCompatibleFMP4(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/demo.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return playback.MediaTruth{
+				Status:     playback.MediaStatusReady,
+				Container:  "mpegts",
+				VideoCodec: "h264",
+				AudioCodec: "ac3",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+			}, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc: recSvc,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	allowTranscode := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   recordingID,
+		SubjectKind: PlaybackSubjectRecording,
+		APIVersion:  "v3.1",
+		SchemaType:  "compact",
+		RequestID:   "req-safari-native-compatible",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mpegts", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			DeviceType:           "safari",
+			HLSEngines:           []string{"native"},
+			PreferredHLSEngine:   "native",
+			ClientFamilyFallback: "safari_native",
+			DeviceContext: &capabilities.DeviceContext{
+				OSName:        "macos",
+				PlatformClass: "macos_safari",
+			},
+			AllowTranscode: &allowTranscode,
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.NotNil(t, res.Decision.TargetProfile)
+	assert.Equal(t, decision.ModeTranscode, res.Decision.Mode)
+	assert.Equal(t, "hls", res.Decision.SelectedOutputKind)
+	assert.Equal(t, playbackprofile.PackagingFMP4, res.Decision.TargetProfile.Packaging)
+	assert.Equal(t, "mp4", res.Decision.TargetProfile.Container)
+	assert.Equal(t, "fmp4", res.Decision.TargetProfile.HLS.SegmentContainer)
+	assert.Equal(t, playbackprofile.MediaModeTranscode, res.Decision.TargetProfile.Video.Mode)
+	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
+	assert.Equal(t, playbackprofile.MediaModeTranscode, res.Decision.TargetProfile.Audio.Mode)
+	assert.Equal(t, "aac", res.Decision.TargetProfile.Audio.Codec)
+	assert.Equal(t, string(playbackprofile.RungCompatibleAudioAAC256Stereo), res.Decision.Trace.QualityRung)
+	assert.Equal(t, string(playbackprofile.IntentRepair), res.Decision.Trace.ResolvedIntent)
+}
+
+func TestShouldPreserveNativeSafariRecordingTransport_PrefersPlatformClass(t *testing.T) {
+	assert.True(t, shouldPreserveNativeSafariRecordingTransport(capabilities.PlaybackCapabilities{
+		PreferredHLSEngine:   "native",
+		ClientFamilyFallback: "safari_native",
+		DeviceContext: &capabilities.DeviceContext{
+			OSName:        "macos",
+			PlatformClass: "ios_webkit",
+		},
+	}))
+
+	assert.False(t, shouldPreserveNativeSafariRecordingTransport(capabilities.PlaybackCapabilities{
+		PreferredHLSEngine:   "native",
+		ClientFamilyFallback: "ios_safari_native",
+		DeviceContext: &capabilities.DeviceContext{
+			OSName:        "ios",
+			PlatformClass: "macos_safari",
+		},
+	}))
+}
+
 func verifiedLiveTruthSource(cap scan.Capability) *stubTruthSource {
 	return &stubTruthSource{
 		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {

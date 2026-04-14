@@ -6,10 +6,16 @@ import type { HlsInstanceRef, PlayerStatus } from '../../types/v3-player';
 
 function HookHarness({
   shouldForceNativeMobileHls,
-  canUseDesktopWebKitFullscreen = () => false
+  canUseDesktopWebKitFullscreen = () => false,
+  playbackMode = 'LIVE',
+  durationSeconds = null,
+  canSeek = false,
 }: {
   shouldForceNativeMobileHls: () => boolean;
   canUseDesktopWebKitFullscreen?: () => boolean;
+  playbackMode?: 'LIVE' | 'VOD' | 'UNKNOWN';
+  durationSeconds?: number | null;
+  canSeek?: boolean;
 }) {
   const containerRef = createRef<HTMLDivElement>();
   const videoRef = createRef<HTMLVideoElement>();
@@ -25,9 +31,9 @@ function HookHarness({
     hlsRef,
     userPauseIntentRef,
     lastDecodedRef,
-    playbackMode: 'LIVE',
-    durationSeconds: null,
-    canSeek: false,
+    playbackMode,
+    durationSeconds,
+    canSeek,
     startUnix: null,
     setStatus,
     allowNativeFullscreen: true,
@@ -44,6 +50,12 @@ function HookHarness({
       <button onClick={() => void chrome.toggleFullscreen()} type="button">
         fullscreen
       </button>
+      <button onClick={() => chrome.seekTo(600)} type="button">
+        seek
+      </button>
+      <button onClick={() => chrome.seekWhenReady(42)} type="button">
+        resume
+      </button>
     </div>
   );
 }
@@ -51,10 +63,12 @@ function HookHarness({
 describe('usePlayerChrome', () => {
   let requestFullscreenDescriptor: PropertyDescriptor | undefined;
   let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
+  let playDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     requestFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLDivElement.prototype, 'requestFullscreen');
     webkitEnterFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
+    playDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'play');
   });
 
   afterEach(() => {
@@ -68,6 +82,12 @@ describe('usePlayerChrome', () => {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
     } else {
       delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
+    }
+
+    if (playDescriptor) {
+      Object.defineProperty(HTMLMediaElement.prototype, 'play', playDescriptor);
+    } else {
+      delete (HTMLMediaElement.prototype as any).play;
     }
 
     vi.restoreAllMocks();
@@ -121,5 +141,68 @@ describe('usePlayerChrome', () => {
       expect(requestFullscreen).toHaveBeenCalledTimes(1);
     });
     expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+  });
+
+  it('preserves the resume click gesture until metadata is available', () => {
+    const play = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: play,
+    });
+
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        playbackMode="VOD"
+        durationSeconds={3600}
+        canSeek={true}
+      />
+    );
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => 0,
+    });
+    video.currentTime = 0;
+
+    fireEvent.click(screen.getByRole('button', { name: 'resume' }));
+
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(video.currentTime).toBe(0);
+
+    fireEvent(video, new Event('loadedmetadata'));
+
+    expect(video.currentTime).toBe(42);
+    expect(play.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+
+  it('clamps VOD seeks to the browser-reported seekable window', () => {
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        playbackMode="VOD"
+        durationSeconds={3600}
+        canSeek={true}
+      />
+    );
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'seekable', {
+      configurable: true,
+      value: {
+        length: 1,
+        start: () => 120,
+        end: () => 240,
+      },
+    });
+    video.currentTime = 0;
+
+    fireEvent(video, new Event('loadedmetadata'));
+    fireEvent.click(screen.getByRole('button', { name: 'seek' }));
+
+    expect(video.currentTime).toBe(240);
   });
 });
