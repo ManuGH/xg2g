@@ -2,6 +2,7 @@ package v3
 
 import (
 	"context"
+	"math"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	connectivitydomain "github.com/ManuGH/xg2g/internal/domain/connectivity"
@@ -85,8 +86,7 @@ func mapPublishedEndpointContracts(values []connectivitydomain.PublishedEndpoint
 		out = append(out, PublishedEndpoint{
 			Url:             value.URL,
 			Kind:            kind,
-			//nolint:gosec // G115: priority values from config are well within int32 bounds
-			Priority:        int32(value.Priority),
+			Priority:        publishedEndpointPriorityValue(value.Priority),
 			TlsMode:         tlsMode,
 			AllowPairing:    value.AllowPairing,
 			AllowStreaming:  value.AllowStreaming,
@@ -98,4 +98,11 @@ func mapPublishedEndpointContracts(values []connectivitydomain.PublishedEndpoint
 	}
 
 	return out
+}
+
+func publishedEndpointPriorityValue(priority int) int32 {
+	if priority < 0 || priority > math.MaxInt32 {
+		panic("published endpoint priority exceeds OpenAPI int32 contract")
+	}
+	return int32(priority)
 }
