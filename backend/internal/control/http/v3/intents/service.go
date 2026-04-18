@@ -199,6 +199,11 @@ func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profil
 				reqProfileID = picked
 			}
 		}
+		if requestedPlaybackMode == "native_hls" {
+			if picked := pickNativeHLSProfileForCodecs(intent.Params["codecs"], clientFamily, hwaccelMode); picked != "" {
+				reqProfileID = picked
+			}
+		}
 		return reqProfileID, requestedPlaybackMode, nil
 	}
 	if profileID := normalize.Token(intent.Params["profile"]); profileID != "" {
@@ -640,6 +645,20 @@ func resolvePlaybackDecisionToken(requestToken string, params map[string]string)
 
 func pickProfileForCodecs(raw string, hwaccelMode profiles.HWAccelMode) string {
 	return autocodec.PickProfileForCodecs(raw, hwaccelMode)
+}
+
+func pickNativeHLSProfileForCodecs(raw, clientFamily string, hwaccelMode profiles.HWAccelMode) string {
+	switch normalize.Token(clientFamily) {
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	default:
+		return ""
+	}
+	switch pickProfileForCodecs(raw, hwaccelMode) {
+	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
+		return profiles.ProfileSafariHEVCHW
+	default:
+		return ""
+	}
 }
 
 func requiredVerifiedHardwareCodecForProfile(profileID string) (string, bool) {
