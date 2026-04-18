@@ -10,6 +10,7 @@ import {
   type PlaybackTrace as PlaybackTraceContract,
   type PlaybackTraceFfmpegPlan,
   type PlaybackTraceOperator,
+  type PlaybackTraceRuntimeReplay,
   type PlaybackTraceRuntimeTick,
   type PlaybackTargetProfile,
 } from '../../../client-ts';
@@ -34,6 +35,7 @@ import {
 } from '../startupOverlayLabel';
 import { PlayerErrorSurface } from './PlayerErrorSurface';
 import { PlayerRuntimeMeta, PlayerRuntimeMetaPanel } from './PlayerRuntimeMeta';
+import { PlayerRuntimeReplayExport } from './PlayerRuntimeReplayExport';
 import { PlayerStartupSurface } from './PlayerStartupSurface';
 import { useResume } from '../../resume/useResume';
 import { ResumeState } from '../../resume/api';
@@ -337,6 +339,7 @@ function mergePlaybackTraceOperator(
     runtimePolicyAction: primary?.runtimePolicyAction ?? fallback?.runtimePolicyAction ?? null,
     runtimePolicyPhase: primary?.runtimePolicyPhase ?? fallback?.runtimePolicyPhase ?? null,
     runtimePolicyConstraints: primary?.runtimePolicyConstraints ?? fallback?.runtimePolicyConstraints ?? null,
+    runtimePolicyReplay: primary?.runtimePolicyReplay ?? fallback?.runtimePolicyReplay ?? null,
     runtimePolicyReasons: primary?.runtimePolicyReasons ?? fallback?.runtimePolicyReasons ?? null,
     runtimePolicyTimeline: primary?.runtimePolicyTimeline ?? fallback?.runtimePolicyTimeline ?? null,
     runtimeProbeCandidate: primary?.runtimeProbeCandidate ?? fallback?.runtimeProbeCandidate ?? null,
@@ -2426,6 +2429,7 @@ function V3Player(props: V3PlayerProps) {
   const effectiveOperatorRuleScope = effectiveOperator?.ruleScope ?? null;
   const effectiveRuntimePolicyAction = effectiveOperator?.runtimePolicyAction ?? null;
   const effectiveRuntimePolicyConstraints = effectiveOperator?.runtimePolicyConstraints ?? null;
+  const effectiveRuntimePolicyReplay: PlaybackTraceRuntimeReplay | null = effectiveOperator?.runtimePolicyReplay ?? null;
   const effectiveRuntimePolicyReasons = effectiveOperator?.runtimePolicyReasons ?? null;
   const effectiveRuntimePolicyTimeline = effectiveOperator?.runtimePolicyTimeline ?? null;
   const effectiveRuntimeProbeFailureStreak = effectiveOperator?.runtimeProbeFailureStreak ?? null;
@@ -2731,6 +2735,7 @@ function V3Player(props: V3PlayerProps) {
       <PlayerRuntimeMetaPanel
         show={showStats && showPlaybackChrome}
         title={t('player.statsTitle', { defaultValue: 'Technical Stats' })}
+        actions={<PlayerRuntimeReplayExport replay={effectiveRuntimePolicyReplay} />}
         rows={runtimeStatsRows}
       />
 

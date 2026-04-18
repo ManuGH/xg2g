@@ -452,6 +452,24 @@
   width: min(560px, calc(100vw - 40px));
 }
 
+.statsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.statsHeaderCopy {
+  min-width: 0;
+}
+
+.statsHeaderActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .statsGrid {
   display: flex;
   flex-direction: column;
@@ -493,6 +511,20 @@
   flex-direction: column;
   gap: 4px;
   text-align: left;
+}
+
+.runtimeReplayActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.runtimeReplayStatus {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .errorToast {

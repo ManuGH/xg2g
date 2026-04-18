@@ -1268,6 +1268,7 @@ export type PlaybackTraceOperator = {
     runtimePolicyAction?: string | null;
     runtimePolicyPhase?: string | null;
     runtimePolicyConstraints?: Array<string> | null;
+    runtimePolicyReplay?: PlaybackTraceRuntimeReplay | null;
     runtimePolicyReasons?: Array<string> | null;
     runtimePolicyTimeline?: Array<PlaybackTraceRuntimeTick> | null;
     runtimeProbeCandidate?: string | null;
@@ -1277,6 +1278,68 @@ export type PlaybackTraceOperator = {
     ruleScope?: string | null;
     clientFallbackDisabled?: boolean;
     overrideApplied?: boolean;
+};
+
+export type PlaybackTraceRuntimeReplay = {
+    finalState?: PlaybackTraceRuntimeReplayState | null;
+    initialState?: PlaybackTraceRuntimeReplayState | null;
+    metadata?: PlaybackTraceRuntimeReplayMetadata | null;
+    ticks?: Array<PlaybackTraceRuntimeReplayTick> | null;
+};
+
+export type PlaybackTraceRuntimeReplayMetadata = {
+    clientPath?: string | null;
+    initialTarget?: string | null;
+    serviceRef?: string | null;
+    sessionId?: string | null;
+    sourceType?: string | null;
+};
+
+export type PlaybackTraceRuntimeReplayState = {
+    confidenceScore?: number | null;
+    confidenceState?: string | null;
+    cooldownUntil?: string | null;
+    currentStep?: string | null;
+    lastAction?: string | null;
+    policyConstraints?: Array<string> | null;
+    probeState?: string | null;
+    probeStep?: string | null;
+    reasons?: Array<string> | null;
+    targetStep?: string | null;
+};
+
+export type PlaybackTraceRuntimeReplayTick = {
+    expected?: PlaybackTraceRuntimeReplayTickExpected | null;
+    input?: PlaybackTraceRuntimeReplayTickInput | null;
+};
+
+export type PlaybackTraceRuntimeReplayTickExpected = {
+    action?: string | null;
+    activeStep?: string | null;
+    blockers?: Array<string> | null;
+    executedTransition?: string | null;
+    plannedTransition?: string | null;
+    probeState?: string | null;
+    probeStep?: string | null;
+    reasons?: Array<string> | null;
+    runtimePhase?: string | null;
+};
+
+export type PlaybackTraceRuntimeReplayTickInput = {
+    confidence?: PlaybackTraceRuntimeReplayTickInputConfidence | null;
+    observedStep?: string | null;
+    targetStep?: string | null;
+    tickAt: string;
+};
+
+export type PlaybackTraceRuntimeReplayTickInputConfidence = {
+    cooldownUntil?: string | null;
+    policyConstraints?: Array<string> | null;
+    reasons?: Array<string> | null;
+    score?: number | null;
+    state?: string | null;
+    stateSince?: string | null;
+    windowCount?: number | null;
 };
 
 export type PlaybackTraceRuntimeTick = {

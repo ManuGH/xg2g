@@ -209,6 +209,9 @@
       "stable": "Stabil",
       "unknown": "Unbekannt"
     },
+    "copyRuntimeReplay": "Replay kopieren",
+    "runtimeReplayCopied": "Replay kopiert",
+    "runtimeReplayCopyFailed": "Replay konnte nicht kopiert werden",
     "runtimePolicySupport": {
       "genericProfile": "dem aktuellen Profil",
       "startup": {

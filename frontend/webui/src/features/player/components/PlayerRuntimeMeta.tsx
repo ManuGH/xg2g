@@ -27,6 +27,7 @@ export interface PlayerRuntimeMetaPanelProps {
   show: boolean;
   title: string;
   rows: PlayerRuntimeMetaPanelRow[];
+  actions?: ReactNode;
 }
 
 export function PlayerRuntimeMeta({
@@ -68,6 +69,7 @@ export function PlayerRuntimeMetaPanel({
   show,
   title,
   rows,
+  actions,
 }: PlayerRuntimeMetaPanelProps) {
   if (!show) {
     return null;
@@ -76,8 +78,15 @@ export function PlayerRuntimeMetaPanel({
   return (
     <div className={styles.statsOverlay}>
       <Card variant="standard">
-        <Card.Header>
-          <Card.Title>{title}</Card.Title>
+        <Card.Header className={styles.statsHeader}>
+          <div className={styles.statsHeaderCopy}>
+            <Card.Title>{title}</Card.Title>
+          </div>
+          {actions ? (
+            <div className={styles.statsHeaderActions}>
+              {actions}
+            </div>
+          ) : null}
         </Card.Header>
         <Card.Content className={styles.statsGrid}>
           {rows.map((row) => (

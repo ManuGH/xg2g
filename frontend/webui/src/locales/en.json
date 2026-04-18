@@ -209,6 +209,9 @@
       "stable": "Stable",
       "unknown": "Unknown"
     },
+    "copyRuntimeReplay": "Copy replay",
+    "runtimeReplayCopied": "Replay copied",
+    "runtimeReplayCopyFailed": "Replay copy failed",
     "runtimePolicySupport": {
       "genericProfile": "the current profile",
       "startup": {
