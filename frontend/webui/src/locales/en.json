@@ -1,8 +1,8 @@
 {
   "nav": {
-    "dashboard": "Dashboard",
+    "dashboard": "Start",
     "recordings": "Recordings",
-    "epg": "TV/EPG",
+    "epg": "Live TV",
     "timers": "Timers",
     "series": "Series",
     "files": "Files",
@@ -12,12 +12,13 @@
     "logout": "Logout",
     "more": "More",
     "config": "Setup",
-    "sectionControl": "Control",
-    "sectionBrowse": "Browse",
+    "sectionControl": "Start",
+    "sectionBrowse": "Media",
     "sectionSystem": "System",
-    "controlSurfaces": "More tools",
+    "controlSurfaces": "More sections",
     "sheetEyebrow": "Navigation",
-    "sheetTitle": "More tools",
+    "sheetTitle": "More sections",
+    "currentArea": "Current area",
     "cards": {
       "boxStreaming": {
         "title": "Receiver Connection",
@@ -73,6 +74,15 @@
     "receiverUnavailable": "Receiver is in standby (idle)",
     "noCurrentProgram": "No current program information"
   },
+  "legacyRoute": {
+    "eyebrow": "Expert path",
+    "title": "This page now lives under {{parent}}",
+    "openParent": "Open {{parent}}",
+    "timersDescription": "For most workflows, schedule recordings directly from Live TV. This page stays available for direct timer management.",
+    "seriesDescription": "Series rules remain available as an expert workflow. For normal DVR browsing, start in Recordings.",
+    "filesDescription": "Playlist and guide feeds stay available as expert tools. You can now also reach them from Settings.",
+    "logsDescription": "Diagnostics stay directly accessible, but most households should enter this area from Settings."
+  },
   "player": {
     "status": "Status",
     "resolution": "Resolution",
@@ -91,6 +101,11 @@
     "segDuration": "Seg Duration",
     "closePlayer": "Close Player",
     "preparingDirectPlay": "Preparing Direct Play...",
+    "preparingRecordingPlayback": "Opening recording…",
+    "recordingFallbackTitle": "Recording",
+    "recordingStartupEyebrow": "Recording",
+    "recordingStartupStatus": "Opening",
+    "recordingStartupSupport": "Preparing the source. Playback will start shortly.",
     "serviceRefPlaceholder": "Service Ref (1:0:1...)",
     "serviceRefRequired": "Service Ref is required.",
     "seekBack15m": "Back 15m",
@@ -101,6 +116,7 @@
     "seekForward15s": "Forward 15s",
     "seekForward60s": "Forward 60s",
     "seekForward15m": "Forward 15m",
+    "seekTimeline": "Seek timeline",
     "goLive": "Go live",
     "fullscreenLabel": "Fullscreen",
     "exitFullscreenLabel": "Exit fullscreen",
@@ -162,6 +178,7 @@
     "resumeTitle": "Resume Playback?",
     "resumePrompt": "Resume from {{time}}?",
     "resumeAction": "Resume",
+    "resumeFrom": "Resume at {{time}}",
     "startOver": "Start Over",
     "dvrMode": "DVR mode",
     "preparing": "Preparing...",
@@ -173,7 +190,46 @@
     "playbackError": "Playback error",
     "streamUrlMissing": "Stream URL missing",
     "sessionExpired": "Session expired. Please restart.",
-    "sessionNotFound": "Session no longer exists."
+    "sessionNotFound": "Session no longer exists.",
+    "watchSurfaceLabel": "Recording playback details",
+    "playbackWindow": "Playback Window",
+    "playbackWindowKinds": {
+      "live": "Live only",
+      "live-dvr": "Live with DVR window",
+      "vod": "On-demand",
+      "unknown": "Unknown"
+    },
+    "runtimePolicyPhase": "Policy phase",
+    "runtimePolicyPhases": {
+      "probing": "Probing",
+      "cooldown": "Cooldown",
+      "probe_regressed": "Probe regressed",
+      "recovering": "Recovering",
+      "degraded": "Degraded",
+      "stable": "Stable",
+      "unknown": "Unknown"
+    },
+    "runtimePolicySupport": {
+      "genericProfile": "the current profile",
+      "startup": {
+        "probing": "Testing {{profile}} briefly. If it stays stable, playback will continue there.",
+        "cooldown": "Holding {{profile}} briefly before the next adjustment is allowed.",
+        "probeRegressed": "A higher profile just turned unstable. Staying on {{profile}} for now.",
+        "recovering": "Recent instability is being absorbed before the next move.",
+        "degraded": "Using {{profile}} for now to keep playback stable."
+      },
+      "error": {
+        "probing": "Playback slipped while {{profile}} was being validated.",
+        "cooldown": "A short cooldown is active before another profile change is allowed.",
+        "probeRegressed": "A higher profile just regressed. Keeping {{profile}} locked for the moment.",
+        "recovering": "The session is still inside a recovery window after recent instability.",
+        "degraded": "The player already stepped down to {{profile}} to protect stability."
+      }
+    },
+    "liveWindowState": "Live Window",
+    "liveWindowReady": "Window ready",
+    "liveWindowAtEdge": "At live edge",
+    "liveWindowBehindEdge": "{{seconds}}s behind live"
   },
   "dashboard": {
     "controlSummary": "Control summary",
@@ -259,11 +315,54 @@
     "timeJustNow": "Just now",
     "timeMinutesAgo": "{{count}}m ago",
     "timeHoursAgo": "{{count}}h ago",
+    "start": {
+      "eyebrow": "Start here",
+      "title": "Choose the task, not the tool",
+      "subtitle": "Each area now follows the household task first. Direct expert paths stay separate below.",
+      "status": {
+        "ready": "Ready now",
+        "standby": "Receiver in standby",
+        "available": "Available in this profile",
+        "blocked": "Blocked in this profile"
+      },
+      "live": {
+        "step": "Step 1",
+        "title": "Watch live TV",
+        "description": "Open the guide, browse channels and start playback from the simplest entry point.",
+        "detailReady": "Guide, channel list and timer planning now live in one place.",
+        "detailStandby": "The receiver is in standby. Wake it first so guide and channel data can refresh.",
+        "action": "Open Live TV"
+      },
+      "recordings": {
+        "step": "Step 2",
+        "title": "Open recordings",
+        "description": "Resume unfinished sessions, browse folders and keep DVR playback separate from live TV.",
+        "detailManage": "Series rules stay inside this area when you need them.",
+        "detailWatch": "This profile can watch recordings but not change DVR rules.",
+        "detailBlocked": "This profile cannot open recordings right now.",
+        "action": "Open Recordings"
+      },
+      "settings": {
+        "step": "Step 3",
+        "title": "Setup and household",
+        "description": "Receiver setup, household profiles and streaming defaults all stay under Settings.",
+        "detailReady": "Use this when a family member needs setup help instead of direct expert tools.",
+        "detailBlocked": "This profile cannot open settings right now.",
+        "action": "Open Setup"
+      }
+    },
+    "shortcuts": {
+      "eyebrow": "Direct paths",
+      "title": "Open a specific area directly",
+      "subtitle": "Use these shortcuts when you already know the exact destination."
+    },
     "logLevelError": "Error",
     "logLevelWarn": "Warn",
     "logLevelInfo": "Info"
   },
   "epg": {
+    "backToGuide": "Back to Live TV",
+    "sectionNavLabel": "Live TV sections",
     "pageTitle": "EPG Overview ({{count}})",
     "timeRange": "Time Range",
     "rangeNowTo6h": "now to +6h",
@@ -290,12 +389,18 @@
     "showLess": "Show less"
   },
   "recordings": {
+    "seriesRulesAction": "Series Rules",
+    "backToLibrary": "Back to recordings",
+    "sectionNavLabel": "Recordings sections",
     "libraryRoot": "Library",
     "profileBlocked": "The current profile cannot access recordings.",
     "loading": "Loading recordings...",
     "eyebrow": "DVR library",
     "title": "Recordings",
-    "summary": "Browse completed recordings, active captures and resume points across your configured storage roots.",
+    "summary": "Find recordings quickly, jump back into unfinished sessions and start playback without extra steps.",
+    "seriesTitle": "Series Rules",
+    "seriesSummary": "Automate recurring DVR rules without turning the normal recordings path into an expert-only surface.",
+    "seriesContext": "Power-user rules stay grouped here, while the default household path stays focused on browsing and playback.",
     "browsingRoot": "Browsing {{root}}",
     "browsingPath": "Browsing {{root}} / {{path}}",
     "metricItems": "Items",
@@ -329,10 +434,26 @@
     "descriptionFallback": "No description available.",
     "emptyLocation": "No recordings found in this location.",
     "emptyFilter": "No recordings match the current filter.",
+    "continueWatchingTitle": "Continue watching",
+    "latestTitle": "Latest recordings",
+    "openPreplay": "Open",
+    "preplayEyebrow": "Recording",
+    "closePreplay": "Close recording",
+    "untitled": "Recording",
+    "resumeProgress": "Resume at {{time}}",
+    "playAction": "Play",
+    "resumeAction": "Resume from {{time}}",
+    "restartAction": "Restart",
     "loadingPlayer": "Preparing player...",
+    "loadingPlayerHint": "Preparing the player and this recording.",
+    "renameAction": "Rename",
+    "renamePrompt": "New name for \"{{title}}\"",
+    "renameSuccess": "Recording renamed successfully.",
+    "renameError": "Failed to rename the recording.",
     "selectionMode": "Selection Mode",
     "deleteSelected": "Delete Selected ({{count}})",
     "cancelSelection": "Cancel",
+    "confirmDeleteOne": "Are you sure you want to permanently delete \"{{title}}\"? This action cannot be undone.",
     "confirmDelete": "Are you sure you want to permanently delete {{count}} recordings? This action cannot be undone.",
     "deleteSuccess": "Successfully deleted {{count}} recordings.",
     "deletePartial": "Deleted {{success}} recordings. {{failed}} failed.",
@@ -379,6 +500,30 @@
     "regenerateErrorTitle": "Unable to regenerate playlist files"
   },
   "settings": {
+    "backToOverview": "Back to overview",
+    "backToSection": "Back to {{section}}",
+    "sectionNavLabel": "Settings sections",
+    "sections": {
+      "overview": "Overview"
+    },
+    "context": {
+      "section": {
+        "setup": "Runs the base configuration again and stays directly reachable by URL.",
+        "household": "Profiles, favourites and permissions now live as a dedicated settings area.",
+        "android-tv": "TV handoff now lives as its own section inside Settings.",
+        "scan": "Channel scan is now reachable as a direct subsection of Settings.",
+        "streaming": "Streaming defaults now live in a clearly scoped Settings subsection.",
+        "advanced": "Expert tools are now grouped inside the advanced settings area."
+      },
+      "tool": {
+        "files": "Playlist, guide and compatibility feeds now live under the advanced settings area.",
+        "logs": "Diagnostics and recent server events now live under the advanced settings area."
+      }
+    },
+    "advanced": {
+      "title": "Expert tools",
+      "subtitle": "File browser and diagnostic logs stay available here without turning the main navigation into a power-user menu."
+    },
     "kicker": "System",
     "title": "Settings",
     "subtitle": "Configure receiver setup and choose streaming defaults. Setup stays here after first run.",
@@ -633,6 +778,18 @@
     "drives": "Drives",
     "internal": "Internal",
     "nas": "NAS",
+    "storageOrigin": {
+      "receiver": "Receiver",
+      "xg2g": "xg2g"
+    },
+    "storageType": {
+      "receiver_attached": "Receiver storage",
+      "receiver_share": "Receiver share",
+      "xg2g_local": "xg2g local",
+      "xg2g_share": "xg2g share",
+      "xg2g_aggregate": "xg2g aggregate",
+      "unknown": "Unknown"
+    },
     "paths": "Recording Paths",
     "healthLabel": "Health",
     "check": "Check",

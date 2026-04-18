@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../context/HouseholdProfilesContext';
 import { setClientAuthToken } from '../services/clientWrapper';
@@ -65,11 +66,13 @@ function renderWithQueryClient() {
   });
 
   return render(
-    <QueryClientProvider client={queryClient}>
-      <HouseholdProfilesProvider>
-        <Timers />
-      </HouseholdProfilesProvider>
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <HouseholdProfilesProvider>
+          <Timers />
+        </HouseholdProfilesProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 
@@ -106,6 +109,15 @@ describe('Timers', () => {
     await waitFor(() => {
       expect(getTimers).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('shows the contextual return path to live tv', async () => {
+    getTimers.mockResolvedValue({ data: { items: [] } });
+    getDvrCapabilities.mockResolvedValue({ data: null });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByRole('button', { name: 'Open Live TV' })).toBeInTheDocument();
   });
 
   it('deletes a timer and refreshes the timer list', async () => {

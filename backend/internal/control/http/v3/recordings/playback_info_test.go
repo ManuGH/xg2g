@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
@@ -69,6 +72,1853 @@ func TestService_ResolvePlaybackInfo_RecordingSuccess(t *testing.T) {
 	assert.Equal(t, "req-1", res.Decision.Trace.RequestID)
 	assert.Equal(t, 1, recSvc.truthCalls)
 	assert.Equal(t, recordingID, recSvc.lastTruthID)
+}
+
+func TestBuildDecisionInput_PropagatesHostPerformanceAndBenchmarkClass(t *testing.T) {
+	allowTranscode := true
+	input := buildDecisionInput(
+		PlaybackInfoRequest{
+			RequestID:        "req-1",
+			RequestedProfile: "quality",
+			APIVersion:       "v3.1",
+		},
+		playback.MediaTruth{
+			Container:         "mpegts",
+			VideoCodec:        "mpeg2",
+			AudioCodec:        "aac",
+			BitrateKbps:       9500,
+			BitrateConfidence: "high",
+			Width:             1920,
+			Height:            1080,
+			FPS:               25,
+			Interlaced:        true,
+		},
+		capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 1,
+			AllowTranscode:      &allowTranscode,
+		},
+		config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+		config.PlaybackOperatorConfig{},
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "medium",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Class: "strong",
+				Profiles: []playbackprofile.HostProfileBenchmark{
+					{ProfileID: playbackprofile.BenchmarkProfileVideoH2641080I, Class: "weak"},
+					{ProfileID: playbackprofile.BenchmarkProfileVideoH2641080P, Class: "moderate"},
+				},
+			},
+		},
+	)
+
+	if input.Policy.Host.PerformanceClass != "medium" {
+		t.Fatalf("expected medium host class in decision input, got %#v", input.Policy.Host)
+	}
+	if input.Policy.Host.BenchmarkClass != "weak" {
+		t.Fatalf("expected h264-specific weak benchmark class in decision input, got %#v", input.Policy.Host)
+	}
+	if input.Source.BitrateKbps != 9500 {
+		t.Fatalf("expected source bitrate to remain in decision input, got %#v", input.Source)
+	}
+	if input.Source.BitrateConfidence != "high" {
+		t.Fatalf("expected bitrate confidence to propagate into decision input, got %#v", input.Source)
+	}
+}
+
+func TestBuildDecisionInput_FallsBackToCodecBenchmarkClassWhenNoProfileBenchmarkExists(t *testing.T) {
+	allowTranscode := true
+	input := buildDecisionInput(
+		PlaybackInfoRequest{
+			RequestID:        "req-2",
+			RequestedProfile: "quality",
+			APIVersion:       "v3.1",
+		},
+		playback.MediaTruth{
+			Container:   "mpegts",
+			VideoCodec:  "mpeg2",
+			AudioCodec:  "aac",
+			BitrateKbps: 3500,
+			Width:       1280,
+			Height:      720,
+			FPS:         25,
+		},
+		capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 1,
+			AllowTranscode:      &allowTranscode,
+		},
+		config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+		config.PlaybackOperatorConfig{},
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "medium",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Class: "strong",
+				Codecs: []playbackprofile.HostCodecBenchmark{
+					{Codec: "h264", Class: "moderate"},
+				},
+			},
+		},
+	)
+
+	if input.Policy.Host.BenchmarkClass != "moderate" {
+		t.Fatalf("expected codec-level fallback benchmark class in decision input, got %#v", input.Policy.Host)
+	}
+}
+
+func TestBuildDecisionInput_UsesAudioOnlyBenchmarkClassWhenVideoCanCopy(t *testing.T) {
+	allowTranscode := true
+	input := buildDecisionInput(
+		PlaybackInfoRequest{
+			RequestID:        "req-audio",
+			RequestedProfile: "quality",
+			APIVersion:       "v3.1",
+		},
+		playback.MediaTruth{
+			Container:   "mp4",
+			VideoCodec:  "h264",
+			AudioCodec:  "ac3",
+			BitrateKbps: 6000,
+			Width:       1920,
+			Height:      1080,
+			FPS:         25,
+		},
+		capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 1,
+			AllowTranscode:      &allowTranscode,
+			VideoCodecs:         []string{"h264"},
+			AudioCodecs:         []string{"aac"},
+			MaxVideo:            &capabilities.MaxVideo{Width: 1920, Height: 1080, Fps: 60},
+		},
+		config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+		config.PlaybackOperatorConfig{},
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "low",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Class: "strong",
+				Profiles: []playbackprofile.HostProfileBenchmark{
+					{ProfileID: playbackprofile.BenchmarkProfileAudioAACStereo, Class: "weak"},
+					{ProfileID: playbackprofile.BenchmarkProfileVideoH2641080P, Class: "strong"},
+				},
+			},
+		},
+	)
+
+	if input.Policy.Host.BenchmarkClass != "weak" {
+		t.Fatalf("expected audio-only benchmark class in decision input, got %#v", input.Policy.Host)
+	}
+}
+
+func TestBuildDecisionInput_UsesFiftyFpsProfileBenchmarkClassForHeavyLivePaths(t *testing.T) {
+	allowTranscode := true
+	input := buildDecisionInput(
+		PlaybackInfoRequest{
+			RequestID:        "req-50fps",
+			RequestedProfile: "quality",
+			APIVersion:       "v3.1",
+		},
+		playback.MediaTruth{
+			Container:   "mpegts",
+			VideoCodec:  "mpeg2",
+			AudioCodec:  "aac",
+			BitrateKbps: 18000,
+			Width:       3840,
+			Height:      2160,
+			FPS:         25,
+			SignalFPS:   50,
+		},
+		capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 1,
+			AllowTranscode:      &allowTranscode,
+		},
+		config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+		config.PlaybackOperatorConfig{},
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "medium",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Class: "strong",
+				Profiles: []playbackprofile.HostProfileBenchmark{
+					{ProfileID: playbackprofile.BenchmarkProfileVideoH2642160P, Class: "moderate"},
+					{ProfileID: playbackprofile.BenchmarkProfileVideoH2642160P50, Class: "weak"},
+				},
+			},
+		},
+	)
+
+	if input.Policy.Host.BenchmarkClass != "weak" {
+		t.Fatalf("expected 2160p50-specific benchmark class in decision input, got %#v", input.Policy.Host)
+	}
+}
+
+func TestService_ApplyPlaybackFeedbackPolicy_ClampsQualityToCompatibleAfterRepeatedDecodeFailures(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-quality.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:     playback.MediaStatusReady,
+		Container:  "mpegts",
+		VideoCodec: "mpeg2",
+		AudioCodec: "ac3",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+	cfg := config.AppConfig{
+		FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+		HLS:    config.HLSConfig{Root: "/tmp/hls"},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-quality",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "mac",
+				Model:     "macbookpro",
+				OSName:    "macos",
+				OSVersion: "15.4",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg:         cfg,
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	for idx, code := range []int{3, 3} {
+		require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+			ObservedAt:        now.Add(time.Duration(idx-2) * time.Minute),
+			RequestID:         "fb-quality-" + string(rune('a'+idx)),
+			ObservationKind:   "feedback",
+			Outcome:           "failed",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "error",
+			FeedbackCode:      code,
+		}))
+	}
+
+	operatorPolicy, _ := svc.applyPlaybackFeedbackPolicy(context.Background(), serviceRef, req, truth, resolvedCaps, requestHostContext{
+		Snapshot: hostSnapshotForRequest(hostRuntime),
+	}, playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal}, config.PlaybackOperatorConfig{})
+
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), operatorPolicy.MaxQualityRung)
+
+	input := buildDecisionInput(
+		req,
+		truth,
+		resolvedCaps,
+		cfg,
+		operatorPolicy,
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		hostRuntime,
+	)
+	_, dec, prob := decision.Decide(context.Background(), input, req.SchemaType)
+	require.Nil(t, prob)
+	require.NotNil(t, dec)
+	assert.Equal(t, "quality", dec.Trace.RequestedIntent)
+	assert.Equal(t, "compatible", dec.Trace.ResolvedIntent)
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), dec.Trace.MaxQualityRung)
+	assert.True(t, dec.Trace.OverrideApplied)
+}
+
+func TestService_ApplyPlaybackFeedbackPolicy_LowBitrateConfidenceDelaysGenericFailureClamp(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-low-confidence.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:              playback.MediaStatusReady,
+		Container:           "mpegts",
+		VideoCodec:          "mpeg2",
+		AudioCodec:          "ac3",
+		BitrateKbps:         9000,
+		BitrateConfidence:   "low",
+		Width:               1920,
+		Height:              1080,
+		FPS:                 25,
+		BitrateObservedKbps: 9000,
+		BitrateSamples:      1,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+	cfg := config.AppConfig{
+		FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+		HLS:    config.HLSConfig{Root: "/tmp/hls"},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-low-confidence",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg:         cfg,
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	for idx := range []int{0, 1} {
+		require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+			ObservedAt:        now.Add(time.Duration(idx-2) * time.Minute),
+			RequestID:         "fb-low-confidence-" + string(rune('a'+idx)),
+			ObservationKind:   "feedback",
+			Outcome:           "failed",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "error",
+			FeedbackCode:      1,
+		}))
+	}
+
+	operatorPolicy, _ := svc.applyPlaybackFeedbackPolicy(context.Background(), serviceRef, req, truth, resolvedCaps, requestHostContext{
+		Snapshot: hostSnapshotForRequest(hostRuntime),
+	}, playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal}, config.PlaybackOperatorConfig{})
+
+	assert.Empty(t, operatorPolicy.MaxQualityRung)
+
+	input := buildDecisionInput(
+		req,
+		truth,
+		resolvedCaps,
+		cfg,
+		operatorPolicy,
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		hostRuntime,
+	)
+	_, dec, prob := decision.Decide(context.Background(), input, req.SchemaType)
+	require.Nil(t, prob)
+	require.NotNil(t, dec)
+	assert.Equal(t, "quality", dec.Trace.RequestedIntent)
+	assert.Equal(t, "quality", dec.Trace.ResolvedIntent)
+	assert.Empty(t, dec.Trace.MaxQualityRung)
+	assert.False(t, dec.Trace.OverrideApplied)
+}
+
+func TestService_ApplyPlaybackFeedbackPolicy_HealthyStartsDelayGenericFailureClamp(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-healthy-streak.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+	cfg := config.AppConfig{
+		FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+		HLS:    config.HLSConfig{Root: "/tmp/hls"},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-healthy-streak",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "windows",
+				Model:     "desktop",
+				OSName:    "windows",
+				OSVersion: "11",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg:         cfg,
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	observations := []capreg.PlaybackObservation{
+		{
+			ObservedAt:        now.Add(-4 * time.Minute),
+			RequestID:         "fb-healthy-a",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      200,
+		},
+		{
+			ObservedAt:        now.Add(-3 * time.Minute),
+			RequestID:         "fb-healthy-b",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      200,
+		},
+		{
+			ObservedAt:        now.Add(-2 * time.Minute),
+			RequestID:         "fb-healthy-c",
+			ObservationKind:   "feedback",
+			Outcome:           "failed",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "error",
+			FeedbackCode:      1,
+		},
+		{
+			ObservedAt:        now.Add(-1 * time.Minute),
+			RequestID:         "fb-healthy-d",
+			ObservationKind:   "feedback",
+			Outcome:           "failed",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "error",
+			FeedbackCode:      1,
+		},
+	}
+	for _, observation := range observations {
+		require.NoError(t, registry.RecordObservation(context.Background(), observation))
+	}
+
+	operatorPolicy, _ := svc.applyPlaybackFeedbackPolicy(context.Background(), serviceRef, req, truth, resolvedCaps, requestHostContext{
+		Snapshot: hostSnapshotForRequest(hostRuntime),
+	}, playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal}, config.PlaybackOperatorConfig{})
+
+	assert.Empty(t, operatorPolicy.MaxQualityRung)
+
+	input := buildDecisionInput(
+		req,
+		truth,
+		resolvedCaps,
+		cfg,
+		operatorPolicy,
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		hostRuntime,
+	)
+	_, dec, prob := decision.Decide(context.Background(), input, req.SchemaType)
+	require.Nil(t, prob)
+	require.NotNil(t, dec)
+	assert.Equal(t, "quality", dec.Trace.RequestedIntent)
+	assert.Equal(t, "quality", dec.Trace.ResolvedIntent)
+	assert.Empty(t, dec.Trace.MaxQualityRung)
+	assert.False(t, dec.Trace.OverrideApplied)
+}
+
+func TestService_ApplyPlaybackFeedbackPolicy_ClampsToCompatibleAfterRepeatedBufferWarnings(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-buffer-warning.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+	cfg := config.AppConfig{
+		FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+		HLS:    config.HLSConfig{Root: "/tmp/hls"},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-buffer-warning",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg:         cfg,
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	for idx, code := range []int{102, 101, 101} {
+		require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+			ObservedAt:        now.Add(time.Duration(idx-3) * time.Minute),
+			RequestID:         "fb-buffer-warning-" + string(rune('a'+idx)),
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      code,
+		}))
+	}
+
+	operatorPolicy, _ := svc.applyPlaybackFeedbackPolicy(context.Background(), serviceRef, req, truth, resolvedCaps, requestHostContext{
+		Snapshot: hostSnapshotForRequest(hostRuntime),
+	}, playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal}, config.PlaybackOperatorConfig{})
+
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), operatorPolicy.MaxQualityRung)
+
+	input := buildDecisionInput(
+		req,
+		truth,
+		resolvedCaps,
+		cfg,
+		operatorPolicy,
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		hostRuntime,
+	)
+	_, dec, prob := decision.Decide(context.Background(), input, req.SchemaType)
+	require.Nil(t, prob)
+	require.NotNil(t, dec)
+	assert.Equal(t, "quality", dec.Trace.RequestedIntent)
+	assert.Equal(t, "compatible", dec.Trace.ResolvedIntent)
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), dec.Trace.MaxQualityRung)
+	assert.True(t, dec.Trace.OverrideApplied)
+}
+
+func TestService_ApplyPlaybackFeedbackPolicy_ClampsToCompatibleAfterRepeatedDecodeWarnings(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-decode-warning.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+	cfg := config.AppConfig{
+		FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+		HLS:    config.HLSConfig{Root: "/tmp/hls"},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-decode-warning",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg:         cfg,
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	for idx := range []int{0, 1} {
+		require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+			ObservedAt:        now.Add(time.Duration(idx-2) * time.Minute),
+			RequestID:         "fb-decode-warning-" + string(rune('a'+idx)),
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      103,
+		}))
+	}
+
+	operatorPolicy, _ := svc.applyPlaybackFeedbackPolicy(context.Background(), serviceRef, req, truth, resolvedCaps, requestHostContext{
+		Snapshot: hostSnapshotForRequest(hostRuntime),
+	}, playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal}, config.PlaybackOperatorConfig{})
+
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), operatorPolicy.MaxQualityRung)
+
+	input := buildDecisionInput(
+		req,
+		truth,
+		resolvedCaps,
+		cfg,
+		operatorPolicy,
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		hostRuntime,
+	)
+	_, dec, prob := decision.Decide(context.Background(), input, req.SchemaType)
+	require.Nil(t, prob)
+	require.NotNil(t, dec)
+	assert.Equal(t, "quality", dec.Trace.RequestedIntent)
+	assert.Equal(t, "compatible", dec.Trace.ResolvedIntent)
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), dec.Trace.MaxQualityRung)
+	assert.True(t, dec.Trace.OverrideApplied)
+}
+
+func TestService_ApplyPlaybackFeedbackPolicy_ClampsToCompatibleAfterRepeatedNetworkWarnings(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-network-warning.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+	cfg := config.AppConfig{
+		FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+		HLS:    config.HLSConfig{Root: "/tmp/hls"},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-network-warning",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg:         cfg,
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	for idx := range []int{0, 1, 2} {
+		require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+			ObservedAt:        now.Add(time.Duration(idx-3) * time.Minute),
+			RequestID:         "fb-network-warning-" + string(rune('a'+idx)),
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      104,
+		}))
+	}
+
+	operatorPolicy, _ := svc.applyPlaybackFeedbackPolicy(context.Background(), serviceRef, req, truth, resolvedCaps, requestHostContext{
+		Snapshot: hostSnapshotForRequest(hostRuntime),
+	}, playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal}, config.PlaybackOperatorConfig{})
+
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), operatorPolicy.MaxQualityRung)
+
+	input := buildDecisionInput(
+		req,
+		truth,
+		resolvedCaps,
+		cfg,
+		operatorPolicy,
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		hostRuntime,
+	)
+	_, dec, prob := decision.Decide(context.Background(), input, req.SchemaType)
+	require.Nil(t, prob)
+	require.NotNil(t, dec)
+	assert.Equal(t, "quality", dec.Trace.RequestedIntent)
+	assert.Equal(t, "compatible", dec.Trace.ResolvedIntent)
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), dec.Trace.MaxQualityRung)
+	assert.True(t, dec.Trace.OverrideApplied)
+}
+
+func TestService_ApplyPlaybackFeedbackPolicy_DelaysSoftWarningClampAfterRecoveryStart(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-recovered-warning.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+	cfg := config.AppConfig{
+		FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+		HLS:    config.HLSConfig{Root: "/tmp/hls"},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-recovered-warning",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg:         cfg,
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+		ObservedAt:        now.Add(-3 * time.Minute),
+		RequestID:         "fb-warning-recent",
+		ObservationKind:   "feedback",
+		Outcome:           "warning",
+		SourceRef:         serviceRef,
+		SourceFingerprint: sourceFingerprint,
+		SubjectKind:       string(PlaybackSubjectRecording),
+		HostFingerprint:   hostFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		FeedbackEvent:     "warning",
+		FeedbackCode:      101,
+	}))
+	require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+		ObservedAt:        now.Add(-4 * time.Minute),
+		RequestID:         "fb-recovered-before-warning",
+		ObservationKind:   "feedback",
+		Outcome:           "started",
+		SourceRef:         serviceRef,
+		SourceFingerprint: sourceFingerprint,
+		SubjectKind:       string(PlaybackSubjectRecording),
+		HostFingerprint:   hostFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		FeedbackEvent:     "info",
+		FeedbackCode:      211,
+	}))
+
+	operatorPolicy, _ := svc.applyPlaybackFeedbackPolicy(context.Background(), serviceRef, req, truth, resolvedCaps, requestHostContext{
+		Snapshot: hostSnapshotForRequest(hostRuntime),
+	}, playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal}, config.PlaybackOperatorConfig{})
+
+	assert.Empty(t, operatorPolicy.MaxQualityRung)
+
+	input := buildDecisionInput(
+		req,
+		truth,
+		resolvedCaps,
+		cfg,
+		operatorPolicy,
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		hostRuntime,
+	)
+	_, dec, prob := decision.Decide(context.Background(), input, req.SchemaType)
+	require.Nil(t, prob)
+	require.NotNil(t, dec)
+	assert.Equal(t, "quality", dec.Trace.RequestedIntent)
+	assert.Equal(t, "quality", dec.Trace.ResolvedIntent)
+	assert.Empty(t, dec.Trace.MaxQualityRung)
+	assert.False(t, dec.Trace.OverrideApplied)
+}
+
+func TestService_ApplyPlaybackFeedbackPolicy_MatchingRecoveryTrustDelaysSoftWarningClampFurther(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-recovered-warning-trust.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+	cfg := config.AppConfig{
+		FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+		HLS:    config.HLSConfig{Root: "/tmp/hls"},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-recovered-warning-trust",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg:         cfg,
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	for idx := range []int{0, 1, 2, 3} {
+		require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+			ObservedAt:        now.Add(time.Duration(idx-4) * time.Minute),
+			RequestID:         "fb-warning-trust-" + string(rune('a'+idx)),
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      101,
+		}))
+	}
+	for idx := range []int{0, 1} {
+		require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+			ObservedAt:        now.Add(time.Duration(-5-idx) * time.Minute),
+			RequestID:         "fb-recovered-trust-" + string(rune('a'+idx)),
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      211,
+		}))
+	}
+
+	operatorPolicy, _ := svc.applyPlaybackFeedbackPolicy(context.Background(), serviceRef, req, truth, resolvedCaps, requestHostContext{
+		Snapshot: hostSnapshotForRequest(hostRuntime),
+	}, playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal}, config.PlaybackOperatorConfig{})
+
+	assert.Empty(t, operatorPolicy.MaxQualityRung)
+
+	input := buildDecisionInput(
+		req,
+		truth,
+		resolvedCaps,
+		cfg,
+		operatorPolicy,
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		hostRuntime,
+	)
+	_, dec, prob := decision.Decide(context.Background(), input, req.SchemaType)
+	require.Nil(t, prob)
+	require.NotNil(t, dec)
+	assert.Equal(t, "quality", dec.Trace.RequestedIntent)
+	assert.Equal(t, "quality", dec.Trace.ResolvedIntent)
+	assert.Empty(t, dec.Trace.MaxQualityRung)
+	assert.False(t, dec.Trace.OverrideApplied)
+}
+
+func TestService_ResolvePlaybackInfo_ClampsToRepairAfterRepeatedStallFailures(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-repair.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:     playback.MediaStatusReady,
+		Container:  "mpegts",
+		VideoCodec: "mpeg2",
+		AudioCodec: "ac3",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-repair",
+		RequestedProfile: "compatible",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "windows",
+				Model:     "desktop",
+				OSName:    "windows",
+				OSVersion: "11",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	for idx := range []int{0, 1} {
+		require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+			ObservedAt:        now.Add(time.Duration(idx-2) * time.Minute),
+			RequestID:         "fb-repair-" + string(rune('a'+idx)),
+			ObservationKind:   "feedback",
+			Outcome:           "failed",
+			SourceRef:         serviceRef,
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       string(PlaybackSubjectRecording),
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "error",
+			FeedbackCode:      4,
+		}))
+	}
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), req)
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "compatible", res.Decision.Trace.RequestedIntent)
+	assert.Equal(t, "repair", res.Decision.Trace.ResolvedIntent)
+	assert.Equal(t, string(playbackprofile.RungRepairH264AAC), res.Decision.Trace.MaxQualityRung)
+	assert.True(t, res.Decision.Trace.OverrideApplied)
+}
+
+func TestService_ResolvePlaybackInfo_SingleDecodeFailureTriggersConfidenceClamp(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/feedback-single-decode-failure.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-feedback-single-decode-failure",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+
+	require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+		ObservedAt:        time.Now().UTC().Add(-1 * time.Minute),
+		RequestID:         "fb-single-decode-failure",
+		ObservationKind:   "feedback",
+		Outcome:           "failed",
+		SourceRef:         serviceRef,
+		SourceFingerprint: sourceFingerprint,
+		SubjectKind:       string(PlaybackSubjectRecording),
+		HostFingerprint:   hostFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		FeedbackEvent:     "error",
+		FeedbackCode:      3,
+	}))
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), req)
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "degrade", res.RuntimePolicyAction)
+	assert.Equal(t, "degraded", res.RuntimePolicyPhase)
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), res.Decision.Trace.MaxQualityRung)
+	assert.True(t, res.Decision.Trace.OverrideApplied)
+}
+
+func TestService_ResolvePlaybackInfo_PersistedCooldownCarriesForwardCompatibleClamp(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/persisted-cooldown.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-persisted-cooldown",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+		ObservedAt:        now.Add(-20 * time.Second),
+		RequestID:         "fb-persisted-cooldown-started",
+		ObservationKind:   "feedback",
+		Outcome:           "started",
+		SourceRef:         serviceRef,
+		SourceFingerprint: sourceFingerprint,
+		SubjectKind:       string(PlaybackSubjectRecording),
+		HostFingerprint:   hostFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		FeedbackEvent:     "info",
+		FeedbackCode:      200,
+	}))
+
+	require.NoError(t, registry.RememberPlaybackPolicyState(context.Background(), capreg.PlaybackPolicyState{
+		SubjectKind:       string(PlaybackSubjectRecording),
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		MaxQualityRung:    playbackprofile.RungCompatibleVideoH264CRF23,
+		Confidence: runtimepolicy.ConfidenceSnapshot{
+			Score:             -18,
+			State:             runtimepolicy.ConfidenceRecovery,
+			WindowCount:       2,
+			CooldownUntil:     now.Add(20 * time.Second),
+			PolicyConstraints: []string{runtimepolicy.ConstraintCooldownActive, runtimepolicy.ConstraintNoProbeUp},
+			Reasons:           []string{runtimepolicy.ReasonNetworkRecentlyUnstable},
+		},
+		UpdatedAt: now,
+	}))
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), req)
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "cooldown", res.RuntimePolicyAction)
+	assert.Equal(t, "cooldown", res.RuntimePolicyPhase)
+	assert.Empty(t, res.RuntimeProbeCandidate)
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), res.Decision.Trace.MaxQualityRung)
+	assert.True(t, res.Decision.Trace.OverrideApplied)
+}
+
+func TestService_ResolvePlaybackInfo_PersistedHighConfidenceProbesRepairUpToCompatible(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/probe-up.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-persisted-probe-up",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+		ObservedAt:        now.Add(-20 * time.Second),
+		RequestID:         "fb-persisted-probe-up-started",
+		ObservationKind:   "feedback",
+		Outcome:           "started",
+		SourceRef:         serviceRef,
+		SourceFingerprint: sourceFingerprint,
+		SubjectKind:       string(PlaybackSubjectRecording),
+		HostFingerprint:   hostFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		FeedbackEvent:     "info",
+		FeedbackCode:      200,
+	}))
+
+	require.NoError(t, registry.RememberPlaybackPolicyState(context.Background(), capreg.PlaybackPolicyState{
+		SubjectKind:       string(PlaybackSubjectRecording),
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		MaxQualityRung:    playbackprofile.RungRepairH264AAC,
+		Confidence: runtimepolicy.ConfidenceSnapshot{
+			Score:       78,
+			State:       runtimepolicy.ConfidenceHigh,
+			StateSince:  now.Add(-15 * time.Second),
+			WindowCount: 6,
+			Reasons:     []string{runtimepolicy.ReasonHeadroomGood, runtimepolicy.ReasonCleanPlaybackWindow},
+		},
+		UpdatedAt: now.Add(-30 * time.Second),
+	}))
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), req)
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "probe_up", res.RuntimePolicyAction)
+	assert.Equal(t, "probing", res.RuntimePolicyPhase)
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), res.RuntimeProbeCandidate)
+	assert.Contains(t, res.RuntimePolicyReasons, runtimepolicy.ReasonProbeUpReady)
+	assert.Equal(t, 0, res.RuntimeProbeSuccessStreak)
+	assert.Equal(t, 0, res.RuntimeProbeFailureStreak)
+	assert.Equal(t, string(playbackprofile.RungCompatibleVideoH264CRF23), res.Decision.Trace.MaxQualityRung)
+	assert.True(t, res.Decision.Trace.OverrideApplied)
+}
+
+func TestService_ResolvePlaybackInfo_PersistedProbeSuccessAllowsNextUpgradeAtLowerScore(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/probe-success-persisted.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-persisted-probe-success",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	require.NoError(t, registry.RememberPlaybackPolicyState(context.Background(), capreg.PlaybackPolicyState{
+		SubjectKind:       string(PlaybackSubjectRecording),
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		MaxQualityRung:    playbackprofile.RungCompatibleVideoH264CRF23,
+		Confidence: runtimepolicy.ConfidenceSnapshot{
+			Score:              58,
+			State:              runtimepolicy.ConfidenceHigh,
+			StateSince:         now.Add(-15 * time.Second),
+			WindowCount:        6,
+			ProbeSuccessStreak: 1,
+			LastProbeEventAt:   now.Add(-30 * time.Second),
+			Reasons:            []string{runtimepolicy.ReasonHeadroomGood, runtimepolicy.ReasonCleanPlaybackWindow, runtimepolicy.ReasonProbeRecentlyConfirmed},
+		},
+		UpdatedAt: now,
+	}))
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), req)
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "probe_up", res.RuntimePolicyAction)
+	assert.Equal(t, "probing", res.RuntimePolicyPhase)
+	assert.Equal(t, string(playbackprofile.RungQualityVideoH264CRF20), res.RuntimeProbeCandidate)
+	assert.Contains(t, res.RuntimePolicyReasons, runtimepolicy.ReasonProbeRecentlyConfirmed)
+	assert.Equal(t, 1, res.RuntimeProbeSuccessStreak)
+	assert.Equal(t, 0, res.RuntimeProbeFailureStreak)
+	assert.Equal(t, string(playbackprofile.RungQualityVideoH264CRF20), res.Decision.Trace.MaxQualityRung)
+	assert.False(t, res.Decision.Trace.OverrideApplied)
+}
+
+func TestService_ResolvePlaybackInfo_PersistedProbeRegressionBlocksReprobeWithoutNewEvents(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/probe-regression-persisted.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-persisted-probe-regression",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	require.NoError(t, registry.RememberPlaybackPolicyState(context.Background(), capreg.PlaybackPolicyState{
+		SubjectKind:       string(PlaybackSubjectRecording),
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		MaxQualityRung:    playbackprofile.RungRepairH264AAC,
+		Confidence: runtimepolicy.ConfidenceSnapshot{
+			Score:              82,
+			State:              runtimepolicy.ConfidenceHigh,
+			StateSince:         now.Add(-15 * time.Second),
+			WindowCount:        6,
+			ProbeFailureStreak: 1,
+			LastProbeEventAt:   now.Add(-30 * time.Second),
+			Reasons:            []string{runtimepolicy.ReasonHeadroomGood, runtimepolicy.ReasonProbeRecentlyRegressed},
+		},
+		UpdatedAt: now,
+	}))
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), req)
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "hold", res.RuntimePolicyAction)
+	assert.Equal(t, "probe_regressed", res.RuntimePolicyPhase)
+	assert.Empty(t, res.RuntimeProbeCandidate)
+	assert.Contains(t, res.RuntimePolicyReasons, runtimepolicy.ReasonProbeRecentlyRegressed)
+	assert.Contains(t, res.RuntimePolicyConstraints, runtimepolicy.ConstraintNoProbeUp)
+	assert.Equal(t, 0, res.RuntimeProbeSuccessStreak)
+	assert.Equal(t, 1, res.RuntimeProbeFailureStreak)
+}
+
+func TestService_ResolvePlaybackInfo_ProbeRegressionBlocksImmediateReprobe(t *testing.T) {
+	allowTranscode := true
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/probe-regression.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	truth := playback.MediaTruth{
+		Status:            playback.MediaStatusReady,
+		Container:         "mpegts",
+		VideoCodec:        "mpeg2",
+		AudioCodec:        "ac3",
+		BitrateKbps:       9000,
+		BitrateConfidence: "high",
+		Width:             1920,
+		Height:            1080,
+		FPS:               25,
+	}
+	registry := capreg.NewMemoryStore()
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return truth, nil
+		},
+	}
+
+	req := PlaybackInfoRequest{
+		SubjectID:        recordingID,
+		SubjectKind:      PlaybackSubjectRecording,
+		APIVersion:       "v3.1",
+		SchemaType:       "compact",
+		RequestID:        "req-probe-regression",
+		RequestedProfile: "quality",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"hls", "mp4"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			DeviceType:           "browser",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "chromium_hlsjs",
+			ClientCapsSource:     "runtime",
+			AllowTranscode:       &allowTranscode,
+			DeviceContext: &capabilities.DeviceContext{
+				Platform:  "linux",
+				Model:     "desktop",
+				OSName:    "linux",
+				OSVersion: "6.12",
+			},
+		},
+	}
+
+	hostRuntime := playbackprofile.HostRuntimeSnapshot{PerformanceClass: "high"}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		capRegistry: registry,
+		hostRuntime: hostRuntime,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	resolvedCaps := domainrecordings.ResolveCapabilities(context.Background(), req.PrincipalID, req.APIVersion, req.RequestedProfile, req.Headers, req.Capabilities)
+	hostFingerprint := hostSnapshotForRequest(hostRuntime).Identity.Fingerprint()
+	deviceFingerprint := deviceIdentityForRequest(req, resolvedCaps).Fingerprint()
+	sourceFingerprint := svc.sourceSnapshotForRequest(context.Background(), serviceRef, req, truth).Fingerprint()
+	now := time.Now().UTC()
+
+	require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+		ObservedAt:        now.Add(-20 * time.Second),
+		RequestID:         "fb-probe-regression-started",
+		ObservationKind:   "feedback",
+		Outcome:           "started",
+		SourceRef:         serviceRef,
+		SourceFingerprint: sourceFingerprint,
+		SubjectKind:       string(PlaybackSubjectRecording),
+		HostFingerprint:   hostFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		FeedbackEvent:     "info",
+		FeedbackCode:      220,
+	}))
+	require.NoError(t, registry.RecordObservation(context.Background(), capreg.PlaybackObservation{
+		ObservedAt:        now.Add(-10 * time.Second),
+		RequestID:         "fb-probe-regression-warning",
+		ObservationKind:   "feedback",
+		Outcome:           "warning",
+		SourceRef:         serviceRef,
+		SourceFingerprint: sourceFingerprint,
+		SubjectKind:       string(PlaybackSubjectRecording),
+		HostFingerprint:   hostFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		FeedbackEvent:     "warning",
+		FeedbackCode:      104,
+	}))
+
+	require.NoError(t, registry.RememberPlaybackPolicyState(context.Background(), capreg.PlaybackPolicyState{
+		SubjectKind:       string(PlaybackSubjectRecording),
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		MaxQualityRung:    playbackprofile.RungRepairH264AAC,
+		Confidence: runtimepolicy.ConfidenceSnapshot{
+			Score:       78,
+			State:       runtimepolicy.ConfidenceHigh,
+			StateSince:  now.Add(-15 * time.Second),
+			WindowCount: 6,
+			Reasons:     []string{runtimepolicy.ReasonHeadroomGood, runtimepolicy.ReasonCleanPlaybackWindow},
+		},
+		UpdatedAt: now.Add(-30 * time.Second),
+	}))
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), req)
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "hold", res.RuntimePolicyAction)
+	assert.Equal(t, "probe_regressed", res.RuntimePolicyPhase)
+	assert.Empty(t, res.RuntimeProbeCandidate)
 }
 
 func TestService_ResolvePlaybackInfo_RecordingNativeHLSUsesFMP4Target(t *testing.T) {
@@ -268,6 +2118,13 @@ func verifiedLiveTruthSource(cap scan.Capability) *stubTruthSource {
 			if cap.ServiceRef == "" {
 				cap.ServiceRef = serviceRef
 			}
+			if cap.LastScan.IsZero() {
+				now := time.Now().UTC()
+				cap.LastScan = now
+				if cap.LastSuccess.IsZero() {
+					cap.LastSuccess = now
+				}
+			}
 			return cap, true
 		},
 	}
@@ -315,17 +2172,27 @@ func TestService_ResolvePlaybackInfo_LiveUsesScanTruthWhenAvailable(t *testing.T
 	truthSource := &stubTruthSource{
 		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
 			return scan.Capability{
-				ServiceRef: serviceRef,
-				State:      scan.CapabilityStateOK,
-				Container:  "ts",
-				VideoCodec: "hevc",
-				AudioCodec: "ac3",
-				Codec:      "hevc",
-				Resolution: "3840x2160",
-				Width:      3840,
-				Height:     2160,
-				FPS:        50,
-				Interlaced: true,
+				ServiceRef:         serviceRef,
+				State:              scan.CapabilityStateOK,
+				Container:          "ts",
+				VideoCodec:         "hevc",
+				AudioCodec:         "ac3",
+				Codec:              "hevc",
+				BitrateKbps:        8000,
+				BitrateMeanKbps:    9500,
+				BitratePeakKbps:    12000,
+				BitrateSamples:     4,
+				Resolution:         "3840x2160",
+				Width:              3840,
+				Height:             2160,
+				FPS:                25,
+				SignalFPS:          50,
+				Interlaced:         true,
+				FieldOrder:         "tt",
+				AudioChannels:      6,
+				AudioBitrateKbps:   384,
+				AudioSampleRate:    48000,
+				AudioChannelLayout: "5.1(side)",
 			}, true
 		},
 	}
@@ -350,10 +2217,21 @@ func TestService_ResolvePlaybackInfo_LiveUsesScanTruthWhenAvailable(t *testing.T
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "hevc", res.Truth.VideoCodec)
 	assert.Equal(t, "ac3", res.Truth.AudioCodec)
+	assert.Equal(t, 10200, res.Truth.BitrateKbps)
+	assert.Equal(t, 8000, res.Truth.BitrateObservedKbps)
+	assert.Equal(t, 12000, res.Truth.BitratePeakKbps)
+	assert.Equal(t, 4, res.Truth.BitrateSamples)
+	assert.Equal(t, "high", res.Truth.BitrateConfidence)
 	assert.Equal(t, 3840, res.Truth.Width)
 	assert.Equal(t, 2160, res.Truth.Height)
-	assert.Equal(t, 50.0, res.Truth.FPS)
+	assert.Equal(t, 25.0, res.Truth.FPS)
+	assert.Equal(t, 50.0, res.Truth.SignalFPS)
 	assert.True(t, res.Truth.Interlaced)
+	assert.Equal(t, "tt", res.Truth.FieldOrder)
+	assert.Equal(t, 6, res.Truth.AudioChannels)
+	assert.Equal(t, 384, res.Truth.AudioBitrateKbps)
+	assert.Equal(t, 48000, res.Truth.AudioSampleRate)
+	assert.Equal(t, "5.1(side)", res.Truth.AudioChannelLayout)
 	assert.Equal(t, 0, recSvc.truthCalls)
 	assert.Equal(t, 1, truthSource.calls)
 	assert.Equal(t, "1:0:1:2B66:3F3:1:C00000:0:0:0:", truthSource.lastServiceRef)
@@ -589,6 +2467,69 @@ func TestService_ResolvePlaybackInfo_LiveMissingScanTruthUsesTargetedProbe(t *te
 	assert.Equal(t, "1:0:1:2B66:3F3:1:C00000:0:0:0:", truthSource.lastProbeRef)
 }
 
+func TestService_ResolvePlaybackInfo_LiveIncompleteScanTruthUsesTargetedProbe(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+
+	staleCapability := scan.Capability{
+		ServiceRef: "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		State:      scan.CapabilityStateOK,
+		VideoCodec: "h264",
+		Codec:      "h264",
+		Resolution: "1920x1080",
+		Width:      1920,
+		Height:     1080,
+	}
+	probedCapability := scan.Capability{
+		ServiceRef: "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		State:      scan.CapabilityStateOK,
+		Container:  "ts",
+		VideoCodec: "h264",
+		AudioCodec: "ac3",
+		Codec:      "h264",
+		Resolution: "1920x1080",
+		Width:      1920,
+		Height:     1080,
+	}
+
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return staleCapability, true
+		},
+		probeCapabilityFn: func(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+			return probedCapability, true, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-incomplete-targeted-probe",
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "ts", res.Truth.Container)
+	assert.Equal(t, "h264", res.Truth.VideoCodec)
+	assert.Equal(t, "ac3", res.Truth.AudioCodec)
+	assert.Equal(t, 1, truthSource.calls)
+	assert.Equal(t, 1, truthSource.probeCalls)
+}
+
 func TestService_ResolvePlaybackInfo_LiveTargetedProbeFailureStillFailsClosed(t *testing.T) {
 	recSvc := &stubRecordingsService{
 		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
@@ -631,6 +2572,121 @@ func TestService_ResolvePlaybackInfo_LiveTargetedProbeFailureStillFailsClosed(t 
 	assert.Equal(t, "failed", err.TruthState)
 	assert.Equal(t, "failed_scan_truth", err.TruthReason)
 	assert.Contains(t, err.ProblemFlags, "failed_scan_truth")
+	assert.Equal(t, 1, truthSource.probeCalls)
+}
+
+func TestService_ResolvePlaybackInfo_LiveStaleScanTruthUsesTargetedProbe(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+
+	staleCapability := scan.Capability{
+		ServiceRef:  "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		State:       scan.CapabilityStateOK,
+		Container:   "ts",
+		VideoCodec:  "h264",
+		AudioCodec:  "aac",
+		Codec:       "h264",
+		Resolution:  "1920x1080",
+		Width:       1920,
+		Height:      1080,
+		FPS:         25,
+		LastScan:    time.Now().UTC().Add(-3 * time.Hour),
+		LastSuccess: time.Now().UTC().Add(-3 * time.Hour),
+	}
+	probedCapability := staleCapability
+	probedCapability.AudioCodec = "ac3"
+	probedCapability.LastScan = time.Now().UTC()
+	probedCapability.LastSuccess = time.Now().UTC()
+
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return staleCapability, true
+		},
+		probeCapabilityFn: func(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+			return probedCapability, true, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-stale-targeted-probe",
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "ts", res.Truth.Container)
+	assert.Equal(t, "h264", res.Truth.VideoCodec)
+	assert.Equal(t, "ac3", res.Truth.AudioCodec)
+	assert.Equal(t, 1, truthSource.calls)
+	assert.Equal(t, 1, truthSource.probeCalls)
+}
+
+func TestService_ResolvePlaybackInfo_LiveStaleScanTruthFailsClosedWithoutFreshProbe(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+
+	staleCapability := scan.Capability{
+		ServiceRef:  "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		State:       scan.CapabilityStateOK,
+		Container:   "ts",
+		VideoCodec:  "h264",
+		AudioCodec:  "aac",
+		Codec:       "h264",
+		Resolution:  "1920x1080",
+		Width:       1920,
+		Height:      1080,
+		FPS:         25,
+		LastScan:    time.Now().UTC().Add(-3 * time.Hour),
+		LastSuccess: time.Now().UTC().Add(-3 * time.Hour),
+	}
+
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return staleCapability, true
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	_, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-stale-no-fresh-probe",
+	})
+	require.NotNil(t, err)
+	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
+	assert.Equal(t, "unverified", err.TruthState)
+	assert.Equal(t, "stale_scan_truth", err.TruthReason)
+	assert.Contains(t, err.ProblemFlags, "stale_scan_truth")
+	assert.Equal(t, 1, truthSource.calls)
 	assert.Equal(t, 1, truthSource.probeCalls)
 }
 
@@ -679,6 +2735,7 @@ func TestService_ResolvePlaybackInfo_LiveIncompleteScanTruthFailsClosed(t *testi
 	assert.Contains(t, err.ProblemFlags, "partial_scan_truth")
 	assert.Equal(t, 0, recSvc.truthCalls)
 	assert.Equal(t, 1, truthSource.calls)
+	assert.Equal(t, 1, truthSource.probeCalls)
 }
 
 func TestService_ResolvePlaybackInfo_LiveInactiveEventFeedFailsClosed(t *testing.T) {

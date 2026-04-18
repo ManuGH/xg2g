@@ -1,6 +1,8 @@
 import type { CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { ChipState } from './ui/StatusChip';
+import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import {
   useSystemHealth,
   useReceiverCurrent,
@@ -8,16 +10,30 @@ import {
   useDvrStatus
 } from '../hooks/useServerQueries';
 import { toAppError } from '../lib/appErrors';
-import { Card, StatusChip } from './ui';
+import { buildEpgRoute, buildRecordingsRoute, buildSettingsRoute, ROUTE_MAP } from '../routes';
+import { Button, Card, StatusChip } from './ui';
 import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
 import StreamsList from './StreamsList';
 import styles from './Dashboard.module.css';
 
 type SummaryTone = 'streaming' | 'control' | 'standby';
+type GuidedCard = {
+  id: 'live' | 'recordings' | 'settings';
+  stepLabel: string;
+  title: string;
+  description: string;
+  detail: string;
+  actionLabel: string;
+  chip: { state: ChipState; label: string };
+  disabled?: boolean;
+  onAction: () => void;
+};
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { canAccessDvrPlayback, canManageDvr, canAccessSettings } = useHouseholdProfiles();
   const { data: health, error, isLoading, refetch } = useSystemHealth();
   const { data: receiver } = useReceiverCurrent();
   const { data: streams = [] } = useStreams();
@@ -65,7 +81,7 @@ export default function Dashboard() {
       ? t('dashboard.heroStandbySummary')
       : next?.title
         ? t('dashboard.heroNextUp', { title: next.title })
-        : t('dashboard.readOnlySummary');
+        : t('dashboard.heroDefaultSummary');
 
   const healthChip = mapHealthChip(health.status, t);
   const guideHealthLabel = missingChannels === 0
@@ -121,6 +137,111 @@ export default function Dashboard() {
       detail: healthChip.label
     }
   ];
+  const guidedCards: GuidedCard[] = [
+    {
+      id: 'live',
+      stepLabel: t('dashboard.start.live.step', { defaultValue: 'Step 1' }),
+      title: t('dashboard.start.live.title', { defaultValue: 'Watch live TV' }),
+      description: t('dashboard.start.live.description', {
+        defaultValue: 'Open the guide, browse channels and start playback from the simplest entry point.',
+      }),
+      detail: receiverUnavailable
+        ? t('dashboard.start.live.detailStandby', {
+          defaultValue: 'The receiver is in standby. Wake it first so guide and channel data can refresh.',
+        })
+        : t('dashboard.start.live.detailReady', {
+          defaultValue: 'Guide, channel list and timer planning now live in one place.',
+        }),
+      actionLabel: t('dashboard.start.live.action', { defaultValue: 'Open Live TV' }),
+      chip: receiverUnavailable
+        ? { state: 'warning', label: t('dashboard.start.status.standby', { defaultValue: 'Receiver in standby' }) }
+        : { state: 'success', label: t('dashboard.start.status.ready', { defaultValue: 'Ready now' }) },
+      onAction: () => navigate(ROUTE_MAP.epg),
+    },
+    {
+      id: 'recordings',
+      stepLabel: t('dashboard.start.recordings.step', { defaultValue: 'Step 2' }),
+      title: t('dashboard.start.recordings.title', { defaultValue: 'Open recordings' }),
+      description: t('dashboard.start.recordings.description', {
+        defaultValue: 'Resume unfinished sessions, browse folders and keep DVR playback separate from live TV.',
+      }),
+      detail: canAccessDvrPlayback
+        ? canManageDvr
+          ? t('dashboard.start.recordings.detailManage', {
+            defaultValue: 'Series rules stay inside this area when you need them.',
+          })
+          : t('dashboard.start.recordings.detailWatch', {
+            defaultValue: 'This profile can watch recordings but not change DVR rules.',
+          })
+        : t('dashboard.start.recordings.detailBlocked', {
+          defaultValue: 'This profile cannot open recordings right now.',
+        }),
+      actionLabel: t('dashboard.start.recordings.action', { defaultValue: 'Open Recordings' }),
+      chip: canAccessDvrPlayback
+        ? { state: 'success', label: t('dashboard.start.status.available', { defaultValue: 'Available in this profile' }) }
+        : { state: 'warning', label: t('dashboard.start.status.blocked', { defaultValue: 'Blocked in this profile' }) },
+      disabled: !canAccessDvrPlayback,
+      onAction: () => navigate(buildRecordingsRoute()),
+    },
+    {
+      id: 'settings',
+      stepLabel: t('dashboard.start.settings.step', { defaultValue: 'Step 3' }),
+      title: t('dashboard.start.settings.title', { defaultValue: 'Setup and household' }),
+      description: t('dashboard.start.settings.description', {
+        defaultValue: 'Receiver setup, household profiles and streaming defaults all stay under Settings.',
+      }),
+      detail: canAccessSettings
+        ? t('dashboard.start.settings.detailReady', {
+          defaultValue: 'Use this when a family member needs setup help instead of direct expert tools.',
+        })
+        : t('dashboard.start.settings.detailBlocked', {
+          defaultValue: 'This profile cannot open settings right now.',
+        }),
+      actionLabel: t('dashboard.start.settings.action', { defaultValue: 'Open Setup' }),
+      chip: canAccessSettings
+        ? { state: 'success', label: t('dashboard.start.status.available', { defaultValue: 'Available in this profile' }) }
+        : { state: 'warning', label: t('dashboard.start.status.blocked', { defaultValue: 'Blocked in this profile' }) },
+      disabled: !canAccessSettings,
+      onAction: () => navigate(buildSettingsRoute({ section: 'setup' })),
+    },
+  ];
+  const directActions = [
+    canAccessSettings
+      ? {
+        id: 'household',
+        label: t('settings.household.title', { defaultValue: 'Household profiles' }),
+        onAction: () => navigate(buildSettingsRoute({ section: 'household' })),
+      }
+      : null,
+    canManageDvr
+      ? {
+        id: 'timers',
+        label: t('nav.timers', { defaultValue: 'Timers' }),
+        onAction: () => navigate(buildEpgRoute('timers')),
+      }
+      : null,
+    canManageDvr
+      ? {
+        id: 'series',
+        label: t('recordings.seriesRulesAction', { defaultValue: 'Series Rules' }),
+        onAction: () => navigate(buildRecordingsRoute({ section: 'series' })),
+      }
+      : null,
+    canAccessSettings
+      ? {
+        id: 'files',
+        label: t('nav.files', { defaultValue: 'Files' }),
+        onAction: () => navigate(buildSettingsRoute({ section: 'advanced', tool: 'files' })),
+      }
+      : null,
+    canAccessSettings
+      ? {
+        id: 'logs',
+        label: t('nav.logs', { defaultValue: 'Logs' }),
+        onAction: () => navigate(buildSettingsRoute({ section: 'advanced', tool: 'logs' })),
+      }
+      : null,
+  ].filter((action): action is { id: string; label: string; onAction: () => void } => action !== null);
 
   return (
     <div className={`${styles.page} animate-enter`.trim()} data-testid="dashboard-view">
@@ -176,6 +297,73 @@ export default function Dashboard() {
           </div>
         ) : null}
       </Card>
+
+      <Card className={styles.startSurface}>
+        <div className={styles.startHeader}>
+          <div>
+            <p className={styles.panelEyebrow}>{t('dashboard.start.eyebrow', { defaultValue: 'Start here' })}</p>
+            <h3 className={styles.panelTitle}>{t('dashboard.start.title', { defaultValue: 'Choose the task, not the tool' })}</h3>
+          </div>
+          <p className={styles.startSubtitle}>
+            {t('dashboard.start.subtitle', {
+              defaultValue: 'Each area now follows the household task first. Direct expert paths stay separate below.',
+            })}
+          </p>
+        </div>
+
+        <div className={styles.startGrid}>
+          {guidedCards.map((card) => (
+            <div key={card.id} className={styles.startCard}>
+              <div className={styles.startCardHeader}>
+                <div>
+                  <p className={styles.startStep}>{card.stepLabel}</p>
+                  <h4 className={styles.startCardTitle}>{card.title}</h4>
+                </div>
+                <StatusChip state={card.chip.state} label={card.chip.label} />
+              </div>
+              <p className={styles.startCardDescription}>{card.description}</p>
+              <p className={styles.startCardDetail}>{card.detail}</p>
+              <Button
+                variant={card.id === 'live' ? 'primary' : 'secondary'}
+                className={styles.startAction}
+                onClick={card.onAction}
+                disabled={card.disabled}
+              >
+                {card.actionLabel}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {directActions.length > 0 && (
+        <Card className={styles.shortcutsSurface}>
+          <div className={styles.panelHeader}>
+            <div>
+              <p className={styles.panelEyebrow}>{t('dashboard.shortcuts.eyebrow', { defaultValue: 'Direct paths' })}</p>
+              <h3 className={styles.panelTitle}>{t('dashboard.shortcuts.title', { defaultValue: 'Open a specific area directly' })}</h3>
+            </div>
+          </div>
+          <p className={styles.shortcutsDescription}>
+            {t('dashboard.shortcuts.subtitle', {
+              defaultValue: 'Use these shortcuts when you already know the exact destination.',
+            })}
+          </p>
+          <div className={styles.shortcutsActions}>
+            {directActions.map((action) => (
+              <Button
+                key={action.id}
+                variant="ghost"
+                size="sm"
+                className={styles.shortcutButton}
+                onClick={action.onAction}
+              >
+                {action.label}
+              </Button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <section className={styles.diagnosticsGrid}>
         <Card className={styles.streamSurface}>

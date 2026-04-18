@@ -10,6 +10,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -451,6 +452,12 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 		Client:              buildStartClientSnapshot(intent, now),
 		HostPressureBand:    string(resolution.hostPressureBand),
 		HostOverrideApplied: resolution.hostOverrideApplied,
+	}
+	if session.ContextData == nil {
+		session.ContextData = make(map[string]string, 2)
+	}
+	if targetStep := runtimepolicy.PlaybackLadderStepFromTargetProfile(session.PlaybackTrace.TargetProfile, playbackprofile.NormalizeQualityRung(videoQualityRung)); targetStep != runtimepolicy.PlaybackStepUnknown {
+		session.ContextData[model.CtxKeyRuntimeTargetStep] = string(targetStep)
 	}
 	return session
 }

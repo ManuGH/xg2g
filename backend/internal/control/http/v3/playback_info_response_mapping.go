@@ -26,7 +26,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
-func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope string) PlaybackInfo {
+func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int) PlaybackInfo {
 	proto := decision.ProtocolFrom(dec)
 	var mode PlaybackInfoMode
 	var url string
@@ -53,7 +53,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 
 	primaryStr := decision.ReasonPrimaryFrom(dec, nil)
 	mainReason := PlaybackInfoReason(primaryStr)
-	decDTO := buildPlaybackDecisionDTO(id, dec, url, resolvedCaps, requestProfile, operatorRuleName, operatorRuleScope)
+	decDTO := buildPlaybackDecisionDTO(id, dec, url, resolvedCaps, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate, runtimePolicyReasons, runtimePolicyConstraints, runtimeProbeSuccessStreak, runtimeProbeFailureStreak)
 	resDTO := buildPlaybackResumeSummary(rState)
 
 	var finalURL *string
@@ -89,7 +89,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	return info
 }
 
-func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope string) PlaybackDecision {
+func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int) PlaybackDecision {
 	var decDTO PlaybackDecision
 	decDTO.Mode = PlaybackDecisionMode(dec.Mode)
 	decDTO.Selected.Container = dec.Selected.Container
@@ -177,7 +177,7 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, res
 		clientFamily := resolvedCaps.ClientFamilyFallback
 		decDTO.Trace.ClientFamily = &clientFamily
 	}
-	if dec.Trace.ForcedIntent != "" || dec.Trace.MaxQualityRung != "" || dec.Trace.OverrideApplied {
+	if dec.Trace.ForcedIntent != "" || dec.Trace.MaxQualityRung != "" || dec.Trace.OverrideApplied || runtimePolicyAction != "" || runtimePolicyPhase != "" || runtimeProbeCandidate != "" || len(runtimePolicyReasons) > 0 || len(runtimePolicyConstraints) > 0 || runtimeProbeSuccessStreak > 0 || runtimeProbeFailureStreak > 0 {
 		operator := PlaybackTraceOperator{
 			ClientFallbackDisabled: boolPtr(false),
 			OverrideApplied:        boolPtr(dec.Trace.OverrideApplied),
@@ -197,6 +197,34 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, res
 		if operatorRuleScope != "" {
 			ruleScope := operatorRuleScope
 			operator.RuleScope = &ruleScope
+		}
+		if runtimePolicyAction != "" {
+			action := runtimePolicyAction
+			operator.RuntimePolicyAction = &action
+		}
+		if runtimePolicyPhase != "" {
+			phase := runtimePolicyPhase
+			operator.RuntimePolicyPhase = &phase
+		}
+		if runtimeProbeCandidate != "" {
+			candidate := runtimeProbeCandidate
+			operator.RuntimeProbeCandidate = &candidate
+		}
+		if len(runtimePolicyReasons) > 0 {
+			reasons := append([]string(nil), runtimePolicyReasons...)
+			operator.RuntimePolicyReasons = &reasons
+		}
+		if len(runtimePolicyConstraints) > 0 {
+			constraints := append([]string(nil), runtimePolicyConstraints...)
+			operator.RuntimePolicyConstraints = &constraints
+		}
+		if runtimeProbeSuccessStreak > 0 {
+			successStreak := runtimeProbeSuccessStreak
+			operator.RuntimeProbeSuccessStreak = &successStreak
+		}
+		if runtimeProbeFailureStreak > 0 {
+			failureStreak := runtimeProbeFailureStreak
+			operator.RuntimeProbeFailureStreak = &failureStreak
 		}
 		decDTO.Trace.Operator = &operator
 	}

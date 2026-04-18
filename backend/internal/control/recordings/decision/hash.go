@@ -29,14 +29,15 @@ func (i DecisionInput) CanonicalJSONForHash() ([]byte, error) {
 
 	c := canonicalInput{
 		Source: canonicalSource{
-			Container:   robustNorm(i.Source.Container),
-			VideoCodec:  robustNorm(i.Source.VideoCodec),
-			AudioCodec:  robustNorm(i.Source.AudioCodec),
-			BitrateKbps: i.Source.BitrateKbps,
-			Width:       i.Source.Width,
-			Height:      i.Source.Height,
-			FPS:         i.Source.FPS,
-			Interlaced:  i.Source.Interlaced,
+			Container:         robustNorm(i.Source.Container),
+			VideoCodec:        robustNorm(i.Source.VideoCodec),
+			AudioCodec:        robustNorm(i.Source.AudioCodec),
+			BitrateKbps:       i.Source.BitrateKbps,
+			BitrateConfidence: normalizeBitrateConfidence(i.Source.BitrateConfidence),
+			Width:             i.Source.Width,
+			Height:            i.Source.Height,
+			FPS:               i.Source.FPS,
+			Interlaced:        i.Source.Interlaced,
 		},
 		Capabilities: canonicalCapabilities{
 			Version:       i.Capabilities.Version,
@@ -71,14 +72,15 @@ func (i DecisionInput) CanonicalJSON() ([]byte, error) {
 
 	c := canonicalInputFull{
 		Source: canonicalSource{
-			Container:   robustNorm(i.Source.Container),
-			VideoCodec:  robustNorm(i.Source.VideoCodec),
-			AudioCodec:  robustNorm(i.Source.AudioCodec),
-			BitrateKbps: i.Source.BitrateKbps,
-			Width:       i.Source.Width,
-			Height:      i.Source.Height,
-			FPS:         i.Source.FPS,
-			Interlaced:  i.Source.Interlaced,
+			Container:         robustNorm(i.Source.Container),
+			VideoCodec:        robustNorm(i.Source.VideoCodec),
+			AudioCodec:        robustNorm(i.Source.AudioCodec),
+			BitrateKbps:       i.Source.BitrateKbps,
+			BitrateConfidence: normalizeBitrateConfidence(i.Source.BitrateConfidence),
+			Width:             i.Source.Width,
+			Height:            i.Source.Height,
+			FPS:               i.Source.FPS,
+			Interlaced:        i.Source.Interlaced,
 		},
 		Capabilities: canonicalCapabilities{
 			Version:       i.Capabilities.Version,
@@ -154,14 +156,15 @@ type canonicalInput struct {
 }
 
 type canonicalSource struct {
-	Container   string  `json:"c"`
-	VideoCodec  string  `json:"v"`
-	AudioCodec  string  `json:"a"`
-	BitrateKbps int     `json:"br"`
-	Width       int     `json:"w"`
-	Height      int     `json:"h"`
-	FPS         float64 `json:"fps"`
-	Interlaced  bool    `json:"interlaced,omitempty"`
+	Container         string  `json:"c"`
+	VideoCodec        string  `json:"v"`
+	AudioCodec        string  `json:"a"`
+	BitrateKbps       int     `json:"br"`
+	BitrateConfidence string  `json:"brc,omitempty"`
+	Width             int     `json:"w"`
+	Height            int     `json:"h"`
+	FPS               float64 `json:"fps"`
+	Interlaced        bool    `json:"interlaced,omitempty"`
 }
 
 type canonicalCapabilities struct {
@@ -187,7 +190,9 @@ type canonicalOperatorPolicy struct {
 }
 
 type canonicalHostPolicy struct {
-	PressureBand string `json:"pressureBand,omitempty"`
+	PressureBand     string `json:"pressureBand,omitempty"`
+	PerformanceClass string `json:"performanceClass,omitempty"`
+	BenchmarkClass   string `json:"benchmarkClass,omitempty"`
 }
 
 func canonicalizeOperatorPolicy(policy OperatorPolicy) *canonicalOperatorPolicy {
@@ -204,8 +209,14 @@ func canonicalizeOperatorPolicy(policy OperatorPolicy) *canonicalOperatorPolicy 
 
 func canonicalizeHostPolicy(policy HostPolicy) *canonicalHostPolicy {
 	pressureBand := string(playbackprofile.NormalizeHostPressureBand(string(policy.PressureBand)))
-	if pressureBand == "" {
+	performanceClass := normalizeHostPerformanceClass(policy.PerformanceClass)
+	benchmarkClass := normalizeHostBenchmarkClass(policy.BenchmarkClass)
+	if pressureBand == "" && performanceClass == "" && benchmarkClass == "" {
 		return nil
 	}
-	return &canonicalHostPolicy{PressureBand: pressureBand}
+	return &canonicalHostPolicy{
+		PressureBand:     pressureBand,
+		PerformanceClass: performanceClass,
+		BenchmarkClass:   benchmarkClass,
+	}
 }

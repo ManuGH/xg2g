@@ -25,14 +25,15 @@ type DecisionInput struct {
 
 // Source represents media truth (known container, codecs, etc.).
 type Source struct {
-	Container   string  `json:"c"`
-	VideoCodec  string  `json:"v"`
-	AudioCodec  string  `json:"a"`
-	BitrateKbps int     `json:"br"`
-	Width       int     `json:"w"`
-	Height      int     `json:"h"`
-	FPS         float64 `json:"fps"`
-	Interlaced  bool    `json:"interlaced,omitempty"`
+	Container         string  `json:"c"`
+	VideoCodec        string  `json:"v"`
+	AudioCodec        string  `json:"a"`
+	BitrateKbps       int     `json:"br"`
+	BitrateConfidence string  `json:"brc,omitempty"`
+	Width             int     `json:"w"`
+	Height            int     `json:"h"`
+	FPS               float64 `json:"fps"`
+	Interlaced        bool    `json:"interlaced,omitempty"`
 }
 
 // MaxVideoDimensions defines video resolution limits.
@@ -67,7 +68,9 @@ type OperatorPolicy struct {
 }
 
 type HostPolicy struct {
-	PressureBand playbackprofile.HostPressureBand `json:"pressureBand,omitempty"`
+	PressureBand     playbackprofile.HostPressureBand `json:"pressureBand,omitempty"`
+	PerformanceClass string                           `json:"performanceClass,omitempty"`
+	BenchmarkClass   string                           `json:"benchmarkClass,omitempty"`
 }
 
 // Decision represents a successful playback decision (HTTP 200).

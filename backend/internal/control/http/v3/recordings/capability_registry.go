@@ -135,16 +135,19 @@ func (s *Service) recordCapabilityObservation(ctx context.Context, sourceRef str
 
 func (s *Service) sourceSnapshotForRequest(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth) capreg.SourceSnapshot {
 	sourceSnapshot := capreg.SourceSnapshot{
-		SubjectKind:     string(req.SubjectKind),
-		Container:       truth.Container,
-		VideoCodec:      truth.VideoCodec,
-		AudioCodec:      truth.AudioCodec,
-		Width:           truth.Width,
-		Height:          truth.Height,
-		FPS:             truth.FPS,
-		Interlaced:      truth.Interlaced,
-		ReceiverContext: cloneReceiverContext(s.deps.ReceiverContext(ctx)),
-		UpdatedAt:       time.Now().UTC(),
+		SubjectKind:       string(req.SubjectKind),
+		Container:         truth.Container,
+		VideoCodec:        truth.VideoCodec,
+		AudioCodec:        truth.AudioCodec,
+		BitrateConfidence: truth.BitrateConfidence,
+		BitrateBucket:     sourceBitrateBucket(truth),
+		Width:             truth.Width,
+		Height:            truth.Height,
+		FPS:               truth.FPS,
+		SignalFPS:         sourceSignalFPS(truth),
+		Interlaced:        truth.Interlaced,
+		ReceiverContext:   cloneReceiverContext(s.deps.ReceiverContext(ctx)),
+		UpdatedAt:         time.Now().UTC(),
 	}
 
 	flags := make([]string, 0, 6)
@@ -193,6 +196,28 @@ func sourceTruthProblemFlags(truth playback.MediaTruth) []string {
 		flags = append(flags, "missing_audio_codec")
 	}
 	return flags
+}
+
+func sourceSignalFPS(truth playback.MediaTruth) float64 {
+	if truth.SignalFPS > 0 {
+		return truth.SignalFPS
+	}
+	return truth.FPS
+}
+
+func sourceBitrateBucket(truth playback.MediaTruth) string {
+	switch {
+	case truth.BitrateKbps >= 18000:
+		return "18m_plus"
+	case truth.BitrateKbps >= 9000:
+		return "9m_18m"
+	case truth.BitrateKbps >= 5000:
+		return "5m_9m"
+	case truth.BitrateKbps > 0:
+		return "sub5m"
+	default:
+		return ""
+	}
 }
 
 func deviceIdentityForRequest(req PlaybackInfoRequest, resolved capabilities.PlaybackCapabilities) capreg.DeviceIdentity {

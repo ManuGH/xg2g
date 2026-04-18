@@ -11,6 +11,7 @@ import (
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -58,6 +59,8 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		req.Capabilities,
 	)
 	hostContext := s.buildRequestHostContext(ctx)
+	hostPressure := s.deps.HostPressure(ctx)
+	operatorPolicy, runtimeFeedbackPolicy := s.applyPlaybackFeedbackPolicy(ctx, sourceRef, req, truth, resolvedCaps, hostContext, hostPressure, operatorPolicy)
 
 	input := buildDecisionInput(
 		req,
@@ -65,7 +68,8 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		resolvedCaps,
 		cfg,
 		operatorPolicy,
-		s.deps.HostPressure(ctx),
+		hostPressure,
+		hostContext.Snapshot.Runtime,
 	)
 
 	ctx = decision.WithShadowCollector(ctx, decision.NewShadowCollector())
@@ -91,14 +95,132 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
 
 	return PlaybackInfoResult{
-		SourceRef:            sourceRef,
-		Truth:                truth,
-		ResolvedCapabilities: resolvedCaps,
-		Decision:             dec,
-		ClientProfile:        req.ClientProfile,
-		OperatorRuleName:     operatorRuleName,
-		OperatorRuleScope:    operatorRuleScope,
+		SourceRef:                 sourceRef,
+		Truth:                     truth,
+		ResolvedCapabilities:      resolvedCaps,
+		Decision:                  dec,
+		ClientProfile:             req.ClientProfile,
+		OperatorRuleName:          operatorRuleName,
+		OperatorRuleScope:         operatorRuleScope,
+		RuntimePolicyAction:       playbackPolicyActionName(runtimeFeedbackPolicy),
+		RuntimePolicyPhase:        playbackPolicyPhaseName(runtimeFeedbackPolicy),
+		RuntimeProbeCandidate:     playbackPolicyProbeCandidateName(runtimeFeedbackPolicy),
+		RuntimePolicyReasons:      playbackPolicyReasonNames(runtimeFeedbackPolicy),
+		RuntimePolicyConstraints:  playbackPolicyConstraintNames(runtimeFeedbackPolicy),
+		RuntimeProbeSuccessStreak: playbackPolicyProbeSuccessStreak(runtimeFeedbackPolicy),
+		RuntimeProbeFailureStreak: playbackPolicyProbeFailureStreak(runtimeFeedbackPolicy),
 	}, nil
+}
+
+func playbackPolicyActionName(policy *playbackFeedbackPolicy) string {
+	if policy == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(policy.Policy.Action))
+}
+
+func playbackPolicyPhaseName(policy *playbackFeedbackPolicy) string {
+	if policy == nil {
+		return ""
+	}
+
+	action := strings.TrimSpace(string(policy.Policy.Action))
+	switch action {
+	case "probe_up":
+		return "probing"
+	case "cooldown":
+		return "cooldown"
+	case "degrade":
+		return "degraded"
+	case "lock_current":
+		return "recovering"
+	}
+
+	if playbackPolicyHasReason(policy, runtimepolicy.ReasonProbeRecentlyRegressed, runtimepolicy.ReasonProbeWindowRegressed) {
+		return "probe_regressed"
+	}
+
+	switch policy.Confidence.State {
+	case runtimepolicy.ConfidenceRecovery:
+		return "recovering"
+	case runtimepolicy.ConfidenceLow:
+		return "degraded"
+	case runtimepolicy.ConfidenceStable, runtimepolicy.ConfidenceHigh:
+		return "stable"
+	default:
+		return ""
+	}
+}
+
+func playbackPolicyProbeCandidateName(policy *playbackFeedbackPolicy) string {
+	if policy == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(policy.Policy.ProbeCandidate))
+}
+
+func playbackPolicyReasonNames(policy *playbackFeedbackPolicy) []string {
+	if policy == nil || len(policy.Policy.Reasons) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(policy.Policy.Reasons))
+	for _, reason := range policy.Policy.Reasons {
+		if strings.TrimSpace(reason) != "" {
+			out = append(out, reason)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func playbackPolicyConstraintNames(policy *playbackFeedbackPolicy) []string {
+	if policy == nil || len(policy.Policy.PolicyConstraints) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(policy.Policy.PolicyConstraints))
+	for _, constraint := range policy.Policy.PolicyConstraints {
+		if strings.TrimSpace(constraint) != "" {
+			out = append(out, constraint)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func playbackPolicyHasReason(policy *playbackFeedbackPolicy, reasons ...string) bool {
+	if policy == nil || len(reasons) == 0 {
+		return false
+	}
+	for _, candidate := range policy.Policy.Reasons {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		for _, reason := range reasons {
+			if candidate == strings.TrimSpace(reason) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func playbackPolicyProbeSuccessStreak(policy *playbackFeedbackPolicy) int {
+	if policy == nil {
+		return 0
+	}
+	return policy.Confidence.ProbeSuccessStreak
+}
+
+func playbackPolicyProbeFailureStreak(policy *playbackFeedbackPolicy) int {
+	if policy == nil {
+		return 0
+	}
+	return policy.Confidence.ProbeFailureStreak
 }
 
 func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoRequest, svc RecordingsService) (string, playback.MediaTruth, *PlaybackInfoError) {
@@ -121,8 +243,9 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 		}
 		source := s.deps.ChannelTruthSource()
 		truthResolution := resolveLiveTruthState(subjectID, source)
-		if !truthResolution.Verified() && truthResolution.Reason == "missing_scan_truth" {
+		if !truthResolution.Verified() && shouldProbeLiveTruth(truthResolution) {
 			if probeSource, ok := source.(channelTruthProbeSource); ok {
+				cachedResolution := truthResolution
 				probedCap, found, probeErr := probeSource.ProbeCapability(ctx, subjectID)
 				if probeErr != nil {
 					log.L().Warn().
@@ -130,7 +253,9 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 						Str("serviceRef", subjectID).
 						Msg("live playback truth probe failed")
 				}
-				truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found)
+				if found || cachedResolution.Reason == "missing_scan_truth" {
+					truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found, time.Now().UTC())
+				}
 			}
 		}
 		if !truthResolution.Verified() {
@@ -179,6 +304,15 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 	}
 }
 
+func shouldProbeLiveTruth(resolution liveTruthResolution) bool {
+	switch resolution.Reason {
+	case "missing_scan_truth", "partial_scan_truth", "incomplete_scan_truth", "failed_scan_truth", "stale_scan_truth":
+		return true
+	default:
+		return false
+	}
+}
+
 func playbackInfoErrorForLiveTruth(resolution liveTruthResolution) *PlaybackInfoError {
 	message := "Live media truth unavailable"
 	switch resolution.Reason {
@@ -186,6 +320,8 @@ func playbackInfoErrorForLiveTruth(resolution liveTruthResolution) *PlaybackInfo
 		message = "Live scan truth unavailable"
 	case "missing_scan_truth":
 		message = "Live media truth missing"
+	case "stale_scan_truth":
+		message = "Live media truth stale"
 	case "inactive_event_feed":
 		message = "Live event feed inactive"
 	case "partial_scan_truth", "incomplete_scan_truth":
@@ -474,25 +610,30 @@ func buildDecisionInput(
 	cfg config.AppConfig,
 	operatorPolicy config.PlaybackOperatorConfig,
 	hostPressure playbackprofile.HostPressureAssessment,
+	hostRuntime playbackprofile.HostRuntimeSnapshot,
 ) decision.DecisionInput {
 	serverCanTranscode := strings.TrimSpace(cfg.FFmpeg.Bin) != "" && strings.TrimSpace(cfg.HLS.Root) != ""
 	clientAllowsTranscode := resolvedCaps.AllowTranscode == nil || *resolvedCaps.AllowTranscode
 	allowTranscode := serverCanTranscode && clientAllowsTranscode
+	mappedCaps := decision.FromCapabilities(resolvedCaps)
+	videoBenchmarkClass := benchmarkClassForPlaybackPath(hostRuntime.Benchmark, truth, mappedCaps)
 
 	return decision.DecisionInput{
 		RequestID:       req.RequestID,
 		RequestedIntent: playbackprofile.NormalizeRequestedIntent(req.RequestedProfile),
 		APIVersion:      req.APIVersion,
 		Source: decision.Source{
-			Container:  truth.Container,
-			VideoCodec: truth.VideoCodec,
-			AudioCodec: truth.AudioCodec,
-			Width:      truth.Width,
-			Height:     truth.Height,
-			FPS:        truth.FPS,
-			Interlaced: truth.Interlaced,
+			Container:         truth.Container,
+			VideoCodec:        truth.VideoCodec,
+			AudioCodec:        truth.AudioCodec,
+			BitrateKbps:       truth.BitrateKbps,
+			BitrateConfidence: truth.BitrateConfidence,
+			Width:             truth.Width,
+			Height:            truth.Height,
+			FPS:               truth.FPS,
+			Interlaced:        truth.Interlaced,
 		},
-		Capabilities: decision.FromCapabilities(resolvedCaps),
+		Capabilities: mappedCaps,
 		Policy: decision.Policy{
 			AllowTranscode: allowTranscode,
 			Operator: decision.OperatorPolicy{
@@ -500,8 +641,90 @@ func buildDecisionInput(
 				MaxQualityRung: playbackprofile.NormalizeQualityRung(operatorPolicy.MaxQualityRung),
 			},
 			Host: decision.HostPolicy{
-				PressureBand: playbackprofile.NormalizeHostPressureBand(string(hostPressure.EffectiveBand)),
+				PressureBand:     playbackprofile.NormalizeHostPressureBand(string(hostPressure.EffectiveBand)),
+				PerformanceClass: hostRuntime.PerformanceClass,
+				BenchmarkClass:   videoBenchmarkClass,
 			},
 		},
 	}
+}
+
+func benchmarkClassForPlaybackPath(snapshot playbackprofile.HostBenchmarkSnapshot, truth playback.MediaTruth, caps decision.Capabilities) string {
+	if profileID := benchmarkProfileForPlaybackPath(truth, caps); profileID != "" {
+		if class := playbackprofile.BenchmarkClassForProfile(snapshot, profileID); class != "" {
+			return class
+		}
+	}
+	return playbackprofile.BenchmarkClassForCodec(snapshot, "h264")
+}
+
+func benchmarkProfileForPlaybackPath(truth playback.MediaTruth, caps decision.Capabilities) string {
+	if benchmarkProfileIsAudioOnly(truth, caps) {
+		return playbackprofile.BenchmarkProfileAudioAACStereo
+	}
+	return benchmarkProfileForTruth(truth)
+}
+
+func benchmarkProfileForTruth(truth playback.MediaTruth) string {
+	pixels := truth.Width * truth.Height
+	signalFPS := truth.SignalFPS
+	if signalFPS <= 0 {
+		signalFPS = truth.FPS
+	}
+	switch {
+	case truth.Interlaced && pixels >= 1920*1080 && signalFPS >= 50:
+		return playbackprofile.BenchmarkProfileVideoH2641080I50
+	case truth.Interlaced && pixels >= 1920*1080:
+		return playbackprofile.BenchmarkProfileVideoH2641080I
+	case pixels >= 3840*2160 && signalFPS >= 50:
+		return playbackprofile.BenchmarkProfileVideoH2642160P50
+	case pixels >= 3840*2160:
+		return playbackprofile.BenchmarkProfileVideoH2642160P
+	case pixels >= 1920*1080:
+		return playbackprofile.BenchmarkProfileVideoH2641080P
+	default:
+		return ""
+	}
+}
+
+func benchmarkProfileIsAudioOnly(truth playback.MediaTruth, caps decision.Capabilities) bool {
+	if benchmarkSourceRequiresVideoRepair(truth) {
+		return false
+	}
+	canVideo := benchmarkContains(caps.VideoCodecs, truth.VideoCodec) && benchmarkWithinMaxVideo(truth, caps.MaxVideo)
+	canAudio := benchmarkContains(caps.AudioCodecs, truth.AudioCodec)
+	return canVideo && !canAudio
+}
+
+func benchmarkSourceRequiresVideoRepair(truth playback.MediaTruth) bool {
+	return truth.Interlaced || truth.Width <= 0 || truth.Height <= 0 || truth.FPS <= 0
+}
+
+func benchmarkContains(values []string, value string) bool {
+	want := normalize.Token(value)
+	if want == "" {
+		return false
+	}
+	for _, candidate := range values {
+		if normalize.Token(candidate) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func benchmarkWithinMaxVideo(truth playback.MediaTruth, maxVideo *decision.MaxVideoDimensions) bool {
+	if maxVideo == nil {
+		return true
+	}
+	if maxVideo.Width > 0 && truth.Width > 0 && truth.Width > maxVideo.Width {
+		return false
+	}
+	if maxVideo.Height > 0 && truth.Height > 0 && truth.Height > maxVideo.Height {
+		return false
+	}
+	if maxVideo.FPS > 0 && truth.FPS > 0 && truth.FPS > float64(maxVideo.FPS) {
+		return false
+	}
+	return true
 }

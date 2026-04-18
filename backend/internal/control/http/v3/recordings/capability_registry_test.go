@@ -33,6 +33,9 @@ func TestService_SourceSnapshotForRequest_LiveUnverified(t *testing.T) {
 	assert.Equal(t, "live", snapshot.SubjectKind)
 	assert.Equal(t, "live_unverified", snapshot.Origin)
 	assert.Equal(t, "mpegts", snapshot.Container)
+	assert.Empty(t, snapshot.BitrateConfidence)
+	assert.Empty(t, snapshot.BitrateBucket)
+	assert.Zero(t, snapshot.SignalFPS)
 	assert.NotNil(t, snapshot.ReceiverContext)
 	assert.Equal(t, "openatv", snapshot.ReceiverContext.OSName)
 	assert.Equal(t, "7.4", snapshot.ReceiverContext.OSVersion)
@@ -65,18 +68,26 @@ func TestService_SourceSnapshotForRequest_LiveScanTruth(t *testing.T) {
 	snapshot := svc.sourceSnapshotForRequest(context.Background(), "1:0:1:2B66:3F3:1:C00000:0:0:0:", PlaybackInfoRequest{
 		SubjectKind: PlaybackSubjectLive,
 	}, playback.MediaTruth{
-		Status:     playback.MediaStatusReady,
-		Container:  "ts",
-		VideoCodec: "hevc",
-		AudioCodec: "ac3",
-		Width:      3840,
-		Height:     2160,
-		FPS:        50,
-		Interlaced: true,
+		Status:              playback.MediaStatusReady,
+		Container:           "ts",
+		VideoCodec:          "hevc",
+		AudioCodec:          "ac3",
+		BitrateConfidence:   "high",
+		BitrateKbps:         10200,
+		Width:               3840,
+		Height:              2160,
+		FPS:                 25,
+		SignalFPS:           50,
+		Interlaced:          true,
+		BitrateObservedKbps: 12000,
+		BitrateSamples:      4,
 	})
 
 	assert.Equal(t, 1, truthSource.calls)
 	assert.Equal(t, "live_scan", snapshot.Origin)
+	assert.Equal(t, "high", snapshot.BitrateConfidence)
+	assert.Equal(t, "9m_18m", snapshot.BitrateBucket)
+	assert.Equal(t, 50.0, snapshot.SignalFPS)
 	assert.ElementsMatch(t, []string{"interlaced"}, snapshot.ProblemFlags)
 }
 
@@ -96,5 +107,8 @@ func TestService_SourceSnapshotForRequest_RecordingTruth(t *testing.T) {
 	})
 
 	assert.Equal(t, "recording_truth", snapshot.Origin)
+	assert.Empty(t, snapshot.BitrateConfidence)
+	assert.Empty(t, snapshot.BitrateBucket)
+	assert.Equal(t, 25.0, snapshot.SignalFPS)
 	assert.Empty(t, snapshot.ProblemFlags)
 }

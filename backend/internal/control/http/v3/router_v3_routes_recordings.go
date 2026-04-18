@@ -9,6 +9,9 @@ import "net/http"
 func registerRecordingRoutes(register routeRegistrar, handler recordingRoutes) {
 	register.add(http.MethodGet, "/recordings", "GetRecordings", handler.GetRecordings)
 	register.add(http.MethodDelete, "/recordings/{recordingId}", "DeleteRecording", handler.DeleteRecording)
+	register.add(http.MethodPost, "/recordings/{recordingId}/delete", "PostRecordingDelete", handler.PostRecordingDelete)
+	register.add(http.MethodPost, "/recordings/{recordingId}/rename", "PostRecordingRename", handler.PostRecordingRename)
+	register.add(http.MethodGet, "/recordings/{recordingId}/thumbnail.jpg", "GetRecordingThumbnail", handler.GetRecordingThumbnail)
 	register.add(http.MethodGet, "/recordings/{recordingId}/playlist.m3u8", "GetRecordingHLSPlaylist", handler.GetRecordingHLSPlaylist)
 	register.add(http.MethodHead, "/recordings/{recordingId}/playlist.m3u8", "GetRecordingHLSPlaylistHead", handler.GetRecordingHLSPlaylistHead)
 	register.add(http.MethodGet, "/recordings/{recordingId}/status", "GetRecordingsRecordingIdStatus", handler.GetRecordingsRecordingIdStatus)

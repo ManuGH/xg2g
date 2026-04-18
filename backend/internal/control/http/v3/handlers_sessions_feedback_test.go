@@ -218,6 +218,138 @@ func TestReportPlaybackFeedback_RecordsFeedbackObservation(t *testing.T) {
 	require.Equal(t, "playing", observed.FeedbackMessage)
 }
 
+func TestReportPlaybackFeedback_RecoveryInfoCountsAsStarted(t *testing.T) {
+	sid := uuid.NewString()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-recovery-001",
+			Profile: model.ProfileSpec{
+				Name:      "universal",
+				Container: "ts",
+			},
+			ContextData: map[string]string{
+				model.CtxKeyMode:            model.ModeLive,
+				model.CtxKeyDecisionRequest: "decision-req-recovery",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				RequestedIntent: "quality",
+				ResolvedIntent:  "compatible",
+			},
+		},
+	}
+	registry := &feedbackRegistry{
+		decisionObservation: capreg.PlaybackObservation{
+			RequestID:          "decision-req-recovery",
+			ObservationKind:    "decision",
+			Outcome:            "predicted",
+			SourceRef:          "1:0:1:445D:453:1:C00000:0:0:0:",
+			SourceFingerprint:  "source-fp-recovery",
+			SubjectKind:        "live",
+			RequestedIntent:    "quality",
+			ResolvedIntent:     "compatible",
+			Mode:               "direct_stream",
+			SelectedContainer:  "ts",
+			SelectedVideoCodec: "h264",
+			SelectedAudioCodec: "ac3",
+			SourceWidth:        1920,
+			SourceHeight:       1080,
+			SourceFPS:          50,
+			HostFingerprint:    "host-fp-recovery",
+			DeviceFingerprint:  "device-fp-recovery",
+			ClientCapsHash:     "caps-hash-recovery",
+		},
+	}
+
+	s := &Server{
+		cfg:                config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}},
+		v3Store:            store,
+		v3Bus:              newFeedbackBus(),
+		capabilityRegistry: registry,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"info","code":211,"message":"recovered_buffering"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	observed := registry.lastObservation()
+	require.Equal(t, "started", observed.Outcome)
+	require.Equal(t, "info", observed.FeedbackEvent)
+	require.Equal(t, 211, observed.FeedbackCode)
+	require.Equal(t, "recovered_buffering", observed.FeedbackMessage)
+}
+
+func TestReportPlaybackFeedback_ProbeInfoCountsAsStarted(t *testing.T) {
+	sid := uuid.NewString()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-probe-001",
+			Profile: model.ProfileSpec{
+				Name:      "universal",
+				Container: "ts",
+			},
+			ContextData: map[string]string{
+				model.CtxKeyMode:            model.ModeLive,
+				model.CtxKeyDecisionRequest: "decision-req-probe",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				RequestedIntent: "quality",
+				ResolvedIntent:  "compatible",
+			},
+		},
+	}
+	registry := &feedbackRegistry{
+		decisionObservation: capreg.PlaybackObservation{
+			RequestID:          "decision-req-probe",
+			ObservationKind:    "decision",
+			Outcome:            "predicted",
+			SourceRef:          "1:0:1:445D:453:1:C00000:0:0:0:",
+			SourceFingerprint:  "source-fp-probe",
+			SubjectKind:        "live",
+			RequestedIntent:    "quality",
+			ResolvedIntent:     "compatible",
+			Mode:               "direct_stream",
+			SelectedContainer:  "ts",
+			SelectedVideoCodec: "h264",
+			SelectedAudioCodec: "ac3",
+			SourceWidth:        1920,
+			SourceHeight:       1080,
+			SourceFPS:          50,
+			HostFingerprint:    "host-fp-probe",
+			DeviceFingerprint:  "device-fp-probe",
+			ClientCapsHash:     "caps-hash-probe",
+		},
+	}
+
+	s := &Server{
+		cfg:                config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}},
+		v3Store:            store,
+		v3Bus:              newFeedbackBus(),
+		capabilityRegistry: registry,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"info","code":220,"message":"probe_window_started"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	observed := registry.lastObservation()
+	require.Equal(t, "started", observed.Outcome)
+	require.Equal(t, "info", observed.FeedbackEvent)
+	require.Equal(t, 220, observed.FeedbackCode)
+	require.Equal(t, "probe_window_started", observed.FeedbackMessage)
+}
+
 func TestReportPlaybackFeedback_WaitsForTerminalBeforeRestart(t *testing.T) {
 	sid := uuid.NewString()
 	hlsRoot := t.TempDir()

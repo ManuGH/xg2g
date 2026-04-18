@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -24,6 +25,8 @@ const (
 	liveTruthOriginUnverified = "live_unverified"
 )
 
+const liveTruthFreshnessWindow = 2 * time.Hour
+
 type liveTruthResolution struct {
 	Truth        playback.MediaTruth
 	Origin       string
@@ -37,6 +40,7 @@ func (r liveTruthResolution) Verified() bool {
 }
 
 func resolveLiveTruthState(serviceRef string, source ChannelTruthSource) liveTruthResolution {
+	now := time.Now().UTC()
 	if source == nil {
 		return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "scanner_unavailable", scan.Capability{}, []string{
 			"live_truth_unverified",
@@ -45,10 +49,10 @@ func resolveLiveTruthState(serviceRef string, source ChannelTruthSource) liveTru
 	}
 
 	cap, found := source.GetCapability(serviceRef)
-	return resolveLiveTruthCapability(serviceRef, cap, found)
+	return resolveLiveTruthCapability(serviceRef, cap, found, now)
 }
 
-func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bool) liveTruthResolution {
+func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bool, now time.Time) liveTruthResolution {
 	if !found {
 		return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "missing_scan_truth", scan.Capability{}, []string{
 			"live_truth_unverified",
@@ -64,6 +68,12 @@ func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bo
 		})
 	}
 	if normalized.HasMediaTruth() {
+		if !liveTruthFreshEnough(normalized, now) {
+			return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "stale_scan_truth", normalized, []string{
+				"live_truth_unverified",
+				"stale_scan_truth",
+			})
+		}
 		metrics.IncLiveTruthSource("scan", "cache_hit")
 		log.L().Debug().
 			Str("event", "live.truth_verified").
@@ -102,15 +112,37 @@ func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bo
 func liveTruthFromCapability(cap scan.Capability, status playback.MediaStatus) playback.MediaTruth {
 	normalized := cap.Normalized()
 	return playback.MediaTruth{
-		Status:     status,
-		Container:  normalized.Container,
-		VideoCodec: normalized.VideoCodec,
-		AudioCodec: normalized.AudioCodec,
-		Width:      normalized.Width,
-		Height:     normalized.Height,
-		FPS:        normalized.FPS,
-		Interlaced: normalized.Interlaced,
+		Status:              status,
+		Container:           normalized.Container,
+		VideoCodec:          normalized.VideoCodec,
+		AudioCodec:          normalized.AudioCodec,
+		BitrateKbps:         normalized.StableBitrateKbps(),
+		BitrateObservedKbps: normalized.BitrateKbps,
+		BitratePeakKbps:     normalized.BitratePeakKbps,
+		BitrateSamples:      normalized.BitrateSamples,
+		BitrateConfidence:   normalized.BitrateConfidence(),
+		Width:               normalized.Width,
+		Height:              normalized.Height,
+		FPS:                 normalized.FPS,
+		SignalFPS:           normalized.SignalFPS,
+		Interlaced:          normalized.Interlaced,
+		FieldOrder:          normalized.FieldOrder,
+		AudioChannels:       normalized.AudioChannels,
+		AudioBitrateKbps:    normalized.AudioBitrateKbps,
+		AudioSampleRate:     normalized.AudioSampleRate,
+		AudioChannelLayout:  normalized.AudioChannelLayout,
 	}
+}
+
+func liveTruthFreshEnough(cap scan.Capability, now time.Time) bool {
+	anchor := cap.LastSuccess
+	if anchor.IsZero() {
+		anchor = cap.LastScan
+	}
+	if anchor.IsZero() {
+		return true
+	}
+	return now.Sub(anchor) <= liveTruthFreshnessWindow
 }
 
 func unverifiedLiveTruth(serviceRef string, state liveTruthState, reason string, cap scan.Capability, flags []string) liveTruthResolution {

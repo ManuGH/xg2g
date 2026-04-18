@@ -10,6 +10,42 @@
   background: transparent;
 }
 
+.surfaceTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.surfaceTab {
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
+}
+
+.surfaceTab:hover {
+  color: var(--text-primary);
+  border-color: var(--border-elevated);
+  transform: translateY(-1px);
+}
+
+.surfaceTabActive {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-action) 34%, var(--border-elevated) 66%);
+  background: color-mix(in srgb, var(--surface-panel-strong) 88%, var(--accent-action-subtle) 12%);
+}
+
 .toolbar {
   position: relative;
   display: flex;

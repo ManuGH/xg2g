@@ -11,22 +11,32 @@ import (
 )
 
 type Capability struct {
-	ServiceRef    string          `json:"service_ref"`
-	Interlaced    bool            `json:"interlaced"`
-	LastScan      time.Time       `json:"last_scan"`
-	LastAttempt   time.Time       `json:"last_attempt,omitempty"`
-	LastSuccess   time.Time       `json:"last_success,omitempty"`
-	State         CapabilityState `json:"state,omitempty"`
-	FailureReason string          `json:"failure_reason,omitempty"`
-	NextRetryAt   time.Time       `json:"next_retry_at,omitempty"`
-	Resolution    string          `json:"resolution"`
-	Codec         string          `json:"codec"`
-	Container     string          `json:"container,omitempty"`
-	VideoCodec    string          `json:"video_codec,omitempty"`
-	AudioCodec    string          `json:"audio_codec,omitempty"`
-	Width         int             `json:"width,omitempty"`
-	Height        int             `json:"height,omitempty"`
-	FPS           float64         `json:"fps,omitempty"`
+	ServiceRef         string          `json:"service_ref"`
+	Interlaced         bool            `json:"interlaced"`
+	LastScan           time.Time       `json:"last_scan"`
+	LastAttempt        time.Time       `json:"last_attempt,omitempty"`
+	LastSuccess        time.Time       `json:"last_success,omitempty"`
+	State              CapabilityState `json:"state,omitempty"`
+	FailureReason      string          `json:"failure_reason,omitempty"`
+	NextRetryAt        time.Time       `json:"next_retry_at,omitempty"`
+	Resolution         string          `json:"resolution"`
+	Codec              string          `json:"codec"`
+	Container          string          `json:"container,omitempty"`
+	VideoCodec         string          `json:"video_codec,omitempty"`
+	AudioCodec         string          `json:"audio_codec,omitempty"`
+	BitrateKbps        int             `json:"bitrate_kbps,omitempty"`
+	BitrateMeanKbps    int             `json:"bitrate_mean_kbps,omitempty"`
+	BitratePeakKbps    int             `json:"bitrate_peak_kbps,omitempty"`
+	BitrateSamples     int             `json:"bitrate_samples,omitempty"`
+	Width              int             `json:"width,omitempty"`
+	Height             int             `json:"height,omitempty"`
+	FPS                float64         `json:"fps,omitempty"`
+	SignalFPS          float64         `json:"signal_fps,omitempty"`
+	FieldOrder         string          `json:"field_order,omitempty"`
+	AudioChannels      int             `json:"audio_channels,omitempty"`
+	AudioBitrateKbps   int             `json:"audio_bitrate_kbps,omitempty"`
+	AudioSampleRate    int             `json:"audio_sample_rate,omitempty"`
+	AudioChannelLayout string          `json:"audio_channel_layout,omitempty"`
 }
 
 type CapabilityState string
@@ -68,12 +78,56 @@ func (c Capability) Normalized() Capability {
 	if c.Resolution == "" && c.Width > 0 && c.Height > 0 {
 		c.Resolution = fmt.Sprintf("%dx%d", c.Width, c.Height)
 	}
+	if c.BitrateKbps < 0 {
+		c.BitrateKbps = 0
+	}
+	if c.BitrateMeanKbps < 0 {
+		c.BitrateMeanKbps = 0
+	}
+	if c.BitratePeakKbps < 0 {
+		c.BitratePeakKbps = 0
+	}
+	if c.BitrateSamples < 0 {
+		c.BitrateSamples = 0
+	}
+	if c.SignalFPS < 0 {
+		c.SignalFPS = 0
+	}
+	if c.AudioChannels < 0 {
+		c.AudioChannels = 0
+	}
+	if c.AudioBitrateKbps < 0 {
+		c.AudioBitrateKbps = 0
+	}
+	if c.AudioSampleRate < 0 {
+		c.AudioSampleRate = 0
+	}
+	c.FieldOrder = strings.ToLower(strings.TrimSpace(c.FieldOrder))
+	c.AudioChannelLayout = strings.ToLower(strings.TrimSpace(c.AudioChannelLayout))
+	if c.FieldOrder != "" && c.FieldOrder != "progressive" {
+		c.Interlaced = true
+	}
+	if c.SignalFPS == 0 && c.FPS > 0 {
+		c.SignalFPS = c.FPS
+	}
+	if c.BitrateKbps > 0 && c.BitrateMeanKbps == 0 {
+		c.BitrateMeanKbps = c.BitrateKbps
+	}
+	if c.BitrateKbps > 0 && c.BitratePeakKbps == 0 {
+		c.BitratePeakKbps = c.BitrateKbps
+	}
+	if c.BitrateKbps > 0 && c.BitrateSamples == 0 {
+		c.BitrateSamples = 1
+	}
 
 	state := c.State
 	switch state {
 	case CapabilityStateOK, CapabilityStatePartial, CapabilityStateFailed, CapabilityStateInactiveEventFeed:
 	default:
 		state = inferCapabilityState(c.Resolution, c.Codec)
+	}
+	if state == CapabilityStateOK && !hasCompleteMediaTruth(c.Container, c.VideoCodec, c.AudioCodec) {
+		state = CapabilityStatePartial
 	}
 	c.State = state
 
@@ -104,6 +158,26 @@ func (c Capability) Normalized() Capability {
 
 func (c Capability) RetryDue(now time.Time) bool {
 	normalized := c.Normalized()
+	switch normalized.State {
+	case CapabilityStateOK, CapabilityStatePartial:
+		if !hasCompleteMediaTruth(normalized.Container, normalized.VideoCodec, normalized.AudioCodec) {
+			anchor := normalized.LastAttempt
+			if anchor.IsZero() {
+				anchor = normalized.LastSuccess
+			}
+			if anchor.IsZero() {
+				anchor = normalized.LastScan
+			}
+			if anchor.IsZero() {
+				return true
+			}
+			dueAt := anchor.Add(partialRetryWindow)
+			if !normalized.NextRetryAt.IsZero() && normalized.NextRetryAt.Before(dueAt) {
+				dueAt = normalized.NextRetryAt
+			}
+			return !now.Before(dueAt)
+		}
+	}
 	if normalized.NextRetryAt.IsZero() {
 		return true
 	}
@@ -125,7 +199,68 @@ func (c Capability) IsInactiveEventFeed() bool {
 
 func (c Capability) HasMediaTruth() bool {
 	normalized := c.Normalized()
-	return normalized.Container != "" && normalized.VideoCodec != "" && normalized.AudioCodec != ""
+	return hasCompleteMediaTruth(normalized.Container, normalized.VideoCodec, normalized.AudioCodec)
+}
+
+func (c Capability) StableBitrateKbps() int {
+	normalized := c.Normalized()
+	current := normalized.BitrateKbps
+	mean := normalized.BitrateMeanKbps
+	peak := normalized.BitratePeakKbps
+	switch {
+	case normalized.BitrateSamples >= 4 && peak > 0:
+		candidate := maxInt(mean, ceilPercent(peak, 85))
+		return maxInt(candidate, current)
+	case normalized.BitrateSamples >= 2:
+		return maxInt(current, maxInt(mean, peak))
+	case current > 0:
+		return current
+	case mean > 0:
+		return mean
+	default:
+		return peak
+	}
+}
+
+func (c Capability) BitrateConfidence() string {
+	normalized := c.Normalized()
+	switch {
+	case normalized.BitrateSamples >= 4:
+		return "high"
+	case normalized.BitrateSamples >= 2:
+		return "medium"
+	case normalized.BitrateSamples == 1:
+		return "low"
+	default:
+		return ""
+	}
+}
+
+func (c Capability) WithObservedBitrateKbps(observed int) Capability {
+	c = c.Normalized()
+	if observed <= 0 {
+		return c
+	}
+	c.BitrateKbps = observed
+	if c.BitrateSamples <= 0 || c.BitrateMeanKbps <= 0 {
+		c.BitrateSamples = 1
+		c.BitrateMeanKbps = observed
+		c.BitratePeakKbps = observed
+		return c
+	}
+	total := c.BitrateMeanKbps*c.BitrateSamples + observed
+	c.BitrateSamples++
+	c.BitrateMeanKbps = total / c.BitrateSamples
+	if observed > c.BitratePeakKbps {
+		c.BitratePeakKbps = observed
+	}
+	return c
+}
+
+func hasCompleteMediaTruth(container, videoCodec, audioCodec string) bool {
+	return strings.TrimSpace(container) != "" &&
+		strings.TrimSpace(videoCodec) != "" &&
+		strings.TrimSpace(audioCodec) != ""
 }
 
 func inferCapabilityState(resolution, codec string) CapabilityState {
@@ -139,6 +274,20 @@ func inferCapabilityState(resolution, codec string) CapabilityState {
 	default:
 		return CapabilityStateFailed
 	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func ceilPercent(value, percent int) int {
+	if value <= 0 || percent <= 0 {
+		return 0
+	}
+	return (value*percent + 99) / 100
 }
 
 func normalizeContainer(in string) string {

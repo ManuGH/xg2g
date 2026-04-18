@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, KeyboardEvent, PointerEvent, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from '../lib/hlsRuntime';
 import {
@@ -10,6 +10,7 @@ import {
   type PlaybackTrace as PlaybackTraceContract,
   type PlaybackTraceFfmpegPlan,
   type PlaybackTraceOperator,
+  type PlaybackTraceRuntimeTick,
   type PlaybackTargetProfile,
 } from '../../../client-ts';
 import { getApiBaseUrl } from '../../../services/clientWrapper';
@@ -25,10 +26,18 @@ import type {
 import { useLiveSessionController } from '../useLiveSessionController';
 import { usePlaybackEngine } from '../usePlaybackEngine';
 import { usePlayerChrome } from '../usePlayerChrome';
-import { resolveStartupOverlayLabel, resolveStartupOverlaySupport } from '../startupOverlayLabel';
+import {
+  resolveRuntimePolicyErrorSupport,
+  resolveRuntimePolicyStartupSupport,
+  resolveStartupOverlayLabel,
+  resolveStartupOverlaySupport,
+} from '../startupOverlayLabel';
+import { PlayerErrorSurface } from './PlayerErrorSurface';
+import { PlayerRuntimeMeta, PlayerRuntimeMetaPanel } from './PlayerRuntimeMeta';
+import { PlayerStartupSurface } from './PlayerStartupSurface';
 import { useResume } from '../../resume/useResume';
 import { ResumeState } from '../../resume/api';
-import { Button, Card, StatusChip } from '../../../components/ui';
+import { Button } from '../../../components/ui';
 import { debugError, debugLog, debugWarn } from '../../../utils/logging';
 import {
   PlayerError,
@@ -81,6 +90,46 @@ type PlaybackObservability = {
   operator: PlaybackTraceOperator | null;
   selectedOutputKind: string | null;
 };
+
+type PlaybackWindowKind = 'live' | 'live-dvr' | 'vod' | 'unknown';
+
+function PlayGlyph() {
+  return (
+    <svg className={[styles.controlIcon, styles.playPauseIcon].join(' ')} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PauseGlyph() {
+  return (
+    <svg className={[styles.controlIcon, styles.playPauseIcon].join(' ')} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M7 6h3.5v12H7V6Zm6.5 0H17v12h-3.5V6Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function VolumeGlyph({ muted }: { muted: boolean }) {
+  return muted ? (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M10 8.25 6.9 11H4v2h2.9L10 15.75V8.25Z" fill="currentColor" />
+      <path d="m14.25 9.25 5.5 5.5M19.75 9.25l-5.5 5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  ) : (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M10 8.25 6.9 11H4v2h2.9L10 15.75V8.25Z" fill="currentColor" />
+      <path d="M14.5 9.3a4.4 4.4 0 0 1 0 5.4M17.2 7a7.6 7.6 0 0 1 0 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function FullscreenGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 4H4v4M16 4h4v4M8 20H4v-4M20 20h-4v-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function formatSourceProfileSummary(source: PlaybackSourceProfile | null | undefined): string {
   if (!source) return '-';
@@ -250,6 +299,139 @@ function formatExecutionLabel(target: PlaybackTargetProfile | null): string {
   return target.hwAccel.toUpperCase();
 }
 
+function resolvePlaybackWindowKind(
+  playbackMode: 'LIVE' | 'VOD' | 'UNKNOWN',
+  hasLiveDvrWindow: boolean
+): PlaybackWindowKind {
+  if (playbackMode === 'LIVE') {
+    return hasLiveDvrWindow ? 'live-dvr' : 'live';
+  }
+  if (playbackMode === 'VOD') {
+    return 'vod';
+  }
+  return 'unknown';
+}
+
+function normalizePlaybackWindowKind(value: string | null | undefined): PlaybackWindowKind {
+  switch (value) {
+    case 'live':
+    case 'live-dvr':
+    case 'vod':
+      return value;
+    default:
+      return 'unknown';
+  }
+}
+
+function mergePlaybackTraceOperator(
+  primary: PlaybackTraceOperator | null | undefined,
+  fallback: PlaybackTraceOperator | null | undefined
+): PlaybackTraceOperator | null {
+  if (!primary && !fallback) {
+    return null;
+  }
+
+  return {
+    forcedIntent: primary?.forcedIntent ?? fallback?.forcedIntent ?? null,
+    maxQualityRung: primary?.maxQualityRung ?? fallback?.maxQualityRung ?? null,
+    runtimePolicyAction: primary?.runtimePolicyAction ?? fallback?.runtimePolicyAction ?? null,
+    runtimePolicyPhase: primary?.runtimePolicyPhase ?? fallback?.runtimePolicyPhase ?? null,
+    runtimePolicyConstraints: primary?.runtimePolicyConstraints ?? fallback?.runtimePolicyConstraints ?? null,
+    runtimePolicyReasons: primary?.runtimePolicyReasons ?? fallback?.runtimePolicyReasons ?? null,
+    runtimePolicyTimeline: primary?.runtimePolicyTimeline ?? fallback?.runtimePolicyTimeline ?? null,
+    runtimeProbeCandidate: primary?.runtimeProbeCandidate ?? fallback?.runtimeProbeCandidate ?? null,
+    runtimeProbeFailureStreak: primary?.runtimeProbeFailureStreak ?? fallback?.runtimeProbeFailureStreak ?? null,
+    runtimeProbeSuccessStreak: primary?.runtimeProbeSuccessStreak ?? fallback?.runtimeProbeSuccessStreak ?? null,
+    ruleName: primary?.ruleName ?? fallback?.ruleName ?? null,
+    ruleScope: primary?.ruleScope ?? fallback?.ruleScope ?? null,
+    clientFallbackDisabled: primary?.clientFallbackDisabled ?? fallback?.clientFallbackDisabled,
+    overrideApplied: primary?.overrideApplied ?? fallback?.overrideApplied,
+  };
+}
+
+function formatRuntimePolicyPhaseLabel(value: string | null | undefined): string {
+  switch (value) {
+    case 'probing':
+      return 'Probing';
+    case 'cooldown':
+      return 'Cooldown';
+    case 'probe_regressed':
+      return 'Probe regressed';
+    case 'recovering':
+      return 'Recovering';
+    case 'degraded':
+      return 'Degraded';
+    case 'stable':
+      return 'Stable';
+    default:
+      return '-';
+  }
+}
+
+function resolveRuntimePolicyPhaseState(value: string | null | undefined) {
+  switch (value) {
+    case 'probing':
+      return 'pending' as const;
+    case 'cooldown':
+    case 'recovering':
+      return 'warning' as const;
+    case 'probe_regressed':
+    case 'degraded':
+      return 'error' as const;
+    case 'stable':
+      return 'success' as const;
+    default:
+      return 'idle' as const;
+  }
+}
+
+function formatRuntimeTimelineTime(value: string | null | undefined): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function humanizeRuntimeToken(value: string | null | undefined): string {
+  if (!value) return '-';
+  return value.replace(/_/g, ' ');
+}
+
+function formatRuntimeTimelineEntry(entry: PlaybackTraceRuntimeTick): string {
+  const parts = [
+    formatRuntimeTimelineTime(entry.tickAt),
+    humanizeRuntimeToken(entry.confidenceState),
+    humanizeRuntimeToken(entry.policyAction),
+    entry.plannedTransition ? `plan:${humanizeRuntimeToken(entry.plannedTransition)}` : null,
+    entry.executedTransition ? `run:${humanizeRuntimeToken(entry.executedTransition)}` : null,
+    entry.activeStep ? `step:${humanizeRuntimeToken(entry.activeStep)}` : null,
+    entry.probeState ? `probe:${humanizeRuntimeToken(entry.probeState)}` : null,
+    entry.blockers?.length ? `block:${entry.blockers.join('/')}` : null,
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function resolveRuntimePolicyMetaHint(
+  phase: string | null | undefined,
+  probeCandidate: string | null | undefined,
+  maxQualityRung: string | null | undefined
+): string | null {
+  switch (phase) {
+    case 'probing':
+      return probeCandidate ?? null;
+    case 'cooldown':
+      return maxQualityRung ?? null;
+    default:
+      return null;
+  }
+}
+
 function extractPlaybackObservability(
   info: PlaybackInfo,
   clientPath: string | null
@@ -366,10 +548,18 @@ function resolveNativePlaybackStatus(state: HostNativePlaybackState | null): Pla
 
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
-  const { token, autoStart, onClose, duration } = props;
+  const { token, autoStart, onClose, duration, startPositionSeconds, suppressResumePrompt } = props;
   const channel = 'channel' in props ? props.channel : undefined;
   const src = 'src' in props ? props.src : undefined;
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
+  const recordingTitle = 'recordingTitle' in props ? props.recordingTitle : undefined;
+  const recordingDescription = 'recordingDescription' in props ? props.recordingDescription : undefined;
+  const recordingDateLabel = 'recordingDateLabel' in props ? props.recordingDateLabel : undefined;
+  const recordingLengthLabel = 'recordingLengthLabel' in props ? props.recordingLengthLabel : undefined;
+  const recordingLayoutMode = 'layoutMode' in props ? props.layoutMode : undefined;
+  const normalizedRecordingTitle = typeof recordingTitle === 'string' ? recordingTitle.trim() : '';
+  const isRecordingPageLayout = Boolean(recordingId && recordingLayoutMode === 'page');
+  const useOverlayShell = Boolean(onClose && !isRecordingPageLayout);
 
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
@@ -425,8 +615,10 @@ function V3Player(props: V3PlayerProps) {
     duration && duration > 0 ? duration : null
   );
   const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
+  const [sessionWindowKind, setSessionWindowKind] = useState<PlaybackWindowKind>('unknown');
   const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>(null);
   const [activeHlsEngine, setActiveHlsEngine] = useState<'native' | 'hlsjs' | null>(null);
+  const [liveSeekWindow, setLiveSeekWindow] = useState<{ start: number; end: number; liveEdge: number | null } | null>(null);
 
   // P3-4: Truth State
   const [canSeek, setCanSeek] = useState(true);
@@ -535,6 +727,35 @@ function V3Player(props: V3PlayerProps) {
     }
     setSessionProfileReason(session.profileReason ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
+    const snapshotWindowKind = normalizePlaybackWindowKind(session.windowKind);
+    if (session.mode === 'LIVE') {
+      setSessionWindowKind(snapshotWindowKind);
+      const seekableStart = typeof session.seekableStartSeconds === 'number' ? session.seekableStartSeconds : null;
+      const seekableEnd = typeof session.seekableEndSeconds === 'number' ? session.seekableEndSeconds : null;
+      const liveEdge = typeof session.liveEdgeSeconds === 'number' ? session.liveEdgeSeconds : null;
+      if (seekableStart !== null && seekableEnd !== null && seekableEnd > seekableStart) {
+        setLiveSeekWindow({
+          start: Math.max(0, seekableStart),
+          end: Math.max(seekableStart, seekableEnd),
+          liveEdge: liveEdge !== null ? Math.max(seekableEnd, liveEdge) : seekableEnd,
+        });
+      } else if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
+        const derivedEnd = liveEdge ?? seekableEnd ?? session.durationSeconds;
+        const derivedStart = Math.max(0, derivedEnd - session.durationSeconds);
+        setLiveSeekWindow({
+          start: derivedStart,
+          end: Math.max(derivedStart, derivedEnd),
+          liveEdge: liveEdge ?? derivedEnd,
+        });
+      } else {
+        setLiveSeekWindow(null);
+      }
+    } else if (session.mode === 'RECORDING') {
+      setSessionWindowKind(snapshotWindowKind !== 'unknown' ? snapshotWindowKind : 'vod');
+      setLiveSeekWindow(null);
+    } else {
+      setSessionWindowKind(snapshotWindowKind);
+    }
   }, [mergeSessionPlaybackTrace]);
 
   // Explicitly static/memoized apiBase
@@ -542,7 +763,18 @@ function V3Player(props: V3PlayerProps) {
     return getApiBaseUrl();
   }, []);
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
+  const requestedStartPositionSeconds = useMemo(
+    () => (startPositionSeconds && Number.isFinite(startPositionSeconds) && startPositionSeconds > 0
+      ? startPositionSeconds
+      : 0),
+    [startPositionSeconds]
+  );
   const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
+  const mergedPlaybackOperator = useMemo(
+    () => mergePlaybackTraceOperator(sessionPlaybackTrace?.operator, playbackObservability?.operator),
+    [playbackObservability?.operator, sessionPlaybackTrace?.operator]
+  );
+  const isRuntimeProbeActive = mergedPlaybackOperator?.runtimePolicyAction === 'probe_up';
 
   const {
     sessionIdRef,
@@ -591,7 +823,7 @@ function V3Player(props: V3PlayerProps) {
     windowDuration,
     relativePosition,
     hasSeekWindow,
-    isLiveMode,
+    hasLiveDvrWindow,
     isAtLiveEdge,
     showDvrModeButton,
     startTimeDisplay,
@@ -621,8 +853,9 @@ function V3Player(props: V3PlayerProps) {
     durationSeconds,
     canSeek,
     startUnix,
+    liveSeekWindow,
     setStatus,
-    allowNativeFullscreen: activeHlsEngine === 'native',
+    allowNativeFullscreen: activeHlsEngine === 'native' || vodStreamMode === 'direct_mp4',
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen
   });
@@ -651,6 +884,7 @@ function V3Player(props: V3PlayerProps) {
     reportError,
     waitForSessionReady,
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
+    runtimeProbeActive: isRuntimeProbeActive,
     setStats,
     setStatus,
     setError: setLegacyError,
@@ -704,6 +938,8 @@ function V3Player(props: V3PlayerProps) {
     setActiveRecordingId(null);
     setVodStreamMode(null);
     setActiveHlsEngine(null);
+    setSessionWindowKind('unknown');
+    setLiveSeekWindow(null);
     setShowNativeVideo(true);
     setShowNativeVideoVeil(false);
     setNativeVeilResumeArmed(false);
@@ -962,11 +1198,14 @@ function V3Player(props: V3PlayerProps) {
     setActiveRecordingId(id);
     setStatus('building');
     clearPlayerError();
+    setResumeState(null);
+    setShowResumeOverlay(false);
     setTraceId('-');
     setPlaybackMode('VOD');
 
     let abortController: AbortController | null = null;
     let requestCaps: CapabilitySnapshot | null = null;
+    let recordingIsSeekable = false;
 
     try {
       await ensureSessionCookie();
@@ -1125,7 +1364,7 @@ function V3Player(props: V3PlayerProps) {
           pInfo,
           requestCaps.preferredHlsEngine ?? null
         ));
-        const recordingIsSeekable = typeof pInfo.isSeekable === 'boolean' ? pInfo.isSeekable : false;
+        recordingIsSeekable = typeof pInfo.isSeekable === 'boolean' ? pInfo.isSeekable : false;
         if (typeof pInfo.isSeekable !== 'boolean') {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.isSeekable.missing',
@@ -1136,7 +1375,7 @@ function V3Player(props: V3PlayerProps) {
         if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
 
         // Resume State
-        if (recordingIsSeekable && pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
+        if (!suppressResumePrompt && recordingIsSeekable && pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
           const d = pInfo.resume.durationSeconds || (playbackDurationSeconds || 0);
           if (!d || pInfo.resume.posSeconds < d - 10) {
             setResumeState({
@@ -1166,6 +1405,9 @@ function V3Player(props: V3PlayerProps) {
           setStatus('buffering');
           setActiveHlsEngine(null);
           playDirectMp4(streamUrl);
+          if (recordingIsSeekable && requestedStartPositionSeconds > 0) {
+            seekWhenReady(requestedStartPositionSeconds);
+          }
           return;
         } catch (_error) {
           if (activeRecordingRef.current !== id) return;
@@ -1211,6 +1453,9 @@ function V3Player(props: V3PlayerProps) {
             ? 'native'
             : resolvePreferredHlsEngineForCapabilities(requestCaps);
           playHls(streamUrl, engine);
+          if (recordingIsSeekable && requestedStartPositionSeconds > 0) {
+            seekWhenReady(requestedStartPositionSeconds);
+          }
           setActiveHlsEngine(engine);
         } finally {
           if (vodFetchRef.current === controller) vodFetchRef.current = null;
@@ -1227,7 +1472,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilitiesForPlayer, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
+  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilitiesForPlayer, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, requestedStartPositionSeconds, resolvePreferredHlsEngineForCapabilities, seekWhenReady, setLegacyErrorDetails, setPlayerError, sleep, suppressResumePrompt, t, teardownActivePlayback, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -1255,8 +1500,8 @@ function V3Player(props: V3PlayerProps) {
             kind: 'recording',
             recordingId,
             authToken: token || undefined,
-            startPositionMs: 0,
-            title: channel?.name ?? recordingId,
+            startPositionMs: Math.round(requestedStartPositionSeconds * 1000),
+            title: normalizedRecordingTitle || channel?.name || recordingId,
           });
           return;
         }
@@ -1634,7 +1879,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback, beginNativePlayback, channel?.name, isNativePlaybackHost, nativePlaybackState]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, token]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -1976,29 +2221,64 @@ function V3Player(props: V3PlayerProps) {
   // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css
   // Static layout styles are in V3Player.module.css (scoped)
 
+  const effectiveOperator = mergedPlaybackOperator;
+  const effectiveOperatorMaxQualityRung = effectiveOperator?.maxQualityRung ?? null;
+  const effectiveRuntimePolicyPhase = effectiveOperator?.runtimePolicyPhase ?? null;
+  const effectiveRuntimeProbeCandidate = effectiveOperator?.runtimeProbeCandidate ?? null;
+  const runtimePolicyMetaHint = resolveRuntimePolicyMetaHint(
+    effectiveRuntimePolicyPhase,
+    effectiveRuntimeProbeCandidate,
+    effectiveOperatorMaxQualityRung,
+  );
+  const runtimePolicyCopyHint = runtimePolicyMetaHint
+    ? formatQualityRungLabel(runtimePolicyMetaHint)
+    : null;
+  const runtimePolicyStartupSupport = resolveRuntimePolicyStartupSupport(
+    effectiveRuntimePolicyPhase,
+    runtimePolicyCopyHint,
+    t,
+  );
+  const runtimePolicyErrorSupport = resolveRuntimePolicyErrorSupport(
+    effectiveRuntimePolicyPhase,
+    runtimePolicyCopyHint,
+    t,
+  );
+  const isRecordingStartupSurface = Boolean(recordingId || activeRecordingId || activeRecordingRef.current);
+  const startupTitle = channel?.name || normalizedRecordingTitle || (isRecordingStartupSurface
+    ? t('player.recordingFallbackTitle', { defaultValue: 'Recording' })
+    : '');
   const spinnerLabel =
     isOverlayStartupStatus
-      ? (overlayStatus === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current && vodStreamMode === 'direct_mp4')
-        ? t('player.preparingDirectPlay') // Show explicit preparing for VOD buffering
+      ? isRecordingStartupSurface
+        ? (overlayStatus === 'buffering' && playbackMode === 'VOD' && vodStreamMode === 'direct_mp4')
+          ? t('player.preparingDirectPlay') // Show explicit preparing for VOD buffering
+          : t('player.preparingRecordingPlayback', { defaultValue: 'Opening recording…' })
         : resolveStartupOverlayLabel(
-          overlayStatus,
-          `${t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}…`,
-          sessionProfileReason,
-          t,
-        )
+            overlayStatus,
+            `${t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}…`,
+            sessionProfileReason,
+            t,
+          )
       : '';
   const spinnerSupport =
     isOverlayStartupStatus
-      ? resolveStartupOverlaySupport(sessionProfileReason, t)
+      ? isRecordingStartupSurface
+        ? t('player.recordingStartupSupport', { defaultValue: 'Preparing the source. Playback will start shortly.' })
+        : runtimePolicyStartupSupport || resolveStartupOverlaySupport(sessionProfileReason, t)
       : '';
+  const startupStatusLabel = isRecordingStartupSurface
+    ? t('player.recordingStartupStatus', { defaultValue: 'Opening' })
+    : t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus });
   const showStartupOverlay =
     isImmediateStartupStatus ||
     (status === 'buffering' && showBufferingOverlay) ||
     shouldHoldNativeVideo;
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
   const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;
-  const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || Boolean(onClose));
+  const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || useOverlayShell || isRecordingPageLayout);
   const showPlaybackChrome = !useMinimalStartupChrome;
+  const showRecordingWatchLayout = Boolean(recordingId && !isFullscreen && (useOverlayShell || isRecordingPageLayout));
+  const recordingWatchTitle = startupTitle || t('player.recordingFallbackTitle', { defaultValue: 'Recording' });
 
   useEffect(() => {
     const video = videoRef.current;
@@ -2027,13 +2307,11 @@ function V3Player(props: V3PlayerProps) {
     }
 
     if (isNativeEngine && showNativeVideoVeil && showNativeVideo) {
-      if (nativeVeilResumeArmed) {
-        return;
-      }
-      if (!nativeManagedPauseRef.current && !video.paused) {
-        video.dataset.xg2gManagedPause = '1';
-        nativeManagedPauseRef.current = true;
-        video.pause();
+      // Keep the veil visual-only. Programmatic pause/resume here can strand
+      // native playback behind a manual play gesture after a brief rebuffer.
+      if (nativeManagedPauseRef.current) {
+        delete video.dataset.xg2gManagedPause;
+        nativeManagedPauseRef.current = false;
       }
       return;
     }
@@ -2135,10 +2413,6 @@ function V3Player(props: V3PlayerProps) {
     sessionPlaybackTrace?.targetProfileHash ??
     playbackObservability?.targetProfileHash ??
     null;
-  const effectiveOperator =
-    sessionPlaybackTrace?.operator ??
-    playbackObservability?.operator ??
-    null;
   const effectiveHostPressureBand =
     sessionPlaybackTrace?.hostPressureBand ??
     playbackObservability?.hostPressureBand ??
@@ -2148,11 +2422,38 @@ function V3Player(props: V3PlayerProps) {
     playbackObservability?.hostOverrideApplied ??
     false;
   const effectiveForcedIntent = effectiveOperator?.forcedIntent ?? null;
-  const effectiveOperatorMaxQualityRung = effectiveOperator?.maxQualityRung ?? null;
   const effectiveOperatorRuleName = effectiveOperator?.ruleName ?? null;
   const effectiveOperatorRuleScope = effectiveOperator?.ruleScope ?? null;
+  const effectiveRuntimePolicyAction = effectiveOperator?.runtimePolicyAction ?? null;
+  const effectiveRuntimePolicyConstraints = effectiveOperator?.runtimePolicyConstraints ?? null;
+  const effectiveRuntimePolicyReasons = effectiveOperator?.runtimePolicyReasons ?? null;
+  const effectiveRuntimePolicyTimeline = effectiveOperator?.runtimePolicyTimeline ?? null;
+  const effectiveRuntimeProbeFailureStreak = effectiveOperator?.runtimeProbeFailureStreak ?? null;
+  const effectiveRuntimeProbeSuccessStreak = effectiveOperator?.runtimeProbeSuccessStreak ?? null;
   const effectiveClientFallbackDisabled = effectiveOperator?.clientFallbackDisabled ?? false;
   const effectiveOperatorOverrideApplied = effectiveOperator?.overrideApplied ?? false;
+  const runtimePolicyReasonsSummary =
+    effectiveRuntimePolicyReasons?.filter(Boolean).join(', ') || '-';
+  const runtimePolicyConstraintsSummary =
+    effectiveRuntimePolicyConstraints?.filter(Boolean).join(', ') || '-';
+  const runtimeProbeTrustSummary =
+    effectiveRuntimeProbeSuccessStreak != null || effectiveRuntimeProbeFailureStreak != null
+      ? `success ${effectiveRuntimeProbeSuccessStreak ?? 0} / fail ${effectiveRuntimeProbeFailureStreak ?? 0}`
+      : '-';
+  const runtimePolicyTimelineEntries =
+    effectiveRuntimePolicyTimeline?.slice(-6).reverse() ?? [];
+  const runtimePolicyTimelineSummaryEntries = runtimePolicyTimelineEntries.map((entry) => ({
+    key: `${entry.tickAt}-${entry.policyAction ?? 'hold'}-${entry.plannedTransition ?? 'noop'}`,
+    value: formatRuntimeTimelineEntry(entry),
+  }));
+  const showRuntimePolicyMeta = Boolean(
+    effectiveRuntimePolicyPhase &&
+      effectiveRuntimePolicyPhase !== 'stable'
+  );
+  const runtimePolicyPhaseLabel = t(`player.runtimePolicyPhases.${effectiveRuntimePolicyPhase ?? 'unknown'}`, {
+    defaultValue: formatRuntimePolicyPhaseLabel(effectiveRuntimePolicyPhase),
+  });
+  const runtimePolicyPhaseState = resolveRuntimePolicyPhaseState(effectiveRuntimePolicyPhase);
   const sourceProfileSummary = formatSourceProfileSummary(sessionPlaybackTrace?.source);
   const ffmpegPlanSummary = formatFfmpegPlanSummary(sessionPlaybackTrace?.ffmpegPlan);
   const firstFrameLabel = formatFirstFrameLabel(sessionPlaybackTrace?.firstFrameAtMs);
@@ -2160,216 +2461,278 @@ function V3Player(props: V3PlayerProps) {
   const stopSummary = formatStopSummary(sessionPlaybackTrace);
   const hostPressureSummary = formatHostPressureSummary(effectiveHostPressureBand, effectiveHostOverrideApplied);
   const showVerboseErrorTelemetry = !isCompactTouchLayout;
+  const runtimePolicyMetaHintLabel = runtimePolicyMetaHint
+    ? formatQualityRungLabel(runtimePolicyMetaHint)
+    : null;
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
-  const audioToggleIcon = isMuted ? '🔊' : '🔇';
+  const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
+  const inferredPlaybackWindowKind = resolvePlaybackWindowKind(playbackMode, hasLiveDvrWindow);
+  const playbackWindowKind = sessionWindowKind !== 'unknown' ? sessionWindowKind : inferredPlaybackWindowKind;
+  const liveWindowEdge = liveSeekWindow?.liveEdge ?? seekableEnd;
+  const liveWindowLagSeconds = Math.max(0, Math.round(liveWindowEdge - currentPlaybackTime));
+  const hasLiveWindowPlayhead = hasLiveDvrWindow && currentPlaybackTime >= Math.max(0, seekableStart - 1);
+  const liveWindowStateLabel = !hasLiveDvrWindow
+    ? '-'
+    : !hasLiveWindowPlayhead
+      ? t('player.liveWindowReady', { defaultValue: 'Window ready' })
+      : isAtLiveEdge
+        ? t('player.liveWindowAtEdge', { defaultValue: 'At live edge' })
+        : t('player.liveWindowBehindEdge', {
+            defaultValue: '{{seconds}}s behind live',
+            seconds: liveWindowLagSeconds,
+          });
+  const runtimeStatsRows = useMemo(() => ([
+    {
+      key: 'status',
+      label: t('player.status'),
+      value: (
+        <span role="status">
+          {t(`player.statusStates.${status}`, { defaultValue: status })}
+        </span>
+      ),
+    },
+    { key: 'session', label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
+    { key: 'request-id', label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
+    { key: 'client-path', label: t('player.clientPath', { defaultValue: 'Client Path' }), value: effectiveClientPath || '-' },
+    { key: 'request-profile', label: t('player.requestProfile', { defaultValue: 'Request Profile' }), value: formatRequestProfileLabel(effectiveRequestProfile) },
+    { key: 'requested-intent', label: t('player.requestedIntent', { defaultValue: 'Requested Intent' }), value: formatRequestProfileLabel(effectiveRequestedIntent) },
+    { key: 'resolved-intent', label: t('player.resolvedIntent', { defaultValue: 'Resolved Intent' }), value: formatRequestProfileLabel(effectiveResolvedIntent) },
+    { key: 'quality-rung', label: t('player.qualityRung', { defaultValue: 'Quality Rung' }), value: formatQualityRungLabel(effectiveQualityRung) },
+    { key: 'audio-quality-rung', label: t('player.audioQualityRung', { defaultValue: 'Audio Quality Rung' }), value: formatQualityRungLabel(effectiveAudioQualityRung) },
+    { key: 'video-quality-rung', label: t('player.videoQualityRung', { defaultValue: 'Video Quality Rung' }), value: formatQualityRungLabel(effectiveVideoQualityRung) },
+    { key: 'degraded-from', label: t('player.degradedFrom', { defaultValue: 'Degraded From' }), value: formatRequestProfileLabel(effectiveDegradedFrom) },
+    { key: 'host-pressure-band', label: t('player.hostPressure', { defaultValue: 'Host Pressure' }), value: effectiveHostPressureBand || '-' },
+    { key: 'host-override', label: t('player.hostOverrideApplied', { defaultValue: 'Host Override Applied' }), value: formatBooleanLabel(effectiveHostOverrideApplied) },
+    { key: 'forced-intent', label: t('player.forcedIntent', { defaultValue: 'Forced Intent' }), value: formatRequestProfileLabel(effectiveForcedIntent) },
+    { key: 'operator-max-quality', label: t('player.operatorMaxQualityRung', { defaultValue: 'Operator Max Quality' }), value: formatQualityRungLabel(effectiveOperatorMaxQualityRung) },
+    { key: 'runtime-policy-action', label: t('player.runtimePolicyAction', { defaultValue: 'Runtime Policy Action' }), value: effectiveRuntimePolicyAction || '-' },
+    {
+      key: 'runtime-policy-phase',
+      label: t('player.runtimePolicyPhase', { defaultValue: 'Runtime Policy Phase' }),
+      value: runtimePolicyPhaseLabel,
+    },
+    { key: 'runtime-probe-target', label: t('player.runtimeProbeCandidate', { defaultValue: 'Runtime Probe Target' }), value: formatQualityRungLabel(effectiveRuntimeProbeCandidate) },
+    { key: 'runtime-policy-reasons', label: t('player.runtimePolicyReasons', { defaultValue: 'Runtime Policy Reasons' }), value: runtimePolicyReasonsSummary },
+    { key: 'runtime-policy-constraints', label: t('player.runtimePolicyConstraints', { defaultValue: 'Runtime Policy Constraints' }), value: runtimePolicyConstraintsSummary },
+    { key: 'runtime-probe-trust', label: t('player.runtimeProbeTrust', { defaultValue: 'Runtime Probe Trust' }), value: runtimeProbeTrustSummary },
+    {
+      key: 'runtime-policy-timeline',
+      label: t('player.runtimePolicyTimeline', { defaultValue: 'Runtime Timeline' }),
+      value: runtimePolicyTimelineSummaryEntries.length > 0 ? (
+        <div className={styles.runtimeTimelineList}>
+          {runtimePolicyTimelineSummaryEntries.map((entry) => (
+            <span key={entry.key}>{entry.value}</span>
+          ))}
+        </div>
+      ) : '-',
+    },
+    { key: 'operator-rule-name', label: t('player.operatorRuleName', { defaultValue: 'Operator Rule' }), value: effectiveOperatorRuleName || '-' },
+    { key: 'operator-rule-scope', label: t('player.operatorRuleScope', { defaultValue: 'Operator Rule Scope' }), value: effectiveOperatorRuleScope || '-' },
+    { key: 'client-fallback-disabled', label: t('player.clientFallbackDisabled', { defaultValue: 'Client Fallback Disabled' }), value: formatBooleanLabel(effectiveClientFallbackDisabled) },
+    { key: 'operator-override-applied', label: t('player.operatorOverrideApplied', { defaultValue: 'Operator Override Applied' }), value: formatBooleanLabel(effectiveOperatorOverrideApplied) },
+    { key: 'source-profile', label: t('player.sourceProfile', { defaultValue: 'Source Profile' }), value: sourceProfileSummary },
+    { key: 'output-profile', label: t('player.outputProfile', { defaultValue: 'Output Profile' }), value: formatTargetProfileSummary(effectiveTargetProfile) },
+    { key: 'profile-hash', label: t('player.profileHash', { defaultValue: 'Profile Hash' }), value: effectiveTargetProfileHash || '-' },
+    { key: 'execution', label: t('player.execution', { defaultValue: 'Execution' }), value: formatExecutionLabel(effectiveTargetProfile) },
+    { key: 'ffmpeg-plan', label: t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' }), value: ffmpegPlanSummary },
+    { key: 'first-frame', label: t('player.firstFrame', { defaultValue: 'First Frame' }), value: firstFrameLabel },
+    { key: 'fallbacks', label: t('player.fallbacks', { defaultValue: 'Fallbacks' }), value: fallbackSummary },
+    { key: 'stop-reason', label: t('player.stopReason', { defaultValue: 'Stop' }), value: stopSummary },
+    { key: 'output-kind', label: t('player.outputKind', { defaultValue: 'Output Kind' }), value: playbackObservability?.selectedOutputKind || '-' },
+    {
+      key: 'playback-window',
+      label: t('player.playbackWindow', { defaultValue: 'Playback Window' }),
+      value: t(`player.playbackWindowKinds.${playbackWindowKind}`, { defaultValue: playbackWindowKind }),
+    },
+    { key: 'resolution', label: t('player.resolution'), value: stats.resolution },
+    { key: 'bandwidth', label: t('player.bandwidth'), value: stats.bandwidth > 0 ? `${stats.bandwidth} kbps` : '-' },
+    { key: 'buffer-health', label: t('player.bufferHealth'), value: `${stats.bufferHealth}s` },
+    { key: 'latency', label: t('player.latency'), value: stats.latency !== null ? `${stats.latency}s` : '-' },
+    { key: 'fps', label: t('player.fps'), value: stats.fps },
+    { key: 'dropped', label: t('player.dropped'), value: stats.droppedFrames },
+    {
+      key: 'hls-level',
+      label: t('player.hlsLevel'),
+      value: hlsRef.current ? (stats.levelIndex === -1 ? 'Auto' : stats.levelIndex) : 'Native / Direct',
+    },
+    { key: 'segment-duration', label: t('player.segDuration'), value: stats.buffer > 0 ? `${stats.buffer}s` : '-' },
+    {
+      key: 'seekable-range',
+      label: t('player.seekableRange', { defaultValue: 'Seekable' }),
+      value: `${formatClock(seekableStart)} -> ${formatClock(seekableEnd)}`,
+    },
+    { key: 'playhead', label: t('player.playhead', { defaultValue: 'Playhead' }), value: formatClock(currentPlaybackTime) },
+    { key: 'seek-window', label: t('player.seekWindow', { defaultValue: 'Seek Window' }), value: hasSeekWindow ? formatClock(windowDuration) : '-' },
+    ...(hasLiveDvrWindow ? [{
+      key: 'live-window-state',
+      label: t('player.liveWindowState', { defaultValue: 'Live Window' }),
+      value: liveWindowStateLabel,
+    }] : []),
+    {
+      key: 'fullscreen-path',
+      label: t('player.fullscreenPath', { defaultValue: 'Fullscreen Path' }),
+      value: isWebKitFullscreenActive
+        ? 'native-webkit'
+        : isFullscreen
+          ? 'container'
+          : prefersDesktopNativeFullscreen
+            ? 'desktop-webkit-ready'
+            : supportsNativeFullscreen
+              ? 'webkit-available'
+              : 'web-only',
+    },
+  ]), [
+    currentPlaybackTime,
+    effectiveAudioQualityRung,
+    effectiveClientFallbackDisabled,
+    effectiveClientPath,
+    effectiveDegradedFrom,
+    effectiveForcedIntent,
+    effectiveHostOverrideApplied,
+    effectiveHostPressureBand,
+    effectiveOperatorMaxQualityRung,
+    effectiveOperatorOverrideApplied,
+    effectiveOperatorRuleName,
+    effectiveOperatorRuleScope,
+    effectiveQualityRung,
+    effectiveRequestProfile,
+    effectiveRequestedIntent,
+    effectiveResolvedIntent,
+    effectiveRuntimePolicyAction,
+    effectiveRuntimeProbeCandidate,
+    effectiveSessionId,
+    effectiveTargetProfile,
+    effectiveTargetProfileHash,
+    effectiveVideoQualityRung,
+    fallbackSummary,
+    ffmpegPlanSummary,
+    firstFrameLabel,
+    hasLiveDvrWindow,
+    hasSeekWindow,
+    isFullscreen,
+    isWebKitFullscreenActive,
+    liveWindowStateLabel,
+    playbackObservability?.selectedOutputKind,
+    playbackWindowKind,
+    prefersDesktopNativeFullscreen,
+    runtimePolicyConstraintsSummary,
+    runtimePolicyPhaseLabel,
+    runtimePolicyPhaseState,
+    runtimePolicyReasonsSummary,
+    runtimePolicyTimelineSummaryEntries,
+    runtimeProbeTrustSummary,
+    seekableEnd,
+    seekableStart,
+    sessionPlaybackTrace?.requestId,
+    sourceProfileSummary,
+    stats.bandwidth,
+    stats.buffer,
+    stats.bufferHealth,
+    stats.droppedFrames,
+    stats.fps,
+    stats.latency,
+    stats.levelIndex,
+    stats.resolution,
+    status,
+    stopSummary,
+    supportsNativeFullscreen,
+    t,
+    traceId,
+    windowDuration,
+  ]);
+  const seekProgressPercent = windowDuration > 0
+    ? `${Math.min(100, Math.max(0, (relativePosition / windowDuration) * 100))}%`
+    : '0%';
+  const seekFromPointer = useCallback((clientX: number, track: HTMLDivElement) => {
+    if (windowDuration <= 0) {
+      return;
+    }
+
+    const rect = track.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    seekTo(seekableStart + ratio * windowDuration);
+  }, [seekTo, seekableStart, windowDuration]);
+  const handleVodScrubPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    seekFromPointer(event.clientX, event.currentTarget);
+  }, [seekFromPointer]);
+  const handleVodScrubPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if ((event.buttons & 1) !== 1) {
+      return;
+    }
+    seekFromPointer(event.clientX, event.currentTarget);
+  }, [seekFromPointer]);
+  const handleVodScrubKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (windowDuration <= 0) {
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowLeft':
+        event.preventDefault();
+        seekBy(-15);
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        seekBy(15);
+        break;
+      case 'Home':
+        event.preventDefault();
+        seekTo(seekableStart);
+        break;
+      case 'End':
+        event.preventDefault();
+        seekTo(seekableEnd);
+        break;
+      default:
+        break;
+    }
+  }, [seekBy, seekTo, seekableEnd, seekableStart, windowDuration]);
 
   return (
     <div
       ref={containerRef}
+      data-xg2g-player-root="true"
+      data-playback-window={playbackWindowKind}
       className={[
         styles.container,
         'animate-enter',
-        onClose ? styles.overlay : null,
+        useOverlayShell ? styles.overlay : null,
+        isRecordingPageLayout ? styles.recordingPage : null,
+        isFullscreen ? styles.fullscreenActive : null,
         isIdle ? styles.userIdle : null,
       ].filter(Boolean).join(' ')}
     >
-      {onClose && (
-        <button
-          onClick={() => void stopStream()}
-          className={styles.closeButton}
-          aria-label={t('player.closePlayer')}
+      <div className={showRecordingWatchLayout ? styles.watchSurface : undefined}>
+        <div
+          className={[
+            styles.playerFrame,
+            useOverlayShell ? styles.playerFrameOverlay : null,
+            isRecordingPageLayout ? styles.playerFramePage : null,
+            showRecordingWatchLayout ? styles.playerFrameWatchSurface : null,
+            isFullscreen ? styles.playerFrameFullscreen : null,
+          ].filter(Boolean).join(' ')}
         >
-          ✕
-        </button>
-      )}
+          {useOverlayShell && (
+            <button
+              onClick={() => void stopStream()}
+              className={styles.closeButton}
+              aria-label={t('player.closePlayer')}
+            >
+              ✕
+            </button>
+          )}
 
-      {/* Stats Overlay */}
-      {showStats && showPlaybackChrome && (
-        <div className={styles.statsOverlay}>
-          <Card variant="standard">
-            <Card.Header>
-              <Card.Title>{t('player.statsTitle', { defaultValue: 'Technical Stats' })}</Card.Title>
-            </Card.Header>
-            <Card.Content className={styles.statsGrid}>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.status')}</span>
-                <StatusChip
-                  state={status === 'ready' ? 'live' : status === 'error' ? 'error' : 'idle'}
-                  label={t(`player.statusStates.${status}`, { defaultValue: status })}
-                />
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('common.session', { defaultValue: 'Session' })}</span>
-                <span className={styles.statsValue}>{effectiveSessionId || '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('common.requestId', { defaultValue: 'Request ID' })}</span>
-                <span className={styles.statsValue}>{sessionPlaybackTrace?.requestId || traceId}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.clientPath', { defaultValue: 'Client Path' })}</span>
-                <span className={styles.statsValue}>{effectiveClientPath || '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.requestProfile', { defaultValue: 'Request Profile' })}</span>
-                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveRequestProfile)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.requestedIntent', { defaultValue: 'Requested Intent' })}</span>
-                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveRequestedIntent)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.resolvedIntent', { defaultValue: 'Resolved Intent' })}</span>
-                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveResolvedIntent)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.qualityRung', { defaultValue: 'Quality Rung' })}</span>
-                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveQualityRung)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.audioQualityRung', { defaultValue: 'Audio Quality Rung' })}</span>
-                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveAudioQualityRung)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.videoQualityRung', { defaultValue: 'Video Quality Rung' })}</span>
-                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveVideoQualityRung)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.degradedFrom', { defaultValue: 'Degraded From' })}</span>
-                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveDegradedFrom)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.hostPressure', { defaultValue: 'Host Pressure' })}</span>
-                <span className={styles.statsValue}>{effectiveHostPressureBand || '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.hostOverrideApplied', { defaultValue: 'Host Override Applied' })}</span>
-                <span className={styles.statsValue}>{formatBooleanLabel(effectiveHostOverrideApplied)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.forcedIntent', { defaultValue: 'Forced Intent' })}</span>
-                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveForcedIntent)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.operatorMaxQualityRung', { defaultValue: 'Operator Max Quality' })}</span>
-                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveOperatorMaxQualityRung)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.operatorRuleName', { defaultValue: 'Operator Rule' })}</span>
-                <span className={styles.statsValue}>{effectiveOperatorRuleName || '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.operatorRuleScope', { defaultValue: 'Operator Rule Scope' })}</span>
-                <span className={styles.statsValue}>{effectiveOperatorRuleScope || '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.clientFallbackDisabled', { defaultValue: 'Client Fallback Disabled' })}</span>
-                <span className={styles.statsValue}>{formatBooleanLabel(effectiveClientFallbackDisabled)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.operatorOverrideApplied', { defaultValue: 'Operator Override Applied' })}</span>
-                <span className={styles.statsValue}>{formatBooleanLabel(effectiveOperatorOverrideApplied)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.sourceProfile', { defaultValue: 'Source Profile' })}</span>
-                <span className={styles.statsValue}>{sourceProfileSummary}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.outputProfile', { defaultValue: 'Output Profile' })}</span>
-                <span className={styles.statsValue}>{formatTargetProfileSummary(effectiveTargetProfile)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.profileHash', { defaultValue: 'Profile Hash' })}</span>
-                <span className={styles.statsValue}>{effectiveTargetProfileHash || '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.execution', { defaultValue: 'Execution' })}</span>
-                <span className={styles.statsValue}>{formatExecutionLabel(effectiveTargetProfile)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}</span>
-                <span className={styles.statsValue}>{ffmpegPlanSummary}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.firstFrame', { defaultValue: 'First Frame' })}</span>
-                <span className={styles.statsValue}>{firstFrameLabel}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.fallbacks', { defaultValue: 'Fallbacks' })}</span>
-                <span className={styles.statsValue}>{fallbackSummary}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
-                <span className={styles.statsValue}>{stopSummary}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.outputKind', { defaultValue: 'Output Kind' })}</span>
-                <span className={styles.statsValue}>{playbackObservability?.selectedOutputKind || '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.resolution')}</span>
-                <span className={styles.statsValue}>{stats.resolution}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.bandwidth')}</span>
-                <span className={styles.statsValue}>{stats.bandwidth > 0 ? `${stats.bandwidth} kbps` : '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.bufferHealth')}</span>
-                <span className={styles.statsValue}>{stats.bufferHealth}s</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.latency')}</span>
-                <span className={styles.statsValue}>{stats.latency !== null ? stats.latency + 's' : '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.fps')}</span>
-                <span className={styles.statsValue}>{stats.fps}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.dropped')}</span>
-                <span className={styles.statsValue}>{stats.droppedFrames}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.hlsLevel')}</span>
-                <span className={styles.statsValue}>{
-                  hlsRef.current ? (stats.levelIndex === -1 ? 'Auto' : stats.levelIndex) : 'Native / Direct'
-                }</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.segDuration')}</span>
-                <span className={styles.statsValue}>{stats.buffer > 0 ? `${stats.buffer}s` : '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.seekableRange', { defaultValue: 'Seekable' })}</span>
-                <span className={styles.statsValue}>{`${formatClock(seekableStart)} -> ${formatClock(seekableEnd)}`}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.playhead', { defaultValue: 'Playhead' })}</span>
-                <span className={styles.statsValue}>{formatClock(currentPlaybackTime)}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.seekWindow', { defaultValue: 'Seek Window' })}</span>
-                <span className={styles.statsValue}>{hasSeekWindow ? formatClock(windowDuration) : '-'}</span>
-              </div>
-              <div className={styles.statsRow}>
-                <span className={styles.statsLabel}>{t('player.fullscreenPath', { defaultValue: 'Fullscreen Path' })}</span>
-                <span className={styles.statsValue}>
-                  {isWebKitFullscreenActive
-                    ? 'native-webkit'
-                    : isFullscreen
-                      ? 'container'
-                      : prefersDesktopNativeFullscreen
-                        ? 'desktop-webkit-ready'
-                        : supportsNativeFullscreen
-                          ? 'webkit-available'
-                          : 'web-only'}
-                </span>
-              </div>
-            </Card.Content>
-          </Card>
-        </div>
-      )}
+      <PlayerRuntimeMetaPanel
+        show={showStats && showPlaybackChrome}
+        title={t('player.statsTitle', { defaultValue: 'Technical Stats' })}
+        rows={runtimeStatsRows}
+      />
 
       <div
         className={[
@@ -2389,52 +2752,30 @@ function V3Player(props: V3PlayerProps) {
         )}
 
         {/* PREPARING Overlay (VOD Remux) */}
-        {showStartupOverlay && (
-          <div
-            className={[
-              styles.spinnerOverlay,
-              useNativeBufferingSafeOverlay ? styles.spinnerOverlaySafe : null,
-            ].filter(Boolean).join(' ')}
-            aria-live="polite"
-            ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}
-          >
-            <div className={styles.spinnerBadge}>
-              <div className={`${styles.spinner} spinner-base`}></div>
-            </div>
-            <div className={styles.spinnerContent}>
-              <div className={styles.spinnerEyebrow}>
-                {t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' })}
-              </div>
-              {channel && <h2 className={styles.spinnerTitle}>{channel.name}</h2>}
-              <div className={styles.spinnerStatusRow}>
-                <StatusChip
-                  state={overlayStatus === 'buffering' ? 'live' : 'idle'}
-                  label={t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}
-                />
-              </div>
-              <div className={styles.spinnerLabel}>{spinnerLabel}</div>
-              <div className={styles.spinnerSupport}>{spinnerSupport}</div>
-              <div className={styles.spinnerMeta}>
-                <div className={styles.spinnerProgressTrack} aria-hidden="true">
-                  <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
-                </div>
-                <div className={styles.spinnerElapsed}>
-                  {t('player.startupElapsed', {
-                    defaultValue: 'Wait {{seconds}}s',
-                    seconds: startupElapsedSeconds,
-                  })}
-                </div>
-              </div>
-              {useMinimalStartupChrome && !onClose && (
-                <div className={styles.spinnerActions}>
-                  <Button variant="danger" size="sm" onClick={() => void stopStream()}>
-                    ⏹ {t('common.stop')}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <PlayerStartupSurface
+          show={showStartupOverlay}
+          isRecordingStartupSurface={isRecordingStartupSurface}
+          useNativeBufferingSafeOverlay={useNativeBufferingSafeOverlay}
+          startupTitle={startupTitle}
+          startupEyebrow={t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' })}
+          startupStatusState={overlayStatus === 'buffering' ? 'live' : 'idle'}
+          startupStatusLabel={startupStatusLabel}
+          spinnerLabel={spinnerLabel}
+          spinnerSupport={spinnerSupport}
+          startupElapsedLabel={t('player.startupElapsed', {
+            defaultValue: 'Wait {{seconds}}s',
+            seconds: startupElapsedSeconds,
+          })}
+          showRuntimePolicyMeta={showRuntimePolicyMeta}
+          runtimePolicyPhase={effectiveRuntimePolicyPhase}
+          runtimePolicyPhaseState={runtimePolicyPhaseState}
+          runtimePolicyPhaseLabel={runtimePolicyPhaseLabel}
+          runtimePolicyMetaHint={runtimePolicyMetaHintLabel}
+          useMinimalStartupChrome={useMinimalStartupChrome}
+          showStopAction={!onClose}
+          stopLabel={t('common.stop')}
+          onStop={() => void stopStream()}
+        />
 
         <video
           ref={videoRef}
@@ -2452,118 +2793,114 @@ function V3Player(props: V3PlayerProps) {
       </div>
 
       {/* Error Toast */}
-      {error && (
-        <div className={styles.errorToast} aria-live="polite" role="alert">
-          <div className={styles.errorMain}>
-            <span className={styles.errorText}>⚠ {error.title}</span>
-            {error.retryable ? (
-              <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
-            ) : null}
-          </div>
-          {showVerboseErrorTelemetry && (stopSummary !== '-' || fallbackSummary !== '-' || ffmpegPlanSummary !== '-' || hostPressureSummary !== '-') && (
-            <div className={styles.errorTelemetry}>
-              {stopSummary !== '-' && (
-                <div className={styles.errorTelemetryRow}>
-                  <span className={styles.errorTelemetryLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
-                  <span className={styles.errorTelemetryValue}>{stopSummary}</span>
-                </div>
-              )}
-              {hostPressureSummary !== '-' && (
-                <div className={styles.errorTelemetryRow}>
-                  <span className={styles.errorTelemetryLabel}>{t('player.hostPressure', { defaultValue: 'Host Pressure' })}</span>
-                  <span className={styles.errorTelemetryValue}>{hostPressureSummary}</span>
-                </div>
-              )}
-              {fallbackSummary !== '-' && (
-                <div className={styles.errorTelemetryRow}>
-                  <span className={styles.errorTelemetryLabel}>{t('player.fallbacks', { defaultValue: 'Fallbacks' })}</span>
-                  <span className={styles.errorTelemetryValue}>{fallbackSummary}</span>
-                </div>
-              )}
-              {ffmpegPlanSummary !== '-' && (
-                <div className={styles.errorTelemetryRow}>
-                  <span className={styles.errorTelemetryLabel}>{t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}</span>
-                  <span className={styles.errorTelemetryValue}>{ffmpegPlanSummary}</span>
-                </div>
-              )}
-            </div>
-          )}
-          {error.detail && (
-            <button
-              onClick={() => setShowErrorDetails(!showErrorDetails)}
-              className={styles.errorDetailsButton}
-            >
-              {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
-            </button>
-          )}
-          {showErrorDetails && error.detail && (
-            <div className={styles.errorDetailsContent}>
-              <pre className={styles.errorDetailsPre}>{error.detail}</pre>
-              <br />
-              {t('common.session')}: {effectiveSessionId || t('common.notAvailable')}
-            </div>
-          )}
-        </div>
-      )}
+      <PlayerErrorSurface
+        error={error}
+        onRetry={handleRetry}
+        showRuntimePolicyMeta={showRuntimePolicyMeta}
+        runtimePolicyPhase={effectiveRuntimePolicyPhase}
+        runtimePolicyPhaseState={runtimePolicyPhaseState}
+        runtimePolicyPhaseLabel={runtimePolicyPhaseLabel}
+        runtimePolicyMetaHint={runtimePolicyMetaHintLabel}
+        runtimePolicyErrorSupport={runtimePolicyErrorSupport}
+        showVerboseErrorTelemetry={showVerboseErrorTelemetry}
+        stopSummary={stopSummary}
+        hostPressureSummary={hostPressureSummary}
+        fallbackSummary={fallbackSummary}
+        ffmpegPlanSummary={ffmpegPlanSummary}
+        stopLabel={t('player.stopReason', { defaultValue: 'Stop' })}
+        hostPressureLabel={t('player.hostPressure', { defaultValue: 'Host Pressure' })}
+        fallbackLabel={t('player.fallbacks', { defaultValue: 'Fallbacks' })}
+        ffmpegPlanLabel={t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}
+        retryLabel={t('common.retry')}
+        showErrorDetails={showErrorDetails}
+        onToggleDetails={() => setShowErrorDetails(!showErrorDetails)}
+        hideDetailsLabel={t('common.hideDetails')}
+        showDetailsLabel={t('common.showDetails')}
+        sessionLabel={t('common.session')}
+        sessionValue={effectiveSessionId || t('common.notAvailable')}
+      />
 
       {/* Controls & Status Bar */}
       {showPlaybackChrome && (
-        <div className={styles.controlsHeader}>
+        <div
+          className={[
+            styles.controlsHeader,
+            useTheaterControlsLayout ? styles.controlsHeaderTheater : null,
+          ].filter(Boolean).join(' ')}
+        >
           {hasSeekWindow ? (
-            <div className={[styles.vodControls, styles.seekControls].join(' ')}>
-              <div className={styles.seekButtons}>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
-                  ↺ 15m
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
-                  ↺ 60s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
-                  ↺ 15s
-                </Button>
+            <div
+              className={[
+                styles.vodControls,
+                styles.seekControls,
+                useTheaterControlsLayout ? styles.vodControlsTheater : null,
+              ].filter(Boolean).join(' ')}
+            >
+              <div className={styles.vodScrubArea}>
+                <div className={styles.vodScrubTimes}>
+                  <span>{startTimeDisplay}</span>
+                  <span>{endTimeDisplay}</span>
+                </div>
+                <div
+                  className={styles.vodScrubTrack}
+                  role="slider"
+                  tabIndex={0}
+                  aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                  aria-valuemin={0}
+                  aria-valuemax={Math.round(windowDuration)}
+                  aria-valuenow={Math.round(relativePosition)}
+                  onPointerDown={handleVodScrubPointerDown}
+                  onPointerMove={handleVodScrubPointerMove}
+                  onKeyDown={handleVodScrubKeyDown}
+                >
+                  <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
+                  <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
+                </div>
               </div>
 
-              <Button
-                variant="primary"
-                size="icon"
-                className={styles.playPauseButton}
-                onClick={togglePlayPause}
-                title={isPlaying ? t('player.pause') : t('player.play')}
-                aria-label={isPlaying ? t('player.pause') : t('player.play')}
+              <div
+                className={[
+                  styles.transportControls,
+                  useTheaterControlsLayout ? styles.transportControlsTheater : null,
+                ].filter(Boolean).join(' ')}
               >
-                {isPlaying ? '⏸' : '▶'}
-              </Button>
+                <div className={styles.seekButtons}>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
+                    -15m
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
+                    -60s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
+                    -15s
+                  </Button>
+                </div>
 
-              <div className={styles.seekSliderGroup}>
-                <span className={styles.vodTime}>{startTimeDisplay}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max={windowDuration}
-                  step="0.1"
-                  className={styles.vodSlider}
-                  value={relativePosition}
-                  onChange={(e) => {
-                    const newVal = parseFloat(e.target.value);
-                    seekTo(seekableStart + newVal);
-                  }}
-                />
-                <span className={styles.vodTimeTotal}>{endTimeDisplay}</span>
+                <Button
+                  variant="primary"
+                  size="icon"
+                  className={styles.playPauseButton}
+                  onClick={togglePlayPause}
+                  title={isPlaying ? t('player.pause') : t('player.play')}
+                  aria-label={isPlaying ? t('player.pause') : t('player.play')}
+                >
+                  {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
+                </Button>
+
+                <div className={styles.seekButtons}>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
+                    +15s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
+                    +60s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
+                    +15m
+                  </Button>
+                </div>
               </div>
 
-              <div className={styles.seekButtons}>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
-                  +15s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
-                  +60s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
-                  +15m
-                </Button>
-              </div>
-
-              {isLiveMode && (
+              {hasLiveDvrWindow && (
                 <button
                   className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
                   onClick={() => seekTo(seekableEnd)}
@@ -2604,12 +2941,25 @@ function V3Player(props: V3PlayerProps) {
 
           {/* DVR Mode Button (Safari Only / Fallback) */}
           {showDvrModeButton && !canToggleFullscreen && (
-            <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
-              📺 DVR
+            <Button size="sm" onClick={enterDVRMode} title={t('player.dvrMode')}>
+              DVR
             </Button>
           )}
 
-          <div className={styles.utilityControls}>
+          <div
+            className={[
+              styles.utilityControls,
+              useTheaterControlsLayout ? styles.utilityControlsTheater : null,
+            ].filter(Boolean).join(' ')}
+          >
+            <PlayerRuntimeMeta
+              show={showRuntimePolicyMeta}
+              phase={effectiveRuntimePolicyPhase}
+              phaseState={runtimePolicyPhaseState}
+              phaseLabel={runtimePolicyPhaseLabel}
+              hint={runtimePolicyMetaHintLabel}
+              theater={useTheaterControlsLayout}
+            />
             {prefersDesktopNativeFullscreen && canEnterNativeFullscreen && !isFullscreen && (
               <Button
                 variant="ghost"
@@ -2617,7 +2967,7 @@ function V3Player(props: V3PlayerProps) {
                 onClick={() => enterNativeFullscreen()}
                 title={t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
               >
-                TV {t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
+                {t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
               </Button>
             )}
 
@@ -2630,15 +2980,21 @@ function V3Player(props: V3PlayerProps) {
                 title={isFullscreen
                   ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
                   : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
-              >
-                ⛶ {isFullscreen
+                aria-label={isFullscreen
                   ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
                   : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+              >
+                <FullscreenGlyph />
               </Button>
             )}
 
             {canToggleMute && (
-              <div className={styles.volumeControl}>
+              <div
+                className={[
+                  styles.volumeControl,
+                  useTheaterControlsLayout ? styles.volumeControlTheater : null,
+                ].filter(Boolean).join(' ')}
+              >
                 <Button
                   variant={isMuted ? 'primary' : 'ghost'}
                   size="sm"
@@ -2648,8 +3004,7 @@ function V3Player(props: V3PlayerProps) {
                   aria-label={audioToggleLabel}
                   aria-pressed={!isMuted}
                 >
-                  <span className={styles.audioToggleIcon} aria-hidden="true">{audioToggleIcon}</span>
-                  <span>{audioToggleLabel}</span>
+                  <VolumeGlyph muted={isMuted} />
                 </Button>
                 {canAdjustVolume ? (
                   <input
@@ -2677,7 +3032,7 @@ function V3Player(props: V3PlayerProps) {
                 onClick={() => void togglePiP()}
                 title={t('player.pipTitle')}
               >
-                📺 {t('player.pipLabel')}
+                {t('player.pipLabel')}
               </Button>
             )}
 
@@ -2692,13 +3047,40 @@ function V3Player(props: V3PlayerProps) {
             </Button>
 
             {!onClose && (
-              <Button variant="danger" onClick={() => void stopStream()}>
-                ⏹ {t('common.stop')}
+              <Button variant="danger" size="sm" onClick={() => void stopStream()}>
+                {t('common.stop')}
               </Button>
             )}
           </div>
         </div>
       )}
+        </div>
+        {showRecordingWatchLayout && (
+          <section
+            className={styles.watchLayout}
+            aria-label={t('player.watchSurfaceLabel', { defaultValue: 'Recording playback details' })}
+          >
+            <div className={styles.watchMain}>
+              <h1 className={styles.watchTitle}>{recordingWatchTitle}</h1>
+              <div className={styles.watchMeta}>
+                {recordingDateLabel ? <span>{recordingDateLabel}</span> : null}
+                {recordingLengthLabel ? <span>{recordingLengthLabel}</span> : null}
+                {requestedStartPositionSeconds > 0 ? (
+                  <span className={styles.watchResumeHint}>
+                    {t('player.resumeFrom', {
+                      defaultValue: 'Resume {{time}}',
+                      time: formatClock(requestedStartPositionSeconds),
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              {recordingDescription ? (
+                <p className={styles.watchDescription}>{recordingDescription}</p>
+              ) : null}
+            </div>
+          </section>
+        )}
+      </div>
       {/* Resume Overlay */}
       {showResumeOverlay && resumeState && (
         <div className={styles.resumeOverlay}>

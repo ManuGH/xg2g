@@ -98,11 +98,38 @@ type HostConcurrencySnapshot struct {
 	MaxVAAPITokens    int `json:"maxVaapiTokens,omitempty"`
 }
 
+type HostCodecBenchmark struct {
+	Codec          string `json:"codec,omitempty"`
+	Class          string `json:"class,omitempty"`
+	Backend        string `json:"backend,omitempty"`
+	ProbeElapsedMs int64  `json:"probeElapsedMs,omitempty"`
+	AutoEligible   bool   `json:"autoEligible,omitempty"`
+}
+
+type HostProfileBenchmark struct {
+	ProfileID      string `json:"profileId,omitempty"`
+	Codec          string `json:"codec,omitempty"`
+	Class          string `json:"class,omitempty"`
+	Backend        string `json:"backend,omitempty"`
+	ProbeElapsedMs int64  `json:"probeElapsedMs,omitempty"`
+}
+
+type HostBenchmarkSnapshot struct {
+	Class                 string                 `json:"class,omitempty"`
+	PreferredCodec        string                 `json:"preferredCodec,omitempty"`
+	PreferredBackend      string                 `json:"preferredBackend,omitempty"`
+	FastestProbeElapsedMs int64                  `json:"fastestProbeElapsedMs,omitempty"`
+	Codecs                []HostCodecBenchmark   `json:"codecs,omitempty"`
+	Profiles              []HostProfileBenchmark `json:"profiles,omitempty"`
+}
+
 // HostRuntimeSnapshot combines static executable capabilities and current runtime pressure inputs.
 type HostRuntimeSnapshot struct {
-	Capabilities ServerTranscodeCapabilities `json:"capabilities"`
-	CPU          HostCPUSnapshot             `json:"cpu"`
-	Concurrency  HostConcurrencySnapshot     `json:"concurrency"`
+	Capabilities     ServerTranscodeCapabilities `json:"capabilities"`
+	CPU              HostCPUSnapshot             `json:"cpu"`
+	Concurrency      HostConcurrencySnapshot     `json:"concurrency"`
+	Benchmark        HostBenchmarkSnapshot       `json:"benchmark,omitempty"`
+	PerformanceClass string                      `json:"performanceClass,omitempty"`
 }
 
 // VideoTarget describes the selected output video path.

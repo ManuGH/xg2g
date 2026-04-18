@@ -12,6 +12,8 @@
 }
 
 .summaryCard,
+.startSurface,
+.shortcutsSurface,
 .streamSurface,
 .signalSurface {
   position: relative;
@@ -23,6 +25,8 @@
 }
 
 .summaryCard::before,
+.startSurface::before,
+.shortcutsSurface::before,
 .streamSurface::before,
 .signalSurface::before {
   content: '';
@@ -182,6 +186,100 @@
   font-weight: 600;
 }
 
+.startSurface,
+.shortcutsSurface {
+  padding: 22px;
+}
+
+.startHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.startSubtitle,
+.shortcutsDescription {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.startGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.startCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+
+.startCardHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.startStep {
+  margin: 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.startCardTitle {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: clamp(1.08rem, 1.6vw, 1.3rem);
+  line-height: 1.15;
+}
+
+.startCardDescription,
+.startCardDetail {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.startCardDescription {
+  color: var(--text-primary);
+  font-size: 0.98rem;
+}
+
+.startCardDetail {
+  font-size: var(--text-sm);
+}
+
+.startAction {
+  margin-top: auto;
+  width: fit-content;
+}
+
+.shortcutsActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.shortcutButton {
+  min-width: 0;
+}
+
 .diagnosticsGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
@@ -270,6 +368,10 @@
 }
 
 @media (max-width: 1180px) {
+  .startGrid {
+    grid-template-columns: 1fr;
+  }
+
   .summaryMetrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -285,6 +387,8 @@
   }
 
   .summaryCard,
+  .startSurface,
+  .shortcutsSurface,
   .streamSurface,
   .signalSurface {
     border-radius: 24px;
@@ -295,9 +399,37 @@
     gap: 16px;
   }
 
+  .startSurface,
+  .shortcutsSurface {
+    padding: 16px;
+  }
+
   .summaryHeader {
     flex-direction: column;
     gap: 16px;
+  }
+
+  .startHeader,
+  .summaryIdentity {
+    max-width: none;
+  }
+
+  .startHeader {
+    flex-direction: column;
+    margin-bottom: 14px;
+  }
+
+  .startCard {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .startCardHeader {
+    flex-direction: column;
+  }
+
+  .startAction {
+    width: 100%;
   }
 
   .summaryIdentity {

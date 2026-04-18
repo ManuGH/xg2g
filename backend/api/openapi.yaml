@@ -607,6 +607,10 @@ components:
           type: string
           description: Playback mode for the session.
           enum: [LIVE, RECORDING]
+        windowKind:
+          type: string
+          description: Playback window topology for the session.
+          enum: [live, live-dvr, vod, unknown]
         durationSeconds:
           type: number
           format: float
@@ -891,6 +895,12 @@ components:
         model: { type: string }
         capacity: { type: string }
         mount: { type: string }
+        origin:
+          type: string
+          description: "Storage perspective: receiver or xg2g."
+        pathType:
+          type: string
+          description: "Topology class of the path: receiver_attached, receiver_share, xg2g_local, xg2g_share, xg2g_aggregate, or unknown."
         mountStatus:
           type: string
           enum: [mounted, unmounted, unknown]
@@ -2171,6 +2181,31 @@ components:
         maxQualityRung:
           type: string
           nullable: true
+        runtimePolicyAction:
+          type: string
+          nullable: true
+        runtimePolicyPhase:
+          type: string
+          nullable: true
+        runtimeProbeCandidate:
+          type: string
+          nullable: true
+        runtimePolicyReasons:
+          type: array
+          items:
+            type: string
+          nullable: true
+        runtimePolicyConstraints:
+          type: array
+          items:
+            type: string
+          nullable: true
+        runtimeProbeSuccessStreak:
+          type: integer
+          nullable: true
+        runtimeProbeFailureStreak:
+          type: integer
+          nullable: true
         ruleName:
           type: string
           nullable: true
@@ -2728,6 +2763,9 @@ components:
           type: string
           description: Human-readable duration string for display only.
         filename: { type: string }
+        localWritable:
+          type: boolean
+          description: Whether the current runtime can rename this recording via a writable locally mapped filesystem path. Clients MUST fail closed when this field is absent or false.
         status:
           type: string
           description: Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.

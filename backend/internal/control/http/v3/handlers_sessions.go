@@ -19,6 +19,7 @@ import (
 
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -341,6 +342,10 @@ func isHexColonServiceRefForEnv(ref string) bool {
 }
 
 func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateStore, sess *model.SessionRecord) {
+	s.scheduleSessionRestart(eventBus, store, sess)
+}
+
+func (s *Server) scheduleSessionRestart(eventBus bus.Bus, store SessionStateStore, sess *model.SessionRecord) {
 	if eventBus == nil || store == nil || sess == nil {
 		return
 	}
@@ -355,7 +360,7 @@ func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateSto
 		defer cancel()
 
 		if err := waitForTerminalSession(ctx, store, sessionID); err != nil {
-			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to observe terminal state before fallback restart")
+			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to observe terminal state before session restart")
 			return
 		}
 
@@ -369,7 +374,7 @@ func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateSto
 		}
 
 		if err := eventBus.Publish(ctx, string(model.EventStartSession), startEvt); err != nil {
-			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to publish restart event during fallback")
+			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to publish session restart event")
 		}
 	}()
 }
@@ -617,6 +622,12 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	if trace == nil {
 		trace = &model.PlaybackTrace{}
 	}
+	runtimeState := loadSessionRuntimePolicyState(session)
+	runtimeTimeline := loadSessionRuntimeTimeline(session)
+	runtimeReplay := loadSessionRuntimeReplay(session)
+	if runtimeReplay == nil {
+		runtimeReplay = buildSessionRuntimePolicyReplay(session)
+	}
 
 	requestProfile := strings.TrimSpace(trace.RequestProfile)
 	if requestProfile == "" {
@@ -728,23 +739,62 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 		}
 	}
 
+	operator := PlaybackTraceOperator{}
+	hasOperator := false
 	if trace.Operator != nil {
-		operator := PlaybackTraceOperator{
+		operator = PlaybackTraceOperator{
 			ClientFallbackDisabled: boolPtr(trace.Operator.ClientFallbackDisabled),
 			OverrideApplied:        boolPtr(trace.Operator.OverrideApplied),
 		}
+		hasOperator = trace.Operator.ClientFallbackDisabled || trace.Operator.OverrideApplied
 		if forcedIntent := strings.TrimSpace(trace.Operator.ForcedIntent); forcedIntent != "" {
 			operator.ForcedIntent = &forcedIntent
+			hasOperator = true
 		}
 		if maxQualityRung := strings.TrimSpace(trace.Operator.MaxQualityRung); maxQualityRung != "" {
 			operator.MaxQualityRung = &maxQualityRung
+			hasOperator = true
 		}
 		if ruleName := strings.TrimSpace(trace.Operator.RuleName); ruleName != "" {
 			operator.RuleName = &ruleName
+			hasOperator = true
 		}
 		if ruleScope := strings.TrimSpace(trace.Operator.RuleScope); ruleScope != "" {
 			operator.RuleScope = &ruleScope
+			hasOperator = true
 		}
+	}
+	if runtimeAction := strings.TrimSpace(string(runtimeState.LastAction)); runtimeAction != "" {
+		operator.RuntimePolicyAction = &runtimeAction
+		hasOperator = true
+	}
+	if runtimePhase := strings.TrimSpace(sessionRuntimePolicyPhaseName(runtimeState, time.Now().UTC())); runtimePhase != "" {
+		operator.RuntimePolicyPhase = &runtimePhase
+		hasOperator = true
+	}
+	if len(runtimeState.PolicyConstraints) > 0 {
+		constraints := append([]string(nil), runtimeState.PolicyConstraints...)
+		operator.RuntimePolicyConstraints = &constraints
+		hasOperator = true
+	}
+	if len(runtimeState.Reasons) > 0 {
+		reasons := append([]string(nil), runtimeState.Reasons...)
+		operator.RuntimePolicyReasons = &reasons
+		hasOperator = true
+	}
+	if mappedReplay := mapRuntimePolicyReplay(runtimeReplay); mappedReplay != nil {
+		operator.RuntimePolicyReplay = mappedReplay
+		hasOperator = true
+	}
+	if runtimeCandidate := strings.TrimSpace(string(runtimeState.ProbeStep)); runtimeCandidate != "" {
+		operator.RuntimeProbeCandidate = &runtimeCandidate
+		hasOperator = true
+	}
+	if mappedTimeline := mapRuntimePolicyTimeline(runtimeTimeline); mappedTimeline != nil {
+		operator.RuntimePolicyTimeline = mappedTimeline
+		hasOperator = true
+	}
+	if hasOperator {
 		dto.Operator = &operator
 	}
 
@@ -802,4 +852,216 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 
 	return dto
+}
+
+func sessionRuntimePolicyPhaseName(state runtimepolicy.SessionLoopState, now time.Time) string {
+	if state.ProbeState == runtimepolicy.ProbeLifecycleScheduled || state.ProbeState == runtimepolicy.ProbeLifecycleObserving {
+		return "probing"
+	}
+	switch strings.TrimSpace(string(state.LastAction)) {
+	case "probe_up":
+		return "probing"
+	case "cooldown":
+		return "cooldown"
+	case "degrade", "step_down":
+		return "degraded"
+	case "lock_current":
+		return "recovering"
+	}
+	if hasString(state.Reasons, runtimepolicy.ReasonProbeRecentlyRegressed, runtimepolicy.ReasonProbeWindowRegressed) || state.ProbeState == runtimepolicy.ProbeLifecycleAborted {
+		return "probe_regressed"
+	}
+	if !state.CooldownUntil.IsZero() && state.CooldownUntil.After(now) {
+		return "cooldown"
+	}
+	switch state.ConfidenceState {
+	case runtimepolicy.ConfidenceRecovery:
+		return "recovering"
+	case runtimepolicy.ConfidenceLow:
+		return "degraded"
+	case runtimepolicy.ConfidenceStable, runtimepolicy.ConfidenceHigh:
+		return "stable"
+	default:
+		return ""
+	}
+}
+
+func mapRuntimePolicyTimeline(timeline []runtimepolicy.TickTrace) *[]PlaybackTraceRuntimeTick {
+	if len(timeline) == 0 {
+		return nil
+	}
+	out := make([]PlaybackTraceRuntimeTick, 0, len(timeline))
+	for _, tick := range timeline {
+		dto := PlaybackTraceRuntimeTick{
+			TickAt:             tick.TickAt,
+			ConfidenceScore:    toIntPtr(tick.ConfidenceScore),
+			ConfidenceState:    strPtr(string(tick.ConfidenceState)),
+			PolicyAction:       strPtr(string(tick.PolicyAction)),
+			PlannedTransition:  strPtr(string(tick.PlannedTransition)),
+			ExecutedTransition: strPtr(string(tick.ExecutedTransition)),
+			ActiveStep:         strPtr(string(tick.ActiveStep)),
+			TargetStep:         strPtr(string(tick.TargetStep)),
+			ProbeStep:          strPtr(string(tick.ProbeStep)),
+			ProbeState:         strPtr(string(tick.ProbeState)),
+		}
+		if !tick.CooldownUntil.IsZero() {
+			cooldown := tick.CooldownUntil
+			dto.CooldownUntil = &cooldown
+		}
+		if len(tick.Blockers) > 0 {
+			blockers := append([]string(nil), tick.Blockers...)
+			dto.Blockers = &blockers
+		}
+		if len(tick.Reasons) > 0 {
+			reasons := append([]string(nil), tick.Reasons...)
+			dto.Reasons = &reasons
+		}
+		out = append(out, dto)
+	}
+	return &out
+}
+
+func mapRuntimePolicyReplay(replay *runtimepolicy.RuntimePolicyReplay) *PlaybackTraceRuntimeReplay {
+	if replay == nil {
+		return nil
+	}
+	out := &PlaybackTraceRuntimeReplay{
+		Metadata:     mapRuntimePolicyReplayMetadata(replay.Metadata),
+		InitialState: mapRuntimePolicyReplayState(replay.InitialState),
+		FinalState:   mapRuntimePolicyReplayState(replay.FinalState),
+	}
+	if len(replay.Ticks) > 0 {
+		ticks := make([]PlaybackTraceRuntimeReplayTick, 0, len(replay.Ticks))
+		for _, tick := range replay.Ticks {
+			ticks = append(ticks, PlaybackTraceRuntimeReplayTick{
+				Input:    mapRuntimePolicyReplayTickInput(tick.Input),
+				Expected: mapRuntimePolicyReplayTickExpected(tick.Expected),
+			})
+		}
+		out.Ticks = &ticks
+	}
+	return out
+}
+
+func mapRuntimePolicyReplayMetadata(metadata runtimepolicy.ReplayMetadata) *PlaybackTraceRuntimeReplayMetadata {
+	if metadata.SessionID == "" && metadata.ServiceRef == "" && metadata.ClientPath == "" && metadata.SourceType == "" && metadata.InitialTarget == runtimepolicy.PlaybackStepUnknown {
+		return nil
+	}
+	return &PlaybackTraceRuntimeReplayMetadata{
+		SessionId:     strPtr(metadata.SessionID),
+		ServiceRef:    strPtr(metadata.ServiceRef),
+		ClientPath:    strPtr(metadata.ClientPath),
+		SourceType:    strPtr(metadata.SourceType),
+		InitialTarget: strPtr(string(metadata.InitialTarget)),
+	}
+}
+
+func mapRuntimePolicyReplayState(state runtimepolicy.SessionLoopState) *PlaybackTraceRuntimeReplayState {
+	if state.CurrentStep == runtimepolicy.PlaybackStepUnknown &&
+		state.TargetStep == runtimepolicy.PlaybackStepUnknown &&
+		state.ProbeStep == runtimepolicy.PlaybackStepUnknown &&
+		state.ProbeState == runtimepolicy.ProbeLifecycleNone &&
+		state.ConfidenceScore == 0 &&
+		state.ConfidenceState == "" &&
+		state.CooldownUntil.IsZero() &&
+		state.LastAction == "" &&
+		len(state.PolicyConstraints) == 0 &&
+		len(state.Reasons) == 0 {
+		return nil
+	}
+	out := &PlaybackTraceRuntimeReplayState{
+		ConfidenceScore: toIntPtr(state.ConfidenceScore),
+		ConfidenceState: strPtr(string(state.ConfidenceState)),
+		CurrentStep:     strPtr(string(state.CurrentStep)),
+		LastAction:      strPtr(string(state.LastAction)),
+		TargetStep:      strPtr(string(state.TargetStep)),
+		ProbeStep:       strPtr(string(state.ProbeStep)),
+		ProbeState:      strPtr(string(state.ProbeState)),
+	}
+	if !state.CooldownUntil.IsZero() {
+		cooldown := state.CooldownUntil
+		out.CooldownUntil = &cooldown
+	}
+	if len(state.PolicyConstraints) > 0 {
+		constraints := append([]string(nil), state.PolicyConstraints...)
+		out.PolicyConstraints = &constraints
+	}
+	if len(state.Reasons) > 0 {
+		reasons := append([]string(nil), state.Reasons...)
+		out.Reasons = &reasons
+	}
+	return out
+}
+
+func mapRuntimePolicyReplayTickInput(input runtimepolicy.ReplayTickInput) *PlaybackTraceRuntimeReplayTickInput {
+	out := &PlaybackTraceRuntimeReplayTickInput{
+		ObservedStep: strPtr(string(input.ObservedStep)),
+		TargetStep:   strPtr(string(input.TargetStep)),
+		TickAt:       input.TickAt,
+	}
+	out.Confidence = mapRuntimePolicyReplayTickInputConfidence(input.Confidence)
+	return out
+}
+
+func mapRuntimePolicyReplayTickInputConfidence(snapshot runtimepolicy.ConfidenceSnapshot) *PlaybackTraceRuntimeReplayTickInputConfidence {
+	out := &PlaybackTraceRuntimeReplayTickInputConfidence{
+		Score:       toIntPtr(snapshot.Score),
+		State:       strPtr(string(snapshot.State)),
+		WindowCount: toIntPtr(snapshot.WindowCount),
+	}
+	if !snapshot.StateSince.IsZero() {
+		stateSince := snapshot.StateSince
+		out.StateSince = &stateSince
+	}
+	if !snapshot.CooldownUntil.IsZero() {
+		cooldown := snapshot.CooldownUntil
+		out.CooldownUntil = &cooldown
+	}
+	if len(snapshot.PolicyConstraints) > 0 {
+		constraints := append([]string(nil), snapshot.PolicyConstraints...)
+		out.PolicyConstraints = &constraints
+	}
+	if len(snapshot.Reasons) > 0 {
+		reasons := append([]string(nil), snapshot.Reasons...)
+		out.Reasons = &reasons
+	}
+	return out
+}
+
+func mapRuntimePolicyReplayTickExpected(expected runtimepolicy.ReplayTickExpectation) *PlaybackTraceRuntimeReplayTickExpected {
+	out := &PlaybackTraceRuntimeReplayTickExpected{
+		Action:             strPtr(string(expected.Action)),
+		ActiveStep:         strPtr(string(expected.ActiveStep)),
+		PlannedTransition:  strPtr(string(expected.PlannedTransition)),
+		ExecutedTransition: strPtr(string(expected.ExecutedTransition)),
+		ProbeStep:          strPtr(string(expected.ProbeStep)),
+		ProbeState:         strPtr(string(expected.ProbeState)),
+		RuntimePhase:       strPtr(expected.RuntimePhase),
+	}
+	if len(expected.Blockers) > 0 {
+		blockers := append([]string(nil), expected.Blockers...)
+		out.Blockers = &blockers
+	}
+	if len(expected.Reasons) > 0 {
+		reasons := append([]string(nil), expected.Reasons...)
+		out.Reasons = &reasons
+	}
+	return out
+}
+
+func toIntPtr(i int) *int { return &i }
+
+func hasString(values []string, targets ...string) bool {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		for _, target := range targets {
+			if value == strings.TrimSpace(target) {
+				return true
+			}
+		}
+	}
+	return false
 }

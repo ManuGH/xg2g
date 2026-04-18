@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
@@ -47,6 +48,21 @@ var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi", "av1_vaapi"}
 
 // nvencEncodersToTest is the list of NVENC encoders verified during preflight.
 var nvencEncodersToTest = []string{"h264_nvenc", "hevc_nvenc", "av1_nvenc"}
+
+var startupProfilesToBenchmark = []string{
+	playbackprofile.BenchmarkProfileAudioAACStereo,
+	playbackprofile.BenchmarkProfileVideoH2641080P,
+	playbackprofile.BenchmarkProfileVideoH2641080I,
+	playbackprofile.BenchmarkProfileVideoH2641080I50,
+	playbackprofile.BenchmarkProfileVideoH2642160P,
+	playbackprofile.BenchmarkProfileVideoH2642160P50,
+}
+
+type profileProbeRequest struct {
+	ProfileID string
+	Backend   string
+	Encoder   string
+}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
@@ -97,6 +113,8 @@ type LocalAdapter struct {
 	nvencEncoderCaps          map[string]hardware.NVENCEncoderCapability
 	nvencChecked              bool
 	nvencErr                  error
+	profileBenchmarksChecked  bool
+	profileProbeFn            func(context.Context, profileProbeRequest) (time.Duration, error)
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
@@ -449,6 +467,35 @@ func (a *LocalAdapter) PreflightNVENC() error {
 	return nil
 }
 
+// PreflightTranscodeProfiles measures a small set of synthetic startup probes
+// so host decisions can distinguish between audio-only, progressive, deinterlaced,
+// and UHD realtime paths.
+func (a *LocalAdapter) PreflightTranscodeProfiles() {
+	if a.profileBenchmarksChecked {
+		return
+	}
+	a.profileBenchmarksChecked = true
+
+	a.Logger.Info().Msg("transcode profile preflight: starting")
+
+	cpuSamples := a.measureProfileBenchmarks("cpu", "libx264")
+	hardware.SetCPUProfileBenchmarks(deriveProfileCapabilities(cpuSamples))
+
+	if a.VaapiEncoderVerified("h264_vaapi") {
+		vaapiSamples := a.measureProfileBenchmarks("vaapi", "h264_vaapi")
+		hardware.SetVAAPIProfileBenchmarks(deriveProfileCapabilities(vaapiSamples))
+	} else {
+		hardware.SetVAAPIProfileBenchmarks(nil)
+	}
+
+	if a.NVENCEncoderVerified("h264_nvenc") {
+		nvencSamples := a.measureProfileBenchmarks("nvenc", "h264_nvenc")
+		hardware.SetNVENCProfileBenchmarks(deriveProfileCapabilities(nvencSamples))
+	} else {
+		hardware.SetNVENCProfileBenchmarks(nil)
+	}
+}
+
 // testVaapiEncoder runs a real 5-frame encode test for a specific VAAPI encoder.
 func (a *LocalAdapter) testVaapiEncoder(encoder string) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -486,6 +533,223 @@ func (a *LocalAdapter) testNVENCEncoder(encoder string) (time.Duration, error) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
+	}
+	return time.Since(start), nil
+}
+
+func (a *LocalAdapter) measureProfileBenchmarks(backend, encoder string) map[string]time.Duration {
+	profilesToBenchmark := profileBenchmarksForBackend(backend)
+	samples := make(map[string]time.Duration, len(profilesToBenchmark))
+	for _, profileID := range profilesToBenchmark {
+		elapsed, err := a.testProfileBenchmark(backend, encoder, profileID)
+		if err != nil {
+			a.Logger.Warn().
+				Err(err).
+				Str("backend", backend).
+				Str("encoder", encoder).
+				Str("profile_benchmark", profileID).
+				Msg("transcode profile preflight: synthetic profile probe failed")
+			continue
+		}
+		samples[profileID] = elapsed
+		a.Logger.Info().
+			Str("backend", backend).
+			Str("encoder", encoder).
+			Str("profile_benchmark", profileID).
+			Dur("probe_elapsed", elapsed).
+			Msg("transcode profile preflight: synthetic profile probe verified")
+	}
+	return samples
+}
+
+func (a *LocalAdapter) testProfileBenchmark(backend, encoder, profileID string) (time.Duration, error) {
+	req := profileProbeRequest{
+		ProfileID: profileID,
+		Backend:   backend,
+		Encoder:   encoder,
+	}
+	if a.profileProbeFn != nil {
+		return a.profileProbeFn(context.Background(), req)
+	}
+
+	if profileID == playbackprofile.BenchmarkProfileAudioAACStereo {
+		return a.testAudioAACProfile()
+	}
+
+	switch backend {
+	case "cpu":
+		return a.testCPUH264Profile(profileID, encoder)
+	case "vaapi":
+		return a.testVAAPIH264Profile(profileID, encoder)
+	case "nvenc":
+		return a.testNVENCH264Profile(profileID, encoder)
+	default:
+		return 0, fmt.Errorf("unsupported benchmark backend %q", backend)
+	}
+}
+
+func profileBenchmarksForBackend(backend string) []string {
+	switch backend {
+	case "cpu":
+		return startupProfilesToBenchmark
+	case "vaapi", "nvenc":
+		return []string{
+			playbackprofile.BenchmarkProfileVideoH2641080P,
+			playbackprofile.BenchmarkProfileVideoH2641080I,
+			playbackprofile.BenchmarkProfileVideoH2641080I50,
+			playbackprofile.BenchmarkProfileVideoH2642160P,
+			playbackprofile.BenchmarkProfileVideoH2642160P50,
+		}
+	default:
+		return nil
+	}
+}
+
+func (a *LocalAdapter) testAudioAACProfile() (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	args := []string{
+		"-f", "lavfi",
+		"-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+		"-t", "0.2",
+		"-vn",
+		"-c:a", "aac",
+		"-b:a", "256k",
+		"-ac", "2",
+		"-ar", "48000",
+		"-f", "null", "-",
+	}
+	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func (a *LocalAdapter) testCPUH264Profile(profileID, encoder string) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
+	defer cancel()
+
+	args := []string{
+		"-f", "lavfi",
+		"-i", profileBenchmarkInput(profileID),
+	}
+	if filter := cpuProfileBenchmarkFilter(profileID); filter != "" {
+		args = append(args, "-vf", filter)
+	}
+	args = append(args,
+		"-c:v", encoder,
+		"-preset", "veryfast",
+		"-frames:v", "5",
+		"-f", "null", "-",
+	)
+	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func (a *LocalAdapter) testVAAPIH264Profile(profileID, encoder string) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
+	defer cancel()
+
+	filter, err := vaapiProfileBenchmarkFilter(profileID)
+	if err != nil {
+		return 0, err
+	}
+	args := []string{
+		"-vaapi_device", a.VaapiDevice,
+		"-f", "lavfi",
+		"-i", profileBenchmarkInput(profileID),
+		"-vf", filter,
+		"-c:v", encoder,
+		"-frames:v", "5",
+		"-f", "null", "-",
+	}
+	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func (a *LocalAdapter) testNVENCH264Profile(profileID, encoder string) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
+	defer cancel()
+
+	args := []string{
+		"-f", "lavfi",
+		"-i", profileBenchmarkInput(profileID),
+	}
+	if filter := nvencProfileBenchmarkFilter(profileID); filter != "" {
+		args = append(args, "-vf", filter)
+	}
+	args = append(args,
+		"-c:v", encoder,
+		"-frames:v", "5",
+		"-f", "null", "-",
+	)
+	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func cpuProfileBenchmarkFilter(profileID string) string {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackprofile.BenchmarkProfileVideoH2641080I, playbackprofile.BenchmarkProfileVideoH2641080I50:
+		return "setfield=tff,bwdif=mode=send_field:parity=auto:deint=all"
+	default:
+		return ""
+	}
+}
+
+func vaapiProfileBenchmarkFilter(profileID string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackprofile.BenchmarkProfileVideoH2641080P:
+		return "format=nv12,hwupload", nil
+	case playbackprofile.BenchmarkProfileVideoH2641080I50:
+		return "format=nv12,setfield=tff,hwupload,deinterlace_vaapi", nil
+	case playbackprofile.BenchmarkProfileVideoH2642160P:
+		return "format=nv12,hwupload", nil
+	case playbackprofile.BenchmarkProfileVideoH2642160P50:
+		return "format=nv12,hwupload", nil
+	case playbackprofile.BenchmarkProfileVideoH2641080I:
+		return "format=nv12,setfield=tff,hwupload,deinterlace_vaapi", nil
+	default:
+		return "", fmt.Errorf("unsupported vaapi benchmark profile %q", profileID)
+	}
+}
+
+func nvencProfileBenchmarkFilter(profileID string) string {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackprofile.BenchmarkProfileVideoH2641080I, playbackprofile.BenchmarkProfileVideoH2641080I50:
+		return "setfield=tff,bwdif=mode=send_field:parity=auto:deint=all"
+	default:
+		return ""
+	}
+}
+
+func profileBenchmarkInput(profileID string) string {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackprofile.BenchmarkProfileVideoH2642160P50:
+		return "testsrc=duration=0.2:size=3840x2160:rate=50"
+	case playbackprofile.BenchmarkProfileVideoH2642160P:
+		return "testsrc=duration=0.2:size=3840x2160:rate=25"
+	case playbackprofile.BenchmarkProfileVideoH2641080I50:
+		return "testsrc=duration=0.2:size=1920x1080:rate=50"
+	default:
+		return "testsrc=duration=0.2:size=1920x1080:rate=25"
+	}
+}
+
+func profileBenchmarkTimeout(profileID string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackprofile.BenchmarkProfileVideoH2642160P50:
+		return 22 * time.Second
+	case playbackprofile.BenchmarkProfileVideoH2642160P:
+		return 18 * time.Second
+	case playbackprofile.BenchmarkProfileVideoH2641080I50:
+		return 15 * time.Second
+	default:
+		return 12 * time.Second
+	}
+}
+
+func runProfileBenchmarkCommand(ctx context.Context, binPath string, args []string) (time.Duration, error) {
+	start := time.Now()
+	// #nosec G204 -- BinPath is trusted from config and args are fixed synthetic probes.
+	cmd := exec.CommandContext(ctx, binPath, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("profile benchmark failed: %w (output: %s)", err, string(out))
 	}
 	return time.Since(start), nil
 }
@@ -569,6 +833,24 @@ func selectHardwareAutoBaseline(samples map[string]time.Duration) (time.Duration
 		}
 	}
 	return baseline, baseline > 0
+}
+
+func deriveProfileCapabilities(samples map[string]time.Duration) map[string]hardware.HardwareProfileCapability {
+	if len(samples) == 0 {
+		return nil
+	}
+
+	caps := make(map[string]hardware.HardwareProfileCapability, len(samples))
+	for profileID, elapsed := range samples {
+		if elapsed <= 0 {
+			continue
+		}
+		caps[strings.ToLower(strings.TrimSpace(profileID))] = hardware.HardwareProfileCapability{
+			Verified:     true,
+			ProbeElapsed: elapsed,
+		}
+	}
+	return caps
 }
 
 func (a *LocalAdapter) hardwareEncoderVerified(backend profiles.GPUBackend, encoder string) bool {

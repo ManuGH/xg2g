@@ -39,6 +39,7 @@
   "heartbeatIntervalSeconds": 30,
   "leaseExpiresAt": "2023-11-14T22:13:50Z",
   "mode": "LIVE",
+  "windowKind": "live",
   "seekableStartSeconds": 0,
   "seekableEndSeconds": 0,
   "liveEdgeSeconds": 0,

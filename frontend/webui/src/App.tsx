@@ -17,7 +17,13 @@ import {
 } from './features/household/model';
 import { deleteServerSession } from './features/household/api';
 import { usePlayerHistoryBridge } from './features/player/usePlayerHistoryBridge';
-import { ROUTE_MAP, UNLOCK_ROUTE } from './routes';
+import {
+  ROUTE_MAP,
+  UNLOCK_ROUTE,
+  buildEpgRoute,
+  buildRecordingsRoute,
+  buildSettingsRoute,
+} from './routes';
 import { formatError } from './utils/logging';
 
 // Lazy load feature views (Phase 4: Bundle optimization)
@@ -25,10 +31,6 @@ import { formatError } from './utils/logging';
 const V3Player = lazy(() => import('./features/player/components/V3Player'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const EPG = lazy(() => import('./features/epg/EPG'));
-const Logs = lazy(() => import('./components/Logs'));
-const Files = lazy(() => import('./components/Files'));
-const SeriesManager = lazy(() => import('./components/SeriesManager'));
-const Timers = lazy(() => import('./components/Timers'));
 const RecordingsList = lazy(() => import('./components/RecordingsList'));
 const Settings = lazy(() => import('./components/Settings'));
 const SystemInfo = lazy(() => import('./features/system/SystemInfo').then(m => ({ default: m.SystemInfo })));
@@ -133,7 +135,14 @@ function App() {
                 />
               )}
             />
-            <Route path={ROUTE_MAP.files} element={<Files />} />
+            <Route
+              path={ROUTE_MAP.files}
+              element={(
+                <ProfileRouteGate allowed={household.canAccessSettings}>
+                  <Navigate to={buildSettingsRoute({ section: 'advanced', tool: 'files' })} replace />
+                </ProfileRouteGate>
+              )}
+            />
             <Route
               path={ROUTE_MAP.recordings}
               element={(
@@ -146,7 +155,7 @@ function App() {
               path={ROUTE_MAP.logs}
               element={(
                 <ProfileRouteGate allowed={household.canAccessSettings}>
-                  <Logs />
+                  <Navigate to={buildSettingsRoute({ section: 'advanced', tool: 'logs' })} replace />
                 </ProfileRouteGate>
               )}
             />
@@ -154,7 +163,7 @@ function App() {
               path={ROUTE_MAP.timers}
               element={(
                 <ProfileRouteGate allowed={household.canManageDvr}>
-                  <Timers />
+                  <Navigate to={buildEpgRoute('timers')} replace />
                 </ProfileRouteGate>
               )}
             />
@@ -162,7 +171,7 @@ function App() {
               path={ROUTE_MAP.series}
               element={(
                 <ProfileRouteGate allowed={household.canManageDvr}>
-                  <SeriesManager />
+                  <Navigate to={buildRecordingsRoute({ section: 'series' })} replace />
                 </ProfileRouteGate>
               )}
             />
@@ -183,8 +192,8 @@ function App() {
               )}
             />
             <Route path={UNLOCK_ROUTE} element={<UnlockStatus />} />
-            <Route path="/" element={<Navigate to={ROUTE_MAP.epg} replace />} />
-            <Route path="*" element={<Navigate to={ROUTE_MAP.epg} replace />} />
+            <Route path="/" element={<Navigate to={ROUTE_MAP.dashboard} replace />} />
+            <Route path="*" element={<Navigate to={ROUTE_MAP.dashboard} replace />} />
           </Route>
         </Route>
       </Routes>

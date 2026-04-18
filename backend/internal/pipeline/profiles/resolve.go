@@ -375,7 +375,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		}
 	case ProfileSafariDirty:
 		spec.PolicyModeHint = ports.RuntimeModeSafe
-		// Quality-first profile for dirty DVB inputs.
+		// Robust recovery profile for dirty DVB inputs.
 		spec.TranscodeVideo = true
 		spec.Deinterlace = true
 		// Browser Safari has shown black-video / freeze regressions on dirty live
@@ -406,11 +406,14 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
 			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 40000, 8000, 120000)
 		default:
+			// CPU fallback prioritizes startup stability and sustained playback over
+			// "best quality" defaults. Dirty 1080i feeds can stall badly on hosts
+			// without GPU acceleration when we keep the older CRF16/fast/14M ladder.
 			spec.VideoCodec = "libx264"
-			spec.VideoCRF = envIntBounded("XG2G_SAFARI_DIRTY_CRF", 16, 12, 30)
-			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 14000, 4000, 60000)
-			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 28000, 8000, 120000)
-			spec.Preset = envPreset("XG2G_SAFARI_DIRTY_PRESET", "fast")
+			spec.VideoCRF = envIntBounded("XG2G_SAFARI_DIRTY_CRF", 18, 12, 30)
+			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 8000, 4000, 60000)
+			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 16000, 8000, 120000)
+			spec.Preset = envPreset("XG2G_SAFARI_DIRTY_PRESET", "veryfast")
 		}
 
 		spec.LLHLS = false

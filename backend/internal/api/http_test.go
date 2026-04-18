@@ -7,6 +7,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -28,7 +29,8 @@ import (
 func TestHandleSystemHealth(t *testing.T) {
 	// Create a mock receiver for health checks
 	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"info":{"brand":"Vu+"}}`))
 	}))
 	defer mockReceiver.Close()
 
@@ -45,9 +47,10 @@ func TestHandleSystemHealth(t *testing.T) {
 
 	// Set status for health check
 	s.SetStatus(jobs.Status{
-		Version:  "1.2.3",
-		Channels: 42,
-		LastRun:  time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
+		Version:       "1.2.3",
+		Channels:      42,
+		EPGProgrammes: 10,
+		LastRun:       time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
 	})
 	handler := s.Handler()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v3/system/health", nil)
@@ -58,7 +61,68 @@ func TestHandleSystemHealth(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code, "handler returned wrong status code")
-	assert.Contains(t, rr.Body.String(), `"status":"ok"`, "handler returned unexpected body")
+	var resp v3.SystemHealth
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	require.NotNil(t, resp.Status)
+	require.NotNil(t, resp.Receiver)
+	require.NotNil(t, resp.Receiver.Status)
+	assert.Equal(t, v3.ComponentStatusStatusOk, *resp.Receiver.Status)
+}
+
+func TestHandleSystemHealth_WithAuthenticatedReceiver(t *testing.T) {
+	const (
+		username = "root"
+		password = "receiver-secret"
+	)
+
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != username || pass != password {
+			w.Header().Set("WWW-Authenticate", `Basic realm="OpenWebif"`)
+			http.Error(w, "401 Authentication required", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"info":{"brand":"Vu+"}}`))
+	}))
+	defer mockReceiver.Close()
+
+	s := mustNewServer(t, config.AppConfig{
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
+		DataDir:        t.TempDir(),
+		Enigma2: config.Enigma2Settings{
+			StreamPort: 8001,
+			BaseURL:    mockReceiver.URL,
+			Username:   username,
+			Password:   password,
+		},
+		Version: "1.2.3",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}, config.NewManager(""))
+
+	s.SetStatus(jobs.Status{
+		Version:       "1.2.3",
+		Channels:      42,
+		EPGProgrammes: 10,
+		LastRun:       time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/health", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var resp v3.SystemHealth
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	require.NotNil(t, resp.Status)
+	require.NotNil(t, resp.Receiver)
+	require.NotNil(t, resp.Receiver.Status)
+	assert.Equal(t, v3.ComponentStatusStatusOk, *resp.Receiver.Status)
 }
 
 func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {

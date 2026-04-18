@@ -13,6 +13,7 @@ import (
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -47,6 +48,7 @@ func TestWriteSessionStateResponse_WritesJSONAndTraceHeader(t *testing.T) {
 		},
 		PlaybackInfo: v3sessions.SessionPlaybackInfo{
 			Mode:                 model.ModeRecording,
+			WindowKind:           v3sessions.SessionWindowKindVOD,
 			DurationSeconds:      float64Ptr(3600),
 			SeekableStartSeconds: float64Ptr(0),
 			SeekableEndSeconds:   float64Ptr(3600),
@@ -66,6 +68,8 @@ func TestWriteSessionStateResponse_WritesJSONAndTraceHeader(t *testing.T) {
 	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440001", *body.Trace.SessionId)
 	require.NotNil(t, body.Mode)
 	assert.Equal(t, RECORDING, *body.Mode)
+	require.NotNil(t, body.WindowKind)
+	assert.Equal(t, SessionResponseWindowKindVod, *body.WindowKind)
 	require.NotNil(t, body.PlaybackUrl)
 	assert.Equal(t, V3BaseURL+"/sessions/550e8400-e29b-41d4-a716-446655440001/hls/index.m3u8", *body.PlaybackUrl)
 	require.NotNil(t, body.DurationSeconds)
@@ -90,11 +94,124 @@ func TestMapSessionStateResponse_IncludesProfileReasonForSafariTranscode(t *test
 			Reason:     model.RNone,
 			DetailCode: model.DNone,
 		},
-		PlaybackInfo: v3sessions.SessionPlaybackInfo{Mode: model.ModeLive},
+		PlaybackInfo: v3sessions.SessionPlaybackInfo{
+			Mode:       model.ModeLive,
+			WindowKind: v3sessions.SessionWindowKindLive,
+		},
 	})
 
 	require.NotNil(t, resp.ProfileReason)
 	assert.Equal(t, sessionProfileReasonSafariCompatTranscode, *resp.ProfileReason)
+	require.NotNil(t, resp.WindowKind)
+	assert.Equal(t, SessionResponseWindowKindLive, *resp.WindowKind)
+}
+
+func TestMapSessionStateResponse_ExposesRuntimePolicyTimeline(t *testing.T) {
+	statePayload, err := json.Marshal(runtimepolicy.SessionLoopState{
+		CurrentStep:     runtimepolicy.PlaybackStepH264720p,
+		TargetStep:      runtimepolicy.PlaybackStepDirectCopy,
+		ProbeStep:       runtimepolicy.PlaybackStepH2641080p,
+		ProbeState:      runtimepolicy.ProbeLifecycleScheduled,
+		ConfidenceScore: 61,
+		ConfidenceState: runtimepolicy.ConfidenceHigh,
+		LastAction:      runtimepolicy.PolicyProbeUp,
+		Reasons:         []string{runtimepolicy.ReasonHeadroomGood, runtimepolicy.ReasonProbeUpReady},
+	})
+	require.NoError(t, err)
+	timelinePayload, err := json.Marshal([]runtimepolicy.TickTrace{{
+		TickAt:             time.Unix(1700000000, 0).UTC(),
+		ConfidenceScore:    61,
+		ConfidenceState:    runtimepolicy.ConfidenceHigh,
+		PolicyAction:       runtimepolicy.PolicyProbeUp,
+		PlannedTransition:  runtimepolicy.SessionTransitionScheduleProbeUp,
+		ExecutedTransition: runtimepolicy.SessionTransitionScheduleProbeUp,
+		ActiveStep:         runtimepolicy.PlaybackStepH264720p,
+		TargetStep:         runtimepolicy.PlaybackStepDirectCopy,
+		ProbeStep:          runtimepolicy.PlaybackStepH2641080p,
+		ProbeState:         runtimepolicy.ProbeLifecycleScheduled,
+		Reasons:            []string{runtimepolicy.ReasonHeadroomGood},
+	}})
+	require.NoError(t, err)
+
+	resp := mapSessionStateResponse("req-runtime-trace", "", v3sessions.GetSessionResult{
+		Session: &model.SessionRecord{
+			SessionID:          "550e8400-e29b-41d4-a716-446655440003",
+			ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+			Profile:            model.ProfileSpec{Name: profiles.ProfileLow},
+			State:              model.SessionReady,
+			CorrelationID:      "corr-runtime-trace",
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: 1700000030,
+			ContextData: map[string]string{
+				model.CtxKeyRuntimePolicyState:    string(statePayload),
+				model.CtxKeyRuntimePolicyTimeline: string(timelinePayload),
+			},
+		},
+		Outcome: lifecycle.PublicOutcome{
+			State:      model.SessionReady,
+			Reason:     model.RNone,
+			DetailCode: model.DNone,
+		},
+		PlaybackInfo: v3sessions.SessionPlaybackInfo{
+			Mode:       model.ModeLive,
+			WindowKind: v3sessions.SessionWindowKindLive,
+		},
+	})
+
+	require.NotNil(t, resp.Trace)
+	require.NotNil(t, resp.Trace.Operator)
+	require.NotNil(t, resp.Trace.Operator.RuntimePolicyAction)
+	assert.Equal(t, "probe_up", *resp.Trace.Operator.RuntimePolicyAction)
+	require.NotNil(t, resp.Trace.Operator.RuntimePolicyPhase)
+	assert.Equal(t, "probing", *resp.Trace.Operator.RuntimePolicyPhase)
+	require.NotNil(t, resp.Trace.Operator.RuntimePolicyTimeline)
+	require.Len(t, *resp.Trace.Operator.RuntimePolicyTimeline, 1)
+	tick := (*resp.Trace.Operator.RuntimePolicyTimeline)[0]
+	require.NotNil(t, tick.PolicyAction)
+	assert.Equal(t, "probe_up", *tick.PolicyAction)
+	require.NotNil(t, tick.PlannedTransition)
+	assert.Equal(t, "schedule_probe_up", *tick.PlannedTransition)
+	require.NotNil(t, resp.Trace.Operator.RuntimePolicyReplay)
+	require.NotNil(t, resp.Trace.Operator.RuntimePolicyReplay.Metadata)
+	require.NotNil(t, resp.Trace.Operator.RuntimePolicyReplay.Metadata.SessionId)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440003", *resp.Trace.Operator.RuntimePolicyReplay.Metadata.SessionId)
+	require.NotNil(t, resp.Trace.Operator.RuntimePolicyReplay.Ticks)
+	require.Len(t, *resp.Trace.Operator.RuntimePolicyReplay.Ticks, 1)
+}
+
+func TestBuildSessionRuntimePolicyReplay_FromTimeline(t *testing.T) {
+	timelinePayload, err := json.Marshal([]runtimepolicy.TickTrace{{
+		TickAt:                time.Unix(1700000000, 0).UTC(),
+		ObservedStep:          runtimepolicy.PlaybackStepH2641080p,
+		ConfidenceScore:       -44,
+		ConfidenceState:       runtimepolicy.ConfidenceLow,
+		ConfidenceWindowCount: 1,
+		PolicyAction:          runtimepolicy.PolicyStepDown,
+		PlannedTransition:     runtimepolicy.SessionTransitionScheduleStepDown,
+		ExecutedTransition:    runtimepolicy.SessionTransitionScheduleStepDown,
+		ActiveStep:            runtimepolicy.PlaybackStepH264720p,
+		TargetStep:            runtimepolicy.PlaybackStepH2641080p,
+		RuntimePhase:          "degraded",
+		Reasons:               []string{runtimepolicy.ReasonBufferingRecent},
+	}})
+	require.NoError(t, err)
+
+	replay := buildSessionRuntimePolicyReplay(&model.SessionRecord{
+		SessionID:  "550e8400-e29b-41d4-a716-446655440004",
+		ServiceRef: "1:0:1:445D:453:1:C00000:0:0:0:",
+		ContextData: map[string]string{
+			model.CtxKeyClientPath:            "hlsjs",
+			model.CtxKeySourceType:            "tuner",
+			model.CtxKeyRuntimePolicyTimeline: string(timelinePayload),
+		},
+	})
+
+	require.NotNil(t, replay)
+	assert.Equal(t, "hlsjs", replay.Metadata.ClientPath)
+	assert.Equal(t, runtimepolicy.PlaybackStepH2641080p, replay.InitialState.CurrentStep)
+	require.Len(t, replay.Ticks, 1)
+	assert.Equal(t, runtimepolicy.PolicyStepDown, replay.Ticks[0].Expected.Action)
+	assert.Equal(t, runtimepolicy.SessionTransitionScheduleStepDown, replay.Ticks[0].Expected.PlannedTransition)
 }
 
 func float64Ptr(v float64) *float64 { return &v }

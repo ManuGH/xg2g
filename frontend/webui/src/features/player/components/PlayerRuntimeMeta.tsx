@@ -1,0 +1,93 @@
+import type { ReactNode } from 'react';
+
+import { Card, StatusChip } from '../../../components/ui';
+import type { ChipState } from '../../../components/ui/StatusChip';
+
+import styles from './V3Player.module.css';
+
+type RuntimeMetaVariant = 'default' | 'startup' | 'error';
+
+export interface PlayerRuntimeMetaProps {
+  show: boolean;
+  phase: string | null | undefined;
+  phaseState: ChipState;
+  phaseLabel: string;
+  hint?: string | null;
+  theater?: boolean;
+  variant?: RuntimeMetaVariant;
+}
+
+export interface PlayerRuntimeMetaPanelRow {
+  key: string;
+  label: string;
+  value: ReactNode;
+}
+
+export interface PlayerRuntimeMetaPanelProps {
+  show: boolean;
+  title: string;
+  rows: PlayerRuntimeMetaPanelRow[];
+}
+
+export function PlayerRuntimeMeta({
+  show,
+  phase,
+  phaseState,
+  phaseLabel,
+  hint,
+  theater = false,
+  variant = 'default',
+}: PlayerRuntimeMetaProps) {
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <div
+      className={[
+        styles.runtimePolicyMeta,
+        theater ? styles.runtimePolicyMetaTheater : null,
+        variant === 'startup' ? styles.runtimePolicyMetaStartup : null,
+        variant === 'error' ? styles.runtimePolicyMetaError : null,
+      ].filter(Boolean).join(' ')}
+      data-phase={phase ?? 'unknown'}
+    >
+      <StatusChip
+        state={phaseState}
+        label={phaseLabel}
+        className={styles.runtimePolicyMetaChip}
+      />
+      {hint ? (
+        <span className={styles.runtimePolicyMetaHint}>{hint}</span>
+      ) : null}
+    </div>
+  );
+}
+
+export function PlayerRuntimeMetaPanel({
+  show,
+  title,
+  rows,
+}: PlayerRuntimeMetaPanelProps) {
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <div className={styles.statsOverlay}>
+      <Card variant="standard">
+        <Card.Header>
+          <Card.Title>{title}</Card.Title>
+        </Card.Header>
+        <Card.Content className={styles.statsGrid}>
+          {rows.map((row) => (
+            <div key={row.key} className={styles.statsRow}>
+              <span className={styles.statsLabel}>{row.label}</span>
+              <div className={styles.statsValue}>{row.value}</div>
+            </div>
+          ))}
+        </Card.Content>
+      </Card>
+    </div>
+  );
+}

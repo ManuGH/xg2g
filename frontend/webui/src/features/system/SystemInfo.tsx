@@ -41,6 +41,8 @@ interface SystemInfoViewData {
       model: string;
       capacity: string;
       mount: string;
+      origin?: string;
+      pathType?: string;
       mountStatus: 'mounted' | 'unmounted' | 'unknown';
       healthStatus: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
       access: 'none' | 'ro' | 'rw';
@@ -52,6 +54,8 @@ interface SystemInfoViewData {
       model: string;
       capacity: string;
       mount: string;
+      origin?: string;
+      pathType?: string;
       mountStatus: 'mounted' | 'unmounted' | 'unknown';
       healthStatus: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
       access: 'none' | 'ro' | 'rw';
@@ -248,8 +252,11 @@ export function SystemInfo() {
                     <span className={[styles.label, styles.textTruncate].join(' ')} title={dev.model}>
                       {dev.model}:
                     </span>
+                    <span className={[styles.tag, styles.tagIntern].join(' ')}>
+                      {resolveStorageOriginLabel(t, dev.origin)}
+                    </span>
                     <span className={[styles.tag, dev.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
-                      {dev.isNas ? t('system.nas') : t('system.internal')}
+                      {resolveStoragePathTypeLabel(t, dev.pathType, dev.isNas)}
                       {dev.fsType && <small> ({dev.fsType})</small>}
                     </span>
                   </div>
@@ -295,8 +302,11 @@ export function SystemInfo() {
                     <span className={[styles.value, styles.mono, styles.textTruncate].join(' ')} title={loc.mount}>
                       {loc.mount}
                     </span>
+                    <span className={[styles.tag, styles.tagIntern].join(' ')}>
+                      {resolveStorageOriginLabel(t, loc.origin)}
+                    </span>
                     <span className={[styles.tag, loc.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
-                      {loc.isNas ? t('system.nas') : t('system.internal')}
+                      {resolveStoragePathTypeLabel(t, loc.pathType, loc.isNas)}
                       {loc.fsType && <small> ({loc.fsType})</small>}
                     </span>
                   </div>
@@ -464,6 +474,8 @@ function normalizeSystemInfo(data: ApiSystemInfoData): SystemInfoViewData {
         model: device.model ?? '',
         capacity: device.capacity ?? '',
         mount: device.mount ?? '',
+        origin: device.origin,
+        pathType: device.pathType,
         mountStatus: device.mountStatus ?? 'unknown',
         healthStatus: device.healthStatus ?? 'unknown',
         access: device.access ?? 'none',
@@ -475,6 +487,8 @@ function normalizeSystemInfo(data: ApiSystemInfoData): SystemInfoViewData {
         model: location.model ?? '',
         capacity: location.capacity ?? '',
         mount: location.mount ?? '',
+        origin: location.origin,
+        pathType: location.pathType,
         mountStatus: location.mountStatus ?? 'unknown',
         healthStatus: location.healthStatus ?? 'unknown',
         access: location.access ?? 'none',
@@ -492,6 +506,31 @@ function normalizeSystemInfo(data: ApiSystemInfoData): SystemInfoViewData {
       memoryUsed: data.resource?.memoryUsed ?? '0 kB',
     },
   };
+}
+
+function resolveStorageOriginLabel(
+  t: ReturnType<typeof useTranslation>['t'],
+  origin?: string,
+): string {
+  return origin === 'xg2g' ? t('system.storageOrigin.xg2g') : t('system.storageOrigin.receiver');
+}
+
+function resolveStoragePathTypeLabel(
+  t: ReturnType<typeof useTranslation>['t'],
+  pathType?: string,
+  isNas?: boolean,
+): string {
+  switch (pathType) {
+    case 'receiver_attached':
+    case 'receiver_share':
+    case 'xg2g_local':
+    case 'xg2g_share':
+    case 'xg2g_aggregate':
+    case 'unknown':
+      return t(`system.storageType.${pathType}`);
+    default:
+      return isNas ? t('system.nas') : t('system.internal');
+  }
 }
 
 // Parse memory string like "757824 kB" to bytes

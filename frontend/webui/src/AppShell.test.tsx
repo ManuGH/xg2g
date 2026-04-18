@@ -1,5 +1,5 @@
 import { lazy, type ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AppShell from './AppShell';
@@ -74,5 +74,13 @@ describe('AppShell', () => {
     renderShell(['/epg'], <PendingRoute />);
 
     expect(screen.getByRole('status', { name: 'Loading...' })).toHaveAttribute('data-loading-variant', 'page');
+  });
+
+  it('syncs the browser title with nested route context', async () => {
+    renderShell(['/settings?section=advanced&tool=files'], <div>Settings view</div>);
+
+    await waitFor(() => {
+      expect(document.title).toBe('Files · Settings · xg2g');
+    });
   });
 });

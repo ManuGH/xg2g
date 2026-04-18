@@ -5,13 +5,16 @@ import "github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 // MediaTruthToPlaybackProfile adapts media truth to the shared playback-profile model.
 func MediaTruthToPlaybackProfile(truth MediaTruth) playbackprofile.SourceProfile {
 	return playbackprofile.CanonicalizeSource(playbackprofile.SourceProfile{
-		Container:  truth.Container,
-		VideoCodec: truth.VideoCodec,
-		AudioCodec: truth.AudioCodec,
-		Width:      truth.Width,
-		Height:     truth.Height,
-		FPS:        truth.FPS,
-		Interlaced: truth.Interlaced,
+		Container:        truth.Container,
+		VideoCodec:       truth.VideoCodec,
+		AudioCodec:       truth.AudioCodec,
+		BitrateKbps:      truth.BitrateKbps,
+		Width:            truth.Width,
+		Height:           truth.Height,
+		FPS:              truth.FPS,
+		Interlaced:       truth.Interlaced,
+		AudioChannels:    truth.AudioChannels,
+		AudioBitrateKbps: truth.AudioBitrateKbps,
 	})
 }
 

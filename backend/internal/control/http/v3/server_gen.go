@@ -440,6 +440,14 @@ const (
 	RECORDING SessionResponseMode = "RECORDING"
 )
 
+// Defines values for SessionResponseWindowKind.
+const (
+	SessionResponseWindowKindLive    SessionResponseWindowKind = "live"
+	SessionResponseWindowKindLiveDvr SessionResponseWindowKind = "live-dvr"
+	SessionResponseWindowKindUnknown SessionResponseWindowKind = "unknown"
+	SessionResponseWindowKindVod     SessionResponseWindowKind = "vod"
+)
+
 // Defines values for SessionResponseReason.
 const (
 	SessionResponseReasonRBADREQUEST         SessionResponseReason = "R_BAD_REQUEST"
@@ -1560,12 +1568,107 @@ type PlaybackTraceFfmpegPlan struct {
 
 // PlaybackTraceOperator defines model for PlaybackTraceOperator.
 type PlaybackTraceOperator struct {
-	ClientFallbackDisabled *bool   `json:"clientFallbackDisabled,omitempty"`
-	ForcedIntent           *string `json:"forcedIntent"`
-	MaxQualityRung         *string `json:"maxQualityRung"`
-	OverrideApplied        *bool   `json:"overrideApplied,omitempty"`
-	RuleName               *string `json:"ruleName"`
-	RuleScope              *string `json:"ruleScope"`
+	ClientFallbackDisabled    *bool                       `json:"clientFallbackDisabled,omitempty"`
+	ForcedIntent              *string                     `json:"forcedIntent"`
+	MaxQualityRung            *string                     `json:"maxQualityRung"`
+	OverrideApplied           *bool                       `json:"overrideApplied,omitempty"`
+	RuntimePolicyAction       *string                     `json:"runtimePolicyAction"`
+	RuntimePolicyPhase        *string                     `json:"runtimePolicyPhase"`
+	RuntimePolicyConstraints  *[]string                   `json:"runtimePolicyConstraints"`
+	RuntimePolicyReplay       *PlaybackTraceRuntimeReplay `json:"runtimePolicyReplay,omitempty"`
+	RuntimePolicyReasons      *[]string                   `json:"runtimePolicyReasons"`
+	RuntimePolicyTimeline     *[]PlaybackTraceRuntimeTick `json:"runtimePolicyTimeline,omitempty"`
+	RuntimeProbeCandidate     *string                     `json:"runtimeProbeCandidate"`
+	RuntimeProbeFailureStreak *int                        `json:"runtimeProbeFailureStreak"`
+	RuntimeProbeSuccessStreak *int                        `json:"runtimeProbeSuccessStreak"`
+	RuleName                  *string                     `json:"ruleName"`
+	RuleScope                 *string                     `json:"ruleScope"`
+}
+
+// PlaybackTraceRuntimeReplay defines model for PlaybackTraceRuntimeReplay.
+type PlaybackTraceRuntimeReplay struct {
+	FinalState   *PlaybackTraceRuntimeReplayState    `json:"finalState,omitempty"`
+	InitialState *PlaybackTraceRuntimeReplayState    `json:"initialState,omitempty"`
+	Metadata     *PlaybackTraceRuntimeReplayMetadata `json:"metadata,omitempty"`
+	Ticks        *[]PlaybackTraceRuntimeReplayTick   `json:"ticks,omitempty"`
+}
+
+// PlaybackTraceRuntimeReplayMetadata defines model for PlaybackTraceRuntimeReplayMetadata.
+type PlaybackTraceRuntimeReplayMetadata struct {
+	ClientPath    *string `json:"clientPath,omitempty"`
+	InitialTarget *string `json:"initialTarget,omitempty"`
+	ServiceRef    *string `json:"serviceRef,omitempty"`
+	SessionId     *string `json:"sessionId,omitempty"`
+	SourceType    *string `json:"sourceType,omitempty"`
+}
+
+// PlaybackTraceRuntimeReplayState defines model for PlaybackTraceRuntimeReplayState.
+type PlaybackTraceRuntimeReplayState struct {
+	ConfidenceScore   *int       `json:"confidenceScore,omitempty"`
+	ConfidenceState   *string    `json:"confidenceState,omitempty"`
+	CooldownUntil     *time.Time `json:"cooldownUntil,omitempty"`
+	CurrentStep       *string    `json:"currentStep,omitempty"`
+	LastAction        *string    `json:"lastAction,omitempty"`
+	PolicyConstraints *[]string  `json:"policyConstraints,omitempty"`
+	ProbeState        *string    `json:"probeState,omitempty"`
+	ProbeStep         *string    `json:"probeStep,omitempty"`
+	Reasons           *[]string  `json:"reasons,omitempty"`
+	TargetStep        *string    `json:"targetStep,omitempty"`
+}
+
+// PlaybackTraceRuntimeReplayTick defines model for PlaybackTraceRuntimeReplayTick.
+type PlaybackTraceRuntimeReplayTick struct {
+	Expected *PlaybackTraceRuntimeReplayTickExpected `json:"expected,omitempty"`
+	Input    *PlaybackTraceRuntimeReplayTickInput    `json:"input,omitempty"`
+}
+
+// PlaybackTraceRuntimeReplayTickExpected defines model for PlaybackTraceRuntimeReplayTickExpected.
+type PlaybackTraceRuntimeReplayTickExpected struct {
+	Action             *string   `json:"action,omitempty"`
+	ActiveStep         *string   `json:"activeStep,omitempty"`
+	Blockers           *[]string `json:"blockers,omitempty"`
+	ExecutedTransition *string   `json:"executedTransition,omitempty"`
+	PlannedTransition  *string   `json:"plannedTransition,omitempty"`
+	ProbeState         *string   `json:"probeState,omitempty"`
+	ProbeStep          *string   `json:"probeStep,omitempty"`
+	Reasons            *[]string `json:"reasons,omitempty"`
+	RuntimePhase       *string   `json:"runtimePhase,omitempty"`
+}
+
+// PlaybackTraceRuntimeReplayTickInput defines model for PlaybackTraceRuntimeReplayTickInput.
+type PlaybackTraceRuntimeReplayTickInput struct {
+	Confidence   *PlaybackTraceRuntimeReplayTickInputConfidence `json:"confidence,omitempty"`
+	ObservedStep *string                                        `json:"observedStep,omitempty"`
+	TargetStep   *string                                        `json:"targetStep,omitempty"`
+	TickAt       time.Time                                      `json:"tickAt"`
+}
+
+// PlaybackTraceRuntimeReplayTickInputConfidence defines model for PlaybackTraceRuntimeReplayTickInputConfidence.
+type PlaybackTraceRuntimeReplayTickInputConfidence struct {
+	CooldownUntil     *time.Time `json:"cooldownUntil,omitempty"`
+	PolicyConstraints *[]string  `json:"policyConstraints,omitempty"`
+	Reasons           *[]string  `json:"reasons,omitempty"`
+	Score             *int       `json:"score,omitempty"`
+	State             *string    `json:"state,omitempty"`
+	StateSince        *time.Time `json:"stateSince,omitempty"`
+	WindowCount       *int       `json:"windowCount,omitempty"`
+}
+
+// PlaybackTraceRuntimeTick defines model for PlaybackTraceRuntimeTick.
+type PlaybackTraceRuntimeTick struct {
+	ActiveStep         *string    `json:"activeStep,omitempty"`
+	Blockers           *[]string  `json:"blockers,omitempty"`
+	ConfidenceScore    *int       `json:"confidenceScore,omitempty"`
+	ConfidenceState    *string    `json:"confidenceState,omitempty"`
+	CooldownUntil      *time.Time `json:"cooldownUntil,omitempty"`
+	ExecutedTransition *string    `json:"executedTransition,omitempty"`
+	PlannedTransition  *string    `json:"plannedTransition,omitempty"`
+	PolicyAction       *string    `json:"policyAction,omitempty"`
+	ProbeState         *string    `json:"probeState,omitempty"`
+	ProbeStep          *string    `json:"probeStep,omitempty"`
+	Reasons            *[]string  `json:"reasons,omitempty"`
+	TargetStep         *string    `json:"targetStep,omitempty"`
+	TickAt             time.Time  `json:"tickAt"`
 }
 
 // PlaybackVideoCodecSignal defines model for PlaybackVideoCodecSignal.
@@ -1713,6 +1816,9 @@ type RecordingItem struct {
 
 	// Length Human-readable duration string for display only.
 	Length *string `json:"length,omitempty"`
+
+	// LocalWritable Whether the current runtime can rename this recording via a writable locally mapped filesystem path. Clients MUST fail closed when this field is absent or false.
+	LocalWritable *bool `json:"localWritable,omitempty"`
 
 	// RecordingId Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
 	RecordingId *string        `json:"recordingId,omitempty"`
@@ -1976,6 +2082,9 @@ type SessionResponse struct {
 	// Mode Playback mode for the session.
 	Mode *SessionResponseMode `json:"mode,omitempty"`
 
+	// WindowKind Playback window topology for the session.
+	WindowKind *SessionResponseWindowKind `json:"windowKind,omitempty"`
+
 	// PlaybackUrl Playback URL for the HLS playlist.
 	PlaybackUrl *string `json:"playbackUrl,omitempty"`
 	Profile     *string `json:"profile,omitempty"`
@@ -2009,6 +2118,9 @@ type SessionResponse struct {
 
 // SessionResponseMode Playback mode for the session.
 type SessionResponseMode string
+
+// SessionResponseWindowKind Playback window topology for the session.
+type SessionResponseWindowKind string
 
 // SessionResponseReason Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
 type SessionResponseReason string
@@ -2071,6 +2183,8 @@ type StorageItem struct {
 	Model        *string                 `json:"model,omitempty"`
 	Mount        *string                 `json:"mount,omitempty"`
 	MountStatus  StorageItemMountStatus  `json:"mountStatus"`
+	Origin       *string                 `json:"origin,omitempty"`
+	PathType     *string                 `json:"pathType,omitempty"`
 }
 
 // StorageItemAccess Access level detected during probe.

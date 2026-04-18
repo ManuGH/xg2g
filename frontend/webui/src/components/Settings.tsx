@@ -3,8 +3,12 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Config, { isConfigured } from './Config';
+import Files from './Files';
+import Logs from './Logs';
+import SectionContextBar from './SectionContextBar';
 import {
   putSystemConfig,
   type AppConfig,
@@ -28,8 +32,34 @@ import {
 } from '../features/household/model';
 import { getClientAuthToken, unwrapClientResultOrThrow } from '../services/clientWrapper';
 import { debugError, formatError } from '../utils/logging';
+import {
+  buildSettingsRoute,
+  type SettingsSection,
+  type SettingsTool,
+} from '../routes';
+import { getSettingsSectionLabel, getSettingsToolLabel } from '../lib/routeContext';
 import { Button } from './ui';
 import styles from './Settings.module.css';
+
+const SETTINGS_SECTIONS: SettingsSection[] = [
+  'overview',
+  'setup',
+  'household',
+  'android-tv',
+  'scan',
+  'streaming',
+  'advanced',
+];
+
+const SETTINGS_TOOLS: SettingsTool[] = ['files', 'logs'];
+
+function isSettingsSection(value: string | null): value is SettingsSection {
+  return value !== null && SETTINGS_SECTIONS.includes(value as SettingsSection);
+}
+
+function isSettingsTool(value: string | null): value is SettingsTool {
+  return value !== null && SETTINGS_TOOLS.includes(value as SettingsTool);
+}
 
 function resolveAndroidTvBaseUrl(
   config: AppConfig | null,
@@ -70,6 +100,8 @@ function resolveAndroidTvBaseUrl(
 
 function Settings() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { search } = useLocation();
   const { channels, loadChannels } = useAppContext();
   const { confirm, toast } = useUiOverlay();
   const { confirmPendingChanges, setPendingChangesGuard } = usePendingChanges();
@@ -141,6 +173,19 @@ function Settings() {
     );
 
   const configured = isConfigured(config);
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+  const requestedSection = searchParams.get('section');
+  const requestedTool = searchParams.get('tool');
+  const activeSection: SettingsSection = !configured
+    ? 'setup'
+    : isSettingsSection(requestedSection)
+      ? requestedSection
+      : 'overview';
+  const activeTool: SettingsTool | null = configured
+    && activeSection === 'advanced'
+    && isSettingsTool(requestedTool)
+    ? requestedTool
+    : null;
   const householdPinConfigured = Boolean(config?.household?.pinConfigured);
   const persistedEditingProfile = profiles.find((profile) => profile.id === editingProfileId) ?? null;
   const editingProfile = persistedEditingProfile ?? selectedProfile;
@@ -160,6 +205,39 @@ function Settings() {
     : scanError;
   const pinDraftValid = /^\d{4,12}$/.test(pinDraft);
   const pinDraftsMatch = pinDraft === pinConfirmDraft;
+  const showSection = (section: Exclude<SettingsSection, 'overview'>) => {
+    return activeSection === 'overview' || activeSection === section;
+  };
+  const sectionLabelMap: Record<SettingsSection, string> = {
+    overview: getSettingsSectionLabel('overview', t),
+    setup: getSettingsSectionLabel('setup', t),
+    household: getSettingsSectionLabel('household', t),
+    'android-tv': getSettingsSectionLabel('android-tv', t),
+    scan: getSettingsSectionLabel('scan', t),
+    streaming: getSettingsSectionLabel('streaming', t),
+    advanced: getSettingsSectionLabel('advanced', t),
+  };
+  const toolLabelMap: Record<SettingsTool, string> = {
+    files: getSettingsToolLabel('files', t),
+    logs: getSettingsToolLabel('logs', t),
+  };
+  const headerTitle = activeTool
+    ? toolLabelMap[activeTool]
+    : activeSection === 'overview'
+      ? t('settings.title')
+      : sectionLabelMap[activeSection];
+  const headerSubtitle = activeTool
+    ? t(`settings.context.tool.${activeTool}`, {
+      defaultValue: activeTool === 'files'
+        ? 'Playlist, guide and compatibility feeds now live under the advanced settings area.'
+        : 'Diagnostics and recent server events now live under the advanced settings area.',
+    })
+    : activeSection === 'overview'
+      ? t('settings.subtitle')
+      : t(`settings.context.section.${activeSection}`, {
+        defaultValue: 'This area is part of Settings and can also be reached directly by URL.',
+      });
+  const showContextBar = activeSection !== 'overview';
 
   useEffect(() => {
     const persistedProfile = profiles.find((profile) => profile.id === editingProfileId);
@@ -459,6 +537,28 @@ function Settings() {
     }
   };
 
+  const handleOpenSettingsSection = async (
+    nextSection: SettingsSection,
+    nextTool?: SettingsTool,
+  ) => {
+    const normalizedTool = nextSection === 'advanced' ? nextTool : undefined;
+    const activeToolValue = activeTool ?? undefined;
+
+    if (activeSection === nextSection && activeToolValue === normalizedTool) {
+      return;
+    }
+
+    const ok = await confirmPendingChanges();
+    if (!ok) {
+      return;
+    }
+
+    navigate(buildSettingsRoute({
+      section: nextSection,
+      tool: normalizedTool,
+    }));
+  };
+
   // ADR-00X: Profile persistence removed (universal policy only)
 
   return (
@@ -466,14 +566,117 @@ function Settings() {
       <div className={styles.header}>
         <div>
           <p className={styles.kicker}>{t('settings.kicker')}</p>
-          <h2>{t('settings.title')}</h2>
+          <h2>{headerTitle}</h2>
           <p className={styles.subtitle}>
-            {t('settings.subtitle')}
+            {headerSubtitle}
           </p>
         </div>
       </div>
 
-      <div className={styles.setup}>
+      {showContextBar ? (
+        <SectionContextBar
+          segments={[
+            {
+              label: t('settings.title'),
+              onClick: () => { void handleOpenSettingsSection('overview'); },
+            },
+            {
+              label: sectionLabelMap[activeSection],
+              onClick: activeTool
+                ? () => { void handleOpenSettingsSection(activeSection); }
+                : undefined,
+            },
+            ...(activeTool ? [{ label: toolLabelMap[activeTool] }] : []),
+          ]}
+          actionLabel={activeTool
+            ? t('settings.backToSection', {
+              defaultValue: 'Back to {{section}}',
+              section: sectionLabelMap[activeSection],
+            })
+            : t('settings.backToOverview', { defaultValue: 'Back to overview' })}
+          onAction={activeTool
+            ? () => { void handleOpenSettingsSection(activeSection); }
+            : () => { void handleOpenSettingsSection('overview'); }}
+        />
+      ) : null}
+
+      {configured ? (
+        <div className={styles.sectionTabs} role="tablist" aria-label={t('settings.sectionNavLabel', { defaultValue: 'Settings sections' })}>
+          <Button
+            variant="secondary"
+            size="sm"
+            active={activeSection === 'overview'}
+            onClick={() => { void handleOpenSettingsSection('overview'); }}
+            role="tab"
+            aria-selected={activeSection === 'overview'}
+          >
+            {t('settings.sections.overview', { defaultValue: 'Overview' })}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            active={activeSection === 'setup'}
+            onClick={() => { void handleOpenSettingsSection('setup'); }}
+            role="tab"
+            aria-selected={activeSection === 'setup'}
+          >
+            {t('setup.title')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            active={activeSection === 'household'}
+            onClick={() => { void handleOpenSettingsSection('household'); }}
+            role="tab"
+            aria-selected={activeSection === 'household'}
+          >
+            {t('settings.household.title', { defaultValue: 'Household profiles' })}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            active={activeSection === 'android-tv'}
+            onClick={() => { void handleOpenSettingsSection('android-tv'); }}
+            role="tab"
+            aria-selected={activeSection === 'android-tv'}
+          >
+            {t('settings.androidTv.title')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            active={activeSection === 'scan'}
+            onClick={() => { void handleOpenSettingsSection('scan'); }}
+            role="tab"
+            aria-selected={activeSection === 'scan'}
+          >
+            {t('settings.streaming.scan.title')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            active={activeSection === 'streaming'}
+            onClick={() => { void handleOpenSettingsSection('streaming'); }}
+            role="tab"
+            aria-selected={activeSection === 'streaming'}
+          >
+            {t('settings.streaming.title')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            active={activeSection === 'advanced'}
+            onClick={() => { void handleOpenSettingsSection('advanced'); }}
+            role="tab"
+            aria-selected={activeSection === 'advanced'}
+          >
+            {t('settings.advanced.title', { defaultValue: 'Advanced tools' })}
+          </Button>
+        </div>
+      ) : null}
+
+      {showSection('setup') ? (
+        <div className={styles.setup}>
         {!configured ? (
           <Config onUpdate={() => { void refetchConfig(); }} />
         ) : (
@@ -498,9 +701,11 @@ function Settings() {
             )}
           </div>
         )}
-      </div>
+        </div>
+      ) : null}
 
-      <div className={styles.section}>
+      {showSection('household') ? (
+        <div className={styles.section}>
         <h3>{t('settings.household.title', { defaultValue: 'Haushaltsprofile' })}</h3>
         <p className={styles.subtitle}>
           {t('settings.household.subtitle', {
@@ -870,9 +1075,11 @@ function Settings() {
             )}
           </div>
         </div>
-      </div>
+        </div>
+      ) : null}
 
-      <div className={styles.section}>
+      {showSection('android-tv') ? (
+        <div className={styles.section}>
         <h3>{t('settings.androidTv.title')}</h3>
         <p className={styles.subtitle}>{t('settings.androidTv.subtitle')}</p>
 
@@ -928,9 +1135,11 @@ function Settings() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      ) : null}
 
-      <div className={styles.section}>
+      {showSection('scan') ? (
+        <div className={styles.section}>
         <h3>{t('settings.streaming.scan.title')}</h3>
         <p className={styles.subtitle}>{t('settings.streaming.scan.description')}</p>
 
@@ -1001,9 +1210,11 @@ function Settings() {
             </div>
           )}
         </div>
-      </div>
+        </div>
+      ) : null}
 
-      <div className={styles.section}>
+      {showSection('streaming') ? (
+        <div className={styles.section}>
         <h3>{t('settings.streaming.title')}</h3>
 
         {/* Note: Profile selection removed in favor of Universal Policy */}
@@ -1023,18 +1234,58 @@ function Settings() {
             <span className={styles.hint}>{t('settings.streaming.policy.hint')}</span>
           </div>
         </div>
-      </div>
+        </div>
+      ) : null}
+
+      {showSection('advanced') ? (
+        <div className={styles.section}>
+        <h3>{t('settings.advanced.title', { defaultValue: 'Advanced tools' })}</h3>
+        <p className={styles.subtitle}>
+          {t('settings.advanced.subtitle', {
+            defaultValue: 'File browser and diagnostic logs stay available here as expert tools without adding more main navigation.',
+          })}
+        </p>
+        <div className={styles.advancedActions}>
+          <Button
+            variant="secondary"
+            active={activeTool === 'files'}
+            onClick={() => { void handleOpenSettingsSection('advanced', 'files'); }}
+          >
+            {t('nav.files')}
+          </Button>
+          <Button
+            variant="secondary"
+            active={activeTool === 'logs'}
+            onClick={() => { void handleOpenSettingsSection('advanced', 'logs'); }}
+          >
+            {t('nav.logs')}
+          </Button>
+        </div>
+        {activeTool === 'files' ? (
+          <div className={styles.embeddedTool}>
+            <Files showLegacyNotice={false} />
+          </div>
+        ) : null}
+        {activeTool === 'logs' ? (
+          <div className={styles.embeddedTool}>
+            <Logs showLegacyNotice={false} />
+          </div>
+        ) : null}
+        </div>
+      ) : null}
 
       {/* Adaptive Bitrate removed as per 2026 Design Contract (Trust Hardening) */}
 
       {/* ADR-00X: Saved message removed (was for profile save feedback) */}
 
 
-      <div className={styles.footer}>
-        <p>
-          <strong>{t('settings.footer.noteTitle')}</strong> {t('settings.footer.noteBody')}
-        </p>
-      </div>
+      {activeSection === 'overview' ? (
+        <div className={styles.footer}>
+          <p>
+            <strong>{t('settings.footer.noteTitle')}</strong> {t('settings.footer.noteBody')}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

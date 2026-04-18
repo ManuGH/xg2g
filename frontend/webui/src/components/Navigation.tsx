@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import { usePendingChanges } from '../context/PendingChangesContext';
 import { resolveHostEnvironment } from '../lib/hostBridge';
+import { resolveAppRouteContext } from '../lib/routeContext';
 import { ROUTE_MAP, normalizePathname, type AppView } from '../routes';
 import styles from './Navigation.module.css';
 
@@ -115,7 +116,7 @@ function NavIcon({ name, className = '' }: { name: IconName; className?: string 
 
 export default function Navigation({ onLogout }: NavigationProps) {
   const { t } = useTranslation();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const {
     profiles,
@@ -125,7 +126,6 @@ export default function Navigation({ onLogout }: NavigationProps) {
     pinConfigured,
     isUnlocked,
     canAccessDvrPlayback,
-    canManageDvr,
     canAccessSettings,
   } = useHouseholdProfiles();
   const { confirmPendingChanges } = usePendingChanges();
@@ -137,9 +137,10 @@ export default function Navigation({ onLogout }: NavigationProps) {
   const restoreFocusRef = useRef(false);
   const sheetTitleId = useId();
   const sheetId = useId();
+  const routeContext = useMemo(() => resolveAppRouteContext(pathname, search, t), [pathname, search, t]);
   const sectionLabels: Record<NavSection, string> = {
-    quick: t('nav.sectionControl', { defaultValue: 'Control' }),
-    main: t('nav.sectionBrowse', { defaultValue: 'Browse' }),
+    quick: t('nav.sectionControl', { defaultValue: 'Start' }),
+    main: t('nav.sectionBrowse', { defaultValue: 'Media' }),
     footer: t('nav.sectionSystem', { defaultValue: 'System' })
   };
 
@@ -147,35 +148,25 @@ export default function Navigation({ onLogout }: NavigationProps) {
     { id: 'dashboard', label: t('nav.dashboard'), section: 'quick' },
     { id: 'epg', label: t('nav.epg'), section: 'main' },
     { id: 'recordings', label: t('nav.recordings'), section: 'main' },
-    { id: 'timers', label: t('nav.timers'), section: 'main' },
-    { id: 'series', label: t('nav.series'), section: 'main' },
-    { id: 'files', label: t('nav.files'), section: 'main' },
-    { id: 'logs', label: t('nav.logs'), section: 'main' },
+    { id: 'system', label: t('nav.system', { defaultValue: 'System' }), section: 'footer' },
     { id: 'settings', label: t('nav.playerSettings'), section: 'footer' },
-    { id: 'system', label: t('nav.system', { defaultValue: 'System' }), section: 'footer' }
   ], [t]);
 
   const visibleNavItems = useMemo(() => navItems.filter((item) => {
     switch (item.id) {
       case 'recordings':
         return canAccessDvrPlayback;
-      case 'timers':
-      case 'series':
-        return canManageDvr;
-      case 'logs':
       case 'settings':
       case 'system':
         return canAccessSettings;
       default:
         return true;
     }
-  }), [canAccessDvrPlayback, canAccessSettings, canManageDvr, navItems]);
+  }), [canAccessDvrPlayback, canAccessSettings, navItems]);
 
-  const profileAccessLabel = canManageDvr
-    ? t('nav.profileAccess.manage', { defaultValue: 'Live + DVR verwalten' })
-    : canAccessDvrPlayback
-      ? t('nav.profileAccess.playback', { defaultValue: 'Live + Aufnahmen ansehen' })
-      : t('nav.profileAccess.live', { defaultValue: 'Nur Live-TV' });
+  const profileAccessLabel = canAccessDvrPlayback
+    ? t('nav.profileAccess.playback', { defaultValue: 'Live + Aufnahmen ansehen' })
+    : t('nav.profileAccess.live', { defaultValue: 'Nur Live-TV' });
 
   const closeMoreMenu = useCallback((restoreFocus: boolean) => {
     restoreFocusRef.current = restoreFocus;
@@ -256,7 +247,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
     if (showMoreMenuRef.current) {
       closeMoreMenu(false);
     }
-  }, [closeMoreMenu, pathname]);
+  }, [closeMoreMenu, pathname, search]);
 
   useEffect(() => {
     if (!showMoreMenu) {
@@ -415,6 +406,14 @@ export default function Navigation({ onLogout }: NavigationProps) {
       </aside>
 
       <div className={styles.mobileShell}>
+        {routeContext.showMobileContext && routeContext.mobileContextLabel && (
+          <div className={styles.mobileContextBar} aria-live="polite">
+            <p className={styles.mobileContextEyebrow}>
+              {t('nav.currentArea', { defaultValue: 'Current area' })}
+            </p>
+            <p className={styles.mobileContextLabel}>{routeContext.mobileContextLabel}</p>
+          </div>
+        )}
         <nav
           className={styles.mobileNav}
           role="navigation"
@@ -465,7 +464,10 @@ export default function Navigation({ onLogout }: NavigationProps) {
               <div className={styles.sheetHeader}>
                 <div>
                   <p className={styles.sheetEyebrow}>{t('nav.sheetEyebrow', { defaultValue: 'Navigation' })}</p>
-                  <h2 id={sheetTitleId} className={styles.sheetTitle}>{t('nav.sheetTitle', { defaultValue: 'Control surfaces' })}</h2>
+                  <h2 id={sheetTitleId} className={styles.sheetTitle}>{t('nav.sheetTitle', { defaultValue: 'More sections' })}</h2>
+                  {routeContext.showMobileContext && routeContext.mobileContextLabel && (
+                    <p className={styles.sheetContext}>{routeContext.mobileContextLabel}</p>
+                  )}
                 </div>
                 <button
                   ref={closeButtonRef}

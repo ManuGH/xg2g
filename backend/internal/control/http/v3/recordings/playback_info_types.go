@@ -29,13 +29,20 @@ type PlaybackInfoRequest struct {
 
 // PlaybackInfoResult holds the domain-level inputs and outputs needed by the HTTP adapter.
 type PlaybackInfoResult struct {
-	SourceRef            string
-	Truth                playback.MediaTruth
-	ResolvedCapabilities capabilities.PlaybackCapabilities
-	Decision             *decision.Decision
-	ClientProfile        string
-	OperatorRuleName     string
-	OperatorRuleScope    string
+	SourceRef                 string
+	Truth                     playback.MediaTruth
+	ResolvedCapabilities      capabilities.PlaybackCapabilities
+	Decision                  *decision.Decision
+	ClientProfile             string
+	OperatorRuleName          string
+	OperatorRuleScope         string
+	RuntimePolicyAction       string
+	RuntimePolicyPhase        string
+	RuntimeProbeCandidate     string
+	RuntimePolicyReasons      []string
+	RuntimePolicyConstraints  []string
+	RuntimeProbeSuccessStreak int
+	RuntimeProbeFailureStreak int
 }
 
 type PlaybackInfoProblem struct {

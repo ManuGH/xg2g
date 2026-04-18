@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	sqlitepkg "github.com/ManuGH/xg2g/internal/persistence/sqlite"
 )
 
 const (
-	sqliteSchemaVersion = 5
+	sqliteSchemaVersion = 8
 	SQLiteSchemaVersion = sqliteSchemaVersion
 )
 
@@ -48,27 +49,39 @@ func (s *SqliteStore) migrate() error {
 
 	switch {
 	case currentVersion <= 0:
-		if err := createSchemaV5(tx); err != nil {
+		if err := createSchemaV8(tx); err != nil {
 			return err
 		}
 	case currentVersion == 1:
-		if err := migrateSchemaV1ToV5(tx); err != nil {
+		if err := migrateSchemaV1ToV8(tx); err != nil {
 			return err
 		}
 	case currentVersion == 2:
-		if err := migrateSchemaV2ToV5(tx); err != nil {
+		if err := migrateSchemaV2ToV8(tx); err != nil {
 			return err
 		}
 	case currentVersion == 4:
-		if err := migrateSchemaV4ToV5(tx); err != nil {
+		if err := migrateSchemaV4ToV8(tx); err != nil {
+			return err
+		}
+	case currentVersion == 5:
+		if err := migrateSchemaV5ToV8(tx); err != nil {
+			return err
+		}
+	case currentVersion == 6:
+		if err := migrateSchemaV6ToV8(tx); err != nil {
+			return err
+		}
+	case currentVersion == 7:
+		if err := migrateSchemaV7ToV8(tx); err != nil {
 			return err
 		}
 	default:
-		if err := createSchemaV5(tx); err != nil {
+		if err := createSchemaV8(tx); err != nil {
 			return err
 		}
 	}
-	if err := ensureSchemaV5Columns(tx); err != nil {
+	if err := ensureSchemaV8Columns(tx); err != nil {
 		return err
 	}
 
@@ -80,7 +93,7 @@ func (s *SqliteStore) migrate() error {
 	return tx.Commit()
 }
 
-func createSchemaV5(tx *sql.Tx) error {
+func createSchemaV8(tx *sql.Tx) error {
 	if _, err := tx.Exec(`
 	CREATE TABLE IF NOT EXISTS capability_hosts (
 		host_fingerprint TEXT PRIMARY KEY,
@@ -122,9 +135,12 @@ func createSchemaV5(tx *sql.Tx) error {
 		container TEXT NOT NULL,
 		video_codec TEXT NOT NULL,
 		audio_codec TEXT NOT NULL,
+		bitrate_confidence TEXT NOT NULL,
+		bitrate_bucket TEXT NOT NULL,
 		width INTEGER NOT NULL,
 		height INTEGER NOT NULL,
 		fps REAL NOT NULL,
+		signal_fps REAL NOT NULL,
 		interlaced INTEGER NOT NULL,
 		problem_flags_json TEXT NOT NULL,
 		receiver_context_json TEXT,
@@ -163,34 +179,67 @@ func createSchemaV5(tx *sql.Tx) error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_capability_observations_time ON capability_observations(observed_at_ms DESC);
 	CREATE INDEX IF NOT EXISTS idx_capability_observations_device ON capability_observations(device_fingerprint, observed_at_ms DESC);
+
+	CREATE TABLE IF NOT EXISTS capability_policy_state (
+		subject_kind TEXT NOT NULL,
+		source_fingerprint TEXT NOT NULL,
+		device_fingerprint TEXT NOT NULL,
+		host_fingerprint TEXT NOT NULL,
+		max_quality_rung TEXT NOT NULL,
+		confidence_json TEXT NOT NULL,
+		updated_at_ms INTEGER NOT NULL,
+		PRIMARY KEY(subject_kind, source_fingerprint, device_fingerprint, host_fingerprint)
+	);
+	CREATE INDEX IF NOT EXISTS idx_capability_policy_state_updated_at ON capability_policy_state(updated_at_ms DESC);
 	`); err != nil {
 		return err
 	}
 	return nil
 }
 
-func migrateSchemaV1ToV5(tx *sql.Tx) error {
-	if err := createSchemaV5(tx); err != nil {
+func migrateSchemaV1ToV8(tx *sql.Tx) error {
+	if err := createSchemaV8(tx); err != nil {
 		return err
 	}
 	return nil
 }
 
-func migrateSchemaV2ToV5(tx *sql.Tx) error {
-	if err := createSchemaV5(tx); err != nil {
+func migrateSchemaV2ToV8(tx *sql.Tx) error {
+	if err := createSchemaV8(tx); err != nil {
 		return err
 	}
 	return nil
 }
 
-func migrateSchemaV4ToV5(tx *sql.Tx) error {
-	if err := createSchemaV5(tx); err != nil {
+func migrateSchemaV4ToV8(tx *sql.Tx) error {
+	if err := createSchemaV8(tx); err != nil {
 		return err
 	}
 	return nil
 }
 
-func ensureSchemaV5Columns(tx *sql.Tx) error {
+func migrateSchemaV5ToV8(tx *sql.Tx) error {
+	if err := createSchemaV8(tx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func migrateSchemaV6ToV8(tx *sql.Tx) error {
+	if err := createSchemaV8(tx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func migrateSchemaV7ToV8(tx *sql.Tx) error {
+	if err := createSchemaV8(tx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureSchemaV8Columns(tx *sql.Tx) error {
 	hasSourceFingerprint, err := tableHasColumn(tx, "capability_observations", "source_fingerprint")
 	if err != nil {
 		return err
@@ -235,6 +284,33 @@ func ensureSchemaV5Columns(tx *sql.Tx) error {
 			return err
 		}
 	}
+	hasBitrateConfidence, err := tableHasColumn(tx, "capability_sources", "bitrate_confidence")
+	if err != nil {
+		return err
+	}
+	if !hasBitrateConfidence {
+		if _, err := tx.Exec(`ALTER TABLE capability_sources ADD COLUMN bitrate_confidence TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	hasBitrateBucket, err := tableHasColumn(tx, "capability_sources", "bitrate_bucket")
+	if err != nil {
+		return err
+	}
+	if !hasBitrateBucket {
+		if _, err := tx.Exec(`ALTER TABLE capability_sources ADD COLUMN bitrate_bucket TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	hasSignalFPS, err := tableHasColumn(tx, "capability_sources", "signal_fps")
+	if err != nil {
+		return err
+	}
+	if !hasSignalFPS {
+		if _, err := tx.Exec(`ALTER TABLE capability_sources ADD COLUMN signal_fps REAL NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
 	for _, column := range []string{"brand", "product", "device_name"} {
 		hasColumn, err := tableHasColumn(tx, "capability_devices", column)
 		if err != nil {
@@ -251,6 +327,24 @@ func ensureSchemaV5Columns(tx *sql.Tx) error {
 		return err
 	}
 	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_capability_observations_session ON capability_observations(session_id, observed_at_ms DESC)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_capability_observations_feedback_path ON capability_observations(observation_kind, source_fingerprint, device_fingerprint, host_fingerprint, observed_at_ms DESC)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS capability_policy_state (
+		subject_kind TEXT NOT NULL,
+		source_fingerprint TEXT NOT NULL,
+		device_fingerprint TEXT NOT NULL,
+		host_fingerprint TEXT NOT NULL,
+		max_quality_rung TEXT NOT NULL DEFAULT '',
+		confidence_json TEXT NOT NULL DEFAULT '{}',
+		updated_at_ms INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY(subject_kind, source_fingerprint, device_fingerprint, host_fingerprint)
+	)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_capability_policy_state_updated_at ON capability_policy_state(updated_at_ms DESC)`); err != nil {
 		return err
 	}
 	return nil
@@ -386,17 +480,20 @@ func (s *SqliteStore) RememberSource(ctx context.Context, snapshot SourceSnapsho
 
 	_, err = s.DB.ExecContext(ctx, `
 	INSERT INTO capability_sources (
-		source_fingerprint, subject_kind, origin, container, video_codec, audio_codec, width, height, fps, interlaced, problem_flags_json, receiver_context_json, updated_at_ms
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		source_fingerprint, subject_kind, origin, container, video_codec, audio_codec, bitrate_confidence, bitrate_bucket, width, height, fps, signal_fps, interlaced, problem_flags_json, receiver_context_json, updated_at_ms
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(source_fingerprint) DO UPDATE SET
 		subject_kind = excluded.subject_kind,
 		origin = excluded.origin,
 		container = excluded.container,
 		video_codec = excluded.video_codec,
 		audio_codec = excluded.audio_codec,
+		bitrate_confidence = excluded.bitrate_confidence,
+		bitrate_bucket = excluded.bitrate_bucket,
 		width = excluded.width,
 		height = excluded.height,
 		fps = excluded.fps,
+		signal_fps = excluded.signal_fps,
 		interlaced = excluded.interlaced,
 		problem_flags_json = excluded.problem_flags_json,
 		receiver_context_json = excluded.receiver_context_json,
@@ -408,9 +505,12 @@ func (s *SqliteStore) RememberSource(ctx context.Context, snapshot SourceSnapsho
 		snapshot.Container,
 		snapshot.VideoCodec,
 		snapshot.AudioCodec,
+		snapshot.BitrateConfidence,
+		snapshot.BitrateBucket,
 		snapshot.Width,
 		snapshot.Height,
 		snapshot.FPS,
+		snapshot.SignalFPS,
 		interlaced,
 		string(problemFlagsJSON),
 		receiverContextJSON,
@@ -493,6 +593,165 @@ func (s *SqliteStore) LookupDecisionObservation(ctx context.Context, requestID s
 		return PlaybackObservation{}, false, err
 	}
 	return observation, true, nil
+}
+
+func (s *SqliteStore) LookupRecentFeedbackSummary(ctx context.Context, query FeedbackSummaryQuery) (FeedbackSummary, bool, error) {
+	query = canonicalFeedbackSummaryQuery(query)
+	if query.SourceFingerprint == "" || query.DeviceFingerprint == "" || query.HostFingerprint == "" {
+		return FeedbackSummary{}, false, nil
+	}
+
+	observations, err := s.LookupRecentFeedbackObservations(ctx, query)
+	if err != nil {
+		return FeedbackSummary{}, false, err
+	}
+	if len(observations) == 0 {
+		return FeedbackSummary{}, false, nil
+	}
+	return summarizeFeedbackObservations(observations), true, nil
+}
+
+func (s *SqliteStore) LookupRecentFeedbackObservations(ctx context.Context, query FeedbackSummaryQuery) ([]PlaybackObservation, error) {
+	query = canonicalFeedbackSummaryQuery(query)
+	if query.SourceFingerprint == "" || query.DeviceFingerprint == "" || query.HostFingerprint == "" {
+		return nil, nil
+	}
+
+	rows, err := s.DB.QueryContext(ctx, `
+	SELECT
+		observed_at_ms,
+		request_id,
+		observation_kind,
+		outcome,
+		session_id,
+		source_ref,
+		source_fingerprint,
+		subject_kind,
+		requested_intent,
+		resolved_intent,
+		mode,
+		selected_container,
+		selected_video_codec,
+		selected_audio_codec,
+		source_width,
+		source_height,
+		source_fps,
+		host_fingerprint,
+		device_fingerprint,
+		client_caps_hash,
+		feedback_event,
+		feedback_code,
+		feedback_message,
+		network_kind,
+		network_metered,
+		network_downlink_kbps
+	FROM capability_observations
+	WHERE observation_kind = 'feedback'
+		AND source_fingerprint = ?
+		AND device_fingerprint = ?
+		AND host_fingerprint = ?
+		AND (? = '' OR subject_kind = ?)
+		AND observed_at_ms >= ?
+	ORDER BY observed_at_ms DESC, id DESC
+	LIMIT ?
+	`,
+		query.SourceFingerprint,
+		query.DeviceFingerprint,
+		query.HostFingerprint,
+		query.SubjectKind,
+		query.SubjectKind,
+		query.Since.UnixMilli(),
+		query.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	observations := make([]PlaybackObservation, 0, query.Limit)
+	for rows.Next() {
+		observation, err := scanObservation(rows)
+		if err != nil {
+			return nil, err
+		}
+		observations = append(observations, observation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return observations, nil
+}
+
+func (s *SqliteStore) RememberPlaybackPolicyState(ctx context.Context, state PlaybackPolicyState) error {
+	state = canonicalPlaybackPolicyState(state)
+	if state.Fingerprint() == "" {
+		return nil
+	}
+	payload, err := json.Marshal(state.Confidence)
+	if err != nil {
+		return err
+	}
+	_, err = s.DB.ExecContext(ctx, `
+	INSERT INTO capability_policy_state (
+		subject_kind, source_fingerprint, device_fingerprint, host_fingerprint, max_quality_rung, confidence_json, updated_at_ms
+	) VALUES (?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(subject_kind, source_fingerprint, device_fingerprint, host_fingerprint) DO UPDATE SET
+		max_quality_rung = excluded.max_quality_rung,
+		confidence_json = excluded.confidence_json,
+		updated_at_ms = excluded.updated_at_ms
+	`,
+		state.SubjectKind,
+		state.SourceFingerprint,
+		state.DeviceFingerprint,
+		state.HostFingerprint,
+		string(state.MaxQualityRung),
+		string(payload),
+		state.UpdatedAt.UnixMilli(),
+	)
+	return err
+}
+
+func (s *SqliteStore) LookupPlaybackPolicyState(ctx context.Context, query PlaybackPolicyStateQuery) (PlaybackPolicyState, bool, error) {
+	query = canonicalPlaybackPolicyStateQuery(query)
+	if queryFingerprint(query) == "" {
+		return PlaybackPolicyState{}, false, nil
+	}
+
+	var state PlaybackPolicyState
+	var payload string
+	var updatedAtMS int64
+	err := s.DB.QueryRowContext(ctx, `
+	SELECT subject_kind, source_fingerprint, device_fingerprint, host_fingerprint, max_quality_rung, confidence_json, updated_at_ms
+	FROM capability_policy_state
+	WHERE subject_kind = ? AND source_fingerprint = ? AND device_fingerprint = ? AND host_fingerprint = ?
+	`,
+		query.SubjectKind,
+		query.SourceFingerprint,
+		query.DeviceFingerprint,
+		query.HostFingerprint,
+	).Scan(
+		&state.SubjectKind,
+		&state.SourceFingerprint,
+		&state.DeviceFingerprint,
+		&state.HostFingerprint,
+		&state.MaxQualityRung,
+		&payload,
+		&updatedAtMS,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return PlaybackPolicyState{}, false, nil
+		}
+		return PlaybackPolicyState{}, false, err
+	}
+	if err := json.Unmarshal([]byte(payload), &state.Confidence); err != nil {
+		return PlaybackPolicyState{}, false, err
+	}
+	state.MaxQualityRung = playbackprofile.NormalizeQualityRung(string(state.MaxQualityRung))
+	if updatedAtMS > 0 {
+		state.UpdatedAt = time.UnixMilli(updatedAtMS).UTC()
+	}
+	return state, true, nil
 }
 
 func (s *SqliteStore) RecordObservation(ctx context.Context, observation PlaybackObservation) error {

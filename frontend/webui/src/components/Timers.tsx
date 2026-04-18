@@ -3,6 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Timer } from '../client-ts';
 import EditTimerDialog from './EditTimerDialog';
 import { useAppContext } from '../context/AppContext';
@@ -11,8 +12,14 @@ import { filterServicesForProfile, filterTimersForProfile } from '../features/ho
 import { debugWarn } from '../utils/logging';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useDeleteTimerMutation, useDvrCapabilities, useTimers } from '../hooks/useServerQueries';
+import { ROUTE_MAP } from '../routes';
 import { Button } from './ui';
+import LegacyRouteNotice from './LegacyRouteNotice';
 import styles from './Timers.module.css';
+
+interface TimersProps {
+  showLegacyNotice?: boolean;
+}
 
 function formatDateTime(ts: number | undefined): string {
   if (!ts) return '';
@@ -26,7 +33,8 @@ function formatDateTime(ts: number | undefined): string {
   });
 }
 
-export default function Timers() {
+export default function Timers({ showLegacyNotice = true }: TimersProps) {
+  const { t } = useTranslation();
   const { channels } = useAppContext();
   const { confirm, toast } = useUiOverlay();
   const { selectedProfile, canManageDvr } = useHouseholdProfiles();
@@ -74,6 +82,15 @@ export default function Timers() {
 
   return (
     <div className={`${styles.view} animate-enter`.trim()}>
+      {showLegacyNotice ? (
+        <LegacyRouteNotice
+          parentLabel={t('nav.epg')}
+          description={t('legacyRoute.timersDescription', {
+            defaultValue: 'For most workflows, schedule recordings directly from Live TV. This page stays available for direct timer management.',
+          })}
+          route={ROUTE_MAP.epg}
+        />
+      ) : null}
       <div className={styles.toolbar}>
         <h2>Scheduled Recordings</h2>
         <div className={styles.actions}>

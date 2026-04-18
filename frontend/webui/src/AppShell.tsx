@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from './context/AppContext';
 import { useHouseholdProfiles } from './context/HouseholdProfilesContext';
 import Navigation from './components/Navigation';
@@ -7,6 +8,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import LoadingSkeleton from './components/LoadingSkeleton';
 import { resetErrorCatalog } from './lib/errorCatalog';
 import { resolveHostEnvironment } from './lib/hostBridge';
+import { resolveAppRouteContext } from './lib/routeContext';
 import { useErrorCatalog } from './hooks/useServerQueries';
 import { normalizePathname, ROUTE_MAP, UNLOCK_ROUTE } from './routes';
 
@@ -15,16 +17,22 @@ interface AppShellProps {
 }
 
 export default function AppShell({ onLogout }: AppShellProps) {
+  const { t } = useTranslation();
   const { auth, channels, dataLoaded, loadBouquetsAndChannels } = useAppContext();
   const household = useHouseholdProfiles();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const usesNativeTvNavigation = hostEnvironment.platform === 'android-tv';
   const normalizedPathname = normalizePathname(pathname);
+  const routeContext = useMemo(() => resolveAppRouteContext(pathname, search, t), [pathname, search, t]);
   const isBootstrapBypassRoute = normalizedPathname === ROUTE_MAP.settings || normalizedPathname === UNLOCK_ROUTE;
   const isHydratingShell = !isBootstrapBypassRoute && channels.loading && !dataLoaded;
   const previousProfileIdRef = useRef<string | null>(null);
   useErrorCatalog(auth.isAuthenticated);
+
+  useEffect(() => {
+    document.title = routeContext.documentTitle;
+  }, [routeContext.documentTitle]);
 
   useEffect(() => {
     if (!auth.isAuthenticated || !household.isReady || channels.loading) {

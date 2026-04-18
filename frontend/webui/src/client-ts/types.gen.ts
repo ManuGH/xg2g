@@ -298,6 +298,10 @@ export type SessionResponse = {
      */
     mode?: 'LIVE' | 'RECORDING';
     /**
+     * Playback window topology for the session.
+     */
+    windowKind?: 'live' | 'live-dvr' | 'vod' | 'unknown';
+    /**
      * DVR window length for live sessions, in seconds.
      */
     durationSeconds?: number;
@@ -484,6 +488,14 @@ export type StorageItem = {
     model?: string;
     capacity?: string;
     mount?: string;
+    /**
+     * Storage perspective: receiver or xg2g.
+     */
+    origin?: string;
+    /**
+     * Topology class of the path: receiver_attached, receiver_share, xg2g_local, xg2g_share, xg2g_aggregate, or unknown.
+     */
+    pathType?: string;
     mountStatus: 'mounted' | 'unmounted' | 'unknown';
     /**
      * Status of the storage device. 'skipped' indicates the monitor was too busy to evaluate.
@@ -1253,10 +1265,34 @@ export type PlaybackTrace = {
 export type PlaybackTraceOperator = {
     forcedIntent?: string | null;
     maxQualityRung?: string | null;
+    runtimePolicyAction?: string | null;
+    runtimePolicyPhase?: string | null;
+    runtimePolicyConstraints?: Array<string> | null;
+    runtimePolicyReasons?: Array<string> | null;
+    runtimePolicyTimeline?: Array<PlaybackTraceRuntimeTick> | null;
+    runtimeProbeCandidate?: string | null;
+    runtimeProbeFailureStreak?: number | null;
+    runtimeProbeSuccessStreak?: number | null;
     ruleName?: string | null;
     ruleScope?: string | null;
     clientFallbackDisabled?: boolean;
     overrideApplied?: boolean;
+};
+
+export type PlaybackTraceRuntimeTick = {
+    tickAt: string;
+    confidenceScore?: number | null;
+    confidenceState?: string | null;
+    policyAction?: string | null;
+    plannedTransition?: string | null;
+    executedTransition?: string | null;
+    activeStep?: string | null;
+    targetStep?: string | null;
+    probeStep?: string | null;
+    probeState?: string | null;
+    cooldownUntil?: string | null;
+    blockers?: Array<string> | null;
+    reasons?: Array<string> | null;
 };
 
 export type PlaybackTraceFfmpegPlan = {
@@ -1599,6 +1635,10 @@ export type RecordingItem = {
      */
     length?: string;
     filename?: string;
+    /**
+     * Whether the current runtime can rename this recording via a writable locally mapped filesystem path. Clients MUST fail closed when this field is absent or false.
+     */
+    localWritable?: boolean;
     /**
      * Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
      */
