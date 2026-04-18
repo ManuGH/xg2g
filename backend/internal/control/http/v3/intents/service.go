@@ -433,12 +433,16 @@ func buildStartOperatorTrace(snapshot profiles.OperatorOverrideSnapshot) *model.
 }
 
 func (s *Service) buildStartSession(intent Intent, resolution startProfileResolution) *model.SessionRecord {
-	videoQualityRung := model.TraceVideoQualityRungFromProfile(resolution.profileSpec)
+	targetProfile := model.TraceTargetProfileFromProfile(resolution.profileSpec)
+	targetVideoQualityRung := model.TraceVideoQualityRungFromProfile(resolution.profileSpec)
+	targetStep := runtimepolicy.PlaybackLadderStepFromTargetProfile(targetProfile, playbackprofile.NormalizeQualityRung(targetVideoQualityRung))
+	startupProfile, _ := capLiveStartupProfile(intent, resolution.profileSpec, targetStep)
+	videoQualityRung := model.TraceVideoQualityRungFromProfile(startupProfile)
 	now := time.Now()
 	session := lifecycle.NewSessionRecord(now)
 	session.SessionID = intent.SessionID
 	session.ServiceRef = intent.ServiceRef
-	session.Profile = resolution.profileSpec
+	session.Profile = startupProfile
 	session.CorrelationID = intent.CorrelationID
 	session.LeaseExpiresAtUnix = now.Add(s.deps.SessionLeaseTTL()).Unix()
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
@@ -459,7 +463,7 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	if session.ContextData == nil {
 		session.ContextData = make(map[string]string, 2)
 	}
-	if targetStep := runtimepolicy.PlaybackLadderStepFromTargetProfile(session.PlaybackTrace.TargetProfile, playbackprofile.NormalizeQualityRung(videoQualityRung)); targetStep != runtimepolicy.PlaybackStepUnknown {
+	if targetStep != runtimepolicy.PlaybackStepUnknown {
 		session.ContextData[model.CtxKeyRuntimeTargetStep] = string(targetStep)
 	}
 	return session
