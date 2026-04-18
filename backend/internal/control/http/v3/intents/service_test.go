@@ -46,6 +46,17 @@ func (m *mockSessionStore) GetSession(_ context.Context, id string) (*model.Sess
 	return m.sessions[id], nil
 }
 
+func (m *mockSessionStore) ListSessions(_ context.Context) ([]*model.SessionRecord, error) {
+	if len(m.sessions) == 0 {
+		return nil, nil
+	}
+	out := make([]*model.SessionRecord, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		out = append(out, session)
+	}
+	return out, nil
+}
+
 func (m *mockSessionStore) PutSessionWithIdempotency(_ context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) (existingID string, exists bool, err error) {
 	m.putCalls++
 	m.putSession = s
@@ -651,6 +662,97 @@ func TestService_ProcessIntent_StartReplayReturnsExistingSession(t *testing.T) {
 	}
 	if len(deps.bus.calls) != 0 {
 		t.Fatalf("expected no event publish on replay, got %d", len(deps.bus.calls))
+	}
+}
+
+func TestService_ProcessIntent_StartReusesMatchingActiveLiveSession(t *testing.T) {
+	deps := newMockDeps()
+	deps.store.sessions = map[string]*model.SessionRecord{
+		"existing-live": {
+			SessionID:     "existing-live",
+			ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-existing",
+			ContextData: map[string]string{
+				model.CtxKeyMode:        model.ModeLive,
+				model.CtxKeyClientPath:  "hlsjs",
+				model.CtxKeyPrincipalID: "viewer-1",
+				"capHash":               "cap-123",
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:                  model.IntentTypeStreamStart,
+		SessionID:             "new-live",
+		ServiceRef:            "1:0:1:1337:42:99:0:0:0:0:",
+		PlaybackDecisionToken: "token-123",
+		Params:                map[string]string{"playback_mode": "hlsjs", "playback_decision_token": "token-123"},
+		CorrelationID:         "corr-new",
+		Mode:                  model.ModeLive,
+		PrincipalID:           "viewer-1",
+		ClientCapHash:         "cap-123",
+		Logger:                zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "idempotent_replay" {
+		t.Fatalf("expected idempotent_replay result, got %#v", res)
+	}
+	if res.SessionID != "existing-live" {
+		t.Fatalf("expected existing live session ID, got %q", res.SessionID)
+	}
+	if deps.store.putCalls != 0 {
+		t.Fatalf("expected no idempotency write when reusing active live session, got %d", deps.store.putCalls)
+	}
+	if len(deps.bus.calls) != 0 {
+		t.Fatalf("expected no publish when reusing active live session, got %d", len(deps.bus.calls))
+	}
+}
+
+func TestService_ProcessIntent_StartDoesNotReuseDifferentClientIdentity(t *testing.T) {
+	deps := newMockDeps()
+	deps.store.sessions = map[string]*model.SessionRecord{
+		"existing-live": {
+			SessionID:     "existing-live",
+			ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-existing",
+			ContextData: map[string]string{
+				model.CtxKeyMode:        model.ModeLive,
+				model.CtxKeyClientPath:  "hlsjs",
+				model.CtxKeyPrincipalID: "viewer-1",
+				"capHash":               "cap-123",
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:                  model.IntentTypeStreamStart,
+		SessionID:             "new-live",
+		ServiceRef:            "1:0:1:1337:42:99:0:0:0:0:",
+		PlaybackDecisionToken: "token-999",
+		Params:                map[string]string{"playback_mode": "hlsjs", "playback_decision_token": "token-999"},
+		CorrelationID:         "corr-new",
+		Mode:                  model.ModeLive,
+		PrincipalID:           "viewer-2",
+		ClientCapHash:         "cap-999",
+		Logger:                zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result for different client identity, got %#v", res)
+	}
+	if deps.store.putCalls != 1 {
+		t.Fatalf("expected one idempotency write for new live session, got %d", deps.store.putCalls)
+	}
+	if len(deps.bus.calls) != 1 {
+		t.Fatalf("expected one publish for new live session, got %d", len(deps.bus.calls))
 	}
 }
 

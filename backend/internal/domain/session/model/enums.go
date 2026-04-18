@@ -27,6 +27,7 @@ const (
 	CtxKeySourceType            = "source_type"
 	CtxKeySource                = "source"
 	CtxKeyClientPath            = "client_path"
+	CtxKeyPrincipalID           = "principal_id"
 	CtxKeyClientFamily          = "client_family"
 	CtxKeyPreferredEngine       = "preferred_hls_engine"
 	CtxKeyDeviceType            = "device_type"
