@@ -350,6 +350,54 @@ func TestReportPlaybackFeedback_ProbeInfoCountsAsStarted(t *testing.T) {
 	require.Equal(t, "probe_window_started", observed.FeedbackMessage)
 }
 
+func TestReportPlaybackFeedback_IgnoresSoftStartupWarningDuringWarmup(t *testing.T) {
+	sid := uuid.NewString()
+	now := time.Now().UTC()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:           sid,
+			ServiceRef:          "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:               model.SessionReady,
+			CreatedAtUnix:       now.Add(-30 * time.Second).Unix(),
+			PlaylistPublishedAt: now.Add(-5 * time.Second),
+			ContextData: map[string]string{
+				model.CtxKeyMode:            model.ModeLive,
+				model.CtxKeyDecisionRequest: "decision-req-startup-warning",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				RequestedIntent: "quality",
+				ResolvedIntent:  "compatible",
+			},
+		},
+	}
+	registry := &feedbackRegistry{
+		decisionObservation: capreg.PlaybackObservation{
+			RequestID:         "decision-req-startup-warning",
+			ObservationKind:   "decision",
+			Outcome:           "predicted",
+			SourceFingerprint: "source-fp-startup-warning",
+			SubjectKind:       "live",
+			HostFingerprint:   "host-fp-startup-warning",
+			DeviceFingerprint: "device-fp-startup-warning",
+		},
+	}
+
+	s := &Server{
+		cfg:                config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}},
+		v3Store:            store,
+		v3Bus:              newFeedbackBus(),
+		capabilityRegistry: registry,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"warning","code":101,"message":"waiting"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+	require.Len(t, registry.recorded, 0)
+}
+
 func TestReportPlaybackFeedback_WaitsForTerminalBeforeRestart(t *testing.T) {
 	sid := uuid.NewString()
 	hlsRoot := t.TempDir()

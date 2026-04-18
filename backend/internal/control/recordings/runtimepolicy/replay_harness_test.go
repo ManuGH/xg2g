@@ -95,6 +95,46 @@ func TestTickSessionLoop_ProbesOneStepTowardTarget(t *testing.T) {
 	}
 }
 
+func TestTickSessionLoop_StartupWarmupBlocksProbeUp(t *testing.T) {
+	now := time.Date(2026, 4, 18, 12, 1, 0, 0, time.UTC)
+	state, decision, changed := TickSessionLoop(SessionLoopState{
+		CurrentStep: PlaybackStepH264720p,
+		TargetStep:  PlaybackStepDirectCopy,
+	}, SessionLoopInput{
+		ObservedStep:       PlaybackStepH264720p,
+		TargetStep:         PlaybackStepDirectCopy,
+		StartupWarmupUntil: now.Add(10 * time.Second),
+		Confidence: ConfidenceSnapshot{
+			Score:       68,
+			State:       ConfidenceHigh,
+			StateSince:  now.Add(-15 * time.Second),
+			WindowCount: 4,
+		},
+	}, now)
+
+	if !changed {
+		t.Fatalf("expected session loop state to change under startup guardrail")
+	}
+	if decision.Action != PolicyHold {
+		t.Fatalf("expected hold action during startup warmup, got %q", decision.Action)
+	}
+	if !contains(decision.Blockers, BlockerStartupWarmup) {
+		t.Fatalf("expected startup warmup blocker, got %#v", decision.Blockers)
+	}
+	if !contains(state.PolicyConstraints, ConstraintStartupWarmup) {
+		t.Fatalf("expected startup warmup constraint, got %#v", state.PolicyConstraints)
+	}
+	if !contains(state.PolicyConstraints, ConstraintNoProbeUp) {
+		t.Fatalf("expected no_probe_up constraint during startup warmup, got %#v", state.PolicyConstraints)
+	}
+	if !contains(state.Reasons, ReasonStartupWarmup) {
+		t.Fatalf("expected startup warmup reason, got %#v", state.Reasons)
+	}
+	if state.ProbeStep != PlaybackStepUnknown {
+		t.Fatalf("expected no probe step during startup warmup, got %q", state.ProbeStep)
+	}
+}
+
 func TestTickSessionLoop_ObservedProbeTransitionsToObserving(t *testing.T) {
 	now := time.Date(2026, 4, 18, 12, 2, 0, 0, time.UTC)
 	state, decision, changed := TickSessionLoop(SessionLoopState{

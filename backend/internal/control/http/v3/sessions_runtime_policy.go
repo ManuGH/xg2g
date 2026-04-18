@@ -114,9 +114,10 @@ func (s *Server) evaluateSessionRuntimePolicy(ctx context.Context, session *mode
 
 	prev := loadSessionRuntimePolicyState(session)
 	input := runtimepolicy.SessionLoopInput{
-		ObservedStep: observedRuntimeStep(session),
-		TargetStep:   targetRuntimeStep(session),
-		Confidence:   policyState.Confidence,
+		ObservedStep:       observedRuntimeStep(session),
+		TargetStep:         targetRuntimeStep(session),
+		Confidence:         policyState.Confidence,
+		StartupWarmupUntil: sessionPlaybackStartupWarmupUntil(session, s.cfg.HLS.Root, sessionRuntimeStartupWarmup),
 	}
 	next, decision, changed := runtimepolicy.TickSessionLoop(prev, input, now)
 	if !changed {

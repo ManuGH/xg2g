@@ -1,6 +1,9 @@
 package runtimepolicy
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const sessionLoopMinimumInterval = 2 * time.Second
 const (
@@ -49,6 +52,10 @@ func TickSessionLoop(prev SessionLoopState, input SessionLoopInput, now time.Tim
 	state.PolicyConstraints = append([]string(nil), confidence.PolicyConstraints...)
 	state.Reasons = append([]string(nil), confidence.Reasons...)
 	state.LastTickAt = now
+	if input.StartupWarmupUntil.After(now) {
+		state.PolicyConstraints = sortedKeys(mergeStringSet(state.PolicyConstraints, ConstraintNoProbeUp, ConstraintStartupWarmup))
+		state.Reasons = sortedKeys(mergeStringSet(state.Reasons, ReasonStartupWarmup))
+	}
 
 	decision.TargetStep = state.TargetStep
 	decision.ProbeState = state.ProbeState
@@ -124,7 +131,7 @@ func TickSessionLoop(prev SessionLoopState, input SessionLoopInput, now time.Tim
 		decision.Blockers = []string{BlockerAlreadyAtLowestStep}
 	}
 
-	if probeBlockers := sessionLoopProbeUpBlockers(state, confidence, now); len(probeBlockers) == 0 {
+	if probeBlockers := sessionLoopProbeUpBlockers(state, input, confidence, now); len(probeBlockers) == 0 {
 		if next, ok := PlaybackLadderNextUpTowards(state.CurrentStep, state.TargetStep); ok {
 			state.ProbeStep = next
 			state.ProbeState = ProbeLifecycleScheduled
@@ -223,8 +230,10 @@ func sessionLoopProbeBlockers(state SessionLoopState) []string {
 	}
 }
 
-func sessionLoopProbeUpBlockers(state SessionLoopState, confidence ConfidenceSnapshot, now time.Time) []string {
+func sessionLoopProbeUpBlockers(state SessionLoopState, input SessionLoopInput, confidence ConfidenceSnapshot, now time.Time) []string {
 	switch {
+	case input.StartupWarmupUntil.After(now):
+		return []string{BlockerStartupWarmup}
 	case confidence.State != ConfidenceHigh:
 		return []string{BlockerInsufficientConfidence}
 	case state.CurrentStep == PlaybackStepUnknown || state.TargetStep == PlaybackStepUnknown:
@@ -256,7 +265,17 @@ func sessionLoopHoldBlockers(state SessionLoopState, confidence ConfidenceSnapsh
 			return []string{BlockerAlreadyAtLowestStep}
 		}
 	}
-	return sessionLoopProbeUpBlockers(state, confidence, now)
+	return nil
+}
+
+func mergeStringSet(base []string, extra ...string) map[string]struct{} {
+	out := sliceToSet(base)
+	for _, value := range extra {
+		if value = strings.TrimSpace(value); value != "" {
+			out[value] = struct{}{}
+		}
+	}
+	return out
 }
 
 func sameStrings(a, b []string) bool {

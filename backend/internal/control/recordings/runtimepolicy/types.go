@@ -35,6 +35,7 @@ const (
 	ConstraintLockCurrentRung      = "lock_current_rung"
 	ConstraintCooldownActive       = "cooldown_active"
 	ConstraintDecodeRiskHard       = "decode_risk_hard"
+	ConstraintStartupWarmup        = "startup_warmup"
 )
 
 const (
@@ -56,6 +57,7 @@ const (
 	ReasonProbeWindowConfirmed     = "probe_window_confirmed"
 	ReasonProbeWindowRegressed     = "probe_window_regressed"
 	ReasonProbeUpReady             = "probe_up_ready"
+	ReasonStartupWarmup            = "startup_warmup"
 )
 
 type WindowFeatures struct {
@@ -142,9 +144,10 @@ type SessionLoopState struct {
 }
 
 type SessionLoopInput struct {
-	ObservedStep PlaybackLadderStep
-	TargetStep   PlaybackLadderStep
-	Confidence   ConfidenceSnapshot
+	ObservedStep       PlaybackLadderStep
+	TargetStep         PlaybackLadderStep
+	Confidence         ConfidenceSnapshot
+	StartupWarmupUntil time.Time
 }
 
 type SessionLoopDecision struct {
@@ -189,6 +192,7 @@ const (
 	BlockerAlreadyAtTarget        = "already_at_target"
 	BlockerInsufficientConfidence = "insufficient_confidence"
 	BlockerNoProbeUp              = "no_probe_up"
+	BlockerStartupWarmup          = "startup_warmup"
 	BlockerSessionNotRestartable  = "session_not_restartable"
 	BlockerProfileUnmapped        = "profile_unmapped"
 	BlockerAlreadyAtProfile       = "already_at_profile"

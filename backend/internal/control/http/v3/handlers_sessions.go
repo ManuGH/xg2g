@@ -447,6 +447,17 @@ func (s *Server) recordPlaybackFeedbackObservation(ctx context.Context, sess *mo
 	if s == nil || sess == nil {
 		return
 	}
+	observedAt := time.Now().UTC()
+	if isSoftStartupPlaybackWarning(req) && sessionInPlaybackStartupWarmup(sess, s.cfg.HLS.Root, playbackStartupSoftWarningWarmup, observedAt) {
+		log.L().Info().
+			Str("sessionId", sess.SessionID).
+			Str("event", string(req.Event)).
+			Int("code", derefInt(req.Code)).
+			Str("msg", derefString(req.Message)).
+			Time("startupWarmupUntil", sessionPlaybackStartupWarmupUntil(sess, s.cfg.HLS.Root, playbackStartupSoftWarningWarmup)).
+			Msg("ignoring soft startup playback warning during warmup")
+		return
+	}
 
 	s.mu.RLock()
 	registry := s.capabilityRegistry
@@ -478,7 +489,7 @@ func (s *Server) recordPlaybackFeedbackObservation(ctx context.Context, sess *mo
 	trace := sess.PlaybackTrace
 	target := traceTargetProfileForFeedback(sess)
 	observation := capreg.PlaybackObservation{
-		ObservedAt:         time.Now().UTC(),
+		ObservedAt:         observedAt,
 		RequestID:          decisionRequestID,
 		ObservationKind:    "feedback",
 		Outcome:            playbackFeedbackOutcome(req.Event),
