@@ -973,6 +973,7 @@ function V3Player(props: V3PlayerProps) {
     togglePlayPause,
     toggleFullscreen,
     enterNativeFullscreen,
+    primeNativeFullscreen,
     enterDVRMode,
     togglePiP,
     toggleMute,
@@ -1642,7 +1643,11 @@ function V3Player(props: V3PlayerProps) {
         } else {
           clearPlaybackState();
         }
-        prepareFreshPlayback(requestedDuration ? 'VOD' : 'LIVE');
+        const treatSrcAsLive = !requestedDuration;
+        prepareFreshPlayback(treatSrcAsLive ? 'LIVE' : 'VOD');
+        if (treatSrcAsLive) {
+          primeNativeFullscreen();
+        }
         setStatus('buffering');
         setTraceId('-');
         const srcEngine = resolvePreferredHlsEngine();
@@ -1666,6 +1671,7 @@ function V3Player(props: V3PlayerProps) {
         clearPlaybackState();
       }
       prepareFreshPlayback('LIVE');
+      primeNativeFullscreen();
       let newSessionId: string | null = null;
       setStatus('starting');
       clearPlayerError();
@@ -2005,7 +2011,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, token]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, primeNativeFullscreen, token]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;

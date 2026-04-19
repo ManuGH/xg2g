@@ -35,14 +35,21 @@ vi.mock('../lib/hlsRuntime', () => {
 describe('V3Player live DVR semantics', () => {
   let originalFetch: typeof globalThis.fetch;
   let maxTouchPointsDescriptor: PropertyDescriptor | undefined;
+  let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
+  const webkitEnterFullscreen = vi.fn();
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     vi.clearAllMocks();
     maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    webkitEnterFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
     Object.defineProperty(window.navigator, 'maxTouchPoints', {
       configurable: true,
       value: 5,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
+      configurable: true,
+      value: webkitEnterFullscreen,
     });
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
@@ -128,6 +135,11 @@ describe('V3Player live DVR semantics', () => {
 
   afterEach(() => {
     (globalThis as any).fetch = originalFetch;
+    if (webkitEnterFullscreenDescriptor) {
+      Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
+    } else {
+      delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
+    }
     if (maxTouchPointsDescriptor) {
       Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
     }
@@ -183,5 +195,38 @@ describe('V3Player live DVR semantics', () => {
     });
     expect(slider).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText(/vollbild wechseln|fullscreen on iphone/i)).toBeInTheDocument();
+  });
+
+  it('primes native fullscreen directly from the iPhone live start action', async () => {
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    let readyState = 0;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState,
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => (readyState >= 1 ? 1920 : 0),
+    });
+    Object.defineProperty(video, 'videoHeight', {
+      configurable: true,
+      get: () => (readyState >= 1 ? 1080 : 0),
+    });
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+
+    readyState = 1;
+    fireEvent.loadedMetadata(video);
+
+    await waitFor(() => {
+      expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+      expect(video.controls).toBe(true);
+    });
   });
 });
