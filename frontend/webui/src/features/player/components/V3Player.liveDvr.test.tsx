@@ -197,36 +197,4 @@ describe('V3Player live DVR semantics', () => {
     expect(screen.getByText(/vollbild wechseln|fullscreen on iphone/i)).toBeInTheDocument();
   });
 
-  it('primes native fullscreen directly from the iPhone live start action', async () => {
-    const props = { autoStart: false } as unknown as V3PlayerProps;
-    const { container } = render(<V3Player {...props} />);
-
-    const video = container.querySelector('video') as HTMLVideoElement;
-    let readyState = 0;
-    Object.defineProperty(video, 'readyState', {
-      configurable: true,
-      get: () => readyState,
-    });
-    Object.defineProperty(video, 'videoWidth', {
-      configurable: true,
-      get: () => (readyState >= 1 ? 1920 : 0),
-    });
-    Object.defineProperty(video, 'videoHeight', {
-      configurable: true,
-      get: () => (readyState >= 1 ? 1080 : 0),
-    });
-
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
-    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
-
-    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
-
-    readyState = 1;
-    fireEvent.loadedMetadata(video);
-
-    await waitFor(() => {
-      expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
-      expect(video.controls).toBe(true);
-    });
-  });
 });

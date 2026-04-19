@@ -74,7 +74,6 @@ interface PlayerChromeController {
   togglePlayPause: () => void;
   toggleFullscreen: () => Promise<void>;
   enterNativeFullscreen: () => boolean;
-  primeNativeFullscreen: () => boolean;
   enterDVRMode: () => void;
   togglePiP: () => Promise<void>;
   toggleMute: () => void;
@@ -455,29 +454,6 @@ export function usePlayerChrome({
       return false;
     }
   }, [allowNativeFullscreen, canEnterNativeFullscreenNow, logNativeFullscreenProbe, videoRef]);
-
-  const primeNativeFullscreen = useCallback((): boolean => {
-    const video = videoRef.current;
-    if (!video?.webkitEnterFullscreen || !shouldUseTouchWebKitFullscreen(video)) {
-      return false;
-    }
-
-    pendingNativeFullscreenRef.current = true;
-    if (!canEnterNativeFullscreenNow(video)) {
-      return true;
-    }
-
-    try {
-      logNativeFullscreenProbe('touch-start-handoff', video);
-      video.controls = true;
-      video.webkitEnterFullscreen();
-      pendingNativeFullscreenRef.current = false;
-      return true;
-    } catch (err) {
-      debugWarn('Primed native fullscreen failed', err);
-      return false;
-    }
-  }, [canEnterNativeFullscreenNow, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
 
   const enterDVRMode = useCallback(() => {
     const video = videoRef.current;
@@ -1170,7 +1146,6 @@ export function usePlayerChrome({
     togglePlayPause,
     toggleFullscreen,
     enterNativeFullscreen,
-    primeNativeFullscreen,
     enterDVRMode,
     togglePiP,
     toggleMute,
