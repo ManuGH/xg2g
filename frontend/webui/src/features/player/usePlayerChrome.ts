@@ -1048,13 +1048,24 @@ export function usePlayerChrome({
   const canEnterNativeFullscreen = supportsNativeFullscreen && !isTouchDevice;
   const prefersDesktopNativeFullscreen = !!videoRef.current && allowNativeFullscreen && canUseDesktopWebKitFullscreen(videoRef.current);
 
-  const startTimeDisplay = startUnix
-    ? formatTimeOfDay(startUnix + relativePosition)
-    : formatClock(relativePosition);
+  const liveWindowStartPosition = normalizedLiveSeekWindow?.start ?? seekableStart;
+  const liveWindowEndPosition = normalizedLiveSeekWindow?.liveEdge ?? seekableEnd;
 
-  const endTimeDisplay = startUnix
-    ? formatTimeOfDay(startUnix + windowDuration)
-    : formatClock(windowDuration);
+  const startTimeDisplay = playbackMode === 'LIVE'
+    ? startUnix
+      ? formatTimeOfDay(startUnix + liveWindowStartPosition)
+      : formatClock(liveWindowStartPosition)
+    : startUnix
+      ? formatTimeOfDay(startUnix + relativePosition)
+      : formatClock(relativePosition);
+
+  const endTimeDisplay = playbackMode === 'LIVE'
+    ? startUnix
+      ? formatTimeOfDay(startUnix + liveWindowEndPosition)
+      : formatClock(liveWindowEndPosition)
+    : startUnix
+      ? formatTimeOfDay(startUnix + windowDuration)
+      : formatClock(windowDuration);
 
   useEffect(() => {
     if (
