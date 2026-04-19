@@ -281,15 +281,25 @@ export function usePlayerChrome({
     }
   }, [seekTo, videoRef]);
 
+  const clearAutoplayMuteIfNeeded = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !shouldForceNativeMobileHls(video) || !video.muted) {
+      return;
+    }
+    video.muted = false;
+    setIsMuted(false);
+  }, [shouldForceNativeMobileHls, videoRef]);
+
   const play = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     if (!video.paused) return;
 
+    clearAutoplayMuteIfNeeded();
     userPauseIntentRef.current = false;
     setStatus((current) => (current === 'paused' || current === 'ready' ? 'buffering' : current));
     video.play().catch((err) => debugWarn('Play failed', err));
-  }, [setStatus, userPauseIntentRef, videoRef]);
+  }, [clearAutoplayMuteIfNeeded, setStatus, userPauseIntentRef, videoRef]);
 
   const pause = useCallback(() => {
     const video = videoRef.current;
@@ -342,6 +352,7 @@ export function usePlayerChrome({
       }
 
       try {
+        clearAutoplayMuteIfNeeded();
         logNativeFullscreenProbe(reason, video);
         video.controls = true;
         video.webkitEnterFullscreen();
@@ -408,7 +419,7 @@ export function usePlayerChrome({
     } catch (err) {
       debugWarn('Fullscreen failed', err);
     }
-  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, containerRef, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
+  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, clearAutoplayMuteIfNeeded, containerRef, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
 
   const enterNativeFullscreen = useCallback((): boolean => {
     const video = videoRef.current;
@@ -422,6 +433,7 @@ export function usePlayerChrome({
     }
 
     try {
+      clearAutoplayMuteIfNeeded();
       logNativeFullscreenProbe('explicit-native-request', video);
       video.controls = true;
       video.webkitEnterFullscreen();
@@ -431,18 +443,19 @@ export function usePlayerChrome({
       debugWarn('Explicit native fullscreen failed', err);
       return false;
     }
-  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, logNativeFullscreenProbe, videoRef]);
+  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, clearAutoplayMuteIfNeeded, logNativeFullscreenProbe, videoRef]);
 
   const enterDVRMode = useCallback(() => {
     const video = videoRef.current;
     if (allowNativeFullscreen && video && video.webkitEnterFullscreen && shouldForceNativeMobileHls(video)) {
+      clearAutoplayMuteIfNeeded();
       logNativeFullscreenProbe('dvr-native-request', video);
       video.controls = true;
       video.webkitEnterFullscreen();
       return;
     }
     void toggleFullscreen();
-  }, [allowNativeFullscreen, logNativeFullscreenProbe, shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
+  }, [allowNativeFullscreen, clearAutoplayMuteIfNeeded, logNativeFullscreenProbe, shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
 
   const togglePiP = useCallback(async () => {
     const video = videoRef.current;

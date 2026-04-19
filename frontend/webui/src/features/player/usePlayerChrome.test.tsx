@@ -58,6 +58,9 @@ function HookHarness({
       <button onClick={() => void chrome.toggleFullscreen()} type="button">
         fullscreen
       </button>
+      <button onClick={chrome.togglePlayPause} type="button">
+        playpause
+      </button>
     </div>
   );
 }
@@ -120,6 +123,54 @@ describe('usePlayerChrome', () => {
     fireEvent.click(screen.getByRole('button', { name: 'mute' }));
 
     expect(video.muted).toBe(true);
+  });
+
+  it('clears autoplay mute on the first native touch fullscreen request', async () => {
+    const webkitEnterFullscreen = vi.fn();
+
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
+      configurable: true,
+      value: webkitEnterFullscreen
+    });
+
+    render(<HookHarness shouldForceNativeMobileHls={() => true} />);
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    video.muted = false;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => 1,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'mute' }));
+    expect(video.muted).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'fullscreen' }));
+
+    await waitFor(() => {
+      expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    });
+    expect(video.muted).toBe(false);
+  });
+
+  it('clears autoplay mute when play is tapped on the native touch path', () => {
+    render(<HookHarness shouldForceNativeMobileHls={() => true} />);
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    const playSpy = vi.spyOn(video, 'play').mockResolvedValue(undefined);
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => true,
+    });
+    video.muted = false;
+
+    fireEvent.click(screen.getByRole('button', { name: 'mute' }));
+    expect(video.muted).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'playpause' }));
+
+    expect(video.muted).toBe(false);
+    expect(playSpy).toHaveBeenCalledTimes(1);
   });
 
   it('still mutes autoplay when the touch WebKit path is not active', () => {
