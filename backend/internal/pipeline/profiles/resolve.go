@@ -471,10 +471,16 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 	case ProfileSafariHEVC:
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
 		// Experimental: HEVC Live Transcoding (CPU)
-		// Strict constraints for Apple HLS compatibility (fMP4 implied by args builder)
+		// Browser Safari has shown almost-black output on this host when HEVC live
+		// transcodes are packaged as fMP4. Keep browser-native Safari on classic
+		// MPEG-TS HLS; app-native clients can still use fMP4.
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
-		spec.Container = "fmp4"
+		if isSafari {
+			spec.Container = "mpegts"
+		} else {
+			spec.Container = "fmp4"
+		}
 		spec.Deinterlace = true
 		spec.VideoCRF = 22        // Conservative start for x265
 		spec.VideoMaxRateK = 5000 // Strict VBV Cap
@@ -485,9 +491,15 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
 		// GPU-Accelerated HEVC (VAAPI) - Recommended for multi-stream
 		// 10x faster than CPU, ~10% CPU usage per stream
+		// Browser Safari stays on MPEG-TS HLS here as well; the host-specific
+		// HEVC live issue is tied to fMP4 packaging, not the encoder itself.
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
-		spec.Container = "fmp4"
+		if isSafari {
+			spec.Container = "mpegts"
+		} else {
+			spec.Container = "fmp4"
+		}
 		spec.Deinterlace = true
 		spec.VideoMaxRateK = 5000 // VBV Cap
 		spec.VideoBufSizeK = 10000

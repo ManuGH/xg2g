@@ -875,6 +875,44 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 	assert.Equal(t, "hvc1", tagValue)
 }
 
+func TestBuildArgs_VaapiHEVCMPEGTSDoesNotEmitHVC1OrFMP4Init(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "vaapi-hevc-mpegts",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			Container:      "mpegts",
+			HWAccel:        "vaapi",
+			VideoCodec:     "hevc",
+			Deinterlace:    false,
+			VideoMaxRateK:  5000,
+			VideoBufSizeK:  10000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "hevc_vaapi")
+	assert.NotContains(t, args, "-tag:v")
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", hlsSegmentType)
+	assert.NotContains(t, args, "-hls_fmp4_init_filename")
+}
+
 func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T) {
 	hardware.SetPathCapabilities(nil)
 	t.Cleanup(func() {

@@ -192,6 +192,26 @@ func TestResolve_ProfileSafariCPUFallbackPresetCanBeOverridden(t *testing.T) {
 	assert.Equal(t, "fast", spec.Preset)
 }
 
+func TestResolve_SafariHEVCBrowserUsesMPEGTS(t *testing.T) {
+	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
+	specCPU := Resolve(ProfileSafariHEVC, safariUA, 0, nil, GPUBackendNone, HWAccelAuto)
+	assert.Equal(t, "mpegts", specCPU.Container)
+
+	specHW := Resolve(ProfileSafariHEVCHW, safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "mpegts", specHW.Container)
+	assert.Equal(t, "vaapi", specHW.HWAccel)
+	assert.Equal(t, "hevc", specHW.VideoCodec)
+}
+
+func TestResolve_SafariHEVCNativeKeepsFMP4(t *testing.T) {
+	specCPU := Resolve(ProfileSafariHEVC, "", 0, nil, GPUBackendNone, HWAccelAuto)
+	assert.Equal(t, "fmp4", specCPU.Container)
+
+	specHW := Resolve(ProfileSafariHEVCHW, "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "fmp4", specHW.Container)
+}
+
 func TestNormalizeRequestedProfileID_MapsPublicAliases(t *testing.T) {
 	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("compatible"))
 	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("quality"))
