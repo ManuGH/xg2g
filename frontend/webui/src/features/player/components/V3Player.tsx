@@ -2470,6 +2470,7 @@ function V3Player(props: V3PlayerProps) {
     : null;
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
   const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
+  const useMinimalTouchInlineChrome = Boolean(isCompactTouchLayout && useOverlayShell && !useTheaterControlsLayout && !isFullscreen);
   const inferredPlaybackWindowKind = resolvePlaybackWindowKind(playbackMode, hasLiveDvrWindow);
   const playbackWindowKind = sessionWindowKind !== 'unknown' ? sessionWindowKind : inferredPlaybackWindowKind;
   const mobileInlinePlaybackLabel = playbackWindowKind === 'live-dvr'
@@ -2852,87 +2853,189 @@ function V3Player(props: V3PlayerProps) {
           )}
 
           {hasSeekWindow ? (
-            <div
-              className={[
-                styles.vodControls,
-                styles.seekControls,
-                useTheaterControlsLayout ? styles.vodControlsTheater : null,
-              ].filter(Boolean).join(' ')}
-            >
-              <div className={styles.vodScrubArea}>
-                <div className={styles.vodScrubTimes}>
-                  <span>{startTimeDisplay}</span>
-                  <span>{endTimeDisplay}</span>
+            useMinimalTouchInlineChrome ? (
+              <div className={[styles.vodControls, styles.seekControls, styles.mobileInlineControls].filter(Boolean).join(' ')}>
+                <div className={styles.vodScrubArea}>
+                  <div className={styles.vodScrubTimes}>
+                    <span>{startTimeDisplay}</span>
+                    <span>{endTimeDisplay}</span>
+                  </div>
+                  <div
+                    className={styles.vodScrubTrack}
+                    role="slider"
+                    tabIndex={0}
+                    aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                    aria-valuemin={0}
+                    aria-valuemax={Math.round(windowDuration)}
+                    aria-valuenow={Math.round(relativePosition)}
+                    onPointerDown={handleVodScrubPointerDown}
+                    onPointerMove={handleVodScrubPointerMove}
+                    onKeyDown={handleVodScrubKeyDown}
+                  >
+                    <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
+                    <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
+                  </div>
                 </div>
-                <div
-                  className={styles.vodScrubTrack}
-                  role="slider"
-                  tabIndex={0}
-                  aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
-                  aria-valuemin={0}
-                  aria-valuemax={Math.round(windowDuration)}
-                  aria-valuenow={Math.round(relativePosition)}
-                  onPointerDown={handleVodScrubPointerDown}
-                  onPointerMove={handleVodScrubPointerMove}
-                  onKeyDown={handleVodScrubKeyDown}
-                >
-                  <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
-                  <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
-                </div>
-              </div>
 
-              <div
-                className={[
-                  styles.transportControls,
-                  useTheaterControlsLayout ? styles.transportControlsTheater : null,
-                ].filter(Boolean).join(' ')}
-              >
-                <div className={styles.seekButtons}>
-                  <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
-                    -15m
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
-                    -60s
-                  </Button>
+                <div className={styles.mobileInlineActions}>
                   <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
                     -15s
                   </Button>
-                </div>
 
-                <Button
-                  variant="primary"
-                  size="icon"
-                  className={styles.playPauseButton}
-                  onClick={togglePlayPause}
-                  title={isPlaying ? t('player.pause') : t('player.play')}
-                  aria-label={isPlaying ? t('player.pause') : t('player.play')}
-                >
-                  {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
-                </Button>
+                  <Button
+                    variant="primary"
+                    size="icon"
+                    className={styles.playPauseButton}
+                    onClick={togglePlayPause}
+                    title={isPlaying ? t('player.pause') : t('player.play')}
+                    aria-label={isPlaying ? t('player.pause') : t('player.play')}
+                  >
+                    {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
+                  </Button>
 
-                <div className={styles.seekButtons}>
                   <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
                     +15s
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
-                    +60s
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
-                    +15m
-                  </Button>
+
+                  {hasLiveDvrWindow ? (
+                    <button
+                      className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
+                      onClick={() => (isAtLiveEdge && showDvrModeButton ? enterDVRMode() : seekTo(seekableEnd))}
+                      title={isAtLiveEdge && showDvrModeButton ? t('player.dvrMode') : t('player.goLive')}
+                    >
+                      {isAtLiveEdge && showDvrModeButton ? 'DVR' : 'LIVE'}
+                    </button>
+                  ) : canToggleMute ? (
+                    <Button
+                      variant={isMuted ? 'primary' : 'ghost'}
+                      size="sm"
+                      className={styles.audioToggleButton}
+                      onClick={toggleMute}
+                      title={audioToggleLabel}
+                      aria-label={audioToggleLabel}
+                      aria-pressed={!isMuted}
+                    >
+                      <VolumeGlyph muted={isMuted} />
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
+
+                  {canToggleFullscreen ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      active={isFullscreen}
+                      onClick={() => void toggleFullscreen()}
+                      title={isFullscreen
+                        ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
+                        : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+                      aria-label={isFullscreen
+                        ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
+                        : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
+                    >
+                      <FullscreenGlyph />
+                    </Button>
+                  ) : canToggleMute ? (
+                    <Button
+                      variant={isMuted ? 'primary' : 'ghost'}
+                      size="sm"
+                      className={styles.audioToggleButton}
+                      onClick={toggleMute}
+                      title={audioToggleLabel}
+                      aria-label={audioToggleLabel}
+                      aria-pressed={!isMuted}
+                    >
+                      <VolumeGlyph muted={isMuted} />
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
                 </div>
               </div>
+            ) : (
+              <div
+                className={[
+                  styles.vodControls,
+                  styles.seekControls,
+                  useTheaterControlsLayout ? styles.vodControlsTheater : null,
+                ].filter(Boolean).join(' ')}
+              >
+                <div className={styles.vodScrubArea}>
+                  <div className={styles.vodScrubTimes}>
+                    <span>{startTimeDisplay}</span>
+                    <span>{endTimeDisplay}</span>
+                  </div>
+                  <div
+                    className={styles.vodScrubTrack}
+                    role="slider"
+                    tabIndex={0}
+                    aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                    aria-valuemin={0}
+                    aria-valuemax={Math.round(windowDuration)}
+                    aria-valuenow={Math.round(relativePosition)}
+                    onPointerDown={handleVodScrubPointerDown}
+                    onPointerMove={handleVodScrubPointerMove}
+                    onKeyDown={handleVodScrubKeyDown}
+                  >
+                    <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
+                    <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
+                  </div>
+                </div>
 
-              {hasLiveDvrWindow && (
-                <button
-                  className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                  onClick={() => seekTo(seekableEnd)}
-                  title={t('player.goLive')}
+                <div
+                  className={[
+                    styles.transportControls,
+                    useTheaterControlsLayout ? styles.transportControlsTheater : null,
+                  ].filter(Boolean).join(' ')}
                 >
-                  LIVE
-                </button>
-              )}
-            </div>
+                  <div className={styles.seekButtons}>
+                    <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
+                      -15m
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
+                      -60s
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
+                      -15s
+                    </Button>
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    size="icon"
+                    className={styles.playPauseButton}
+                    onClick={togglePlayPause}
+                    title={isPlaying ? t('player.pause') : t('player.play')}
+                    aria-label={isPlaying ? t('player.pause') : t('player.play')}
+                  >
+                    {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
+                  </Button>
+
+                  <div className={styles.seekButtons}>
+                    <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
+                      +15s
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
+                      +60s
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
+                      +15m
+                    </Button>
+                  </div>
+                </div>
+
+                {hasLiveDvrWindow && (
+                  <button
+                    className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
+                    onClick={() => seekTo(seekableEnd)}
+                    title={t('player.goLive')}
+                  >
+                    LIVE
+                  </button>
+                )}
+              </div>
+            )
           ) : (
             !channel && !recordingId && !src && (
               <input
@@ -2969,12 +3072,13 @@ function V3Player(props: V3PlayerProps) {
             </Button>
           )}
 
-          <div
-            className={[
-              styles.utilityControls,
-              useTheaterControlsLayout ? styles.utilityControlsTheater : null,
-            ].filter(Boolean).join(' ')}
-          >
+          {!useMinimalTouchInlineChrome && (
+            <div
+              className={[
+                styles.utilityControls,
+                useTheaterControlsLayout ? styles.utilityControlsTheater : null,
+              ].filter(Boolean).join(' ')}
+            >
             <PlayerRuntimeMeta
               show={showRuntimePolicyMeta}
               phase={effectiveRuntimePolicyPhase}
@@ -3074,7 +3178,8 @@ function V3Player(props: V3PlayerProps) {
                 {t('common.stop')}
               </Button>
             )}
-          </div>
+            </div>
+          )}
         </div>
       )}
         </div>

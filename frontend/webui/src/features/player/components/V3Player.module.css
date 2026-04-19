@@ -290,6 +290,18 @@
   white-space: nowrap;
 }
 
+.mobileInlineControls {
+  gap: 12px;
+}
+
+.mobileInlineActions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  align-items: center;
+}
+
 .spinnerOverlay {
   position: absolute;
   top: 50%;
@@ -1753,29 +1765,11 @@
     bottom: auto;
     margin-top: 0;
     padding: 12px 14px calc(12px + var(--sab));
-    max-height: 420px;
-    overflow: hidden;
     background:
       linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent),
       color-mix(in srgb, var(--surface-panel-strong) 84%, var(--bg-video) 16%);
     border-top: 1px solid color-mix(in srgb, var(--border-elevated) 84%, transparent);
     transform: none;
-    transition:
-      opacity var(--motion-standard) var(--ease-standard),
-      max-height var(--motion-standard) var(--ease-standard),
-      padding var(--motion-standard) var(--ease-standard),
-      border-color var(--motion-standard) var(--ease-standard);
-  }
-
-  .container.userIdle .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) {
-    max-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-top-color: transparent;
-  }
-
-  .container.userIdle .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater)::before {
-    opacity: 0;
   }
 
   .container.overlay .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) .mobileInlineMeta {
@@ -1997,6 +1991,27 @@
     align-self: center;
     min-width: 46px;
     min-height: 46px;
+  }
+
+  .mobileInlineActions {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .mobileInlineActions :global(button[data-size="sm"]) {
+    min-height: 38px;
+    min-width: 0;
+    padding: 0 8px;
+    font-size: 0.78rem;
+  }
+
+  .mobileInlineActions .playPauseButton {
+    justify-self: center;
+  }
+
+  .mobileInlineActions .liveButton {
+    min-width: 0;
+    justify-self: stretch;
+    text-align: center;
   }
 
   .seekSliderGroup {

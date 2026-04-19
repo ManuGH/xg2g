@@ -929,6 +929,11 @@ export function usePlayerChrome({
     const container = containerRef.current;
     if (!container) return;
 
+    if (isTouchDevice) {
+      setIsIdle(false);
+      return;
+    }
+
     const resetIdle = () => {
       setIsIdle(false);
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
@@ -953,7 +958,7 @@ export function usePlayerChrome({
       container.removeEventListener('keydown', onKey);
       container.removeEventListener('touchstart', onClick);
     };
-  }, [containerRef, idleDelayMs]);
+  }, [containerRef, idleDelayMs, isTouchDevice]);
 
   const windowDuration = useMemo(() => Math.max(0, seekableEnd - seekableStart), [seekableEnd, seekableStart]);
   const relativePosition = useMemo(
