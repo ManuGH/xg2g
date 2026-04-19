@@ -274,4 +274,65 @@ describe('V3Player Mobile Controls', () => {
     });
   });
 
+  it('reloads the native inline source when unlock resume stays stuck', async () => {
+    let visibilityState: DocumentVisibilityState = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+
+    let paused = false;
+    let readyState = 1;
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {
+      paused = true;
+    });
+    const loadSpy = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(Hls).not.toHaveBeenCalled();
+    });
+
+    vi.useFakeTimers();
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => paused,
+    });
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState,
+    });
+    Object.defineProperty(video, 'currentSrc', {
+      configurable: true,
+      get: () => 'http://example.com/playlist.m3u8',
+    });
+
+    playSpy.mockClear();
+    pauseSpy.mockClear();
+    loadSpy.mockClear();
+
+    visibilityState = 'hidden';
+    fireEvent(document, new Event('visibilitychange'));
+    expect(pauseSpy).toHaveBeenCalled();
+
+    visibilityState = 'visible';
+    fireEvent(document, new Event('visibilitychange'));
+
+    await act(async () => {
+      vi.advanceTimersByTime(1700);
+    });
+    fireEvent.loadedMetadata(video);
+
+    expect(loadSpy).toHaveBeenCalled();
+    expect(playSpy).toHaveBeenCalled();
+  });
+
 });

@@ -526,6 +526,7 @@ const NATIVE_VIDEO_REVEAL_REBUFFER: NativeVideoRevealThresholds = {
 
 const NATIVE_VIDEO_REBUFFER_VEIL_MS = 2300;
 const NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS = 140;
+const NATIVE_VISIBILITY_RESUME_RECOVERY_MS = 1400;
 const NATIVE_PLAYER_STATE_IDLE = 1;
 const NATIVE_PLAYER_STATE_BUFFERING = 2;
 const NATIVE_PLAYER_STATE_READY = 3;
@@ -621,11 +622,13 @@ function V3Player(props: V3PlayerProps) {
   const nativeVideoRevealTimerRef = useRef<number | null>(null);
   const nativeVideoVeilRevealTimerRef = useRef<number | null>(null);
   const nativeVideoVeilClearTimerRef = useRef<number | null>(null);
+  const nativeVisibilityResumeRecoveryTimerRef = useRef<number | null>(null);
   const nativeVideoShownRef = useRef(false);
   const nativeVideoHoldPositionRef = useRef<number | null>(null);
   const nativeVideoTempMutedRef = useRef(false);
   const nativeManagedPauseRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
+  const nativeVisibilityResumeArmedRef = useRef(false);
   const nativePlaybackWasActiveRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
 
@@ -958,12 +961,21 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
+  const clearNativeVisibilityResumeRecoveryTimer = useCallback(() => {
+    if (nativeVisibilityResumeRecoveryTimerRef.current !== null) {
+      window.clearTimeout(nativeVisibilityResumeRecoveryTimerRef.current);
+      nativeVisibilityResumeRecoveryTimerRef.current = null;
+    }
+  }, []);
+
   const clearPlaybackSelection = useCallback(() => {
     activeRecordingRef.current = null;
     nativePlaybackWasActiveRef.current = false;
     nativeVideoShownRef.current = false;
     nativeVideoHoldPositionRef.current = null;
+    nativeVisibilityResumeArmedRef.current = false;
     clearNativeVideoVeilTimers();
+    clearNativeVisibilityResumeRecoveryTimer();
     setNativePlaybackState(null);
     setNativeSessionId(null);
     setActiveRecordingId(null);
@@ -978,7 +990,7 @@ function V3Player(props: V3PlayerProps) {
     setPlaybackObservability(null);
     setSessionPlaybackTrace(null);
     setSessionProfileReason(null);
-  }, [clearNativeVideoVeilTimers]);
+  }, [clearNativeVideoVeilTimers, clearNativeVisibilityResumeRecoveryTimer]);
 
   const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
@@ -2092,8 +2104,10 @@ function V3Player(props: V3PlayerProps) {
 
     const inPictureInPicture = document.pictureInPictureElement === video;
     if (!isDocumentVisible && !inPictureInPicture) {
+      clearNativeVisibilityResumeRecoveryTimer();
       if (!video.paused && !userPauseIntentRef.current && !hasTerminalStatus) {
         visibilityManagedPauseRef.current = true;
+        nativeVisibilityResumeArmedRef.current = isNativeEngine && isCompactTouchLayout;
         video.pause();
         setStatus('paused');
       }
@@ -2106,6 +2120,7 @@ function V3Player(props: V3PlayerProps) {
 
     visibilityManagedPauseRef.current = false;
     if (userPauseIntentRef.current || hasTerminalStatus) {
+      nativeVisibilityResumeArmedRef.current = false;
       return;
     }
 
@@ -2113,7 +2128,95 @@ function V3Player(props: V3PlayerProps) {
     void video.play().catch((err) => {
       debugWarn('[V3Player] Host resume play blocked', err);
     });
-  }, [hasTerminalStatus, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, shouldManageVisibilityResume, status, videoRef]);
+  }, [clearNativeVisibilityResumeRecoveryTimer, hasTerminalStatus, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, shouldManageVisibilityResume, status, videoRef]);
+
+  useEffect(() => {
+    clearNativeVisibilityResumeRecoveryTimer();
+
+    if (
+      !isDocumentVisible ||
+      !nativeVisibilityResumeArmedRef.current ||
+      !isNativeEngine ||
+      !isCompactTouchLayout ||
+      hasTerminalStatus ||
+      userPauseIntentRef.current
+    ) {
+      return;
+    }
+
+    nativeVisibilityResumeRecoveryTimerRef.current = window.setTimeout(() => {
+      nativeVisibilityResumeRecoveryTimerRef.current = null;
+
+      const video = videoRef.current;
+      if (
+        !video ||
+        !isDocumentVisible ||
+        userPauseIntentRef.current ||
+        hasTerminalStatus
+      ) {
+        return;
+      }
+
+      const currentSrc = video.currentSrc || video.getAttribute('src');
+      if (!currentSrc) {
+        return;
+      }
+
+      const stuckAfterResume =
+        video.paused ||
+        video.readyState < 2 ||
+        (video.readyState >= 2 && video.videoWidth <= 0);
+      if (!stuckAfterResume) {
+        nativeVisibilityResumeArmedRef.current = false;
+        return;
+      }
+
+      const resumePosition = Number.isFinite(video.currentTime) ? video.currentTime : null;
+      debugWarn('[V3Player] Native visibility resume stuck, reloading current source', {
+        readyState: video.readyState,
+        paused: video.paused,
+        currentTime: resumePosition,
+        currentSrc,
+      });
+
+      nativeVideoHoldPositionRef.current = resumePosition;
+      setShowNativeVideo(false);
+      setShowNativeVideoVeil(true);
+      setNativeVeilResumeArmed(false);
+      setStatus('buffering');
+
+      const replay = () => {
+        nativeVisibilityResumeArmedRef.current = false;
+        if (resumePosition !== null && resumePosition > 0) {
+          try {
+            video.currentTime = resumePosition;
+          } catch {
+            // Live windows can clamp differently after resume. Playback still continues.
+          }
+        }
+        void video.play().catch((err) => {
+          debugWarn('[V3Player] Native visibility recovery play blocked', err);
+        });
+      };
+
+      video.pause();
+      video.src = currentSrc;
+      video.load();
+      video.addEventListener('loadedmetadata', replay, { once: true });
+    }, NATIVE_VISIBILITY_RESUME_RECOVERY_MS);
+
+    return () => {
+      clearNativeVisibilityResumeRecoveryTimer();
+    };
+  }, [
+    clearNativeVisibilityResumeRecoveryTimer,
+    hasTerminalStatus,
+    isCompactTouchLayout,
+    isDocumentVisible,
+    isNativeEngine,
+    setStatus,
+    videoRef,
+  ]);
 
   useEffect(() => {
     if (bufferingOverlayTimerRef.current !== null) {
