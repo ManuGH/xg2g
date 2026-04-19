@@ -130,6 +130,7 @@ export function usePlayerChrome({
   const pendingNativeFullscreenRef = useRef(false);
   const appliedTouchDvrDefaultRef = useRef(false);
   const isTouchDevice = useMemo(() => hasTouchInput(), []);
+  const idleDelayMs = isTouchDevice ? 2400 : 3000;
 
   const shouldUseTouchWebKitFullscreen = useCallback((videoEl?: VideoElementRef) => {
     if (!videoEl?.webkitEnterFullscreen) return false;
@@ -928,15 +929,10 @@ export function usePlayerChrome({
     const container = containerRef.current;
     if (!container) return;
 
-    if (isTouchDevice) {
-      setIsIdle(false);
-      return;
-    }
-
     const resetIdle = () => {
       setIsIdle(false);
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-      idleTimerRef.current = window.setTimeout(() => setIsIdle(true), 3000);
+      idleTimerRef.current = window.setTimeout(() => setIsIdle(true), idleDelayMs);
     };
 
     resetIdle();
@@ -957,7 +953,7 @@ export function usePlayerChrome({
       container.removeEventListener('keydown', onKey);
       container.removeEventListener('touchstart', onClick);
     };
-  }, [containerRef, isTouchDevice]);
+  }, [containerRef, idleDelayMs]);
 
   const windowDuration = useMemo(() => Math.max(0, seekableEnd - seekableStart), [seekableEnd, seekableStart]);
   const relativePosition = useMemo(

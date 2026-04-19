@@ -202,7 +202,7 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });
 
-  it('does not auto-hide the bridge deck on touch devices after the idle timeout', async () => {
+  it('auto-hides the bridge deck on touch devices after the idle timeout and shows it again on touch', async () => {
     vi.useFakeTimers();
 
     const props = {
@@ -220,8 +220,13 @@ describe('V3Player Mobile Controls', () => {
       vi.advanceTimersByTime(4000);
     });
 
+    expect(player.className).toContain(styles.userIdle);
+
+    await act(async () => {
+      fireEvent.touchStart(player);
+    });
+
     expect(player.className).not.toContain(styles.userIdle);
-    expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });
 
 });

@@ -181,6 +181,11 @@
     "resumeFrom": "Resume at {{time}}",
     "startOver": "Start Over",
     "dvrMode": "DVR mode",
+    "mobilePlaybackWindowBadge": {
+      "live": "Live",
+      "dvr": "DVR",
+      "vod": "Replay"
+    },
     "preparing": "Preparing...",
     "timeout": "Timeout",
     "networkError": "Network error",

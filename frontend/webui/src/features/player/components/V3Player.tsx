@@ -2472,6 +2472,13 @@ function V3Player(props: V3PlayerProps) {
   const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
   const inferredPlaybackWindowKind = resolvePlaybackWindowKind(playbackMode, hasLiveDvrWindow);
   const playbackWindowKind = sessionWindowKind !== 'unknown' ? sessionWindowKind : inferredPlaybackWindowKind;
+  const mobileInlinePlaybackLabel = playbackWindowKind === 'live-dvr'
+    ? t('player.mobilePlaybackWindowBadge.dvr', { defaultValue: 'DVR' })
+    : playbackWindowKind === 'live'
+      ? t('player.mobilePlaybackWindowBadge.live', { defaultValue: 'Live' })
+      : playbackWindowKind === 'vod'
+        ? t('player.mobilePlaybackWindowBadge.vod', { defaultValue: 'Replay' })
+        : null;
   const liveWindowEdge = liveSeekWindow?.liveEdge ?? seekableEnd;
   const liveWindowLagSeconds = Math.max(0, Math.round(liveWindowEdge - currentPlaybackTime));
   const hasLiveWindowPlayhead = hasLiveDvrWindow && currentPlaybackTime >= Math.max(0, seekableStart - 1);
@@ -2745,7 +2752,7 @@ function V3Player(props: V3PlayerProps) {
           showNativeBufferingMask ? styles.videoWrapperMasked : null,
         ].filter(Boolean).join(' ')}
       >
-        {channel && showPlaybackChrome && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
+        {channel && showPlaybackChrome && !isCompactTouchLayout && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
         {showNativeBufferingMask && (
           <div
             className={styles.nativeBufferingMask}
@@ -2833,6 +2840,17 @@ function V3Player(props: V3PlayerProps) {
             useTheaterControlsLayout ? styles.controlsHeaderTheater : null,
           ].filter(Boolean).join(' ')}
         >
+          {channel && isCompactTouchLayout && useOverlayShell && (
+            <div className={styles.mobileInlineMeta}>
+              <div className={styles.mobileInlineMetaCopy}>
+                {mobileInlinePlaybackLabel && (
+                  <span className={styles.mobileInlineMetaEyebrow}>{mobileInlinePlaybackLabel}</span>
+                )}
+                <h3 className={styles.mobileInlineMetaTitle}>{channel.name}</h3>
+              </div>
+            </div>
+          )}
+
           {hasSeekWindow ? (
             <div
               className={[

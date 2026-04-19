@@ -259,6 +259,37 @@
   opacity: 1;
 }
 
+.mobileInlineMeta {
+  display: none;
+}
+
+.mobileInlineMetaCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobileInlineMetaEyebrow {
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mobileInlineMetaTitle {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: 0.98rem;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .spinnerOverlay {
   position: absolute;
   top: 50%;
@@ -1722,11 +1753,41 @@
     bottom: auto;
     margin-top: 0;
     padding: 12px 14px calc(12px + var(--sab));
+    max-height: 420px;
+    overflow: hidden;
     background:
       linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent),
       color-mix(in srgb, var(--surface-panel-strong) 84%, var(--bg-video) 16%);
     border-top: 1px solid color-mix(in srgb, var(--border-elevated) 84%, transparent);
     transform: none;
+    transition:
+      opacity var(--motion-standard) var(--ease-standard),
+      max-height var(--motion-standard) var(--ease-standard),
+      padding var(--motion-standard) var(--ease-standard),
+      border-color var(--motion-standard) var(--ease-standard);
+  }
+
+  .container.userIdle .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-color: transparent;
+  }
+
+  .container.userIdle .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater)::before {
+    opacity: 0;
+  }
+
+  .container.overlay .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) .mobileInlineMeta {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0 0 2px;
+  }
+
+  .container.overlay .playerFrameOverlay .videoWrapper .overlayTitle {
+    display: none;
   }
 
   .spinnerOverlay {
@@ -1797,10 +1858,10 @@
   }
 
   .controlsHeader {
-    padding: 16px 16px calc(16px + var(--sab));
+    padding: 14px 16px calc(14px + var(--sab));
     opacity: 1;
     transform: none;
-    gap: 12px;
+    gap: 10px;
     align-items: stretch;
   }
 
@@ -1913,9 +1974,9 @@
   .seekControls {
     min-width: 0;
     width: 100%;
-    padding: 14px;
-    gap: 12px;
-    border-radius: 22px;
+    padding: 12px 13px;
+    gap: 10px;
+    border-radius: 18px;
   }
 
   .seekControls {
@@ -1934,6 +1995,8 @@
 
   .playPauseButton {
     align-self: center;
+    min-width: 46px;
+    min-height: 46px;
   }
 
   .seekSliderGroup {
@@ -1947,18 +2010,18 @@
   }
 
   .utilityControls {
-    width: auto;
-    max-width: calc(100% - 16px);
-    margin-left: auto;
-    justify-content: flex-end;
-    align-self: flex-end;
-    gap: 8px;
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    justify-content: space-between;
+    align-self: stretch;
+    gap: 10px;
   }
 
   .volumeControl {
     flex: 0 1 auto;
     min-width: 0;
-    max-width: min(100%, 220px);
+    max-width: min(100%, 208px);
     padding: 8px 12px;
   }
 
@@ -1975,7 +2038,7 @@
   }
 
   .deviceVolumeHint {
-    max-width: 132px;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
