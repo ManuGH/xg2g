@@ -847,6 +847,7 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
 			TranscodeVideo: true,
+			Container:      "fmp4",
 			HWAccel:        "vaapi",
 			VideoCodec:     "hevc",
 			Deinterlace:    false,
@@ -868,6 +869,9 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 	assert.NotContains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "deinterlace_vaapi", "progressive source: no deinterlace filter")
 	assert.NotContains(t, args, "yadif")
+	tagValue, ok := valueAfter(args, "-tag:v")
+	require.True(t, ok)
+	assert.Equal(t, "hvc1", tagValue)
 }
 
 func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {

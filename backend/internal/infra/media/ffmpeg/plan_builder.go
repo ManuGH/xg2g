@@ -350,6 +350,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	)
 
 	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec)
+	out.args = appendLiveVideoContainerTags(out.args, spec, codec.resolvedCodec)
 	out.args = appendLiveAudioArgs(out.args, spec)
 	out.args = a.appendLiveHLSArgs(out.args, spec, layout)
 	out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID))
@@ -738,6 +739,16 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec) []string {
 		"-sn",
 		"-f", "hls",
 	)
+}
+
+func appendLiveVideoContainerTags(args []string, spec ports.StreamSpec, outputCodec string) []string {
+	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+		return args
+	}
+	if !strings.EqualFold(strings.TrimSpace(outputCodec), "hevc") {
+		return args
+	}
+	return append(args, "-tag:v", "hvc1")
 }
 
 func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, layout liveSegmentLayout) []string {
