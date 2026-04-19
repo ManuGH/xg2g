@@ -780,6 +780,113 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [mergeSessionPlaybackTrace]);
 
+  const clearNativeVideoVeilTimers = useCallback(() => {
+    if (nativeVideoVeilRevealTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoVeilRevealTimerRef.current);
+      nativeVideoVeilRevealTimerRef.current = null;
+    }
+    if (nativeVideoVeilClearTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoVeilClearTimerRef.current);
+      nativeVideoVeilClearTimerRef.current = null;
+    }
+  }, []);
+
+  const clearNativeVisibilityResumeRecoveryTimer = useCallback(() => {
+    if (nativeVisibilityResumeRecoveryTimerRef.current !== null) {
+      window.clearTimeout(nativeVisibilityResumeRecoveryTimerRef.current);
+      nativeVisibilityResumeRecoveryTimerRef.current = null;
+    }
+  }, []);
+
+  const clearNativeVideoRevealTimer = useCallback(() => {
+    if (nativeVideoRevealTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoRevealTimerRef.current);
+      nativeVideoRevealTimerRef.current = null;
+    }
+  }, []);
+
+  const recoverNativeInlineSource = useCallback((reason: string, targetPosition?: number | null): boolean => {
+    const video = videoRef.current;
+    if (!video) {
+      return false;
+    }
+
+    const currentSrc = video.currentSrc || video.getAttribute('src');
+    if (!currentSrc) {
+      return false;
+    }
+
+    const resumePosition = Number.isFinite(targetPosition ?? NaN)
+      ? (targetPosition as number)
+      : (Number.isFinite(video.currentTime) ? video.currentTime : null);
+
+    debugWarn(`[V3Player] Recovering native inline source after ${reason}`, {
+      readyState: video.readyState,
+      paused: video.paused,
+      currentTime: resumePosition,
+      currentSrc,
+    });
+
+    nativeVisibilityResumeArmedRef.current = false;
+    userPauseIntentRef.current = false;
+    nativeVideoHoldPositionRef.current = resumePosition;
+    clearNativeVisibilityResumeRecoveryTimer();
+    setShowNativeVideo(false);
+    setShowNativeVideoVeil(true);
+    setNativeVeilResumeArmed(false);
+    setStatus('buffering');
+
+    const replay = () => {
+      if (resumePosition !== null && resumePosition > 0) {
+        try {
+          video.currentTime = resumePosition;
+        } catch {
+          // Live windows can clamp differently after resume. Playback still continues.
+        }
+      }
+      void video.play().catch((err) => {
+        debugWarn(`[V3Player] Native recovery play blocked after ${reason}`, err);
+      });
+    };
+
+    video.pause();
+    video.src = currentSrc;
+    video.load();
+    video.addEventListener('loadedmetadata', replay, { once: true });
+    return true;
+  }, [clearNativeVisibilityResumeRecoveryTimer, setStatus, videoRef]);
+
+  const recoverInlineLiveSeek = useCallback((targetSeconds: number): boolean => {
+    const video = videoRef.current;
+    const fullscreenElement = typeof document !== 'undefined' ? document.fullscreenElement : null;
+    const isVideoFullscreen = !!(
+      video?.webkitDisplayingFullscreen ||
+      (fullscreenElement && (fullscreenElement === containerRef.current || fullscreenElement === video))
+    );
+
+    if (
+      !isDocumentVisible ||
+      activeHlsEngine !== 'native' ||
+      !hasTouchInput() ||
+      isVideoFullscreen ||
+      playbackMode !== 'LIVE' ||
+      status === 'idle' ||
+      status === 'error' ||
+      status === 'stopped'
+    ) {
+      return false;
+    }
+
+    return recoverNativeInlineSource('inline live seek', targetSeconds);
+  }, [
+    activeHlsEngine,
+    isDocumentVisible,
+    playbackMode,
+    recoverNativeInlineSource,
+    status,
+    videoRef,
+  ]);
+
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
     return getApiBaseUrl();
@@ -889,6 +996,7 @@ function V3Player(props: V3PlayerProps) {
     allowNativeFullscreen: activeHlsEngine === 'native' || vodStreamMode === 'direct_mp4',
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen,
+    recoverInlineLiveSeek,
     mediaTitle: mediaSessionTitle,
     mediaSubtitle: mediaSessionSubtitle,
     mediaArtworkUrl: mediaSessionArtworkUrl,
@@ -950,24 +1058,6 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
-  const clearNativeVideoVeilTimers = useCallback(() => {
-    if (nativeVideoVeilRevealTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoVeilRevealTimerRef.current);
-      nativeVideoVeilRevealTimerRef.current = null;
-    }
-    if (nativeVideoVeilClearTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoVeilClearTimerRef.current);
-      nativeVideoVeilClearTimerRef.current = null;
-    }
-  }, []);
-
-  const clearNativeVisibilityResumeRecoveryTimer = useCallback(() => {
-    if (nativeVisibilityResumeRecoveryTimerRef.current !== null) {
-      window.clearTimeout(nativeVisibilityResumeRecoveryTimerRef.current);
-      nativeVisibilityResumeRecoveryTimerRef.current = null;
-    }
-  }, []);
-
   const clearPlaybackSelection = useCallback(() => {
     activeRecordingRef.current = null;
     nativePlaybackWasActiveRef.current = false;
@@ -999,13 +1089,6 @@ function V3Player(props: V3PlayerProps) {
     clearSessionLeaseState();
     resetChromeState();
   }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
-
-  const clearNativeVideoRevealTimer = useCallback(() => {
-    if (nativeVideoRevealTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoRevealTimerRef.current);
-      nativeVideoRevealTimerRef.current = null;
-    }
-  }, []);
 
   const getBufferedAheadSeconds = useCallback((): number => {
     const video = videoRef.current;
@@ -2171,38 +2254,10 @@ function V3Player(props: V3PlayerProps) {
         return;
       }
 
-      const resumePosition = Number.isFinite(video.currentTime) ? video.currentTime : null;
-      debugWarn('[V3Player] Native visibility resume stuck, reloading current source', {
-        readyState: video.readyState,
-        paused: video.paused,
-        currentTime: resumePosition,
-        currentSrc,
-      });
-
-      nativeVideoHoldPositionRef.current = resumePosition;
-      setShowNativeVideo(false);
-      setShowNativeVideoVeil(true);
-      setNativeVeilResumeArmed(false);
-      setStatus('buffering');
-
-      const replay = () => {
-        nativeVisibilityResumeArmedRef.current = false;
-        if (resumePosition !== null && resumePosition > 0) {
-          try {
-            video.currentTime = resumePosition;
-          } catch {
-            // Live windows can clamp differently after resume. Playback still continues.
-          }
-        }
-        void video.play().catch((err) => {
-          debugWarn('[V3Player] Native visibility recovery play blocked', err);
-        });
-      };
-
-      video.pause();
-      video.src = currentSrc;
-      video.load();
-      video.addEventListener('loadedmetadata', replay, { once: true });
+      recoverNativeInlineSource(
+        'visibility resume',
+        Number.isFinite(video.currentTime) ? video.currentTime : null,
+      );
     }, NATIVE_VISIBILITY_RESUME_RECOVERY_MS);
 
     return () => {
@@ -2214,6 +2269,7 @@ function V3Player(props: V3PlayerProps) {
     isCompactTouchLayout,
     isDocumentVisible,
     isNativeEngine,
+    recoverNativeInlineSource,
     setStatus,
     videoRef,
   ]);

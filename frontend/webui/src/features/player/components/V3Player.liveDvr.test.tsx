@@ -34,12 +34,22 @@ vi.mock('../lib/hlsRuntime', () => {
 
 describe('V3Player live DVR semantics', () => {
   let originalFetch: typeof globalThis.fetch;
+  let maxTouchPointsDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     vi.clearAllMocks();
+    maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5,
+    });
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation(function (this: HTMLMediaElement, type: string) {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      return '';
+    });
 
     (globalThis as any).fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === 'string'
@@ -118,6 +128,9 @@ describe('V3Player live DVR semantics', () => {
 
   afterEach(() => {
     (globalThis as any).fetch = originalFetch;
+    if (maxTouchPointsDescriptor) {
+      Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+    }
     vi.restoreAllMocks();
   });
 

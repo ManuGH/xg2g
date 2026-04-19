@@ -31,6 +31,7 @@ interface UsePlayerChromeProps {
   allowNativeFullscreen: boolean;
   shouldForceNativeMobileHls: ForceNativeFn;
   canUseDesktopWebKitFullscreen: DesktopFullscreenFn;
+  recoverInlineLiveSeek?: (targetSeconds: number) => boolean;
   mediaTitle?: string | null;
   mediaSubtitle?: string | null;
   mediaArtworkUrl?: string | null;
@@ -111,6 +112,7 @@ export function usePlayerChrome({
   allowNativeFullscreen,
   shouldForceNativeMobileHls,
   canUseDesktopWebKitFullscreen,
+  recoverInlineLiveSeek,
   mediaTitle,
   mediaSubtitle,
   mediaArtworkUrl,
@@ -262,8 +264,12 @@ export function usePlayerChrome({
     if (seekableEnd > seekableStart) {
       clamped = Math.min(Math.max(targetSeconds, seekableStart), seekableEnd);
     }
+    if (recoverInlineLiveSeek?.(clamped)) {
+      setCurrentPlaybackTime(clamped);
+      return;
+    }
     video.currentTime = clamped;
-  }, [seekableEnd, seekableStart, videoRef]);
+  }, [recoverInlineLiveSeek, seekableEnd, seekableStart, videoRef]);
 
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;
