@@ -31,6 +31,7 @@ func capLiveStartupProfile(intent Intent, profile model.ProfileSpec, targetStep 
 	next.TranscodeVideo = true
 	next.Deinterlace = true
 	next.VideoCodec = "libx264"
+	next.HWAccel = ""
 	next.VideoCRF = startupCapVideoCRF
 	next.VideoMaxWidth = startupCapVideoMaxWidth
 	next.VideoMaxRateK = startupCapVideoMaxRateK
@@ -44,11 +45,14 @@ func shouldCapLiveStartupProfile(intent Intent, profile model.ProfileSpec, targe
 	if strings.TrimSpace(intent.Mode) != "" && !strings.EqualFold(strings.TrimSpace(intent.Mode), model.ModeLive) {
 		return false
 	}
-	if targetStep != runtimepolicy.PlaybackStepH2641080p {
+	if targetStep != runtimepolicy.PlaybackStepH2641080p && targetStep != runtimepolicy.PlaybackStepAV11080p {
 		return false
 	}
 	if !profile.TranscodeVideo || !profile.Deinterlace {
 		return false
+	}
+	if targetStep == runtimepolicy.PlaybackStepAV11080p {
+		return true
 	}
 	if strings.TrimSpace(profile.HWAccel) != "" {
 		return false

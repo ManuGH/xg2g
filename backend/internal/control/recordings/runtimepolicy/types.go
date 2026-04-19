@@ -113,6 +113,7 @@ const (
 	PlaybackStepRepairLow         PlaybackLadderStep = "repair_low"
 	PlaybackStepH264720p          PlaybackLadderStep = "h264_720p"
 	PlaybackStepH2641080p         PlaybackLadderStep = "h264_1080p"
+	PlaybackStepAV11080p          PlaybackLadderStep = "av1_1080p"
 	PlaybackStepVideoCopyAudioAAC PlaybackLadderStep = "video_copy_audio_aac"
 	PlaybackStepDirectCopy        PlaybackLadderStep = "direct_copy"
 )

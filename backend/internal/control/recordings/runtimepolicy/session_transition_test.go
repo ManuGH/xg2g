@@ -55,6 +55,25 @@ func TestPlanSessionTransition_ProbeUpSchedulesRuntimeTransition(t *testing.T) {
 	}
 }
 
+func TestPlanSessionTransition_ProbeUpToAV1SchedulesRuntimeTransition(t *testing.T) {
+	transition := PlanSessionTransition(
+		SessionLoopState{CurrentStep: PlaybackStepH2641080p},
+		SessionLoopState{CurrentStep: PlaybackStepH2641080p, ProbeStep: PlaybackStepAV11080p, ProbeState: ProbeLifecycleScheduled},
+		SessionLoopDecision{
+			Action:     PolicyProbeUp,
+			ProbeStep:  PlaybackStepAV11080p,
+			ProbeState: ProbeLifecycleScheduled,
+		},
+	)
+
+	if transition.Kind != SessionTransitionScheduleProbeUp {
+		t.Fatalf("expected schedule_probe_up, got %q", transition.Kind)
+	}
+	if transition.FromStep != PlaybackStepH2641080p || transition.ToStep != PlaybackStepAV11080p {
+		t.Fatalf("unexpected transition steps: %#v", transition)
+	}
+}
+
 func TestPlanSessionTransition_AbortProbeRevertsToStableStep(t *testing.T) {
 	transition := PlanSessionTransition(
 		SessionLoopState{CurrentStep: PlaybackStepH264720p, ProbeStep: PlaybackStepH2641080p, ProbeState: ProbeLifecycleObserving},

@@ -30,10 +30,26 @@ func TestPlaybackLadderStepFromTargetProfile(t *testing.T) {
 	}
 
 	if got := PlaybackLadderStepFromTargetProfile(&playbackprofile.TargetPlaybackProfile{
+		Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeTranscode, Width: 1920, Codec: "av1"},
+		Audio: playbackprofile.AudioTarget{Mode: playbackprofile.MediaModeTranscode, Codec: "aac"},
+	}, playbackprofile.RungUnknown); got != PlaybackStepAV11080p {
+		t.Fatalf("expected av1 step, got %q", got)
+	}
+
+	if got := PlaybackLadderStepFromTargetProfile(&playbackprofile.TargetPlaybackProfile{
 		Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeTranscode, Width: 1280, Codec: "h264", CRF: 28, Preset: "veryfast"},
 		Audio: playbackprofile.AudioTarget{Mode: playbackprofile.MediaModeTranscode, Codec: "aac"},
 	}, playbackprofile.RungRepairVideoH264CRF28); got != PlaybackStepRepairLow {
 		t.Fatalf("expected repair step, got %q", got)
+	}
+}
+
+func TestPlaybackLadderNextUpTowards_AV1TargetBranchesFromH2641080p(t *testing.T) {
+	if got, ok := PlaybackLadderNextUpTowards(PlaybackStepH2641080p, PlaybackStepAV11080p); !ok || got != PlaybackStepAV11080p {
+		t.Fatalf("expected av1 probe step from h264_1080p, got %q ok=%v", got, ok)
+	}
+	if got, ok := PlaybackLadderNextUpTowards(PlaybackStepH2641080p, PlaybackStepDirectCopy); !ok || got != PlaybackStepVideoCopyAudioAAC {
+		t.Fatalf("expected direct-copy path to keep audio-aac rung, got %q ok=%v", got, ok)
 	}
 }
 

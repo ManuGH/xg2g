@@ -7,14 +7,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
-var playbackLadder = []PlaybackLadderStep{
-	PlaybackStepRepairLow,
-	PlaybackStepH264720p,
-	PlaybackStepH2641080p,
-	PlaybackStepVideoCopyAudioAAC,
-	PlaybackStepDirectCopy,
-}
-
 func NormalizePlaybackLadderStep(raw string) PlaybackLadderStep {
 	switch normalize.Token(raw) {
 	case string(PlaybackStepRepairLow):
@@ -23,6 +15,8 @@ func NormalizePlaybackLadderStep(raw string) PlaybackLadderStep {
 		return PlaybackStepH264720p
 	case string(PlaybackStepH2641080p):
 		return PlaybackStepH2641080p
+	case string(PlaybackStepAV11080p):
+		return PlaybackStepAV11080p
 	case string(PlaybackStepVideoCopyAudioAAC):
 		return PlaybackStepVideoCopyAudioAAC
 	case string(PlaybackStepDirectCopy):
@@ -69,6 +63,9 @@ func PlaybackLadderStepFromTargetProfile(target *playbackprofile.TargetPlaybackP
 	case videoMode == string(playbackprofile.MediaModeCopy) && audioMode == string(playbackprofile.MediaModeTranscode):
 		return PlaybackStepVideoCopyAudioAAC
 	case videoMode == string(playbackprofile.MediaModeTranscode):
+		if strings.EqualFold(strings.TrimSpace(target.Video.Codec), "av1") {
+			return PlaybackStepAV11080p
+		}
 		if target.Video.CRF >= 28 || strings.EqualFold(strings.TrimSpace(target.Video.Preset), "veryfast") {
 			return PlaybackStepRepairLow
 		}
@@ -82,28 +79,75 @@ func PlaybackLadderStepFromTargetProfile(target *playbackprofile.TargetPlaybackP
 }
 
 func PlaybackLadderNextDown(step PlaybackLadderStep) (PlaybackLadderStep, bool) {
-	index := playbackLadderIndex(step)
-	if index <= 0 {
+	switch NormalizePlaybackLadderStep(string(step)) {
+	case PlaybackStepDirectCopy:
+		return PlaybackStepVideoCopyAudioAAC, true
+	case PlaybackStepVideoCopyAudioAAC:
+		return PlaybackStepH2641080p, true
+	case PlaybackStepAV11080p:
+		return PlaybackStepH2641080p, true
+	case PlaybackStepH2641080p:
+		return PlaybackStepH264720p, true
+	case PlaybackStepH264720p:
+		return PlaybackStepRepairLow, true
+	default:
 		return PlaybackStepUnknown, false
 	}
-	return playbackLadder[index-1], true
 }
 
 func PlaybackLadderNextUpTowards(current PlaybackLadderStep, target PlaybackLadderStep) (PlaybackLadderStep, bool) {
-	currentIndex := playbackLadderIndex(current)
-	targetIndex := playbackLadderIndex(target)
-	if currentIndex < 0 || targetIndex < 0 || currentIndex >= targetIndex {
+	path := playbackPathToTarget(target)
+	if len(path) == 0 {
 		return PlaybackStepUnknown, false
 	}
-	return playbackLadder[currentIndex+1], true
+	current = NormalizePlaybackLadderStep(string(current))
+	for i, candidate := range path {
+		if candidate != current {
+			continue
+		}
+		if i+1 >= len(path) {
+			return PlaybackStepUnknown, false
+		}
+		return path[i+1], true
+	}
+	return PlaybackStepUnknown, false
+}
+
+func playbackPathToTarget(target PlaybackLadderStep) []PlaybackLadderStep {
+	switch NormalizePlaybackLadderStep(string(target)) {
+	case PlaybackStepRepairLow:
+		return []PlaybackLadderStep{PlaybackStepRepairLow}
+	case PlaybackStepH264720p:
+		return []PlaybackLadderStep{PlaybackStepRepairLow, PlaybackStepH264720p}
+	case PlaybackStepH2641080p:
+		return []PlaybackLadderStep{PlaybackStepRepairLow, PlaybackStepH264720p, PlaybackStepH2641080p}
+	case PlaybackStepAV11080p:
+		return []PlaybackLadderStep{PlaybackStepRepairLow, PlaybackStepH264720p, PlaybackStepH2641080p, PlaybackStepAV11080p}
+	case PlaybackStepVideoCopyAudioAAC:
+		return []PlaybackLadderStep{PlaybackStepRepairLow, PlaybackStepH264720p, PlaybackStepH2641080p, PlaybackStepVideoCopyAudioAAC}
+	case PlaybackStepDirectCopy:
+		return []PlaybackLadderStep{PlaybackStepRepairLow, PlaybackStepH264720p, PlaybackStepH2641080p, PlaybackStepVideoCopyAudioAAC, PlaybackStepDirectCopy}
+	default:
+		return nil
+	}
 }
 
 func playbackLadderIndex(step PlaybackLadderStep) int {
 	step = NormalizePlaybackLadderStep(string(step))
-	for i, candidate := range playbackLadder {
-		if candidate == step {
-			return i
-		}
+	switch step {
+	case PlaybackStepRepairLow:
+		return 0
+	case PlaybackStepH264720p:
+		return 1
+	case PlaybackStepH2641080p:
+		return 2
+	case PlaybackStepAV11080p:
+		return 3
+	case PlaybackStepVideoCopyAudioAAC:
+		return 4
+	case PlaybackStepDirectCopy:
+		return 5
+	default:
+		return -1
 	}
-	return -1
 }

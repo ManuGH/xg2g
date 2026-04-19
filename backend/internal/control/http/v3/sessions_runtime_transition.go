@@ -136,6 +136,21 @@ func sessionRuntimeProfileForStep(current model.ProfileSpec, step runtimepolicy.
 		return build(profiles.ProfileCopy), true
 	case runtimepolicy.PlaybackStepVideoCopyAudioAAC:
 		return build(profiles.ProfileHigh), true
+	case runtimepolicy.PlaybackStepAV11080p:
+		next := profiles.Resolve(profiles.ProfileAV1HW, "", current.DVRWindowSec, nil, profiles.GPUBackendVAAPI, profiles.HWAccelForce)
+		next.DVRWindowSec = current.DVRWindowSec
+		next.VOD = current.VOD
+		next.DisableSafariForceCopy = current.DisableSafariForceCopy
+		next.ForceSafariHQ25 = current.ForceSafariHQ25
+		next.LLHLS = current.LLHLS
+		if current.Deinterlace {
+			next.Deinterlace = true
+		}
+		next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
+		if next.EffectiveRuntimeMode == "" || next.EffectiveRuntimeMode == ports.RuntimeModeUnknown {
+			next.EffectiveRuntimeMode = next.PolicyModeHint
+		}
+		return next, true
 	case runtimepolicy.PlaybackStepH2641080p:
 		next := build(profiles.ProfileHigh)
 		next.TranscodeVideo = true

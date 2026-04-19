@@ -58,6 +58,44 @@ func TestBuildStartSession_CapsHeavyLiveStartupProfileButPreservesTargetStep(t *
 	require.Equal(t, string(runtimepolicy.PlaybackStepH2641080p), session.ContextData[model.CtxKeyRuntimeTargetStep])
 }
 
+func TestBuildStartSession_CapsAV1StartupButPreservesAV1TargetStep(t *testing.T) {
+	deps := newMockDeps()
+	svc := NewService(deps)
+
+	resolution := startProfileResolution{
+		effectiveProfileID: profiles.ProfileAV1HW,
+		profileSpec: model.ProfileSpec{
+			Name:                 profiles.ProfileAV1HW,
+			PolicyModeHint:       ports.RuntimeModeHQ25,
+			EffectiveRuntimeMode: ports.RuntimeModeHQ25,
+			EffectiveModeSource:  ports.RuntimeModeSourceResolve,
+			TranscodeVideo:       true,
+			Deinterlace:          true,
+			VideoCodec:           "av1",
+			HWAccel:              "vaapi",
+			VideoMaxWidth:        1920,
+			AudioBitrateK:        192,
+			Container:            "fmp4",
+		},
+	}
+
+	session := svc.buildStartSession(Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-startup-cap-av1",
+		ServiceRef:    "1:0:19:EF75:3F9:1:C00000:0:0:0",
+		CorrelationID: "corr-startup-cap-av1",
+		Mode:          model.ModeLive,
+		Logger:        zerolog.Nop(),
+	}, resolution)
+
+	require.Equal(t, profiles.ProfileAV1HW, session.Profile.Name)
+	require.Equal(t, "libx264", session.Profile.VideoCodec)
+	require.Equal(t, "", session.Profile.HWAccel)
+	require.Equal(t, 1280, session.Profile.VideoMaxWidth)
+	require.Equal(t, "fmp4", session.Profile.Container)
+	require.Equal(t, string(runtimepolicy.PlaybackStepAV11080p), session.ContextData[model.CtxKeyRuntimeTargetStep])
+}
+
 func TestCapLiveStartupProfile_SkipsGPUBackedOrAlreadyCheapProfiles(t *testing.T) {
 	intent := Intent{Mode: model.ModeLive}
 
@@ -89,4 +127,30 @@ func TestCapLiveStartupProfile_SkipsGPUBackedOrAlreadyCheapProfiles(t *testing.T
 	}, runtimepolicy.PlaybackStepH264720p)
 	require.False(t, changed)
 	require.Equal(t, 1280, capped.VideoMaxWidth)
+}
+
+func TestCapLiveStartupProfile_CapsAV1LiveTargetToCheapH264Startup(t *testing.T) {
+	intent := Intent{Mode: model.ModeLive}
+
+	capped, changed := capLiveStartupProfile(intent, model.ProfileSpec{
+		Name:                 profiles.ProfileAV1HW,
+		PolicyModeHint:       ports.RuntimeModeHQ25,
+		EffectiveRuntimeMode: ports.RuntimeModeHQ25,
+		EffectiveModeSource:  ports.RuntimeModeSourceResolve,
+		TranscodeVideo:       true,
+		Deinterlace:          true,
+		VideoCodec:           "av1",
+		HWAccel:              "vaapi",
+		VideoMaxWidth:        1920,
+		Container:            "fmp4",
+		AudioBitrateK:        192,
+	}, runtimepolicy.PlaybackStepAV11080p)
+
+	require.True(t, changed)
+	require.Equal(t, "libx264", capped.VideoCodec)
+	require.Equal(t, "", capped.HWAccel)
+	require.Equal(t, 1280, capped.VideoMaxWidth)
+	require.Equal(t, "fmp4", capped.Container)
+	require.Equal(t, 160, capped.AudioBitrateK)
+	require.Equal(t, ports.RuntimeModeSourceRuntimeHardening, capped.EffectiveModeSource)
 }
