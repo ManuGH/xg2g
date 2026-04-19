@@ -108,6 +108,32 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  nightly-spec-doc-lint:
+    name: nightly-spec-doc-lint
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 2 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Node for OpenAPI + Markdown lint
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/webui/package-lock.json
+
+      - name: Lint OpenAPI (nightly)
+        run: |
+          set -euo pipefail
+          npx --yes @redocly/cli@1.31.0 lint backend/api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
+
+      - name: Lint Markdown (nightly)
+        run: |
+          set -euo pipefail
+          npx --yes markdownlint-cli2@0.14.0 "docs/**/*.md" ".github/**/*.md" "*.md" "!CHANGELOG.md"
+
   weekly-security-deep:
     name: weekly-security-deep
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * 0'
@@ -206,7 +232,7 @@ jobs:
 
   deep-summary:
     name: deep-summary
-    needs: [nightly-race, nightly-integration, weekly-security-deep, weekly-governance-deep]
+    needs: [nightly-race, nightly-integration, nightly-spec-doc-lint, weekly-security-deep, weekly-governance-deep]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -216,6 +242,7 @@ jobs:
         env:
           RACE_RESULT: ${{ needs.nightly-race.result }}
           INTEGRATION_RESULT: ${{ needs.nightly-integration.result }}
+          DOC_LINT_RESULT: ${{ needs.nightly-spec-doc-lint.result }}
           SECURITY_RESULT: ${{ needs.weekly-security-deep.result }}
           GOVERNANCE_RESULT: ${{ needs.weekly-governance-deep.result }}
         run: |
@@ -231,6 +258,7 @@ jobs:
 
           RACE_EXIT="$(map_exit "$RACE_RESULT")"
           INTEGRATION_EXIT="$(map_exit "$INTEGRATION_RESULT")"
+          DOC_LINT_EXIT="$(map_exit "$DOC_LINT_RESULT")"
           SECURITY_EXIT="$(map_exit "$SECURITY_RESULT")"
           GOVERNANCE_EXIT="$(map_exit "$GOVERNANCE_RESULT")"
 
@@ -241,19 +269,21 @@ jobs:
             echo "|---|---|---:|---:|"
             echo "| nightly-race | \`cd backend && go test -race -count=1 ./...\` | $RACE_RESULT | $RACE_EXIT |"
             echo "| nightly-integration | \`cd backend && go test -count=1 -failfast ./test/integration/... ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
+            echo "| nightly-spec-doc-lint | \`redocly lint + markdownlint-cli2\` | $DOC_LINT_RESULT | $DOC_LINT_EXIT |"
             echo "| weekly-security-deep | \`cd backend && govulncheck -tags=nogpu ./... && gosec -severity=high ... ./...\` | $SECURITY_RESULT | $SECURITY_EXIT |"
             echo "| weekly-governance-deep | \`jsx + wrapper-boundary guards + (cd frontend/webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deep-alert-on-failure:
     name: deep-alert-on-failure
-    needs: [nightly-race, nightly-integration, weekly-security-deep, weekly-governance-deep, deep-summary]
+    needs: [nightly-race, nightly-integration, nightly-spec-doc-lint, weekly-security-deep, weekly-governance-deep, deep-summary]
     if: >
       always() &&
       github.event_name == 'schedule' &&
       (
         needs.nightly-race.result == 'failure' || needs.nightly-race.result == 'cancelled' ||
         needs.nightly-integration.result == 'failure' || needs.nightly-integration.result == 'cancelled' ||
+        needs.nightly-spec-doc-lint.result == 'failure' || needs.nightly-spec-doc-lint.result == 'cancelled' ||
         needs.weekly-security-deep.result == 'failure' || needs.weekly-security-deep.result == 'cancelled' ||
         needs.weekly-governance-deep.result == 'failure' || needs.weekly-governance-deep.result == 'cancelled'
       )
@@ -265,6 +295,7 @@ jobs:
         env:
           RACE_RESULT: ${{ needs.nightly-race.result }}
           INTEGRATION_RESULT: ${{ needs.nightly-integration.result }}
+          DOC_LINT_RESULT: ${{ needs.nightly-spec-doc-lint.result }}
           SECURITY_RESULT: ${{ needs.weekly-security-deep.result }}
           GOVERNANCE_RESULT: ${{ needs.weekly-governance-deep.result }}
         with:
@@ -283,6 +314,7 @@ jobs:
               "|---|---:|",
               `| nightly-race | ${process.env.RACE_RESULT} |`,
               `| nightly-integration | ${process.env.INTEGRATION_RESULT} |`,
+              `| nightly-spec-doc-lint | ${process.env.DOC_LINT_RESULT} |`,
               `| weekly-security-deep | ${process.env.SECURITY_RESULT} |`,
               `| weekly-governance-deep | ${process.env.GOVERNANCE_RESULT} |`,
               "",

@@ -133,7 +133,7 @@ quality-gates-online: verify-generated-artifacts verify-release-output-contract 
 ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-client-wrapper webui-test ## Run the local PR validation bundle used by CI
 	@echo "✅ PR gate bundle passed"
 
-ci-nightly: quality-gates-online webui-test ## Run the nightly validation bundle used by CI
+ci-nightly: quality-gates-online webui-test ## Run the local deep validation bundle
 	@echo "✅ Nightly gate bundle passed"
 
 # Deterministic Python toolchain for governance scripts.
