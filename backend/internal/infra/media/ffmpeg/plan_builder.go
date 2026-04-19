@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	infraffmpeg "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
@@ -201,12 +202,22 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			}
 			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
 			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
-			// AMD/VAAPI full-pipeline decode+deinterlace has produced near-black
-			// frames for interlaced broadcast inputs when encoding to HEVC/AV1.
-			// Keep GPU encode, but route these cases through CPU deinterlace +
-			// hwupload instead of deinterlace_vaapi.
-			if fullVAAPI && spec.Profile.Deinterlace && resolvedCodec != "h264" {
-				fullVAAPI = false
+			if fullVAAPI {
+				var pathID string
+				if spec.Profile.Deinterlace {
+					pathID = vaapiPathCorrectnessIDFor(resolvedCodec)
+				}
+				if pathID != "" {
+					capability, ok := hardware.HardwarePathCapabilityFor(pathID)
+					if !ok || capability.Status != hardware.PathStatusVerified {
+						fullVAAPI = false
+						a.Logger.Info().
+							Str("path_id", pathID).
+							Str("status", capability.Status).
+							Str("reason", capability.Reason).
+							Msg("vaapi full pipeline disabled by path correctness matrix")
+					}
+				}
 			}
 			if fullVAAPI {
 				preInputArgs = append(preInputArgs,
@@ -234,6 +245,17 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		fullVAAPI:     fullVAAPI,
 		preInputArgs:  preInputArgs,
 	}, nil
+}
+
+func vaapiPathCorrectnessIDFor(codec string) string {
+	switch strings.TrimSpace(codec) {
+	case "hevc":
+		return hardware.PathVAAPIFullInterlacedHEVC
+	case "av1":
+		return hardware.PathVAAPIFullInterlacedAV1
+	default:
+		return ""
+	}
 }
 
 func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputPlan, error) {

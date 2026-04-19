@@ -192,6 +192,54 @@ func TestPreflightTranscodeProfiles_PublishesMeasuredProfileBenchmarks(t *testin
 	}
 }
 
+func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
+	adapter := NewLocalAdapter("ffmpeg", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128")
+	adapter.vaapiEncoders = map[string]bool{
+		"hevc_vaapi": true,
+		"av1_vaapi":  true,
+	}
+	adapter.pathProbeFn = func(_ context.Context, req pathProbeRequest) (hardware.HardwarePathCapability, error) {
+		switch req.PathID {
+		case hardware.PathVAAPIFullInterlacedHEVC:
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic yavg 118.2",
+			}, nil
+		case hardware.PathVAAPIFullInterlacedAV1:
+			return hardware.HardwarePathCapability{
+				Status: hardware.PathStatusBrokenOutput,
+				Reason: "synthetic yavg 2.4 below threshold",
+			}, nil
+		default:
+			return hardware.HardwarePathCapability{}, errors.New("unexpected path probe")
+		}
+	}
+
+	hardware.SetPathCapabilities(nil)
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter.PreflightPathCorrectness()
+
+	hevcCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedHEVC)
+	if !ok {
+		t.Fatal("expected published hevc path correctness")
+	}
+	if !hevcCap.Verified || hevcCap.Status != hardware.PathStatusVerified {
+		t.Fatalf("unexpected hevc path capability: %#v", hevcCap)
+	}
+
+	av1Cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedAV1)
+	if !ok {
+		t.Fatal("expected published av1 path correctness")
+	}
+	if av1Cap.Verified || av1Cap.Status != hardware.PathStatusBrokenOutput {
+		t.Fatalf("unexpected av1 path capability: %#v", av1Cap)
+	}
+}
+
 func TestPreflightTS_SyncOK(t *testing.T) {
 	buf := make([]byte, 188*3)
 	buf[0] = 0x47

@@ -15,6 +15,13 @@ func TestSnapshotHostRuntime_CombinesCapabilitiesAndRuntime(t *testing.T) {
 		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 120 * time.Millisecond},
 		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
 	})
+	SetPathCapabilities(map[string]HardwarePathCapability{
+		PathVAAPIFullInterlacedHEVC: {
+			Verified: true,
+			Status:   PathStatusVerified,
+			Reason:   "synthetic yavg 118.2",
+		},
+	})
 
 	got := SnapshotHostRuntime(true, true, admissionruntime.RuntimeState{
 		TunerSlots:       3,
@@ -61,6 +68,9 @@ func TestSnapshotHostRuntime_CombinesCapabilitiesAndRuntime(t *testing.T) {
 	}
 	if len(got.Benchmark.Profiles) != 5 {
 		t.Fatalf("unexpected benchmark profiles: %#v", got.Benchmark.Profiles)
+	}
+	if len(got.Benchmark.Paths) != 1 || got.Benchmark.Paths[0].PathID != PathVAAPIFullInterlacedHEVC || got.Benchmark.Paths[0].Status != PathStatusVerified {
+		t.Fatalf("unexpected benchmark paths: %#v", got.Benchmark.Paths)
 	}
 	profilesByID := make(map[string]string, len(got.Benchmark.Profiles))
 	for _, benchmark := range got.Benchmark.Profiles {

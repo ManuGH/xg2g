@@ -64,6 +64,12 @@ type profileProbeRequest struct {
 	Encoder   string
 }
 
+type pathProbeRequest struct {
+	PathID  string
+	Backend string
+	Encoder string
+}
+
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
 	BinPath                   string
@@ -115,6 +121,8 @@ type LocalAdapter struct {
 	nvencErr                  error
 	profileBenchmarksChecked  bool
 	profileProbeFn            func(context.Context, profileProbeRequest) (time.Duration, error)
+	pathCorrectnessChecked    bool
+	pathProbeFn               func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
@@ -496,6 +504,47 @@ func (a *LocalAdapter) PreflightTranscodeProfiles() {
 	}
 }
 
+// PreflightPathCorrectness validates a small set of host-specific media paths
+// whose encoder availability alone is not sufficient to trust output quality.
+func (a *LocalAdapter) PreflightPathCorrectness() {
+	if a.pathCorrectnessChecked {
+		return
+	}
+	a.pathCorrectnessChecked = true
+
+	capabilities := make(map[string]hardware.HardwarePathCapability)
+	for _, req := range []pathProbeRequest{
+		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
+		{PathID: hardware.PathVAAPIFullInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
+	} {
+		if req.Backend != "vaapi" || !a.VaapiEncoderVerified(req.Encoder) {
+			continue
+		}
+		capability, err := a.testPathCorrectness(req)
+		if err != nil {
+			capability = hardware.HardwarePathCapability{
+				Status: hardware.PathStatusPreflightFailed,
+				Reason: err.Error(),
+			}
+			a.Logger.Warn().
+				Err(err).
+				Str("path_id", req.PathID).
+				Str("encoder", req.Encoder).
+				Msg("path correctness preflight failed")
+		} else {
+			a.Logger.Info().
+				Str("path_id", req.PathID).
+				Str("encoder", req.Encoder).
+				Str("status", capability.Status).
+				Str("reason", capability.Reason).
+				Msg("path correctness preflight result")
+		}
+		capabilities[req.PathID] = capability
+	}
+
+	hardware.SetPathCapabilities(capabilities)
+}
+
 // testVaapiEncoder runs a real 5-frame encode test for a specific VAAPI encoder.
 func (a *LocalAdapter) testVaapiEncoder(encoder string) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -588,6 +637,18 @@ func (a *LocalAdapter) testProfileBenchmark(backend, encoder, profileID string) 
 	}
 }
 
+func (a *LocalAdapter) testPathCorrectness(req pathProbeRequest) (hardware.HardwarePathCapability, error) {
+	if a.pathProbeFn != nil {
+		return a.pathProbeFn(context.Background(), req)
+	}
+	switch req.PathID {
+	case hardware.PathVAAPIFullInterlacedHEVC, hardware.PathVAAPIFullInterlacedAV1:
+		return a.testVAAPIInterlacedPathCorrectness(req.Encoder)
+	default:
+		return hardware.HardwarePathCapability{}, fmt.Errorf("unsupported path correctness probe %q", req.PathID)
+	}
+}
+
 func profileBenchmarksForBackend(backend string) []string {
 	switch backend {
 	case "cpu":
@@ -661,6 +722,49 @@ func (a *LocalAdapter) testVAAPIH264Profile(profileID, encoder string) (time.Dur
 		"-f", "null", "-",
 	}
 	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string) (hardware.HardwarePathCapability, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	tempDir, err := os.MkdirTemp("", "xg2g-path-correctness-*")
+	if err != nil {
+		return hardware.HardwarePathCapability{}, fmt.Errorf("mktemp path correctness probe: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	outPath := filepath.Join(tempDir, "probe.mkv")
+	encodeArgs := []string{
+		"-y",
+		"-vaapi_device", a.VaapiDevice,
+		"-f", "lavfi",
+		"-i", "testsrc2=duration=0.4:size=1920x1080:rate=25",
+		"-vf", "format=nv12,setfield=tff,hwupload,deinterlace_vaapi",
+		"-c:v", encoder,
+		"-frames:v", "5",
+		outPath,
+	}
+	if _, err := runProfileBenchmarkCommand(ctx, a.BinPath, encodeArgs); err != nil {
+		return hardware.HardwarePathCapability{}, fmt.Errorf("encode correctness probe failed: %w", err)
+	}
+
+	lumaYAvg, err := a.measureSignalStatsYAvg(ctx, outPath)
+	if err != nil {
+		return hardware.HardwarePathCapability{}, fmt.Errorf("signalstats correctness probe failed: %w", err)
+	}
+	if lumaYAvg < 32 {
+		return hardware.HardwarePathCapability{
+			Status: hardware.PathStatusBrokenOutput,
+			Reason: fmt.Sprintf("synthetic yavg %.2f below threshold", lumaYAvg),
+		}, nil
+	}
+
+	return hardware.HardwarePathCapability{
+		Verified: true,
+		Status:   hardware.PathStatusVerified,
+		Reason:   fmt.Sprintf("synthetic yavg %.2f", lumaYAvg),
+	}, nil
 }
 
 func (a *LocalAdapter) testNVENCH264Profile(profileID, encoder string) (time.Duration, error) {
@@ -741,6 +845,37 @@ func profileBenchmarkTimeout(profileID string) time.Duration {
 	default:
 		return 12 * time.Second
 	}
+}
+
+func (a *LocalAdapter) measureSignalStatsYAvg(ctx context.Context, mediaPath string) (float64, error) {
+	args := []string{
+		"-v", "warning",
+		"-i", mediaPath,
+		"-vf", "signalstats,metadata=mode=print",
+		"-frames:v", "1",
+		"-f", "null", "-",
+	}
+	// #nosec G204 -- BinPath is trusted from config and mediaPath is a local temp path.
+	cmd := exec.CommandContext(ctx, a.BinPath, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("measure signalstats: %w (output: %s)", err, string(out))
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		const prefix = "lavfi.signalstats.YAVG="
+		idx := strings.Index(line, prefix)
+		if idx < 0 {
+			continue
+		}
+		value := strings.TrimSpace(line[idx+len(prefix):])
+		yavg, parseErr := strconv.ParseFloat(value, 64)
+		if parseErr != nil {
+			return 0, fmt.Errorf("parse signalstats yavg %q: %w", value, parseErr)
+		}
+		return yavg, nil
+	}
+	return 0, errors.New("lavfi.signalstats.YAVG not found")
 }
 
 func runProfileBenchmarkCommand(ctx context.Context, binPath string, args []string) (time.Duration, error) {

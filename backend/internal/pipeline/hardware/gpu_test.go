@@ -26,6 +26,10 @@ func resetVaapiState(t *testing.T) {
 	nvencProfileCaps = nil
 	profileBenchMu.Unlock()
 
+	pathCapsMu.Lock()
+	pathCaps = nil
+	pathCapsMu.Unlock()
+
 	nvencMu.Lock()
 	nvencChecked = false
 	nvencPassed = false
@@ -55,6 +59,10 @@ func resetVaapiState(t *testing.T) {
 		nvencProfileCaps = nil
 		profileBenchMu.Unlock()
 
+		pathCapsMu.Lock()
+		pathCaps = nil
+		pathCapsMu.Unlock()
+
 		nvencMu.Lock()
 		nvencChecked = false
 		nvencPassed = false
@@ -66,6 +74,31 @@ func resetVaapiState(t *testing.T) {
 		nvencEncCaps = nil
 		nvencEncMu.Unlock()
 	})
+}
+
+func TestHardwarePathCapabilityFor_ReturnsStoredPathTruth(t *testing.T) {
+	resetVaapiState(t)
+
+	SetPathCapabilities(map[string]HardwarePathCapability{
+		PathVAAPIFullInterlacedHEVC: {
+			Status: PathStatusBrokenOutput,
+			Reason: "synthetic luma below threshold",
+		},
+	})
+
+	cap, ok := HardwarePathCapabilityFor(PathVAAPIFullInterlacedHEVC)
+	if !ok {
+		t.Fatal("expected path capability to be available")
+	}
+	if cap.Verified {
+		t.Fatalf("expected broken path capability to stay unverified, got %#v", cap)
+	}
+	if cap.Status != PathStatusBrokenOutput {
+		t.Fatalf("unexpected path status: %#v", cap)
+	}
+	if cap.Reason == "" {
+		t.Fatalf("expected path reason to be preserved, got %#v", cap)
+	}
 }
 
 func TestIsVAAPIReady_DefaultFalse(t *testing.T) {

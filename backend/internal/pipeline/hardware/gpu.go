@@ -22,6 +22,15 @@ import (
 const vaapiRuntimeFailureThreshold = 3
 const nvencRuntimeFailureThreshold = 3
 
+const (
+	PathVAAPIFullInterlacedHEVC = "vaapi_full_interlaced_hevc"
+	PathVAAPIFullInterlacedAV1  = "vaapi_full_interlaced_av1"
+
+	PathStatusVerified        = "verified"
+	PathStatusBrokenOutput    = "broken_output"
+	PathStatusPreflightFailed = "preflight_failed"
+)
+
 type HardwareEncoderCapability struct {
 	Verified     bool
 	ProbeElapsed time.Duration
@@ -33,6 +42,11 @@ type NVENCEncoderCapability = HardwareEncoderCapability
 type HardwareProfileCapability struct {
 	Verified     bool
 	ProbeElapsed time.Duration
+}
+type HardwarePathCapability struct {
+	Verified bool
+	Status   string
+	Reason   string
 }
 
 var (
@@ -63,6 +77,9 @@ var (
 	cpuProfileCaps   map[string]HardwareProfileCapability
 	vaapiProfileCaps map[string]HardwareProfileCapability
 	nvencProfileCaps map[string]HardwareProfileCapability
+
+	pathCapsMu sync.RWMutex
+	pathCaps   map[string]HardwarePathCapability
 )
 
 // HasVAAPI checks if the VAAPI render device exists
@@ -172,6 +189,12 @@ func SetNVENCProfileBenchmarks(capabilities map[string]HardwareProfileCapability
 	profileBenchMu.Lock()
 	defer profileBenchMu.Unlock()
 	nvencProfileCaps = cloneProfileCapabilities(capabilities)
+}
+
+func SetPathCapabilities(capabilities map[string]HardwarePathCapability) {
+	pathCapsMu.Lock()
+	defer pathCapsMu.Unlock()
+	pathCaps = clonePathCapabilities(capabilities)
 }
 
 // IsVAAPIReady returns true only if the VAAPI render device exists AND
@@ -304,6 +327,30 @@ func HardwareProfileCapabilityFor(profileID string) (HardwareProfileCapability, 
 	return bestCap, bestBackend, true
 }
 
+func HardwarePathCapabilityFor(pathID string) (HardwarePathCapability, bool) {
+	pathID = normalizeProfileBenchmarkID(pathID)
+	if pathID == "" {
+		return HardwarePathCapability{}, false
+	}
+
+	pathCapsMu.RLock()
+	defer pathCapsMu.RUnlock()
+	if pathCaps == nil {
+		return HardwarePathCapability{}, false
+	}
+	cap, ok := pathCaps[pathID]
+	if !ok {
+		return HardwarePathCapability{}, false
+	}
+	return cap, true
+}
+
+func HardwarePathCapabilities() map[string]HardwarePathCapability {
+	pathCapsMu.RLock()
+	defer pathCapsMu.RUnlock()
+	return clonePathCapabilities(pathCaps)
+}
+
 // RecordVAAPIRuntimeFailure increments the runtime failure counter after startup preflight.
 // After threshold is reached, VAAPI is demoted to not-ready and encoder readiness is cleared.
 func RecordVAAPIRuntimeFailure() (failures int, demoted bool) {
@@ -366,6 +413,25 @@ func cloneProfileCapabilities(capabilities map[string]HardwareProfileCapability)
 			continue
 		}
 		cloned[profileID] = capability
+	}
+	return cloned
+}
+
+func clonePathCapabilities(capabilities map[string]HardwarePathCapability) map[string]HardwarePathCapability {
+	if capabilities == nil {
+		return nil
+	}
+	cloned := make(map[string]HardwarePathCapability, len(capabilities))
+	for rawPathID, capability := range capabilities {
+		pathID := normalizeProfileBenchmarkID(rawPathID)
+		status := strings.ToLower(strings.TrimSpace(capability.Status))
+		if pathID == "" || status == "" {
+			continue
+		}
+		capability.Status = status
+		capability.Reason = strings.TrimSpace(capability.Reason)
+		capability.Verified = status == PathStatusVerified
+		cloned[pathID] = capability
 	}
 	return cloned
 }

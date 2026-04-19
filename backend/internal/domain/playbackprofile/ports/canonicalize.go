@@ -6,6 +6,7 @@ package ports
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
@@ -135,6 +136,21 @@ func CanonicalizeHostRuntime(in HostRuntimeSnapshot) HostRuntimeSnapshot {
 	}
 	sort.Slice(out.Benchmark.Profiles, func(i, j int) bool {
 		return out.Benchmark.Profiles[i].ProfileID < out.Benchmark.Profiles[j].ProfileID
+	})
+	if out.Benchmark.Paths == nil {
+		out.Benchmark.Paths = []HostPathCapability{}
+	}
+	for idx := range out.Benchmark.Paths {
+		out.Benchmark.Paths[idx].PathID = normalize.Token(out.Benchmark.Paths[idx].PathID)
+		out.Benchmark.Paths[idx].Backend = normalize.Token(out.Benchmark.Paths[idx].Backend)
+		out.Benchmark.Paths[idx].Status = normalize.Token(out.Benchmark.Paths[idx].Status)
+		out.Benchmark.Paths[idx].Reason = strings.TrimSpace(out.Benchmark.Paths[idx].Reason)
+	}
+	sort.Slice(out.Benchmark.Paths, func(i, j int) bool {
+		if out.Benchmark.Paths[i].PathID == out.Benchmark.Paths[j].PathID {
+			return out.Benchmark.Paths[i].Backend < out.Benchmark.Paths[j].Backend
+		}
+		return out.Benchmark.Paths[i].PathID < out.Benchmark.Paths[j].PathID
 	})
 	if out.CPU.Load1m < 0 {
 		out.CPU.Load1m = 0

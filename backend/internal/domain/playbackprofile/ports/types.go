@@ -114,6 +114,13 @@ type HostProfileBenchmark struct {
 	ProbeElapsedMs int64  `json:"probeElapsedMs,omitempty"`
 }
 
+type HostPathCapability struct {
+	PathID  string `json:"pathId,omitempty"`
+	Backend string `json:"backend,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
 type HostBenchmarkSnapshot struct {
 	Class                 string                 `json:"class,omitempty"`
 	PreferredCodec        string                 `json:"preferredCodec,omitempty"`
@@ -121,6 +128,7 @@ type HostBenchmarkSnapshot struct {
 	FastestProbeElapsedMs int64                  `json:"fastestProbeElapsedMs,omitempty"`
 	Codecs                []HostCodecBenchmark   `json:"codecs,omitempty"`
 	Profiles              []HostProfileBenchmark `json:"profiles,omitempty"`
+	Paths                 []HostPathCapability   `json:"paths,omitempty"`
 }
 
 // HostRuntimeSnapshot combines static executable capabilities and current runtime pressure inputs.

@@ -62,6 +62,9 @@ type HostCodecBenchmark = ports.HostCodecBenchmark
 // HostProfileBenchmark captures benchmark truth for a derived transcode profile.
 type HostProfileBenchmark = ports.HostProfileBenchmark
 
+// HostPathCapability captures host-specific correctness truth for a concrete media pipeline path.
+type HostPathCapability = ports.HostPathCapability
+
 // HostBenchmarkSnapshot summarizes measured hardware encoder probe truth for the host.
 type HostBenchmarkSnapshot = ports.HostBenchmarkSnapshot
 

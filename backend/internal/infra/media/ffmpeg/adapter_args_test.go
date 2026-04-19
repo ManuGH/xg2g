@@ -12,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -875,6 +876,11 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 }
 
 func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPath(t *testing.T) {
+	hardware.SetPathCapabilities(nil)
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
@@ -916,6 +922,58 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPath(t *testing.T) {
 	tagValue, ok := valueAfter(args, "-tag:v")
 	require.True(t, ok)
 	assert.Equal(t, "hvc1", tagValue)
+}
+
+func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
+	hardware.SetPathCapabilities(map[string]hardware.HardwarePathCapability{
+		hardware.PathVAAPIFullInterlacedHEVC: {
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   "synthetic yavg 118.2",
+		},
+	})
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "vaapi-hevc-deinterlace-full",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_hevc_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "hevc",
+			Deinterlace:    true,
+			VideoMaxRateK:  5000,
+			VideoBufSizeK:  10000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-vaapi_device")
+	assert.Contains(t, args, "-hwaccel")
+	assert.Contains(t, args, "-hwaccel_output_format")
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "deinterlace_vaapi")
+	assert.NotContains(t, vf, "bwdif=")
+	assert.Contains(t, args, "hevc_vaapi")
 }
 
 func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {

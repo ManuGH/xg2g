@@ -1,6 +1,7 @@
 package hardware
 
 import (
+	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
@@ -15,6 +16,7 @@ const (
 func snapshotHostBenchmark() playbackprofile.HostBenchmarkSnapshot {
 	codecs := []string{"h264", "hevc", "av1"}
 	results := make([]playbackprofile.HostCodecBenchmark, 0, len(codecs))
+	paths := snapshotPathCapabilities()
 
 	var (
 		preferredCodec   string
@@ -54,6 +56,7 @@ func snapshotHostBenchmark() playbackprofile.HostBenchmarkSnapshot {
 		FastestProbeElapsedMs: fastestElapsed.Milliseconds(),
 		Codecs:                results,
 		Profiles:              snapshotProfileBenchmarks(results),
+		Paths:                 paths,
 	}
 }
 
@@ -164,4 +167,34 @@ func codecBenchmark(codecs []playbackprofile.HostCodecBenchmark, codec string) (
 		}
 	}
 	return playbackprofile.HostCodecBenchmark{}, false
+}
+
+func snapshotPathCapabilities() []playbackprofile.HostPathCapability {
+	raw := HardwarePathCapabilities()
+	if len(raw) == 0 {
+		return nil
+	}
+	paths := make([]playbackprofile.HostPathCapability, 0, len(raw))
+	for pathID, capability := range raw {
+		if strings.TrimSpace(capability.Status) == "" {
+			continue
+		}
+		paths = append(paths, playbackprofile.HostPathCapability{
+			PathID:  pathID,
+			Backend: backendForPathID(pathID),
+			Status:  capability.Status,
+			Reason:  capability.Reason,
+		})
+	}
+	return paths
+}
+
+func backendForPathID(pathID string) string {
+	if strings.HasPrefix(strings.TrimSpace(pathID), "vaapi_") {
+		return "vaapi"
+	}
+	if strings.HasPrefix(strings.TrimSpace(pathID), "nvenc_") {
+		return "nvenc"
+	}
+	return ""
 }
