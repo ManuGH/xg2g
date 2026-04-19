@@ -874,6 +874,50 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 	assert.Equal(t, "hvc1", tagValue)
 }
 
+func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPath(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "vaapi-hevc-deinterlace-encode-only",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_hevc_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "hevc",
+			Deinterlace:    true,
+			VideoMaxRateK:  5000,
+			VideoBufSizeK:  10000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-vaapi_device")
+	assert.NotContains(t, args, "-hwaccel", "encode-only path should skip full VAAPI decode")
+	assert.NotContains(t, args, "-hwaccel_output_format", "encode-only path should skip full VAAPI decode surfaces")
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "bwdif=")
+	assert.Contains(t, vf, "format=nv12,hwupload")
+	assert.Contains(t, args, "hevc_vaapi")
+	tagValue, ok := valueAfter(args, "-tag:v")
+	require.True(t, ok)
+	assert.Equal(t, "hvc1", tagValue)
+}
+
 func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),

@@ -201,6 +201,13 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			}
 			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
 			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
+			// AMD/VAAPI full-pipeline decode+deinterlace has produced near-black
+			// frames for interlaced broadcast inputs when encoding to HEVC/AV1.
+			// Keep GPU encode, but route these cases through CPU deinterlace +
+			// hwupload instead of deinterlace_vaapi.
+			if fullVAAPI && spec.Profile.Deinterlace && resolvedCodec != "h264" {
+				fullVAAPI = false
+			}
 			if fullVAAPI {
 				preInputArgs = append(preInputArgs,
 					"-hwaccel", "vaapi",
