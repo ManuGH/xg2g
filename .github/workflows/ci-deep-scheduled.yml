@@ -141,13 +141,13 @@ jobs:
           cd backend
           govulncheck -tags=nogpu -format json ./... > govulncheck.json 2> govulncheck.stderr
           GOVULN_EXIT=$?
+          # v2.22.11 panics while building SSA for backend/internal/cache under the current toolchain.
           gosec \
             -fmt=sarif \
             -out=gosec.sarif \
             -severity=high \
             -tags=nogpu \
             -exclude-generated \
-            # v2.22.11 panics while building SSA for backend/internal/cache under the current toolchain.
             -exclude-dir=internal/cache \
             -exclude-dir=test \
             -exclude-dir=internal/test \
