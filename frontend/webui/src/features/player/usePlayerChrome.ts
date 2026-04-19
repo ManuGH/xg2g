@@ -90,6 +90,8 @@ const initialStats: PlayerStats = {
   levelIndex: -1
 };
 
+const touchLiveDvrDefaultOffsetSeconds = 18;
+
 export function usePlayerChrome({
   autoStart,
   containerRef,
@@ -126,6 +128,7 @@ export function usePlayerChrome({
   const lastNonZeroVolumeRef = useRef<number>(1);
   const idleTimerRef = useRef<number | null>(null);
   const pendingNativeFullscreenRef = useRef(false);
+  const appliedTouchDvrDefaultRef = useRef(false);
   const isTouchDevice = useMemo(() => hasTouchInput(), []);
 
   const shouldUseTouchWebKitFullscreen = useCallback((videoEl?: VideoElementRef) => {
@@ -507,6 +510,7 @@ export function usePlayerChrome({
     setSeekableStart(0);
     setSeekableEnd(0);
     setCurrentPlaybackTime(0);
+    appliedTouchDvrDefaultRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -638,6 +642,54 @@ export function usePlayerChrome({
       video.removeEventListener('playing', handleNativeFullscreenReady);
     };
   }, [flushPendingNativeFullscreen, refreshSeekableState, videoRef]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (
+      !video ||
+      appliedTouchDvrDefaultRef.current ||
+      !allowNativeFullscreen ||
+      !normalizedLiveSeekWindow ||
+      !shouldForceNativeMobileHls(video)
+    ) {
+      return;
+    }
+
+    const liveEdge = normalizedLiveSeekWindow.liveEdge ?? normalizedLiveSeekWindow.end;
+    const windowStart = normalizedLiveSeekWindow.start;
+    const windowSpan = Math.max(0, liveEdge - windowStart);
+    const current = video.currentTime;
+
+    if (!Number.isFinite(current) || current <= 0 || !Number.isFinite(liveEdge) || windowSpan < 8) {
+      return;
+    }
+
+    if (current < liveEdge - 2) {
+      appliedTouchDvrDefaultRef.current = true;
+      return;
+    }
+
+    const desiredOffset = Math.min(
+      touchLiveDvrDefaultOffsetSeconds,
+      Math.max(8, Math.floor(windowSpan / 6)),
+    );
+    const target = Math.max(windowStart, liveEdge - desiredOffset);
+
+    if (!(target < liveEdge - 1)) {
+      appliedTouchDvrDefaultRef.current = true;
+      return;
+    }
+
+    video.currentTime = target;
+    setCurrentPlaybackTime(target);
+    appliedTouchDvrDefaultRef.current = true;
+  }, [
+    allowNativeFullscreen,
+    normalizedLiveSeekWindow,
+    setCurrentPlaybackTime,
+    shouldForceNativeMobileHls,
+    videoRef,
+  ]);
 
   useEffect(() => {
     if (!showStats) return;

@@ -237,7 +237,7 @@ describe('usePlayerChrome', () => {
     });
   });
 
-  it('treats a live seek window as automatic DVR without switching away from LIVE', async () => {
+  it('defaults touch live DVR slightly behind the live edge', async () => {
     render(
       <HookHarness
         shouldForceNativeMobileHls={() => true}
@@ -246,15 +246,24 @@ describe('usePlayerChrome', () => {
     );
 
     const video = screen.getByTestId('player-video') as HTMLVideoElement;
-    video.currentTime = 119;
+    let currentTime = 119;
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
+    });
     fireEvent(video, new Event('loadedmetadata'));
 
     await waitFor(() => {
       expect(screen.getByTestId('has-seek-window')).toHaveTextContent('true');
       expect(screen.getByTestId('has-live-dvr-window')).toHaveTextContent('true');
       expect(screen.getByTestId('is-live-mode')).toHaveTextContent('true');
-      expect(screen.getByTestId('is-at-live-edge')).toHaveTextContent('true');
+      expect(screen.getByTestId('is-at-live-edge')).toHaveTextContent('false');
       expect(screen.getByTestId('show-dvr-button')).toHaveTextContent('true');
     });
+
+    expect(currentTime).toBeLessThan(119);
   });
 });
