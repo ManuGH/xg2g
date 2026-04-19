@@ -38,6 +38,10 @@ const loadV3Player = () => {
   return v3PlayerModulePromise;
 };
 
+const buildProgressStyle = (progressPercent: number): CSSProperties => (
+  { '--xg2g-progress-width': `${progressPercent}%` } as CSSProperties
+);
+
 const V3Player = lazy(loadV3Player);
 
 // Simple Icons
@@ -777,7 +781,7 @@ export default function RecordingsList() {
             </div>
             {progressPercent !== null && (
               <div className={styles.mediaProgressTrack} aria-hidden="true">
-                <div className={styles.mediaProgressFill} style={{ width: `${progressPercent}%` }}></div>
+                <div className={styles.mediaProgressFill} style={buildProgressStyle(progressPercent)}></div>
               </div>
             )}
             {selectionMode && canManageDvr && (
@@ -864,10 +868,7 @@ export default function RecordingsList() {
                 </div>
                 {playingProgressPercent !== null && (
                   <div className={styles.preplayStageProgress}>
-                    <div
-                      className={styles.preplayStageProgressFill}
-                      style={{ width: `${playingProgressPercent}%` }}
-                    ></div>
+                    <div className={styles.preplayStageProgressFill} style={buildProgressStyle(playingProgressPercent)}></div>
                   </div>
                 )}
                 <div className={styles.preplayStageDock}>
@@ -1197,10 +1198,7 @@ export default function RecordingsList() {
               </div>
               {preplayProgressPercent !== null && (
                 <div className={styles.preplayStageProgress}>
-                  <div
-                    className={styles.preplayStageProgressFill}
-                    style={{ width: `${preplayProgressPercent}%` }}
-                  ></div>
+                  <div className={styles.preplayStageProgressFill} style={buildProgressStyle(preplayProgressPercent)}></div>
                 </div>
               )}
               <div className={styles.preplayStageDock}>

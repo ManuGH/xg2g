@@ -116,6 +116,28 @@
   --shadow-status-info: 0 0 6px rgba(96, 165, 250, 0.4);
   --shadow-status-error: 0 0 10px rgba(248, 113, 113, 0.5);
   --shadow-status-error-strong: 0 0 20px rgba(248, 113, 113, 0.8);
+  --shadow-none: none;
+  --shadow-recordings-media-preview: 0 14px 28px color-mix(in srgb, var(--bg-video) 18%, transparent);
+  --shadow-recordings-selection-indicator: 0 10px 24px color-mix(in srgb, black 24%, transparent);
+  --shadow-recordings-preplay-stage:
+    0 16px 36px color-mix(in srgb, var(--bg-video) 30%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--border-base) 88%, transparent);
+  --gradient-recordings-media-preview:
+    radial-gradient(circle at 16% 18%, color-mix(in srgb, var(--recording-accent) 28%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 38%),
+    linear-gradient(135deg, color-mix(in srgb, var(--recording-accent) 10%, var(--bg-video) 90%), color-mix(in srgb, var(--bg-video) 92%, black 8%));
+  --gradient-recordings-media-preview-overlay:
+    linear-gradient(180deg, color-mix(in srgb, black 6%, transparent), transparent 28%),
+    linear-gradient(180deg, transparent 45%, color-mix(in srgb, black 46%, transparent) 100%);
+  --gradient-recordings-progress-fill: linear-gradient(90deg, var(--accent-action), var(--accent-live));
+  --gradient-recordings-play-overlay: radial-gradient(circle at center, color-mix(in srgb, black 22%, transparent), transparent 48%);
+  --gradient-recordings-preplay-stage:
+    radial-gradient(circle at 24% 16%, color-mix(in srgb, var(--accent-action) 14%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 36%),
+    var(--bg-video);
+  --gradient-recordings-preplay-stage-overlay:
+    linear-gradient(180deg, color-mix(in srgb, black 8%, transparent), transparent 26%),
+    linear-gradient(180deg, transparent 44%, color-mix(in srgb, black 58%, transparent) 100%);
 
   /* Spacing */
   --radius-sm: 6px;
