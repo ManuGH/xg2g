@@ -875,7 +875,7 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 	assert.Equal(t, "hvc1", tagValue)
 }
 
-func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPath(t *testing.T) {
+func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T) {
 	hardware.SetPathCapabilities(nil)
 	t.Cleanup(func() {
 		hardware.SetPathCapabilities(nil)
@@ -889,6 +889,59 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPath(t *testing.T) {
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-hevc-deinterlace-encode-only",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_hevc_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "hevc",
+			Deinterlace:    true,
+			VideoMaxRateK:  5000,
+			VideoBufSizeK:  10000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-vaapi_device")
+	assert.Contains(t, args, "-hwaccel", "safe h264 fallback may still use the verified full VAAPI path")
+	assert.Contains(t, args, "-hwaccel_output_format", "safe h264 fallback may still use the verified full VAAPI path")
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "deinterlace_vaapi")
+	assert.Contains(t, args, "h264_vaapi")
+	assert.NotContains(t, args, "hevc_vaapi")
+	assert.NotContains(t, args, "-tag:v", "h264 fallback must not emit hvc1 tags")
+}
+
+func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPathWhenVerified(t *testing.T) {
+	hardware.SetPathCapabilities(map[string]hardware.HardwarePathCapability{
+		hardware.PathVAAPIEncodeOnlyInterlacedHEVC: {
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   "runtime yavg 122.4",
+		},
+	})
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "vaapi-hevc-deinterlace-encode-only-verified",
 		Mode:      ports.ModeLive,
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,

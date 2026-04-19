@@ -194,6 +194,15 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 
 		switch hwBackend {
 		case profiles.GPUBackendVAAPI:
+			if spec.Profile.Deinterlace && !vaapiInterlacedCodecIsSafe(resolvedCodec) {
+				if !a.anyVerifiedVAAPIInterlacedPathForCodec(resolvedCodec) {
+					a.Logger.Warn().
+						Str("requested_codec", resolvedCodec).
+						Str("fallback_codec", "h264").
+						Msg("interlaced vaapi codec downgraded until path correctness is verified")
+					resolvedCodec = "h264"
+				}
+			}
 			if a.VaapiDevice == "" {
 				return codecPlan{}, fmt.Errorf("vaapi requested by profile but no vaapi device configured on adapter")
 			}
@@ -269,6 +278,29 @@ func vaapiPathCorrectnessIDFor(codec string, full bool) string {
 	default:
 		return ""
 	}
+}
+
+func vaapiInterlacedCodecIsSafe(codec string) bool {
+	switch strings.TrimSpace(codec) {
+	case "hevc", "av1":
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *LocalAdapter) anyVerifiedVAAPIInterlacedPathForCodec(codec string) bool {
+	for _, full := range []bool{true, false} {
+		pathID := vaapiPathCorrectnessIDFor(codec, full)
+		if pathID == "" {
+			continue
+		}
+		capability, ok := hardware.HardwarePathCapabilityFor(pathID)
+		if ok && capability.Status == hardware.PathStatusVerified {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputPlan, error) {
@@ -385,6 +417,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	fps = a.adjustLiveFPSForRuntimeServiceOverride(spec, input.inputURL, fps)
 	gop := fps * layout.segmentDurationSec
 
+	spec.Profile.VideoCodec = codec.resolvedCodec
 	out := outputPlan{effectiveProfile: spec.Profile}
 	out.args = append(out.args,
 		"-map", "0:v:0?",
