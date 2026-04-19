@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Behavioral Changes (v3.4.7)
+
+- iPhone and iPad native Live-DVR playback now keeps the timeline moving across lock/unlock and foreground resume instead of freezing the remaining time until the next playlist access.
+- Background media-truth scanning can now be disabled explicitly for staging or playback-focused deployments so live debugging no longer competes with a cold full-channel scan.
+
 ### Release Notes
 
 - Playback decisions now follow an intent-based profile strategy with a quality ladder for audio and video.
@@ -780,6 +785,5 @@ Operational changes:
 
 
 ### Behavioral Changes (v3.4.3)
-
 
 

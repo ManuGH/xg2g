@@ -1,10 +1,10 @@
 {
-  "version": "v3.4.6",
-  "git_sha": "71cd99c7d1cd1e5f5a163cc9a1ffccee9a93068c",
+  "version": "v3.4.7",
+  "git_sha": "c15491cbb5fbd57f45bbd4794db216a30d85645b",
   "image": "ghcr.io/manugh/xg2g",
-  "tag": "v3.4.6",
+  "tag": "v3.4.7",
   "digest": null,
-  "build_time_utc": "2026-04-09T17:06:01Z",
+  "build_time_utc": "2026-04-19T21:44:08Z",
   "provenance_ref": null,
   "sbom_ref": null
 }
