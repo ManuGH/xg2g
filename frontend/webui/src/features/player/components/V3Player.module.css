@@ -1909,27 +1909,37 @@
   }
 
   .utilityControls {
-    width: 100%;
-    margin-left: 0;
-    justify-content: flex-start;
+    width: auto;
+    max-width: calc(100% - 16px);
+    margin-left: auto;
+    justify-content: flex-end;
+    align-self: flex-end;
     gap: 8px;
   }
 
   .volumeControl {
-    flex: 1 1 100%;
+    flex: 0 1 auto;
     min-width: 0;
+    max-width: min(100%, 220px);
     padding: 8px 12px;
   }
 
   .audioToggleButton {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
     justify-content: center;
   }
 
   .volumeSlider {
-    flex-basis: 100%;
-    width: 100%;
+    flex: 1 1 96px;
+    width: auto;
     min-width: 72px;
+    max-width: 120px;
+  }
+
+  .deviceVolumeHint {
+    max-width: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .spinnerOverlayRecording {
@@ -1951,15 +1961,19 @@
   }
 
   .vodControls,
-  .seekControls,
-  .utilityControls,
-  .volumeControl {
+  .seekControls {
     width: 100%;
   }
 
   .utilityControls {
     gap: 10px;
+    max-width: calc(100% - 12px);
     align-content: flex-start;
+  }
+
+  .volumeControl {
+    width: auto;
+    max-width: min(100%, 220px);
   }
 
   .deviceVolumeHint {
