@@ -132,6 +132,8 @@ describe('V3Player Mobile Controls', () => {
 
     const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
     const video = container.querySelector('video') as HTMLVideoElement;
+    let seekableStart = 90;
+    let seekableEnd = 120;
     Object.defineProperty(video, 'readyState', {
       configurable: true,
       get: () => 1
@@ -144,6 +146,14 @@ describe('V3Player Mobile Controls', () => {
       configurable: true,
       get: () => 1080
     });
+    Object.defineProperty(video, 'seekable', {
+      configurable: true,
+      get: () => ({
+        length: seekableEnd > seekableStart ? 1 : 0,
+        start: () => seekableStart,
+        end: () => seekableEnd,
+      })
+    });
     fireEvent.click(fullscreenButton);
 
     expect(requestFullscreen).not.toHaveBeenCalled();
@@ -154,6 +164,8 @@ describe('V3Player Mobile Controls', () => {
 
   it('defers native fullscreen on touch devices until metadata is available', async () => {
     let readyState = 0;
+    let seekableStart = 0;
+    let seekableEnd = 0;
     const props = {
       src: 'http://example.com/playlist.m3u8',
       autoStart: true
@@ -177,6 +189,14 @@ describe('V3Player Mobile Controls', () => {
       configurable: true,
       get: () => (readyState >= 1 ? 1080 : 0)
     });
+    Object.defineProperty(video, 'seekable', {
+      configurable: true,
+      get: () => ({
+        length: seekableEnd > seekableStart ? 1 : 0,
+        start: () => seekableStart,
+        end: () => seekableEnd,
+      })
+    });
 
     const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
     fireEvent.click(fullscreenButton);
@@ -185,6 +205,12 @@ describe('V3Player Mobile Controls', () => {
 
     readyState = 1;
     fireEvent.loadedMetadata(video);
+
+    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+
+    seekableStart = 90;
+    seekableEnd = 120;
+    fireEvent.progress(video);
 
     expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
     expect(video.controls).toBe(true);

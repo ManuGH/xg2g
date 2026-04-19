@@ -187,7 +187,7 @@ describe('usePlayerChrome', () => {
   });
 
   it('mutes autoplay on the touch WebKit path too', () => {
-    render(<HookHarness shouldForceNativeMobileHls={() => true} />);
+    render(<HookHarness shouldForceNativeMobileHls={() => true} playbackMode="VOD" durationSeconds={1800} />);
 
     const video = screen.getByTestId('player-video') as HTMLVideoElement;
     video.muted = false;
@@ -205,7 +205,7 @@ describe('usePlayerChrome', () => {
       value: webkitEnterFullscreen
     });
 
-    render(<HookHarness shouldForceNativeMobileHls={() => true} />);
+    render(<HookHarness shouldForceNativeMobileHls={() => true} playbackMode="VOD" durationSeconds={1800} />);
 
     const video = screen.getByTestId('player-video') as HTMLVideoElement;
     video.muted = false;

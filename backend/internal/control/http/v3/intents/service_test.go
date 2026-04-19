@@ -303,6 +303,9 @@ func TestService_ProcessIntent_StartAcceptedPublishesEvent(t *testing.T) {
 	if deps.store.putSession.PlaybackTrace.RequestProfile != "compatible" {
 		t.Fatalf("expected compatible public request profile, got %q", deps.store.putSession.PlaybackTrace.RequestProfile)
 	}
+	if deps.store.putSession.Profile.DVRWindowSec != int(deps.dvrWindow.Seconds()) {
+		t.Fatalf("expected DVR window %d seconds, got %d", int(deps.dvrWindow.Seconds()), deps.store.putSession.Profile.DVRWindowSec)
+	}
 }
 
 func TestService_ProcessIntent_StartPersistsCanonicalClientSnapshot(t *testing.T) {

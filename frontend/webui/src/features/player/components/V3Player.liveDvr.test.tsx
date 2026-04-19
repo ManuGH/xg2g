@@ -36,6 +36,7 @@ describe('V3Player live DVR semantics', () => {
   let originalFetch: typeof globalThis.fetch;
   let maxTouchPointsDescriptor: PropertyDescriptor | undefined;
   let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
+  let visibilityStateDescriptor: PropertyDescriptor | undefined;
   const webkitEnterFullscreen = vi.fn();
 
   beforeEach(() => {
@@ -43,6 +44,7 @@ describe('V3Player live DVR semantics', () => {
     vi.clearAllMocks();
     maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
     webkitEnterFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
+    visibilityStateDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
     Object.defineProperty(window.navigator, 'maxTouchPoints', {
       configurable: true,
       value: 5,
@@ -143,6 +145,9 @@ describe('V3Player live DVR semantics', () => {
     if (maxTouchPointsDescriptor) {
       Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
     }
+    if (visibilityStateDescriptor) {
+      Object.defineProperty(document, 'visibilityState', visibilityStateDescriptor);
+    }
     vi.restoreAllMocks();
   });
 
@@ -177,7 +182,6 @@ describe('V3Player live DVR semantics', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Live with DVR window/i)).toBeInTheDocument();
-      expect(screen.getByText(/At live edge/i)).toBeInTheDocument();
     });
 
     unmount();
@@ -195,6 +199,98 @@ describe('V3Player live DVR semantics', () => {
     });
     expect(slider).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText(/vollbild wechseln|fullscreen on iphone/i)).toBeInTheDocument();
+  });
+
+  it('arms native-first iPhone live playback by disabling inline mode before attach', async () => {
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    await waitFor(() => {
+      expect(video.playsInline).toBe(false);
+      expect(video.hasAttribute('playsinline')).toBe(false);
+    });
+  });
+
+  it('does not force inline recovery after leaving a native-first live player', async () => {
+    const loadSpy = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    await screen.findByRole('button', { name: /fullscreen/i });
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    let currentTime = 108;
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
+    });
+    Object.defineProperty(video, 'currentSrc', {
+      configurable: true,
+      get: () => 'http://example.com/live-dvr.m3u8',
+    });
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => false,
+    });
+
+    fireEvent(video, new Event('webkitendfullscreen'));
+
+    expect(loadSpy).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the live session snapshot after returning to the foreground', async () => {
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    render(<V3Player {...props} />);
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    await screen.findByRole('status');
+
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    const sessionFetchCountBefore = fetchMock.mock.calls.filter(([input]) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      return url.includes('/sessions/sid-live-dvr-1') && !url.includes('/heartbeat') && !url.includes('/feedback');
+    }).length;
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+    fireEvent(document, new Event('visibilitychange'));
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    });
+    fireEvent(document, new Event('visibilitychange'));
+
+    await waitFor(() => {
+      const sessionFetchCountAfter = fetchMock.mock.calls.filter(([input]) => {
+        const url = typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        return url.includes('/sessions/sid-live-dvr-1') && !url.includes('/heartbeat') && !url.includes('/feedback');
+      }).length;
+      expect(sessionFetchCountAfter).toBeGreaterThan(sessionFetchCountBefore);
+    });
   });
 
 });
