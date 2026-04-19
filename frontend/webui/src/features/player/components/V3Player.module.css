@@ -296,6 +296,13 @@
   gap: 12px;
 }
 
+.inlineDvrHint {
+  margin-top: 6px;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .mobileInlinePrimaryActions,
 .mobileInlineSecondaryActions {
   display: grid;
@@ -899,6 +906,16 @@
 .vodScrubTrack:focus-visible {
   outline: 2px solid var(--accent-action);
   outline-offset: 3px;
+}
+
+.vodScrubTrackDisabled {
+  cursor: default;
+  touch-action: auto;
+  opacity: 0.72;
+}
+
+.vodScrubTrackDisabled:focus-visible {
+  outline: none;
 }
 
 .vodScrubFill {

@@ -2738,6 +2738,7 @@ function V3Player(props: V3PlayerProps) {
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
   const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
   const useMinimalTouchInlineChrome = Boolean(isCompactTouchLayout && useOverlayShell && !useTheaterControlsLayout && !isFullscreen);
+  const disableInlineLiveDvrScrub = useMinimalTouchInlineChrome && hasLiveDvrWindow;
   const inferredPlaybackWindowKind = resolvePlaybackWindowKind(playbackMode, hasLiveDvrWindow);
   const playbackWindowKind = sessionWindowKind !== 'unknown' ? sessionWindowKind : inferredPlaybackWindowKind;
   const mobileInlinePlaybackLabel = playbackWindowKind === 'live-dvr'
@@ -3129,20 +3130,31 @@ function V3Player(props: V3PlayerProps) {
                     <span>{endTimeDisplay}</span>
                   </div>
                   <div
-                    className={styles.vodScrubTrack}
+                    className={[
+                      styles.vodScrubTrack,
+                      disableInlineLiveDvrScrub ? styles.vodScrubTrackDisabled : null,
+                    ].filter(Boolean).join(' ')}
                     role="slider"
-                    tabIndex={0}
-                    aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                    tabIndex={disableInlineLiveDvrScrub ? -1 : 0}
+                    aria-label={disableInlineLiveDvrScrub
+                      ? t('player.inlineDvrFullscreenHint', { defaultValue: 'Open fullscreen for DVR scrubbing' })
+                      : t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                    aria-disabled={disableInlineLiveDvrScrub}
                     aria-valuemin={0}
                     aria-valuemax={Math.round(windowDuration)}
                     aria-valuenow={Math.round(relativePosition)}
-                    onPointerDown={handleVodScrubPointerDown}
-                    onPointerMove={handleVodScrubPointerMove}
-                    onKeyDown={handleVodScrubKeyDown}
+                    onPointerDown={disableInlineLiveDvrScrub ? undefined : handleVodScrubPointerDown}
+                    onPointerMove={disableInlineLiveDvrScrub ? undefined : handleVodScrubPointerMove}
+                    onKeyDown={disableInlineLiveDvrScrub ? undefined : handleVodScrubKeyDown}
                   >
                     <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
                     <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
                   </div>
+                  {disableInlineLiveDvrScrub && (
+                    <div className={styles.inlineDvrHint}>
+                      <span>{t('player.inlineDvrFullscreenHint', { defaultValue: 'Open fullscreen for DVR scrubbing' })}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className={styles.mobileInlinePrimaryActions}>

@@ -181,6 +181,7 @@
     "resumeFrom": "Weiter bei {{time}}",
     "startOver": "Von vorn beginnen",
     "dvrMode": "DVR-Modus",
+    "inlineDvrFullscreenHint": "Für DVR-Scrubbing am iPhone ins Vollbild wechseln.",
     "mobilePlaybackWindowBadge": {
       "live": "Live",
       "dvr": "DVR",

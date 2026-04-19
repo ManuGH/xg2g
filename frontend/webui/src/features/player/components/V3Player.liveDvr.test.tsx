@@ -170,4 +170,18 @@ describe('V3Player live DVR semantics', () => {
 
     unmount();
   });
+
+  it('shows fullscreen guidance instead of free inline DVR scrubbing on touch devices', async () => {
+    const props = { autoStart: false, onClose: vi.fn() } as unknown as V3PlayerProps;
+    render(<V3Player {...props} />);
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    const slider = await screen.findByRole('slider', {
+      name: /fullscreen on iphone for dvr scrubbing|vollbild wechseln/i,
+    });
+    expect(slider).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText(/vollbild wechseln|fullscreen on iphone/i)).toBeInTheDocument();
+  });
 });
