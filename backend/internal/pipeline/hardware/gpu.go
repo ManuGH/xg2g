@@ -23,8 +23,10 @@ const vaapiRuntimeFailureThreshold = 3
 const nvencRuntimeFailureThreshold = 3
 
 const (
-	PathVAAPIFullInterlacedHEVC = "vaapi_full_interlaced_hevc"
-	PathVAAPIFullInterlacedAV1  = "vaapi_full_interlaced_av1"
+	PathVAAPIFullInterlacedHEVC       = "vaapi_full_interlaced_hevc"
+	PathVAAPIFullInterlacedAV1        = "vaapi_full_interlaced_av1"
+	PathVAAPIEncodeOnlyInterlacedHEVC = "vaapi_encode_only_interlaced_hevc"
+	PathVAAPIEncodeOnlyInterlacedAV1  = "vaapi_encode_only_interlaced_av1"
 
 	PathStatusVerified        = "verified"
 	PathStatusBrokenOutput    = "broken_output"

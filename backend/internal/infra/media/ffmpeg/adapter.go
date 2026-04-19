@@ -41,6 +41,9 @@ const (
 	defaultAV1VAAPIAutoRatioMax  = 2.50
 	defaultHEVCNVENCAutoRatioMax = 1.75
 	defaultAV1NVENCAutoRatioMax  = 2.50
+
+	defaultRuntimePathCorrectnessMinYAvg = 8.0
+	defaultRuntimePathCorrectnessChecks  = 2
 )
 
 // vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
@@ -123,6 +126,7 @@ type LocalAdapter struct {
 	profileProbeFn            func(context.Context, profileProbeRequest) (time.Duration, error)
 	pathCorrectnessChecked    bool
 	pathProbeFn               func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
+	signalStatsYAvgFn         func(context.Context, string) (float64, error)
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
@@ -848,6 +852,9 @@ func profileBenchmarkTimeout(profileID string) time.Duration {
 }
 
 func (a *LocalAdapter) measureSignalStatsYAvg(ctx context.Context, mediaPath string) (float64, error) {
+	if a.signalStatsYAvgFn != nil {
+		return a.signalStatsYAvgFn(ctx, mediaPath)
+	}
 	args := []string{
 		"-v", "warning",
 		"-i", mediaPath,
@@ -876,6 +883,83 @@ func (a *LocalAdapter) measureSignalStatsYAvg(ctx context.Context, mediaPath str
 		return yavg, nil
 	}
 	return 0, errors.New("lavfi.signalstats.YAVG not found")
+}
+
+func (a *LocalAdapter) observeRuntimePathCorrectness(ctx context.Context, handle ports.RunHandle, cmd *exec.Cmd, sessionID, pathID string) {
+	if strings.TrimSpace(pathID) == "" || !ports.IsSafeSessionID(sessionID) {
+		return
+	}
+
+	playlistPath := filepath.Join(ports.SessionHLSDir(a.HLSRoot, sessionID), "index.m3u8")
+	deadline := time.Now().Add(20 * time.Second)
+	minYAvg := envFloatBounded("XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG", defaultRuntimePathCorrectnessMinYAvg, 1.0, 64.0)
+	requiredLowObservations := envIntBounded("XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", defaultRuntimePathCorrectnessChecks, 1, 4)
+	lowObservations := 0
+
+	for time.Now().Before(deadline) {
+		if ctx.Err() != nil {
+			return
+		}
+
+		probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		yavg, err := a.measureSignalStatsYAvg(probeCtx, playlistPath)
+		cancel()
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		a.Logger.Info().
+			Str("session_id", sessionID).
+			Str("path_id", pathID).
+			Float64("yavg", yavg).
+			Msg("runtime path correctness observation")
+
+		if yavg < minYAvg {
+			lowObservations++
+			if lowObservations < requiredLowObservations {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			reason := fmt.Sprintf("runtime yavg %.2f below threshold %.2f", yavg, minYAvg)
+			a.updateRuntimePathCapability(pathID, hardware.HardwarePathCapability{
+				Status: hardware.PathStatusBrokenOutput,
+				Reason: reason,
+			})
+			a.recordProcessDetail(handle, "runtime path correctness failed - black output detected")
+			a.Logger.Error().
+				Str("session_id", sessionID).
+				Str("path_id", pathID).
+				Float64("yavg", yavg).
+				Float64("threshold", minYAvg).
+				Msg("runtime path correctness marked path as broken_output")
+			a.terminateProcessGroup(cmd, sessionID)
+			return
+		}
+
+		reason := fmt.Sprintf("runtime yavg %.2f", yavg)
+		a.updateRuntimePathCapability(pathID, hardware.HardwarePathCapability{
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   reason,
+		})
+		a.Logger.Info().
+			Str("session_id", sessionID).
+			Str("path_id", pathID).
+			Float64("yavg", yavg).
+			Msg("runtime path correctness verified path")
+		return
+	}
+}
+
+func (a *LocalAdapter) updateRuntimePathCapability(pathID string, capability hardware.HardwarePathCapability) {
+	current := hardware.HardwarePathCapabilities()
+	if current == nil {
+		current = make(map[string]hardware.HardwarePathCapability)
+	}
+	current[pathID] = capability
+	hardware.SetPathCapabilities(current)
 }
 
 func runProfileBenchmarkCommand(ctx context.Context, binPath string, args []string) (time.Duration, error) {
@@ -1226,7 +1310,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(sourceKey, spec.SessionID)
 	}
@@ -1246,7 +1330,7 @@ func (a *LocalAdapter) FinalizedProfile(handle ports.RunHandle) (ports.ProfileSp
 	return profile, true
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, startTimeout time.Duration) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration) {
 	defer func() {
 		a.mu.Lock()
 		delete(a.activeProcs, handle)
@@ -1261,6 +1345,8 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 	}
 	wdCtx, wdCancel := context.WithCancel(parentCtx)
 	defer wdCancel()
+	observerCtx, observerCancel := context.WithCancel(parentCtx)
+	defer observerCancel()
 
 	wdErrCh := make(chan error, 1)
 	go func() {
@@ -1277,6 +1363,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		scanner.Split(scanFFmpegLogTokens)
 		firstFrameLogged := false
 		firstSegmentLogged := false
+		outputObserverStarted := false
 
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -1301,6 +1388,10 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 						Str("startup_phase", "first_segment_write").
 						Str("segment_path", segmentPath).
 						Msg("ffmpeg first segment write observed")
+					if pathID != "" && !outputObserverStarted {
+						outputObserverStarted = true
+						go a.observeRuntimePathCorrectness(observerCtx, handle, cmd, sessionID, pathID)
+					}
 				}
 			}
 			sanitizedLine := sanitizeFFmpegLogLine(line)
@@ -1670,6 +1761,8 @@ func (a *LocalAdapter) processStatusMessage(handle ports.RunHandle, fallback str
 
 func processDetailPriority(detail string) int {
 	switch detail {
+	case "runtime path correctness failed - black output detected":
+		return 55
 	case "transcode stalled - no progress detected":
 		return 50
 	case "copy output missing codec parameters":

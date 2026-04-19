@@ -34,6 +34,7 @@ type codecPlan struct {
 	hwBackend     profiles.GPUBackend
 	fullVAAPI     bool
 	preInputArgs  []string
+	pathID        string
 }
 
 type outputPlan struct {
@@ -44,6 +45,7 @@ type outputPlan struct {
 type finalizedPlan struct {
 	args             []string
 	effectiveProfile ports.ProfileSpec
+	pathID           string
 }
 
 type liveSegmentLayout struct {
@@ -69,6 +71,7 @@ func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamS
 	result := finalizedPlan{
 		args:             args,
 		effectiveProfile: spec.Profile,
+		pathID:           codecPhase.pathID,
 	}
 
 	if spec.Mode == ports.ModeLive {
@@ -177,6 +180,7 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 	}
 	hwBackend := profiles.GPUBackendNone
 	fullVAAPI := false
+	pathID := ""
 
 	preInputArgs := make([]string, 0, 6)
 	if useHW {
@@ -202,21 +206,23 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			}
 			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
 			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
-			if fullVAAPI {
-				var pathID string
-				if spec.Profile.Deinterlace {
-					pathID = vaapiPathCorrectnessIDFor(resolvedCodec)
-				}
-				if pathID != "" {
-					capability, ok := hardware.HardwarePathCapabilityFor(pathID)
+			if spec.Profile.Deinterlace {
+				fullPathID := vaapiPathCorrectnessIDFor(resolvedCodec, true)
+				if fullVAAPI && fullPathID != "" {
+					capability, ok := hardware.HardwarePathCapabilityFor(fullPathID)
 					if !ok || capability.Status != hardware.PathStatusVerified {
 						fullVAAPI = false
 						a.Logger.Info().
-							Str("path_id", pathID).
+							Str("path_id", fullPathID).
 							Str("status", capability.Status).
 							Str("reason", capability.Reason).
 							Msg("vaapi full pipeline disabled by path correctness matrix")
 					}
+				}
+				if fullVAAPI {
+					pathID = fullPathID
+				} else {
+					pathID = vaapiPathCorrectnessIDFor(resolvedCodec, false)
 				}
 			}
 			if fullVAAPI {
@@ -244,15 +250,22 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		hwBackend:     hwBackend,
 		fullVAAPI:     fullVAAPI,
 		preInputArgs:  preInputArgs,
+		pathID:        pathID,
 	}, nil
 }
 
-func vaapiPathCorrectnessIDFor(codec string) string {
+func vaapiPathCorrectnessIDFor(codec string, full bool) string {
 	switch strings.TrimSpace(codec) {
 	case "hevc":
-		return hardware.PathVAAPIFullInterlacedHEVC
+		if full {
+			return hardware.PathVAAPIFullInterlacedHEVC
+		}
+		return hardware.PathVAAPIEncodeOnlyInterlacedHEVC
 	case "av1":
-		return hardware.PathVAAPIFullInterlacedAV1
+		if full {
+			return hardware.PathVAAPIFullInterlacedAV1
+		}
+		return hardware.PathVAAPIEncodeOnlyInterlacedAV1
 	default:
 		return ""
 	}

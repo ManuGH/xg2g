@@ -46,7 +46,12 @@ func snapshotHostBenchmark() playbackprofile.HostBenchmarkSnapshot {
 	}
 
 	if !hasMeasured {
-		return playbackprofile.HostBenchmarkSnapshot{}
+		if len(paths) == 0 {
+			return playbackprofile.HostBenchmarkSnapshot{}
+		}
+		return playbackprofile.HostBenchmarkSnapshot{
+			Paths: paths,
+		}
 	}
 
 	return playbackprofile.HostBenchmarkSnapshot{
