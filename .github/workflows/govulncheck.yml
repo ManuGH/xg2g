@@ -49,7 +49,7 @@ jobs:
           # govulncheck exits with code 3 if vulnerabilities are found.
           # We want the SARIF output even if it exits non-zero.
           # We use a temp file to avoid partial SARIF on disk if it fails early.
-          govulncheck -tags=nogpu -format sarif ./... > govulncheck.tmp.sarif || {
+          bash ./scripts/ci/run-govulncheck.sh sarif govulncheck.tmp.sarif || {
             RET=$?
             if [ $RET -ne 3 ]; then
               echo "❌ govulncheck failed with unexpected exit code $RET"
@@ -98,7 +98,7 @@ jobs:
           category: govulncheck
 
       - name: Run govulncheck (JSON)
-        run: govulncheck -tags=nogpu -format json ./... > govulncheck.json || true
+        run: bash ./scripts/ci/run-govulncheck.sh json govulncheck.json || true
 
       - name: Evaluate High/Critical vulnerabilities
         id: severity

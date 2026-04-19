@@ -165,7 +165,7 @@ jobs:
           set +e
           set -u -o pipefail
           cd backend
-          govulncheck -tags=nogpu -format json ./... > govulncheck.json 2> govulncheck.stderr
+          bash ./scripts/ci/run-govulncheck.sh json govulncheck.json 2> govulncheck.stderr
           GOVULN_EXIT=$?
           bash ./scripts/ci/run-gosec.sh gosec.sarif 2> gosec.stderr
           GOSEC_EXIT=$?
@@ -328,3 +328,67 @@ jobs:
               title,
               body,
             });
+
+  deep-close-stale-alerts:
+    name: deep-close-stale-alerts
+    needs: [nightly-race, nightly-integration, nightly-spec-doc-lint, weekly-security-deep, weekly-governance-deep, deep-summary]
+    if: >
+      always() &&
+      github.event_name == 'schedule' &&
+      needs.nightly-race.result != 'failure' &&
+      needs.nightly-race.result != 'cancelled' &&
+      needs.nightly-integration.result != 'failure' &&
+      needs.nightly-integration.result != 'cancelled' &&
+      needs.nightly-spec-doc-lint.result != 'failure' &&
+      needs.nightly-spec-doc-lint.result != 'cancelled' &&
+      needs.weekly-security-deep.result != 'failure' &&
+      needs.weekly-security-deep.result != 'cancelled' &&
+      needs.weekly-governance-deep.result != 'failure' &&
+      needs.weekly-governance-deep.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Close stale deep-suite alert issues
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const prefix = "[CI Deep] Scheduled run failed:";
+            const schedule = context.payload.schedule || "";
+            const { data } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} is:issue is:open in:title "${prefix}"`,
+              per_page: 100,
+            });
+
+            for (const issue of data.items) {
+              const body = issue.body || "";
+              const matchesNightly =
+                body.includes("| weekly-security-deep | skipped |") &&
+                body.includes("| weekly-governance-deep | skipped |");
+              const matchesWeekly =
+                body.includes("| nightly-race | skipped |") &&
+                body.includes("| nightly-integration | skipped |");
+
+              if (schedule === "0 2 * * *" && !matchesNightly) {
+                continue;
+              }
+              if (schedule === "0 3 * * 0" && !matchesWeekly) {
+                continue;
+              }
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: `Closing after a successful scheduled deep-suite run: ${runUrl}`,
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                state: "closed",
+                state_reason: "completed",
+              });
+            }
