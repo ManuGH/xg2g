@@ -79,6 +79,7 @@ var runtimeEnvKeys = []string{
 	"XG2G_FPS_CACHE_TTL",
 	"XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT",
 	"XG2G_SKIP_FPS_PROBE_WARMUP",
+	"XG2G_BACKGROUND_SCAN_ENABLED",
 }
 
 // KnownRuntimeEnvKeys returns all env keys read by ReadEnv.
