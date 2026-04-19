@@ -235,8 +235,8 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 	switch requestedPlaybackMode {
 	case "", "native_hls":
 		// Explicit playback modes usually bypass UA sniffing, but native_hls
-		// still needs the real Safari UA to distinguish browser Safari
-		// (mpegts copy) from non-Safari/native clients.
+		// still needs the real Safari UA to distinguish browser-native Safari
+		// playback (mpegts copy) from app-native or other non-Safari clients.
 		profileUserAgent = intent.UserAgent
 	case "hlsjs":
 		// Desktop Safari can prefer hls.js while still requiring Safari-specific

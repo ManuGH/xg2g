@@ -334,9 +334,9 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			spec.TranscodeVideo = true
 			spec.Deinterlace = true
 			// Browser Safari has also shown black-video failures on live fMP4
-			// transcode output. Keep classic MPEG-TS HLS there as the safer native
-			// path; native clients that resolve through the safari family can stay
-			// on fMP4.
+			// transcode output. Keep classic MPEG-TS HLS there as the safer
+			// browser-native HLS path; app-native or non-Safari clients that
+			// resolve through the safari family can stay on fMP4.
 			if isSafari {
 				spec.Container = "mpegts"
 			} else {

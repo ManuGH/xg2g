@@ -67,7 +67,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     ]);
   });
 
-  it('uses hls.js plus fmp4 on non-native clients and strips recording ac3', async () => {
+  it('uses hls.js plus fmp4 on MSE/hls.js clients and strips recording ac3', async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
 
     const video = document.createElement('video');
