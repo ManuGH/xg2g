@@ -267,7 +267,7 @@ var registry = map[string]Spec{
 	CodeLibraryRootNotFound:      newRegisteredSpec(CodeLibraryRootNotFound, "Library root not found"),
 	CodeSessionNotFound:          specWithSeverity(newRegisteredSpec(CodeSessionNotFound, "session not found"), SeverityInfo),
 	CodeNotFound:                 specWithSeverity(newRegisteredSpec(CodeNotFound, "resource not found"), SeverityInfo),
-	CodeScanUnavailable:          newRegisteredSpec(CodeScanUnavailable, "Smart Profile Scanner is not initialized"),
+	CodeScanUnavailable:          newRegisteredSpec(CodeScanUnavailable, "Media Truth Scan is not initialized"),
 	CodeSessionGone:              specWithSeverity(specWithOperatorHint(specWithDescription(newCustomProblemSpec("urn:xg2g:error:session:gone", "Session Gone"), "The requested session is already in a terminal state and can no longer serve live state transitions."), "Create a new playback session instead of retrying operations against the terminated session ID."), SeverityInfo),
 	CodeUnavailable:              specWithRetryable(specWithSeverity(newRegisteredSpec(CodeUnavailable, "Service unavailable"), SeverityWarning), true),
 	CodeInternalError:            newRegisteredSpec(CodeInternalError, "Internal Error"),

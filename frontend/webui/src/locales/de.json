@@ -592,8 +592,8 @@
         "hint": "Passt die Qualität automatisch an, damit die Wiedergabe bei langsamen Verbindungen stabil bleibt."
       },
       "scan": {
-        "title": "Smart Profil Scanner",
-        "description": "Scannt alle Kanäle im Hintergrund auf Interlacing. Ermöglicht GPU-Beschleunigung für spezifische Kanäle.",
+        "title": "Media Truth Scan",
+        "description": "Scannt alle Kanäle im Hintergrund auf Container-, Codec-, Auflösungs- und Interlacing-Truth. Diese Medienwahrheit steuert spätere Profil- und GPU-Entscheidungen.",
         "start": "Scan Starten",
         "status": {
           "label": "Status",

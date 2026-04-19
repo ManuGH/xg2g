@@ -635,9 +635,17 @@ func (c *Container) runInitialRefresh(ctx context.Context) {
 	c.Server.UpdateStatus(*st)
 
 	if c.scanManager != nil {
-		c.Logger.Info().Msg("triggering v3 data ingest")
-		c.scanManager.RunBackground()
+		if backgroundScanEnabled() {
+			c.Logger.Info().Msg("triggering media truth background scan")
+			c.scanManager.RunBackground()
+		} else {
+			c.Logger.Warn().Msg("Background media truth scan is disabled (XG2G_BACKGROUND_SCAN_ENABLED=false)")
+		}
 	}
+}
+
+func backgroundScanEnabled() bool {
+	return config.ParseBool("XG2G_BACKGROUND_SCAN_ENABLED", true)
 }
 
 func resolveConfigPath(explicit string) (path string, explicitMode bool, err error) {

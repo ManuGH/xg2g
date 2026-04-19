@@ -592,8 +592,8 @@
         "hint": "Will automatically tune quality to keep playback stable on slower links."
       },
       "scan": {
-        "title": "Smart Profile Scanner",
-        "description": "Scans all channels in background to detect interlacing. Use this to enable GPU acceleration for specific channels.",
+        "title": "Media Truth Scan",
+        "description": "Scans all channels in the background for container, codec, resolution, and interlacing truth. This media truth drives later profile and GPU decisions.",
         "start": "Start Scan",
         "status": {
           "label": "Status",

@@ -71,7 +71,7 @@ export function getSettingsSectionLabel(section: SettingsSection, t: TranslateFn
     case 'android-tv':
       return t('settings.androidTv.title', { defaultValue: 'Android TV' });
     case 'scan':
-      return t('settings.streaming.scan.title', { defaultValue: 'Channel scan' });
+      return t('settings.streaming.scan.title', { defaultValue: 'Media Truth Scan' });
     case 'streaming':
       return t('settings.streaming.title', { defaultValue: 'Streaming' });
     case 'advanced':
