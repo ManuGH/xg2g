@@ -1,14 +1,17 @@
 package playbackprofile
 
-import "github.com/ManuGH/xg2g/internal/normalize"
+import (
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
+	"github.com/ManuGH/xg2g/internal/normalize"
+)
 
 const (
-	BenchmarkProfileAudioAACStereo   = "audio_aac_stereo"
-	BenchmarkProfileVideoH2641080P   = "video_h264_1080p"
-	BenchmarkProfileVideoH2641080I   = "video_h264_1080i"
-	BenchmarkProfileVideoH2641080I50 = "video_h264_1080i50"
-	BenchmarkProfileVideoH2642160P   = "video_h264_2160p"
-	BenchmarkProfileVideoH2642160P50 = "video_h264_2160p50"
+	BenchmarkProfileAudioAACStereo   = ports.BenchmarkProfileAudioAACStereo
+	BenchmarkProfileVideoH2641080P   = ports.BenchmarkProfileVideoH2641080P
+	BenchmarkProfileVideoH2641080I   = ports.BenchmarkProfileVideoH2641080I
+	BenchmarkProfileVideoH2641080I50 = ports.BenchmarkProfileVideoH2641080I50
+	BenchmarkProfileVideoH2642160P   = ports.BenchmarkProfileVideoH2642160P
+	BenchmarkProfileVideoH2642160P50 = ports.BenchmarkProfileVideoH2642160P50
 )
 
 // BenchmarkClassForCodec returns the most specific measured benchmark class for a codec.

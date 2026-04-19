@@ -74,7 +74,7 @@ func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 	assert.Contains(t, args, "0:a:0?", "audio map should remain optional")
 }
 
-func TestBuildArgs_EmptyProfileLegacy(t *testing.T) {
+func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
@@ -94,14 +94,21 @@ func TestBuildArgs_EmptyProfileLegacy(t *testing.T) {
 
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
-	assert.Contains(t, args, "libx264", "legacy path must use libx264")
-	assert.Contains(t, args, "bwdif=mode=send_field:parity=auto:deint=all", "legacy live HLS path must preserve field-rate motion")
-	assert.Contains(t, args, "-crf", "legacy path must use CRF")
-	assert.Contains(t, args, "20", "legacy path CRF=20")
-	assert.Contains(t, args, "-preset", "legacy path must have preset")
-	assert.Contains(t, args, "ultrafast", "legacy path preset=ultrafast")
-	assert.NotContains(t, args, "h264_vaapi", "legacy path must not contain VAAPI")
-	assert.NotContains(t, args, "-vaapi_device", "legacy path must not contain vaapi_device")
+
+	videoCodec, ok := valueAfter(args, "-c:v")
+	require.True(t, ok, "zero-valued profile should still emit a video codec decision")
+	assert.Equal(t, "copy", videoCodec, "zero-valued profile now defaults to copy instead of legacy CPU transcode")
+
+	audioCodec, ok := valueAfter(args, "-c:a")
+	require.True(t, ok, "live HLS path should still transcode audio for compatibility")
+	assert.Equal(t, "aac", audioCodec)
+
+	assert.NotContains(t, args, "libx264", "default copy path must not force legacy CPU transcode")
+	assert.NotContains(t, args, "bwdif=mode=send_field:parity=auto:deint=all", "default copy path must not inject deinterlace filters")
+	assert.NotContains(t, args, "-crf", "default copy path must not emit CPU quality controls")
+	assert.NotContains(t, args, "-preset", "default copy path must not emit CPU preset controls")
+	assert.NotContains(t, args, "h264_vaapi", "default copy path must not force VAAPI")
+	assert.NotContains(t, args, "-vaapi_device", "default copy path must not require VAAPI devices")
 }
 
 func TestBuildArgs_HighProfileUsesVideoCopy(t *testing.T) {

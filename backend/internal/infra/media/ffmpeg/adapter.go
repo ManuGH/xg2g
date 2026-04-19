@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
@@ -53,12 +53,12 @@ var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi", "av1_vaapi"}
 var nvencEncodersToTest = []string{"h264_nvenc", "hevc_nvenc", "av1_nvenc"}
 
 var startupProfilesToBenchmark = []string{
-	playbackprofile.BenchmarkProfileAudioAACStereo,
-	playbackprofile.BenchmarkProfileVideoH2641080P,
-	playbackprofile.BenchmarkProfileVideoH2641080I,
-	playbackprofile.BenchmarkProfileVideoH2641080I50,
-	playbackprofile.BenchmarkProfileVideoH2642160P,
-	playbackprofile.BenchmarkProfileVideoH2642160P50,
+	playbackports.BenchmarkProfileAudioAACStereo,
+	playbackports.BenchmarkProfileVideoH2641080P,
+	playbackports.BenchmarkProfileVideoH2641080I,
+	playbackports.BenchmarkProfileVideoH2641080I50,
+	playbackports.BenchmarkProfileVideoH2642160P,
+	playbackports.BenchmarkProfileVideoH2642160P50,
 }
 
 type profileProbeRequest struct {
@@ -625,7 +625,7 @@ func (a *LocalAdapter) testProfileBenchmark(backend, encoder, profileID string) 
 		return a.profileProbeFn(context.Background(), req)
 	}
 
-	if profileID == playbackprofile.BenchmarkProfileAudioAACStereo {
+	if profileID == playbackports.BenchmarkProfileAudioAACStereo {
 		return a.testAudioAACProfile()
 	}
 
@@ -659,11 +659,11 @@ func profileBenchmarksForBackend(backend string) []string {
 		return startupProfilesToBenchmark
 	case "vaapi", "nvenc":
 		return []string{
-			playbackprofile.BenchmarkProfileVideoH2641080P,
-			playbackprofile.BenchmarkProfileVideoH2641080I,
-			playbackprofile.BenchmarkProfileVideoH2641080I50,
-			playbackprofile.BenchmarkProfileVideoH2642160P,
-			playbackprofile.BenchmarkProfileVideoH2642160P50,
+			playbackports.BenchmarkProfileVideoH2641080P,
+			playbackports.BenchmarkProfileVideoH2641080I,
+			playbackports.BenchmarkProfileVideoH2641080I50,
+			playbackports.BenchmarkProfileVideoH2642160P,
+			playbackports.BenchmarkProfileVideoH2642160P50,
 		}
 	default:
 		return nil
@@ -792,7 +792,7 @@ func (a *LocalAdapter) testNVENCH264Profile(profileID, encoder string) (time.Dur
 
 func cpuProfileBenchmarkFilter(profileID string) string {
 	switch strings.ToLower(strings.TrimSpace(profileID)) {
-	case playbackprofile.BenchmarkProfileVideoH2641080I, playbackprofile.BenchmarkProfileVideoH2641080I50:
+	case playbackports.BenchmarkProfileVideoH2641080I, playbackports.BenchmarkProfileVideoH2641080I50:
 		return "setfield=tff,bwdif=mode=send_field:parity=auto:deint=all"
 	default:
 		return ""
@@ -801,15 +801,15 @@ func cpuProfileBenchmarkFilter(profileID string) string {
 
 func vaapiProfileBenchmarkFilter(profileID string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(profileID)) {
-	case playbackprofile.BenchmarkProfileVideoH2641080P:
+	case playbackports.BenchmarkProfileVideoH2641080P:
 		return "format=nv12,hwupload", nil
-	case playbackprofile.BenchmarkProfileVideoH2641080I50:
+	case playbackports.BenchmarkProfileVideoH2641080I50:
 		return "format=nv12,setfield=tff,hwupload,deinterlace_vaapi", nil
-	case playbackprofile.BenchmarkProfileVideoH2642160P:
+	case playbackports.BenchmarkProfileVideoH2642160P:
 		return "format=nv12,hwupload", nil
-	case playbackprofile.BenchmarkProfileVideoH2642160P50:
+	case playbackports.BenchmarkProfileVideoH2642160P50:
 		return "format=nv12,hwupload", nil
-	case playbackprofile.BenchmarkProfileVideoH2641080I:
+	case playbackports.BenchmarkProfileVideoH2641080I:
 		return "format=nv12,setfield=tff,hwupload,deinterlace_vaapi", nil
 	default:
 		return "", fmt.Errorf("unsupported vaapi benchmark profile %q", profileID)
@@ -818,7 +818,7 @@ func vaapiProfileBenchmarkFilter(profileID string) (string, error) {
 
 func nvencProfileBenchmarkFilter(profileID string) string {
 	switch strings.ToLower(strings.TrimSpace(profileID)) {
-	case playbackprofile.BenchmarkProfileVideoH2641080I, playbackprofile.BenchmarkProfileVideoH2641080I50:
+	case playbackports.BenchmarkProfileVideoH2641080I, playbackports.BenchmarkProfileVideoH2641080I50:
 		return "setfield=tff,bwdif=mode=send_field:parity=auto:deint=all"
 	default:
 		return ""
@@ -827,11 +827,11 @@ func nvencProfileBenchmarkFilter(profileID string) string {
 
 func profileBenchmarkInput(profileID string) string {
 	switch strings.ToLower(strings.TrimSpace(profileID)) {
-	case playbackprofile.BenchmarkProfileVideoH2642160P50:
+	case playbackports.BenchmarkProfileVideoH2642160P50:
 		return "testsrc=duration=0.2:size=3840x2160:rate=50"
-	case playbackprofile.BenchmarkProfileVideoH2642160P:
+	case playbackports.BenchmarkProfileVideoH2642160P:
 		return "testsrc=duration=0.2:size=3840x2160:rate=25"
-	case playbackprofile.BenchmarkProfileVideoH2641080I50:
+	case playbackports.BenchmarkProfileVideoH2641080I50:
 		return "testsrc=duration=0.2:size=1920x1080:rate=50"
 	default:
 		return "testsrc=duration=0.2:size=1920x1080:rate=25"
@@ -840,11 +840,11 @@ func profileBenchmarkInput(profileID string) string {
 
 func profileBenchmarkTimeout(profileID string) time.Duration {
 	switch strings.ToLower(strings.TrimSpace(profileID)) {
-	case playbackprofile.BenchmarkProfileVideoH2642160P50:
+	case playbackports.BenchmarkProfileVideoH2642160P50:
 		return 22 * time.Second
-	case playbackprofile.BenchmarkProfileVideoH2642160P:
+	case playbackports.BenchmarkProfileVideoH2642160P:
 		return 18 * time.Second
-	case playbackprofile.BenchmarkProfileVideoH2641080I50:
+	case playbackports.BenchmarkProfileVideoH2641080I50:
 		return 15 * time.Second
 	default:
 		return 12 * time.Second

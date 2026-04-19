@@ -147,6 +147,8 @@ jobs:
             -severity=high \
             -tags=nogpu \
             -exclude-generated \
+            # v2.22.11 panics while building SSA for backend/internal/cache under the current toolchain.
+            -exclude-dir=internal/cache \
             -exclude-dir=test \
             -exclude-dir=internal/test \
             -exclude-dir=internal/api \
