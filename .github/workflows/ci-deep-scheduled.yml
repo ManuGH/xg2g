@@ -141,20 +141,7 @@ jobs:
           cd backend
           govulncheck -tags=nogpu -format json ./... > govulncheck.json 2> govulncheck.stderr
           GOVULN_EXIT=$?
-          # v2.22.11 panics while building SSA for backend/internal/cache under the current toolchain.
-          gosec \
-            -fmt=sarif \
-            -out=gosec.sarif \
-            -severity=high \
-            -tags=nogpu \
-            -exclude-generated \
-            -exclude-dir=internal/cache \
-            -exclude-dir=test \
-            -exclude-dir=internal/test \
-            -exclude-dir=internal/api \
-            -exclude-dir=.github \
-            -exclude-dir=vendor \
-            ./... 2> gosec.stderr
+          bash ./scripts/ci/run-gosec.sh gosec.sarif 2> gosec.stderr
           GOSEC_EXIT=$?
 
           if [ "$GOVULN_EXIT" -ne 0 ] || [ "$GOSEC_EXIT" -ne 0 ]; then

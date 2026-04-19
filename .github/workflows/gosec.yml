@@ -41,20 +41,7 @@ jobs:
       - name: Run gosec security scan
         run: |
           cd backend
-          # v2.22.11 panics while building SSA for backend/internal/cache under the current toolchain.
-          gosec \
-            -fmt=sarif \
-            -out=../gosec.sarif \
-            -severity=high \
-            -tags=nogpu \
-            -exclude-generated \
-            -exclude-dir=internal/cache \
-            -exclude-dir=test \
-            -exclude-dir=internal/test \
-            -exclude-dir=internal/api \
-            -exclude-dir=.github \
-            -exclude-dir=vendor \
-            ./...
+          bash ./scripts/ci/run-gosec.sh ../gosec.sarif
 
       - name: Upload SARIF to GitHub Security
         if: always() && hashFiles('gosec.sarif') != ''
