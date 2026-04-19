@@ -2053,6 +2053,8 @@ function V3Player(props: V3PlayerProps) {
   const isImmediateStartupStatus =
     status === 'starting' || status === 'priming' || status === 'building';
   const isNativeEngine = activeHlsEngine === 'native';
+  const shouldManageVisibilityResume =
+    hostEnvironment.isTv || (isNativeEngine && isCompactTouchLayout);
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
   const shouldKeepHostAwake =
     hostEnvironment.supportsKeepScreenAwake &&
@@ -2079,7 +2081,7 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
-    if (!hostEnvironment.isTv) {
+    if (!shouldManageVisibilityResume) {
       return;
     }
 
@@ -2111,7 +2113,7 @@ function V3Player(props: V3PlayerProps) {
     void video.play().catch((err) => {
       debugWarn('[V3Player] Host resume play blocked', err);
     });
-  }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
+  }, [hasTerminalStatus, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, shouldManageVisibilityResume, status, videoRef]);
 
   useEffect(() => {
     if (bufferingOverlayTimerRef.current !== null) {
