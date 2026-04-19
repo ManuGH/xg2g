@@ -199,6 +199,7 @@
   max-height: 100%;
   display: block;
   object-fit: contain;
+  object-position: center center;
   background: var(--bg-video);
   transition: opacity 220ms ease;
 }
@@ -1691,6 +1692,11 @@
 
 /* Mobile Adjustments */
 @media (max-width: 768px) {
+  .container.overlay {
+    justify-content: center;
+    align-items: center;
+  }
+
   .spinnerOverlay {
     top: auto;
     left: 16px;
