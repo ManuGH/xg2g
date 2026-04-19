@@ -445,6 +445,46 @@ a:hover {
   }
 }
 
+@keyframes recordingsLaunchSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes runtimePolicyProbing {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent-action) 10%, transparent),
+      0 10px 24px color-mix(in srgb, var(--accent-action) 10%, transparent);
+  }
+
+  50% {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent-action) 18%, transparent),
+      0 12px 28px color-mix(in srgb, var(--accent-action) 16%, transparent);
+  }
+}
+
+@keyframes runtimePolicyAlert {
+  0%,
+  100% {
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--state-danger) 10%, transparent);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--state-danger) 18%, transparent),
+      0 10px 26px color-mix(in srgb, var(--state-danger) 18%, transparent);
+  }
+}
+
 .animate-enter {
   opacity: 1;
 }
@@ -467,6 +507,27 @@ a:hover {
 .animate-startup-progress {
   animation-name: startupProgressSlide;
   animation-duration: 1.45s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.animate-recordings-launch-spinner {
+  animation-name: recordingsLaunchSpin;
+  animation-duration: 0.85s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.animate-runtime-policy-probing {
+  animation-name: runtimePolicyProbing;
+  animation-duration: 2.4s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.animate-runtime-policy-alert {
+  animation-name: runtimePolicyAlert;
+  animation-duration: 1.8s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
 }

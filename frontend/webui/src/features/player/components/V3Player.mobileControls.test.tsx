@@ -132,8 +132,8 @@ describe('V3Player Mobile Controls', () => {
 
     const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
     const video = container.querySelector('video') as HTMLVideoElement;
-    let seekableStart = 90;
-    let seekableEnd = 120;
+    const seekableStart = 90;
+    const seekableEnd = 120;
     Object.defineProperty(video, 'readyState', {
       configurable: true,
       get: () => 1
@@ -308,7 +308,7 @@ describe('V3Player Mobile Controls', () => {
     });
 
     let paused = false;
-    let readyState = 1;
+    const readyState = 1;
     const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {
       paused = true;

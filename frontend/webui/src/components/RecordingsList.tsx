@@ -881,7 +881,7 @@ export default function RecordingsList() {
                   </div>
                   <div className={styles.preplayStageActions}>
                     <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
-                      <span className={styles.playerLaunchSpinner} aria-hidden="true" />
+                      <span className={[styles.playerLaunchSpinner, 'animate-recordings-launch-spinner'].join(' ')} aria-hidden="true" />
                       <div className={styles.playerLaunchCopy}>
                         <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
                         <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>
@@ -1223,7 +1223,7 @@ export default function RecordingsList() {
                 <div className={styles.preplayStageActions}>
                   {isPreplayLaunching ? (
                     <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
-                      <span className={styles.playerLaunchSpinner} aria-hidden="true" />
+                      <span className={[styles.playerLaunchSpinner, 'animate-recordings-launch-spinner'].join(' ')} aria-hidden="true" />
                       <div className={styles.playerLaunchCopy}>
                         <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
                         <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>

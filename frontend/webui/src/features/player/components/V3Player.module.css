@@ -1068,7 +1068,6 @@
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--accent-action) 12%, transparent),
     0 10px 24px color-mix(in srgb, var(--accent-action) 12%, transparent);
-  animation: runtime-policy-probing 2.4s ease-in-out infinite;
 }
 
 .runtimePolicyMeta[data-phase='cooldown'] {
@@ -1097,7 +1096,6 @@
 }
 
 .runtimePolicyMeta[data-phase='probe_regressed'] {
-  animation: runtime-policy-alert 1.8s ease-in-out infinite;
 }
 
 .runtimePolicyMeta[data-phase='probing'] .runtimePolicyMetaHint,
@@ -1109,41 +1107,6 @@
 .runtimePolicyMeta[data-phase='degraded'] .runtimePolicyMetaHint,
 .runtimePolicyMeta[data-phase='probe_regressed'] .runtimePolicyMetaHint {
   color: color-mix(in srgb, var(--state-danger) 74%, var(--text-primary) 26%);
-}
-
-@keyframes runtime-policy-probing {
-  0%,
-  100% {
-    transform: translateY(0);
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--accent-action) 10%, transparent),
-      0 10px 24px color-mix(in srgb, var(--accent-action) 10%, transparent);
-  }
-  50% {
-    transform: translateY(-1px);
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--accent-action) 18%, transparent),
-      0 12px 28px color-mix(in srgb, var(--accent-action) 16%, transparent);
-  }
-}
-
-@keyframes runtime-policy-alert {
-  0%,
-  100% {
-    box-shadow: 0 8px 22px color-mix(in srgb, var(--state-danger) 10%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--state-danger) 18%, transparent),
-      0 10px 26px color-mix(in srgb, var(--state-danger) 18%, transparent);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .runtimePolicyMeta[data-phase='probing'],
-  .runtimePolicyMeta[data-phase='probe_regressed'] {
-    animation: none;
-  }
 }
 
 .utilityControlsTheater {

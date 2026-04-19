@@ -50,6 +50,8 @@ export function PlayerRuntimeMeta({
         theater ? styles.runtimePolicyMetaTheater : null,
         variant === 'startup' ? styles.runtimePolicyMetaStartup : null,
         variant === 'error' ? styles.runtimePolicyMetaError : null,
+        phase === 'probing' ? 'animate-runtime-policy-probing' : null,
+        phase === 'probe_regressed' ? 'animate-runtime-policy-alert' : null,
       ].filter(Boolean).join(' ')}
       data-phase={phase ?? 'unknown'}
     >
