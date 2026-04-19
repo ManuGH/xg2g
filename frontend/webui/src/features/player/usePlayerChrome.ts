@@ -31,6 +31,9 @@ interface UsePlayerChromeProps {
   allowNativeFullscreen: boolean;
   shouldForceNativeMobileHls: ForceNativeFn;
   canUseDesktopWebKitFullscreen: DesktopFullscreenFn;
+  mediaTitle?: string | null;
+  mediaSubtitle?: string | null;
+  mediaArtworkUrl?: string | null;
 }
 
 interface PlayerChromeController {
@@ -107,7 +110,10 @@ export function usePlayerChrome({
   setStatus,
   allowNativeFullscreen,
   shouldForceNativeMobileHls,
-  canUseDesktopWebKitFullscreen
+  canUseDesktopWebKitFullscreen,
+  mediaTitle,
+  mediaSubtitle,
+  mediaArtworkUrl,
 }: UsePlayerChromeProps): PlayerChromeController {
   const [showStats, setShowStats] = useState(false);
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0);
@@ -352,7 +358,6 @@ export function usePlayerChrome({
       }
 
       try {
-        clearAutoplayMuteIfNeeded();
         logNativeFullscreenProbe(reason, video);
         video.controls = true;
         video.webkitEnterFullscreen();
@@ -419,7 +424,7 @@ export function usePlayerChrome({
     } catch (err) {
       debugWarn('Fullscreen failed', err);
     }
-  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, clearAutoplayMuteIfNeeded, containerRef, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
+  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, containerRef, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
 
   const enterNativeFullscreen = useCallback((): boolean => {
     const video = videoRef.current;
@@ -433,7 +438,6 @@ export function usePlayerChrome({
     }
 
     try {
-      clearAutoplayMuteIfNeeded();
       logNativeFullscreenProbe('explicit-native-request', video);
       video.controls = true;
       video.webkitEnterFullscreen();
@@ -443,19 +447,18 @@ export function usePlayerChrome({
       debugWarn('Explicit native fullscreen failed', err);
       return false;
     }
-  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, clearAutoplayMuteIfNeeded, logNativeFullscreenProbe, videoRef]);
+  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, logNativeFullscreenProbe, videoRef]);
 
   const enterDVRMode = useCallback(() => {
     const video = videoRef.current;
     if (allowNativeFullscreen && video && video.webkitEnterFullscreen && shouldForceNativeMobileHls(video)) {
-      clearAutoplayMuteIfNeeded();
       logNativeFullscreenProbe('dvr-native-request', video);
       video.controls = true;
       video.webkitEnterFullscreen();
       return;
     }
     void toggleFullscreen();
-  }, [allowNativeFullscreen, clearAutoplayMuteIfNeeded, logNativeFullscreenProbe, shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
+  }, [allowNativeFullscreen, logNativeFullscreenProbe, shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
 
   const togglePiP = useCallback(async () => {
     const video = videoRef.current;
@@ -624,6 +627,60 @@ export function usePlayerChrome({
       setHandler('seekforward', null);
     };
   }, [canSeek, durationSeconds, pause, play, playbackMode, seekBy, seekableEnd, seekableStart, stop]);
+
+  useEffect(() => {
+    if (
+      typeof navigator === 'undefined' ||
+      !('mediaSession' in navigator) ||
+      typeof MediaMetadata === 'undefined'
+    ) {
+      return;
+    }
+
+    const title = mediaTitle?.trim();
+    const subtitle = mediaSubtitle?.trim();
+    const artworkUrl = mediaArtworkUrl?.trim();
+    if (!title) {
+      return;
+    }
+
+    const artwork = artworkUrl ? [
+      { src: artworkUrl, sizes: '512x512', type: 'image/png' },
+      { src: artworkUrl, sizes: '256x256', type: 'image/png' },
+      { src: artworkUrl, sizes: '192x192', type: 'image/png' },
+      { src: artworkUrl, sizes: '128x128', type: 'image/png' },
+    ] : undefined;
+
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title,
+        artist: subtitle || 'xg2g',
+        album: 'xg2g',
+        artwork,
+      });
+    } catch (err) {
+      debugWarn('Media session metadata failed', err);
+    }
+
+    return () => {
+      if ('mediaSession' in navigator && navigator.mediaSession.metadata?.title === title) {
+        navigator.mediaSession.metadata = null;
+      }
+    };
+  }, [mediaArtworkUrl, mediaSubtitle, mediaTitle]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+      return;
+    }
+
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    return () => {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'none';
+      }
+    };
+  }, [isPlaying]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -942,11 +999,6 @@ export function usePlayerChrome({
     const container = containerRef.current;
     if (!container) return;
 
-    if (isTouchDevice) {
-      setIsIdle(false);
-      return;
-    }
-
     const resetIdle = () => {
       setIsIdle(false);
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
@@ -971,7 +1023,7 @@ export function usePlayerChrome({
       container.removeEventListener('keydown', onKey);
       container.removeEventListener('touchstart', onClick);
     };
-  }, [containerRef, idleDelayMs, isTouchDevice]);
+  }, [containerRef, idleDelayMs]);
 
   const windowDuration = useMemo(() => Math.max(0, seekableEnd - seekableStart), [seekableEnd, seekableStart]);
   const relativePosition = useMemo(
@@ -997,6 +1049,48 @@ export function usePlayerChrome({
   const endTimeDisplay = startUnix
     ? formatTimeOfDay(startUnix + windowDuration)
     : formatClock(windowDuration);
+
+  useEffect(() => {
+    if (
+      typeof navigator === 'undefined' ||
+      !('mediaSession' in navigator) ||
+      typeof navigator.mediaSession.setPositionState !== 'function'
+    ) {
+      return;
+    }
+
+    const positionDuration = hasSeekWindow
+      ? windowDuration
+      : playbackMode === 'VOD' && durationSeconds && durationSeconds > 0
+        ? durationSeconds
+        : 0;
+    if (!(positionDuration > 0)) {
+      try {
+        navigator.mediaSession.setPositionState?.(undefined);
+      } catch (err) {
+        debugWarn('Media session position reset failed', err);
+      }
+      return;
+    }
+
+    const position = hasSeekWindow ? relativePosition : currentPlaybackTime;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: positionDuration,
+        playbackRate: 1,
+        position: Math.min(positionDuration, Math.max(0, position)),
+      });
+    } catch (err) {
+      debugWarn('Media session position update failed', err);
+    }
+  }, [
+    currentPlaybackTime,
+    durationSeconds,
+    hasSeekWindow,
+    playbackMode,
+    relativePosition,
+    windowDuration,
+  ]);
 
   return {
     showStats,

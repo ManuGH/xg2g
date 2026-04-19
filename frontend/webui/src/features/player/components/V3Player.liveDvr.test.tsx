@@ -90,6 +90,23 @@ describe('V3Player live DVR semantics', () => {
           }),
         });
       }
+      if (url.includes('/services/now-next')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            items: [{
+              serviceRef: '1:0:1:777:666:55AA:0:0:0:0:',
+              now: {
+                title: 'Wetter',
+                start: 100,
+                end: 160,
+              },
+            }],
+          }),
+        });
+      }
       return Promise.resolve({
         ok: true,
         status: 200,

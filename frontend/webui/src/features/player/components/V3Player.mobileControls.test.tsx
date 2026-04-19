@@ -202,7 +202,7 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });
 
-  it('keeps the bridge deck visible on touch devices after the idle timeout', async () => {
+  it('collapses the inline bridge deck into idle mode on touch devices after the idle timeout', async () => {
     vi.useFakeTimers();
 
     const props = {
@@ -220,7 +220,8 @@ describe('V3Player Mobile Controls', () => {
       vi.advanceTimersByTime(4000);
     });
 
-    expect(player.className).not.toContain(styles.userIdle);
+    expect(player.className).toContain(styles.userIdle);
+    expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });
 
 });

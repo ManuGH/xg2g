@@ -241,6 +241,21 @@ function formatRequestProfileLabel(profile: string | null): string {
   }
 }
 
+function resolveMediaArtworkUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url, typeof window !== 'undefined' ? window.location.href : 'http://localhost').toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolveApiUrl(base: string, path: string): string {
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+  return new URL(normalizedPath, new URL(normalizedBase, typeof window !== 'undefined' ? window.location.href : 'http://localhost')).toString();
+}
+
 function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null): string[] {
   if (!snapshot) return [];
 
@@ -622,6 +637,7 @@ function V3Player(props: V3PlayerProps) {
   const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>(null);
   const [activeHlsEngine, setActiveHlsEngine] = useState<'native' | 'hlsjs' | null>(null);
   const [liveSeekWindow, setLiveSeekWindow] = useState<{ start: number; end: number; liveEdge: number | null } | null>(null);
+  const [liveProgramTitle, setLiveProgramTitle] = useState<string | null>(null);
 
   // P3-4: Truth State
   const [canSeek, setCanSeek] = useState(true);
@@ -778,6 +794,15 @@ function V3Player(props: V3PlayerProps) {
     [playbackObservability?.operator, sessionPlaybackTrace?.operator]
   );
   const isRuntimeProbeActive = mergedPlaybackOperator?.runtimePolicyAction === 'probe_up';
+  const mediaSessionTitle = playbackMode === 'LIVE'
+    ? liveProgramTitle || channel?.name || t('player.loading')
+    : normalizedRecordingTitle || channel?.name || t('player.loading');
+  const mediaSessionSubtitle = playbackMode === 'LIVE'
+    ? channel?.name || t('common.appName', { defaultValue: 'xg2g' })
+    : channel?.name && normalizedRecordingTitle
+      ? channel.name
+      : recordingDateLabel || t('common.appName', { defaultValue: 'xg2g' });
+  const mediaSessionArtworkUrl = resolveMediaArtworkUrl(channel?.logoUrl || null);
 
   const {
     sessionIdRef,
@@ -860,7 +885,10 @@ function V3Player(props: V3PlayerProps) {
     setStatus,
     allowNativeFullscreen: activeHlsEngine === 'native' || vodStreamMode === 'direct_mp4',
     shouldForceNativeMobileHls,
-    canUseDesktopWebKitFullscreen
+    canUseDesktopWebKitFullscreen,
+    mediaTitle: mediaSessionTitle,
+    mediaSubtitle: mediaSessionSubtitle,
+    mediaArtworkUrl: mediaSessionArtworkUrl,
   });
 
   // Resume Hook
@@ -1944,6 +1972,84 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [requestedDuration]);
 
+  useEffect(() => {
+    if (playbackMode !== 'LIVE') {
+      setLiveProgramTitle(null);
+      return;
+    }
+
+    const serviceRef = (channel?.serviceRef || channel?.id || sRef || '').trim();
+    if (!serviceRef) {
+      setLiveProgramTitle(null);
+      return;
+    }
+    setLiveProgramTitle(null);
+
+    let cancelled = false;
+    let refreshTimer: number | null = null;
+
+    const scheduleRefresh = (delayMs: number) => {
+      if (cancelled) return;
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+      refreshTimer = window.setTimeout(() => {
+        void refreshNowNext();
+      }, delayMs);
+    };
+
+    const refreshNowNext = async () => {
+      try {
+        const response = await fetch(resolveApiUrl(apiBase, 'services/now-next'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authHeaders() as Record<string, string>),
+          },
+          body: JSON.stringify({ services: [serviceRef] }),
+        });
+
+        if (cancelled) {
+          return;
+        }
+        if (!response.ok) {
+          scheduleRefresh(60000);
+          return;
+        }
+
+        const data = await response.json() as { items?: Array<{ serviceRef?: string; now?: { title?: string; end?: number } }> };
+        if (cancelled) {
+          return;
+        }
+
+        const item = data?.items?.find((candidate) => candidate.serviceRef === serviceRef) ?? data?.items?.[0];
+        const currentTitle = item?.now?.title?.trim() || null;
+        setLiveProgramTitle(currentTitle);
+
+        const eventEndMs = item?.now?.end ? (item.now.end * 1000) : null;
+        if (eventEndMs) {
+          scheduleRefresh(Math.max(15000, Math.min(60000, (eventEndMs - Date.now()) + 1000)));
+          return;
+        }
+        scheduleRefresh(60000);
+        return;
+      } catch (err) {
+        if (!cancelled) {
+          debugWarn('[V3Player] now/next refresh failed', err);
+        }
+      }
+      scheduleRefresh(60000);
+    };
+
+    void refreshNowNext();
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+    };
+  }, [apiBase, authHeaders, channel?.id, channel?.serviceRef, playbackMode, sRef]);
+
   const isImmediateStartupStatus =
     status === 'starting' || status === 'priming' || status === 'building';
   const isNativeEngine = activeHlsEngine === 'native';
@@ -2716,6 +2822,7 @@ function V3Player(props: V3PlayerProps) {
         'animate-enter',
         useOverlayShell ? styles.overlay : null,
         isRecordingPageLayout ? styles.recordingPage : null,
+        useMinimalTouchInlineChrome ? styles.touchInlineChrome : null,
         isFullscreen ? styles.fullscreenActive : null,
         isIdle ? styles.userIdle : null,
       ].filter(Boolean).join(' ')}
@@ -2877,7 +2984,7 @@ function V3Player(props: V3PlayerProps) {
                   </div>
                 </div>
 
-                <div className={styles.mobileInlineActions}>
+                <div className={styles.mobileInlinePrimaryActions}>
                   <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
                     -15s
                   </Button>
@@ -2896,16 +3003,10 @@ function V3Player(props: V3PlayerProps) {
                   <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
                     +15s
                   </Button>
+                </div>
 
-                  {hasLiveDvrWindow ? (
-                    <button
-                      className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                      onClick={() => (isAtLiveEdge && showDvrModeButton ? enterDVRMode() : seekTo(seekableEnd))}
-                      title={isAtLiveEdge && showDvrModeButton ? t('player.dvrMode') : t('player.goLive')}
-                    >
-                      {isAtLiveEdge && showDvrModeButton ? 'DVR' : 'LIVE'}
-                    </button>
-                  ) : canToggleMute ? (
+                <div className={styles.mobileInlineSecondaryActions}>
+                  {canToggleMute ? (
                     <Button
                       variant={isMuted ? 'primary' : 'ghost'}
                       size="sm"
@@ -2917,6 +3018,18 @@ function V3Player(props: V3PlayerProps) {
                     >
                       <VolumeGlyph muted={isMuted} />
                     </Button>
+                  ) : (
+                    <span />
+                  )}
+
+                  {hasLiveDvrWindow ? (
+                    <button
+                      className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
+                      onClick={() => (isAtLiveEdge && showDvrModeButton ? enterDVRMode() : seekTo(seekableEnd))}
+                      title={isAtLiveEdge && showDvrModeButton ? t('player.dvrMode') : t('player.goLive')}
+                    >
+                      {isAtLiveEdge && showDvrModeButton ? 'DVR' : 'LIVE'}
+                    </button>
                   ) : (
                     <span />
                   )}
@@ -2935,18 +3048,6 @@ function V3Player(props: V3PlayerProps) {
                         : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
                     >
                       <FullscreenGlyph />
-                    </Button>
-                  ) : canToggleMute ? (
-                    <Button
-                      variant={isMuted ? 'primary' : 'ghost'}
-                      size="sm"
-                      className={styles.audioToggleButton}
-                      onClick={toggleMute}
-                      title={audioToggleLabel}
-                      aria-label={audioToggleLabel}
-                      aria-pressed={!isMuted}
-                    >
-                      <VolumeGlyph muted={isMuted} />
                     </Button>
                   ) : (
                     <span />

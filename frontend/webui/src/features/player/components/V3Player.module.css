@@ -175,6 +175,8 @@
   transition: opacity 0.5s ease-out;
 }
 
+.touchInlineChrome {}
+
 .videoWrapper {
   width: 100%;
   height: 100%;
@@ -294,9 +296,10 @@
   gap: 12px;
 }
 
-.mobileInlineActions {
+.mobileInlinePrimaryActions,
+.mobileInlineSecondaryActions {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
   align-items: center;
@@ -1993,25 +1996,56 @@
     min-height: 46px;
   }
 
-  .mobileInlineActions {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+  .mobileInlinePrimaryActions,
+  .mobileInlineSecondaryActions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .mobileInlineActions :global(button[data-size="sm"]) {
+  .mobileInlinePrimaryActions :global(button[data-size="sm"]),
+  .mobileInlineSecondaryActions :global(button[data-size="sm"]) {
     min-height: 38px;
     min-width: 0;
     padding: 0 8px;
     font-size: 0.78rem;
   }
 
-  .mobileInlineActions .playPauseButton {
+  .mobileInlinePrimaryActions .playPauseButton {
     justify-self: center;
   }
 
-  .mobileInlineActions .liveButton {
+  .mobileInlineSecondaryActions .liveButton {
     min-width: 0;
     justify-self: stretch;
     text-align: center;
+  }
+
+  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater),
+  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls,
+  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .seekControls {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) {
+    padding-top: 10px;
+    padding-bottom: calc(10px + var(--sab));
+    gap: 8px;
+  }
+
+  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .container.touchInlineChrome.userIdle .mobileInlineMeta,
+  .container.touchInlineChrome.userIdle .vodScrubArea,
+  .container.touchInlineChrome.userIdle .mobileInlinePrimaryActions {
+    display: none;
+  }
+
+  .container.touchInlineChrome.userIdle .mobileInlineControls {
+    gap: 0;
   }
 
   .seekSliderGroup {
