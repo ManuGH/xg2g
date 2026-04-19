@@ -125,6 +125,7 @@ export function usePlayerChrome({
   const [stats, setStats] = useState<PlayerStats>(initialStats);
   const lastNonZeroVolumeRef = useRef<number>(1);
   const idleTimerRef = useRef<number | null>(null);
+  const pendingNativeFullscreenRef = useRef(false);
   const isTouchDevice = useMemo(() => hasTouchInput(), []);
 
   const shouldUseTouchWebKitFullscreen = useCallback((videoEl?: VideoElementRef) => {
@@ -202,6 +203,36 @@ export function usePlayerChrome({
       videoHeight: video.videoHeight || 0,
     });
   }, [allowNativeFullscreen, canSeek, canUseDesktopWebKitFullscreen, playbackMode, readSeekableBounds]);
+
+  const canEnterNativeFullscreenNow = useCallback((video: SafariVideoElement) => (
+    video.readyState >= 1 ||
+    (video.videoWidth > 0 && video.videoHeight > 0)
+  ), []);
+
+  const flushPendingNativeFullscreen = useCallback((reason: string) => {
+    const video = videoRef.current;
+    if (!pendingNativeFullscreenRef.current || !video?.webkitEnterFullscreen) {
+      return false;
+    }
+    if (!shouldUseTouchWebKitFullscreen(video)) {
+      pendingNativeFullscreenRef.current = false;
+      return false;
+    }
+    if (!canEnterNativeFullscreenNow(video)) {
+      return false;
+    }
+
+    try {
+      logNativeFullscreenProbe(reason, video);
+      video.controls = true;
+      video.webkitEnterFullscreen();
+      pendingNativeFullscreenRef.current = false;
+      return true;
+    } catch (err) {
+      debugWarn('Pending WebKit fullscreen failed', err);
+      return false;
+    }
+  }, [canEnterNativeFullscreenNow, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
 
   const refreshSeekableState = useCallback(() => {
     const video = videoRef.current;
@@ -343,7 +374,15 @@ export function usePlayerChrome({
       }
     }
 
-    if (video && useTouchWebKitFullscreen && requestWebKitFullscreen('touch-webkit-request')) {
+    if (video && useTouchWebKitFullscreen) {
+      pendingNativeFullscreenRef.current = true;
+      if (!canEnterNativeFullscreenNow(video)) {
+        return;
+      }
+      if (requestWebKitFullscreen('touch-webkit-request')) {
+        pendingNativeFullscreenRef.current = false;
+        return;
+      }
       return;
     }
 
@@ -365,7 +404,7 @@ export function usePlayerChrome({
     } catch (err) {
       debugWarn('Fullscreen failed', err);
     }
-  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
+  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, containerRef, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
 
   const enterNativeFullscreen = useCallback((): boolean => {
     const video = videoRef.current;
@@ -373,16 +412,22 @@ export function usePlayerChrome({
       return false;
     }
 
+    if (!canEnterNativeFullscreenNow(video)) {
+      pendingNativeFullscreenRef.current = true;
+      return true;
+    }
+
     try {
       logNativeFullscreenProbe('explicit-native-request', video);
       video.controls = true;
       video.webkitEnterFullscreen();
+      pendingNativeFullscreenRef.current = false;
       return true;
     } catch (err) {
       debugWarn('Explicit native fullscreen failed', err);
       return false;
     }
-  }, [allowNativeFullscreen, logNativeFullscreenProbe, videoRef]);
+  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, logNativeFullscreenProbe, videoRef]);
 
   const enterDVRMode = useCallback(() => {
     const video = videoRef.current;
@@ -567,12 +612,18 @@ export function usePlayerChrome({
     if (!video) return;
 
     const handleTimeUpdate = () => refreshSeekableState();
+    const handleNativeFullscreenReady = () => {
+      void flushPendingNativeFullscreen('deferred-touch-webkit-request');
+    };
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleTimeUpdate);
     video.addEventListener('durationchange', handleTimeUpdate);
     video.addEventListener('progress', handleTimeUpdate);
     video.addEventListener('seeking', handleTimeUpdate);
+    video.addEventListener('loadedmetadata', handleNativeFullscreenReady);
+    video.addEventListener('canplay', handleNativeFullscreenReady);
+    video.addEventListener('playing', handleNativeFullscreenReady);
 
     refreshSeekableState();
 
@@ -582,8 +633,11 @@ export function usePlayerChrome({
       video.removeEventListener('durationchange', handleTimeUpdate);
       video.removeEventListener('progress', handleTimeUpdate);
       video.removeEventListener('seeking', handleTimeUpdate);
+      video.removeEventListener('loadedmetadata', handleNativeFullscreenReady);
+      video.removeEventListener('canplay', handleNativeFullscreenReady);
+      video.removeEventListener('playing', handleNativeFullscreenReady);
     };
-  }, [refreshSeekableState, videoRef]);
+  }, [flushPendingNativeFullscreen, refreshSeekableState, videoRef]);
 
   useEffect(() => {
     if (!showStats) return;
@@ -777,6 +831,7 @@ export function usePlayerChrome({
     const onWebkitBeginFullscreen = () => {
       setIsFullscreen(true);
       setIsWebKitFullscreenActive(true);
+      pendingNativeFullscreenRef.current = false;
       if (video) {
         refreshSeekableState();
         logNativeFullscreenProbe('webkit-beginfullscreen', video);

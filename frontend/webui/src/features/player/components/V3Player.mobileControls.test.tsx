@@ -125,13 +125,63 @@ describe('V3Player Mobile Controls', () => {
     });
 
     const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
+    const video = container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => 1
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => 1920
+    });
+    Object.defineProperty(video, 'videoHeight', {
+      configurable: true,
+      get: () => 1080
+    });
     fireEvent.click(fullscreenButton);
 
-    const video = container.querySelector('video') as HTMLVideoElement;
     expect(requestFullscreen).not.toHaveBeenCalled();
     expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
     expect(video.controls).toBe(true);
     expect(screen.queryByRole('button', { name: /player\.dvrMode/i })).not.toBeInTheDocument();
+  });
+
+  it('defers native fullscreen on touch devices until metadata is available', async () => {
+    let readyState = 0;
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(Hls).not.toHaveBeenCalled();
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => (readyState >= 1 ? 1920 : 0)
+    });
+    Object.defineProperty(video, 'videoHeight', {
+      configurable: true,
+      get: () => (readyState >= 1 ? 1080 : 0)
+    });
+
+    const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
+    fireEvent.click(fullscreenButton);
+
+    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+
+    readyState = 1;
+    fireEvent.loadedMetadata(video);
+
+    expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    expect(video.controls).toBe(true);
   });
 
   it('keeps mute controls but hides the volume slider on mobile WebKit when the native HLS path is active', async () => {
