@@ -7,6 +7,7 @@ package enigma2
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
@@ -44,24 +45,28 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 	logger := log.L().With().Int("slot", t.Slot).Str("ref", serviceRef).Logger()
 	logger.Debug().Msg("initiating zap")
 
-	// CRITICAL FIX: Always force Zap, even if useWebIFStreams is true.
-	// Optional middleware (Port 17999) may REQUIRE the receiver to be tuned to the service for proper processing.
-	// Relying on "implicit tuning via stream URL" works for 8001 but may fail for 17999.
-	// The overhead of an extra Zap is negligible compared to the stability gain.
-	// if t.Client != nil && t.Client.useWebIFStreams {
-	// 	logger.Info().Msg("skipping zap for WebIF stream")
-	// 	return nil
-	// }
-
 	if t.Client != nil {
-		// Only plain WebIF-managed streams and direct TS ports can skip explicit zapping.
-		// Relay/middleware ports like 17999 often need the receiver tuned first.
+		// Product rule: a receiver that is currently in active live use must never be
+		// visibly retuned by xg2g. Background streaming has to use free tuner capacity.
+		// Only standby is allowed to use an explicit tune fallback.
 		if t.Client.UseWebIFStreams && t.Client.StreamPort == 0 {
 			logger.Info().Msg("skipping explicit zap for WebIF stream (OpenWebIF manages zap/port)")
 			return nil
 		}
 		if t.Client.StreamPort == 8001 || t.Client.StreamPort == 8002 {
 			logger.Info().Int("streamPort", t.Client.StreamPort).Msg("skipping zap for direct TS port access")
+			return nil
+		}
+		status, err := t.Client.GetStatusInfo(ctx)
+		if err != nil {
+			logger.Warn().Err(err).Msg("statusinfo unavailable; skipping explicit zap to avoid disruptive retune")
+			return nil
+		}
+		if !strings.EqualFold(strings.TrimSpace(status.InStandby), "true") {
+			logger.Info().
+				Str("in_standby", status.InStandby).
+				Int("streamPort", t.Client.StreamPort).
+				Msg("receiver is active; skipping explicit zap and relying on background tuner allocation")
 			return nil
 		}
 	}

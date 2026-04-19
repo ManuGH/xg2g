@@ -175,6 +175,15 @@ func (c *Client) GetCurrent(ctx context.Context) (*CurrentInfo, error) {
 	return &res, nil
 }
 
+// GetStatusInfo retrieves standby/playback status.
+func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
+	var res StatusInfo
+	if err := c.get(ctx, "/api/statusinfo", nil, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 // GetSignal retrieves tuner signal stats (SNR, AGC, BER, Lock).
 func (c *Client) GetSignal(ctx context.Context) (*Signal, error) {
 	var res Signal
