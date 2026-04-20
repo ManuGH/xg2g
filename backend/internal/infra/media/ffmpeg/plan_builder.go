@@ -55,12 +55,15 @@ type liveSegmentLayout struct {
 }
 
 func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamSpec, inputURL string) (finalizedPlan, error) {
-	codecPhase, err := a.planCodec(spec)
+	inputPhase, err := a.planInput(spec, inputURL)
 	if err != nil {
 		return finalizedPlan{}, err
 	}
+	if spec.Mode == ports.ModeLive {
+		spec = a.FinalizePlan(ctx, spec, inputPhase.inputURL)
+	}
 
-	inputPhase, err := a.planInput(spec, inputURL)
+	codecPhase, err := a.planCodec(spec)
 	if err != nil {
 		return finalizedPlan{}, err
 	}
@@ -412,7 +415,6 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	if err != nil {
 		return outputPlan{}, err
 	}
-	spec = a.FinalizePlan(ctx, spec, input.inputURL)
 	fps := a.resolveLiveFPS(ctx, spec, input.inputURL)
 	fps = a.adjustLiveFPSForRuntimeServiceOverride(spec, input.inputURL, fps)
 	gop := fps * layout.segmentDurationSec
@@ -659,6 +661,11 @@ func (a *LocalAdapter) FinalizePlan(ctx context.Context, spec ports.StreamSpec, 
 		spec.Profile.EffectiveModeSource = source
 	}
 
+	spec, overridden, source = a.applyRuntimeProgressiveHardwareDeinterlaceOverride(ctx, spec, inputURL)
+	if overridden {
+		spec.Profile.EffectiveModeSource = source
+	}
+
 	if !spec.Profile.TranscodeVideo && shouldHardenSafariCopyBitstream(spec, inputURL) {
 		spec.Profile.EffectiveRuntimeMode = ports.RuntimeModeCopyHardened
 		spec.Profile.EffectiveModeSource = ports.RuntimeModeSourceEnvOverride
@@ -668,6 +675,48 @@ func (a *LocalAdapter) FinalizePlan(ctx context.Context, spec ports.StreamSpec, 
 		spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
 	}
 	return spec
+}
+
+func (a *LocalAdapter) applyRuntimeProgressiveHardwareDeinterlaceOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {
+	if spec.Mode != ports.ModeLive {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if !spec.Profile.TranscodeVideo || !spec.Profile.Deinterlace {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if strings.TrimSpace(inputURL) == "" {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if normalizeRequestedCodec(spec.Profile.VideoCodec) != "av1" {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+
+	probeTimeout := a.SafariRuntimeProbeTimeout
+	if probeTimeout <= 0 {
+		probeTimeout = 6 * time.Second
+	}
+	info, err := a.runSafariRuntimeProbeWithRetry(ctx, spec.SessionID, inputURL, probeTimeout)
+	if err != nil {
+		a.Logger.Info().
+			Err(err).
+			Str("sessionId", spec.SessionID).
+			Str("input_url", sanitizeURLForLog(inputURL)).
+			Dur("probe_timeout", probeTimeout).
+			Msg("runtime progressive probe failed; keeping deinterlace enabled")
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+	if info.Video.Interlaced {
+		return spec, false, ports.RuntimeModeSourceUnknown
+	}
+
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("video_codec", info.Video.CodecName).
+		Bool("interlaced", info.Video.Interlaced).
+		Str("container", info.Container).
+		Msg("runtime probe cleared unnecessary deinterlace for hardware av1 path")
+	spec.Profile.Deinterlace = false
+	return spec, true, ports.RuntimeModeSourceRuntimeHardening
 }
 
 func (a *LocalAdapter) applySafariRuntimeRemuxOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {

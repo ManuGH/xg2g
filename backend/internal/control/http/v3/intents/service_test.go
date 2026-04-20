@@ -633,6 +633,55 @@ func TestService_ProcessIntent_RejectsExplicitHWProfileWhenHwaccelOff(t *testing
 	}
 }
 
+func TestService_ProcessIntent_StartUsesProgressiveScanTruthForAV1HW(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+	hardware.SetVAAPIEncoderPreflight(map[string]bool{"av1_vaapi": true})
+	hardware.SetVAAPIPreflightResult(true)
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.scanner = &mockChannelScanner{
+		found:      true,
+		capability: scan.Capability{Interlaced: false},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-av1-progressive",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "av1_hw"},
+		CorrelationID: "corr-av1-progressive",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil {
+		t.Fatal("expected session to be persisted")
+	}
+	if deps.store.putSession.Profile.Name != "av1_hw" {
+		t.Fatalf("expected av1_hw profile, got %#v", deps.store.putSession.Profile)
+	}
+	if deps.store.putSession.Profile.VideoCodec != "av1" {
+		t.Fatalf("expected av1 codec, got %#v", deps.store.putSession.Profile)
+	}
+	if deps.store.putSession.Profile.Container != "mpegts" {
+		t.Fatalf("expected mpegts container, got %#v", deps.store.putSession.Profile)
+	}
+	if deps.store.putSession.Profile.Deinterlace {
+		t.Fatalf("expected progressive scan truth to disable deinterlace, got %#v", deps.store.putSession.Profile)
+	}
+}
+
 func TestService_ProcessIntent_StartReplayReturnsExistingSession(t *testing.T) {
 	deps := newMockDeps()
 	deps.store.putExistingID = "existing-sid"

@@ -1,6 +1,9 @@
 package container
 
-import "github.com/ManuGH/xg2g/internal/media/codec"
+import (
+	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/media/codec"
+)
 
 // Format identifies a concrete media container or segment format.
 type Format uint8
@@ -29,6 +32,8 @@ func (f Format) CanCarry(id codec.ID) bool {
 	switch f {
 	case MPEGTS:
 		switch id {
+		case codec.IDAV1:
+			return config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false)
 		case codec.IDH264, codec.IDHEVC, codec.IDMPEG2, codec.IDAAC, codec.IDAC3, codec.IDEAC3, codec.IDMP2, codec.IDMP3:
 			return true
 		default:

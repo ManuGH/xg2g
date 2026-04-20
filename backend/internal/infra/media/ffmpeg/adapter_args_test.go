@@ -1598,6 +1598,97 @@ func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
 	assert.Equal(t, "av1", spec.Profile.VideoCodec, "adapter must not mutate profile codec semantics")
 }
 
+func TestBuildArgs_AV1HWUsesMPEGTSSegmentsWhenExperimentalFlagEnabled(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-ts",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Container:      "mpegts",
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", hlsSegmentType)
+	assert.Contains(t, args, "av1_vaapi")
+}
+
+func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		return &vod.StreamInfo{
+			Container: "ts",
+			Video: vod.VideoStreamInfo{
+				CodecName:  "h264",
+				Interlaced: false,
+			},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-progressive-probe",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:                "av1_hw",
+			EffectiveModeSource: ports.RuntimeModeSourceResolve,
+			TranscodeVideo:      true,
+			HWAccel:             "vaapi",
+			VideoCodec:          "av1",
+			Deinterlace:         true,
+			Container:           "mpegts",
+			VideoMaxRateK:       6000,
+			VideoBufSizeK:       12000,
+			AudioBitrateK:       192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:"
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+
+	assert.Contains(t, plan.args, "av1_vaapi")
+	assert.NotContains(t, plan.args, "h264_vaapi")
+	assert.Equal(t, "av1", plan.effectiveProfile.VideoCodec)
+	assert.False(t, plan.effectiveProfile.Deinterlace)
+	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, plan.effectiveProfile.EffectiveModeSource)
+}
+
 func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
