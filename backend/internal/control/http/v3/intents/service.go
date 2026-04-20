@@ -236,9 +236,15 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 	switch requestedPlaybackMode {
 	case "", "native_hls":
 		// Explicit playback modes usually bypass UA sniffing, but native_hls
-		// still needs the real Safari UA to distinguish browser-native Safari
-		// playback (mpegts copy) from app-native or other non-Safari clients.
-		profileUserAgent = intent.UserAgent
+		// still needs the real Safari UA to keep desktop Safari on the proven
+		// browser-native MPEG-TS path. iOS native HLS should instead follow the
+		// native packaging contract used by playback-info (fMP4 for HEVC/H.264
+		// and AV1 unless an explicit AV1 MPEG-TS experiment is requested).
+		if requestedPlaybackMode == "native_hls" && clientFamily == playbackprofile.ClientIOSSafariNative {
+			profileUserAgent = ""
+		} else {
+			profileUserAgent = intent.UserAgent
+		}
 	case "hlsjs":
 		// Desktop Safari can prefer hls.js while still requiring Safari-specific
 		// packaging choices for dirty live transcodes.
@@ -261,6 +267,22 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 			resolution.profileSpec = resolveProfileSpec(resolution.effectiveProfileID)
 			resolution.hostOverrideApplied = true
 		}
+	}
+	if requestedPlaybackMode == "native_hls" &&
+		clientFamily == playbackprofile.ClientIOSSafariNative &&
+		resolution.effectiveProfileID == profiles.ProfileAV1HW &&
+		strings.EqualFold(strings.TrimSpace(resolution.profileSpec.Container), "mpegts") {
+		// Apple native HLS AV1 should stay on fMP4 even when the global AV1
+		// MPEG-TS experiment is enabled for other playback paths.
+		resolution.profileSpec.Container = "fmp4"
+	}
+	if requestedPlaybackMode == "native_hls" &&
+		clientFamily == playbackprofile.ClientIOSSafariNative &&
+		(resolution.effectiveProfileID == profiles.ProfileSafariHEVCHW || resolution.effectiveProfileID == profiles.ProfileSafariHEVCHWLL) &&
+		profiles.IsFullVAAPIProfile(resolution.profileSpec.HWAccel) {
+		// iPhone native HLS still black-screens on the current full VAAPI HEVC path.
+		// Keep HEVC, but avoid VAAPI decode surfaces and use encode-only instead.
+		resolution.profileSpec.HWAccel = "vaapi_encode_only"
 	}
 	if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(resolution.effectiveProfileID); ok {
 		if hwaccelMode == profiles.HWAccelOff {
@@ -649,52 +671,25 @@ func pickProfileForCodecs(raw string, hwaccelMode profiles.HWAccelMode) string {
 }
 
 func pickNativeHLSProfile(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode) string {
-	if picked := pickNativeHLSProfileForCodecs(raw, clientFamily, hwaccelMode); picked != "" {
-		return picked
-	}
-	return pickNativeHLSProfileForCapabilities(clientFamily, clientCaps, hwaccelMode)
+	return autocodec.PickNativeHLSProfile(raw, clientFamily, clientCaps, hwaccelMode)
 }
 
 func pickNativeHLSProfileForCodecs(raw, clientFamily string, hwaccelMode profiles.HWAccelMode) string {
-	switch normalize.Token(clientFamily) {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
-	default:
-		return ""
-	}
-	switch pickProfileForCodecs(raw, hwaccelMode) {
-	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
-		return profiles.ProfileSafariHEVCHW
-	default:
-		return ""
-	}
+	return autocodec.PickNativeHLSProfileForCodecs(raw, clientFamily, hwaccelMode)
 }
 
 func pickNativeHLSProfileForCapabilities(clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode) string {
-	if hwaccelMode == profiles.HWAccelOff {
-		return ""
-	}
+	return autocodec.PickNativeHLSProfileForCapabilities(clientFamily, clientCaps, hwaccelMode)
+}
 
-	family := normalize.Token(clientFamily)
-	if family == "" && clientCaps != nil {
-		family = normalize.Token(clientCaps.ClientFamilyFallback)
-	}
-	switch family {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
-	default:
-		return ""
-	}
-
-	if clientCaps != nil {
-		source := normalize.Token(clientCaps.ClientCapsSource)
-		if source != capabilities.ClientCapsSourceRuntimePlusFam && source != capabilities.ClientCapsSourceFamilyFallback {
-			return ""
+func clientCapsHasCodec(values []string, want string) bool {
+	want = normalize.Token(want)
+	for _, value := range values {
+		if normalize.Token(value) == want {
+			return true
 		}
 	}
-
-	if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(profiles.ProfileSafariHEVCHW); ok && hardware.IsHardwareEncoderReady(requiredCodec) {
-		return profiles.ProfileSafariHEVCHW
-	}
-	return ""
+	return false
 }
 
 func requiredVerifiedHardwareCodecForProfile(profileID string) (string, bool) {

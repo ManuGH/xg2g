@@ -32,7 +32,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 
 	req = s.applyCapabilityRegistryFallback(ctx, req)
 
-	sourceRef, truth, err := s.resolveSubjectTruth(ctx, req, svc)
+	sourceRef, truth, liveTruth, err := s.resolveSubjectTruth(ctx, req, svc)
 	if err != nil {
 		return PlaybackInfoResult{}, err
 	}
@@ -90,7 +90,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	alignAutoCodecDecision(req, resolvedCaps, dec)
 	alignLiveNativePackaging(req, resolvedCaps, dec)
 	alignRecordingNativePackaging(req, resolvedCaps, dec)
-	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, resolvedCaps)
+	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, liveTruth, resolvedCaps)
 	s.recordDecisionAudit(ctx, hostContext, sourceRef, req, resolvedCaps, input, dec)
 	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
 
@@ -223,10 +223,10 @@ func playbackPolicyProbeFailureStreak(policy *playbackFeedbackPolicy) int {
 	return policy.Confidence.ProbeFailureStreak
 }
 
-func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoRequest, svc RecordingsService) (string, playback.MediaTruth, *PlaybackInfoError) {
+func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoRequest, svc RecordingsService) (string, playback.MediaTruth, *liveTruthResolution, *PlaybackInfoError) {
 	subjectID := strings.TrimSpace(req.SubjectID)
 	if subjectID == "" {
-		return "", playback.MediaTruth{}, &PlaybackInfoError{
+		return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 			Kind:    PlaybackInfoErrorInvalidInput,
 			Message: "subject id is required",
 		}
@@ -235,7 +235,7 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 	switch req.SubjectKind {
 	case PlaybackSubjectLive:
 		if err := domainrecordings.ValidateLiveRef(subjectID); err != nil {
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:    PlaybackInfoErrorInvalidInput,
 				Message: "serviceRef must be a valid live Enigma2 reference",
 				Cause:   err,
@@ -259,13 +259,13 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 			}
 		}
 		if !truthResolution.Verified() {
-			return "", playback.MediaTruth{}, playbackInfoErrorForLiveTruth(truthResolution)
+			return "", playback.MediaTruth{}, &truthResolution, playbackInfoErrorForLiveTruth(truthResolution)
 		}
-		return subjectID, truthResolution.Truth, nil
+		return subjectID, truthResolution.Truth, &truthResolution, nil
 	case PlaybackSubjectRecording:
 		sourceRef, ok := domainrecordings.DecodeRecordingID(subjectID)
 		if !ok {
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:    PlaybackInfoErrorInvalidInput,
 				Message: "Invalid recording ID format",
 			}
@@ -273,31 +273,31 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 
 		truth, err := svc.GetMediaTruth(ctx, subjectID)
 		if err != nil {
-			return "", playback.MediaTruth{}, classifyPlaybackInfoError(err)
+			return "", playback.MediaTruth{}, nil, classifyPlaybackInfoError(err)
 		}
 
 		switch truth.Status {
 		case playback.MediaStatusPreparing:
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:              PlaybackInfoErrorPreparing,
 				Message:           "Retry shortly.",
 				RetryAfterSeconds: truth.RetryAfter,
 				ProbeState:        string(truth.ProbeState),
 			}
 		case playback.MediaStatusUpstreamUnavailable:
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:    PlaybackInfoErrorUpstreamUnavailable,
 				Message: "Retry later.",
 			}
 		case playback.MediaStatusNotFound:
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:    PlaybackInfoErrorNotFound,
 				Message: "recording not found",
 			}
 		}
-		return sourceRef, truth, nil
+		return sourceRef, truth, nil, nil
 	default:
-		return "", playback.MediaTruth{}, &PlaybackInfoError{
+		return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 			Kind:    PlaybackInfoErrorInvalidInput,
 			Message: "unsupported playback subject kind",
 		}
@@ -387,7 +387,7 @@ func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.P
 		return
 	}
 
-	profileID := autocodec.PickProfileForCapabilities(resolvedCaps, profiles.HWAccelAuto)
+	profileID := pickPlaybackInfoAutoProfile(resolvedCaps)
 	if profileID == "" {
 		return
 	}
@@ -409,6 +409,13 @@ func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.P
 		dec.Trace.RequestedIntent = publicProfile
 		dec.Trace.ResolvedIntent = publicProfile
 	}
+}
+
+func pickPlaybackInfoAutoProfile(resolvedCaps capabilities.PlaybackCapabilities) string {
+	if profileID := autocodec.PickNativeHLSProfile("", resolvedCaps.ClientFamilyFallback, &resolvedCaps, profiles.HWAccelAuto); profileID != "" {
+		return profileID
+	}
+	return autocodec.PickProfileForCapabilities(resolvedCaps, profiles.HWAccelAuto)
 }
 
 func shouldApplyAutoCodecDecision(requestedProfile string) bool {
@@ -440,6 +447,9 @@ func alignLiveNativePackaging(req PlaybackInfoRequest, resolvedCaps capabilities
 	if !clientWantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
 		return
 	}
+	if shouldKeepExperimentalNativeAV1TransportStream(resolvedCaps, dec) {
+		return
+	}
 	if shouldPreferNativeDirectStream(dec) {
 		rewriteDecisionToDirectStream(dec)
 	}
@@ -458,6 +468,39 @@ func alignLiveNativePackaging(req PlaybackInfoRequest, resolvedCaps capabilities
 	if dec.Mode == decision.ModeDirectStream {
 		dec.Trace.QualityRung = string(playbackprofile.RungCompatibleHLSFMP4)
 	}
+}
+
+func shouldKeepExperimentalNativeAV1TransportStream(resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) bool {
+	if dec == nil || dec.TargetProfile == nil {
+		return false
+	}
+	if !config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false) {
+		return false
+	}
+	switch normalize.Token(resolvedCaps.ClientFamilyFallback) {
+	case playbackprofile.ClientSafariNative:
+	default:
+		return false
+	}
+	switch normalize.Token(resolvedCaps.ClientCapsSource) {
+	case "runtime", "runtime_plus_family":
+	default:
+		return false
+	}
+	if !playbackInfoCapsHasToken(resolvedCaps.VideoCodecs, "av1") {
+		return false
+	}
+	if !playbackInfoCapsHasToken(resolvedCaps.Containers, "ts") && !playbackInfoCapsHasToken(resolvedCaps.Containers, "mpegts") {
+		return false
+	}
+	if !decisionTargetsVideoCodec(dec, "av1") {
+		return false
+	}
+	target := playbackprofile.CanonicalizeTarget(*dec.TargetProfile)
+	if target.Container != "mpegts" && target.Packaging != playbackprofile.PackagingTS && target.HLS.SegmentContainer != "mpegts" {
+		return false
+	}
+	return true
 }
 
 func alignRecordingNativePackaging(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
@@ -555,6 +598,33 @@ func clientWantsFMP4Packaging(requestedProfile string, clientFamily string) bool
 	default:
 		return false
 	}
+}
+
+func playbackInfoCapsHasToken(values []string, want string) bool {
+	want = normalize.Token(want)
+	if want == "" {
+		return false
+	}
+	for _, value := range values {
+		if normalize.Token(value) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func decisionTargetsVideoCodec(dec *decision.Decision, want string) bool {
+	want = normalize.Token(want)
+	if want == "" || dec == nil {
+		return false
+	}
+	if normalize.Token(dec.Selected.VideoCodec) == want {
+		return true
+	}
+	if dec.TargetProfile == nil {
+		return false
+	}
+	return normalize.Token(dec.TargetProfile.Video.Codec) == want
 }
 
 func recordingClientSupportsDirectTransportStream(requestedProfile string, clientFamily string) bool {

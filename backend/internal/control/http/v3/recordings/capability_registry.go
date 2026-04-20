@@ -63,7 +63,7 @@ func (s *Service) buildRequestHostContext(ctx context.Context) requestHostContex
 	}
 }
 
-func (s *Service) rememberCapabilitySnapshots(ctx context.Context, hostContext requestHostContext, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, resolved capabilities.PlaybackCapabilities) (string, string, string) {
+func (s *Service) rememberCapabilitySnapshots(ctx context.Context, hostContext requestHostContext, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, liveTruth *liveTruthResolution, resolved capabilities.PlaybackCapabilities) (string, string, string) {
 	registry := s.deps.CapabilityRegistry()
 	if registry == nil {
 		return "", "", ""
@@ -88,7 +88,7 @@ func (s *Service) rememberCapabilitySnapshots(ctx context.Context, hostContext r
 		}
 	}
 
-	sourceSnapshot := s.sourceSnapshotForRequest(ctx, sourceRef, req, truth)
+	sourceSnapshot := s.sourceSnapshotForRequestWithLiveTruth(ctx, sourceRef, req, truth, liveTruth)
 	sourceFingerprint := sourceSnapshot.Fingerprint()
 	if sourceFingerprint != "" {
 		if err := registry.RememberSource(ctx, sourceSnapshot); err != nil {
@@ -134,6 +134,10 @@ func (s *Service) recordCapabilityObservation(ctx context.Context, sourceRef str
 }
 
 func (s *Service) sourceSnapshotForRequest(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth) capreg.SourceSnapshot {
+	return s.sourceSnapshotForRequestWithLiveTruth(ctx, sourceRef, req, truth, nil)
+}
+
+func (s *Service) sourceSnapshotForRequestWithLiveTruth(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, liveTruth *liveTruthResolution) capreg.SourceSnapshot {
 	sourceSnapshot := capreg.SourceSnapshot{
 		SubjectKind:       string(req.SubjectKind),
 		Container:         truth.Container,
@@ -153,9 +157,14 @@ func (s *Service) sourceSnapshotForRequest(ctx context.Context, sourceRef string
 	flags := make([]string, 0, 6)
 	switch req.SubjectKind {
 	case PlaybackSubjectLive:
-		origin, liveFlags := liveSourceOriginAndFlags(sourceRef, s.deps.ChannelTruthSource())
-		sourceSnapshot.Origin = origin
-		flags = append(flags, liveFlags...)
+		if liveTruth != nil {
+			sourceSnapshot.Origin = liveTruth.Origin
+			flags = append(flags, append([]string(nil), liveTruth.ProblemFlags...)...)
+		} else {
+			origin, liveFlags := liveSourceOriginAndFlags(sourceRef, s.deps.ChannelTruthSource())
+			sourceSnapshot.Origin = origin
+			flags = append(flags, liveFlags...)
+		}
 	case PlaybackSubjectRecording:
 		sourceSnapshot.Origin = "recording_truth"
 	default:

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -49,6 +51,72 @@ func PickProfileForCapabilities(caps capabilities.PlaybackCapabilities, hwaccelM
 		return ""
 	}
 	return PickProfileForCodecs(strings.Join(codecs, ","), hwaccelMode)
+}
+
+func PickNativeHLSProfile(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode) string {
+	if picked := PickNativeHLSProfileForCodecs(raw, clientFamily, hwaccelMode); picked != "" {
+		return picked
+	}
+	return PickNativeHLSProfileForCapabilities(clientFamily, clientCaps, hwaccelMode)
+}
+
+func PickNativeHLSProfileForCodecs(raw, clientFamily string, hwaccelMode profiles.HWAccelMode) string {
+	switch normalize.Token(clientFamily) {
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	default:
+		return ""
+	}
+
+	switch PickProfileForCodecs(raw, hwaccelMode) {
+	case profiles.ProfileAV1HW:
+		return profiles.ProfileAV1HW
+	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
+		return profiles.ProfileSafariHEVCHW
+	default:
+		return ""
+	}
+}
+
+func PickNativeHLSProfileForCapabilities(clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode) string {
+	if hwaccelMode == profiles.HWAccelOff {
+		return ""
+	}
+
+	family := normalize.Token(clientFamily)
+	if family == "" && clientCaps != nil {
+		family = normalize.Token(clientCaps.ClientFamilyFallback)
+	}
+	switch family {
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	default:
+		return ""
+	}
+
+	if clientCaps != nil {
+		source := normalize.Token(clientCaps.ClientCapsSource)
+		if source != capabilities.ClientCapsSourceRuntimePlusFam &&
+			source != capabilities.ClientCapsSourceFamilyFallback &&
+			source != capabilities.ClientCapsSourceRuntime {
+			return ""
+		}
+	}
+
+	if clientCaps != nil &&
+		playbackCapabilitiesHaveCodec(clientCaps.VideoCodecs, "av1") &&
+		normalize.Token(clientCaps.ClientCapsSource) != capabilities.ClientCapsSourceFamilyFallback {
+		if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(profiles.ProfileAV1HW); ok && hardware.IsHardwareEncoderReady(requiredCodec) {
+			return profiles.ProfileAV1HW
+		}
+	}
+
+	if clientCaps != nil && !playbackCapabilitiesHaveCodec(clientCaps.VideoCodecs, "hevc") {
+		return ""
+	}
+
+	if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(profiles.ProfileSafariHEVCHW); ok && hardware.IsHardwareEncoderReady(requiredCodec) {
+		return profiles.ProfileSafariHEVCHW
+	}
+	return ""
 }
 
 func PickProfileForCodecs(raw string, hwaccelMode profiles.HWAccelMode) string {
@@ -203,4 +271,28 @@ func dedupeOrdered(in []string) []string {
 		out = append(out, codec)
 	}
 	return out
+}
+
+func playbackCapabilitiesHaveCodec(codecs []string, want string) bool {
+	want = normalize.Token(want)
+	if want == "" {
+		return false
+	}
+	for _, codec := range codecs {
+		if normalize.Token(codec) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func requiredVerifiedHardwareCodecForProfile(profileID string) (string, bool) {
+	switch profiles.NormalizeRequestedProfileID(profileID) {
+	case profiles.ProfileAV1HW:
+		return "av1", true
+	case profiles.ProfileSafariHEVCHW, profiles.ProfileSafariHEVCHWLL:
+		return "hevc", true
+	default:
+		return "", false
+	}
 }

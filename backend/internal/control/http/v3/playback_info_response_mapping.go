@@ -53,7 +53,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 
 	primaryStr := decision.ReasonPrimaryFrom(dec, nil)
 	mainReason := PlaybackInfoReason(primaryStr)
-	decDTO := buildPlaybackDecisionDTO(id, dec, url, resolvedCaps, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate, runtimePolicyReasons, runtimePolicyConstraints, runtimeProbeSuccessStreak, runtimeProbeFailureStreak)
+	decDTO := buildPlaybackDecisionDTO(id, dec, url, rawTruth, resolvedCaps, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate, runtimePolicyReasons, runtimePolicyConstraints, runtimeProbeSuccessStreak, runtimeProbeFailureStreak)
 	resDTO := buildPlaybackResumeSummary(rState)
 
 	var finalURL *string
@@ -89,7 +89,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	return info
 }
 
-func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int) PlaybackDecision {
+func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, rawTruth playback.MediaTruth, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int) PlaybackDecision {
 	var decDTO PlaybackDecision
 	decDTO.Mode = PlaybackDecisionMode(dec.Mode)
 	decDTO.Selected.Container = dec.Selected.Container
@@ -177,6 +177,7 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, res
 		clientFamily := resolvedCaps.ClientFamilyFallback
 		decDTO.Trace.ClientFamily = &clientFamily
 	}
+	decDTO.Trace.Source = mapSourceProfile(sourceProfileFromMediaTruth(rawTruth))
 	if dec.Trace.ForcedIntent != "" || dec.Trace.MaxQualityRung != "" || dec.Trace.OverrideApplied || runtimePolicyAction != "" || runtimePolicyPhase != "" || runtimeProbeCandidate != "" || len(runtimePolicyReasons) > 0 || len(runtimePolicyConstraints) > 0 || runtimeProbeSuccessStreak > 0 || runtimeProbeFailureStreak > 0 {
 		operator := PlaybackTraceOperator{
 			ClientFallbackDisabled: boolPtr(false),
@@ -236,6 +237,36 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, res
 	}
 
 	return decDTO
+}
+
+func sourceProfileFromMediaTruth(rawTruth playback.MediaTruth) *playbackprofile.SourceProfile {
+	source := playbackprofile.SourceProfile{
+		Container:        rawTruth.Container,
+		VideoCodec:       rawTruth.VideoCodec,
+		AudioCodec:       rawTruth.AudioCodec,
+		BitrateKbps:      rawTruth.BitrateKbps,
+		Width:            rawTruth.Width,
+		Height:           rawTruth.Height,
+		FPS:              rawTruth.FPS,
+		Interlaced:       rawTruth.Interlaced,
+		AudioChannels:    rawTruth.AudioChannels,
+		AudioBitrateKbps: rawTruth.AudioBitrateKbps,
+	}
+
+	if source.Container == "" &&
+		source.VideoCodec == "" &&
+		source.AudioCodec == "" &&
+		source.BitrateKbps == 0 &&
+		source.Width == 0 &&
+		source.Height == 0 &&
+		source.FPS == 0 &&
+		!source.Interlaced &&
+		source.AudioChannels == 0 &&
+		source.AudioBitrateKbps == 0 {
+		return nil
+	}
+
+	return &source
 }
 
 func buildPlaybackResumeSummary(rState *resume.State) *ResumeSummary {

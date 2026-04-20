@@ -2832,6 +2832,79 @@ func TestService_ResolvePlaybackInfo_LiveTranscodeUsesMeasuredAutoCodecProfile(t
 	assert.Equal(t, "fmp4", res.Decision.TargetProfile.Container)
 }
 
+func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasuredH264Preference(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 50},
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 10},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: verifiedLiveTruthSource(scan.Capability{State: scan.CapabilityStateOK, Container: "ts", VideoCodec: "h264", AudioCodec: "ac3", Width: 1920, Height: 1080, FPS: 25, Interlaced: false}),
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	supportsRange := true
+	av1Smooth := true
+	av1Efficient := true
+	h264Smooth := true
+	h264Efficient := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:        "1:0:19:EF75:3F9:1:C00000:0:0:0:",
+		SubjectKind:      PlaybackSubjectLive,
+		APIVersion:       "v3.1",
+		SchemaType:       "live",
+		RequestedProfile: "quality",
+		RequestID:        "req-live-native-av1-ts",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 3,
+			Containers:          []string{"mp4", "ts"},
+			VideoCodecs:         []string{"av1", "hevc", "h264"},
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
+				{Codec: "h264", Supported: true, Smooth: &h264Smooth, PowerEfficient: &h264Efficient},
+			},
+			AudioCodecs:          []string{"aac"},
+			SupportsHLS:          true,
+			SupportsRange:        &supportsRange,
+			DeviceType:           "mobile",
+			HLSEngines:           []string{"native"},
+			PreferredHLSEngine:   "native",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: "ios_safari_native",
+			ClientCapsSource:     "runtime_plus_family",
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.NotNil(t, res.Decision.TargetProfile)
+	assert.Equal(t, decision.ModeTranscode, res.Decision.Mode)
+	assert.Equal(t, "hls", res.Decision.SelectedOutputKind)
+	assert.Equal(t, "av1", res.Decision.Selected.VideoCodec)
+	assert.Equal(t, "fmp4", res.Decision.Selected.Container)
+	assert.Equal(t, "fmp4", res.Decision.TargetProfile.Container)
+	assert.Equal(t, playbackprofile.PackagingFMP4, res.Decision.TargetProfile.Packaging)
+	assert.Equal(t, "fmp4", res.Decision.TargetProfile.HLS.SegmentContainer)
+	assert.Equal(t, "av1", res.Decision.TargetProfile.Video.Codec)
+}
+
 func TestService_ResolvePlaybackInfo_LiveRepairIntentSkipsAutoCodecUpgrade(t *testing.T) {
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{

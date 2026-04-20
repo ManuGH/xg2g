@@ -105,6 +105,9 @@ func (s *Service) applyPlaybackFeedbackPolicy(ctx context.Context, sourceRef str
 
 func (s *Service) lookupPlaybackFeedbackPolicy(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, resolved capabilities.PlaybackCapabilities, hostContext requestHostContext, hostPressure playbackprofile.HostPressureAssessment) (playbackFeedbackPolicy, bool) {
 	registry := s.deps.CapabilityRegistry()
+	if registry == nil {
+		return playbackFeedbackPolicy{}, false
+	}
 	hostFingerprint := strings.TrimSpace(hostContext.Snapshot.Identity.Fingerprint())
 	deviceFingerprint := deviceIdentityForRequest(req, resolved).Fingerprint()
 	sourceFingerprint := s.sourceSnapshotForRequest(ctx, sourceRef, req, truth).Fingerprint()
@@ -512,6 +515,9 @@ func confidenceIsProbeConfirmedCode(code int) bool {
 
 func (s *Service) rememberPlaybackPolicyState(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, resolved capabilities.PlaybackCapabilities, hostContext requestHostContext, policy playbackFeedbackPolicy) {
 	registry := s.deps.CapabilityRegistry()
+	if registry == nil {
+		return
+	}
 	store, ok := registry.(capreg.PlaybackPolicyStateStore)
 	if !ok {
 		return
