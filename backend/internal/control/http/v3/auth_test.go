@@ -383,6 +383,17 @@ func TestCreateSession_TransportSecurity(t *testing.T) {
 			expectCookie: true,
 			expectSecure: false,
 		},
+		{
+			name: "gateway-like plain HTTP remains rejected",
+			cfg: config.AppConfig{
+				APIToken:       "secret",
+				APITokenScopes: []string{string(ScopeV3Read)},
+			},
+			remoteAddr:   "172.20.0.1:1234",
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     problemcode.CodeHTTPSRequired,
+			expectCookie: false,
+		},
 	}
 
 	for _, tc := range testCases {
