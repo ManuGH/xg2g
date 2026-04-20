@@ -1053,7 +1053,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
-	args = appendVaapiRateControlArgs(args, spec, outputCodec)
+	args = appendVaapiRateControlArgs(args, prof)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
@@ -1093,7 +1093,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
-	args = appendVaapiRateControlArgs(args, spec, outputCodec)
+	args = appendVaapiRateControlArgs(args, prof)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
@@ -1105,23 +1105,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	return args
 }
 
-func appendVaapiRateControlArgs(args []string, spec ports.StreamSpec, outputCodec string) []string {
-	prof := spec.Profile
-	if useConservativeHEVCVAAPILivePreset(spec, outputCodec) && prof.VideoMaxRateK > 0 {
-		// Apple-native HEVC live playback is less tolerant of bursty encode-only
-		// output than our generic VAAPI paths. Keep this path on bounded bitrate
-		// control instead of CQP so segment sizes and decoder buffering stay tame.
-		args = append(args,
-			"-rc_mode", "CBR",
-			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
-			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
-		)
-		if prof.VideoBufSizeK > 0 {
-			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
-		}
-		return args
-	}
-
+func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string {
 	if prof.VideoQP > 0 {
 		args = append(args,
 			"-rc_mode", "CQP",
