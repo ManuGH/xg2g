@@ -356,7 +356,7 @@ describe('V3Player native Safari recovery', () => {
 
   it('drops the startup overlay once native playback is visibly renderable', async () => {
     let paused = false;
-    let currentTime = 0.45;
+    let currentTime = 0;
     let readyState = 4;
     let bufferedLength = 1;
     let bufferedEnd = 1.5;

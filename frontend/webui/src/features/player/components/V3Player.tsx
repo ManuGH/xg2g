@@ -2452,8 +2452,8 @@ function V3Player(props: V3PlayerProps) {
       }
 
       const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
-      const hasPlaybackProgress = Number.isFinite(video.currentTime) && video.currentTime > 0;
-      if (video.paused || video.readyState < 4 || !hasVideoGeometry || !hasPlaybackProgress) {
+      const hasReadyFrame = video.readyState >= 4;
+      if (video.paused || (!hasReadyFrame && !hasVideoGeometry)) {
         return false;
       }
 
