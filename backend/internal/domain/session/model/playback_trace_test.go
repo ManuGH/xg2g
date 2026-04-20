@@ -193,6 +193,20 @@ func TestTraceFFmpegPlanFromProfile_UsesFMP4AndVAAPIWhenConfigured(t *testing.T)
 	assert.Equal(t, "aac", plan.AudioCodec)
 }
 
+func TestTraceFFmpegPlanFromProfile_PreservesEncodeOnlyHWAccel(t *testing.T) {
+	plan := TraceFFmpegPlanFromProfile(ProfileSpec{
+		Name:           "safari_hevc_hw",
+		Container:      "fmp4",
+		TranscodeVideo: true,
+		VideoCodec:     "hevc",
+		HWAccel:        "vaapi_encode_only",
+		AudioBitrateK:  192,
+	}, "tuner", 6)
+	require.NotNil(t, plan)
+	assert.Equal(t, "vaapi_encode_only", plan.HWAccel)
+	assert.Equal(t, "hevc", plan.VideoCodec)
+}
+
 func TestTraceStopClassFromReason_MapsLifecycleReasons(t *testing.T) {
 	assert.Equal(t, PlaybackStopClassInput, TraceStopClassFromReason(RTuneTimeout))
 	assert.Equal(t, PlaybackStopClassPackager, TraceStopClassFromReason(RPackagerFailed))

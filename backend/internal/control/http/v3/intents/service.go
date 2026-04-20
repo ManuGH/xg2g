@@ -276,12 +276,13 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 		// MPEG-TS experiment is enabled for other playback paths.
 		resolution.profileSpec.Container = "fmp4"
 	}
-	if requestedPlaybackMode == "native_hls" &&
-		clientFamily == playbackprofile.ClientIOSSafariNative &&
+	if clientFamily == playbackprofile.ClientIOSSafariNative &&
 		(resolution.effectiveProfileID == profiles.ProfileSafariHEVCHW || resolution.effectiveProfileID == profiles.ProfileSafariHEVCHWLL) &&
 		profiles.IsFullVAAPIProfile(resolution.profileSpec.HWAccel) {
-		// iPhone native HLS still black-screens on the current full VAAPI HEVC path.
-		// Keep HEVC, but avoid VAAPI decode surfaces and use encode-only instead.
+		// iPhone HEVC still black-screens on the current full VAAPI path.
+		// The live playback token binds starts to decision.Mode ("transcode"),
+		// so this safeguard must apply to iOS HEVC sessions regardless of the
+		// requested playback_mode label.
 		resolution.profileSpec.HWAccel = "vaapi_encode_only"
 	}
 	if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(resolution.effectiveProfileID); ok {

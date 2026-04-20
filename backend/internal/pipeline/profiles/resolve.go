@@ -481,7 +481,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		} else {
 			spec.Container = "fmp4"
 		}
-		spec.Deinterlace = true
+		spec.Deinterlace = cap == nil || cap.Interlaced
 		spec.VideoCRF = 22        // Conservative start for x265
 		spec.VideoMaxRateK = 5000 // Strict VBV Cap
 		spec.VideoBufSizeK = 10000
@@ -500,7 +500,10 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		} else {
 			spec.Container = "fmp4"
 		}
-		spec.Deinterlace = true
+		// Respect existing scan truth so progressive HEVC candidates do not enter
+		// the conservative interlaced path and get downgraded to H.264 before launch.
+		spec.Deinterlace = cap == nil || cap.Interlaced
+		spec.VideoQP = envIntBounded("XG2G_SAFARI_HEVC_VAAPI_QP", 20, 10, 40)
 		spec.VideoMaxRateK = 5000 // VBV Cap
 		spec.VideoBufSizeK = 10000
 		spec.AudioBitrateK = 192
@@ -522,8 +525,9 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
 		spec.Container = "fmp4"
-		spec.Deinterlace = true
+		spec.Deinterlace = cap == nil || cap.Interlaced
 		spec.LLHLS = true // Enable Low-Latency HLS with 0.5s part-segments
+		spec.VideoQP = envIntBounded("XG2G_SAFARI_HEVC_VAAPI_QP", 20, 10, 40)
 		spec.VideoMaxRateK = 5000
 		spec.VideoBufSizeK = 10000
 		spec.AudioBitrateK = 192
@@ -543,11 +547,17 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 	case ProfileAV1HW:
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
 		// GPU-Accelerated AV1 (VAAPI).
-		// AV1 mandates fMP4 segments (not TS).
+		// Default to fMP4. MPEG-TS is available only as an explicit experimental opt-in.
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "av1"
-		spec.Container = "fmp4"
-		spec.Deinterlace = true
+		if config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false) {
+			spec.Container = "mpegts"
+		} else {
+			spec.Container = "fmp4"
+		}
+		// Respect existing scan truth so progressive services do not enter the
+		// conservative interlaced startup path and get downgraded before launch.
+		spec.Deinterlace = cap == nil || cap.Interlaced
 		spec.VideoMaxRateK = 6000
 		spec.VideoBufSizeK = 12000
 		spec.AudioBitrateK = 192

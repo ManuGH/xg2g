@@ -202,6 +202,7 @@ func TestResolve_SafariHEVCBrowserUsesMPEGTS(t *testing.T) {
 	assert.Equal(t, "mpegts", specHW.Container)
 	assert.Equal(t, "vaapi", specHW.HWAccel)
 	assert.Equal(t, "hevc", specHW.VideoCodec)
+	assert.Equal(t, 20, specHW.VideoQP)
 }
 
 func TestResolve_SafariHEVCNativeKeepsFMP4(t *testing.T) {
@@ -210,6 +211,73 @@ func TestResolve_SafariHEVCNativeKeepsFMP4(t *testing.T) {
 
 	specHW := Resolve(ProfileSafariHEVCHW, "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "fmp4", specHW.Container)
+	assert.Equal(t, 20, specHW.VideoQP)
+}
+
+func TestResolve_AV1HWDefaultsToFMP4(t *testing.T) {
+	spec := Resolve(ProfileAV1HW, "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "fmp4", spec.Container)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.True(t, spec.Deinterlace)
+}
+
+func TestResolve_AV1HWUsesMPEGTSWhenExperimentalFlagEnabled(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+
+	spec := Resolve(ProfileAV1HW, "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "mpegts", spec.Container)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.True(t, spec.Deinterlace)
+}
+
+func TestResolve_AV1HWProgressiveCapabilityDisablesDeinterlace(t *testing.T) {
+	spec := Resolve(ProfileAV1HW, "", 0, &scan.Capability{Interlaced: false}, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.False(t, spec.Deinterlace)
+}
+
+func TestResolve_AV1HWInterlacedCapabilityKeepsDeinterlace(t *testing.T) {
+	spec := Resolve(ProfileAV1HW, "", 0, &scan.Capability{Interlaced: true}, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.True(t, spec.Deinterlace)
+}
+
+func TestResolve_SafariHEVCProgressiveCapabilityDisablesDeinterlace(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+	}{
+		{name: "cpu", profile: ProfileSafariHEVC},
+		{name: "hw", profile: ProfileSafariHEVCHW},
+		{name: "hw ll", profile: ProfileSafariHEVCHWLL},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := Resolve(tt.profile, "", 0, &scan.Capability{Interlaced: false}, GPUBackendVAAPI, HWAccelAuto)
+			assert.Equal(t, "hevc", spec.VideoCodec)
+			assert.False(t, spec.Deinterlace)
+		})
+	}
+}
+
+func TestResolve_SafariHEVCInterlacedCapabilityKeepsDeinterlace(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+	}{
+		{name: "cpu", profile: ProfileSafariHEVC},
+		{name: "hw", profile: ProfileSafariHEVCHW},
+		{name: "hw ll", profile: ProfileSafariHEVCHWLL},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := Resolve(tt.profile, "", 0, &scan.Capability{Interlaced: true}, GPUBackendVAAPI, HWAccelAuto)
+			assert.Equal(t, "hevc", spec.VideoCodec)
+			assert.True(t, spec.Deinterlace)
+		})
+	}
 }
 
 func TestNormalizeRequestedProfileID_MapsPublicAliases(t *testing.T) {
