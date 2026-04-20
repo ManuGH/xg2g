@@ -1053,7 +1053,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
-	args = appendVaapiRateControlArgs(args, prof)
+	args = appendVaapiRateControlArgs(args, spec, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
@@ -1093,7 +1093,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
-	args = appendVaapiRateControlArgs(args, prof)
+	args = appendVaapiRateControlArgs(args, spec, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
@@ -1105,7 +1105,23 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	return args
 }
 
-func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string {
+func appendVaapiRateControlArgs(args []string, spec ports.StreamSpec, outputCodec string) []string {
+	prof := spec.Profile
+	if useConservativeHEVCVAAPILivePreset(spec, outputCodec) && prof.VideoMaxRateK > 0 {
+		// Apple-native HEVC live playback is less tolerant of bursty encode-only
+		// output than our generic VAAPI paths. Keep this path on bounded bitrate
+		// control instead of CQP so segment sizes and decoder buffering stay tame.
+		args = append(args,
+			"-rc_mode", "CBR",
+			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+		)
+		if prof.VideoBufSizeK > 0 {
+			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+		return args
+	}
+
 	if prof.VideoQP > 0 {
 		args = append(args,
 			"-rc_mode", "CQP",
@@ -1200,22 +1216,32 @@ func appendNVENCRateControlArgs(args []string, prof ports.ProfileSpec) []string 
 }
 
 func appendConservativeHEVCVAAPIArgs(args []string, spec ports.StreamSpec, outputCodec string) []string {
-	if normalizeRequestedCodec(outputCodec) != "hevc" {
-		return args
-	}
-	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
-		return args
-	}
-	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+	if !useConservativeHEVCVAAPILivePreset(spec, outputCodec) {
 		return args
 	}
 	// iOS-native HEVC fMP4 attaches are sensitive to open-GOP recovery behavior.
 	// Keep the VAAPI bitstream conservative so every forced segment boundary lands
-	// on a full IDR and include AUD markers for stricter Apple decoders.
+	// on a full IDR, avoid B-frame reordering, and include AUD markers for
+	// stricter Apple decoders.
 	return append(args,
+		"-bf", "0",
 		"-aud", "1",
 		"-idr_interval", "1",
+		"-tier", "main",
 	)
+}
+
+func useConservativeHEVCVAAPILivePreset(spec ports.StreamSpec, outputCodec string) bool {
+	if spec.Mode != ports.ModeLive {
+		return false
+	}
+	if normalizeRequestedCodec(outputCodec) != "hevc" {
+		return false
+	}
+	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
 }
 
 func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, inputURL string) []string {

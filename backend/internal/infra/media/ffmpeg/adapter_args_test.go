@@ -755,6 +755,14 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 	require.True(t, ok)
 	assert.Equal(t, "25", outputFPS, "hq25 HEVC path must clamp output framerate to 25fps")
 
+	rcMode, ok := valueAfter(args, "-rc_mode")
+	require.True(t, ok)
+	assert.Equal(t, "CBR", rcMode, "hq25 HEVC path must use bounded bitrate control instead of CQP")
+
+	videoBitrate, ok := valueAfter(args, "-b:v")
+	require.True(t, ok)
+	assert.Equal(t, "5000k", videoBitrate)
+
 	aud, ok := valueAfter(args, "-aud")
 	require.True(t, ok)
 	assert.Equal(t, "1", aud)
@@ -763,7 +771,16 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 	require.True(t, ok)
 	assert.Equal(t, "1", idrInterval)
 
+	bFrames, ok := valueAfter(args, "-bf")
+	require.True(t, ok)
+	assert.Equal(t, "0", bFrames)
+
+	tier, ok := valueAfter(args, "-tier")
+	require.True(t, ok)
+	assert.Equal(t, "main", tier)
+
 	assert.Contains(t, args, "hevc_vaapi")
+	assert.NotContains(t, args, "-qp", "bounded HEVC path must not mix CQP with CBR")
 	assert.Equal(t, ports.RuntimeModeHQ25, plan.effectiveProfile.EffectiveRuntimeMode)
 }
 
