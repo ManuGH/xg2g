@@ -701,6 +701,62 @@ func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *
 	assert.True(t, plan.effectiveProfile.ForceSafariHQ25)
 }
 
+func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-hevc-hq25-progressive",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:                 "safari_hevc_hw",
+			PolicyModeHint:       ports.RuntimeModeHQ25,
+			EffectiveRuntimeMode: ports.RuntimeModeHQ25,
+			Container:            "fmp4",
+			TranscodeVideo:       true,
+			HWAccel:              "vaapi_encode_only",
+			VideoCodec:           "hevc",
+			VideoQP:              20,
+			Deinterlace:          false,
+			VideoMaxRateK:        5000,
+			VideoBufSizeK:        10000,
+			AudioBitrateK:        192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	args := plan.args
+
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, expectedGOP, gop, "hq25 HEVC path must clamp progressive sources to 25fps GOP cadence")
+
+	aud, ok := valueAfter(args, "-aud")
+	require.True(t, ok)
+	assert.Equal(t, "1", aud)
+
+	idrInterval, ok := valueAfter(args, "-idr_interval")
+	require.True(t, ok)
+	assert.Equal(t, "1", idrInterval)
+
+	assert.Contains(t, args, "hevc_vaapi")
+	assert.Equal(t, ports.RuntimeModeHQ25, plan.effectiveProfile.EffectiveRuntimeMode)
+}
+
 func TestShouldRetrySafariRuntimeProbe_TransientStreamRelayOnly(t *testing.T) {
 	streamRelayURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:"
 

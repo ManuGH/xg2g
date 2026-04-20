@@ -415,11 +415,11 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	if err != nil {
 		return outputPlan{}, err
 	}
+	spec.Profile.VideoCodec = codec.resolvedCodec
 	fps := a.resolveLiveFPS(ctx, spec, input.inputURL)
 	fps = a.adjustLiveFPSForRuntimeServiceOverride(spec, input.inputURL, fps)
 	gop := fps * layout.segmentDurationSec
 
-	spec.Profile.VideoCodec = codec.resolvedCodec
 	out := outputPlan{effectiveProfile: spec.Profile}
 	out.args = append(out.args,
 		"-map", "0:v:0?",
@@ -811,10 +811,7 @@ func (a *LocalAdapter) applySafariRuntimeHQOverride(ctx context.Context, spec po
 }
 
 func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamSpec, inputURL string, fps int) int {
-	if !shouldForceSafariHQForServiceRef(spec, inputURL) {
-		return fps
-	}
-	if !shouldForce25FPSForSafariHQ(spec.Profile) {
+	if !shouldForce25FPSForLiveProfile(spec, inputURL) {
 		return fps
 	}
 
@@ -823,13 +820,36 @@ func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamS
 		return fps
 	}
 
-	a.Logger.Info().
+	logEvt := a.Logger.Info().
 		Str("sessionId", spec.SessionID).
-		Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
 		Int("cached_or_detected_fps", fps).
 		Int("override_fps", targetFPS).
-		Msg("forcing 25fps for safari HQ service override")
+		Str("runtime_mode", string(effectiveLiveRuntimeMode(spec.Profile)))
+	if serviceRef := safariRuntimeServiceRef(spec, inputURL); serviceRef != "" {
+		logEvt = logEvt.Str("service_ref", serviceRef)
+	}
+	logEvt.Msg("forcing 25fps for live runtime profile")
 	return targetFPS
+}
+
+func shouldForce25FPSForLiveProfile(spec ports.StreamSpec, inputURL string) bool {
+	if shouldForceSafariHQForServiceRef(spec, inputURL) {
+		return shouldForce25FPSForSafariHQ(spec.Profile)
+	}
+	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
+		return false
+	}
+	return normalizeRequestedCodec(spec.Profile.VideoCodec) == "hevc"
+}
+
+func effectiveLiveRuntimeMode(profile ports.ProfileSpec) ports.RuntimeMode {
+	if profile.EffectiveRuntimeMode != "" && profile.EffectiveRuntimeMode != ports.RuntimeModeUnknown {
+		return profile.EffectiveRuntimeMode
+	}
+	if profile.PolicyModeHint != "" && profile.PolicyModeHint != ports.RuntimeModeUnknown {
+		return profile.PolicyModeHint
+	}
+	return profiles.RuntimeModeHintFromProfile(profile)
 }
 
 func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.StreamSpec, inputURL string, codec codecPlan, gop, segmentDurationSec int) []string {
@@ -1017,6 +1037,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	}
 	args = append(args, "-c:v", encoder)
 	args = appendVaapiRateControlArgs(args, prof)
+	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
 		"-g", strconv.Itoa(gop),
@@ -1056,6 +1077,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	}
 	args = append(args, "-c:v", encoder)
 	args = appendVaapiRateControlArgs(args, prof)
+	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
 		"-g", strconv.Itoa(gop),
@@ -1158,6 +1180,25 @@ func appendNVENCRateControlArgs(args []string, prof ports.ProfileSpec) []string 
 	}
 
 	return append(args, "-cq", "23")
+}
+
+func appendConservativeHEVCVAAPIArgs(args []string, spec ports.StreamSpec, outputCodec string) []string {
+	if normalizeRequestedCodec(outputCodec) != "hevc" {
+		return args
+	}
+	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
+		return args
+	}
+	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+		return args
+	}
+	// iOS-native HEVC fMP4 attaches are sensitive to open-GOP recovery behavior.
+	// Keep the VAAPI bitstream conservative so every forced segment boundary lands
+	// on a full IDR and include AUD markers for stricter Apple decoders.
+	return append(args,
+		"-aud", "1",
+		"-idr_interval", "1",
+	)
 }
 
 func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, inputURL string) []string {
