@@ -627,6 +627,8 @@ function V3Player(props: V3PlayerProps) {
   const nativeVideoHoldPositionRef = useRef<number | null>(null);
   const nativeVideoTempMutedRef = useRef(false);
   const nativeManagedPauseRef = useRef(false);
+  const nativePlayingProbeSessionRef = useRef<string | null>(null);
+  const nativeRenderRecoverySessionRef = useRef<string | null>(null);
   const visibilityManagedPauseRef = useRef(false);
   const nativeVisibilityResumeArmedRef = useRef(false);
   const nativePlaybackWasActiveRef = useRef(false);
@@ -2545,6 +2547,88 @@ function V3Player(props: V3PlayerProps) {
   }, [isOverlayStartupStatus]);
 
   useEffect(() => {
+    const trackedSessionId = sessionIdRef.current || nativeSessionId;
+    if (!isNativeEngine || status !== 'playing' || !trackedSessionId) {
+      if (status !== 'playing') {
+        nativePlayingProbeSessionRef.current = null;
+        nativeRenderRecoverySessionRef.current = null;
+      }
+      return;
+    }
+
+    if (nativePlayingProbeSessionRef.current === trackedSessionId) {
+      return;
+    }
+    nativePlayingProbeSessionRef.current = trackedSessionId;
+    nativeRenderRecoverySessionRef.current = null;
+
+    const describeNativeRenderState = (stage: string): string => {
+      const video = videoRef.current;
+      if (!video) {
+        return `native_render stage=${stage} video=missing`;
+      }
+      const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
+      const droppedFrameCount = (video as HTMLVideoElement & { webkitDroppedFrameCount?: number }).webkitDroppedFrameCount;
+      return [
+        `native_render stage=${stage}`,
+        `rs=${video.readyState}`,
+        `paused=${video.paused ? 1 : 0}`,
+        `t=${Number.isFinite(video.currentTime) ? video.currentTime.toFixed(2) : 'na'}`,
+        `vw=${video.videoWidth}`,
+        `vh=${video.videoHeight}`,
+        `dec=${typeof decodedFrameCount === 'number' ? decodedFrameCount : 'na'}`,
+        `drop=${typeof droppedFrameCount === 'number' ? droppedFrameCount : 'na'}`,
+        `show=${showNativeVideo ? 1 : 0}`,
+        `veil=${showNativeVideoVeil ? 1 : 0}`,
+      ].join(' ');
+    };
+
+    const initialProbeTimer = window.setTimeout(() => {
+      void reportError('info', 230, describeNativeRenderState('playing'));
+    }, 350);
+
+    const followupProbeTimer = window.setTimeout(() => {
+      const video = videoRef.current;
+      if (!video || (sessionIdRef.current || nativeSessionId) !== trackedSessionId) {
+        return;
+      }
+
+      const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
+      const hasDecodedFrames = typeof decodedFrameCount !== 'number' || decodedFrameCount > 0;
+      const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
+
+      if (!hasVideoGeometry || !hasDecodedFrames) {
+        if (nativeRenderRecoverySessionRef.current !== trackedSessionId) {
+          nativeRenderRecoverySessionRef.current = trackedSessionId;
+          void reportError('info', 232, describeNativeRenderState('recover'));
+          recoverNativeInlineSource(
+            'native playing without visible video',
+            Number.isFinite(video.currentTime) ? video.currentTime : null,
+          );
+        }
+        return;
+      }
+
+      void reportError('info', 231, describeNativeRenderState('stable'));
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(initialProbeTimer);
+      window.clearTimeout(followupProbeTimer);
+    };
+  }, [
+    isNativeEngine,
+    nativeSessionId,
+    recoverNativeInlineSource,
+    reportError,
+    sessionIdRef,
+    showNativeVideo,
+    showNativeVideoVeil,
+    status,
+    videoRef,
+  ]);
+
+  useEffect(() => {
     return () => {
       cleanupPlaybackResourcesRef.current();
     };
@@ -2662,7 +2746,9 @@ function V3Player(props: V3PlayerProps) {
     (status === 'buffering' && showBufferingOverlay) ||
     shouldHoldNativeVideo;
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
-  const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;
+  const showNativeBufferingMask =
+    (shouldHoldNativeVideo || showNativeVideoVeil) &&
+    !(isNativeEngine && status === 'playing');
   const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || useOverlayShell || isRecordingPageLayout);
   const showPlaybackChrome = !useMinimalStartupChrome;
   const showRecordingWatchLayout = Boolean(recordingId && !isFullscreen && (useOverlayShell || isRecordingPageLayout));
