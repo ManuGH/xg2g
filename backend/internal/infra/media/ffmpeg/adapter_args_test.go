@@ -593,6 +593,7 @@ func TestBuildArgs_SafariHQAllowlistKeepsProgressive50fpsSourcesProgressive(t *t
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "progressive HQ safari path should preserve 50fps GOP cadence")
+	assert.NotContains(t, args, "-r", "HQ50 path must not clamp output framerate")
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
@@ -647,6 +648,9 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "forced HQ25 should clamp progressive sources to 25fps GOP cadence")
+	outputFPS, ok := valueAfter(args, "-r")
+	require.True(t, ok)
+	assert.Equal(t, "25", outputFPS, "HQ25 path must clamp output framerate to 25fps")
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
@@ -695,6 +699,9 @@ func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop)
+	outputFPS, ok := valueAfter(args, "-r")
+	require.True(t, ok)
+	assert.Equal(t, "25", outputFPS)
 
 	assert.Equal(t, ports.RuntimeModeHQ25, plan.effectiveProfile.EffectiveRuntimeMode)
 	assert.Equal(t, ports.RuntimeModeSourceEnvOverride, plan.effectiveProfile.EffectiveModeSource)
@@ -744,6 +751,9 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "hq25 HEVC path must clamp progressive sources to 25fps GOP cadence")
+	outputFPS, ok := valueAfter(args, "-r")
+	require.True(t, ok)
+	assert.Equal(t, "25", outputFPS, "hq25 HEVC path must clamp output framerate to 25fps")
 
 	aud, ok := valueAfter(args, "-aud")
 	require.True(t, ok)

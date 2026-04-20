@@ -419,12 +419,16 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	fps := a.resolveLiveFPS(ctx, spec, input.inputURL)
 	fps = a.adjustLiveFPSForRuntimeServiceOverride(spec, input.inputURL, fps)
 	gop := fps * layout.segmentDurationSec
+	targetOutputFPS := targetLiveOutputFPS(spec)
 
 	out := outputPlan{effectiveProfile: spec.Profile}
 	out.args = append(out.args,
 		"-map", "0:v:0?",
 		"-map", "0:a:0?",
 	)
+	if targetOutputFPS > 0 {
+		out.args = append(out.args, "-r", strconv.Itoa(targetOutputFPS))
+	}
 
 	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec)
 	out.args = appendLiveVideoContainerTags(out.args, spec, codec.resolvedCodec)
@@ -850,6 +854,19 @@ func effectiveLiveRuntimeMode(profile ports.ProfileSpec) ports.RuntimeMode {
 		return profile.PolicyModeHint
 	}
 	return profiles.RuntimeModeHintFromProfile(profile)
+}
+
+func targetLiveOutputFPS(spec ports.StreamSpec) int {
+	if spec.Mode != ports.ModeLive {
+		return 0
+	}
+	if !spec.Profile.TranscodeVideo {
+		return 0
+	}
+	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
+		return 0
+	}
+	return 25
 }
 
 func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.StreamSpec, inputURL string, codec codecPlan, gop, segmentDurationSec int) []string {
