@@ -1371,6 +1371,44 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 	assert.NotContains(t, fflags, "nobuffer")
 }
 
+func TestBuildArgs_HEVCTranscodeUsesStrictLiveIngest(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "hevc-strict-ingest",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "hevc",
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	iIdx := indexOf(args, "-i")
+	require.True(t, iIdx > 0)
+
+	fflagsIdx := indexOf(args, "-fflags")
+	require.True(t, fflagsIdx >= 0 && fflagsIdx < iIdx, "fflags must be before -i")
+	fflags, ok := valueAfter(args, "-fflags")
+	require.True(t, ok)
+	assert.Contains(t, fflags, "+genpts")
+	assert.Contains(t, fflags, "+discardcorrupt")
+	assert.Contains(t, fflags, "+igndts")
+
+	assert.Equal(t, -1, indexOf(args, "-err_detect"))
+	assert.Equal(t, -1, indexOf(args, "-max_error_rate"))
+	assert.Equal(t, -1, indexOf(args, "-flags2"))
+}
+
 func TestBuildArgs_StreamRelayPassthroughUsesFastLiveProbe(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),

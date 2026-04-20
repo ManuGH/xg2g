@@ -306,6 +306,15 @@ func (a *LocalAdapter) anyVerifiedVAAPIInterlacedPathForCodec(codec string) bool
 	return false
 }
 
+func strictLiveIngestCodec(codec string) bool {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "hevc", "av1":
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputPlan, error) {
 	fflags := strings.TrimSpace(a.IngestFFlags)
 	if fflags == "" {
@@ -314,10 +323,13 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 	analyzeDuration := strings.TrimSpace(a.AnalyzeDuration)
 	probeSize := strings.TrimSpace(a.ProbeSize)
 	baseInputArgs := make([]string, 0, 20)
-	if v := strings.TrimSpace(a.IngestErrDetect); v != "" {
+	strictIngest := spec.Source.Type != ports.SourceFile &&
+		spec.Profile.TranscodeVideo &&
+		strictLiveIngestCodec(spec.Profile.VideoCodec)
+	if v := strings.TrimSpace(a.IngestErrDetect); v != "" && !strictIngest {
 		baseInputArgs = append(baseInputArgs, "-err_detect", v)
 	}
-	if v := strings.TrimSpace(a.IngestMaxErrorRate); v != "" {
+	if v := strings.TrimSpace(a.IngestMaxErrorRate); v != "" && !strictIngest {
 		baseInputArgs = append(baseInputArgs, "-max_error_rate", v)
 	}
 	baseInputArgs = append(baseInputArgs, "-ignore_unknown")
@@ -361,7 +373,7 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 			"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
 			"-headers", headers,
 		)
-		if v := strings.TrimSpace(a.IngestFlags2); v != "" {
+		if v := strings.TrimSpace(a.IngestFlags2); v != "" && !strictIngest {
 			baseInputArgs = append(baseInputArgs, "-flags2", v)
 		}
 	}
