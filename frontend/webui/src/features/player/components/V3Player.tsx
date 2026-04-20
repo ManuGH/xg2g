@@ -2452,6 +2452,7 @@ function V3Player(props: V3PlayerProps) {
 
       const bufferAheadSeconds = getBufferedAheadSeconds();
       const holdPosition = nativeVideoHoldPositionRef.current;
+      const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
       const playbackAdvancedEnough =
         holdPosition === null || !Number.isFinite(holdPosition)
           ? true
@@ -2459,11 +2460,23 @@ function V3Player(props: V3PlayerProps) {
       const playbackResumeSatisfied = revealThresholds.requirePlaybackResume
         ? !video.paused
         : (status === 'ready' || !video.paused);
-      const readyForReveal =
-        video.readyState >= 3 &&
+      const playingWithVisibleGeometry =
+        status === 'playing' &&
         playbackResumeSatisfied &&
         playbackAdvancedEnough &&
-        (video.readyState >= 4 || bufferAheadSeconds >= revealThresholds.minBufferSeconds);
+        hasVideoGeometry;
+      const readyForReveal =
+        playbackResumeSatisfied &&
+        playbackAdvancedEnough &&
+        (
+          video.readyState >= 3 ||
+          playingWithVisibleGeometry
+        ) &&
+        (
+          video.readyState >= 4 ||
+          bufferAheadSeconds >= revealThresholds.minBufferSeconds ||
+          playingWithVisibleGeometry
+        );
 
       if (readyForReveal) {
         nativeVideoRevealTimerRef.current = null;
