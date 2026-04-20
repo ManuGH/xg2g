@@ -2723,6 +2723,8 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
+    let veilPollTimer: number | null = null;
+
     const releaseVeil = () => {
       clearNativeVideoVeilTimers();
       nativeVideoVeilClearTimerRef.current = window.setTimeout(() => {
@@ -2732,16 +2734,58 @@ function V3Player(props: V3PlayerProps) {
       }, NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS);
     };
 
-    const handlePlaying = () => {
-      releaseVeil();
+    const clearVeilPollTimer = () => {
+      if (veilPollTimer !== null) {
+        window.clearTimeout(veilPollTimer);
+        veilPollTimer = null;
+      }
     };
 
-    if (!video.paused && video.readyState >= 3) {
+    const canReleaseVeilNow = (): boolean => {
+      const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
+      const hasPlaybackProgress = Number.isFinite(video.currentTime) && video.currentTime > 0;
+      const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
+      const hasDecodedFrames = typeof decodedFrameCount !== 'number' || decodedFrameCount > 0;
+      return !video.paused && (
+        video.readyState >= 3 ||
+        (
+          status === 'playing' &&
+          hasVideoGeometry &&
+          hasPlaybackProgress &&
+          hasDecodedFrames
+        )
+      );
+    };
+
+    const pollVeilRelease = () => {
+      if (canReleaseVeilNow()) {
+        clearVeilPollTimer();
+        releaseVeil();
+        return;
+      }
+      veilPollTimer = window.setTimeout(pollVeilRelease, 120);
+    };
+
+    const handlePlaybackProgress = () => {
+      if (canReleaseVeilNow()) {
+        clearVeilPollTimer();
+        releaseVeil();
+      }
+    };
+
+    if (canReleaseVeilNow()) {
       releaseVeil();
-      return;
+      return () => {
+        clearVeilPollTimer();
+      };
     }
 
-    video.addEventListener('playing', handlePlaying, { once: true });
+    video.addEventListener('playing', handlePlaybackProgress);
+    video.addEventListener('loadeddata', handlePlaybackProgress);
+    video.addEventListener('canplay', handlePlaybackProgress);
+    video.addEventListener('resize', handlePlaybackProgress);
+
+    pollVeilRelease();
 
     delete video.dataset.xg2gManagedPause;
     nativeManagedPauseRef.current = false;
@@ -2751,9 +2795,13 @@ function V3Player(props: V3PlayerProps) {
     });
 
     return () => {
-      video.removeEventListener('playing', handlePlaying);
+      clearVeilPollTimer();
+      video.removeEventListener('playing', handlePlaybackProgress);
+      video.removeEventListener('loadeddata', handlePlaybackProgress);
+      video.removeEventListener('canplay', handlePlaybackProgress);
+      video.removeEventListener('resize', handlePlaybackProgress);
     };
-  }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, videoRef]);
+  }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, status, videoRef]);
 
   const effectiveClientPath =
     sessionPlaybackTrace?.clientPath ||
