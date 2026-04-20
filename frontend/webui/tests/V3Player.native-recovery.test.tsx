@@ -354,10 +354,10 @@ describe('V3Player native Safari recovery', () => {
     expect(paused).toBe(false);
   });
 
-  it('unveils native video when playback is already advancing with visible geometry', async () => {
+  it('drops the startup overlay once native playback is visibly renderable', async () => {
     let paused = false;
     let currentTime = 0.45;
-    let readyState = 2;
+    let readyState = 4;
     let bufferedLength = 1;
     let bufferedEnd = 1.5;
     let videoWidth = 1280;
@@ -426,10 +426,13 @@ describe('V3Player native Safari recovery', () => {
     await act(async () => {
       fireEvent.playing(video);
       await Promise.resolve();
+      await Promise.resolve();
     });
 
+    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1200);
+      await vi.advanceTimersByTimeAsync(300);
       await Promise.resolve();
       await Promise.resolve();
     });

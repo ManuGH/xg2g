@@ -2445,7 +2445,36 @@ function V3Player(props: V3PlayerProps) {
       ? NATIVE_VIDEO_REVEAL_REBUFFER
       : NATIVE_VIDEO_REVEAL_STARTUP;
 
+    const forceRevealIfRenderable = (): boolean => {
+      const video = videoRef.current;
+      if (!video || status !== 'playing') {
+        return false;
+      }
+
+      const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
+      const hasPlaybackProgress = Number.isFinite(video.currentTime) && video.currentTime > 0;
+      if (video.paused || video.readyState < 4 || !hasVideoGeometry || !hasPlaybackProgress) {
+        return false;
+      }
+
+      clearNativeVideoRevealTimer();
+      nativeVideoShownRef.current = true;
+      nativeVideoHoldPositionRef.current = null;
+      setShowNativeVideo(true);
+      setShowNativeVideoVeil(true);
+      setNativeVeilResumeArmed(true);
+      return true;
+    };
+
+    if (forceRevealIfRenderable()) {
+      return;
+    }
+
     const waitForStablePlayback = () => {
+      if (forceRevealIfRenderable()) {
+        return;
+      }
+
       const video = videoRef.current;
       if (!video) {
         nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.retryMs);
