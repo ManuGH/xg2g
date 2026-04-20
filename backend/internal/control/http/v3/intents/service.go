@@ -268,12 +268,14 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 			resolution.hostOverrideApplied = true
 		}
 	}
-	if requestedPlaybackMode == "native_hls" &&
-		clientFamily == playbackprofile.ClientIOSSafariNative &&
+	if clientFamily == playbackprofile.ClientIOSSafariNative &&
 		resolution.effectiveProfileID == profiles.ProfileAV1HW &&
 		strings.EqualFold(strings.TrimSpace(resolution.profileSpec.Container), "mpegts") {
-		// Apple native HLS AV1 should stay on fMP4 even when the global AV1
-		// MPEG-TS experiment is enabled for other playback paths.
+		// iPhone AV1 should stay on fMP4 even when the global AV1 MPEG-TS
+		// experiment is enabled for other playback paths. The live playback
+		// token binds starts to decision.Mode ("transcode"), so this safeguard
+		// must apply to iOS AV1 sessions regardless of the requested
+		// playback_mode label.
 		resolution.profileSpec.Container = "fmp4"
 	}
 	if clientFamily == playbackprofile.ClientIOSSafariNative &&
