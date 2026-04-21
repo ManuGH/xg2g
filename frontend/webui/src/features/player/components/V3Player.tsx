@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Dispatch, KeyboardEvent, PointerEvent, SetStateAction } from 'react';
+import type { CSSProperties, Dispatch, KeyboardEvent, PointerEvent, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from '../lib/hlsRuntime';
 import {
@@ -3283,6 +3283,9 @@ function V3Player(props: V3PlayerProps) {
   const seekProgressPercent = windowDuration > 0
     ? `${Math.min(100, Math.max(0, (relativePosition / windowDuration) * 100))}%`
     : '0%';
+  const seekProgressStyle = {
+    '--xg2g-seek-progress': seekProgressPercent,
+  } as CSSProperties;
   const seekFromPointer = useCallback((clientX: number, track: HTMLDivElement) => {
     if (windowDuration <= 0) {
       return;
@@ -3495,6 +3498,7 @@ function V3Player(props: V3PlayerProps) {
                       disableInlineLiveDvrScrub ? styles.vodScrubTrackDisabled : null,
                     ].filter(Boolean).join(' ')}
                     role="slider"
+                    style={seekProgressStyle}
                     tabIndex={disableInlineLiveDvrScrub ? -1 : 0}
                     aria-label={disableInlineLiveDvrScrub
                       ? t('player.inlineDvrFullscreenHint', { defaultValue: 'Open fullscreen for DVR scrubbing' })
@@ -3507,8 +3511,8 @@ function V3Player(props: V3PlayerProps) {
                     onPointerMove={disableInlineLiveDvrScrub ? undefined : handleVodScrubPointerMove}
                     onKeyDown={disableInlineLiveDvrScrub ? undefined : handleVodScrubKeyDown}
                   >
-                    <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
-                    <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
+                    <div className={styles.vodScrubFill}></div>
+                    <div className={styles.vodScrubThumb}></div>
                   </div>
                   {disableInlineLiveDvrScrub && (
                     <div className={styles.inlineDvrHint}>
@@ -3603,6 +3607,7 @@ function V3Player(props: V3PlayerProps) {
                   <div
                     className={styles.vodScrubTrack}
                     role="slider"
+                    style={seekProgressStyle}
                     tabIndex={0}
                     aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
                     aria-valuemin={0}
@@ -3612,8 +3617,8 @@ function V3Player(props: V3PlayerProps) {
                     onPointerMove={handleVodScrubPointerMove}
                     onKeyDown={handleVodScrubKeyDown}
                   >
-                    <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
-                    <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
+                    <div className={styles.vodScrubFill}></div>
+                    <div className={styles.vodScrubThumb}></div>
                   </div>
                 </div>
 

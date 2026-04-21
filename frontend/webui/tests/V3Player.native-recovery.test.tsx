@@ -355,14 +355,14 @@ describe('V3Player native Safari recovery', () => {
   });
 
   it('drops the startup overlay once native playback is visibly renderable', async () => {
-    let paused = false;
-    let currentTime = 0;
-    let readyState = 4;
-    let bufferedLength = 1;
-    let bufferedEnd = 1.5;
-    let videoWidth = 1280;
-    let videoHeight = 720;
-    let decodedFrameCount = 8;
+    const paused = false;
+    const currentTime = 0;
+    const readyState = 4;
+    const bufferedLength = 1;
+    const bufferedEnd = 1.5;
+    const videoWidth = 1280;
+    const videoHeight = 720;
+    const decodedFrameCount = 8;
     const playbackUrl = 'http://example.com/live-native-startup-veil.m3u8';
 
     render(<V3Player autoStart={true} src={playbackUrl} />);
@@ -442,7 +442,7 @@ describe('V3Player native Safari recovery', () => {
   });
 
   it('reveals native video again when buffering media becomes renderable before another playing event', async () => {
-    let paused = false;
+    const paused = false;
     let currentTime = 12;
     let readyState = 2;
     let bufferedLength = 0;

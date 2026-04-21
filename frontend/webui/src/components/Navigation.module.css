@@ -280,7 +280,7 @@
     border-radius: 18px;
     border: 1px solid var(--border-elevated);
     background: color-mix(in srgb, var(--surface-shell-strong) 90%, var(--accent-action-subtle) 10%);
-    box-shadow: 0 10px 28px color-mix(in srgb, var(--surface-stage) 28%, transparent);
+    box-shadow: var(--shadow-hover);
   }
 
   .mobileContextEyebrow {
