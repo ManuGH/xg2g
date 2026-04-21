@@ -23,6 +23,8 @@ type PlaybackFallbackTrace struct {
 	AtUnix          int64  `json:"atUnix,omitempty"`
 	Trigger         string `json:"trigger,omitempty"`
 	Reason          string `json:"reason,omitempty"`
+	PlanID          string `json:"planId,omitempty"`
+	PlanReason      string `json:"planReason,omitempty"`
 	FromProfileHash string `json:"fromProfileHash,omitempty"`
 	ToProfileHash   string `json:"toProfileHash,omitempty"`
 }
@@ -118,6 +120,11 @@ type PlaybackTrace struct {
 	Client               *PlaybackClientSnapshot                `json:"client,omitempty"`
 	HostPressureBand     string                                 `json:"hostPressureBand,omitempty"`
 	HostOverrideApplied  bool                                   `json:"hostOverrideApplied,omitempty"`
+	AutoCodecPolicy      string                                 `json:"autoCodecPolicy,omitempty"`
+	AutoCodecRequested   string                                 `json:"autoCodecRequestedCodecs,omitempty"`
+	AutoCodecSelected    string                                 `json:"autoCodecSelectedCodec,omitempty"`
+	AutoCodecHostClass   string                                 `json:"autoCodecPerformanceClass,omitempty"`
+	AutoCodecBenchClass  string                                 `json:"autoCodecBenchmarkClass,omitempty"`
 	FirstFrameAtUnix     int64                                  `json:"firstFrameAtUnix,omitempty"`
 	Fallbacks            []PlaybackFallbackTrace                `json:"fallbacks,omitempty"`
 	StopReason           string                                 `json:"stopReason,omitempty"`

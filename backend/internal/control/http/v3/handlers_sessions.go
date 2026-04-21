@@ -16,13 +16,13 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/go-chi/chi/v5"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/rs/zerolog"
 
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
-	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -34,6 +34,8 @@ import (
 const (
 	fallbackRestartPollInterval = 50 * time.Millisecond
 	fallbackRestartTimeout      = 5 * time.Second
+	playbackErrorCodeDecode     = 3
+	playbackErrorCodeHlsStalled = 4
 )
 
 const safariFallbackBrowserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15"
@@ -92,23 +94,15 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	// 3. Check for MediaError 3 (Safari HLS decode error)
-	// We only trigger fallback if it's an error and specifically code 3
-	isDecodeError := req.Event == PlaybackFeedbackRequestEventError && req.Code != nil && *req.Code == 3
 	ctx := r.Context()
 	sess, err := store.GetSession(ctx, sessionId.String())
+	isDecodeError := shouldTriggerPlaybackFallback(req, sess)
 	if err == nil && sess != nil {
 		s.recordPlaybackFeedbackObservation(ctx, sess, req)
 	}
+	s.logPlaybackFeedback(sessionId.String(), sess, req, isDecodeError)
 
 	if !isDecodeError {
-		// Just log info/warnings
-		log.L().Info().
-			Str("sessionId", sessionId.String()).
-			Str("event", string(req.Event)).
-			Int("code", derefInt(req.Code)).
-			Str("msg", derefString(req.Message)).
-			Msg("playback feedback received")
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -173,23 +167,8 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 			fromHash = fromTarget.Hash()
 		}
 
-		switch s.Profile.Name {
-		case profiles.ProfileSafari:
-			s.Profile = nextSafariFeedbackProfile(s.Profile, s.ServiceRef)
-		default:
-			// Escalate all other failures, including safari_dirty re-failures, to repair.
-			s.Profile.Name = profiles.ProfileRepair
-			s.Profile.PolicyModeHint = ports.RuntimeModeSafe
-			s.Profile.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
-			s.Profile.TranscodeVideo = true
-			s.Profile.Deinterlace = false // Keep simple
-			s.Profile.HWAccel = ""        // Force CPU
-			s.Profile.VideoCodec = "libx264"
-			s.Profile.VideoCRF = 24
-			s.Profile.VideoMaxWidth = 1280
-			s.Profile.Preset = "veryfast"
-			s.Profile.Container = "fmp4" // Ensure FMP4 for Safari
-		}
+		fallbackPlan := nextPlaybackFeedbackPlan(s.Profile, s.ServiceRef)
+		s.Profile = fallbackPlan.profile
 
 		s.FallbackReason = fmt.Sprintf("client_report:code=%d", derefInt(req.Code))
 		s.FallbackAtUnix = now.Unix()
@@ -211,6 +190,8 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 			AtUnix:          now.Unix(),
 			Trigger:         "client_feedback",
 			Reason:          s.FallbackReason,
+			PlanID:          string(fallbackPlan.id),
+			PlanReason:      string(fallbackPlan.reason),
 			FromProfileHash: fromHash,
 			ToProfileHash:   toHash,
 		})
@@ -235,6 +216,8 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	log.L().
 		Warn().
 		Str("sessionId", sess.SessionID).
+		Str("fallback_plan", sessionFallbackPlanID(sess)).
+		Str("fallback_plan_reason", sessionFallbackPlanReason(sess)).
 		Str("fallback_profile", sess.Profile.Name).
 		Str("fallback_container", sess.Profile.Container).
 		Msg("activating safari fallback due to client error")
@@ -260,39 +243,86 @@ func shouldPreferSafariTSFallbackForServiceRef(serviceRef string) bool {
 	return serviceRefEnvContainsNormalized("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", serviceRef)
 }
 
-func nextSafariFeedbackProfile(current model.ProfileSpec, serviceRef string) model.ProfileSpec {
-	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) && !current.DisableSafariForceCopy {
-		// First Safari recovery step for allowlisted dirty relay streams: disable the
-		// runtime copy experiment and restart as the browser-safe TS transcode path.
-		next := profiles.Resolve(profiles.ProfileSafari, safariFallbackBrowserUA, current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
-		next.DisableSafariForceCopy = true
-		next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
-		return next
+func shouldTriggerPlaybackFallback(req PlaybackFeedbackRequest, sess *model.SessionRecord) bool {
+	if req.Event != PlaybackFeedbackRequestEventError || req.Code == nil {
+		return false
 	}
 
-	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) {
-		// If Safari already runs on the browser-safe TS transcode path and still
-		// reports a decode failure, escalate to a materially different low-complexity
-		// repair rung instead of restarting the exact same media profile again.
-		next := profiles.Resolve(profiles.ProfileRepair, safariFallbackBrowserUA, current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
-		next.Container = "mpegts"
-		next.Deinterlace = true
-		next.HWAccel = ""
-		next.VideoCodec = "libx264"
-		next.VideoCRF = 24
-		next.VideoMaxWidth = 1280
-		next.Preset = "veryfast"
-		next.AudioBitrateK = 192
-		next.PolicyModeHint = ports.RuntimeModeSafe
-		next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
-		return next
+	switch *req.Code {
+	case playbackErrorCodeDecode:
+		return true
+	case playbackErrorCodeHlsStalled:
+		return shouldEscalateIOSAV1HlsStall(sess)
+	default:
+		return false
+	}
+}
+
+func shouldEscalateIOSAV1HlsStall(sess *model.SessionRecord) bool {
+	if sess == nil {
+		return false
 	}
 
-	// First recovery step for general Safari failures remains the stricter
-	// dirty-stream profile.
-	next := profiles.Resolve(profiles.ProfileSafariDirty, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
-	next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
-	return next
+	if strings.TrimSpace(sessionClientFamilyForFeedback(sess)) != playbackprofile.ClientIOSSafariNative {
+		return false
+	}
+	if strings.TrimSpace(sessionClientPathForFeedback(sess)) != "hlsjs" {
+		return false
+	}
+
+	return strings.EqualFold(strings.TrimSpace(sessionTargetVideoCodecForFeedback(sess)), "av1")
+}
+
+func sessionClientFamilyForFeedback(sess *model.SessionRecord) string {
+	if sess == nil {
+		return ""
+	}
+	if sess.ContextData != nil {
+		if family := strings.TrimSpace(sess.ContextData[model.CtxKeyClientFamily]); family != "" {
+			return family
+		}
+	}
+	if sess.PlaybackTrace != nil && sess.PlaybackTrace.Client != nil {
+		return strings.TrimSpace(sess.PlaybackTrace.Client.ClientFamily)
+	}
+	return ""
+}
+
+func sessionClientPathForFeedback(sess *model.SessionRecord) string {
+	if sess == nil {
+		return ""
+	}
+	if sess.ContextData != nil {
+		if clientPath := strings.TrimSpace(sess.ContextData[model.CtxKeyClientPath]); clientPath != "" {
+			return clientPath
+		}
+	}
+	if sess.PlaybackTrace != nil {
+		return strings.TrimSpace(sess.PlaybackTrace.ClientPath)
+	}
+	return ""
+}
+
+func sessionTargetVideoCodecForFeedback(sess *model.SessionRecord) string {
+	if sess == nil {
+		return ""
+	}
+	if sess.PlaybackTrace != nil {
+		if sess.PlaybackTrace.TargetProfile != nil {
+			if codec := strings.TrimSpace(sess.PlaybackTrace.TargetProfile.Video.Codec); codec != "" {
+				return codec
+			}
+		}
+		if sess.PlaybackTrace.FFmpegPlan != nil {
+			if codec := strings.TrimSpace(sess.PlaybackTrace.FFmpegPlan.VideoCodec); codec != "" {
+				return codec
+			}
+		}
+		if codec := strings.TrimSpace(sess.PlaybackTrace.AutoCodecSelected); codec != "" {
+			return codec
+		}
+	}
+	return strings.TrimSpace(sess.Profile.VideoCodec)
 }
 
 func serviceRefEnvContainsNormalized(envKey, targetRef string) bool {
@@ -520,6 +550,109 @@ func (s *Server) recordPlaybackFeedbackObservation(ctx context.Context, sess *mo
 	}
 }
 
+func (s *Server) logPlaybackFeedback(sessionID string, sess *model.SessionRecord, req PlaybackFeedbackRequest, decodeError bool) {
+	var event *zerolog.Event
+	switch req.Event {
+	case PlaybackFeedbackRequestEventError:
+		event = log.L().Warn()
+	default:
+		event = log.L().Info()
+	}
+
+	event.
+		Str("sessionId", strings.TrimSpace(sessionID)).
+		Str("event", string(req.Event)).
+		Int("code", derefInt(req.Code)).
+		Str("msg", derefString(req.Message)).
+		Bool("decodeError", decodeError)
+
+	if sess == nil {
+		event.Msg("playback feedback received")
+		return
+	}
+
+	event.
+		Str("state", string(sess.State)).
+		Str("serviceRef", strings.TrimSpace(sess.ServiceRef)).
+		Str("profile", strings.TrimSpace(sess.Profile.Name)).
+		Str("profileContainer", strings.TrimSpace(sess.Profile.Container)).
+		Str("profileVideoCodec", strings.TrimSpace(sess.Profile.VideoCodec)).
+		Bool("firstFrameSeen", sessionHasFirstFrameArtifact(s.cfg.HLS.Root, sess.SessionID))
+
+	if sess.ContextData != nil {
+		if requestID := strings.TrimSpace(sess.ContextData[model.CtxKeyDecisionRequest]); requestID != "" {
+			event.Str("decisionRequestId", requestID)
+		}
+		if requestedPath := strings.TrimSpace(sess.ContextData[model.CtxKeyClientPath]); requestedPath != "" {
+			event.Str("contextClientPath", requestedPath)
+		}
+	}
+
+	trace := sess.PlaybackTrace
+	if trace == nil {
+		event.Msg("playback feedback received")
+		return
+	}
+
+	event.
+		Str("requestProfile", strings.TrimSpace(trace.RequestProfile)).
+		Str("requestedIntent", strings.TrimSpace(trace.RequestedIntent)).
+		Str("resolvedIntent", strings.TrimSpace(trace.ResolvedIntent)).
+		Str("clientPath", strings.TrimSpace(trace.ClientPath)).
+		Str("inputKind", strings.TrimSpace(trace.InputKind)).
+		Str("autoCodecPolicy", strings.TrimSpace(trace.AutoCodecPolicy)).
+		Str("autoCodecRequested", strings.TrimSpace(trace.AutoCodecRequested)).
+		Str("autoCodecSelected", strings.TrimSpace(trace.AutoCodecSelected)).
+		Str("autoCodecPerformanceClass", strings.TrimSpace(trace.AutoCodecHostClass)).
+		Str("autoCodecBenchmarkClass", strings.TrimSpace(trace.AutoCodecBenchClass)).
+		Str("ffmpegPackaging", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.Packaging) })).
+		Str("ffmpegContainer", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.Container) })).
+		Str("ffmpegVideoMode", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.VideoMode) })).
+		Str("ffmpegVideoCodec", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.VideoCodec) })).
+		Str("ffmpegAudioMode", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.AudioMode) })).
+		Str("ffmpegAudioCodec", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.AudioCodec) })).
+		Str("clientFamily", traceClientValue(trace, func(client *model.PlaybackClientSnapshot) string { return strings.TrimSpace(client.ClientFamily) })).
+		Str("preferredHlsEngine", traceClientValue(trace, func(client *model.PlaybackClientSnapshot) string { return strings.TrimSpace(client.PreferredHLSEngine) }))
+
+	if trace.TargetProfile != nil {
+		event.
+			Str("targetContainer", strings.TrimSpace(trace.TargetProfile.Container)).
+			Str("targetPackaging", strings.TrimSpace(string(trace.TargetProfile.Packaging))).
+			Str("targetVideoCodec", strings.TrimSpace(trace.TargetProfile.Video.Codec)).
+			Str("targetAudioCodec", strings.TrimSpace(trace.TargetProfile.Audio.Codec))
+	}
+
+	event.Msg("playback feedback received")
+}
+
+func traceFFmpegPlanValue(trace *model.PlaybackTrace, selector func(*model.FFmpegPlanTrace) string) string {
+	if trace == nil || trace.FFmpegPlan == nil {
+		return ""
+	}
+	return selector(trace.FFmpegPlan)
+}
+
+func traceClientValue(trace *model.PlaybackTrace, selector func(*model.PlaybackClientSnapshot) string) string {
+	if trace == nil || trace.Client == nil {
+		return ""
+	}
+	return selector(trace.Client)
+}
+
+func sessionFallbackPlanID(sess *model.SessionRecord) string {
+	if sess == nil || sess.PlaybackTrace == nil || len(sess.PlaybackTrace.Fallbacks) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(sess.PlaybackTrace.Fallbacks[len(sess.PlaybackTrace.Fallbacks)-1].PlanID)
+}
+
+func sessionFallbackPlanReason(sess *model.SessionRecord) string {
+	if sess == nil || sess.PlaybackTrace == nil || len(sess.PlaybackTrace.Fallbacks) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(sess.PlaybackTrace.Fallbacks[len(sess.PlaybackTrace.Fallbacks)-1].PlanReason)
+}
+
 func playbackFeedbackOutcome(event PlaybackFeedbackRequestEvent) string {
 	switch event {
 	case PlaybackFeedbackRequestEventError:
@@ -697,6 +830,21 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	hostPressureBand := strings.TrimSpace(trace.HostPressureBand)
 	if hostPressureBand != "" {
 		dto.HostPressureBand = &hostPressureBand
+	}
+	if autoCodecPolicy := strings.TrimSpace(trace.AutoCodecPolicy); autoCodecPolicy != "" {
+		dto.AutoCodecPolicy = &autoCodecPolicy
+	}
+	if autoCodecRequested := strings.TrimSpace(trace.AutoCodecRequested); autoCodecRequested != "" {
+		dto.AutoCodecRequestedCodecs = &autoCodecRequested
+	}
+	if autoCodecSelected := strings.TrimSpace(trace.AutoCodecSelected); autoCodecSelected != "" {
+		dto.AutoCodecSelectedCodec = &autoCodecSelected
+	}
+	if autoCodecHostClass := strings.TrimSpace(trace.AutoCodecHostClass); autoCodecHostClass != "" {
+		dto.AutoCodecPerformanceClass = &autoCodecHostClass
+	}
+	if autoCodecBenchClass := strings.TrimSpace(trace.AutoCodecBenchClass); autoCodecBenchClass != "" {
+		dto.AutoCodecBenchmarkClass = &autoCodecBenchClass
 	}
 	if trace.HostOverrideApplied {
 		hostOverrideApplied := true

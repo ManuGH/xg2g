@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
@@ -46,7 +47,7 @@ func (siw *ServerInterfaceWrapper) GetRecordingThumbnail(w http.ResponseWriter, 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler, ok := siw.Handler.(recordingThumbnailServer)
 		if !ok || handler == nil {
-			w.WriteHeader(http.StatusNotImplemented)
+			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not_implemented", "Not Implemented", problemcode.CodeNotImplemented, "Recording thumbnails are not implemented on this server.", nil)
 			return
 		}
 		handler.GetRecordingThumbnail(w, r, recordingID)
@@ -199,6 +200,7 @@ func probeRecordingDurationSeconds(ctx context.Context, cfg config.AppConfig, so
 	probeCtx, cancel := context.WithTimeout(ctx, recordingThumbnailProbeTimeout)
 	defer cancel()
 
+	// #nosec G204 -- ffprobe path is operator-configured and the input path is a validated local recording source.
 	cmd := exec.CommandContext(
 		probeCtx,
 		probeBin,
@@ -273,6 +275,7 @@ func generateRecordingThumbnail(ctx context.Context, cfg config.AppConfig, sourc
 		thumbnailPath,
 	)
 
+	// #nosec G204 -- ffmpeg path is operator-configured and arguments only reference validated local recording paths.
 	cmd := exec.CommandContext(buildCtx, ffmpegBin, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

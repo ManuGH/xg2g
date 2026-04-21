@@ -469,3 +469,106 @@
     max-height: calc(100dvh - 86px - var(--sat) - var(--sab));
   }
 }
+
+@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  .mobileNav {
+    margin: 0 8px calc(6px + var(--sab));
+    padding: 6px;
+    border-radius: 20px;
+    gap: 4px;
+  }
+
+  .mobileContextBar {
+    margin: 0 10px 6px;
+    padding: 8px 12px 10px;
+    border-radius: 15px;
+  }
+
+  .mobileContextEyebrow {
+    margin-bottom: 2px;
+    font-size: 9px;
+  }
+
+  .mobileContextLabel {
+    font-size: 0.82rem;
+    line-height: 1.2;
+  }
+
+  .mobileItem {
+    min-height: 48px;
+    padding: 4px 3px 6px;
+    gap: 4px;
+    border-radius: 14px;
+  }
+
+  .mobileItem .label {
+    font-size: 9px;
+    line-height: 1.05;
+  }
+
+  .mobileItem .iconShell {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+  }
+
+  .mobileSheet {
+    left: 8px;
+    right: 8px;
+    bottom: calc(62px + var(--sab));
+    max-height: min(360px, calc(100dvh - 78px - var(--sat) - var(--sab)));
+    padding: 12px 12px 10px;
+    border-radius: 20px;
+  }
+
+  .sheetHeader {
+    margin-bottom: 10px;
+  }
+
+  .sheetContext {
+    margin-top: 6px;
+    font-size: 0.84rem;
+  }
+
+  .sheetClose,
+  .sheetAction {
+    min-height: 38px;
+    border-radius: 12px;
+    padding: 0 11px;
+    gap: 8px;
+  }
+
+  .sheetSections {
+    gap: 10px;
+  }
+
+  .sheetProfileSection {
+    gap: 6px;
+    padding-bottom: 10px;
+  }
+
+  .sheetSection {
+    gap: 6px;
+  }
+
+  .sheetList {
+    gap: 6px;
+  }
+
+  .sheetItem {
+    min-height: 44px;
+    padding: 6px;
+    border-radius: 14px;
+  }
+
+  .sheetItem .iconShell {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+
+  .sheetFooter {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+}

@@ -97,7 +97,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 
 	next, ok = startupRecoveryProfile(
 		model.ProfileSpec{
-			Name:                 "safari_hq",
+			Name:                 profiles.ProfileSafariRuntimeHQ,
 			DVRWindowSec:         2700,
 			EffectiveRuntimeMode: ports.RuntimeModeHQ50,
 		},
@@ -112,7 +112,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 
 	next, ok = startupRecoveryProfile(
 		model.ProfileSpec{
-			Name:                 "safari_hq",
+			Name:                 profiles.ProfileSafariRuntimeHQ,
 			DVRWindowSec:         1800,
 			EffectiveRuntimeMode: ports.RuntimeModeHQ50,
 		},
@@ -127,7 +127,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 
 	next, ok = startupRecoveryProfile(
 		model.ProfileSpec{
-			Name:                 "safari_hq",
+			Name:                 profiles.ProfileSafariRuntimeHQ,
 			DVRWindowSec:         1200,
 			EffectiveRuntimeMode: ports.RuntimeModeHQ25,
 		},
@@ -142,7 +142,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 
 	next, ok = startupRecoveryProfile(
 		model.ProfileSpec{
-			Name:                 "safari_hq",
+			Name:                 profiles.ProfileSafariRuntimeHQ,
 			DVRWindowSec:         600,
 			EffectiveRuntimeMode: ports.RuntimeModeHQ25,
 		},

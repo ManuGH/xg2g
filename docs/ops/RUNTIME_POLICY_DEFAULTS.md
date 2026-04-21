@@ -24,9 +24,9 @@ These defaults govern:
 
 Primary implementation references:
 
-- [confidence.go](/root/xg2g-work/backend/internal/control/recordings/runtimepolicy/confidence.go:12)
-- [policy_loop.go](/root/xg2g-work/backend/internal/control/recordings/runtimepolicy/policy_loop.go:3)
-- [playback_ladder.go](/root/xg2g-work/backend/internal/control/recordings/runtimepolicy/playback_ladder.go:9)
+- [confidence.go](../../backend/internal/control/recordings/runtimepolicy/confidence.go)
+- [policy_loop.go](../../backend/internal/control/recordings/runtimepolicy/policy_loop.go)
+- [playback_ladder.go](../../backend/internal/control/recordings/runtimepolicy/playback_ladder.go)
 
 ## Defaults
 
@@ -56,7 +56,7 @@ The web runtime ladder is intentionally small and local-step only:
 5. `direct_copy`
 
 Source:
-- [playback_ladder.go](/root/xg2g-work/backend/internal/control/recordings/runtimepolicy/playback_ladder.go:9)
+- [playback_ladder.go](../../backend/internal/control/recordings/runtimepolicy/playback_ladder.go)
 
 Guardrails:
 
@@ -79,7 +79,7 @@ Guardrails:
 - current ladder step is below target ladder step
 
 Source:
-- [policy_loop.go](/root/xg2g-work/backend/internal/control/recordings/runtimepolicy/policy_loop.go:102)
+- [policy_loop.go](../../backend/internal/control/recordings/runtimepolicy/policy_loop.go)
 
 ## Probe Confirm Criteria
 
@@ -96,7 +96,7 @@ A probe is confirmed when either:
   - no stall reason
 
 Source:
-- [policy_loop.go](/root/xg2g-work/backend/internal/control/recordings/runtimepolicy/policy_loop.go:149)
+- [policy_loop.go](../../backend/internal/control/recordings/runtimepolicy/policy_loop.go)
 
 ## Probe Abort Criteria
 
@@ -110,7 +110,7 @@ A probe is aborted immediately when any of the following holds:
   instability
 
 Source:
-- [policy_loop.go](/root/xg2g-work/backend/internal/control/recordings/runtimepolicy/policy_loop.go:128)
+- [policy_loop.go](../../backend/internal/control/recordings/runtimepolicy/policy_loop.go)
 
 ## Hard vs Soft Failure Policy
 
@@ -129,7 +129,7 @@ Soft classes remain eligible for hysteresis and recovery trust:
 This asymmetry is intentional and must stay visible in tuning.
 
 Source:
-- [confidence.go](/root/xg2g-work/backend/internal/control/recordings/runtimepolicy/confidence.go:27)
+- [confidence.go](../../backend/internal/control/recordings/runtimepolicy/confidence.go)
 
 ## Review Rule
 

@@ -202,6 +202,7 @@ func TestResolve_SafariHEVCBrowserUsesMPEGTS(t *testing.T) {
 	assert.Equal(t, "mpegts", specHW.Container)
 	assert.Equal(t, "vaapi", specHW.HWAccel)
 	assert.Equal(t, "hevc", specHW.VideoCodec)
+	assert.Equal(t, 20, specHW.VideoQP)
 }
 
 func TestResolve_SafariHEVCNativeKeepsFMP4(t *testing.T) {
@@ -210,16 +211,96 @@ func TestResolve_SafariHEVCNativeKeepsFMP4(t *testing.T) {
 
 	specHW := Resolve(ProfileSafariHEVCHW, "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "fmp4", specHW.Container)
+	assert.Equal(t, 20, specHW.VideoQP)
+}
+
+func TestResolve_AV1HWDefaultsToFMP4(t *testing.T) {
+	spec := Resolve(ProfileAV1HW, "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "fmp4", spec.Container)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.True(t, spec.Deinterlace)
+	assert.Equal(t, "vaapi_encode_only", spec.HWAccel)
+}
+
+func TestResolve_AV1HWUsesMPEGTSWhenExperimentalFlagEnabled(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+
+	spec := Resolve(ProfileAV1HW, "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "mpegts", spec.Container)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.True(t, spec.Deinterlace)
+}
+
+func TestResolve_AV1HWProgressiveCapabilityDisablesDeinterlace(t *testing.T) {
+	spec := Resolve(ProfileAV1HW, "", 0, &scan.Capability{Interlaced: false}, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.False(t, spec.Deinterlace)
+	assert.Equal(t, "vaapi_encode_only", spec.HWAccel)
+}
+
+func TestResolve_AV1HWInterlacedCapabilityKeepsDeinterlace(t *testing.T) {
+	spec := Resolve(ProfileAV1HW, "", 0, &scan.Capability{Interlaced: true}, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.True(t, spec.Deinterlace)
+}
+
+func TestResolve_SafariHEVCProgressiveCapabilityDisablesDeinterlace(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+	}{
+		{name: "cpu", profile: ProfileSafariHEVC},
+		{name: "hw", profile: ProfileSafariHEVCHW},
+		{name: "hw ll", profile: ProfileSafariHEVCHWLL},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := Resolve(tt.profile, "", 0, &scan.Capability{Interlaced: false}, GPUBackendVAAPI, HWAccelAuto)
+			assert.Equal(t, "hevc", spec.VideoCodec)
+			assert.False(t, spec.Deinterlace)
+		})
+	}
+}
+
+func TestResolve_SafariHEVCInterlacedCapabilityKeepsDeinterlace(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+	}{
+		{name: "cpu", profile: ProfileSafariHEVC},
+		{name: "hw", profile: ProfileSafariHEVCHW},
+		{name: "hw ll", profile: ProfileSafariHEVCHWLL},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := Resolve(tt.profile, "", 0, &scan.Capability{Interlaced: true}, GPUBackendVAAPI, HWAccelAuto)
+			assert.Equal(t, "hevc", spec.VideoCodec)
+			assert.True(t, spec.Deinterlace)
+		})
+	}
 }
 
 func TestNormalizeRequestedProfileID_MapsPublicAliases(t *testing.T) {
 	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("compatible"))
 	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("quality"))
 	assert.Equal(t, ProfileLow, NormalizeRequestedProfileID("bandwidth"))
+	assert.Equal(t, ProfileAndroid, NormalizeRequestedProfileID("android_tv_native"))
 	assert.Equal(t, ProfileCopy, NormalizeRequestedProfileID("direct"))
 	assert.Equal(t, ProfileCopy, NormalizeRequestedProfileID("passthrough"))
 	assert.Equal(t, ProfileRepair, NormalizeRequestedProfileID("repair"))
 	assert.Equal(t, "generic", NormalizeRequestedProfileID("generic"))
+}
+
+func TestPrefersNativeFMP4Packaging_MapsProfileBias(t *testing.T) {
+	assert.True(t, PrefersNativeFMP4Packaging("android_native"))
+	assert.True(t, PrefersNativeFMP4Packaging("android_tv_native"))
+	assert.True(t, PrefersNativeFMP4Packaging(ProfileSafariHEVCHW))
+	assert.True(t, PrefersNativeFMP4Packaging("safari_hevc_hw_ll"))
+	assert.True(t, PrefersNativeFMP4Packaging(ProfileH264FMP4))
+	assert.False(t, PrefersNativeFMP4Packaging(ProfileAV1HW))
+	assert.False(t, PrefersNativeFMP4Packaging(ProfileCopy))
 }
 
 func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
@@ -227,6 +308,7 @@ func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
 	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileHigh))
 	assert.Equal(t, PublicProfileBandwidth, PublicProfileName(ProfileLow))
 	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileSafari))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileSafariRuntimeHQ))
 	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileSafariDirty))
 	assert.Equal(t, PublicProfileQuality, PublicProfileName(ProfileSafariHEVCHW))
 	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileH264FMP4))

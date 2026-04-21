@@ -5,6 +5,9 @@
  * Probes browser codec support via MediaCapabilities, MediaSource, and HTMLVideoElement APIs.
  */
 
+import { detectPlaybackClientFamily } from './playbackClientFamily';
+import { hasIOSNativeAV1ExperimentOverride } from './iosNativeAv1Experiment';
+
 export type PreferredCodec = 'av1' | 'hevc' | 'h264';
 
 export type VideoCodecSignal = {
@@ -14,13 +17,23 @@ export type VideoCodecSignal = {
   powerEfficient?: boolean;
 };
 
-let cachedPreferredCodecs: PreferredCodec[] | null = null;
 let cachedVideoCodecSignals: VideoCodecSignal[] | null = null;
 
 /** Reset cached codecs (for testing). */
 export function resetCachedCodecs(): void {
-  cachedPreferredCodecs = null;
   cachedVideoCodecSignals = null;
+}
+
+function isIOSNativeRelaxedAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
+  if (!videoEl) return false;
+  try {
+    if (detectPlaybackClientFamily(videoEl) !== 'ios_safari_native') {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+  return hasIOSNativeAV1ExperimentOverride();
 }
 
 type DecodingInfoResult = {
@@ -146,19 +159,20 @@ export async function detectVideoCodecSignals(videoEl?: HTMLVideoElement | null)
 }
 
 export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): Promise<PreferredCodec[]> {
-  if (cachedPreferredCodecs) return cachedPreferredCodecs;
-
   const signals = await detectVideoCodecSignals(videoEl);
   const out: PreferredCodec[] = [];
   const signalFor = (codec: PreferredCodec) => signals.find((signal) => signal.codec === codec);
+  const av1Signal = signalFor('av1');
+  const allowRelaxedIOSNativeAV1 =
+    isIOSNativeRelaxedAV1ProbeEnabled(videoEl) &&
+    (av1Signal?.supported || av1Signal?.smooth);
 
-  if (signalFor('av1')?.powerEfficient) out.push('av1');
+  if (av1Signal?.powerEfficient || allowRelaxedIOSNativeAV1) out.push('av1');
   if (signalFor('hevc')?.powerEfficient || signalFor('hevc')?.smooth) out.push('hevc');
 
   // Always include H.264 as a safe fallback.
   // If the platform surprisingly doesn't report support, keep it anyway: server will still fall back if needed.
   out.push('h264');
 
-  cachedPreferredCodecs = Array.from(new Set(out));
-  return out;
+  return Array.from(new Set(out));
 }

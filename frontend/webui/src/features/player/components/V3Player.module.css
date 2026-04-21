@@ -2109,4 +2109,93 @@
   .deviceVolumeHint {
     white-space: normal;
   }
+
+  .container.touchInlineChrome .controlsHeader:not(.controlsHeaderTheater) {
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + var(--sab));
+    padding: 8px 10px calc(8px + var(--sab));
+    gap: 6px;
+    align-items: stretch;
+    opacity: 1;
+    transform: none;
+    max-height: min(156px, calc(100dvh - 56px - var(--sat) - var(--sab)));
+  }
+
+  .container.touchInlineChrome .mobileInlineMeta {
+    display: none;
+  }
+
+  .container.touchInlineChrome .mobileInlineControls {
+    min-width: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(176px, 0.8fr);
+    gap: 6px 8px;
+    padding: 8px 10px;
+  }
+
+  .container.touchInlineChrome .mobileInlineControls .vodScrubArea {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    min-width: 0;
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  .container.touchInlineChrome .mobileInlineControls .vodScrubTimes {
+    font-size: 9px;
+  }
+
+  .container.touchInlineChrome .mobileInlinePrimaryActions,
+  .container.touchInlineChrome .mobileInlineSecondaryActions {
+    width: 100%;
+    gap: 4px;
+    align-self: stretch;
+  }
+
+  .container.touchInlineChrome .mobileInlinePrimaryActions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .container.touchInlineChrome .mobileInlineSecondaryActions {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .container.touchInlineChrome .mobileInlinePrimaryActions :global(button[data-size="sm"]),
+  .container.touchInlineChrome .mobileInlineSecondaryActions :global(button[data-size="sm"]) {
+    min-height: 30px;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 0.68rem;
+  }
+
+  .container.touchInlineChrome .mobileInlinePrimaryActions .playPauseButton {
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  .container.touchInlineChrome .mobileInlineSecondaryActions .liveButton {
+    min-height: 30px;
+    padding: 0 6px;
+    letter-spacing: 0.05em;
+  }
+
+  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater),
+  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls,
+  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .seekControls {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .container.touchInlineChrome .closeButton {
+    top: calc(10px + var(--sat));
+    right: 10px;
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
 }

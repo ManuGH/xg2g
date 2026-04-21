@@ -6,6 +6,12 @@ import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } f
 import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
+import {
+  describeHlsRenderProbe,
+  isBlackRenderSuspect,
+  readPlaybackFrameCounters,
+  type HlsRenderProbeSnapshot,
+} from './playbackRenderProbe';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
 type ReportErrorFn = (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
@@ -23,7 +29,11 @@ const PLAYBACK_INFO_CODE_RECOVERED_NETWORK = 212;
 const PLAYBACK_INFO_CODE_RECOVERED_DECODER = 213;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_STARTED = 220;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED = 221;
+const PLAYBACK_INFO_CODE_HLSJS_RENDER_PLAYING = 240;
+const PLAYBACK_INFO_CODE_HLSJS_RENDER_STABLE = 241;
+const PLAYBACK_INFO_CODE_HLSJS_RENDER_BLACK = 242;
 const PROBE_CONFIRMATION_MS = 10_000;
+const HLSJS_RENDER_PROBE_MS = 2_500;
 
 interface UsePlaybackEngineProps {
   videoRef: RefObject<VideoElementRef>;
@@ -35,7 +45,7 @@ interface UsePlaybackEngineProps {
   reportError: ReportErrorFn;
   waitForSessionReady: WaitForSessionReadyFn;
   shouldPreferNativeHls: PreferNativeFn;
-  runtimeProbeActive: boolean;
+  runtimeProbeActive?: boolean;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
   setError: Dispatch<SetStateAction<string | null>>;
@@ -74,7 +84,6 @@ function extractHlsHttpStatus(data: ErrorData): number | undefined {
 
   return candidates.find((value): value is number => typeof value === 'number');
 }
-
 export function usePlaybackEngine({
   videoRef,
   hlsRef,
@@ -85,7 +94,7 @@ export function usePlaybackEngine({
   reportError,
   waitForSessionReady,
   shouldPreferNativeHls,
-  runtimeProbeActive,
+  runtimeProbeActive = false,
   setStats,
   setStatus,
   setError,
@@ -107,6 +116,9 @@ export function usePlaybackEngine({
   const reportedProbeStartedSessionRef = useRef<string | null>(null);
   const reportedProbeConfirmedSessionRef = useRef<string | null>(null);
   const probeConfirmationTimerRef = useRef<number | null>(null);
+  const activeHlsRenderProbeSessionRef = useRef<string | null>(null);
+  const completedHlsRenderProbeSessionRef = useRef<string | null>(null);
+  const hlsRenderProbeTimerRef = useRef<number | null>(null);
 
   const clearPendingNativeAutoplay = useCallback(() => {
     const video = videoRef.current;
@@ -150,6 +162,17 @@ export function usePlaybackEngine({
     }
   }, []);
 
+  const clearHlsRenderProbe = useCallback((resetCompleted: boolean = false) => {
+    if (hlsRenderProbeTimerRef.current !== null) {
+      window.clearTimeout(hlsRenderProbeTimerRef.current);
+      hlsRenderProbeTimerRef.current = null;
+    }
+    activeHlsRenderProbeSessionRef.current = null;
+    if (resetCompleted) {
+      completedHlsRenderProbeSessionRef.current = null;
+    }
+  }, []);
+
   const bufferedAheadSeconds = useCallback((videoEl: NonNullable<VideoElementRef>): number => {
     if (!videoEl.buffered.length) {
       return 0;
@@ -175,6 +198,60 @@ export function usePlaybackEngine({
       return 0;
     }
   }, []);
+
+  const captureHlsRenderProbeSnapshot = useCallback((videoEl: NonNullable<VideoElementRef>): HlsRenderProbeSnapshot => {
+    const counters = readPlaybackFrameCounters(videoEl);
+    return {
+      currentTime: videoEl.currentTime,
+      readyState: videoEl.readyState,
+      networkState: videoEl.networkState,
+      videoWidth: videoEl.videoWidth,
+      videoHeight: videoEl.videoHeight,
+      paused: videoEl.paused,
+      bufferedAhead: bufferedAheadSeconds(videoEl),
+      totalFrames: counters.totalFrames,
+      droppedFrames: counters.droppedFrames,
+    };
+  }, [bufferedAheadSeconds]);
+
+  const scheduleHlsRenderProbe = useCallback((videoEl: NonNullable<VideoElementRef>, trackedSessionId: string) => {
+    if (lastHlsEngineRef.current !== 'hlsjs') {
+      clearHlsRenderProbe(false);
+      return;
+    }
+    if (
+      completedHlsRenderProbeSessionRef.current === trackedSessionId ||
+      activeHlsRenderProbeSessionRef.current === trackedSessionId
+    ) {
+      return;
+    }
+
+    const started = captureHlsRenderProbeSnapshot(videoEl);
+    activeHlsRenderProbeSessionRef.current = trackedSessionId;
+    void reportError('info', PLAYBACK_INFO_CODE_HLSJS_RENDER_PLAYING, describeHlsRenderProbe('playing', started));
+
+    hlsRenderProbeTimerRef.current = window.setTimeout(() => {
+      hlsRenderProbeTimerRef.current = null;
+      if (
+        isTeardownRef.current ||
+        sessionIdRef.current !== trackedSessionId ||
+        lastHlsEngineRef.current !== 'hlsjs'
+      ) {
+        activeHlsRenderProbeSessionRef.current = null;
+        return;
+      }
+
+      const settled = captureHlsRenderProbeSnapshot(videoEl);
+      const blackSuspect = isBlackRenderSuspect(started, settled);
+      activeHlsRenderProbeSessionRef.current = null;
+      completedHlsRenderProbeSessionRef.current = trackedSessionId;
+      void reportError(
+        'info',
+        blackSuspect ? PLAYBACK_INFO_CODE_HLSJS_RENDER_BLACK : PLAYBACK_INFO_CODE_HLSJS_RENDER_STABLE,
+        describeHlsRenderProbe(blackSuspect ? 'black_suspect' : 'stable', settled, started)
+      );
+    }, HLSJS_RENDER_PROBE_MS);
+  }, [captureHlsRenderProbeSnapshot, clearHlsRenderProbe, isTeardownRef, reportError, sessionIdRef]);
 
   const reportPlaybackWarning = useCallback((code: number, message: string) => {
     const trackedSessionId = sessionIdRef.current;
@@ -236,6 +313,7 @@ export function usePlaybackEngine({
       reportedWarningKeysRef.current.clear();
       pendingWarningRecoveryRef.current = null;
       clearProbeConfirmation();
+      clearHlsRenderProbe(true);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -250,7 +328,7 @@ export function usePlaybackEngine({
         isTeardownRef.current = false;
       }, 50);
     }
-  }, [clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearProbeConfirmation, hlsRef, isTeardownRef, videoRef]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearProbeConfirmation, hlsRef, isTeardownRef, videoRef]);
 
   const beginSessionDecodeRecovery = useCallback((
     code: number,
@@ -334,6 +412,7 @@ export function usePlaybackEngine({
     trigger: 'waiting' | 'stalled'
   ) => {
     if (
+      decodeRecoveryInFlightRef.current ||
       nativeStallRecoveryTimerRef.current !== null ||
       hlsRef.current ||
       !sessionIdRef.current ||
@@ -352,6 +431,7 @@ export function usePlaybackEngine({
 
       if (
         isTeardownRef.current ||
+        decodeRecoveryInFlightRef.current ||
         hlsRef.current ||
         !sessionIdRef.current ||
         !lastHlsUrlRef.current ||
@@ -398,6 +478,7 @@ export function usePlaybackEngine({
     trigger: 'waiting' | 'stalled'
   ) => {
     if (
+      decodeRecoveryInFlightRef.current ||
       hlsStallRecoveryTimerRef.current !== null ||
       !hlsRef.current ||
       !sessionIdRef.current ||
@@ -416,6 +497,7 @@ export function usePlaybackEngine({
       const hls = hlsRef.current;
       if (
         isTeardownRef.current ||
+        decodeRecoveryInFlightRef.current ||
         !hls ||
         !sessionIdRef.current ||
         !lastHlsUrlRef.current ||
@@ -492,6 +574,7 @@ export function usePlaybackEngine({
     clearPendingNativeAutoplay();
     clearNativeStallRecovery();
     clearHlsStallRecovery();
+    clearHlsRenderProbe(true);
     hlsStallRecoveryAttemptsRef.current = 0;
     lastDecodedRef.current = 0;
 
@@ -503,12 +586,25 @@ export function usePlaybackEngine({
       engine === 'native' ||
       (engine === 'auto' && canPlayNative && !hlsJsSupported);
     const canUseHlsJs = (engine === 'hlsjs' || engine === 'auto') && !preferNativeHls;
+    const usingHlsJs = !preferNative && canUseHlsJs && hlsJsSupported;
+
+    try {
+      if (engine === 'hlsjs' || usingHlsJs) {
+        (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
+        video.setAttribute('disableremoteplayback', '');
+      } else {
+        (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false;
+        video.removeAttribute('disableremoteplayback');
+      }
+    } catch {
+      // Best-effort: iOS MMS can require remote playback to be disabled.
+    }
 
     if (preferNativeHls && engine === 'hlsjs') {
       debugLog('[V3Player] Overriding hls.js engine to native HLS on WebKit');
     }
 
-    if (!preferNative && canUseHlsJs && hlsJsSupported) {
+    if (usingHlsJs) {
       lastHlsUrlRef.current = url;
       lastHlsEngineRef.current = 'hlsjs';
       if (hlsRef.current) {
@@ -685,7 +781,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, scheduleNativeAutoplay, sessionIdRef, setError, setErrorDetails, setStats, setStatus, shouldPreferNativeHls, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, scheduleNativeAutoplay, sessionIdRef, setError, setErrorDetails, setStats, setStatus, shouldPreferNativeHls, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -693,6 +789,7 @@ export function usePlaybackEngine({
     clearPendingNativeAutoplay();
     clearNativeStallRecovery();
     clearHlsStallRecovery();
+    clearHlsRenderProbe(true);
     hlsStallRecoveryAttemptsRef.current = 0;
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -709,7 +806,7 @@ export function usePlaybackEngine({
     video.src = url;
     video.load();
     video.play().catch((err) => debugWarn('Autoplay failed', err));
-  }, [clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, videoRef]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, videoRef]);
 
   const waitForDirectStream = useCallback(async (url: string): Promise<void> => {
     const maxRetries = 100;
@@ -747,6 +844,11 @@ export function usePlaybackEngine({
     if (!videoEl) return;
 
     const onWaiting = () => {
+      if (decodeRecoveryInFlightRef.current) {
+        debugLog('[V3Player] Event: waiting ignored during decode recovery');
+        return;
+      }
+
       let bufferHealth = 0;
       if (videoEl.buffered.length > 0) {
         for (let i = 0; i < videoEl.buffered.length; i++) {
@@ -766,6 +868,7 @@ export function usePlaybackEngine({
 
       debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
       clearProbeConfirmation();
+      clearHlsRenderProbe(false);
       setStatus('buffering');
       reportPlaybackWarning(PLAYBACK_WARNING_CODE_WAITING, 'waiting');
       scheduleNativeStallRecovery(videoEl, 'waiting');
@@ -773,6 +876,11 @@ export function usePlaybackEngine({
     };
 
     const onStalled = () => {
+      if (decodeRecoveryInFlightRef.current) {
+        debugLog('[V3Player] Event: stalled ignored during decode recovery');
+        return;
+      }
+
       let bufferHealth = 0;
       if (videoEl.buffered.length > 0) {
         for (let i = 0; i < videoEl.buffered.length; i++) {
@@ -792,6 +900,7 @@ export function usePlaybackEngine({
 
       debugLog('[V3Player] Event: stalled -> buffering');
       clearProbeConfirmation();
+      clearHlsRenderProbe(false);
       setStatus('buffering');
       reportPlaybackWarning(PLAYBACK_WARNING_CODE_STALLED, 'stalled');
       scheduleNativeStallRecovery(videoEl, 'stalled');
@@ -799,9 +908,15 @@ export function usePlaybackEngine({
     };
 
     const onSeeking = () => {
+      if (decodeRecoveryInFlightRef.current) {
+        debugLog('[V3Player] Event: seeking ignored during decode recovery');
+        return;
+      }
+
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();
+      clearHlsRenderProbe(false);
       debugLog('[V3Player] Event: seeking -> buffering');
       setStatus('buffering');
     };
@@ -842,6 +957,11 @@ export function usePlaybackEngine({
       } else if (!runtimeProbeActive) {
         clearProbeConfirmation();
       }
+      if (trackedSessionId && lastHlsEngineRef.current === 'hlsjs') {
+        scheduleHlsRenderProbe(videoEl, trackedSessionId);
+      } else {
+        clearHlsRenderProbe(false);
+      }
       pendingWarningRecoveryRef.current = null;
       reportedWarningKeysRef.current.clear();
       setStatus('playing');
@@ -861,6 +981,7 @@ export function usePlaybackEngine({
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();
+      clearHlsRenderProbe(false);
       setStatus((prev) => (prev === 'error' ? prev : 'paused'));
     };
 
@@ -895,6 +1016,7 @@ export function usePlaybackEngine({
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();
+      clearHlsRenderProbe(false);
       const presentation = classifyMediaElementError({
         code: err?.code,
         message: err?.message,
@@ -938,6 +1060,7 @@ export function usePlaybackEngine({
 
     return () => {
       clearProbeConfirmation();
+      clearHlsRenderProbe(false);
       videoEl.removeEventListener('waiting', onWaiting);
       videoEl.removeEventListener('stalled', onStalled);
       videoEl.removeEventListener('seeking', onSeeking);
@@ -946,7 +1069,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setError, setErrorDetails, setShowErrorDetails, setStatus, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setError, setErrorDetails, setShowErrorDetails, setStatus, videoRef]);
 
   return {
     resetPlaybackEngine,

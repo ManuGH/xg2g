@@ -212,8 +212,76 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 
 func (m *Manager) GetStatus() ScanStatus {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.status
+	status := m.status
+	m.mu.RUnlock()
+
+	if status.State != "idle" || status.TotalChannels > 0 || status.ScannedChannels > 0 || status.UpdatedCount > 0 {
+		return status
+	}
+
+	return m.deriveIdleStatusFromCache(status)
+}
+
+func (m *Manager) deriveIdleStatusFromCache(status ScanStatus) ScanStatus {
+	if m == nil || m.store == nil || strings.TrimSpace(m.m3uPath) == "" {
+		return status
+	}
+
+	content, err := os.ReadFile(m.m3uPath)
+	if err != nil {
+		return status
+	}
+
+	channels := m3u.Parse(string(content))
+	if len(channels) == 0 {
+		return status
+	}
+
+	seen := make(map[string]struct{}, len(channels))
+	total := 0
+	cached := 0
+	latestFinishedAt := int64(0)
+
+	for _, ch := range channels {
+		serviceRef := ExtractServiceRef(ch.URL)
+		if serviceRef == "" {
+			continue
+		}
+		if _, ok := seen[serviceRef]; ok {
+			continue
+		}
+		seen[serviceRef] = struct{}{}
+		total++
+
+		cap, found := m.store.Get(serviceRef)
+		if !found {
+			continue
+		}
+		cached++
+
+		anchor := cap.LastSuccess
+		if anchor.IsZero() {
+			anchor = cap.LastScan
+		}
+		if anchor.IsZero() {
+			anchor = cap.LastAttempt
+		}
+		if ts := anchor.UTC().Unix(); ts > latestFinishedAt {
+			latestFinishedAt = ts
+		}
+	}
+
+	if total == 0 {
+		return status
+	}
+
+	status.TotalChannels = total
+	status.ScannedChannels = cached
+	status.UpdatedCount = cached
+	if latestFinishedAt > 0 {
+		status.FinishedAt = latestFinishedAt
+	}
+	return status
 }
 
 // Close releases the underlying capability store resources.

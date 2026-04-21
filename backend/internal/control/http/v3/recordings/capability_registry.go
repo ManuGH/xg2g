@@ -161,7 +161,7 @@ func (s *Service) sourceSnapshotForRequestWithLiveTruth(ctx context.Context, sou
 			sourceSnapshot.Origin = liveTruth.Origin
 			flags = append(flags, append([]string(nil), liveTruth.ProblemFlags...)...)
 		} else {
-			origin, liveFlags := liveSourceOriginAndFlags(sourceRef, s.deps.ChannelTruthSource())
+			origin, liveFlags := liveSourceOriginAndFlags(sourceRef, s.deps.ChannelTruthSource(), PlaybackInfoRequestContext(req))
 			sourceSnapshot.Origin = origin
 			flags = append(flags, liveFlags...)
 		}
@@ -176,8 +176,8 @@ func (s *Service) sourceSnapshotForRequestWithLiveTruth(ctx context.Context, sou
 	return sourceSnapshot
 }
 
-func liveSourceOriginAndFlags(sourceRef string, source ChannelTruthSource) (string, []string) {
-	resolution := resolveLiveTruthState(sourceRef, source)
+func liveSourceOriginAndFlags(sourceRef string, source ChannelTruthSource, requestContext string) (string, []string) {
+	resolution := resolveLiveTruthState(sourceRef, source, requestContext)
 	return resolution.Origin, append([]string(nil), resolution.ProblemFlags...)
 }
 

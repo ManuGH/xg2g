@@ -45,7 +45,7 @@ func (siw *ServerInterfaceWrapper) PostRecordingDelete(w http.ResponseWriter, r 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler, ok := siw.Handler.(recordingAdminServer)
 		if !ok || handler == nil {
-			w.WriteHeader(http.StatusNotImplemented)
+			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not_implemented", "Not Implemented", problemcode.CodeNotImplemented, "Recording delete is not implemented on this server.", nil)
 			return
 		}
 		handler.PostRecordingDelete(w, r, recordingID)
@@ -63,7 +63,7 @@ func (siw *ServerInterfaceWrapper) PostRecordingRename(w http.ResponseWriter, r 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler, ok := siw.Handler.(recordingAdminServer)
 		if !ok || handler == nil {
-			w.WriteHeader(http.StatusNotImplemented)
+			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not_implemented", "Not Implemented", problemcode.CodeNotImplemented, "Recording rename is not implemented on this server.", nil)
 			return
 		}
 		handler.PostRecordingRename(w, r, recordingID)
@@ -342,7 +342,7 @@ func planLocalRecordingRenames(localPath string, artifacts []string, title strin
 	ops := make([]recordingRenameOp, 0, len(artifacts))
 	for _, artifactPath := range artifacts {
 		oldName := filepath.Base(artifactPath)
-		newName := oldName
+		var newName string
 
 		switch {
 		case oldName == baseName:
@@ -400,7 +400,8 @@ func ensureRecordingRenameTargetsAvailable(ops []recordingRenameOp) error {
 
 func updateRecordingMetaTitle(localPath, title string) error {
 	metaPath := localPath + ".meta"
-	content, err := os.ReadFile(metaPath)
+	// #nosec G304 -- metaPath is derived from a validated local recording path under operator-controlled storage mappings.
+	content, err := os.ReadFile(filepath.Clean(metaPath))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil

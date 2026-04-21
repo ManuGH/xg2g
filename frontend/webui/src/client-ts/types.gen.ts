@@ -1253,6 +1253,26 @@ export type PlaybackTrace = {
     preflightDetail?: string | null;
     targetProfileHash?: string | null;
     targetProfile?: PlaybackTargetProfile;
+    /**
+     * Neutral selection policy identifier used for automatic codec choice.
+     */
+    autoCodecPolicy?: string | null;
+    /**
+     * Comma-separated codec preference set considered during automatic codec choice.
+     */
+    autoCodecRequestedCodecs?: string | null;
+    /**
+     * Codec selected from the automatic codec preference set.
+     */
+    autoCodecSelectedCodec?: string | null;
+    /**
+     * Host performance class observed during automatic codec choice.
+     */
+    autoCodecPerformanceClass?: string | null;
+    /**
+     * Benchmark capability class for the selected codec on the current host.
+     */
+    autoCodecBenchmarkClass?: string | null;
     ffmpegPlan?: PlaybackTraceFfmpegPlan;
     operator?: PlaybackTraceOperator;
     firstFrameAtMs?: number | null;
@@ -1267,13 +1287,13 @@ export type PlaybackTraceOperator = {
     maxQualityRung?: string | null;
     runtimePolicyAction?: string | null;
     runtimePolicyPhase?: string | null;
-    runtimePolicyConstraints?: Array<string> | null;
-    runtimePolicyReplay?: PlaybackTraceRuntimeReplay | null;
-    runtimePolicyReasons?: Array<string> | null;
-    runtimePolicyTimeline?: Array<PlaybackTraceRuntimeTick> | null;
     runtimeProbeCandidate?: string | null;
-    runtimeProbeFailureStreak?: number | null;
+    runtimePolicyReasons?: Array<string> | null;
+    runtimePolicyConstraints?: Array<string> | null;
+    runtimePolicyReplay?: PlaybackTraceRuntimeReplay;
+    runtimePolicyTimeline?: Array<PlaybackTraceRuntimeTick> | null;
     runtimeProbeSuccessStreak?: number | null;
+    runtimeProbeFailureStreak?: number | null;
     ruleName?: string | null;
     ruleScope?: string | null;
     clientFallbackDisabled?: boolean;
@@ -1281,18 +1301,18 @@ export type PlaybackTraceOperator = {
 };
 
 export type PlaybackTraceRuntimeReplay = {
-    finalState?: PlaybackTraceRuntimeReplayState | null;
-    initialState?: PlaybackTraceRuntimeReplayState | null;
-    metadata?: PlaybackTraceRuntimeReplayMetadata | null;
+    metadata?: PlaybackTraceRuntimeReplayMetadata;
+    initialState?: PlaybackTraceRuntimeReplayState;
+    finalState?: PlaybackTraceRuntimeReplayState;
     ticks?: Array<PlaybackTraceRuntimeReplayTick> | null;
 };
 
 export type PlaybackTraceRuntimeReplayMetadata = {
-    clientPath?: string | null;
-    initialTarget?: string | null;
-    serviceRef?: string | null;
     sessionId?: string | null;
+    serviceRef?: string | null;
+    clientPath?: string | null;
     sourceType?: string | null;
+    initialTarget?: string | null;
 };
 
 export type PlaybackTraceRuntimeReplayState = {
@@ -1309,37 +1329,37 @@ export type PlaybackTraceRuntimeReplayState = {
 };
 
 export type PlaybackTraceRuntimeReplayTick = {
-    expected?: PlaybackTraceRuntimeReplayTickExpected | null;
-    input?: PlaybackTraceRuntimeReplayTickInput | null;
-};
-
-export type PlaybackTraceRuntimeReplayTickExpected = {
-    action?: string | null;
-    activeStep?: string | null;
-    blockers?: Array<string> | null;
-    executedTransition?: string | null;
-    plannedTransition?: string | null;
-    probeState?: string | null;
-    probeStep?: string | null;
-    reasons?: Array<string> | null;
-    runtimePhase?: string | null;
+    input?: PlaybackTraceRuntimeReplayTickInput;
+    expected?: PlaybackTraceRuntimeReplayTickExpected;
 };
 
 export type PlaybackTraceRuntimeReplayTickInput = {
-    confidence?: PlaybackTraceRuntimeReplayTickInputConfidence | null;
+    confidence?: PlaybackTraceRuntimeReplayTickInputConfidence;
     observedStep?: string | null;
     targetStep?: string | null;
     tickAt: string;
 };
 
 export type PlaybackTraceRuntimeReplayTickInputConfidence = {
-    cooldownUntil?: string | null;
-    policyConstraints?: Array<string> | null;
-    reasons?: Array<string> | null;
     score?: number | null;
     state?: string | null;
     stateSince?: string | null;
+    cooldownUntil?: string | null;
+    policyConstraints?: Array<string> | null;
+    reasons?: Array<string> | null;
     windowCount?: number | null;
+};
+
+export type PlaybackTraceRuntimeReplayTickExpected = {
+    action?: string | null;
+    activeStep?: string | null;
+    blockers?: Array<string> | null;
+    plannedTransition?: string | null;
+    executedTransition?: string | null;
+    probeStep?: string | null;
+    probeState?: string | null;
+    reasons?: Array<string> | null;
+    runtimePhase?: string | null;
 };
 
 export type PlaybackTraceRuntimeTick = {

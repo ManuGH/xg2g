@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -593,6 +594,7 @@ func TestBuildArgs_SafariHQAllowlistKeepsProgressive50fpsSourcesProgressive(t *t
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "progressive HQ safari path should preserve 50fps GOP cadence")
+	assert.NotContains(t, args, "-r", "HQ50 path must not clamp output framerate")
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
@@ -616,7 +618,7 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:            "safari_hq",
+			Name:            profiles.ProfileSafariRuntimeHQ,
 			PolicyModeHint:  ports.RuntimeModeCopy,
 			ForceSafariHQ25: true,
 			TranscodeVideo:  true,
@@ -647,6 +649,9 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "forced HQ25 should clamp progressive sources to 25fps GOP cadence")
+	outputFPS, ok := valueAfter(args, "-r")
+	require.True(t, ok)
+	assert.Equal(t, "25", outputFPS, "HQ25 path must clamp output framerate to 25fps")
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
@@ -695,10 +700,87 @@ func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop)
+	outputFPS, ok := valueAfter(args, "-r")
+	require.True(t, ok)
+	assert.Equal(t, "25", outputFPS)
 
 	assert.Equal(t, ports.RuntimeModeHQ25, plan.effectiveProfile.EffectiveRuntimeMode)
 	assert.Equal(t, ports.RuntimeModeSourceEnvOverride, plan.effectiveProfile.EffectiveModeSource)
 	assert.True(t, plan.effectiveProfile.ForceSafariHQ25)
+}
+
+func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "safari-hevc-hq25-progressive",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:                 "safari_hevc_hw",
+			PolicyModeHint:       ports.RuntimeModeHQ25,
+			EffectiveRuntimeMode: ports.RuntimeModeHQ25,
+			Container:            "fmp4",
+			TranscodeVideo:       true,
+			HWAccel:              "vaapi_encode_only",
+			VideoCodec:           "hevc",
+			VideoQP:              20,
+			Deinterlace:          false,
+			VideoMaxRateK:        5000,
+			VideoBufSizeK:        10000,
+			AudioBitrateK:        192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	args := plan.args
+
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, expectedGOP, gop, "hq25 HEVC path must clamp progressive sources to 25fps GOP cadence")
+	outputFPS, ok := valueAfter(args, "-r")
+	require.True(t, ok)
+	assert.Equal(t, "25", outputFPS, "hq25 HEVC path must clamp output framerate to 25fps")
+
+	rcMode, ok := valueAfter(args, "-rc_mode")
+	require.True(t, ok)
+	assert.Equal(t, "CQP", rcMode, "hq25 HEVC path must keep VAAPI CQP until a bounded mode proves bitstream-safe")
+
+	aud, ok := valueAfter(args, "-aud")
+	require.True(t, ok)
+	assert.Equal(t, "1", aud)
+
+	idrInterval, ok := valueAfter(args, "-idr_interval")
+	require.True(t, ok)
+	assert.Equal(t, "1", idrInterval)
+
+	bFrames, ok := valueAfter(args, "-bf")
+	require.True(t, ok)
+	assert.Equal(t, "0", bFrames)
+
+	tier, ok := valueAfter(args, "-tier")
+	require.True(t, ok)
+	assert.Equal(t, "main", tier)
+
+	assert.Contains(t, args, "hevc_vaapi")
+	qp, ok := valueAfter(args, "-qp")
+	require.True(t, ok)
+	assert.Equal(t, "20", qp)
+	assert.Equal(t, ports.RuntimeModeHQ25, plan.effectiveProfile.EffectiveRuntimeMode)
 }
 
 func TestShouldRetrySafariRuntimeProbe_TransientStreamRelayOnly(t *testing.T) {
@@ -1074,6 +1156,47 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 	assert.Contains(t, args, "hevc_vaapi")
 }
 
+func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "hevc-hw-profile-cpu-fallback",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_hevc_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "",
+			VideoCodec:     "hevc",
+			VideoCRF:       22,
+			VideoMaxRateK:  5000,
+			VideoBufSizeK:  10000,
+			AudioBitrateK:  192,
+			Preset:         "superfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.NotContains(t, args, "-vaapi_device")
+	assert.NotContains(t, args, "-hwaccel")
+	assert.NotContains(t, args, "hevc_vaapi")
+	assert.Contains(t, args, "libx265")
+	tagValue, ok := valueAfter(args, "-tag:v")
+	require.True(t, ok)
+	assert.Equal(t, "hvc1", tagValue)
+}
+
 func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
@@ -1288,6 +1411,44 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "1M", probe)
 	assert.NotContains(t, fflags, "nobuffer")
+}
+
+func TestBuildArgs_HEVCTranscodeUsesStrictLiveIngest(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "hevc-strict-ingest",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: true,
+			VideoCodec:     "hevc",
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	iIdx := indexOf(args, "-i")
+	require.True(t, iIdx > 0)
+
+	fflagsIdx := indexOf(args, "-fflags")
+	require.True(t, fflagsIdx >= 0 && fflagsIdx < iIdx, "fflags must be before -i")
+	fflags, ok := valueAfter(args, "-fflags")
+	require.True(t, ok)
+	assert.Contains(t, fflags, "+genpts")
+	assert.Contains(t, fflags, "+discardcorrupt")
+	assert.Contains(t, fflags, "+igndts")
+
+	assert.Equal(t, -1, indexOf(args, "-err_detect"))
+	assert.Equal(t, -1, indexOf(args, "-max_error_rate"))
+	assert.Equal(t, -1, indexOf(args, "-flags2"))
 }
 
 func TestBuildArgs_StreamRelayPassthroughUsesFastLiveProbe(t *testing.T) {
@@ -1596,6 +1757,188 @@ func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
 	assert.Contains(t, args, "hevc_vaapi", "av1_hw should fall back to a verified HW codec")
 	assert.NotContains(t, args, "av1_vaapi", "must not emit av1_vaapi when av1 preflight failed")
 	assert.Equal(t, "av1", spec.Profile.VideoCodec, "adapter must not mutate profile codec semantics")
+}
+
+func TestBuildArgs_AV1HWUsesMPEGTSSegmentsWhenExperimentalFlagEnabled(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-ts",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Container:      "mpegts",
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
+	require.True(t, ok)
+	assert.Equal(t, "mpegts", hlsSegmentType)
+	assert.Contains(t, args, "av1_vaapi")
+}
+
+func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		return &vod.StreamInfo{
+			Container: "ts",
+			Video: vod.VideoStreamInfo{
+				CodecName:  "h264",
+				Interlaced: false,
+			},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-progressive-probe",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:                "av1_hw",
+			EffectiveModeSource: ports.RuntimeModeSourceResolve,
+			TranscodeVideo:      true,
+			HWAccel:             "vaapi",
+			VideoCodec:          "av1",
+			Deinterlace:         true,
+			Container:           "mpegts",
+			VideoMaxRateK:       6000,
+			VideoBufSizeK:       12000,
+			AudioBitrateK:       192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:"
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+
+	assert.Contains(t, plan.args, "av1_vaapi")
+	assert.NotContains(t, plan.args, "h264_vaapi")
+	assert.NotContains(t, plan.args, "-hwaccel", "av1 hw path should stay encode-only so geometry can be normalized before hwupload")
+	vf, ok := valueAfter(plan.args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
+	assert.Contains(t, vf, "format=nv12,hwupload")
+	assert.Equal(t, "av1", plan.effectiveProfile.VideoCodec)
+	assert.False(t, plan.effectiveProfile.Deinterlace)
+	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, plan.effectiveProfile.EffectiveModeSource)
+}
+
+func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{
+		"h264_vaapi": true,
+		"av1_vaapi":  true,
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-interlaced-default-fallback",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Deinterlace:    true,
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "h264_vaapi")
+	assert.NotContains(t, args, "av1_vaapi")
+	assert.Contains(t, args, "-hwaccel", "safe h264 fallback may still use the verified full VAAPI path")
+}
+
+func TestBuildArgs_AV1HWInterlacedExperimentalOverrideUsesAV1EncodeOnlyPath(t *testing.T) {
+	t.Setenv(experimentalInterlacedVAAPICodecsEnv, "av1")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{
+		"h264_vaapi": true,
+		"av1_vaapi":  true,
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-interlaced-override",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Deinterlace:    true,
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-vaapi_device")
+	assert.NotContains(t, args, "-hwaccel", "unverified override should stay on encode-only path")
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "bwdif=")
+	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
+	assert.Contains(t, vf, "format=nv12,hwupload")
+	assert.Contains(t, args, "av1_vaapi")
+	assert.NotContains(t, args, "h264_vaapi")
 }
 
 func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {

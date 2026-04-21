@@ -61,7 +61,7 @@ func runPreflightCLIWithIO(args []string, stdout, stderr io.Writer, detectRepoRo
 		health.LifecycleOperationRestore,
 		health.LifecycleOperationRollback:
 	default:
-		fmt.Fprintf(stderr, "invalid --operation %q\n", operation)
+		_, _ = fmt.Fprintf(stderr, "invalid --operation %q\n", operation)
 		return 2
 	}
 
@@ -74,9 +74,9 @@ func runPreflightCLIWithIO(args []string, stdout, stderr io.Writer, detectRepoRo
 	cfg, err := loader.Load()
 	if err != nil {
 		if configPath == "" {
-			fmt.Fprintf(stderr, "failed to load configuration from defaults/env: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "failed to load configuration from defaults/env: %v\n", err)
 		} else {
-			fmt.Fprintf(stderr, "failed to load configuration from %s: %v\n", configPath, err)
+			_, _ = fmt.Fprintf(stderr, "failed to load configuration from %s: %v\n", configPath, err)
 		}
 		return 2
 	}
@@ -85,7 +85,7 @@ func runPreflightCLIWithIO(args []string, stdout, stderr io.Writer, detectRepoRo
 	if strings.TrimSpace(configPath) != "" {
 		raw, rawErr := config.LoadFileConfig(configPath)
 		if rawErr != nil {
-			fmt.Fprintf(stderr, "failed to load raw file config from %s: %v\n", configPath, rawErr)
+			_, _ = fmt.Fprintf(stderr, "failed to load raw file config from %s: %v\n", configPath, rawErr)
 			return 2
 		}
 		fileCfg = raw
@@ -115,7 +115,7 @@ func runPreflightCLIWithIO(args []string, stdout, stderr io.Writer, detectRepoRo
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(report); err != nil {
-			fmt.Fprintf(stderr, "failed to encode preflight report: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "failed to encode preflight report: %v\n", err)
 			return 2
 		}
 	} else {

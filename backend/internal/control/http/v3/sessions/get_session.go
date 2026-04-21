@@ -96,15 +96,24 @@ func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) SessionPla
 		durationSeconds = &value
 	}
 
+	if session.CreatedAtUnix == 0 {
+		zero := 0.0
+		return SessionPlaybackInfo{
+			Mode:                 mode,
+			WindowKind:           resolveLiveWindowKind(durationSeconds, zero, zero),
+			DurationSeconds:      durationSeconds,
+			SeekableStartSeconds: &zero,
+			SeekableEndSeconds:   &zero,
+			LiveEdgeSeconds:      &zero,
+		}
+	}
+
 	if now.IsZero() {
 		now = time.Now()
 	}
 	nowUnix := now.Unix()
 
 	startUnix := session.CreatedAtUnix
-	if startUnix == 0 {
-		startUnix = session.UpdatedAtUnix
-	}
 	if startUnix == 0 {
 		startUnix = nowUnix
 	}

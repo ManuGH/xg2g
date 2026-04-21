@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import SeriesManager from '../src/components/SeriesManager';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as client from '../src/client-ts';
@@ -24,9 +25,11 @@ describe('SeriesManager Truth Sealing (UI-INV-SERIES-001)', () => {
 
   it('omits optional filters from create payload if not set', async () => {
     render(
-      <UiOverlayProvider>
-        <SeriesManager />
-      </UiOverlayProvider>
+      <MemoryRouter>
+        <UiOverlayProvider>
+          <SeriesManager />
+        </UiOverlayProvider>
+      </MemoryRouter>
     );
 
     // Open "New Rule" modal (Wait for loading to finish)
@@ -67,9 +70,11 @@ describe('SeriesManager Truth Sealing (UI-INV-SERIES-001)', () => {
     });
 
     render(
-      <UiOverlayProvider>
-        <SeriesManager />
-      </UiOverlayProvider>
+      <MemoryRouter>
+        <UiOverlayProvider>
+          <SeriesManager />
+        </UiOverlayProvider>
+      </MemoryRouter>
     );
 
     const editButton = await screen.findByRole('button', { name: 'Edit' });

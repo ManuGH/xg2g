@@ -58,7 +58,7 @@ func TestBuildStartSession_CapsHeavyLiveStartupProfileButPreservesTargetStep(t *
 	require.Equal(t, string(runtimepolicy.PlaybackStepH2641080p), session.ContextData[model.CtxKeyRuntimeTargetStep])
 }
 
-func TestBuildStartSession_CapsAV1StartupButPreservesAV1TargetStep(t *testing.T) {
+func TestBuildStartSession_PreservesAV1StartupProfileAndTargetStep(t *testing.T) {
 	deps := newMockDeps()
 	svc := NewService(deps)
 
@@ -89,9 +89,11 @@ func TestBuildStartSession_CapsAV1StartupButPreservesAV1TargetStep(t *testing.T)
 	}, resolution)
 
 	require.Equal(t, profiles.ProfileAV1HW, session.Profile.Name)
-	require.Equal(t, "libx264", session.Profile.VideoCodec)
-	require.Equal(t, "", session.Profile.HWAccel)
-	require.Equal(t, 1280, session.Profile.VideoMaxWidth)
+	require.Equal(t, ports.RuntimeModeSourceResolve, session.Profile.EffectiveModeSource)
+	require.Equal(t, "av1", session.Profile.VideoCodec)
+	require.Equal(t, "vaapi", session.Profile.HWAccel)
+	require.Equal(t, 1920, session.Profile.VideoMaxWidth)
+	require.Equal(t, 192, session.Profile.AudioBitrateK)
 	require.Equal(t, "fmp4", session.Profile.Container)
 	require.Equal(t, string(runtimepolicy.PlaybackStepAV11080p), session.ContextData[model.CtxKeyRuntimeTargetStep])
 }
@@ -129,7 +131,7 @@ func TestCapLiveStartupProfile_SkipsGPUBackedOrAlreadyCheapProfiles(t *testing.T
 	require.Equal(t, 1280, capped.VideoMaxWidth)
 }
 
-func TestCapLiveStartupProfile_CapsAV1LiveTargetToCheapH264Startup(t *testing.T) {
+func TestCapLiveStartupProfile_PreservesAV1LiveTarget(t *testing.T) {
 	intent := Intent{Mode: model.ModeLive}
 
 	capped, changed := capLiveStartupProfile(intent, model.ProfileSpec{
@@ -146,11 +148,11 @@ func TestCapLiveStartupProfile_CapsAV1LiveTargetToCheapH264Startup(t *testing.T)
 		AudioBitrateK:        192,
 	}, runtimepolicy.PlaybackStepAV11080p)
 
-	require.True(t, changed)
-	require.Equal(t, "libx264", capped.VideoCodec)
-	require.Equal(t, "", capped.HWAccel)
-	require.Equal(t, 1280, capped.VideoMaxWidth)
+	require.False(t, changed)
+	require.Equal(t, "av1", capped.VideoCodec)
+	require.Equal(t, "vaapi", capped.HWAccel)
+	require.Equal(t, 1920, capped.VideoMaxWidth)
 	require.Equal(t, "fmp4", capped.Container)
-	require.Equal(t, 160, capped.AudioBitrateK)
-	require.Equal(t, ports.RuntimeModeSourceRuntimeHardening, capped.EffectiveModeSource)
+	require.Equal(t, 192, capped.AudioBitrateK)
+	require.Equal(t, ports.RuntimeModeSourceResolve, capped.EffectiveModeSource)
 }

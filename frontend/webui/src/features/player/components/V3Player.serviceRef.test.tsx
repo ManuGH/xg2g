@@ -1,9 +1,10 @@
 /// <reference types="@testing-library/jest-dom" />
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import V3Player from './V3Player';
 import type { V3PlayerProps } from '../../../types/v3-player';
+import { resetCachedCodecs } from '../utils/codecDetection';
 
 const { createSessionMock, postRecordingPlaybackInfoMock } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
@@ -86,6 +87,7 @@ describe('V3Player ServiceRef Input', () => {
   });
 
   afterEach(() => {
+    cleanup();
     (globalThis as any).fetch = originalFetch;
     vi.restoreAllMocks();
   });
@@ -187,6 +189,7 @@ describe('V3Player ServiceRef Input', () => {
       const streamInfoCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/live/stream-info'));
       expect(streamInfoCall).toBeDefined();
       const [, streamInfoOptions] = streamInfoCall;
+      expect(streamInfoOptions.headers?.['X-XG2G-Playback-Info-Context']).toBe('player_start');
       const streamInfoBody = JSON.parse(streamInfoOptions.body);
       expect(streamInfoBody.capabilities?.capabilitiesVersion).toBe(3);
       expect(streamInfoBody.capabilities?.preferredHlsEngine).toBe('native');
@@ -211,6 +214,149 @@ describe('V3Player ServiceRef Input', () => {
         );
       } else {
         delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
+      }
+
+      if (maxTouchPointsDescriptor) {
+        Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+      }
+    }
+  });
+
+  it('keeps relaxed iOS AV1 playback on native HLS for live transcodes', async () => {
+    const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    const mediaCapabilitiesDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'mediaCapabilities');
+    const webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      'webkitSupportsPresentationMode'
+    );
+    const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
+    const originalUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    const response = (status: number, body: Record<string, unknown> = {}) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: {
+        get: vi.fn().mockImplementation((name: string) => (
+          name === 'content-type' ? 'application/json' : null
+        )),
+      },
+      json: vi.fn().mockResolvedValue(body),
+      text: vi.fn().mockResolvedValue(JSON.stringify(body)),
+    });
+
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5,
+    });
+    Object.defineProperty(window.navigator, 'mediaCapabilities', {
+      configurable: true,
+      value: {
+        decodingInfo: vi.fn().mockImplementation(({ video }: { video?: { contentType?: string } }) => {
+          const contentType = video?.contentType ?? '';
+          if (contentType.includes('av01')) {
+            return Promise.resolve({ supported: true, smooth: true, powerEfficient: false });
+          }
+          if (contentType.includes('hvc1') || contentType.includes('hev1')) {
+            return Promise.resolve({ supported: true, smooth: true, powerEfficient: true });
+          }
+          if (contentType.includes('avc1')) {
+            return Promise.resolve({ supported: true, smooth: true, powerEfficient: true });
+          }
+          return Promise.resolve({ supported: false, smooth: false, powerEfficient: false });
+        }),
+      },
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation(function (this: HTMLMediaElement, type: string) {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hev1') || type.includes('hvc1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return originalCanPlayType.call(this, type);
+    });
+
+    window.history.replaceState({}, '', '/?xg2g_ios_native_av1=1');
+    resetCachedCodecs();
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(response(200, {
+          mode: 'transcode',
+          requestId: 'live-decision-av1-1',
+          playbackDecisionToken: 'live-token-av1-1',
+          decision: { reasons: ['transcode'] },
+        }));
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          headers: {
+            get: vi.fn().mockImplementation((name: string) => (
+              name === 'content-type' ? 'application/problem+json' : null
+            )),
+          },
+          json: vi.fn().mockResolvedValue({
+            type: '/problems/admission/state-unknown',
+            title: 'Unavailable',
+            status: 503,
+            code: 'ADMISSION_STATE_UNKNOWN',
+            requestId: 'test-av1',
+          }),
+        });
+      }
+      return Promise.resolve(response(200, {}));
+    });
+
+    try {
+      const props = { autoStart: false } as unknown as V3PlayerProps;
+      render(<V3Player {...props} />);
+
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: '1:0:19:EF75:3F9:1:C00000:0:0:0' } });
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+      await waitFor(() => {
+        expect(globalThis.fetch).toHaveBeenCalled();
+      });
+
+      const streamInfoCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/live/stream-info'));
+      expect(streamInfoCall).toBeDefined();
+      const [, streamInfoOptions] = streamInfoCall;
+      expect(streamInfoOptions.headers?.['X-XG2G-Playback-Info-Context']).toBe('player_start');
+      const streamInfoBody = JSON.parse(streamInfoOptions.body);
+      expect(streamInfoBody.capabilities?.clientFamilyFallback).toBe('ios_safari_native');
+      expect(streamInfoBody.capabilities?.preferredHlsEngine).toBe('native');
+      expect(streamInfoBody.capabilities?.container).toEqual(['mp4', 'ts']);
+      expect(streamInfoBody.capabilities?.videoCodecs).toEqual(['av1', 'hevc', 'h264']);
+
+      const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
+      expect(intentCall).toBeDefined();
+      const [, options] = intentCall;
+      const body = JSON.parse(options.body);
+      expect(body.params?.playback_mode).toBe('transcode');
+      expect(body.params?.preferred_hls_engine).toBe('native');
+      expect(body.params?.codecs).toBe('av1,hevc,h264');
+    } finally {
+      resetCachedCodecs();
+      window.history.replaceState({}, '', originalUrl || '/');
+
+      if (webkitSupportsPresentationModeDescriptor) {
+        Object.defineProperty(
+          HTMLVideoElement.prototype,
+          'webkitSupportsPresentationMode',
+          webkitSupportsPresentationModeDescriptor
+        );
+      } else {
+        delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
+      }
+
+      if (mediaCapabilitiesDescriptor) {
+        Object.defineProperty(window.navigator, 'mediaCapabilities', mediaCapabilitiesDescriptor);
+      } else {
+        delete (window.navigator as any).mediaCapabilities;
       }
 
       if (maxTouchPointsDescriptor) {
@@ -403,7 +549,22 @@ describe('V3Player ServiceRef Input', () => {
         serviceRef: '1:0:1:123:456:789:0:0:0:0:',
         authToken: 'dev-token'
       });
-      expect(globalThis.fetch).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(globalThis.fetch).toHaveBeenCalled();
+      });
+
+      const nowNextCall = (globalThis.fetch as any).mock.calls.find((call: any[]) =>
+        String(call[0]).includes('/services/now-next')
+      );
+      expect(nowNextCall).toBeDefined();
+      expect(nowNextCall[1]?.headers).toMatchObject({
+        Authorization: 'Bearer dev-token',
+      });
+      expect(
+        (globalThis.fetch as any).mock.calls.some((call: any[]) =>
+          String(call[0]).includes('/intents') || String(call[0]).includes('/live/stream-info')
+        )
+      ).toBe(false);
     } finally {
       window.__XG2G_HOST__ = originalHost;
       window.Xg2gHost = originalBridge;

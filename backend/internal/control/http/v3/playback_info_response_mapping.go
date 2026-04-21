@@ -165,6 +165,26 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, raw
 		hostPressureBand := dec.Trace.HostPressureBand
 		decDTO.Trace.HostPressureBand = &hostPressureBand
 	}
+	if dec.Trace.AutoCodecPolicy != "" {
+		value := dec.Trace.AutoCodecPolicy
+		decDTO.Trace.AutoCodecPolicy = &value
+	}
+	if dec.Trace.AutoCodecRequested != "" {
+		value := dec.Trace.AutoCodecRequested
+		decDTO.Trace.AutoCodecRequestedCodecs = &value
+	}
+	if dec.Trace.AutoCodecSelected != "" {
+		value := dec.Trace.AutoCodecSelected
+		decDTO.Trace.AutoCodecSelectedCodec = &value
+	}
+	if dec.Trace.AutoCodecHostClass != "" {
+		value := dec.Trace.AutoCodecHostClass
+		decDTO.Trace.AutoCodecPerformanceClass = &value
+	}
+	if dec.Trace.AutoCodecBenchClass != "" {
+		value := dec.Trace.AutoCodecBenchClass
+		decDTO.Trace.AutoCodecBenchmarkClass = &value
+	}
 	if dec.Trace.HostOverrideApplied {
 		hostOverrideApplied := true
 		decDTO.Trace.HostOverrideApplied = &hostOverrideApplied

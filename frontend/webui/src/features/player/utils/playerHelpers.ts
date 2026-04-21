@@ -7,7 +7,6 @@
  */
 
 import type { VideoElementRef } from '../../../types/v3-player';
-
 // --- Error Type ---
 
 export class PlayerError extends Error {

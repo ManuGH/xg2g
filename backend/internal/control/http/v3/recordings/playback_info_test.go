@@ -2789,7 +2789,7 @@ func TestService_ResolvePlaybackInfo_LiveTranscodeUsesMeasuredAutoCodecProfile(t
 	}
 	svc := NewService(stubDeps{
 		svc:         recSvc,
-		truthSource: verifiedLiveTruthSource(scan.Capability{State: scan.CapabilityStateOK, Container: "ts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 25}),
+		truthSource: verifiedLiveTruthSource(scan.Capability{State: scan.CapabilityStateOK, Container: "ts", VideoCodec: "h264", AudioCodec: "ac3", Width: 1920, Height: 1080, FPS: 25}),
 		cfg: config.AppConfig{
 			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
 			HLS:    config.HLSConfig{Root: "/tmp/hls"},

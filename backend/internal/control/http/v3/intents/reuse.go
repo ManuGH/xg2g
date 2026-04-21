@@ -70,16 +70,68 @@ func isReusableLiveSessionCandidate(intent Intent, session, candidate *model.Ses
 	if !strings.EqualFold(strings.TrimSpace(sessionContextValue(candidate, model.CtxKeyMode)), model.ModeLive) {
 		return false
 	}
-	if normalize.Token(sessionContextValue(candidate, model.CtxKeyClientPath)) != normalize.Token(sessionContextValue(session, model.CtxKeyClientPath)) {
+	if !reusableLiveClientPathCompatible(session, candidate) {
 		return false
 	}
-	if !matchSessionIdentity(intent, candidate) {
+	if !matchSessionIdentity(intent, session, candidate) {
 		return false
 	}
 	return true
 }
 
-func matchSessionIdentity(intent Intent, candidate *model.SessionRecord) bool {
+func reusableLiveClientPathCompatible(session, candidate *model.SessionRecord) bool {
+	if session == nil || candidate == nil {
+		return false
+	}
+	if normalize.Token(sessionContextValue(candidate, model.CtxKeyClientPath)) == normalize.Token(sessionContextValue(session, model.CtxKeyClientPath)) {
+		return true
+	}
+	return reusableLiveProfileEquivalent(session.Profile, candidate.Profile)
+}
+
+type reusableLiveProfileFingerprint struct {
+	LLHLS          bool
+	DVRWindowSec   int
+	TranscodeVideo bool
+	VideoCodec     string
+	HWAccel        string
+	Deinterlace    bool
+	VideoCRF       int
+	VideoQP        int
+	VideoMaxWidth  int
+	VideoMaxRateK  int
+	VideoBufSizeK  int
+	BFrames        int
+	AudioBitrateK  int
+	Preset         string
+	Container      string
+}
+
+func reusableLiveProfileEquivalent(left, right model.ProfileSpec) bool {
+	return reusableLiveProfileKey(left) == reusableLiveProfileKey(right)
+}
+
+func reusableLiveProfileKey(profile model.ProfileSpec) reusableLiveProfileFingerprint {
+	return reusableLiveProfileFingerprint{
+		LLHLS:          profile.LLHLS,
+		DVRWindowSec:   profile.DVRWindowSec,
+		TranscodeVideo: profile.TranscodeVideo,
+		VideoCodec:     normalize.Token(profile.VideoCodec),
+		HWAccel:        normalize.Token(profile.HWAccel),
+		Deinterlace:    profile.Deinterlace,
+		VideoCRF:       profile.VideoCRF,
+		VideoQP:        profile.VideoQP,
+		VideoMaxWidth:  profile.VideoMaxWidth,
+		VideoMaxRateK:  profile.VideoMaxRateK,
+		VideoBufSizeK:  profile.VideoBufSizeK,
+		BFrames:        profile.BFrames,
+		AudioBitrateK:  profile.AudioBitrateK,
+		Preset:         normalize.Token(profile.Preset),
+		Container:      normalize.Token(profile.Container),
+	}
+}
+
+func matchSessionIdentity(intent Intent, session, candidate *model.SessionRecord) bool {
 	intentPrincipal := normalize.Token(intent.PrincipalID)
 	candidatePrincipal := normalize.Token(sessionContextValue(candidate, model.CtxKeyPrincipalID))
 	if intentPrincipal != "" || candidatePrincipal != "" {
@@ -91,8 +143,14 @@ func matchSessionIdentity(intent Intent, candidate *model.SessionRecord) bool {
 	intentCapHash := normalize.Token(clientCapHashForIntent(intent))
 	candidateCapHash := normalize.Token(candidateCapHash(candidate))
 	if intentCapHash != "" || candidateCapHash != "" {
-		if intentCapHash == "" || candidateCapHash == "" || intentCapHash != candidateCapHash {
-			return false
+		if intentCapHash == "" || candidateCapHash == "" {
+			if intentPrincipal == "" || candidatePrincipal == "" || !reusableLiveProfileEquivalent(session.Profile, candidate.Profile) {
+				return false
+			}
+		} else if intentCapHash != candidateCapHash {
+			if intentPrincipal == "" || candidatePrincipal == "" || !reusableLiveProfileEquivalent(session.Profile, candidate.Profile) {
+				return false
+			}
 		}
 	}
 

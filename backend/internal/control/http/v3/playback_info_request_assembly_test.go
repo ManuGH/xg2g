@@ -78,6 +78,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/streams/live?profile=safari", nil)
 	req.Header.Add("X-Test", "first")
 	req.Header.Add("X-Test", "second")
+	req.Header.Set("X-XG2G-Playback-Info-Context", "player_start")
 	req.Header.Set("User-Agent", "Mozilla/5.0 Safari/605.1.15")
 	req = req.WithContext(log.ContextWithRequestID(req.Context(), "req-123"))
 	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.NewPrincipal("token", "alice", nil)))
@@ -96,7 +97,9 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		"User-Agent": "Mozilla/5.0 Safari/605.1.15",
 		"X-Test":     "first",
+		http.CanonicalHeaderKey("X-XG2G-Playback-Info-Context"): "player_start",
 	}, got.Headers)
+	assert.Equal(t, v3recordings.PlaybackInfoContextPlayerStart, v3recordings.PlaybackInfoRequestContext(got))
 	assert.Equal(t, 3, got.Capabilities.CapabilitiesVersion)
 	assert.Equal(t, []string{"mpegts", "hls"}, got.Capabilities.Containers)
 	assert.Equal(t, []string{"h264"}, got.Capabilities.VideoCodecs)

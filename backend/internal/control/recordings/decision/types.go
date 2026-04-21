@@ -116,6 +116,11 @@ type Trace struct {
 	OverrideApplied     bool     `json:"overrideApplied,omitempty"`
 	HostPressureBand    string   `json:"hostPressureBand,omitempty"`
 	HostOverrideApplied bool     `json:"hostOverrideApplied,omitempty"`
+	AutoCodecPolicy     string   `json:"autoCodecPolicy,omitempty"`
+	AutoCodecRequested  string   `json:"autoCodecRequestedCodecs,omitempty"`
+	AutoCodecSelected   string   `json:"autoCodecSelectedCodec,omitempty"`
+	AutoCodecHostClass  string   `json:"autoCodecPerformanceClass,omitempty"`
+	AutoCodecBenchClass string   `json:"autoCodecBenchmarkClass,omitempty"`
 	RuleHits            []string `json:"ruleHits"` // Ordered list of rules evaluated
 	Why                 []Reason `json:"why"`      // Structured explanation
 }

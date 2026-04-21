@@ -8,6 +8,11 @@
   "requestId": "",
   "trace": {
     "audioQualityRung": null,
+    "autoCodecBenchmarkClass": null,
+    "autoCodecPerformanceClass": null,
+    "autoCodecPolicy": null,
+    "autoCodecRequestedCodecs": null,
+    "autoCodecSelectedCodec": null,
     "clientCapsSource": null,
     "clientFamily": null,
     "clientPath": null,
