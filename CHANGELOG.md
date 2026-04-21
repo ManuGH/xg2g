@@ -788,3 +788,10 @@ Operational changes:
 ### Behavioral Changes (v3.4.3)
 
 - Auto codec selection now reports its policy, requested codec set, selected codec, and host/benchmark classes in playback traces, so operators can understand why a specific setup preferred AV1, HEVC, or H.264 without relying on setup-specific assumptions.
+### Behavioral Changes (v3.4.8)
+Operational changes:
+- iPhone and iPad native Live-DVR playback now keeps the seek window and remaining time advancing across lock/unlock and foreground resume, instead of freezing until the next playlist fetch reaches the server again.
+- iOS Safari native live playback now uses the hardened fMP4 AV1 path and earlier render reveal handling, reducing audio-only and black-screen startup failures during native playback.
+- Background media-truth scanning can now be disabled explicitly via `XG2G_BACKGROUND_SCAN_ENABLED=false`, which is useful for staging or playback-debug deployments where a cold full-channel scan would otherwise load the receiver and obscure live-session behavior.
+
+
