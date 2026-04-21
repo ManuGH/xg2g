@@ -103,6 +103,29 @@ assert_owner() {
   [[ "${actual}" == "${expected}" ]] || fail "${label}: expected owner ${expected}, got ${actual} for ${path}"
 }
 
+first_mapped_nonroot_id() {
+  local map_file="$1"
+
+  awk '
+    {
+      start = $1
+      span = $3
+      if (span <= 0) {
+        next
+      }
+      if (start == 0) {
+        if (span > 1) {
+          print 1
+          exit
+        }
+        next
+      }
+      print start
+      exit
+    }
+  ' "${map_file}"
+}
+
 assert_executable() {
   local path="$1"
   local label="$2"
@@ -350,10 +373,19 @@ verify_negative_drift_guard() {
   fi
 
   if [[ "${EUID}" -eq 0 ]]; then
+    local drift_uid=""
+    local drift_gid=""
+
+    drift_uid="$(first_mapped_nonroot_id /proc/self/uid_map || true)"
+    drift_gid="$(first_mapped_nonroot_id /proc/self/gid_map || true)"
+
     chmod 600 "$(join_path "${root}" "/etc/xg2g/xg2g.env")"
-    chown 1:1 "$(join_path "${root}" "/etc/xg2g/xg2g.env")"
-    if XG2G_ENFORCE_ENV_OWNER=1 "${BASH_SOURCE[0]}" --verify-install-root "${root}" >/dev/null 2>&1; then
-      fail "negative drift guard failed: wrong env owner unexpectedly passed"
+    if [[ -n "${drift_uid}" && -n "${drift_gid}" ]] && chown "${drift_uid}:${drift_gid}" "$(join_path "${root}" "/etc/xg2g/xg2g.env")"; then
+      if XG2G_ENFORCE_ENV_OWNER=1 "${BASH_SOURCE[0]}" --verify-install-root "${root}" >/dev/null 2>&1; then
+        fail "negative drift guard failed: wrong env owner unexpectedly passed"
+      fi
+    else
+      echo "NOTE: skipping env owner negative drift guard; no non-root UID/GID mapping available in this environment." >&2
     fi
   fi
 
