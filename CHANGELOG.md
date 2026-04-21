@@ -21,6 +21,7 @@
 - Decision, session trace, OpenAPI, and WebUI contracts were extended with a consistent playback observability model.
 - Profile resolution, canonicalization, and hash stability were expanded to support variant-aware caching and deterministic target profiles.
 - Client matrix fixtures, table-driven tests, and hysteresis-based host pressure handling now cover the new playback decision paths.
+- Capacity and performance demotion for auto-codec selection are now verified through a deterministic repo harness, and the new verifier is wired into the existing PR and online quality gates.
 - Configuration surfaces and ops documentation were extended for playback operator rules and the new diagnostic fields.
 
 ### Bug Fixes
@@ -786,4 +787,4 @@ Operational changes:
 
 ### Behavioral Changes (v3.4.3)
 
-
+- Auto codec selection now reports its policy, requested codec set, selected codec, and host/benchmark classes in playback traces, so operators can understand why a specific setup preferred AV1, HEVC, or H.264 without relying on setup-specific assumptions.

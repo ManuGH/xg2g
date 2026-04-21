@@ -381,6 +381,7 @@ func (o *Orchestrator) playlistReadyTimeout(currentProfileSpec model.ProfileSpec
 	if vodMode {
 		return defaultVODPlaylistReadyTimeout
 	}
+	normalizedProfile := profiles.NormalizeRequestedProfileID(currentProfileSpec.Name)
 	if isStartupRecoveryProfile(currentProfileSpec.Name) {
 		return defaultIfZero(o.RecoveryPlaylistReadyTimeout, defaultRecoveryPlaylistReadyTimeout)
 	}
@@ -391,7 +392,7 @@ func (o *Orchestrator) playlistReadyTimeout(currentProfileSpec model.ProfileSpec
 		}
 		return timeout
 	}
-	if strings.EqualFold(strings.TrimSpace(currentProfileSpec.Name), profiles.ProfileSafari) {
+	if normalizedProfile == profiles.ProfileSafari || normalizedProfile == profiles.ProfileSafariRuntimeHQ {
 		timeout := defaultIfZero(o.SafariPlaylistReadyTimeout, defaultSafariPlaylistReadyTimeout)
 		if currentProfileSpec.TranscodeVideo && strings.TrimSpace(currentProfileSpec.HWAccel) == "" {
 			if timeout < defaultSafariCPUPlaylistReadyTimeout {

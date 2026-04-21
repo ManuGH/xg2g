@@ -374,28 +374,31 @@ func resolveConfidenceState(prev ConfidenceSnapshot, target ConfidenceState, win
 		return current, stateSince
 	}
 
-	next := current
 	var hold time.Duration
 	switch current {
 	case ConfidenceLow:
-		next = ConfidenceRecovery
 		hold = holdLowBeforeRecovery
+		if now.Sub(stateSince) < hold {
+			return current, stateSince
+		}
+		return ConfidenceRecovery, now
 	case ConfidenceRecovery:
-		next = ConfidenceStable
 		hold = holdRecoveryBeforeStable
+		if now.Sub(stateSince) < hold {
+			return current, stateSince
+		}
+		return ConfidenceStable, now
 	case ConfidenceStable:
-		next = ConfidenceHigh
 		hold = holdStableBeforeHigh
+		if now.Sub(stateSince) < hold {
+			return current, stateSince
+		}
+		return ConfidenceHigh, now
 	case ConfidenceHigh:
 		return ConfidenceHigh, stateSince
 	default:
 		return target, now
 	}
-
-	if now.Sub(stateSince) < hold {
-		return current, stateSince
-	}
-	return next, now
 }
 
 func shouldForceLowConfidence(win WindowFeatures, score int) bool {

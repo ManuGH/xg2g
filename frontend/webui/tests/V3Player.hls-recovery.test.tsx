@@ -214,6 +214,135 @@ describe('V3Player hls.js decode recovery', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('reports the initial hls.js render probe when playback starts', async () => {
+    const playbackUrl = `${window.location.origin}/api/v3/sessions/sess-hls-black/hls/index.m3u8`;
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes('/live/stream-info')) {
+        return jsonResponse(url, 200, {
+          mode: 'hlsjs',
+          requestId: 'live-decision-hls-black',
+          playbackDecisionToken: 'live-token-hls-black',
+          decision: { reasons: ['transcode_video'] }
+        });
+      }
+
+      if (url.includes('/intents')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (body?.type === 'stream.start') {
+          return jsonResponse(url, 200, { sessionId: 'sess-hls-black' });
+        }
+        return jsonResponse(url, 200, {});
+      }
+
+      if (url.includes('/sessions/sess-hls-black/feedback')) {
+        return jsonResponse(url, 202, {});
+      }
+
+      if (url.includes('/sessions/sess-hls-black') && !url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          state: 'READY',
+          playbackUrl,
+          heartbeatIntervalSeconds: 1
+        });
+      }
+
+      if (url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-hls-black',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
+      }
+
+      return jsonResponse(url, 200, {});
+    }) as unknown as typeof globalThis.fetch);
+
+    const { container } = render(<V3Player autoStart={true} channel={{ id: 'ch-hls-black', serviceRef: '1:0:1:black...' } as any} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(hlsInstances).toHaveLength(1);
+    const video = container.querySelector('video') as HTMLVideoElement;
+    expect(video).toBeTruthy();
+
+    let currentTime = 12;
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
+    });
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => 4,
+    });
+    Object.defineProperty(video, 'networkState', {
+      configurable: true,
+      get: () => 2,
+    });
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => false,
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => 1280,
+    });
+    Object.defineProperty(video, 'videoHeight', {
+      configurable: true,
+      get: () => 720,
+    });
+    Object.defineProperty(video, 'buffered', {
+      configurable: true,
+      get: () => ({
+        length: 1,
+        start: () => 0,
+        end: () => 30,
+      }),
+    });
+    Object.defineProperty(video, 'getVideoPlaybackQuality', {
+      configurable: true,
+      value: vi.fn(() => ({
+        totalVideoFrames: 0,
+        droppedVideoFrames: 0,
+      })),
+    });
+
+    await act(async () => {
+      fireEvent.playing(video);
+      await Promise.resolve();
+    });
+
+    currentTime = 14.6;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2600);
+      await Promise.resolve();
+    });
+
+    const feedbackBodies = (globalThis.fetch as any).mock.calls
+      .filter((call: any[]) => String(call[0]).includes('/sessions/sess-hls-black/feedback'))
+      .map((call: any[]) => JSON.parse(String(call[1]?.body ?? '{}')));
+
+    const renderStart = feedbackBodies.find((body: any) => body?.event === 'info' && body?.code === 240);
+    expect(renderStart).toBeTruthy();
+    expect(renderStart).toMatchObject({
+      event: 'info',
+      code: 240,
+    });
+    expect(renderStart.message).toContain('hlsjs_render stage=playing');
+  });
+
   it('nudges hls.js loading again after a non-fatal live stall', async () => {
     const playbackUrl = `${window.location.origin}/api/v3/sessions/sess-hls-stall/hls/index.m3u8`;
 

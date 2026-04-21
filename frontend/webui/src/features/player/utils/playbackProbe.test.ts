@@ -14,6 +14,7 @@ const originalWebkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDe
   HTMLVideoElement.prototype,
   'webkitSupportsPresentationMode'
 );
+const originalLocation = window.location;
 
 describe('probeRuntimePlaybackCapabilities', () => {
   beforeEach(() => {
@@ -36,6 +37,11 @@ describe('probeRuntimePlaybackCapabilities', () => {
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
     }
+
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
+    });
   });
 
   it('prefers native HLS when hls.js is unavailable and keeps live ac3 support', async () => {
@@ -145,5 +151,41 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.hlsEngines).toEqual(['native']);
     expect(probe.containers).toEqual(['mp4', 'ts']);
     expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
+  });
+
+  it('keeps native HLS on touch WebKit when the iOS AV1 experiment enables AV1', async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5,
+    });
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        search: '?xg2g_ios_native_av1=1',
+      },
+    });
+
+    const video = document.createElement('video') as HTMLVideoElement & {
+      webkitEnterFullscreen?: () => void;
+    };
+    video.webkitEnterFullscreen = vi.fn();
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hev1') || type.includes('hvc1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+
+    const probe = await probeRuntimePlaybackCapabilities(video, 'live');
+
+    expect(probe.nativeHls).toBe(true);
+    expect(probe.hlsJs).toBe(true);
+    expect(probe.preferredHlsEngine).toBe('native');
+    expect(probe.hlsEngines).toEqual(['native']);
+    expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.videoCodecs).toEqual(['av1', 'h264']);
   });
 });

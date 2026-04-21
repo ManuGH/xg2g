@@ -1,5 +1,5 @@
 /// <reference types="@testing-library/jest-dom" />
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import V3Player from './V3Player';
 import type { V3PlayerProps } from '../../../types/v3-player';
@@ -136,6 +136,7 @@ describe('V3Player live DVR semantics', () => {
   });
 
   afterEach(() => {
+    cleanup();
     (globalThis as any).fetch = originalFetch;
     if (webkitEnterFullscreenDescriptor) {
       Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', webkitEnterFullscreenDescriptor);
@@ -201,7 +202,7 @@ describe('V3Player live DVR semantics', () => {
     expect(screen.getByText(/vollbild wechseln|fullscreen on iphone/i)).toBeInTheDocument();
   });
 
-  it('arms native-first iPhone live playback by disabling inline mode before attach', async () => {
+  it('keeps iPhone live playback inline during startup', async () => {
     const props = { autoStart: false } as unknown as V3PlayerProps;
     const { container } = render(<V3Player {...props} />);
 
@@ -211,12 +212,12 @@ describe('V3Player live DVR semantics', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(video.playsInline).toBe(false);
-      expect(video.hasAttribute('playsinline')).toBe(false);
+      expect(video.playsInline).toBe(true);
+      expect(video.hasAttribute('playsinline')).toBe(true);
     });
   });
 
-  it('does not force inline recovery after leaving a native-first live player', async () => {
+  it('recovers inline live playback after leaving native fullscreen', async () => {
     const loadSpy = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
     const props = { autoStart: false } as unknown as V3PlayerProps;
     const { container } = render(<V3Player {...props} />);
@@ -246,7 +247,7 @@ describe('V3Player live DVR semantics', () => {
 
     fireEvent(video, new Event('webkitendfullscreen'));
 
-    expect(loadSpy).not.toHaveBeenCalled();
+    expect(loadSpy).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes the live session snapshot after returning to the foreground', async () => {

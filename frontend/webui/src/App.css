@@ -85,3 +85,14 @@
     border-radius: 26px;
   }
 }
+
+@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  .app-container {
+    padding: 8px 10px calc(78px + var(--sab));
+  }
+
+  .content-area {
+    padding: 10px;
+    border-radius: 22px;
+  }
+}

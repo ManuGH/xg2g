@@ -17,21 +17,22 @@ import (
 )
 
 const (
-	ProfileAuto           = "auto"
-	ProfileHigh           = "high"
-	ProfileLow            = "low"
-	ProfileDVR            = "dvr"
-	ProfileSafari         = "safari"
-	ProfileSafariDirty    = "safari_dirty"
-	ProfileSafariDVR      = "safari_dvr"
-	ProfileSafariHEVC     = "safari_hevc"
-	ProfileSafariHEVCHW   = "safari_hevc_hw"    // GPU-accelerated HEVC
-	ProfileSafariHEVCHWLL = "safari_hevc_hw_ll" // GPU-accelerated HEVC + LL-HLS
-	ProfileAV1HW          = "av1_hw"            // GPU-accelerated AV1 (VAAPI only)
-	ProfileH264FMP4       = "h264_fmp4"         // Always transcode H.264 + fMP4 (optional VAAPI)
-	ProfileAndroid        = "android"           // Android native: video copy + AAC + mpegts
-	ProfileCopy           = "copy"
-	ProfileRepair         = "repair" // High + Transcode (Rescue Mode)
+	ProfileAuto            = "auto"
+	ProfileHigh            = "high"
+	ProfileLow             = "low"
+	ProfileDVR             = "dvr"
+	ProfileSafari          = "safari"
+	ProfileSafariDirty     = "safari_dirty"
+	ProfileSafariDVR       = "safari_dvr"
+	ProfileSafariHEVC      = "safari_hevc"
+	ProfileSafariHEVCHW    = "safari_hevc_hw"    // GPU-accelerated HEVC
+	ProfileSafariHEVCHWLL  = "safari_hevc_hw_ll" // GPU-accelerated HEVC + LL-HLS
+	ProfileSafariRuntimeHQ = "safari_runtime_hq" // Internal runtime hardening override, not a requested profile
+	ProfileAV1HW           = "av1_hw"            // GPU-accelerated AV1 (VAAPI only)
+	ProfileH264FMP4        = "h264_fmp4"         // Always transcode H.264 + fMP4 (optional VAAPI)
+	ProfileAndroid         = "android"           // Android native: video copy + AAC + mpegts
+	ProfileCopy            = "copy"
+	ProfileRepair          = "repair" // High + Transcode (Rescue Mode)
 
 	PublicProfileCompatible = string(playbackprofile.IntentCompatible)
 	PublicProfileBandwidth  = "bandwidth" // Deprecated legacy alias; quality ladder migration removes this later.
@@ -61,10 +62,13 @@ var aliasMap = map[string]string{
 	"safari_hevc":       ProfileSafariHEVC,
 	"safari_hevc_hw":    ProfileSafariHEVCHW,
 	"safari_hevc_hw_ll": ProfileSafariHEVCHWLL,
+	"safari_runtime_hq": ProfileSafariRuntimeHQ,
+	"safari_hq":         ProfileSafariRuntimeHQ, // Legacy internal name kept for persisted sessions and traces.
 	"av1_hw":            ProfileAV1HW,
 	"h264_fmp4":         ProfileH264FMP4,
 	"android":           ProfileAndroid,
 	"android_native":    ProfileAndroid,
+	"android_tv_native": ProfileAndroid,
 	"copy":              ProfileCopy,
 	"direct":            ProfileCopy,
 	"passthrough":       ProfileCopy,
@@ -196,6 +200,25 @@ func NormalizeRequestedProfileID(requested string) string {
 	return requested
 }
 
+// PrefersNativeFMP4Packaging reports whether the requested internal/public
+// profile carries an explicit native HLS fMP4 packaging bias. Client-family
+// fallback belongs in higher-level policy layers.
+func PrefersNativeFMP4Packaging(profile string) bool {
+	switch NormalizeRequestedProfileID(profile) {
+	case ProfileSafari,
+		ProfileSafariDVR,
+		ProfileSafariDirty,
+		ProfileSafariHEVC,
+		ProfileSafariHEVCHW,
+		ProfileSafariHEVCHWLL,
+		ProfileH264FMP4,
+		ProfileAndroid:
+		return true
+	default:
+		return false
+	}
+}
+
 // PublicProfileName returns a clearer public-facing label for legacy internal
 // profile identifiers while preserving unknown values as-is.
 func PublicProfileName(profile string) string {
@@ -222,6 +245,8 @@ func PublicProfileName(profile string) string {
 	case ProfileAndroid:
 		return PublicProfileCompatible
 	case ProfileSafari:
+		return PublicProfileCompatible
+	case ProfileSafariRuntimeHQ:
 		return PublicProfileCompatible
 	case ProfileSafariDVR:
 		return PublicProfileCompatible
@@ -563,7 +588,11 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.AudioBitrateK = 192
 
 		if shouldUseGPU(gpuBackend, hwaccelMode) {
-			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
+			// Keep AV1 on the VAAPI encode-only path for live playback. This leaves
+			// frame geometry in system memory long enough to normalize the input
+			// before hwupload, which avoids malformed 1080p AV1 output on current
+			// AMD VAAPI stacks.
+			spec.HWAccel = requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode)
 		}
 
 		if dvrWindowSec > 0 {

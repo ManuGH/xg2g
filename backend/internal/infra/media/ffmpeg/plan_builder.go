@@ -23,6 +23,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
+const experimentalInterlacedVAAPICodecsEnv = "XG2G_EXPERIMENTAL_ALLOW_UNVERIFIED_INTERLACED_VAAPI_CODECS"
+
 type inputPlan struct {
 	args     []string
 	inputURL string
@@ -126,9 +128,6 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 
 	requestedBackend := backendForHWAccel(spec.Profile.HWAccel)
 	useHWPath := requestedBackend != profiles.GPUBackendNone
-	if isPreferHWProfile(spec.Profile.Name) && len(a.supportedHWCodecs()) > 0 {
-		useHWPath = true
-	}
 
 	hardHWRequest := requestedBackend != profiles.GPUBackendNone && !isPreferHWProfile(spec.Profile.Name)
 	decisionIn := codecdecision.Input{
@@ -198,7 +197,12 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		switch hwBackend {
 		case profiles.GPUBackendVAAPI:
 			if spec.Profile.Deinterlace && !vaapiInterlacedCodecIsSafe(resolvedCodec) {
-				if !a.anyVerifiedVAAPIInterlacedPathForCodec(resolvedCodec) {
+				if experimentalAllowUnverifiedInterlacedVAAPICodec(resolvedCodec) {
+					a.Logger.Warn().
+						Str("requested_codec", resolvedCodec).
+						Str("override_env", experimentalInterlacedVAAPICodecsEnv).
+						Msg("allowing unverified interlaced vaapi codec via experimental override")
+				} else if !a.anyVerifiedVAAPIInterlacedPathForCodec(resolvedCodec) {
 					a.Logger.Warn().
 						Str("requested_codec", resolvedCodec).
 						Str("fallback_codec", "h264").
@@ -218,6 +222,13 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			}
 			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
 			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
+			if normalizeRequestedCodec(resolvedCodec) == "av1" {
+				// Keep AV1 on the encode-only path even when a caller requested
+				// full VAAPI. This preserves a software-domain normalization step
+				// before hwupload, which is required to avoid malformed 1080p AV1
+				// output on current AMD VAAPI stacks.
+				fullVAAPI = false
+			}
 			if spec.Profile.Deinterlace {
 				fullPathID := vaapiPathCorrectnessIDFor(resolvedCodec, true)
 				if fullVAAPI && fullPathID != "" {
@@ -300,6 +311,25 @@ func (a *LocalAdapter) anyVerifiedVAAPIInterlacedPathForCodec(codec string) bool
 		}
 		capability, ok := hardware.HardwarePathCapabilityFor(pathID)
 		if ok && capability.Status == hardware.PathStatusVerified {
+			return true
+		}
+	}
+	return false
+}
+
+func experimentalAllowUnverifiedInterlacedVAAPICodec(codec string) bool {
+	codec = normalizeRequestedCodec(codec)
+	if codec != "hevc" && codec != "av1" {
+		return false
+	}
+	raw := strings.TrimSpace(config.ParseString(experimentalInterlacedVAAPICodecsEnv, ""))
+	if raw == "" {
+		return false
+	}
+	for _, item := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	}) {
+		if normalizeRequestedCodec(item) == codec {
 			return true
 		}
 	}
@@ -654,178 +684,6 @@ func (a *LocalAdapter) isValidFPS(fps int) bool {
 	return fps >= a.FPSMin && fps <= a.FPSMax
 }
 
-func (a *LocalAdapter) FinalizePlan(ctx context.Context, spec ports.StreamSpec, inputURL string) ports.StreamSpec {
-	spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
-	if spec.Profile.EffectiveModeSource == "" || spec.Profile.EffectiveModeSource == ports.RuntimeModeSourceUnknown {
-		spec.Profile.EffectiveModeSource = ports.RuntimeModeSourceResolve
-	}
-
-	var (
-		overridden bool
-		source     ports.RuntimeModeSource
-	)
-
-	spec, overridden, source = a.applySafariRuntimeRemuxOverride(ctx, spec, inputURL)
-	if overridden {
-		spec.Profile.EffectiveRuntimeMode = ports.RuntimeModeCopy
-		spec.Profile.EffectiveModeSource = source
-	}
-
-	spec, overridden, source = a.applySafariRuntimeHQOverride(ctx, spec, inputURL)
-	if overridden {
-		spec.Profile.EffectiveRuntimeMode = safariHQRuntimeMode(spec.Profile)
-		spec.Profile.EffectiveModeSource = source
-	}
-
-	spec, overridden, source = a.applyRuntimeProgressiveHardwareDeinterlaceOverride(ctx, spec, inputURL)
-	if overridden {
-		spec.Profile.EffectiveModeSource = source
-	}
-
-	if !spec.Profile.TranscodeVideo && shouldHardenSafariCopyBitstream(spec, inputURL) {
-		spec.Profile.EffectiveRuntimeMode = ports.RuntimeModeCopyHardened
-		spec.Profile.EffectiveModeSource = ports.RuntimeModeSourceEnvOverride
-	}
-
-	if spec.Profile.EffectiveRuntimeMode == "" || spec.Profile.EffectiveRuntimeMode == ports.RuntimeModeUnknown {
-		spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
-	}
-	return spec
-}
-
-func (a *LocalAdapter) applyRuntimeProgressiveHardwareDeinterlaceOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {
-	if spec.Mode != ports.ModeLive {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if !spec.Profile.TranscodeVideo || !spec.Profile.Deinterlace {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if strings.TrimSpace(inputURL) == "" {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if normalizeRequestedCodec(spec.Profile.VideoCodec) != "av1" {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-
-	probeTimeout := a.SafariRuntimeProbeTimeout
-	if probeTimeout <= 0 {
-		probeTimeout = 6 * time.Second
-	}
-	info, err := a.runSafariRuntimeProbeWithRetry(ctx, spec.SessionID, inputURL, probeTimeout)
-	if err != nil {
-		a.Logger.Info().
-			Err(err).
-			Str("sessionId", spec.SessionID).
-			Str("input_url", sanitizeURLForLog(inputURL)).
-			Dur("probe_timeout", probeTimeout).
-			Msg("runtime progressive probe failed; keeping deinterlace enabled")
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if info.Video.Interlaced {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-
-	a.Logger.Info().
-		Str("sessionId", spec.SessionID).
-		Str("video_codec", info.Video.CodecName).
-		Bool("interlaced", info.Video.Interlaced).
-		Str("container", info.Container).
-		Msg("runtime probe cleared unnecessary deinterlace for hardware av1 path")
-	spec.Profile.Deinterlace = false
-	return spec, true, ports.RuntimeModeSourceRuntimeHardening
-}
-
-func (a *LocalAdapter) applySafariRuntimeRemuxOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {
-	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Name), profiles.ProfileSafari) {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if !spec.Profile.TranscodeVideo {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if strings.TrimSpace(inputURL) == "" {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if shouldForceSafariCopyForServiceRef(spec, inputURL) {
-		a.Logger.Warn().
-			Str("sessionId", spec.SessionID).
-			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
-			Msg("forcing safari remux path via service-ref allowlist")
-		spec.Profile.TranscodeVideo = false
-		spec.Profile.Deinterlace = false
-		spec.Profile.Container = "mpegts"
-		if spec.Profile.AudioBitrateK <= 0 {
-			spec.Profile.AudioBitrateK = 192
-		}
-		return spec, true, ports.RuntimeModeSourceEnvOverride
-	}
-
-	probeTimeout := a.SafariRuntimeProbeTimeout
-	if probeTimeout <= 0 {
-		probeTimeout = 6 * time.Second
-	}
-	info, err := a.runSafariRuntimeProbeWithRetry(ctx, spec.SessionID, inputURL, probeTimeout)
-	if err != nil {
-		a.Logger.Info().
-			Err(err).
-			Str("sessionId", spec.SessionID).
-			Str("input_url", sanitizeURLForLog(inputURL)).
-			Dur("probe_timeout", probeTimeout).
-			Msg("safari runtime probe failed; keeping transcode path")
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if !strings.EqualFold(strings.TrimSpace(info.Video.CodecName), "h264") || info.Video.Interlaced {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-
-	a.Logger.Info().
-		Str("sessionId", spec.SessionID).
-		Str("video_codec", info.Video.CodecName).
-		Bool("interlaced", info.Video.Interlaced).
-		Str("container", info.Container).
-		Msg("safari runtime probe selected remux path")
-	spec.Profile.TranscodeVideo = false
-	spec.Profile.Deinterlace = false
-	// Native Safari is tolerant on MPEG-TS HLS, but remuxed broadcast H.264
-	// inside fMP4 has shown audio-only / black-video failures in production.
-	// Keep the runtime-remux optimization, but package it as classic TS HLS.
-	spec.Profile.Container = "mpegts"
-	if spec.Profile.AudioBitrateK <= 0 {
-		spec.Profile.AudioBitrateK = 192
-	}
-	return spec, true, ports.RuntimeModeSourceRuntimeHardening
-}
-
-func (a *LocalAdapter) applySafariRuntimeHQOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {
-	if !shouldForceSafariHQForServiceRef(spec, inputURL) {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if shouldForceSafariHQ25ForServiceRef(spec, inputURL) {
-		spec.Profile.ForceSafariHQ25 = true
-	}
-	progressiveHQ := shouldUseProgressiveSafariHQ(spec.Profile)
-
-	a.Logger.Warn().
-		Str("sessionId", spec.SessionID).
-		Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
-		Msg("forcing safari HQ transcode path via service-ref allowlist")
-
-	spec.Profile.Name = "safari_hq"
-	spec.Profile.TranscodeVideo = true
-	spec.Profile.Deinterlace = !progressiveHQ
-	spec.Profile.Container = "mpegts"
-	spec.Profile.HWAccel = ""
-	spec.Profile.VideoCodec = "libx264"
-	spec.Profile.VideoCRF = 16
-	spec.Profile.VideoMaxRateK = 12000
-	spec.Profile.VideoBufSizeK = 24000
-	spec.Profile.AudioBitrateK = 256
-	spec.Profile.Preset = "fast"
-	if progressiveHQ {
-		spec.Profile.Preset = "veryfast"
-	}
-	return spec, true, ports.RuntimeModeSourceEnvOverride
-}
-
 func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamSpec, inputURL string, fps int) int {
 	if !shouldForce25FPSForLiveProfile(spec, inputURL) {
 		return fps
@@ -1091,10 +949,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		Bool("deinterlace", prof.Deinterlace).
 		Msg("pipeline video: vaapi encode only")
 
-	filter := "format=nv12,hwupload"
-	if prof.Deinterlace {
-		filter = a.deinterlaceFilterForProfile(spec) + "," + filter
-	}
+	filter := a.vaapiEncodeOnlyFilter(spec, outputCodec)
 	args = append(args, "-vf", filter)
 
 	encoder := "h264_vaapi"
@@ -1115,6 +970,25 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		"-profile:v", "main",
 	)
 	return args
+}
+
+func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec string) string {
+	parts := make([]string, 0, 4)
+	if spec.Profile.Deinterlace {
+		parts = append(parts, a.deinterlaceFilterForProfile(spec))
+	}
+	if normalizeRequestedCodec(outputCodec) == "av1" {
+		parts = append(parts, av1VAAPIGeometryPadFilter())
+	}
+	parts = append(parts, "format=nv12", "hwupload")
+	return strings.Join(parts, ",")
+}
+
+func av1VAAPIGeometryPadFilter() string {
+	// Current AMD VAAPI AV1 encoders can emit 1080p bitstreams that decode as
+	// 1082-line frames. Padding the software-domain input to a 16-line height
+	// keeps the decoded geometry stable for native HLS clients.
+	return "pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
 
 func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string {

@@ -185,6 +185,14 @@ func TestPlaylistReadyTimeout_ExtendsSafariCPUTranscodeStartup(t *testing.T) {
 	if timeout != defaultSafariPlaylistReadyTimeout {
 		t.Fatalf("expected safari gpu timeout %v, got %v", defaultSafariPlaylistReadyTimeout, timeout)
 	}
+
+	timeout = orch.playlistReadyTimeout(model.ProfileSpec{
+		Name:           profiles.ProfileSafariRuntimeHQ,
+		TranscodeVideo: true,
+	}, false)
+	if timeout != defaultSafariCPUPlaylistReadyTimeout {
+		t.Fatalf("expected safari runtime hq timeout %v, got %v", defaultSafariCPUPlaylistReadyTimeout, timeout)
+	}
 }
 
 func TestPlaylistReadyTimeout_ExtendsSafariHQ50Startup(t *testing.T) {

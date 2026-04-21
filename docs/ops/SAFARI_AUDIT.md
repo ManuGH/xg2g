@@ -1,6 +1,6 @@
 # Safari/iOS Playback Audit
 
-Last updated: 2026-02-27
+Last updated: 2026-04-20
 
 ## Goal
 
@@ -100,3 +100,27 @@ Runbook:
 
 - WebUI prefers the hls.js/MMS path on Safari whenever the runtime exposes it.
 - Native HLS remains the fallback path for Safari runtimes that do not expose hls.js support.
+
+## Live Remux Semantics
+
+For live Safari playback, `direct` does not mean that `xg2g` bypasses the
+server pipeline entirely.
+
+When the runtime probe confirms a progressive H.264 source that Safari can
+consume safely, `xg2g` may switch from a planned transcode path to a runtime
+remux/copy path:
+
+- video stays on `copy` (`-c:v copy`), so there is no video re-encode;
+- audio is still normalized to AAC for HLS delivery;
+- FFmpeg still runs to package the receiver relay into browser-safe HLS output;
+- the live container stays on classic MPEG-TS HLS, not remuxed fMP4, because
+  broadcast H.264 inside fMP4 has produced audio-only / black-video failures
+  on Safari in production.
+
+Operationally, this means:
+
+- `decision.summary path=direct` means "no video transcode required";
+- it does not mean "no FFmpeg process" or "raw receiver stream passed through
+  unchanged";
+- the effective runtime mode is `copy`, and logs should show
+  `pipeline video: copy` when this path is active.

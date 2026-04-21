@@ -72,8 +72,16 @@ describe('V3Player native Android handoff', () => {
   it('hands live playback off to the native host without posting stream.start from the web player', async () => {
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
-
-      throw new Error(`web fetch should not run for native live handoff: ${url}`);
+      if (url.includes('/services/now-next')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({ items: [] }),
+          text: vi.fn().mockResolvedValue(JSON.stringify({ items: [] })),
+        });
+      }
+      throw new Error(`unexpected web fetch during native live handoff: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock as unknown as typeof globalThis.fetch);
 
@@ -91,7 +99,27 @@ describe('V3Player native Android handoff', () => {
     });
     expect(payload.playbackDecisionToken).toBeUndefined();
     expect(payload.params).toBeUndefined();
-    expect(fetchMock).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const nowNextCall = fetchMock.mock.calls.find((call: any[]) =>
+      String(call[0]).includes('/services/now-next')
+    );
+    expect(nowNextCall).toBeDefined();
+    expect(nowNextCall?.[1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ services: ['1:0:1:AA'] }),
+    });
+    expect(
+      fetchMock.mock.calls.some((call: any[]) =>
+        String(call[0]).includes('/intents') || String(call[0]).includes('/live/stream-info')
+      )
+    ).toBe(false);
 
     const liveReadyState = {
       activeRequest: payload,

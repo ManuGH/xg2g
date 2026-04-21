@@ -219,6 +219,7 @@ func TestResolve_AV1HWDefaultsToFMP4(t *testing.T) {
 	assert.Equal(t, "fmp4", spec.Container)
 	assert.Equal(t, "av1", spec.VideoCodec)
 	assert.True(t, spec.Deinterlace)
+	assert.Equal(t, "vaapi_encode_only", spec.HWAccel)
 }
 
 func TestResolve_AV1HWUsesMPEGTSWhenExperimentalFlagEnabled(t *testing.T) {
@@ -234,6 +235,7 @@ func TestResolve_AV1HWProgressiveCapabilityDisablesDeinterlace(t *testing.T) {
 	spec := Resolve(ProfileAV1HW, "", 0, &scan.Capability{Interlaced: false}, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "av1", spec.VideoCodec)
 	assert.False(t, spec.Deinterlace)
+	assert.Equal(t, "vaapi_encode_only", spec.HWAccel)
 }
 
 func TestResolve_AV1HWInterlacedCapabilityKeepsDeinterlace(t *testing.T) {
@@ -284,10 +286,21 @@ func TestNormalizeRequestedProfileID_MapsPublicAliases(t *testing.T) {
 	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("compatible"))
 	assert.Equal(t, ProfileHigh, NormalizeRequestedProfileID("quality"))
 	assert.Equal(t, ProfileLow, NormalizeRequestedProfileID("bandwidth"))
+	assert.Equal(t, ProfileAndroid, NormalizeRequestedProfileID("android_tv_native"))
 	assert.Equal(t, ProfileCopy, NormalizeRequestedProfileID("direct"))
 	assert.Equal(t, ProfileCopy, NormalizeRequestedProfileID("passthrough"))
 	assert.Equal(t, ProfileRepair, NormalizeRequestedProfileID("repair"))
 	assert.Equal(t, "generic", NormalizeRequestedProfileID("generic"))
+}
+
+func TestPrefersNativeFMP4Packaging_MapsProfileBias(t *testing.T) {
+	assert.True(t, PrefersNativeFMP4Packaging("android_native"))
+	assert.True(t, PrefersNativeFMP4Packaging("android_tv_native"))
+	assert.True(t, PrefersNativeFMP4Packaging(ProfileSafariHEVCHW))
+	assert.True(t, PrefersNativeFMP4Packaging("safari_hevc_hw_ll"))
+	assert.True(t, PrefersNativeFMP4Packaging(ProfileH264FMP4))
+	assert.False(t, PrefersNativeFMP4Packaging(ProfileAV1HW))
+	assert.False(t, PrefersNativeFMP4Packaging(ProfileCopy))
 }
 
 func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
@@ -295,6 +308,7 @@ func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
 	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileHigh))
 	assert.Equal(t, PublicProfileBandwidth, PublicProfileName(ProfileLow))
 	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileSafari))
+	assert.Equal(t, PublicProfileCompatible, PublicProfileName(ProfileSafariRuntimeHQ))
 	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileSafariDirty))
 	assert.Equal(t, PublicProfileQuality, PublicProfileName(ProfileSafariHEVCHW))
 	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileH264FMP4))

@@ -343,6 +343,22 @@ button:focus-visible {
   min-height: 52px;
 }
 
+@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  :root {
+    --text-display: 1.7rem;
+    --text-h1: 1.3rem;
+    --text-h2: 1.08rem;
+    --text-h3: 0.95rem;
+    --text-base: 0.9375rem;
+    --text-sm: 0.8125rem;
+    --text-xs: 0.6875rem;
+    --text-mono-base: 0.8125rem;
+    --text-mono-sm: 0.6875rem;
+    --nav-height: 52px;
+    --radius-xl: 20px;
+  }
+}
+
 /* Links */
 a {
   color: var(--accent-action);

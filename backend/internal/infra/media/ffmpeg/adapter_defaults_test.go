@@ -7,6 +7,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
@@ -88,7 +89,7 @@ func TestLocalAdapter_StartTimeoutForProfile_ExtendsSafariHQ50Transcode(t *testi
 	)
 
 	profile := ports.ProfileSpec{
-		Name:                 "safari_hq",
+		Name:                 profiles.ProfileSafariRuntimeHQ,
 		TranscodeVideo:       true,
 		VideoCodec:           "libx264",
 		Container:            "mpegts",

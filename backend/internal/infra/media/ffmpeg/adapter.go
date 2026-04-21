@@ -736,7 +736,7 @@ func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string) (hardw
 	if err != nil {
 		return hardware.HardwarePathCapability{}, fmt.Errorf("mktemp path correctness probe: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	outPath := filepath.Join(tempDir, "probe.mkv")
 	encodeArgs := []string{
@@ -1508,8 +1508,11 @@ func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profi
 	overrideFloor := 30 * time.Second
 	if profile.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {
 		overrideFloor = 60 * time.Second
-	} else if !strings.EqualFold(strings.TrimSpace(profile.Name), "safari") && !strings.EqualFold(strings.TrimSpace(profile.Name), "safari_hq") {
-		return timeout
+	} else {
+		normalizedProfile := profiles.NormalizeRequestedProfileID(profile.Name)
+		if normalizedProfile != profiles.ProfileSafari && normalizedProfile != profiles.ProfileSafariRuntimeHQ {
+			return timeout
+		}
 	}
 
 	overrideMs := envIntBounded(

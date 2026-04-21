@@ -314,10 +314,6 @@ type Match struct {
 	Info   MountInfo
 }
 
-func isNasFs(fs string) bool {
-	return isNetworkFs(fs)
-}
-
 func isNetworkFs(fs string) bool {
 	fs = strings.ToLower(fs)
 	return fs == "nfs" ||

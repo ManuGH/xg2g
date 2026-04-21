@@ -106,6 +106,74 @@ func TestMapSessionStateResponse_IncludesProfileReasonForSafariTranscode(t *test
 	assert.Equal(t, SessionResponseWindowKindLive, *resp.WindowKind)
 }
 
+func TestMapSessionStateResponse_IncludesProfileReasonForSafariRuntimeHQTranscode(t *testing.T) {
+	resp := mapSessionStateResponse("req-profile-reason-runtime-hq", "", v3sessions.GetSessionResult{
+		Session: &model.SessionRecord{
+			SessionID:          "550e8400-e29b-41d4-a716-446655440003",
+			ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+			Profile:            model.ProfileSpec{Name: profiles.ProfileSafariRuntimeHQ, TranscodeVideo: true},
+			State:              model.SessionPriming,
+			CorrelationID:      "corr-safari-runtime-hq",
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: 1700000030,
+		},
+		Outcome: lifecycle.PublicOutcome{
+			State:      model.SessionPriming,
+			Reason:     model.RNone,
+			DetailCode: model.DNone,
+		},
+		PlaybackInfo: v3sessions.SessionPlaybackInfo{
+			Mode:       model.ModeLive,
+			WindowKind: v3sessions.SessionWindowKindLive,
+		},
+	})
+
+	require.NotNil(t, resp.ProfileReason)
+	assert.Equal(t, sessionProfileReasonSafariCompatTranscode, *resp.ProfileReason)
+}
+
+func TestMapSessionStateResponse_ExposesAutoCodecTrace(t *testing.T) {
+	resp := mapSessionStateResponse("req-auto-codec", "", v3sessions.GetSessionResult{
+		Session: &model.SessionRecord{
+			SessionID:          "550e8400-e29b-41d4-a716-446655440099",
+			ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+			Profile:            model.ProfileSpec{Name: profiles.ProfileSafariHEVC},
+			State:              model.SessionReady,
+			CorrelationID:      "corr-auto-codec",
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: 1700000030,
+			PlaybackTrace: &model.PlaybackTrace{
+				AutoCodecPolicy:     "host_aware_bottleneck",
+				AutoCodecRequested:  "av1,hevc,h264",
+				AutoCodecSelected:   "hevc",
+				AutoCodecHostClass:  "medium",
+				AutoCodecBenchClass: "strong",
+			},
+		},
+		Outcome: lifecycle.PublicOutcome{
+			State:      model.SessionReady,
+			Reason:     model.RNone,
+			DetailCode: model.DNone,
+		},
+		PlaybackInfo: v3sessions.SessionPlaybackInfo{
+			Mode:       model.ModeLive,
+			WindowKind: v3sessions.SessionWindowKindLive,
+		},
+	})
+
+	require.NotNil(t, resp.Trace)
+	require.NotNil(t, resp.Trace.AutoCodecPolicy)
+	assert.Equal(t, "host_aware_bottleneck", *resp.Trace.AutoCodecPolicy)
+	require.NotNil(t, resp.Trace.AutoCodecRequestedCodecs)
+	assert.Equal(t, "av1,hevc,h264", *resp.Trace.AutoCodecRequestedCodecs)
+	require.NotNil(t, resp.Trace.AutoCodecSelectedCodec)
+	assert.Equal(t, "hevc", *resp.Trace.AutoCodecSelectedCodec)
+	require.NotNil(t, resp.Trace.AutoCodecPerformanceClass)
+	assert.Equal(t, "medium", *resp.Trace.AutoCodecPerformanceClass)
+	require.NotNil(t, resp.Trace.AutoCodecBenchmarkClass)
+	assert.Equal(t, "strong", *resp.Trace.AutoCodecBenchmarkClass)
+}
+
 func TestMapSessionStateResponse_ExposesRuntimePolicyTimeline(t *testing.T) {
 	statePayload, err := json.Marshal(runtimepolicy.SessionLoopState{
 		CurrentStep:     runtimepolicy.PlaybackStepH264720p,

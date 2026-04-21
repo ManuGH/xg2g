@@ -62,6 +62,10 @@ func (d *serverIntentDeps) HostPressure(ctx context.Context) playbackprofile.Hos
 	return d.s.currentHostPressure(ctx)
 }
 
+func (d *serverIntentDeps) HostRuntime(ctx context.Context) playbackprofile.HostRuntimeSnapshot {
+	return d.s.currentHostRuntime(ctx)
+}
+
 func (d *serverIntentDeps) VerifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode string) bool {
 	return d.s.verifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode)
 }

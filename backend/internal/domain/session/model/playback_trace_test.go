@@ -79,6 +79,8 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 			AtUnix:          456,
 			Trigger:         "mediaError",
 			Reason:          "bufferAppendError",
+			PlanID:          "repair_fmp4",
+			PlanReason:      "default_repair_escalation",
 			FromProfileHash: "hash-1",
 			ToProfileHash:   "hash-2",
 		}},
@@ -105,6 +107,7 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 	cloned.HostPressureBand = "critical"
 	cloned.HostOverrideApplied = false
 	cloned.Fallbacks[0].Reason = "networkError"
+	cloned.Fallbacks[0].PlanID = "safari_dirty"
 
 	assert.Equal(t, "aac", trace.Source.AudioCodec)
 	assert.Equal(t, "aac", trace.TargetProfile.Audio.Codec)
@@ -116,6 +119,8 @@ func TestPlaybackTraceClone_DeepCopiesNestedFields(t *testing.T) {
 	assert.Equal(t, "constrained", trace.HostPressureBand)
 	assert.True(t, trace.HostOverrideApplied)
 	assert.Equal(t, "bufferAppendError", trace.Fallbacks[0].Reason)
+	assert.Equal(t, "repair_fmp4", trace.Fallbacks[0].PlanID)
+	assert.Equal(t, "default_repair_escalation", trace.Fallbacks[0].PlanReason)
 }
 
 func TestPlaybackTraceClone_NilSafe(t *testing.T) {

@@ -200,3 +200,30 @@ func TestServiceGetSessionReadyLivePlaybackInfoWindowKinds(t *testing.T) {
 		assert.Equal(t, 90.0, *got.PlaybackInfo.SeekableEndSeconds)
 	})
 }
+
+func TestServiceGetSessionReadyLivePlaybackInfoWithoutCreatedAtFallsBackToNeutralWindow(t *testing.T) {
+	svc := NewService(fakeDeps{store: fakeStore{session: &model.SessionRecord{
+		SessionID:     "550e8400-e29b-41d4-a716-446655440005",
+		State:         model.SessionReady,
+		ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+		UpdatedAtUnix: 1700000030,
+		Profile: model.ProfileSpec{
+			Name: "compatible",
+		},
+	}}})
+
+	got, err := svc.GetSession(context.Background(), GetSessionRequest{
+		SessionID: "550e8400-e29b-41d4-a716-446655440005",
+		Now:       time.Unix(1700000090, 0),
+	})
+
+	require.Nil(t, err)
+	assert.Equal(t, model.ModeLive, got.PlaybackInfo.Mode)
+	assert.Equal(t, SessionWindowKindLive, got.PlaybackInfo.WindowKind)
+	require.NotNil(t, got.PlaybackInfo.SeekableStartSeconds)
+	require.NotNil(t, got.PlaybackInfo.SeekableEndSeconds)
+	require.NotNil(t, got.PlaybackInfo.LiveEdgeSeconds)
+	assert.Equal(t, 0.0, *got.PlaybackInfo.SeekableStartSeconds)
+	assert.Equal(t, 0.0, *got.PlaybackInfo.SeekableEndSeconds)
+	assert.Equal(t, 0.0, *got.PlaybackInfo.LiveEdgeSeconds)
+}

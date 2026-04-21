@@ -101,6 +101,30 @@ describe('EpgChannelList playback affordance', () => {
               videoCodec: 'h264',
               audioCodec: 'ac3',
             },
+            targetProfile: {
+              container: 'mpegts',
+              packaging: 'ts',
+              video: {
+                mode: 'copy',
+                codec: 'h264',
+                width: 1920,
+                height: 1080,
+                fps: 50,
+              },
+              audio: {
+                mode: 'transcode',
+                codec: 'aac',
+                channels: 2,
+                bitrateKbps: 128,
+                sampleRate: 48000,
+              },
+              hls: {
+                enabled: true,
+                segmentContainer: 'mpegts',
+                segmentSeconds: 4,
+              },
+              hwAccel: 'none',
+            },
           },
         },
       },
@@ -178,11 +202,12 @@ describe('EpgChannelList playback affordance', () => {
     });
 
     expect(await screen.findByText('Remux')).toBeTruthy();
-    expect(screen.getByText('1080p · h264/ac3')).toBeTruthy();
+    expect(screen.getByText('1080p · v:copy/h264 · a:encode/aac')).toBeTruthy();
     expect(mockedPostLivePlaybackInfo).toHaveBeenCalledWith(
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer dev-token',
+          'X-XG2G-Playback-Info-Context': 'epg_badge',
         }),
         body: expect.objectContaining({
           serviceRef: 'svc-badge-auth',

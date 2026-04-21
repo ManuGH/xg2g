@@ -56,6 +56,10 @@ import {
   gatherPlaybackClientContext,
   resolvePlaybackRequestProfile,
 } from '../utils/playbackRequestProfile';
+import {
+  PLAYBACK_INFO_CONTEXT_HEADER,
+  PLAYBACK_INFO_CONTEXT_PLAYER_START,
+} from '../utils/playbackInfoContext';
 import { normalizePlayerError } from '../../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
 import { useTvInitialFocus } from '../../../hooks/useTvInitialFocus';
@@ -259,6 +263,24 @@ function resolveApiUrl(base: string, path: string): string {
 function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null): string[] {
   if (!snapshot) return [];
 
+  // The live stream-info request already carries the probed, policy-shaped
+  // client codec list. Reusing it for the start intent keeps both requests in
+  // sync and avoids silently dropping relaxed iOS-native AV1.
+  const advertisedCodecs = Array.isArray(snapshot.videoCodecs)
+    ? Array.from(
+        new Set(
+          snapshot.videoCodecs
+            .map((codec) => codec.trim().toLowerCase())
+            .filter((codec): codec is 'av1' | 'hevc' | 'h264' => (
+              codec === 'av1' || codec === 'hevc' || codec === 'h264'
+            ))
+        )
+      )
+    : [];
+  if (advertisedCodecs.length > 0) {
+    return advertisedCodecs;
+  }
+
   const out: string[] = [];
   const signals = Array.isArray(snapshot.videoCodecSignals) ? snapshot.videoCodecSignals : [];
   const signalFor = (codec: string) => signals.find((signal) => signal.codec === codec);
@@ -354,7 +376,7 @@ function mergePlaybackTraceOperator(
     runtimePolicyAction: primary?.runtimePolicyAction ?? fallback?.runtimePolicyAction ?? null,
     runtimePolicyPhase: primary?.runtimePolicyPhase ?? fallback?.runtimePolicyPhase ?? null,
     runtimePolicyConstraints: primary?.runtimePolicyConstraints ?? fallback?.runtimePolicyConstraints ?? null,
-    runtimePolicyReplay: primary?.runtimePolicyReplay ?? fallback?.runtimePolicyReplay ?? null,
+    runtimePolicyReplay: primary?.runtimePolicyReplay ?? fallback?.runtimePolicyReplay,
     runtimePolicyReasons: primary?.runtimePolicyReasons ?? fallback?.runtimePolicyReasons ?? null,
     runtimePolicyTimeline: primary?.runtimePolicyTimeline ?? fallback?.runtimePolicyTimeline ?? null,
     runtimeProbeCandidate: primary?.runtimeProbeCandidate ?? fallback?.runtimeProbeCandidate ?? null,
@@ -629,10 +651,11 @@ function V3Player(props: V3PlayerProps) {
   const nativeManagedPauseRef = useRef(false);
   const nativePlayingProbeSessionRef = useRef<string | null>(null);
   const nativeRenderRecoverySessionRef = useRef<string | null>(null);
+  const showNativeVideoRef = useRef(showNativeVideo);
+  const showNativeVideoVeilRef = useRef(showNativeVideoVeil);
   const visibilityManagedPauseRef = useRef(false);
   const nativeVisibilityResumeArmedRef = useRef(false);
   const nativePlaybackWasActiveRef = useRef(false);
-  const directTouchNativeStartRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
 
   const [durationSeconds, setDurationSeconds] = useState<number | null>(
@@ -693,21 +716,7 @@ function V3Player(props: V3PlayerProps) {
     video.removeAttribute('webkit-playsinline');
   }, [videoRef]);
 
-  const armDirectTouchNativeStart = useCallback((): boolean => {
-    const video = videoRef.current;
-    if (!video || !shouldForceNativeMobileHls(video)) {
-      directTouchNativeStartRef.current = false;
-      setTouchInlinePlaybackEnabled(true);
-      return false;
-    }
-
-    directTouchNativeStartRef.current = true;
-    setTouchInlinePlaybackEnabled(false);
-    return true;
-  }, [setTouchInlinePlaybackEnabled, shouldForceNativeMobileHls, videoRef]);
-
   const clearDirectTouchNativeStart = useCallback(() => {
-    directTouchNativeStartRef.current = false;
     setTouchInlinePlaybackEnabled(true);
   }, [setTouchInlinePlaybackEnabled]);
 
@@ -853,6 +862,42 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
+  useEffect(() => {
+    showNativeVideoRef.current = showNativeVideo;
+  }, [showNativeVideo]);
+
+  useEffect(() => {
+    showNativeVideoVeilRef.current = showNativeVideoVeil;
+  }, [showNativeVideoVeil]);
+
+  const revealNativeVideoIfRenderable = useCallback((): boolean => {
+    if (activeHlsEngine !== 'native') {
+      return false;
+    }
+
+    const video = videoRef.current;
+    if (!video || video.paused) {
+      return false;
+    }
+
+    const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
+    const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
+    const hasDecodedFrames = typeof decodedFrameCount !== 'number' || decodedFrameCount > 0;
+    const hasRenderableFrame = video.readyState >= 3 || (hasVideoGeometry && hasDecodedFrames);
+    if (!hasRenderableFrame) {
+      return false;
+    }
+
+    clearNativeVideoRevealTimer();
+    clearNativeVideoVeilTimers();
+    nativeVideoShownRef.current = true;
+    nativeVideoHoldPositionRef.current = null;
+    setShowNativeVideo(true);
+    setShowNativeVideoVeil(true);
+    setNativeVeilResumeArmed(true);
+    return true;
+  }, [activeHlsEngine, clearNativeVideoRevealTimer, clearNativeVideoVeilTimers, videoRef]);
+
   const recoverNativeInlineSource = useCallback((reason: string, targetPosition?: number | null): boolean => {
     const video = videoRef.current;
     if (!video) {
@@ -964,7 +1009,6 @@ function V3Player(props: V3PlayerProps) {
   const handleNativeFullscreenExit = useCallback((details: { currentTime: number | null; wasPaused: boolean }) => {
     const video = videoRef.current;
     if (
-      directTouchNativeStartRef.current ||
       playbackMode !== 'LIVE' ||
       !isCompactTouchLayout ||
       !isDocumentVisible ||
@@ -1050,7 +1094,6 @@ function V3Player(props: V3PlayerProps) {
     togglePlayPause,
     toggleFullscreen,
     enterNativeFullscreen,
-    primeNativeFullscreen,
     enterDVRMode,
     togglePiP,
     toggleMute,
@@ -1725,10 +1768,7 @@ function V3Player(props: V3PlayerProps) {
         const treatSrcAsLive = !requestedDuration;
         prepareFreshPlayback(treatSrcAsLive ? 'LIVE' : 'VOD');
         if (treatSrcAsLive) {
-          const directNativeStart = armDirectTouchNativeStart();
-          if (!directNativeStart) {
-            primeNativeFullscreen();
-          }
+          clearDirectTouchNativeStart();
         } else {
           clearDirectTouchNativeStart();
         }
@@ -1755,10 +1795,7 @@ function V3Player(props: V3PlayerProps) {
         clearPlaybackState();
       }
       prepareFreshPlayback('LIVE');
-      const directNativeStart = armDirectTouchNativeStart();
-      if (!directNativeStart) {
-        primeNativeFullscreen();
-      }
+      clearDirectTouchNativeStart();
       let newSessionId: string | null = null;
       setStatus('starting');
       clearPlayerError();
@@ -1796,6 +1833,7 @@ function V3Player(props: V3PlayerProps) {
           headers: {
             ...(authHeaders(true) as Record<string, string>),
             ...buildPlaybackProfileHeaders(requestProfile),
+            [PLAYBACK_INFO_CONTEXT_HEADER]: PLAYBACK_INFO_CONTEXT_PLAYER_START,
           },
           body: JSON.stringify({
             serviceRef: ref,
@@ -2099,7 +2137,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, armDirectTouchNativeStart, clearDirectTouchNativeStart, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, primeNativeFullscreen, token]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearDirectTouchNativeStart, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, token]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -2404,6 +2442,10 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
+    if (!showNativeVideo && revealNativeVideoIfRenderable()) {
+      return;
+    }
+
     if (status === 'starting' || status === 'priming' || status === 'building' || status === 'buffering' || status === 'recovering') {
       clearNativeVideoRevealTimer();
       clearNativeVideoVeilTimers();
@@ -2444,34 +2486,12 @@ function V3Player(props: V3PlayerProps) {
     const revealThresholds = nativeVideoShownRef.current
       ? NATIVE_VIDEO_REVEAL_REBUFFER
       : NATIVE_VIDEO_REVEAL_STARTUP;
-
-    const forceRevealIfRenderable = (): boolean => {
-      const video = videoRef.current;
-      if (!video || status !== 'playing') {
-        return false;
-      }
-
-      const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
-      const hasReadyFrame = video.readyState >= 4;
-      if (video.paused || (!hasReadyFrame && !hasVideoGeometry)) {
-        return false;
-      }
-
-      clearNativeVideoRevealTimer();
-      nativeVideoShownRef.current = true;
-      nativeVideoHoldPositionRef.current = null;
-      setShowNativeVideo(true);
-      setShowNativeVideoVeil(true);
-      setNativeVeilResumeArmed(true);
-      return true;
-    };
-
-    if (forceRevealIfRenderable()) {
+    if (revealNativeVideoIfRenderable()) {
       return;
     }
 
     const waitForStablePlayback = () => {
-      if (forceRevealIfRenderable()) {
+      if (revealNativeVideoIfRenderable()) {
         return;
       }
 
@@ -2488,11 +2508,8 @@ function V3Player(props: V3PlayerProps) {
         holdPosition === null || !Number.isFinite(holdPosition)
           ? true
           : Math.max(0, video.currentTime - holdPosition) >= revealThresholds.minAdvanceSeconds;
-      const playbackResumeSatisfied = revealThresholds.requirePlaybackResume
-        ? !video.paused
-        : (status === 'ready' || !video.paused);
+      const playbackResumeSatisfied = !video.paused;
       const playingWithVisibleGeometry =
-        status === 'playing' &&
         playbackResumeSatisfied &&
         playbackAdvancedEnough &&
         hasVideoGeometry;
@@ -2545,10 +2562,60 @@ function V3Player(props: V3PlayerProps) {
     clearNativeVideoVeilTimers,
     getBufferedAheadSeconds,
     isNativeEngine,
+    revealNativeVideoIfRenderable,
     showNativeVideo,
     status,
     videoRef,
   ]);
+
+  useEffect(() => {
+    if (!(isNativeEngine && !showNativeVideo)) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    let renderablePollTimer: number | null = null;
+
+    const clearRenderablePollTimer = () => {
+      if (renderablePollTimer !== null) {
+        window.clearTimeout(renderablePollTimer);
+        renderablePollTimer = null;
+      }
+    };
+
+    const probeRenderableState = () => {
+      if (revealNativeVideoIfRenderable()) {
+        clearRenderablePollTimer();
+        return;
+      }
+      renderablePollTimer = window.setTimeout(probeRenderableState, 140);
+    };
+
+    const handleRenderableEvent = () => {
+      if (revealNativeVideoIfRenderable()) {
+        clearRenderablePollTimer();
+      }
+    };
+
+    video.addEventListener('playing', handleRenderableEvent);
+    video.addEventListener('loadeddata', handleRenderableEvent);
+    video.addEventListener('canplay', handleRenderableEvent);
+    video.addEventListener('resize', handleRenderableEvent);
+
+    probeRenderableState();
+
+    return () => {
+      clearRenderablePollTimer();
+      video.removeEventListener('playing', handleRenderableEvent);
+      video.removeEventListener('loadeddata', handleRenderableEvent);
+      video.removeEventListener('canplay', handleRenderableEvent);
+      video.removeEventListener('resize', handleRenderableEvent);
+    };
+  }, [isNativeEngine, revealNativeVideoIfRenderable, showNativeVideo, videoRef]);
 
   useEffect(() => {
     if (!isOverlayStartupStatus) {
@@ -2596,6 +2663,10 @@ function V3Player(props: V3PlayerProps) {
       if (!video) {
         return `native_render stage=${stage} video=missing`;
       }
+      const rect = video.getBoundingClientRect();
+      const computedStyle = window.getComputedStyle(video);
+      const wrapper = video.parentElement as HTMLElement | null;
+      const wrapperRect = wrapper?.getBoundingClientRect();
       const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
       const droppedFrameCount = (video as HTMLVideoElement & { webkitDroppedFrameCount?: number }).webkitDroppedFrameCount;
       return [
@@ -2605,10 +2676,19 @@ function V3Player(props: V3PlayerProps) {
         `t=${Number.isFinite(video.currentTime) ? video.currentTime.toFixed(2) : 'na'}`,
         `vw=${video.videoWidth}`,
         `vh=${video.videoHeight}`,
+        `cw=${video.clientWidth}`,
+        `ch=${video.clientHeight}`,
+        `rw=${Math.round(rect.width)}`,
+        `rh=${Math.round(rect.height)}`,
+        `ww=${wrapperRect ? Math.round(wrapperRect.width) : 'na'}`,
+        `wh=${wrapperRect ? Math.round(wrapperRect.height) : 'na'}`,
+        `disp=${computedStyle.display}`,
+        `vis=${computedStyle.visibility}`,
+        `op=${computedStyle.opacity}`,
         `dec=${typeof decodedFrameCount === 'number' ? decodedFrameCount : 'na'}`,
         `drop=${typeof droppedFrameCount === 'number' ? droppedFrameCount : 'na'}`,
-        `show=${showNativeVideo ? 1 : 0}`,
-        `veil=${showNativeVideoVeil ? 1 : 0}`,
+        `show=${showNativeVideoRef.current ? 1 : 0}`,
+        `veil=${showNativeVideoVeilRef.current ? 1 : 0}`,
       ].join(' ');
     };
 
@@ -2651,8 +2731,6 @@ function V3Player(props: V3PlayerProps) {
     recoverNativeInlineSource,
     reportError,
     sessionIdRef,
-    showNativeVideo,
-    showNativeVideoVeil,
     status,
     videoRef,
   ]);
@@ -2778,6 +2856,7 @@ function V3Player(props: V3PlayerProps) {
   const showNativeBufferingMask =
     (shouldHoldNativeVideo || showNativeVideoVeil) &&
     !(isNativeEngine && status === 'playing');
+  const hideVideoElement = showNativeBufferingMask && !isNativeEngine;
   const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || useOverlayShell || isRecordingPageLayout);
   const showPlaybackChrome = !useMinimalStartupChrome;
   const showRecordingWatchLayout = Boolean(recordingId && !isFullscreen && (useOverlayShell || isRecordingPageLayout));
@@ -3350,7 +3429,7 @@ function V3Player(props: V3PlayerProps) {
           autoPlay={!!autoStart}
           className={[
             styles.videoElement,
-            showNativeBufferingMask ? styles.videoElementHidden : null,
+            hideVideoElement ? styles.videoElementHidden : null,
           ].filter(Boolean).join(' ')}
         />
       </div>

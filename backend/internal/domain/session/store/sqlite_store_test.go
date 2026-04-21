@@ -112,6 +112,8 @@ func TestSqliteStore_PlaybackTraceRoundTrip(t *testing.T) {
 				AtUnix:          42,
 				Trigger:         "mediaError",
 				Reason:          "bufferAppendError",
+				PlanID:          "repair_fmp4",
+				PlanReason:      "default_repair_escalation",
 				FromProfileHash: "hash-old",
 				ToProfileHash:   "hash-new",
 			}},
@@ -136,6 +138,9 @@ func TestSqliteStore_PlaybackTraceRoundTrip(t *testing.T) {
 	}
 	if len(got.PlaybackTrace.Fallbacks) != 1 || got.PlaybackTrace.Fallbacks[0].Trigger != "mediaError" {
 		t.Fatalf("unexpected fallback trace: %#v", got.PlaybackTrace.Fallbacks)
+	}
+	if got.PlaybackTrace.Fallbacks[0].PlanID != "repair_fmp4" || got.PlaybackTrace.Fallbacks[0].PlanReason != "default_repair_escalation" {
+		t.Fatalf("unexpected fallback plan trace: %#v", got.PlaybackTrace.Fallbacks[0])
 	}
 	if got.PlaybackTrace.StopClass != model.PlaybackStopClassPackager {
 		t.Fatalf("unexpected stop class: %q", got.PlaybackTrace.StopClass)

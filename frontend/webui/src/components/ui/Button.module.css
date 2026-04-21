@@ -105,3 +105,21 @@
   border-color: var(--status-error);
   color: var(--status-error);
 }
+
+@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  .button {
+    min-height: 40px;
+    min-width: 40px;
+    gap: 8px;
+    padding: 0 13px;
+  }
+
+  .button[data-size="sm"] {
+    padding: 0 10px;
+  }
+
+  .button[data-size="icon"] {
+    width: 40px;
+    height: 40px;
+  }
+}

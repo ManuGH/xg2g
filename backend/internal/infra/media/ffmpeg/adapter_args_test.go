@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -617,7 +618,7 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:            "safari_hq",
+			Name:            profiles.ProfileSafariRuntimeHQ,
 			PolicyModeHint:  ports.RuntimeModeCopy,
 			ForceSafariHQ25: true,
 			TranscodeVideo:  true,
@@ -1153,6 +1154,47 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 	assert.Contains(t, vf, "deinterlace_vaapi")
 	assert.NotContains(t, vf, "bwdif=")
 	assert.Contains(t, args, "hevc_vaapi")
+}
+
+func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "hevc-hw-profile-cpu-fallback",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_hevc_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "",
+			VideoCodec:     "hevc",
+			VideoCRF:       22,
+			VideoMaxRateK:  5000,
+			VideoBufSizeK:  10000,
+			AudioBitrateK:  192,
+			Preset:         "superfast",
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.NotContains(t, args, "-vaapi_device")
+	assert.NotContains(t, args, "-hwaccel")
+	assert.NotContains(t, args, "hevc_vaapi")
+	assert.Contains(t, args, "libx265")
+	tagValue, ok := valueAfter(args, "-tag:v")
+	require.True(t, ok)
+	assert.Equal(t, "hvc1", tagValue)
 }
 
 func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
@@ -1803,9 +1845,100 @@ func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
 
 	assert.Contains(t, plan.args, "av1_vaapi")
 	assert.NotContains(t, plan.args, "h264_vaapi")
+	assert.NotContains(t, plan.args, "-hwaccel", "av1 hw path should stay encode-only so geometry can be normalized before hwupload")
+	vf, ok := valueAfter(plan.args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
+	assert.Contains(t, vf, "format=nv12,hwupload")
 	assert.Equal(t, "av1", plan.effectiveProfile.VideoCodec)
 	assert.False(t, plan.effectiveProfile.Deinterlace)
 	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, plan.effectiveProfile.EffectiveModeSource)
+}
+
+func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{
+		"h264_vaapi": true,
+		"av1_vaapi":  true,
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-interlaced-default-fallback",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Deinterlace:    true,
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "h264_vaapi")
+	assert.NotContains(t, args, "av1_vaapi")
+	assert.Contains(t, args, "-hwaccel", "safe h264 fallback may still use the verified full VAAPI path")
+}
+
+func TestBuildArgs_AV1HWInterlacedExperimentalOverrideUsesAV1EncodeOnlyPath(t *testing.T) {
+	t.Setenv(experimentalInterlacedVAAPICodecsEnv, "av1")
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{
+		"h264_vaapi": true,
+		"av1_vaapi":  true,
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-interlaced-override",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Deinterlace:    true,
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-vaapi_device")
+	assert.NotContains(t, args, "-hwaccel", "unverified override should stay on encode-only path")
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "bwdif=")
+	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
+	assert.Contains(t, vf, "format=nv12,hwupload")
+	assert.Contains(t, args, "av1_vaapi")
+	assert.NotContains(t, args, "h264_vaapi")
 }
 
 func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {

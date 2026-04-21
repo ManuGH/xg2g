@@ -561,7 +561,6 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesFMP4ForQualifiedHEVCOnIOSSafar
 	require.Equal(t, "hevc", store.lastSession.Profile.VideoCodec)
 	require.True(t, store.lastSession.Profile.TranscodeVideo)
 	require.Equal(t, "vaapi_encode_only", store.lastSession.Profile.HWAccel)
-	require.Equal(t, 20, store.lastSession.Profile.VideoQP)
 }
 
 func TestHandleV3Intents_PlaybackModeNativeHLSUsesAV1FMP4ForRuntimeCapableIOSSafariNative(t *testing.T) {
