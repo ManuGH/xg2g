@@ -23,7 +23,7 @@ vi.mock('../hooks/useServerQueries', () => ({
 }));
 
 vi.mock('../lib/browserNavigation', () => ({
-  reloadWindowLocation: () => mockLocationReload(),
+  reloadWindowLocation: (token?: string) => mockLocationReload(token),
 }));
 
 function renderGate(initialEntries: string[] = [ROUTE_MAP.epg]) {
@@ -118,7 +118,7 @@ describe('BootstrapGate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
 
     expect(setToken).toHaveBeenCalledWith('new-token');
-    expect(mockLocationReload).toHaveBeenCalledTimes(1);
+    expect(mockLocationReload).toHaveBeenCalledWith('new-token');
   });
 
   it('reloads after re-authenticating from a stale bootstrap 401 state', async () => {
@@ -165,7 +165,7 @@ describe('BootstrapGate', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
     expect(setToken).toHaveBeenCalledWith('dev-token');
-    expect(mockLocationReload).toHaveBeenCalledTimes(1);
+    expect(mockLocationReload).toHaveBeenCalledWith('dev-token');
     expect(setPlayingChannel).toHaveBeenCalledWith(null);
   });
 

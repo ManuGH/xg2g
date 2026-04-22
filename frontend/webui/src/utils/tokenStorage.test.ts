@@ -3,6 +3,8 @@ import { clearStoredToken, getStoredToken, setStoredToken } from './tokenStorage
 
 describe('tokenStorage', () => {
   afterEach(() => {
+    clearStoredToken();
+    window.history.replaceState({}, '', '/ui/');
     window.localStorage.clear();
     window.sessionStorage.clear();
   });
@@ -21,6 +23,14 @@ describe('tokenStorage', () => {
     expect(getStoredToken()).toBe('legacy-token');
     expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBe('legacy-token');
     expect(window.sessionStorage.getItem('XG2G_API_TOKEN')).toBeNull();
+  });
+
+  it('consumes bootstrap tokens from the URL hash and clears the hash afterwards', () => {
+    window.history.replaceState({}, '', '/ui/#xg2g_boot_token=hash-token');
+
+    expect(getStoredToken()).toBe('hash-token');
+    expect(window.location.hash).toBe('');
+    expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBe('hash-token');
   });
 
   it('clears the token from both storages', () => {
