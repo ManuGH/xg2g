@@ -49,6 +49,7 @@ import {
   type RecordingResponse,
   type ScanStatus
 } from '../client-ts';
+import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import { HOUSEHOLD_PROFILE_HEADER, throwOnClientResultError, unwrapClientResultOrThrow } from '../services/clientWrapper';
 import { setErrorCatalog } from '../lib/errorCatalog';
@@ -91,7 +92,10 @@ export async function fetchSystemConfigStrict(): Promise<AppConfig | null> {
  * staleTime: 30s
  */
 export function useSystemConfig() {
+  const { auth } = useAppContext();
   const { selectedProfileId, isReady } = useHouseholdProfiles();
+  const authReady = auth.isReady ?? true;
+  const enabled = isReady && authReady && auth.isAuthenticated;
 
   return useQuery({
     queryKey: [...queryKeys.systemConfig, { profileId: selectedProfileId }],
@@ -102,13 +106,16 @@ export function useSystemConfig() {
         silent: true
       }) ?? null;
     },
-    enabled: isReady,
+    enabled,
     staleTime: 30_000,
   });
 }
 
 export function useSystemConnectivity() {
+  const { auth } = useAppContext();
   const { isReady } = useHouseholdProfiles();
+  const authReady = auth.isReady ?? true;
+  const enabled = isReady && authReady && auth.isAuthenticated;
 
   return useQuery({
     queryKey: queryKeys.systemConnectivity,
@@ -119,7 +126,7 @@ export function useSystemConnectivity() {
         silent: true,
       });
     },
-    enabled: isReady,
+    enabled,
     staleTime: 5_000,
   });
 }
@@ -212,7 +219,10 @@ export function useSystemInfo() {
  * staleTime: 1s
  */
 export function useSystemScanStatus() {
+  const { auth } = useAppContext();
   const { selectedProfileId, isReady } = useHouseholdProfiles();
+  const authReady = auth.isReady ?? true;
+  const enabled = isReady && authReady && auth.isAuthenticated;
 
   return useQuery({
     queryKey: [...queryKeys.systemScanStatus, { profileId: selectedProfileId }],
@@ -220,7 +230,7 @@ export function useSystemScanStatus() {
       const result = await getSystemScanStatus();
       return unwrapClientResultOrThrow<ScanStatus>(result, { source: 'useSystemScanStatus' });
     },
-    enabled: isReady,
+    enabled,
     refetchInterval: 2_000,
     staleTime: 1_000,
   });

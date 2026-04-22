@@ -14,6 +14,7 @@ const {
   confirm,
   toast,
   loadChannels,
+  authState,
 } = vi.hoisted(() => ({
   getSystemConfig: vi.fn(),
   getSystemConnectivity: vi.fn(),
@@ -22,6 +23,11 @@ const {
   confirm: vi.fn(),
   toast: vi.fn(),
   loadChannels: vi.fn(),
+  authState: {
+    token: 'stored-token',
+    isAuthenticated: true,
+    isReady: true,
+  },
 }));
 
 vi.mock('../client-ts', () => ({
@@ -33,6 +39,7 @@ vi.mock('../client-ts', () => ({
 
 vi.mock('../context/AppContext', () => ({
   useAppContext: () => ({
+    auth: authState,
     channels: {
       bouquets: [],
       selectedBouquet: '',
@@ -135,8 +142,23 @@ function renderWithQueryClient(initialEntries: string[] = ['/settings']) {
 describe('Settings', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    authState.token = 'stored-token';
+    authState.isAuthenticated = true;
+    authState.isReady = true;
     setClientAuthToken('');
     window.localStorage.clear();
+  });
+
+  it('waits for auth header hydration before loading settings queries', () => {
+    authState.token = 'stored-token';
+    authState.isAuthenticated = true;
+    authState.isReady = false;
+
+    renderWithQueryClient();
+
+    expect(getSystemConfig).not.toHaveBeenCalled();
+    expect(getSystemConnectivity).not.toHaveBeenCalled();
+    expect(getSystemScanStatus).not.toHaveBeenCalled();
   });
 
   it('loads config and scan status from shared query hooks', async () => {
