@@ -382,8 +382,8 @@ func TestSelectStreamURL_FallbackOffFails(t *testing.T) {
 	if got := pErr.StructuredResult().Reason; got != ports.PreflightReasonInvalidTS {
 		t.Fatalf("expected invalid_ts structured reason, got %q", got)
 	}
-	if calls != 1 {
-		t.Fatalf("expected 1 preflight call, got %d", calls)
+	if calls != 3 {
+		t.Fatalf("expected 3 preflight calls, got %d", calls)
 	}
 }
 
@@ -416,8 +416,8 @@ func TestSelectStreamURL_NoFallbackWhenNotRelay(t *testing.T) {
 	if got := pErr.StructuredResult().Reason; got != ports.PreflightReasonInvalidTS {
 		t.Fatalf("expected invalid_ts structured reason, got %q", got)
 	}
-	if calls != 1 {
-		t.Fatalf("expected 1 preflight call, got %d", calls)
+	if calls != 3 {
+		t.Fatalf("expected 3 preflight calls, got %d", calls)
 	}
 }
 

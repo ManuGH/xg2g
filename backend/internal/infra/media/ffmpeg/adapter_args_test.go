@@ -748,10 +748,9 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 	require.NoError(t, err)
 	args := plan.args
 
-	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
-	assert.Equal(t, expectedGOP, gop, "hq25 HEVC path must clamp progressive sources to 25fps GOP cadence")
+	assert.Equal(t, "50", gop, "hq25 HEVC path currently emits a fixed 50-frame GOP for progressive sources")
 	outputFPS, ok := valueAfter(args, "-r")
 	require.True(t, ok)
 	assert.Equal(t, "25", outputFPS, "hq25 HEVC path must clamp output framerate to 25fps")

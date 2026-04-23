@@ -3756,6 +3756,109 @@ paths:
         "500":
           description: Failed to delete recording
 
+  /recordings/{recordingId}/delete:
+    post:
+      summary: Delete a recording via compatibility endpoint
+      description: Deletes the recording via OpenWebIF on the receiver.
+      security:
+        - BearerAuth: [v3:write]
+      operationId: postRecordingDelete
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      responses:
+        "204":
+          description: Recording deleted
+        "400":
+          description: Invalid recording reference
+        "403":
+          description: Access denied
+        "404":
+          description: Recording not found
+        "500":
+          description: Failed to delete recording
+
+  /recordings/{recordingId}/rename:
+    post:
+      summary: Rename a recording via compatibility endpoint
+      security:
+        - BearerAuth: [v3:write]
+      operationId: postRecordingRename
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+              required: [name]
+      responses:
+        "204":
+          description: Recording renamed
+        "400":
+          description: Invalid request
+        "403":
+          description: Access denied
+        "404":
+          description: Recording not found
+        "500":
+          description: Failed to rename recording
+
+  /recordings/{recordingId}/thumbnail.jpg:
+    get:
+      summary: Get recording thumbnail
+      security:
+        - BearerAuth: [v3:read]
+      operationId: getRecordingThumbnail
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      responses:
+        "200":
+          description: Thumbnail image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Thumbnail not found
+
   /recordings/{recordingId}/status:
     get:
       summary: Get recording build status
