@@ -6,4 +6,4 @@ services:
       context: /srv/xg2g
       dockerfile: /srv/xg2g/Dockerfile
       args:
-        FFMPEG_BASE_IMAGE: ${XG2G_FFMPEG_BASE_IMAGE:-ffmpeg-runtime-base-internal}
+        FFMPEG_BASE_IMAGE: ffmpeg-runtime-base-internal
