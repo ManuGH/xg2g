@@ -7,10 +7,12 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 )
 
 func TestPickProfileForCodecs_AutoUsesMeasuredHostRanking(t *testing.T) {
@@ -480,7 +482,7 @@ func TestResolveRequestedStartProfile_IOSHlsJsClampsToH264(t *testing.T) {
 			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
 			model.CtxKeyPreferredEngine: "hlsjs",
 		},
-	}, profiles.HWAccelAuto)
+	}, profiles.HWAccelAuto, nil)
 	if err != nil {
 		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
 	}
@@ -540,7 +542,7 @@ func TestResolveRequestedStartProfile_IOSHlsJsAllowsAV1WithRuntimeManagedAV1Caps
 			RuntimeProbeUsed:    true,
 			RuntimeProbeVersion: 2,
 		},
-	}, profiles.HWAccelAuto)
+	}, profiles.HWAccelAuto, nil)
 	if err != nil {
 		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
 	}
@@ -549,5 +551,718 @@ func TestResolveRequestedStartProfile_IOSHlsJsAllowsAV1WithRuntimeManagedAV1Caps
 	}
 	if profileID != profiles.ProfileAV1HW {
 		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileAV1HW)
+	}
+}
+
+func TestResolveRequestedStartProfile_DesktopSafariNativeH264SourceKeepsSafariProfile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		PlaybackDecisionToken: "decision-token",
+		Params: map[string]string{
+			"playback_mode":             "native_hls",
+			"codecs":                    "hevc,h264",
+			model.CtxKeyClientFamily:    playbackprofile.ClientSafariNative,
+			model.CtxKeyPreferredEngine: "native",
+		},
+	}, profiles.HWAccelAuto, &scan.Capability{VideoCodec: "h264", Interlaced: false})
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "native_hls" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want %q", playbackMode, "native_hls")
+	}
+	if profileID != profiles.ProfileSafari {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileSafari)
+	}
+}
+
+func TestResolveRequestedStartProfile_IOSNativeRuntimeAV1HEVCH264SourcePrefersAV1Profile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	av1Smooth := true
+	av1Efficient := true
+	hevcSmooth := true
+	hevcEfficient := true
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		PlaybackDecisionToken: "decision-token",
+		Params: map[string]string{
+			"playback_mode":             "native_hls",
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyPreferredEngine: "native",
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
+				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
+			},
+		},
+	}, profiles.HWAccelAuto, &scan.Capability{
+		Container:  "ts",
+		VideoCodec: "h264",
+		AudioCodec: "ac3",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+		Interlaced: false,
+	})
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "native_hls" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want %q", playbackMode, "native_hls")
+	}
+	if profileID != profiles.ProfileAV1HW {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileAV1HW)
+	}
+}
+
+func TestResolveRequestedStartProfile_HLSJSChromiumCompatibleH264SourceKeepsHighProfile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		PlaybackDecisionToken: "decision-token",
+		Params: map[string]string{
+			"playback_mode":             "hlsjs",
+			"codecs":                    "av1,hevc,h264",
+			model.CtxKeyClientFamily:    playbackprofile.ClientChromiumHLSJS,
+			model.CtxKeyPreferredEngine: "hlsjs",
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientChromiumHLSJS,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			PreferredHLSEngine:   "hlsjs",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+		},
+	}, profiles.HWAccelAuto, &scan.Capability{
+		Container:  "ts",
+		VideoCodec: "h264",
+		AudioCodec: "ac3",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+		Interlaced: false,
+	})
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "hlsjs" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want %q", playbackMode, "hlsjs")
+	}
+	if profileID != profiles.ProfileHigh {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileHigh)
+	}
+}
+
+func TestResolveRequestedStartProfile_AutoModeCompatibleH264SourceKeepsUniversalProfile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		Params: map[string]string{
+			model.CtxKeyClientFamily:    playbackprofile.ClientChromiumHLSJS,
+			model.CtxKeyPreferredEngine: "hlsjs",
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientChromiumHLSJS,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			PreferredHLSEngine:   "hlsjs",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+		},
+	}, profiles.HWAccelAuto, &scan.Capability{
+		Container:  "ts",
+		VideoCodec: "h264",
+		AudioCodec: "ac3",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+		Interlaced: false,
+	})
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want empty playback mode", playbackMode)
+	}
+	if profileID != "universal" {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, "universal")
+	}
+}
+
+func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1H264SourceKeepsUniversalProfile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	av1Smooth := true
+	av1Efficient := true
+	hevcSmooth := true
+	hevcEfficient := true
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		Params: map[string]string{
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyPreferredEngine: "native",
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
+				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
+			},
+		},
+	}, profiles.HWAccelAuto, &scan.Capability{
+		Container:  "ts",
+		VideoCodec: "h264",
+		AudioCodec: "ac3",
+		Width:      1920,
+		Height:     1080,
+		FPS:        25,
+		Interlaced: false,
+	})
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want empty playback mode", playbackMode)
+	}
+	if profileID != defaultStartProfileID {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, defaultStartProfileID)
+	}
+}
+
+func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1WithoutCopyPathPicksAV1Profile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	av1Smooth := true
+	av1Efficient := true
+	hevcSmooth := true
+	hevcEfficient := true
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		Params: map[string]string{
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyPreferredEngine: "native",
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
+				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
+			},
+		},
+	}, profiles.HWAccelAuto, nil)
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want empty playback mode", playbackMode)
+	}
+	if profileID != profiles.ProfileAV1HW {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileAV1HW)
+	}
+}
+
+func TestResolveRequestedStartProfile_AutoModeChromiumWithoutRuntimeCapsFallsBackToH264Profile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		Params: map[string]string{
+			model.CtxKeyClientFamily:    playbackprofile.ClientChromiumHLSJS,
+			model.CtxKeyPreferredEngine: "hlsjs",
+		},
+	}, profiles.HWAccelAuto, nil)
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want empty playback mode", playbackMode)
+	}
+	if profileID != profiles.ProfileH264FMP4 {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileH264FMP4)
+	}
+}
+
+func TestResolveRequestedStartProfile_AutoModeSafariWithoutRuntimeCapsPrefersHEVCProfile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		Params: map[string]string{
+			model.CtxKeyClientFamily:    playbackprofile.ClientSafariNative,
+			model.CtxKeyPreferredEngine: "native",
+		},
+	}, profiles.HWAccelAuto, nil)
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want empty playback mode", playbackMode)
+	}
+	if profileID != profiles.ProfileSafariHEVCHW {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileSafariHEVCHW)
+	}
+}
+
+func TestResolveRequestedStartProfile_NativeHLSSafariRuntimeH264OnlyUsesHEVCBaseline(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		PlaybackDecisionToken: "decision-token",
+		Params: map[string]string{
+			"playback_mode":             "native_hls",
+			model.CtxKeyClientFamily:    playbackprofile.ClientSafariNative,
+			model.CtxKeyPreferredEngine: "native",
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
+			Containers:           []string{"mp4", "ts"},
+			VideoCodecs:          []string{"h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			PreferredHLSEngine:   "native",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+		},
+	}, profiles.HWAccelAuto, nil)
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "native_hls" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want %q", playbackMode, "native_hls")
+	}
+	if profileID != profiles.ProfileSafariHEVCHW {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileSafariHEVCHW)
+	}
+}
+
+func TestResolveRequestedStartProfile_DesktopSafariHlsjsWithoutRuntimeCapsFallsBackToH264Profile(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		PlaybackDecisionToken: "decision-token",
+		Params: map[string]string{
+			"playback_mode":             "hlsjs",
+			"codecs":                    "av1,hevc,h264",
+			model.CtxKeyClientFamily:    playbackprofile.ClientSafariNative,
+			model.CtxKeyPreferredEngine: "hlsjs",
+		},
+	}, profiles.HWAccelAuto, nil)
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "hlsjs" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want %q", playbackMode, "hlsjs")
+	}
+	if profileID != profiles.ProfileH264FMP4 {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileH264FMP4)
+	}
+}
+
+func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1WithoutCopyPathClampsToCompatibleProfileFromPlaybackFeedback(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	av1Smooth := true
+	av1Efficient := true
+	hevcSmooth := true
+	hevcEfficient := true
+
+	registry := capreg.NewMemoryStore()
+	const (
+		decisionTrace = "decision-ios-compatible"
+		serviceRef    = "1:0:1:5000:1:70:1680000:0:0:0:"
+	)
+	seedStartPlaybackPolicyState(t, registry, decisionTrace, serviceRef, playbackprofile.RungCompatibleVideoH264CRF23)
+
+	deps := newMockDeps()
+	deps.registry = registry
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		ServiceRef:    serviceRef,
+		DecisionTrace: decisionTrace,
+		Params: map[string]string{
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyPreferredEngine: "native",
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
+				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
+			},
+		},
+	}, profiles.HWAccelAuto, nil)
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want empty playback mode", playbackMode)
+	}
+	if profileID != profiles.ProfileSafari {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileSafari)
+	}
+}
+
+func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1WithoutCopyPathClampsToRepairProfileFromPlaybackFeedback(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	av1Smooth := true
+	av1Efficient := true
+	hevcSmooth := true
+	hevcEfficient := true
+
+	registry := capreg.NewMemoryStore()
+	const (
+		decisionTrace = "decision-ios-repair"
+		serviceRef    = "1:0:1:5000:1:70:1680001:0:0:0:"
+	)
+	seedStartPlaybackPolicyState(t, registry, decisionTrace, serviceRef, playbackprofile.RungRepairH264AAC)
+
+	deps := newMockDeps()
+	deps.registry = registry
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "high",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
+		ServiceRef:    serviceRef,
+		DecisionTrace: decisionTrace,
+		Params: map[string]string{
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyPreferredEngine: "native",
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			SupportsHLS:          true,
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
+				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
+			},
+		},
+	}, profiles.HWAccelAuto, nil)
+	if err != nil {
+		t.Fatalf("resolveRequestedStartProfile() error = %#v", err)
+	}
+	if playbackMode != "" {
+		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want empty playback mode", playbackMode)
+	}
+	if profileID != profiles.ProfileSafariDirty {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileSafariDirty)
+	}
+}
+
+func seedStartPlaybackPolicyState(t *testing.T, registry *capreg.MemoryStore, decisionTrace, serviceRef string, maxQualityRung playbackprofile.QualityRung) {
+	t.Helper()
+
+	observation := capreg.PlaybackObservation{
+		ObservedAt:        time.Now().UTC(),
+		RequestID:         decisionTrace,
+		ObservationKind:   "decision",
+		Outcome:           "predicted",
+		SourceRef:         serviceRef,
+		SubjectKind:       "live",
+		SourceFingerprint: "source-fp",
+		DeviceFingerprint: "device-fp",
+		HostFingerprint:   "host-fp",
+	}
+	if err := registry.RecordObservation(context.Background(), observation); err != nil {
+		t.Fatalf("RecordObservation() error = %v", err)
+	}
+	if err := registry.RememberPlaybackPolicyState(context.Background(), capreg.PlaybackPolicyState{
+		SubjectKind:       "live",
+		SourceFingerprint: observation.SourceFingerprint,
+		DeviceFingerprint: observation.DeviceFingerprint,
+		HostFingerprint:   observation.HostFingerprint,
+		MaxQualityRung:    maxQualityRung,
+		UpdatedAt:         time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("RememberPlaybackPolicyState() error = %v", err)
 	}
 }

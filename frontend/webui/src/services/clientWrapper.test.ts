@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { client } from '../client-ts/client.gen';
 import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import {
+  buildClientHeaders,
   CLIENT_AUTH_CHANGED_EVENT,
   ClientRequestError,
   getClientAuthToken,
@@ -41,6 +42,18 @@ describe('client-ts wrapper error mapping', () => {
     } finally {
       window.removeEventListener(CLIENT_AUTH_CHANGED_EVENT, authChanged);
     }
+  });
+
+  it('preserves bearer auth when request-specific headers clear the household profile', () => {
+    setClientAuthToken('test-token');
+    setClientHouseholdProfileId('child-profile');
+
+    const headers = buildClientHeaders({
+      'X-Household-Profile': null,
+    });
+
+    expect(headers.get('Authorization')).toBe('Bearer test-token');
+    expect(headers.get('X-Household-Profile')).toBeNull();
   });
 
   it('keeps a bearer auth fallback for secured requests when the header is absent', async () => {

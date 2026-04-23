@@ -63,6 +63,7 @@ import {
 import { normalizePlayerError } from '../../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
 import { useTvInitialFocus } from '../../../hooks/useTvInitialFocus';
+import { useUiSurface } from '../../../context/UiSurfaceContext';
 import {
   getNativePlaybackState,
   onNativePlaybackState,
@@ -991,7 +992,12 @@ function V3Player(props: V3PlayerProps) {
       : 0),
     [startPositionSeconds]
   );
-  const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
+  const uiSurface = useUiSurface();
+  const hasTouchPlaybackInput = useMemo(() => hasTouchInput(), []);
+  const isCompactTouchLayout = hasTouchPlaybackInput && (
+    uiSurface.width < 768 ||
+    uiSurface.heightClass !== 'comfortable'
+  );
   const mergedPlaybackOperator = useMemo(
     () => mergePlaybackTraceOperator(sessionPlaybackTrace?.operator, playbackObservability?.operator),
     [playbackObservability?.operator, sessionPlaybackTrace?.operator]
@@ -1010,7 +1016,7 @@ function V3Player(props: V3PlayerProps) {
     const video = videoRef.current;
     if (
       playbackMode !== 'LIVE' ||
-      !isCompactTouchLayout ||
+      !hasTouchPlaybackInput ||
       !isDocumentVisible ||
       !video ||
       !shouldForceNativeMobileHls(video) ||
@@ -1026,7 +1032,7 @@ function V3Player(props: V3PlayerProps) {
 
     recoverNativeInlineSource('native fullscreen exit', details.currentTime);
   }, [
-    isCompactTouchLayout,
+    hasTouchPlaybackInput,
     isDocumentVisible,
     playbackMode,
     recoverNativeInlineSource,
@@ -1039,6 +1045,7 @@ function V3Player(props: V3PlayerProps) {
     authHeaders,
     reportError,
     ensureSessionCookie,
+    primePlaybackAuth,
     setActiveSessionId,
     clearSessionLeaseState,
     sendStopIntent,
@@ -1066,6 +1073,7 @@ function V3Player(props: V3PlayerProps) {
     supportsNativeFullscreen,
     canEnterNativeFullscreen,
     prefersDesktopNativeFullscreen,
+    nativeFullscreenPending,
     isWebKitFullscreenActive,
     isPip,
     canTogglePiP,
@@ -1148,6 +1156,7 @@ function V3Player(props: V3PlayerProps) {
     reportError,
     waitForSessionReady,
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
+    primePlaybackAuth,
     runtimeProbeActive: isRuntimeProbeActive,
     setStats,
     setStatus,
@@ -2281,7 +2290,7 @@ function V3Player(props: V3PlayerProps) {
     status === 'starting' || status === 'priming' || status === 'building';
   const isNativeEngine = activeHlsEngine === 'native';
   const shouldManageVisibilityResume =
-    hostEnvironment.isTv || (isNativeEngine && isCompactTouchLayout);
+    hostEnvironment.isTv || (isNativeEngine && hasTouchPlaybackInput);
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
   const shouldKeepHostAwake =
     hostEnvironment.supportsKeepScreenAwake &&
@@ -2322,7 +2331,7 @@ function V3Player(props: V3PlayerProps) {
       clearNativeVisibilityResumeRecoveryTimer();
       if (!video.paused && !userPauseIntentRef.current && !hasTerminalStatus) {
         visibilityManagedPauseRef.current = true;
-        nativeVisibilityResumeArmedRef.current = isNativeEngine && isCompactTouchLayout;
+        nativeVisibilityResumeArmedRef.current = isNativeEngine && hasTouchPlaybackInput;
         video.pause();
         setStatus('paused');
       }
@@ -2352,7 +2361,7 @@ function V3Player(props: V3PlayerProps) {
       !isDocumentVisible ||
       !nativeVisibilityResumeArmedRef.current ||
       !isNativeEngine ||
-      !isCompactTouchLayout ||
+      !hasTouchPlaybackInput ||
       hasTerminalStatus ||
       userPauseIntentRef.current
     ) {
@@ -2398,7 +2407,7 @@ function V3Player(props: V3PlayerProps) {
   }, [
     clearNativeVisibilityResumeRecoveryTimer,
     hasTerminalStatus,
-    isCompactTouchLayout,
+    hasTouchPlaybackInput,
     isDocumentVisible,
     isNativeEngine,
     recoverNativeInlineSource,
@@ -3098,6 +3107,13 @@ function V3Player(props: V3PlayerProps) {
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
   const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
   const useMinimalTouchInlineChrome = Boolean(isCompactTouchLayout && useOverlayShell && !useTheaterControlsLayout && !isFullscreen);
+  const useTheaterStackSurface = uiSurface.width < 1220;
+  const useCompactSurface =
+    uiSurface.width < 768 ||
+    (uiSurface.inputMode === 'coarse' && uiSurface.heightClass !== 'comfortable');
+  const useTightSurface =
+    (uiSurface.width < 768 && uiSurface.orientation === 'landscape') ||
+    uiSurface.heightClass !== 'comfortable';
   const disableInlineLiveDvrScrub = useMinimalTouchInlineChrome && hasLiveDvrWindow;
   const inferredPlaybackWindowKind = resolvePlaybackWindowKind(playbackMode, hasLiveDvrWindow);
   const playbackWindowKind = sessionWindowKind !== 'unknown' ? sessionWindowKind : inferredPlaybackWindowKind;
@@ -3348,6 +3364,9 @@ function V3Player(props: V3PlayerProps) {
         useOverlayShell ? styles.overlay : null,
         isRecordingPageLayout ? styles.recordingPage : null,
         useMinimalTouchInlineChrome ? styles.touchInlineChrome : null,
+        useTheaterStackSurface ? styles.surfaceTheaterStack : null,
+        useCompactSurface ? styles.surfaceCompact : null,
+        useTightSurface ? styles.surfaceTight : null,
         isFullscreen ? styles.fullscreenActive : null,
         isIdle ? styles.userIdle : null,
       ].filter(Boolean).join(' ')}
@@ -3730,10 +3749,16 @@ function V3Player(props: V3PlayerProps) {
               <Button
                 variant="ghost"
                 size="sm"
+                active={nativeFullscreenPending}
+                aria-busy={nativeFullscreenPending}
                 onClick={() => enterNativeFullscreen()}
-                title={t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
+                title={nativeFullscreenPending
+                  ? t('player.nativeFullscreenPendingTitle', { defaultValue: 'Preparing Apple player' })
+                  : t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
               >
-                {t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
+                {nativeFullscreenPending
+                  ? t('player.nativeFullscreenPendingLabel', { defaultValue: 'Native...' })
+                  : t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
               </Button>
             )}
 

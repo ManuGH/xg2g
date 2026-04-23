@@ -177,7 +177,7 @@ describe('V3Player Safari Logic', () => {
     expect(screen.getByRole('button', { name: /native/i })).toBeInTheDocument();
   });
 
-  it('prefers native HLS on mobile WebKit when native fullscreen controls are available', () => {
+  it('prefers native HLS on mobile WebKit when native fullscreen controls are available', async () => {
     userAgentGetter.mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
 
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
@@ -198,6 +198,8 @@ describe('V3Player Safari Logic', () => {
     const { container } = render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
     expect(Hls).not.toHaveBeenCalled();
-    expect(container.querySelector('video')?.getAttribute('src')).toBe('http://example.com/playlist.m3u8');
+    await waitFor(() => {
+      expect(container.querySelector('video')?.getAttribute('src')).toBe('http://example.com/playlist.m3u8');
+    });
   });
 });

@@ -227,6 +227,35 @@ export function getApiBaseUrl(defaultBase: string = '/api/v3'): string {
   return (client.getConfig().baseUrl || defaultBase).replace(/\/$/, '');
 }
 
+export function buildClientHeaders(overrides?: Record<string, unknown>): Headers {
+  const headers = new Headers(client.getConfig().headers as HeadersInit);
+  const resolvedToken = normalizeToken(getClientAuthToken()) ?? normalizeToken(getStoredToken());
+
+  if (resolvedToken) {
+    headers.set('Authorization', `Bearer ${resolvedToken}`);
+  }
+
+  for (const [key, value] of Object.entries(overrides || {})) {
+    if (value === null) {
+      headers.delete(key);
+      continue;
+    }
+    if (value === undefined) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      headers.delete(key);
+      value.forEach((entry) => {
+        headers.append(key, String(entry));
+      });
+      continue;
+    }
+    headers.set(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+  }
+
+  return headers;
+}
+
 interface ClientResultOptions {
   source?: string;
   silent?: boolean;

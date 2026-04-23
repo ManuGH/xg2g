@@ -3,8 +3,10 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import { usePendingChanges } from '../context/PendingChangesContext';
+import { useUiScale } from '../context/UiScaleContext';
 import { resolveHostEnvironment } from '../lib/hostBridge';
 import { resolveAppRouteContext } from '../lib/routeContext';
+import type { UiScale } from '../lib/uiScale';
 import { ROUTE_MAP, normalizePathname, type AppView } from '../routes';
 import styles from './Navigation.module.css';
 
@@ -129,6 +131,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
     canAccessSettings,
   } = useHouseholdProfiles();
   const { confirmPendingChanges } = usePendingChanges();
+  const { scale, setScale } = useUiScale();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -143,6 +146,23 @@ export default function Navigation({ onLogout }: NavigationProps) {
     main: t('nav.sectionBrowse', { defaultValue: 'Media' }),
     footer: t('nav.sectionSystem', { defaultValue: 'System' })
   };
+  const displayScaleOptions = useMemo<Array<{ value: UiScale; buttonLabel: string; spokenLabel: string }>>(() => [
+    {
+      value: 'compact',
+      buttonLabel: 'A-',
+      spokenLabel: t('nav.displaySize.compact', { defaultValue: 'Compact' }),
+    },
+    {
+      value: 'normal',
+      buttonLabel: 'A',
+      spokenLabel: t('nav.displaySize.normal', { defaultValue: 'Default' }),
+    },
+    {
+      value: 'large',
+      buttonLabel: 'A+',
+      spokenLabel: t('nav.displaySize.large', { defaultValue: 'Large' }),
+    },
+  ], [t]);
 
   const navItems = useMemo<NavItem[]>(() => [
     { id: 'dashboard', label: t('nav.dashboard'), section: 'quick' },
@@ -337,6 +357,43 @@ export default function Navigation({ onLogout }: NavigationProps) {
     </NavLink>
   );
 
+  const renderDisplayScaleControl = (appearance: 'desktop' | 'sheet') => (
+    <section
+      className={[
+        styles.displaySection,
+        appearance === 'sheet' ? styles.sheetDisplaySection : null,
+      ].filter(Boolean).join(' ')}
+      aria-label={t('nav.displaySize.label', { defaultValue: 'Display size' })}
+    >
+      <div className={styles.displayCopy}>
+        <p className={styles.displayLabel}>{t('nav.displaySize.label', { defaultValue: 'Display size' })}</p>
+        <p className={styles.displayHint}>{t('nav.displaySize.hint', { defaultValue: 'Saved on this device.' })}</p>
+      </div>
+      <div
+        className={styles.scaleGroup}
+        role="group"
+        aria-label={t('nav.displaySize.label', { defaultValue: 'Display size' })}
+      >
+        {displayScaleOptions.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={[
+              styles.scaleButton,
+              scale === option.value ? styles.scaleButtonActive : null,
+            ].filter(Boolean).join(' ')}
+            aria-pressed={scale === option.value}
+            aria-label={`${t('nav.displaySize.label', { defaultValue: 'Display size' })}: ${option.spokenLabel}`}
+            onClick={() => setScale(option.value)}
+          >
+            <span className={styles.scaleGlyph} aria-hidden="true">{option.buttonLabel}</span>
+            <span className={styles.scaleText}>{option.spokenLabel}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+
   return (
     <>
       <aside className={styles.desktopShell}>
@@ -371,6 +428,8 @@ export default function Navigation({ onLogout }: NavigationProps) {
             </select>
             <span className={styles.profileHint}>{profileAccessLabel}</span>
           </div>
+
+          {renderDisplayScaleControl('desktop')}
 
           <div className={styles.desktopSection}>
             <span className={styles.sectionTitle}>{sectionLabels.quick}</span>
@@ -498,6 +557,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
                   </select>
                   <span className={styles.profileHint}>{profileAccessLabel}</span>
                 </div>
+                {renderDisplayScaleControl('sheet')}
                 {overflowSections.map((section) => (
                   <section key={section.id} className={styles.sheetSection} aria-label={section.label}>
                     <p className={styles.sheetSectionTitle}>{section.label}</p>

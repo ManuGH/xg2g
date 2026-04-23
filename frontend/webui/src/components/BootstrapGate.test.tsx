@@ -117,7 +117,7 @@ describe('BootstrapGate', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
 
-    expect(setToken).toHaveBeenCalledWith('new-token');
+    expect(setToken).not.toHaveBeenCalled();
     expect(mockLocationReload).toHaveBeenCalledWith('new-token');
   });
 
@@ -164,7 +164,7 @@ describe('BootstrapGate', () => {
       target: { value: 'dev-token' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
-    expect(setToken).toHaveBeenCalledWith('dev-token');
+    expect(setToken).not.toHaveBeenCalledWith('dev-token');
     expect(mockLocationReload).toHaveBeenCalledWith('dev-token');
     expect(setPlayingChannel).toHaveBeenCalledWith(null);
   });

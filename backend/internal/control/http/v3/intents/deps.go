@@ -6,6 +6,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
@@ -43,6 +44,7 @@ type Deps interface {
 	SessionStore() SessionStore
 	EventBus() EventBus
 	ChannelScanner() ChannelScanner
+	CapabilityRegistry() capreg.Store
 	AdmissionController() AdmissionController
 	AdmissionRuntimeState(ctx context.Context) admission.RuntimeState
 	HostPressure(ctx context.Context) playbackprofile.HostPressureAssessment

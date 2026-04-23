@@ -219,6 +219,54 @@ func TestBuildDecisionInput_UsesAudioOnlyBenchmarkClassWhenVideoCanCopy(t *testi
 	}
 }
 
+func TestBuildDecisionInput_DoesNotUseAudioOnlyBenchmarkClassWhenVideoNeedsRepair(t *testing.T) {
+	allowTranscode := true
+	input := buildDecisionInput(
+		PlaybackInfoRequest{
+			RequestID:        "req-repair",
+			RequestedProfile: "quality",
+			APIVersion:       "v3.1",
+		},
+		playback.MediaTruth{
+			Container:   "mp4",
+			VideoCodec:  "h264",
+			AudioCodec:  "ac3",
+			BitrateKbps: 6000,
+			Width:       1920,
+			Height:      1080,
+			FPS:         25,
+			Interlaced:  true,
+		},
+		capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 1,
+			AllowTranscode:      &allowTranscode,
+			VideoCodecs:         []string{"h264"},
+			AudioCodecs:         []string{"aac"},
+			MaxVideo:            &capabilities.MaxVideo{Width: 1920, Height: 1080, Fps: 60},
+		},
+		config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+		config.PlaybackOperatorConfig{},
+		playbackprofile.HostPressureAssessment{EffectiveBand: playbackprofile.HostPressureNormal},
+		playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "low",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Class: "strong",
+				Profiles: []playbackprofile.HostProfileBenchmark{
+					{ProfileID: playbackprofile.BenchmarkProfileAudioAACStereo, Class: "weak"},
+					{ProfileID: playbackprofile.BenchmarkProfileVideoH2641080I, Class: "strong"},
+				},
+			},
+		},
+	)
+
+	if input.Policy.Host.BenchmarkClass != "strong" {
+		t.Fatalf("expected video-repair benchmark class in decision input, got %#v", input.Policy.Host)
+	}
+}
+
 func TestBuildDecisionInput_UsesFiftyFpsProfileBenchmarkClassForHeavyLivePaths(t *testing.T) {
 	allowTranscode := true
 	input := buildDecisionInput(

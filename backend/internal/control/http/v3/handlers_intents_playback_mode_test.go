@@ -834,6 +834,414 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeH264KeepsFMP4OnIOSSafariNat
 	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
 }
 
+func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeAV1HEVCHintsKeepSafariProfileForIOSH264Source(t *testing.T) {
+	store := &capturingIntentStore{}
+	cfg := config.AppConfig{}
+	cfg.Engine.TunerSlots = []int{0}
+	cfg.Engine.Enabled = true
+	cfg.Limits.MaxSessions = 8
+	cfg.Limits.MaxTranscodes = 4
+	cfg.Sessions.LeaseTTL = time.Minute
+	cfg.Sessions.HeartbeatInterval = 30 * time.Second
+	cfg.Enigma2.BaseURL = "http://example.com"
+
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{})
+	})
+
+	s := &Server{
+		cfg:       cfg,
+		JWTSecret: auth.TestSecret(),
+	}
+	s.SetDependencies(Dependencies{
+		Bus:   &noopIntentBus{},
+		Store: store,
+		Scan: &fixedIntentScanner{capability: scan.Capability{
+			Container:  "ts",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+			Width:      1920,
+			Height:     1080,
+			FPS:        25,
+			Interlaced: false,
+		}},
+	})
+	s.admission = admission.NewController(cfg)
+	s.admissionState = &MockAdmissionState{Tuners: 1}
+
+	serviceRef := "1:0:19:146:6:85:C00000:0:0:0:"
+	clientCaps := PlaybackCapabilities{
+		CapabilitiesVersion:  3,
+		Container:            []string{"mp4", "ts", "fmp4"},
+		VideoCodecs:          []string{"av1", "hevc", "h264"},
+		AudioCodecs:          []string{"aac", "ac3"},
+		SupportsHls:          boolPtr(true),
+		ClientFamilyFallback: strPtr(playbackprofile.ClientIOSSafariNative),
+		PreferredHlsEngine:   strPtr("native"),
+		RuntimeProbeUsed:     boolPtr(true),
+		RuntimeProbeVersion:  intPtr(2),
+	}
+	capHash := hashV3Capabilities(&clientCaps)
+
+	now := time.Now().Unix()
+	token := generateTestToken(t, auth.TokenClaims{
+		Iss:     "xg2g",
+		Aud:     "xg2g/v3/intents",
+		Sub:     normalize.ServiceRef(serviceRef),
+		Jti:     "test-uuid-native-hls-ios-h264-source-rich-caps",
+		Iat:     now,
+		Nbf:     now - 10,
+		Exp:     now + 60,
+		Mode:    "native_hls",
+		CapHash: capHash,
+	}, auth.TestSecret())
+
+	intentType := IntentRequestType("stream.start")
+	reqBody := IntentRequest{
+		Type:                  &intentType,
+		ServiceRef:            &serviceRef,
+		PlaybackDecisionToken: &token,
+		Client:                &clientCaps,
+		Params: &map[string]string{
+			"playback_mode":           "native_hls",
+			"playback_decision_token": token,
+			"capHash":                 capHash,
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1")
+	rr := httptest.NewRecorder()
+
+	s.handleV3Intents(rr, req)
+
+	require.Equal(t, http.StatusAccepted, rr.Code)
+	require.NotNil(t, store.lastSession)
+	require.Equal(t, profiles.ProfileSafari, store.lastSession.Profile.Name)
+	require.NotEqual(t, "hevc", store.lastSession.Profile.VideoCodec)
+	require.NotEqual(t, "av1", store.lastSession.Profile.VideoCodec)
+	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
+}
+
+func TestHandleV3Intents_PlaybackModeHLSJSRuntimeRichCodecsKeepHighProfileForChromiumH264Source(t *testing.T) {
+	store := &capturingIntentStore{}
+	cfg := config.AppConfig{}
+	cfg.Engine.TunerSlots = []int{0}
+	cfg.Engine.Enabled = true
+	cfg.Limits.MaxSessions = 8
+	cfg.Limits.MaxTranscodes = 4
+	cfg.Sessions.LeaseTTL = time.Minute
+	cfg.Sessions.HeartbeatInterval = 30 * time.Second
+	cfg.Enigma2.BaseURL = "http://example.com"
+
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{})
+	})
+
+	s := &Server{
+		cfg:       cfg,
+		JWTSecret: auth.TestSecret(),
+	}
+	s.SetDependencies(Dependencies{
+		Bus:   &noopIntentBus{},
+		Store: store,
+		Scan: &fixedIntentScanner{capability: scan.Capability{
+			Container:  "ts",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+			Width:      1920,
+			Height:     1080,
+			FPS:        25,
+			Interlaced: false,
+		}},
+	})
+	s.admission = admission.NewController(cfg)
+	s.admissionState = &MockAdmissionState{Tuners: 1}
+
+	serviceRef := "1:0:19:246:6:85:C00000:0:0:0:"
+	clientCaps := PlaybackCapabilities{
+		CapabilitiesVersion:  3,
+		Container:            []string{"mp4", "ts", "fmp4"},
+		VideoCodecs:          []string{"av1", "hevc", "h264"},
+		AudioCodecs:          []string{"aac", "ac3"},
+		SupportsHls:          boolPtr(true),
+		ClientFamilyFallback: strPtr(playbackprofile.ClientChromiumHLSJS),
+		PreferredHlsEngine:   strPtr("hlsjs"),
+		RuntimeProbeUsed:     boolPtr(true),
+		RuntimeProbeVersion:  intPtr(2),
+	}
+	capHash := hashV3Capabilities(&clientCaps)
+
+	now := time.Now().Unix()
+	token := generateTestToken(t, auth.TokenClaims{
+		Iss:     "xg2g",
+		Aud:     "xg2g/v3/intents",
+		Sub:     normalize.ServiceRef(serviceRef),
+		Jti:     "test-uuid-hlsjs-chromium-h264-source-rich-caps",
+		Iat:     now,
+		Nbf:     now - 10,
+		Exp:     now + 60,
+		Mode:    "hlsjs",
+		CapHash: capHash,
+	}, auth.TestSecret())
+
+	intentType := IntentRequestType("stream.start")
+	reqBody := IntentRequest{
+		Type:                  &intentType,
+		ServiceRef:            &serviceRef,
+		PlaybackDecisionToken: &token,
+		Client:                &clientCaps,
+		Params: &map[string]string{
+			"playback_mode":           "hlsjs",
+			"playback_decision_token": token,
+			"capHash":                 capHash,
+			"codecs":                  "av1,hevc,h264",
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+	rr := httptest.NewRecorder()
+
+	s.handleV3Intents(rr, req)
+
+	require.Equal(t, http.StatusAccepted, rr.Code)
+	require.NotNil(t, store.lastSession)
+	require.Equal(t, profiles.ProfileHigh, store.lastSession.Profile.Name)
+	require.Equal(t, profiles.ProfileHigh, store.lastSession.ContextData["profile"])
+	require.False(t, store.lastSession.Profile.TranscodeVideo)
+	require.NotEqual(t, "hevc", store.lastSession.Profile.VideoCodec)
+	require.NotEqual(t, "av1", store.lastSession.Profile.VideoCodec)
+}
+
+func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeHEVCHintsKeepSafariProfileForDesktopH264Source(t *testing.T) {
+	store := &capturingIntentStore{}
+	cfg := config.AppConfig{}
+	cfg.Engine.TunerSlots = []int{0}
+	cfg.Engine.Enabled = true
+	cfg.Limits.MaxSessions = 8
+	cfg.Limits.MaxTranscodes = 4
+	cfg.Sessions.LeaseTTL = time.Minute
+	cfg.Sessions.HeartbeatInterval = 30 * time.Second
+	cfg.Enigma2.BaseURL = "http://example.com"
+
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{})
+	})
+
+	s := &Server{
+		cfg:       cfg,
+		JWTSecret: auth.TestSecret(),
+	}
+	s.SetDependencies(Dependencies{
+		Bus:   &noopIntentBus{},
+		Store: store,
+		Scan: &fixedIntentScanner{capability: scan.Capability{
+			Container:  "ts",
+			Interlaced: false,
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+			Width:      1280,
+			Height:     720,
+			FPS:        50,
+		}},
+	})
+	s.admission = admission.NewController(cfg)
+	s.admissionState = &MockAdmissionState{Tuners: 1}
+
+	serviceRef := "1:0:19:132F:3EF:1:C00000:0:0:0:"
+	clientCaps := PlaybackCapabilities{
+		CapabilitiesVersion:  3,
+		Container:            []string{"mp4", "ts"},
+		VideoCodecs:          []string{"hevc", "h264"},
+		AudioCodecs:          []string{"aac", "ac3", "mp3"},
+		SupportsHls:          boolPtr(true),
+		ClientFamilyFallback: strPtr(playbackprofile.ClientSafariNative),
+		PreferredHlsEngine:   strPtr("native"),
+		RuntimeProbeUsed:     boolPtr(true),
+		RuntimeProbeVersion:  intPtr(2),
+	}
+	capHash := hashV3Capabilities(&clientCaps)
+
+	now := time.Now().Unix()
+	token := generateTestToken(t, auth.TokenClaims{
+		Iss:     "xg2g",
+		Aud:     "xg2g/v3/intents",
+		Sub:     normalize.ServiceRef(serviceRef),
+		Jti:     "test-uuid-native-hls-desktop-h264-source",
+		Iat:     now,
+		Nbf:     now - 10,
+		Exp:     now + 60,
+		Mode:    "native_hls",
+		CapHash: capHash,
+	}, auth.TestSecret())
+
+	intentType := IntentRequestType("stream.start")
+	reqBody := IntentRequest{
+		Type:                  &intentType,
+		ServiceRef:            &serviceRef,
+		PlaybackDecisionToken: &token,
+		Client:                &clientCaps,
+		Params: &map[string]string{
+			"playback_mode":           "native_hls",
+			"playback_decision_token": token,
+			"capHash":                 capHash,
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15")
+	rr := httptest.NewRecorder()
+
+	s.handleV3Intents(rr, req)
+
+	require.Equal(t, http.StatusAccepted, rr.Code)
+	require.NotNil(t, store.lastSession)
+	require.Equal(t, profiles.ProfileSafari, store.lastSession.Profile.Name)
+	require.Equal(t, profiles.ProfileSafari, store.lastSession.ContextData["profile"])
+	require.NotEqual(t, "hevc", store.lastSession.Profile.VideoCodec)
+	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
+}
+
+func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1Profile(t *testing.T) {
+	store := &capturingIntentStore{}
+	cfg := config.AppConfig{}
+	cfg.Engine.TunerSlots = []int{0}
+	cfg.Engine.Enabled = true
+	cfg.Limits.MaxSessions = 8
+	cfg.Limits.MaxTranscodes = 4
+	cfg.Sessions.LeaseTTL = time.Minute
+	cfg.Sessions.HeartbeatInterval = 30 * time.Second
+	cfg.Enigma2.BaseURL = "http://example.com"
+
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{})
+	})
+
+	s := &Server{
+		cfg:       cfg,
+		JWTSecret: auth.TestSecret(),
+	}
+	s.SetDependencies(Dependencies{
+		Bus:   &noopIntentBus{},
+		Store: store,
+		Scan: &fixedIntentScanner{capability: scan.Capability{
+			Container:  "ts",
+			Interlaced: false,
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+			Width:      1920,
+			Height:     1080,
+			FPS:        25,
+		}},
+	})
+	s.admission = admission.NewController(cfg)
+	s.admissionState = &MockAdmissionState{Tuners: 1}
+
+	serviceRef := "1:0:19:EF75:3F9:1:C00000:0:0:0:"
+	clientCaps := PlaybackCapabilities{
+		CapabilitiesVersion:  3,
+		Container:            []string{"mp4", "ts"},
+		VideoCodecs:          []string{"av1", "hevc", "h264"},
+		AudioCodecs:          []string{"aac", "ac3", "mp3"},
+		SupportsHls:          boolPtr(true),
+		ClientFamilyFallback: strPtr("safari"),
+		PreferredHlsEngine:   strPtr("native"),
+		RuntimeProbeUsed:     boolPtr(true),
+		RuntimeProbeVersion:  intPtr(2),
+		VideoCodecSignals: &[]PlaybackVideoCodecSignal{
+			{Codec: "av1", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+			{Codec: "hevc", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+			{Codec: "h264", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+		},
+	}
+	capHash := hashV3Capabilities(&clientCaps)
+
+	now := time.Now().Unix()
+	token := generateTestToken(t, auth.TokenClaims{
+		Iss:     "xg2g",
+		Aud:     "xg2g/v3/intents",
+		Sub:     normalize.ServiceRef(serviceRef),
+		Jti:     "test-uuid-native-hls-legacy-safari-av1",
+		Iat:     now,
+		Nbf:     now - 10,
+		Exp:     now + 60,
+		Mode:    "native_hls",
+		CapHash: capHash,
+	}, auth.TestSecret())
+
+	intentType := IntentRequestType("stream.start")
+	reqBody := IntentRequest{
+		Type:                  &intentType,
+		ServiceRef:            &serviceRef,
+		PlaybackDecisionToken: &token,
+		Client:                &clientCaps,
+		Params: &map[string]string{
+			"playback_mode":           "native_hls",
+			"playback_decision_token": token,
+			"capHash":                 capHash,
+			"client_family":           "safari",
+			"preferred_hls_engine":    "native",
+			"device_type":             "mac",
+			"codecs":                  "av1,hevc,h264",
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15")
+	rr := httptest.NewRecorder()
+
+	s.handleV3Intents(rr, req)
+
+	require.Equal(t, http.StatusAccepted, rr.Code)
+	require.NotNil(t, store.lastSession)
+	require.Equal(t, profiles.ProfileAV1HW, store.lastSession.Profile.Name)
+	require.Equal(t, profiles.ProfileAV1HW, store.lastSession.ContextData["profile"])
+	require.Equal(t, "av1", store.lastSession.Profile.VideoCodec)
+	require.Contains(t, []string{"fmp4", "mpegts"}, store.lastSession.Profile.Container)
+	require.Equal(t, playbackprofile.ClientSafariNative, store.lastSession.ContextData[model.CtxKeyClientFamily])
+	require.Equal(t, playbackprofile.ClientSafariNative, store.lastSession.PlaybackTrace.Client.ClientFamily)
+}
+
 func TestHandleV3Intents_PlaybackModeTranscodeUsesMeasuredCodecRanking(t *testing.T) {
 	store := &capturingIntentStore{}
 	cfg := config.AppConfig{}

@@ -126,6 +126,34 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
   });
 
+  it('advertises desktop Safari AV1 when the native runtime reports support', async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn(),
+    });
+
+    const video = document.createElement('video');
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+
+    const probe = await probeRuntimePlaybackCapabilities(video, 'live');
+
+    expect(probe.nativeHls).toBe(true);
+    expect(probe.preferredHlsEngine).toBe('native');
+    expect(probe.videoCodecs).toEqual(['av1', 'h264']);
+    expect(probe.videoCodecSignals[0]).toEqual({ codec: 'av1', supported: true });
+  });
+
   it('prefers native HLS on touch WebKit even when hls.js is available', async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     Object.defineProperty(navigator, 'maxTouchPoints', {

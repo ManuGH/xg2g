@@ -15,7 +15,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -497,24 +496,15 @@ func buildDecisionInput(
 	clientAllowsTranscode := resolvedCaps.AllowTranscode == nil || *resolvedCaps.AllowTranscode
 	allowTranscode := serverCanTranscode && clientAllowsTranscode
 	mappedCaps := decision.FromCapabilities(resolvedCaps)
-	videoBenchmarkClass := benchmarkClassForPlaybackPath(hostRuntime.Benchmark, truth, mappedCaps)
+	source := decisionSourceFromMediaTruth(truth)
+	videoBenchmarkClass := benchmarkClassForPlaybackPath(hostRuntime.Benchmark, truth, source, mappedCaps)
 
 	return decision.DecisionInput{
 		RequestID:       req.RequestID,
 		RequestedIntent: playbackprofile.NormalizeRequestedIntent(req.RequestedProfile),
 		APIVersion:      req.APIVersion,
-		Source: decision.Source{
-			Container:         truth.Container,
-			VideoCodec:        truth.VideoCodec,
-			AudioCodec:        truth.AudioCodec,
-			BitrateKbps:       truth.BitrateKbps,
-			BitrateConfidence: truth.BitrateConfidence,
-			Width:             truth.Width,
-			Height:            truth.Height,
-			FPS:               truth.FPS,
-			Interlaced:        truth.Interlaced,
-		},
-		Capabilities: mappedCaps,
+		Source:          source,
+		Capabilities:    mappedCaps,
 		Policy: decision.Policy{
 			AllowTranscode: allowTranscode,
 			Operator: decision.OperatorPolicy{
@@ -530,8 +520,22 @@ func buildDecisionInput(
 	}
 }
 
-func benchmarkClassForPlaybackPath(snapshot playbackprofile.HostBenchmarkSnapshot, truth playback.MediaTruth, caps decision.Capabilities) string {
-	if profileID := benchmarkProfileForPlaybackPath(truth, caps); profileID != "" {
+func decisionSourceFromMediaTruth(truth playback.MediaTruth) decision.Source {
+	return decision.Source{
+		Container:         truth.Container,
+		VideoCodec:        truth.VideoCodec,
+		AudioCodec:        truth.AudioCodec,
+		BitrateKbps:       truth.BitrateKbps,
+		BitrateConfidence: truth.BitrateConfidence,
+		Width:             truth.Width,
+		Height:            truth.Height,
+		FPS:               truth.FPS,
+		Interlaced:        truth.Interlaced,
+	}
+}
+
+func benchmarkClassForPlaybackPath(snapshot playbackprofile.HostBenchmarkSnapshot, truth playback.MediaTruth, source decision.Source, caps decision.Capabilities) string {
+	if profileID := benchmarkProfileForPlaybackPath(truth, source, caps); profileID != "" {
 		if class := playbackprofile.BenchmarkClassForProfile(snapshot, profileID); class != "" {
 			return class
 		}
@@ -539,8 +543,8 @@ func benchmarkClassForPlaybackPath(snapshot playbackprofile.HostBenchmarkSnapsho
 	return playbackprofile.BenchmarkClassForCodec(snapshot, "h264")
 }
 
-func benchmarkProfileForPlaybackPath(truth playback.MediaTruth, caps decision.Capabilities) string {
-	if benchmarkProfileIsAudioOnly(truth, caps) {
+func benchmarkProfileForPlaybackPath(truth playback.MediaTruth, source decision.Source, caps decision.Capabilities) string {
+	if benchmarkProfileIsAudioOnly(source, caps) {
 		return playbackprofile.BenchmarkProfileAudioAACStereo
 	}
 	return benchmarkProfileForTruth(truth)
@@ -568,44 +572,6 @@ func benchmarkProfileForTruth(truth playback.MediaTruth) string {
 	}
 }
 
-func benchmarkProfileIsAudioOnly(truth playback.MediaTruth, caps decision.Capabilities) bool {
-	if benchmarkSourceRequiresVideoRepair(truth) {
-		return false
-	}
-	canVideo := benchmarkContains(caps.VideoCodecs, truth.VideoCodec) && benchmarkWithinMaxVideo(truth, caps.MaxVideo)
-	canAudio := benchmarkContains(caps.AudioCodecs, truth.AudioCodec)
-	return canVideo && !canAudio
-}
-
-func benchmarkSourceRequiresVideoRepair(truth playback.MediaTruth) bool {
-	return truth.Interlaced || truth.Width <= 0 || truth.Height <= 0 || truth.FPS <= 0
-}
-
-func benchmarkContains(values []string, value string) bool {
-	want := normalize.Token(value)
-	if want == "" {
-		return false
-	}
-	for _, candidate := range values {
-		if normalize.Token(candidate) == want {
-			return true
-		}
-	}
-	return false
-}
-
-func benchmarkWithinMaxVideo(truth playback.MediaTruth, maxVideo *decision.MaxVideoDimensions) bool {
-	if maxVideo == nil {
-		return true
-	}
-	if maxVideo.Width > 0 && truth.Width > 0 && truth.Width > maxVideo.Width {
-		return false
-	}
-	if maxVideo.Height > 0 && truth.Height > 0 && truth.Height > maxVideo.Height {
-		return false
-	}
-	if maxVideo.FPS > 0 && truth.FPS > 0 && truth.FPS > float64(maxVideo.FPS) {
-		return false
-	}
-	return true
+func benchmarkProfileIsAudioOnly(source decision.Source, caps decision.Capabilities) bool {
+	return decision.CanKeepVideoCopy(source, caps) && !decision.CanKeepAudioCopy(source, caps)
 }

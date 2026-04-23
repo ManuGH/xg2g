@@ -86,6 +86,32 @@ func TestProblemSpecForPlaybackInfoError_LiveUnverified(t *testing.T) {
 	}, spec.extra)
 }
 
+func TestProblemSpecForPlaybackInfoError_LiveUnverifiedStaleTruth(t *testing.T) {
+	spec := problemSpecForPlaybackInfoError("live", &v3recordings.PlaybackInfoError{
+		Kind:              v3recordings.PlaybackInfoErrorUnverified,
+		Message:           "Live media truth stale",
+		RetryAfterSeconds: 7,
+		TruthState:        "unverified",
+		TruthReason:       "stale_scan_truth",
+		TruthOrigin:       "live_unverified",
+		ProblemFlags:      []string{"live_truth_unverified", "stale_scan_truth"},
+	})
+
+	require.Equal(t, http.StatusServiceUnavailable, spec.status)
+	require.NotNil(t, spec.retryAfter)
+	assert.Equal(t, 7, *spec.retryAfter)
+	assert.Equal(t, "live/stale_truth", spec.problem.problemType)
+	assert.Equal(t, problemcode.CodeUnavailable, spec.problem.code)
+	assert.Equal(t, "Live media truth stale", spec.problem.detail)
+	assert.Equal(t, map[string]any{
+		"retryAfterSeconds": 7,
+		"truthState":        "unverified",
+		"truthReason":       "stale_scan_truth",
+		"truthOrigin":       "live_unverified",
+		"problemFlags":      []string{"live_truth_unverified", "stale_scan_truth"},
+	}, spec.extra)
+}
+
 func TestWritePlaybackInfoServiceError_PassthroughProblem(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)

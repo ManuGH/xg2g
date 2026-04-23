@@ -7,6 +7,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/metrics"
 )
@@ -47,6 +48,12 @@ func (d *serverIntentDeps) EventBus() v3intents.EventBus {
 
 func (d *serverIntentDeps) ChannelScanner() v3intents.ChannelScanner {
 	return d.s.sessionsModuleDeps().channelScanner
+}
+
+func (d *serverIntentDeps) CapabilityRegistry() capreg.Store {
+	d.s.mu.RLock()
+	defer d.s.mu.RUnlock()
+	return d.s.capabilityRegistry
 }
 
 func (d *serverIntentDeps) AdmissionController() v3intents.AdmissionController {

@@ -183,7 +183,7 @@ describe('Settings', () => {
     renderWithQueryClient();
 
     expect(await screen.findByDisplayValue('Universal (H.264/AAC/fMP4)')).toBeInTheDocument();
-    expect(screen.getByText('Idle')).toBeInTheDocument();
+    expect(screen.getAllByText('Idle').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Files' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument();
     expect(getSystemConfig).toHaveBeenCalledTimes(1);

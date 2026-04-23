@@ -51,7 +51,12 @@ import {
 } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
-import { HOUSEHOLD_PROFILE_HEADER, throwOnClientResultError, unwrapClientResultOrThrow } from '../services/clientWrapper';
+import {
+  buildClientHeaders,
+  HOUSEHOLD_PROFILE_HEADER,
+  throwOnClientResultError,
+  unwrapClientResultOrThrow
+} from '../services/clientWrapper';
 import { setErrorCatalog } from '../lib/errorCatalog';
 
 /**
@@ -77,9 +82,9 @@ export const queryKeys = {
 
 export async function fetchSystemConfigStrict(): Promise<AppConfig | null> {
   const result = await getSystemConfig({
-    headers: {
+    headers: buildClientHeaders({
       [HOUSEHOLD_PROFILE_HEADER]: null,
-    } as Record<string, unknown>,
+    }),
   });
   throwOnClientResultError(result, { source: 'useBootstrapConfig' });
   return result.data ?? null;

@@ -111,6 +111,44 @@ describe('codecDetection', () => {
     expect(preferred).toEqual(['hevc', 'h264']);
   });
 
+  it('allows desktop safari native av1 when Safari reports decode support', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('av01')) {
+          return { supported: true, smooth: false, powerEfficient: false };
+        }
+        if (contentType.includes('hvc1') || contentType.includes('hev1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        if (contentType.includes('avc1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      })
+    };
+
+    const video = document.createElement('video');
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15'
+    );
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0,
+    });
+
+    const preferred = await detectPreferredCodecs(video);
+
+    expect(preferred).toEqual(['av1', 'hevc', 'h264']);
+  });
+
   it('allows ios native av1 on supported-or-smooth probes when the relaxed flag is enabled', async () => {
     (navigator as any).mediaCapabilities = {
       decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {

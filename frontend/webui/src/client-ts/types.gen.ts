@@ -1482,7 +1482,7 @@ export type LivePlaybackTruthProblem = {
     /**
      * Stable live-truth problem type. Clients MUST branch on this field, not on free-text title/detail.
      */
-    type: '/problems/live/scan_unavailable' | '/problems/live/missing_scan_truth' | '/problems/live/partial_truth' | '/problems/live/inactive_event_feed' | '/problems/live/failed_scan_truth';
+    type: '/problems/live/scan_unavailable' | '/problems/live/missing_scan_truth' | '/problems/live/stale_truth' | '/problems/live/partial_truth' | '/problems/live/inactive_event_feed' | '/problems/live/failed_scan_truth';
     /**
      * Human-readable fallback title. Not for decision branching.
      */
@@ -1509,7 +1509,7 @@ export type LivePlaybackTruthProblem = {
     /**
      * Stable machine-readable reason for the degraded live truth state.
      */
-    truthReason: 'scanner_unavailable' | 'missing_scan_truth' | 'partial_scan_truth' | 'inactive_event_feed' | 'failed_scan_truth';
+    truthReason: 'scanner_unavailable' | 'missing_scan_truth' | 'stale_scan_truth' | 'partial_scan_truth' | 'inactive_event_feed' | 'failed_scan_truth';
     /**
      * Diagnostic provenance only. Clients SHOULD NOT branch on this field.
      */

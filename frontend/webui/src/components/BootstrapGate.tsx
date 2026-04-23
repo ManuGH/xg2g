@@ -155,7 +155,6 @@ export default function BootstrapGate() {
 
     setForcedAuthPrompt(null);
     setTokenValue(token);
-    setToken(token);
     reloadWindowLocation(token);
   };
 

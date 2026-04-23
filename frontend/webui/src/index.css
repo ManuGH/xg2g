@@ -4,6 +4,13 @@
      CTO Contract: Source of truth, no hardcoded values
      ======================================== */
 
+  --ui-font-scale-user: 1;
+  --ui-density-scale-user: 1;
+  --ui-font-scale-surface: 1;
+  --ui-density-scale-surface: 1;
+  --ui-font-scale: calc(var(--ui-font-scale-user) * var(--ui-font-scale-surface));
+  --ui-density-scale: calc(var(--ui-density-scale-user) * var(--ui-density-scale-surface));
+
   /* Typography Stack */
   --font-heading: 'Space Grotesk', -apple-system, sans-serif;
   --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
@@ -140,10 +147,10 @@
     linear-gradient(180deg, transparent 44%, color-mix(in srgb, black 58%, transparent) 100%);
 
   /* Spacing */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 24px;
+  --radius-sm: calc(6px * var(--ui-density-scale));
+  --radius-md: calc(10px * var(--ui-density-scale));
+  --radius-lg: calc(12px * var(--ui-density-scale));
+  --radius-xl: calc(24px * var(--ui-density-scale));
 
   /* Legacy Aliases (for compatibility during migration) */
   --bg-app: var(--bg-base);
@@ -173,16 +180,59 @@
   --sal: env(safe-area-inset-left, 0px);
 
   /* Navigation */
-  --nav-shell-width: 248px;
-  --nav-height: 60px;
-  --nav-rail-width: 92px;
+  --nav-shell-width: calc(248px * var(--ui-density-scale));
+  --nav-height: calc(60px * var(--ui-density-scale));
+  --nav-rail-width: calc(92px * var(--ui-density-scale));
   --nav-rail-expanded: var(--nav-shell-width);
   --content-max-width: 1580px;
+  --page-max-width-regular: 1180px;
+  --page-max-width-wide: 1480px;
 
   /* Motion */
   --motion-standard: 180ms; /* Interactions: 160-220ms */
   --motion-slow: 220ms; /* Reserved for non-critical UI transitions */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root[data-ui-scale='compact'] {
+  --ui-font-scale-user: 0.94;
+  --ui-density-scale-user: 0.94;
+}
+
+:root[data-ui-scale='large'] {
+  --ui-font-scale-user: 1.08;
+  --ui-density-scale-user: 1.06;
+}
+
+:root[data-ui-surface='small'] {
+  --ui-font-scale-surface: 0.95;
+  --ui-density-scale-surface: 0.94;
+  --content-max-width: 100%;
+  --page-max-width-regular: 100%;
+  --page-max-width-wide: 100%;
+}
+
+:root[data-ui-surface='medium'] {
+  --ui-font-scale-surface: 0.98;
+  --ui-density-scale-surface: 0.98;
+  --content-max-width: 1260px;
+  --page-max-width-regular: 980px;
+  --page-max-width-wide: 1180px;
+}
+
+:root[data-ui-surface='xlarge'] {
+  --ui-font-scale-surface: 1.03;
+  --ui-density-scale-surface: 1.04;
+  --nav-shell-width: calc(268px * var(--ui-density-scale));
+  --nav-height: calc(64px * var(--ui-density-scale));
+  --content-max-width: 1760px;
+  --page-max-width-regular: 1260px;
+  --page-max-width-wide: 1640px;
+}
+
+html {
+  font-size: calc(16px * var(--ui-font-scale));
+  -webkit-text-size-adjust: 100%;
 }
 
 /* Reset & Base */
@@ -323,6 +373,8 @@ button:focus-visible {
 :root[data-xg2g-host-tv="true"] {
   --nav-height: 72px;
   --content-max-width: 1680px;
+  --page-max-width-regular: 1320px;
+  --page-max-width-wide: 1720px;
 }
 
 :root[data-xg2g-host-tv="true"] body {
@@ -343,20 +395,19 @@ button:focus-visible {
   min-height: 52px;
 }
 
-@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
-  :root {
-    --text-display: 1.7rem;
-    --text-h1: 1.3rem;
-    --text-h2: 1.08rem;
-    --text-h3: 0.95rem;
-    --text-base: 0.9375rem;
-    --text-sm: 0.8125rem;
-    --text-xs: 0.6875rem;
-    --text-mono-base: 0.8125rem;
-    --text-mono-sm: 0.6875rem;
-    --nav-height: 52px;
-    --radius-xl: 20px;
-  }
+:root[data-ui-height='short'],
+:root[data-ui-height='compact'] {
+  --text-display: 1.7rem;
+  --text-h1: 1.3rem;
+  --text-h2: 1.08rem;
+  --text-h3: 0.95rem;
+  --text-base: 0.9375rem;
+  --text-sm: 0.8125rem;
+  --text-xs: 0.6875rem;
+  --text-mono-base: 0.8125rem;
+  --text-mono-sm: 0.6875rem;
+  --nav-height: 52px;
+  --radius-xl: 20px;
 }
 
 /* Links */

@@ -44,6 +44,7 @@ interface LiveSessionController {
   reportError: (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
   ensureSessionCookie: () => Promise<void>;
   recoverSessionCookie: (source: string) => Promise<boolean>;
+  primePlaybackAuth: (playbackUrl: string, source: string) => Promise<void>;
   setActiveSessionId: (sessionId: string | null) => void;
   clearSessionLeaseState: () => void;
   sendStopIntent: (sessionId: string | null, force?: boolean) => Promise<void>;
@@ -165,6 +166,37 @@ export function useLiveSessionController({
 
     return { response: retriedResponse, recovered: true };
   }, [recoverSessionCookie, token]);
+
+  const primePlaybackAuth = useCallback(async (playbackUrl: string, source: string): Promise<void> => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    let resolvedUrl: URL;
+    try {
+      resolvedUrl = new URL(playbackUrl, window.location.origin);
+    } catch {
+      return;
+    }
+
+    if (resolvedUrl.origin !== window.location.origin || !resolvedUrl.pathname.startsWith('/api/v3/')) {
+      return;
+    }
+
+    const { response } = await fetchWithRecoveredSessionCookie(source, () => fetch(resolvedUrl.toString(), {
+      method: 'HEAD',
+      cache: 'no-store',
+      credentials: 'same-origin',
+    }));
+
+    if (response.status === 401) {
+      throw createPlayerError(t('player.authFailed'), {
+        url: response.url || resolvedUrl.toString(),
+        status: 401,
+        requestId: response.headers.get('X-Request-ID') || undefined,
+      });
+    }
+  }, [createPlayerError, fetchWithRecoveredSessionCookie, t]);
 
   const setActiveSessionId = useCallback((nextSessionId: string | null) => {
     sessionIdRef.current = nextSessionId;
@@ -542,6 +574,7 @@ export function useLiveSessionController({
     reportError,
     ensureSessionCookie,
     recoverSessionCookie,
+    primePlaybackAuth,
     setActiveSessionId,
     clearSessionLeaseState,
     sendStopIntent,

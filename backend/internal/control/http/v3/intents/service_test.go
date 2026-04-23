@@ -9,6 +9,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
@@ -126,6 +127,7 @@ type mockDeps struct {
 	store             *mockSessionStore
 	bus               *mockEventBus
 	scanner           ChannelScanner
+	registry          capreg.Store
 	controller        AdmissionController
 	runtimeState      admission.RuntimeState
 	hostPressure      playbackprofile.HostPressureAssessment
@@ -169,6 +171,8 @@ func (m *mockDeps) SessionStore() SessionStore { return m.store }
 func (m *mockDeps) EventBus() EventBus { return m.bus }
 
 func (m *mockDeps) ChannelScanner() ChannelScanner { return m.scanner }
+
+func (m *mockDeps) CapabilityRegistry() capreg.Store { return m.registry }
 
 func (m *mockDeps) AdmissionController() AdmissionController { return m.controller }
 
@@ -381,7 +385,7 @@ func TestService_ProcessIntent_StartPersistsCanonicalClientSnapshot(t *testing.T
 	if client.PreferredHLSEngine != "hlsjs" {
 		t.Fatalf("expected preferred engine to be persisted, got %#v", client)
 	}
-	if client.DeviceType != "web" {
+	if client.DeviceType != "chromium" {
 		t.Fatalf("expected device type to be persisted, got %#v", client)
 	}
 	if !client.RuntimeProbeUsed || client.RuntimeProbeVersion != 2 {

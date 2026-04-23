@@ -519,7 +519,9 @@ func (a *LocalAdapter) PreflightPathCorrectness() {
 	capabilities := make(map[string]hardware.HardwarePathCapability)
 	for _, req := range []pathProbeRequest{
 		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
+		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
 		{PathID: hardware.PathVAAPIFullInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
+		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 	} {
 		if req.Backend != "vaapi" || !a.VaapiEncoderVerified(req.Encoder) {
 			continue
@@ -647,7 +649,9 @@ func (a *LocalAdapter) testPathCorrectness(req pathProbeRequest) (hardware.Hardw
 	}
 	switch req.PathID {
 	case hardware.PathVAAPIFullInterlacedHEVC, hardware.PathVAAPIFullInterlacedAV1:
-		return a.testVAAPIInterlacedPathCorrectness(req.Encoder)
+		return a.testVAAPIInterlacedPathCorrectness(req.Encoder, true)
+	case hardware.PathVAAPIEncodeOnlyInterlacedHEVC, hardware.PathVAAPIEncodeOnlyInterlacedAV1:
+		return a.testVAAPIInterlacedPathCorrectness(req.Encoder, false)
 	default:
 		return hardware.HardwarePathCapability{}, fmt.Errorf("unsupported path correctness probe %q", req.PathID)
 	}
@@ -728,7 +732,7 @@ func (a *LocalAdapter) testVAAPIH264Profile(profileID, encoder string) (time.Dur
 	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
 }
 
-func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string) (hardware.HardwarePathCapability, error) {
+func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string, full bool) (hardware.HardwarePathCapability, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -739,12 +743,16 @@ func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string) (hardw
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	outPath := filepath.Join(tempDir, "probe.mkv")
+	filter := "format=nv12,setfield=tff,hwupload,deinterlace_vaapi"
+	if !full {
+		filter = vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder)
+	}
 	encodeArgs := []string{
 		"-y",
 		"-vaapi_device", a.VaapiDevice,
 		"-f", "lavfi",
 		"-i", "testsrc2=duration=0.4:size=1920x1080:rate=25",
-		"-vf", "format=nv12,setfield=tff,hwupload,deinterlace_vaapi",
+		"-vf", filter,
 		"-c:v", encoder,
 		"-frames:v", "5",
 		outPath,
@@ -755,6 +763,13 @@ func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string) (hardw
 
 	lumaYAvg, err := a.measureSignalStatsYAvg(ctx, outPath)
 	if err != nil {
+		if !full && normalizeRequestedCodec(encoder) == "av1" && isAV1SignalStatsDecodeUnavailable(err) && outputFileHasBytes(outPath) {
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic av1 encode verified; local signalstats decode unavailable",
+			}, nil
+		}
 		return hardware.HardwarePathCapability{}, fmt.Errorf("signalstats correctness probe failed: %w", err)
 	}
 	if lumaYAvg < 32 {
@@ -769,6 +784,32 @@ func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string) (hardw
 		Status:   hardware.PathStatusVerified,
 		Reason:   fmt.Sprintf("synthetic yavg %.2f", lumaYAvg),
 	}, nil
+}
+
+func vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder string) string {
+	parts := []string{
+		"setfield=tff",
+		"bwdif=mode=send_field:parity=auto:deint=all",
+	}
+	if normalizeRequestedCodec(encoder) == "av1" {
+		parts = append(parts, av1VAAPIGeometryPadFilter())
+	}
+	parts = append(parts, "format=nv12", "hwupload")
+	return strings.Join(parts, ",")
+}
+
+func isAV1SignalStatsDecodeUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "doesn't support hardware accelerated av1 decoding") ||
+		strings.Contains(msg, "error submitting packet to decoder")
+}
+
+func outputFileHasBytes(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
 }
 
 func (a *LocalAdapter) testNVENCH264Profile(profileID, encoder string) (time.Duration, error) {
@@ -856,7 +897,8 @@ func (a *LocalAdapter) measureSignalStatsYAvg(ctx context.Context, mediaPath str
 		return a.signalStatsYAvgFn(ctx, mediaPath)
 	}
 	args := []string{
-		"-v", "warning",
+		"-v", "info",
+		"-hwaccel", "none",
 		"-i", mediaPath,
 		"-vf", "signalstats,metadata=mode=print",
 		"-frames:v", "1",

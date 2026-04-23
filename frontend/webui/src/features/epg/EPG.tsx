@@ -22,6 +22,7 @@ import { isUnauthorizedError } from '../player/sessionEvents';
 import { normalizeEpgText } from '../../utils/text';
 import { debugError, debugLog, formatError } from '../../utils/logging';
 import { useUiOverlay } from '../../context/UiOverlayContext';
+import { useUiSurface } from '../../context/UiSurfaceContext';
 import type { AppError } from '../../types/errors';
 import Timers from '../../components/Timers';
 import {
@@ -80,6 +81,7 @@ export default function EPG({
   const navigate = useNavigate();
   const { search } = useLocation();
   const { confirm, toast } = useUiOverlay();
+  const uiSurface = useUiSurface();
   const {
     selectedProfile,
     selectedProfileId,
@@ -412,9 +414,25 @@ export default function EPG({
 
   const showSearchResults = state.searchLoadState === 'ready' && visibleSearchEventCount > 0;
   const showMainList = state.loadState === 'ready' && !showSearchResults;
+  const useStackedSurface = uiSurface.width < 1100;
+  const useCompactSurface =
+    uiSurface.width < 768 ||
+    (uiSurface.inputMode === 'coarse' && uiSurface.heightClass !== 'comfortable');
+  const useCompactLandscapeSurface =
+    uiSurface.inputMode === 'coarse' &&
+    uiSurface.orientation === 'landscape' &&
+    uiSurface.width < 932;
 
   return (
-    <div className={[styles.page, 'animate-enter'].join(' ')}>
+    <div
+      className={[
+        styles.page,
+        'animate-enter',
+        useStackedSurface ? styles.surfaceStacked : null,
+        useCompactSurface ? styles.surfaceCompact : null,
+        useCompactLandscapeSurface ? styles.surfaceCompactLandscape : null,
+      ].filter(Boolean).join(' ')}
+    >
       {canManageDvr ? (
         <div className={styles.surfaceTabs} role="tablist" aria-label={t('epg.sectionNavLabel', { defaultValue: 'Live TV sections' })}>
           <button

@@ -19,6 +19,13 @@
     "sheetEyebrow": "Navigation",
     "sheetTitle": "Weitere Bereiche",
     "currentArea": "Aktueller Bereich",
+    "displaySize": {
+      "label": "Ansichtsgröße",
+      "hint": "Das Layout passt sich automatisch an. Hier änderst du nur die Lesbarkeit.",
+      "compact": "Kompakt",
+      "normal": "Standard",
+      "large": "Groß"
+    },
     "cards": {
       "boxStreaming": {
         "title": "Receiver Verbindung",
@@ -324,6 +331,16 @@
     "timeJustNow": "Gerade eben",
     "timeMinutesAgo": "vor {{count}} Min.",
     "timeHoursAgo": "vor {{count}} Std.",
+    "heroAside": {
+      "eyebrow": "Nächster sinnvoller Schritt",
+      "profileLabel": "Aktives Profil",
+      "standbyTitle": "Starte mit Fernsehen, sobald der Receiver wieder wach ist",
+      "standbyDetail": "Die Box schläft gerade. Gehe zuerst über Fernsehen, damit Guide- und Senderstatus wieder sauber aufgebaut werden.",
+      "streamingTitle": "Wiedergabe läuft bereits über die Bridge",
+      "streamingDetail": "Nutze Aufnahmen für die nächste Aufgabe oder springe zurück zu Fernsehen, ohne die aktuelle Operator-Übersicht zu verlieren.",
+      "readyTitle": "Alles ist bereit für den normalen Haushaltsweg",
+      "readyDetail": "Fernsehen ist der schnellste Einstieg. Aufnahmen und Einrichtung bleiben einen Klick entfernt, wenn das Profil sie erlaubt."
+    },
     "start": {
       "eyebrow": "Hier anfangen",
       "title": "Wähle die Aufgabe, nicht das Werkzeug",
@@ -537,6 +554,34 @@
     "title": "Einstellungen",
     "subtitle": "Receiver-Setup konfigurieren und Streaming-Defaults wählen. Das Setup bleibt hier nach der Ersteinrichtung.",
     "saved": "Einstellungen automatisch gespeichert",
+    "summary": {
+      "eyebrow": "Bereich wählen",
+      "title": "Die Hauptaufgaben führen. Expertenwerkzeuge bleiben nah dran.",
+      "subtitle": "Setup und Haushalt stehen vorne. Streaming, TV-Übergabe und Diagnose bleiben direkt daneben erreichbar.",
+      "primary": "Hauptpfad",
+      "secondary": "Nebenpfad",
+      "ready": "Bereit",
+      "attention": "Braucht Setup",
+      "protected": "Geschützt",
+      "open": "Offen",
+      "available": "Verfügbar",
+      "live": "Live",
+      "modeLan": "LAN",
+      "modePublic": "Public",
+      "setupConfigured": "Die Basisverbindung ist verifiziert. Das Setup lässt sich jederzeit neu öffnen, ohne den Rest der Oberfläche aufzureißen.",
+      "setupPending": "Schließe zuerst das Ersteinrichtungs-Setup ab, bevor Apps gekoppelt und die restliche Oberfläche feinjustiert werden.",
+      "setupMeta": "{{mode}} Modus",
+      "householdBody": "{{count}} Profile stehen bereit. Favoriten, DVR-Rechte und Einstellungszugriff bleiben hier sauber gebündelt.",
+      "householdMetaProtected": "PIN aktiv",
+      "householdMetaOpen": "Kein PIN",
+      "androidTvBody": "Übergib den aktiven Server an Android TV und Fire TV, ohne lange URLs mit der Fernbedienung einzutippen.",
+      "androidTvMetaReady": "App-Übergabe bereit",
+      "androidTvMetaBlocked": "Kein Native-Endpoint",
+      "scanBody": "Halte Codec- und Container-Truth aktuell, damit spätere Playback-Entscheidungen verlässlich bleiben.",
+      "streamingBody": "Die Auslieferung bleibt bewusst eng geführt, damit Browser im ganzen Haushalt konsistent reagieren.",
+      "advancedBody": "Dateien und Logs bleiben erreichbar, ohne die Hauptnavigation in ein Wartungsmenü zu verwandeln.",
+      "toolsCount": "{{count}} Werkzeuge"
+    },
     "androidTv": {
       "title": "Android TV",
       "subtitle": "Verknüpfe die Android-TV-App mit diesem Server, ohne die URL auf dem Fernseher eintippen zu müssen.",
@@ -810,6 +855,13 @@
       "normal": "Normal",
       "warning": "Erhöht",
       "critical": "Hoch"
+    },
+    "glance": {
+      "tunersActive": "{{count}} aktiv von {{total}}",
+      "tunersIdle": "Alle Tuner im Leerlauf",
+      "storageReady": "{{count}} von {{total}} bereit",
+      "storageEmpty": "Kein Aufnahmeziel",
+      "networkReady": "{{count}} verbunden"
     },
     "noInformation": "Keine Informationen verfügbar.",
     "loadError": "System-Informationen konnten nicht geladen werden: {{error}}",

@@ -2671,6 +2671,7 @@ components:
           enum:
             - /problems/live/scan_unavailable
             - /problems/live/missing_scan_truth
+            - /problems/live/stale_truth
             - /problems/live/partial_truth
             - /problems/live/inactive_event_feed
             - /problems/live/failed_scan_truth
@@ -2704,6 +2705,7 @@ components:
           enum:
             - scanner_unavailable
             - missing_scan_truth
+            - stale_scan_truth
             - partial_scan_truth
             - inactive_event_feed
             - failed_scan_truth
@@ -2718,19 +2720,19 @@ components:
           items:
             type: string
       example:
-        type: /problems/live/partial_truth
-        title: Live media truth incomplete
+        type: /problems/live/stale_truth
+        title: Live media truth stale
         status: 503
         requestId: req_live_123
         code: UNAVAILABLE
-        detail: Live media truth is incomplete
+        detail: Live media truth is stale
         retryAfterSeconds: 5
-        truthState: partial
-        truthReason: partial_scan_truth
+        truthState: unverified
+        truthReason: stale_scan_truth
         truthOrigin: live_unverified
         problemFlags:
           - live_truth_unverified
-          - partial_scan_truth
+          - stale_scan_truth
 
     SessionTerminalProblem:
       type: object

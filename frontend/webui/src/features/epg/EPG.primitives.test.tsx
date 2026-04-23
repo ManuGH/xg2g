@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../../context/HouseholdProfilesContext';
 import { ClientRequestError, setClientAuthToken } from '../../services/clientWrapper';
 import type { EpgEvent, Timer } from './types';
+import styles from './EPG.module.css';
 
 const {
   fetchEpgEvents,
@@ -13,6 +14,7 @@ const {
   confirm,
   toast,
   timersView,
+  useUiSurfaceMock,
 } = vi.hoisted(() => ({
   fetchEpgEvents: vi.fn<(...args: any[]) => Promise<EpgEvent[]>>(),
   fetchTimers: vi.fn<() => Promise<Timer[]>>(),
@@ -20,6 +22,7 @@ const {
   confirm: vi.fn(),
   toast: vi.fn(),
   timersView: vi.fn(() => <div data-testid="epg-timers-stub">Timers view</div>),
+  useUiSurfaceMock: vi.fn(),
 }));
 
 vi.mock('./epgApi', () => ({
@@ -38,6 +41,10 @@ vi.mock('../../context/UiOverlayContext', () => ({
   }),
 }));
 
+vi.mock('../../context/UiSurfaceContext', () => ({
+  useUiSurface: () => useUiSurfaceMock(),
+}));
+
 vi.mock('./components/EpgChannelList', () => ({
   EpgChannelList: () => <div data-testid="epg-channel-list" />,
 }));
@@ -48,6 +55,19 @@ vi.mock('../../components/Timers', () => ({
 }));
 
 import EPG from './EPG';
+
+function createUiSurface(overrides: Record<string, unknown> = {}) {
+  return {
+    surface: 'large',
+    orientation: 'landscape',
+    inputMode: 'fine',
+    heightClass: 'comfortable',
+    navMode: 'rail',
+    width: 1440,
+    height: 900,
+    ...overrides,
+  };
+}
 
 function renderWithProviders(ui: ReactNode, initialEntries: string[] = ['/epg']) {
   return render(
@@ -74,6 +94,7 @@ describe('EPG shared primitives', () => {
     setClientAuthToken('');
     vi.stubGlobal('setInterval', vi.fn(() => 0 as unknown as ReturnType<typeof setInterval>));
     vi.stubGlobal('clearInterval', vi.fn());
+    useUiSurfaceMock.mockReturnValue(createUiSurface());
   });
 
   afterEach(() => {
@@ -156,5 +177,30 @@ describe('EPG shared primitives', () => {
 
     expect(await screen.findByTestId('epg-timers-stub')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Back to Live TV' })).toBeInTheDocument();
+  });
+
+  it('applies the compact landscape surface classes for phone-width guide layouts', async () => {
+    fetchTimers.mockResolvedValue([]);
+    fetchEpgEvents.mockResolvedValue([]);
+    useUiSurfaceMock.mockReturnValue(createUiSurface({
+      surface: 'medium',
+      orientation: 'landscape',
+      inputMode: 'coarse',
+      heightClass: 'compact',
+      navMode: 'bottom',
+      width: 844,
+      height: 390,
+    }));
+
+    const { container } = renderWithProviders(<EPG channels={[]} />);
+    const page = container.querySelector(`.${styles.page}`) as HTMLElement;
+    await waitFor(() => {
+      expect(screen.queryByRole('status', { name: /Loading EPG/i })).not.toBeInTheDocument();
+    });
+
+    expect(page).toBeTruthy();
+    expect(page.className).toContain(styles.surfaceStacked);
+    expect(page.className).toContain(styles.surfaceCompact);
+    expect(page.className).toContain(styles.surfaceCompactLandscape);
   });
 });
