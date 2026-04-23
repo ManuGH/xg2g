@@ -314,9 +314,28 @@ type Match struct {
 	Info   MountInfo
 }
 
-func isNasFs(fs string) bool {
+func isNetworkFs(fs string) bool {
 	fs = strings.ToLower(fs)
-	return fs == "nfs" || fs == "cifs" || fs == "smb" || fs == "nfs4" || fs == "fuse.mergerfs"
+	return fs == "nfs" ||
+		fs == "nfs4" ||
+		fs == "cifs" ||
+		fs == "smb" ||
+		fs == "smb3" ||
+		fs == "sshfs" ||
+		fs == "fuse.sshfs" ||
+		fs == "davfs2" ||
+		fs == "fuse.rclone"
+}
+
+func isAggregateFs(fs string) bool {
+	fs = strings.ToLower(fs)
+	return fs == "fuse.mergerfs" ||
+		fs == "mergerfs" ||
+		fs == "overlay" ||
+		fs == "overlayfs" ||
+		fs == "aufs" ||
+		fs == "unionfs" ||
+		fs == "fuse.unionfs"
 }
 
 // MountInfo represents a single entry in /proc/self/mountinfo

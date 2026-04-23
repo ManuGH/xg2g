@@ -638,6 +638,99 @@ func TestPostLivePlaybackInfo_AndroidNativeCopyableTSReturnsFMP4HLS(t *testing.T
 	assert.Equal(t, "fmp4", hls["segmentContainer"])
 }
 
+func TestPostLivePlaybackInfo_IOSNativeKeepsSourceTruthTopLevelWhileDecisionUsesAV1FMP4(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 50},
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 10},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	svc := new(MockRecordingsService)
+	s := createTestServerDTO(svc)
+	s.SetDependencies(Dependencies{
+		Scan: &fixedPlaybackInfoScanner{
+			found: true,
+			capability: scan.Capability{
+				State:      scan.CapabilityStateOK,
+				Container:  "mpegts",
+				VideoCodec: "h264",
+				AudioCodec: "mp2",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+			},
+		},
+		RecordingsService: svc,
+	})
+
+	body := `{
+		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
+		"capabilities":{
+			"capabilitiesVersion":3,
+			"container":["mp4","ts"],
+			"videoCodecs":["av1","hevc","h264"],
+			"videoCodecSignals":[
+				{"codec":"av1","supported":true,"smooth":true,"powerEfficient":true},
+				{"codec":"h264","supported":true,"smooth":true,"powerEfficient":true}
+			],
+			"audioCodecs":["aac"],
+			"supportsHls":true,
+			"supportsRange":true,
+			"deviceType":"mobile",
+			"hlsEngines":["native"],
+			"preferredHlsEngine":"native",
+			"runtimeProbeUsed":true,
+			"runtimeProbeVersion":2,
+			"clientFamilyFallback":"ios_safari_native",
+			"allowTranscode":true
+		}
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info?profile=quality", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1")
+
+	s.PostLivePlaybackInfo(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	require.NoError(t, err)
+
+	assert.Equal(t, "ts", raw["container"])
+	assert.Equal(t, "h264", raw["videoCodec"])
+	assert.Equal(t, "mp2", raw["audioCodec"])
+
+	dec, ok := raw["decision"].(map[string]any)
+	require.True(t, ok)
+	selected, ok := dec["selected"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "fmp4", selected["container"])
+	assert.Equal(t, "av1", selected["videoCodec"])
+	assert.Equal(t, "aac", selected["audioCodec"])
+
+	trace, ok := dec["trace"].(map[string]any)
+	require.True(t, ok)
+	source, ok := trace["source"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "ts", source["container"])
+	assert.Equal(t, "h264", source["videoCodec"])
+	assert.Equal(t, "mp2", source["audioCodec"])
+
+	targetProfileRaw, ok := trace["targetProfile"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "fmp4", targetProfileRaw["container"])
+	assert.Equal(t, "fmp4", targetProfileRaw["packaging"])
+}
+
 func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testing.T) {
 	svc := new(MockRecordingsService)
 	s := createTestServerDTO(svc)

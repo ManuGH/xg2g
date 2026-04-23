@@ -16,6 +16,7 @@ export interface EpgToolbarProps {
   bouquets: EpgBouquet[];
   loadState: EpgLoadState;
   searchLoadState: EpgLoadState;
+  extraActions?: React.ReactNode;
 
   onFilterChange: (updates: Partial<EpgFilters>) => void;
   onRefresh: () => void;
@@ -31,6 +32,7 @@ export function EpgToolbar({
   bouquets,
   loadState,
   searchLoadState,
+  extraActions,
   onFilterChange,
   onRefresh,
   onToggleFavorites,
@@ -75,6 +77,7 @@ export function EpgToolbar({
           </p>
         </div>
         <div className={styles.toolbarRight}>
+          {extraActions}
           <button
             onClick={onToggleFavorites}
             disabled={favoriteCount === 0}

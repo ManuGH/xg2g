@@ -74,6 +74,8 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 	// ADR-009: Idempotent heartbeat within interval
 	timeSinceLastHB := now - session.LastHeartbeatUnix
 	if timeSinceLastHB < int64(session.HeartbeatInterval) {
+		s.tickSessionRuntimePolicy(ctx, store, session, time.Now())
+
 		// No-op: Return current expiry (idempotent)
 		logger.Debug().
 			Str("sessionId", sessionID).
@@ -105,6 +107,10 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 		Int64("new_expiry", newExpiry).
 		Msg("session lease extended")
 
+	if updated, getErr := store.GetSession(ctx, sessionID); getErr == nil && updated != nil {
+		s.tickSessionRuntimePolicy(ctx, store, updated, time.Now())
+	}
+
 	// 5. Return new expiry
 	writeSessionHeartbeatResponse(w, sessionID, newExpiry)
 }
@@ -112,8 +118,8 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 func writeSessionHeartbeatResponse(w http.ResponseWriter, sessionID string, leaseExpiresAtUnix int64) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(SessionHeartbeatResponse{
-		SessionId:       openapi_types.UUID(parseUUID(sessionID)),
-		Acknowledged:    true,
-		LeaseExpiresAt:  time.Unix(leaseExpiresAtUnix, 0).UTC(),
+		SessionId:      openapi_types.UUID(parseUUID(sessionID)),
+		Acknowledged:   true,
+		LeaseExpiresAt: time.Unix(leaseExpiresAtUnix, 0).UTC(),
 	})
 }

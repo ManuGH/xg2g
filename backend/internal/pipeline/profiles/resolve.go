@@ -17,21 +17,22 @@ import (
 )
 
 const (
-	ProfileAuto           = "auto"
-	ProfileHigh           = "high"
-	ProfileLow            = "low"
-	ProfileDVR            = "dvr"
-	ProfileSafari         = "safari"
-	ProfileSafariDirty    = "safari_dirty"
-	ProfileSafariDVR      = "safari_dvr"
-	ProfileSafariHEVC     = "safari_hevc"
-	ProfileSafariHEVCHW   = "safari_hevc_hw"    // GPU-accelerated HEVC
-	ProfileSafariHEVCHWLL = "safari_hevc_hw_ll" // GPU-accelerated HEVC + LL-HLS
-	ProfileAV1HW          = "av1_hw"            // GPU-accelerated AV1 (VAAPI only)
-	ProfileH264FMP4       = "h264_fmp4"         // Always transcode H.264 + fMP4 (optional VAAPI)
-	ProfileAndroid        = "android"           // Android native: video copy + AAC + mpegts
-	ProfileCopy           = "copy"
-	ProfileRepair         = "repair" // High + Transcode (Rescue Mode)
+	ProfileAuto            = "auto"
+	ProfileHigh            = "high"
+	ProfileLow             = "low"
+	ProfileDVR             = "dvr"
+	ProfileSafari          = "safari"
+	ProfileSafariDirty     = "safari_dirty"
+	ProfileSafariDVR       = "safari_dvr"
+	ProfileSafariHEVC      = "safari_hevc"
+	ProfileSafariHEVCHW    = "safari_hevc_hw"    // GPU-accelerated HEVC
+	ProfileSafariHEVCHWLL  = "safari_hevc_hw_ll" // GPU-accelerated HEVC + LL-HLS
+	ProfileSafariRuntimeHQ = "safari_runtime_hq" // Internal runtime hardening override, not a requested profile
+	ProfileAV1HW           = "av1_hw"            // GPU-accelerated AV1 (VAAPI only)
+	ProfileH264FMP4        = "h264_fmp4"         // Always transcode H.264 + fMP4 (optional VAAPI)
+	ProfileAndroid         = "android"           // Android native: video copy + AAC + mpegts
+	ProfileCopy            = "copy"
+	ProfileRepair          = "repair" // High + Transcode (Rescue Mode)
 
 	PublicProfileCompatible = string(playbackprofile.IntentCompatible)
 	PublicProfileBandwidth  = "bandwidth" // Deprecated legacy alias; quality ladder migration removes this later.
@@ -61,10 +62,13 @@ var aliasMap = map[string]string{
 	"safari_hevc":       ProfileSafariHEVC,
 	"safari_hevc_hw":    ProfileSafariHEVCHW,
 	"safari_hevc_hw_ll": ProfileSafariHEVCHWLL,
+	"safari_runtime_hq": ProfileSafariRuntimeHQ,
+	"safari_hq":         ProfileSafariRuntimeHQ, // Legacy internal name kept for persisted sessions and traces.
 	"av1_hw":            ProfileAV1HW,
 	"h264_fmp4":         ProfileH264FMP4,
 	"android":           ProfileAndroid,
 	"android_native":    ProfileAndroid,
+	"android_tv_native": ProfileAndroid,
 	"copy":              ProfileCopy,
 	"direct":            ProfileCopy,
 	"passthrough":       ProfileCopy,
@@ -196,6 +200,25 @@ func NormalizeRequestedProfileID(requested string) string {
 	return requested
 }
 
+// PrefersNativeFMP4Packaging reports whether the requested internal/public
+// profile carries an explicit native HLS fMP4 packaging bias. Client-family
+// fallback belongs in higher-level policy layers.
+func PrefersNativeFMP4Packaging(profile string) bool {
+	switch NormalizeRequestedProfileID(profile) {
+	case ProfileSafari,
+		ProfileSafariDVR,
+		ProfileSafariDirty,
+		ProfileSafariHEVC,
+		ProfileSafariHEVCHW,
+		ProfileSafariHEVCHWLL,
+		ProfileH264FMP4,
+		ProfileAndroid:
+		return true
+	default:
+		return false
+	}
+}
+
 // PublicProfileName returns a clearer public-facing label for legacy internal
 // profile identifiers while preserving unknown values as-is.
 func PublicProfileName(profile string) string {
@@ -222,6 +245,8 @@ func PublicProfileName(profile string) string {
 	case ProfileAndroid:
 		return PublicProfileCompatible
 	case ProfileSafari:
+		return PublicProfileCompatible
+	case ProfileSafariRuntimeHQ:
 		return PublicProfileCompatible
 	case ProfileSafariDVR:
 		return PublicProfileCompatible
@@ -334,9 +359,9 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			spec.TranscodeVideo = true
 			spec.Deinterlace = true
 			// Browser Safari has also shown black-video failures on live fMP4
-			// transcode output. Keep classic MPEG-TS HLS there as the safer native
-			// path; native clients that resolve through the safari family can stay
-			// on fMP4.
+			// transcode output. Keep classic MPEG-TS HLS there as the safer
+			// browser-native HLS path; app-native or non-Safari clients that
+			// resolve through the safari family can stay on fMP4.
 			if isSafari {
 				spec.Container = "mpegts"
 			} else {
@@ -375,7 +400,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		}
 	case ProfileSafariDirty:
 		spec.PolicyModeHint = ports.RuntimeModeSafe
-		// Quality-first profile for dirty DVB inputs.
+		// Robust recovery profile for dirty DVB inputs.
 		spec.TranscodeVideo = true
 		spec.Deinterlace = true
 		// Browser Safari has shown black-video / freeze regressions on dirty live
@@ -406,11 +431,14 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 20000, 4000, 60000)
 			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 40000, 8000, 120000)
 		default:
+			// CPU fallback prioritizes startup stability and sustained playback over
+			// "best quality" defaults. Dirty 1080i feeds can stall badly on hosts
+			// without GPU acceleration when we keep the older CRF16/fast/14M ladder.
 			spec.VideoCodec = "libx264"
-			spec.VideoCRF = envIntBounded("XG2G_SAFARI_DIRTY_CRF", 16, 12, 30)
-			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 14000, 4000, 60000)
-			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 28000, 8000, 120000)
-			spec.Preset = envPreset("XG2G_SAFARI_DIRTY_PRESET", "fast")
+			spec.VideoCRF = envIntBounded("XG2G_SAFARI_DIRTY_CRF", 18, 12, 30)
+			spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 8000, 4000, 60000)
+			spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 16000, 8000, 120000)
+			spec.Preset = envPreset("XG2G_SAFARI_DIRTY_PRESET", "veryfast")
 		}
 
 		spec.LLHLS = false
@@ -468,11 +496,17 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 	case ProfileSafariHEVC:
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
 		// Experimental: HEVC Live Transcoding (CPU)
-		// Strict constraints for Apple HLS compatibility (fMP4 implied by args builder)
+		// Browser Safari has shown almost-black output on this host when HEVC live
+		// transcodes are packaged as fMP4. Keep browser-native Safari on classic
+		// MPEG-TS HLS; app-native clients can still use fMP4.
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
-		spec.Container = "fmp4"
-		spec.Deinterlace = true
+		if isSafari {
+			spec.Container = "mpegts"
+		} else {
+			spec.Container = "fmp4"
+		}
+		spec.Deinterlace = cap == nil || cap.Interlaced
 		spec.VideoCRF = 22        // Conservative start for x265
 		spec.VideoMaxRateK = 5000 // Strict VBV Cap
 		spec.VideoBufSizeK = 10000
@@ -482,10 +516,19 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
 		// GPU-Accelerated HEVC (VAAPI) - Recommended for multi-stream
 		// 10x faster than CPU, ~10% CPU usage per stream
+		// Browser Safari stays on MPEG-TS HLS here as well; the host-specific
+		// HEVC live issue is tied to fMP4 packaging, not the encoder itself.
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
-		spec.Container = "fmp4"
-		spec.Deinterlace = true
+		if isSafari {
+			spec.Container = "mpegts"
+		} else {
+			spec.Container = "fmp4"
+		}
+		// Respect existing scan truth so progressive HEVC candidates do not enter
+		// the conservative interlaced path and get downgraded to H.264 before launch.
+		spec.Deinterlace = cap == nil || cap.Interlaced
+		spec.VideoQP = envIntBounded("XG2G_SAFARI_HEVC_VAAPI_QP", 20, 10, 40)
 		spec.VideoMaxRateK = 5000 // VBV Cap
 		spec.VideoBufSizeK = 10000
 		spec.AudioBitrateK = 192
@@ -507,8 +550,9 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
 		spec.Container = "fmp4"
-		spec.Deinterlace = true
+		spec.Deinterlace = cap == nil || cap.Interlaced
 		spec.LLHLS = true // Enable Low-Latency HLS with 0.5s part-segments
+		spec.VideoQP = envIntBounded("XG2G_SAFARI_HEVC_VAAPI_QP", 20, 10, 40)
 		spec.VideoMaxRateK = 5000
 		spec.VideoBufSizeK = 10000
 		spec.AudioBitrateK = 192
@@ -528,17 +572,27 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 	case ProfileAV1HW:
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
 		// GPU-Accelerated AV1 (VAAPI).
-		// AV1 mandates fMP4 segments (not TS).
+		// Default to fMP4. MPEG-TS is available only as an explicit experimental opt-in.
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "av1"
-		spec.Container = "fmp4"
-		spec.Deinterlace = true
+		if config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false) {
+			spec.Container = "mpegts"
+		} else {
+			spec.Container = "fmp4"
+		}
+		// Respect existing scan truth so progressive services do not enter the
+		// conservative interlaced startup path and get downgraded before launch.
+		spec.Deinterlace = cap == nil || cap.Interlaced
 		spec.VideoMaxRateK = 6000
 		spec.VideoBufSizeK = 12000
 		spec.AudioBitrateK = 192
 
 		if shouldUseGPU(gpuBackend, hwaccelMode) {
-			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
+			// Keep AV1 on the VAAPI encode-only path for live playback. This leaves
+			// frame geometry in system memory long enough to normalize the input
+			// before hwupload, which avoids malformed 1080p AV1 output on current
+			// AMD VAAPI stacks.
+			spec.HWAccel = requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode)
 		}
 
 		if dvrWindowSec > 0 {

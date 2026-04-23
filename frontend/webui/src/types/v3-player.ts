@@ -81,7 +81,20 @@ export type V3SessionStatusResponse = SessionResponse;
 export type V3SessionHeartbeatResponse = SessionHeartbeatResponse;
 export type V3SessionSnapshot =
   Pick<SessionResponse, 'sessionId' | 'state'> &
-  Partial<Pick<SessionResponse, 'requestId' | 'reason' | 'reasonDetail' | 'profileReason' | 'trace'>>;
+  Partial<Pick<
+    SessionResponse,
+    | 'requestId'
+    | 'reason'
+    | 'reasonDetail'
+    | 'profileReason'
+    | 'trace'
+    | 'mode'
+    | 'windowKind'
+    | 'durationSeconds'
+    | 'seekableStartSeconds'
+    | 'seekableEndSeconds'
+    | 'liveEdgeSeconds'
+  >>;
 
 
 // HLS-specific types

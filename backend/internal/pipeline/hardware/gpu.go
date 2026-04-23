@@ -14,12 +14,24 @@ package hardware
 
 import (
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
 
 const vaapiRuntimeFailureThreshold = 3
 const nvencRuntimeFailureThreshold = 3
+
+const (
+	PathVAAPIFullInterlacedHEVC       = "vaapi_full_interlaced_hevc"
+	PathVAAPIFullInterlacedAV1        = "vaapi_full_interlaced_av1"
+	PathVAAPIEncodeOnlyInterlacedHEVC = "vaapi_encode_only_interlaced_hevc"
+	PathVAAPIEncodeOnlyInterlacedAV1  = "vaapi_encode_only_interlaced_av1"
+
+	PathStatusVerified        = "verified"
+	PathStatusBrokenOutput    = "broken_output"
+	PathStatusPreflightFailed = "preflight_failed"
+)
 
 type HardwareEncoderCapability struct {
 	Verified     bool
@@ -29,6 +41,15 @@ type HardwareEncoderCapability struct {
 
 type VAAPIEncoderCapability = HardwareEncoderCapability
 type NVENCEncoderCapability = HardwareEncoderCapability
+type HardwareProfileCapability struct {
+	Verified     bool
+	ProbeElapsed time.Duration
+}
+type HardwarePathCapability struct {
+	Verified bool
+	Status   string
+	Reason   string
+}
 
 var (
 	vaapiMu      sync.RWMutex
@@ -53,6 +74,14 @@ var (
 	nvencEncMu      sync.RWMutex
 	nvencEncChecked bool
 	nvencEncCaps    map[string]HardwareEncoderCapability
+
+	profileBenchMu   sync.RWMutex
+	cpuProfileCaps   map[string]HardwareProfileCapability
+	vaapiProfileCaps map[string]HardwareProfileCapability
+	nvencProfileCaps map[string]HardwareProfileCapability
+
+	pathCapsMu sync.RWMutex
+	pathCaps   map[string]HardwarePathCapability
 )
 
 // HasVAAPI checks if the VAAPI render device exists
@@ -144,6 +173,30 @@ func SetNVENCEncoderCapabilities(capabilities map[string]HardwareEncoderCapabili
 			nvencEncCaps[k] = v
 		}
 	}
+}
+
+func SetCPUProfileBenchmarks(capabilities map[string]HardwareProfileCapability) {
+	profileBenchMu.Lock()
+	defer profileBenchMu.Unlock()
+	cpuProfileCaps = cloneProfileCapabilities(capabilities)
+}
+
+func SetVAAPIProfileBenchmarks(capabilities map[string]HardwareProfileCapability) {
+	profileBenchMu.Lock()
+	defer profileBenchMu.Unlock()
+	vaapiProfileCaps = cloneProfileCapabilities(capabilities)
+}
+
+func SetNVENCProfileBenchmarks(capabilities map[string]HardwareProfileCapability) {
+	profileBenchMu.Lock()
+	defer profileBenchMu.Unlock()
+	nvencProfileCaps = cloneProfileCapabilities(capabilities)
+}
+
+func SetPathCapabilities(capabilities map[string]HardwarePathCapability) {
+	pathCapsMu.Lock()
+	defer pathCapsMu.Unlock()
+	pathCaps = clonePathCapabilities(capabilities)
 }
 
 // IsVAAPIReady returns true only if the VAAPI render device exists AND
@@ -238,6 +291,68 @@ func NVENCEncoderCapabilityFor(encoder string) (NVENCEncoderCapability, bool) {
 	return cap, true
 }
 
+func HardwareProfileCapabilityFor(profileID string) (HardwareProfileCapability, string, bool) {
+	profileID = normalizeProfileBenchmarkID(profileID)
+	if profileID == "" {
+		return HardwareProfileCapability{}, "", false
+	}
+
+	profileBenchMu.RLock()
+	defer profileBenchMu.RUnlock()
+
+	var (
+		bestCap     HardwareProfileCapability
+		bestBackend string
+		ok          bool
+	)
+	for _, candidate := range []struct {
+		backend string
+		caps    map[string]HardwareProfileCapability
+	}{
+		{backend: "cpu", caps: cpuProfileCaps},
+		{backend: "vaapi", caps: vaapiProfileCaps},
+		{backend: "nvenc", caps: nvencProfileCaps},
+	} {
+		cap, exists := candidate.caps[profileID]
+		if !exists || !cap.Verified {
+			continue
+		}
+		if !ok || betterProfileCapability(candidate.backend, cap, bestBackend, bestCap) {
+			bestCap = cap
+			bestBackend = candidate.backend
+			ok = true
+		}
+	}
+	if !ok {
+		return HardwareProfileCapability{}, "", false
+	}
+	return bestCap, bestBackend, true
+}
+
+func HardwarePathCapabilityFor(pathID string) (HardwarePathCapability, bool) {
+	pathID = normalizeProfileBenchmarkID(pathID)
+	if pathID == "" {
+		return HardwarePathCapability{}, false
+	}
+
+	pathCapsMu.RLock()
+	defer pathCapsMu.RUnlock()
+	if pathCaps == nil {
+		return HardwarePathCapability{}, false
+	}
+	cap, ok := pathCaps[pathID]
+	if !ok {
+		return HardwarePathCapability{}, false
+	}
+	return cap, true
+}
+
+func HardwarePathCapabilities() map[string]HardwarePathCapability {
+	pathCapsMu.RLock()
+	defer pathCapsMu.RUnlock()
+	return clonePathCapabilities(pathCaps)
+}
+
 // RecordVAAPIRuntimeFailure increments the runtime failure counter after startup preflight.
 // After threshold is reached, VAAPI is demoted to not-ready and encoder readiness is cleared.
 func RecordVAAPIRuntimeFailure() (failures int, demoted bool) {
@@ -260,6 +375,7 @@ func RecordVAAPIRuntimeFailure() (failures int, demoted bool) {
 	vaapiEncChecked = true
 	vaapiEncCaps = map[string]HardwareEncoderCapability{}
 	vaapiEncMu.Unlock()
+	SetVAAPIProfileBenchmarks(nil)
 	return failures, true
 }
 
@@ -284,5 +400,69 @@ func RecordNVENCRuntimeFailure() (failures int, demoted bool) {
 	nvencEncChecked = true
 	nvencEncCaps = map[string]HardwareEncoderCapability{}
 	nvencEncMu.Unlock()
+	SetNVENCProfileBenchmarks(nil)
 	return failures, true
+}
+
+func cloneProfileCapabilities(capabilities map[string]HardwareProfileCapability) map[string]HardwareProfileCapability {
+	if capabilities == nil {
+		return nil
+	}
+	cloned := make(map[string]HardwareProfileCapability, len(capabilities))
+	for rawProfileID, capability := range capabilities {
+		profileID := normalizeProfileBenchmarkID(rawProfileID)
+		if profileID == "" || !capability.Verified {
+			continue
+		}
+		cloned[profileID] = capability
+	}
+	return cloned
+}
+
+func clonePathCapabilities(capabilities map[string]HardwarePathCapability) map[string]HardwarePathCapability {
+	if capabilities == nil {
+		return nil
+	}
+	cloned := make(map[string]HardwarePathCapability, len(capabilities))
+	for rawPathID, capability := range capabilities {
+		pathID := normalizeProfileBenchmarkID(rawPathID)
+		status := strings.ToLower(strings.TrimSpace(capability.Status))
+		if pathID == "" || status == "" {
+			continue
+		}
+		capability.Status = status
+		capability.Reason = strings.TrimSpace(capability.Reason)
+		capability.Verified = status == PathStatusVerified
+		cloned[pathID] = capability
+	}
+	return cloned
+}
+
+func normalizeProfileBenchmarkID(profileID string) string {
+	return strings.ToLower(strings.TrimSpace(profileID))
+}
+
+func betterProfileCapability(candidateBackend string, candidateCap HardwareProfileCapability, bestBackend string, bestCap HardwareProfileCapability) bool {
+	candidateMeasured := candidateCap.ProbeElapsed > 0
+	bestMeasured := bestCap.ProbeElapsed > 0
+	if candidateMeasured != bestMeasured {
+		return candidateMeasured
+	}
+	if candidateMeasured && candidateCap.ProbeElapsed != bestCap.ProbeElapsed {
+		return candidateCap.ProbeElapsed < bestCap.ProbeElapsed
+	}
+	return profileBackendRank(candidateBackend) < profileBackendRank(bestBackend)
+}
+
+func profileBackendRank(backend string) int {
+	switch backend {
+	case "vaapi":
+		return 0
+	case "nvenc":
+		return 1
+	case "cpu":
+		return 2
+	default:
+		return 3
+	}
 }

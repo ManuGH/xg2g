@@ -10,9 +10,10 @@ import (
 
 // StreamInfo defines the properties needed for decision making.
 type StreamInfo struct {
-	Container string // e.g. "mov,mp4,m4a,3gp,3g2,mj2" or "mpegts"
-	Video     VideoStreamInfo
-	Audio     AudioStreamInfo
+	Container   string // e.g. "mov,mp4,m4a,3gp,3g2,mj2" or "mpegts"
+	BitrateKbps int
+	Video       VideoStreamInfo
+	Audio       AudioStreamInfo
 }
 
 type VideoStreamInfo struct {
@@ -26,13 +27,16 @@ type VideoStreamInfo struct {
 	Width      int
 	Height     int
 	FPS        float64
+	SignalFPS  float64
 	Interlaced bool
+	FieldOrder string
 }
 
 type AudioStreamInfo struct {
 	CodecName     string
 	SampleRate    int
 	Channels      int
+	BitrateKbps   int
 	ChannelLayout string
 	TrackCount    int
 	StartTime     float64

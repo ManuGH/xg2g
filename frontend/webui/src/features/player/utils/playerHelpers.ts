@@ -7,7 +7,6 @@
  */
 
 import type { VideoElementRef } from '../../../types/v3-player';
-
 // --- Error Type ---
 
 export class PlayerError extends Error {
@@ -120,12 +119,48 @@ export function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
   }
 }
 
+function hasDesktopWebKitPresentation(videoEl?: VideoElementRef): boolean {
+  if (!videoEl) return false;
+  try {
+    const webkitVideo = videoEl as unknown as {
+      webkitSupportsPresentationMode?: unknown;
+      webkitSetPresentationMode?: unknown;
+      webkitPresentationMode?: unknown;
+      webkitEnterFullscreen?: unknown;
+    };
+
+    return (
+      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
+      typeof webkitVideo.webkitSetPresentationMode === 'function' ||
+      typeof webkitVideo.webkitEnterFullscreen === 'function' ||
+      'webkitPresentationMode' in webkitVideo
+    ) && !hasTouchInput();
+  } catch {
+    return false;
+  }
+}
+
+function isLikelyDesktopSafariUserAgent(): boolean {
+  try {
+    if (hasTouchInput()) return false;
+    const ua = navigator.userAgent || '';
+    if (!/safari/i.test(ua) || !/applewebkit/i.test(ua)) {
+      return false;
+    }
+    return !/(chrome|chromium|crios|fxios|firefox|edg|edgios|opr|opera|android)/i.test(ua);
+  } catch {
+    return false;
+  }
+}
+
 export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupported: boolean = false): boolean {
   if (!videoEl) return false;
   try {
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
     if (!hasNativeHls) return false;
     if (shouldForceNativeMobileHls(videoEl)) return true;
+    if (hasDesktopWebKitPresentation(videoEl)) return true;
+    if (isLikelyDesktopSafariUserAgent()) return true;
 
     return !hlsJsSupported;
   } catch {

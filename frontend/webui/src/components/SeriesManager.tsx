@@ -3,6 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   getSeriesRules,
   deleteSeriesRule,
@@ -17,8 +18,14 @@ import {
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
 import { useUiOverlay } from '../context/UiOverlayContext';
+import { ROUTE_MAP } from '../routes';
 import { Button, Card, StatusChip } from './ui';
+import LegacyRouteNotice from './LegacyRouteNotice';
 import styles from './SeriesManager.module.css';
+
+interface SeriesManagerProps {
+  showLegacyNotice?: boolean;
+}
 
 interface DaySelectorProps {
   value: number[];
@@ -64,7 +71,8 @@ interface RuleFormState {
   enabled: boolean;
 }
 
-function SeriesManager() {
+function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
+  const { t } = useTranslation();
   const { confirm, toast } = useUiOverlay();
   const [rules, setRules] = useState<SeriesRule[]>([]);
   const [channels, setChannels] = useState<Service[]>([]);
@@ -212,6 +220,15 @@ function SeriesManager() {
 
   return (
     <div className={`${styles.container} animate-enter`.trim()}>
+      {showLegacyNotice ? (
+        <LegacyRouteNotice
+          parentLabel={t('nav.recordings')}
+          description={t('legacyRoute.seriesDescription', {
+            defaultValue: 'Series rules remain available as an expert workflow. For most DVR browsing, start in Recordings.',
+          })}
+          route={ROUTE_MAP.recordings}
+        />
+      ) : null}
       <div className={styles.header}>
         <h2>Series Recording Rules</h2>
         <Button onClick={() => handleEdit(null)} data-testid="series-add-btn">

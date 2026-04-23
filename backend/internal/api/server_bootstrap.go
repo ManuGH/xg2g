@@ -6,7 +6,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -23,7 +22,6 @@ import (
 	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
-	"github.com/ManuGH/xg2g/internal/platform/httpx"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
@@ -115,7 +113,16 @@ func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) e
 }
 
 func (s *Server) newSeriesOWIClient(cfg config.AppConfig) dvr.OWIClient {
-	return openwebif.New(cfg.Enigma2.BaseURL)
+	timeout := cfg.Enigma2.Timeout
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+
+	return openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
+		Timeout:  timeout,
+		Username: cfg.Enigma2.Username,
+		Password: cfg.Enigma2.Password,
+	})
 }
 
 func (s *Server) newHealthManager(cfg config.AppConfig) *health.Manager {
@@ -163,8 +170,6 @@ func (s *Server) initHDHR(cfg config.AppConfig, cm *channels.Manager) {
 }
 
 func (s *Server) registerHealthCheckers(cfg config.AppConfig) {
-	receiverProbeClient := httpx.NewClient(5 * time.Second)
-
 	s.healthManager.RegisterChecker(health.NewExistingWritableDirChecker("data_dir", cfg.DataDir))
 	if !strings.EqualFold(strings.TrimSpace(cfg.Store.Backend), "memory") {
 		s.healthManager.RegisterChecker(health.NewExistingWritableDirChecker("store_path", cfg.Store.Path))
@@ -195,21 +200,19 @@ func (s *Server) registerHealthCheckers(cfg config.AppConfig) {
 		if cfg.Enigma2.BaseURL == "" {
 			return fmt.Errorf("receiver not configured")
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, cfg.Enigma2.BaseURL, nil)
-		if err != nil {
-			return err
+
+		timeout := cfg.Enigma2.Timeout
+		if timeout <= 0 {
+			timeout = 2 * time.Second
 		}
-		resp, err := receiverProbeClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			_ = resp.Body.Close()
-		}()
-		if resp.StatusCode >= 400 {
-			return fmt.Errorf("receiver returned HTTP %d", resp.StatusCode)
-		}
-		return nil
+
+		client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
+			Timeout:  timeout,
+			Username: cfg.Enigma2.Username,
+			Password: cfg.Enigma2.Password,
+		})
+		_, err := client.About(ctx)
+		return err
 	}))
 
 	s.healthManager.RegisterChecker(health.NewChannelsChecker(func() int {

@@ -243,6 +243,297 @@ describe('V3Player native Safari recovery', () => {
     expect(
       (globalThis.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/sessions/sess-native-stall/feedback'))
     ).toBe(true);
+    const warningCall = (globalThis.fetch as any).mock.calls.find((call: any[]) => {
+      const url = String(call[0]);
+      if (!url.includes('/sessions/sess-native-stall/feedback')) {
+        return false;
+      }
+      const body = call[1]?.body ? JSON.parse(String(call[1].body)) : null;
+      return body?.event === 'warning';
+    });
+    expect(warningCall).toBeTruthy();
+    expect(JSON.parse(String(warningCall[1].body))).toMatchObject({
+      event: 'warning',
+      code: 102,
+      message: 'stalled',
+    });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps native playback running during veil-based rebuffer recovery', async () => {
+    let paused = false;
+    let currentTime = 12;
+    let readyState = 4;
+    let bufferedLength = 1;
+    let bufferedEnd = 14;
+    const playbackUrl = 'http://example.com/live-native-veil.m3u8';
+
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(async function () {
+      paused = false;
+    });
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {
+      paused = true;
+    });
+
+    render(<V3Player autoStart={true} src={playbackUrl} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    expect(video).toBeTruthy();
+    if (!video) {
+      return;
+    }
+
+    Object.defineProperty(video, 'currentSrc', {
+      configurable: true,
+      get: () => playbackUrl,
+    });
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => paused,
+    });
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+    });
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState,
+    });
+    Object.defineProperty(video, 'buffered', {
+      configurable: true,
+      get: () => ({
+        length: bufferedLength,
+        start: () => 0,
+        end: () => bufferedEnd,
+      }),
+    });
+
+    await act(async () => {
+      fireEvent.loadedMetadata(video);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.playing(video);
+      await Promise.resolve();
+    });
+
+    readyState = 2;
+    bufferedLength = 0;
+
+    await act(async () => {
+      fireEvent.waiting(video);
+      await Promise.resolve();
+    });
+
+    currentTime = 12.5;
+    readyState = 4;
+    bufferedLength = 1;
+    bufferedEnd = 16;
+
+    await act(async () => {
+      fireEvent.playing(video);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(playSpy).toHaveBeenCalled();
+    expect(pauseSpy).not.toHaveBeenCalled();
+    expect(paused).toBe(false);
+  });
+
+  it('drops the startup overlay once native playback is visibly renderable', async () => {
+    const paused = false;
+    const currentTime = 0;
+    const readyState = 4;
+    const bufferedLength = 1;
+    const bufferedEnd = 1.5;
+    const videoWidth = 1280;
+    const videoHeight = 720;
+    const decodedFrameCount = 8;
+    const playbackUrl = 'http://example.com/live-native-startup-veil.m3u8';
+
+    render(<V3Player autoStart={true} src={playbackUrl} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    expect(video).toBeTruthy();
+    if (!video) {
+      return;
+    }
+
+    Object.defineProperty(video, 'currentSrc', {
+      configurable: true,
+      get: () => playbackUrl,
+    });
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => paused,
+    });
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+    });
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState,
+    });
+    Object.defineProperty(video, 'buffered', {
+      configurable: true,
+      get: () => ({
+        length: bufferedLength,
+        start: () => 0,
+        end: () => bufferedEnd,
+      }),
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => videoWidth,
+    });
+    Object.defineProperty(video, 'videoHeight', {
+      configurable: true,
+      get: () => videoHeight,
+    });
+    Object.defineProperty(video, 'webkitDecodedFrameCount', {
+      configurable: true,
+      get: () => decodedFrameCount,
+    });
+
+    await act(async () => {
+      fireEvent.loadedMetadata(video);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      fireEvent.playing(video);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(video.className).not.toContain('videoElementHidden');
+    expect(video.muted).toBe(false);
+  });
+
+  it('reveals native video again when buffering media becomes renderable before another playing event', async () => {
+    const paused = false;
+    let currentTime = 12;
+    let readyState = 2;
+    let bufferedLength = 0;
+    let bufferedEnd = 12;
+    let videoWidth = 0;
+    let videoHeight = 0;
+    let decodedFrameCount = 0;
+    const playbackUrl = 'http://example.com/live-native-buffering-reveal.m3u8';
+
+    render(<V3Player autoStart={true} src={playbackUrl} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    expect(video).toBeTruthy();
+    if (!video) {
+      return;
+    }
+
+    Object.defineProperty(video, 'currentSrc', {
+      configurable: true,
+      get: () => playbackUrl,
+    });
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => paused,
+    });
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+    });
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState,
+    });
+    Object.defineProperty(video, 'buffered', {
+      configurable: true,
+      get: () => ({
+        length: bufferedLength,
+        start: () => 0,
+        end: () => bufferedEnd,
+      }),
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => videoWidth,
+    });
+    Object.defineProperty(video, 'videoHeight', {
+      configurable: true,
+      get: () => videoHeight,
+    });
+    Object.defineProperty(video, 'webkitDecodedFrameCount', {
+      configurable: true,
+      get: () => decodedFrameCount,
+    });
+
+    await act(async () => {
+      fireEvent.loadedMetadata(video);
+      fireEvent.waiting(video);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    readyState = 4;
+    bufferedLength = 1;
+    bufferedEnd = 18;
+    videoWidth = 1280;
+    videoHeight = 720;
+    decodedFrameCount = 6;
+    currentTime = 12.24;
+
+    await act(async () => {
+      fireEvent.canPlay(video);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+    expect(video.className).not.toContain('videoElementHidden');
+    expect(video.muted).toBe(false);
   });
 });

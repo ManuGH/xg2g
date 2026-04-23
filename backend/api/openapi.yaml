@@ -607,6 +607,10 @@ components:
           type: string
           description: Playback mode for the session.
           enum: [LIVE, RECORDING]
+        windowKind:
+          type: string
+          description: Playback window topology for the session.
+          enum: [live, live-dvr, vod, unknown]
         durationSeconds:
           type: number
           format: float
@@ -891,6 +895,12 @@ components:
         model: { type: string }
         capacity: { type: string }
         mount: { type: string }
+        origin:
+          type: string
+          description: "Storage perspective: receiver or xg2g."
+        pathType:
+          type: string
+          description: "Topology class of the path: receiver_attached, receiver_share, xg2g_local, xg2g_share, xg2g_aggregate, or unknown."
         mountStatus:
           type: string
           enum: [mounted, unmounted, unknown]
@@ -2141,6 +2151,26 @@ components:
           nullable: true
         targetProfile:
           $ref: "#/components/schemas/PlaybackTargetProfile"
+        autoCodecPolicy:
+          type: string
+          nullable: true
+          description: Neutral selection policy identifier used for automatic codec choice.
+        autoCodecRequestedCodecs:
+          type: string
+          nullable: true
+          description: Comma-separated codec preference set considered during automatic codec choice.
+        autoCodecSelectedCodec:
+          type: string
+          nullable: true
+          description: Codec selected from the automatic codec preference set.
+        autoCodecPerformanceClass:
+          type: string
+          nullable: true
+          description: Host performance class observed during automatic codec choice.
+        autoCodecBenchmarkClass:
+          type: string
+          nullable: true
+          description: Benchmark capability class for the selected codec on the current host.
         ffmpegPlan:
           $ref: "#/components/schemas/PlaybackTraceFfmpegPlan"
         operator:
@@ -2171,6 +2201,38 @@ components:
         maxQualityRung:
           type: string
           nullable: true
+        runtimePolicyAction:
+          type: string
+          nullable: true
+        runtimePolicyPhase:
+          type: string
+          nullable: true
+        runtimeProbeCandidate:
+          type: string
+          nullable: true
+        runtimePolicyReasons:
+          type: array
+          items:
+            type: string
+          nullable: true
+        runtimePolicyConstraints:
+          type: array
+          items:
+            type: string
+          nullable: true
+        runtimePolicyReplay:
+          $ref: "#/components/schemas/PlaybackTraceRuntimeReplay"
+        runtimePolicyTimeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaybackTraceRuntimeTick"
+          nullable: true
+        runtimeProbeSuccessStreak:
+          type: integer
+          nullable: true
+        runtimeProbeFailureStreak:
+          type: integer
+          nullable: true
         ruleName:
           type: string
           nullable: true
@@ -2181,6 +2243,226 @@ components:
           type: boolean
         overrideApplied:
           type: boolean
+
+    PlaybackTraceRuntimeReplay:
+      type: object
+      additionalProperties: false
+      properties:
+        metadata:
+          $ref: "#/components/schemas/PlaybackTraceRuntimeReplayMetadata"
+        initialState:
+          $ref: "#/components/schemas/PlaybackTraceRuntimeReplayState"
+        finalState:
+          $ref: "#/components/schemas/PlaybackTraceRuntimeReplayState"
+        ticks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaybackTraceRuntimeReplayTick"
+          nullable: true
+
+    PlaybackTraceRuntimeReplayMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+          nullable: true
+        serviceRef:
+          type: string
+          nullable: true
+        clientPath:
+          type: string
+          nullable: true
+        sourceType:
+          type: string
+          nullable: true
+        initialTarget:
+          type: string
+          nullable: true
+
+    PlaybackTraceRuntimeReplayState:
+      type: object
+      additionalProperties: false
+      properties:
+        confidenceScore:
+          type: integer
+          nullable: true
+        confidenceState:
+          type: string
+          nullable: true
+        cooldownUntil:
+          type: string
+          format: date-time
+          nullable: true
+        currentStep:
+          type: string
+          nullable: true
+        lastAction:
+          type: string
+          nullable: true
+        policyConstraints:
+          type: array
+          items:
+            type: string
+          nullable: true
+        probeState:
+          type: string
+          nullable: true
+        probeStep:
+          type: string
+          nullable: true
+        reasons:
+          type: array
+          items:
+            type: string
+          nullable: true
+        targetStep:
+          type: string
+          nullable: true
+
+    PlaybackTraceRuntimeReplayTick:
+      type: object
+      additionalProperties: false
+      properties:
+        input:
+          $ref: "#/components/schemas/PlaybackTraceRuntimeReplayTickInput"
+        expected:
+          $ref: "#/components/schemas/PlaybackTraceRuntimeReplayTickExpected"
+
+    PlaybackTraceRuntimeReplayTickInput:
+      type: object
+      additionalProperties: false
+      required: [tickAt]
+      properties:
+        confidence:
+          $ref: "#/components/schemas/PlaybackTraceRuntimeReplayTickInputConfidence"
+        observedStep:
+          type: string
+          nullable: true
+        targetStep:
+          type: string
+          nullable: true
+        tickAt:
+          type: string
+          format: date-time
+
+    PlaybackTraceRuntimeReplayTickInputConfidence:
+      type: object
+      additionalProperties: false
+      properties:
+        score:
+          type: integer
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        stateSince:
+          type: string
+          format: date-time
+          nullable: true
+        cooldownUntil:
+          type: string
+          format: date-time
+          nullable: true
+        policyConstraints:
+          type: array
+          items:
+            type: string
+          nullable: true
+        reasons:
+          type: array
+          items:
+            type: string
+          nullable: true
+        windowCount:
+          type: integer
+          nullable: true
+
+    PlaybackTraceRuntimeReplayTickExpected:
+      type: object
+      additionalProperties: false
+      properties:
+        action:
+          type: string
+          nullable: true
+        activeStep:
+          type: string
+          nullable: true
+        blockers:
+          type: array
+          items:
+            type: string
+          nullable: true
+        plannedTransition:
+          type: string
+          nullable: true
+        executedTransition:
+          type: string
+          nullable: true
+        probeStep:
+          type: string
+          nullable: true
+        probeState:
+          type: string
+          nullable: true
+        reasons:
+          type: array
+          items:
+            type: string
+          nullable: true
+        runtimePhase:
+          type: string
+          nullable: true
+
+    PlaybackTraceRuntimeTick:
+      type: object
+      additionalProperties: false
+      required: [tickAt]
+      properties:
+        tickAt:
+          type: string
+          format: date-time
+        confidenceScore:
+          type: integer
+          nullable: true
+        confidenceState:
+          type: string
+          nullable: true
+        policyAction:
+          type: string
+          nullable: true
+        plannedTransition:
+          type: string
+          nullable: true
+        executedTransition:
+          type: string
+          nullable: true
+        activeStep:
+          type: string
+          nullable: true
+        targetStep:
+          type: string
+          nullable: true
+        probeStep:
+          type: string
+          nullable: true
+        probeState:
+          type: string
+          nullable: true
+        cooldownUntil:
+          type: string
+          format: date-time
+          nullable: true
+        blockers:
+          type: array
+          items:
+            type: string
+          nullable: true
+        reasons:
+          type: array
+          items:
+            type: string
+          nullable: true
 
     PlaybackTraceFfmpegPlan:
       type: object

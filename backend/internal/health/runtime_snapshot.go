@@ -256,7 +256,8 @@ func snapshotFile(path string) LifecycleRuntimeFileSnapshot {
 	snapshot.Exists = true
 	snapshot.Mode = fmt.Sprintf("%03o", info.Mode().Perm())
 	if info.Mode().IsRegular() {
-		if data, readErr := os.ReadFile(path); readErr == nil {
+		// #nosec G304 -- snapshot paths come from the fixed runtime snapshot inventory, not user input.
+		if data, readErr := os.ReadFile(filepath.Clean(path)); readErr == nil {
 			sum := sha256.Sum256(data)
 			snapshot.SHA256 = hex.EncodeToString(sum[:])
 		}

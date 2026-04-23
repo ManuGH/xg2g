@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -218,6 +219,186 @@ func TestReportPlaybackFeedback_RecordsFeedbackObservation(t *testing.T) {
 	require.Equal(t, "playing", observed.FeedbackMessage)
 }
 
+func TestReportPlaybackFeedback_RecoveryInfoCountsAsStarted(t *testing.T) {
+	sid := uuid.NewString()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-recovery-001",
+			Profile: model.ProfileSpec{
+				Name:      "universal",
+				Container: "ts",
+			},
+			ContextData: map[string]string{
+				model.CtxKeyMode:            model.ModeLive,
+				model.CtxKeyDecisionRequest: "decision-req-recovery",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				RequestedIntent: "quality",
+				ResolvedIntent:  "compatible",
+			},
+		},
+	}
+	registry := &feedbackRegistry{
+		decisionObservation: capreg.PlaybackObservation{
+			RequestID:          "decision-req-recovery",
+			ObservationKind:    "decision",
+			Outcome:            "predicted",
+			SourceRef:          "1:0:1:445D:453:1:C00000:0:0:0:",
+			SourceFingerprint:  "source-fp-recovery",
+			SubjectKind:        "live",
+			RequestedIntent:    "quality",
+			ResolvedIntent:     "compatible",
+			Mode:               "direct_stream",
+			SelectedContainer:  "ts",
+			SelectedVideoCodec: "h264",
+			SelectedAudioCodec: "ac3",
+			SourceWidth:        1920,
+			SourceHeight:       1080,
+			SourceFPS:          50,
+			HostFingerprint:    "host-fp-recovery",
+			DeviceFingerprint:  "device-fp-recovery",
+			ClientCapsHash:     "caps-hash-recovery",
+		},
+	}
+
+	s := &Server{
+		cfg:                config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}},
+		v3Store:            store,
+		v3Bus:              newFeedbackBus(),
+		capabilityRegistry: registry,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"info","code":211,"message":"recovered_buffering"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	observed := registry.lastObservation()
+	require.Equal(t, "started", observed.Outcome)
+	require.Equal(t, "info", observed.FeedbackEvent)
+	require.Equal(t, 211, observed.FeedbackCode)
+	require.Equal(t, "recovered_buffering", observed.FeedbackMessage)
+}
+
+func TestReportPlaybackFeedback_ProbeInfoCountsAsStarted(t *testing.T) {
+	sid := uuid.NewString()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-probe-001",
+			Profile: model.ProfileSpec{
+				Name:      "universal",
+				Container: "ts",
+			},
+			ContextData: map[string]string{
+				model.CtxKeyMode:            model.ModeLive,
+				model.CtxKeyDecisionRequest: "decision-req-probe",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				RequestedIntent: "quality",
+				ResolvedIntent:  "compatible",
+			},
+		},
+	}
+	registry := &feedbackRegistry{
+		decisionObservation: capreg.PlaybackObservation{
+			RequestID:          "decision-req-probe",
+			ObservationKind:    "decision",
+			Outcome:            "predicted",
+			SourceRef:          "1:0:1:445D:453:1:C00000:0:0:0:",
+			SourceFingerprint:  "source-fp-probe",
+			SubjectKind:        "live",
+			RequestedIntent:    "quality",
+			ResolvedIntent:     "compatible",
+			Mode:               "direct_stream",
+			SelectedContainer:  "ts",
+			SelectedVideoCodec: "h264",
+			SelectedAudioCodec: "ac3",
+			SourceWidth:        1920,
+			SourceHeight:       1080,
+			SourceFPS:          50,
+			HostFingerprint:    "host-fp-probe",
+			DeviceFingerprint:  "device-fp-probe",
+			ClientCapsHash:     "caps-hash-probe",
+		},
+	}
+
+	s := &Server{
+		cfg:                config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}},
+		v3Store:            store,
+		v3Bus:              newFeedbackBus(),
+		capabilityRegistry: registry,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"info","code":220,"message":"probe_window_started"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	observed := registry.lastObservation()
+	require.Equal(t, "started", observed.Outcome)
+	require.Equal(t, "info", observed.FeedbackEvent)
+	require.Equal(t, 220, observed.FeedbackCode)
+	require.Equal(t, "probe_window_started", observed.FeedbackMessage)
+}
+
+func TestReportPlaybackFeedback_IgnoresSoftStartupWarningDuringWarmup(t *testing.T) {
+	sid := uuid.NewString()
+	now := time.Now().UTC()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:           sid,
+			ServiceRef:          "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:               model.SessionReady,
+			CreatedAtUnix:       now.Add(-30 * time.Second).Unix(),
+			PlaylistPublishedAt: now.Add(-5 * time.Second),
+			ContextData: map[string]string{
+				model.CtxKeyMode:            model.ModeLive,
+				model.CtxKeyDecisionRequest: "decision-req-startup-warning",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				RequestedIntent: "quality",
+				ResolvedIntent:  "compatible",
+			},
+		},
+	}
+	registry := &feedbackRegistry{
+		decisionObservation: capreg.PlaybackObservation{
+			RequestID:         "decision-req-startup-warning",
+			ObservationKind:   "decision",
+			Outcome:           "predicted",
+			SourceFingerprint: "source-fp-startup-warning",
+			SubjectKind:       "live",
+			HostFingerprint:   "host-fp-startup-warning",
+			DeviceFingerprint: "device-fp-startup-warning",
+		},
+	}
+
+	s := &Server{
+		cfg:                config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}},
+		v3Store:            store,
+		v3Bus:              newFeedbackBus(),
+		capabilityRegistry: registry,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"warning","code":101,"message":"waiting"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+	require.Len(t, registry.recorded, 0)
+}
+
 func TestReportPlaybackFeedback_WaitsForTerminalBeforeRestart(t *testing.T) {
 	sid := uuid.NewString()
 	hlsRoot := t.TempDir()
@@ -271,6 +452,8 @@ func TestReportPlaybackFeedback_WaitsForTerminalBeforeRestart(t *testing.T) {
 	require.Len(t, updated.PlaybackTrace.Fallbacks, 1)
 	require.Equal(t, "client_feedback", updated.PlaybackTrace.Fallbacks[0].Trigger)
 	require.Equal(t, "client_report:code=3", updated.PlaybackTrace.Fallbacks[0].Reason)
+	require.Equal(t, "repair_fmp4", updated.PlaybackTrace.Fallbacks[0].PlanID)
+	require.Equal(t, "default_repair_escalation", updated.PlaybackTrace.Fallbacks[0].PlanReason)
 	require.NotEmpty(t, updated.PlaybackTrace.TargetProfileHash)
 
 	store.setState(model.SessionStopped)
@@ -281,6 +464,147 @@ func TestReportPlaybackFeedback_WaitsForTerminalBeforeRestart(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("expected fallback restart event after terminal state")
 	}
+}
+
+func TestReportPlaybackFeedback_IOSAV1HlsStallFallsBackToRepair(t *testing.T) {
+	sid := uuid.NewString()
+	hlsRoot := t.TempDir()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:19:EF75:3F9:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-ios-av1-stall-001",
+			Profile: model.ProfileSpec{
+				Name:       "av1_hw",
+				Container:  "fmp4",
+				VideoCodec: "av1",
+			},
+			ContextData: map[string]string{
+				model.CtxKeyClientFamily: playbackprofile.ClientIOSSafariNative,
+				model.CtxKeyClientPath:   "hlsjs",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				ClientPath: "hlsjs",
+				Client: &model.PlaybackClientSnapshot{
+					ClientFamily:       playbackprofile.ClientIOSSafariNative,
+					PreferredHLSEngine: "hlsjs",
+				},
+				TargetProfile: &playbackprofile.TargetPlaybackProfile{
+					Video: playbackprofile.VideoTarget{
+						Codec: "av1",
+					},
+				},
+				FFmpegPlan: &model.FFmpegPlanTrace{
+					VideoCodec: "av1",
+				},
+				AutoCodecSelected: "av1",
+			},
+		},
+	}
+	eventBus := newFeedbackBus()
+
+	writeFirstFrameMarker(t, hlsRoot, sid)
+
+	s := &Server{cfg: config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}}, v3Store: store, v3Bus: eventBus}
+	runtimeCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	require.NoError(t, s.SetRuntimeContext(runtimeCtx))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"error","code":4,"message":"hlsjs_stalled"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	select {
+	case evt := <-eventBus.ch:
+		require.Equal(t, string(model.EventStopSession), evt.topic)
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected AV1 stall fallback stop event")
+	}
+
+	updated, err := store.GetSession(context.Background(), sid)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, model.SessionStarting, updated.State)
+	require.Equal(t, profiles.ProfileRepair, updated.Profile.Name)
+	require.Equal(t, "fmp4", updated.Profile.Container)
+	require.Equal(t, "client_report:code=4", updated.FallbackReason)
+	require.NotNil(t, updated.PlaybackTrace)
+	require.Len(t, updated.PlaybackTrace.Fallbacks, 1)
+	require.Equal(t, "client_feedback", updated.PlaybackTrace.Fallbacks[0].Trigger)
+	require.Equal(t, "client_report:code=4", updated.PlaybackTrace.Fallbacks[0].Reason)
+	require.Equal(t, "repair_fmp4", updated.PlaybackTrace.Fallbacks[0].PlanID)
+	require.Equal(t, "default_repair_escalation", updated.PlaybackTrace.Fallbacks[0].PlanReason)
+
+	store.setState(model.SessionStopped)
+
+	select {
+	case evt := <-eventBus.ch:
+		require.Equal(t, string(model.EventStartSession), evt.topic)
+	case <-time.After(time.Second):
+		t.Fatal("expected AV1 stall fallback restart event after terminal state")
+	}
+}
+
+func TestReportPlaybackFeedback_HlsStallIgnoredOutsideIOSAV1HlsjsPath(t *testing.T) {
+	sid := uuid.NewString()
+	hlsRoot := t.TempDir()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:19:EF75:3F9:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-ios-av1-stall-002",
+			Profile: model.ProfileSpec{
+				Name:       "hevc_hw",
+				Container:  "fmp4",
+				VideoCodec: "hevc",
+			},
+			ContextData: map[string]string{
+				model.CtxKeyClientFamily: playbackprofile.ClientIOSSafariNative,
+				model.CtxKeyClientPath:   "hlsjs",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				ClientPath: "hlsjs",
+				Client: &model.PlaybackClientSnapshot{
+					ClientFamily: playbackprofile.ClientIOSSafariNative,
+				},
+				TargetProfile: &playbackprofile.TargetPlaybackProfile{
+					Video: playbackprofile.VideoTarget{
+						Codec: "hevc",
+					},
+				},
+			},
+		},
+	}
+	eventBus := newFeedbackBus()
+
+	writeFirstFrameMarker(t, hlsRoot, sid)
+
+	s := &Server{cfg: config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}}, v3Store: store, v3Bus: eventBus}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"error","code":4,"message":"hlsjs_stalled"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	select {
+	case evt := <-eventBus.ch:
+		t.Fatalf("unexpected fallback event for non-AV1 stall: %s", evt.topic)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	updated, err := store.GetSession(context.Background(), sid)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, model.SessionReady, updated.State)
+	require.Equal(t, "hevc_hw", updated.Profile.Name)
+	require.Empty(t, updated.FallbackReason)
 }
 
 func TestReportPlaybackFeedback_SafariFallsBackToDirtyProfileBeforeRestart(t *testing.T) {
@@ -339,6 +663,8 @@ func TestReportPlaybackFeedback_SafariFallsBackToDirtyProfileBeforeRestart(t *te
 	require.Len(t, updated.PlaybackTrace.Fallbacks, 1)
 	require.Equal(t, "client_feedback", updated.PlaybackTrace.Fallbacks[0].Trigger)
 	require.Equal(t, "client_report:code=3", updated.PlaybackTrace.Fallbacks[0].Reason)
+	require.Equal(t, "safari_dirty", updated.PlaybackTrace.Fallbacks[0].PlanID)
+	require.Equal(t, "safari_general_first_failure", updated.PlaybackTrace.Fallbacks[0].PlanReason)
 	require.NotEmpty(t, updated.PlaybackTrace.TargetProfileHash)
 
 	store.setState(model.SessionStopped)
@@ -412,6 +738,8 @@ func TestReportPlaybackFeedback_SafariForceCopyAllowlistFallsBackToBrowserTSBefo
 	require.Len(t, updated.PlaybackTrace.Fallbacks, 1)
 	require.Equal(t, "client_feedback", updated.PlaybackTrace.Fallbacks[0].Trigger)
 	require.Equal(t, "client_report:code=3", updated.PlaybackTrace.Fallbacks[0].Reason)
+	require.Equal(t, "safari_browser_ts", updated.PlaybackTrace.Fallbacks[0].PlanID)
+	require.Equal(t, "safari_force_copy_allowlist_first_failure", updated.PlaybackTrace.Fallbacks[0].PlanReason)
 	require.NotEmpty(t, updated.PlaybackTrace.TargetProfileHash)
 
 	store.setState(model.SessionStopped)
@@ -497,6 +825,8 @@ func TestReportPlaybackFeedback_SafariForceCopyAllowlistEscalatesToRepairAfterTS
 	require.Len(t, updated.PlaybackTrace.Fallbacks, 1)
 	require.Equal(t, "client_feedback", updated.PlaybackTrace.Fallbacks[0].Trigger)
 	require.Equal(t, "client_report:code=3", updated.PlaybackTrace.Fallbacks[0].Reason)
+	require.Equal(t, "safari_repair_ts", updated.PlaybackTrace.Fallbacks[0].PlanID)
+	require.Equal(t, "safari_force_copy_allowlist_repeat_failure", updated.PlaybackTrace.Fallbacks[0].PlanReason)
 	require.NotEmpty(t, updated.PlaybackTrace.TargetProfileHash)
 	require.NotEqual(t, updated.PlaybackTrace.Fallbacks[0].FromProfileHash, updated.PlaybackTrace.Fallbacks[0].ToProfileHash)
 

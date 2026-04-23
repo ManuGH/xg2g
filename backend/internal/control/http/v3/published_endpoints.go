@@ -2,6 +2,7 @@ package v3
 
 import (
 	"context"
+	"math"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	connectivitydomain "github.com/ManuGH/xg2g/internal/domain/connectivity"
@@ -85,7 +86,7 @@ func mapPublishedEndpointContracts(values []connectivitydomain.PublishedEndpoint
 		out = append(out, PublishedEndpoint{
 			Url:             value.URL,
 			Kind:            kind,
-			Priority:        int32(value.Priority),
+			Priority:        clampPublishedEndpointPriority(value.Priority),
 			TlsMode:         tlsMode,
 			AllowPairing:    value.AllowPairing,
 			AllowStreaming:  value.AllowStreaming,
@@ -97,4 +98,15 @@ func mapPublishedEndpointContracts(values []connectivitydomain.PublishedEndpoint
 	}
 
 	return out
+}
+
+func clampPublishedEndpointPriority(priority int) int32 {
+	switch {
+	case priority > math.MaxInt32:
+		return math.MaxInt32
+	case priority < math.MinInt32:
+		return math.MinInt32
+	default:
+		return int32(priority)
+	}
 }

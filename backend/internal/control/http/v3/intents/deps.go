@@ -46,6 +46,7 @@ type Deps interface {
 	AdmissionController() AdmissionController
 	AdmissionRuntimeState(ctx context.Context) admission.RuntimeState
 	HostPressure(ctx context.Context) playbackprofile.HostPressureAssessment
+	HostRuntime(ctx context.Context) playbackprofile.HostRuntimeSnapshot
 	VerifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode string) bool
 	IncLivePlaybackKey(keyLabel, resultLabel string)
 	RecordReject(code string)

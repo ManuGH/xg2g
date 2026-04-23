@@ -1,0 +1,3 @@
+Operational changes:
+- iPhone/iPad native Live-DVR playback now keeps the seek window and remaining time advancing across device lock/unlock and foreground resume, instead of freezing until the next playlist fetch reaches the server again.
+- Background media-truth scanning can now be disabled explicitly via `XG2G_BACKGROUND_SCAN_ENABLED=false`, which is useful for staging or playback-debug deployments where a cold full-channel scan would otherwise load the receiver and obscure live-session behavior.

@@ -30,7 +30,7 @@ type targetProfileResolution struct {
 }
 
 func buildTargetProfile(mode Mode, pred Predicates, input DecisionInput) targetProfileResolution {
-	requestedIntent, effectiveIntent, forcedIntent, maxQualityRung, hostPressureBand, operatorOverrideUsed, hostOverrideApplied := resolvePlaybackIntent(input)
+	requestedIntent, effectiveIntent, forcedIntent, maxQualityRung, hostPressureBand, operatorOverrideUsed, hostOverrideApplied := resolvePlaybackIntent(mode, pred, input)
 
 	switch mode {
 	case ModeDirectPlay:
@@ -159,7 +159,7 @@ func buildTargetProfile(mode Mode, pred Predicates, input DecisionInput) targetP
 	}
 }
 
-func resolvePlaybackIntent(input DecisionInput) (playbackprofile.PlaybackIntent, playbackprofile.PlaybackIntent, playbackprofile.PlaybackIntent, playbackprofile.QualityRung, playbackprofile.HostPressureBand, bool, bool) {
+func resolvePlaybackIntent(mode Mode, pred Predicates, input DecisionInput) (playbackprofile.PlaybackIntent, playbackprofile.PlaybackIntent, playbackprofile.PlaybackIntent, playbackprofile.QualityRung, playbackprofile.HostPressureBand, bool, bool) {
 	requestedIntent := playbackprofile.NormalizeRequestedIntent(string(input.RequestedIntent))
 	effectiveIntent := requestedIntent
 	forcedIntent := playbackprofile.NormalizeRequestedIntent(string(input.Policy.Operator.ForceIntent))
@@ -180,6 +180,10 @@ func resolvePlaybackIntent(input DecisionInput) (playbackprofile.PlaybackIntent,
 	hostOverrideApplied := false
 	if !operatorActive {
 		if hostIntent := applyHostPressureIntent(effectiveIntent, hostPressureBand); hostIntent != effectiveIntent {
+			effectiveIntent = hostIntent
+			hostOverrideApplied = true
+		}
+		if hostIntent := applyHostPerformanceIntent(effectiveIntent, input.Policy.Host, input.Source, mode, pred); hostIntent != effectiveIntent {
 			effectiveIntent = hostIntent
 			hostOverrideApplied = true
 		}
@@ -209,6 +213,88 @@ func applyHostPressureIntent(intent playbackprofile.PlaybackIntent, band playbac
 		}
 	}
 	return intent
+}
+
+func applyHostPerformanceIntent(intent playbackprofile.PlaybackIntent, host HostPolicy, source Source, mode Mode, pred Predicates) playbackprofile.PlaybackIntent {
+	videoTranscodeRequired := mode == ModeTranscode && (!pred.CanVideo || pred.VideoRepairRequired)
+	if !videoTranscodeRequired {
+		return intent
+	}
+
+	cost := sourceTranscodeCostScore(source)
+	performanceClass := normalizeHostPerformanceClass(host.PerformanceClass)
+	benchmarkClass := normalizeHostBenchmarkClass(host.BenchmarkClass)
+	switch performanceClass {
+	case hostPerformanceClassLow:
+		if cost >= 8 && intent == playbackprofile.IntentCompatible {
+			return playbackprofile.IntentRepair
+		}
+		if cost >= 5 && intent == playbackprofile.IntentQuality {
+			return playbackprofile.IntentCompatible
+		}
+	case hostPerformanceClassMedium:
+		if cost >= 8 && intent == playbackprofile.IntentQuality {
+			return playbackprofile.IntentCompatible
+		}
+	}
+
+	if videoTranscodeRequired && benchmarkClass == hostBenchmarkClassWeak {
+		if cost >= 9 && intent == playbackprofile.IntentCompatible {
+			return playbackprofile.IntentRepair
+		}
+		if cost >= 6 && intent == playbackprofile.IntentQuality && performanceClass != hostPerformanceClassLow {
+			return playbackprofile.IntentCompatible
+		}
+	}
+	return intent
+}
+
+func sourceTranscodeCostScore(source Source) int {
+	score := 0
+	if source.Interlaced {
+		score += 3
+	}
+
+	pixels := source.Width * source.Height
+	switch {
+	case pixels >= 3840*2160:
+		score += 4
+	case pixels >= 1920*1080:
+		score += 2
+	case pixels >= 1280*720:
+		score++
+	}
+
+	switch {
+	case source.FPS >= 50:
+		score += 2
+	case source.FPS >= 30:
+		score++
+	}
+
+	score += bitrateCostScore(source)
+
+	return score
+}
+
+func bitrateCostScore(source Source) int {
+	score := 0
+	switch {
+	case source.BitrateKbps >= 18000:
+		score += 3
+	case source.BitrateKbps >= 9000:
+		score += 2
+	case source.BitrateKbps >= 5000:
+		score++
+	}
+
+	// A single fresh probe is better than guessing, but still too noisy to let
+	// bitrate alone push us into a more degraded ladder.
+	if score > 0 && normalizeBitrateConfidence(source.BitrateConfidence) == bitrateConfidenceLow {
+		score--
+	}
+
+	return score
 }
 
 func transcodeAudioTarget(intent playbackprofile.PlaybackIntent) playbackprofile.AudioTarget {

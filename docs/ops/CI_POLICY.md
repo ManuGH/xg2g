@@ -81,7 +81,7 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
 | PR Required Gates | `pull_request`, `workflow_dispatch` | Canonical WebUI build + browser smoke gate |
 | Repository Health Checks | `pull_request`, `push(main)` | Required checks |
 | Runner Smoke Test | `workflow_dispatch` | Diagnostic only |
-| CI Nightly | `workflow_dispatch` | Deep/expensive |
+| CI Deep Scheduled | `schedule`, `workflow_dispatch` | Single nightly/weekly deep-suite workflow |
 | Lint Invariants | `pull_request`, `push(main)`, `workflow_dispatch` | Scoped invariant backstop; fail-closed scope |
 | Phase 4 Guardrails | `pull_request`, `push(main)`, `workflow_dispatch` | PR compatibility shim; push/manual backstop |
 | UI Contract Enforcement | `pull_request`, `push(main)`, `workflow_dispatch` | PR compatibility shim; push/manual backstop |

@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -24,6 +25,8 @@ const (
 	liveTruthOriginUnverified = "live_unverified"
 )
 
+const liveTruthFreshnessWindow = 2 * time.Hour
+
 type liveTruthResolution struct {
 	Truth        playback.MediaTruth
 	Origin       string
@@ -36,24 +39,25 @@ func (r liveTruthResolution) Verified() bool {
 	return r.State == liveTruthStateVerified
 }
 
-func resolveLiveTruthState(serviceRef string, source ChannelTruthSource) liveTruthResolution {
+func resolveLiveTruthState(serviceRef string, source ChannelTruthSource, requestContext string) liveTruthResolution {
+	now := time.Now().UTC()
 	if source == nil {
 		return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "scanner_unavailable", scan.Capability{}, []string{
 			"live_truth_unverified",
 			"scanner_unavailable",
-		})
+		}, requestContext)
 	}
 
 	cap, found := source.GetCapability(serviceRef)
-	return resolveLiveTruthCapability(serviceRef, cap, found)
+	return resolveLiveTruthCapability(serviceRef, cap, found, now, requestContext)
 }
 
-func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bool) liveTruthResolution {
+func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bool, now time.Time, requestContext string) liveTruthResolution {
 	if !found {
 		return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "missing_scan_truth", scan.Capability{}, []string{
 			"live_truth_unverified",
 			"missing_scan_truth",
-		})
+		}, requestContext)
 	}
 
 	normalized := cap.Normalized()
@@ -61,17 +65,30 @@ func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bo
 		return unverifiedLiveTruth(serviceRef, liveTruthStateInactiveEventFeed, "inactive_event_feed", normalized, []string{
 			"live_truth_unverified",
 			"inactive_event_feed",
-		})
+		}, requestContext)
 	}
 	if normalized.HasMediaTruth() {
+		if !liveTruthFreshEnough(normalized, now) {
+			return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "stale_scan_truth", normalized, []string{
+				"live_truth_unverified",
+				"stale_scan_truth",
+			}, requestContext)
+		}
 		metrics.IncLiveTruthSource("scan", "cache_hit")
-		log.L().Debug().
+		evt := log.L().Debug().
 			Str("event", "live.truth_verified").
 			Str("serviceRef", serviceRef).
 			Str("container", normalized.Container).
 			Str("videoCodec", normalized.VideoCodec).
-			Str("audioCodec", normalized.AudioCodec).
-			Msg("Using persisted scan truth for live playback")
+			Str("audioCodec", normalized.AudioCodec)
+		if requestContext != "" {
+			evt = evt.Str("request_context", requestContext)
+		}
+		if requestContext == PlaybackInfoContextEpgBadge {
+			evt.Msg("Using persisted scan truth for live playback preview")
+		} else {
+			evt.Msg("Using persisted scan truth for live playback")
+		}
 		return liveTruthResolution{
 			Truth:  liveTruthFromCapability(normalized, playback.MediaStatusReady),
 			Origin: liveTruthOriginScan,
@@ -96,26 +113,48 @@ func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bo
 	if strings.TrimSpace(normalized.FailureReason) != "" {
 		flags = append(flags, "scan_failure_reason_set")
 	}
-	return unverifiedLiveTruth(serviceRef, state, reason, normalized, flags)
+	return unverifiedLiveTruth(serviceRef, state, reason, normalized, flags, requestContext)
 }
 
 func liveTruthFromCapability(cap scan.Capability, status playback.MediaStatus) playback.MediaTruth {
 	normalized := cap.Normalized()
 	return playback.MediaTruth{
-		Status:     status,
-		Container:  normalized.Container,
-		VideoCodec: normalized.VideoCodec,
-		AudioCodec: normalized.AudioCodec,
-		Width:      normalized.Width,
-		Height:     normalized.Height,
-		FPS:        normalized.FPS,
-		Interlaced: normalized.Interlaced,
+		Status:              status,
+		Container:           normalized.Container,
+		VideoCodec:          normalized.VideoCodec,
+		AudioCodec:          normalized.AudioCodec,
+		BitrateKbps:         normalized.StableBitrateKbps(),
+		BitrateObservedKbps: normalized.BitrateKbps,
+		BitratePeakKbps:     normalized.BitratePeakKbps,
+		BitrateSamples:      normalized.BitrateSamples,
+		BitrateConfidence:   normalized.BitrateConfidence(),
+		Width:               normalized.Width,
+		Height:              normalized.Height,
+		FPS:                 normalized.FPS,
+		SignalFPS:           normalized.SignalFPS,
+		Interlaced:          normalized.Interlaced,
+		FieldOrder:          normalized.FieldOrder,
+		AudioChannels:       normalized.AudioChannels,
+		AudioBitrateKbps:    normalized.AudioBitrateKbps,
+		AudioSampleRate:     normalized.AudioSampleRate,
+		AudioChannelLayout:  normalized.AudioChannelLayout,
 	}
 }
 
-func unverifiedLiveTruth(serviceRef string, state liveTruthState, reason string, cap scan.Capability, flags []string) liveTruthResolution {
+func liveTruthFreshEnough(cap scan.Capability, now time.Time) bool {
+	anchor := cap.LastSuccess
+	if anchor.IsZero() {
+		anchor = cap.LastScan
+	}
+	if anchor.IsZero() {
+		return true
+	}
+	return now.Sub(anchor) <= liveTruthFreshnessWindow
+}
+
+func unverifiedLiveTruth(serviceRef string, state liveTruthState, reason string, cap scan.Capability, flags []string, requestContext string) liveTruthResolution {
 	metrics.IncLiveTruthSource("unverified", reason)
-	log.L().Info().
+	evt := log.L().Info().
 		Str("event", "live.truth_unverified").
 		Str("serviceRef", serviceRef).
 		Str("state", string(state)).
@@ -125,8 +164,15 @@ func unverifiedLiveTruth(serviceRef string, state liveTruthState, reason string,
 		Str("scanVideoCodec", cap.VideoCodec).
 		Str("scanAudioCodec", cap.AudioCodec).
 		Str("scanResolution", cap.Resolution).
-		Str("scanCodec", cap.Codec).
-		Msg("Live playback truth is unavailable or incomplete")
+		Str("scanCodec", cap.Codec)
+	if requestContext != "" {
+		evt = evt.Str("request_context", requestContext)
+	}
+	if requestContext == PlaybackInfoContextEpgBadge {
+		evt.Msg("Live playback preview truth is unavailable or incomplete")
+	} else {
+		evt.Msg("Live playback truth is unavailable or incomplete")
+	}
 	return liveTruthResolution{
 		Truth:        liveTruthFromCapability(cap, playback.MediaStatusUnverified),
 		Origin:       liveTruthOriginUnverified,

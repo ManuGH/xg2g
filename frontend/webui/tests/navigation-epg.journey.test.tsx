@@ -242,7 +242,7 @@ describe('Primary navigation and EPG journeys', () => {
     });
 
     const desktopNav = screen.getByRole('navigation', { name: 'Main navigation' });
-    fireEvent.click(within(desktopNav).getByRole('link', { name: /nav\.epg|TV\/EPG/i }));
+    fireEvent.click(within(desktopNav).getByRole('link', { name: /nav\.epg|live tv/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId('epg-channel-list-main')).toBeInTheDocument();
@@ -262,12 +262,12 @@ describe('Primary navigation and EPG journeys', () => {
     await screen.findByText('Dashboard route ready');
 
     fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
-    fireEvent.click(screen.getByRole('link', { name: /nav\.timers|Timers/i }));
+    fireEvent.click(screen.getByRole('link', { name: /nav\.settings|settings/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Timers route ready')).toBeInTheDocument();
-      expect(screen.getByTestId('journey-pathname')).toHaveTextContent(ROUTE_MAP.timers);
-      expect(screen.queryByRole('dialog', { name: 'More tools' })).toBeNull();
+      expect(screen.getByText('Settings route ready')).toBeInTheDocument();
+      expect(screen.getByTestId('journey-pathname')).toHaveTextContent(ROUTE_MAP.settings);
+      expect(screen.queryByRole('dialog', { name: /more sections/i })).toBeNull();
     });
   });
 

@@ -8,8 +8,10 @@ import (
 
 // SnapshotHostRuntime combines static host capabilities and live runtime counters into one snapshot.
 func SnapshotHostRuntime(ffmpegAvailable, hlsAvailable bool, runtime admissionruntime.RuntimeState, monitor admissionmonitor.MonitorSnapshot) playbackprofile.HostRuntimeSnapshot {
+	capabilities := SnapshotTranscodeCapabilities(ffmpegAvailable, hlsAvailable)
+	benchmark := snapshotHostBenchmark()
 	return playbackprofile.CanonicalizeHostRuntime(playbackprofile.HostRuntimeSnapshot{
-		Capabilities: SnapshotTranscodeCapabilities(ffmpegAvailable, hlsAvailable),
+		Capabilities: capabilities,
 		CPU: playbackprofile.HostCPUSnapshot{
 			Load1m:        monitor.CPU.Load1m,
 			CoreCount:     monitor.CPU.CoreCount,
@@ -24,5 +26,23 @@ func SnapshotHostRuntime(ffmpegAvailable, hlsAvailable bool, runtime admissionru
 			MaxSessions:       monitor.MaxSessions,
 			MaxVAAPITokens:    monitor.MaxVAAPITokens,
 		},
+		Benchmark: benchmark,
+		PerformanceClass: classifyHostPerformanceClass(
+			playbackprofile.HostCPUSnapshot{
+				Load1m:        monitor.CPU.Load1m,
+				CoreCount:     monitor.CPU.CoreCount,
+				SampleCount:   monitor.CPU.SampleCount,
+				WindowSeconds: monitor.CPU.WindowSeconds,
+			},
+			playbackprofile.HostConcurrencySnapshot{
+				TunersAvailable:   runtime.TunerSlots,
+				SessionsActive:    runtime.SessionsActive,
+				TranscodesActive:  runtime.TranscodesActive,
+				ActiveVAAPITokens: monitor.ActiveVAAPITokens,
+				MaxSessions:       monitor.MaxSessions,
+				MaxVAAPITokens:    monitor.MaxVAAPITokens,
+			},
+			capabilities,
+		),
 	})
 }

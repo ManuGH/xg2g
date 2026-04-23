@@ -6,13 +6,19 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemHealth, postSystemRefresh, type SystemHealth } from '../client-ts';
 import { toAppError } from '../lib/appErrors';
+import { ROUTE_MAP } from '../routes';
 import { unwrapClientResultOrThrow } from '../services/clientWrapper';
 import type { AppError } from '../types/errors';
 import { Button, ButtonLink, Card, CardBody, CardHeader, CardSubtitle, CardTitle, StatusChip, type ChipState } from './ui';
 import ErrorPanel from './ErrorPanel';
+import LegacyRouteNotice from './LegacyRouteNotice';
 import styles from './Files.module.css';
 
-function Files() {
+interface FilesProps {
+  showLegacyNotice?: boolean;
+}
+
+function Files({ showLegacyNotice = true }: FilesProps) {
   const { t } = useTranslation();
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -107,6 +113,15 @@ function Files() {
 
   return (
     <div className={`${styles.container} animate-enter`.trim()}>
+      {showLegacyNotice ? (
+        <LegacyRouteNotice
+          parentLabel={t('nav.playerSettings')}
+          description={t('legacyRoute.filesDescription', {
+            defaultValue: 'Playlist and guide feeds stay available as expert tools. You can now also reach them from Settings.',
+          })}
+          route={ROUTE_MAP.settings}
+        />
+      ) : null}
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>{t('files.eyebrow')}</p>

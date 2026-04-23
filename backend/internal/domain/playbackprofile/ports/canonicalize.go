@@ -6,6 +6,7 @@ package ports
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
@@ -97,6 +98,60 @@ func CanonicalizeServerCapabilities(in ServerTranscodeCapabilities) ServerTransc
 func CanonicalizeHostRuntime(in HostRuntimeSnapshot) HostRuntimeSnapshot {
 	out := in
 	out.Capabilities = CanonicalizeServerCapabilities(out.Capabilities)
+	out.PerformanceClass = normalize.Token(out.PerformanceClass)
+	out.Benchmark.Class = normalize.Token(out.Benchmark.Class)
+	out.Benchmark.PreferredCodec = normalize.Token(out.Benchmark.PreferredCodec)
+	out.Benchmark.PreferredBackend = normalize.Token(out.Benchmark.PreferredBackend)
+	if out.Benchmark.FastestProbeElapsedMs < 0 {
+		out.Benchmark.FastestProbeElapsedMs = 0
+	}
+	if out.Benchmark.Codecs == nil {
+		out.Benchmark.Codecs = []HostCodecBenchmark{}
+	}
+	for idx := range out.Benchmark.Codecs {
+		out.Benchmark.Codecs[idx].Codec = normalize.Token(out.Benchmark.Codecs[idx].Codec)
+		out.Benchmark.Codecs[idx].Class = normalize.Token(out.Benchmark.Codecs[idx].Class)
+		out.Benchmark.Codecs[idx].Backend = normalize.Token(out.Benchmark.Codecs[idx].Backend)
+		if out.Benchmark.Codecs[idx].ProbeElapsedMs < 0 {
+			out.Benchmark.Codecs[idx].ProbeElapsedMs = 0
+		}
+	}
+	sort.Slice(out.Benchmark.Codecs, func(i, j int) bool {
+		if out.Benchmark.Codecs[i].Codec == out.Benchmark.Codecs[j].Codec {
+			return out.Benchmark.Codecs[i].Backend < out.Benchmark.Codecs[j].Backend
+		}
+		return out.Benchmark.Codecs[i].Codec < out.Benchmark.Codecs[j].Codec
+	})
+	if out.Benchmark.Profiles == nil {
+		out.Benchmark.Profiles = []HostProfileBenchmark{}
+	}
+	for idx := range out.Benchmark.Profiles {
+		out.Benchmark.Profiles[idx].ProfileID = normalize.Token(out.Benchmark.Profiles[idx].ProfileID)
+		out.Benchmark.Profiles[idx].Codec = normalize.Token(out.Benchmark.Profiles[idx].Codec)
+		out.Benchmark.Profiles[idx].Class = normalize.Token(out.Benchmark.Profiles[idx].Class)
+		out.Benchmark.Profiles[idx].Backend = normalize.Token(out.Benchmark.Profiles[idx].Backend)
+		if out.Benchmark.Profiles[idx].ProbeElapsedMs < 0 {
+			out.Benchmark.Profiles[idx].ProbeElapsedMs = 0
+		}
+	}
+	sort.Slice(out.Benchmark.Profiles, func(i, j int) bool {
+		return out.Benchmark.Profiles[i].ProfileID < out.Benchmark.Profiles[j].ProfileID
+	})
+	if out.Benchmark.Paths == nil {
+		out.Benchmark.Paths = []HostPathCapability{}
+	}
+	for idx := range out.Benchmark.Paths {
+		out.Benchmark.Paths[idx].PathID = normalize.Token(out.Benchmark.Paths[idx].PathID)
+		out.Benchmark.Paths[idx].Backend = normalize.Token(out.Benchmark.Paths[idx].Backend)
+		out.Benchmark.Paths[idx].Status = normalize.Token(out.Benchmark.Paths[idx].Status)
+		out.Benchmark.Paths[idx].Reason = strings.TrimSpace(out.Benchmark.Paths[idx].Reason)
+	}
+	sort.Slice(out.Benchmark.Paths, func(i, j int) bool {
+		if out.Benchmark.Paths[i].PathID == out.Benchmark.Paths[j].PathID {
+			return out.Benchmark.Paths[i].Backend < out.Benchmark.Paths[j].Backend
+		}
+		return out.Benchmark.Paths[i].PathID < out.Benchmark.Paths[j].PathID
+	})
 	if out.CPU.Load1m < 0 {
 		out.CPU.Load1m = 0
 	}

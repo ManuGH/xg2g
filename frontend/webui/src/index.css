@@ -116,6 +116,28 @@
   --shadow-status-info: 0 0 6px rgba(96, 165, 250, 0.4);
   --shadow-status-error: 0 0 10px rgba(248, 113, 113, 0.5);
   --shadow-status-error-strong: 0 0 20px rgba(248, 113, 113, 0.8);
+  --shadow-none: none;
+  --shadow-recordings-media-preview: 0 14px 28px color-mix(in srgb, var(--bg-video) 18%, transparent);
+  --shadow-recordings-selection-indicator: 0 10px 24px color-mix(in srgb, black 24%, transparent);
+  --shadow-recordings-preplay-stage:
+    0 16px 36px color-mix(in srgb, var(--bg-video) 30%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--border-base) 88%, transparent);
+  --gradient-recordings-media-preview:
+    radial-gradient(circle at 16% 18%, color-mix(in srgb, var(--recording-accent) 28%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 38%),
+    linear-gradient(135deg, color-mix(in srgb, var(--recording-accent) 10%, var(--bg-video) 90%), color-mix(in srgb, var(--bg-video) 92%, black 8%));
+  --gradient-recordings-media-preview-overlay:
+    linear-gradient(180deg, color-mix(in srgb, black 6%, transparent), transparent 28%),
+    linear-gradient(180deg, transparent 45%, color-mix(in srgb, black 46%, transparent) 100%);
+  --gradient-recordings-progress-fill: linear-gradient(90deg, var(--accent-action), var(--accent-live));
+  --gradient-recordings-play-overlay: radial-gradient(circle at center, color-mix(in srgb, black 22%, transparent), transparent 48%);
+  --gradient-recordings-preplay-stage:
+    radial-gradient(circle at 24% 16%, color-mix(in srgb, var(--accent-action) 14%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 36%),
+    var(--bg-video);
+  --gradient-recordings-preplay-stage-overlay:
+    linear-gradient(180deg, color-mix(in srgb, black 8%, transparent), transparent 26%),
+    linear-gradient(180deg, transparent 44%, color-mix(in srgb, black 58%, transparent) 100%);
 
   /* Spacing */
   --radius-sm: 6px;
@@ -321,6 +343,22 @@ button:focus-visible {
   min-height: 52px;
 }
 
+@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  :root {
+    --text-display: 1.7rem;
+    --text-h1: 1.3rem;
+    --text-h2: 1.08rem;
+    --text-h3: 0.95rem;
+    --text-base: 0.9375rem;
+    --text-sm: 0.8125rem;
+    --text-xs: 0.6875rem;
+    --text-mono-base: 0.8125rem;
+    --text-mono-sm: 0.6875rem;
+    --nav-height: 52px;
+    --radius-xl: 20px;
+  }
+}
+
 /* Links */
 a {
   color: var(--accent-action);
@@ -445,6 +483,46 @@ a:hover {
   }
 }
 
+@keyframes recordingsLaunchSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes runtimePolicyProbing {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent-action) 10%, transparent),
+      0 10px 24px color-mix(in srgb, var(--accent-action) 10%, transparent);
+  }
+
+  50% {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent-action) 18%, transparent),
+      0 12px 28px color-mix(in srgb, var(--accent-action) 16%, transparent);
+  }
+}
+
+@keyframes runtimePolicyAlert {
+  0%,
+  100% {
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--state-danger) 10%, transparent);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--state-danger) 18%, transparent),
+      0 10px 26px color-mix(in srgb, var(--state-danger) 18%, transparent);
+  }
+}
+
 .animate-enter {
   opacity: 1;
 }
@@ -467,6 +545,27 @@ a:hover {
 .animate-startup-progress {
   animation-name: startupProgressSlide;
   animation-duration: 1.45s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.animate-recordings-launch-spinner {
+  animation-name: recordingsLaunchSpin;
+  animation-duration: 0.85s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.animate-runtime-policy-probing {
+  animation-name: runtimePolicyProbing;
+  animation-duration: 2.4s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.animate-runtime-policy-alert {
+  animation-name: runtimePolicyAlert;
+  animation-duration: 1.8s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
 }

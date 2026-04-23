@@ -17,8 +17,10 @@ internal object ServerTargetResolver {
     private const val QUERY_AUTH_TOKEN = "auth_token"
     private const val QUERY_DEVICE_GRANT_ID = "device_grant_id"
     private const val QUERY_DEVICE_GRANT = "device_grant"
-    private const val QUERY_ACCESS_TOKEN = "access_token"
-    private const val QUERY_ACCESS_TOKEN_EXPIRES_AT = "access_token_expires_at"
+    private const val QUERY_LAUNCH_ACCESS_TOKEN = "launch_access_token"
+    private const val QUERY_LAUNCH_ACCESS_TOKEN_EXPIRES_AT = "launch_access_token_expires_at"
+    private const val LEGACY_QUERY_ACCESS_TOKEN = "access_token"
+    private const val LEGACY_QUERY_ACCESS_TOKEN_EXPIRES_AT = "access_token_expires_at"
     private const val UI_BASE_SEGMENT = "/ui"
 
     fun resolveConfiguredBaseUrl(
@@ -92,7 +94,11 @@ internal object ServerTargetResolver {
             return null
         }
 
-        return queryParameter(deepLinkUri.rawQuery, QUERY_ACCESS_TOKEN)
+        return queryParameterAny(
+            deepLinkUri.rawQuery,
+            QUERY_LAUNCH_ACCESS_TOKEN,
+            LEGACY_QUERY_ACCESS_TOKEN
+        )
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
     }
@@ -116,7 +122,11 @@ internal object ServerTargetResolver {
         val accessToken = resolveAccessToken(overrideAccessToken, deepLinkUrl)
         val accessTokenExpiresAtEpochMs = parseDeviceAuthExpiryEpochMs(
             overrideAccessTokenExpiresAt?.trim()?.takeIf { it.isNotEmpty() }
-                ?: queryParameter(deepLinkUri?.rawQuery, QUERY_ACCESS_TOKEN_EXPIRES_AT)
+                ?: queryParameterAny(
+                    deepLinkUri?.rawQuery,
+                    QUERY_LAUNCH_ACCESS_TOKEN_EXPIRES_AT,
+                    LEGACY_QUERY_ACCESS_TOKEN_EXPIRES_AT
+                )
         )
 
         if (deviceGrantId == null &&
@@ -250,6 +260,13 @@ internal object ServerTargetResolver {
             }
             .firstOrNull { (key, _) -> key == name }
             ?.second
+    }
+
+    private fun queryParameterAny(rawQuery: String?, vararg names: String): String? {
+        for (name in names) {
+            queryParameter(rawQuery, name)?.let { return it }
+        }
+        return null
     }
 
     private fun decode(value: String): String {

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +33,7 @@ func TestHostSnapshotDecisionFingerprint_UsesStableHostClass(t *testing.T) {
 
 	baseFingerprint := base.DecisionFingerprint()
 	require.NotEmpty(t, baseFingerprint)
-	require.Contains(t, baseFingerprint, "df1:")
+	require.Contains(t, baseFingerprint, "df4:")
 	require.Equal(t, baseFingerprint, changedRuntime.DecisionFingerprint())
 }
 
@@ -53,4 +54,165 @@ func TestHostSnapshotDecisionFingerprint_ChangesWhenHostClassChanges(t *testing.
 	withAV1.EncoderCapabilities = append(withAV1.EncoderCapabilities, EncoderCapability{Codec: "av1"})
 
 	require.NotEqual(t, base.DecisionFingerprint(), withAV1.DecisionFingerprint())
+}
+
+func TestHostSnapshotDecisionFingerprint_ChangesWhenPerformanceClassChanges(t *testing.T) {
+	base := HostSnapshot{
+		Identity: HostIdentity{
+			OSName:       "linux",
+			OSVersion:    "6.9",
+			Architecture: "amd64",
+		},
+		Runtime: playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "medium",
+		},
+		EncoderCapabilities: []EncoderCapability{
+			{Codec: "h264"},
+		},
+	}
+
+	upgraded := base
+	upgraded.Runtime.PerformanceClass = "high"
+
+	require.NotEqual(t, base.DecisionFingerprint(), upgraded.DecisionFingerprint())
+}
+
+func TestHostSnapshotDecisionFingerprint_ChangesWhenBenchmarkClassChanges(t *testing.T) {
+	base := HostSnapshot{
+		Identity: HostIdentity{
+			OSName:       "linux",
+			OSVersion:    "6.9",
+			Architecture: "amd64",
+		},
+		Runtime: playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "high",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Class: "moderate",
+			},
+		},
+		EncoderCapabilities: []EncoderCapability{
+			{Codec: "h264"},
+		},
+	}
+
+	upgraded := base
+	upgraded.Runtime.Benchmark.Class = "strong"
+
+	require.NotEqual(t, base.DecisionFingerprint(), upgraded.DecisionFingerprint())
+}
+
+func TestHostSnapshotDecisionFingerprint_ChangesWhenH264BenchmarkClassChanges(t *testing.T) {
+	base := HostSnapshot{
+		Identity: HostIdentity{
+			OSName:       "linux",
+			OSVersion:    "6.9",
+			Architecture: "amd64",
+		},
+		Runtime: playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "high",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Class: "strong",
+				Codecs: []playbackprofile.HostCodecBenchmark{
+					{Codec: "h264", Class: "moderate"},
+					{Codec: "hevc", Class: "strong"},
+				},
+			},
+		},
+		EncoderCapabilities: []EncoderCapability{
+			{Codec: "h264"},
+		},
+	}
+
+	upgraded := base
+	upgraded.Runtime.Benchmark.Codecs = []playbackprofile.HostCodecBenchmark{
+		{Codec: "h264", Class: "weak"},
+		{Codec: "hevc", Class: "strong"},
+	}
+
+	require.NotEqual(t, base.DecisionFingerprint(), upgraded.DecisionFingerprint())
+}
+
+func TestHostSnapshotDecisionFingerprint_ChangesWhenH264ProfileBenchmarkClassChanges(t *testing.T) {
+	base := HostSnapshot{
+		Identity: HostIdentity{
+			OSName:       "linux",
+			OSVersion:    "6.9",
+			Architecture: "amd64",
+		},
+		Runtime: playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "high",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Class: "strong",
+				Codecs: []playbackprofile.HostCodecBenchmark{
+					{Codec: "h264", Class: "strong"},
+				},
+				Profiles: []playbackprofile.HostProfileBenchmark{
+					{ProfileID: playbackprofile.BenchmarkProfileVideoH2641080I, Class: "moderate"},
+				},
+			},
+		},
+		EncoderCapabilities: []EncoderCapability{
+			{Codec: "h264"},
+		},
+	}
+
+	upgraded := base
+	upgraded.Runtime.Benchmark.Profiles = []playbackprofile.HostProfileBenchmark{
+		{ProfileID: playbackprofile.BenchmarkProfileVideoH2641080I, Class: "weak"},
+	}
+
+	require.NotEqual(t, base.DecisionFingerprint(), upgraded.DecisionFingerprint())
+}
+
+func TestSourceSnapshotFingerprint_ChangesWhenBitrateConfidenceChanges(t *testing.T) {
+	base := SourceSnapshot{
+		SubjectKind:       "live",
+		Origin:            "live_scan",
+		Container:         "ts",
+		VideoCodec:        "hevc",
+		AudioCodec:        "ac3",
+		BitrateConfidence: "low",
+		BitrateBucket:     "9m_18m",
+		Width:             3840,
+		Height:            2160,
+		FPS:               25,
+		SignalFPS:         50,
+		Interlaced:        true,
+		ProblemFlags:      []string{"interlaced"},
+		UpdatedAt:         time.Unix(1_700_000_000, 0).UTC(),
+	}
+
+	upgraded := base
+	upgraded.BitrateConfidence = "high"
+	upgraded.UpdatedAt = time.Unix(1_800_000_000, 0).UTC()
+
+	require.NotEqual(t, base.Fingerprint(), upgraded.Fingerprint())
+}
+
+func TestSourceSnapshotFingerprint_ChangesWhenSignalFPSOrBitrateBucketChanges(t *testing.T) {
+	base := SourceSnapshot{
+		SubjectKind:       "live",
+		Origin:            "live_scan",
+		Container:         "ts",
+		VideoCodec:        "hevc",
+		AudioCodec:        "ac3",
+		BitrateConfidence: "high",
+		BitrateBucket:     "9m_18m",
+		Width:             3840,
+		Height:            2160,
+		FPS:               25,
+		SignalFPS:         50,
+		Interlaced:        true,
+		ProblemFlags:      []string{"interlaced"},
+		UpdatedAt:         time.Unix(1_700_000_000, 0).UTC(),
+	}
+
+	withLowerSignalFPS := base
+	withLowerSignalFPS.SignalFPS = 25
+
+	withHigherBitrateBucket := base
+	withHigherBitrateBucket.BitrateBucket = "18m_plus"
+
+	require.NotEqual(t, base.Fingerprint(), withLowerSignalFPS.Fingerprint())
+	require.NotEqual(t, base.Fingerprint(), withHigherBitrateBucket.Fingerprint())
 }

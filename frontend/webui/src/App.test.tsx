@@ -43,8 +43,20 @@ vi.mock('./components/Files', () => ({
   default: () => <div>Files view</div>,
 }));
 
+vi.mock('./components/Dashboard', () => ({
+  default: () => <div>Start view</div>,
+}));
+
 vi.mock('./features/epg/EPG', () => ({
   default: () => <div>EPG view</div>,
+}));
+
+vi.mock('./components/Settings', () => ({
+  default: () => <div>Settings view</div>,
+}));
+
+vi.mock('./components/RecordingsList', () => ({
+  default: () => <div>Recordings view</div>,
 }));
 
 describe('App', () => {
@@ -94,7 +106,7 @@ describe('App', () => {
     });
   });
 
-  it('renders the route-matched view and redirects root to epg', async () => {
+  it('resolves canonical routes and redirects legacy routes into their parent surfaces', async () => {
     const { default: App } = await import('./App');
 
     const { unmount } = render(
@@ -103,9 +115,29 @@ describe('App', () => {
       </MemoryRouter>
     );
 
-    await screen.findByText('Files view');
+    await screen.findByText('Settings view');
 
     unmount();
+
+    const seriesRender = render(
+      <MemoryRouter initialEntries={['/series']}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('Recordings view');
+
+    seriesRender.unmount();
+
+    const timersRender = render(
+      <MemoryRouter initialEntries={['/timers']}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('EPG view');
+
+    timersRender.unmount();
 
     render(
       <MemoryRouter initialEntries={['/']}>
@@ -113,6 +145,6 @@ describe('App', () => {
       </MemoryRouter>
     );
 
-    await screen.findByText('EPG view');
+    await screen.findByText('Start view');
   });
 });

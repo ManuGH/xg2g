@@ -11,6 +11,7 @@ import (
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -31,7 +32,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 
 	req = s.applyCapabilityRegistryFallback(ctx, req)
 
-	sourceRef, truth, err := s.resolveSubjectTruth(ctx, req, svc)
+	sourceRef, truth, liveTruth, err := s.resolveSubjectTruth(ctx, req, svc)
 	if err != nil {
 		return PlaybackInfoResult{}, err
 	}
@@ -58,6 +59,8 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		req.Capabilities,
 	)
 	hostContext := s.buildRequestHostContext(ctx)
+	hostPressure := s.deps.HostPressure(ctx)
+	operatorPolicy, runtimeFeedbackPolicy := s.applyPlaybackFeedbackPolicy(ctx, sourceRef, req, truth, resolvedCaps, hostContext, hostPressure, operatorPolicy)
 
 	input := buildDecisionInput(
 		req,
@@ -65,7 +68,8 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		resolvedCaps,
 		cfg,
 		operatorPolicy,
-		s.deps.HostPressure(ctx),
+		hostPressure,
+		hostContext.Snapshot.Runtime,
 	)
 
 	ctx = decision.WithShadowCollector(ctx, decision.NewShadowCollector())
@@ -83,28 +87,145 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		}
 	}
 
-	alignAutoCodecDecision(req, resolvedCaps, dec)
-	alignLiveNativePackaging(req, resolvedCaps, dec)
-	alignRecordingNativePackaging(req, resolvedCaps, dec)
-	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, resolvedCaps)
+	alignAutoCodecDecision(req, resolvedCaps, hostContext.Snapshot.Runtime, dec)
+	applyPlaybackTransportPolicy(req, resolvedCaps, dec)
+	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, liveTruth, resolvedCaps)
 	s.recordDecisionAudit(ctx, hostContext, sourceRef, req, resolvedCaps, input, dec)
 	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
 
 	return PlaybackInfoResult{
-		SourceRef:            sourceRef,
-		Truth:                truth,
-		ResolvedCapabilities: resolvedCaps,
-		Decision:             dec,
-		ClientProfile:        req.ClientProfile,
-		OperatorRuleName:     operatorRuleName,
-		OperatorRuleScope:    operatorRuleScope,
+		SourceRef:                 sourceRef,
+		Truth:                     truth,
+		ResolvedCapabilities:      resolvedCaps,
+		Decision:                  dec,
+		ClientProfile:             req.ClientProfile,
+		OperatorRuleName:          operatorRuleName,
+		OperatorRuleScope:         operatorRuleScope,
+		RuntimePolicyAction:       playbackPolicyActionName(runtimeFeedbackPolicy),
+		RuntimePolicyPhase:        playbackPolicyPhaseName(runtimeFeedbackPolicy),
+		RuntimeProbeCandidate:     playbackPolicyProbeCandidateName(runtimeFeedbackPolicy),
+		RuntimePolicyReasons:      playbackPolicyReasonNames(runtimeFeedbackPolicy),
+		RuntimePolicyConstraints:  playbackPolicyConstraintNames(runtimeFeedbackPolicy),
+		RuntimeProbeSuccessStreak: playbackPolicyProbeSuccessStreak(runtimeFeedbackPolicy),
+		RuntimeProbeFailureStreak: playbackPolicyProbeFailureStreak(runtimeFeedbackPolicy),
 	}, nil
 }
 
-func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoRequest, svc RecordingsService) (string, playback.MediaTruth, *PlaybackInfoError) {
+func playbackPolicyActionName(policy *playbackFeedbackPolicy) string {
+	if policy == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(policy.Policy.Action))
+}
+
+func playbackPolicyPhaseName(policy *playbackFeedbackPolicy) string {
+	if policy == nil {
+		return ""
+	}
+
+	action := strings.TrimSpace(string(policy.Policy.Action))
+	switch action {
+	case "probe_up":
+		return "probing"
+	case "cooldown":
+		return "cooldown"
+	case "degrade":
+		return "degraded"
+	case "lock_current":
+		return "recovering"
+	}
+
+	if playbackPolicyHasReason(policy, runtimepolicy.ReasonProbeRecentlyRegressed, runtimepolicy.ReasonProbeWindowRegressed) {
+		return "probe_regressed"
+	}
+
+	switch policy.Confidence.State {
+	case runtimepolicy.ConfidenceRecovery:
+		return "recovering"
+	case runtimepolicy.ConfidenceLow:
+		return "degraded"
+	case runtimepolicy.ConfidenceStable, runtimepolicy.ConfidenceHigh:
+		return "stable"
+	default:
+		return ""
+	}
+}
+
+func playbackPolicyProbeCandidateName(policy *playbackFeedbackPolicy) string {
+	if policy == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(policy.Policy.ProbeCandidate))
+}
+
+func playbackPolicyReasonNames(policy *playbackFeedbackPolicy) []string {
+	if policy == nil || len(policy.Policy.Reasons) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(policy.Policy.Reasons))
+	for _, reason := range policy.Policy.Reasons {
+		if strings.TrimSpace(reason) != "" {
+			out = append(out, reason)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func playbackPolicyConstraintNames(policy *playbackFeedbackPolicy) []string {
+	if policy == nil || len(policy.Policy.PolicyConstraints) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(policy.Policy.PolicyConstraints))
+	for _, constraint := range policy.Policy.PolicyConstraints {
+		if strings.TrimSpace(constraint) != "" {
+			out = append(out, constraint)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func playbackPolicyHasReason(policy *playbackFeedbackPolicy, reasons ...string) bool {
+	if policy == nil || len(reasons) == 0 {
+		return false
+	}
+	for _, candidate := range policy.Policy.Reasons {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		for _, reason := range reasons {
+			if candidate == strings.TrimSpace(reason) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func playbackPolicyProbeSuccessStreak(policy *playbackFeedbackPolicy) int {
+	if policy == nil {
+		return 0
+	}
+	return policy.Confidence.ProbeSuccessStreak
+}
+
+func playbackPolicyProbeFailureStreak(policy *playbackFeedbackPolicy) int {
+	if policy == nil {
+		return 0
+	}
+	return policy.Confidence.ProbeFailureStreak
+}
+
+func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoRequest, svc RecordingsService) (string, playback.MediaTruth, *liveTruthResolution, *PlaybackInfoError) {
 	subjectID := strings.TrimSpace(req.SubjectID)
 	if subjectID == "" {
-		return "", playback.MediaTruth{}, &PlaybackInfoError{
+		return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 			Kind:    PlaybackInfoErrorInvalidInput,
 			Message: "subject id is required",
 		}
@@ -113,37 +234,41 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 	switch req.SubjectKind {
 	case PlaybackSubjectLive:
 		if err := domainrecordings.ValidateLiveRef(subjectID); err != nil {
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:    PlaybackInfoErrorInvalidInput,
 				Message: "serviceRef must be a valid live Enigma2 reference",
 				Cause:   err,
 			}
 		}
 		source := s.deps.ChannelTruthSource()
-		truthResolution := resolveLiveTruthState(subjectID, source)
+		requestContext := PlaybackInfoRequestContext(req)
+		truthResolution := resolveLiveTruthState(subjectID, source, requestContext)
 		if !truthResolution.Verified() && shouldProbeLiveTruth(truthResolution) {
 			if probeSource, ok := source.(channelTruthProbeSource); ok {
 				cachedResolution := truthResolution
 				probedCap, found, probeErr := probeSource.ProbeCapability(ctx, subjectID)
 				if probeErr != nil {
-					log.L().Warn().
+					evt := log.L().Warn().
 						Err(probeErr).
-						Str("serviceRef", subjectID).
-						Msg("live playback truth probe failed")
+						Str("serviceRef", subjectID)
+					if requestContext != "" {
+						evt = evt.Str("request_context", requestContext)
+					}
+					evt.Msg("live playback truth probe failed")
 				}
 				if found || cachedResolution.Reason == "missing_scan_truth" {
-					truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found)
+					truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found, time.Now().UTC(), requestContext)
 				}
 			}
 		}
 		if !truthResolution.Verified() {
-			return "", playback.MediaTruth{}, playbackInfoErrorForLiveTruth(truthResolution)
+			return "", playback.MediaTruth{}, &truthResolution, playbackInfoErrorForLiveTruth(truthResolution)
 		}
-		return subjectID, truthResolution.Truth, nil
+		return subjectID, truthResolution.Truth, &truthResolution, nil
 	case PlaybackSubjectRecording:
 		sourceRef, ok := domainrecordings.DecodeRecordingID(subjectID)
 		if !ok {
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:    PlaybackInfoErrorInvalidInput,
 				Message: "Invalid recording ID format",
 			}
@@ -151,31 +276,31 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 
 		truth, err := svc.GetMediaTruth(ctx, subjectID)
 		if err != nil {
-			return "", playback.MediaTruth{}, classifyPlaybackInfoError(err)
+			return "", playback.MediaTruth{}, nil, classifyPlaybackInfoError(err)
 		}
 
 		switch truth.Status {
 		case playback.MediaStatusPreparing:
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:              PlaybackInfoErrorPreparing,
 				Message:           "Retry shortly.",
 				RetryAfterSeconds: truth.RetryAfter,
 				ProbeState:        string(truth.ProbeState),
 			}
 		case playback.MediaStatusUpstreamUnavailable:
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:    PlaybackInfoErrorUpstreamUnavailable,
 				Message: "Retry later.",
 			}
 		case playback.MediaStatusNotFound:
-			return "", playback.MediaTruth{}, &PlaybackInfoError{
+			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 				Kind:    PlaybackInfoErrorNotFound,
 				Message: "recording not found",
 			}
 		}
-		return sourceRef, truth, nil
+		return sourceRef, truth, nil, nil
 	default:
-		return "", playback.MediaTruth{}, &PlaybackInfoError{
+		return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
 			Kind:    PlaybackInfoErrorInvalidInput,
 			Message: "unsupported playback subject kind",
 		}
@@ -184,7 +309,7 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 
 func shouldProbeLiveTruth(resolution liveTruthResolution) bool {
 	switch resolution.Reason {
-	case "missing_scan_truth", "partial_scan_truth", "incomplete_scan_truth", "failed_scan_truth":
+	case "missing_scan_truth", "partial_scan_truth", "incomplete_scan_truth", "failed_scan_truth", "stale_scan_truth":
 		return true
 	default:
 		return false
@@ -198,6 +323,8 @@ func playbackInfoErrorForLiveTruth(resolution liveTruthResolution) *PlaybackInfo
 		message = "Live scan truth unavailable"
 	case "missing_scan_truth":
 		message = "Live media truth missing"
+	case "stale_scan_truth":
+		message = "Live media truth stale"
 	case "inactive_event_feed":
 		message = "Live event feed inactive"
 	case "partial_scan_truth", "incomplete_scan_truth":
@@ -258,12 +385,12 @@ func (s *Service) recordDecisionAudit(ctx context.Context, hostContext requestHo
 	}
 }
 
-func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
+func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, dec *decision.Decision) {
 	if req.Capabilities == nil || dec == nil || dec.Mode != decision.ModeTranscode || !shouldApplyAutoCodecDecision(req.RequestedProfile) {
 		return
 	}
 
-	profileID := autocodec.PickProfileForCapabilities(resolvedCaps, profiles.HWAccelAuto)
+	profileID := pickPlaybackInfoAutoProfile(resolvedCaps, hostRuntime)
 	if profileID == "" {
 		return
 	}
@@ -285,6 +412,22 @@ func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.P
 		dec.Trace.RequestedIntent = publicProfile
 		dec.Trace.ResolvedIntent = publicProfile
 	}
+	selectionTrace := autocodec.DescribeSelection(strings.Join(autocodec.ResolveAutoTranscodeCodecs(resolvedCaps), ","), profileID, hostRuntime)
+	dec.Trace.AutoCodecPolicy = selectionTrace.Policy
+	dec.Trace.AutoCodecRequested = selectionTrace.RequestedCodecs
+	dec.Trace.AutoCodecSelected = selectionTrace.SelectedCodec
+	dec.Trace.AutoCodecHostClass = selectionTrace.PerformanceClass
+	dec.Trace.AutoCodecBenchClass = selectionTrace.CodecBenchmarkClass
+}
+
+func pickPlaybackInfoAutoProfile(resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
+	if profileID := autocodec.PickNativeHLSProfileForClientAndHost("", resolvedCaps.ClientFamilyFallback, &resolvedCaps, profiles.HWAccelAuto, hostRuntime); profileID != "" {
+		return autocodec.ApplyClientCompatibilityProfileID(resolvedCaps.ClientFamilyFallback, profileID)
+	}
+	return autocodec.ApplyClientCompatibilityProfileID(
+		resolvedCaps.ClientFamilyFallback,
+		autocodec.PickProfileForCapabilitiesForClientAndHost(resolvedCaps, resolvedCaps.ClientFamilyFallback, profiles.HWAccelAuto, hostRuntime),
+	)
 }
 
 func shouldApplyAutoCodecDecision(requestedProfile string) bool {
@@ -306,144 +449,6 @@ func resolvePlaybackInfoGPUBackend(profileID string) profiles.GPUBackend {
 		return hardware.PreferredGPUBackendForCodec("h264")
 	default:
 		return hardware.PreferredGPUBackend()
-	}
-}
-
-func alignLiveNativePackaging(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
-	if req.SubjectKind != PlaybackSubjectLive || dec == nil || dec.TargetProfile == nil {
-		return
-	}
-	if !clientWantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
-		return
-	}
-	if shouldPreferNativeDirectStream(dec) {
-		rewriteDecisionToDirectStream(dec)
-	}
-	if dec.SelectedOutputKind != "hls" || !dec.TargetProfile.HLS.Enabled {
-		return
-	}
-
-	target := *dec.TargetProfile
-	target.Container = "fmp4"
-	target.Packaging = playbackprofile.PackagingFMP4
-	target.HLS.Enabled = true
-	target.HLS.SegmentContainer = "fmp4"
-	canonical := playbackprofile.CanonicalizeTarget(target)
-	dec.TargetProfile = &canonical
-	dec.Selected.Container = "fmp4"
-	if dec.Mode == decision.ModeDirectStream {
-		dec.Trace.QualityRung = string(playbackprofile.RungCompatibleHLSFMP4)
-	}
-}
-
-func alignRecordingNativePackaging(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
-	if req.SubjectKind != PlaybackSubjectRecording || dec == nil || dec.TargetProfile == nil {
-		return
-	}
-	if !clientWantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
-		return
-	}
-	if shouldPreferNativeDirectStream(dec) {
-		if recordingClientSupportsDirectTransportStream(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
-			return
-		}
-		rewriteDecisionToDirectStream(dec)
-	}
-	if dec.SelectedOutputKind != "hls" || !dec.TargetProfile.HLS.Enabled {
-		return
-	}
-
-	target := *dec.TargetProfile
-	target.Container = "mp4"
-	target.Packaging = playbackprofile.PackagingFMP4
-	target.HLS.Enabled = true
-	target.HLS.SegmentContainer = "fmp4"
-	canonical := playbackprofile.CanonicalizeTarget(target)
-	dec.TargetProfile = &canonical
-	if dec.Mode == decision.ModeDirectStream {
-		dec.Trace.QualityRung = string(playbackprofile.RungCompatibleHLSFMP4)
-	}
-}
-
-func shouldPreferNativeDirectStream(dec *decision.Decision) bool {
-	if dec == nil || dec.Mode != decision.ModeDirectPlay || dec.TargetProfile == nil {
-		return false
-	}
-
-	target := playbackprofile.CanonicalizeTarget(*dec.TargetProfile)
-	if target.Video.Mode != playbackprofile.MediaModeCopy || target.Audio.Mode != playbackprofile.MediaModeCopy {
-		return false
-	}
-
-	switch normalize.Token(target.Container) {
-	case "ts", "mpegts":
-		return true
-	}
-	return target.Packaging == playbackprofile.PackagingTS
-}
-
-func rewriteDecisionToDirectStream(dec *decision.Decision) {
-	if dec == nil || dec.TargetProfile == nil {
-		return
-	}
-
-	target := playbackprofile.CanonicalizeTarget(*dec.TargetProfile)
-	target.HLS.Enabled = true
-	target.HLS.SegmentContainer = "mpegts"
-	canonical := playbackprofile.CanonicalizeTarget(target)
-
-	dec.Mode = decision.ModeDirectStream
-	dec.Outputs = []decision.Output{
-		{
-			Kind: "hls",
-			URL:  "placeholder://direct-stream.m3u8",
-		},
-	}
-	dec.TargetProfile = &canonical
-	dec.Reasons = []decision.ReasonCode{decision.ReasonDirectStreamMatch}
-	dec.SelectedOutputKind = "hls"
-	dec.SelectedOutputURL = "placeholder://direct-stream.m3u8"
-	dec.Trace.ResolvedIntent = playbackprofile.PublicIntentName(playbackprofile.IntentCompatible)
-	dec.Trace.QualityRung = string(playbackprofile.RungCompatibleHLSTS)
-	dec.Trace.AudioQualityRung = ""
-	dec.Trace.VideoQualityRung = ""
-	if dec.Trace.RequestedIntent == string(playbackprofile.IntentDirect) {
-		dec.Trace.DegradedFrom = string(playbackprofile.IntentDirect)
-	} else {
-		dec.Trace.DegradedFrom = ""
-	}
-	dec.Trace.Why = []decision.Reason{
-		{
-			Code: decision.ReasonDirectStreamMatch,
-		},
-	}
-}
-
-func clientWantsFMP4Packaging(requestedProfile string, clientFamily string) bool {
-	switch strings.ToLower(strings.TrimSpace(requestedProfile)) {
-	case "android_native", "android_tv_native", "safari", "safari_dvr", "safari_dirty", "safari_hevc", "safari_hevc_hw", "safari_hevc_hw_ll", "h264_fmp4":
-		return true
-	}
-
-	switch strings.ToLower(strings.TrimSpace(clientFamily)) {
-	case "android_native", "android_tv_native", "safari_native", "ios_safari_native":
-		return true
-	default:
-		return false
-	}
-}
-
-func recordingClientSupportsDirectTransportStream(requestedProfile string, clientFamily string) bool {
-	switch strings.ToLower(strings.TrimSpace(requestedProfile)) {
-	case "android_native", "android_tv_native":
-		return true
-	}
-
-	switch strings.ToLower(strings.TrimSpace(clientFamily)) {
-	case "android_native", "android_tv_native":
-		return true
-	default:
-		return false
 	}
 }
 
@@ -486,25 +491,30 @@ func buildDecisionInput(
 	cfg config.AppConfig,
 	operatorPolicy config.PlaybackOperatorConfig,
 	hostPressure playbackprofile.HostPressureAssessment,
+	hostRuntime playbackprofile.HostRuntimeSnapshot,
 ) decision.DecisionInput {
 	serverCanTranscode := strings.TrimSpace(cfg.FFmpeg.Bin) != "" && strings.TrimSpace(cfg.HLS.Root) != ""
 	clientAllowsTranscode := resolvedCaps.AllowTranscode == nil || *resolvedCaps.AllowTranscode
 	allowTranscode := serverCanTranscode && clientAllowsTranscode
+	mappedCaps := decision.FromCapabilities(resolvedCaps)
+	videoBenchmarkClass := benchmarkClassForPlaybackPath(hostRuntime.Benchmark, truth, mappedCaps)
 
 	return decision.DecisionInput{
 		RequestID:       req.RequestID,
 		RequestedIntent: playbackprofile.NormalizeRequestedIntent(req.RequestedProfile),
 		APIVersion:      req.APIVersion,
 		Source: decision.Source{
-			Container:  truth.Container,
-			VideoCodec: truth.VideoCodec,
-			AudioCodec: truth.AudioCodec,
-			Width:      truth.Width,
-			Height:     truth.Height,
-			FPS:        truth.FPS,
-			Interlaced: truth.Interlaced,
+			Container:         truth.Container,
+			VideoCodec:        truth.VideoCodec,
+			AudioCodec:        truth.AudioCodec,
+			BitrateKbps:       truth.BitrateKbps,
+			BitrateConfidence: truth.BitrateConfidence,
+			Width:             truth.Width,
+			Height:            truth.Height,
+			FPS:               truth.FPS,
+			Interlaced:        truth.Interlaced,
 		},
-		Capabilities: decision.FromCapabilities(resolvedCaps),
+		Capabilities: mappedCaps,
 		Policy: decision.Policy{
 			AllowTranscode: allowTranscode,
 			Operator: decision.OperatorPolicy{
@@ -512,8 +522,90 @@ func buildDecisionInput(
 				MaxQualityRung: playbackprofile.NormalizeQualityRung(operatorPolicy.MaxQualityRung),
 			},
 			Host: decision.HostPolicy{
-				PressureBand: playbackprofile.NormalizeHostPressureBand(string(hostPressure.EffectiveBand)),
+				PressureBand:     playbackprofile.NormalizeHostPressureBand(string(hostPressure.EffectiveBand)),
+				PerformanceClass: hostRuntime.PerformanceClass,
+				BenchmarkClass:   videoBenchmarkClass,
 			},
 		},
 	}
+}
+
+func benchmarkClassForPlaybackPath(snapshot playbackprofile.HostBenchmarkSnapshot, truth playback.MediaTruth, caps decision.Capabilities) string {
+	if profileID := benchmarkProfileForPlaybackPath(truth, caps); profileID != "" {
+		if class := playbackprofile.BenchmarkClassForProfile(snapshot, profileID); class != "" {
+			return class
+		}
+	}
+	return playbackprofile.BenchmarkClassForCodec(snapshot, "h264")
+}
+
+func benchmarkProfileForPlaybackPath(truth playback.MediaTruth, caps decision.Capabilities) string {
+	if benchmarkProfileIsAudioOnly(truth, caps) {
+		return playbackprofile.BenchmarkProfileAudioAACStereo
+	}
+	return benchmarkProfileForTruth(truth)
+}
+
+func benchmarkProfileForTruth(truth playback.MediaTruth) string {
+	pixels := truth.Width * truth.Height
+	signalFPS := truth.SignalFPS
+	if signalFPS <= 0 {
+		signalFPS = truth.FPS
+	}
+	switch {
+	case truth.Interlaced && pixels >= 1920*1080 && signalFPS >= 50:
+		return playbackprofile.BenchmarkProfileVideoH2641080I50
+	case truth.Interlaced && pixels >= 1920*1080:
+		return playbackprofile.BenchmarkProfileVideoH2641080I
+	case pixels >= 3840*2160 && signalFPS >= 50:
+		return playbackprofile.BenchmarkProfileVideoH2642160P50
+	case pixels >= 3840*2160:
+		return playbackprofile.BenchmarkProfileVideoH2642160P
+	case pixels >= 1920*1080:
+		return playbackprofile.BenchmarkProfileVideoH2641080P
+	default:
+		return ""
+	}
+}
+
+func benchmarkProfileIsAudioOnly(truth playback.MediaTruth, caps decision.Capabilities) bool {
+	if benchmarkSourceRequiresVideoRepair(truth) {
+		return false
+	}
+	canVideo := benchmarkContains(caps.VideoCodecs, truth.VideoCodec) && benchmarkWithinMaxVideo(truth, caps.MaxVideo)
+	canAudio := benchmarkContains(caps.AudioCodecs, truth.AudioCodec)
+	return canVideo && !canAudio
+}
+
+func benchmarkSourceRequiresVideoRepair(truth playback.MediaTruth) bool {
+	return truth.Interlaced || truth.Width <= 0 || truth.Height <= 0 || truth.FPS <= 0
+}
+
+func benchmarkContains(values []string, value string) bool {
+	want := normalize.Token(value)
+	if want == "" {
+		return false
+	}
+	for _, candidate := range values {
+		if normalize.Token(candidate) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func benchmarkWithinMaxVideo(truth playback.MediaTruth, maxVideo *decision.MaxVideoDimensions) bool {
+	if maxVideo == nil {
+		return true
+	}
+	if maxVideo.Width > 0 && truth.Width > 0 && truth.Width > maxVideo.Width {
+		return false
+	}
+	if maxVideo.Height > 0 && truth.Height > 0 && truth.Height > maxVideo.Height {
+		return false
+	}
+	if maxVideo.FPS > 0 && truth.FPS > 0 && truth.FPS > float64(maxVideo.FPS) {
+		return false
+	}
+	return true
 }

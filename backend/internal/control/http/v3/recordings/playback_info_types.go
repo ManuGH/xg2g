@@ -1,6 +1,8 @@
 package recordings
 
 import (
+	"strings"
+
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
@@ -12,6 +14,35 @@ const (
 	PlaybackSubjectRecording PlaybackSubjectKind = "recording"
 	PlaybackSubjectLive      PlaybackSubjectKind = "live"
 )
+
+const (
+	PlaybackInfoContextHeader      = "X-XG2G-Playback-Info-Context"
+	PlaybackInfoContextPlayerStart = "player_start"
+	PlaybackInfoContextEpgBadge    = "epg_badge"
+)
+
+func NormalizePlaybackInfoRequestContext(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case PlaybackInfoContextPlayerStart:
+		return PlaybackInfoContextPlayerStart
+	case PlaybackInfoContextEpgBadge:
+		return PlaybackInfoContextEpgBadge
+	default:
+		return ""
+	}
+}
+
+func PlaybackInfoRequestContext(req PlaybackInfoRequest) string {
+	if req.Headers == nil {
+		return ""
+	}
+	for key, value := range req.Headers {
+		if strings.EqualFold(key, PlaybackInfoContextHeader) {
+			return NormalizePlaybackInfoRequestContext(value)
+		}
+	}
+	return ""
+}
 
 // PlaybackInfoRequest is the transport-neutral request payload for recording/live playback decisions.
 type PlaybackInfoRequest struct {
@@ -29,13 +60,20 @@ type PlaybackInfoRequest struct {
 
 // PlaybackInfoResult holds the domain-level inputs and outputs needed by the HTTP adapter.
 type PlaybackInfoResult struct {
-	SourceRef            string
-	Truth                playback.MediaTruth
-	ResolvedCapabilities capabilities.PlaybackCapabilities
-	Decision             *decision.Decision
-	ClientProfile        string
-	OperatorRuleName     string
-	OperatorRuleScope    string
+	SourceRef                 string
+	Truth                     playback.MediaTruth
+	ResolvedCapabilities      capabilities.PlaybackCapabilities
+	Decision                  *decision.Decision
+	ClientProfile             string
+	OperatorRuleName          string
+	OperatorRuleScope         string
+	RuntimePolicyAction       string
+	RuntimePolicyPhase        string
+	RuntimeProbeCandidate     string
+	RuntimePolicyReasons      []string
+	RuntimePolicyConstraints  []string
+	RuntimeProbeSuccessStreak int
+	RuntimeProbeFailureStreak int
 }
 
 type PlaybackInfoProblem struct {

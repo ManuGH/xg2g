@@ -167,22 +167,39 @@ func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string,
 			}
 			info.Video.Width = s.Width
 			info.Video.Height = s.Height
-			if s.FieldOrder != "" && s.FieldOrder != "progressive" {
+			info.Video.FieldOrder = strings.ToLower(strings.TrimSpace(s.FieldOrder))
+			if info.Video.FieldOrder != "" && info.Video.FieldOrder != "progressive" {
 				info.Video.Interlaced = true
 			}
-			if s.AvgFrameRate != "" && s.AvgFrameRate != "0/0" {
-				parts := strings.Split(s.AvgFrameRate, "/")
-				if len(parts) == 2 {
-					num, _ := strconv.ParseFloat(parts[0], 64)
-					den, _ := strconv.ParseFloat(parts[1], 64)
-					if den > 0 {
-						info.Video.FPS = num / den
-					}
+			if fps := parseFrameRate(s.AvgFrameRate); fps > 0 {
+				info.Video.FPS = fps
+			}
+			if signalFPS := parseFrameRate(s.RFrameRate); signalFPS > 0 {
+				info.Video.SignalFPS = signalFPS
+			}
+			if info.Video.SignalFPS == 0 {
+				info.Video.SignalFPS = info.Video.FPS
+			}
+			if info.BitrateKbps == 0 && s.BitRate != "" {
+				if bitrateKbps := parseBitrateKbps(s.BitRate); bitrateKbps > 0 {
+					info.BitrateKbps = bitrateKbps
 				}
 			}
 
 		case "audio":
 			info.Audio.CodecName = s.CodecName
+			if s.SampleRate != "" {
+				if sampleRate, err := strconv.Atoi(s.SampleRate); err == nil {
+					info.Audio.SampleRate = sampleRate
+				}
+			}
+			if s.Channels > 0 {
+				info.Audio.Channels = s.Channels
+			}
+			if bitrateKbps := parseBitrateKbps(s.BitRate); bitrateKbps > 0 {
+				info.Audio.BitrateKbps = bitrateKbps
+			}
+			info.Audio.ChannelLayout = strings.ToLower(strings.TrimSpace(s.ChannelLayout))
 			info.Audio.TrackCount++
 		}
 	}
@@ -212,8 +229,43 @@ func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string,
 		return nil, fmt.Errorf("ffprobe returned empty format_name token list")
 	}
 	info.Container = canonical
+	if bitrateKbps := parseBitrateKbps(data.Format.BitRate); bitrateKbps > 0 {
+		info.BitrateKbps = bitrateKbps
+	}
 
 	return info, nil
+}
+
+func parseBitrateKbps(raw string) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	bitrate, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || bitrate <= 0 {
+		return 0
+	}
+	return int((bitrate + 999) / 1000)
+}
+
+func parseFrameRate(raw string) float64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "0/0" {
+		return 0
+	}
+	parts := strings.Split(raw, "/")
+	if len(parts) == 2 {
+		num, errNum := strconv.ParseFloat(parts[0], 64)
+		den, errDen := strconv.ParseFloat(parts[1], 64)
+		if errNum == nil && errDen == nil && den > 0 {
+			return num / den
+		}
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || value <= 0 {
+		return 0
+	}
+	return value
 }
 
 func sanitizeProbePathForLog(path string) string {
@@ -233,14 +285,20 @@ type probeData struct {
 		CodecName        string `json:"codec_name"`
 		PixFmt           string `json:"pix_fmt,omitempty"`
 		BitsPerRawSample string `json:"bits_per_raw_sample,omitempty"`
+		BitRate          string `json:"bit_rate,omitempty"`
 		Duration         string `json:"duration,omitempty"`
+		SampleRate       string `json:"sample_rate,omitempty"`
+		Channels         int    `json:"channels,omitempty"`
+		ChannelLayout    string `json:"channel_layout,omitempty"`
 		Width            int    `json:"width,omitempty"`
 		Height           int    `json:"height,omitempty"`
 		FieldOrder       string `json:"field_order,omitempty"`
 		AvgFrameRate     string `json:"avg_frame_rate,omitempty"`
+		RFrameRate       string `json:"r_frame_rate,omitempty"`
 	} `json:"streams"`
 	Format struct {
 		Duration   string `json:"duration"`
+		BitRate    string `json:"bit_rate,omitempty"`
 		FormatName string `json:"format_name"`
 	} `json:"format"`
 }

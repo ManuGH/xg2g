@@ -4,7 +4,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
-import { postLivePlaybackInfo, type PlaybackInfo } from '../../../client-ts';
+import { postLivePlaybackInfo, type PlaybackInfo, type PlaybackTargetProfile } from '../../../client-ts';
 import { isEventVisible } from '../epgModel';
 import { EpgEventRow } from './EpgEventList';
 import { Button } from '../../../components/ui';
@@ -16,6 +16,10 @@ import {
   resolvePlaybackRequestProfile,
   type PlaybackRequestProfile,
 } from '../../player/utils/playbackRequestProfile';
+import {
+  PLAYBACK_INFO_CONTEXT_EPG_BADGE,
+  PLAYBACK_INFO_CONTEXT_HEADER,
+} from '../../player/utils/playbackInfoContext';
 import { resolveHostEnvironment } from '../../../lib/hostBridge';
 import { getStoredToken } from '../../../utils/tokenStorage';
 import styles from '../EPG.module.css';
@@ -70,8 +74,40 @@ function formatResolutionLabel(resolution?: string | null): string | null {
   return Number.isNaN(height) ? resolution : `${height}p`;
 }
 
+function formatTargetResolutionLabel(targetProfile?: PlaybackTargetProfile): string | null {
+  const width = targetProfile?.video?.width;
+  const height = targetProfile?.video?.height;
+
+  if (!width || !height) {
+    return null;
+  }
+
+  return formatResolutionLabel(`${width}x${height}`);
+}
+
+function formatTargetLane(label: string, mode?: string | null, codec?: string | null): string | null {
+  if (!mode && !codec) {
+    return null;
+  }
+
+  const normalizedMode = mode === 'copy' ? 'copy' : mode === 'transcode' ? 'encode' : mode;
+  const detail = [normalizedMode, codec].filter(Boolean).join('/');
+  return detail ? `${label}:${detail}` : null;
+}
+
 function buildChannelPlaybackDetail(channel: EpgChannel, info: PlaybackInfo): string | null {
-  const resolution = formatResolutionLabel(channel.resolution);
+  const targetProfile = info.decision?.trace?.targetProfile;
+  const resolution = formatTargetResolutionLabel(targetProfile) || formatResolutionLabel(channel.resolution);
+
+  if (targetProfile) {
+    const videoLane = formatTargetLane('v', targetProfile.video?.mode, targetProfile.video?.codec);
+    const audioLane = formatTargetLane('a', targetProfile.audio?.mode, targetProfile.audio?.codec);
+    const detail = [resolution, videoLane, audioLane].filter(Boolean).join(' · ');
+    if (detail) {
+      return detail;
+    }
+  }
+
   const videoCodec = info.videoCodec || channel.codec || null;
   const audioCodec = info.audioCodec || null;
   const codecSummary = [videoCodec, audioCodec].filter(Boolean).join('/');
@@ -147,6 +183,7 @@ async function fetchChannelPlaybackBadge(
       headers: {
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...buildPlaybackProfileHeaders(requestProfile),
+        [PLAYBACK_INFO_CONTEXT_HEADER]: PLAYBACK_INFO_CONTEXT_EPG_BADGE,
       },
       body: {
         serviceRef,

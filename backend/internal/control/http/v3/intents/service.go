@@ -10,6 +10,8 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/clientpolicy"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
@@ -48,6 +50,7 @@ type startProfileResolution struct {
 	idempotencyKey        string
 	resolvedIntent        string
 	degradedFrom          string
+	autoCodecTrace        autocodec.SelectionTrace
 }
 
 func NewService(deps Deps) *Service {
@@ -78,7 +81,7 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	if err != nil {
 		return nil, err
 	}
-	reqProfileID, requestedPlaybackMode, err := s.resolveRequestedStartProfile(intent, hwaccelMode)
+	reqProfileID, requestedPlaybackMode, err := s.resolveRequestedStartProfile(ctx, intent, hwaccelMode)
 	if err != nil {
 		return nil, err
 	}
@@ -178,10 +181,12 @@ func (s *Service) resolveStartHWAccelMode(intent Intent, hw startHardwareState) 
 	return hwaccelMode, nil
 }
 
-func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profiles.HWAccelMode) (string, string, *Error) {
+func (s *Service) resolveRequestedStartProfile(ctx context.Context, intent Intent, hwaccelMode profiles.HWAccelMode) (string, string, *Error) {
 	reqProfileID := "universal"
 	requestedPlaybackMode := normalize.Token(intent.Params["playback_mode"])
 	clientFamily := clientFamilyForIntent(intent)
+	hostRuntime := s.deps.HostRuntime(ctx)
+	requestedCodecs := requestedCodecsForIntent(intent, requestedPlaybackMode)
 	if requestedPlaybackMode != "" {
 		_, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(intent.PlaybackDecisionToken, intent.Params)
 		if tokenErr != nil {
@@ -194,8 +199,13 @@ func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profil
 			return "", "", &Error{Kind: ErrorInvalidInput, Message: mapErr.Error()}
 		}
 		reqProfileID = mappedProfile
-		if requestedPlaybackMode == "transcode" {
-			if picked := pickProfileForCodecs(intent.Params["codecs"], hwaccelMode); picked != "" {
+		if requestedPlaybackMode == "transcode" || requestedPlaybackMode == "hlsjs" {
+			if picked := pickProfileForCodecsWithHost(requestedCodecs, clientFamily, hwaccelMode, hostRuntime); picked != "" {
+				reqProfileID = picked
+			}
+		}
+		if requestedPlaybackMode == "native_hls" {
+			if picked := pickNativeHLSProfileWithHost(requestedCodecs, clientFamily, intent.ClientCaps, hwaccelMode, hostRuntime); picked != "" {
 				reqProfileID = picked
 			}
 		}
@@ -204,7 +214,7 @@ func (s *Service) resolveRequestedStartProfile(intent Intent, hwaccelMode profil
 	if profileID := normalize.Token(intent.Params["profile"]); profileID != "" {
 		return profileID, "", nil
 	}
-	if picked := pickProfileForCodecs(intent.Params["codecs"], hwaccelMode); picked != "" {
+	if picked := pickProfileForCodecsWithHost(requestedCodecs, clientFamily, hwaccelMode, hostRuntime); picked != "" {
 		return picked, "", nil
 	}
 	return reqProfileID, "", nil
@@ -223,23 +233,9 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 	if intent.StartMs != nil && *intent.StartMs > 0 {
 		resolution.bucket = fmt.Sprintf("%d", *intent.StartMs/1000)
 	}
-	resolution.idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, resolution.effectiveProfileID, resolution.bucket)
 
-	profileUserAgent := ""
 	clientFamily := clientFamilyForIntent(intent)
-	switch requestedPlaybackMode {
-	case "", "native_hls":
-		// Explicit playback modes usually bypass UA sniffing, but native_hls
-		// still needs the real Safari UA to distinguish browser Safari
-		// (mpegts copy) from non-Safari/native clients.
-		profileUserAgent = intent.UserAgent
-	case "hlsjs":
-		// Desktop Safari can prefer hls.js while still requiring Safari-specific
-		// packaging choices for dirty live transcodes.
-		if clientFamily == playbackprofile.ClientSafariNative || clientFamily == playbackprofile.ClientIOSSafariNative {
-			profileUserAgent = intent.UserAgent
-		}
-	}
+	profileUserAgent := clientpolicy.ResolveProfileUserAgent(requestedPlaybackMode, clientFamily, intent.UserAgent)
 	resolveProfileSpec := func(profileID string) model.ProfileSpec {
 		return s.resolveProfileSpec(profileID, profileUserAgent, capability, hw, hwaccelMode)
 	}
@@ -256,6 +252,18 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 			resolution.hostOverrideApplied = true
 		}
 	}
+	resolution.profileSpec = clientpolicy.ApplyStartPackagingPolicy(clientFamily, resolution.effectiveProfileID, resolution.profileSpec)
+	resolution.effectiveProfileID, resolution.profileSpec = autocodec.ApplyClientCompatibilityPolicy(
+		clientFamily,
+		resolution.effectiveProfileID,
+		resolution.profileSpec,
+		resolveProfileSpec,
+	)
+	requestedCodecs := requestedCodecsForIntent(intent, requestedPlaybackMode)
+	if shouldTraceAutoCodecDecision(intent, requestedCodecs) {
+		resolution.autoCodecTrace = autocodec.DescribeSelection(requestedCodecs, resolution.effectiveProfileID, s.deps.HostRuntime(ctx))
+	}
+	resolution.idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, intent.ServiceRef, resolution.effectiveProfileID, resolution.bucket)
 	if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(resolution.effectiveProfileID); ok {
 		if hwaccelMode == profiles.HWAccelOff {
 			s.deps.RecordIntent(string(model.IntentTypeStreamStart), "phase0", "hw_profile_conflict")
@@ -356,11 +364,18 @@ func deriveStartHWAccelSummary(profileSpec model.ProfileSpec, hwaccelMode profil
 }
 
 func (s *Service) logStartProfileResolution(intent Intent, resolution startProfileResolution, hw startHardwareState, hwaccelMode profiles.HWAccelMode, hwaccelEffective, hwaccelReason, encoderBackend string) {
-	intent.Logger.Info().
+	clientFamily := clientFamilyForIntent(intent)
+	preferredEngine := preferredEngineForIntent(intent)
+	deviceType := deviceTypeForIntent(intent)
+	capHash := clientCapHashForIntent(intent)
+	canonicalCaps := normalizedClientCaps(intent.ClientCaps)
+
+	event := intent.Logger.Info().
 		Str("ua", intent.UserAgent).
 		Str("profile", resolution.profileSpec.Name).
 		Str("profile_public", resolution.publicRequestProfile).
 		Str("profile_effective", resolution.effectiveProfileID).
+		Str("requested_playback_mode", resolution.requestedPlaybackMode).
 		Int("dvr_window_sec", resolution.profileSpec.DVRWindowSec).
 		Str("idem_key", resolution.idempotencyKey).
 		Bool("gpu_available", hw.hasGPU).
@@ -373,11 +388,52 @@ func (s *Service) logStartProfileResolution(intent Intent, resolution startProfi
 		Bool("operator_override_applied", resolution.operatorSnapshot.OverrideApplied).
 		Str("host_pressure_band", string(resolution.hostPressureBand)).
 		Bool("host_override_applied", resolution.hostOverrideApplied).
+		Str("auto_codec_policy", resolution.autoCodecTrace.Policy).
+		Str("auto_codec_requested", resolution.autoCodecTrace.RequestedCodecs).
+		Str("auto_codec_selected", resolution.autoCodecTrace.SelectedCodec).
+		Str("auto_codec_host_class", resolution.autoCodecTrace.PerformanceClass).
+		Str("auto_codec_benchmark_class", resolution.autoCodecTrace.CodecBenchmarkClass).
 		Str("encoder_backend", encoderBackend).
 		Str("video_codec", resolution.profileSpec.VideoCodec).
 		Str("container", resolution.profileSpec.Container).
-		Bool("llhls", resolution.profileSpec.LLHLS).
-		Msg("intent profile resolved")
+		Bool("llhls", resolution.profileSpec.LLHLS)
+	if clientFamily != "" {
+		event = event.Str("client_family", clientFamily)
+	}
+	if preferredEngine != "" {
+		event = event.Str("preferred_hls_engine", preferredEngine)
+	}
+	if deviceType != "" {
+		event = event.Str("device_type", deviceType)
+	}
+	if capHash != "" {
+		event = event.Str("cap_hash", capHash)
+	}
+	if canonicalCaps != nil {
+		if source := normalize.Token(canonicalCaps.ClientCapsSource); source != "" {
+			event = event.Str("client_caps_source", source)
+		}
+		if len(canonicalCaps.Containers) > 0 {
+			event = event.Str("client_containers", strings.Join(canonicalCaps.Containers, ","))
+		}
+		if len(canonicalCaps.VideoCodecs) > 0 {
+			event = event.Str("client_video_codecs", strings.Join(canonicalCaps.VideoCodecs, ","))
+		}
+		if len(canonicalCaps.AudioCodecs) > 0 {
+			event = event.Str("client_audio_codecs", strings.Join(canonicalCaps.AudioCodecs, ","))
+		}
+		if canonicalCaps.RuntimeProbeUsed {
+			event = event.Bool("client_runtime_probe_used", true)
+		}
+		if canonicalCaps.RuntimeProbeVersion > 0 {
+			event = event.Int("client_runtime_probe_version", canonicalCaps.RuntimeProbeVersion)
+		}
+	}
+	event.Msg("intent profile resolved")
+}
+
+func shouldTraceAutoCodecDecision(intent Intent, requestedCodecs string) bool {
+	return strings.TrimSpace(intent.Params["profile"]) == "" && strings.TrimSpace(requestedCodecs) != ""
 }
 
 func buildStartRequestParams(intent Intent, resolution startProfileResolution) map[string]string {
@@ -397,8 +453,8 @@ func buildStartRequestParams(intent Intent, resolution startProfileResolution) m
 	if deviceType := deviceTypeForIntent(intent); deviceType != "" {
 		requestParams[model.CtxKeyDeviceType] = deviceType
 	}
-	if raw := intent.Params["codecs"]; raw != "" {
-		requestParams["codecs"] = raw
+	if requestedCodecs := requestedCodecsForIntent(intent, resolution.requestedPlaybackMode); requestedCodecs != "" {
+		requestParams["codecs"] = requestedCodecs
 	}
 	if capHash := clientCapHashForIntent(intent); capHash != "" {
 		requestParams["capHash"] = capHash
@@ -433,12 +489,16 @@ func buildStartOperatorTrace(snapshot profiles.OperatorOverrideSnapshot) *model.
 }
 
 func (s *Service) buildStartSession(intent Intent, resolution startProfileResolution) *model.SessionRecord {
-	videoQualityRung := model.TraceVideoQualityRungFromProfile(resolution.profileSpec)
+	targetProfile := model.TraceTargetProfileFromProfile(resolution.profileSpec)
+	targetVideoQualityRung := model.TraceVideoQualityRungFromProfile(resolution.profileSpec)
+	targetStep := runtimepolicy.PlaybackLadderStepFromTargetProfile(targetProfile, playbackprofile.NormalizeQualityRung(targetVideoQualityRung))
+	startupProfile, _ := capLiveStartupProfile(intent, resolution.profileSpec, targetStep)
+	videoQualityRung := model.TraceVideoQualityRungFromProfile(startupProfile)
 	now := time.Now()
 	session := lifecycle.NewSessionRecord(now)
 	session.SessionID = intent.SessionID
 	session.ServiceRef = intent.ServiceRef
-	session.Profile = resolution.profileSpec
+	session.Profile = startupProfile
 	session.CorrelationID = intent.CorrelationID
 	session.LeaseExpiresAtUnix = now.Add(s.deps.SessionLeaseTTL()).Unix()
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
@@ -455,6 +515,17 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 		Client:              buildStartClientSnapshot(intent, now),
 		HostPressureBand:    string(resolution.hostPressureBand),
 		HostOverrideApplied: resolution.hostOverrideApplied,
+		AutoCodecPolicy:     resolution.autoCodecTrace.Policy,
+		AutoCodecRequested:  resolution.autoCodecTrace.RequestedCodecs,
+		AutoCodecSelected:   resolution.autoCodecTrace.SelectedCodec,
+		AutoCodecHostClass:  resolution.autoCodecTrace.PerformanceClass,
+		AutoCodecBenchClass: resolution.autoCodecTrace.CodecBenchmarkClass,
+	}
+	if session.ContextData == nil {
+		session.ContextData = make(map[string]string, 2)
+	}
+	if targetStep != runtimepolicy.PlaybackStepUnknown {
+		session.ContextData[model.CtxKeyRuntimeTargetStep] = string(targetStep)
 	}
 	if session.ContextData == nil {
 		session.ContextData = make(map[string]string, 2)
@@ -634,8 +705,142 @@ func resolvePlaybackDecisionToken(requestToken string, params map[string]string)
 	}
 }
 
-func pickProfileForCodecs(raw string, hwaccelMode profiles.HWAccelMode) string {
-	return autocodec.PickProfileForCodecs(raw, hwaccelMode)
+func pickProfileForCodecsWithHost(raw, clientFamily string, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
+	return autocodec.PickProfileForCodecsForClientAndHost(raw, clientFamily, hwaccelMode, hostRuntime)
+}
+
+func pickNativeHLSProfileWithHost(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
+	return autocodec.PickNativeHLSProfileForClientAndHost(raw, clientFamily, clientCaps, hwaccelMode, hostRuntime)
+}
+
+func requestedCodecsForIntent(intent Intent, requestedPlaybackMode string) string {
+	if explicit := joinRequestedCodecs(autocodec.ParseCodecList(intent.Params["codecs"])); explicit != "" {
+		return clampRequestedCodecsForClient(intent, requestedPlaybackMode, explicit)
+	}
+	return clampRequestedCodecsForClient(intent, requestedPlaybackMode, requestedCodecsFromClientCaps(intent.ClientCaps, requestedPlaybackMode))
+}
+
+func requestedCodecsFromClientCaps(clientCaps *capabilities.PlaybackCapabilities, requestedPlaybackMode string) string {
+	if clientCaps == nil {
+		return ""
+	}
+
+	codecs := append([]string(nil), autocodec.ResolveAutoTranscodeCodecs(*clientCaps)...)
+	if requestedPlaybackMode == "native_hls" || requestedPlaybackMode == "" {
+		source := normalize.Token(clientCaps.ClientCapsSource)
+		if source == capabilities.ClientCapsSourceRuntime || source == capabilities.ClientCapsSourceRuntimePlusFam {
+			if clientCapsHasCodec(clientCaps.VideoCodecs, "av1") {
+				codecs = append(codecs, "av1")
+			}
+		}
+		if source == capabilities.ClientCapsSourceRuntime ||
+			source == capabilities.ClientCapsSourceRuntimePlusFam ||
+			source == capabilities.ClientCapsSourceFamilyFallback {
+			if clientCapsHasCodec(clientCaps.VideoCodecs, "hevc") {
+				codecs = append(codecs, "hevc")
+			}
+		}
+	}
+	if clientCapsHasCodec(clientCaps.VideoCodecs, "h264") || len(codecs) == 0 {
+		codecs = append(codecs, "h264")
+	}
+	return joinRequestedCodecs(codecs)
+}
+
+func clampRequestedCodecsForClient(intent Intent, requestedPlaybackMode, requestedCodecs string) string {
+	clientFamily := clientFamilyForIntent(intent)
+	preferredEngine := preferredEngineForIntent(intent)
+	if clientFamily != playbackprofile.ClientIOSSafariNative {
+		return requestedCodecs
+	}
+	if preferredEngine != "hlsjs" {
+		return requestedCodecs
+	}
+	if requestedPlaybackMode != "hlsjs" && requestedPlaybackMode != "transcode" {
+		return requestedCodecs
+	}
+	if iosSafariManagedAV1Allowed(intent.ClientCaps) {
+		return requestedCodecs
+	}
+	// iPhone Safari can report AV1/HEVC decoding support while the managed MSE
+	// path still fails with audio-only playback or append errors. Keep stale or
+	// out-of-date hls.js starts on the universally safe H.264 path.
+	return "h264"
+}
+
+func iosSafariManagedAV1Allowed(clientCaps *capabilities.PlaybackCapabilities) bool {
+	canonicalCaps := normalizedClientCaps(clientCaps)
+	if canonicalCaps == nil {
+		return false
+	}
+
+	source := normalize.Token(canonicalCaps.ClientCapsSource)
+	if source != capabilities.ClientCapsSourceRuntime && source != capabilities.ClientCapsSourceRuntimePlusFam {
+		return false
+	}
+	if normalize.Token(canonicalCaps.PreferredHLSEngine) != "hlsjs" {
+		return false
+	}
+	if !clientCapsHasCodec(canonicalCaps.HLSEngines, "hlsjs") {
+		return false
+	}
+	if !clientCapsHasCodec(canonicalCaps.Containers, "fmp4") {
+		return false
+	}
+	if !clientCapsHasCodec(canonicalCaps.VideoCodecs, "av1") {
+		return false
+	}
+
+	for _, signal := range canonicalCaps.VideoCodecSignals {
+		if normalize.Token(signal.Codec) != "av1" {
+			continue
+		}
+		if signal.Supported {
+			return true
+		}
+		if signal.Smooth != nil && *signal.Smooth {
+			return true
+		}
+	}
+	return false
+}
+
+func joinRequestedCodecs(codecs []string) string {
+	if len(codecs) == 0 {
+		return ""
+	}
+	seen := make(map[string]struct{}, len(codecs))
+	ordered := make([]string, 0, len(codecs))
+	for _, raw := range codecs {
+		canonical := canonicalRequestedCodec(raw)
+		if canonical == "" {
+			continue
+		}
+		if _, ok := seen[canonical]; ok {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		ordered = append(ordered, canonical)
+	}
+	return strings.Join(ordered, ",")
+}
+
+func canonicalRequestedCodec(raw string) string {
+	parsed := autocodec.ParseCodecList(raw)
+	if len(parsed) == 0 {
+		return ""
+	}
+	return parsed[0]
+}
+
+func clientCapsHasCodec(values []string, want string) bool {
+	want = normalize.Token(want)
+	for _, value := range values {
+		if normalize.Token(value) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func requiredVerifiedHardwareCodecForProfile(profileID string) (string, bool) {

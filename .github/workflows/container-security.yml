@@ -9,7 +9,7 @@ permissions:
   contents: read # Global read-only, write per job
 
 concurrency:
-  group: repo-${{ github.event.pull_request.number || github.ref }}
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:

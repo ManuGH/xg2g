@@ -21,7 +21,6 @@ import (
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/entitlements"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -198,22 +197,17 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		StreamPort:            cfg.Enigma2.StreamPort,
 	}
 	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
+	owiClient := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, openwebif.Options{
+		Timeout:             cfg.Enigma2.Timeout,
+		Username:            cfg.Enigma2.Username,
+		Password:            cfg.Enigma2.Password,
+		UseWebIFStreams:     cfg.Enigma2.UseWebIFStreams,
+		StreamBaseURL:       snap.Runtime.OpenWebIF.StreamBaseURL,
+		HTTPMaxConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
+	})
 
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
-	v3Scan.ActivePlaybackFn = func(ctx context.Context) (bool, error) {
-		sessions, err := v3Store.ListSessions(ctx)
-		if err != nil {
-			return false, err
-		}
-		now := time.Now()
-		for _, s := range sessions {
-			switch model.DeriveLifecycleState(s, now) {
-			case model.LifecycleStarting, model.LifecycleBuffering, model.LifecycleActive, model.LifecycleStalled:
-				return true, nil
-			}
-		}
-		return false, nil
-	}
+	v3Scan.ActivePlaybackFn = newBackgroundScanPlaybackDetector(v3Store, owiClient)
 	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger)
 
 	s.WireV3Runtime(v3.Dependencies{
@@ -635,9 +629,17 @@ func (c *Container) runInitialRefresh(ctx context.Context) {
 	c.Server.UpdateStatus(*st)
 
 	if c.scanManager != nil {
-		c.Logger.Info().Msg("triggering v3 data ingest")
-		c.scanManager.RunBackground()
+		if backgroundScanEnabled() {
+			c.Logger.Info().Msg("triggering media truth background scan")
+			c.scanManager.RunBackground()
+		} else {
+			c.Logger.Warn().Msg("Background media truth scan is disabled (XG2G_BACKGROUND_SCAN_ENABLED=false)")
+		}
 	}
+}
+
+func backgroundScanEnabled() bool {
+	return config.ParseBool("XG2G_BACKGROUND_SCAN_ENABLED", true)
 }
 
 func resolveConfigPath(explicit string) (path string, explicitMode bool, err error) {

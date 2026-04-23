@@ -3,10 +3,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ClientRequestError } from '../services/clientWrapper';
 import Dashboard from './Dashboard';
+import { buildRecordingsRoute, buildSettingsRoute } from '../routes';
 
 const mockNavigate = vi.fn();
 const mockRefetch = vi.fn();
 const mockUseSystemHealth = vi.fn();
+const mockUseHouseholdProfiles = vi.fn();
 
 vi.mock('react-router-dom', () => ({
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
@@ -25,10 +27,19 @@ vi.mock('../hooks/useServerQueries', () => ({
   useDvrStatus: () => ({ data: null })
 }));
 
+vi.mock('../context/HouseholdProfilesContext', () => ({
+  useHouseholdProfiles: () => mockUseHouseholdProfiles(),
+}));
+
 describe('Dashboard', () => {
   beforeEach(() => {
     mockNavigate.mockReset();
     mockRefetch.mockReset();
+    mockUseHouseholdProfiles.mockReturnValue({
+      canAccessDvrPlayback: true,
+      canManageDvr: true,
+      canAccessSettings: true,
+    });
     mockUseSystemHealth.mockReturnValue({
       data: {
         status: 'ok',
@@ -47,10 +58,39 @@ describe('Dashboard', () => {
     render(<Dashboard />);
 
     screen.getByText('Control summary');
+    screen.getByText('Choose the task, not the tool');
+    screen.getByRole('button', { name: 'Open Live TV' });
+    screen.getByRole('button', { name: 'Open Recordings' });
+    screen.getByRole('button', { name: 'Open Setup' });
+    screen.getByRole('button', { name: 'Household profiles' });
     expect(screen.getByRole('status', { name: 'System healthy - success' })).toBeInTheDocument();
     expect(screen.queryByText('Recent logs')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
     screen.getByText('Receiver and guide health');
+  });
+
+  it('navigates to guided and direct routes from the dashboard', () => {
+    render(<Dashboard />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Recordings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Household profiles' }));
+
+    expect(mockNavigate).toHaveBeenNthCalledWith(1, buildRecordingsRoute());
+    expect(mockNavigate).toHaveBeenNthCalledWith(2, buildSettingsRoute({ section: 'household' }));
+  });
+
+  it('shows restricted start cards and hides direct paths when the profile is limited', () => {
+    mockUseHouseholdProfiles.mockReturnValue({
+      canAccessDvrPlayback: false,
+      canManageDvr: false,
+      canAccessSettings: false,
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByRole('button', { name: 'Open Recordings' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Open Setup' })).toBeDisabled();
+    expect(screen.queryByText('Open a specific area directly')).toBeNull();
   });
 
   it('renders the section skeleton while health data is loading', () => {

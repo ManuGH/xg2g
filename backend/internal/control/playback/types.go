@@ -119,11 +119,16 @@ type MediaTruth struct {
 	RetryAfter int
 	ProbeState ProbeState
 	// Reserved for blocked probe states.
-	ProbeBlockedReason ProbeBlockedReason
-	Container          string
-	VideoCodec         string
-	AudioCodec         string
-	Duration           float64
+	ProbeBlockedReason  ProbeBlockedReason
+	Container           string
+	VideoCodec          string
+	AudioCodec          string
+	BitrateKbps         int
+	BitrateObservedKbps int
+	BitratePeakKbps     int
+	BitrateSamples      int
+	BitrateConfidence   string
+	Duration            float64
 	// Duration truth metadata (optional)
 	DurationSource     string
 	DurationConfidence string
@@ -131,7 +136,13 @@ type MediaTruth struct {
 	Width              int
 	Height             int
 	FPS                float64
+	SignalFPS          float64
 	Interlaced         bool
+	FieldOrder         string
+	AudioChannels      int
+	AudioBitrateKbps   int
+	AudioSampleRate    int
+	AudioChannelLayout string
 }
 
 type ProbeState string

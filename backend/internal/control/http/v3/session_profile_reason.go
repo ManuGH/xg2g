@@ -19,8 +19,8 @@ func sessionProfileReason(session *model.SessionRecord) *string {
 		return nil
 	}
 
-	switch strings.TrimSpace(session.Profile.Name) {
-	case profiles.ProfileSafari:
+	switch profiles.NormalizeRequestedProfileID(session.Profile.Name) {
+	case profiles.ProfileSafari, profiles.ProfileSafariRuntimeHQ:
 		return toPtr(sessionProfileReasonSafariCompatTranscode)
 	case profiles.ProfileSafariDirty:
 		return toPtr(sessionProfileReasonRepairTranscode)

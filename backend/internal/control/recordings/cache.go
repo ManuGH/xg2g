@@ -101,12 +101,10 @@ func RecordingTargetProfile(profile string) *playbackprofile.TargetPlaybackProfi
 }
 
 func resolveRecordingPackaging(raw string) (playbackprofile.Packaging, string, string) {
-	switch raw {
-	case "android_native", "android_tv_native", "safari", "safari_dvr", "safari_dirty", "safari_hevc", "safari_hevc_hw", "safari_hevc_hw_ll", "h264_fmp4":
+	if profiles.PrefersNativeFMP4Packaging(raw) {
 		return playbackprofile.PackagingFMP4, "fmp4", "mp4"
-	default:
-		return playbackprofile.PackagingTS, "mpegts", "mpegts"
 	}
+	return playbackprofile.PackagingTS, "mpegts", "mpegts"
 }
 
 func recordingVideoTarget(publicProfile string) playbackprofile.VideoTarget {

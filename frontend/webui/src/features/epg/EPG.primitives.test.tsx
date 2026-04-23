@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../../context/HouseholdProfilesContext';
 import { ClientRequestError, setClientAuthToken } from '../../services/clientWrapper';
@@ -11,12 +12,14 @@ const {
   addTimer,
   confirm,
   toast,
+  timersView,
 } = vi.hoisted(() => ({
   fetchEpgEvents: vi.fn<(...args: any[]) => Promise<EpgEvent[]>>(),
   fetchTimers: vi.fn<() => Promise<Timer[]>>(),
   addTimer: vi.fn(),
   confirm: vi.fn(),
   toast: vi.fn(),
+  timersView: vi.fn(() => <div data-testid="epg-timers-stub">Timers view</div>),
 }));
 
 vi.mock('./epgApi', () => ({
@@ -39,13 +42,20 @@ vi.mock('./components/EpgChannelList', () => ({
   EpgChannelList: () => <div data-testid="epg-channel-list" />,
 }));
 
+vi.mock('../../components/Timers', () => ({
+  __esModule: true,
+  default: timersView,
+}));
+
 import EPG from './EPG';
 
-function renderWithProviders(ui: ReactNode) {
+function renderWithProviders(ui: ReactNode, initialEntries: string[] = ['/epg']) {
   return render(
-    <HouseholdProfilesProvider>
-      {ui}
-    </HouseholdProfilesProvider>
+    <MemoryRouter initialEntries={initialEntries}>
+      <HouseholdProfilesProvider>
+        {ui}
+      </HouseholdProfilesProvider>
+    </MemoryRouter>
   );
 }
 
@@ -136,5 +146,15 @@ describe('EPG shared primitives', () => {
     await waitFor(() => {
       expect(fetchEpgEvents).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('renders the embedded timers view for the timers section route', async () => {
+    fetchTimers.mockResolvedValue([]);
+    fetchEpgEvents.mockResolvedValue([]);
+
+    renderWithProviders(<EPG channels={[]} />, ['/epg?section=timers']);
+
+    expect(await screen.findByTestId('epg-timers-stub')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to Live TV' })).toBeInTheDocument();
   });
 });

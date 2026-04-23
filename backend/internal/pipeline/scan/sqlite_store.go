@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	schemaVersion = 5 // Includes persisted media truth for live decision reuse.
+	schemaVersion = 8 // Includes persisted live bitrate stability truth.
 	SchemaVersion = schemaVersion
 )
 
@@ -61,12 +61,22 @@ func (s *SqliteStore) migrate() error {
 		resolution TEXT NOT NULL,
 		codec TEXT NOT NULL,
 		container TEXT,
-		video_codec TEXT,
-		audio_codec TEXT,
-		width INTEGER NOT NULL DEFAULT 0,
-		height INTEGER NOT NULL DEFAULT 0,
-		fps REAL NOT NULL DEFAULT 0
-	);
+			video_codec TEXT,
+			audio_codec TEXT,
+			bitrate_k INTEGER NOT NULL DEFAULT 0,
+			bitrate_mean_k INTEGER NOT NULL DEFAULT 0,
+			bitrate_peak_k INTEGER NOT NULL DEFAULT 0,
+			bitrate_samples INTEGER NOT NULL DEFAULT 0,
+			width INTEGER NOT NULL DEFAULT 0,
+			height INTEGER NOT NULL DEFAULT 0,
+			fps REAL NOT NULL DEFAULT 0,
+			signal_fps REAL NOT NULL DEFAULT 0,
+			field_order TEXT,
+			audio_channels INTEGER NOT NULL DEFAULT 0,
+			audio_bitrate_k INTEGER NOT NULL DEFAULT 0,
+			audio_sample_rate INTEGER NOT NULL DEFAULT 0,
+			audio_channel_layout TEXT
+		);
 	CREATE INDEX IF NOT EXISTS idx_capabilities_scan ON capabilities(last_scan);
 
 	CREATE TABLE IF NOT EXISTS migration_history (
@@ -92,9 +102,19 @@ func (s *SqliteStore) migrate() error {
 		`ALTER TABLE capabilities ADD COLUMN container TEXT`,
 		`ALTER TABLE capabilities ADD COLUMN video_codec TEXT`,
 		`ALTER TABLE capabilities ADD COLUMN audio_codec TEXT`,
+		`ALTER TABLE capabilities ADD COLUMN bitrate_k INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN bitrate_mean_k INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN bitrate_peak_k INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN bitrate_samples INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE capabilities ADD COLUMN width INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE capabilities ADD COLUMN height INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE capabilities ADD COLUMN fps REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN signal_fps REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN field_order TEXT`,
+		`ALTER TABLE capabilities ADD COLUMN audio_channels INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN audio_bitrate_k INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN audio_sample_rate INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE capabilities ADD COLUMN audio_channel_layout TEXT`,
 	} {
 		if err := execIfMissingColumn(tx, "capabilities", stmt); err != nil {
 			return err
@@ -120,14 +140,15 @@ func (s *SqliteStore) Update(cap Capability) {
 		)
 	}
 	query := `
-	INSERT INTO capabilities (
-		service_ref, interlaced, last_scan, last_attempt, last_success,
-		scan_state, failure_reason, next_retry_at, resolution, codec,
-		container, video_codec, audio_codec, width, height, fps
-	)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(service_ref) DO UPDATE SET
-		interlaced = excluded.interlaced,
+		INSERT INTO capabilities (
+			service_ref, interlaced, last_scan, last_attempt, last_success,
+			scan_state, failure_reason, next_retry_at, resolution, codec,
+			container, video_codec, audio_codec, bitrate_k, bitrate_mean_k, bitrate_peak_k, bitrate_samples, width, height, fps,
+			signal_fps, field_order, audio_channels, audio_bitrate_k, audio_sample_rate, audio_channel_layout
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(service_ref) DO UPDATE SET
+			interlaced = excluded.interlaced,
 		last_scan = excluded.last_scan,
 		last_attempt = excluded.last_attempt,
 		last_success = excluded.last_success,
@@ -136,13 +157,23 @@ func (s *SqliteStore) Update(cap Capability) {
 		next_retry_at = excluded.next_retry_at,
 		resolution = excluded.resolution,
 		codec = excluded.codec,
-		container = excluded.container,
-		video_codec = excluded.video_codec,
-		audio_codec = excluded.audio_codec,
-		width = excluded.width,
-		height = excluded.height,
-		fps = excluded.fps
-	`
+			container = excluded.container,
+			video_codec = excluded.video_codec,
+			audio_codec = excluded.audio_codec,
+			bitrate_k = excluded.bitrate_k,
+			bitrate_mean_k = excluded.bitrate_mean_k,
+			bitrate_peak_k = excluded.bitrate_peak_k,
+			bitrate_samples = excluded.bitrate_samples,
+			width = excluded.width,
+			height = excluded.height,
+			fps = excluded.fps,
+			signal_fps = excluded.signal_fps,
+			field_order = excluded.field_order,
+			audio_channels = excluded.audio_channels,
+			audio_bitrate_k = excluded.audio_bitrate_k,
+			audio_sample_rate = excluded.audio_sample_rate,
+			audio_channel_layout = excluded.audio_channel_layout
+		`
 	_, _ = s.DB.Exec(query,
 		cap.ServiceRef,
 		cap.Interlaced,
@@ -157,18 +188,29 @@ func (s *SqliteStore) Update(cap Capability) {
 		dbNullableString(cap.Container),
 		dbNullableString(cap.VideoCodec),
 		dbNullableString(cap.AudioCodec),
+		cap.BitrateKbps,
+		cap.BitrateMeanKbps,
+		cap.BitratePeakKbps,
+		cap.BitrateSamples,
 		cap.Width,
 		cap.Height,
 		cap.FPS,
+		cap.SignalFPS,
+		dbNullableString(cap.FieldOrder),
+		cap.AudioChannels,
+		cap.AudioBitrateKbps,
+		cap.AudioSampleRate,
+		dbNullableString(cap.AudioChannelLayout),
 	)
 }
 
 func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 	normalizedRef := normalize.ServiceRef(serviceRef)
 	query := `
-	SELECT service_ref, interlaced, last_scan, last_attempt, last_success, scan_state, failure_reason, next_retry_at, resolution, codec,
-		container, video_codec, audio_codec, width, height, fps
-	FROM capabilities
+		SELECT service_ref, interlaced, last_scan, last_attempt, last_success, scan_state, failure_reason, next_retry_at, resolution, codec,
+			container, video_codec, audio_codec, bitrate_k, bitrate_mean_k, bitrate_peak_k, bitrate_samples, width, height, fps,
+			signal_fps, field_order, audio_channels, audio_bitrate_k, audio_sample_rate, audio_channel_layout
+		FROM capabilities
 	WHERE RTRIM(service_ref, ':') = ?
 	ORDER BY CASE WHEN service_ref = ? THEN 0 ELSE 1 END
 	LIMIT 1
@@ -184,9 +226,19 @@ func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 	var container sql.NullString
 	var videoCodec sql.NullString
 	var audioCodec sql.NullString
+	var bitrateK sql.NullInt64
+	var bitrateMeanK sql.NullInt64
+	var bitratePeakK sql.NullInt64
+	var bitrateSamples sql.NullInt64
 	var width sql.NullInt64
 	var height sql.NullInt64
 	var fps sql.NullFloat64
+	var signalFPS sql.NullFloat64
+	var fieldOrder sql.NullString
+	var audioChannels sql.NullInt64
+	var audioBitrateK sql.NullInt64
+	var audioSampleRate sql.NullInt64
+	var audioChannelLayout sql.NullString
 	err := s.DB.QueryRow(query, normalizedRef, normalizedRef).Scan(
 		&storedRef,
 		&cap.Interlaced,
@@ -201,9 +253,19 @@ func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 		&container,
 		&videoCodec,
 		&audioCodec,
+		&bitrateK,
+		&bitrateMeanK,
+		&bitratePeakK,
+		&bitrateSamples,
 		&width,
 		&height,
 		&fps,
+		&signalFPS,
+		&fieldOrder,
+		&audioChannels,
+		&audioBitrateK,
+		&audioSampleRate,
+		&audioChannelLayout,
 	)
 	if err != nil {
 		return Capability{}, false
@@ -232,6 +294,18 @@ func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 	if audioCodec.Valid {
 		cap.AudioCodec = audioCodec.String
 	}
+	if bitrateK.Valid {
+		cap.BitrateKbps = int(bitrateK.Int64)
+	}
+	if bitrateMeanK.Valid {
+		cap.BitrateMeanKbps = int(bitrateMeanK.Int64)
+	}
+	if bitratePeakK.Valid {
+		cap.BitratePeakKbps = int(bitratePeakK.Int64)
+	}
+	if bitrateSamples.Valid {
+		cap.BitrateSamples = int(bitrateSamples.Int64)
+	}
 	if width.Valid {
 		cap.Width = int(width.Int64)
 	}
@@ -240,6 +314,24 @@ func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 	}
 	if fps.Valid {
 		cap.FPS = fps.Float64
+	}
+	if signalFPS.Valid {
+		cap.SignalFPS = signalFPS.Float64
+	}
+	if fieldOrder.Valid {
+		cap.FieldOrder = fieldOrder.String
+	}
+	if audioChannels.Valid {
+		cap.AudioChannels = int(audioChannels.Int64)
+	}
+	if audioBitrateK.Valid {
+		cap.AudioBitrateKbps = int(audioBitrateK.Int64)
+	}
+	if audioSampleRate.Valid {
+		cap.AudioSampleRate = int(audioSampleRate.Int64)
+	}
+	if audioChannelLayout.Valid {
+		cap.AudioChannelLayout = audioChannelLayout.String
 	}
 	cap.NextRetryAt = parseNullableTime(nextRetryAt)
 	return cap.Normalized(), true

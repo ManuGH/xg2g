@@ -71,3 +71,18 @@
   align-items: center;
 }
 
+@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  .card {
+    padding: 18px;
+  }
+
+  .header {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+  }
+
+  .footer {
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+}

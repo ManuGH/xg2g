@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   HouseholdProfilesProvider,
@@ -156,6 +156,7 @@ describe('HouseholdProfilesProvider', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    cleanup();
     setClientAuthToken('');
     window.localStorage.clear();
   });
@@ -212,7 +213,9 @@ describe('HouseholdProfilesProvider', () => {
     await renderProbe();
 
     await screen.findByTestId('selected-profile-id');
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Default' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Default' }));
+    });
 
     expect(deleteRemoteHouseholdProfile).not.toHaveBeenCalled();
     expect(screen.getByTestId('profile-count')).toHaveTextContent('1');

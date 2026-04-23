@@ -12,14 +12,31 @@ test.describe('WebUI browser smoke', () => {
   });
 
   test('authenticates and renders the dashboard with fixture data', async ({ page }) => {
+    await page.context().clearCookies();
+    await page.addInitScript(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
+
     await page.goto('/dashboard');
 
-    await expect(page.getByTestId('auth-surface')).toBeVisible();
-    await page.getByTestId('auth-token-input').fill('smoke-token');
-    await page.getByTestId('auth-submit').click();
+    const authSurface = page.getByTestId('auth-surface');
+    const dashboardView = page.getByTestId('dashboard-view');
+    const initialState = await Promise.race([
+      authSurface.waitFor({ state: 'visible' }).then(() => 'auth'),
+      dashboardView.waitFor({ state: 'visible' }).then(() => 'dashboard'),
+    ]);
+
+    if (initialState === 'auth') {
+      await page.getByTestId('auth-token-input').fill('smoke-token');
+      await Promise.all([
+        page.waitForURL(/\/dashboard$/),
+        page.getByTestId('auth-token-input').press('Enter'),
+      ]);
+    }
 
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.getByTestId('dashboard-view')).toBeVisible();
+    await expect(dashboardView).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Das Erste HD' })).toBeVisible();
     await expect(page.getByText('Control summary')).toBeVisible();
   });

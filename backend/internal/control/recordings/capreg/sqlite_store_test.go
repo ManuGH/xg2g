@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	sqlitepkg "github.com/ManuGH/xg2g/internal/persistence/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -118,16 +119,19 @@ func TestSqliteStore_RememberHostAndRecordObservation(t *testing.T) {
 	require.NoError(t, store.RememberHost(context.Background(), hostSnapshot))
 
 	sourceSnapshot := SourceSnapshot{
-		SubjectKind:  "live",
-		Origin:       "live_scan",
-		Container:    "ts",
-		VideoCodec:   "hevc",
-		AudioCodec:   "ac3",
-		Width:        3840,
-		Height:       2160,
-		FPS:          50,
-		Interlaced:   true,
-		ProblemFlags: []string{"interlaced"},
+		SubjectKind:       "live",
+		Origin:            "live_scan",
+		Container:         "ts",
+		VideoCodec:        "hevc",
+		AudioCodec:        "ac3",
+		BitrateConfidence: "high",
+		BitrateBucket:     "9m_18m",
+		Width:             3840,
+		Height:            2160,
+		FPS:               25,
+		SignalFPS:         50,
+		Interlaced:        true,
+		ProblemFlags:      []string{"interlaced"},
 		ReceiverContext: &ReceiverContext{
 			Platform:            "enigma2",
 			Brand:               "vuplus",
@@ -187,7 +191,8 @@ func TestSqliteStore_RememberHostAndRecordObservation(t *testing.T) {
 	require.NoError(t, store.DB.QueryRow(`SELECT COUNT(*) FROM capability_sources`).Scan(&sourceCount))
 	assert.Equal(t, 1, sourceCount)
 
-	var observationKind, outcome, mode, selectedCodec, networkKind, sourceFingerprint, receiverContextJSON string
+	var observationKind, outcome, mode, selectedCodec, networkKind, sourceFingerprint, receiverContextJSON, bitrateConfidence, bitrateBucket string
+	var signalFPS float64
 	require.NoError(t, store.DB.QueryRow(`
 		SELECT
 			o.observation_kind,
@@ -196,20 +201,548 @@ func TestSqliteStore_RememberHostAndRecordObservation(t *testing.T) {
 			o.selected_video_codec,
 			o.network_kind,
 			o.source_fingerprint,
-			COALESCE(s.receiver_context_json, '')
+			COALESCE(s.receiver_context_json, ''),
+			COALESCE(s.bitrate_confidence, ''),
+			COALESCE(s.bitrate_bucket, ''),
+			COALESCE(s.signal_fps, 0)
 		FROM capability_observations o
 		LEFT JOIN capability_sources s ON s.source_fingerprint = o.source_fingerprint
 		ORDER BY o.id DESC
 		LIMIT 1
-	`).Scan(&observationKind, &outcome, &mode, &selectedCodec, &networkKind, &sourceFingerprint, &receiverContextJSON))
+	`).Scan(&observationKind, &outcome, &mode, &selectedCodec, &networkKind, &sourceFingerprint, &receiverContextJSON, &bitrateConfidence, &bitrateBucket, &signalFPS))
 	assert.Equal(t, "decision", observationKind)
 	assert.Equal(t, "predicted", outcome)
 	assert.Equal(t, "transcode", mode)
 	assert.Equal(t, "hevc", selectedCodec)
 	assert.Equal(t, "ethernet", networkKind)
 	assert.Equal(t, sourceSnapshot.Fingerprint(), sourceFingerprint)
+	assert.Equal(t, "high", bitrateConfidence)
+	assert.Equal(t, "9m_18m", bitrateBucket)
+	assert.Equal(t, 50.0, signalFPS)
 	assert.Contains(t, receiverContextJSON, `"osName":"openatv"`)
 	assert.Contains(t, receiverContextJSON, `"osVersion":"7.4"`)
+}
+
+func TestSqliteStore_LookupRecentFeedbackSummary(t *testing.T) {
+	store, err := NewSqliteStore(filepath.Join(t.TempDir(), "capability_registry.sqlite"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	sourceFingerprint := "source-fp"
+	deviceFingerprint := "device-fp"
+	hostFingerprint := "host-fp"
+
+	observations := []PlaybackObservation{
+		{
+			ObservedAt:        time.Unix(1_700_001_300, 0).UTC(),
+			RequestID:         "req-newest-fail",
+			ObservationKind:   "feedback",
+			Outcome:           "failed",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "error",
+			FeedbackCode:      4,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_001_200, 0).UTC(),
+			RequestID:         "req-older-fail",
+			ObservationKind:   "feedback",
+			Outcome:           "failed",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "error",
+			FeedbackCode:      3,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_001_100, 0).UTC(),
+			RequestID:         "req-started",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      200,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_001_000, 0).UTC(),
+			RequestID:         "req-decision",
+			ObservationKind:   "decision",
+			Outcome:           "predicted",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+		},
+	}
+	for _, observation := range observations {
+		require.NoError(t, store.RecordObservation(context.Background(), observation))
+	}
+
+	summary, ok, err := store.LookupRecentFeedbackSummary(context.Background(), FeedbackSummaryQuery{
+		SubjectKind:       "live",
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		Since:             time.Unix(1_700_000_900, 0).UTC(),
+		Limit:             8,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, time.Unix(1_700_001_300, 0).UTC(), summary.LastObservedAt)
+	assert.Equal(t, 3, summary.SampleCount)
+	assert.Equal(t, 1, summary.StartedCount)
+	assert.Equal(t, 2, summary.FailedCount)
+	assert.Equal(t, 0, summary.ConsecutiveWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveBufferWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveDecodeWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveNetworkWarnings)
+	assert.Equal(t, 2, summary.ConsecutiveFailures)
+	assert.Equal(t, 1, summary.ConsecutiveDecodeFailures)
+	assert.Equal(t, 1, summary.ConsecutiveStallFailures)
+	assert.Equal(t, 1, summary.PriorStartedStreak)
+}
+
+func TestSqliteStore_LookupRecentFeedbackObservations(t *testing.T) {
+	store, err := NewSqliteStore(filepath.Join(t.TempDir(), "capability_registry.sqlite"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	sourceFingerprint := "source-observation-fp"
+	deviceFingerprint := "device-observation-fp"
+	hostFingerprint := "host-observation-fp"
+
+	observations := []PlaybackObservation{
+		{
+			ObservedAt:        time.Unix(1_700_001_300, 0).UTC(),
+			RequestID:         "req-newest-warning",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      101,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_001_200, 0).UTC(),
+			RequestID:         "req-middle-started",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      200,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_001_100, 0).UTC(),
+			RequestID:         "req-oldest-failed",
+			ObservationKind:   "feedback",
+			Outcome:           "failed",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "error",
+			FeedbackCode:      3,
+		},
+	}
+	for _, observation := range observations {
+		require.NoError(t, store.RecordObservation(context.Background(), observation))
+	}
+
+	got, err := store.LookupRecentFeedbackObservations(context.Background(), FeedbackSummaryQuery{
+		SubjectKind:       "live",
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		Since:             time.Unix(1_700_001_000, 0).UTC(),
+		Limit:             2,
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Equal(t, "req-newest-warning", got[0].RequestID)
+	assert.Equal(t, "req-middle-started", got[1].RequestID)
+}
+
+func TestSqliteStore_RememberAndLookupPlaybackPolicyState(t *testing.T) {
+	store, err := NewSqliteStore(filepath.Join(t.TempDir(), "capability_registry.sqlite"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	now := time.Unix(1_700_010_000, 0).UTC()
+	state := PlaybackPolicyState{
+		SubjectKind:       "live",
+		SourceFingerprint: "source-policy-fp",
+		DeviceFingerprint: "device-policy-fp",
+		HostFingerprint:   "host-policy-fp",
+		MaxQualityRung:    playbackprofile.RungCompatibleVideoH264CRF23,
+		Confidence: runtimepolicy.ConfidenceSnapshot{
+			Score:              -22,
+			State:              runtimepolicy.ConfidenceRecovery,
+			WindowCount:        3,
+			CooldownUntil:      now.Add(20 * time.Second),
+			ProbeSuccessStreak: 2,
+			LastProbeEventAt:   now.Add(-15 * time.Second),
+			PolicyConstraints:  []string{"cooldown_active", "no_probe_up"},
+			Reasons:            []string{"network_recently_unstable", "probe_recently_confirmed"},
+		},
+		UpdatedAt: now,
+	}
+
+	require.NoError(t, store.RememberPlaybackPolicyState(context.Background(), state))
+
+	got, ok, err := store.LookupPlaybackPolicyState(context.Background(), PlaybackPolicyStateQuery{
+		SubjectKind:       "live",
+		SourceFingerprint: "source-policy-fp",
+		DeviceFingerprint: "device-policy-fp",
+		HostFingerprint:   "host-policy-fp",
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, playbackprofile.RungCompatibleVideoH264CRF23, got.MaxQualityRung)
+	assert.Equal(t, -22, got.Confidence.Score)
+	assert.Equal(t, runtimepolicy.ConfidenceRecovery, got.Confidence.State)
+	assert.Equal(t, 3, got.Confidence.WindowCount)
+	assert.Equal(t, now.Add(20*time.Second), got.Confidence.CooldownUntil)
+	assert.Equal(t, 2, got.Confidence.ProbeSuccessStreak)
+	assert.Equal(t, now.Add(-15*time.Second), got.Confidence.LastProbeEventAt)
+	assert.Equal(t, now, got.UpdatedAt)
+}
+
+func TestSqliteStore_LookupRecentFeedbackSummary_TracksConsecutiveBufferWarnings(t *testing.T) {
+	store, err := NewSqliteStore(filepath.Join(t.TempDir(), "capability_registry.sqlite"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	sourceFingerprint := "source-buffer-warning"
+	deviceFingerprint := "device-buffer-warning"
+	hostFingerprint := "host-buffer-warning"
+
+	observations := []PlaybackObservation{
+		{
+			ObservedAt:        time.Unix(1_700_002_300, 0).UTC(),
+			RequestID:         "req-warning-newest",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      102,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_002_200, 0).UTC(),
+			RequestID:         "req-warning-middle",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      101,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_002_100, 0).UTC(),
+			RequestID:         "req-warning-oldest",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      101,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_002_000, 0).UTC(),
+			RequestID:         "req-started-before-warning",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      200,
+		},
+	}
+	for _, observation := range observations {
+		require.NoError(t, store.RecordObservation(context.Background(), observation))
+	}
+
+	summary, ok, err := store.LookupRecentFeedbackSummary(context.Background(), FeedbackSummaryQuery{
+		SubjectKind:       "live",
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		Since:             time.Unix(1_700_001_900, 0).UTC(),
+		Limit:             8,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 4, summary.SampleCount)
+	assert.Equal(t, 1, summary.StartedCount)
+	assert.Equal(t, 3, summary.WarningCount)
+	assert.Equal(t, 3, summary.ConsecutiveWarnings)
+	assert.Equal(t, 3, summary.ConsecutiveBufferWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveDecodeWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveNetworkWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveFailures)
+	assert.Equal(t, 0, summary.PriorStartedStreak)
+}
+
+func TestSqliteStore_LookupRecentFeedbackSummary_TracksConsecutiveDecodeWarnings(t *testing.T) {
+	store, err := NewSqliteStore(filepath.Join(t.TempDir(), "capability_registry.sqlite"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	sourceFingerprint := "source-decode-warning"
+	deviceFingerprint := "device-decode-warning"
+	hostFingerprint := "host-decode-warning"
+
+	observations := []PlaybackObservation{
+		{
+			ObservedAt:        time.Unix(1_700_003_300, 0).UTC(),
+			RequestID:         "req-decode-warning-newest",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      103,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_003_200, 0).UTC(),
+			RequestID:         "req-decode-warning-older",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      103,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_003_100, 0).UTC(),
+			RequestID:         "req-started-before-decode-warning",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      200,
+		},
+	}
+	for _, observation := range observations {
+		require.NoError(t, store.RecordObservation(context.Background(), observation))
+	}
+
+	summary, ok, err := store.LookupRecentFeedbackSummary(context.Background(), FeedbackSummaryQuery{
+		SubjectKind:       "live",
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		Since:             time.Unix(1_700_003_000, 0).UTC(),
+		Limit:             8,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 3, summary.SampleCount)
+	assert.Equal(t, 1, summary.StartedCount)
+	assert.Equal(t, 2, summary.WarningCount)
+	assert.Equal(t, 2, summary.ConsecutiveWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveBufferWarnings)
+	assert.Equal(t, 2, summary.ConsecutiveDecodeWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveNetworkWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveFailures)
+	assert.Equal(t, 0, summary.PriorStartedStreak)
+}
+
+func TestSqliteStore_LookupRecentFeedbackSummary_TracksConsecutiveNetworkWarnings(t *testing.T) {
+	store, err := NewSqliteStore(filepath.Join(t.TempDir(), "capability_registry.sqlite"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	sourceFingerprint := "source-network-warning"
+	deviceFingerprint := "device-network-warning"
+	hostFingerprint := "host-network-warning"
+
+	observations := []PlaybackObservation{
+		{
+			ObservedAt:        time.Unix(1_700_004_300, 0).UTC(),
+			RequestID:         "req-network-warning-newest",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      104,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_004_200, 0).UTC(),
+			RequestID:         "req-network-warning-middle",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      104,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_004_100, 0).UTC(),
+			RequestID:         "req-network-warning-oldest",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      104,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_004_000, 0).UTC(),
+			RequestID:         "req-started-before-network-warning",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      200,
+		},
+	}
+	for _, observation := range observations {
+		require.NoError(t, store.RecordObservation(context.Background(), observation))
+	}
+
+	summary, ok, err := store.LookupRecentFeedbackSummary(context.Background(), FeedbackSummaryQuery{
+		SubjectKind:       "live",
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		Since:             time.Unix(1_700_003_900, 0).UTC(),
+		Limit:             8,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 4, summary.SampleCount)
+	assert.Equal(t, 1, summary.StartedCount)
+	assert.Equal(t, 3, summary.WarningCount)
+	assert.Equal(t, 3, summary.ConsecutiveWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveBufferWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveDecodeWarnings)
+	assert.Equal(t, 3, summary.ConsecutiveNetworkWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveFailures)
+	assert.Equal(t, 0, summary.PriorStartedStreak)
+	assert.Equal(t, 0, summary.PriorRecoveredStartStreak)
+}
+
+func TestSqliteStore_LookupRecentFeedbackSummary_TracksPriorRecoveredStartStreak(t *testing.T) {
+	store, err := NewSqliteStore(filepath.Join(t.TempDir(), "capability_registry.sqlite"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	sourceFingerprint := "source-recovered-warning"
+	deviceFingerprint := "device-recovered-warning"
+	hostFingerprint := "host-recovered-warning"
+
+	observations := []PlaybackObservation{
+		{
+			ObservedAt:        time.Unix(1_700_005_300, 0).UTC(),
+			RequestID:         "req-recovered-warning-newest",
+			ObservationKind:   "feedback",
+			Outcome:           "warning",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "warning",
+			FeedbackCode:      101,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_005_200, 0).UTC(),
+			RequestID:         "req-recovered-start",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      211,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_005_150, 0).UTC(),
+			RequestID:         "req-recovered-start-second",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      211,
+		},
+		{
+			ObservedAt:        time.Unix(1_700_005_100, 0).UTC(),
+			RequestID:         "req-started-before-recovery",
+			ObservationKind:   "feedback",
+			Outcome:           "started",
+			SourceFingerprint: sourceFingerprint,
+			SubjectKind:       "live",
+			HostFingerprint:   hostFingerprint,
+			DeviceFingerprint: deviceFingerprint,
+			FeedbackEvent:     "info",
+			FeedbackCode:      200,
+		},
+	}
+	for _, observation := range observations {
+		require.NoError(t, store.RecordObservation(context.Background(), observation))
+	}
+
+	summary, ok, err := store.LookupRecentFeedbackSummary(context.Background(), FeedbackSummaryQuery{
+		SubjectKind:       "live",
+		SourceFingerprint: sourceFingerprint,
+		DeviceFingerprint: deviceFingerprint,
+		HostFingerprint:   hostFingerprint,
+		Since:             time.Unix(1_700_005_000, 0).UTC(),
+		Limit:             8,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 4, summary.SampleCount)
+	assert.Equal(t, 3, summary.StartedCount)
+	assert.Equal(t, 1, summary.WarningCount)
+	assert.Equal(t, 1, summary.ConsecutiveWarnings)
+	assert.Equal(t, 1, summary.ConsecutiveBufferWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveDecodeWarnings)
+	assert.Equal(t, 0, summary.ConsecutiveNetworkWarnings)
+	assert.Equal(t, 2, summary.PriorRecoveredStartStreak)
+	assert.Equal(t, 211, summary.PriorRecoveryStartCode)
+	assert.Equal(t, 0, summary.ConsecutiveFailures)
+	assert.Equal(t, 0, summary.PriorStartedStreak)
 }
 
 func TestSqliteStore_MigratesV1ObservationSchemaToLatest(t *testing.T) {
@@ -316,7 +849,7 @@ func TestSqliteStore_MigratesV1ObservationSchemaToLatest(t *testing.T) {
 
 	var version int
 	require.NoError(t, store.DB.QueryRow(`PRAGMA user_version`).Scan(&version))
-	assert.Equal(t, 5, version)
+	assert.Equal(t, 8, version)
 
 	var columnCount int
 	require.NoError(t, store.DB.QueryRow(`
@@ -334,13 +867,13 @@ func TestSqliteStore_MigratesV1ObservationSchemaToLatest(t *testing.T) {
 	`).Scan(&sourceTableCount))
 	assert.Equal(t, 1, sourceTableCount)
 
-	var receiverContextCount int
+	var sourceColumnCount int
 	require.NoError(t, store.DB.QueryRow(`
 		SELECT COUNT(*)
 		FROM pragma_table_info('capability_sources')
-		WHERE name = 'receiver_context_json'
-	`).Scan(&receiverContextCount))
-	assert.Equal(t, 1, receiverContextCount)
+		WHERE name IN ('receiver_context_json', 'bitrate_confidence', 'bitrate_bucket', 'signal_fps')
+	`).Scan(&sourceColumnCount))
+	assert.Equal(t, 4, sourceColumnCount)
 
 	var deviceColumnCount int
 	require.NoError(t, store.DB.QueryRow(`
@@ -371,15 +904,18 @@ func TestSqliteStore_MigratesV1ObservationSchemaToLatest(t *testing.T) {
 	assert.Equal(t, 950000, observation.Network.DownlinkKbps)
 
 	sourceSnapshot := SourceSnapshot{
-		SubjectKind: "live",
-		Origin:      "live_scan",
-		Container:   "ts",
-		VideoCodec:  "h264",
-		AudioCodec:  "aac",
-		Width:       1280,
-		Height:      720,
-		FPS:         50,
-		UpdatedAt:   time.Unix(1_700_000_300, 0).UTC(),
+		SubjectKind:       "live",
+		Origin:            "live_scan",
+		Container:         "ts",
+		VideoCodec:        "h264",
+		AudioCodec:        "aac",
+		BitrateConfidence: "low",
+		BitrateBucket:     "sub5m",
+		Width:             1280,
+		Height:            720,
+		FPS:               50,
+		SignalFPS:         50,
+		UpdatedAt:         time.Unix(1_700_000_300, 0).UTC(),
 	}
 	require.NoError(t, store.RememberSource(context.Background(), sourceSnapshot))
 	require.NoError(t, store.RecordObservation(context.Background(), PlaybackObservation{

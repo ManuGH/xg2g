@@ -1,5 +1,6 @@
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../../context/HouseholdProfilesContext';
 import { ClientRequestError, setClientAuthToken } from '../../services/clientWrapper';
@@ -11,12 +12,14 @@ const {
   addTimer,
   confirm,
   toast,
+  timersView,
 } = vi.hoisted(() => ({
   fetchEpgEvents: vi.fn<(...args: any[]) => Promise<EpgEvent[]>>(),
   fetchTimers: vi.fn<() => Promise<Timer[]>>(),
   addTimer: vi.fn(),
   confirm: vi.fn(),
   toast: vi.fn(),
+  timersView: vi.fn(() => <div data-testid="epg-timers-stub">Timers view</div>),
 }));
 
 vi.mock('./epgApi', () => ({
@@ -43,13 +46,20 @@ vi.mock('./components/EpgChannelList', () => ({
   EpgChannelList: () => <div data-testid="epg-channel-list" />,
 }));
 
+vi.mock('../../components/Timers', () => ({
+  __esModule: true,
+  default: timersView,
+}));
+
 import EPG from './EPG';
 
 function renderWithProviders(ui: ReactNode) {
   return render(
-    <HouseholdProfilesProvider>
-      {ui}
-    </HouseholdProfilesProvider>
+    <MemoryRouter>
+      <HouseholdProfilesProvider>
+        {ui}
+      </HouseholdProfilesProvider>
+    </MemoryRouter>
   );
 }
 

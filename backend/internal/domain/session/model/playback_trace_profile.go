@@ -111,7 +111,7 @@ func TraceFFmpegPlanFromProfile(profile ProfileSpec, inputKind string, segmentSe
 		InputKind:  inputKind,
 		Container:  target.Container,
 		Packaging:  string(target.Packaging),
-		HWAccel:    string(target.HWAccel),
+		HWAccel:    tracePlanHWAccel(profile.HWAccel),
 		VideoMode:  string(target.Video.Mode),
 		VideoCodec: videoCodec,
 		AudioMode:  string(target.Audio.Mode),
@@ -124,6 +124,14 @@ func TraceFFmpegPlanFromProfile(profile ProfileSpec, inputKind string, segmentSe
 		_ = segmentSeconds
 	}
 	return plan
+}
+
+func tracePlanHWAccel(raw string) string {
+	hwAccel := strings.ToLower(strings.TrimSpace(raw))
+	if hwAccel == "" {
+		return string(playbackprofile.HWAccelNone)
+	}
+	return hwAccel
 }
 
 func traceVideoCRF(profile ProfileSpec) int {

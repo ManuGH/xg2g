@@ -34,6 +34,12 @@ type Signal struct {
 	Locked bool      `json:"lock"`
 }
 
+// StatusInfo represents the response from /api/statusinfo.
+type StatusInfo struct {
+	Result    bool   `json:"result"`
+	InStandby string `json:"inStandby"`
+}
+
 // IntString handles JSON fields that might be numbers or strings.
 type IntString int
 

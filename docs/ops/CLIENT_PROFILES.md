@@ -170,3 +170,6 @@ Interpretation:
 - Unknown family fallback must not invent extra capability truth.
 - Desktop Safari and iOS Safari remain distinct even under family-only fallback.
 - Firefox and Chromium stay conservative unless runtime probe proves more.
+- For live Safari families, a `direct` decision means "no video re-encode
+  required", not "no server-side media process". `xg2g` may still run FFmpeg in
+  copy/remux mode to package MPEG-TS HLS and normalize audio for delivery.

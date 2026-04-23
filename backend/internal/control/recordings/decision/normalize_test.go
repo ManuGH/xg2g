@@ -90,6 +90,58 @@ func TestNormalizeInput_NormalizesHostPressureBand(t *testing.T) {
 	}
 }
 
+func TestNormalizeInput_NormalizesHostPerformanceClass(t *testing.T) {
+	t.Parallel()
+
+	input := DecisionInput{
+		Policy: Policy{
+			Host: HostPolicy{
+				PerformanceClass: " HIGH ",
+			},
+		},
+		Capabilities: Capabilities{Version: 1},
+	}
+
+	normalized := NormalizeInput(input)
+	if normalized.Policy.Host.PerformanceClass != "high" {
+		t.Fatalf("expected high host performance class, got %q", normalized.Policy.Host.PerformanceClass)
+	}
+}
+
+func TestNormalizeInput_NormalizesHostBenchmarkClass(t *testing.T) {
+	t.Parallel()
+
+	input := DecisionInput{
+		Policy: Policy{
+			Host: HostPolicy{
+				BenchmarkClass: " STRONG ",
+			},
+		},
+		Capabilities: Capabilities{Version: 1},
+	}
+
+	normalized := NormalizeInput(input)
+	if normalized.Policy.Host.BenchmarkClass != "strong" {
+		t.Fatalf("expected strong host benchmark class, got %q", normalized.Policy.Host.BenchmarkClass)
+	}
+}
+
+func TestNormalizeInput_NormalizesBitrateConfidence(t *testing.T) {
+	t.Parallel()
+
+	input := DecisionInput{
+		Source: Source{
+			BitrateConfidence: " LOW ",
+		},
+		Capabilities: Capabilities{Version: 1},
+	}
+
+	normalized := NormalizeInput(input)
+	if normalized.Source.BitrateConfidence != "low" {
+		t.Fatalf("expected low bitrate confidence, got %q", normalized.Source.BitrateConfidence)
+	}
+}
+
 // INV-NORM-003: Edge Trimming, Case Folding, and Ordering.
 // Normalization is NON-DESTRUCTIVE: preserves interior content byte-for-byte.
 // Only edges are trimmed, case is folded, slices are ordered/deduped.

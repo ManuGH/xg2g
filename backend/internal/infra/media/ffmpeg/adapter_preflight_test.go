@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/rs/zerolog"
 )
 
@@ -52,6 +54,189 @@ func TestDeriveVAAPIEncoderCapabilities_FallsBackToFastestVerifiedBaseline(t *te
 	}
 	if caps["av1_vaapi"].AutoEligible {
 		t.Fatalf("expected slower av1_vaapi to stay out of auto ladder: %#v", caps["av1_vaapi"])
+	}
+}
+
+func TestDeriveProfileCapabilities_PreservesMeasuredProfiles(t *testing.T) {
+	t.Parallel()
+
+	caps := deriveProfileCapabilities(map[string]time.Duration{
+		playbackprofile.BenchmarkProfileAudioAACStereo:   35 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2641080P:   90 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2641080I:   180 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2641080I50: 310 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2642160P:   420 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2642160P50: 820 * time.Millisecond,
+	})
+
+	if !caps[playbackprofile.BenchmarkProfileAudioAACStereo].Verified || caps[playbackprofile.BenchmarkProfileAudioAACStereo].ProbeElapsed != 35*time.Millisecond {
+		t.Fatalf("expected audio profile capability, got %#v", caps[playbackprofile.BenchmarkProfileAudioAACStereo])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2641080P].Verified || caps[playbackprofile.BenchmarkProfileVideoH2641080P].ProbeElapsed != 90*time.Millisecond {
+		t.Fatalf("expected 1080p profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2641080P])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2641080I].Verified || caps[playbackprofile.BenchmarkProfileVideoH2641080I].ProbeElapsed != 180*time.Millisecond {
+		t.Fatalf("expected 1080i profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2641080I])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2641080I50].Verified || caps[playbackprofile.BenchmarkProfileVideoH2641080I50].ProbeElapsed != 310*time.Millisecond {
+		t.Fatalf("expected 1080i50 profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2641080I50])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2642160P].Verified || caps[playbackprofile.BenchmarkProfileVideoH2642160P].ProbeElapsed != 420*time.Millisecond {
+		t.Fatalf("expected 2160p profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2642160P])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2642160P50].Verified || caps[playbackprofile.BenchmarkProfileVideoH2642160P50].ProbeElapsed != 820*time.Millisecond {
+		t.Fatalf("expected 2160p50 profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2642160P50])
+	}
+}
+
+func TestPreflightTranscodeProfiles_PublishesMeasuredProfileBenchmarks(t *testing.T) {
+	adapter := NewLocalAdapter("ffmpeg", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128")
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true}
+	adapter.nvencEncoders = map[string]bool{"h264_nvenc": true}
+	adapter.profileProbeFn = func(_ context.Context, req profileProbeRequest) (time.Duration, error) {
+		switch req.Backend + ":" + req.ProfileID {
+		case "cpu:" + playbackprofile.BenchmarkProfileAudioAACStereo:
+			return 35 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2641080P:
+			return 220 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2641080I:
+			return 360 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2641080I50:
+			return 520 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2641080P:
+			return 80 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2641080I:
+			return 170 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2641080I50:
+			return 260 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2642160P:
+			return 410 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2642160P50:
+			return 760 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2641080P:
+			return 95 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2641080I:
+			return 210 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2641080I50:
+			return 240 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2642160P:
+			return 330 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2642160P50:
+			return 610 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2642160P:
+			return 780 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2642160P50:
+			return 1400 * time.Millisecond, nil
+		default:
+			return 0, errors.New("unexpected profile probe")
+		}
+	}
+
+	hardware.SetCPUProfileBenchmarks(nil)
+	hardware.SetVAAPIProfileBenchmarks(nil)
+	hardware.SetNVENCProfileBenchmarks(nil)
+	t.Cleanup(func() {
+		hardware.SetCPUProfileBenchmarks(nil)
+		hardware.SetVAAPIProfileBenchmarks(nil)
+		hardware.SetNVENCProfileBenchmarks(nil)
+	})
+
+	adapter.PreflightTranscodeProfiles()
+
+	cpuCap, cpuBackend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2641080P)
+	if !ok {
+		t.Fatal("expected published 1080p profile benchmark")
+	}
+	if cpuBackend != "vaapi" || cpuCap.ProbeElapsed != 80*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 1080p, got backend=%q cap=%#v", cpuBackend, cpuCap)
+	}
+
+	interlacedCap, interlacedBackend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2641080I)
+	if !ok {
+		t.Fatal("expected published 1080i profile benchmark")
+	}
+	if interlacedBackend != "vaapi" || interlacedCap.ProbeElapsed != 170*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 1080i, got backend=%q cap=%#v", interlacedBackend, interlacedCap)
+	}
+
+	interlaced50Cap, interlaced50Backend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2641080I50)
+	if !ok {
+		t.Fatal("expected published 1080i50 profile benchmark")
+	}
+	if interlaced50Backend != "nvenc" || interlaced50Cap.ProbeElapsed != 240*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 1080i50, got backend=%q cap=%#v", interlaced50Backend, interlaced50Cap)
+	}
+
+	audioCap, audioBackend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileAudioAACStereo)
+	if !ok {
+		t.Fatal("expected published audio profile benchmark")
+	}
+	if audioBackend != "cpu" || audioCap.ProbeElapsed != 35*time.Millisecond {
+		t.Fatalf("expected cpu audio profile benchmark, got backend=%q cap=%#v", audioBackend, audioCap)
+	}
+
+	uhdCap, uhdBackend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2642160P)
+	if !ok {
+		t.Fatal("expected published 2160p profile benchmark")
+	}
+	if uhdBackend != "nvenc" || uhdCap.ProbeElapsed != 330*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 2160p, got backend=%q cap=%#v", uhdBackend, uhdCap)
+	}
+
+	uhd50Cap, uhd50Backend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2642160P50)
+	if !ok {
+		t.Fatal("expected published 2160p50 profile benchmark")
+	}
+	if uhd50Backend != "nvenc" || uhd50Cap.ProbeElapsed != 610*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 2160p50, got backend=%q cap=%#v", uhd50Backend, uhd50Cap)
+	}
+}
+
+func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
+	adapter := NewLocalAdapter("ffmpeg", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128")
+	adapter.vaapiEncoders = map[string]bool{
+		"hevc_vaapi": true,
+		"av1_vaapi":  true,
+	}
+	adapter.pathProbeFn = func(_ context.Context, req pathProbeRequest) (hardware.HardwarePathCapability, error) {
+		switch req.PathID {
+		case hardware.PathVAAPIFullInterlacedHEVC:
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic yavg 118.2",
+			}, nil
+		case hardware.PathVAAPIFullInterlacedAV1:
+			return hardware.HardwarePathCapability{
+				Status: hardware.PathStatusBrokenOutput,
+				Reason: "synthetic yavg 2.4 below threshold",
+			}, nil
+		default:
+			return hardware.HardwarePathCapability{}, errors.New("unexpected path probe")
+		}
+	}
+
+	hardware.SetPathCapabilities(nil)
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter.PreflightPathCorrectness()
+
+	hevcCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedHEVC)
+	if !ok {
+		t.Fatal("expected published hevc path correctness")
+	}
+	if !hevcCap.Verified || hevcCap.Status != hardware.PathStatusVerified {
+		t.Fatalf("unexpected hevc path capability: %#v", hevcCap)
+	}
+
+	av1Cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedAV1)
+	if !ok {
+		t.Fatal("expected published av1 path correctness")
+	}
+	if av1Cap.Verified || av1Cap.Status != hardware.PathStatusBrokenOutput {
+		t.Fatalf("unexpected av1 path capability: %#v", av1Cap)
 	}
 }
 

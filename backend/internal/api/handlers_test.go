@@ -145,7 +145,9 @@ func TestHandler(t *testing.T) {
 func TestRegisterRoutes_StatusEndpoint(t *testing.T) {
 	// Create a mock receiver for health checks
 	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"info":{"brand":"Vu+"}}`))
 	}))
 	defer mockReceiver.Close()
 

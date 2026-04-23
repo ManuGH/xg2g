@@ -25,14 +25,15 @@ type DecisionInput struct {
 
 // Source represents media truth (known container, codecs, etc.).
 type Source struct {
-	Container   string  `json:"c"`
-	VideoCodec  string  `json:"v"`
-	AudioCodec  string  `json:"a"`
-	BitrateKbps int     `json:"br"`
-	Width       int     `json:"w"`
-	Height      int     `json:"h"`
-	FPS         float64 `json:"fps"`
-	Interlaced  bool    `json:"interlaced,omitempty"`
+	Container         string  `json:"c"`
+	VideoCodec        string  `json:"v"`
+	AudioCodec        string  `json:"a"`
+	BitrateKbps       int     `json:"br"`
+	BitrateConfidence string  `json:"brc,omitempty"`
+	Width             int     `json:"w"`
+	Height            int     `json:"h"`
+	FPS               float64 `json:"fps"`
+	Interlaced        bool    `json:"interlaced,omitempty"`
 }
 
 // MaxVideoDimensions defines video resolution limits.
@@ -67,7 +68,9 @@ type OperatorPolicy struct {
 }
 
 type HostPolicy struct {
-	PressureBand playbackprofile.HostPressureBand `json:"pressureBand,omitempty"`
+	PressureBand     playbackprofile.HostPressureBand `json:"pressureBand,omitempty"`
+	PerformanceClass string                           `json:"performanceClass,omitempty"`
+	BenchmarkClass   string                           `json:"benchmarkClass,omitempty"`
 }
 
 // Decision represents a successful playback decision (HTTP 200).
@@ -113,6 +116,11 @@ type Trace struct {
 	OverrideApplied     bool     `json:"overrideApplied,omitempty"`
 	HostPressureBand    string   `json:"hostPressureBand,omitempty"`
 	HostOverrideApplied bool     `json:"hostOverrideApplied,omitempty"`
+	AutoCodecPolicy     string   `json:"autoCodecPolicy,omitempty"`
+	AutoCodecRequested  string   `json:"autoCodecRequestedCodecs,omitempty"`
+	AutoCodecSelected   string   `json:"autoCodecSelectedCodec,omitempty"`
+	AutoCodecHostClass  string   `json:"autoCodecPerformanceClass,omitempty"`
+	AutoCodecBenchClass string   `json:"autoCodecBenchmarkClass,omitempty"`
 	RuleHits            []string `json:"ruleHits"` // Ordered list of rules evaluated
 	Why                 []Reason `json:"why"`      // Structured explanation
 }

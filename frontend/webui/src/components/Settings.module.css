@@ -40,6 +40,12 @@
   line-height: 1.6;
 }
 
+.sectionTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .setup {
   margin-bottom: 0;
 }
@@ -63,6 +69,16 @@
   border-bottom: 1px solid var(--border-base);
   padding-bottom: 12px;
   font-size: 1.15rem;
+}
+
+.advancedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.embeddedTool {
+  padding-top: 6px;
 }
 
 .accordionHeader {
