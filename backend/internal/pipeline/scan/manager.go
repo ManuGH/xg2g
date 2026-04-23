@@ -911,6 +911,9 @@ func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRe
 		cap.Resolution = ""
 	}
 	cap.State = inferCapabilityState(cap.Resolution, cap.Codec)
+	if cap.State == CapabilityStateOK && !hasCompleteMediaTruth(cap.Container, cap.VideoCodec, cap.AudioCodec) {
+		cap.State = CapabilityStatePartial
+	}
 	if cap.State == CapabilityStateFailed {
 		if isLikelyInactiveEventFeed(channelName, nil) {
 			cap.State = CapabilityStateInactiveEventFeed

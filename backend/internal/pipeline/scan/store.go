@@ -75,6 +75,9 @@ func (c Capability) Normalized() Capability {
 	default:
 		state = inferCapabilityState(c.Resolution, c.Codec)
 	}
+	if state == CapabilityStateOK && !hasCompleteMediaTruth(c.Container, c.VideoCodec, c.AudioCodec) {
+		state = CapabilityStatePartial
+	}
 	c.State = state
 
 	if c.LastAttempt.IsZero() && !c.LastScan.IsZero() {
@@ -104,6 +107,26 @@ func (c Capability) Normalized() Capability {
 
 func (c Capability) RetryDue(now time.Time) bool {
 	normalized := c.Normalized()
+	switch normalized.State {
+	case CapabilityStateOK, CapabilityStatePartial:
+		if !hasCompleteMediaTruth(normalized.Container, normalized.VideoCodec, normalized.AudioCodec) {
+			anchor := normalized.LastAttempt
+			if anchor.IsZero() {
+				anchor = normalized.LastSuccess
+			}
+			if anchor.IsZero() {
+				anchor = normalized.LastScan
+			}
+			if anchor.IsZero() {
+				return true
+			}
+			dueAt := anchor.Add(partialRetryWindow)
+			if !normalized.NextRetryAt.IsZero() && normalized.NextRetryAt.Before(dueAt) {
+				dueAt = normalized.NextRetryAt
+			}
+			return !now.Before(dueAt)
+		}
+	}
 	if normalized.NextRetryAt.IsZero() {
 		return true
 	}
@@ -125,7 +148,13 @@ func (c Capability) IsInactiveEventFeed() bool {
 
 func (c Capability) HasMediaTruth() bool {
 	normalized := c.Normalized()
-	return normalized.Container != "" && normalized.VideoCodec != "" && normalized.AudioCodec != ""
+	return hasCompleteMediaTruth(normalized.Container, normalized.VideoCodec, normalized.AudioCodec)
+}
+
+func hasCompleteMediaTruth(container, videoCodec, audioCodec string) bool {
+	return strings.TrimSpace(container) != "" &&
+		strings.TrimSpace(videoCodec) != "" &&
+		strings.TrimSpace(audioCodec) != ""
 }
 
 func inferCapabilityState(resolution, codec string) CapabilityState {

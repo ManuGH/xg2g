@@ -10,6 +10,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -408,6 +409,9 @@ func buildStartRequestParams(intent Intent, resolution startProfileResolution) m
 	if intent.DecisionTrace != "" {
 		requestParams[model.CtxKeyDecisionRequest] = intent.DecisionTrace
 	}
+	if principalID := normalize.Token(intent.PrincipalID); principalID != "" {
+		requestParams[model.CtxKeyPrincipalID] = principalID
+	}
 	if intent.Mode != "" {
 		requestParams[model.CtxKeyMode] = intent.Mode
 	}
@@ -452,10 +456,27 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 		HostPressureBand:    string(resolution.hostPressureBand),
 		HostOverrideApplied: resolution.hostOverrideApplied,
 	}
+	if session.ContextData == nil {
+		session.ContextData = make(map[string]string, 2)
+	}
+	if targetStep := runtimepolicy.PlaybackLadderStepFromTargetProfile(session.PlaybackTrace.TargetProfile, playbackprofile.NormalizeQualityRung(videoQualityRung)); targetStep != runtimepolicy.PlaybackStepUnknown {
+		session.ContextData[model.CtxKeyRuntimeTargetStep] = string(targetStep)
+	}
 	return session
 }
 
 func (s *Service) persistStartSession(ctx context.Context, intent Intent, store SessionStore, session *model.SessionRecord, idempotencyKey, phaseLabel string) (*Result, *Error) {
+	if replay, err := resolveReusableLiveStart(ctx, store, intent, session); err != nil {
+		intent.Logger.Error().Err(err).Msg("failed to inspect active live sessions")
+		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+		return nil, &Error{Kind: ErrorStoreUnavailable, Message: "failed to inspect active live sessions", Cause: err}
+	} else if replay != nil {
+		s.deps.RecordReplay(string(model.IntentTypeStreamStart))
+		s.deps.RecordIntent(string(model.IntentTypeStreamStart), phaseLabel, "replay")
+		intent.Logger.Info().Str("existing_sid", replay.SessionID).Msg("reused matching active live session")
+		return replay, nil
+	}
+
 	persisted := false
 	for attempt := 0; attempt < startReplayRecoveryAttempts; attempt++ {
 		existingID, exists, err := store.PutSessionWithIdempotency(ctx, session, idempotencyKey, admissionLeaseTTL)

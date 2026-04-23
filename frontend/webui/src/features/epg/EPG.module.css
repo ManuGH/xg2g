@@ -891,3 +891,121 @@
     width: 100%;
   }
 }
+
+@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  .page {
+    gap: 12px;
+  }
+
+  .surfaceTabs {
+    gap: 8px;
+  }
+
+  .surfaceTab {
+    min-height: 38px;
+    padding: 0 14px;
+  }
+
+  .toolbar,
+  .card {
+    padding: 14px 16px;
+    border-radius: 20px;
+  }
+
+  .toolbar {
+    gap: 14px;
+  }
+
+  .toolbarHero {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 12px;
+  }
+
+  .toolbarLeft {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
+  .toolbarTitle,
+  .toolbarLeft h3 {
+    font-size: clamp(1.4rem, 3.2vw, 2rem);
+  }
+
+  .toolbarSummary,
+  .toolbarLeft p {
+    margin-top: 8px;
+    font-size: 0.86rem;
+    line-height: 1.45;
+  }
+
+  .toolbarRight {
+    width: auto;
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .toolbarRight button {
+    width: auto;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 14px;
+  }
+
+  .toolbarMeta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+
+  .metaPill {
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 16px;
+  }
+
+  .controls {
+    grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .filterField,
+  .rangeGroup,
+  .search {
+    padding: 12px 14px;
+    border-radius: 18px;
+  }
+
+  .search {
+    flex-direction: row;
+    gap: 10px;
+  }
+
+  .searchRight button {
+    width: auto;
+    min-width: 120px;
+  }
+
+  .channel {
+    gap: 12px;
+    align-items: center;
+  }
+
+  .logo {
+    width: 50px;
+    height: 50px;
+    border-radius: 16px;
+  }
+
+  .programme {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .programmeTime {
+    width: auto;
+    min-width: 96px;
+  }
+}

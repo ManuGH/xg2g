@@ -175,6 +175,8 @@ func getFieldValue(t *testing.T, v reflect.Value, path string) (reflect.Value, b
 // Gate: Ensure Registry Defaults are the Single Source of Truth for runtime configuration
 func TestConfigAudit_RegistryTruth_Defaults(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_VAAPI_DEVICE", "")
+
 	// 1. Load config only with defaults (no file, no env)
 	loader := NewLoader("", "vTest")
 	cfg, err := loader.Load()

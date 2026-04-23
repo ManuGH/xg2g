@@ -122,11 +122,11 @@ func TestSqliteStore_MigratesLegacySchemaDespiteMatchingUserVersion(t *testing.T
 	require.Equal(t, "1920x1080", got.Resolution)
 	require.Equal(t, "h264", got.Codec)
 	require.Equal(t, "h264", got.VideoCodec)
-	require.Equal(t, CapabilityStateOK, got.State)
+	require.Equal(t, CapabilityStatePartial, got.State)
 	require.True(t, got.Interlaced)
 	require.True(t, got.LastAttempt.Equal(legacyScan))
 	require.True(t, got.LastSuccess.Equal(legacyScan))
-	require.True(t, got.NextRetryAt.Equal(legacyScan.Add(30*24*time.Hour)))
+	require.True(t, got.NextRetryAt.Equal(legacyScan.Add(partialRetryWindow)))
 
 	store.Update(Capability{
 		ServiceRef:    got.ServiceRef,
@@ -160,4 +160,23 @@ func TestSqliteStore_MigratesLegacySchemaDespiteMatchingUserVersion(t *testing.T
 	require.Equal(t, 50.0, rewritten.FPS)
 	require.Equal(t, "legacy_migrated", rewritten.FailureReason)
 	require.True(t, rewritten.NextRetryAt.Equal(legacyScan.Add(8*time.Hour)))
+}
+
+func TestCapability_RetryDueTreatsIncompleteMediaTruthAsPartial(t *testing.T) {
+	lastAttempt := time.Date(2026, 3, 23, 10, 13, 18, 0, time.UTC)
+	cap := Capability{
+		ServiceRef:  "1:0:19:132F:3EF:1:C00000:0:0:0:",
+		State:       CapabilityStateOK,
+		LastScan:    lastAttempt,
+		LastAttempt: lastAttempt,
+		LastSuccess: lastAttempt,
+		NextRetryAt: lastAttempt.Add(30 * 24 * time.Hour),
+		Resolution:  "1280x720",
+		Codec:       "h264",
+	}
+
+	normalized := cap.Normalized()
+	require.Equal(t, CapabilityStatePartial, normalized.State)
+	require.False(t, cap.RetryDue(lastAttempt.Add(partialRetryWindow-time.Second)))
+	require.True(t, cap.RetryDue(lastAttempt.Add(partialRetryWindow)))
 }

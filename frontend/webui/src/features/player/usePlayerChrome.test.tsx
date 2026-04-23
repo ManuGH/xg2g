@@ -51,10 +51,16 @@ function HookHarness({
 describe('usePlayerChrome', () => {
   let requestFullscreenDescriptor: PropertyDescriptor | undefined;
   let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
+  let webkitExitFullscreenDescriptor: PropertyDescriptor | undefined;
+  let fullscreenElementDescriptor: PropertyDescriptor | undefined;
+  let exitFullscreenDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     requestFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLDivElement.prototype, 'requestFullscreen');
     webkitEnterFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
+    webkitExitFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitExitFullscreen');
+    fullscreenElementDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'fullscreenElement');
+    exitFullscreenDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'exitFullscreen');
   });
 
   afterEach(() => {
@@ -70,10 +76,28 @@ describe('usePlayerChrome', () => {
       delete (HTMLVideoElement.prototype as any).webkitEnterFullscreen;
     }
 
+    if (webkitExitFullscreenDescriptor) {
+      Object.defineProperty(HTMLVideoElement.prototype, 'webkitExitFullscreen', webkitExitFullscreenDescriptor);
+    } else {
+      delete (HTMLVideoElement.prototype as any).webkitExitFullscreen;
+    }
+
+    if (fullscreenElementDescriptor) {
+      Object.defineProperty(Document.prototype, 'fullscreenElement', fullscreenElementDescriptor);
+    } else {
+      delete (Document.prototype as any).fullscreenElement;
+    }
+
+    if (exitFullscreenDescriptor) {
+      Object.defineProperty(Document.prototype, 'exitFullscreen', exitFullscreenDescriptor);
+    } else {
+      delete (Document.prototype as any).exitFullscreen;
+    }
+
     vi.restoreAllMocks();
   });
 
-  it('keeps autoplay audio enabled on the touch WebKit path', () => {
+  it('mutes autoplay on the touch WebKit path too', () => {
     render(<HookHarness shouldForceNativeMobileHls={() => true} />);
 
     const video = screen.getByTestId('player-video') as HTMLVideoElement;
@@ -81,7 +105,7 @@ describe('usePlayerChrome', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'mute' }));
 
-    expect(video.muted).toBe(false);
+    expect(video.muted).toBe(true);
   });
 
   it('still mutes autoplay when the touch WebKit path is not active', () => {
@@ -121,5 +145,81 @@ describe('usePlayerChrome', () => {
       expect(requestFullscreen).toHaveBeenCalledTimes(1);
     });
     expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+  });
+
+  it('exits root fullscreen when playback already owns document fullscreen', async () => {
+    let currentFullscreenElement: Element | null = document.createElement('div');
+    const exitFullscreen = vi.fn().mockImplementation(async () => {
+      currentFullscreenElement = null;
+    });
+
+    Object.defineProperty(Document.prototype, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen
+    });
+    Object.defineProperty(Document.prototype, 'fullscreenElement', {
+      configurable: true,
+      get: () => currentFullscreenElement
+    });
+
+    currentFullscreenElement = document.documentElement;
+
+    render(<HookHarness shouldForceNativeMobileHls={() => false} />);
+
+    fireEvent.keyDown(window, { key: 'f' });
+
+    await waitFor(() => {
+      expect(exitFullscreen).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('exits foreign fullscreen before promoting to the player container', async () => {
+    let currentFullscreenElement: Element | null = document.createElement('div');
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    const exitFullscreen = vi.fn().mockImplementation(async () => {
+      currentFullscreenElement = null;
+    });
+
+    Object.defineProperty(HTMLDivElement.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen
+    });
+    Object.defineProperty(Document.prototype, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen
+    });
+    Object.defineProperty(Document.prototype, 'fullscreenElement', {
+      configurable: true,
+      get: () => currentFullscreenElement
+    });
+
+    render(<HookHarness shouldForceNativeMobileHls={() => false} />);
+
+    fireEvent.keyDown(window, { key: 'f' });
+
+    await waitFor(() => {
+      expect(exitFullscreen).toHaveBeenCalledTimes(1);
+      expect(requestFullscreen).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('exits native WebKit fullscreen when f is pressed again', async () => {
+    const webkitExitFullscreen = vi.fn();
+
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitExitFullscreen', {
+      configurable: true,
+      value: webkitExitFullscreen
+    });
+
+    render(<HookHarness shouldForceNativeMobileHls={() => false} />);
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement & { webkitDisplayingFullscreen?: boolean };
+    video.webkitDisplayingFullscreen = true;
+
+    fireEvent.keyDown(window, { key: 'f' });
+
+    await waitFor(() => {
+      expect(webkitExitFullscreen).toHaveBeenCalledTimes(1);
+    });
   });
 });

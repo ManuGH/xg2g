@@ -1712,6 +1712,9 @@ type RecordingItem struct {
 	// Length Human-readable duration string for display only.
 	Length *string `json:"length,omitempty"`
 
+	// LocalWritable Whether the current runtime can rename this recording via a writable locally mapped filesystem path. Clients MUST fail closed when this field is absent or false.
+	LocalWritable *bool `json:"localWritable,omitempty"`
+
 	// RecordingId Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
 	RecordingId *string        `json:"recordingId,omitempty"`
 	Resume      *ResumeSummary `json:"resume,omitempty"`

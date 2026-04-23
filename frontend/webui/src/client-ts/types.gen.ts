@@ -1600,6 +1600,10 @@ export type RecordingItem = {
     length?: string;
     filename?: string;
     /**
+     * Whether the current runtime can rename this recording via a writable locally mapped filesystem path. Clients MUST fail closed when this field is absent or false.
+     */
+    localWritable?: boolean;
+    /**
      * Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
      */
     status: 'scheduled' | 'recording' | 'completed' | 'failed' | 'unknown';

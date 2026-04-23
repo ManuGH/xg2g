@@ -5,7 +5,7 @@
 // Phase 2E: Recordings View refactored to primitives (Card + StatusChip)
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
-import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
+import React, { useState, useEffect, lazy, Suspense, useRef, type CSSProperties } from 'react';
 import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
@@ -14,14 +14,24 @@ import { useTranslation } from 'react-i18next';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
 import { usePlayerHistoryBridge } from '../features/player/usePlayerHistoryBridge';
 import { useUiOverlay } from '../context/UiOverlayContext';
-import { useDeleteRecordingsMutation, useRecordings } from '../hooks/useServerQueries';
+import { useRecordings } from '../hooks/useServerQueries';
 import { toAppError } from '../lib/appErrors';
 import { Button, Card, CardBody, StatusChip, type ChipState } from './ui';
 import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
 import styles from './Recordings.module.css';
 
-const V3Player = lazy(() => import('../features/player/components/V3Player'));
+const importV3Player = () => import('../features/player/components/V3Player');
+let v3PlayerModulePromise: ReturnType<typeof importV3Player> | null = null;
+
+const loadV3Player = () => {
+  if (!v3PlayerModulePromise) {
+    v3PlayerModulePromise = importV3Player();
+  }
+  return v3PlayerModulePromise;
+};
+
+const V3Player = lazy(loadV3Player);
 
 // Simple Icons
 const FolderIcon = ({ className }: { className?: string }) => (
@@ -30,10 +40,10 @@ const FolderIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const FileIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <path fillRule="evenodd" d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0016.5 9h-1.875a1.875 1.875 0 01-1.875-1.875V5.25A3.75 3.75 0 009 1.5H5.625zM12.971 5.25a5.23 5.23 0 00-1.276-2.575c-.098-.099-.205-.198-.322-.29C13.315 2.444 14.88 3.5 15.686 5.25H12.972z" clipRule="evenodd" />
-    <path d="M9.75 13.5a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5zM9.75 16.5a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" />
+const PlayCircleIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" className={className}>
+    <circle cx="24" cy="24" r="23" fill="currentColor" fillOpacity="0.14" stroke="currentColor" strokeWidth="2" />
+    <path d="M20 16.8c0-1.54 1.67-2.5 3.01-1.72l11.16 6.47c1.32.77 1.32 2.67 0 3.44L23 31.46c-1.34.78-3-.18-3-1.72V16.8Z" fill="currentColor" />
   </svg>
 );
 
@@ -41,6 +51,12 @@ const TrashIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path fillRule="evenodd" d="M16.5 4.478v.227a48.816 48.816 0 0 1 3.878.512.75.75 0 1 1-.49 1.478 47.4 47.4 0 0 0-3.899-.514H7.991a47.403 47.403 0 0 0-3.899.513.75.75 0 0 1-.492-1.478 48.817 48.817 0 0 1 3.879-.512v-.227c0-1.168.968-2.147 2.135-2.288 1.477-.178 3.013-.178 4.49 0 1.167.14 2.135 1.12 2.135 2.288ZM8.33 12a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v5.25a.75.75 0 0 1-.75.75H9.08a.75.75 0 0 1-.75-.75V12Zm3.75 0a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v5.25a.75.75 0 0 1-.75.75h-.008a.75.75 0 0 1-.75-.75V12Zm3.75 0a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v5.25a.75.75 0 0 1-.75.75h-.008a.75.75 0 0 1-.75-.75V12Z" clipRule="evenodd" />
     <path d="M5 9.75a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 .75.75v7.5a9 9 0 0 1-9 9h-4.5a9 9 0 0 1-9-9v-7.5Z" />
+  </svg>
+);
+
+const PencilIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M16.862 3.487a2.625 2.625 0 1 1 3.712 3.713l-10.5 10.5a2.25 2.25 0 0 1-1.06.598l-3.11.777a.75.75 0 0 1-.91-.91l.777-3.11a2.25 2.25 0 0 1 .598-1.06l10.5-10.5ZM18.8 4.548a1.125 1.125 0 0 0-1.591 0l-.71.71 1.59 1.59.71-.709a1.125 1.125 0 0 0 0-1.59ZM16.43 7.318l-1.59-1.59-8.41 8.41a.75.75 0 0 0-.2.354l-.42 1.68 1.68-.42a.75.75 0 0 0 .354-.2l8.586-8.234Z" />
   </svg>
 );
 
@@ -53,12 +69,77 @@ const CheckCircleIcon = ({ className }: { className?: string }) => (
 interface PlayingState {
   recordingId: string;
   title: string;
+  description: string;
+  beginUnixSeconds?: number;
+  lengthLabel: string;
   durationSeconds: number;
+  startPositionSeconds: number;
+  suppressResumePrompt: boolean;
 }
 
 type RecordingsFilter = 'all' | 'active' | 'resume' | 'unwatched';
 type RecordingsSort = 'newest' | 'oldest';
 type RecordingChipLabel = 'watched' | 'resume' | 'rec' | 'scheduled' | 'failed' | 'unknown' | 'new';
+
+const RECORDING_PREVIEW_ACCENTS = [
+  'var(--accent-action)',
+  'var(--accent-live)',
+  'color-mix(in srgb, var(--accent-action) 52%, var(--surface-highlight) 48%)',
+  'color-mix(in srgb, var(--accent-live) 46%, var(--surface-highlight) 54%)',
+] as const;
+
+const recordingThumbnailObjectUrlCache = new Map<string, string>();
+const recordingThumbnailMissCache = new Set<string>();
+
+function buildRecordingAdminHeaders(authToken?: string | null, includeJSON: boolean = false): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const normalizedToken = String(authToken || '').trim();
+  if (normalizedToken) {
+    headers.Authorization = `Bearer ${normalizedToken}`;
+  }
+  if (includeJSON) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+}
+
+async function readRecordingAdminErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = await response.json() as { detail?: string; title?: string; message?: string };
+    return payload.detail || payload.title || payload.message || `Request failed (${response.status})`;
+  } catch {
+    return `Request failed (${response.status})`;
+  }
+}
+
+async function requestRecordingDelete(recordingId: string, authToken?: string | null): Promise<void> {
+  const response = await fetch(`/api/v3/recordings/${encodeURIComponent(recordingId)}/delete`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: buildRecordingAdminHeaders(authToken),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readRecordingAdminErrorMessage(response));
+  }
+}
+
+async function requestRecordingRename(recordingId: string, title: string, authToken?: string | null): Promise<void> {
+  const response = await fetch(`/api/v3/recordings/${encodeURIComponent(recordingId)}/rename`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: buildRecordingAdminHeaders(authToken, true),
+    body: JSON.stringify({ title }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readRecordingAdminErrorMessage(response));
+  }
+}
+
+function normalizeRecordingRenameInput(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
 
 // mapRecordingToChip - CTO Contract: Deterministic mapping
 function mapRecordingToChip(item: RecordingItem): { state: ChipState; labelKey: RecordingChipLabel } {
@@ -82,6 +163,139 @@ function mapRecordingToChip(item: RecordingItem): { state: ChipState; labelKey: 
   }
 }
 
+function resolveRecordingPreviewStyle(recording: RecordingItem): CSSProperties {
+  const seed = `${recording.recordingId || ''}:${recording.title || ''}`;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+
+  return {
+    ['--recording-accent' as string]: RECORDING_PREVIEW_ACCENTS[hash % RECORDING_PREVIEW_ACCENTS.length],
+  };
+}
+
+function resolveRecordingPreviewMonogram(title?: string): string {
+  const normalized = String(title || '').trim();
+  if (!normalized) {
+    return 'REC';
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 1) {
+    const [firstWord] = words;
+    return firstWord ? firstWord.slice(0, 2).toUpperCase() : 'REC';
+  }
+
+  return words.slice(0, 2).map((word) => word.slice(0, 1).toUpperCase()).join('');
+}
+
+function resolveRecordingThumbnailUrl(recording: RecordingItem): string | null {
+  const recordingId = String(recording.recordingId || '').trim();
+  if (!recordingId) {
+    return null;
+  }
+
+  return `/api/v3/recordings/${encodeURIComponent(recordingId)}/thumbnail.jpg`;
+}
+
+function RecordingPreviewArtwork({ recording, authToken }: { recording: RecordingItem; authToken?: string | null }) {
+  const thumbnailUrl = resolveRecordingThumbnailUrl(recording);
+  const [resolvedThumbnailUrl, setResolvedThumbnailUrl] = useState<string | null>(() => {
+    if (!thumbnailUrl) {
+      return null;
+    }
+    return recordingThumbnailObjectUrlCache.get(thumbnailUrl) ?? null;
+  });
+  const [thumbnailUnavailable, setThumbnailUnavailable] = useState<boolean>(() => {
+    if (!thumbnailUrl) {
+      return true;
+    }
+    return recordingThumbnailMissCache.has(thumbnailUrl);
+  });
+
+  useEffect(() => {
+    if (!thumbnailUrl) {
+      setResolvedThumbnailUrl(null);
+      setThumbnailUnavailable(true);
+      return;
+    }
+
+    const cachedObjectUrl = recordingThumbnailObjectUrlCache.get(thumbnailUrl);
+    if (cachedObjectUrl) {
+      setResolvedThumbnailUrl(cachedObjectUrl);
+      setThumbnailUnavailable(false);
+      return;
+    }
+
+    if (recordingThumbnailMissCache.has(thumbnailUrl)) {
+      setResolvedThumbnailUrl(null);
+      setThumbnailUnavailable(true);
+      return;
+    }
+
+    const controller = new AbortController();
+    const normalizedToken = String(authToken || '').trim();
+    const headers: Record<string, string> = {};
+    if (normalizedToken) {
+      headers.Authorization = `Bearer ${normalizedToken}`;
+    }
+
+    void fetch(thumbnailUrl, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers,
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`thumbnail ${response.status}`);
+        }
+        return response.blob();
+      })
+      .then((blob) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        const objectUrl = URL.createObjectURL(blob);
+        recordingThumbnailObjectUrlCache.set(thumbnailUrl, objectUrl);
+        setResolvedThumbnailUrl(objectUrl);
+        setThumbnailUnavailable(false);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        recordingThumbnailMissCache.add(thumbnailUrl);
+        setResolvedThumbnailUrl(null);
+        setThumbnailUnavailable(true);
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [authToken, thumbnailUrl]);
+
+  return (
+    <>
+      {resolvedThumbnailUrl && !thumbnailUnavailable ? (
+        <img
+          className={styles.mediaPreviewImage}
+          data-testid="recording-thumbnail"
+          src={resolvedThumbnailUrl}
+          alt=""
+          draggable={false}
+        />
+      ) : null}
+      {!resolvedThumbnailUrl || thumbnailUnavailable ? (
+        <div className={styles.mediaPreviewBackdrop}>
+          <div className={styles.mediaPreviewWordmark}>{resolveRecordingPreviewMonogram(recording.title)}</div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export default function RecordingsList() {
   const { t } = useTranslation();
   const { auth } = useAppContext();
@@ -92,7 +306,15 @@ export default function RecordingsList() {
   const [root, setRoot] = useState<string>(''); // Selected Root ID
   const [path, setPath] = useState<string>(''); // Current relative path
   const [playing, setPlaying] = useState<PlayingState | null>(null);
-  const handlePlayerClose = usePlayerHistoryBridge(playing !== null, () => setPlaying(null));
+  const [preplayRecording, setPreplayRecording] = useState<RecordingItem | null>(null);
+  const [launchingRecordingId, setLaunchingRecordingId] = useState<string | null>(null);
+  const closePlayerOverlay = () => {
+    setPlaying(null);
+    setPreplayRecording(null);
+    setLaunchingRecordingId(null);
+    exitPlaybackFullscreen();
+  };
+  const handlePlayerClose = usePlayerHistoryBridge(playing !== null, closePlayerOverlay);
   const [filterMode, setFilterMode] = useState<RecordingsFilter>('all');
   const [sortMode, setSortMode] = useState<RecordingsSort>('newest');
 
@@ -108,8 +330,8 @@ export default function RecordingsList() {
     isFetching,
     refetch: refetchRecordings
   } = useRecordings(root, path);
-  const deleteRecordingsMutation = useDeleteRecordingsMutation();
-  const deleteLoading = deleteRecordingsMutation.isPending;
+  const [adminBusyIds, setAdminBusyIds] = useState<Set<string>>(new Set());
+  const deleteLoading = adminBusyIds.size > 0;
   const loading = isPending || (isFetching && !data);
   const pageError = error
     ? toAppError(error, {
@@ -131,6 +353,20 @@ export default function RecordingsList() {
     setSelectionMode(false);
     setSelectedIds(new Set());
   }, [canManageDvr]);
+
+  useEffect(() => {
+    if (!canAccessDvrPlayback || !data?.recordings?.length) {
+      return;
+    }
+
+    const preloadTimer = window.setTimeout(() => {
+      void loadV3Player();
+    }, 180);
+
+    return () => {
+      window.clearTimeout(preloadTimer);
+    };
+  }, [canAccessDvrPlayback, data?.recordings?.length]);
 
   useEffect(() => {
     if (!data || !initialLoad.current) return;
@@ -159,16 +395,45 @@ export default function RecordingsList() {
     setPath(newPath);
   };
 
-  const handlePlay = async (item: RecordingItem) => {
+  const handlePlay = async (
+    item: RecordingItem,
+    options: { startPositionSeconds?: number; suppressResumePrompt?: boolean } = {}
+  ) => {
+    if (!canAccessDvrPlayback) return;
+    if (selectionMode) return;
+    const recordingId = item.recordingId;
+    if (!recordingId) return;
+
+    setLaunchingRecordingId(recordingId);
+
+    try {
+      await loadV3Player();
+    } catch {
+      setLaunchingRecordingId(null);
+      return;
+    }
+
+    setPreplayRecording(null);
+    setPlaying({
+      recordingId,
+      title: item.title || 'Recording',
+      description: item.description || '',
+      beginUnixSeconds: item.beginUnixSeconds,
+      lengthLabel: item.length || formatRecordingLength(item.durationSeconds ?? item.resume?.durationSeconds),
+      durationSeconds: item.durationSeconds ?? item.resume?.durationSeconds ?? 0,
+      startPositionSeconds: options.startPositionSeconds ?? 0,
+      suppressResumePrompt: options.suppressResumePrompt ?? true
+    });
+    setLaunchingRecordingId(null);
+  };
+
+  const handleOpenPreplay = (item: RecordingItem) => {
     if (!canAccessDvrPlayback) return;
     if (selectionMode) return;
     if (!item.recordingId) return;
 
-    setPlaying({
-      recordingId: item.recordingId,
-      title: item.title || 'Recording',
-      durationSeconds: item.durationSeconds ?? 0
-    });
+    void loadV3Player();
+    setPreplayRecording(item);
   };
 
   const toggleSelectionMode = () => {
@@ -193,23 +458,117 @@ export default function RecordingsList() {
     });
   };
 
+  const updateAdminBusy = (recordingIds: string[], busy: boolean) => {
+    setAdminBusyIds(prev => {
+      const next = new Set(prev);
+      for (const recordingId of recordingIds) {
+        if (!recordingId) {
+          continue;
+        }
+        if (busy) {
+          next.add(recordingId);
+        } else {
+          next.delete(recordingId);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleRenameRecording = async (recording: RecordingItem) => {
+    if (!canManageDvr) return;
+    const recordingId = String(recording.recordingId || '').trim();
+    if (!recordingId || adminBusyIds.has(recordingId)) return;
+
+    const currentTitle = String(recording.title || '').trim() || t('recordings.untitled');
+    const nextTitle = window.prompt(t('recordings.renamePrompt', { title: currentTitle }), currentTitle);
+    if (nextTitle === null) return;
+
+    const normalizedTitle = normalizeRecordingRenameInput(nextTitle);
+    if (!normalizedTitle || normalizedTitle === currentTitle) {
+      return;
+    }
+
+    updateAdminBusy([recordingId], true);
+    try {
+      await requestRecordingRename(recordingId, normalizedTitle, auth.token);
+      await refetchRecordings();
+      toast({ kind: 'success', message: t('recordings.renameSuccess') });
+    } catch (renameError) {
+      const message = renameError instanceof Error && renameError.message
+        ? renameError.message
+        : t('recordings.renameError');
+      toast({ kind: 'error', message });
+    } finally {
+      updateAdminBusy([recordingId], false);
+    }
+  };
+
+  const handleDeleteRecording = async (recording: RecordingItem) => {
+    if (!canManageDvr) return;
+    const recordingId = String(recording.recordingId || '').trim();
+    if (!recordingId || adminBusyIds.has(recordingId)) return;
+
+    const ok = await confirm({
+      title: t('common.delete'),
+      message: t('recordings.confirmDeleteOne', { title: recording.title || t('recordings.untitled') }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+      tone: 'danger',
+    });
+    if (!ok) return;
+
+    updateAdminBusy([recordingId], true);
+    try {
+      await requestRecordingDelete(recordingId, auth.token);
+      await refetchRecordings();
+      toast({ kind: 'success', message: t('recordings.deleteSuccess', { count: 1 }) });
+    } catch (deleteError) {
+      const message = deleteError instanceof Error && deleteError.message
+        ? deleteError.message
+        : t('recordings.deleteError');
+      toast({ kind: 'error', message });
+    } finally {
+      updateAdminBusy([recordingId], false);
+    }
+  };
+
   const handleBulkDelete = async () => {
     if (!canManageDvr) return;
     if (selectedIds.size === 0) return;
     const ok = await confirm({
-      title: 'Delete recordings',
+      title: t('common.delete'),
       message: t('recordings.confirmDelete', { count: selectedIds.size }),
-      confirmLabel: 'Delete',
-      cancelLabel: 'Cancel',
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
       tone: 'danger',
     });
     if (!ok) return;
 
     const ids = Array.from(selectedIds);
-    await deleteRecordingsMutation.mutateAsync(ids);
-    setSelectionMode(false);
-    setSelectedIds(new Set());
-    toast({ kind: 'success', message: `Deleted ${ids.length} recording(s)` });
+    updateAdminBusy(ids, true);
+    try {
+      const results = await Promise.allSettled(ids.map((recordingId) => requestRecordingDelete(recordingId, auth.token)));
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      const failedCount = ids.length - successCount;
+
+      if (successCount > 0) {
+        await refetchRecordings();
+      }
+
+      if (failedCount === 0) {
+        toast({ kind: 'success', message: t('recordings.deleteSuccess', { count: successCount }) });
+      } else if (successCount > 0) {
+        toast({ kind: 'warning', message: t('recordings.deletePartial', { success: successCount, failed: failedCount }) });
+      } else {
+        toast({ kind: 'error', message: t('recordings.deleteError') });
+      }
+
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    } finally {
+      updateAdminBusy(ids, false);
+    }
   };
 
   const handleRefresh = () => {
@@ -238,12 +597,173 @@ export default function RecordingsList() {
       finished: resume.finished || false,
     }, recording.durationSeconds));
   }).length;
+  const preplayResume = preplayRecording ? resolveEligibleResume(preplayRecording) : null;
+  const preplayStatus = preplayRecording ? mapRecordingToChip(preplayRecording) : null;
+  const isPreplayLaunching = Boolean(preplayRecording?.recordingId && preplayRecording.recordingId === launchingRecordingId);
+  const preplayProgressPercent = preplayRecording ? resolveRecordingProgressPercent(preplayRecording) : null;
+  const playingProgressPercent = playing
+    ? resolvePlaybackProgressPercent(playing.startPositionSeconds, playing.durationSeconds)
+    : null;
   const libraryRootLabel = t('recordings.libraryRoot');
   const currentRootLabel = resolveRecordingRootLabel(data?.roots, root || data?.currentRoot, libraryRootLabel);
   const currentPathLabel = data?.currentPath?.trim() || '';
   const librarySummary = currentPathLabel
     ? t('recordings.browsingPath', { root: currentRootLabel, path: currentPathLabel })
     : t('recordings.browsingRoot', { root: currentRootLabel });
+  const filterOptions: Array<{ value: RecordingsFilter; label: string }> = [
+    { value: 'all', label: t('recordings.viewAll') },
+    { value: 'active', label: t('recordings.viewActive') },
+    { value: 'resume', label: t('recordings.viewResume') },
+    { value: 'unwatched', label: t('recordings.viewUnwatched') },
+  ];
+  const sortOptions: Array<{ value: RecordingsSort; label: string }> = [
+    { value: 'newest', label: t('recordings.sortNewest') },
+    { value: 'oldest', label: t('recordings.sortOldest') },
+  ];
+  const continueWatching = !selectionMode && filterMode === 'all'
+    ? visibleRecordings.filter((recording) => Boolean(resolveEligibleResume(recording))).slice(0, 4)
+    : [];
+  const continueWatchingIds = new Set(
+    continueWatching.map((recording) => recording.recordingId).filter((recordingId): recordingId is string => Boolean(recordingId))
+  );
+  const primaryRecordings = continueWatchingIds.size > 0
+    ? visibleRecordings.filter((recording) => !recording.recordingId || !continueWatchingIds.has(recording.recordingId))
+    : visibleRecordings;
+
+  const renderRecordingCard = (rec: RecordingItem, variant: 'grid' | 'featured' = 'grid') => {
+    const recordingId = String(rec.recordingId || '').trim();
+    const isSelected = rec.recordingId ? selectedIds.has(rec.recordingId) : false;
+    const { state, labelKey } = mapRecordingToChip(rec);
+    const eligibleResume = resolveEligibleResume(rec);
+    const progressPercent = resolveRecordingProgressPercent(rec);
+    const isAdminBusy = Boolean(recordingId && adminBusyIds.has(recordingId));
+    const canRenameRecording = Boolean(canManageDvr && recordingId && rec.localWritable === true);
+    const showPreviewChip = variant === 'featured'
+      && (labelKey === 'rec' || labelKey === 'scheduled' || labelKey === 'failed' || labelKey === 'unknown');
+    const statusMetaLabel = !eligibleResume && (labelKey === 'rec' || labelKey === 'scheduled' || labelKey === 'failed' || labelKey === 'unknown')
+      ? t(`recordings.badges.${labelKey}`)
+      : null;
+    const showCardDescription = variant === 'featured' && Boolean(rec.description);
+    const isSelectableCard = selectionMode && canManageDvr && Boolean(rec.recordingId);
+    const canOpenPlayer = !selectionMode && canAccessDvrPlayback && Boolean(rec.recordingId);
+    const cardIsInteractive = isSelectableCard || canOpenPlayer;
+    const handleCardClick = cardIsInteractive
+      ? () => {
+          if (isSelectableCard && rec.recordingId) {
+            toggleSelect(rec.recordingId);
+            return;
+          }
+          if (eligibleResume) {
+            handleOpenPreplay(rec);
+            return;
+          }
+          void handlePlay(rec, {
+            startPositionSeconds: 0,
+            suppressResumePrompt: true,
+          });
+        }
+      : undefined;
+
+    return (
+      <Card
+        key={rec.recordingId || `${variant}-${rec.title || 'recording'}`}
+        interactive={cardIsInteractive}
+        className={[
+          styles.recordingCard,
+          variant === 'featured' ? styles.recordingCardFeatured : null,
+          isSelected ? styles.selected : null,
+        ].filter(Boolean).join(' ')}
+        variant={state === 'recording' || state === 'live' ? 'live' : 'standard'}
+        onClick={handleCardClick}
+      >
+        <CardBody className={styles.mediaCardBody}>
+          <div className={styles.mediaPreview} style={resolveRecordingPreviewStyle(rec)}>
+            <RecordingPreviewArtwork recording={rec} authToken={auth.token} />
+            {showPreviewChip ? (
+              <div className={styles.mediaPreviewTop}>
+                <StatusChip state={state} label={t(`recordings.badges.${labelKey}`)} />
+              </div>
+            ) : null}
+            {canManageDvr && !selectionMode && recordingId ? (
+              <div className={styles.mediaCardActions}>
+                {canRenameRecording ? (
+                  <button
+                    type="button"
+                    className={styles.mediaActionButton}
+                    title={t('recordings.renameAction')}
+                    aria-label={t('recordings.renameAction')}
+                    disabled={isAdminBusy}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void handleRenameRecording(rec);
+                    }}
+                  >
+                    <PencilIcon className={styles.iconSm} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={[styles.mediaActionButton, styles.mediaActionButtonDanger].join(' ')}
+                  title={t('common.delete')}
+                  aria-label={t('common.delete')}
+                  disabled={isAdminBusy}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void handleDeleteRecording(rec);
+                  }}
+                >
+                  <TrashIcon className={styles.iconSm} />
+                </button>
+              </div>
+            ) : null}
+            <div className={styles.mediaPreviewBottom}>
+              <span className={styles.mediaPreviewLabel}>
+                {eligibleResume
+                  ? t('recordings.resumeProgress', { time: formatResumeClock(eligibleResume.posSeconds) })
+                  : formatRecordingCardDate(rec.beginUnixSeconds)}
+              </span>
+              <span className={styles.mediaDuration}>
+                {rec.length || formatRecordingLength(rec.durationSeconds || rec.resume?.durationSeconds)}
+              </span>
+            </div>
+            {progressPercent !== null && (
+              <div className={styles.mediaProgressTrack} aria-hidden="true">
+                <div className={styles.mediaProgressFill} style={{ width: `${progressPercent}%` }}></div>
+              </div>
+            )}
+            {selectionMode && canManageDvr && (
+              <div className={styles.selectionIndicator}>
+                {isSelected && <CheckCircleIcon className={styles.checkIcon} />}
+              </div>
+            )}
+            {!selectionMode && (
+              <div className={styles.playOverlay} aria-hidden="true">
+                <PlayCircleIcon className={styles.playOverlayIcon} />
+              </div>
+            )}
+          </div>
+          <div className={styles.mediaText}>
+            <div className={styles.itemName} data-testid="recording-title">{rec.title || t('recordings.untitled')}</div>
+            <div className={`${styles.itemMetaRow} tabular`.trim()}>
+              <span className={styles.metaDate}>{formatTime(rec.beginUnixSeconds)}</span>
+              {eligibleResume ? (
+                <span className={styles.metaResume}>
+                  {t('recordings.resumeProgress', { time: formatResumeClock(eligibleResume.posSeconds) })}
+                </span>
+              ) : statusMetaLabel ? (
+                <span className={styles.metaStatus}>{statusMetaLabel}</span>
+              ) : null}
+            </div>
+            {showCardDescription ? (
+              <p className={styles.itemDesc}>{rec.description}</p>
+            ) : null}
+          </div>
+        </CardBody>
+      </Card>
+    );
+  };
 
   if (!canAccessDvrPlayback) {
     return (
@@ -271,49 +791,157 @@ export default function RecordingsList() {
     );
   }
 
+  if (playing) {
+    return (
+      <div className={[styles.container, styles.watchPage, 'animate-enter'].join(' ')}>
+        <div className={styles.watchPageHeader}>
+          <div className={styles.watchPageLead}>
+            <span className={styles.watchPageLabel}>{t('nav.recordings')}</span>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className={styles.watchPageClose}
+            onClick={() => handlePlayerClose()}
+          >
+            {t('common.close')}
+          </Button>
+        </div>
+
+        <div className={styles.watchPageBody}>
+          <Suspense fallback={
+            <div className={styles.watchPageFallback}>
+              <div className={[styles.preplayStage, styles.watchPageFallbackStage].join(' ')} aria-hidden="true">
+                <div className={styles.preplayStageCenter}>
+                  <PlayCircleIcon className={styles.preplayStageIcon} />
+                </div>
+                {playingProgressPercent !== null && (
+                  <div className={styles.preplayStageProgress}>
+                    <div
+                      className={styles.preplayStageProgressFill}
+                      style={{ width: `${playingProgressPercent}%` }}
+                    ></div>
+                  </div>
+                )}
+                <div className={styles.preplayStageDock}>
+                  <div className={styles.preplayStageCopy}>
+                    <div className={styles.preplayEyebrow}>{t('recordings.preplayEyebrow')}</div>
+                    <h2 className={styles.preplayTitle}>{playing.title || t('recordings.untitled')}</h2>
+                    <div className={styles.preplayMeta}>
+                      {playing.beginUnixSeconds ? <span>{formatTime(playing.beginUnixSeconds)}</span> : null}
+                      <span>{playing.lengthLabel}</span>
+                    </div>
+                  </div>
+                  <div className={styles.preplayStageActions}>
+                    <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
+                      <span className={styles.playerLaunchSpinner} aria-hidden="true" />
+                      <div className={styles.playerLaunchCopy}>
+                        <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
+                        <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          }>
+            <V3Player
+              recordingId={playing.recordingId}
+              recordingTitle={playing.title}
+              recordingDescription={playing.description}
+              recordingDateLabel={playing.beginUnixSeconds ? formatTime(playing.beginUnixSeconds) : undefined}
+              recordingLengthLabel={playing.lengthLabel}
+              layoutMode="page"
+              token={auth.token || undefined}
+              autoStart={true}
+              onClose={handlePlayerClose}
+              duration={playing.durationSeconds}
+              startPositionSeconds={playing.startPositionSeconds}
+              suppressResumePrompt={playing.suppressResumePrompt}
+            />
+          </Suspense>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={[styles.container, 'animate-enter'].join(' ')}>
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
           <p className={styles.heroEyebrow}>{t('recordings.eyebrow')}</p>
-          <h2 className={styles.heroTitle}>{t('recordings.title')}</h2>
-          <p className={styles.heroSummary}>{t('recordings.summary')}</p>
+          <div className={styles.heroHeadingRow}>
+            <div>
+              <h2 className={styles.heroTitle}>{t('recordings.title')}</h2>
+              <p className={styles.heroSummary}>{t('recordings.summary')}</p>
+            </div>
+            <div className={styles.heroSignals}>
+              <div className={styles.heroSignal}>
+                <span className={styles.heroSignalValue}>{resumeCount}</span>
+                <span className={styles.heroSignalLabel}>{t('recordings.metricResume')}</span>
+              </div>
+              <div className={styles.heroSignal}>
+                <span className={styles.heroSignalValue}>{activeCount}</span>
+                <span className={styles.heroSignalLabel}>{t('recordings.metricRecording')}</span>
+              </div>
+              <div className={styles.heroSignal}>
+                <span className={styles.heroSignalValue}>{profileRecordings.length}</span>
+                <span className={styles.heroSignalLabel}>{t('recordings.metricItems')}</span>
+              </div>
+            </div>
+          </div>
           <p className={styles.heroContext}>{librarySummary}</p>
-        </div>
-
-        <div className={styles.heroStats}>
-          <div className={styles.heroStat}>
-            <span className={styles.heroStatLabel}>{t('recordings.metricItems')}</span>
-            <span className={styles.heroStatValue}>{profileRecordings.length}</span>
-            <span className={styles.heroStatDetail}>{t('recordings.metricItemsDetail')}</span>
-          </div>
-          <div className={styles.heroStat}>
-            <span className={styles.heroStatLabel}>{t('recordings.metricFolders')}</span>
-            <span className={styles.heroStatValue}>{data?.directories?.length ?? 0}</span>
-            <span className={styles.heroStatDetail}>{t('recordings.metricFoldersDetail')}</span>
-          </div>
-          <div className={styles.heroStat}>
-            <span className={styles.heroStatLabel}>{t('recordings.metricRecording')}</span>
-            <span className={styles.heroStatValue}>{activeCount}</span>
-            <span className={styles.heroStatDetail}>{t('recordings.metricRecordingDetail')}</span>
-          </div>
-          <div className={styles.heroStat}>
-            <span className={styles.heroStatLabel}>{t('recordings.metricResume')}</span>
-            <span className={styles.heroStatValue}>{resumeCount}</span>
-            <span className={styles.heroStatDetail}>{t('recordings.metricResumeDetail')}</span>
-          </div>
         </div>
       </section>
 
-      {/* Header / Toolbar */}
-      <div className={styles.toolbar}>
-        <div className={styles.toolbarGroup}>
+      <div className={styles.browserBar}>
+        <div className={styles.toolbarPrimary}>
+          <div className={styles.toolbarGroup}>
             <label className={styles.infoLabel}>{t('recordings.location')}</label>
-            <select value={root} onChange={handleRootChange} disabled={loading || deleteLoading}>
+            <select
+              className={styles.rootSelect}
+              value={root}
+              onChange={handleRootChange}
+              disabled={loading || deleteLoading}
+            >
               {data?.roots?.map(r => (
-              <option key={r.id} value={r.id}>{resolveRecordingRootLabel([r], r.id, libraryRootLabel)}</option>
-            ))}
-          </select>
+                <option key={r.id} value={r.id}>{resolveRecordingRootLabel([r], r.id, libraryRootLabel)}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.toolbarActions}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={loading || deleteLoading}
+            >
+              {t('common.refresh')}
+            </Button>
+            {canManageDvr && selectionMode ? (
+              <>
+                <Button
+                  variant="danger"
+                  disabled={selectedIds.size === 0 || deleteLoading}
+                  onClick={handleBulkDelete}
+                >
+                  {deleteLoading ? t('common.loading') : t('recordings.deleteSelected', { count: selectedIds.size })}
+                </Button>
+                <Button variant="secondary" onClick={toggleSelectionMode} disabled={deleteLoading}>
+                  {t('recordings.cancelSelection')}
+                </Button>
+              </>
+            ) : canManageDvr ? (
+              <button
+                className={styles.iconButton}
+                title={t('recordings.selectionMode')}
+                onClick={toggleSelectionMode}
+              >
+                <TrashIcon className={styles.iconSm} />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <div className={styles.breadcrumbs}>
@@ -326,190 +954,297 @@ export default function RecordingsList() {
           ))}
         </div>
 
-        <div className={styles.toolbarActions}>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={loading || deleteLoading}
-            >
-              {t('common.refresh')}
-            </Button>
-            {canManageDvr && selectionMode ? (
-            <>
-              <Button
-                variant="danger"
-                disabled={selectedIds.size === 0 || deleteLoading}
-                onClick={handleBulkDelete}
+        <div className={styles.segmentedControls}>
+          <div className={styles.segmentGroup} role="tablist" aria-label={t('recordings.view')}>
+            {filterOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={filterMode === option.value}
+                className={[
+                  styles.segmentButton,
+                  filterMode === option.value ? styles.segmentButtonActive : null,
+                ].filter(Boolean).join(' ')}
+                onClick={() => setFilterMode(option.value)}
+                disabled={deleteLoading}
               >
-                {deleteLoading ? t('common.loading') : t('recordings.deleteSelected', { count: selectedIds.size })}
-              </Button>
-              <Button variant="secondary" onClick={toggleSelectionMode} disabled={deleteLoading}>
-                {t('recordings.cancelSelection')}
-              </Button>
-            </>
-          ) : canManageDvr ? (
-            <button
-              className={styles.iconButton}
-              title={t('recordings.selectionMode')}
-              onClick={toggleSelectionMode}
-            >
-              <TrashIcon className={styles.iconSm} />
-            </button>
-          ) : null}
-        </div>
-
-        <div className={styles.workflowControls}>
-          <div className={styles.toolbarGroup}>
-            <label className={styles.infoLabel} htmlFor="recordings-filter-select">{t('recordings.view')}</label>
-            <select
-              id="recordings-filter-select"
-              data-testid="recordings-filter-select"
-              value={filterMode}
-              onChange={(e) => setFilterMode(e.target.value as RecordingsFilter)}
-              disabled={deleteLoading}
-            >
-              <option value="all">{t('recordings.viewAll')}</option>
-              <option value="active">{t('recordings.viewActive')}</option>
-              <option value="resume">{t('recordings.viewResume')}</option>
-              <option value="unwatched">{t('recordings.viewUnwatched')}</option>
-            </select>
+                {option.label}
+              </button>
+            ))}
           </div>
 
-          <div className={styles.toolbarGroup}>
-            <label className={styles.infoLabel} htmlFor="recordings-sort-select">{t('recordings.sort')}</label>
-            <select
-              id="recordings-sort-select"
-              data-testid="recordings-sort-select"
-              value={sortMode}
-              onChange={(e) => setSortMode(e.target.value as RecordingsSort)}
-              disabled={deleteLoading}
-            >
-              <option value="newest">{t('recordings.sortNewest')}</option>
-              <option value="oldest">{t('recordings.sortOldest')}</option>
-            </select>
+          <div className={styles.segmentGroup} role="tablist" aria-label={t('recordings.sort')}>
+            {sortOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={sortMode === option.value}
+                className={[
+                  styles.segmentButton,
+                  sortMode === option.value ? styles.segmentButtonActive : null,
+                ].filter(Boolean).join(' ')}
+                onClick={() => setSortMode(option.value)}
+                disabled={deleteLoading}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Content Grid */}
-      <div className={[styles.grid, selectionMode && canManageDvr ? styles.selectionMode : null].filter(Boolean).join(' ')}>
-        {/* Directories */}
-        {data?.directories?.map((dir, i) => (
-          <Card
-            key={`dir-${i}`}
-            interactive
-            onClick={() => handleNavigate(dir.path || '')}
-          >
-            <CardBody className={styles.itemContent}>
-              <div className={styles.iconWrapper}>
-                <FolderIcon className={styles.folderIcon} />
-              </div>
-                <div className={styles.itemDetails}>
-                  <span className={styles.itemName}>{dir.name}</span>
-                  <StatusChip state="idle" label={t('recordings.directory')} showIcon={false} />
-                </div>
-              </CardBody>
-            </Card>
-        ))}
-
-        {/* Recordings */}
-        {visibleRecordings.map((rec, i) => {
-          const isSelected = rec.recordingId ? selectedIds.has(rec.recordingId) : false;
-          const { state, labelKey } = mapRecordingToChip(rec);
-
-          return (
-            <Card
-              key={`rec-${i}`}
-              interactive
-              className={[styles.recordingCard, isSelected ? styles.selected : null].filter(Boolean).join(' ')}
-              variant={state === 'recording' || state === 'live' ? 'live' : 'standard'}
-              onClick={() => selectionMode && canManageDvr && rec.recordingId ? toggleSelect(rec.recordingId) : handlePlay(rec)}
-            >
-              <CardBody className={styles.itemContent}>
-                <div className={styles.iconWrapper}>
-                  <FileIcon className={styles.fileIcon} />
-                </div>
-                <div className={styles.itemDetails}>
-                  <div className={styles.itemName} data-testid="recording-title">{rec.title}</div>
-                  <div className={`${styles.itemMetaRow} tabular`.trim()}>
-                    <span className={styles.metaDate}>{formatTime(rec.beginUnixSeconds)}</span>
-                    <span className={styles.metaLength}>{rec.length || formatRecordingLength(rec.durationSeconds)}</span>
-                  </div>
-                  <p className={styles.itemDesc}>
-                    {rec.description || t('recordings.descriptionFallback')}
-                  </p>
-
-                  <div className={styles.badgeGroup}>
-                    <StatusChip state={state} label={t(`recordings.badges.${labelKey}`)} />
-                  </div>
-
-                  {/* Resume Bar Integration */}
-                  {(rec as RecordingItem).resume && (() => {
-                    const r = (rec as RecordingItem).resume!;
-                    const safeResume = {
-                      ...r,
-                      posSeconds: r.posSeconds || 0,
-                      durationSeconds: r.durationSeconds || 0,
-                      finished: r.finished || false
-                    };
-                    return isResumeEligible(safeResume, rec.durationSeconds) && (
-                      <div className={styles.resumeContainer}>
-                        <RecordingResumeBar
-                          resume={safeResume}
-                          durationSeconds={rec.durationSeconds}
-                        />
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {selectionMode && canManageDvr && (
-                  <div className={styles.selectionIndicator}>
-                    {isSelected && <CheckCircleIcon className={styles.checkIcon} />}
-                  </div>
-                )}
-
-                {!selectionMode && (
-                  <div className={styles.playOverlay}>
-                    <span className={styles.playLabel}>{t('player.play')}</span>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          );
-        })}
-
-        {/* Empty State */}
-        {(!data?.directories?.length && !visibleRecordings.length) && (
-          <div className={styles.emptyState}>
-            <p>
-              {filterMode === 'all'
-                ? t('recordings.emptyLocation')
-                : t('recordings.emptyFilter')}
-            </p>
+      {data?.directories?.length ? (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.sectionTitle}>{t('recordings.metricFolders')}</h3>
           </div>
-        )}
-      </div>
-
-      {/* V3Player Overlay */}
-      {playing && (
-        <Suspense fallback={
-          <div className={styles.playerFallback}>
-            <LoadingSkeleton variant="section" label={t('recordings.loadingPlayer')} />
+          <div className={styles.directoryRail}>
+            {data.directories.map((dir, i) => (
+              <Card
+                key={`dir-${i}`}
+                interactive
+                className={styles.directoryCard}
+                onClick={() => handleNavigate(dir.path || '')}
+              >
+                <CardBody className={styles.directoryCardBody}>
+                  <div className={styles.directoryCardIcon}>
+                    <FolderIcon className={styles.iconSm} />
+                  </div>
+                  <div className={styles.directoryCardCopy}>
+                    <span className={styles.directoryCardTitle}>{dir.name}</span>
+                    <span className={styles.directoryCardMeta}>{t('recordings.directory')}</span>
+                  </div>
+                </CardBody>
+              </Card>
+            ))}
           </div>
-        }>
-          <V3Player
-            recordingId={playing.recordingId}
-            token={auth.token || undefined}
-            autoStart={true}
-            onClose={handlePlayerClose}
-            duration={playing.durationSeconds}
-          />
-        </Suspense>
+        </section>
+      ) : null}
+
+      {continueWatching.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.sectionTitle}>{t('recordings.continueWatchingTitle')}</h3>
+          </div>
+          <div className={styles.resumeShelf}>
+            {continueWatching.map((recording) => renderRecordingCard(recording, 'featured'))}
+          </div>
+        </section>
       )}
+
+      {primaryRecordings.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.sectionTitle}>
+              {continueWatching.length > 0 ? t('recordings.latestTitle') : t('recordings.title')}
+            </h3>
+          </div>
+          <div className={[styles.grid, selectionMode && canManageDvr ? styles.selectionMode : null].filter(Boolean).join(' ')}>
+            {primaryRecordings.map((recording) => renderRecordingCard(recording))}
+          </div>
+        </section>
+      )}
+
+      {(!data?.directories?.length && !visibleRecordings.length) && (
+        <div className={styles.emptyState}>
+          <p>
+            {filterMode === 'all'
+              ? t('recordings.emptyLocation')
+              : t('recordings.emptyFilter')}
+          </p>
+        </div>
+      )}
+
+      {preplayRecording && preplayStatus && (
+        <div
+          className={styles.preplayOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="recording-preplay-title"
+          aria-busy={isPreplayLaunching}
+          onClick={() => {
+            if (!isPreplayLaunching) {
+              setPreplayRecording(null);
+            }
+          }}
+        >
+          <div
+            className={[styles.preplayPanel, isPreplayLaunching ? styles.preplayPanelBusy : null].filter(Boolean).join(' ')}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className={styles.preplayClose}
+              aria-label={t('recordings.closePreplay')}
+              disabled={isPreplayLaunching}
+              onClick={() => setPreplayRecording(null)}
+            >
+              ×
+            </button>
+            <div className={styles.preplayStage}>
+              <div className={styles.preplayStageCenter}>
+                <PlayCircleIcon className={styles.preplayStageIcon} />
+              </div>
+              {preplayProgressPercent !== null && (
+                <div className={styles.preplayStageProgress}>
+                  <div
+                    className={styles.preplayStageProgressFill}
+                    style={{ width: `${preplayProgressPercent}%` }}
+                  ></div>
+                </div>
+              )}
+              <div className={styles.preplayStageDock}>
+                <div className={styles.preplayStageCopy}>
+                  <div className={styles.preplayEyebrow}>{t('recordings.preplayEyebrow')}</div>
+                  <h2 id="recording-preplay-title" className={styles.preplayTitle}>
+                    {preplayRecording.title || t('recordings.untitled')}
+                  </h2>
+                  <div className={styles.preplayMeta}>
+                    <span>{formatTime(preplayRecording.beginUnixSeconds)}</span>
+                    <span>{preplayRecording.length || formatRecordingLength(preplayRecording.durationSeconds)}</span>
+                    {preplayStatus.labelKey !== 'new' ? (
+                      <StatusChip
+                        state={preplayStatus.state}
+                        label={t(`recordings.badges.${preplayStatus.labelKey}`)}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+                <div className={styles.preplayStageActions}>
+                  {isPreplayLaunching ? (
+                    <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
+                      <span className={styles.playerLaunchSpinner} aria-hidden="true" />
+                      <div className={styles.playerLaunchCopy}>
+                        <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
+                        <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={styles.preplayActions}>
+                      <Button
+                        variant="primary"
+                        onClick={() => {
+                          void handlePlay(preplayRecording, {
+                            startPositionSeconds: preplayResume?.posSeconds ?? 0,
+                            suppressResumePrompt: true,
+                          });
+                        }}
+                      >
+                        {preplayResume
+                          ? t('recordings.resumeAction', { time: formatResumeClock(preplayResume.posSeconds) })
+                          : t('recordings.playAction')}
+                      </Button>
+                      {preplayResume && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            void handlePlay(preplayRecording, {
+                              startPositionSeconds: 0,
+                              suppressResumePrompt: true,
+                            });
+                          }}
+                        >
+                          {t('recordings.restartAction')}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className={styles.preplayBody}>
+              <div className={styles.preplayMain}>
+                {preplayRecording.description ? (
+                  <p className={styles.preplayDescription}>{preplayRecording.description}</p>
+                ) : null}
+                {preplayResume && (
+                  <div className={styles.preplayResume}>
+                    <RecordingResumeBar
+                      resume={preplayResume}
+                      durationSeconds={preplayRecording.durationSeconds}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
+}
+
+function exitPlaybackFullscreen(): void {
+  if (typeof document === 'undefined' || !document.fullscreenElement) {
+    return;
+  }
+  if (typeof document.exitFullscreen !== 'function') {
+    return;
+  }
+
+  document.exitFullscreen().catch(() => undefined);
+}
+
+function resolveEligibleResume(recording: RecordingItem) {
+  const resume = recording.resume;
+  if (!resume) {
+    return null;
+  }
+
+  const normalizedResume = {
+    ...resume,
+    posSeconds: resume.posSeconds || 0,
+    durationSeconds: resume.durationSeconds || recording.durationSeconds || 0,
+    finished: resume.finished || false,
+  };
+
+  return isResumeEligible(normalizedResume, recording.durationSeconds) ? normalizedResume : null;
+}
+
+function resolveRecordingProgressPercent(recording: RecordingItem): number | null {
+  const resume = resolveEligibleResume(recording);
+  if (!resume) {
+    return null;
+  }
+
+  return resolvePlaybackProgressPercent(resume.posSeconds || 0, resume.durationSeconds || recording.durationSeconds || 0);
+}
+
+function resolvePlaybackProgressPercent(positionSeconds?: number, durationSeconds?: number): number | null {
+  if (!durationSeconds || durationSeconds <= 0) {
+    return null;
+  }
+
+  const percent = (Math.max(0, positionSeconds || 0) / durationSeconds) * 100;
+  return Math.max(0, Math.min(100, percent));
+}
+
+function formatResumeClock(value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    return '00:00';
+  }
+
+  const total = Math.floor(value);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+}
+
+function formatRecordingCardDate(ts?: number): string {
+  if (!ts) {
+    return '';
+  }
+
+  return new Date(ts * 1000).toLocaleDateString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function resolveRecordingRootLabel(

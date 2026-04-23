@@ -44,6 +44,8 @@ export interface V3PlayerBaseProps {
   autoStart?: boolean;
   onClose?: () => void;
   duration?: number; // Duration in seconds (enables VOD mode)
+  startPositionSeconds?: number;
+  suppressResumePrompt?: boolean;
 }
 
 export interface V3PlayerLiveProps extends V3PlayerBaseProps {
@@ -58,6 +60,11 @@ export interface V3PlayerDirectProps extends V3PlayerBaseProps {
 
 export interface V3PlayerRecordingProps extends V3PlayerBaseProps {
   recordingId: string;
+  recordingTitle?: string;
+  recordingDescription?: string;
+  recordingDateLabel?: string;
+  recordingLengthLabel?: string;
+  layoutMode?: 'overlay' | 'page';
   channel?: never;
   src?: never;
 }
@@ -82,6 +89,7 @@ export type HlsInstanceRef = Hls | null;
 
 export interface SafariVideoElement extends HTMLVideoElement {
   webkitEnterFullscreen?: () => void;
+  webkitExitFullscreen?: () => void;
   webkitSupportsFullscreen?: boolean;
   webkitDisplayingFullscreen?: boolean;
 }

@@ -121,8 +121,9 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 		}
 		source := s.deps.ChannelTruthSource()
 		truthResolution := resolveLiveTruthState(subjectID, source)
-		if !truthResolution.Verified() && truthResolution.Reason == "missing_scan_truth" {
+		if !truthResolution.Verified() && shouldProbeLiveTruth(truthResolution) {
 			if probeSource, ok := source.(channelTruthProbeSource); ok {
+				cachedResolution := truthResolution
 				probedCap, found, probeErr := probeSource.ProbeCapability(ctx, subjectID)
 				if probeErr != nil {
 					log.L().Warn().
@@ -130,7 +131,9 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 						Str("serviceRef", subjectID).
 						Msg("live playback truth probe failed")
 				}
-				truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found)
+				if found || cachedResolution.Reason == "missing_scan_truth" {
+					truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found)
+				}
 			}
 		}
 		if !truthResolution.Verified() {
@@ -176,6 +179,15 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 			Kind:    PlaybackInfoErrorInvalidInput,
 			Message: "unsupported playback subject kind",
 		}
+	}
+}
+
+func shouldProbeLiveTruth(resolution liveTruthResolution) bool {
+	switch resolution.Reason {
+	case "missing_scan_truth", "partial_scan_truth", "incomplete_scan_truth", "failed_scan_truth":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, KeyboardEvent, PointerEvent, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from '../lib/hlsRuntime';
 import {
@@ -366,10 +366,18 @@ function resolveNativePlaybackStatus(state: HostNativePlaybackState | null): Pla
 
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
-  const { token, autoStart, onClose, duration } = props;
+  const { token, autoStart, onClose, duration, startPositionSeconds, suppressResumePrompt } = props;
   const channel = 'channel' in props ? props.channel : undefined;
   const src = 'src' in props ? props.src : undefined;
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
+  const recordingTitle = 'recordingTitle' in props ? props.recordingTitle : undefined;
+  const recordingDescription = 'recordingDescription' in props ? props.recordingDescription : undefined;
+  const recordingDateLabel = 'recordingDateLabel' in props ? props.recordingDateLabel : undefined;
+  const recordingLengthLabel = 'recordingLengthLabel' in props ? props.recordingLengthLabel : undefined;
+  const recordingLayoutMode = 'layoutMode' in props ? props.layoutMode : undefined;
+  const normalizedRecordingTitle = typeof recordingTitle === 'string' ? recordingTitle.trim() : '';
+  const isRecordingPageLayout = Boolean(recordingId && recordingLayoutMode === 'page');
+  const useOverlayShell = Boolean(onClose && !isRecordingPageLayout);
 
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
@@ -542,6 +550,12 @@ function V3Player(props: V3PlayerProps) {
     return getApiBaseUrl();
   }, []);
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
+  const requestedStartPositionSeconds = useMemo(
+    () => (startPositionSeconds && Number.isFinite(startPositionSeconds) && startPositionSeconds > 0
+      ? startPositionSeconds
+      : 0),
+    [startPositionSeconds]
+  );
   const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
 
   const {
@@ -622,7 +636,7 @@ function V3Player(props: V3PlayerProps) {
     canSeek,
     startUnix,
     setStatus,
-    allowNativeFullscreen: activeHlsEngine === 'native',
+    allowNativeFullscreen: activeHlsEngine === 'native' || vodStreamMode === 'direct_mp4',
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen
   });
@@ -962,11 +976,14 @@ function V3Player(props: V3PlayerProps) {
     setActiveRecordingId(id);
     setStatus('building');
     clearPlayerError();
+    setResumeState(null);
+    setShowResumeOverlay(false);
     setTraceId('-');
     setPlaybackMode('VOD');
 
     let abortController: AbortController | null = null;
     let requestCaps: CapabilitySnapshot | null = null;
+    let recordingIsSeekable = false;
 
     try {
       await ensureSessionCookie();
@@ -1125,7 +1142,7 @@ function V3Player(props: V3PlayerProps) {
           pInfo,
           requestCaps.preferredHlsEngine ?? null
         ));
-        const recordingIsSeekable = typeof pInfo.isSeekable === 'boolean' ? pInfo.isSeekable : false;
+        recordingIsSeekable = typeof pInfo.isSeekable === 'boolean' ? pInfo.isSeekable : false;
         if (typeof pInfo.isSeekable !== 'boolean') {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.isSeekable.missing',
@@ -1136,7 +1153,7 @@ function V3Player(props: V3PlayerProps) {
         if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
 
         // Resume State
-        if (recordingIsSeekable && pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
+        if (!suppressResumePrompt && recordingIsSeekable && pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
           const d = pInfo.resume.durationSeconds || (playbackDurationSeconds || 0);
           if (!d || pInfo.resume.posSeconds < d - 10) {
             setResumeState({
@@ -1166,6 +1183,9 @@ function V3Player(props: V3PlayerProps) {
           setStatus('buffering');
           setActiveHlsEngine(null);
           playDirectMp4(streamUrl);
+          if (recordingIsSeekable && requestedStartPositionSeconds > 0) {
+            seekWhenReady(requestedStartPositionSeconds);
+          }
           return;
         } catch (_error) {
           if (activeRecordingRef.current !== id) return;
@@ -1211,6 +1231,9 @@ function V3Player(props: V3PlayerProps) {
             ? 'native'
             : resolvePreferredHlsEngineForCapabilities(requestCaps);
           playHls(streamUrl, engine);
+          if (recordingIsSeekable && requestedStartPositionSeconds > 0) {
+            seekWhenReady(requestedStartPositionSeconds);
+          }
           setActiveHlsEngine(engine);
         } finally {
           if (vodFetchRef.current === controller) vodFetchRef.current = null;
@@ -1227,7 +1250,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilitiesForPlayer, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, resolvePreferredHlsEngineForCapabilities, setLegacyErrorDetails, setPlayerError, sleep, t, teardownActivePlayback, waitForDirectStream]);
+  }, [clearPlaybackState, clearPlayerError, ensureSessionCookie, gatherPlaybackCapabilitiesForPlayer, hasActivePlayback, mergeSessionPlaybackTrace, playDirectMp4, playHls, requestedStartPositionSeconds, resolvePreferredHlsEngineForCapabilities, seekWhenReady, setLegacyErrorDetails, setPlayerError, sleep, suppressResumePrompt, t, teardownActivePlayback, waitForDirectStream]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -1255,8 +1278,8 @@ function V3Player(props: V3PlayerProps) {
             kind: 'recording',
             recordingId,
             authToken: token || undefined,
-            startPositionMs: 0,
-            title: channel?.name ?? recordingId,
+            startPositionMs: Math.round(requestedStartPositionSeconds * 1000),
+            title: normalizedRecordingTitle || channel?.name || recordingId,
           });
           return;
         }
@@ -1634,7 +1657,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, teardownActivePlayback, beginNativePlayback, channel?.name, isNativePlaybackHost, nativePlaybackState]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, token]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -1976,29 +1999,42 @@ function V3Player(props: V3PlayerProps) {
   // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css
   // Static layout styles are in V3Player.module.css (scoped)
 
+  const isRecordingStartupSurface = Boolean(recordingId || activeRecordingId || activeRecordingRef.current);
+  const startupTitle = channel?.name || normalizedRecordingTitle || (isRecordingStartupSurface
+    ? t('player.recordingFallbackTitle', { defaultValue: 'Recording' })
+    : '');
   const spinnerLabel =
     isOverlayStartupStatus
-      ? (overlayStatus === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current && vodStreamMode === 'direct_mp4')
-        ? t('player.preparingDirectPlay') // Show explicit preparing for VOD buffering
+      ? isRecordingStartupSurface
+        ? (overlayStatus === 'buffering' && playbackMode === 'VOD' && vodStreamMode === 'direct_mp4')
+          ? t('player.preparingDirectPlay') // Show explicit preparing for VOD buffering
+          : t('player.preparingRecordingPlayback', { defaultValue: 'Opening recording…' })
         : resolveStartupOverlayLabel(
-          overlayStatus,
-          `${t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}…`,
-          sessionProfileReason,
-          t,
-        )
+            overlayStatus,
+            `${t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}…`,
+            sessionProfileReason,
+            t,
+          )
       : '';
   const spinnerSupport =
     isOverlayStartupStatus
-      ? resolveStartupOverlaySupport(sessionProfileReason, t)
+      ? isRecordingStartupSurface
+        ? t('player.recordingStartupSupport', { defaultValue: 'Preparing the source. Playback will start shortly.' })
+        : resolveStartupOverlaySupport(sessionProfileReason, t)
       : '';
+  const startupStatusLabel = isRecordingStartupSurface
+    ? t('player.recordingStartupStatus', { defaultValue: 'Opening' })
+    : t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus });
   const showStartupOverlay =
     isImmediateStartupStatus ||
     (status === 'buffering' && showBufferingOverlay) ||
     shouldHoldNativeVideo;
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
   const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;
-  const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || Boolean(onClose));
+  const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || useOverlayShell || isRecordingPageLayout);
   const showPlaybackChrome = !useMinimalStartupChrome;
+  const showRecordingWatchLayout = Boolean(recordingId && !isFullscreen && (useOverlayShell || isRecordingPageLayout));
+  const recordingWatchTitle = startupTitle || t('player.recordingFallbackTitle', { defaultValue: 'Recording' });
 
   useEffect(() => {
     const video = videoRef.current;
@@ -2162,26 +2198,93 @@ function V3Player(props: V3PlayerProps) {
   const showVerboseErrorTelemetry = !isCompactTouchLayout;
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
   const audioToggleIcon = isMuted ? '🔊' : '🔇';
+  const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
+  const seekProgressPercent = windowDuration > 0
+    ? `${Math.min(100, Math.max(0, (relativePosition / windowDuration) * 100))}%`
+    : '0%';
+  const seekFromPointer = useCallback((clientX: number, track: HTMLDivElement) => {
+    if (windowDuration <= 0) {
+      return;
+    }
+
+    const rect = track.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    seekTo(seekableStart + ratio * windowDuration);
+  }, [seekTo, seekableStart, windowDuration]);
+  const handleVodScrubPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    seekFromPointer(event.clientX, event.currentTarget);
+  }, [seekFromPointer]);
+  const handleVodScrubPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if ((event.buttons & 1) !== 1) {
+      return;
+    }
+    seekFromPointer(event.clientX, event.currentTarget);
+  }, [seekFromPointer]);
+  const handleVodScrubKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (windowDuration <= 0) {
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowLeft':
+        event.preventDefault();
+        seekBy(-15);
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        seekBy(15);
+        break;
+      case 'Home':
+        event.preventDefault();
+        seekTo(seekableStart);
+        break;
+      case 'End':
+        event.preventDefault();
+        seekTo(seekableEnd);
+        break;
+      default:
+        break;
+    }
+  }, [seekBy, seekTo, seekableEnd, seekableStart, windowDuration]);
 
   return (
     <div
       ref={containerRef}
+      data-xg2g-player-root="true"
       className={[
         styles.container,
         'animate-enter',
-        onClose ? styles.overlay : null,
+        useOverlayShell ? styles.overlay : null,
+        isRecordingPageLayout ? styles.recordingPage : null,
+        isFullscreen ? styles.fullscreenActive : null,
         isIdle ? styles.userIdle : null,
       ].filter(Boolean).join(' ')}
     >
-      {onClose && (
-        <button
-          onClick={() => void stopStream()}
-          className={styles.closeButton}
-          aria-label={t('player.closePlayer')}
+      <div className={showRecordingWatchLayout ? styles.watchSurface : undefined}>
+        <div
+          className={[
+            styles.playerFrame,
+            useOverlayShell ? styles.playerFrameOverlay : null,
+            isRecordingPageLayout ? styles.playerFramePage : null,
+            showRecordingWatchLayout ? styles.playerFrameWatchSurface : null,
+            isFullscreen ? styles.playerFrameFullscreen : null,
+          ].filter(Boolean).join(' ')}
         >
-          ✕
-        </button>
-      )}
+          {useOverlayShell && (
+            <button
+              onClick={() => void stopStream()}
+              className={styles.closeButton}
+              aria-label={t('player.closePlayer')}
+            >
+              ✕
+            </button>
+          )}
 
       {/* Stats Overlay */}
       {showStats && showPlaybackChrome && (
@@ -2393,38 +2496,63 @@ function V3Player(props: V3PlayerProps) {
           <div
             className={[
               styles.spinnerOverlay,
+              isRecordingStartupSurface ? styles.spinnerOverlayRecording : null,
               useNativeBufferingSafeOverlay ? styles.spinnerOverlaySafe : null,
             ].filter(Boolean).join(' ')}
             aria-live="polite"
             ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}
           >
-            <div className={styles.spinnerBadge}>
-              <div className={`${styles.spinner} spinner-base`}></div>
+            <div
+              className={[
+                styles.spinnerBadge,
+                isRecordingStartupSurface ? styles.spinnerBadgeRecording : null,
+              ].filter(Boolean).join(' ')}
+            >
+              {isRecordingStartupSurface ? (
+                <svg
+                  className={styles.spinnerMediaIcon}
+                  viewBox="0 0 48 48"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="M15 10.8c0-1.6 1.7-2.6 3.1-1.8l19.2 11.2c1.4.8 1.4 2.8 0 3.6L18.1 35c-1.4.8-3.1-.2-3.1-1.8V10.8Z" />
+                </svg>
+              ) : (
+                <div className={`${styles.spinner} spinner-base`}></div>
+              )}
             </div>
             <div className={styles.spinnerContent}>
-              <div className={styles.spinnerEyebrow}>
-                {t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' })}
-              </div>
-              {channel && <h2 className={styles.spinnerTitle}>{channel.name}</h2>}
-              <div className={styles.spinnerStatusRow}>
-                <StatusChip
-                  state={overlayStatus === 'buffering' ? 'live' : 'idle'}
-                  label={t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus })}
-                />
-              </div>
+              {!isRecordingStartupSurface && (
+                <div className={styles.spinnerEyebrow}>
+                  {t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' })}
+                </div>
+              )}
+              {startupTitle && <h2 className={styles.spinnerTitle}>{startupTitle}</h2>}
+              {!isRecordingStartupSurface && (
+                <div className={styles.spinnerStatusRow}>
+                  <StatusChip
+                    state={overlayStatus === 'buffering' ? 'live' : 'idle'}
+                    label={startupStatusLabel}
+                  />
+                </div>
+              )}
               <div className={styles.spinnerLabel}>{spinnerLabel}</div>
-              <div className={styles.spinnerSupport}>{spinnerSupport}</div>
-              <div className={styles.spinnerMeta}>
-                <div className={styles.spinnerProgressTrack} aria-hidden="true">
-                  <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
-                </div>
-                <div className={styles.spinnerElapsed}>
-                  {t('player.startupElapsed', {
-                    defaultValue: 'Wait {{seconds}}s',
-                    seconds: startupElapsedSeconds,
-                  })}
-                </div>
-              </div>
+              {!isRecordingStartupSurface && (
+                <>
+                  <div className={styles.spinnerSupport}>{spinnerSupport}</div>
+                  <div className={styles.spinnerMeta}>
+                    <div className={styles.spinnerProgressTrack} aria-hidden="true">
+                      <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
+                    </div>
+                    <div className={styles.spinnerElapsed}>
+                      {t('player.startupElapsed', {
+                        defaultValue: 'Wait {{seconds}}s',
+                        seconds: startupElapsedSeconds,
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
               {useMinimalStartupChrome && !onClose && (
                 <div className={styles.spinnerActions}>
                   <Button variant="danger" size="sm" onClick={() => void stopStream()}>
@@ -2508,59 +2636,82 @@ function V3Player(props: V3PlayerProps) {
 
       {/* Controls & Status Bar */}
       {showPlaybackChrome && (
-        <div className={styles.controlsHeader}>
+        <div
+          className={[
+            styles.controlsHeader,
+            useTheaterControlsLayout ? styles.controlsHeaderTheater : null,
+          ].filter(Boolean).join(' ')}
+        >
           {hasSeekWindow ? (
-            <div className={[styles.vodControls, styles.seekControls].join(' ')}>
-              <div className={styles.seekButtons}>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
-                  ↺ 15m
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
-                  ↺ 60s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
-                  ↺ 15s
-                </Button>
+            <div
+              className={[
+                styles.vodControls,
+                styles.seekControls,
+                useTheaterControlsLayout ? styles.vodControlsTheater : null,
+              ].filter(Boolean).join(' ')}
+            >
+              <div className={styles.vodScrubArea}>
+                <div className={styles.vodScrubTimes}>
+                  <span>{startTimeDisplay}</span>
+                  <span>{endTimeDisplay}</span>
+                </div>
+                <div
+                  className={styles.vodScrubTrack}
+                  role="slider"
+                  tabIndex={0}
+                  aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                  aria-valuemin={0}
+                  aria-valuemax={Math.round(windowDuration)}
+                  aria-valuenow={Math.round(relativePosition)}
+                  onPointerDown={handleVodScrubPointerDown}
+                  onPointerMove={handleVodScrubPointerMove}
+                  onKeyDown={handleVodScrubKeyDown}
+                >
+                  <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
+                  <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
+                </div>
               </div>
 
-              <Button
-                variant="primary"
-                size="icon"
-                className={styles.playPauseButton}
-                onClick={togglePlayPause}
-                title={isPlaying ? t('player.pause') : t('player.play')}
-                aria-label={isPlaying ? t('player.pause') : t('player.play')}
+              <div
+                className={[
+                  styles.transportControls,
+                  useTheaterControlsLayout ? styles.transportControlsTheater : null,
+                ].filter(Boolean).join(' ')}
               >
-                {isPlaying ? '⏸' : '▶'}
-              </Button>
+                <div className={styles.seekButtons}>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
+                    ↺ 15m
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
+                    ↺ 60s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
+                    ↺ 15s
+                  </Button>
+                </div>
 
-              <div className={styles.seekSliderGroup}>
-                <span className={styles.vodTime}>{startTimeDisplay}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max={windowDuration}
-                  step="0.1"
-                  className={styles.vodSlider}
-                  value={relativePosition}
-                  onChange={(e) => {
-                    const newVal = parseFloat(e.target.value);
-                    seekTo(seekableStart + newVal);
-                  }}
-                />
-                <span className={styles.vodTimeTotal}>{endTimeDisplay}</span>
-              </div>
+                <Button
+                  variant="primary"
+                  size="icon"
+                  className={styles.playPauseButton}
+                  onClick={togglePlayPause}
+                  title={isPlaying ? t('player.pause') : t('player.play')}
+                  aria-label={isPlaying ? t('player.pause') : t('player.play')}
+                >
+                  {isPlaying ? '⏸' : '▶'}
+                </Button>
 
-              <div className={styles.seekButtons}>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
-                  +15s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
-                  +60s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
-                  +15m
-                </Button>
+                <div className={styles.seekButtons}>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
+                    +15s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
+                    +60s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
+                    +15m
+                  </Button>
+                </div>
               </div>
 
               {isLiveMode && (
@@ -2609,7 +2760,12 @@ function V3Player(props: V3PlayerProps) {
             </Button>
           )}
 
-          <div className={styles.utilityControls}>
+          <div
+            className={[
+              styles.utilityControls,
+              useTheaterControlsLayout ? styles.utilityControlsTheater : null,
+            ].filter(Boolean).join(' ')}
+          >
             {prefersDesktopNativeFullscreen && canEnterNativeFullscreen && !isFullscreen && (
               <Button
                 variant="ghost"
@@ -2638,7 +2794,12 @@ function V3Player(props: V3PlayerProps) {
             )}
 
             {canToggleMute && (
-              <div className={styles.volumeControl}>
+              <div
+                className={[
+                  styles.volumeControl,
+                  useTheaterControlsLayout ? styles.volumeControlTheater : null,
+                ].filter(Boolean).join(' ')}
+              >
                 <Button
                   variant={isMuted ? 'primary' : 'ghost'}
                   size="sm"
@@ -2649,7 +2810,7 @@ function V3Player(props: V3PlayerProps) {
                   aria-pressed={!isMuted}
                 >
                   <span className={styles.audioToggleIcon} aria-hidden="true">{audioToggleIcon}</span>
-                  <span>{audioToggleLabel}</span>
+                  <span className={styles.audioToggleLabel}>{audioToggleLabel}</span>
                 </Button>
                 {canAdjustVolume ? (
                   <input
@@ -2699,6 +2860,33 @@ function V3Player(props: V3PlayerProps) {
           </div>
         </div>
       )}
+        </div>
+        {showRecordingWatchLayout && (
+          <section
+            className={styles.watchLayout}
+            aria-label={t('player.watchSurfaceLabel', { defaultValue: 'Recording playback details' })}
+          >
+            <div className={styles.watchMain}>
+              <h1 className={styles.watchTitle}>{recordingWatchTitle}</h1>
+              <div className={styles.watchMeta}>
+                {recordingDateLabel ? <span>{recordingDateLabel}</span> : null}
+                {recordingLengthLabel ? <span>{recordingLengthLabel}</span> : null}
+                {requestedStartPositionSeconds > 0 ? (
+                  <span className={styles.watchResumeHint}>
+                    {t('player.resumeFrom', {
+                      defaultValue: 'Resume {{time}}',
+                      time: formatClock(requestedStartPositionSeconds),
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              {recordingDescription ? (
+                <p className={styles.watchDescription}>{recordingDescription}</p>
+              ) : null}
+            </div>
+          </section>
+        )}
+      </div>
       {/* Resume Overlay */}
       {showResumeOverlay && resumeState && (
         <div className={styles.resumeOverlay}>

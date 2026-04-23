@@ -14,6 +14,7 @@ import (
 // SessionStore defines the minimal session persistence contract needed by intent processing.
 type SessionStore interface {
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
+	ListSessions(ctx context.Context) ([]*model.SessionRecord, error)
 	PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) (existingID string, exists bool, err error)
 }
 

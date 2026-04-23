@@ -1,4 +1,5 @@
 import { useMemo, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ResumeSummary } from './types';
 import styles from './resume.module.css';
 
@@ -37,6 +38,7 @@ export default function RecordingResumeBar(props: {
   resume: ResumeSummary;
   durationSeconds?: number | null;
 }) {
+  const { t } = useTranslation();
   const { resume, durationSeconds } = props;
   const d = resume.durationSeconds ?? durationSeconds ?? 0;
 
@@ -57,7 +59,9 @@ export default function RecordingResumeBar(props: {
   return (
     <div className={styles.summary}>
       <div className={styles.meta}>
-        <span className={styles.label}>Resume at {formatClock(resume.posSeconds)}</span>
+        <span className={styles.label}>
+          {t('recordings.resumeProgress', { time: formatClock(resume.posSeconds) })}
+        </span>
         {d > 0 && <span className={styles.percent}>{percent}%</span>}
       </div>
       {d > 0 && (

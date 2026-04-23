@@ -347,3 +347,103 @@
     padding-bottom: 20px;
   }
 }
+
+@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  .page {
+    gap: 12px;
+    padding-bottom: 12px;
+  }
+
+  .summaryCard,
+  .startSurface,
+  .shortcutsSurface,
+  .streamSurface,
+  .signalSurface {
+    border-radius: 20px;
+  }
+
+  .summaryCard {
+    padding: 16px 18px;
+    gap: 14px;
+  }
+
+  .summaryHeader {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+  }
+
+  .startHeader {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+
+  .summaryTitle {
+    max-width: 16ch;
+    font-size: clamp(1.35rem, 3.8vw, 1.95rem);
+  }
+
+  .summaryDescription {
+    margin-top: 8px;
+    max-width: none;
+    font-size: 0.86rem;
+    line-height: 1.45;
+  }
+
+  .summaryChips {
+    width: auto;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+
+  .summaryMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .metricCard,
+  .contextCard {
+    padding: 12px 14px;
+    border-radius: 16px;
+  }
+
+  .timelineHeader {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .startSurface,
+  .shortcutsSurface,
+  .streamSurface,
+  .signalSurface {
+    padding: 14px 16px;
+  }
+
+  .startGrid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  .startCard {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .diagnosticsGrid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+  }
+
+  .panelHeader {
+    margin-bottom: 12px;
+  }
+
+  .statusRow,
+  .statusRow:last-child {
+    padding: 12px 14px;
+    border-radius: 16px;
+  }
+}
