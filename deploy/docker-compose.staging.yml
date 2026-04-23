@@ -1,0 +1,9 @@
+services:
+  xg2g:
+    image: xg2g:staging
+    pull_policy: never
+    build:
+      context: /srv/xg2g
+      dockerfile: /srv/xg2g/Dockerfile
+      args:
+        FFMPEG_BASE_IMAGE: ${XG2G_FFMPEG_BASE_IMAGE:-ffmpeg-runtime-base-internal}
