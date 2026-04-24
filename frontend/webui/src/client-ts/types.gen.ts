@@ -2575,6 +2575,116 @@ export type DeleteRecordingResponses = {
 
 export type DeleteRecordingResponse = DeleteRecordingResponses[keyof DeleteRecordingResponses];
 
+export type PostRecordingDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/delete';
+};
+
+export type PostRecordingDeleteErrors = {
+    /**
+     * Invalid recording reference
+     */
+    400: unknown;
+    /**
+     * Access denied
+     */
+    403: unknown;
+    /**
+     * Recording not found
+     */
+    404: unknown;
+    /**
+     * Failed to delete recording
+     */
+    500: unknown;
+};
+
+export type PostRecordingDeleteResponses = {
+    /**
+     * Recording deleted
+     */
+    204: void;
+};
+
+export type PostRecordingDeleteResponse = PostRecordingDeleteResponses[keyof PostRecordingDeleteResponses];
+
+export type PostRecordingRenameData = {
+    body: {
+        title: string;
+    };
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/rename';
+};
+
+export type PostRecordingRenameErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Access denied
+     */
+    403: unknown;
+    /**
+     * Recording not found
+     */
+    404: unknown;
+    /**
+     * Failed to rename recording
+     */
+    500: unknown;
+};
+
+export type PostRecordingRenameResponses = {
+    /**
+     * Recording renamed
+     */
+    204: void;
+};
+
+export type PostRecordingRenameResponse = PostRecordingRenameResponses[keyof PostRecordingRenameResponses];
+
+export type GetRecordingThumbnailData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/thumbnail.jpg';
+};
+
+export type GetRecordingThumbnailErrors = {
+    /**
+     * Thumbnail not found
+     */
+    404: unknown;
+};
+
+export type GetRecordingThumbnailResponses = {
+    /**
+     * Thumbnail image
+     */
+    200: Blob | File;
+};
+
+export type GetRecordingThumbnailResponse = GetRecordingThumbnailResponses[keyof GetRecordingThumbnailResponses];
+
 export type GetRecordingsRecordingIdStatusData = {
     body?: never;
     path: {

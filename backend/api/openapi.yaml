@@ -3814,9 +3814,9 @@ paths:
             schema:
               type: object
               properties:
-                name:
+                title:
                   type: string
-              required: [name]
+              required: [title]
       responses:
         "204":
           description: Recording renamed
