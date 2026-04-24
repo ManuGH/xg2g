@@ -342,8 +342,12 @@ export function usePlayerChrome({
     setCurrentPlaybackTime(video.currentTime);
   }, [readSeekableBounds, videoRef]);
 
+  const canSeekLiveWindow = playbackMode === 'LIVE' && seekableEnd > seekableStart;
+  const canRunSeekCommand = canSeek || canSeekLiveWindow;
+
   const seekTo = useCallback((targetSeconds: number) => {
     const video = videoRef.current;
+    if (!canRunSeekCommand) return;
     if (!video || !Number.isFinite(targetSeconds)) return;
 
     let clamped = Math.max(0, targetSeconds);
@@ -355,7 +359,7 @@ export function usePlayerChrome({
       return;
     }
     video.currentTime = clamped;
-  }, [recoverInlineLiveSeek, seekableEnd, seekableStart, videoRef]);
+  }, [canRunSeekCommand, recoverInlineLiveSeek, seekableEnd, seekableStart, videoRef]);
 
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;
@@ -725,10 +729,7 @@ export function usePlayerChrome({
     }
 
     const mediaSession = navigator.mediaSession;
-    const canMediaSeek =
-      canSeek ||
-      (playbackMode === 'VOD' && !!durationSeconds && durationSeconds > 0) ||
-      (playbackMode === 'LIVE' && seekableEnd > seekableStart);
+    const canMediaSeek = canRunSeekCommand;
     const setHandler = (
       action: MediaSessionAction,
       handler: MediaSessionActionHandler | null,
@@ -753,7 +754,7 @@ export function usePlayerChrome({
       setHandler('seekbackward', null);
       setHandler('seekforward', null);
     };
-  }, [canSeek, durationSeconds, pause, play, playbackMode, seekBy, seekableEnd, seekableStart, stop]);
+  }, [canRunSeekCommand, pause, play, seekBy, stop]);
 
   useEffect(() => {
     if (
@@ -1170,9 +1171,8 @@ export function usePlayerChrome({
     () => Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart)),
     [currentPlaybackTime, seekableStart, windowDuration]
   );
-  const hasVodTimeline = playbackMode === 'VOD' && !!durationSeconds && durationSeconds > 0;
-  const hasLiveDvrWindow = playbackMode === 'LIVE' && windowDuration > 0;
-  const seekEnabled = canSeek || hasVodTimeline || hasLiveDvrWindow;
+  const hasLiveDvrWindow = canSeekLiveWindow && windowDuration > 0;
+  const seekEnabled = canRunSeekCommand;
   const hasSeekWindow = seekEnabled && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const liveEdgePosition = normalizedLiveSeekWindow?.liveEdge ?? seekableEnd;

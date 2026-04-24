@@ -676,7 +676,7 @@ function V3Player(props: V3PlayerProps) {
   const [useInlineVideoPlayback, setUseInlineVideoPlayback] = useState(true);
 
   // P3-4: Truth State
-  const [canSeek, setCanSeek] = useState(true);
+  const [canSeek, setCanSeek] = useState(() => !recordingId);
   const [startUnix, setStartUnix] = useState<number | null>(null);
 
   const lastDecodedRef = useRef<number>(0);
@@ -1460,6 +1460,7 @@ function V3Player(props: V3PlayerProps) {
     setShowResumeOverlay(false);
     setTraceId('-');
     setPlaybackMode('VOD');
+    setCanSeek(false);
 
     let abortController: AbortController | null = null;
     let requestCaps: CapabilitySnapshot | null = null;
@@ -2451,11 +2452,18 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
-    if (!showNativeVideo && revealNativeVideoIfRenderable()) {
+    const shouldHoldNativeVideoForStatus =
+      status === 'starting' ||
+      status === 'priming' ||
+      status === 'building' ||
+      status === 'buffering' ||
+      status === 'recovering';
+
+    if ((shouldHoldNativeVideoForStatus || !showNativeVideo) && revealNativeVideoIfRenderable()) {
       return;
     }
 
-    if (status === 'starting' || status === 'priming' || status === 'building' || status === 'buffering' || status === 'recovering') {
+    if (shouldHoldNativeVideoForStatus) {
       clearNativeVideoRevealTimer();
       clearNativeVideoVeilTimers();
       if (showNativeVideo) {
@@ -3106,7 +3114,13 @@ function V3Player(props: V3PlayerProps) {
     : null;
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
   const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
-  const useMinimalTouchInlineChrome = Boolean(isCompactTouchLayout && useOverlayShell && !useTheaterControlsLayout && !isFullscreen);
+  const useLiveDvrTouchFullscreenGuard = Boolean(hasTouchPlaybackInput && useOverlayShell && hasLiveDvrWindow && !isFullscreen);
+  const useMinimalTouchInlineChrome = Boolean(
+    useOverlayShell &&
+    !useTheaterControlsLayout &&
+    !isFullscreen &&
+    (isCompactTouchLayout || useLiveDvrTouchFullscreenGuard)
+  );
   const useTheaterStackSurface = uiSurface.width < 1220;
   const useCompactSurface =
     uiSurface.width < 768 ||
@@ -3114,7 +3128,7 @@ function V3Player(props: V3PlayerProps) {
   const useTightSurface =
     (uiSurface.width < 768 && uiSurface.orientation === 'landscape') ||
     uiSurface.heightClass !== 'comfortable';
-  const disableInlineLiveDvrScrub = useMinimalTouchInlineChrome && hasLiveDvrWindow;
+  const disableInlineLiveDvrScrub = useLiveDvrTouchFullscreenGuard;
   const inferredPlaybackWindowKind = resolvePlaybackWindowKind(playbackMode, hasLiveDvrWindow);
   const playbackWindowKind = sessionWindowKind !== 'unknown' ? sessionWindowKind : inferredPlaybackWindowKind;
   const mobileInlinePlaybackLabel = playbackWindowKind === 'live-dvr'
@@ -3541,7 +3555,14 @@ function V3Player(props: V3PlayerProps) {
                 </div>
 
                 <div className={styles.mobileInlinePrimaryActions}>
-                  <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={disableInlineLiveDvrScrub}
+                    onClick={disableInlineLiveDvrScrub ? undefined : () => seekBy(-15)}
+                    title={t('player.seekBack15s')}
+                    aria-label={t('player.seekBack15s')}
+                  >
                     -15s
                   </Button>
 
@@ -3556,7 +3577,14 @@ function V3Player(props: V3PlayerProps) {
                     {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
                   </Button>
 
-                  <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={disableInlineLiveDvrScrub}
+                    onClick={disableInlineLiveDvrScrub ? undefined : () => seekBy(15)}
+                    title={t('player.seekForward15s')}
+                    aria-label={t('player.seekForward15s')}
+                  >
                     +15s
                   </Button>
                 </div>

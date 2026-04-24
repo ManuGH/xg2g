@@ -77,6 +77,7 @@ export default function Dashboard() {
   const progressPercent = hasProgramProgress && now?.beginTimestamp && now?.durationSec
     ? Math.min(100, Math.max(0, (((Date.now() / 1000) - now.beginTimestamp) / now.durationSec) * 100))
     : 0;
+  const activeProfileName = selectedProfile?.name || t('dashboard.profileFallback', { defaultValue: 'Current profile' });
 
   const summaryTitle = currentChannel;
 
@@ -181,7 +182,7 @@ export default function Dashboard() {
   const summarySpotlightFacts = [
     {
       label: t('dashboard.heroAside.profileLabel', { defaultValue: 'Active profile' }),
-      value: selectedProfile.name,
+      value: activeProfileName,
     },
     {
       label: t('dashboard.guideHealth'),
@@ -324,6 +325,16 @@ export default function Dashboard() {
       }
       : null,
   ].filter((action): action is { id: string; label: string; onAction: () => void } => action !== null);
+  const spotlightPrimaryLabel = t('dashboard.heroAside.primaryActionLabel', {
+    action: summarySpotlight.primaryAction.label,
+    defaultValue: `Recommended: ${summarySpotlight.primaryAction.label}`,
+  });
+  const spotlightSecondaryLabel = summarySpotlight.secondaryAction
+    ? t('dashboard.heroAside.secondaryActionLabel', {
+      action: summarySpotlight.secondaryAction.label,
+      defaultValue: `Also: ${summarySpotlight.secondaryAction.label}`,
+    })
+    : null;
 
   return (
     <div className={`${styles.page} animate-enter`.trim()} data-testid="dashboard-view">
@@ -387,6 +398,11 @@ export default function Dashboard() {
               <p className={styles.summarySpotlightEyebrow}>{summarySpotlight.eyebrow}</p>
               <StatusChip state={summarySpotlight.chip.state} label={summarySpotlight.chip.label} />
             </div>
+            <div className={styles.signalDial} aria-hidden="true">
+              <span className={styles.signalDialCore} />
+              <span className={styles.signalDialRing} />
+              <span className={styles.signalDialSweep} />
+            </div>
             <h3 className={styles.summarySpotlightTitle}>{summarySpotlight.title}</h3>
             <p className={styles.summarySpotlightCopy}>{summarySpotlight.detail}</p>
 
@@ -401,11 +417,11 @@ export default function Dashboard() {
 
             <div className={styles.summarySpotlightActions}>
               <Button variant="primary" onClick={summarySpotlight.primaryAction.onAction}>
-                {summarySpotlight.primaryAction.label}
+                {spotlightPrimaryLabel}
               </Button>
               {summarySpotlight.secondaryAction ? (
                 <Button variant="secondary" onClick={summarySpotlight.secondaryAction.onAction}>
-                  {summarySpotlight.secondaryAction.label}
+                  {spotlightSecondaryLabel}
                 </Button>
               ) : null}
             </div>

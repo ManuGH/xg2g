@@ -37,48 +37,48 @@
   /* 12px */
 
   /* Background Layers */
-  --bg-base: #061018;
-  --bg-video: #02060b;
-  --bg-elevated: rgba(17, 25, 38, 0.76);
-  --bg-overlay: rgba(10, 16, 27, 0.88);
-  --bg-hover: rgba(255, 255, 255, 0.08);
-  --bg-input: rgba(14, 23, 36, 0.88);
+  --bg-base: #070b10;
+  --bg-video: #010308;
+  --bg-elevated: rgba(18, 27, 37, 0.78);
+  --bg-overlay: rgba(8, 13, 20, 0.9);
+  --bg-hover: rgba(255, 255, 255, 0.09);
+  --bg-input: rgba(12, 19, 29, 0.9);
 
   /* Surfaces */
-  --surface-shell: rgba(12, 18, 28, 0.78);
-  --surface-shell-strong: rgba(15, 23, 36, 0.94);
-  --surface-shell-safe: rgba(8, 12, 19, 0.96);
-  --surface-panel: rgba(18, 28, 42, 0.74);
-  --surface-panel-strong: rgba(24, 35, 52, 0.88);
-  --surface-panel-safe: rgba(18, 27, 40, 0.97);
-  --surface-panel-soft: rgba(10, 16, 25, 0.62);
+  --surface-shell: rgba(11, 18, 27, 0.78);
+  --surface-shell-strong: rgba(12, 20, 31, 0.95);
+  --surface-shell-safe: rgba(7, 11, 17, 0.97);
+  --surface-panel: rgba(17, 28, 39, 0.74);
+  --surface-panel-strong: rgba(23, 36, 50, 0.88);
+  --surface-panel-safe: rgba(15, 24, 35, 0.97);
+  --surface-panel-soft: rgba(8, 14, 22, 0.64);
   --surface-highlight: rgba(255, 255, 255, 0.14);
   --surface-muted: rgba(255, 255, 255, 0.05);
-  --surface-stage: rgba(9, 15, 24, 0.74);
-  --surface-stage-strong: rgba(14, 21, 33, 0.94);
+  --surface-stage: rgba(7, 13, 21, 0.74);
+  --surface-stage-strong: rgba(11, 19, 30, 0.94);
 
   /* Text Hierarchy */
-  --text-primary: #f4f8fb;
+  --text-primary: #f7fbf6;
   /* High contrast */
-  --text-secondary: #b7c0cc;
+  --text-secondary: #b7c6c4;
   /* Standard UI */
-  --text-tertiary: #7d8796;
+  --text-tertiary: #78908d;
   /* Metadata */
-  --text-disabled: #5a6472;
+  --text-disabled: #586a68;
   /* Disabled */
 
   /* Dual-Accent System */
   /* Blue = Action/Interactive */
-  --accent-action: #58c3ff;
-  --accent-action-hover: #7bd0ff;
-  --accent-action-pressed: #3ea7e3;
-  --accent-action-subtle: rgba(88, 195, 255, 0.14);
+  --accent-action: #4ee6c1;
+  --accent-action-hover: #8af4d7;
+  --accent-action-pressed: #2db795;
+  --accent-action-subtle: rgba(78, 230, 193, 0.14);
 
   /* Amber = Live/Recording */
-  --accent-live: #ff9b54;
-  --accent-live-hover: #ffb37a;
-  --accent-live-pulse: #ffc27f;
-  --accent-live-subtle: rgba(255, 155, 84, 0.14);
+  --accent-live: #ffb24a;
+  --accent-live-hover: #ffd17a;
+  --accent-live-pulse: #ffe09a;
+  --accent-live-subtle: rgba(255, 178, 74, 0.14);
 
   /* Semantic States */
   --status-success: #34d399;
@@ -110,13 +110,13 @@
   --border-focus: var(--accent-action);
 
   /* Shadow System */
-  --shadow-card: 0 24px 48px rgba(0, 0, 0, 0.32);
-  --shadow-hover: 0 30px 62px rgba(0, 0, 0, 0.38);
-  --shadow-shell: 0 30px 72px rgba(0, 0, 0, 0.34);
-  --shadow-shell-safe: 0 22px 48px rgba(0, 0, 0, 0.42);
-  --shadow-stage: 0 34px 84px rgba(0, 0, 0, 0.42);
-  --shadow-accent-live: 0 18px 44px rgba(255, 155, 84, 0.16);
-  --shadow-accent-action: 0 18px 44px rgba(88, 195, 255, 0.18);
+  --shadow-card: 0 26px 64px rgba(0, 0, 0, 0.34);
+  --shadow-hover: 0 34px 76px rgba(0, 0, 0, 0.42);
+  --shadow-shell: 0 34px 86px rgba(0, 0, 0, 0.38);
+  --shadow-shell-safe: 0 24px 54px rgba(0, 0, 0, 0.44);
+  --shadow-stage: 0 42px 96px rgba(0, 0, 0, 0.46);
+  --shadow-accent-live: 0 20px 52px rgba(255, 178, 74, 0.17);
+  --shadow-accent-action: 0 20px 52px rgba(78, 230, 193, 0.18);
   --shadow-ring-action: 0 0 0 1px color-mix(in srgb, var(--accent-action) 35%, transparent);
   --shadow-status-success: 0 0 6px rgba(52, 211, 153, 0.4);
   --shadow-status-warning: 0 0 6px rgba(251, 191, 36, 0.4);
@@ -145,6 +145,16 @@
   --gradient-recordings-preplay-stage-overlay:
     linear-gradient(180deg, color-mix(in srgb, black 8%, transparent), transparent 26%),
     linear-gradient(180deg, transparent 44%, color-mix(in srgb, black 58%, transparent) 100%);
+  --gradient-app-stage:
+    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--accent-action) 18%, transparent), transparent 28%),
+    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--accent-live) 14%, transparent), transparent 24%),
+    radial-gradient(circle at 42% 92%, color-mix(in srgb, var(--status-info) 10%, transparent), transparent 34%),
+    linear-gradient(145deg, color-mix(in srgb, var(--bg-base) 94%, var(--accent-action) 6%), var(--bg-video));
+  --gradient-surface-hero:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-panel-strong) 88%, var(--accent-action-subtle) 12%), color-mix(in srgb, var(--surface-shell-safe) 90%, var(--accent-live-subtle) 10%));
+  --gradient-surface-quiet:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 44%),
+    color-mix(in srgb, var(--surface-panel) 88%, var(--surface-stage) 12%);
 
   /* Spacing */
   --radius-sm: calc(6px * var(--ui-density-scale));
@@ -247,10 +257,8 @@ body {
   font-family: var(--font-body);
   font-size: var(--text-base);
   background-color: var(--bg-base);
-  background-image:
-    radial-gradient(circle at 10% 14%, color-mix(in srgb, var(--accent-action-subtle) 88%, transparent), transparent 24%),
-    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--accent-live-subtle) 88%, transparent), transparent 22%),
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent);
+  background-image: var(--gradient-app-stage);
+  background-attachment: fixed;
   color: var(--text-primary);
   margin: 0;
   padding: 0;
@@ -269,11 +277,11 @@ body {
 body::before {
   content: '';
   position: fixed;
-  inset: -8% -6%;
+  inset: -12% -8%;
   background:
-    radial-gradient(circle at 14% 12%, color-mix(in srgb, var(--accent-action-subtle) 88%, transparent), transparent 26%),
-    radial-gradient(circle at 82% 10%, color-mix(in srgb, var(--accent-live-subtle) 88%, transparent), transparent 18%),
-    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 34%);
+    radial-gradient(circle at 16% 12%, color-mix(in srgb, var(--accent-action) 16%, transparent), transparent 28%),
+    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--accent-live) 12%, transparent), transparent 22%),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--text-primary) 6%, transparent), transparent 36%);
   pointer-events: none;
   z-index: 0;
 }
@@ -283,11 +291,11 @@ body::after {
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(color-mix(in srgb, var(--text-primary) 2%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--text-primary) 1.4%, transparent) 1px, transparent 1px);
-  background-size: 100% 132px, 132px 100%;
-  mask-image: linear-gradient(180deg, color-mix(in srgb, black 46%, transparent), transparent 80%);
-  opacity: 0.14;
+    linear-gradient(color-mix(in srgb, var(--accent-action) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text-primary) 2%, transparent) 1px, transparent 1px);
+  background-size: 100% 124px, 124px 100%;
+  mask-image: linear-gradient(180deg, color-mix(in srgb, black 52%, transparent), transparent 82%);
+  opacity: 0.16;
   pointer-events: none;
   z-index: 0;
 }

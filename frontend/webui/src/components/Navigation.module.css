@@ -1,8 +1,8 @@
 .desktopShell {
   position: fixed;
-  left: 18px;
-  top: 18px;
-  bottom: 18px;
+  left: 20px;
+  top: 20px;
+  bottom: 20px;
   z-index: 1100;
   display: flex;
   pointer-events: none;
@@ -12,10 +12,15 @@
   position: relative;
   width: var(--nav-shell-width);
   height: 100%;
-  padding: 18px 14px;
-  border-radius: 34px;
-  border: 1px solid var(--border-elevated);
-  background: color-mix(in srgb, var(--surface-shell-strong) 94%, var(--surface-stage) 6%);
+  padding: 18px 14px 16px;
+  border-radius: 36px;
+  border: 1px solid color-mix(in srgb, var(--accent-action) 20%, var(--border-elevated) 80%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 34%),
+    color-mix(in srgb, var(--surface-shell-strong) 94%, var(--surface-stage) 6%);
+  box-shadow:
+    var(--shadow-shell),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -30,8 +35,21 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--accent-action-subtle) 72%, transparent);
-  opacity: 0.9;
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--accent-action) 16%, transparent), transparent 32%),
+    radial-gradient(circle at 92% 82%, color-mix(in srgb, var(--accent-live) 12%, transparent), transparent 30%);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.desktopNav::after {
+  content: '';
+  position: absolute;
+  top: 24px;
+  right: 12px;
+  bottom: 24px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent-action) 42%, transparent), transparent);
   pointer-events: none;
 }
 
@@ -46,27 +64,32 @@
   align-items: center;
   gap: 16px;
   min-height: 72px;
-  padding: 6px 6px 22px;
+  padding: 8px 8px 22px;
   border-bottom: 1px solid var(--border-base);
 }
 
 .brandMark {
   width: 54px;
   height: 54px;
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--accent-action-subtle) 72%, var(--accent-live-subtle) 28%);
-  border: 1px solid var(--border-elevated);
+  border-radius: 19px;
+  background:
+    radial-gradient(circle at 68% 28%, color-mix(in srgb, var(--accent-live) 48%, transparent), transparent 34%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 70%, var(--surface-panel) 30%), color-mix(in srgb, var(--surface-shell-safe) 70%, var(--accent-live) 30%));
+  border: 1px solid color-mix(in srgb, var(--accent-action) 42%, var(--border-elevated) 58%);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: var(--shadow-accent-action);
 }
 
 .brandPulse {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
-  background: var(--accent-live);
+  background: var(--bg-video);
+  border: 4px solid color-mix(in srgb, var(--text-primary) 88%, transparent);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--bg-video) 24%, transparent);
 }
 
 .brandCopy,
@@ -80,7 +103,7 @@
 .brandTitle {
   display: block;
   font-family: var(--font-heading);
-  font-size: 1.35rem;
+  font-size: 1.44rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.04em;
@@ -99,7 +122,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 6px 14px;
+  padding: 0 8px 14px;
   border-bottom: 1px solid var(--border-base);
 }
 
@@ -113,9 +136,11 @@
 .profileSelect {
   min-height: 46px;
   width: 100%;
-  border-radius: 16px;
-  border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent-action) 18%, var(--border-base) 82%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
+    color-mix(in srgb, var(--surface-muted) 76%, transparent);
   color: var(--text-primary);
   padding: 0 14px;
 }
@@ -163,9 +188,11 @@
 .scaleButton {
   min-height: calc(52px * var(--ui-density-scale));
   padding: 8px 10px;
-  border-radius: 16px;
+  border-radius: 17px;
   border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent),
+    color-mix(in srgb, var(--surface-muted) 72%, transparent);
   color: var(--text-secondary);
   display: flex;
   flex-direction: column;
@@ -186,8 +213,9 @@
 }
 
 .scaleButtonActive {
-  background: color-mix(in srgb, var(--accent-action-subtle) 72%, var(--surface-shell) 28%);
-  border-color: color-mix(in srgb, var(--accent-action) 28%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-action-subtle) 92%, transparent), color-mix(in srgb, var(--surface-shell) 88%, transparent));
+  border-color: color-mix(in srgb, var(--accent-action) 42%, transparent);
   color: var(--text-primary);
   box-shadow: var(--shadow-ring-action);
 }
@@ -238,9 +266,11 @@
   width: 100%;
   min-height: 64px;
   padding: 10px;
-  border-radius: 22px;
+  border-radius: 23px;
   border: 1px solid transparent;
-  background: color-mix(in srgb, var(--surface-muted) 50%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent),
+    color-mix(in srgb, var(--surface-muted) 48%, transparent);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
@@ -256,26 +286,31 @@
 .navItem::after {
   content: '';
   position: absolute;
-  left: 10px;
-  top: 12px;
-  bottom: 12px;
-  width: 3px;
+  left: 9px;
+  top: 13px;
+  bottom: 13px;
+  width: 4px;
   border-radius: 999px;
   background: transparent;
   transition: background var(--motion-standard) var(--ease-standard);
 }
 
 .navItem:hover {
-  background: var(--surface-muted);
-  border-color: var(--border-base);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-action-subtle) 36%, transparent), transparent 72%),
+    var(--surface-muted);
+  border-color: color-mix(in srgb, var(--accent-action) 24%, var(--border-base) 76%);
   color: var(--text-primary);
   transform: translateX(2px);
 }
 
 .navItem[aria-current="page"] {
-  background: color-mix(in srgb, var(--accent-action-subtle) 72%, var(--surface-shell) 28%);
-  border-color: color-mix(in srgb, var(--accent-action) 28%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-action-subtle) 92%, transparent), transparent 78%),
+    color-mix(in srgb, var(--surface-shell) 86%, var(--surface-stage) 14%);
+  border-color: color-mix(in srgb, var(--accent-action) 42%, transparent);
   color: var(--text-primary);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
 
 .navItem[aria-current="page"]::after {
@@ -291,9 +326,11 @@
 .iconShell {
   width: 44px;
   height: 44px;
-  border-radius: 16px;
+  border-radius: 15px;
   border: 1px solid var(--border-base);
-  background: var(--surface-muted);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
+    var(--surface-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -344,21 +381,28 @@
   margin: 0 10px calc(8px + var(--sab));
   padding: 8px;
   border-radius: 24px;
-  border: 1px solid var(--border-elevated);
-  background: color-mix(in srgb, var(--surface-shell-strong) 94%, var(--surface-stage) 6%);
+  border: 1px solid color-mix(in srgb, var(--accent-action) 18%, var(--border-elevated) 82%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent),
+    color-mix(in srgb, var(--surface-shell-strong) 94%, var(--surface-stage) 6%);
+  box-shadow: var(--shadow-shell-safe);
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   pointer-events: auto;
+  backdrop-filter: blur(22px) saturate(122%);
+  -webkit-backdrop-filter: blur(22px) saturate(122%);
 }
 
 :global(:root[data-ui-nav-mode='bottom']) .mobileContextBar {
   margin: 0 14px 8px;
   padding: 10px 14px 12px;
   border-radius: 18px;
-  border: 1px solid var(--border-elevated);
-  background: color-mix(in srgb, var(--surface-shell-strong) 90%, var(--accent-action-subtle) 10%);
-  box-shadow: var(--shadow-hover);
+  border: 1px solid color-mix(in srgb, var(--accent-action) 20%, var(--border-elevated) 80%);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-action-subtle) 70%, transparent), transparent 82%),
+    color-mix(in srgb, var(--surface-shell-strong) 90%, var(--accent-action-subtle) 10%);
+  box-shadow: var(--shadow-shell-safe);
 }
 
 :global(:root[data-ui-nav-mode='bottom']) .mobileContextEyebrow {
@@ -425,8 +469,14 @@
   -webkit-overflow-scrolling: touch;
   padding: 16px 14px 14px;
   border-radius: 24px;
-  border: 1px solid var(--border-elevated);
-  background: color-mix(in srgb, var(--surface-shell-strong) 95%, var(--surface-stage) 5%);
+  border: 1px solid color-mix(in srgb, var(--accent-action) 20%, var(--border-elevated) 80%);
+  background:
+    radial-gradient(circle at 12% 6%, color-mix(in srgb, var(--accent-action) 14%, transparent), transparent 26%),
+    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--accent-live) 12%, transparent), transparent 26%),
+    color-mix(in srgb, var(--surface-shell-strong) 95%, var(--surface-stage) 5%);
+  box-shadow: var(--shadow-shell-safe);
+  backdrop-filter: blur(24px) saturate(124%);
+  -webkit-backdrop-filter: blur(24px) saturate(124%);
   pointer-events: auto;
 }
 

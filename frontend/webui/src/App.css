@@ -4,7 +4,7 @@
   margin-left: calc(var(--nav-shell-width) + 44px);
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 18px 22px 28px 0;
+  padding: 18px 24px 30px 0;
 }
 
 .content-area {
@@ -14,12 +14,17 @@
   margin: 0 auto;
   min-height: calc(100vh - 36px);
   min-height: calc(100dvh - 36px);
-  padding: clamp(20px, 2vw, 30px);
-  border-radius: 38px;
-  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
-  background: color-mix(in srgb, var(--surface-shell-strong) 88%, var(--surface-stage) 12%);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
+  padding: clamp(22px, 2vw, 34px);
+  border-radius: 42px;
+  border: 1px solid color-mix(in srgb, var(--accent-action) 18%, var(--border-base) 82%);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 34%),
+    color-mix(in srgb, var(--surface-shell-strong) 86%, var(--surface-stage) 14%);
+  box-shadow:
+    var(--shadow-stage),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
+  backdrop-filter: blur(30px) saturate(124%);
+  -webkit-backdrop-filter: blur(30px) saturate(124%);
 }
 
 .content-area::before,
@@ -30,19 +35,21 @@
 }
 
 .content-area::before {
-  inset: -24% auto auto -8%;
-  width: 48%;
-  height: 52%;
-  background: var(--accent-action-subtle);
-  opacity: 0.85;
+  inset: -20% auto auto -10%;
+  width: 54%;
+  height: 54%;
+  background:
+    radial-gradient(circle at center, color-mix(in srgb, var(--accent-action) 24%, transparent), transparent 68%);
+  opacity: 0.8;
 }
 
 .content-area::after {
-  inset: auto -10% -24% auto;
-  width: 44%;
-  height: 48%;
-  background: var(--accent-live-subtle);
-  opacity: 0.7;
+  inset: auto -12% -28% auto;
+  width: 48%;
+  height: 54%;
+  background:
+    radial-gradient(circle at center, color-mix(in srgb, var(--accent-live) 18%, transparent), transparent 70%);
+  opacity: 0.72;
 }
 
 .content-area > * {

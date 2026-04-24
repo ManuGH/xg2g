@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientRequestError } from '../services/clientWrapper';
@@ -8,7 +9,6 @@ import { ROUTE_MAP, UNLOCK_ROUTE } from '../routes';
 
 const mockUseAppContext = vi.fn();
 const mockUseBootstrapConfig = vi.fn();
-const mockLocationReload = vi.fn();
 
 
 vi.mock('../context/AppContext', () => ({
@@ -22,27 +22,31 @@ vi.mock('../hooks/useServerQueries', () => ({
   },
 }));
 
-vi.mock('../lib/browserNavigation', () => ({
-  reloadWindowLocation: (token?: string) => mockLocationReload(token),
-}));
-
 function renderGate(initialEntries: string[] = [ROUTE_MAP.epg]) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <Routes>
-        <Route element={<BootstrapGate />}>
-          <Route path={ROUTE_MAP.epg} element={<div>EPG view</div>} />
-          <Route path={`${ROUTE_MAP.settings}/*`} element={<div>Settings view</div>} />
-          <Route path={UNLOCK_ROUTE} element={<div>Unlock view</div>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={initialEntries}>
+        <Routes>
+          <Route element={<BootstrapGate />}>
+            <Route path={ROUTE_MAP.epg} element={<div>EPG view</div>} />
+            <Route path={`${ROUTE_MAP.settings}/*`} element={<div>Settings view</div>} />
+            <Route path={UNLOCK_ROUTE} element={<div>Unlock view</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
 describe('BootstrapGate', () => {
   beforeEach(() => {
-    mockLocationReload.mockReset();
     mockUseAppContext.mockReturnValue({
       auth: { token: 'stored-token', hasServerSession: false, isAuthenticated: true, isReady: true },
       setToken: vi.fn(),
@@ -117,11 +121,10 @@ describe('BootstrapGate', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
 
-    expect(setToken).not.toHaveBeenCalled();
-    expect(mockLocationReload).toHaveBeenCalledWith('new-token');
+    expect(setToken).toHaveBeenCalledWith('new-token');
   });
 
-  it('reloads after re-authenticating from a stale bootstrap 401 state', async () => {
+  it('retries bootstrap in-place after re-authenticating from a stale bootstrap 401 state', async () => {
     const setPlayingChannel = vi.fn();
     const unauthorized = new ClientRequestError({
       status: 401,
@@ -143,29 +146,17 @@ describe('BootstrapGate', () => {
       refetch: vi.fn(),
     }));
 
-    const view = renderGate();
+    renderGate();
 
     await waitFor(() => {
       expect(setToken).toHaveBeenCalledWith('');
     });
 
-    view.rerender(
-      <MemoryRouter initialEntries={[ROUTE_MAP.epg]}>
-        <Routes>
-          <Route element={<BootstrapGate />}>
-            <Route path={ROUTE_MAP.epg} element={<div>EPG view</div>} />
-            <Route path={ROUTE_MAP.settings} element={<div>Settings view</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    );
-
     fireEvent.change(screen.getByLabelText('API Token'), {
       target: { value: 'dev-token' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
-    expect(setToken).not.toHaveBeenCalledWith('dev-token');
-    expect(mockLocationReload).toHaveBeenCalledWith('dev-token');
+    expect(setToken).toHaveBeenCalledWith('dev-token');
     expect(setPlayingChannel).toHaveBeenCalledWith(null);
   });
 

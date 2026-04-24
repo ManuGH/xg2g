@@ -16,6 +16,16 @@ vi.mock('../src/client-ts', async () => {
   };
 });
 
+vi.mock('../src/context/AppContext', () => ({
+  useAppContext: () => ({
+    auth: {
+      token: 'test-token',
+      isAuthenticated: true,
+      isReady: true,
+    },
+  }),
+}));
+
 describe('Config Component Payload Hardening', () => {
   const originalFetch = global.fetch;
 

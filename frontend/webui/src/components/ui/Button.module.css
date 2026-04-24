@@ -6,7 +6,7 @@
   justify-content: center;
   gap: 10px;
   padding: 0 16px;
-  border-radius: var(--radius-md);
+  border-radius: calc(var(--radius-md) + 3px);
   border: 1px solid transparent;
   font-family: var(--font-body);
   font-size: var(--text-base);
@@ -19,7 +19,9 @@
     background var(--motion-standard) var(--ease-standard),
     color var(--motion-standard) var(--ease-standard),
     border-color var(--motion-standard) var(--ease-standard),
-    opacity var(--motion-standard) var(--ease-standard);
+    opacity var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
 }
 
 .button:focus-visible {
@@ -44,16 +46,24 @@
 }
 
 .button[data-variant="primary"] {
-  background: var(--accent-action);
-  color: var(--text-primary);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 92%, white 8%), color-mix(in srgb, var(--accent-live) 56%, var(--accent-action) 44%));
+  color: var(--bg-video);
+  border-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--accent-action) 16%, transparent);
 }
 
 .button[data-variant="primary"]:hover:not(:disabled) {
-  background: var(--accent-action-hover);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-action-hover) 94%, white 6%), color-mix(in srgb, var(--accent-live-hover) 58%, var(--accent-action-hover) 42%));
+  transform: translateY(-1px);
+  box-shadow: 0 18px 34px color-mix(in srgb, var(--accent-action) 22%, transparent);
 }
 
 .button[data-variant="secondary"] {
-  background: var(--bg-input);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
+    var(--bg-input);
   color: var(--text-primary);
   border-color: var(--border-base);
 }
@@ -75,12 +85,14 @@
 .button[data-variant="ghost"] {
   background: transparent;
   color: var(--text-primary);
-  border-color: var(--border-base);
+  border-color: color-mix(in srgb, var(--border-base) 86%, transparent);
 }
 
 .button[data-variant="ghost"]:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border-elevated);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-action-subtle) 48%, transparent), transparent 78%),
+    var(--bg-hover);
+  border-color: color-mix(in srgb, var(--accent-action) 26%, var(--border-elevated) 74%);
 }
 
 .button[data-active="true"] {
