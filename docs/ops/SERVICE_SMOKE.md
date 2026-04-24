@@ -21,6 +21,12 @@ After a real deploy, run the playback verifier as a second step:
 sudo /srv/xg2g/scripts/verify-post-deploy-playback.sh
 ```
 
+What that verifier now proves:
+- live HLS manifests are not anonymously readable
+- `POST /auth/session` mints `xg2g_session` and unlocks the same live manifest/media path
+- DVR-enabled live manifests use `EVENT` semantics instead of `VOD`
+- forced transcode still lands on the expected hardware encoder backend
+
 On NVIDIA-only hosts, you can pin the expected hardware backend explicitly:
 ```bash
 sudo XG2G_POST_DEPLOY_EXPECT_ENCODER_BACKEND=nvenc /srv/xg2g/scripts/verify-post-deploy-playback.sh

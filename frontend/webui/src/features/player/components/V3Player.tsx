@@ -448,7 +448,7 @@ function V3Player(props: V3PlayerProps) {
   const [activeHlsEngine, setActiveHlsEngine] = useState<'native' | 'hlsjs' | null>(null);
 
   // P3-4: Truth State
-  const [canSeek, setCanSeek] = useState(true);
+  const [canSeek, setCanSeek] = useState(() => !recordingId);
   const [startUnix, setStartUnix] = useState<number | null>(null);
 
   const lastDecodedRef = useRef<number>(0);
@@ -602,6 +602,7 @@ function V3Player(props: V3PlayerProps) {
     supportsNativeFullscreen,
     canEnterNativeFullscreen,
     prefersDesktopNativeFullscreen,
+    nativeFullscreenPending,
     isWebKitFullscreenActive,
     isPip,
     canTogglePiP,
@@ -1004,7 +1005,7 @@ function V3Player(props: V3PlayerProps) {
     if (mappedStatus) {
       setStatus(mappedStatus);
     }
-  }, [clearPlayerError, isNativePlaybackHost, setPlaybackMode, setPlayerError, setStatus]);
+  }, [clearPlayerError, isNativePlaybackHost, mergeSessionPlaybackTrace, setPlaybackMode, setPlayerError, setStatus]);
 
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
@@ -1025,6 +1026,7 @@ function V3Player(props: V3PlayerProps) {
     setShowResumeOverlay(false);
     setTraceId('-');
     setPlaybackMode('VOD');
+    setCanSeek(false);
 
     let abortController: AbortController | null = null;
     let requestCaps: CapabilitySnapshot | null = null;
@@ -3018,8 +3020,12 @@ function V3Player(props: V3PlayerProps) {
               <Button
                 variant="ghost"
                 size="sm"
+                active={nativeFullscreenPending}
+                aria-busy={nativeFullscreenPending}
                 onClick={() => enterNativeFullscreen()}
-                title={t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
+                title={nativeFullscreenPending
+                  ? t('player.nativeFullscreenPendingTitle', { defaultValue: 'Preparing Apple player' })
+                  : t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
               >
                 TV {t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
               </Button>

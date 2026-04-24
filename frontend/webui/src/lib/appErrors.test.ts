@@ -45,4 +45,49 @@ describe('appErrors live problem mapping', () => {
       severity: 'warning'
     }));
   });
+
+  it('maps stale live truth to a refresh message even when the problem type is generic', () => {
+    const appError = toAppError({
+      type: '/problems/live/unverified',
+      title: 'Live media truth stale',
+      detail: 'Raw backend detail should not leak into the UI',
+      status: 503,
+      requestId: 'req-live-stale',
+      code: 'UNAVAILABLE',
+      retryAfterSeconds: 5,
+      truthState: 'unverified',
+      truthReason: 'stale_scan_truth',
+      truthOrigin: 'live_unverified'
+    });
+
+    expect(appError).toEqual(expect.objectContaining({
+      title: 'Live stream is being refreshed',
+      detail: 'xg2g has older media details for this channel and is waiting for a fresh confirmation from the receiver. Try again in about 5 seconds.',
+      status: 503,
+      code: 'UNAVAILABLE',
+      requestId: 'req-live-stale',
+      retryable: true,
+      severity: 'warning'
+    }));
+  });
+
+  it('maps generic live unverified problems to stable user-facing copy', () => {
+    const appError = toAppError({
+      type: '/problems/live/unverified',
+      title: 'Live media truth unavailable',
+      status: 503,
+      requestId: 'req-live-generic',
+      code: 'UNAVAILABLE'
+    });
+
+    expect(appError).toEqual(expect.objectContaining({
+      title: 'Live stream is being verified',
+      detail: 'xg2g is waiting for verified media details for this channel. Please try again shortly.',
+      status: 503,
+      code: 'UNAVAILABLE',
+      requestId: 'req-live-generic',
+      retryable: true,
+      severity: 'warning'
+    }));
+  });
 });

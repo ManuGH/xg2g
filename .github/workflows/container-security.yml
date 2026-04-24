@@ -63,7 +63,7 @@ jobs:
           provenance: false
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: xg2g:${{ github.sha }}
           format: "sarif"
@@ -73,7 +73,7 @@ jobs:
           ignore-unfixed: false
 
       - name: Fail on critical/high vulnerabilities
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: xg2g:${{ github.sha }}
           format: "table"
@@ -107,7 +107,7 @@ jobs:
           provenance: false
 
       - name: Run Trivy config scanner
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: xg2g:${{ github.sha }}
           scan-type: "config"
@@ -135,7 +135,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # Latest stable
 
       - name: Run Trivy filesystem scanner
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           scan-type: "fs"
           scan-ref: "."
@@ -170,7 +170,7 @@ jobs:
           provenance: false
 
       - name: Generate SBOM for production image
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: xg2g:${{ github.sha }}
           format: "cyclonedx"
@@ -185,7 +185,7 @@ jobs:
           retention-days: 90
 
       - name: Scan SBOM for vulnerabilities
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           scan-type: "sbom"
           scan-ref: "sbom-production.json"

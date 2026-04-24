@@ -9,6 +9,26 @@ vi.mock("./playbackProbe", () => ({
 
 vi.mock("./playbackClientFamily", () => ({
   detectPlaybackClientFamily: vi.fn(),
+  normalizePlaybackClientFamily: (value: string | null | undefined) => {
+    switch ((value || "").trim().toLowerCase()) {
+      case "safari":
+      case "safari_native":
+        return "safari_native";
+      case "ios_safari":
+      case "ios_safari_native":
+        return "ios_safari_native";
+      case "firefox":
+      case "firefox_hlsjs":
+        return "firefox_hlsjs";
+      case "chromium":
+      case "chrome":
+      case "edge":
+      case "chromium_hlsjs":
+        return "chromium_hlsjs";
+      default:
+        return undefined;
+    }
+  },
 }));
 
 describe("gatherPlaybackCapabilities", () => {
@@ -121,5 +141,41 @@ describe("gatherPlaybackCapabilities", () => {
       }),
     );
     expect(probeRuntimePlaybackCapabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes legacy native client-family aliases from the host bridge", async () => {
+    window.Xg2gHost = {
+      getCapabilitiesJson: () =>
+        JSON.stringify({
+          platform: "android",
+          supportsNativePlayback: true,
+        }),
+      getPlaybackCapabilitiesJson: () =>
+        JSON.stringify({
+          capabilitiesVersion: 3,
+          container: ["mp4", "ts"],
+          videoCodecs: ["av1", "hevc", "h264"],
+          audioCodecs: ["aac", "ac3", "mp3"],
+          supportsHls: true,
+          supportsRange: true,
+          deviceType: "safari",
+          hlsEngines: ["native"],
+          preferredHlsEngine: "native",
+          runtimeProbeUsed: true,
+          runtimeProbeVersion: 2,
+          clientFamilyFallback: "safari",
+          allowTranscode: true,
+        }),
+    };
+
+    const capabilities = await gatherPlaybackCapabilities("live");
+
+    expect(capabilities).toEqual(
+      expect.objectContaining({
+        clientFamilyFallback: "safari_native",
+        preferredHlsEngine: "native",
+        videoCodecs: ["av1", "hevc", "h264"],
+      }),
+    );
   });
 });

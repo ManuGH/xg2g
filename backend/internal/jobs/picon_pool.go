@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,12 +28,16 @@ type PiconPoolConfig struct {
 	QueueSize     int
 	NegTTL        time.Duration
 	ClientTimeout time.Duration
+	Username      string
+	Password      string
 }
 
 // PiconPool manages concurrent picon downloads.
 type PiconPool struct {
 	upstreamBase string
 	piconDir     string
+	username     string
+	password     string
 
 	client http.Client
 
@@ -85,6 +90,8 @@ func NewPiconPoolWithContext(rootCtx context.Context, upstreamBase, piconDir str
 	return &PiconPool{
 		upstreamBase: upstreamBase,
 		piconDir:     piconDir,
+		username:     cfg.Username,
+		password:     cfg.Password,
 		client:       http.Client{Timeout: cfg.ClientTimeout},
 		jobs:         make(chan string, cfg.QueueSize),
 		workers:      cfg.Workers,
@@ -111,7 +118,13 @@ func NewPiconPoolForConfig(rootCtx context.Context, cfg config.AppConfig) (*Pico
 		return nil, fmt.Errorf("create picon cache dir: %w", err)
 	}
 
-	pool := NewPiconPoolWithContext(rootCtx, upstreamBase, piconDir, PiconPoolConfig{})
+	poolCfg := PiconPoolConfig{}
+	if shouldUseReceiverAuthForPicons(upstreamBase, cfg.Enigma2.BaseURL) {
+		poolCfg.Username = cfg.Enigma2.Username
+		poolCfg.Password = cfg.Enigma2.Password
+	}
+
+	pool := NewPiconPoolWithContext(rootCtx, upstreamBase, piconDir, poolCfg)
 	pool.Start()
 	log.Info().
 		Int("workers", pool.workers).
@@ -263,6 +276,9 @@ func (p *PiconPool) tryFetchToFile(ctx context.Context, url, localPath string) (
 	if err != nil {
 		return 0, false
 	}
+	if p.username != "" || p.password != "" {
+		req.SetBasicAuth(p.username, p.password)
+	}
 	// Use shared client
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -359,4 +375,35 @@ func writeAtomic(dest, dir string, r io.Reader) error {
 		return err
 	}
 	return nil
+}
+
+func shouldUseReceiverAuthForPicons(upstreamBase, receiverBase string) bool {
+	upstreamURL, err := url.Parse(strings.TrimSpace(upstreamBase))
+	if err != nil {
+		return false
+	}
+	receiverURL, err := url.Parse(strings.TrimSpace(receiverBase))
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(upstreamURL.Hostname(), receiverURL.Hostname()) &&
+		effectiveURLPort(upstreamURL) == effectiveURLPort(receiverURL)
+}
+
+func effectiveURLPort(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	default:
+		return ""
+	}
 }

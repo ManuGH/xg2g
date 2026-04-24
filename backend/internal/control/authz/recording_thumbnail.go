@@ -5,12 +5,4 @@
 package authz
 
 func init() {
-	operationScopes["GetRecordingThumbnail"] = []string{"v3:read"}
-	operationExposurePolicies["GetRecordingThumbnail"] = policy(
-		ExposureClassRead,
-		ExposureAuthBearerScope,
-		ExposureRateLimitGlobal,
-		ExposureBrowserTrustSameOrigin,
-		false,
-	)
 }

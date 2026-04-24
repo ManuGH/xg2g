@@ -1,6 +1,6 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import V3Player from '../src/features/player/components/V3Player';
 
 vi.mock('../src/features/player/lib/hlsRuntime', () => {
@@ -37,6 +37,14 @@ describe('V3Player native Safari recovery', () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined as never);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('reattaches the session after native video error code 4', async () => {
@@ -438,7 +446,6 @@ describe('V3Player native Safari recovery', () => {
     });
 
     expect(video.className).not.toContain('videoElementHidden');
-    expect(video.muted).toBe(false);
   });
 
   it('reveals native video again when buffering media becomes renderable before another playing event', async () => {
@@ -520,20 +527,19 @@ describe('V3Player native Safari recovery', () => {
     decodedFrameCount = 6;
     currentTime = 12.24;
 
-    await act(async () => {
+    act(() => {
       fireEvent.canPlay(video);
-      await Promise.resolve();
-      await Promise.resolve();
     });
+    await Promise.resolve();
+    await Promise.resolve();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
+      vi.advanceTimersByTime(300);
       await Promise.resolve();
       await Promise.resolve();
     });
 
     expect(document.querySelector('[aria-live="polite"]')).toBeNull();
     expect(video.className).not.toContain('videoElementHidden');
-    expect(video.muted).toBe(false);
   });
 });

@@ -17,6 +17,7 @@ type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
 type ReportErrorFn = (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
 type PreferNativeFn = (videoEl?: VideoElementRef, hlsJsSupported?: boolean) => boolean;
 type WaitForSessionReadyFn = (sessionId: string, maxAttempts?: number) => Promise<V3SessionStatusResponse>;
+type PrimePlaybackAuthFn = (playbackUrl: string, source: string) => Promise<void>;
 
 const NATIVE_STALL_RECOVERY_MS = 2500;
 const HLS_STALL_RECOVERY_MS = 2200;
@@ -45,6 +46,7 @@ interface UsePlaybackEngineProps {
   reportError: ReportErrorFn;
   waitForSessionReady: WaitForSessionReadyFn;
   shouldPreferNativeHls: PreferNativeFn;
+  primePlaybackAuth?: PrimePlaybackAuthFn;
   runtimeProbeActive?: boolean;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
@@ -94,6 +96,7 @@ export function usePlaybackEngine({
   reportError,
   waitForSessionReady,
   shouldPreferNativeHls,
+  primePlaybackAuth,
   runtimeProbeActive = false,
   setStats,
   setStatus,
@@ -140,6 +143,50 @@ export function usePlaybackEngine({
     pendingNativeAutoplayRef.current = onLoadedMetadata;
     video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
   }, [clearPendingNativeAutoplay]);
+
+  const startNativeHlsPlayback = useCallback((url: string, autoplayLabel: string) => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const trackedSessionId = sessionIdRef.current;
+    lastHlsUrlRef.current = url;
+    lastHlsEngineRef.current = 'native';
+
+    void (async () => {
+      try {
+        await primePlaybackAuth?.(url, 'usePlaybackEngine.playHls.native');
+      } catch (err) {
+        debugWarn('[V3Player] Native HLS auth priming failed', err);
+        if (
+          isTeardownRef.current ||
+          (trackedSessionId !== null && sessionIdRef.current !== trackedSessionId) ||
+          lastHlsUrlRef.current !== url ||
+          lastHlsEngineRef.current !== 'native'
+        ) {
+          return;
+        }
+
+        setStatus('error');
+        setError(err instanceof Error && err.message ? err.message : t('player.authFailed'));
+        setErrorDetails('native_hls_auth_prime_failed');
+        return;
+      }
+
+      if (
+        isTeardownRef.current ||
+        (trackedSessionId !== null && sessionIdRef.current !== trackedSessionId) ||
+        lastHlsUrlRef.current !== url ||
+        lastHlsEngineRef.current !== 'native'
+      ) {
+        return;
+      }
+
+      video.src = url;
+      scheduleNativeAutoplay(video, autoplayLabel);
+    })();
+  }, [isTeardownRef, primePlaybackAuth, scheduleNativeAutoplay, sessionIdRef, setError, setErrorDetails, setStatus, t, videoRef]);
 
   const clearNativeStallRecovery = useCallback(() => {
     if (nativeStallRecoveryTimerRef.current !== null) {
@@ -761,23 +808,17 @@ export function usePlaybackEngine({
     }
 
     if (canPlayNative && (engine === 'native' || engine === 'auto')) {
-      lastHlsUrlRef.current = url;
-      lastHlsEngineRef.current = 'native';
-      video.src = url;
-      scheduleNativeAutoplay(video, '[V3Player] Native play blocked');
+      startNativeHlsPlayback(url, '[V3Player] Native play blocked');
       return;
     }
 
     if (engine === 'auto') {
-      lastHlsUrlRef.current = url;
-      lastHlsEngineRef.current = 'native';
-      video.src = url;
-      scheduleNativeAutoplay(video, '[V3Player] Auto fallback play blocked');
+      startNativeHlsPlayback(url, '[V3Player] Auto fallback play blocked');
       return;
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, scheduleNativeAutoplay, sessionIdRef, setError, setErrorDetails, setStats, setStatus, shouldPreferNativeHls, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, sessionIdRef, setError, setErrorDetails, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -974,7 +1015,7 @@ export function usePlaybackEngine({
 
     const onError = () => {
       if (isTeardownRef.current) return;
-      if (!videoEl.currentSrc || videoEl.currentSrc === 'about:blank' || !videoEl.getAttribute('src')) return;
+      if (!videoEl.currentSrc || videoEl.currentSrc === 'about:blank') return;
 
       const err = videoEl.error;
       const diagnostics = {
@@ -1050,7 +1091,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setError, setErrorDetails, setShowErrorDetails, setStatus, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setError, setErrorDetails, setShowErrorDetails, setStatus, t, videoRef]);
 
   return {
     resetPlaybackEngine,

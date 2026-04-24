@@ -358,7 +358,7 @@ func TestHandleReady(t *testing.T) {
 	// for the cache to expire before the checkers will re-run and see the new state
 	time.Sleep(1100 * time.Millisecond)
 
-	// Now readiness should pass (all checkers will re-run and see healthy state)
+	// Now readiness should pass (all checkers will re-run and see healthy state).
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)

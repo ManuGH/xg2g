@@ -118,9 +118,6 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 	if serviceRef == "" {
 		return Capability{}, false, fmt.Errorf("scan: service ref required")
 	}
-	if err := m.waitForPlaybackIdle(ctx); err != nil {
-		return Capability{}, false, err
-	}
 
 	channel, found, err := m.lookupChannel(serviceRef)
 	if err != nil {

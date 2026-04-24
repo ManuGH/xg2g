@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../context/HouseholdProfilesContext';
 import { PendingChangesProvider, usePendingChanges } from '../context/PendingChangesContext';
+import { UiScaleProvider } from '../context/UiScaleContext';
 import { setClientAuthToken } from '../services/clientWrapper';
 import Navigation from './Navigation';
 import { ROUTE_MAP } from '../routes';
@@ -45,13 +46,15 @@ function DirtyGuardProbe({ allowNavigation }: { allowNavigation: boolean }) {
 
 function renderWithProviders(children: ReactNode, initialEntries: string[] = [ROUTE_MAP.dashboard]) {
   return render(
-    <PendingChangesProvider>
-      <HouseholdProfilesProvider>
-        <MemoryRouter initialEntries={initialEntries}>
-          {children}
-        </MemoryRouter>
-      </HouseholdProfilesProvider>
-    </PendingChangesProvider>
+    <UiScaleProvider>
+      <PendingChangesProvider>
+        <HouseholdProfilesProvider>
+          <MemoryRouter initialEntries={initialEntries}>
+            {children}
+          </MemoryRouter>
+        </HouseholdProfilesProvider>
+      </PendingChangesProvider>
+    </UiScaleProvider>
   );
 }
 
@@ -172,6 +175,22 @@ describe('Navigation', () => {
     expect(dialog).toBeInTheDocument();
     await waitFor(() => {
       expect(within(dialog as HTMLElement).getByRole('button', { name: 'Close', hidden: true })).toHaveFocus();
+    });
+  });
+
+  it('persists display size changes from the more sheet', async () => {
+    renderWithProviders(
+      <>
+        <Navigation />
+      </>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Display size: Large' }));
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.uiScale).toBe('large');
+      expect(window.localStorage.getItem('xg2g-ui-scale')).toBe('large');
     });
   });
 

@@ -202,7 +202,7 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 						Str("requested_codec", resolvedCodec).
 						Str("override_env", experimentalInterlacedVAAPICodecsEnv).
 						Msg("allowing unverified interlaced vaapi codec via experimental override")
-				} else if !a.anyVerifiedVAAPIInterlacedPathForCodec(resolvedCodec) {
+				} else if !a.anyVerifiedVAAPIInterlacedPathForCodec(resolvedCodec, profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)) {
 					a.Logger.Warn().
 						Str("requested_codec", resolvedCodec).
 						Str("fallback_codec", "h264").
@@ -303,8 +303,19 @@ func vaapiInterlacedCodecIsSafe(codec string) bool {
 	}
 }
 
-func (a *LocalAdapter) anyVerifiedVAAPIInterlacedPathForCodec(codec string) bool {
-	for _, full := range []bool{true, false} {
+func (a *LocalAdapter) anyVerifiedVAAPIInterlacedPathForCodec(codec string, fullRequested bool) bool {
+	codec = normalizeRequestedCodec(codec)
+	if codec == "av1" {
+		// AV1 VAAPI is intentionally forced through encode-only later in the
+		// planner, so a verified full path alone must not unlock it.
+		fullRequested = false
+	}
+
+	candidates := []bool{false}
+	if fullRequested {
+		candidates = []bool{true, false}
+	}
+	for _, full := range candidates {
 		pathID := vaapiPathCorrectnessIDFor(codec, full)
 		if pathID == "" {
 			continue
@@ -486,7 +497,7 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		segmentDurationSec: a.SegmentSeconds,
 		listSize:           10,
 	}
-	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && layout.segmentDurationSec > safariDirtyHLSTimeSec {
+	if shouldUseShortFMP4StartupSegments(spec) && layout.segmentDurationSec > safariDirtyHLSTimeSec {
 		layout.segmentDurationSec = safariDirtyHLSTimeSec
 		layout.initSegmentDurationSec = safariDirtyHLSInitTimeSec
 		if layout.initSegmentDurationSec > layout.segmentDurationSec {
@@ -503,6 +514,27 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		}
 	}
 	return layout, nil
+}
+
+func shouldUseShortFMP4StartupSegments(spec ports.StreamSpec) bool {
+	if spec.Mode != ports.ModeLive || !spec.Profile.TranscodeVideo {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+		return false
+	}
+
+	switch profiles.NormalizeRequestedProfileID(spec.Profile.Name) {
+	case profiles.ProfileSafariDirty,
+		profiles.ProfileSafariHEVCHW,
+		profiles.ProfileSafariHEVCHWLL,
+		profiles.ProfileAV1HW:
+		// Native iOS fMP4 transcodes benefit from a denser startup GOP cadence.
+		// The default 6-second layout makes first attach visibly sluggish.
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *LocalAdapter) defaultLiveFPS(spec ports.StreamSpec, inputURL string) int {

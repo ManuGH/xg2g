@@ -33,7 +33,12 @@ type GuidedCard = {
 export default function Dashboard() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { canAccessDvrPlayback, canManageDvr, canAccessSettings } = useHouseholdProfiles();
+  const {
+    selectedProfile,
+    canAccessDvrPlayback,
+    canManageDvr,
+    canAccessSettings,
+  } = useHouseholdProfiles();
   const { data: health, error, isLoading, refetch } = useSystemHealth();
   const { data: receiver } = useReceiverCurrent();
   const { data: streams = [] } = useStreams();
@@ -72,6 +77,7 @@ export default function Dashboard() {
   const progressPercent = hasProgramProgress && now?.beginTimestamp && now?.durationSec
     ? Math.min(100, Math.max(0, (((Date.now() / 1000) - now.beginTimestamp) / now.durationSec) * 100))
     : 0;
+  const activeProfileName = selectedProfile?.name || t('dashboard.profileFallback', { defaultValue: 'Current profile' });
 
   const summaryTitle = currentChannel;
 
@@ -109,6 +115,83 @@ export default function Dashboard() {
       value: recorderLabel,
       detail: recording?.isRecording ? t('dashboard.recordingActive') : t('dashboard.noActiveRecordingTask')
     }
+  ];
+  const liveAction = {
+    label: t('dashboard.start.live.action', { defaultValue: 'Open Live TV' }),
+    onAction: () => navigate(ROUTE_MAP.epg),
+  };
+  const recordingsAction = canAccessDvrPlayback
+    ? {
+      label: t('dashboard.start.recordings.action', { defaultValue: 'Open Recordings' }),
+      onAction: () => navigate(buildRecordingsRoute()),
+    }
+    : null;
+  const settingsAction = canAccessSettings
+    ? {
+      label: t('dashboard.start.settings.action', { defaultValue: 'Open Setup' }),
+      onAction: () => navigate(buildSettingsRoute({ section: 'setup' })),
+    }
+    : null;
+  const summarySpotlight = receiverUnavailable
+    ? {
+      eyebrow: t('dashboard.heroAside.eyebrow', { defaultValue: 'Next best move' }),
+      title: t('dashboard.heroAside.standbyTitle', {
+        defaultValue: 'Start from live TV once the receiver wakes',
+      }),
+      detail: t('dashboard.heroAside.standbyDetail', {
+        defaultValue: 'The box is sleeping right now. Use the live TV path first so guide and channel state can rebuild cleanly.',
+      }),
+      chip: {
+        state: 'warning' as const,
+        label: t('dashboard.start.status.standby', { defaultValue: 'Receiver in standby' }),
+      },
+      primaryAction: liveAction,
+      secondaryAction: settingsAction,
+    }
+    : streamCount > 0
+      ? {
+        eyebrow: t('dashboard.heroAside.eyebrow', { defaultValue: 'Next best move' }),
+        title: t('dashboard.heroAside.streamingTitle', {
+          defaultValue: 'Playback is already live on the bridge',
+        }),
+        detail: t('dashboard.heroAside.streamingDetail', {
+          defaultValue: 'Use recordings for the next task or jump back into live TV without losing the current operator overview.',
+        }),
+        chip: {
+          state: 'live' as const,
+          label: t('dashboard.sessions', { count: streamCount }),
+        },
+        primaryAction: recordingsAction ?? liveAction,
+        secondaryAction: recordingsAction ? liveAction : settingsAction,
+      }
+      : {
+        eyebrow: t('dashboard.heroAside.eyebrow', { defaultValue: 'Next best move' }),
+        title: t('dashboard.heroAside.readyTitle', {
+          defaultValue: 'Everything is ready for the normal household path',
+        }),
+        detail: t('dashboard.heroAside.readyDetail', {
+          defaultValue: 'Live TV is the fastest entry. Recordings and setup stay one click away if the current profile allows them.',
+        }),
+        chip: {
+          state: 'success' as const,
+          label: t('dashboard.start.status.ready', { defaultValue: 'Ready now' }),
+        },
+        primaryAction: liveAction,
+        secondaryAction: recordingsAction ?? settingsAction,
+      };
+  const summarySpotlightFacts = [
+    {
+      label: t('dashboard.heroAside.profileLabel', { defaultValue: 'Active profile' }),
+      value: activeProfileName,
+    },
+    {
+      label: t('dashboard.guideHealth'),
+      value: guideHealthLabel,
+    },
+    {
+      label: t('dashboard.recorder'),
+      value: recorderLabel,
+    },
   ];
   const systemFacts = [
     {
@@ -242,60 +325,108 @@ export default function Dashboard() {
       }
       : null,
   ].filter((action): action is { id: string; label: string; onAction: () => void } => action !== null);
+  const spotlightPrimaryLabel = t('dashboard.heroAside.primaryActionLabel', {
+    action: summarySpotlight.primaryAction.label,
+    defaultValue: `Recommended: ${summarySpotlight.primaryAction.label}`,
+  });
+  const spotlightSecondaryLabel = summarySpotlight.secondaryAction
+    ? t('dashboard.heroAside.secondaryActionLabel', {
+      action: summarySpotlight.secondaryAction.label,
+      defaultValue: `Also: ${summarySpotlight.secondaryAction.label}`,
+    })
+    : null;
 
   return (
     <div className={`${styles.page} animate-enter`.trim()} data-testid="dashboard-view">
       <Card variant="action" className={[styles.summaryCard, styles[`summary${capitalize(summaryTone)}`]].join(' ')}>
-        <div className={styles.summaryHeader}>
-          <div className={styles.summaryIdentity}>
-            <p className={styles.summaryEyebrow}>{t('dashboard.controlSummary')}</p>
-            <h2 className={styles.summaryTitle}>{summaryTitle}</h2>
-            <p className={styles.summaryDescription}>{summaryDescription}</p>
+        <div className={styles.summaryHeroGrid}>
+          <div className={styles.summaryHeroMain}>
+            <div className={styles.summaryHeader}>
+              <div className={styles.summaryIdentity}>
+                <p className={styles.summaryEyebrow}>{t('dashboard.controlSummary')}</p>
+                <h2 className={styles.summaryTitle}>{summaryTitle}</h2>
+                <p className={styles.summaryDescription}>{summaryDescription}</p>
+              </div>
+              <div className={styles.summaryChips}>
+                <StatusChip state={healthChip.state} label={healthChip.label} />
+                <StatusChip
+                  state={streamCount > 0 ? 'live' : 'idle'}
+                  label={streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.noSessions')}
+                />
+              </div>
+            </div>
+
+            <div className={styles.summaryMetrics}>
+              {summaryItems.map((item) => (
+                <div key={item.label} className={styles.metricCard}>
+                  <span className={styles.metricLabel}>{item.label}</span>
+                  <span className={styles.metricValue}>{item.value}</span>
+                  <span className={styles.metricDetail}>{item.detail}</span>
+                </div>
+              ))}
+            </div>
+
+            {hasProgramProgress && now?.beginTimestamp && now?.durationSec ? (
+              <div className={styles.contextCard}>
+                <div className={styles.timelineHeader}>
+                  <span className={styles.timelineLabel}>{t('dashboard.onReceiverNow')}</span>
+                  <span className={styles.timelineMeta}>
+                    {new Date(now.beginTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {' \u2192 '}
+                    {new Date((now.beginTimestamp + now.durationSec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className={styles.timelineTrack}>
+                  <div
+                    className={styles.timelineFill}
+                    style={{ '--xg2g-progress': `${progressPercent}%` } as CSSProperties & { [key: string]: string }}
+                  />
+                </div>
+                {next?.title && <p className={styles.timelineNext}>{t('dashboard.upNext', { title: next.title })}</p>}
+              </div>
+            ) : showReceiverContext ? (
+              <div className={styles.contextCard}>
+                <span className={styles.contextLabel}>{t('dashboard.receiverContext')}</span>
+                <span className={styles.contextValue}>{currentChannel}</span>
+                <span className={styles.contextDetail}>{t('dashboard.readyForPlayback')}</span>
+              </div>
+            ) : null}
           </div>
-          <div className={styles.summaryChips}>
-            <StatusChip state={healthChip.state} label={healthChip.label} />
-            <StatusChip
-              state={streamCount > 0 ? 'live' : 'idle'}
-              label={streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.noSessions')}
-            />
+
+          <div className={styles.summarySpotlight}>
+            <div className={styles.summarySpotlightHeader}>
+              <p className={styles.summarySpotlightEyebrow}>{summarySpotlight.eyebrow}</p>
+              <StatusChip state={summarySpotlight.chip.state} label={summarySpotlight.chip.label} />
+            </div>
+            <div className={styles.signalDial} aria-hidden="true">
+              <span className={styles.signalDialCore} />
+              <span className={styles.signalDialRing} />
+              <span className={styles.signalDialSweep} />
+            </div>
+            <h3 className={styles.summarySpotlightTitle}>{summarySpotlight.title}</h3>
+            <p className={styles.summarySpotlightCopy}>{summarySpotlight.detail}</p>
+
+            <div className={styles.summarySpotlightMeta}>
+              {summarySpotlightFacts.map((item) => (
+                <div key={item.label} className={styles.summarySpotlightFact}>
+                  <span className={styles.summarySpotlightFactLabel}>{item.label}</span>
+                  <span className={styles.summarySpotlightFactValue}>{item.value}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className={styles.summarySpotlightActions}>
+              <Button variant="primary" onClick={summarySpotlight.primaryAction.onAction}>
+                {spotlightPrimaryLabel}
+              </Button>
+              {summarySpotlight.secondaryAction ? (
+                <Button variant="secondary" onClick={summarySpotlight.secondaryAction.onAction}>
+                  {spotlightSecondaryLabel}
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
-
-        <div className={styles.summaryMetrics}>
-          {summaryItems.map((item) => (
-            <div key={item.label} className={styles.metricCard}>
-              <span className={styles.metricLabel}>{item.label}</span>
-              <span className={styles.metricValue}>{item.value}</span>
-              <span className={styles.metricDetail}>{item.detail}</span>
-            </div>
-          ))}
-        </div>
-
-        {hasProgramProgress && now?.beginTimestamp && now?.durationSec ? (
-          <div className={styles.contextCard}>
-            <div className={styles.timelineHeader}>
-              <span className={styles.timelineLabel}>{t('dashboard.onReceiverNow')}</span>
-              <span className={styles.timelineMeta}>
-                {new Date(now.beginTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                {' \u2192 '}
-                {new Date((now.beginTimestamp + now.durationSec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-            <div className={styles.timelineTrack}>
-              <div
-                className={styles.timelineFill}
-                style={{ '--xg2g-progress': `${progressPercent}%` } as CSSProperties & { [key: string]: string }}
-              />
-            </div>
-            {next?.title && <p className={styles.timelineNext}>{t('dashboard.upNext', { title: next.title })}</p>}
-          </div>
-        ) : showReceiverContext ? (
-          <div className={styles.contextCard}>
-            <span className={styles.contextLabel}>{t('dashboard.receiverContext')}</span>
-            <span className={styles.contextValue}>{currentChannel}</span>
-            <span className={styles.contextDetail}>{t('dashboard.readyForPlayback')}</span>
-          </div>
-        ) : null}
       </Card>
 
       <Card className={styles.startSurface}>
@@ -313,7 +444,7 @@ export default function Dashboard() {
 
         <div className={styles.startGrid}>
           {guidedCards.map((card) => (
-            <div key={card.id} className={styles.startCard}>
+            <div key={card.id} className={styles.startCard} data-card={card.id}>
               <div className={styles.startCardHeader}>
                 <div>
                   <p className={styles.startStep}>{card.stepLabel}</p>

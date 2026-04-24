@@ -130,6 +130,15 @@ if [[ -f "${ENV_FILE}" ]]; then
   if listen_from_file="$(read_env_value "${ENV_FILE}" XG2G_LISTEN 2>/dev/null)"; then
     XG2G_LISTEN="${listen_from_file}"
   fi
+  if hls_dvr_window_from_file="$(read_env_value "${ENV_FILE}" XG2G_HLS_DVR_WINDOW 2>/dev/null)"; then
+    XG2G_HLS_DVR_WINDOW="${hls_dvr_window_from_file}"
+  fi
+  if public_url_from_file="$(read_env_value "${ENV_FILE}" XG2G_PUBLIC_URL 2>/dev/null)"; then
+    XG2G_PUBLIC_URL="${public_url_from_file}"
+  fi
+  if allowed_origins_from_file="$(read_env_value "${ENV_FILE}" XG2G_ALLOWED_ORIGINS 2>/dev/null)"; then
+    XG2G_ALLOWED_ORIGINS="${allowed_origins_from_file}"
+  fi
 fi
 
 API_TOKEN="${XG2G_API_TOKEN:-}"
@@ -184,6 +193,47 @@ resolve_api_origin() {
 API_ORIGIN="$(resolve_api_origin "${XG2G_LISTEN:-127.0.0.1:8088}")"
 API_BASE="${API_ORIGIN}/api/v3"
 REFERER="${API_ORIGIN}/"
+
+first_csv_entry() {
+  local raw="${1:-}"
+  local first="${raw%%,*}"
+  trim_ascii_whitespace "${first}"
+}
+
+resolve_media_origin() {
+  local explicit="${XG2G_POST_DEPLOY_MEDIA_ORIGIN:-}"
+  local api_origin="$1"
+  local public_url="${XG2G_PUBLIC_URL:-}"
+  local allowed_origin=""
+
+  if [[ -n "${explicit}" ]]; then
+    printf '%s' "${explicit%/}"
+    return 0
+  fi
+
+  if [[ "${api_origin}" == https://* ]]; then
+    printf '%s' "${api_origin%/}"
+    return 0
+  fi
+
+  if [[ -n "${public_url}" ]]; then
+    printf '%s' "${public_url%/}"
+    return 0
+  fi
+
+  allowed_origin="$(first_csv_entry "${XG2G_ALLOWED_ORIGINS:-}")"
+  if [[ "${allowed_origin}" == https://* || "${allowed_origin}" == http://* ]]; then
+    printf '%s' "${allowed_origin%/}"
+    return 0
+  fi
+
+  printf '%s' "${api_origin%/}"
+}
+
+MEDIA_ORIGIN="$(resolve_media_origin "${API_ORIGIN}")"
+MEDIA_API_BASE="${MEDIA_ORIGIN}/api/v3"
+MEDIA_REFERER="${MEDIA_ORIGIN}/"
+HLS_DVR_WINDOW="${XG2G_HLS_DVR_WINDOW:-}"
 
 join_url() {
   local base="$1"
@@ -310,18 +360,48 @@ wait_for_session_ready() {
   fail "session ${sid} did not become READY within ${READY_TIMEOUT_SEC}s"
 }
 
-fetch_manifest_without_auth() {
+create_session_cookie_jar() {
+  local cookie_jar="${TMPDIR_ROOT}/cookies.$RANDOM.jar"
+  local header_file="${TMPDIR_ROOT}/auth-session.$RANDOM.headers"
+  local body_file="${TMPDIR_ROOT}/auth-session.$RANDOM.body"
+  local status
+
+  curl -sS -D "${header_file}" -o "${body_file}" \
+    -X POST \
+    -H "Authorization: Bearer ${API_TOKEN}" \
+    -H "Origin: ${MEDIA_ORIGIN}" \
+    -H "Referer: ${MEDIA_REFERER}" \
+    -c "${cookie_jar}" \
+    -b "${cookie_jar}" \
+    "${MEDIA_API_BASE}/auth/session"
+
+  status="$(awk '/^HTTP/{code=$2} END{print code}' "${header_file}")"
+  [[ "${status}" == "200" ]] || fail "auth/session failed via ${MEDIA_API_BASE}: HTTP ${status}: $(cat "${body_file}")"
+  grep -q $'\txg2g_session\t' "${cookie_jar}" || fail "auth/session did not mint xg2g_session cookie"
+  printf '%s' "${cookie_jar}"
+}
+
+fetch_manifest() {
   local manifest_url="$1"
+  local cookie_jar="${2:-}"
   local body_file="${TMPDIR_ROOT}/manifest.$RANDOM.m3u8"
   local header_file="${TMPDIR_ROOT}/manifest.$RANDOM.headers"
 
-  curl -sS -D "${header_file}" -o "${body_file}" "${manifest_url}"
+  if [[ -n "${cookie_jar}" ]]; then
+    curl -sS -D "${header_file}" -o "${body_file}" \
+      -b "${cookie_jar}" \
+      -c "${cookie_jar}" \
+      "${manifest_url}"
+  else
+    curl -sS -D "${header_file}" -o "${body_file}" "${manifest_url}"
+  fi
+
   MANIFEST_STATUS="$(awk '/^HTTP/{code=$2} END{print code}' "${header_file}")"
   MANIFEST_BODY="$(cat "${body_file}")"
 }
 
 verify_direct_live_hls() {
-  local caps info_body token mode cap_hash playback_mode start_body sid session_json playback_url manifest_url
+  local caps info_body token mode cap_hash playback_mode start_body sid session_json playback_url manifest_url cookie_jar first_media_uri media_url media_header_file media_body_file media_status
 
   caps="$(jq -nc '{
     capabilitiesVersion: 2,
@@ -376,20 +456,52 @@ verify_direct_live_hls() {
 
   session_json="$(wait_for_session_ready "${sid}")"
   playback_url="$(printf '%s' "${session_json}" | jq -r '.playbackUrl // empty')"
-  [[ "${playback_url}" == *"token="* ]] || fail "playbackUrl missing token query parameter: ${playback_url}"
+  [[ "${playback_url}" == /api/v3/* ]] || fail "unexpected playbackUrl outside API base: ${playback_url}"
+  [[ "${playback_url}" != *"token="* ]] || fail "playbackUrl still exposes token query parameter: ${playback_url}"
 
-  manifest_url="$(join_url "${API_ORIGIN}" "${playback_url}")"
-  fetch_manifest_without_auth "${manifest_url}"
-  [[ "${MANIFEST_STATUS}" == "200" ]] || fail "manifest fetch without auth failed: HTTP ${MANIFEST_STATUS}"
+  manifest_url="$(join_url "${MEDIA_ORIGIN}" "${playback_url}")"
 
-  if printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PLAYLIST-TYPE:'; then
-    fail "live manifest still emits EXT-X-PLAYLIST-TYPE"
+  fetch_manifest "${manifest_url}"
+  [[ "${MANIFEST_STATUS}" == "401" ]] || fail "manifest fetch without session cookie should be 401, got HTTP ${MANIFEST_STATUS}"
+
+  cookie_jar="$(create_session_cookie_jar)"
+  fetch_manifest "${manifest_url}" "${cookie_jar}"
+  [[ "${MANIFEST_STATUS}" == "200" ]] || fail "manifest fetch with session cookie failed: HTTP ${MANIFEST_STATUS}"
+
+  if [[ -n "${HLS_DVR_WINDOW}" ]]; then
+    printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PLAYLIST-TYPE:EVENT$' || fail "live DVR manifest missing EXT-X-PLAYLIST-TYPE:EVENT"
+    printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-START:' || fail "live DVR manifest missing EXT-X-START"
+  else
+    if printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PLAYLIST-TYPE:'; then
+      fail "live manifest without DVR should not emit EXT-X-PLAYLIST-TYPE"
+    fi
+    if printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-START:'; then
+      fail "live manifest without DVR should not emit EXT-X-START"
+    fi
   fi
-  printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-START:' || fail "live manifest missing EXT-X-START"
+  if printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PLAYLIST-TYPE:VOD$'; then
+    fail "live manifest must not emit EXT-X-PLAYLIST-TYPE:VOD"
+  fi
   printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PROGRAM-DATE-TIME:' || fail "live manifest missing EXT-X-PROGRAM-DATE-TIME"
-  printf '%s\n' "${MANIFEST_BODY}" | grep -Eq '(init\.mp4|seg_[0-9]+).*(\?|&)token=' || fail "manifest entries missing propagated media token"
+  if printf '%s\n' "${MANIFEST_BODY}" | grep -Eq '(init\.mp4|seg_[0-9]+).*(\?|&)token='; then
+    fail "manifest still propagates media token query parameters"
+  fi
 
-  echo "✅ Live HLS tokenized manifest OK (${sid}, ${SERVICE_NAME})"
+  first_media_uri="$(printf '%s\n' "${MANIFEST_BODY}" | grep -E '^(init\.mp4|seg_[0-9]+(\.m4s|\.ts))([?].*)?$' | head -n1)"
+  [[ -n "${first_media_uri}" ]] || fail "manifest did not contain an init or segment URI"
+
+  media_url="$(join_url "${MEDIA_ORIGIN}" "$(dirname "${playback_url}")/${first_media_uri}")"
+  media_header_file="${TMPDIR_ROOT}/media.$RANDOM.headers"
+  media_body_file="${TMPDIR_ROOT}/media.$RANDOM.body"
+  curl -sS -D "${media_header_file}" -o "${media_body_file}" \
+    -b "${cookie_jar}" \
+    -c "${cookie_jar}" \
+    "${media_url}"
+  media_status="$(awk '/^HTTP/{code=$2} END{print code}' "${media_header_file}")"
+  [[ "${media_status}" == "200" ]] || fail "media fetch with session cookie failed: HTTP ${media_status}"
+  [[ -s "${media_body_file}" ]] || fail "media fetch returned empty body"
+
+  echo "✅ Live HLS session-cookie manifest OK (${sid}, ${SERVICE_NAME})"
 }
 
 verify_hw_transcode_gpu() {
@@ -490,6 +602,7 @@ verify_hw_transcode_gpu() {
 
 echo "== Post-deploy playback verifier =="
 echo "API base: ${API_BASE}"
+echo "Media origin: ${MEDIA_ORIGIN}"
 echo "Service: ${SERVICE_NAME} (${SERVICE_REF})"
 
 docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}' "${CONTAINER_NAME}" \

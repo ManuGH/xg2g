@@ -222,6 +222,12 @@ func TestRefresh_WithRuntimePoolPrewarmsPiconsWithoutExplicitPiconBase(t *testin
 		if !strings.HasSuffix(r.URL.Path, ".png") {
 			t.Fatalf("unexpected picon path %q", r.URL.Path)
 		}
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "root" || pass != "secret" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="OpenWebif"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		// Simulate the real-world receiver behavior: HD refs 404, normalized SD-style refs exist.
 		if strings.Contains(r.URL.Path, "1_0_19_") {
 			http.NotFound(w, r)
@@ -241,6 +247,8 @@ func TestRefresh_WithRuntimePoolPrewarmsPiconsWithoutExplicitPiconBase(t *testin
 	cfg := config.AppConfig{
 		DataDir: tmp,
 		Enigma2: config.Enigma2Settings{
+			Username:   "root",
+			Password:   "secret",
 			BaseURL:    srv.URL,
 			StreamPort: 8001,
 		},

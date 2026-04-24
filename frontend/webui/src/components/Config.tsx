@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemConfig, putSystemConfig, type AppConfig, type ConfigUpdate } from '../client-ts';
+import { useAppContext } from '../context/AppContext';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../lib/httpProblem';
 import { isUnauthorizedError } from '../features/player/sessionEvents';
 import { unwrapClientResultOrThrow } from '../services/clientWrapper';
@@ -45,6 +46,7 @@ interface ConfigProps {
 function Config(props: ConfigProps = { showTitle: true }) {
   const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
   const { t } = useTranslation();
+  const { auth } = useAppContext();
   // ... (rest of component remains same until return)
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -87,8 +89,11 @@ function Config(props: ConfigProps = { showTitle: true }) {
   }, [t]);
 
   useEffect(() => {
+    if (!auth.isReady || !auth.isAuthenticated) {
+      return;
+    }
     void loadConfig();
-  }, [loadConfig]);
+  }, [auth.isAuthenticated, auth.isReady, loadConfig]);
 
   const checkHealthAndReload = async () => {
     const pollInterval = setInterval(async () => {

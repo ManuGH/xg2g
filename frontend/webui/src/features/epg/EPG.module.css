@@ -843,89 +843,201 @@
   color: var(--text-primary);
 }
 
-@media (max-width: 1100px) {
-  .controls {
-    grid-template-columns: 1fr;
-  }
-
-  .toolbarHero {
-    flex-direction: column;
-  }
-
-  .toolbarRight {
-    width: 100%;
-  }
-
-  .toolbarRight button {
-    width: 100%;
-    justify-content: center;
-  }
+.page.surfaceStacked .controls {
+  grid-template-columns: 1fr;
 }
 
-@media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
-  .page {
-    gap: 14px;
-  }
+.page.surfaceStacked .toolbarHero {
+  flex-direction: column;
+}
 
-  .toolbar,
-  .card {
-    border-radius: 24px;
-    padding: 18px;
-  }
+.page.surfaceStacked .toolbarRight {
+  width: 100%;
+}
 
-  .toolbarTitle,
-  .toolbarLeft h3 {
-    font-size: clamp(1.6rem, 5vw, 2.3rem);
-  }
+.page.surfaceStacked .toolbarRight button {
+  width: 100%;
+  justify-content: center;
+}
 
-  .toolbarSummary,
-  .toolbarLeft p {
-    font-size: 0.92rem;
-  }
+.page.surfaceCompact {
+  gap: 14px;
+}
 
-  .toolbarMeta {
-    gap: 10px;
-  }
+.page.surfaceCompact .toolbar,
+.page.surfaceCompact .card {
+  border-radius: 24px;
+  padding: 18px;
+}
 
-  .metaPill {
-    min-width: calc(50% - 5px);
-    flex: 1 1 160px;
-  }
+.page.surfaceCompact .toolbarTitle,
+.page.surfaceCompact .toolbarLeft h3 {
+  font-size: clamp(1.6rem, 5vw, 2.3rem);
+}
 
-  .search {
-    flex-direction: column;
-  }
+.page.surfaceCompact .toolbarSummary,
+.page.surfaceCompact .toolbarLeft p {
+  font-size: 0.92rem;
+}
 
-  .searchRight button {
-    width: 100%;
-    justify-content: center;
-  }
+.page.surfaceCompact .toolbarMeta {
+  gap: 10px;
+}
 
-  .channel {
-    gap: 14px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
+.page.surfaceCompact .metaPill {
+  min-width: calc(50% - 5px);
+  flex: 1 1 160px;
+}
 
-  .play {
-    margin-left: 0;
-  }
+.page.surfaceCompact .search {
+  flex-direction: column;
+}
 
-  .logo {
-    width: 58px;
-    height: 58px;
-    border-radius: 18px;
-  }
+.page.surfaceCompact .searchRight button {
+  width: 100%;
+  justify-content: center;
+}
 
-  .programme {
-    flex-direction: column;
-    gap: 14px;
-  }
+.page.surfaceCompact .channel {
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
 
-  .programmeTime {
-    min-width: 0;
-    width: 100%;
-  }
+.page.surfaceCompact .play {
+  margin-left: 0;
+}
+
+.page.surfaceCompact .logo {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+}
+
+.page.surfaceCompact .programme {
+  flex-direction: column;
+  gap: 14px;
+}
+
+.page.surfaceCompact .programmeTime {
+  min-width: 0;
+  width: 100%;
+}
+
+.page.surfaceCompactLandscape {
+  gap: 12px;
+}
+
+.page.surfaceCompactLandscape .surfaceTabs {
+  gap: 8px;
+}
+
+.page.surfaceCompactLandscape .surfaceTab {
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.page.surfaceCompactLandscape .toolbar,
+.page.surfaceCompactLandscape .card {
+  padding: 14px 16px;
+  border-radius: 20px;
+}
+
+.page.surfaceCompactLandscape .toolbar {
+  gap: 14px;
+}
+
+.page.surfaceCompactLandscape .toolbarHero {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.page.surfaceCompactLandscape .toolbarLeft {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.page.surfaceCompactLandscape .toolbarTitle,
+.page.surfaceCompactLandscape .toolbarLeft h3 {
+  font-size: clamp(1.4rem, 3.2vw, 2rem);
+}
+
+.page.surfaceCompactLandscape .toolbarSummary,
+.page.surfaceCompactLandscape .toolbarLeft p {
+  margin-top: 8px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.page.surfaceCompactLandscape .toolbarRight {
+  width: auto;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.page.surfaceCompactLandscape .toolbarRight button {
+  width: auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 14px;
+}
+
+.page.surfaceCompactLandscape .toolbarMeta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.page.surfaceCompactLandscape .metaPill {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 16px;
+}
+
+.page.surfaceCompactLandscape .controls {
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.page.surfaceCompactLandscape .filterField,
+.page.surfaceCompactLandscape .rangeGroup,
+.page.surfaceCompactLandscape .search {
+  padding: 12px 14px;
+  border-radius: 18px;
+}
+
+.page.surfaceCompactLandscape .search {
+  flex-direction: row;
+  gap: 10px;
+}
+
+.page.surfaceCompactLandscape .searchRight button {
+  width: auto;
+  min-width: 120px;
+}
+
+.page.surfaceCompactLandscape .channel {
+  gap: 12px;
+  align-items: center;
+}
+
+.page.surfaceCompactLandscape .logo {
+  width: 50px;
+  height: 50px;
+  border-radius: 16px;
+}
+
+.page.surfaceCompactLandscape .programme {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.page.surfaceCompactLandscape .programmeTime {
+  width: auto;
+  min-width: 96px;
 }
 
 @media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {

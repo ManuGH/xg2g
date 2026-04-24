@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
@@ -19,10 +20,10 @@ func normalizedClientCaps(in *capabilities.PlaybackCapabilities) *capabilities.P
 
 func clientFamilyForIntent(intent Intent) string {
 	if clientFamily := normalize.Token(intent.Params[model.CtxKeyClientFamily]); clientFamily != "" {
-		return clientFamily
+		return playbackprofile.NormalizeClientFamilyID(clientFamily)
 	}
 	if intent.ClientCaps != nil {
-		return normalize.Token(intent.ClientCaps.ClientFamilyFallback)
+		return playbackprofile.NormalizeClientFamilyID(intent.ClientCaps.ClientFamilyFallback)
 	}
 	return ""
 }

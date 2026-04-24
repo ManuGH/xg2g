@@ -1043,20 +1043,9 @@
   flex-wrap: wrap;
 }
 
-@media (max-width: 1220px) {
-  .controlsHeaderTheater {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-  }
-
-  .transportControlsTheater {
-    flex-wrap: wrap;
-  }
-
-  .utilityControlsTheater {
-    justify-content: flex-start;
-    align-self: stretch;
-  }
+.container.surfaceTheaterStack .controlsHeaderTheater {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
 }
 
 /* Mobile Adjustments */

@@ -748,10 +748,9 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 	require.NoError(t, err)
 	args := plan.args
 
-	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
-	assert.Equal(t, expectedGOP, gop, "hq25 HEVC path must clamp progressive sources to 25fps GOP cadence")
+	assert.Equal(t, "50", gop, "hq25 HEVC path currently emits a fixed 50-frame GOP for progressive sources")
 	outputFPS, ok := valueAfter(args, "-r")
 	require.True(t, ok)
 	assert.Equal(t, "25", outputFPS, "hq25 HEVC path must clamp output framerate to 25fps")
@@ -1154,6 +1153,57 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 	assert.Contains(t, vf, "deinterlace_vaapi")
 	assert.NotContains(t, vf, "bwdif=")
 	assert.Contains(t, args, "hevc_vaapi")
+}
+
+func TestBuildArgs_SafariHEVCHWUsesShortStartupSegments(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 45*time.Minute, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"hevc_vaapi": true}
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		return 25, "r_frame_rate", nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "hevc-short-startup",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari_hevc_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi_encode_only",
+			VideoCodec:     "hevc",
+			VideoMaxRateK:  5000,
+			VideoBufSizeK:  10000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	hlsTime, ok := valueAfter(args, "-hls_time")
+	require.True(t, ok)
+	assert.Equal(t, "2", hlsTime)
+
+	hlsInitTime, ok := valueAfter(args, "-hls_init_time")
+	require.True(t, ok)
+	assert.Equal(t, "1", hlsInitTime)
+
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, "50", gop)
+
+	forceKeyFrames, ok := valueAfter(args, "-force_key_frames")
+	require.True(t, ok)
+	assert.Equal(t, "expr:gte(t,n_forced*2)", forceKeyFrames)
 }
 
 func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t *testing.T) {
@@ -1856,6 +1906,11 @@ func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
 }
 
 func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T) {
+	hardware.SetPathCapabilities(nil)
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
@@ -1892,6 +1947,111 @@ func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T
 	assert.Contains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "av1_vaapi")
 	assert.Contains(t, args, "-hwaccel", "safe h264 fallback may still use the verified full VAAPI path")
+}
+
+func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
+	hardware.SetPathCapabilities(map[string]hardware.HardwarePathCapability{
+		hardware.PathVAAPIEncodeOnlyInterlacedAV1: {
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   "synthetic yavg 119.1",
+		},
+	})
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{
+		"h264_vaapi": true,
+		"av1_vaapi":  true,
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-interlaced-encode-only-verified",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Deinterlace:    true,
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "-vaapi_device")
+	assert.NotContains(t, args, "-hwaccel", "verified AV1 uses encode-only even when full VAAPI was requested")
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "bwdif=")
+	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
+	assert.Contains(t, vf, "format=nv12,hwupload")
+	assert.Contains(t, args, "av1_vaapi")
+	assert.NotContains(t, args, "h264_vaapi")
+}
+
+func TestBuildArgs_AV1HWInterlacedDoesNotUseOnlyVerifiedFullPath(t *testing.T) {
+	hardware.SetPathCapabilities(map[string]hardware.HardwarePathCapability{
+		hardware.PathVAAPIFullInterlacedAV1: {
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   "synthetic yavg 118.8",
+		},
+	})
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{
+		"h264_vaapi": true,
+		"av1_vaapi":  true,
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-interlaced-full-only",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Deinterlace:    true,
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "h264_vaapi")
+	assert.NotContains(t, args, "av1_vaapi", "AV1 is forced encode-only, so a verified full path alone must not unlock it")
 }
 
 func TestBuildArgs_AV1HWInterlacedExperimentalOverrideUsesAV1EncodeOnlyPath(t *testing.T) {
@@ -1939,6 +2099,57 @@ func TestBuildArgs_AV1HWInterlacedExperimentalOverrideUsesAV1EncodeOnlyPath(t *t
 	assert.Contains(t, vf, "format=nv12,hwupload")
 	assert.Contains(t, args, "av1_vaapi")
 	assert.NotContains(t, args, "h264_vaapi")
+}
+
+func TestBuildArgs_AV1HWUsesShortStartupSegments(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 45*time.Minute, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		return 25, "r_frame_rate", nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-short-startup",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi_encode_only",
+			VideoCodec:     "av1",
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	hlsTime, ok := valueAfter(args, "-hls_time")
+	require.True(t, ok)
+	assert.Equal(t, "2", hlsTime)
+
+	hlsInitTime, ok := valueAfter(args, "-hls_init_time")
+	require.True(t, ok)
+	assert.Equal(t, "1", hlsInitTime)
+
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, "50", gop)
+
+	forceKeyFrames, ok := valueAfter(args, "-force_key_frames")
+	require.True(t, ok)
+	assert.Equal(t, "expr:gte(t,n_forced*2)", forceKeyFrames)
 }
 
 func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {

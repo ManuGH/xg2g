@@ -1,8 +1,10 @@
 .page {
+  max-width: var(--page-max-width-wide);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  padding: 4px 0 24px;
+  gap: 26px;
+  padding: 4px 0 28px;
 }
 
 .loadingState,
@@ -18,10 +20,12 @@
 .signalSurface {
   position: relative;
   overflow: hidden;
-  border-radius: 30px;
-  border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--surface-panel) 86%, var(--surface-stage) 14%);
-  box-shadow: var(--shadow-card);
+  border-radius: 32px;
+  border: 1px solid color-mix(in srgb, var(--accent-action) 14%, var(--border-base) 86%);
+  background: var(--gradient-surface-quiet);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .summaryCard::before,
@@ -32,41 +36,78 @@
   content: '';
   position: absolute;
   pointer-events: none;
-  inset: auto auto -26% -10%;
-  width: 44%;
-  height: 52%;
-  background: color-mix(in srgb, var(--accent-action-subtle) 52%, transparent);
+  inset: auto auto -28% -12%;
+  width: 48%;
+  height: 56%;
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--accent-action) 16%, transparent), transparent 70%);
+}
+
+.summaryCard::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  inset: -22% -8% auto auto;
+  width: 42%;
+  height: 58%;
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--accent-live) 14%, transparent), transparent 70%);
 }
 
 .summaryCard {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  padding: 28px 30px;
+  gap: 0;
+  padding: clamp(28px, 3vw, 42px);
   min-height: 0;
+  background:
+    radial-gradient(circle at 9% 18%, color-mix(in srgb, var(--accent-action) 18%, transparent), transparent 34%),
+    radial-gradient(circle at 96% 12%, color-mix(in srgb, var(--accent-live) 15%, transparent), transparent 30%),
+    var(--gradient-surface-hero);
+  border-color: color-mix(in srgb, var(--accent-action) 24%, var(--border-elevated) 76%);
 }
 
 .summaryStreaming {
-  background: color-mix(in srgb, var(--surface-panel-strong) 88%, var(--surface-stage) 12%);
+  background:
+    radial-gradient(circle at 14% 16%, color-mix(in srgb, var(--accent-live) 18%, transparent), transparent 34%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-panel-strong) 90%, var(--accent-live-subtle) 10%), color-mix(in srgb, var(--surface-stage) 86%, var(--accent-action-subtle) 14%));
 }
 
 .summaryControl {
-  background: color-mix(in srgb, var(--surface-panel) 90%, var(--surface-stage) 10%);
+  background:
+    radial-gradient(circle at 12% 16%, color-mix(in srgb, var(--accent-action) 18%, transparent), transparent 34%),
+    var(--gradient-surface-hero);
 }
 
 .summaryStandby {
-  background: color-mix(in srgb, var(--surface-shell) 88%, var(--surface-stage) 12%);
+  background:
+    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--status-warning) 14%, transparent), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-shell) 88%, var(--surface-stage) 12%), var(--surface-shell-safe));
+}
+
+.summaryHeroGrid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.22fr) minmax(360px, 0.78fr);
+  gap: 22px;
+  align-items: stretch;
+}
+
+.summaryHeroMain {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
 }
 
 .summaryHeader {
   display: flex;
   justify-content: space-between;
-  gap: 26px;
-  align-items: flex-end;
+  gap: 22px;
+  align-items: flex-start;
 }
 
 .summaryIdentity {
-  max-width: 780px;
+  max-width: 48rem;
 }
 
 .summaryEyebrow,
@@ -74,29 +115,31 @@
 .metricLabel,
 .contextLabel {
   display: block;
-  margin: 0 0 8px;
-  color: var(--text-tertiary);
+  margin: 0 0 10px;
+  color: color-mix(in srgb, var(--accent-action) 62%, var(--text-secondary) 38%);
   font-size: var(--text-xs);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
+  font-weight: 700;
 }
 
 .summaryTitle {
   margin: 0;
   font-family: var(--font-heading);
-  font-size: clamp(2.1rem, 3.3vw, 3.4rem);
-  line-height: 0.96;
-  letter-spacing: -0.04em;
+  font-size: clamp(2.55rem, 4.6vw, 5.25rem);
+  line-height: 0.9;
+  letter-spacing: -0.065em;
   color: var(--text-primary);
-  max-width: 14ch;
+  max-width: 15ch;
+  text-wrap: balance;
 }
 
 .summaryDescription {
-  margin: 16px 0 0;
-  max-width: 60ch;
+  margin: 18px 0 0;
+  max-width: 64ch;
   color: var(--text-secondary);
-  font-size: 1rem;
-  line-height: 1.6;
+  font-size: clamp(1rem, 1.4vw, 1.12rem);
+  line-height: 1.65;
 }
 
 .summaryChips {
@@ -107,18 +150,180 @@
   justify-content: flex-end;
 }
 
+.summarySpotlight {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 24px 22px;
+  min-width: 0;
+  border-radius: 28px;
+  border: 1px solid color-mix(in srgb, var(--accent-live) 18%, var(--border-elevated) 82%);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 46%),
+    color-mix(in srgb, var(--surface-panel-safe) 84%, var(--surface-stage) 16%);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+
+.summarySpotlight::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-live) 13%, transparent), transparent 42%),
+    radial-gradient(circle at bottom left, color-mix(in srgb, var(--accent-action) 12%, transparent), transparent 34%);
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+.summarySpotlight > * {
+  position: relative;
+  z-index: 1;
+}
+
+.summarySpotlightHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signalDial {
+  position: relative;
+  width: min(100%, 260px);
+  aspect-ratio: 2.4;
+  margin: -2px 0 2px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-action) 22%, var(--border-base) 78%);
+  background:
+    radial-gradient(circle at 18% 50%, color-mix(in srgb, var(--accent-action) 38%, transparent), transparent 18%),
+    radial-gradient(circle at 68% 48%, color-mix(in srgb, var(--accent-live) 22%, transparent), transparent 24%),
+    linear-gradient(90deg, color-mix(in srgb, var(--surface-muted) 94%, transparent), color-mix(in srgb, var(--surface-panel-soft) 88%, transparent));
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent),
+    inset 0 -16px 30px color-mix(in srgb, var(--bg-video) 20%, transparent);
+}
+
+.signalDialCore,
+.signalDialRing,
+.signalDialSweep {
+  position: absolute;
+  pointer-events: none;
+}
+
+.signalDialCore {
+  left: 14%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent-action);
+  transform: translateY(-50%);
+  box-shadow: 0 0 26px color-mix(in srgb, var(--accent-action) 48%, transparent);
+}
+
+.signalDialRing {
+  left: 16%;
+  top: 50%;
+  width: 82px;
+  height: 82px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-action) 42%, transparent);
+  transform: translateY(-50%);
+}
+
+.signalDialSweep {
+  left: 24%;
+  right: 12%;
+  top: 50%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-action), color-mix(in srgb, var(--accent-live) 72%, transparent), transparent);
+  transform: translateY(-50%);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent-live) 30%, transparent);
+}
+
+.summarySpotlightEyebrow,
+.summarySpotlightFactLabel {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.summarySpotlightTitle {
+  margin: 0;
+  max-width: 20ch;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: clamp(1.5rem, 2.25vw, 2.05rem);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.summarySpotlightCopy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.summarySpotlightMeta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.summarySpotlightFact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 13px 14px;
+  border-radius: 19px;
+  border: 1px solid color-mix(in srgb, var(--border-base) 86%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent),
+    color-mix(in srgb, var(--surface-muted) 78%, transparent);
+}
+
+.summarySpotlightFactValue {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.summarySpotlightActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: auto;
+}
+
 .summaryMetrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 14px;
 }
 
 .metricCard,
 .contextCard {
   padding: 20px 22px;
   border-radius: 24px;
-  border: 1px solid var(--border-base);
-  background: var(--surface-muted);
+  border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
+    color-mix(in srgb, var(--surface-muted) 86%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
 .metricCard {
@@ -131,9 +336,10 @@
 .metricValue {
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: clamp(1.08rem, 1.7vw, 1.3rem);
+  font-size: clamp(1.12rem, 1.8vw, 1.38rem);
   font-weight: 600;
   line-height: 1.2;
+  letter-spacing: -0.025em;
   overflow-wrap: anywhere;
 }
 
@@ -158,17 +364,19 @@
 
 .timelineTrack {
   margin-top: 14px;
-  height: 10px;
+  height: 11px;
   border-radius: 999px;
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--bg-video) 50%, var(--surface-highlight) 50%);
   overflow: hidden;
+  box-shadow: inset 0 1px 4px color-mix(in srgb, black 36%, transparent);
 }
 
 .timelineFill {
   height: 100%;
   width: var(--xg2g-progress, 0%);
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent-live), var(--accent-action));
+  background: linear-gradient(90deg, var(--accent-action), var(--accent-live));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent-action) 32%, transparent);
 }
 
 .timelineNext,
@@ -188,15 +396,15 @@
 
 .startSurface,
 .shortcutsSurface {
-  padding: 22px;
+  padding: 24px;
 }
 
 .startHeader {
   display: flex;
   justify-content: space-between;
-  gap: 18px;
+  gap: 22px;
   align-items: flex-start;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .startSubtitle,
@@ -211,18 +419,85 @@
 .startGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .startCard {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
-  padding: 20px;
-  border-radius: 24px;
-  border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  min-height: 260px;
+  padding: 22px;
+  border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent),
+    0 16px 34px color-mix(in srgb, black 16%, transparent);
+  transition:
+    border-color var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
+}
+
+.startCard:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent-action) 28%, var(--border-elevated) 72%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent),
+    var(--shadow-hover);
+}
+
+.startCard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.startCard[data-card="live"] {
+  border-color: color-mix(in srgb, var(--accent-action) 46%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent-action-subtle) 80%, transparent), transparent 50%),
+    color-mix(in srgb, var(--surface-panel-safe) 82%, var(--surface-stage) 18%);
+}
+
+.startCard[data-card="live"]::before {
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-action-subtle) 82%, transparent), transparent 44%),
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent-action-subtle) 22%, transparent));
+}
+
+.startCard[data-card="recordings"] {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 46%),
+    color-mix(in srgb, var(--surface-panel) 84%, var(--surface-stage) 16%);
+}
+
+.startCard[data-card="recordings"]::before {
+  background: radial-gradient(circle at top right, color-mix(in srgb, var(--accent-live-subtle) 50%, transparent), transparent 42%);
+}
+
+.startCard[data-card="settings"] {
+  border-color: color-mix(in srgb, var(--status-success) 28%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 46%),
+    color-mix(in srgb, var(--surface-panel-soft) 84%, var(--surface-stage) 16%);
+}
+
+.startCard[data-card="settings"]::before {
+  background: radial-gradient(circle at top right, color-mix(in srgb, var(--status-success-subtle) 68%, transparent), transparent 42%);
+}
+
+.startCard > * {
+  position: relative;
+  z-index: 1;
 }
 
 .startCardHeader {
@@ -234,7 +509,7 @@
 
 .startStep {
   margin: 0 0 6px;
-  color: var(--text-tertiary);
+  color: color-mix(in srgb, var(--accent-action) 60%, var(--text-tertiary) 40%);
   font-size: var(--text-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -244,8 +519,9 @@
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: clamp(1.08rem, 1.6vw, 1.3rem);
-  line-height: 1.15;
+  font-size: clamp(1.22rem, 1.8vw, 1.55rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
 }
 
 .startCardDescription,
@@ -257,7 +533,7 @@
 
 .startCardDescription {
   color: var(--text-primary);
-  font-size: 0.98rem;
+  font-size: 1rem;
 }
 
 .startCardDetail {
@@ -282,7 +558,7 @@
 
 .diagnosticsGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+  grid-template-columns: minmax(0, 1.28fr) minmax(330px, 0.9fr);
   gap: 20px;
   align-items: start;
 }
@@ -342,9 +618,11 @@
   display: grid;
   gap: 4px;
   padding: 16px 18px;
-  border: 1px solid var(--border-base);
+  border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
   border-radius: 20px;
-  background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-action-subtle) 18%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface-muted) 70%, transparent);
 }
 
 .statusRow:last-child {
@@ -368,6 +646,14 @@
 }
 
 @media (max-width: 1180px) {
+  .summaryHeroGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .summarySpotlightMeta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .startGrid {
     grid-template-columns: 1fr;
   }
@@ -396,7 +682,7 @@
 
   .summaryCard {
     padding: 18px;
-    gap: 16px;
+    gap: 0;
   }
 
   .startSurface,
@@ -404,9 +690,32 @@
     padding: 16px;
   }
 
+  .summaryHeroGrid {
+    gap: 14px;
+  }
+
+  .summaryHeroMain {
+    gap: 14px;
+  }
+
   .summaryHeader {
     flex-direction: column;
     gap: 16px;
+  }
+
+  .summarySpotlight {
+    gap: 14px;
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .summarySpotlightHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .summarySpotlightMeta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .startHeader,

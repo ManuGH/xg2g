@@ -1,8 +1,36 @@
 .page {
+  max-width: var(--page-max-width-regular);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 20px;
   padding: 8px 0 24px;
+}
+
+.heroPanel {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 28px 26px;
+  border: 1px solid var(--border-base);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 54%),
+    color-mix(in srgb, var(--surface-panel) 88%, var(--surface-stage) 12%);
+  box-shadow: var(--shadow-card);
+}
+
+.heroPanel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-action-subtle) 64%, transparent), transparent 38%),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-live-subtle) 42%, transparent), transparent 34%);
+  opacity: 0.78;
+  pointer-events: none;
 }
 
 .header {
@@ -10,6 +38,12 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.header,
+.glanceGrid {
+  position: relative;
+  z-index: 1;
 }
 
 .kicker {
@@ -28,10 +62,86 @@
   line-height: 1.6;
 }
 
+.glanceGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.glanceCard {
+  position: relative;
+  overflow: hidden;
+  min-height: 112px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--border-base) 86%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface-panel) 90%, var(--surface-stage) 10%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: flex-end;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.glanceCard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, color-mix(in srgb, var(--accent-action-subtle) 62%, transparent), transparent 38%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.glanceCard[data-tone="live"] {
+  border-color: color-mix(in srgb, var(--accent-live) 34%, transparent);
+}
+
+.glanceCard[data-tone="live"]::before {
+  background: radial-gradient(circle at top right, color-mix(in srgb, var(--accent-live-subtle) 78%, transparent), transparent 42%);
+}
+
+.glanceCard[data-tone="action"] {
+  border-color: color-mix(in srgb, var(--accent-action) 26%, transparent);
+}
+
+.glanceCard[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--status-warning) 30%, transparent);
+}
+
+.glanceLabel,
+.glanceDetail,
+.glanceValue {
+  position: relative;
+  z-index: 1;
+}
+
+.glanceLabel {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.glanceValue {
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: clamp(1.35rem, 2.4vw, 2rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+
+.glanceDetail {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
   align-items: start;
 }
 
@@ -41,6 +151,21 @@
 
 .cardWide {
   grid-column: span 8;
+}
+
+.cardHardware {
+  grid-column: span 5;
+}
+
+.cardSoftware {
+  grid-column: span 7;
+}
+
+.cardSpotlight {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 52%),
+    color-mix(in srgb, var(--surface-panel-safe) 78%, var(--surface-stage) 22%);
+  box-shadow: var(--shadow-card);
 }
 
 .cardBody {
@@ -357,18 +482,30 @@
 }
 
 @media (max-width: 1200px) {
+  .glanceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .card,
+  .cardHardware,
+  .cardSoftware,
   .cardWide {
     grid-column: span 6;
   }
 }
 
 @media (max-width: 768px) {
+  .glanceGrid {
+    grid-template-columns: 1fr;
+  }
+
   .grid {
     grid-template-columns: 1fr;
   }
 
   .card,
+  .cardHardware,
+  .cardSoftware,
   .cardWide {
     grid-column: span 1;
   }
@@ -387,5 +524,115 @@
   .tunerGrid,
   .ramStats {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  .page {
+    gap: 14px;
+    padding: 4px 0 18px;
+  }
+
+  .heroPanel {
+    gap: 12px;
+    padding: 18px 18px 20px;
+    border-radius: 22px;
+  }
+
+  .header {
+    gap: 12px;
+  }
+
+  .header h1 {
+    font-size: clamp(1.65rem, 3vw, 2.15rem);
+    letter-spacing: -0.04em;
+    line-height: 0.98;
+  }
+
+  .subtitle {
+    margin-top: 8px;
+    max-width: 56ch;
+    font-size: 0.86rem;
+    line-height: 1.45;
+  }
+
+  .glanceGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .glanceCard {
+    padding: 14px 14px 13px;
+    border-radius: 18px;
+  }
+
+  .glanceValue {
+    font-size: clamp(1.15rem, 2vw, 1.55rem);
+  }
+
+  .glanceDetail {
+    font-size: 0.82rem;
+    line-height: 1.34;
+  }
+
+  .grid {
+    gap: 12px;
+  }
+
+  .cardBody {
+    gap: 12px;
+  }
+
+  .cardHeader {
+    gap: 10px;
+    padding-bottom: 10px;
+  }
+
+  .cardTitle {
+    font-size: 1.1rem;
+  }
+
+  .section {
+    gap: 10px;
+    padding-top: 12px;
+  }
+
+  .tunerGrid {
+    gap: 10px;
+  }
+
+  .tunerItem {
+    padding: 14px;
+  }
+}
+
+@media (max-width: 932px) and (orientation: landscape) and (max-height: 430px) and (hover: none) and (pointer: coarse) {
+  .page {
+    gap: 12px;
+    padding-bottom: 16px;
+  }
+
+  .header h1 {
+    font-size: clamp(1.5rem, 2.8vw, 1.95rem);
+  }
+
+  .subtitle {
+    font-size: 0.82rem;
+  }
+
+  .glanceGrid {
+    gap: 8px;
+  }
+
+  .glanceCard {
+    padding: 12px 12px 11px;
+  }
+
+  .glanceValue {
+    font-size: clamp(1.02rem, 1.8vw, 1.35rem);
+  }
+
+  .glanceDetail {
+    font-size: 0.76rem;
   }
 }

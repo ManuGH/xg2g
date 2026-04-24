@@ -7,6 +7,29 @@ export type PlaybackClientFamily =
   | 'firefox_hlsjs'
   | 'chromium_hlsjs';
 
+export function normalizePlaybackClientFamily(
+  value: string | null | undefined,
+): PlaybackClientFamily | undefined {
+  switch ((value || '').trim().toLowerCase()) {
+    case 'safari':
+    case 'safari_native':
+      return 'safari_native';
+    case 'ios_safari':
+    case 'ios_safari_native':
+      return 'ios_safari_native';
+    case 'firefox':
+    case 'firefox_hlsjs':
+      return 'firefox_hlsjs';
+    case 'chromium':
+    case 'chrome':
+    case 'edge':
+    case 'chromium_hlsjs':
+      return 'chromium_hlsjs';
+    default:
+      return undefined;
+  }
+}
+
 type PlaybackClientFamilyCapabilities = {
   deviceType: 'safari' | 'ios_safari' | 'firefox' | 'chromium';
   container: string[];
