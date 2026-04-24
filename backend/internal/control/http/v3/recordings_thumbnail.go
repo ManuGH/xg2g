@@ -21,7 +21,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
-	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -37,28 +36,6 @@ const (
 )
 
 var recordingThumbnailBuildGroup singleflight.Group
-
-type recordingThumbnailServer interface {
-	GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, recordingId string)
-}
-
-func (siw *ServerInterfaceWrapper) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request) {
-	recordingID := chi.URLParam(r, "recordingId")
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler, ok := siw.Handler.(recordingThumbnailServer)
-		if !ok || handler == nil {
-			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not-implemented", "Not Implemented", problemcode.CodeInternalError, "Recording thumbnail handler not implemented", nil)
-			return
-		}
-		handler.GetRecordingThumbnail(w, r, recordingID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
 
 func (s *Server) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, recordingId string) {
 	deps := s.recordingsModuleDeps()
@@ -200,7 +177,7 @@ func probeRecordingDurationSeconds(ctx context.Context, cfg config.AppConfig, so
 	probeCtx, cancel := context.WithTimeout(ctx, recordingThumbnailProbeTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(
+	cmd := exec.CommandContext( // #nosec G204 -- ffprobe binary is trusted config/default and args are fixed except resolver-confined sourcePath.
 		probeCtx,
 		probeBin,
 		"-v", "error",
@@ -274,7 +251,7 @@ func generateRecordingThumbnail(ctx context.Context, cfg config.AppConfig, sourc
 		thumbnailPath,
 	)
 
-	cmd := exec.CommandContext(buildCtx, ffmpegBin, args...)
+	cmd := exec.CommandContext(buildCtx, ffmpegBin, args...) // #nosec G204 -- ffmpeg binary is trusted config/default and args are internally constructed from resolver-confined paths.
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ffmpeg thumbnail: %w (%s)", err, strings.TrimSpace(string(output)))
