@@ -2575,6 +2575,138 @@ export type DeleteRecordingResponses = {
 
 export type DeleteRecordingResponse = DeleteRecordingResponses[keyof DeleteRecordingResponses];
 
+export type PostRecordingDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/delete';
+};
+
+export type PostRecordingDeleteErrors = {
+    /**
+     * Invalid recording reference
+     */
+    400: ProblemDetails;
+    /**
+     * Access denied
+     */
+    403: ProblemDetails;
+    /**
+     * Recording not found
+     */
+    404: ProblemDetails;
+    /**
+     * Failed to delete recording
+     */
+    500: ProblemDetails;
+};
+
+export type PostRecordingDeleteError = PostRecordingDeleteErrors[keyof PostRecordingDeleteErrors];
+
+export type PostRecordingDeleteResponses = {
+    /**
+     * Recording deleted
+     */
+    204: void;
+};
+
+export type PostRecordingDeleteResponse = PostRecordingDeleteResponses[keyof PostRecordingDeleteResponses];
+
+export type PostRecordingRenameData = {
+    body: {
+        title: string;
+    };
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/rename';
+};
+
+export type PostRecordingRenameErrors = {
+    /**
+     * Invalid request
+     */
+    400: ProblemDetails;
+    /**
+     * Access denied
+     */
+    403: ProblemDetails;
+    /**
+     * Recording not found
+     */
+    404: ProblemDetails;
+    /**
+     * Rename unsupported for this recording
+     */
+    422: ProblemDetails;
+    /**
+     * Failed to rename recording
+     */
+    500: ProblemDetails;
+};
+
+export type PostRecordingRenameError = PostRecordingRenameErrors[keyof PostRecordingRenameErrors];
+
+export type PostRecordingRenameResponses = {
+    /**
+     * Recording renamed
+     */
+    204: void;
+};
+
+export type PostRecordingRenameResponse = PostRecordingRenameResponses[keyof PostRecordingRenameResponses];
+
+export type GetRecordingThumbnailData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/thumbnail.jpg';
+};
+
+export type GetRecordingThumbnailErrors = {
+    /**
+     * Invalid recording reference
+     */
+    400: ProblemDetails;
+    /**
+     * Access denied
+     */
+    403: ProblemDetails;
+    /**
+     * Recording thumbnail not found
+     */
+    404: ProblemDetails;
+    /**
+     * Thumbnail cache unavailable
+     */
+    500: ProblemDetails;
+};
+
+export type GetRecordingThumbnailError = GetRecordingThumbnailErrors[keyof GetRecordingThumbnailErrors];
+
+export type GetRecordingThumbnailResponses = {
+    /**
+     * JPEG thumbnail
+     */
+    200: Blob | File;
+};
+
+export type GetRecordingThumbnailResponse = GetRecordingThumbnailResponses[keyof GetRecordingThumbnailResponses];
+
 export type GetRecordingsRecordingIdStatusData = {
     body?: never;
     path: {

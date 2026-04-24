@@ -3753,6 +3753,177 @@ paths:
         "500":
           description: Failed to delete recording
 
+  /recordings/{recordingId}/delete:
+    post:
+      summary: Delete a recording
+      description: Compatibility POST endpoint for clients that cannot issue DELETE requests. Deletes the recording via OpenWebIF on the receiver or via the local recording mapping when available.
+      security:
+        - BearerAuth: [v3:write]
+      operationId: postRecordingDelete
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      responses:
+        "204":
+          description: Recording deleted
+        "400":
+          description: Invalid recording reference
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Access denied
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Recording not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "500":
+          description: Failed to delete recording
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /recordings/{recordingId}/rename:
+    post:
+      summary: Rename a recording
+      description: Renames a locally mapped recording and its sidecar artifacts.
+      security:
+        - BearerAuth: [v3:write]
+      operationId: postRecordingRename
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+      responses:
+        "204":
+          description: Recording renamed
+        "400":
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Access denied
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Recording not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "422":
+          description: Rename unsupported for this recording
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "500":
+          description: Failed to rename recording
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /recordings/{recordingId}/thumbnail.jpg:
+    get:
+      summary: Get a recording thumbnail
+      description: Returns a cached JPEG thumbnail for a locally mapped recording, generating it on demand when possible.
+      security:
+        - BearerAuth: [v3:read]
+      operationId: getRecordingThumbnail
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      responses:
+        "200":
+          description: JPEG thumbnail
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Private thumbnail cache policy
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid recording reference
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Access denied
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Recording thumbnail not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "500":
+          description: Thumbnail cache unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /recordings/{recordingId}/status:
     get:
       summary: Get recording build status
