@@ -31,6 +31,10 @@ import { ResumeState } from '../../resume/api';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { debugError, debugLog, debugWarn } from '../../../utils/logging';
 import {
+  PLAYBACK_INFO_CONTEXT_HEADER,
+  PLAYBACK_INFO_CONTEXT_PLAYER_START,
+} from '../utils/playbackInfoContext';
+import {
   PlayerError,
   readResponseBody,
   extractCapHashFromDecisionToken,
@@ -198,7 +202,7 @@ function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null): string
   const signalFor = (codec: string) => signals.find((signal) => signal.codec === codec);
 
   const av1 = signalFor('av1');
-  if (av1?.supported && av1.powerEfficient) {
+  if (av1?.supported && (av1.powerEfficient || snapshot.videoCodecs.includes('av1'))) {
     out.push('av1');
   }
 
@@ -212,6 +216,12 @@ function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null): string
   }
 
   return Array.from(new Set(out));
+}
+
+function resolveApiUrl(base: string, path: string): string {
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+  return new URL(normalizedPath, new URL(normalizedBase, typeof window !== 'undefined' ? window.location.href : 'http://localhost')).toString();
 }
 
 function formatQualityRungLabel(rung: string | null): string {
@@ -393,6 +403,7 @@ function V3Player(props: V3PlayerProps) {
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
   const [sessionPlaybackTrace, setSessionPlaybackTrace] = useState<PlaybackTraceContract | null>(null);
   const [sessionProfileReason, setSessionProfileReason] = useState<string | null>(null);
+  const [sessionWindowKind, setSessionWindowKind] = useState<'live' | 'live-dvr' | 'vod' | 'unknown' | null>(null);
   const [startupElapsedSeconds, setStartupElapsedSeconds] = useState(0);
   const [showBufferingOverlay, setShowBufferingOverlay] = useState(false);
   const [showNativeVideo, setShowNativeVideo] = useState(true);
@@ -542,6 +553,7 @@ function V3Player(props: V3PlayerProps) {
       setTraceId(session.requestId);
     }
     setSessionProfileReason(session.profileReason ?? null);
+    setSessionWindowKind(session.windowKind ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
   }, [mergeSessionPlaybackTrace]);
 
@@ -566,6 +578,7 @@ function V3Player(props: V3PlayerProps) {
     setActiveSessionId,
     clearSessionLeaseState,
     sendStopIntent,
+    refreshSessionSnapshot,
     waitForSessionReady
   } = useLiveSessionController({
     token,
@@ -725,6 +738,7 @@ function V3Player(props: V3PlayerProps) {
     setPlaybackObservability(null);
     setSessionPlaybackTrace(null);
     setSessionProfileReason(null);
+    setSessionWindowKind(null);
   }, [clearNativeVideoVeilTimers]);
 
   const clearPlaybackState = useCallback(() => {
@@ -759,6 +773,37 @@ function V3Player(props: V3PlayerProps) {
     const finalEnd = video.buffered.end(video.buffered.length - 1);
     return finalEnd > video.currentTime ? finalEnd - video.currentTime : 0;
   }, [videoRef]);
+
+  const revealNativeVideoIfRenderable = useCallback((): boolean => {
+    if (activeHlsEngine !== 'native') {
+      return false;
+    }
+
+    const video = videoRef.current;
+    if (!video || video.paused) {
+      return false;
+    }
+
+    const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
+    const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
+    const hasDecodedFrames = typeof decodedFrameCount !== 'number' || decodedFrameCount > 0;
+    const hasRenderableFrame = video.readyState >= 3 || (hasVideoGeometry && hasDecodedFrames);
+    if (!hasRenderableFrame) {
+      return false;
+    }
+
+    clearNativeVideoRevealTimer();
+    clearNativeVideoVeilTimers();
+    nativeVideoShownRef.current = true;
+    nativeVideoHoldPositionRef.current = null;
+    video.muted = false;
+    nativeVideoTempMutedRef.current = false;
+    setStatus('playing');
+    setShowNativeVideo(true);
+    setShowNativeVideoVeil(true);
+    setNativeVeilResumeArmed(true);
+    return true;
+  }, [activeHlsEngine, clearNativeVideoRevealTimer, clearNativeVideoVeilTimers, videoRef]);
 
   const cleanupPlaybackResources = useCallback(() => {
     const activeHls = hlsRef.current;
@@ -1355,6 +1400,7 @@ function V3Player(props: V3PlayerProps) {
           headers: {
             ...(authHeaders(true) as Record<string, string>),
             ...buildPlaybackProfileHeaders(requestProfile),
+            [PLAYBACK_INFO_CONTEXT_HEADER]: PLAYBACK_INFO_CONTEXT_PLAYER_START,
           },
           body: JSON.stringify({
             serviceRef: ref,
@@ -1719,6 +1765,74 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [requestedDuration]);
 
+  useEffect(() => {
+    if (playbackMode !== 'LIVE') {
+      return;
+    }
+
+    const serviceRef = (channel?.serviceRef || channel?.id || sRef || '').trim();
+    if (!serviceRef) {
+      return;
+    }
+
+    let cancelled = false;
+    let refreshTimer: number | null = null;
+
+    const scheduleRefresh = (delayMs: number) => {
+      if (cancelled) return;
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+      refreshTimer = window.setTimeout(() => {
+        void refreshNowNext();
+      }, delayMs);
+    };
+
+    const refreshNowNext = async () => {
+      try {
+        const response = await fetch(resolveApiUrl(apiBase, 'services/now-next'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authHeaders() as Record<string, string>),
+          },
+          body: JSON.stringify({ services: [serviceRef] }),
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (response.ok) {
+          const data = await response.json() as { items?: Array<{ serviceRef?: string; now?: { end?: number } }> };
+          if (cancelled) {
+            return;
+          }
+          const item = data?.items?.find((candidate) => candidate.serviceRef === serviceRef) ?? data?.items?.[0];
+          const eventEndMs = item?.now?.end ? (item.now.end * 1000) : null;
+          if (eventEndMs) {
+            scheduleRefresh(Math.max(15000, Math.min(60000, (eventEndMs - Date.now()) + 1000)));
+            return;
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          debugWarn('[V3Player] now/next refresh failed', err);
+        }
+      }
+
+      scheduleRefresh(60000);
+    };
+
+    void refreshNowNext();
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+    };
+  }, [apiBase, authHeaders, channel?.id, channel?.serviceRef, playbackMode, sRef]);
+
   const isImmediateStartupStatus =
     status === 'starting' || status === 'priming' || status === 'building';
   const isNativeEngine = activeHlsEngine === 'native';
@@ -1783,6 +1897,50 @@ function V3Player(props: V3PlayerProps) {
   }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
   useEffect(() => {
+    const video = videoRef.current;
+    if (!isNativeEngine || !video || !shouldForceNativeMobileHls(video)) {
+      return;
+    }
+
+    if (!isDocumentVisible) {
+      if (!video.paused && !userPauseIntentRef.current && !hasTerminalStatus) {
+        visibilityManagedPauseRef.current = true;
+        video.pause();
+        setStatus('paused');
+      }
+      return;
+    }
+
+    void refreshSessionSnapshot();
+
+    if (!visibilityManagedPauseRef.current) {
+      return;
+    }
+
+    visibilityManagedPauseRef.current = false;
+    if (userPauseIntentRef.current || hasTerminalStatus) {
+      return;
+    }
+
+    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    void video.play().catch((err) => {
+      debugWarn('[V3Player] Native inline resume play blocked', err);
+    });
+
+    const reloadTimer = window.setTimeout(() => {
+      if (!video.currentSrc || video.readyState >= 3 || userPauseIntentRef.current || hasTerminalStatus) {
+        return;
+      }
+      video.load();
+      void video.play().catch((err) => {
+        debugWarn('[V3Player] Native inline reload play blocked', err);
+      });
+    }, 1500);
+
+    return () => window.clearTimeout(reloadTimer);
+  }, [hasTerminalStatus, isDocumentVisible, isNativeEngine, refreshSessionSnapshot, setStatus, videoRef]);
+
+  useEffect(() => {
     if (bufferingOverlayTimerRef.current !== null) {
       window.clearTimeout(bufferingOverlayTimerRef.current);
       bufferingOverlayTimerRef.current = null;
@@ -1818,7 +1976,7 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
-    if (status === 'starting' || status === 'priming' || status === 'building' || status === 'buffering' || status === 'recovering') {
+    if (status === 'starting' || status === 'priming' || status === 'building') {
       clearNativeVideoRevealTimer();
       clearNativeVideoVeilTimers();
       if (showNativeVideo) {
@@ -1828,6 +1986,17 @@ function V3Player(props: V3PlayerProps) {
       setShowNativeVideoVeil(true);
       setNativeVeilResumeArmed(false);
       return;
+    }
+
+    if (status === 'buffering' || status === 'recovering') {
+      clearNativeVideoRevealTimer();
+      clearNativeVideoVeilTimers();
+      if (showNativeVideo) {
+        nativeVideoHoldPositionRef.current = videoRef.current?.currentTime ?? null;
+      }
+      setShowNativeVideo(false);
+      setShowNativeVideoVeil(true);
+      setNativeVeilResumeArmed(false);
     }
 
     if (status === 'idle' || status === 'error' || status === 'stopped') {
@@ -1858,8 +2027,15 @@ function V3Player(props: V3PlayerProps) {
     const revealThresholds = nativeVideoShownRef.current
       ? NATIVE_VIDEO_REVEAL_REBUFFER
       : NATIVE_VIDEO_REVEAL_STARTUP;
+    if (revealNativeVideoIfRenderable()) {
+      return;
+    }
 
     const waitForStablePlayback = () => {
+      if (revealNativeVideoIfRenderable()) {
+        return;
+      }
+
       const video = videoRef.current;
       if (!video) {
         nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.retryMs);
@@ -1868,24 +2044,37 @@ function V3Player(props: V3PlayerProps) {
 
       const bufferAheadSeconds = getBufferedAheadSeconds();
       const holdPosition = nativeVideoHoldPositionRef.current;
+      const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
       const playbackAdvancedEnough =
         holdPosition === null || !Number.isFinite(holdPosition)
           ? true
           : Math.max(0, video.currentTime - holdPosition) >= revealThresholds.minAdvanceSeconds;
-      const playbackResumeSatisfied = revealThresholds.requirePlaybackResume
-        ? !video.paused
-        : (status === 'ready' || !video.paused);
-      const readyForReveal =
-        video.readyState >= 3 &&
+      const playbackResumeSatisfied = !video.paused;
+      const playingWithVisibleGeometry =
         playbackResumeSatisfied &&
         playbackAdvancedEnough &&
-        (video.readyState >= 4 || bufferAheadSeconds >= revealThresholds.minBufferSeconds);
+        hasVideoGeometry;
+      const readyForReveal =
+        playbackResumeSatisfied &&
+        playbackAdvancedEnough &&
+        (
+          video.readyState >= 3 ||
+          playingWithVisibleGeometry
+        ) &&
+        (
+          video.readyState >= 4 ||
+          bufferAheadSeconds >= revealThresholds.minBufferSeconds ||
+          playingWithVisibleGeometry
+        );
 
       if (readyForReveal) {
         nativeVideoRevealTimerRef.current = null;
         const isRebufferReveal = nativeVideoShownRef.current;
         nativeVideoShownRef.current = true;
         nativeVideoHoldPositionRef.current = null;
+        video.muted = false;
+        nativeVideoTempMutedRef.current = false;
+        setStatus('playing');
         setShowNativeVideo(true);
         clearNativeVideoVeilTimers();
         if (isRebufferReveal) {
@@ -1906,7 +2095,10 @@ function V3Player(props: V3PlayerProps) {
     };
 
     clearNativeVideoRevealTimer();
-    nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.stableMs);
+    nativeVideoRevealTimerRef.current = window.setTimeout(
+      waitForStablePlayback,
+      Math.min(revealThresholds.stableMs, revealThresholds.retryMs),
+    );
 
     return () => {
       clearNativeVideoRevealTimer();
@@ -1917,10 +2109,38 @@ function V3Player(props: V3PlayerProps) {
     clearNativeVideoVeilTimers,
     getBufferedAheadSeconds,
     isNativeEngine,
+    revealNativeVideoIfRenderable,
     showNativeVideo,
     status,
     videoRef,
   ]);
+
+  useEffect(() => {
+    if (!isNativeEngine) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const handleRenderableEvent = () => {
+      revealNativeVideoIfRenderable();
+    };
+
+    video.addEventListener('playing', handleRenderableEvent);
+    video.addEventListener('loadeddata', handleRenderableEvent);
+    video.addEventListener('canplay', handleRenderableEvent);
+    video.addEventListener('resize', handleRenderableEvent);
+
+    return () => {
+      video.removeEventListener('playing', handleRenderableEvent);
+      video.removeEventListener('loadeddata', handleRenderableEvent);
+      video.removeEventListener('canplay', handleRenderableEvent);
+      video.removeEventListener('resize', handleRenderableEvent);
+    };
+  }, [isNativeEngine, revealNativeVideoIfRenderable, videoRef]);
 
   useEffect(() => {
     if (!isOverlayStartupStatus) {
@@ -2030,7 +2250,9 @@ function V3Player(props: V3PlayerProps) {
     (status === 'buffering' && showBufferingOverlay) ||
     shouldHoldNativeVideo;
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
-  const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;
+  const showNativeBufferingMask =
+    (shouldHoldNativeVideo || showNativeVideoVeil) &&
+    !(isNativeEngine && status === 'playing');
   const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || useOverlayShell || isRecordingPageLayout);
   const showPlaybackChrome = !useMinimalStartupChrome;
   const showRecordingWatchLayout = Boolean(recordingId && !isFullscreen && (useOverlayShell || isRecordingPageLayout));
@@ -2198,6 +2420,15 @@ function V3Player(props: V3PlayerProps) {
   const showVerboseErrorTelemetry = !isCompactTouchLayout;
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
   const audioToggleIcon = isMuted ? '🔊' : '🔇';
+  const playbackWindowKind = sessionWindowKind
+    ?? (playbackMode === 'VOD' ? 'vod' : playbackMode === 'LIVE' ? (hasSeekWindow ? 'live-dvr' : 'live') : 'unknown');
+  const playbackWindowLabel = t(`player.playbackWindowKinds.${playbackWindowKind}`, { defaultValue: playbackWindowKind });
+  const shouldUseInlineDvrFullscreenGuidance = Boolean(
+    playbackWindowKind === 'live-dvr' &&
+    isCompactTouchLayout &&
+    activeHlsEngine === 'native' &&
+    supportsNativeFullscreen
+  );
   const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
   const seekProgressPercent = windowDuration > 0
     ? `${Math.min(100, Math.max(0, (relativePosition / windowDuration) * 100))}%`
@@ -2257,6 +2488,7 @@ function V3Player(props: V3PlayerProps) {
     <div
       ref={containerRef}
       data-xg2g-player-root="true"
+      data-playback-window={playbackWindowKind}
       className={[
         styles.container,
         'animate-enter',
@@ -2454,6 +2686,10 @@ function V3Player(props: V3PlayerProps) {
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.seekWindow', { defaultValue: 'Seek Window' })}</span>
                 <span className={styles.statsValue}>{hasSeekWindow ? formatClock(windowDuration) : '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.playbackWindow', { defaultValue: 'Playback Window' })}</span>
+                <span className={styles.statsValue}>{playbackWindowLabel}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.fullscreenPath', { defaultValue: 'Fullscreen Path' })}</span>
@@ -2658,18 +2894,30 @@ function V3Player(props: V3PlayerProps) {
                 <div
                   className={styles.vodScrubTrack}
                   role="slider"
-                  tabIndex={0}
-                  aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                  tabIndex={shouldUseInlineDvrFullscreenGuidance ? -1 : 0}
+                  aria-label={shouldUseInlineDvrFullscreenGuidance
+                    ? t('player.inlineDvrFullscreenHint', { defaultValue: 'Use fullscreen on iPhone for DVR scrubbing.' })
+                    : t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                  aria-disabled={shouldUseInlineDvrFullscreenGuidance ? 'true' : undefined}
                   aria-valuemin={0}
                   aria-valuemax={Math.round(windowDuration)}
                   aria-valuenow={Math.round(relativePosition)}
-                  onPointerDown={handleVodScrubPointerDown}
-                  onPointerMove={handleVodScrubPointerMove}
-                  onKeyDown={handleVodScrubKeyDown}
+                  onPointerDown={shouldUseInlineDvrFullscreenGuidance ? undefined : handleVodScrubPointerDown}
+                  onPointerMove={shouldUseInlineDvrFullscreenGuidance ? undefined : handleVodScrubPointerMove}
+                  onKeyDown={shouldUseInlineDvrFullscreenGuidance ? undefined : handleVodScrubKeyDown}
                 >
                   <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
                   <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
                 </div>
+                {shouldUseInlineDvrFullscreenGuidance && (
+                  <button
+                    type="button"
+                    className={styles.inlineDvrFullscreenHint}
+                    onClick={enterDVRMode}
+                  >
+                    {t('player.inlineDvrFullscreenHint', { defaultValue: 'Use fullscreen on iPhone for DVR scrubbing.' })}
+                  </button>
+                )}
               </div>
 
               <div

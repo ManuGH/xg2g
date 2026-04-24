@@ -316,8 +316,32 @@ export function usePlayerChrome({
       }
     }
 
-    if (video && useTouchWebKitFullscreen && requestWebKitFullscreen('touch-webkit-request')) {
-      return;
+    if (video && useTouchWebKitFullscreen) {
+      const canEnterTouchWebKitFullscreen = () => {
+        const { start, end } = readSeekableBounds(video);
+        return video.readyState >= 1 && Math.max(0, end - start) > 0;
+      };
+
+      if (!canEnterTouchWebKitFullscreen()) {
+        const retryEnterTouchWebKitFullscreen = () => {
+          if (!canEnterTouchWebKitFullscreen()) {
+            return;
+          }
+          video.removeEventListener('loadedmetadata', retryEnterTouchWebKitFullscreen);
+          video.removeEventListener('durationchange', retryEnterTouchWebKitFullscreen);
+          video.removeEventListener('progress', retryEnterTouchWebKitFullscreen);
+          requestWebKitFullscreen('touch-webkit-ready');
+        };
+
+        video.addEventListener('loadedmetadata', retryEnterTouchWebKitFullscreen);
+        video.addEventListener('durationchange', retryEnterTouchWebKitFullscreen);
+        video.addEventListener('progress', retryEnterTouchWebKitFullscreen);
+        return;
+      }
+
+      if (requestWebKitFullscreen('touch-webkit-request')) {
+        return;
+      }
     }
 
     if (container?.requestFullscreen) {
@@ -338,7 +362,7 @@ export function usePlayerChrome({
     } catch (err) {
       debugWarn('Fullscreen failed', err);
     }
-  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
+  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, readSeekableBounds, shouldUseTouchWebKitFullscreen, videoRef]);
 
   const enterNativeFullscreen = useCallback((): boolean => {
     const video = videoRef.current;
@@ -758,6 +782,10 @@ export function usePlayerChrome({
         refreshSeekableState();
         logNativeFullscreenProbe('webkit-endfullscreen', video);
         video.controls = false;
+        if (!video.paused && video.currentSrc) {
+          video.load();
+          video.play().catch((err) => debugWarn('Native fullscreen resume failed', err));
+        }
       }
     };
 
@@ -789,11 +817,6 @@ export function usePlayerChrome({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
-    if (isTouchDevice) {
-      setIsIdle(false);
-      return;
-    }
 
     const resetIdle = () => {
       setIsIdle(false);
@@ -827,7 +850,7 @@ export function usePlayerChrome({
     [currentPlaybackTime, seekableStart, windowDuration]
   );
   const hasVodTimeline = playbackMode === 'VOD' && !!durationSeconds && durationSeconds > 0;
-  const hasSeekWindow = (canSeek || hasVodTimeline) && windowDuration > 0;
+  const hasSeekWindow = canSeek && (hasVodTimeline || windowDuration > 0);
   const isLiveMode = playbackMode === 'LIVE';
   const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
   const showDvrModeButton = allowNativeFullscreen && shouldForceNativeMobileHls(videoRef.current);
