@@ -304,9 +304,12 @@
   border-radius: 14px;
   overflow: hidden;
   isolation: isolate;
-  background: var(--gradient-recordings-media-preview);
+  background:
+    radial-gradient(circle at 16% 18%, color-mix(in srgb, var(--recording-accent) 28%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 38%),
+    linear-gradient(135deg, color-mix(in srgb, var(--recording-accent) 10%, var(--bg-video) 90%), color-mix(in srgb, var(--bg-video) 92%, black 8%));
   border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
-  box-shadow: var(--shadow-recordings-media-preview);
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--bg-video) 18%, transparent);
 }
 
 .mediaPreview::after {
@@ -314,7 +317,9 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: var(--gradient-recordings-media-preview-overlay);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, black 6%, transparent), transparent 28%),
+    linear-gradient(180deg, transparent 45%, color-mix(in srgb, black 46%, transparent) 100%);
   pointer-events: none;
 }
 
@@ -460,8 +465,7 @@
 
 .mediaProgressFill {
   height: 100%;
-  width: var(--xg2g-progress-width, 0%);
-  background: var(--gradient-recordings-progress-fill);
+  background: linear-gradient(90deg, var(--accent-action), var(--accent-live));
 }
 
 .selectionMode {}
@@ -483,7 +487,7 @@
   align-items: center;
   justify-content: center;
   z-index: 3;
-  box-shadow: var(--shadow-recordings-selection-indicator);
+  box-shadow: 0 10px 24px color-mix(in srgb, black 24%, transparent);
 }
 
 .selectionMode .selected .selectionIndicator {
@@ -505,7 +509,7 @@
   justify-content: center;
   opacity: 0;
   pointer-events: none;
-  background: var(--gradient-recordings-play-overlay);
+  background: radial-gradient(circle at center, color-mix(in srgb, black 22%, transparent), transparent 48%);
   transition:
     opacity var(--motion-standard) var(--ease-standard),
     transform var(--motion-standard) var(--ease-standard);
@@ -728,15 +732,22 @@
   aspect-ratio: 16 / 9;
   border-radius: 14px;
   overflow: hidden;
-  background: var(--gradient-recordings-preplay-stage);
-  box-shadow: var(--shadow-recordings-preplay-stage);
+  background:
+    radial-gradient(circle at 24% 16%, color-mix(in srgb, var(--accent-action) 14%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 36%),
+    var(--bg-video);
+  box-shadow:
+    0 16px 36px color-mix(in srgb, var(--bg-video) 30%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--border-base) 88%, transparent);
 }
 
 .preplayStage::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: var(--gradient-recordings-preplay-stage-overlay);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, black 8%, transparent), transparent 26%),
+    linear-gradient(180deg, transparent 44%, color-mix(in srgb, black 58%, transparent) 100%);
   pointer-events: none;
 }
 
@@ -793,8 +804,7 @@
 
 .preplayStageProgressFill {
   height: 100%;
-  width: var(--xg2g-progress-width, 0%);
-  background: var(--gradient-recordings-progress-fill);
+  background: linear-gradient(90deg, var(--accent-action), var(--accent-live));
 }
 
 .preplayBody {
@@ -896,6 +906,7 @@
   line-height: 1.5;
 }
 
+
 @media (max-width: 980px) {
   .heroHeadingRow {
     align-items: flex-start;
@@ -980,7 +991,7 @@
   .watchPageFallbackStage,
   .preplayStage {
     border-radius: 0;
-    box-shadow: var(--shadow-none);
+    box-shadow: none;
   }
 
   .preplayStageDock {
@@ -1007,31 +1018,27 @@
 
 @media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
   .container {
-    gap: 12px;
-    padding: 4px 0 16px;
+    gap: 14px;
+    padding: 6px 0 20px;
   }
 
   .hero {
-    gap: 8px;
-  }
-
-  .heroCopy {
-    gap: 8px;
+    gap: 10px;
   }
 
   .heroHeadingRow {
     align-items: flex-end;
-    gap: 10px 12px;
+    gap: 12px;
   }
 
   .heroTitle {
-    font-size: clamp(1.32rem, 3vw, 1.95rem);
+    font-size: clamp(1.45rem, 3.4vw, 2.2rem);
   }
 
   .heroSummary,
   .heroContext {
-    font-size: 0.84rem;
-    line-height: 1.38;
+    font-size: 0.88rem;
+    line-height: 1.45;
   }
 
   .heroSignals {
@@ -1039,13 +1046,13 @@
   }
 
   .browserBar {
-    gap: 8px;
-    padding-top: 8px;
+    gap: 10px;
+    padding-top: 10px;
   }
 
   .toolbarPrimary,
   .segmentedControls {
-    gap: 8px 10px;
+    gap: 10px;
   }
 
   .toolbarGroup,
@@ -1061,14 +1068,6 @@
 
   .segmentButton {
     padding: 7px 11px;
-  }
-
-  .section {
-    gap: 10px;
-  }
-
-  .sectionTitle {
-    font-size: 1rem;
   }
 
   .directoryRail,

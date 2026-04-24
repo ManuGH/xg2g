@@ -459,7 +459,6 @@ export function usePlaybackEngine({
     trigger: 'waiting' | 'stalled'
   ) => {
     if (
-      decodeRecoveryInFlightRef.current ||
       nativeStallRecoveryTimerRef.current !== null ||
       hlsRef.current ||
       !sessionIdRef.current ||
@@ -478,7 +477,6 @@ export function usePlaybackEngine({
 
       if (
         isTeardownRef.current ||
-        decodeRecoveryInFlightRef.current ||
         hlsRef.current ||
         !sessionIdRef.current ||
         !lastHlsUrlRef.current ||
@@ -525,7 +523,6 @@ export function usePlaybackEngine({
     trigger: 'waiting' | 'stalled'
   ) => {
     if (
-      decodeRecoveryInFlightRef.current ||
       hlsStallRecoveryTimerRef.current !== null ||
       !hlsRef.current ||
       !sessionIdRef.current ||
@@ -544,7 +541,6 @@ export function usePlaybackEngine({
       const hls = hlsRef.current;
       if (
         isTeardownRef.current ||
-        decodeRecoveryInFlightRef.current ||
         !hls ||
         !sessionIdRef.current ||
         !lastHlsUrlRef.current ||
@@ -885,11 +881,6 @@ export function usePlaybackEngine({
     if (!videoEl) return;
 
     const onWaiting = () => {
-      if (decodeRecoveryInFlightRef.current) {
-        debugLog('[V3Player] Event: waiting ignored during decode recovery');
-        return;
-      }
-
       let bufferHealth = 0;
       if (videoEl.buffered.length > 0) {
         for (let i = 0; i < videoEl.buffered.length; i++) {
@@ -917,11 +908,6 @@ export function usePlaybackEngine({
     };
 
     const onStalled = () => {
-      if (decodeRecoveryInFlightRef.current) {
-        debugLog('[V3Player] Event: stalled ignored during decode recovery');
-        return;
-      }
-
       let bufferHealth = 0;
       if (videoEl.buffered.length > 0) {
         for (let i = 0; i < videoEl.buffered.length; i++) {
@@ -949,11 +935,6 @@ export function usePlaybackEngine({
     };
 
     const onSeeking = () => {
-      if (decodeRecoveryInFlightRef.current) {
-        debugLog('[V3Player] Event: seeking ignored during decode recovery');
-        return;
-      }
-
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();

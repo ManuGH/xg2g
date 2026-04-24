@@ -805,22 +805,13 @@
 
   .summaryCard {
     padding: 16px 18px;
-    gap: 0;
-  }
-
-  .summaryHeroGrid {
-    gap: 12px;
-    grid-template-columns: 1fr;
-  }
-
-  .summaryHeroMain {
-    gap: 12px;
+    gap: 14px;
   }
 
   .summaryHeader {
     flex-direction: row;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: flex-end;
     gap: 12px;
   }
 
@@ -847,36 +838,6 @@
     width: auto;
     gap: 8px;
     justify-content: flex-start;
-  }
-
-  .summarySpotlight {
-    gap: 12px;
-    padding: 16px;
-    border-radius: 18px;
-  }
-
-  .summarySpotlightTitle {
-    max-width: none;
-    font-size: clamp(1.08rem, 2.4vw, 1.3rem);
-  }
-
-  .summarySpotlightCopy {
-    font-size: 0.84rem;
-    line-height: 1.45;
-  }
-
-  .summarySpotlightMeta {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .summarySpotlightFact {
-    padding: 10px 12px;
-    border-radius: 14px;
-  }
-
-  .summarySpotlightActions {
-    gap: 8px;
   }
 
   .summaryMetrics {

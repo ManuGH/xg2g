@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../context/HouseholdProfilesContext';
 import { setClientAuthToken } from '../services/clientWrapper';
@@ -10,7 +9,6 @@ const {
   confirm,
   toast,
   v3Player,
-  seriesManager,
 } = vi.hoisted(() => ({
   getRecordings: vi.fn(),
   confirm: vi.fn(),
@@ -32,7 +30,6 @@ const {
       {`${recordingId || ''}|${token || ''}|${recordingTitle || ''}|${startPositionSeconds ?? ''}|${suppressResumePrompt ? 'suppress' : 'prompt'}`}
     </div>
   )),
-  seriesManager: vi.fn(() => <div data-testid="series-manager-stub">Series manager</div>),
 }));
 
 vi.mock('../client-ts', () => ({
@@ -66,14 +63,9 @@ vi.mock('../features/player/components/V3Player', () => ({
   default: v3Player,
 }));
 
-vi.mock('./SeriesManager', () => ({
-  __esModule: true,
-  default: seriesManager,
-}));
-
 import RecordingsList from './RecordingsList';
 
-function renderWithQueryClient(initialEntries: string[] = ['/recordings']) {
+function renderWithQueryClient() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -86,13 +78,11 @@ function renderWithQueryClient(initialEntries: string[] = ['/recordings']) {
   });
 
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <QueryClientProvider client={queryClient}>
-        <HouseholdProfilesProvider>
-          <RecordingsList />
-        </HouseholdProfilesProvider>
-      </QueryClientProvider>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <HouseholdProfilesProvider>
+        <RecordingsList />
+      </HouseholdProfilesProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -149,41 +139,6 @@ describe('RecordingsList', () => {
     await waitFor(() => {
       expect(getRecordings).toHaveBeenCalledTimes(2);
     });
-  });
-
-  it('shows the series rules entry for DVR managers', async () => {
-    getRecordings.mockResolvedValue({
-      data: {
-        currentRoot: 'root-a',
-        currentPath: '',
-        roots: [{ id: 'root-a', name: 'Root A' }],
-        breadcrumbs: [],
-        directories: [],
-        recordings: [],
-      },
-    });
-
-    renderWithQueryClient();
-
-    expect(await screen.findByRole('button', { name: 'Series Rules' })).toBeInTheDocument();
-  });
-
-  it('renders the embedded series manager for the series section route', async () => {
-    getRecordings.mockResolvedValue({
-      data: {
-        currentRoot: 'root-a',
-        currentPath: '',
-        roots: [{ id: 'root-a', name: 'Root A' }],
-        breadcrumbs: [],
-        directories: [],
-        recordings: [],
-      },
-    });
-
-    renderWithQueryClient(['/recordings?section=series']);
-
-    expect(await screen.findByTestId('series-manager-stub')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Back to recordings' })).toBeInTheDocument();
   });
 
   it('refetches recordings when navigating into a directory', async () => {

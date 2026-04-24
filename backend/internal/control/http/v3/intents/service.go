@@ -519,6 +519,12 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	if targetStep != runtimepolicy.PlaybackStepUnknown {
 		session.ContextData[model.CtxKeyRuntimeTargetStep] = string(targetStep)
 	}
+	if session.ContextData == nil {
+		session.ContextData = make(map[string]string, 2)
+	}
+	if targetStep := runtimepolicy.PlaybackLadderStepFromTargetProfile(session.PlaybackTrace.TargetProfile, playbackprofile.NormalizeQualityRung(videoQualityRung)); targetStep != runtimepolicy.PlaybackStepUnknown {
+		session.ContextData[model.CtxKeyRuntimeTargetStep] = string(targetStep)
+	}
 	return session
 }
 

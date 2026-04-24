@@ -305,9 +305,11 @@ func TestHandleReady(t *testing.T) {
 	xmltvPath := "epg.xml"
 	xmltvFullPath := filepath.Join(tempDir, xmltvPath)
 
-	// Create a mock receiver server for health check
+	// Create a mock receiver server for health check.
+	// The strict readiness checker calls /api/about and parses the OpenWebIF JSON body.
 	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"info":{"model":"test"}}`))
 	}))
 	defer mockReceiver.Close()
 
@@ -356,12 +358,11 @@ func TestHandleReady(t *testing.T) {
 	// for the cache to expire before the checkers will re-run and see the new state
 	time.Sleep(1100 * time.Millisecond)
 
-	// The readiness contract also requires a valid receiver target; without one,
-	// the server remains not ready even after a successful refresh snapshot.
+	// Now readiness should pass (all checkers will re-run and see healthy state).
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
-	assert.Contains(t, rr.Body.String(), `"ready":false`)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), `"ready":true`)
 }
 
 func TestLegacyFilesRoutesRemoved(t *testing.T) {

@@ -358,8 +358,7 @@ func ensureRecordingRenameTargetsAvailable(ops []recordingRenameOp) error {
 
 func updateRecordingMetaTitle(localPath, title string) error {
 	metaPath := localPath + ".meta"
-	// #nosec G304 -- metaPath is derived from a validated local recording path under operator-controlled storage mappings.
-	content, err := os.ReadFile(filepath.Clean(metaPath))
+	content, err := os.ReadFile(metaPath) // #nosec G304 -- localPath is resolved by the recording path resolver before metadata sidecar access.
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil

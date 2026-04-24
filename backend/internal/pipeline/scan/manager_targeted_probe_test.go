@@ -87,8 +87,8 @@ func TestManager_ProbeCapability_DoesNotWaitForPlaybackIdle(t *testing.T) {
 	manager.probeFn = func(ctx context.Context, probeURL string, opts infra.ProbeOptions) (*vod.StreamInfo, error) {
 		return &vod.StreamInfo{
 			Container: "ts",
-			Video: vod.VideoStreamInfo{CodecName: "h264"},
-			Audio: vod.AudioStreamInfo{CodecName: "aac"},
+			Video:     vod.VideoStreamInfo{CodecName: "h264"},
+			Audio:     vod.AudioStreamInfo{CodecName: "aac"},
 		}, nil
 	}
 

@@ -6,7 +6,6 @@
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
 import React, { useState, useEffect, lazy, Suspense, useRef, type CSSProperties } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
@@ -20,12 +19,6 @@ import { toAppError } from '../lib/appErrors';
 import { Button, Card, CardBody, StatusChip, type ChipState } from './ui';
 import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
-import SectionContextBar from './SectionContextBar';
-import SeriesManager from './SeriesManager';
-import {
-  buildRecordingsRoute,
-  type RecordingsSection,
-} from '../routes';
 import styles from './Recordings.module.css';
 
 const importV3Player = () => import('../features/player/components/V3Player');
@@ -37,10 +30,6 @@ const loadV3Player = () => {
   }
   return v3PlayerModulePromise;
 };
-
-const buildProgressStyle = (progressPercent: number): CSSProperties => (
-  { '--xg2g-progress-width': `${progressPercent}%` } as CSSProperties
-);
 
 const V3Player = lazy(loadV3Player);
 
@@ -309,16 +298,9 @@ function RecordingPreviewArtwork({ recording, authToken }: { recording: Recordin
 
 export default function RecordingsList() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const { search } = useLocation();
   const { auth } = useAppContext();
   const { confirm, toast } = useUiOverlay();
   const { selectedProfile, canAccessDvrPlayback, canManageDvr } = useHouseholdProfiles();
-  const searchParams = React.useMemo(() => new URLSearchParams(search), [search]);
-  const requestedSection = searchParams.get('section');
-  const activeSection: RecordingsSection = requestedSection === 'series' && canManageDvr
-    ? 'series'
-    : 'library';
 
   // State
   const [root, setRoot] = useState<string>(''); // Selected Root ID
@@ -411,25 +393,6 @@ export default function RecordingsList() {
       setSelectionMode(false);
     }
     setPath(newPath);
-  };
-
-  const handleSectionChange = (nextSection: RecordingsSection) => {
-    if (activeSection === nextSection) {
-      return;
-    }
-
-    setSelectionMode(false);
-    setSelectedIds(new Set());
-    setPreplayRecording(null);
-    setLaunchingRecordingId(null);
-
-    if (nextSection !== 'library') {
-      setPlaying(null);
-    }
-
-    navigate(buildRecordingsRoute({
-      section: nextSection,
-    }));
   };
 
   const handlePlay = async (
@@ -647,20 +610,6 @@ export default function RecordingsList() {
   const librarySummary = currentPathLabel
     ? t('recordings.browsingPath', { root: currentRootLabel, path: currentPathLabel })
     : t('recordings.browsingRoot', { root: currentRootLabel });
-  const heroTitle = activeSection === 'series'
-    ? t('recordings.seriesTitle', { defaultValue: 'Series Rules' })
-    : t('recordings.title');
-  const heroSummary = activeSection === 'series'
-    ? t('recordings.seriesSummary', {
-      defaultValue: 'Automate recurring DVR rules without turning the main recordings path into an expert-only surface.',
-    })
-    : t('recordings.summary');
-  const heroContext = activeSection === 'series'
-    ? t('recordings.seriesContext', {
-      defaultValue: 'Power-user rules stay here, while the default recordings flow remains focused on watching and browsing.',
-    })
-    : librarySummary;
-  const showSeriesContextBar = activeSection === 'series' && canManageDvr;
   const filterOptions: Array<{ value: RecordingsFilter; label: string }> = [
     { value: 'all', label: t('recordings.viewAll') },
     { value: 'active', label: t('recordings.viewActive') },
@@ -781,7 +730,7 @@ export default function RecordingsList() {
             </div>
             {progressPercent !== null && (
               <div className={styles.mediaProgressTrack} aria-hidden="true">
-                <div className={styles.mediaProgressFill} style={buildProgressStyle(progressPercent)}></div>
+                <div className={styles.mediaProgressFill} style={{ width: `${progressPercent}%` }}></div>
               </div>
             )}
             {selectionMode && canManageDvr && (
@@ -826,7 +775,7 @@ export default function RecordingsList() {
     );
   }
 
-  if (activeSection === 'library' && loading && !data) {
+  if (loading && !data) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
         <LoadingSkeleton variant="page" label={t('recordings.loading')} />
@@ -834,7 +783,7 @@ export default function RecordingsList() {
     );
   }
 
-  if (activeSection === 'library' && pageError && !data) {
+  if (pageError && !data) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
         <ErrorPanel error={pageError} onRetry={handleRefresh} titleAs="h3" />
@@ -868,7 +817,10 @@ export default function RecordingsList() {
                 </div>
                 {playingProgressPercent !== null && (
                   <div className={styles.preplayStageProgress}>
-                    <div className={styles.preplayStageProgressFill} style={buildProgressStyle(playingProgressPercent)}></div>
+                    <div
+                      className={styles.preplayStageProgressFill}
+                      style={{ width: `${playingProgressPercent}%` }}
+                    ></div>
                   </div>
                 )}
                 <div className={styles.preplayStageDock}>
@@ -882,7 +834,7 @@ export default function RecordingsList() {
                   </div>
                   <div className={styles.preplayStageActions}>
                     <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
-                      <span className={[styles.playerLaunchSpinner, 'animate-recordings-launch-spinner'].join(' ')} aria-hidden="true" />
+                      <span className={`${styles.playerLaunchSpinner} animate-recordings-launch-spinner`} aria-hidden="true" />
                       <div className={styles.playerLaunchCopy}>
                         <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
                         <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>
@@ -920,76 +872,28 @@ export default function RecordingsList() {
           <p className={styles.heroEyebrow}>{t('recordings.eyebrow')}</p>
           <div className={styles.heroHeadingRow}>
             <div>
-              <h2 className={styles.heroTitle}>{heroTitle}</h2>
-              <p className={styles.heroSummary}>{heroSummary}</p>
+              <h2 className={styles.heroTitle}>{t('recordings.title')}</h2>
+              <p className={styles.heroSummary}>{t('recordings.summary')}</p>
             </div>
-            {activeSection === 'library' ? (
-              <div className={styles.heroSignals}>
-                <div className={styles.heroSignal}>
-                  <span className={styles.heroSignalValue}>{resumeCount}</span>
-                  <span className={styles.heroSignalLabel}>{t('recordings.metricResume')}</span>
-                </div>
-                <div className={styles.heroSignal}>
-                  <span className={styles.heroSignalValue}>{activeCount}</span>
-                  <span className={styles.heroSignalLabel}>{t('recordings.metricRecording')}</span>
-                </div>
-                <div className={styles.heroSignal}>
-                  <span className={styles.heroSignalValue}>{profileRecordings.length}</span>
-                  <span className={styles.heroSignalLabel}>{t('recordings.metricItems')}</span>
-                </div>
+            <div className={styles.heroSignals}>
+              <div className={styles.heroSignal}>
+                <span className={styles.heroSignalValue}>{resumeCount}</span>
+                <span className={styles.heroSignalLabel}>{t('recordings.metricResume')}</span>
               </div>
-            ) : null}
-          </div>
-          <p className={styles.heroContext}>{heroContext}</p>
-          {canManageDvr ? (
-            <div className={styles.segmentGroup} role="tablist" aria-label={t('recordings.sectionNavLabel', { defaultValue: 'Recordings sections' })}>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeSection === 'library'}
-                className={[
-                  styles.segmentButton,
-                  activeSection === 'library' ? styles.segmentButtonActive : null,
-                ].filter(Boolean).join(' ')}
-                onClick={() => handleSectionChange('library')}
-              >
-                {t('nav.recordings')}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeSection === 'series'}
-                className={[
-                  styles.segmentButton,
-                  activeSection === 'series' ? styles.segmentButtonActive : null,
-                ].filter(Boolean).join(' ')}
-                onClick={() => handleSectionChange('series')}
-              >
-                {t('recordings.seriesRulesAction', { defaultValue: 'Series Rules' })}
-              </button>
+              <div className={styles.heroSignal}>
+                <span className={styles.heroSignalValue}>{activeCount}</span>
+                <span className={styles.heroSignalLabel}>{t('recordings.metricRecording')}</span>
+              </div>
+              <div className={styles.heroSignal}>
+                <span className={styles.heroSignalValue}>{profileRecordings.length}</span>
+                <span className={styles.heroSignalLabel}>{t('recordings.metricItems')}</span>
+              </div>
             </div>
-          ) : null}
+          </div>
+          <p className={styles.heroContext}>{librarySummary}</p>
         </div>
       </section>
 
-      {showSeriesContextBar ? (
-        <SectionContextBar
-          segments={[
-            {
-              label: t('nav.recordings'),
-              onClick: () => handleSectionChange('library'),
-            },
-            {
-              label: t('recordings.seriesRulesAction', { defaultValue: 'Series Rules' }),
-            },
-          ]}
-          actionLabel={t('recordings.backToLibrary', { defaultValue: 'Back to recordings' })}
-          onAction={() => handleSectionChange('library')}
-        />
-      ) : null}
-
-      {activeSection === 'library' ? (
-        <>
       <div className={styles.browserBar}>
         <div className={styles.toolbarPrimary}>
           <div className={styles.toolbarGroup}>
@@ -1007,15 +911,6 @@ export default function RecordingsList() {
           </div>
 
           <div className={styles.toolbarActions}>
-            {canManageDvr ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleSectionChange('series')}
-              >
-                {t('recordings.seriesRulesAction', { defaultValue: 'Series Rules' })}
-              </Button>
-            ) : null}
             <Button
               variant="secondary"
               size="sm"
@@ -1161,10 +1056,6 @@ export default function RecordingsList() {
           </p>
         </div>
       )}
-        </>
-      ) : (
-        <SeriesManager showLegacyNotice={false} />
-      )}
 
       {preplayRecording && preplayStatus && (
         <div
@@ -1198,7 +1089,10 @@ export default function RecordingsList() {
               </div>
               {preplayProgressPercent !== null && (
                 <div className={styles.preplayStageProgress}>
-                  <div className={styles.preplayStageProgressFill} style={buildProgressStyle(preplayProgressPercent)}></div>
+                  <div
+                    className={styles.preplayStageProgressFill}
+                    style={{ width: `${preplayProgressPercent}%` }}
+                  ></div>
                 </div>
               )}
               <div className={styles.preplayStageDock}>
@@ -1221,7 +1115,7 @@ export default function RecordingsList() {
                 <div className={styles.preplayStageActions}>
                   {isPreplayLaunching ? (
                     <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
-                      <span className={[styles.playerLaunchSpinner, 'animate-recordings-launch-spinner'].join(' ')} aria-hidden="true" />
+                      <span className={`${styles.playerLaunchSpinner} animate-recordings-launch-spinner`} aria-hidden="true" />
                       <div className={styles.playerLaunchCopy}>
                         <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
                         <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>

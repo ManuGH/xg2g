@@ -316,9 +316,9 @@ export const deleteRecording = <ThrowOnError extends boolean = false>(options: O
 });
 
 /**
- * Delete a recording via compatibility endpoint
+ * Delete a recording
  *
- * Deletes the recording via OpenWebIF on the receiver.
+ * Compatibility POST endpoint for clients that cannot issue DELETE requests. Deletes the recording via OpenWebIF on the receiver or via the local recording mapping when available.
  */
 export const postRecordingDelete = <ThrowOnError extends boolean = false>(options: Options<PostRecordingDeleteData, ThrowOnError>) => (options.client ?? client).post<PostRecordingDeleteResponses, PostRecordingDeleteErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -327,7 +327,9 @@ export const postRecordingDelete = <ThrowOnError extends boolean = false>(option
 });
 
 /**
- * Rename a recording via compatibility endpoint
+ * Rename a recording
+ *
+ * Renames a locally mapped recording and its sidecar artifacts.
  */
 export const postRecordingRename = <ThrowOnError extends boolean = false>(options: Options<PostRecordingRenameData, ThrowOnError>) => (options.client ?? client).post<PostRecordingRenameResponses, PostRecordingRenameErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -340,7 +342,9 @@ export const postRecordingRename = <ThrowOnError extends boolean = false>(option
 });
 
 /**
- * Get recording thumbnail
+ * Get a recording thumbnail
+ *
+ * Returns a cached JPEG thumbnail for a locally mapped recording, generating it on demand when possible.
  */
 export const getRecordingThumbnail = <ThrowOnError extends boolean = false>(options: Options<GetRecordingThumbnailData, ThrowOnError>) => (options.client ?? client).get<GetRecordingThumbnailResponses, GetRecordingThumbnailErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

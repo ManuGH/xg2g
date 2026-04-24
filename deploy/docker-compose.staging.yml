@@ -1,0 +1,4 @@
+services:
+  xg2g:
+    image: xg2g:staging
+    pull_policy: never

@@ -2591,20 +2591,22 @@ export type PostRecordingDeleteErrors = {
     /**
      * Invalid recording reference
      */
-    400: unknown;
+    400: ProblemDetails;
     /**
      * Access denied
      */
-    403: unknown;
+    403: ProblemDetails;
     /**
      * Recording not found
      */
-    404: unknown;
+    404: ProblemDetails;
     /**
      * Failed to delete recording
      */
-    500: unknown;
+    500: ProblemDetails;
 };
+
+export type PostRecordingDeleteError = PostRecordingDeleteErrors[keyof PostRecordingDeleteErrors];
 
 export type PostRecordingDeleteResponses = {
     /**
@@ -2633,20 +2635,26 @@ export type PostRecordingRenameErrors = {
     /**
      * Invalid request
      */
-    400: unknown;
+    400: ProblemDetails;
     /**
      * Access denied
      */
-    403: unknown;
+    403: ProblemDetails;
     /**
      * Recording not found
      */
-    404: unknown;
+    404: ProblemDetails;
+    /**
+     * Rename unsupported for this recording
+     */
+    422: ProblemDetails;
     /**
      * Failed to rename recording
      */
-    500: unknown;
+    500: ProblemDetails;
 };
+
+export type PostRecordingRenameError = PostRecordingRenameErrors[keyof PostRecordingRenameErrors];
 
 export type PostRecordingRenameResponses = {
     /**
@@ -2671,14 +2679,28 @@ export type GetRecordingThumbnailData = {
 
 export type GetRecordingThumbnailErrors = {
     /**
-     * Thumbnail not found
+     * Invalid recording reference
      */
-    404: unknown;
+    400: ProblemDetails;
+    /**
+     * Access denied
+     */
+    403: ProblemDetails;
+    /**
+     * Recording thumbnail not found
+     */
+    404: ProblemDetails;
+    /**
+     * Thumbnail cache unavailable
+     */
+    500: ProblemDetails;
 };
+
+export type GetRecordingThumbnailError = GetRecordingThumbnailErrors[keyof GetRecordingThumbnailErrors];
 
 export type GetRecordingThumbnailResponses = {
     /**
-     * Thumbnail image
+     * JPEG thumbnail
      */
     200: Blob | File;
 };

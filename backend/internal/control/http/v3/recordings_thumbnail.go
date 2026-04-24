@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 	"golang.org/x/sync/singleflight"
 )
@@ -44,14 +45,14 @@ func (s *Server) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, r
 
 	serviceRef, ok := recservice.DecodeRecordingID(recordingId)
 	if !ok {
-		http.NotFound(w, r)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, "Recording not found", nil)
 		return
 	}
 
 	sourcePath, err := resolveRecordingThumbnailSourcePath(deps, serviceRef)
 	if err != nil {
 		log.L().Debug().Err(err).Str("recordingId", recordingId).Msg("recording thumbnail source unavailable")
-		http.NotFound(w, r)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, "Recording thumbnail source not found", nil)
 		return
 	}
 
@@ -64,7 +65,7 @@ func (s *Server) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, r
 
 	if err := ensureRecordingThumbnail(r.Context(), deps.cfg, sourcePath, thumbnailPath); err != nil {
 		log.L().Debug().Err(err).Str("recordingId", recordingId).Str("sourcePath", sourcePath).Msg("recording thumbnail build failed")
-		http.NotFound(w, r)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, "Recording thumbnail not found", nil)
 		return
 	}
 
@@ -176,8 +177,7 @@ func probeRecordingDurationSeconds(ctx context.Context, cfg config.AppConfig, so
 	probeCtx, cancel := context.WithTimeout(ctx, recordingThumbnailProbeTimeout)
 	defer cancel()
 
-	// #nosec G204 -- ffprobe path is operator-configured and the input path is a validated local recording source.
-	cmd := exec.CommandContext(
+	cmd := exec.CommandContext( // #nosec G204 -- ffprobe binary is trusted config/default and args are fixed except resolver-confined sourcePath.
 		probeCtx,
 		probeBin,
 		"-v", "error",
@@ -251,8 +251,7 @@ func generateRecordingThumbnail(ctx context.Context, cfg config.AppConfig, sourc
 		thumbnailPath,
 	)
 
-	// #nosec G204 -- ffmpeg path is operator-configured and arguments only reference validated local recording paths.
-	cmd := exec.CommandContext(buildCtx, ffmpegBin, args...)
+	cmd := exec.CommandContext(buildCtx, ffmpegBin, args...) // #nosec G204 -- ffmpeg binary is trusted config/default and args are internally constructed from resolver-confined paths.
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ffmpeg thumbnail: %w (%s)", err, strings.TrimSpace(string(output)))

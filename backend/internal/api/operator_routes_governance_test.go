@@ -35,7 +35,7 @@ func TestOperatorRoutes_InternalAllowlist(t *testing.T) {
 	require.NoError(t, err)
 
 	expected := map[string]methodSet{
-		"/internal/setup/validate":        {"POST": {}},
+		"/internal/setup/validate":       {"POST": {}},
 		"/internal/system/config/reload": {"POST": {}},
 	}
 	require.Equal(t, expected, got)

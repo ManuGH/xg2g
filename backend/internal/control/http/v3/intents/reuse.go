@@ -2,6 +2,7 @@ package intents
 
 import (
 	"context"
+	"reflect"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -80,77 +81,43 @@ func isReusableLiveSessionCandidate(intent Intent, session, candidate *model.Ses
 }
 
 func reusableLiveClientPathCompatible(session, candidate *model.SessionRecord) bool {
+	requestPath := normalize.Token(sessionContextValue(session, model.CtxKeyClientPath))
+	candidatePath := normalize.Token(sessionContextValue(candidate, model.CtxKeyClientPath))
+	if requestPath == candidatePath {
+		return true
+	}
+	if requestPath == "" || candidatePath == "" {
+		return false
+	}
+	return reusableLiveProfilesEquivalent(session, candidate)
+}
+
+func reusableLiveProfilesEquivalent(session, candidate *model.SessionRecord) bool {
 	if session == nil || candidate == nil {
 		return false
 	}
-	if normalize.Token(sessionContextValue(candidate, model.CtxKeyClientPath)) == normalize.Token(sessionContextValue(session, model.CtxKeyClientPath)) {
-		return true
-	}
-	return reusableLiveProfileEquivalent(session.Profile, candidate.Profile)
-}
-
-type reusableLiveProfileFingerprint struct {
-	LLHLS          bool
-	DVRWindowSec   int
-	TranscodeVideo bool
-	VideoCodec     string
-	HWAccel        string
-	Deinterlace    bool
-	VideoCRF       int
-	VideoQP        int
-	VideoMaxWidth  int
-	VideoMaxRateK  int
-	VideoBufSizeK  int
-	BFrames        int
-	AudioBitrateK  int
-	Preset         string
-	Container      string
-}
-
-func reusableLiveProfileEquivalent(left, right model.ProfileSpec) bool {
-	return reusableLiveProfileKey(left) == reusableLiveProfileKey(right)
-}
-
-func reusableLiveProfileKey(profile model.ProfileSpec) reusableLiveProfileFingerprint {
-	return reusableLiveProfileFingerprint{
-		LLHLS:          profile.LLHLS,
-		DVRWindowSec:   profile.DVRWindowSec,
-		TranscodeVideo: profile.TranscodeVideo,
-		VideoCodec:     normalize.Token(profile.VideoCodec),
-		HWAccel:        normalize.Token(profile.HWAccel),
-		Deinterlace:    profile.Deinterlace,
-		VideoCRF:       profile.VideoCRF,
-		VideoQP:        profile.VideoQP,
-		VideoMaxWidth:  profile.VideoMaxWidth,
-		VideoMaxRateK:  profile.VideoMaxRateK,
-		VideoBufSizeK:  profile.VideoBufSizeK,
-		BFrames:        profile.BFrames,
-		AudioBitrateK:  profile.AudioBitrateK,
-		Preset:         normalize.Token(profile.Preset),
-		Container:      normalize.Token(profile.Container),
-	}
+	return reflect.DeepEqual(session.Profile, candidate.Profile)
 }
 
 func matchSessionIdentity(intent Intent, session, candidate *model.SessionRecord) bool {
 	intentPrincipal := normalize.Token(intent.PrincipalID)
 	candidatePrincipal := normalize.Token(sessionContextValue(candidate, model.CtxKeyPrincipalID))
+	principalMatched := false
 	if intentPrincipal != "" || candidatePrincipal != "" {
 		if intentPrincipal == "" || candidatePrincipal == "" || intentPrincipal != candidatePrincipal {
 			return false
 		}
+		principalMatched = true
 	}
 
 	intentCapHash := normalize.Token(clientCapHashForIntent(intent))
 	candidateCapHash := normalize.Token(candidateCapHash(candidate))
 	if intentCapHash != "" || candidateCapHash != "" {
-		if intentCapHash == "" || candidateCapHash == "" {
-			if intentPrincipal == "" || candidatePrincipal == "" || !reusableLiveProfileEquivalent(session.Profile, candidate.Profile) {
-				return false
+		if intentCapHash == "" || candidateCapHash == "" || intentCapHash != candidateCapHash {
+			if principalMatched && reusableLiveProfilesEquivalent(session, candidate) {
+				return true
 			}
-		} else if intentCapHash != candidateCapHash {
-			if intentPrincipal == "" || candidatePrincipal == "" || !reusableLiveProfileEquivalent(session.Profile, candidate.Profile) {
-				return false
-			}
+			return false
 		}
 	}
 

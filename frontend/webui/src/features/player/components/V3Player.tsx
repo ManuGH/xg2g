@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { CSSProperties, Dispatch, KeyboardEvent, PointerEvent, SetStateAction } from 'react';
+import type { Dispatch, KeyboardEvent, PointerEvent, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from '../lib/hlsRuntime';
 import {
@@ -10,8 +10,6 @@ import {
   type PlaybackTrace as PlaybackTraceContract,
   type PlaybackTraceFfmpegPlan,
   type PlaybackTraceOperator,
-  type PlaybackTraceRuntimeReplay,
-  type PlaybackTraceRuntimeTick,
   type PlaybackTargetProfile,
 } from '../../../client-ts';
 import { getApiBaseUrl } from '../../../services/clientWrapper';
@@ -27,20 +25,15 @@ import type {
 import { useLiveSessionController } from '../useLiveSessionController';
 import { usePlaybackEngine } from '../usePlaybackEngine';
 import { usePlayerChrome } from '../usePlayerChrome';
-import {
-  resolveRuntimePolicyErrorSupport,
-  resolveRuntimePolicyStartupSupport,
-  resolveStartupOverlayLabel,
-  resolveStartupOverlaySupport,
-} from '../startupOverlayLabel';
-import { PlayerErrorSurface } from './PlayerErrorSurface';
-import { PlayerRuntimeMeta, PlayerRuntimeMetaPanel } from './PlayerRuntimeMeta';
-import { PlayerRuntimeReplayExport } from './PlayerRuntimeReplayExport';
-import { PlayerStartupSurface } from './PlayerStartupSurface';
+import { resolveStartupOverlayLabel, resolveStartupOverlaySupport } from '../startupOverlayLabel';
 import { useResume } from '../../resume/useResume';
 import { ResumeState } from '../../resume/api';
-import { Button } from '../../../components/ui';
+import { Button, Card, StatusChip } from '../../../components/ui';
 import { debugError, debugLog, debugWarn } from '../../../utils/logging';
+import {
+  PLAYBACK_INFO_CONTEXT_HEADER,
+  PLAYBACK_INFO_CONTEXT_PLAYER_START,
+} from '../utils/playbackInfoContext';
 import {
   PlayerError,
   readResponseBody,
@@ -56,14 +49,9 @@ import {
   gatherPlaybackClientContext,
   resolvePlaybackRequestProfile,
 } from '../utils/playbackRequestProfile';
-import {
-  PLAYBACK_INFO_CONTEXT_HEADER,
-  PLAYBACK_INFO_CONTEXT_PLAYER_START,
-} from '../utils/playbackInfoContext';
 import { normalizePlayerError } from '../../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
 import { useTvInitialFocus } from '../../../hooks/useTvInitialFocus';
-import { useUiSurface } from '../../../context/UiSurfaceContext';
 import {
   getNativePlaybackState,
   onNativePlaybackState,
@@ -97,46 +85,6 @@ type PlaybackObservability = {
   operator: PlaybackTraceOperator | null;
   selectedOutputKind: string | null;
 };
-
-type PlaybackWindowKind = 'live' | 'live-dvr' | 'vod' | 'unknown';
-
-function PlayGlyph() {
-  return (
-    <svg className={[styles.controlIcon, styles.playPauseIcon].join(' ')} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function PauseGlyph() {
-  return (
-    <svg className={[styles.controlIcon, styles.playPauseIcon].join(' ')} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M7 6h3.5v12H7V6Zm6.5 0H17v12h-3.5V6Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function VolumeGlyph({ muted }: { muted: boolean }) {
-  return muted ? (
-    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M10 8.25 6.9 11H4v2h2.9L10 15.75V8.25Z" fill="currentColor" />
-      <path d="m14.25 9.25 5.5 5.5M19.75 9.25l-5.5 5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  ) : (
-    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M10 8.25 6.9 11H4v2h2.9L10 15.75V8.25Z" fill="currentColor" />
-      <path d="M14.5 9.3a4.4 4.4 0 0 1 0 5.4M17.2 7a7.6 7.6 0 0 1 0 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function FullscreenGlyph() {
-  return (
-    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M8 4H4v4M16 4h4v4M8 20H4v-4M20 20h-4v-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 function formatSourceProfileSummary(source: PlaybackSourceProfile | null | undefined): string {
   if (!source) return '-';
@@ -246,48 +194,15 @@ function formatRequestProfileLabel(profile: string | null): string {
   }
 }
 
-function resolveMediaArtworkUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url, typeof window !== 'undefined' ? window.location.href : 'http://localhost').toString();
-  } catch {
-    return null;
-  }
-}
-
-function resolveApiUrl(base: string, path: string): string {
-  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
-  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
-  return new URL(normalizedPath, new URL(normalizedBase, typeof window !== 'undefined' ? window.location.href : 'http://localhost')).toString();
-}
-
 function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null): string[] {
   if (!snapshot) return [];
-
-  // The live stream-info request already carries the probed, policy-shaped
-  // client codec list. Reusing it for the start intent keeps both requests in
-  // sync and avoids silently dropping relaxed iOS-native AV1.
-  const advertisedCodecs = Array.isArray(snapshot.videoCodecs)
-    ? Array.from(
-        new Set(
-          snapshot.videoCodecs
-            .map((codec) => codec.trim().toLowerCase())
-            .filter((codec): codec is 'av1' | 'hevc' | 'h264' => (
-              codec === 'av1' || codec === 'hevc' || codec === 'h264'
-            ))
-        )
-      )
-    : [];
-  if (advertisedCodecs.length > 0) {
-    return advertisedCodecs;
-  }
 
   const out: string[] = [];
   const signals = Array.isArray(snapshot.videoCodecSignals) ? snapshot.videoCodecSignals : [];
   const signalFor = (codec: string) => signals.find((signal) => signal.codec === codec);
 
   const av1 = signalFor('av1');
-  if (av1?.supported && av1.powerEfficient) {
+  if (av1?.supported && (av1.powerEfficient || snapshot.videoCodecs.includes('av1'))) {
     out.push('av1');
   }
 
@@ -301,6 +216,12 @@ function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null): string
   }
 
   return Array.from(new Set(out));
+}
+
+function resolveApiUrl(base: string, path: string): string {
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+  return new URL(normalizedPath, new URL(normalizedBase, typeof window !== 'undefined' ? window.location.href : 'http://localhost')).toString();
 }
 
 function formatQualityRungLabel(rung: string | null): string {
@@ -337,140 +258,6 @@ function formatExecutionLabel(target: PlaybackTargetProfile | null): string {
     return 'CPU';
   }
   return target.hwAccel.toUpperCase();
-}
-
-function resolvePlaybackWindowKind(
-  playbackMode: 'LIVE' | 'VOD' | 'UNKNOWN',
-  hasLiveDvrWindow: boolean
-): PlaybackWindowKind {
-  if (playbackMode === 'LIVE') {
-    return hasLiveDvrWindow ? 'live-dvr' : 'live';
-  }
-  if (playbackMode === 'VOD') {
-    return 'vod';
-  }
-  return 'unknown';
-}
-
-function normalizePlaybackWindowKind(value: string | null | undefined): PlaybackWindowKind {
-  switch (value) {
-    case 'live':
-    case 'live-dvr':
-    case 'vod':
-      return value;
-    default:
-      return 'unknown';
-  }
-}
-
-function mergePlaybackTraceOperator(
-  primary: PlaybackTraceOperator | null | undefined,
-  fallback: PlaybackTraceOperator | null | undefined
-): PlaybackTraceOperator | null {
-  if (!primary && !fallback) {
-    return null;
-  }
-
-  return {
-    forcedIntent: primary?.forcedIntent ?? fallback?.forcedIntent ?? null,
-    maxQualityRung: primary?.maxQualityRung ?? fallback?.maxQualityRung ?? null,
-    runtimePolicyAction: primary?.runtimePolicyAction ?? fallback?.runtimePolicyAction ?? null,
-    runtimePolicyPhase: primary?.runtimePolicyPhase ?? fallback?.runtimePolicyPhase ?? null,
-    runtimePolicyConstraints: primary?.runtimePolicyConstraints ?? fallback?.runtimePolicyConstraints ?? null,
-    runtimePolicyReplay: primary?.runtimePolicyReplay ?? fallback?.runtimePolicyReplay,
-    runtimePolicyReasons: primary?.runtimePolicyReasons ?? fallback?.runtimePolicyReasons ?? null,
-    runtimePolicyTimeline: primary?.runtimePolicyTimeline ?? fallback?.runtimePolicyTimeline ?? null,
-    runtimeProbeCandidate: primary?.runtimeProbeCandidate ?? fallback?.runtimeProbeCandidate ?? null,
-    runtimeProbeFailureStreak: primary?.runtimeProbeFailureStreak ?? fallback?.runtimeProbeFailureStreak ?? null,
-    runtimeProbeSuccessStreak: primary?.runtimeProbeSuccessStreak ?? fallback?.runtimeProbeSuccessStreak ?? null,
-    ruleName: primary?.ruleName ?? fallback?.ruleName ?? null,
-    ruleScope: primary?.ruleScope ?? fallback?.ruleScope ?? null,
-    clientFallbackDisabled: primary?.clientFallbackDisabled ?? fallback?.clientFallbackDisabled,
-    overrideApplied: primary?.overrideApplied ?? fallback?.overrideApplied,
-  };
-}
-
-function formatRuntimePolicyPhaseLabel(value: string | null | undefined): string {
-  switch (value) {
-    case 'probing':
-      return 'Probing';
-    case 'cooldown':
-      return 'Cooldown';
-    case 'probe_regressed':
-      return 'Probe regressed';
-    case 'recovering':
-      return 'Recovering';
-    case 'degraded':
-      return 'Degraded';
-    case 'stable':
-      return 'Stable';
-    default:
-      return '-';
-  }
-}
-
-function resolveRuntimePolicyPhaseState(value: string | null | undefined) {
-  switch (value) {
-    case 'probing':
-      return 'pending' as const;
-    case 'cooldown':
-    case 'recovering':
-      return 'warning' as const;
-    case 'probe_regressed':
-    case 'degraded':
-      return 'error' as const;
-    case 'stable':
-      return 'success' as const;
-    default:
-      return 'idle' as const;
-  }
-}
-
-function formatRuntimeTimelineTime(value: string | null | undefined): string {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-  return date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-function humanizeRuntimeToken(value: string | null | undefined): string {
-  if (!value) return '-';
-  return value.replace(/_/g, ' ');
-}
-
-function formatRuntimeTimelineEntry(entry: PlaybackTraceRuntimeTick): string {
-  const parts = [
-    formatRuntimeTimelineTime(entry.tickAt),
-    humanizeRuntimeToken(entry.confidenceState),
-    humanizeRuntimeToken(entry.policyAction),
-    entry.plannedTransition ? `plan:${humanizeRuntimeToken(entry.plannedTransition)}` : null,
-    entry.executedTransition ? `run:${humanizeRuntimeToken(entry.executedTransition)}` : null,
-    entry.activeStep ? `step:${humanizeRuntimeToken(entry.activeStep)}` : null,
-    entry.probeState ? `probe:${humanizeRuntimeToken(entry.probeState)}` : null,
-    entry.blockers?.length ? `block:${entry.blockers.join('/')}` : null,
-  ].filter(Boolean);
-  return parts.join(' · ');
-}
-
-function resolveRuntimePolicyMetaHint(
-  phase: string | null | undefined,
-  probeCandidate: string | null | undefined,
-  maxQualityRung: string | null | undefined
-): string | null {
-  switch (phase) {
-    case 'probing':
-      return probeCandidate ?? null;
-    case 'cooldown':
-      return maxQualityRung ?? null;
-    default:
-      return null;
-  }
 }
 
 function extractPlaybackObservability(
@@ -549,7 +336,6 @@ const NATIVE_VIDEO_REVEAL_REBUFFER: NativeVideoRevealThresholds = {
 
 const NATIVE_VIDEO_REBUFFER_VEIL_MS = 2300;
 const NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS = 140;
-const NATIVE_VISIBILITY_RESUME_RECOVERY_MS = 1400;
 const NATIVE_PLAYER_STATE_IDLE = 1;
 const NATIVE_PLAYER_STATE_BUFFERING = 2;
 const NATIVE_PLAYER_STATE_READY = 3;
@@ -617,6 +403,7 @@ function V3Player(props: V3PlayerProps) {
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
   const [sessionPlaybackTrace, setSessionPlaybackTrace] = useState<PlaybackTraceContract | null>(null);
   const [sessionProfileReason, setSessionProfileReason] = useState<string | null>(null);
+  const [sessionWindowKind, setSessionWindowKind] = useState<'live' | 'live-dvr' | 'vod' | 'unknown' | null>(null);
   const [startupElapsedSeconds, setStartupElapsedSeconds] = useState(0);
   const [showBufferingOverlay, setShowBufferingOverlay] = useState(false);
   const [showNativeVideo, setShowNativeVideo] = useState(true);
@@ -645,17 +432,11 @@ function V3Player(props: V3PlayerProps) {
   const nativeVideoRevealTimerRef = useRef<number | null>(null);
   const nativeVideoVeilRevealTimerRef = useRef<number | null>(null);
   const nativeVideoVeilClearTimerRef = useRef<number | null>(null);
-  const nativeVisibilityResumeRecoveryTimerRef = useRef<number | null>(null);
   const nativeVideoShownRef = useRef(false);
   const nativeVideoHoldPositionRef = useRef<number | null>(null);
   const nativeVideoTempMutedRef = useRef(false);
   const nativeManagedPauseRef = useRef(false);
-  const nativePlayingProbeSessionRef = useRef<string | null>(null);
-  const nativeRenderRecoverySessionRef = useRef<string | null>(null);
-  const showNativeVideoRef = useRef(showNativeVideo);
-  const showNativeVideoVeilRef = useRef(showNativeVideoVeil);
   const visibilityManagedPauseRef = useRef(false);
-  const nativeVisibilityResumeArmedRef = useRef(false);
   const nativePlaybackWasActiveRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
 
@@ -663,17 +444,8 @@ function V3Player(props: V3PlayerProps) {
     duration && duration > 0 ? duration : null
   );
   const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
-  const [sessionWindowKind, setSessionWindowKind] = useState<PlaybackWindowKind>('unknown');
   const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>(null);
   const [activeHlsEngine, setActiveHlsEngine] = useState<'native' | 'hlsjs' | null>(null);
-  const [liveSeekWindow, setLiveSeekWindow] = useState<{
-    start: number;
-    end: number;
-    liveEdge: number | null;
-    capturedAtMs?: number;
-  } | null>(null);
-  const [liveProgramTitle, setLiveProgramTitle] = useState<string | null>(null);
-  const [useInlineVideoPlayback, setUseInlineVideoPlayback] = useState(true);
 
   // P3-4: Truth State
   const [canSeek, setCanSeek] = useState(() => !recordingId);
@@ -697,29 +469,6 @@ function V3Player(props: V3PlayerProps) {
     setError(null);
     setShowErrorDetails(false);
   }, []);
-
-  const setTouchInlinePlaybackEnabled = useCallback((enabled: boolean) => {
-    setUseInlineVideoPlayback(enabled);
-
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    video.playsInline = enabled;
-    if (enabled) {
-      video.setAttribute('playsinline', '');
-      video.setAttribute('webkit-playsinline', '');
-      return;
-    }
-
-    video.removeAttribute('playsinline');
-    video.removeAttribute('webkit-playsinline');
-  }, [videoRef]);
-
-  const clearDirectTouchNativeStart = useCallback(() => {
-    setTouchInlinePlaybackEnabled(true);
-  }, [setTouchInlinePlaybackEnabled]);
 
   const setLegacyError = useCallback<Dispatch<SetStateAction<string | null>>>((next) => {
     setError((current) => {
@@ -804,182 +553,9 @@ function V3Player(props: V3PlayerProps) {
       setTraceId(session.requestId);
     }
     setSessionProfileReason(session.profileReason ?? null);
+    setSessionWindowKind(session.windowKind ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
-    const snapshotWindowKind = normalizePlaybackWindowKind(session.windowKind);
-    if (session.mode === 'LIVE') {
-      setSessionWindowKind(snapshotWindowKind);
-      const seekableStart = typeof session.seekableStartSeconds === 'number' ? session.seekableStartSeconds : null;
-      const seekableEnd = typeof session.seekableEndSeconds === 'number' ? session.seekableEndSeconds : null;
-      const liveEdge = typeof session.liveEdgeSeconds === 'number' ? session.liveEdgeSeconds : null;
-      if (seekableStart !== null && seekableEnd !== null && seekableEnd > seekableStart) {
-        setLiveSeekWindow({
-          start: Math.max(0, seekableStart),
-          end: Math.max(seekableStart, seekableEnd),
-          liveEdge: liveEdge !== null ? Math.max(seekableEnd, liveEdge) : seekableEnd,
-          capturedAtMs: Date.now(),
-        });
-      } else if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
-        const derivedEnd = liveEdge ?? seekableEnd ?? session.durationSeconds;
-        const derivedStart = Math.max(0, derivedEnd - session.durationSeconds);
-        setLiveSeekWindow({
-          start: derivedStart,
-          end: Math.max(derivedStart, derivedEnd),
-          liveEdge: liveEdge ?? derivedEnd,
-          capturedAtMs: Date.now(),
-        });
-      } else {
-        setLiveSeekWindow(null);
-      }
-    } else if (session.mode === 'RECORDING') {
-      setSessionWindowKind(snapshotWindowKind !== 'unknown' ? snapshotWindowKind : 'vod');
-      setLiveSeekWindow(null);
-    } else {
-      setSessionWindowKind(snapshotWindowKind);
-    }
   }, [mergeSessionPlaybackTrace]);
-
-  const clearNativeVideoVeilTimers = useCallback(() => {
-    if (nativeVideoVeilRevealTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoVeilRevealTimerRef.current);
-      nativeVideoVeilRevealTimerRef.current = null;
-    }
-    if (nativeVideoVeilClearTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoVeilClearTimerRef.current);
-      nativeVideoVeilClearTimerRef.current = null;
-    }
-  }, []);
-
-  const clearNativeVisibilityResumeRecoveryTimer = useCallback(() => {
-    if (nativeVisibilityResumeRecoveryTimerRef.current !== null) {
-      window.clearTimeout(nativeVisibilityResumeRecoveryTimerRef.current);
-      nativeVisibilityResumeRecoveryTimerRef.current = null;
-    }
-  }, []);
-
-  const clearNativeVideoRevealTimer = useCallback(() => {
-    if (nativeVideoRevealTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoRevealTimerRef.current);
-      nativeVideoRevealTimerRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    showNativeVideoRef.current = showNativeVideo;
-  }, [showNativeVideo]);
-
-  useEffect(() => {
-    showNativeVideoVeilRef.current = showNativeVideoVeil;
-  }, [showNativeVideoVeil]);
-
-  const revealNativeVideoIfRenderable = useCallback((): boolean => {
-    if (activeHlsEngine !== 'native') {
-      return false;
-    }
-
-    const video = videoRef.current;
-    if (!video || video.paused) {
-      return false;
-    }
-
-    const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
-    const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
-    const hasDecodedFrames = typeof decodedFrameCount !== 'number' || decodedFrameCount > 0;
-    const hasRenderableFrame = video.readyState >= 3 || (hasVideoGeometry && hasDecodedFrames);
-    if (!hasRenderableFrame) {
-      return false;
-    }
-
-    clearNativeVideoRevealTimer();
-    clearNativeVideoVeilTimers();
-    nativeVideoShownRef.current = true;
-    nativeVideoHoldPositionRef.current = null;
-    setShowNativeVideo(true);
-    setShowNativeVideoVeil(true);
-    setNativeVeilResumeArmed(true);
-    return true;
-  }, [activeHlsEngine, clearNativeVideoRevealTimer, clearNativeVideoVeilTimers, videoRef]);
-
-  const recoverNativeInlineSource = useCallback((reason: string, targetPosition?: number | null): boolean => {
-    const video = videoRef.current;
-    if (!video) {
-      return false;
-    }
-
-    const currentSrc = video.currentSrc || video.getAttribute('src');
-    if (!currentSrc) {
-      return false;
-    }
-
-    const resumePosition = Number.isFinite(targetPosition ?? NaN)
-      ? (targetPosition as number)
-      : (Number.isFinite(video.currentTime) ? video.currentTime : null);
-
-    debugWarn(`[V3Player] Recovering native inline source after ${reason}`, {
-      readyState: video.readyState,
-      paused: video.paused,
-      currentTime: resumePosition,
-      currentSrc,
-    });
-
-    nativeVisibilityResumeArmedRef.current = false;
-    userPauseIntentRef.current = false;
-    nativeVideoHoldPositionRef.current = resumePosition;
-    clearNativeVisibilityResumeRecoveryTimer();
-    setShowNativeVideo(false);
-    setShowNativeVideoVeil(true);
-    setNativeVeilResumeArmed(false);
-    setStatus('buffering');
-
-    const replay = () => {
-      if (resumePosition !== null && resumePosition > 0) {
-        try {
-          video.currentTime = resumePosition;
-        } catch {
-          // Live windows can clamp differently after resume. Playback still continues.
-        }
-      }
-      void video.play().catch((err) => {
-        debugWarn(`[V3Player] Native recovery play blocked after ${reason}`, err);
-      });
-    };
-
-    video.pause();
-    video.src = currentSrc;
-    video.load();
-    video.addEventListener('loadedmetadata', replay, { once: true });
-    return true;
-  }, [clearNativeVisibilityResumeRecoveryTimer, setStatus, videoRef]);
-
-  const recoverInlineLiveSeek = useCallback((targetSeconds: number): boolean => {
-    const video = videoRef.current;
-    const fullscreenElement = typeof document !== 'undefined' ? document.fullscreenElement : null;
-    const isVideoFullscreen = !!(
-      video?.webkitDisplayingFullscreen ||
-      (fullscreenElement && (fullscreenElement === containerRef.current || fullscreenElement === video))
-    );
-
-    if (
-      !isDocumentVisible ||
-      activeHlsEngine !== 'native' ||
-      !hasTouchInput() ||
-      isVideoFullscreen ||
-      playbackMode !== 'LIVE' ||
-      status === 'idle' ||
-      status === 'error' ||
-      status === 'stopped'
-    ) {
-      return false;
-    }
-
-    return recoverNativeInlineSource('inline live seek', targetSeconds);
-  }, [
-    activeHlsEngine,
-    isDocumentVisible,
-    playbackMode,
-    recoverNativeInlineSource,
-    status,
-    videoRef,
-  ]);
 
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
@@ -992,52 +568,7 @@ function V3Player(props: V3PlayerProps) {
       : 0),
     [startPositionSeconds]
   );
-  const uiSurface = useUiSurface();
-  const hasTouchPlaybackInput = useMemo(() => hasTouchInput(), []);
-  const isCompactTouchLayout = hasTouchPlaybackInput && (
-    uiSurface.width < 768 ||
-    uiSurface.heightClass !== 'comfortable'
-  );
-  const mergedPlaybackOperator = useMemo(
-    () => mergePlaybackTraceOperator(sessionPlaybackTrace?.operator, playbackObservability?.operator),
-    [playbackObservability?.operator, sessionPlaybackTrace?.operator]
-  );
-  const isRuntimeProbeActive = mergedPlaybackOperator?.runtimePolicyAction === 'probe_up';
-  const mediaSessionTitle = playbackMode === 'LIVE'
-    ? liveProgramTitle || channel?.name || t('player.loading')
-    : normalizedRecordingTitle || channel?.name || t('player.loading');
-  const mediaSessionSubtitle = playbackMode === 'LIVE'
-    ? channel?.name || t('common.appName', { defaultValue: 'xg2g' })
-    : channel?.name && normalizedRecordingTitle
-      ? channel.name
-      : recordingDateLabel || t('common.appName', { defaultValue: 'xg2g' });
-  const mediaSessionArtworkUrl = resolveMediaArtworkUrl(channel?.logoUrl || null);
-  const handleNativeFullscreenExit = useCallback((details: { currentTime: number | null; wasPaused: boolean }) => {
-    const video = videoRef.current;
-    if (
-      playbackMode !== 'LIVE' ||
-      !hasTouchPlaybackInput ||
-      !isDocumentVisible ||
-      !video ||
-      !shouldForceNativeMobileHls(video) ||
-      userPauseIntentRef.current ||
-      details.wasPaused ||
-      status === 'paused' ||
-      status === 'idle' ||
-      status === 'error' ||
-      status === 'stopped'
-    ) {
-      return;
-    }
-
-    recoverNativeInlineSource('native fullscreen exit', details.currentTime);
-  }, [
-    hasTouchPlaybackInput,
-    isDocumentVisible,
-    playbackMode,
-    recoverNativeInlineSource,
-    status,
-  ]);
+  const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
 
   const {
     sessionIdRef,
@@ -1089,7 +620,7 @@ function V3Player(props: V3PlayerProps) {
     windowDuration,
     relativePosition,
     hasSeekWindow,
-    hasLiveDvrWindow,
+    isLiveMode,
     isAtLiveEdge,
     showDvrModeButton,
     startTimeDisplay,
@@ -1119,16 +650,10 @@ function V3Player(props: V3PlayerProps) {
     durationSeconds,
     canSeek,
     startUnix,
-    liveSeekWindow,
     setStatus,
     allowNativeFullscreen: activeHlsEngine === 'native' || vodStreamMode === 'direct_mp4',
     shouldForceNativeMobileHls,
-    canUseDesktopWebKitFullscreen,
-    recoverInlineLiveSeek,
-    onNativeFullscreenExit: handleNativeFullscreenExit,
-    mediaTitle: mediaSessionTitle,
-    mediaSubtitle: mediaSessionSubtitle,
-    mediaArtworkUrl: mediaSessionArtworkUrl,
+    canUseDesktopWebKitFullscreen
   });
 
   // Resume Hook
@@ -1155,8 +680,6 @@ function V3Player(props: V3PlayerProps) {
     reportError,
     waitForSessionReady,
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
-    primePlaybackAuth,
-    runtimeProbeActive: isRuntimeProbeActive,
     setStats,
     setStatus,
     setError: setLegacyError,
@@ -1188,22 +711,28 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
+  const clearNativeVideoVeilTimers = useCallback(() => {
+    if (nativeVideoVeilRevealTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoVeilRevealTimerRef.current);
+      nativeVideoVeilRevealTimerRef.current = null;
+    }
+    if (nativeVideoVeilClearTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoVeilClearTimerRef.current);
+      nativeVideoVeilClearTimerRef.current = null;
+    }
+  }, []);
+
   const clearPlaybackSelection = useCallback(() => {
     activeRecordingRef.current = null;
     nativePlaybackWasActiveRef.current = false;
     nativeVideoShownRef.current = false;
     nativeVideoHoldPositionRef.current = null;
-    nativeVisibilityResumeArmedRef.current = false;
     clearNativeVideoVeilTimers();
-    clearNativeVisibilityResumeRecoveryTimer();
     setNativePlaybackState(null);
     setNativeSessionId(null);
     setActiveRecordingId(null);
-    clearDirectTouchNativeStart();
     setVodStreamMode(null);
     setActiveHlsEngine(null);
-    setSessionWindowKind('unknown');
-    setLiveSeekWindow(null);
     setShowNativeVideo(true);
     setShowNativeVideoVeil(false);
     setNativeVeilResumeArmed(false);
@@ -1211,7 +740,8 @@ function V3Player(props: V3PlayerProps) {
     setPlaybackObservability(null);
     setSessionPlaybackTrace(null);
     setSessionProfileReason(null);
-  }, [clearDirectTouchNativeStart, clearNativeVideoVeilTimers, clearNativeVisibilityResumeRecoveryTimer]);
+    setSessionWindowKind(null);
+  }, [clearNativeVideoVeilTimers]);
 
   const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
@@ -1220,6 +750,13 @@ function V3Player(props: V3PlayerProps) {
     clearSessionLeaseState();
     resetChromeState();
   }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
+
+  const clearNativeVideoRevealTimer = useCallback(() => {
+    if (nativeVideoRevealTimerRef.current !== null) {
+      window.clearTimeout(nativeVideoRevealTimerRef.current);
+      nativeVideoRevealTimerRef.current = null;
+    }
+  }, []);
 
   const getBufferedAheadSeconds = useCallback((): number => {
     const video = videoRef.current;
@@ -1238,6 +775,37 @@ function V3Player(props: V3PlayerProps) {
     const finalEnd = video.buffered.end(video.buffered.length - 1);
     return finalEnd > video.currentTime ? finalEnd - video.currentTime : 0;
   }, [videoRef]);
+
+  const revealNativeVideoIfRenderable = useCallback((): boolean => {
+    if (activeHlsEngine !== 'native') {
+      return false;
+    }
+
+    const video = videoRef.current;
+    if (!video || video.paused) {
+      return false;
+    }
+
+    const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
+    const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
+    const hasDecodedFrames = typeof decodedFrameCount !== 'number' || decodedFrameCount > 0;
+    const hasRenderableFrame = video.readyState >= 3 || (hasVideoGeometry && hasDecodedFrames);
+    if (!hasRenderableFrame) {
+      return false;
+    }
+
+    clearNativeVideoRevealTimer();
+    clearNativeVideoVeilTimers();
+    nativeVideoShownRef.current = true;
+    nativeVideoHoldPositionRef.current = null;
+    video.muted = false;
+    nativeVideoTempMutedRef.current = false;
+    setStatus('playing');
+    setShowNativeVideo(true);
+    setShowNativeVideoVeil(true);
+    setNativeVeilResumeArmed(true);
+    return true;
+  }, [activeHlsEngine, clearNativeVideoRevealTimer, clearNativeVideoVeilTimers, videoRef]);
 
   const cleanupPlaybackResources = useCallback(() => {
     const activeHls = hlsRef.current;
@@ -1774,13 +1342,7 @@ function V3Player(props: V3PlayerProps) {
         } else {
           clearPlaybackState();
         }
-        const treatSrcAsLive = !requestedDuration;
-        prepareFreshPlayback(treatSrcAsLive ? 'LIVE' : 'VOD');
-        if (treatSrcAsLive) {
-          clearDirectTouchNativeStart();
-        } else {
-          clearDirectTouchNativeStart();
-        }
+        prepareFreshPlayback(requestedDuration ? 'VOD' : 'LIVE');
         setStatus('buffering');
         setTraceId('-');
         const srcEngine = resolvePreferredHlsEngine();
@@ -1804,7 +1366,6 @@ function V3Player(props: V3PlayerProps) {
         clearPlaybackState();
       }
       prepareFreshPlayback('LIVE');
-      clearDirectTouchNativeStart();
       let newSessionId: string | null = null;
       setStatus('starting');
       clearPlayerError();
@@ -2127,6 +1688,9 @@ function V3Player(props: V3PlayerProps) {
         if (!streamUrl) {
           throw new Error(t('player.streamUrlMissing'));
         }
+        if (liveEngine === 'native') {
+          await primePlaybackAuth(streamUrl, 'V3Player.liveNativeHls');
+        }
         playHls(streamUrl, liveEngine);
         setActiveHlsEngine(liveEngine);
 
@@ -2135,7 +1699,6 @@ function V3Player(props: V3PlayerProps) {
           await sendStopIntent(newSessionId);
         }
         clearSessionLeaseState();
-        clearDirectTouchNativeStart();
         debugError(err);
         mergeSessionPlaybackTrace(extractPlaybackTrace(err));
         setPlayerError(normalizePlayerError(err, {
@@ -2146,7 +1709,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearDirectTouchNativeStart, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, token]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, primePlaybackAuth, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, token]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
@@ -2210,16 +1773,13 @@ function V3Player(props: V3PlayerProps) {
 
   useEffect(() => {
     if (playbackMode !== 'LIVE') {
-      setLiveProgramTitle(null);
       return;
     }
 
     const serviceRef = (channel?.serviceRef || channel?.id || sRef || '').trim();
     if (!serviceRef) {
-      setLiveProgramTitle(null);
       return;
     }
-    setLiveProgramTitle(null);
 
     let cancelled = false;
     let refreshTimer: number | null = null;
@@ -2248,32 +1808,25 @@ function V3Player(props: V3PlayerProps) {
         if (cancelled) {
           return;
         }
-        if (!response.ok) {
-          scheduleRefresh(60000);
-          return;
-        }
 
-        const data = await response.json() as { items?: Array<{ serviceRef?: string; now?: { title?: string; end?: number } }> };
-        if (cancelled) {
-          return;
+        if (response.ok) {
+          const data = await response.json() as { items?: Array<{ serviceRef?: string; now?: { end?: number } }> };
+          if (cancelled) {
+            return;
+          }
+          const item = data?.items?.find((candidate) => candidate.serviceRef === serviceRef) ?? data?.items?.[0];
+          const eventEndMs = item?.now?.end ? (item.now.end * 1000) : null;
+          if (eventEndMs) {
+            scheduleRefresh(Math.max(15000, Math.min(60000, (eventEndMs - Date.now()) + 1000)));
+            return;
+          }
         }
-
-        const item = data?.items?.find((candidate) => candidate.serviceRef === serviceRef) ?? data?.items?.[0];
-        const currentTitle = item?.now?.title?.trim() || null;
-        setLiveProgramTitle(currentTitle);
-
-        const eventEndMs = item?.now?.end ? (item.now.end * 1000) : null;
-        if (eventEndMs) {
-          scheduleRefresh(Math.max(15000, Math.min(60000, (eventEndMs - Date.now()) + 1000)));
-          return;
-        }
-        scheduleRefresh(60000);
-        return;
       } catch (err) {
         if (!cancelled) {
           debugWarn('[V3Player] now/next refresh failed', err);
         }
       }
+
       scheduleRefresh(60000);
     };
 
@@ -2289,8 +1842,6 @@ function V3Player(props: V3PlayerProps) {
   const isImmediateStartupStatus =
     status === 'starting' || status === 'priming' || status === 'building';
   const isNativeEngine = activeHlsEngine === 'native';
-  const shouldManageVisibilityResume =
-    hostEnvironment.isTv || (isNativeEngine && hasTouchPlaybackInput);
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
   const shouldKeepHostAwake =
     hostEnvironment.supportsKeepScreenAwake &&
@@ -2317,7 +1868,7 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
-    if (!shouldManageVisibilityResume) {
+    if (!hostEnvironment.isTv) {
       return;
     }
 
@@ -2328,10 +1879,8 @@ function V3Player(props: V3PlayerProps) {
 
     const inPictureInPicture = document.pictureInPictureElement === video;
     if (!isDocumentVisible && !inPictureInPicture) {
-      clearNativeVisibilityResumeRecoveryTimer();
       if (!video.paused && !userPauseIntentRef.current && !hasTerminalStatus) {
         visibilityManagedPauseRef.current = true;
-        nativeVisibilityResumeArmedRef.current = isNativeEngine && hasTouchPlaybackInput;
         video.pause();
         setStatus('paused');
       }
@@ -2344,7 +1893,6 @@ function V3Player(props: V3PlayerProps) {
 
     visibilityManagedPauseRef.current = false;
     if (userPauseIntentRef.current || hasTerminalStatus) {
-      nativeVisibilityResumeArmedRef.current = false;
       return;
     }
 
@@ -2352,68 +1900,51 @@ function V3Player(props: V3PlayerProps) {
     void video.play().catch((err) => {
       debugWarn('[V3Player] Host resume play blocked', err);
     });
-  }, [clearNativeVisibilityResumeRecoveryTimer, hasTerminalStatus, hasTouchPlaybackInput, isDocumentVisible, isNativeEngine, isNativePlaybackHost, nativePlaybackState, setStatus, shouldManageVisibilityResume, status, videoRef]);
+  }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
   useEffect(() => {
-    clearNativeVisibilityResumeRecoveryTimer();
-
-    if (
-      !isDocumentVisible ||
-      !nativeVisibilityResumeArmedRef.current ||
-      !isNativeEngine ||
-      !hasTouchPlaybackInput ||
-      hasTerminalStatus ||
-      userPauseIntentRef.current
-    ) {
+    const video = videoRef.current;
+    if (!isNativeEngine || !video || !shouldForceNativeMobileHls(video)) {
       return;
     }
 
-    nativeVisibilityResumeRecoveryTimerRef.current = window.setTimeout(() => {
-      nativeVisibilityResumeRecoveryTimerRef.current = null;
+    if (!isDocumentVisible) {
+      if (!video.paused && !userPauseIntentRef.current && !hasTerminalStatus) {
+        visibilityManagedPauseRef.current = true;
+        video.pause();
+        setStatus('paused');
+      }
+      return;
+    }
 
-      const video = videoRef.current;
-      if (
-        !video ||
-        !isDocumentVisible ||
-        userPauseIntentRef.current ||
-        hasTerminalStatus
-      ) {
+    void refreshSessionSnapshot();
+
+    if (!visibilityManagedPauseRef.current) {
+      return;
+    }
+
+    visibilityManagedPauseRef.current = false;
+    if (userPauseIntentRef.current || hasTerminalStatus) {
+      return;
+    }
+
+    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    void video.play().catch((err) => {
+      debugWarn('[V3Player] Native inline resume play blocked', err);
+    });
+
+    const reloadTimer = window.setTimeout(() => {
+      if (!video.currentSrc || video.readyState >= 3 || userPauseIntentRef.current || hasTerminalStatus) {
         return;
       }
+      video.load();
+      void video.play().catch((err) => {
+        debugWarn('[V3Player] Native inline reload play blocked', err);
+      });
+    }, 1500);
 
-      const currentSrc = video.currentSrc || video.getAttribute('src');
-      if (!currentSrc) {
-        return;
-      }
-
-      const stuckAfterResume =
-        video.paused ||
-        video.readyState < 2 ||
-        (video.readyState >= 2 && video.videoWidth <= 0);
-      if (!stuckAfterResume) {
-        nativeVisibilityResumeArmedRef.current = false;
-        return;
-      }
-
-      recoverNativeInlineSource(
-        'visibility resume',
-        Number.isFinite(video.currentTime) ? video.currentTime : null,
-      );
-    }, NATIVE_VISIBILITY_RESUME_RECOVERY_MS);
-
-    return () => {
-      clearNativeVisibilityResumeRecoveryTimer();
-    };
-  }, [
-    clearNativeVisibilityResumeRecoveryTimer,
-    hasTerminalStatus,
-    hasTouchPlaybackInput,
-    isDocumentVisible,
-    isNativeEngine,
-    recoverNativeInlineSource,
-    setStatus,
-    videoRef,
-  ]);
+    return () => window.clearTimeout(reloadTimer);
+  }, [hasTerminalStatus, isDocumentVisible, isNativeEngine, refreshSessionSnapshot, setStatus, videoRef]);
 
   useEffect(() => {
     if (bufferingOverlayTimerRef.current !== null) {
@@ -2451,18 +1982,7 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
-    const shouldHoldNativeVideoForStatus =
-      status === 'starting' ||
-      status === 'priming' ||
-      status === 'building' ||
-      status === 'buffering' ||
-      status === 'recovering';
-
-    if ((shouldHoldNativeVideoForStatus || !showNativeVideo) && revealNativeVideoIfRenderable()) {
-      return;
-    }
-
-    if (shouldHoldNativeVideoForStatus) {
+    if (status === 'starting' || status === 'priming' || status === 'building') {
       clearNativeVideoRevealTimer();
       clearNativeVideoVeilTimers();
       if (showNativeVideo) {
@@ -2472,6 +1992,17 @@ function V3Player(props: V3PlayerProps) {
       setShowNativeVideoVeil(true);
       setNativeVeilResumeArmed(false);
       return;
+    }
+
+    if (status === 'buffering' || status === 'recovering') {
+      clearNativeVideoRevealTimer();
+      clearNativeVideoVeilTimers();
+      if (showNativeVideo) {
+        nativeVideoHoldPositionRef.current = videoRef.current?.currentTime ?? null;
+      }
+      setShowNativeVideo(false);
+      setShowNativeVideoVeil(true);
+      setNativeVeilResumeArmed(false);
     }
 
     if (status === 'idle' || status === 'error' || status === 'stopped') {
@@ -2547,6 +2078,9 @@ function V3Player(props: V3PlayerProps) {
         const isRebufferReveal = nativeVideoShownRef.current;
         nativeVideoShownRef.current = true;
         nativeVideoHoldPositionRef.current = null;
+        video.muted = false;
+        nativeVideoTempMutedRef.current = false;
+        setStatus('playing');
         setShowNativeVideo(true);
         clearNativeVideoVeilTimers();
         if (isRebufferReveal) {
@@ -2567,7 +2101,10 @@ function V3Player(props: V3PlayerProps) {
     };
 
     clearNativeVideoRevealTimer();
-    nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.stableMs);
+    nativeVideoRevealTimerRef.current = window.setTimeout(
+      waitForStablePlayback,
+      Math.min(revealThresholds.stableMs, revealThresholds.retryMs),
+    );
 
     return () => {
       clearNativeVideoRevealTimer();
@@ -2585,7 +2122,7 @@ function V3Player(props: V3PlayerProps) {
   ]);
 
   useEffect(() => {
-    if (!(isNativeEngine && !showNativeVideo)) {
+    if (!isNativeEngine) {
       return;
     }
 
@@ -2594,27 +2131,8 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
-    let renderablePollTimer: number | null = null;
-
-    const clearRenderablePollTimer = () => {
-      if (renderablePollTimer !== null) {
-        window.clearTimeout(renderablePollTimer);
-        renderablePollTimer = null;
-      }
-    };
-
-    const probeRenderableState = () => {
-      if (revealNativeVideoIfRenderable()) {
-        clearRenderablePollTimer();
-        return;
-      }
-      renderablePollTimer = window.setTimeout(probeRenderableState, 140);
-    };
-
     const handleRenderableEvent = () => {
-      if (revealNativeVideoIfRenderable()) {
-        clearRenderablePollTimer();
-      }
+      revealNativeVideoIfRenderable();
     };
 
     video.addEventListener('playing', handleRenderableEvent);
@@ -2622,16 +2140,13 @@ function V3Player(props: V3PlayerProps) {
     video.addEventListener('canplay', handleRenderableEvent);
     video.addEventListener('resize', handleRenderableEvent);
 
-    probeRenderableState();
-
     return () => {
-      clearRenderablePollTimer();
       video.removeEventListener('playing', handleRenderableEvent);
       video.removeEventListener('loadeddata', handleRenderableEvent);
       video.removeEventListener('canplay', handleRenderableEvent);
       video.removeEventListener('resize', handleRenderableEvent);
     };
-  }, [isNativeEngine, revealNativeVideoIfRenderable, showNativeVideo, videoRef]);
+  }, [isNativeEngine, revealNativeVideoIfRenderable, videoRef]);
 
   useEffect(() => {
     if (!isOverlayStartupStatus) {
@@ -2659,99 +2174,6 @@ function V3Player(props: V3PlayerProps) {
   }, [isOverlayStartupStatus]);
 
   useEffect(() => {
-    const trackedSessionId = sessionIdRef.current || nativeSessionId;
-    if (!isNativeEngine || status !== 'playing' || !trackedSessionId) {
-      if (status !== 'playing') {
-        nativePlayingProbeSessionRef.current = null;
-        nativeRenderRecoverySessionRef.current = null;
-      }
-      return;
-    }
-
-    if (nativePlayingProbeSessionRef.current === trackedSessionId) {
-      return;
-    }
-    nativePlayingProbeSessionRef.current = trackedSessionId;
-    nativeRenderRecoverySessionRef.current = null;
-
-    const describeNativeRenderState = (stage: string): string => {
-      const video = videoRef.current;
-      if (!video) {
-        return `native_render stage=${stage} video=missing`;
-      }
-      const rect = video.getBoundingClientRect();
-      const computedStyle = window.getComputedStyle(video);
-      const wrapper = video.parentElement as HTMLElement | null;
-      const wrapperRect = wrapper?.getBoundingClientRect();
-      const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
-      const droppedFrameCount = (video as HTMLVideoElement & { webkitDroppedFrameCount?: number }).webkitDroppedFrameCount;
-      return [
-        `native_render stage=${stage}`,
-        `rs=${video.readyState}`,
-        `paused=${video.paused ? 1 : 0}`,
-        `t=${Number.isFinite(video.currentTime) ? video.currentTime.toFixed(2) : 'na'}`,
-        `vw=${video.videoWidth}`,
-        `vh=${video.videoHeight}`,
-        `cw=${video.clientWidth}`,
-        `ch=${video.clientHeight}`,
-        `rw=${Math.round(rect.width)}`,
-        `rh=${Math.round(rect.height)}`,
-        `ww=${wrapperRect ? Math.round(wrapperRect.width) : 'na'}`,
-        `wh=${wrapperRect ? Math.round(wrapperRect.height) : 'na'}`,
-        `disp=${computedStyle.display}`,
-        `vis=${computedStyle.visibility}`,
-        `op=${computedStyle.opacity}`,
-        `dec=${typeof decodedFrameCount === 'number' ? decodedFrameCount : 'na'}`,
-        `drop=${typeof droppedFrameCount === 'number' ? droppedFrameCount : 'na'}`,
-        `show=${showNativeVideoRef.current ? 1 : 0}`,
-        `veil=${showNativeVideoVeilRef.current ? 1 : 0}`,
-      ].join(' ');
-    };
-
-    const initialProbeTimer = window.setTimeout(() => {
-      void reportError('info', 230, describeNativeRenderState('playing'));
-    }, 350);
-
-    const followupProbeTimer = window.setTimeout(() => {
-      const video = videoRef.current;
-      if (!video || (sessionIdRef.current || nativeSessionId) !== trackedSessionId) {
-        return;
-      }
-
-      const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
-      const hasDecodedFrames = typeof decodedFrameCount !== 'number' || decodedFrameCount > 0;
-      const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
-
-      if (!hasVideoGeometry || !hasDecodedFrames) {
-        if (nativeRenderRecoverySessionRef.current !== trackedSessionId) {
-          nativeRenderRecoverySessionRef.current = trackedSessionId;
-          void reportError('info', 232, describeNativeRenderState('recover'));
-          recoverNativeInlineSource(
-            'native playing without visible video',
-            Number.isFinite(video.currentTime) ? video.currentTime : null,
-          );
-        }
-        return;
-      }
-
-      void reportError('info', 231, describeNativeRenderState('stable'));
-    }, 1800);
-
-    return () => {
-      window.clearTimeout(initialProbeTimer);
-      window.clearTimeout(followupProbeTimer);
-    };
-  }, [
-    isNativeEngine,
-    nativeSessionId,
-    recoverNativeInlineSource,
-    reportError,
-    sessionIdRef,
-    status,
-    videoRef,
-  ]);
-
-  useEffect(() => {
     return () => {
       cleanupPlaybackResourcesRef.current();
     };
@@ -2772,19 +2194,6 @@ function V3Player(props: V3PlayerProps) {
       window.removeEventListener('pagehide', handleVisibilityChange);
     };
   }, []);
-
-  useEffect(() => {
-    if (!isDocumentVisible || playbackMode !== 'LIVE') {
-      return;
-    }
-
-    const activeSessionId = sessionIdRef.current;
-    if (!activeSessionId) {
-      return;
-    }
-
-    void refreshSessionSnapshot(activeSessionId);
-  }, [isDocumentVisible, playbackMode, refreshSessionSnapshot, sessionIdRef]);
 
   useEffect(() => {
     if (!hostEnvironment.isTv) {
@@ -2816,28 +2225,6 @@ function V3Player(props: V3PlayerProps) {
   // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css
   // Static layout styles are in V3Player.module.css (scoped)
 
-  const effectiveOperator = mergedPlaybackOperator;
-  const effectiveOperatorMaxQualityRung = effectiveOperator?.maxQualityRung ?? null;
-  const effectiveRuntimePolicyPhase = effectiveOperator?.runtimePolicyPhase ?? null;
-  const effectiveRuntimeProbeCandidate = effectiveOperator?.runtimeProbeCandidate ?? null;
-  const runtimePolicyMetaHint = resolveRuntimePolicyMetaHint(
-    effectiveRuntimePolicyPhase,
-    effectiveRuntimeProbeCandidate,
-    effectiveOperatorMaxQualityRung,
-  );
-  const runtimePolicyCopyHint = runtimePolicyMetaHint
-    ? formatQualityRungLabel(runtimePolicyMetaHint)
-    : null;
-  const runtimePolicyStartupSupport = resolveRuntimePolicyStartupSupport(
-    effectiveRuntimePolicyPhase,
-    runtimePolicyCopyHint,
-    t,
-  );
-  const runtimePolicyErrorSupport = resolveRuntimePolicyErrorSupport(
-    effectiveRuntimePolicyPhase,
-    runtimePolicyCopyHint,
-    t,
-  );
   const isRecordingStartupSurface = Boolean(recordingId || activeRecordingId || activeRecordingRef.current);
   const startupTitle = channel?.name || normalizedRecordingTitle || (isRecordingStartupSurface
     ? t('player.recordingFallbackTitle', { defaultValue: 'Recording' })
@@ -2859,7 +2246,7 @@ function V3Player(props: V3PlayerProps) {
     isOverlayStartupStatus
       ? isRecordingStartupSurface
         ? t('player.recordingStartupSupport', { defaultValue: 'Preparing the source. Playback will start shortly.' })
-        : runtimePolicyStartupSupport || resolveStartupOverlaySupport(sessionProfileReason, t)
+        : resolveStartupOverlaySupport(sessionProfileReason, t)
       : '';
   const startupStatusLabel = isRecordingStartupSurface
     ? t('player.recordingStartupStatus', { defaultValue: 'Opening' })
@@ -2872,7 +2259,6 @@ function V3Player(props: V3PlayerProps) {
   const showNativeBufferingMask =
     (shouldHoldNativeVideo || showNativeVideoVeil) &&
     !(isNativeEngine && status === 'playing');
-  const hideVideoElement = showNativeBufferingMask && !isNativeEngine;
   const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || useOverlayShell || isRecordingPageLayout);
   const showPlaybackChrome = !useMinimalStartupChrome;
   const showRecordingWatchLayout = Boolean(recordingId && !isFullscreen && (useOverlayShell || isRecordingPageLayout));
@@ -2905,11 +2291,13 @@ function V3Player(props: V3PlayerProps) {
     }
 
     if (isNativeEngine && showNativeVideoVeil && showNativeVideo) {
-      // Keep the veil visual-only. Programmatic pause/resume here can strand
-      // native playback behind a manual play gesture after a brief rebuffer.
-      if (nativeManagedPauseRef.current) {
-        delete video.dataset.xg2gManagedPause;
-        nativeManagedPauseRef.current = false;
+      if (nativeVeilResumeArmed) {
+        return;
+      }
+      if (!nativeManagedPauseRef.current && !video.paused) {
+        video.dataset.xg2gManagedPause = '1';
+        nativeManagedPauseRef.current = true;
+        video.pause();
       }
       return;
     }
@@ -2933,8 +2321,6 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
-    let veilPollTimer: number | null = null;
-
     const releaseVeil = () => {
       clearNativeVideoVeilTimers();
       nativeVideoVeilClearTimerRef.current = window.setTimeout(() => {
@@ -2944,58 +2330,16 @@ function V3Player(props: V3PlayerProps) {
       }, NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS);
     };
 
-    const clearVeilPollTimer = () => {
-      if (veilPollTimer !== null) {
-        window.clearTimeout(veilPollTimer);
-        veilPollTimer = null;
-      }
-    };
-
-    const canReleaseVeilNow = (): boolean => {
-      const hasVideoGeometry = video.videoWidth > 0 && video.videoHeight > 0;
-      const hasPlaybackProgress = Number.isFinite(video.currentTime) && video.currentTime > 0;
-      const decodedFrameCount = (video as HTMLVideoElement & { webkitDecodedFrameCount?: number }).webkitDecodedFrameCount;
-      const hasDecodedFrames = typeof decodedFrameCount !== 'number' || decodedFrameCount > 0;
-      return !video.paused && (
-        video.readyState >= 3 ||
-        (
-          status === 'playing' &&
-          hasVideoGeometry &&
-          hasPlaybackProgress &&
-          hasDecodedFrames
-        )
-      );
-    };
-
-    const pollVeilRelease = () => {
-      if (canReleaseVeilNow()) {
-        clearVeilPollTimer();
-        releaseVeil();
-        return;
-      }
-      veilPollTimer = window.setTimeout(pollVeilRelease, 120);
-    };
-
-    const handlePlaybackProgress = () => {
-      if (canReleaseVeilNow()) {
-        clearVeilPollTimer();
-        releaseVeil();
-      }
-    };
-
-    if (canReleaseVeilNow()) {
+    const handlePlaying = () => {
       releaseVeil();
-      return () => {
-        clearVeilPollTimer();
-      };
+    };
+
+    if (!video.paused && video.readyState >= 3) {
+      releaseVeil();
+      return;
     }
 
-    video.addEventListener('playing', handlePlaybackProgress);
-    video.addEventListener('loadeddata', handlePlaybackProgress);
-    video.addEventListener('canplay', handlePlaybackProgress);
-    video.addEventListener('resize', handlePlaybackProgress);
-
-    pollVeilRelease();
+    video.addEventListener('playing', handlePlaying, { once: true });
 
     delete video.dataset.xg2gManagedPause;
     nativeManagedPauseRef.current = false;
@@ -3005,13 +2349,9 @@ function V3Player(props: V3PlayerProps) {
     });
 
     return () => {
-      clearVeilPollTimer();
-      video.removeEventListener('playing', handlePlaybackProgress);
-      video.removeEventListener('loadeddata', handlePlaybackProgress);
-      video.removeEventListener('canplay', handlePlaybackProgress);
-      video.removeEventListener('resize', handlePlaybackProgress);
+      video.removeEventListener('playing', handlePlaying);
     };
-  }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, status, videoRef]);
+  }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, videoRef]);
 
   const effectiveClientPath =
     sessionPlaybackTrace?.clientPath ||
@@ -3059,6 +2399,10 @@ function V3Player(props: V3PlayerProps) {
     sessionPlaybackTrace?.targetProfileHash ??
     playbackObservability?.targetProfileHash ??
     null;
+  const effectiveOperator =
+    sessionPlaybackTrace?.operator ??
+    playbackObservability?.operator ??
+    null;
   const effectiveHostPressureBand =
     sessionPlaybackTrace?.hostPressureBand ??
     playbackObservability?.hostPressureBand ??
@@ -3068,39 +2412,11 @@ function V3Player(props: V3PlayerProps) {
     playbackObservability?.hostOverrideApplied ??
     false;
   const effectiveForcedIntent = effectiveOperator?.forcedIntent ?? null;
+  const effectiveOperatorMaxQualityRung = effectiveOperator?.maxQualityRung ?? null;
   const effectiveOperatorRuleName = effectiveOperator?.ruleName ?? null;
   const effectiveOperatorRuleScope = effectiveOperator?.ruleScope ?? null;
-  const effectiveRuntimePolicyAction = effectiveOperator?.runtimePolicyAction ?? null;
-  const effectiveRuntimePolicyConstraints = effectiveOperator?.runtimePolicyConstraints ?? null;
-  const effectiveRuntimePolicyReplay: PlaybackTraceRuntimeReplay | null = effectiveOperator?.runtimePolicyReplay ?? null;
-  const effectiveRuntimePolicyReasons = effectiveOperator?.runtimePolicyReasons ?? null;
-  const effectiveRuntimePolicyTimeline = effectiveOperator?.runtimePolicyTimeline ?? null;
-  const effectiveRuntimeProbeFailureStreak = effectiveOperator?.runtimeProbeFailureStreak ?? null;
-  const effectiveRuntimeProbeSuccessStreak = effectiveOperator?.runtimeProbeSuccessStreak ?? null;
   const effectiveClientFallbackDisabled = effectiveOperator?.clientFallbackDisabled ?? false;
   const effectiveOperatorOverrideApplied = effectiveOperator?.overrideApplied ?? false;
-  const runtimePolicyReasonsSummary =
-    effectiveRuntimePolicyReasons?.filter(Boolean).join(', ') || '-';
-  const runtimePolicyConstraintsSummary =
-    effectiveRuntimePolicyConstraints?.filter(Boolean).join(', ') || '-';
-  const runtimeProbeTrustSummary =
-    effectiveRuntimeProbeSuccessStreak != null || effectiveRuntimeProbeFailureStreak != null
-      ? `success ${effectiveRuntimeProbeSuccessStreak ?? 0} / fail ${effectiveRuntimeProbeFailureStreak ?? 0}`
-      : '-';
-  const runtimePolicyTimelineEntries =
-    effectiveRuntimePolicyTimeline?.slice(-6).reverse() ?? [];
-  const runtimePolicyTimelineSummaryEntries = runtimePolicyTimelineEntries.map((entry) => ({
-    key: `${entry.tickAt}-${entry.policyAction ?? 'hold'}-${entry.plannedTransition ?? 'noop'}`,
-    value: formatRuntimeTimelineEntry(entry),
-  }));
-  const showRuntimePolicyMeta = Boolean(
-    effectiveRuntimePolicyPhase &&
-      effectiveRuntimePolicyPhase !== 'stable'
-  );
-  const runtimePolicyPhaseLabel = t(`player.runtimePolicyPhases.${effectiveRuntimePolicyPhase ?? 'unknown'}`, {
-    defaultValue: formatRuntimePolicyPhaseLabel(effectiveRuntimePolicyPhase),
-  });
-  const runtimePolicyPhaseState = resolveRuntimePolicyPhaseState(effectiveRuntimePolicyPhase);
   const sourceProfileSummary = formatSourceProfileSummary(sessionPlaybackTrace?.source);
   const ffmpegPlanSummary = formatFfmpegPlanSummary(sessionPlaybackTrace?.ffmpegPlan);
   const firstFrameLabel = formatFirstFrameLabel(sessionPlaybackTrace?.firstFrameAtMs);
@@ -3108,213 +2424,21 @@ function V3Player(props: V3PlayerProps) {
   const stopSummary = formatStopSummary(sessionPlaybackTrace);
   const hostPressureSummary = formatHostPressureSummary(effectiveHostPressureBand, effectiveHostOverrideApplied);
   const showVerboseErrorTelemetry = !isCompactTouchLayout;
-  const runtimePolicyMetaHintLabel = runtimePolicyMetaHint
-    ? formatQualityRungLabel(runtimePolicyMetaHint)
-    : null;
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
-  const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
-  const useLiveDvrTouchFullscreenGuard = Boolean(hasTouchPlaybackInput && useOverlayShell && hasLiveDvrWindow && !isFullscreen);
-  const useMinimalTouchInlineChrome = Boolean(
-    useOverlayShell &&
-    !useTheaterControlsLayout &&
-    !isFullscreen &&
-    (isCompactTouchLayout || useLiveDvrTouchFullscreenGuard)
+  const audioToggleIcon = isMuted ? '🔊' : '🔇';
+  const playbackWindowKind = sessionWindowKind
+    ?? (playbackMode === 'VOD' ? 'vod' : playbackMode === 'LIVE' ? (hasSeekWindow ? 'live-dvr' : 'live') : 'unknown');
+  const playbackWindowLabel = t(`player.playbackWindowKinds.${playbackWindowKind}`, { defaultValue: playbackWindowKind });
+  const shouldUseInlineDvrFullscreenGuidance = Boolean(
+    playbackWindowKind === 'live-dvr' &&
+    isCompactTouchLayout &&
+    activeHlsEngine === 'native' &&
+    supportsNativeFullscreen
   );
-  const useTheaterStackSurface = uiSurface.width < 1220;
-  const useCompactSurface =
-    uiSurface.width < 768 ||
-    (uiSurface.inputMode === 'coarse' && uiSurface.heightClass !== 'comfortable');
-  const useTightSurface =
-    (uiSurface.width < 768 && uiSurface.orientation === 'landscape') ||
-    uiSurface.heightClass !== 'comfortable';
-  const disableInlineLiveDvrScrub = useLiveDvrTouchFullscreenGuard;
-  const inferredPlaybackWindowKind = resolvePlaybackWindowKind(playbackMode, hasLiveDvrWindow);
-  const playbackWindowKind = sessionWindowKind !== 'unknown' ? sessionWindowKind : inferredPlaybackWindowKind;
-  const mobileInlinePlaybackLabel = playbackWindowKind === 'live-dvr'
-    ? t('player.mobilePlaybackWindowBadge.dvr', { defaultValue: 'DVR' })
-    : playbackWindowKind === 'live'
-      ? t('player.mobilePlaybackWindowBadge.live', { defaultValue: 'Live' })
-      : playbackWindowKind === 'vod'
-        ? t('player.mobilePlaybackWindowBadge.vod', { defaultValue: 'Replay' })
-        : null;
-  const liveWindowEdge = liveSeekWindow?.liveEdge ?? seekableEnd;
-  const liveWindowLagSeconds = Math.max(0, Math.round(liveWindowEdge - currentPlaybackTime));
-  const hasLiveWindowPlayhead = hasLiveDvrWindow && currentPlaybackTime >= Math.max(0, seekableStart - 1);
-  const liveWindowStateLabel = !hasLiveDvrWindow
-    ? '-'
-    : !hasLiveWindowPlayhead
-      ? t('player.liveWindowReady', { defaultValue: 'Window ready' })
-      : isAtLiveEdge
-        ? t('player.liveWindowAtEdge', { defaultValue: 'At live edge' })
-        : t('player.liveWindowBehindEdge', {
-            defaultValue: '{{seconds}}s behind live',
-            seconds: liveWindowLagSeconds,
-          });
-  const runtimeStatsRows = useMemo(() => ([
-    {
-      key: 'status',
-      label: t('player.status'),
-      value: (
-        <span role="status">
-          {t(`player.statusStates.${status}`, { defaultValue: status })}
-        </span>
-      ),
-    },
-    { key: 'session', label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
-    { key: 'request-id', label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
-    { key: 'client-path', label: t('player.clientPath', { defaultValue: 'Client Path' }), value: effectiveClientPath || '-' },
-    { key: 'request-profile', label: t('player.requestProfile', { defaultValue: 'Request Profile' }), value: formatRequestProfileLabel(effectiveRequestProfile) },
-    { key: 'requested-intent', label: t('player.requestedIntent', { defaultValue: 'Requested Intent' }), value: formatRequestProfileLabel(effectiveRequestedIntent) },
-    { key: 'resolved-intent', label: t('player.resolvedIntent', { defaultValue: 'Resolved Intent' }), value: formatRequestProfileLabel(effectiveResolvedIntent) },
-    { key: 'quality-rung', label: t('player.qualityRung', { defaultValue: 'Quality Rung' }), value: formatQualityRungLabel(effectiveQualityRung) },
-    { key: 'audio-quality-rung', label: t('player.audioQualityRung', { defaultValue: 'Audio Quality Rung' }), value: formatQualityRungLabel(effectiveAudioQualityRung) },
-    { key: 'video-quality-rung', label: t('player.videoQualityRung', { defaultValue: 'Video Quality Rung' }), value: formatQualityRungLabel(effectiveVideoQualityRung) },
-    { key: 'degraded-from', label: t('player.degradedFrom', { defaultValue: 'Degraded From' }), value: formatRequestProfileLabel(effectiveDegradedFrom) },
-    { key: 'host-pressure-band', label: t('player.hostPressure', { defaultValue: 'Host Pressure' }), value: effectiveHostPressureBand || '-' },
-    { key: 'host-override', label: t('player.hostOverrideApplied', { defaultValue: 'Host Override Applied' }), value: formatBooleanLabel(effectiveHostOverrideApplied) },
-    { key: 'forced-intent', label: t('player.forcedIntent', { defaultValue: 'Forced Intent' }), value: formatRequestProfileLabel(effectiveForcedIntent) },
-    { key: 'operator-max-quality', label: t('player.operatorMaxQualityRung', { defaultValue: 'Operator Max Quality' }), value: formatQualityRungLabel(effectiveOperatorMaxQualityRung) },
-    { key: 'runtime-policy-action', label: t('player.runtimePolicyAction', { defaultValue: 'Runtime Policy Action' }), value: effectiveRuntimePolicyAction || '-' },
-    {
-      key: 'runtime-policy-phase',
-      label: t('player.runtimePolicyPhase', { defaultValue: 'Runtime Policy Phase' }),
-      value: runtimePolicyPhaseLabel,
-    },
-    { key: 'runtime-probe-target', label: t('player.runtimeProbeCandidate', { defaultValue: 'Runtime Probe Target' }), value: formatQualityRungLabel(effectiveRuntimeProbeCandidate) },
-    { key: 'runtime-policy-reasons', label: t('player.runtimePolicyReasons', { defaultValue: 'Runtime Policy Reasons' }), value: runtimePolicyReasonsSummary },
-    { key: 'runtime-policy-constraints', label: t('player.runtimePolicyConstraints', { defaultValue: 'Runtime Policy Constraints' }), value: runtimePolicyConstraintsSummary },
-    { key: 'runtime-probe-trust', label: t('player.runtimeProbeTrust', { defaultValue: 'Runtime Probe Trust' }), value: runtimeProbeTrustSummary },
-    {
-      key: 'runtime-policy-timeline',
-      label: t('player.runtimePolicyTimeline', { defaultValue: 'Runtime Timeline' }),
-      value: runtimePolicyTimelineSummaryEntries.length > 0 ? (
-        <div className={styles.runtimeTimelineList}>
-          {runtimePolicyTimelineSummaryEntries.map((entry) => (
-            <span key={entry.key}>{entry.value}</span>
-          ))}
-        </div>
-      ) : '-',
-    },
-    { key: 'operator-rule-name', label: t('player.operatorRuleName', { defaultValue: 'Operator Rule' }), value: effectiveOperatorRuleName || '-' },
-    { key: 'operator-rule-scope', label: t('player.operatorRuleScope', { defaultValue: 'Operator Rule Scope' }), value: effectiveOperatorRuleScope || '-' },
-    { key: 'client-fallback-disabled', label: t('player.clientFallbackDisabled', { defaultValue: 'Client Fallback Disabled' }), value: formatBooleanLabel(effectiveClientFallbackDisabled) },
-    { key: 'operator-override-applied', label: t('player.operatorOverrideApplied', { defaultValue: 'Operator Override Applied' }), value: formatBooleanLabel(effectiveOperatorOverrideApplied) },
-    { key: 'source-profile', label: t('player.sourceProfile', { defaultValue: 'Source Profile' }), value: sourceProfileSummary },
-    { key: 'output-profile', label: t('player.outputProfile', { defaultValue: 'Output Profile' }), value: formatTargetProfileSummary(effectiveTargetProfile) },
-    { key: 'profile-hash', label: t('player.profileHash', { defaultValue: 'Profile Hash' }), value: effectiveTargetProfileHash || '-' },
-    { key: 'execution', label: t('player.execution', { defaultValue: 'Execution' }), value: formatExecutionLabel(effectiveTargetProfile) },
-    { key: 'ffmpeg-plan', label: t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' }), value: ffmpegPlanSummary },
-    { key: 'first-frame', label: t('player.firstFrame', { defaultValue: 'First Frame' }), value: firstFrameLabel },
-    { key: 'fallbacks', label: t('player.fallbacks', { defaultValue: 'Fallbacks' }), value: fallbackSummary },
-    { key: 'stop-reason', label: t('player.stopReason', { defaultValue: 'Stop' }), value: stopSummary },
-    { key: 'output-kind', label: t('player.outputKind', { defaultValue: 'Output Kind' }), value: playbackObservability?.selectedOutputKind || '-' },
-    {
-      key: 'playback-window',
-      label: t('player.playbackWindow', { defaultValue: 'Playback Window' }),
-      value: t(`player.playbackWindowKinds.${playbackWindowKind}`, { defaultValue: playbackWindowKind }),
-    },
-    { key: 'resolution', label: t('player.resolution'), value: stats.resolution },
-    { key: 'bandwidth', label: t('player.bandwidth'), value: stats.bandwidth > 0 ? `${stats.bandwidth} kbps` : '-' },
-    { key: 'buffer-health', label: t('player.bufferHealth'), value: `${stats.bufferHealth}s` },
-    { key: 'latency', label: t('player.latency'), value: stats.latency !== null ? `${stats.latency}s` : '-' },
-    { key: 'fps', label: t('player.fps'), value: stats.fps },
-    { key: 'dropped', label: t('player.dropped'), value: stats.droppedFrames },
-    {
-      key: 'hls-level',
-      label: t('player.hlsLevel'),
-      value: hlsRef.current ? (stats.levelIndex === -1 ? 'Auto' : stats.levelIndex) : 'Native / Direct',
-    },
-    { key: 'segment-duration', label: t('player.segDuration'), value: stats.buffer > 0 ? `${stats.buffer}s` : '-' },
-    {
-      key: 'seekable-range',
-      label: t('player.seekableRange', { defaultValue: 'Seekable' }),
-      value: `${formatClock(seekableStart)} -> ${formatClock(seekableEnd)}`,
-    },
-    { key: 'playhead', label: t('player.playhead', { defaultValue: 'Playhead' }), value: formatClock(currentPlaybackTime) },
-    { key: 'seek-window', label: t('player.seekWindow', { defaultValue: 'Seek Window' }), value: hasSeekWindow ? formatClock(windowDuration) : '-' },
-    ...(hasLiveDvrWindow ? [{
-      key: 'live-window-state',
-      label: t('player.liveWindowState', { defaultValue: 'Live Window' }),
-      value: liveWindowStateLabel,
-    }] : []),
-    {
-      key: 'fullscreen-path',
-      label: t('player.fullscreenPath', { defaultValue: 'Fullscreen Path' }),
-      value: isWebKitFullscreenActive
-        ? 'native-webkit'
-        : isFullscreen
-          ? 'container'
-          : prefersDesktopNativeFullscreen
-            ? 'desktop-webkit-ready'
-            : supportsNativeFullscreen
-              ? 'webkit-available'
-              : 'web-only',
-    },
-  ]), [
-    currentPlaybackTime,
-    effectiveAudioQualityRung,
-    effectiveClientFallbackDisabled,
-    effectiveClientPath,
-    effectiveDegradedFrom,
-    effectiveForcedIntent,
-    effectiveHostOverrideApplied,
-    effectiveHostPressureBand,
-    effectiveOperatorMaxQualityRung,
-    effectiveOperatorOverrideApplied,
-    effectiveOperatorRuleName,
-    effectiveOperatorRuleScope,
-    effectiveQualityRung,
-    effectiveRequestProfile,
-    effectiveRequestedIntent,
-    effectiveResolvedIntent,
-    effectiveRuntimePolicyAction,
-    effectiveRuntimeProbeCandidate,
-    effectiveSessionId,
-    effectiveTargetProfile,
-    effectiveTargetProfileHash,
-    effectiveVideoQualityRung,
-    fallbackSummary,
-    ffmpegPlanSummary,
-    firstFrameLabel,
-    formatClock,
-    hasLiveDvrWindow,
-    hasSeekWindow,
-    isFullscreen,
-    isWebKitFullscreenActive,
-    liveWindowStateLabel,
-    playbackObservability?.selectedOutputKind,
-    playbackWindowKind,
-    prefersDesktopNativeFullscreen,
-    runtimePolicyConstraintsSummary,
-    runtimePolicyPhaseLabel,
-    runtimePolicyReasonsSummary,
-    runtimePolicyTimelineSummaryEntries,
-    runtimeProbeTrustSummary,
-    seekableEnd,
-    seekableStart,
-    sessionPlaybackTrace?.requestId,
-    sourceProfileSummary,
-    stats.bandwidth,
-    stats.buffer,
-    stats.bufferHealth,
-    stats.droppedFrames,
-    stats.fps,
-    stats.latency,
-    stats.levelIndex,
-    stats.resolution,
-    status,
-    stopSummary,
-    supportsNativeFullscreen,
-    t,
-    traceId,
-    windowDuration,
-  ]);
+  const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
   const seekProgressPercent = windowDuration > 0
     ? `${Math.min(100, Math.max(0, (relativePosition / windowDuration) * 100))}%`
     : '0%';
-  const seekProgressStyle = {
-    '--xg2g-seek-progress': seekProgressPercent,
-  } as CSSProperties;
   const seekFromPointer = useCallback((clientX: number, track: HTMLDivElement) => {
     if (windowDuration <= 0) {
       return;
@@ -3376,10 +2500,6 @@ function V3Player(props: V3PlayerProps) {
         'animate-enter',
         useOverlayShell ? styles.overlay : null,
         isRecordingPageLayout ? styles.recordingPage : null,
-        useMinimalTouchInlineChrome ? styles.touchInlineChrome : null,
-        useTheaterStackSurface ? styles.surfaceTheaterStack : null,
-        useCompactSurface ? styles.surfaceCompact : null,
-        useTightSurface ? styles.surfaceTight : null,
         isFullscreen ? styles.fullscreenActive : null,
         isIdle ? styles.userIdle : null,
       ].filter(Boolean).join(' ')}
@@ -3404,12 +2524,197 @@ function V3Player(props: V3PlayerProps) {
             </button>
           )}
 
-      <PlayerRuntimeMetaPanel
-        show={showStats && showPlaybackChrome}
-        title={t('player.statsTitle', { defaultValue: 'Technical Stats' })}
-        actions={<PlayerRuntimeReplayExport replay={effectiveRuntimePolicyReplay} />}
-        rows={runtimeStatsRows}
-      />
+      {/* Stats Overlay */}
+      {showStats && showPlaybackChrome && (
+        <div className={styles.statsOverlay}>
+          <Card variant="standard">
+            <Card.Header>
+              <Card.Title>{t('player.statsTitle', { defaultValue: 'Technical Stats' })}</Card.Title>
+            </Card.Header>
+            <Card.Content className={styles.statsGrid}>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.status')}</span>
+                <StatusChip
+                  state={status === 'ready' ? 'live' : status === 'error' ? 'error' : 'idle'}
+                  label={t(`player.statusStates.${status}`, { defaultValue: status })}
+                />
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('common.session', { defaultValue: 'Session' })}</span>
+                <span className={styles.statsValue}>{effectiveSessionId || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('common.requestId', { defaultValue: 'Request ID' })}</span>
+                <span className={styles.statsValue}>{sessionPlaybackTrace?.requestId || traceId}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.clientPath', { defaultValue: 'Client Path' })}</span>
+                <span className={styles.statsValue}>{effectiveClientPath || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.requestProfile', { defaultValue: 'Request Profile' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveRequestProfile)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.requestedIntent', { defaultValue: 'Requested Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveRequestedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.resolvedIntent', { defaultValue: 'Resolved Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveResolvedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.qualityRung', { defaultValue: 'Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.audioQualityRung', { defaultValue: 'Audio Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveAudioQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.videoQualityRung', { defaultValue: 'Video Quality Rung' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveVideoQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.degradedFrom', { defaultValue: 'Degraded From' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveDegradedFrom)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.hostPressure', { defaultValue: 'Host Pressure' })}</span>
+                <span className={styles.statsValue}>{effectiveHostPressureBand || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.hostOverrideApplied', { defaultValue: 'Host Override Applied' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveHostOverrideApplied)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.forcedIntent', { defaultValue: 'Forced Intent' })}</span>
+                <span className={styles.statsValue}>{formatRequestProfileLabel(effectiveForcedIntent)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorMaxQualityRung', { defaultValue: 'Operator Max Quality' })}</span>
+                <span className={styles.statsValue}>{formatQualityRungLabel(effectiveOperatorMaxQualityRung)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorRuleName', { defaultValue: 'Operator Rule' })}</span>
+                <span className={styles.statsValue}>{effectiveOperatorRuleName || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorRuleScope', { defaultValue: 'Operator Rule Scope' })}</span>
+                <span className={styles.statsValue}>{effectiveOperatorRuleScope || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.clientFallbackDisabled', { defaultValue: 'Client Fallback Disabled' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveClientFallbackDisabled)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.operatorOverrideApplied', { defaultValue: 'Operator Override Applied' })}</span>
+                <span className={styles.statsValue}>{formatBooleanLabel(effectiveOperatorOverrideApplied)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.sourceProfile', { defaultValue: 'Source Profile' })}</span>
+                <span className={styles.statsValue}>{sourceProfileSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.outputProfile', { defaultValue: 'Output Profile' })}</span>
+                <span className={styles.statsValue}>{formatTargetProfileSummary(effectiveTargetProfile)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.profileHash', { defaultValue: 'Profile Hash' })}</span>
+                <span className={styles.statsValue}>{effectiveTargetProfileHash || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.execution', { defaultValue: 'Execution' })}</span>
+                <span className={styles.statsValue}>{formatExecutionLabel(effectiveTargetProfile)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}</span>
+                <span className={styles.statsValue}>{ffmpegPlanSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.firstFrame', { defaultValue: 'First Frame' })}</span>
+                <span className={styles.statsValue}>{firstFrameLabel}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.fallbacks', { defaultValue: 'Fallbacks' })}</span>
+                <span className={styles.statsValue}>{fallbackSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
+                <span className={styles.statsValue}>{stopSummary}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.outputKind', { defaultValue: 'Output Kind' })}</span>
+                <span className={styles.statsValue}>{playbackObservability?.selectedOutputKind || '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.resolution')}</span>
+                <span className={styles.statsValue}>{stats.resolution}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.bandwidth')}</span>
+                <span className={styles.statsValue}>{stats.bandwidth > 0 ? `${stats.bandwidth} kbps` : '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.bufferHealth')}</span>
+                <span className={styles.statsValue}>{stats.bufferHealth}s</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.latency')}</span>
+                <span className={styles.statsValue}>{stats.latency !== null ? stats.latency + 's' : '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.fps')}</span>
+                <span className={styles.statsValue}>{stats.fps}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.dropped')}</span>
+                <span className={styles.statsValue}>{stats.droppedFrames}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.hlsLevel')}</span>
+                <span className={styles.statsValue}>{
+                  hlsRef.current ? (stats.levelIndex === -1 ? 'Auto' : stats.levelIndex) : 'Native / Direct'
+                }</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.segDuration')}</span>
+                <span className={styles.statsValue}>{stats.buffer > 0 ? `${stats.buffer}s` : '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.seekableRange', { defaultValue: 'Seekable' })}</span>
+                <span className={styles.statsValue}>{`${formatClock(seekableStart)} -> ${formatClock(seekableEnd)}`}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.playhead', { defaultValue: 'Playhead' })}</span>
+                <span className={styles.statsValue}>{formatClock(currentPlaybackTime)}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.seekWindow', { defaultValue: 'Seek Window' })}</span>
+                <span className={styles.statsValue}>{hasSeekWindow ? formatClock(windowDuration) : '-'}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.playbackWindow', { defaultValue: 'Playback Window' })}</span>
+                <span className={styles.statsValue}>{playbackWindowLabel}</span>
+              </div>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.fullscreenPath', { defaultValue: 'Fullscreen Path' })}</span>
+                <span className={styles.statsValue}>
+                  {isWebKitFullscreenActive
+                    ? 'native-webkit'
+                    : isFullscreen
+                      ? 'container'
+                      : prefersDesktopNativeFullscreen
+                        ? 'desktop-webkit-ready'
+                        : supportsNativeFullscreen
+                          ? 'webkit-available'
+                          : 'web-only'}
+                </span>
+              </div>
+            </Card.Content>
+          </Card>
+        </div>
+      )}
 
       <div
         className={[
@@ -3417,7 +2722,7 @@ function V3Player(props: V3PlayerProps) {
           showNativeBufferingMask ? styles.videoWrapperMasked : null,
         ].filter(Boolean).join(' ')}
       >
-        {channel && showPlaybackChrome && !isCompactTouchLayout && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
+        {channel && showPlaybackChrome && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
         {showNativeBufferingMask && (
           <div
             className={styles.nativeBufferingMask}
@@ -3429,73 +2734,147 @@ function V3Player(props: V3PlayerProps) {
         )}
 
         {/* PREPARING Overlay (VOD Remux) */}
-        <PlayerStartupSurface
-          show={showStartupOverlay}
-          isRecordingStartupSurface={isRecordingStartupSurface}
-          useNativeBufferingSafeOverlay={useNativeBufferingSafeOverlay}
-          startupTitle={startupTitle}
-          startupEyebrow={t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' })}
-          startupStatusState={overlayStatus === 'buffering' ? 'live' : 'idle'}
-          startupStatusLabel={startupStatusLabel}
-          spinnerLabel={spinnerLabel}
-          spinnerSupport={spinnerSupport}
-          startupElapsedLabel={t('player.startupElapsed', {
-            defaultValue: 'Wait {{seconds}}s',
-            seconds: startupElapsedSeconds,
-          })}
-          showRuntimePolicyMeta={showRuntimePolicyMeta}
-          runtimePolicyPhase={effectiveRuntimePolicyPhase}
-          runtimePolicyPhaseState={runtimePolicyPhaseState}
-          runtimePolicyPhaseLabel={runtimePolicyPhaseLabel}
-          runtimePolicyMetaHint={runtimePolicyMetaHintLabel}
-          useMinimalStartupChrome={useMinimalStartupChrome}
-          showStopAction={!onClose}
-          stopLabel={t('common.stop')}
-          onStop={() => void stopStream()}
-        />
+        {showStartupOverlay && (
+          <div
+            className={[
+              styles.spinnerOverlay,
+              isRecordingStartupSurface ? styles.spinnerOverlayRecording : null,
+              useNativeBufferingSafeOverlay ? styles.spinnerOverlaySafe : null,
+            ].filter(Boolean).join(' ')}
+            aria-live="polite"
+            ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}
+          >
+            <div
+              className={[
+                styles.spinnerBadge,
+                isRecordingStartupSurface ? styles.spinnerBadgeRecording : null,
+              ].filter(Boolean).join(' ')}
+            >
+              {isRecordingStartupSurface ? (
+                <svg
+                  className={styles.spinnerMediaIcon}
+                  viewBox="0 0 48 48"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="M15 10.8c0-1.6 1.7-2.6 3.1-1.8l19.2 11.2c1.4.8 1.4 2.8 0 3.6L18.1 35c-1.4.8-3.1-.2-3.1-1.8V10.8Z" />
+                </svg>
+              ) : (
+                <div className={`${styles.spinner} spinner-base`}></div>
+              )}
+            </div>
+            <div className={styles.spinnerContent}>
+              {!isRecordingStartupSurface && (
+                <div className={styles.spinnerEyebrow}>
+                  {t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' })}
+                </div>
+              )}
+              {startupTitle && <h2 className={styles.spinnerTitle}>{startupTitle}</h2>}
+              {!isRecordingStartupSurface && (
+                <div className={styles.spinnerStatusRow}>
+                  <StatusChip
+                    state={overlayStatus === 'buffering' ? 'live' : 'idle'}
+                    label={startupStatusLabel}
+                  />
+                </div>
+              )}
+              <div className={styles.spinnerLabel}>{spinnerLabel}</div>
+              {!isRecordingStartupSurface && (
+                <>
+                  <div className={styles.spinnerSupport}>{spinnerSupport}</div>
+                  <div className={styles.spinnerMeta}>
+                    <div className={styles.spinnerProgressTrack} aria-hidden="true">
+                      <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
+                    </div>
+                    <div className={styles.spinnerElapsed}>
+                      {t('player.startupElapsed', {
+                        defaultValue: 'Wait {{seconds}}s',
+                        seconds: startupElapsedSeconds,
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+              {useMinimalStartupChrome && !onClose && (
+                <div className={styles.spinnerActions}>
+                  <Button variant="danger" size="sm" onClick={() => void stopStream()}>
+                    ⏹ {t('common.stop')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <video
           ref={videoRef}
           controls={false}
-          playsInline={useInlineVideoPlayback}
-          webkit-playsinline={useInlineVideoPlayback ? '' : undefined}
+          playsInline
+          webkit-playsinline=""
           x-webkit-airplay="allow"
           preload="metadata"
           autoPlay={!!autoStart}
           className={[
             styles.videoElement,
-            hideVideoElement ? styles.videoElementHidden : null,
+            showNativeBufferingMask ? styles.videoElementHidden : null,
           ].filter(Boolean).join(' ')}
         />
       </div>
 
       {/* Error Toast */}
-      <PlayerErrorSurface
-        error={error}
-        onRetry={handleRetry}
-        showRuntimePolicyMeta={showRuntimePolicyMeta}
-        runtimePolicyPhase={effectiveRuntimePolicyPhase}
-        runtimePolicyPhaseState={runtimePolicyPhaseState}
-        runtimePolicyPhaseLabel={runtimePolicyPhaseLabel}
-        runtimePolicyMetaHint={runtimePolicyMetaHintLabel}
-        runtimePolicyErrorSupport={runtimePolicyErrorSupport}
-        showVerboseErrorTelemetry={showVerboseErrorTelemetry}
-        stopSummary={stopSummary}
-        hostPressureSummary={hostPressureSummary}
-        fallbackSummary={fallbackSummary}
-        ffmpegPlanSummary={ffmpegPlanSummary}
-        stopLabel={t('player.stopReason', { defaultValue: 'Stop' })}
-        hostPressureLabel={t('player.hostPressure', { defaultValue: 'Host Pressure' })}
-        fallbackLabel={t('player.fallbacks', { defaultValue: 'Fallbacks' })}
-        ffmpegPlanLabel={t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}
-        retryLabel={t('common.retry')}
-        showErrorDetails={showErrorDetails}
-        onToggleDetails={() => setShowErrorDetails(!showErrorDetails)}
-        hideDetailsLabel={t('common.hideDetails')}
-        showDetailsLabel={t('common.showDetails')}
-        sessionLabel={t('common.session')}
-        sessionValue={effectiveSessionId || t('common.notAvailable')}
-      />
+      {error && (
+        <div className={styles.errorToast} aria-live="polite" role="alert">
+          <div className={styles.errorMain}>
+            <span className={styles.errorText}>⚠ {error.title}</span>
+            {error.retryable ? (
+              <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
+            ) : null}
+          </div>
+          {showVerboseErrorTelemetry && (stopSummary !== '-' || fallbackSummary !== '-' || ffmpegPlanSummary !== '-' || hostPressureSummary !== '-') && (
+            <div className={styles.errorTelemetry}>
+              {stopSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.stopReason', { defaultValue: 'Stop' })}</span>
+                  <span className={styles.errorTelemetryValue}>{stopSummary}</span>
+                </div>
+              )}
+              {hostPressureSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.hostPressure', { defaultValue: 'Host Pressure' })}</span>
+                  <span className={styles.errorTelemetryValue}>{hostPressureSummary}</span>
+                </div>
+              )}
+              {fallbackSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.fallbacks', { defaultValue: 'Fallbacks' })}</span>
+                  <span className={styles.errorTelemetryValue}>{fallbackSummary}</span>
+                </div>
+              )}
+              {ffmpegPlanSummary !== '-' && (
+                <div className={styles.errorTelemetryRow}>
+                  <span className={styles.errorTelemetryLabel}>{t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' })}</span>
+                  <span className={styles.errorTelemetryValue}>{ffmpegPlanSummary}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {error.detail && (
+            <button
+              onClick={() => setShowErrorDetails(!showErrorDetails)}
+              className={styles.errorDetailsButton}
+            >
+              {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
+            </button>
+          )}
+          {showErrorDetails && error.detail && (
+            <div className={styles.errorDetailsContent}>
+              <pre className={styles.errorDetailsPre}>{error.detail}</pre>
+              <br />
+              {t('common.session')}: {effectiveSessionId || t('common.notAvailable')}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Controls & Status Bar */}
       {showPlaybackChrome && (
@@ -3505,222 +2884,100 @@ function V3Player(props: V3PlayerProps) {
             useTheaterControlsLayout ? styles.controlsHeaderTheater : null,
           ].filter(Boolean).join(' ')}
         >
-          {channel && isCompactTouchLayout && useOverlayShell && (
-            <div className={styles.mobileInlineMeta}>
-              <div className={styles.mobileInlineMetaCopy}>
-                {mobileInlinePlaybackLabel && (
-                  <span className={styles.mobileInlineMetaEyebrow}>{mobileInlinePlaybackLabel}</span>
-                )}
-                <h3 className={styles.mobileInlineMetaTitle}>{channel.name}</h3>
-              </div>
-            </div>
-          )}
-
           {hasSeekWindow ? (
-            useMinimalTouchInlineChrome ? (
-              <div className={[styles.vodControls, styles.seekControls, styles.mobileInlineControls].filter(Boolean).join(' ')}>
-                <div className={styles.vodScrubArea}>
-                  <div className={styles.vodScrubTimes}>
-                    <span>{startTimeDisplay}</span>
-                    <span>{endTimeDisplay}</span>
-                  </div>
-                  <div
-                    className={[
-                      styles.vodScrubTrack,
-                      disableInlineLiveDvrScrub ? styles.vodScrubTrackDisabled : null,
-                    ].filter(Boolean).join(' ')}
-                    role="slider"
-                    style={seekProgressStyle}
-                    tabIndex={disableInlineLiveDvrScrub ? -1 : 0}
-                    aria-label={disableInlineLiveDvrScrub
-                      ? t('player.inlineDvrFullscreenHint', { defaultValue: 'Open fullscreen for DVR scrubbing' })
-                      : t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
-                    aria-disabled={disableInlineLiveDvrScrub}
-                    aria-valuemin={0}
-                    aria-valuemax={Math.round(windowDuration)}
-                    aria-valuenow={Math.round(relativePosition)}
-                    onPointerDown={disableInlineLiveDvrScrub ? undefined : handleVodScrubPointerDown}
-                    onPointerMove={disableInlineLiveDvrScrub ? undefined : handleVodScrubPointerMove}
-                    onKeyDown={disableInlineLiveDvrScrub ? undefined : handleVodScrubKeyDown}
-                  >
-                    <div className={styles.vodScrubFill}></div>
-                    <div className={styles.vodScrubThumb}></div>
-                  </div>
-                  {disableInlineLiveDvrScrub && (
-                    <div className={styles.inlineDvrHint}>
-                      <span>{t('player.inlineDvrFullscreenHint', { defaultValue: 'Open fullscreen for DVR scrubbing' })}</span>
-                    </div>
-                  )}
+            <div
+              className={[
+                styles.vodControls,
+                styles.seekControls,
+                useTheaterControlsLayout ? styles.vodControlsTheater : null,
+              ].filter(Boolean).join(' ')}
+            >
+              <div className={styles.vodScrubArea}>
+                <div className={styles.vodScrubTimes}>
+                  <span>{startTimeDisplay}</span>
+                  <span>{endTimeDisplay}</span>
                 </div>
-
-                <div className={styles.mobileInlinePrimaryActions}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={disableInlineLiveDvrScrub}
-                    onClick={disableInlineLiveDvrScrub ? undefined : () => seekBy(-15)}
-                    title={t('player.seekBack15s')}
-                    aria-label={t('player.seekBack15s')}
-                  >
-                    -15s
-                  </Button>
-
-                  <Button
-                    variant="primary"
-                    size="icon"
-                    className={styles.playPauseButton}
-                    onClick={togglePlayPause}
-                    title={isPlaying ? t('player.pause') : t('player.play')}
-                    aria-label={isPlaying ? t('player.pause') : t('player.play')}
-                  >
-                    {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={disableInlineLiveDvrScrub}
-                    onClick={disableInlineLiveDvrScrub ? undefined : () => seekBy(15)}
-                    title={t('player.seekForward15s')}
-                    aria-label={t('player.seekForward15s')}
-                  >
-                    +15s
-                  </Button>
-                </div>
-
-                <div className={styles.mobileInlineSecondaryActions}>
-                  {canToggleMute ? (
-                    <Button
-                      variant={isMuted ? 'primary' : 'ghost'}
-                      size="sm"
-                      className={styles.audioToggleButton}
-                      onClick={toggleMute}
-                      title={audioToggleLabel}
-                      aria-label={audioToggleLabel}
-                      aria-pressed={!isMuted}
-                    >
-                      <VolumeGlyph muted={isMuted} />
-                    </Button>
-                  ) : (
-                    <span />
-                  )}
-
-                  {hasLiveDvrWindow ? (
-                    <button
-                      className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                      onClick={() => (isAtLiveEdge && showDvrModeButton ? enterDVRMode() : seekTo(seekableEnd))}
-                      title={isAtLiveEdge && showDvrModeButton ? t('player.dvrMode') : t('player.goLive')}
-                    >
-                      {isAtLiveEdge && showDvrModeButton ? 'DVR' : 'LIVE'}
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-
-                  {canToggleFullscreen ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      active={isFullscreen}
-                      onClick={() => void toggleFullscreen()}
-                      title={isFullscreen
-                        ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
-                        : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
-                      aria-label={isFullscreen
-                        ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
-                        : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
-                    >
-                      <FullscreenGlyph />
-                    </Button>
-                  ) : (
-                    <span />
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div
-                className={[
-                  styles.vodControls,
-                  styles.seekControls,
-                  useTheaterControlsLayout ? styles.vodControlsTheater : null,
-                ].filter(Boolean).join(' ')}
-              >
-                <div className={styles.vodScrubArea}>
-                  <div className={styles.vodScrubTimes}>
-                    <span>{startTimeDisplay}</span>
-                    <span>{endTimeDisplay}</span>
-                  </div>
-                  <div
-                    className={styles.vodScrubTrack}
-                    role="slider"
-                    style={seekProgressStyle}
-                    tabIndex={0}
-                    aria-label={t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
-                    aria-valuemin={0}
-                    aria-valuemax={Math.round(windowDuration)}
-                    aria-valuenow={Math.round(relativePosition)}
-                    onPointerDown={handleVodScrubPointerDown}
-                    onPointerMove={handleVodScrubPointerMove}
-                    onKeyDown={handleVodScrubKeyDown}
-                  >
-                    <div className={styles.vodScrubFill}></div>
-                    <div className={styles.vodScrubThumb}></div>
-                  </div>
-                </div>
-
                 <div
-                  className={[
-                    styles.transportControls,
-                    useTheaterControlsLayout ? styles.transportControlsTheater : null,
-                  ].filter(Boolean).join(' ')}
+                  className={styles.vodScrubTrack}
+                  role="slider"
+                  tabIndex={shouldUseInlineDvrFullscreenGuidance ? -1 : 0}
+                  aria-label={shouldUseInlineDvrFullscreenGuidance
+                    ? t('player.inlineDvrFullscreenHint', { defaultValue: 'Use fullscreen on iPhone for DVR scrubbing.' })
+                    : t('player.seekTimeline', { defaultValue: 'Seek timeline' })}
+                  aria-disabled={shouldUseInlineDvrFullscreenGuidance ? 'true' : undefined}
+                  aria-valuemin={0}
+                  aria-valuemax={Math.round(windowDuration)}
+                  aria-valuenow={Math.round(relativePosition)}
+                  onPointerDown={shouldUseInlineDvrFullscreenGuidance ? undefined : handleVodScrubPointerDown}
+                  onPointerMove={shouldUseInlineDvrFullscreenGuidance ? undefined : handleVodScrubPointerMove}
+                  onKeyDown={shouldUseInlineDvrFullscreenGuidance ? undefined : handleVodScrubKeyDown}
                 >
-                  <div className={styles.seekButtons}>
-                    <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
-                      -15m
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
-                      -60s
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
-                      -15s
-                    </Button>
-                  </div>
-
-                  <Button
-                    variant="primary"
-                    size="icon"
-                    className={styles.playPauseButton}
-                    onClick={togglePlayPause}
-                    title={isPlaying ? t('player.pause') : t('player.play')}
-                    aria-label={isPlaying ? t('player.pause') : t('player.play')}
-                  >
-                    {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
-                  </Button>
-
-                  <div className={styles.seekButtons}>
-                    <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
-                      +15s
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
-                      +60s
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
-                      +15m
-                    </Button>
-                  </div>
+                  <div className={styles.vodScrubFill} style={{ width: seekProgressPercent }}></div>
+                  <div className={styles.vodScrubThumb} style={{ left: seekProgressPercent }}></div>
                 </div>
-
-                {hasLiveDvrWindow && (
+                {shouldUseInlineDvrFullscreenGuidance && (
                   <button
-                    className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                    onClick={() => seekTo(seekableEnd)}
-                    title={t('player.goLive')}
+                    type="button"
+                    className={styles.inlineDvrFullscreenHint}
+                    onClick={enterDVRMode}
                   >
-                    LIVE
+                    {t('player.inlineDvrFullscreenHint', { defaultValue: 'Use fullscreen on iPhone for DVR scrubbing.' })}
                   </button>
                 )}
               </div>
-            )
+
+              <div
+                className={[
+                  styles.transportControls,
+                  useTheaterControlsLayout ? styles.transportControlsTheater : null,
+                ].filter(Boolean).join(' ')}
+              >
+                <div className={styles.seekButtons}>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
+                    ↺ 15m
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
+                    ↺ 60s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
+                    ↺ 15s
+                  </Button>
+                </div>
+
+                <Button
+                  variant="primary"
+                  size="icon"
+                  className={styles.playPauseButton}
+                  onClick={togglePlayPause}
+                  title={isPlaying ? t('player.pause') : t('player.play')}
+                  aria-label={isPlaying ? t('player.pause') : t('player.play')}
+                >
+                  {isPlaying ? '⏸' : '▶'}
+                </Button>
+
+                <div className={styles.seekButtons}>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
+                    +15s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
+                    +60s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
+                    +15m
+                  </Button>
+                </div>
+              </div>
+
+              {isLiveMode && (
+                <button
+                  className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
+                  onClick={() => seekTo(seekableEnd)}
+                  title={t('player.goLive')}
+                >
+                  LIVE
+                </button>
+              )}
+            </div>
           ) : (
             !channel && !recordingId && !src && (
               <input
@@ -3752,26 +3009,17 @@ function V3Player(props: V3PlayerProps) {
 
           {/* DVR Mode Button (Safari Only / Fallback) */}
           {showDvrModeButton && !canToggleFullscreen && (
-            <Button size="sm" onClick={enterDVRMode} title={t('player.dvrMode')}>
-              DVR
+            <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
+              📺 DVR
             </Button>
           )}
 
-          {!useMinimalTouchInlineChrome && (
-            <div
-              className={[
-                styles.utilityControls,
-                useTheaterControlsLayout ? styles.utilityControlsTheater : null,
-              ].filter(Boolean).join(' ')}
-            >
-            <PlayerRuntimeMeta
-              show={showRuntimePolicyMeta}
-              phase={effectiveRuntimePolicyPhase}
-              phaseState={runtimePolicyPhaseState}
-              phaseLabel={runtimePolicyPhaseLabel}
-              hint={runtimePolicyMetaHintLabel}
-              theater={useTheaterControlsLayout}
-            />
+          <div
+            className={[
+              styles.utilityControls,
+              useTheaterControlsLayout ? styles.utilityControlsTheater : null,
+            ].filter(Boolean).join(' ')}
+          >
             {prefersDesktopNativeFullscreen && canEnterNativeFullscreen && !isFullscreen && (
               <Button
                 variant="ghost"
@@ -3783,9 +3031,7 @@ function V3Player(props: V3PlayerProps) {
                   ? t('player.nativeFullscreenPendingTitle', { defaultValue: 'Preparing Apple player' })
                   : t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
               >
-                {nativeFullscreenPending
-                  ? t('player.nativeFullscreenPendingLabel', { defaultValue: 'Native...' })
-                  : t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
+                TV {t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
               </Button>
             )}
 
@@ -3798,11 +3044,10 @@ function V3Player(props: V3PlayerProps) {
                 title={isFullscreen
                   ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
                   : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
-                aria-label={isFullscreen
+              >
+                ⛶ {isFullscreen
                   ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
                   : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' })}
-              >
-                <FullscreenGlyph />
               </Button>
             )}
 
@@ -3822,7 +3067,8 @@ function V3Player(props: V3PlayerProps) {
                   aria-label={audioToggleLabel}
                   aria-pressed={!isMuted}
                 >
-                  <VolumeGlyph muted={isMuted} />
+                  <span className={styles.audioToggleIcon} aria-hidden="true">{audioToggleIcon}</span>
+                  <span className={styles.audioToggleLabel}>{audioToggleLabel}</span>
                 </Button>
                 {canAdjustVolume ? (
                   <input
@@ -3850,7 +3096,7 @@ function V3Player(props: V3PlayerProps) {
                 onClick={() => void togglePiP()}
                 title={t('player.pipTitle')}
               >
-                {t('player.pipLabel')}
+                📺 {t('player.pipLabel')}
               </Button>
             )}
 
@@ -3865,12 +3111,11 @@ function V3Player(props: V3PlayerProps) {
             </Button>
 
             {!onClose && (
-              <Button variant="danger" size="sm" onClick={() => void stopStream()}>
-                {t('common.stop')}
+              <Button variant="danger" onClick={() => void stopStream()}>
+                ⏹ {t('common.stop')}
               </Button>
             )}
-            </div>
-          )}
+          </div>
         </div>
       )}
         </div>

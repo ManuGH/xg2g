@@ -171,7 +171,7 @@ func (s *Server) initHDHR(cfg config.AppConfig, cm *channels.Manager) {
 
 func (s *Server) registerHealthCheckers(cfg config.AppConfig) {
 	s.healthManager.RegisterChecker(health.NewExistingWritableDirChecker("data_dir", cfg.DataDir))
-	if !strings.EqualFold(strings.TrimSpace(cfg.Store.Backend), "memory") {
+	if !strings.EqualFold(strings.TrimSpace(cfg.Store.Backend), "memory") && strings.TrimSpace(cfg.Store.Path) != "" {
 		s.healthManager.RegisterChecker(health.NewExistingWritableDirChecker("store_path", cfg.Store.Path))
 	}
 	if cfg.Engine.Enabled {
