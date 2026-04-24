@@ -44,6 +44,12 @@ func (m *MockPreparingServer) GetRecordings(w http.ResponseWriter, r *http.Reque
 }
 func (m *MockPreparingServer) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
+func (m *MockPreparingServer) PostRecordingDelete(w http.ResponseWriter, r *http.Request, recordingId string) {
+}
+func (m *MockPreparingServer) PostRecordingRename(w http.ResponseWriter, r *http.Request, recordingId string) {
+}
+func (m *MockPreparingServer) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, recordingId string) {
+}
 func (m *MockPreparingServer) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
 func (m *MockPreparingServer) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {

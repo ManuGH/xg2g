@@ -20,16 +20,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
-	"github.com/go-chi/chi/v5"
 	"golang.org/x/sys/unix"
 )
 
 const recordingRenameBodyLimit = 4096
-
-type recordingAdminServer interface {
-	PostRecordingDelete(w http.ResponseWriter, r *http.Request, recordingId string)
-	PostRecordingRename(w http.ResponseWriter, r *http.Request, recordingId string)
-}
 
 type renameRecordingRequest struct {
 	Title string `json:"title"`
@@ -38,42 +32,6 @@ type renameRecordingRequest struct {
 type recordingRenameOp struct {
 	oldPath string
 	newPath string
-}
-
-func (siw *ServerInterfaceWrapper) PostRecordingDelete(w http.ResponseWriter, r *http.Request) {
-	recordingID := chi.URLParam(r, "recordingId")
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler, ok := siw.Handler.(recordingAdminServer)
-		if !ok || handler == nil {
-			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not_implemented", "Not Implemented", problemcode.CodeNotImplemented, "Recording delete is not implemented on this server.", nil)
-			return
-		}
-		handler.PostRecordingDelete(w, r, recordingID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-func (siw *ServerInterfaceWrapper) PostRecordingRename(w http.ResponseWriter, r *http.Request) {
-	recordingID := chi.URLParam(r, "recordingId")
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler, ok := siw.Handler.(recordingAdminServer)
-		if !ok || handler == nil {
-			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not_implemented", "Not Implemented", problemcode.CodeNotImplemented, "Recording rename is not implemented on this server.", nil)
-			return
-		}
-		handler.PostRecordingRename(w, r, recordingID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
 }
 
 func (s *Server) PostRecordingDelete(w http.ResponseWriter, r *http.Request, recordingId string) {

@@ -19,9 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/problemcode"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
-	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -37,28 +35,6 @@ const (
 )
 
 var recordingThumbnailBuildGroup singleflight.Group
-
-type recordingThumbnailServer interface {
-	GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, recordingId string)
-}
-
-func (siw *ServerInterfaceWrapper) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request) {
-	recordingID := chi.URLParam(r, "recordingId")
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler, ok := siw.Handler.(recordingThumbnailServer)
-		if !ok || handler == nil {
-			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not_implemented", "Not Implemented", problemcode.CodeNotImplemented, "Recording thumbnails are not implemented on this server.", nil)
-			return
-		}
-		handler.GetRecordingThumbnail(w, r, recordingID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
 
 func (s *Server) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, recordingId string) {
 	deps := s.recordingsModuleDeps()
