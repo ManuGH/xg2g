@@ -72,18 +72,32 @@ func Metrics() func(http.Handler) http.Handler {
 				}
 			}
 
-			// Record request size (label by route pattern to avoid cardinality explosion)
+			// Record request size (label by route pattern to avoid cardinality explosion).
+			// Use the non-panicking Prometheus accessor so malformed paths can never turn
+			// metrics recording itself into a recovered 500 response.
 			if contentLength > 0 {
-				httpRequestSize.WithLabelValues(r.Method, path).Observe(float64(contentLength))
+				observeHistogramVec(httpRequestSize, float64(contentLength), r.Method, path)
 			}
 
 			// Record metrics
-			status := strconv.Itoa(ww.Status())
-			httpRequestDuration.WithLabelValues(r.Method, path, status).Observe(duration)
+			statusCode := ww.Status()
+			if statusCode == 0 {
+				statusCode = http.StatusOK
+			}
+			status := strconv.Itoa(statusCode)
+			observeHistogramVec(httpRequestDuration, duration, r.Method, path, status)
 
 			if written := ww.BytesWritten(); written > 0 {
-				httpResponseSize.WithLabelValues(r.Method, path, status).Observe(float64(written))
+				observeHistogramVec(httpResponseSize, float64(written), r.Method, path, status)
 			}
 		})
 	}
+}
+
+func observeHistogramVec(vec *prometheus.HistogramVec, value float64, labelValues ...string) {
+	observer, err := vec.GetMetricWithLabelValues(labelValues...)
+	if err != nil {
+		return
+	}
+	observer.Observe(value)
 }

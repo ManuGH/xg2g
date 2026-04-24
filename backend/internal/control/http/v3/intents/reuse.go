@@ -2,6 +2,7 @@ package intents
 
 import (
 	"context"
+	"reflect"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -70,28 +71,52 @@ func isReusableLiveSessionCandidate(intent Intent, session, candidate *model.Ses
 	if !strings.EqualFold(strings.TrimSpace(sessionContextValue(candidate, model.CtxKeyMode)), model.ModeLive) {
 		return false
 	}
-	if normalize.Token(sessionContextValue(candidate, model.CtxKeyClientPath)) != normalize.Token(sessionContextValue(session, model.CtxKeyClientPath)) {
+	if !reusableLiveClientPathCompatible(session, candidate) {
 		return false
 	}
-	if !matchSessionIdentity(intent, candidate) {
+	if !matchSessionIdentity(intent, session, candidate) {
 		return false
 	}
 	return true
 }
 
-func matchSessionIdentity(intent Intent, candidate *model.SessionRecord) bool {
+func reusableLiveClientPathCompatible(session, candidate *model.SessionRecord) bool {
+	requestPath := normalize.Token(sessionContextValue(session, model.CtxKeyClientPath))
+	candidatePath := normalize.Token(sessionContextValue(candidate, model.CtxKeyClientPath))
+	if requestPath == candidatePath {
+		return true
+	}
+	if requestPath == "" || candidatePath == "" {
+		return false
+	}
+	return reusableLiveProfilesEquivalent(session, candidate)
+}
+
+func reusableLiveProfilesEquivalent(session, candidate *model.SessionRecord) bool {
+	if session == nil || candidate == nil {
+		return false
+	}
+	return reflect.DeepEqual(session.Profile, candidate.Profile)
+}
+
+func matchSessionIdentity(intent Intent, session, candidate *model.SessionRecord) bool {
 	intentPrincipal := normalize.Token(intent.PrincipalID)
 	candidatePrincipal := normalize.Token(sessionContextValue(candidate, model.CtxKeyPrincipalID))
+	principalMatched := false
 	if intentPrincipal != "" || candidatePrincipal != "" {
 		if intentPrincipal == "" || candidatePrincipal == "" || intentPrincipal != candidatePrincipal {
 			return false
 		}
+		principalMatched = true
 	}
 
 	intentCapHash := normalize.Token(clientCapHashForIntent(intent))
 	candidateCapHash := normalize.Token(candidateCapHash(candidate))
 	if intentCapHash != "" || candidateCapHash != "" {
 		if intentCapHash == "" || candidateCapHash == "" || intentCapHash != candidateCapHash {
+			if principalMatched && reusableLiveProfilesEquivalent(session, candidate) {
+				return true
+			}
 			return false
 		}
 	}

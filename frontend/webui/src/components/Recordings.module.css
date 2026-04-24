@@ -884,7 +884,6 @@
   border-radius: 999px;
   border: 2px solid color-mix(in srgb, var(--border-elevated) 72%, transparent);
   border-top-color: var(--accent-action);
-  animation: recordingsLaunchSpin 0.85s linear infinite;
 }
 
 .playerLaunchCopy {
@@ -907,15 +906,6 @@
   line-height: 1.5;
 }
 
-@keyframes recordingsLaunchSpin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 @media (max-width: 980px) {
   .heroHeadingRow {

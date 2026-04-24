@@ -305,9 +305,11 @@ func TestHandleReady(t *testing.T) {
 	xmltvPath := "epg.xml"
 	xmltvFullPath := filepath.Join(tempDir, xmltvPath)
 
-	// Create a mock receiver server for health check
+	// Create a mock receiver server for health check.
+	// The strict readiness checker calls /api/about and parses the OpenWebIF JSON body.
 	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"info":{"model":"test"}}`))
 	}))
 	defer mockReceiver.Close()
 

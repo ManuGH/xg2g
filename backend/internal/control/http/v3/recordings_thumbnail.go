@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
@@ -46,7 +47,7 @@ func (siw *ServerInterfaceWrapper) GetRecordingThumbnail(w http.ResponseWriter, 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler, ok := siw.Handler.(recordingThumbnailServer)
 		if !ok || handler == nil {
-			w.WriteHeader(http.StatusNotImplemented)
+			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not-implemented", "Not Implemented", problemcode.CodeInternalError, "Recording thumbnail handler not implemented", nil)
 			return
 		}
 		handler.GetRecordingThumbnail(w, r, recordingID)
@@ -67,14 +68,14 @@ func (s *Server) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, r
 
 	serviceRef, ok := recservice.DecodeRecordingID(recordingId)
 	if !ok {
-		http.NotFound(w, r)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, "Recording not found", nil)
 		return
 	}
 
 	sourcePath, err := resolveRecordingThumbnailSourcePath(deps, serviceRef)
 	if err != nil {
 		log.L().Debug().Err(err).Str("recordingId", recordingId).Msg("recording thumbnail source unavailable")
-		http.NotFound(w, r)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, "Recording thumbnail source not found", nil)
 		return
 	}
 
@@ -87,7 +88,7 @@ func (s *Server) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, r
 
 	if err := ensureRecordingThumbnail(r.Context(), deps.cfg, sourcePath, thumbnailPath); err != nil {
 		log.L().Debug().Err(err).Str("recordingId", recordingId).Str("sourcePath", sourcePath).Msg("recording thumbnail build failed")
-		http.NotFound(w, r)
+		writeRegisteredProblem(w, r, http.StatusNotFound, "recordings/not-found", "Not Found", problemcode.CodeNotFound, "Recording thumbnail not found", nil)
 		return
 	}
 

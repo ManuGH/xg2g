@@ -45,7 +45,7 @@ func (siw *ServerInterfaceWrapper) PostRecordingDelete(w http.ResponseWriter, r 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler, ok := siw.Handler.(recordingAdminServer)
 		if !ok || handler == nil {
-			w.WriteHeader(http.StatusNotImplemented)
+			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not-implemented", "Not Implemented", problemcode.CodeInternalError, "Recording delete handler not implemented", nil)
 			return
 		}
 		handler.PostRecordingDelete(w, r, recordingID)
@@ -63,7 +63,7 @@ func (siw *ServerInterfaceWrapper) PostRecordingRename(w http.ResponseWriter, r 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler, ok := siw.Handler.(recordingAdminServer)
 		if !ok || handler == nil {
-			w.WriteHeader(http.StatusNotImplemented)
+			writeRegisteredProblem(w, r, http.StatusNotImplemented, "system/not-implemented", "Not Implemented", problemcode.CodeInternalError, "Recording rename handler not implemented", nil)
 			return
 		}
 		handler.PostRecordingRename(w, r, recordingID)
