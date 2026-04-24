@@ -575,6 +575,7 @@ function V3Player(props: V3PlayerProps) {
     authHeaders,
     reportError,
     ensureSessionCookie,
+    primePlaybackAuth,
     setActiveSessionId,
     clearSessionLeaseState,
     sendStopIntent,
@@ -1687,6 +1688,9 @@ function V3Player(props: V3PlayerProps) {
         if (!streamUrl) {
           throw new Error(t('player.streamUrlMissing'));
         }
+        if (liveEngine === 'native') {
+          await primePlaybackAuth(streamUrl, 'V3Player.liveNativeHls');
+        }
         playHls(streamUrl, liveEngine);
         setActiveHlsEngine(liveEngine);
 
@@ -1705,7 +1709,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, token]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, primePlaybackAuth, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, prepareFreshPlayback, requestedDuration, requestedStartPositionSeconds, teardownActivePlayback, beginNativePlayback, channel?.name, channel?.logoUrl, nativePlaybackState, normalizedRecordingTitle, token]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     userPauseIntentRef.current = true;
