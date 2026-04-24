@@ -84,7 +84,6 @@ export default function EPG({
   const uiSurface = useUiSurface();
   const {
     selectedProfile,
-    selectedProfileId,
     isReady,
     isFavoriteService,
     toggleFavoriteService,
@@ -236,7 +235,7 @@ export default function EPG({
         payload: { error: createEpgError(err, t, 'epg.loadError') }
       });
     }
-  }, [isReady, selectedProfileId, state.filters.timeRange, state.filters.bouquetId, t]);
+  }, [isReady, state.filters.timeRange, state.filters.bouquetId, t]);
 
   // Initial load + auto-refresh every 5 minutes
   useEffect(() => {
@@ -279,7 +278,7 @@ export default function EPG({
         payload: { error: createEpgError(err, t, 'epg.searchError') }
       });
     }
-  }, [isReady, selectedProfileId, state.filters.query, state.filters.bouquetId, t]);
+  }, [isReady, state.filters.query, state.filters.bouquetId, t]);
 
   // Clear search when query is emptied
   useEffect(() => {

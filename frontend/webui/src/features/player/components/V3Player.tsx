@@ -1036,7 +1036,6 @@ function V3Player(props: V3PlayerProps) {
     isDocumentVisible,
     playbackMode,
     recoverNativeInlineSource,
-    shouldForceNativeMobileHls,
     status,
   ]);
 
@@ -1439,7 +1438,7 @@ function V3Player(props: V3PlayerProps) {
     if (mappedStatus) {
       setStatus(mappedStatus);
     }
-  }, [clearPlayerError, isNativePlaybackHost, setPlaybackMode, setPlayerError, setStatus]);
+  }, [clearPlayerError, isNativePlaybackHost, mergeSessionPlaybackTrace, setPlaybackMode, setPlayerError, setStatus]);
 
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
@@ -2353,7 +2352,7 @@ function V3Player(props: V3PlayerProps) {
     void video.play().catch((err) => {
       debugWarn('[V3Player] Host resume play blocked', err);
     });
-  }, [clearNativeVisibilityResumeRecoveryTimer, hasTerminalStatus, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, shouldManageVisibilityResume, status, videoRef]);
+  }, [clearNativeVisibilityResumeRecoveryTimer, hasTerminalStatus, hasTouchPlaybackInput, isDocumentVisible, isNativeEngine, isNativePlaybackHost, nativePlaybackState, setStatus, shouldManageVisibilityResume, status, videoRef]);
 
   useEffect(() => {
     clearNativeVisibilityResumeRecoveryTimer();
@@ -3277,6 +3276,7 @@ function V3Player(props: V3PlayerProps) {
     fallbackSummary,
     ffmpegPlanSummary,
     firstFrameLabel,
+    formatClock,
     hasLiveDvrWindow,
     hasSeekWindow,
     isFullscreen,
@@ -3287,7 +3287,6 @@ function V3Player(props: V3PlayerProps) {
     prefersDesktopNativeFullscreen,
     runtimePolicyConstraintsSummary,
     runtimePolicyPhaseLabel,
-    runtimePolicyPhaseState,
     runtimePolicyReasonsSummary,
     runtimePolicyTimelineSummaryEntries,
     runtimeProbeTrustSummary,

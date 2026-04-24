@@ -34,7 +34,6 @@ describe('probeRuntimePlaybackCapabilities', () => {
         originalWebkitSupportsPresentationModeDescriptor
       );
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
     }
 

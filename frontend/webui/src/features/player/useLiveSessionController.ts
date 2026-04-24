@@ -464,7 +464,7 @@ export function useLiveSessionController({
       waitedMs: maxAttempts * SESSION_READY_POLL_MS,
       pollMs: SESSION_READY_POLL_MS
     });
-  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, onSessionSnapshot, readResponseBody, setStatus, t]);
+  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, fetchWithRecoveredSessionCookie, onSessionSnapshot, readResponseBody, setStatus, t]);
 
   useEffect(() => {
     if (!sessionId || !heartbeatInterval) {
@@ -559,7 +559,7 @@ export function useLiveSessionController({
       debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
       window.clearInterval(timerId);
     };
-  }, [apiBase, authHeaders, clearSessionLeaseState, heartbeatInterval, refreshSessionSnapshot, sessionId, setError, setPlaybackMode, setStatus, t, videoRef]);
+  }, [apiBase, authHeaders, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, sessionId, setError, setPlaybackMode, setStatus, t, videoRef]);
 
   useEffect(() => {
     setClientAuthToken(token);
