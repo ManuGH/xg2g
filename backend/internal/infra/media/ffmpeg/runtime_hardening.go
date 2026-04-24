@@ -187,14 +187,16 @@ func (a *LocalAdapter) evaluateProgressiveHardwareDeinterlaceHardening(ctx conte
 	if probeTimeout <= 0 {
 		probeTimeout = 6 * time.Second
 	}
-	info, err := a.runSafariRuntimeProbeWithRetry(ctx, spec.SessionID, inputURL, probeTimeout)
+	attemptCtx, cancel := context.WithTimeout(ctx, probeTimeout)
+	info, err := a.runSafariRuntimeProbeOnce(attemptCtx, inputURL)
+	cancel()
 	if err != nil {
 		a.Logger.Info().
 			Err(err).
 			Str("sessionId", spec.SessionID).
 			Str("input_url", sanitizeURLForLog(inputURL)).
 			Dur("probe_timeout", probeTimeout).
-			Msg("runtime progressive probe failed; keeping deinterlace enabled")
+			Msg("runtime progressive probe failed; keeping deinterlace enabled without retry")
 		return noRuntimeHardeningDecision()
 	}
 	if info.Video.Interlaced {

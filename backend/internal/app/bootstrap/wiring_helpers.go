@@ -77,7 +77,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 			Msg("NVENC preflight failed; NVIDIA GPU transcoding will be unavailable for sessions requesting it")
 	}
 	adapter.PreflightTranscodeProfiles()
-	if config.ParseBool("XG2G_ENABLE_SYNTHETIC_PATH_CORRECTNESS_PREFLIGHT", false) {
+	if config.ParseBool("XG2G_ENABLE_SYNTHETIC_PATH_CORRECTNESS_PREFLIGHT", true) {
 		adapter.PreflightPathCorrectness()
 	}
 

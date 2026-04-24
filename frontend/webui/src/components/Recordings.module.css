@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 20px;
   padding: 12px 0 80px;
-  max-width: 1480px;
+  max-width: var(--page-max-width-wide);
   margin: 0 auto;
 }
 
@@ -1002,5 +1002,176 @@
   .playerLaunchStatus {
     width: 100%;
     max-width: none;
+  }
+}
+
+@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  .container {
+    gap: 12px;
+    padding: 4px 0 16px;
+  }
+
+  .hero {
+    gap: 8px;
+  }
+
+  .heroCopy {
+    gap: 8px;
+  }
+
+  .heroHeadingRow {
+    align-items: flex-end;
+    gap: 10px 12px;
+  }
+
+  .heroTitle {
+    font-size: clamp(1.32rem, 3vw, 1.95rem);
+  }
+
+  .heroSummary,
+  .heroContext {
+    font-size: 0.84rem;
+    line-height: 1.38;
+  }
+
+  .heroSignals {
+    gap: 6px 10px;
+  }
+
+  .browserBar {
+    gap: 8px;
+    padding-top: 8px;
+  }
+
+  .toolbarPrimary,
+  .segmentedControls {
+    gap: 8px 10px;
+  }
+
+  .toolbarGroup,
+  .toolbarActions,
+  .segmentGroup {
+    gap: 8px;
+  }
+
+  .rootSelect {
+    min-width: 150px;
+    padding: 8px 12px;
+  }
+
+  .segmentButton {
+    padding: 7px 11px;
+  }
+
+  .section {
+    gap: 10px;
+  }
+
+  .sectionTitle {
+    font-size: 1rem;
+  }
+
+  .directoryRail,
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  .resumeShelf {
+    gap: 12px;
+    grid-auto-columns: minmax(260px, 320px);
+  }
+
+  .directoryCardBody {
+    min-height: 62px;
+  }
+
+  .mediaPreviewBackdrop {
+    padding: 14px;
+  }
+
+  .mediaPreviewWordmark {
+    max-width: min(54%, 12ch);
+    font-size: clamp(0.92rem, 1.6vw, 1.2rem);
+  }
+
+  .mediaPreviewTop,
+  .mediaPreviewBottom {
+    left: 10px;
+    right: 10px;
+    gap: 8px;
+  }
+
+  .mediaPreviewTop {
+    top: 10px;
+  }
+
+  .mediaPreviewBottom {
+    bottom: 10px;
+  }
+
+  .mediaCardActions {
+    top: 10px;
+    right: 10px;
+    gap: 6px;
+  }
+
+  .mediaActionButton {
+    width: 30px;
+    height: 30px;
+  }
+
+  .watchPage {
+    padding-bottom: 18px;
+  }
+
+  .watchPageHeader {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .watchPageClose {
+    align-self: auto;
+  }
+
+  .preplayOverlay {
+    align-items: flex-start;
+    padding: calc(8px + var(--sat)) 0 calc(10px + var(--sab));
+  }
+
+  .preplayPanel {
+    width: min(100%, 940px);
+  }
+
+  .watchPageFallbackStage,
+  .preplayStage {
+    border-radius: 20px;
+  }
+
+  .preplayStageDock {
+    flex-direction: row;
+    align-items: flex-end;
+    padding: 16px 16px 14px;
+    gap: 12px;
+  }
+
+  .preplayStageActions {
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .preplayBody {
+    padding: 0 16px;
+  }
+
+  .preplayDescription {
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+
+  .preplayActions {
+    gap: 8px;
   }
 }

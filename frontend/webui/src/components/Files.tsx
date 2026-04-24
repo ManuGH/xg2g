@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemHealth, postSystemRefresh, type SystemHealth } from '../client-ts';
 import { toAppError } from '../lib/appErrors';
@@ -25,7 +25,7 @@ function Files({ showLegacyNotice = true }: FilesProps) {
   const [regenerating, setRegenerating] = useState<boolean>(false);
   const [error, setError] = useState<AppError | null>(null);
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -38,11 +38,11 @@ function Files({ showLegacyNotice = true }: FilesProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     fetchStatus();
-  }, []);
+  }, [fetchStatus]);
 
   const handleRegenerate = async () => {
     setError(null);

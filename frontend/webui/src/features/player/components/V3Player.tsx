@@ -63,6 +63,7 @@ import {
 import { normalizePlayerError } from '../../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../../lib/httpProblem';
 import { useTvInitialFocus } from '../../../hooks/useTvInitialFocus';
+import { useUiSurface } from '../../../context/UiSurfaceContext';
 import {
   getNativePlaybackState,
   onNativePlaybackState,
@@ -675,7 +676,7 @@ function V3Player(props: V3PlayerProps) {
   const [useInlineVideoPlayback, setUseInlineVideoPlayback] = useState(true);
 
   // P3-4: Truth State
-  const [canSeek, setCanSeek] = useState(true);
+  const [canSeek, setCanSeek] = useState(() => !recordingId);
   const [startUnix, setStartUnix] = useState<number | null>(null);
 
   const lastDecodedRef = useRef<number>(0);
@@ -991,7 +992,12 @@ function V3Player(props: V3PlayerProps) {
       : 0),
     [startPositionSeconds]
   );
-  const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
+  const uiSurface = useUiSurface();
+  const hasTouchPlaybackInput = useMemo(() => hasTouchInput(), []);
+  const isCompactTouchLayout = hasTouchPlaybackInput && (
+    uiSurface.width < 768 ||
+    uiSurface.heightClass !== 'comfortable'
+  );
   const mergedPlaybackOperator = useMemo(
     () => mergePlaybackTraceOperator(sessionPlaybackTrace?.operator, playbackObservability?.operator),
     [playbackObservability?.operator, sessionPlaybackTrace?.operator]
@@ -1010,7 +1016,7 @@ function V3Player(props: V3PlayerProps) {
     const video = videoRef.current;
     if (
       playbackMode !== 'LIVE' ||
-      !isCompactTouchLayout ||
+      !hasTouchPlaybackInput ||
       !isDocumentVisible ||
       !video ||
       !shouldForceNativeMobileHls(video) ||
@@ -1026,11 +1032,10 @@ function V3Player(props: V3PlayerProps) {
 
     recoverNativeInlineSource('native fullscreen exit', details.currentTime);
   }, [
-    isCompactTouchLayout,
+    hasTouchPlaybackInput,
     isDocumentVisible,
     playbackMode,
     recoverNativeInlineSource,
-    shouldForceNativeMobileHls,
     status,
   ]);
 
@@ -1039,6 +1044,7 @@ function V3Player(props: V3PlayerProps) {
     authHeaders,
     reportError,
     ensureSessionCookie,
+    primePlaybackAuth,
     setActiveSessionId,
     clearSessionLeaseState,
     sendStopIntent,
@@ -1066,6 +1072,7 @@ function V3Player(props: V3PlayerProps) {
     supportsNativeFullscreen,
     canEnterNativeFullscreen,
     prefersDesktopNativeFullscreen,
+    nativeFullscreenPending,
     isWebKitFullscreenActive,
     isPip,
     canTogglePiP,
@@ -1148,6 +1155,7 @@ function V3Player(props: V3PlayerProps) {
     reportError,
     waitForSessionReady,
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
+    primePlaybackAuth,
     runtimeProbeActive: isRuntimeProbeActive,
     setStats,
     setStatus,
@@ -1430,7 +1438,7 @@ function V3Player(props: V3PlayerProps) {
     if (mappedStatus) {
       setStatus(mappedStatus);
     }
-  }, [clearPlayerError, isNativePlaybackHost, setPlaybackMode, setPlayerError, setStatus]);
+  }, [clearPlayerError, isNativePlaybackHost, mergeSessionPlaybackTrace, setPlaybackMode, setPlayerError, setStatus]);
 
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
@@ -1451,6 +1459,7 @@ function V3Player(props: V3PlayerProps) {
     setShowResumeOverlay(false);
     setTraceId('-');
     setPlaybackMode('VOD');
+    setCanSeek(false);
 
     let abortController: AbortController | null = null;
     let requestCaps: CapabilitySnapshot | null = null;
@@ -2281,7 +2290,7 @@ function V3Player(props: V3PlayerProps) {
     status === 'starting' || status === 'priming' || status === 'building';
   const isNativeEngine = activeHlsEngine === 'native';
   const shouldManageVisibilityResume =
-    hostEnvironment.isTv || (isNativeEngine && isCompactTouchLayout);
+    hostEnvironment.isTv || (isNativeEngine && hasTouchPlaybackInput);
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
   const shouldKeepHostAwake =
     hostEnvironment.supportsKeepScreenAwake &&
@@ -2322,7 +2331,7 @@ function V3Player(props: V3PlayerProps) {
       clearNativeVisibilityResumeRecoveryTimer();
       if (!video.paused && !userPauseIntentRef.current && !hasTerminalStatus) {
         visibilityManagedPauseRef.current = true;
-        nativeVisibilityResumeArmedRef.current = isNativeEngine && isCompactTouchLayout;
+        nativeVisibilityResumeArmedRef.current = isNativeEngine && hasTouchPlaybackInput;
         video.pause();
         setStatus('paused');
       }
@@ -2343,7 +2352,7 @@ function V3Player(props: V3PlayerProps) {
     void video.play().catch((err) => {
       debugWarn('[V3Player] Host resume play blocked', err);
     });
-  }, [clearNativeVisibilityResumeRecoveryTimer, hasTerminalStatus, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, shouldManageVisibilityResume, status, videoRef]);
+  }, [clearNativeVisibilityResumeRecoveryTimer, hasTerminalStatus, hasTouchPlaybackInput, isDocumentVisible, isNativeEngine, isNativePlaybackHost, nativePlaybackState, setStatus, shouldManageVisibilityResume, status, videoRef]);
 
   useEffect(() => {
     clearNativeVisibilityResumeRecoveryTimer();
@@ -2352,7 +2361,7 @@ function V3Player(props: V3PlayerProps) {
       !isDocumentVisible ||
       !nativeVisibilityResumeArmedRef.current ||
       !isNativeEngine ||
-      !isCompactTouchLayout ||
+      !hasTouchPlaybackInput ||
       hasTerminalStatus ||
       userPauseIntentRef.current
     ) {
@@ -2398,7 +2407,7 @@ function V3Player(props: V3PlayerProps) {
   }, [
     clearNativeVisibilityResumeRecoveryTimer,
     hasTerminalStatus,
-    isCompactTouchLayout,
+    hasTouchPlaybackInput,
     isDocumentVisible,
     isNativeEngine,
     recoverNativeInlineSource,
@@ -2442,11 +2451,18 @@ function V3Player(props: V3PlayerProps) {
       return;
     }
 
-    if (!showNativeVideo && revealNativeVideoIfRenderable()) {
+    const shouldHoldNativeVideoForStatus =
+      status === 'starting' ||
+      status === 'priming' ||
+      status === 'building' ||
+      status === 'buffering' ||
+      status === 'recovering';
+
+    if ((shouldHoldNativeVideoForStatus || !showNativeVideo) && revealNativeVideoIfRenderable()) {
       return;
     }
 
-    if (status === 'starting' || status === 'priming' || status === 'building' || status === 'buffering' || status === 'recovering') {
+    if (shouldHoldNativeVideoForStatus) {
       clearNativeVideoRevealTimer();
       clearNativeVideoVeilTimers();
       if (showNativeVideo) {
@@ -3097,8 +3113,21 @@ function V3Player(props: V3PlayerProps) {
     : null;
   const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
   const useTheaterControlsLayout = Boolean(isRecordingPageLayout && !isFullscreen && hasSeekWindow);
-  const useMinimalTouchInlineChrome = Boolean(isCompactTouchLayout && useOverlayShell && !useTheaterControlsLayout && !isFullscreen);
-  const disableInlineLiveDvrScrub = useMinimalTouchInlineChrome && hasLiveDvrWindow;
+  const useLiveDvrTouchFullscreenGuard = Boolean(hasTouchPlaybackInput && useOverlayShell && hasLiveDvrWindow && !isFullscreen);
+  const useMinimalTouchInlineChrome = Boolean(
+    useOverlayShell &&
+    !useTheaterControlsLayout &&
+    !isFullscreen &&
+    (isCompactTouchLayout || useLiveDvrTouchFullscreenGuard)
+  );
+  const useTheaterStackSurface = uiSurface.width < 1220;
+  const useCompactSurface =
+    uiSurface.width < 768 ||
+    (uiSurface.inputMode === 'coarse' && uiSurface.heightClass !== 'comfortable');
+  const useTightSurface =
+    (uiSurface.width < 768 && uiSurface.orientation === 'landscape') ||
+    uiSurface.heightClass !== 'comfortable';
+  const disableInlineLiveDvrScrub = useLiveDvrTouchFullscreenGuard;
   const inferredPlaybackWindowKind = resolvePlaybackWindowKind(playbackMode, hasLiveDvrWindow);
   const playbackWindowKind = sessionWindowKind !== 'unknown' ? sessionWindowKind : inferredPlaybackWindowKind;
   const mobileInlinePlaybackLabel = playbackWindowKind === 'live-dvr'
@@ -3247,6 +3276,7 @@ function V3Player(props: V3PlayerProps) {
     fallbackSummary,
     ffmpegPlanSummary,
     firstFrameLabel,
+    formatClock,
     hasLiveDvrWindow,
     hasSeekWindow,
     isFullscreen,
@@ -3257,7 +3287,6 @@ function V3Player(props: V3PlayerProps) {
     prefersDesktopNativeFullscreen,
     runtimePolicyConstraintsSummary,
     runtimePolicyPhaseLabel,
-    runtimePolicyPhaseState,
     runtimePolicyReasonsSummary,
     runtimePolicyTimelineSummaryEntries,
     runtimeProbeTrustSummary,
@@ -3348,6 +3377,9 @@ function V3Player(props: V3PlayerProps) {
         useOverlayShell ? styles.overlay : null,
         isRecordingPageLayout ? styles.recordingPage : null,
         useMinimalTouchInlineChrome ? styles.touchInlineChrome : null,
+        useTheaterStackSurface ? styles.surfaceTheaterStack : null,
+        useCompactSurface ? styles.surfaceCompact : null,
+        useTightSurface ? styles.surfaceTight : null,
         isFullscreen ? styles.fullscreenActive : null,
         isIdle ? styles.userIdle : null,
       ].filter(Boolean).join(' ')}
@@ -3522,7 +3554,14 @@ function V3Player(props: V3PlayerProps) {
                 </div>
 
                 <div className={styles.mobileInlinePrimaryActions}>
-                  <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={disableInlineLiveDvrScrub}
+                    onClick={disableInlineLiveDvrScrub ? undefined : () => seekBy(-15)}
+                    title={t('player.seekBack15s')}
+                    aria-label={t('player.seekBack15s')}
+                  >
                     -15s
                   </Button>
 
@@ -3537,7 +3576,14 @@ function V3Player(props: V3PlayerProps) {
                     {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
                   </Button>
 
-                  <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={disableInlineLiveDvrScrub}
+                    onClick={disableInlineLiveDvrScrub ? undefined : () => seekBy(15)}
+                    title={t('player.seekForward15s')}
+                    aria-label={t('player.seekForward15s')}
+                  >
                     +15s
                   </Button>
                 </div>
@@ -3730,10 +3776,16 @@ function V3Player(props: V3PlayerProps) {
               <Button
                 variant="ghost"
                 size="sm"
+                active={nativeFullscreenPending}
+                aria-busy={nativeFullscreenPending}
                 onClick={() => enterNativeFullscreen()}
-                title={t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
+                title={nativeFullscreenPending
+                  ? t('player.nativeFullscreenPendingTitle', { defaultValue: 'Preparing Apple player' })
+                  : t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' })}
               >
-                {t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
+                {nativeFullscreenPending
+                  ? t('player.nativeFullscreenPendingLabel', { defaultValue: 'Native...' })
+                  : t('player.nativeFullscreenLabel', { defaultValue: 'Native' })}
               </Button>
             )}
 

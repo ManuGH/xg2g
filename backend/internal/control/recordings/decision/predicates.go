@@ -49,6 +49,23 @@ func computePredicates(ctx context.Context, source Source, caps Capabilities, po
 	}
 }
 
+// CanKeepVideoCopy reports whether the source video can stay on the copy path
+// for a client without forcing a video repair/transcode step. This intentionally
+// matches the current decision-engine predicate semantics so start resolution
+// and playback-info do not drift apart.
+func CanKeepVideoCopy(source Source, caps Capabilities) bool {
+	return contains(caps.VideoCodecs, source.VideoCodec) &&
+		withinMaxVideo(source, caps.MaxVideo) &&
+		!sourceRequiresVideoRepair(source, caps.MaxVideo)
+}
+
+// CanKeepAudioCopy reports whether the source audio can stay on the copy path
+// for a client without forcing an audio transcode step. This intentionally
+// matches the current decision-engine predicate semantics.
+func CanKeepAudioCopy(source Source, caps Capabilities) bool {
+	return contains(caps.AudioCodecs, source.AudioCodec)
+}
+
 func shadowEvaluateVideoCompatibility(ctx context.Context, source Source, caps Capabilities, legacyCanVideo bool, legacyVideoRepairRequired bool) {
 	newResult := EvaluateVideoCompatibility(
 		sourceToVideoCapability(source),

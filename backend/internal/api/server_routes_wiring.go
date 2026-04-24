@@ -92,6 +92,7 @@ func (s *Server) registerPublicRoutes(r chi.Router) {
 	})
 	r.Handle("/ui/*", http.StripPrefix("/ui", uiHandler))
 	r.Get("/ui", redirectTo("/ui/", http.StatusMovedPermanently))
+	r.Get("/index.html", redirectTo("/ui/", http.StatusTemporaryRedirect))
 	r.Get("/", redirectTo("/ui/", http.StatusTemporaryRedirect))
 	r.NotFound(s.publicNotFoundHandler(uiHandler))
 

@@ -3,7 +3,10 @@ import {
   getNativePlaybackCapabilities,
   resolveHostEnvironment,
 } from "../../../lib/hostBridge";
-import { detectPlaybackClientFamily } from "./playbackClientFamily";
+import {
+  detectPlaybackClientFamily,
+  normalizePlaybackClientFamily,
+} from "./playbackClientFamily";
 import {
   probeRuntimePlaybackCapabilities,
   type RuntimePlaybackProbeScope,
@@ -208,10 +211,11 @@ function sanitizeNativePlaybackCapabilities(
       typeof record.runtimeProbeVersion === "number"
         ? record.runtimeProbeVersion
         : undefined,
-    clientFamilyFallback:
+    clientFamilyFallback: normalizePlaybackClientFamily(
       typeof record.clientFamilyFallback === "string"
         ? record.clientFamilyFallback
         : undefined,
+    ),
     allowTranscode:
       typeof record.allowTranscode === "boolean"
         ? record.allowTranscode

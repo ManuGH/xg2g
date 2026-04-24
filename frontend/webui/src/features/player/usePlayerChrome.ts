@@ -47,6 +47,7 @@ interface PlayerChromeController {
   supportsNativeFullscreen: boolean;
   canEnterNativeFullscreen: boolean;
   prefersDesktopNativeFullscreen: boolean;
+  nativeFullscreenPending: boolean;
   isWebKitFullscreenActive: boolean;
   isPip: boolean;
   canTogglePiP: boolean;
@@ -138,6 +139,7 @@ export function usePlayerChrome({
   const [canAdjustVolume, setCanAdjustVolume] = useState(true);
   const [stats, setStats] = useState<PlayerStats>(initialStats);
   const [liveWindowClockMs, setLiveWindowClockMs] = useState(() => Date.now());
+  const [nativeFullscreenPending, setNativeFullscreenPending] = useState(false);
   const lastNonZeroVolumeRef = useRef<number>(1);
   const idleTimerRef = useRef<number | null>(null);
   const pendingNativeFullscreenRef = useRef(false);
@@ -273,16 +275,40 @@ export function usePlayerChrome({
     return !!actualWindow && actualWindow.end - actualWindow.start >= 8;
   }, [canEnterNativeFullscreenNow, playbackMode, readActualSeekableBounds]);
 
+  const requiresVerifiedDesktopLiveWindow = useCallback(() => (
+    playbackMode === 'LIVE' &&
+    !!normalizedLiveSeekWindow &&
+    normalizedLiveSeekWindow.end - normalizedLiveSeekWindow.start >= 8
+  ), [normalizedLiveSeekWindow, playbackMode]);
+
+  const canEnterDesktopNativeFullscreenNow = useCallback((video: SafariVideoElement) => {
+    if (!canEnterNativeFullscreenNow(video)) {
+      return false;
+    }
+    if (!requiresVerifiedDesktopLiveWindow()) {
+      return true;
+    }
+
+    const actualWindow = readActualSeekableBounds(video);
+    return !!actualWindow && actualWindow.end - actualWindow.start >= 8;
+  }, [canEnterNativeFullscreenNow, readActualSeekableBounds, requiresVerifiedDesktopLiveWindow]);
+
   const flushPendingNativeFullscreen = useCallback((reason: string) => {
     const video = videoRef.current;
     if (!pendingNativeFullscreenRef.current || !video?.webkitEnterFullscreen) {
       return false;
     }
-    if (!shouldUseTouchWebKitFullscreen(video)) {
+    const useTouchFullscreen = shouldUseTouchWebKitFullscreen(video);
+    const useDesktopFullscreen = !useTouchFullscreen && canUseDesktopWebKitFullscreen(video);
+    if (!useTouchFullscreen && !useDesktopFullscreen) {
       pendingNativeFullscreenRef.current = false;
+      setNativeFullscreenPending(false);
       return false;
     }
-    if (!canEnterTouchNativeFullscreenNow(video)) {
+    const canEnterNow = useTouchFullscreen
+      ? canEnterTouchNativeFullscreenNow(video)
+      : canEnterDesktopNativeFullscreenNow(video);
+    if (!canEnterNow) {
       return false;
     }
 
@@ -291,12 +317,20 @@ export function usePlayerChrome({
       video.controls = true;
       video.webkitEnterFullscreen();
       pendingNativeFullscreenRef.current = false;
+      setNativeFullscreenPending(false);
       return true;
     } catch (err) {
       debugWarn('Pending WebKit fullscreen failed', err);
       return false;
     }
-  }, [canEnterTouchNativeFullscreenNow, logNativeFullscreenProbe, shouldUseTouchWebKitFullscreen, videoRef]);
+  }, [
+    canEnterDesktopNativeFullscreenNow,
+    canEnterTouchNativeFullscreenNow,
+    canUseDesktopWebKitFullscreen,
+    logNativeFullscreenProbe,
+    shouldUseTouchWebKitFullscreen,
+    videoRef,
+  ]);
 
   const refreshSeekableState = useCallback(() => {
     const video = videoRef.current;
@@ -308,8 +342,12 @@ export function usePlayerChrome({
     setCurrentPlaybackTime(video.currentTime);
   }, [readSeekableBounds, videoRef]);
 
+  const canSeekLiveWindow = playbackMode === 'LIVE' && seekableEnd > seekableStart;
+  const canRunSeekCommand = canSeek || canSeekLiveWindow;
+
   const seekTo = useCallback((targetSeconds: number) => {
     const video = videoRef.current;
+    if (!canRunSeekCommand) return;
     if (!video || !Number.isFinite(targetSeconds)) return;
 
     let clamped = Math.max(0, targetSeconds);
@@ -321,7 +359,7 @@ export function usePlayerChrome({
       return;
     }
     video.currentTime = clamped;
-  }, [recoverInlineLiveSeek, seekableEnd, seekableStart, videoRef]);
+  }, [canRunSeekCommand, recoverInlineLiveSeek, seekableEnd, seekableStart, videoRef]);
 
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;
@@ -486,12 +524,13 @@ export function usePlayerChrome({
 
   const enterNativeFullscreen = useCallback((): boolean => {
     const video = videoRef.current;
-    if (!allowNativeFullscreen || !video?.webkitEnterFullscreen) {
+    if (!allowNativeFullscreen || !video?.webkitEnterFullscreen || !canUseDesktopWebKitFullscreen(video)) {
       return false;
     }
 
-    if (!canEnterNativeFullscreenNow(video)) {
-      pendingNativeFullscreenRef.current = true;
+    pendingNativeFullscreenRef.current = true;
+    setNativeFullscreenPending(true);
+    if (!canEnterDesktopNativeFullscreenNow(video)) {
       return true;
     }
 
@@ -500,12 +539,19 @@ export function usePlayerChrome({
       video.controls = true;
       video.webkitEnterFullscreen();
       pendingNativeFullscreenRef.current = false;
+      setNativeFullscreenPending(false);
       return true;
     } catch (err) {
       debugWarn('Explicit native fullscreen failed', err);
       return false;
     }
-  }, [allowNativeFullscreen, canEnterNativeFullscreenNow, logNativeFullscreenProbe, videoRef]);
+  }, [
+    allowNativeFullscreen,
+    canEnterDesktopNativeFullscreenNow,
+    canUseDesktopWebKitFullscreen,
+    logNativeFullscreenProbe,
+    videoRef,
+  ]);
 
   const primeNativeFullscreen = useCallback((): boolean => {
     const video = videoRef.current;
@@ -514,6 +560,7 @@ export function usePlayerChrome({
     }
 
     pendingNativeFullscreenRef.current = true;
+    setNativeFullscreenPending(true);
     if (!canEnterTouchNativeFullscreenNow(video)) {
       return true;
     }
@@ -523,6 +570,7 @@ export function usePlayerChrome({
       video.controls = true;
       video.webkitEnterFullscreen();
       pendingNativeFullscreenRef.current = false;
+      setNativeFullscreenPending(false);
       return true;
     } catch (err) {
       debugWarn('Primed native fullscreen failed', err);
@@ -608,6 +656,8 @@ export function usePlayerChrome({
     setSeekableStart(0);
     setSeekableEnd(0);
     setCurrentPlaybackTime(0);
+    setNativeFullscreenPending(false);
+    pendingNativeFullscreenRef.current = false;
     appliedTouchDvrDefaultRef.current = false;
   }, []);
 
@@ -679,10 +729,7 @@ export function usePlayerChrome({
     }
 
     const mediaSession = navigator.mediaSession;
-    const canMediaSeek =
-      canSeek ||
-      (playbackMode === 'VOD' && !!durationSeconds && durationSeconds > 0) ||
-      (playbackMode === 'LIVE' && seekableEnd > seekableStart);
+    const canMediaSeek = canRunSeekCommand;
     const setHandler = (
       action: MediaSessionAction,
       handler: MediaSessionActionHandler | null,
@@ -707,7 +754,7 @@ export function usePlayerChrome({
       setHandler('seekbackward', null);
       setHandler('seekforward', null);
     };
-  }, [canSeek, durationSeconds, pause, play, playbackMode, seekBy, seekableEnd, seekableStart, stop]);
+  }, [canRunSeekCommand, pause, play, seekBy, stop]);
 
   useEffect(() => {
     if (
@@ -1043,6 +1090,7 @@ export function usePlayerChrome({
       setIsFullscreen(true);
       setIsWebKitFullscreenActive(true);
       pendingNativeFullscreenRef.current = false;
+      setNativeFullscreenPending(false);
       if (video) {
         refreshSeekableState();
         logNativeFullscreenProbe('webkit-beginfullscreen', video);
@@ -1051,6 +1099,7 @@ export function usePlayerChrome({
     const onWebkitEndFullscreen = () => {
       setIsFullscreen(false);
       setIsWebKitFullscreenActive(false);
+      setNativeFullscreenPending(false);
       if (video) {
         onNativeFullscreenExit?.({
           currentTime: Number.isFinite(video.currentTime) ? video.currentTime : null,
@@ -1122,9 +1171,8 @@ export function usePlayerChrome({
     () => Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart)),
     [currentPlaybackTime, seekableStart, windowDuration]
   );
-  const hasVodTimeline = playbackMode === 'VOD' && !!durationSeconds && durationSeconds > 0;
-  const hasLiveDvrWindow = playbackMode === 'LIVE' && windowDuration > 0;
-  const seekEnabled = canSeek || hasVodTimeline || hasLiveDvrWindow;
+  const hasLiveDvrWindow = canSeekLiveWindow && windowDuration > 0;
+  const seekEnabled = canRunSeekCommand;
   const hasSeekWindow = seekEnabled && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const liveEdgePosition = normalizedLiveSeekWindow?.liveEdge ?? seekableEnd;
@@ -1203,6 +1251,7 @@ export function usePlayerChrome({
     supportsNativeFullscreen,
     canEnterNativeFullscreen,
     prefersDesktopNativeFullscreen,
+    nativeFullscreenPending,
     isWebKitFullscreenActive,
     isPip,
     canTogglePiP,

@@ -61,11 +61,15 @@ function HookHarness({
       <output data-testid="is-live-mode">{String(chrome.isLiveMode)}</output>
       <output data-testid="is-at-live-edge">{String(chrome.isAtLiveEdge)}</output>
       <output data-testid="show-dvr-button">{String(chrome.showDvrModeButton)}</output>
+      <output data-testid="native-pending">{String(chrome.nativeFullscreenPending)}</output>
       <button onClick={chrome.applyAutoplayMute} type="button">
         mute
       </button>
       <button onClick={() => void chrome.toggleFullscreen()} type="button">
         fullscreen
+      </button>
+      <button onClick={chrome.enterNativeFullscreen} type="button">
+        native
       </button>
       <button onClick={chrome.togglePlayPause} type="button">
         playpause
@@ -223,6 +227,80 @@ describe('usePlayerChrome', () => {
       expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
     });
     expect(video.muted).toBe(true);
+  });
+
+  it('defers desktop native fullscreen for live DVR until Safari exposes a seekable window', async () => {
+    const webkitEnterFullscreen = vi.fn();
+
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
+      configurable: true,
+      value: webkitEnterFullscreen,
+    });
+
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        canUseDesktopWebKitFullscreen={() => true}
+        playbackMode="LIVE"
+        liveSeekWindow={{ start: 0, end: 120, liveEdge: 120 }}
+      />
+    );
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => 1,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'native' }));
+
+    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+    expect(screen.getByTestId('native-pending')).toHaveTextContent('true');
+
+    Object.defineProperty(video, 'seekable', {
+      configurable: true,
+      get: () => ({
+        length: 1,
+        start: () => 0,
+        end: () => 36,
+      }),
+    });
+
+    fireEvent(video, new Event('timeupdate'));
+
+    await waitFor(() => {
+      expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByTestId('native-pending')).toHaveTextContent('false');
+  });
+
+  it('enters desktop native fullscreen immediately for VOD playback', () => {
+    const webkitEnterFullscreen = vi.fn();
+
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
+      configurable: true,
+      value: webkitEnterFullscreen,
+    });
+
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        canUseDesktopWebKitFullscreen={() => true}
+        playbackMode="VOD"
+        durationSeconds={1800}
+      />
+    );
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => 1,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'native' }));
+
+    expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('native-pending')).toHaveTextContent('false');
   });
 
   it('clears autoplay mute when play is tapped on the native touch path', () => {

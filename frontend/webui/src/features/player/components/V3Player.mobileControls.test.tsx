@@ -7,7 +7,7 @@ import type { V3PlayerProps } from '../../../types/v3-player';
 import styles from './V3Player.module.css';
 
 vi.mock('../lib/hlsRuntime', () => {
-  const HlsMock = vi.fn().mockImplementation(function (this: any) {
+const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),
       loadSource: vi.fn(),
@@ -35,6 +35,27 @@ vi.mock('../client-ts', () => ({
   postRecordingPlaybackInfo: vi.fn(),
   postLivePlaybackInfo: vi.fn()
 }));
+
+const { useUiSurfaceMock } = vi.hoisted(() => ({
+  useUiSurfaceMock: vi.fn(),
+}));
+
+vi.mock('../../../context/UiSurfaceContext', () => ({
+  useUiSurface: () => useUiSurfaceMock(),
+}));
+
+function createUiSurface(overrides: Record<string, unknown> = {}) {
+  return {
+    surface: 'small',
+    orientation: 'portrait',
+    inputMode: 'coarse',
+    heightClass: 'comfortable',
+    navMode: 'bottom',
+    width: 390,
+    height: 844,
+    ...overrides,
+  };
+}
 
 describe('V3Player Mobile Controls', () => {
   let maxTouchPointsDescriptor: PropertyDescriptor | undefined;
@@ -80,6 +101,7 @@ describe('V3Player Mobile Controls', () => {
       if (type === 'application/vnd.apple.mpegurl') return 'probably';
       return '';
     });
+    useUiSurfaceMock.mockReturnValue(createUiSurface());
   });
 
   afterEach(() => {
@@ -254,6 +276,28 @@ describe('V3Player Mobile Controls', () => {
 
     expect(player.className).toContain(styles.userIdle);
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+  });
+
+  it('keeps roomy touch surfaces out of the compact inline chrome path', async () => {
+    useUiSurfaceMock.mockReturnValue(createUiSurface({
+      surface: 'medium',
+      width: 834,
+      height: 1112,
+    }));
+
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true,
+      onClose: vi.fn(),
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(Hls).not.toHaveBeenCalled();
+    });
+
+    const player = container.firstElementChild as HTMLElement;
+    expect(player.className).not.toContain(styles.touchInlineChrome);
   });
 
   it('resumes native inline playback after lock and unlock on touch devices', async () => {

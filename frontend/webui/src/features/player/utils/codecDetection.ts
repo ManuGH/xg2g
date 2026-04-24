@@ -36,6 +36,15 @@ function isIOSNativeRelaxedAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): b
   return hasIOSNativeAV1ExperimentOverride();
 }
 
+function isDesktopSafariNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
+  if (!videoEl) return false;
+  try {
+    return detectPlaybackClientFamily(videoEl) === 'safari_native';
+  } catch {
+    return false;
+  }
+}
+
 type DecodingInfoResult = {
   supported: boolean;
   smooth: boolean;
@@ -166,8 +175,11 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
   const allowRelaxedIOSNativeAV1 =
     isIOSNativeRelaxedAV1ProbeEnabled(videoEl) &&
     (av1Signal?.supported || av1Signal?.smooth);
+  const allowDesktopSafariNativeAV1 =
+    isDesktopSafariNativeAV1ProbeEnabled(videoEl) &&
+    (av1Signal?.supported || av1Signal?.smooth);
 
-  if (av1Signal?.powerEfficient || allowRelaxedIOSNativeAV1) out.push('av1');
+  if (av1Signal?.powerEfficient || allowRelaxedIOSNativeAV1 || allowDesktopSafariNativeAV1) out.push('av1');
   if (signalFor('hevc')?.powerEfficient || signalFor('hevc')?.smooth) out.push('hevc');
 
   // Always include H.264 as a safe fallback.

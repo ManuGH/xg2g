@@ -137,11 +137,40 @@ function formatRetryAdvice(retryAfterSeconds?: number): string {
   return ' Please try again shortly.';
 }
 
+function resolveLiveProblemKey(mapped: {
+  type?: string;
+  truthReason?: string;
+}): string {
+  const typeKey = liveProblemKey(mapped.type);
+  if (typeKey && typeKey !== 'live/unverified') {
+    return typeKey;
+  }
+
+  switch (mapped.truthReason) {
+    case 'scanner_unavailable':
+      return 'live/scan_unavailable';
+    case 'missing_scan_truth':
+      return 'live/missing_scan_truth';
+    case 'partial_scan_truth':
+    case 'incomplete_scan_truth':
+      return 'live/partial_truth';
+    case 'inactive_event_feed':
+      return 'live/inactive_event_feed';
+    case 'failed_scan_truth':
+      return 'live/failed_scan_truth';
+    case 'stale_scan_truth':
+      return 'live/stale_truth';
+    default:
+      return typeKey;
+  }
+}
+
 function getLiveProblemCopy(mapped: {
   type?: string;
+  truthReason?: string;
   retryAfterSeconds?: number;
 }): Partial<AppError> {
-  switch (liveProblemKey(mapped.type)) {
+  switch (resolveLiveProblemKey(mapped)) {
     case 'live/scan_unavailable':
       return {
         title: 'Live stream is being verified',
@@ -174,6 +203,20 @@ function getLiveProblemCopy(mapped: {
       return {
         title: 'Live stream details could not be verified',
         detail: `xg2g could not confirm the live media details for this channel.${formatRetryAdvice(mapped.retryAfterSeconds)}`,
+        retryable: true,
+        severity: 'warning',
+      };
+    case 'live/stale_truth':
+      return {
+        title: 'Live stream is being refreshed',
+        detail: `xg2g has older media details for this channel and is waiting for a fresh confirmation from the receiver.${formatRetryAdvice(mapped.retryAfterSeconds)}`,
+        retryable: true,
+        severity: 'warning',
+      };
+    case 'live/unverified':
+      return {
+        title: 'Live stream is being verified',
+        detail: `xg2g is waiting for verified media details for this channel.${formatRetryAdvice(mapped.retryAfterSeconds)}`,
         retryable: true,
         severity: 'warning',
       };

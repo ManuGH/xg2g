@@ -718,6 +718,107 @@ describe('V3Player ServiceRef Input', () => {
     }
   });
 
+  it('re-mints the session cookie before attaching native HLS when manifest priming returns 401', async () => {
+    const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    const webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      'webkitSupportsPresentationMode'
+    );
+    const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
+
+    Object.defineProperty(window.navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn()
+    });
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation(function (this: HTMLMediaElement, type: string) {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      return originalCanPlayType.call(this, type);
+    });
+
+    const response = (status: number, body: Record<string, unknown> = {}, url?: string) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      url: url ?? 'http://localhost/mock',
+      headers: { get: vi.fn().mockImplementation((name: string) => name === 'content-type' ? 'application/json' : null) },
+      json: vi.fn().mockResolvedValue(body),
+      text: vi.fn().mockResolvedValue(JSON.stringify(body))
+    });
+
+    let manifestHeadCount = 0;
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(response(200, {
+          mode: 'native_hls',
+          requestId: 'live-decision-prime-1',
+          playbackDecisionToken: 'live-token-prime-1',
+          decision: { reasons: ['native_hls'] }
+        }, String(url)));
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve(response(200, {
+          sessionId: 'sid-live-prime-1',
+          requestId: 'intent-req-prime-1'
+        }, String(url)));
+      }
+      if (url.includes('/api/v3/sessions/sid-live-prime-1/hls/index.m3u8')) {
+        if ((init?.method ?? 'GET') === 'HEAD') {
+          manifestHeadCount += 1;
+          if (manifestHeadCount === 1) {
+            return Promise.resolve(response(401, {
+              title: 'Authentication required',
+              code: 'AUTH_REQUIRED',
+              requestId: 'req-manifest-401'
+            }, String(url)));
+          }
+        }
+        return Promise.resolve(response(200, {}, String(url)));
+      }
+      if (url.includes('/sessions/sid-live-prime-1') && !url.includes('/heartbeat')) {
+        return Promise.resolve(response(200, {
+          id: 'sid-live-prime-1',
+          state: 'READY',
+          mode: 'LIVE',
+          playbackUrl: '/api/v3/sessions/sid-live-prime-1/hls/index.m3u8',
+          heartbeatIntervalSeconds: 600
+        }, String(url)));
+      }
+      return Promise.resolve(response(200, {}, String(url)));
+    });
+
+    try {
+      const props = { autoStart: false, token: 'dev-token' } as unknown as V3PlayerProps;
+      const { container } = render(<V3Player {...props} />);
+
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: '1:0:1:999:888:777:0:0:0:0:' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+      await waitFor(() => {
+        expect(createSessionMock).toHaveBeenCalledTimes(2);
+      });
+
+      await waitFor(() => {
+        expect(container.querySelector('video')?.getAttribute('src')).toBe('/api/v3/sessions/sid-live-prime-1/hls/index.m3u8');
+      });
+
+      expect(manifestHeadCount).toBe(2);
+    } finally {
+      if (webkitSupportsPresentationModeDescriptor) {
+        Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', webkitSupportsPresentationModeDescriptor);
+      } else {
+        delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
+      }
+      if (maxTouchPointsDescriptor) {
+        Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+      }
+    }
+  });
+
   it('shows session expired instead of auth failed when recovery succeeds but the session is gone', async () => {
     const authRequiredHandler = vi.fn();
     window.addEventListener('auth-required', authRequiredHandler);

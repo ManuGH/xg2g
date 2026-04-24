@@ -1701,502 +1701,495 @@
   flex-wrap: wrap;
 }
 
-@media (max-width: 1220px) {
-  .controlsHeaderTheater {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-  }
-
-  .transportControlsTheater {
-    flex-wrap: wrap;
-  }
-
-  .utilityControlsTheater {
-    justify-content: flex-start;
-    align-self: stretch;
-  }
+.container.surfaceTheaterStack .controlsHeaderTheater {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
 }
 
-/* Mobile Adjustments */
-@media (max-width: 768px) {
-  .container.overlay {
-    justify-content: center;
-    align-items: center;
-  }
-
-  .container.overlay .playerFrameOverlay {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    height: auto;
-    max-height: none;
-    overflow: visible;
-    background: color-mix(in srgb, var(--bg-video) 90%, var(--surface-panel) 10%);
-  }
-
-  .container.overlay .playerFrameOverlay .videoWrapper {
-    width: 100%;
-    height: auto;
-    aspect-ratio: 16 / 9;
-    flex: 0 0 auto;
-    overflow: hidden;
-  }
-
-  .container.overlay .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) {
-    position: static;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    margin-top: 0;
-    padding: 12px 14px calc(12px + var(--sab));
-    background:
-      linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent),
-      color-mix(in srgb, var(--surface-panel-strong) 84%, var(--bg-video) 16%);
-    border-top: 1px solid color-mix(in srgb, var(--border-elevated) 84%, transparent);
-    transform: none;
-  }
-
-  .container.overlay .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) .mobileInlineMeta {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 0 0 2px;
-  }
-
-  .container.overlay .playerFrameOverlay .videoWrapper .overlayTitle {
-    display: none;
-  }
-
-  .spinnerOverlay {
-    top: auto;
-    left: 16px;
-    right: 16px;
-    bottom: calc(108px + var(--sab));
-    transform: none;
-    min-width: 0;
-    width: auto;
-    grid-template-columns: 1fr;
-    padding: 14px 16px;
-    gap: 12px;
-    border-radius: 22px;
-  }
-
-  .spinnerBadge {
-    width: 58px;
-    height: 58px;
-    border-radius: 20px;
-  }
-
-  .spinnerBadgeRecording {
-    width: 58px;
-    height: 58px;
-    border-radius: 18px;
-  }
-
-  .spinnerMediaIcon {
-    width: 28px;
-    height: 28px;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-  }
-
-  .spinnerContent {
-    gap: 8px;
-  }
-
-  .spinnerTitle {
-    font-size: 1.2rem;
-  }
-
-  .spinnerLabel {
-    font-size: var(--text-xs);
-    text-align: center;
-  }
-
-  .spinnerSupport {
-    font-size: var(--text-xs);
-  }
-
-  .spinnerMeta {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .spinnerElapsed {
-    align-self: flex-end;
-  }
-
-  .spinnerActions {
-    justify-content: flex-start;
-  }
-
-  .controlsHeader {
-    padding: 14px 16px calc(14px + var(--sab));
-    opacity: 1;
-    transform: none;
-    gap: 10px;
-    align-items: stretch;
-  }
-
-  .controlsHeaderTheater {
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    border-radius: 0;
-    border: none;
-    box-shadow: none;
-    background: transparent;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-
-  .statsOverlay {
-    right: 16px;
-    top: 88px;
-    width: calc(100% - 32px);
-  }
-
-  .overlayTitle {
-    top: calc(16px + var(--sat));
-    left: 16px;
-    right: 72px;
-    padding: 10px 14px;
-    font-size: 1rem;
-  }
-
-  .closeButton {
-    top: calc(16px + var(--sat));
-    right: 16px;
-  }
-
-  .container.overlay {
-    padding: 0;
-  }
-
-  .container.recordingPage {
-    --recording-watch-width: 100%;
-  }
-
-  .playerFrameOverlay {
-    width: 100vw;
-    height: min(100dvh, calc(100vw * 9 / 16));
-    max-height: 100dvh;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .playerFramePage {
-    max-height: none;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .watchSurface {
-    width: 100%;
-    gap: 14px;
-  }
-
-  .watchLayout {
-    width: 100%;
-    margin: 0;
-    padding: 0 16px;
-  }
-
-  .watchTitle {
-    font-size: 1.25rem;
-  }
-
-  .watchDescription {
-    font-size: var(--text-sm);
-  }
-
-  .errorToast {
-    left: 16px;
-    right: 16px;
-    bottom: calc(96px + var(--sab));
-    transform: none;
-    min-width: 0;
-    max-width: none;
-    width: auto;
-    padding: 14px 16px;
-    border-radius: 20px;
-    gap: 10px;
-  }
-
-  .errorMain {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-
-  .errorText {
-    line-height: 1.35;
-  }
-
-  .errorDetailsButton {
-    align-self: flex-start;
-  }
-
-  .errorDetailsContent {
-    max-height: 140px;
-    font-size: var(--text-xs);
-  }
-
-  .vodControls,
-  .seekControls {
-    min-width: 0;
-    width: 100%;
-    padding: 12px 13px;
-    gap: 10px;
-    border-radius: 18px;
-  }
-
-  .seekControls {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .seekButtons {
-    width: 100%;
-    gap: 8px;
-  }
-
-  .seekButtons > * {
-    flex: 1 1 0;
-  }
-
-  .playPauseButton {
-    align-self: center;
-    min-width: 46px;
-    min-height: 46px;
-  }
-
-  .mobileInlinePrimaryActions,
-  .mobileInlineSecondaryActions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .mobileInlinePrimaryActions :global(button[data-size="sm"]),
-  .mobileInlineSecondaryActions :global(button[data-size="sm"]) {
-    min-height: 38px;
-    min-width: 0;
-    padding: 0 8px;
-    font-size: 0.78rem;
-  }
-
-  .mobileInlinePrimaryActions .playPauseButton {
-    justify-self: center;
-  }
-
-  .mobileInlineSecondaryActions .liveButton {
-    min-width: 0;
-    justify-self: stretch;
-    text-align: center;
-  }
-
-  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater),
-  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls,
-  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .seekControls {
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
-  }
-
-  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) {
-    padding-top: 10px;
-    padding-bottom: calc(10px + var(--sab));
-    gap: 8px;
-  }
-
-  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls {
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
-
-  .container.touchInlineChrome.userIdle .mobileInlineMeta,
-  .container.touchInlineChrome.userIdle .vodScrubArea,
-  .container.touchInlineChrome.userIdle .mobileInlinePrimaryActions {
-    display: none;
-  }
-
-  .container.touchInlineChrome.userIdle .mobileInlineControls {
-    gap: 0;
-  }
-
-  .seekSliderGroup {
-    min-width: 0;
-  }
-
-  .vodTime,
-  .vodTimeTotal {
-    min-width: 48px;
-    font-size: 11px;
-  }
-
-  .utilityControls {
-    width: 100%;
-    max-width: none;
-    margin-left: 0;
-    justify-content: space-between;
-    align-self: stretch;
-    gap: 10px;
-  }
-
-  .volumeControl {
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: min(100%, 208px);
-    padding: 8px 12px;
-  }
-
-  .audioToggleButton {
-    flex: 0 0 auto;
-    justify-content: center;
-  }
-
-  .volumeSlider {
-    flex: 1 1 96px;
-    width: auto;
-    min-width: 72px;
-    max-width: 120px;
-  }
-
-  .deviceVolumeHint {
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .spinnerOverlayRecording {
-    left: 16px;
-    bottom: calc(16px + var(--sab));
-    width: calc(100% - 32px);
-  }
+.container.surfaceTheaterStack .transportControlsTheater {
+  flex-wrap: wrap;
 }
 
-@media (max-width: 768px) and (orientation: landscape), (max-height: 500px) {
-  .controlsHeader {
-    top: auto;
-    max-height: calc(100dvh - 88px - var(--sat) - var(--sab));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
-    padding-top: 12px;
-  }
+.container.surfaceTheaterStack .utilityControlsTheater {
+  justify-content: flex-start;
+  align-self: stretch;
+}
 
-  .vodControls,
-  .seekControls {
-    width: 100%;
-  }
+.container.surfaceCompact.overlay {
+  justify-content: center;
+  align-items: center;
+}
 
-  .utilityControls {
-    gap: 10px;
-    max-width: calc(100% - 12px);
-    align-content: flex-start;
-  }
+.container.surfaceCompact.overlay .playerFrameOverlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  background: color-mix(in srgb, var(--bg-video) 90%, var(--surface-panel) 10%);
+}
 
-  .volumeControl {
-    width: auto;
-    max-width: min(100%, 220px);
-  }
+.container.surfaceCompact.overlay .playerFrameOverlay .videoWrapper {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
 
-  .deviceVolumeHint {
-    white-space: normal;
-  }
+.container.surfaceCompact.overlay .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  margin-top: 0;
+  padding: 12px 14px calc(12px + var(--sab));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent),
+    color-mix(in srgb, var(--surface-panel-strong) 84%, var(--bg-video) 16%);
+  border-top: 1px solid color-mix(in srgb, var(--border-elevated) 84%, transparent);
+  transform: none;
+}
 
-  .container.touchInlineChrome .controlsHeader:not(.controlsHeaderTheater) {
-    left: 10px;
-    right: 10px;
-    bottom: calc(10px + var(--sab));
-    padding: 8px 10px calc(8px + var(--sab));
-    gap: 6px;
-    align-items: stretch;
-    opacity: 1;
-    transform: none;
-    max-height: min(156px, calc(100dvh - 56px - var(--sat) - var(--sab)));
-  }
+.container.surfaceCompact.overlay .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) .mobileInlineMeta {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 0 2px;
+}
 
-  .container.touchInlineChrome .mobileInlineMeta {
-    display: none;
-  }
+.container.surfaceCompact.overlay .playerFrameOverlay .videoWrapper .overlayTitle {
+  display: none;
+}
 
-  .container.touchInlineChrome .mobileInlineControls {
-    min-width: 0;
-    width: 100%;
-    display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(176px, 0.8fr);
-    gap: 6px 8px;
-    padding: 8px 10px;
-  }
+.container.surfaceCompact .spinnerOverlay {
+  top: auto;
+  left: 16px;
+  right: 16px;
+  bottom: calc(108px + var(--sab));
+  transform: none;
+  min-width: 0;
+  width: auto;
+  grid-template-columns: 1fr;
+  padding: 14px 16px;
+  gap: 12px;
+  border-radius: 22px;
+}
 
-  .container.touchInlineChrome .mobileInlineControls .vodScrubArea {
-    grid-column: 1;
-    grid-row: 1 / span 2;
-    min-width: 0;
-    align-self: stretch;
-    justify-content: center;
-  }
+.container.surfaceCompact .spinnerBadge {
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
+}
 
-  .container.touchInlineChrome .mobileInlineControls .vodScrubTimes {
-    font-size: 9px;
-  }
+.container.surfaceCompact .spinnerBadgeRecording {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+}
 
-  .container.touchInlineChrome .mobileInlinePrimaryActions,
-  .container.touchInlineChrome .mobileInlineSecondaryActions {
-    width: 100%;
-    gap: 4px;
-    align-self: stretch;
-  }
+.container.surfaceCompact .spinnerMediaIcon {
+  width: 28px;
+  height: 28px;
+}
 
-  .container.touchInlineChrome .mobileInlinePrimaryActions {
-    grid-column: 2;
-    grid-row: 1;
-  }
+.container.surfaceCompact .spinner {
+  width: 32px;
+  height: 32px;
+}
 
-  .container.touchInlineChrome .mobileInlineSecondaryActions {
-    grid-column: 2;
-    grid-row: 2;
-  }
+.container.surfaceCompact .spinnerContent {
+  gap: 8px;
+}
 
-  .container.touchInlineChrome .mobileInlinePrimaryActions :global(button[data-size="sm"]),
-  .container.touchInlineChrome .mobileInlineSecondaryActions :global(button[data-size="sm"]) {
-    min-height: 30px;
-    min-width: 0;
-    padding: 0 6px;
-    font-size: 0.68rem;
-  }
+.container.surfaceCompact .spinnerTitle {
+  font-size: 1.2rem;
+}
 
-  .container.touchInlineChrome .mobileInlinePrimaryActions .playPauseButton {
-    min-width: 34px;
-    min-height: 34px;
-  }
+.container.surfaceCompact .spinnerLabel {
+  font-size: var(--text-xs);
+  text-align: center;
+}
 
-  .container.touchInlineChrome .mobileInlineSecondaryActions .liveButton {
-    min-height: 30px;
-    padding: 0 6px;
-    letter-spacing: 0.05em;
-  }
+.container.surfaceCompact .spinnerSupport {
+  font-size: var(--text-xs);
+}
 
-  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater),
-  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls,
-  .container.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .seekControls {
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
-  }
+.container.surfaceCompact .spinnerMeta {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 8px;
+}
 
-  .container.touchInlineChrome .closeButton {
-    top: calc(10px + var(--sat));
-    right: 10px;
-    width: 34px;
-    height: 34px;
-    font-size: 14px;
-  }
+.container.surfaceCompact .spinnerElapsed {
+  align-self: flex-end;
+}
+
+.container.surfaceCompact .spinnerActions {
+  justify-content: flex-start;
+}
+
+.container.surfaceCompact .controlsHeader {
+  padding: 14px 16px calc(14px + var(--sab));
+  opacity: 1;
+  transform: none;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.container.surfaceCompact .controlsHeaderTheater {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.container.surfaceCompact .statsOverlay {
+  right: 16px;
+  top: 88px;
+  width: calc(100% - 32px);
+}
+
+.container.surfaceCompact .overlayTitle {
+  top: calc(16px + var(--sat));
+  left: 16px;
+  right: 72px;
+  padding: 10px 14px;
+  font-size: 1rem;
+}
+
+.container.surfaceCompact .closeButton {
+  top: calc(16px + var(--sat));
+  right: 16px;
+}
+
+.container.surfaceCompact.overlay {
+  padding: 0;
+}
+
+.container.surfaceCompact.recordingPage {
+  --recording-watch-width: 100%;
+}
+
+.container.surfaceCompact .playerFrameOverlay {
+  width: 100vw;
+  height: min(100dvh, calc(100vw * 9 / 16));
+  max-height: 100dvh;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.container.surfaceCompact .playerFramePage {
+  max-height: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.container.surfaceCompact .watchSurface {
+  width: 100%;
+  gap: 14px;
+}
+
+.container.surfaceCompact .watchLayout {
+  width: 100%;
+  margin: 0;
+  padding: 0 16px;
+}
+
+.container.surfaceCompact .watchTitle {
+  font-size: 1.25rem;
+}
+
+.container.surfaceCompact .watchDescription {
+  font-size: var(--text-sm);
+}
+
+.container.surfaceCompact .errorToast {
+  left: 16px;
+  right: 16px;
+  bottom: calc(96px + var(--sab));
+  transform: none;
+  min-width: 0;
+  max-width: none;
+  width: auto;
+  padding: 14px 16px;
+  border-radius: 20px;
+  gap: 10px;
+}
+
+.container.surfaceCompact .errorMain {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.container.surfaceCompact .errorText {
+  line-height: 1.35;
+}
+
+.container.surfaceCompact .errorDetailsButton {
+  align-self: flex-start;
+}
+
+.container.surfaceCompact .errorDetailsContent {
+  max-height: 140px;
+  font-size: var(--text-xs);
+}
+
+.container.surfaceCompact .vodControls,
+.container.surfaceCompact .seekControls {
+  min-width: 0;
+  width: 100%;
+  padding: 12px 13px;
+  gap: 10px;
+  border-radius: 18px;
+}
+
+.container.surfaceCompact .seekControls {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.container.surfaceCompact .seekButtons {
+  width: 100%;
+  gap: 8px;
+}
+
+.container.surfaceCompact .seekButtons > * {
+  flex: 1 1 0;
+}
+
+.container.surfaceCompact .playPauseButton {
+  align-self: center;
+  min-width: 46px;
+  min-height: 46px;
+}
+
+.container.surfaceCompact .mobileInlinePrimaryActions,
+.container.surfaceCompact .mobileInlineSecondaryActions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.container.surfaceCompact .mobileInlinePrimaryActions :global(button[data-size="sm"]),
+.container.surfaceCompact .mobileInlineSecondaryActions :global(button[data-size="sm"]) {
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 0.78rem;
+}
+
+.container.surfaceCompact .mobileInlinePrimaryActions .playPauseButton {
+  justify-self: center;
+}
+
+.container.surfaceCompact .mobileInlineSecondaryActions .liveButton {
+  min-width: 0;
+  justify-self: stretch;
+  text-align: center;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater),
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls,
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .seekControls {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) {
+  padding-top: 10px;
+  padding-bottom: calc(10px + var(--sab));
+  gap: 8px;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .mobileInlineMeta,
+.container.surfaceCompact.touchInlineChrome.userIdle .vodScrubArea,
+.container.surfaceCompact.touchInlineChrome.userIdle .mobileInlinePrimaryActions {
+  display: none;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .mobileInlineControls {
+  gap: 0;
+}
+
+.container.surfaceCompact .seekSliderGroup {
+  min-width: 0;
+}
+
+.container.surfaceCompact .vodTime,
+.container.surfaceCompact .vodTimeTotal {
+  min-width: 48px;
+  font-size: 11px;
+}
+
+.container.surfaceCompact .utilityControls {
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  justify-content: space-between;
+  align-self: stretch;
+  gap: 10px;
+}
+
+.container.surfaceCompact .volumeControl {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(100%, 208px);
+  padding: 8px 12px;
+}
+
+.container.surfaceCompact .audioToggleButton {
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+.container.surfaceCompact .volumeSlider {
+  flex: 1 1 96px;
+  width: auto;
+  min-width: 72px;
+  max-width: 120px;
+}
+
+.container.surfaceCompact .deviceVolumeHint {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.container.surfaceCompact .spinnerOverlayRecording {
+  left: 16px;
+  bottom: calc(16px + var(--sab));
+  width: calc(100% - 32px);
+}
+
+.container.surfaceTight .controlsHeader {
+  top: auto;
+  max-height: calc(100dvh - 88px - var(--sat) - var(--sab));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding-top: 12px;
+}
+
+.container.surfaceTight .vodControls,
+.container.surfaceTight .seekControls {
+  width: 100%;
+}
+
+.container.surfaceTight .utilityControls {
+  gap: 10px;
+  max-width: calc(100% - 12px);
+  align-content: flex-start;
+}
+
+.container.surfaceTight .volumeControl {
+  width: auto;
+  max-width: min(100%, 220px);
+}
+
+.container.surfaceTight .deviceVolumeHint {
+  white-space: normal;
+}
+
+.container.surfaceTight.touchInlineChrome .controlsHeader:not(.controlsHeaderTheater) {
+  left: 10px;
+  right: 10px;
+  bottom: calc(10px + var(--sab));
+  padding: 8px 10px calc(8px + var(--sab));
+  gap: 6px;
+  align-items: stretch;
+  opacity: 1;
+  transform: none;
+  max-height: min(156px, calc(100dvh - 56px - var(--sat) - var(--sab)));
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineMeta {
+  display: none;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineControls {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(176px, 0.8fr);
+  gap: 6px 8px;
+  padding: 8px 10px;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineControls .vodScrubArea {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineControls .vodScrubTimes {
+  font-size: 9px;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlinePrimaryActions,
+.container.surfaceTight.touchInlineChrome .mobileInlineSecondaryActions {
+  width: 100%;
+  gap: 4px;
+  align-self: stretch;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlinePrimaryActions {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineSecondaryActions {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlinePrimaryActions :global(button[data-size="sm"]),
+.container.surfaceTight.touchInlineChrome .mobileInlineSecondaryActions :global(button[data-size="sm"]) {
+  min-height: 30px;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 0.68rem;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlinePrimaryActions .playPauseButton {
+  min-width: 34px;
+  min-height: 34px;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineSecondaryActions .liveButton {
+  min-height: 30px;
+  padding: 0 6px;
+  letter-spacing: 0.05em;
+}
+
+.container.surfaceTight.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater),
+.container.surfaceTight.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls,
+.container.surfaceTight.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .seekControls {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.container.surfaceTight.touchInlineChrome .closeButton {
+  top: calc(10px + var(--sat));
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  font-size: 14px;
 }

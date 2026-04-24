@@ -356,11 +356,12 @@ func TestHandleReady(t *testing.T) {
 	// for the cache to expire before the checkers will re-run and see the new state
 	time.Sleep(1100 * time.Millisecond)
 
-	// Now readiness should pass (all checkers will re-run and see healthy state)
+	// The readiness contract also requires a valid receiver target; without one,
+	// the server remains not ready even after a successful refresh snapshot.
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Contains(t, rr.Body.String(), `"ready":true`)
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	assert.Contains(t, rr.Body.String(), `"ready":false`)
 }
 
 func TestLegacyFilesRoutesRemoved(t *testing.T) {

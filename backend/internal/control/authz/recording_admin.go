@@ -5,21 +5,4 @@
 package authz
 
 func init() {
-	operationScopes["PostRecordingDelete"] = []string{"v3:write"}
-	operationExposurePolicies["PostRecordingDelete"] = policy(
-		ExposureClassWrite,
-		ExposureAuthBearerScope,
-		ExposureRateLimitGlobal,
-		ExposureBrowserTrustSameOrigin,
-		true,
-	)
-
-	operationScopes["PostRecordingRename"] = []string{"v3:write"}
-	operationExposurePolicies["PostRecordingRename"] = policy(
-		ExposureClassWrite,
-		ExposureAuthBearerScope,
-		ExposureRateLimitGlobal,
-		ExposureBrowserTrustSameOrigin,
-		true,
-	)
 }

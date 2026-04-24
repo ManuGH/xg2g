@@ -12,9 +12,13 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { AppProvider } from './context/AppContext.tsx';
 import { HouseholdProfilesProvider } from './context/HouseholdProfilesContext.tsx';
 import { PendingChangesProvider } from './context/PendingChangesContext.tsx';
+import { UiScaleProvider } from './context/UiScaleContext.tsx';
+import { UiSurfaceProvider } from './context/UiSurfaceContext.tsx';
 import { UiOverlayProvider } from './context/UiOverlayContext.tsx';
 import { i18nReady } from './i18n';
 import { applyHostEnvironmentToDocument, resolveHostEnvironment } from './lib/hostBridge';
+import { applyUiScaleToDocument, readStoredUiScale } from './lib/uiScale.ts';
+import { applyUiSurfaceToDocument, resolveUiSurface } from './lib/uiSurface.ts';
 import { setClientAuthToken } from './services/clientWrapper';
 import { ROUTE_MAP } from './routes.ts';
 import { getStoredToken } from './utils/tokenStorage';
@@ -35,7 +39,10 @@ const queryClient = new QueryClient({
 // Prime the shared API client before React mounts so the first bootstrap query
 // already carries the persisted token on cold starts.
 setClientAuthToken(getStoredToken());
-applyHostEnvironmentToDocument(resolveHostEnvironment());
+const hostEnvironment = resolveHostEnvironment();
+applyHostEnvironmentToDocument(hostEnvironment);
+applyUiScaleToDocument(readStoredUiScale(window.localStorage), document.documentElement);
+applyUiSurfaceToDocument(resolveUiSurface(window, hostEnvironment), document.documentElement);
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -48,15 +55,19 @@ void i18nReady.finally(() => {
         homeHref={ROUTE_MAP.dashboard}
       >
         <QueryClientProvider client={queryClient}>
-          <UiOverlayProvider>
-            <PendingChangesProvider>
-              <AppProvider>
-                <HouseholdProfilesProvider>
-                  <App />
-                </HouseholdProfilesProvider>
-              </AppProvider>
-            </PendingChangesProvider>
-          </UiOverlayProvider>
+          <UiSurfaceProvider>
+            <UiScaleProvider>
+              <UiOverlayProvider>
+                <PendingChangesProvider>
+                  <AppProvider>
+                    <HouseholdProfilesProvider>
+                      <App />
+                    </HouseholdProfilesProvider>
+                  </AppProvider>
+                </PendingChangesProvider>
+              </UiOverlayProvider>
+            </UiScaleProvider>
+          </UiSurfaceProvider>
         </QueryClientProvider>
       </ErrorBoundary>
     </BrowserRouter>,

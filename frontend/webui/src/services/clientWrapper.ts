@@ -1,6 +1,7 @@
 import { client } from '../client-ts/client.gen';
 import type { ApiError, ProblemDetails } from '../client-ts/types.gen';
 import { isUnauthorizedStatus, requestAuthRequired } from '../features/player/sessionEvents';
+import { getStoredToken } from '../utils/tokenStorage';
 
 export const HOUSEHOLD_PROFILE_HEADER = 'X-Household-Profile';
 export const CLIENT_AUTH_CHANGED_EVENT = 'xg2g:client-auth-changed';
@@ -172,6 +173,7 @@ export function mapApiError(error: unknown, fallbackStatus?: number): MappedApiE
 export function setClientAuthToken(token?: string | null): void {
   const normalizedToken = normalizeToken(token);
   client.setConfig({
+    auth: () => resolveClientAuthToken(normalizedToken),
     headers: {
       Authorization: normalizedToken ? `Bearer ${normalizedToken}` : null
     }
@@ -223,6 +225,35 @@ export function getClientHouseholdProfileId(): string | null {
 
 export function getApiBaseUrl(defaultBase: string = '/api/v3'): string {
   return (client.getConfig().baseUrl || defaultBase).replace(/\/$/, '');
+}
+
+export function buildClientHeaders(overrides?: Record<string, unknown>): Headers {
+  const headers = new Headers(client.getConfig().headers as HeadersInit);
+  const resolvedToken = normalizeToken(getClientAuthToken()) ?? normalizeToken(getStoredToken());
+
+  if (resolvedToken) {
+    headers.set('Authorization', `Bearer ${resolvedToken}`);
+  }
+
+  for (const [key, value] of Object.entries(overrides || {})) {
+    if (value === null) {
+      headers.delete(key);
+      continue;
+    }
+    if (value === undefined) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      headers.delete(key);
+      value.forEach((entry) => {
+        headers.append(key, String(entry));
+      });
+      continue;
+    }
+    headers.set(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+  }
+
+  return headers;
 }
 
 interface ClientResultOptions {
@@ -289,6 +320,16 @@ export async function putJsonOrThrow<TBody>(url: string, body: TBody): Promise<v
 function normalizeToken(token?: string | null): string | null {
   const trimmed = String(token || '').trim();
   return trimmed || null;
+}
+
+function resolveClientAuthToken(token?: string | null): string | undefined {
+  const normalizedToken = normalizeToken(token);
+  if (normalizedToken) {
+    return normalizedToken;
+  }
+
+  const storedToken = normalizeToken(getStoredToken());
+  return storedToken ?? undefined;
 }
 
 function readClientHeader(name: string): string | null {

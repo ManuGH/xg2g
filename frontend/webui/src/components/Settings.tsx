@@ -38,7 +38,7 @@ import {
   type SettingsTool,
 } from '../routes';
 import { getSettingsSectionLabel, getSettingsToolLabel } from '../lib/routeContext';
-import { Button } from './ui';
+import { Button, Card, CardBody, type CardVariant } from './ui';
 import styles from './Settings.module.css';
 
 const SETTINGS_SECTIONS: SettingsSection[] = [
@@ -52,6 +52,17 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
 ];
 
 const SETTINGS_TOOLS: SettingsTool[] = ['files', 'logs'];
+
+interface SettingsHighlight {
+  section: Exclude<SettingsSection, 'overview'>;
+  eyebrow: string;
+  title: string;
+  summary: string;
+  meta: string;
+  status: string;
+  variant: CardVariant;
+  emphasis: 'primary' | 'secondary';
+}
 
 function isSettingsSection(value: string | null): value is SettingsSection {
   return value !== null && SETTINGS_SECTIONS.includes(value as SettingsSection);
@@ -238,6 +249,119 @@ function Settings() {
         defaultValue: 'This area is part of Settings and can also be reached directly by URL.',
       });
   const showContextBar = activeSection !== 'overview';
+  const sectionHighlights = useMemo<SettingsHighlight[]>(() => {
+    const scanState = scanStatus?.state || 'idle';
+
+    return [
+      {
+        section: 'setup',
+        eyebrow: t('settings.summary.primary', { defaultValue: 'Primary lane' }),
+        title: t('setup.title'),
+        summary: configured
+          ? t('settings.summary.setupConfigured', {
+            defaultValue: 'Base connection is verified. Re-open setup any time without losing the rest of the surface.',
+          })
+          : t('settings.summary.setupPending', {
+            defaultValue: 'Finish first-run setup before pairing apps and tuning the rest of the experience.',
+          }),
+        meta: t('settings.summary.setupMeta', {
+          defaultValue: '{{mode}} mode',
+          mode: androidTvPublicMode
+            ? t('settings.summary.modePublic', { defaultValue: 'Public' })
+            : t('settings.summary.modeLan', { defaultValue: 'LAN' }),
+        }),
+        status: configured
+          ? t('settings.summary.ready', { defaultValue: 'Ready' })
+          : t('settings.summary.attention', { defaultValue: 'Needs setup' }),
+        variant: configured ? 'action' : 'standard',
+        emphasis: 'primary',
+      },
+      {
+        section: 'household',
+        eyebrow: t('settings.summary.primary', { defaultValue: 'Primary lane' }),
+        title: t('settings.household.title'),
+        summary: t('settings.summary.householdBody', {
+          defaultValue: '{{count}} profiles are available. Favorites, DVR rights and settings access stay scoped here.',
+          count: profiles.length,
+        }),
+        meta: householdPinConfigured
+          ? t('settings.summary.householdMetaProtected', { defaultValue: 'PIN active' })
+          : t('settings.summary.householdMetaOpen', { defaultValue: 'No PIN' }),
+        status: householdPinConfigured
+          ? t('settings.summary.protected', { defaultValue: 'Protected' })
+          : t('settings.summary.open', { defaultValue: 'Open' }),
+        variant: 'action',
+        emphasis: 'primary',
+      },
+      {
+        section: 'android-tv',
+        eyebrow: t('settings.summary.secondary', { defaultValue: 'Secondary lane' }),
+        title: t('settings.androidTv.title'),
+        summary: t('settings.summary.androidTvBody', {
+          defaultValue: 'Hand the active server to Android TV and Fire TV without typing long URLs on the remote.',
+        }),
+        meta: androidTvLaunchDisabled
+          ? t('settings.summary.androidTvMetaBlocked', { defaultValue: 'No native endpoint' })
+          : t('settings.summary.androidTvMetaReady', { defaultValue: 'App handoff ready' }),
+        status: androidTvLaunchDisabled
+          ? t('settings.summary.attention', { defaultValue: 'Needs setup' })
+          : t('settings.summary.available', { defaultValue: 'Available' }),
+        variant: 'standard',
+        emphasis: 'secondary',
+      },
+      {
+        section: 'scan',
+        eyebrow: t('settings.summary.secondary', { defaultValue: 'Secondary lane' }),
+        title: t('settings.streaming.scan.title'),
+        summary: t('settings.summary.scanBody', {
+          defaultValue: 'Keep codec and container truth current so later playback decisions stay predictable.',
+        }),
+        meta: t(`settings.streaming.scan.status.${scanState}`),
+        status: scanState === 'running'
+          ? t('settings.summary.live', { defaultValue: 'Live' })
+          : scanState === 'failed'
+            ? t('settings.summary.attention', { defaultValue: 'Needs setup' })
+            : t('settings.summary.ready', { defaultValue: 'Ready' }),
+        variant: scanState === 'running' ? 'action' : 'standard',
+        emphasis: 'secondary',
+      },
+      {
+        section: 'streaming',
+        eyebrow: t('settings.summary.secondary', { defaultValue: 'Secondary lane' }),
+        title: t('settings.streaming.title'),
+        summary: t('settings.summary.streamingBody', {
+          defaultValue: 'Delivery policy stays intentionally narrow so browsers behave consistently across the house.',
+        }),
+        meta: t('settings.streaming.policy.universal'),
+        status: t('settings.summary.ready', { defaultValue: 'Ready' }),
+        variant: 'standard',
+        emphasis: 'secondary',
+      },
+      {
+        section: 'advanced',
+        eyebrow: t('settings.summary.secondary', { defaultValue: 'Secondary lane' }),
+        title: t('settings.advanced.title', { defaultValue: 'Expert tools' }),
+        summary: t('settings.summary.advancedBody', {
+          defaultValue: 'Files and logs stay reachable without turning the main navigation into a maintenance menu.',
+        }),
+        meta: t('settings.summary.toolsCount', {
+          defaultValue: '{{count}} tools',
+          count: SETTINGS_TOOLS.length,
+        }),
+        status: t('settings.summary.available', { defaultValue: 'Available' }),
+        variant: 'standard',
+        emphasis: 'secondary',
+      },
+    ];
+  }, [
+    androidTvLaunchDisabled,
+    androidTvPublicMode,
+    configured,
+    householdPinConfigured,
+    profiles.length,
+    scanStatus?.state,
+    t,
+  ]);
 
   useEffect(() => {
     const persistedProfile = profiles.find((profile) => profile.id === editingProfileId);
@@ -601,78 +725,134 @@ function Settings() {
       ) : null}
 
       {configured ? (
-        <div className={styles.sectionTabs} role="tablist" aria-label={t('settings.sectionNavLabel', { defaultValue: 'Settings sections' })}>
-          <Button
-            variant="secondary"
-            size="sm"
-            active={activeSection === 'overview'}
-            onClick={() => { void handleOpenSettingsSection('overview'); }}
-            role="tab"
-            aria-selected={activeSection === 'overview'}
-          >
-            {t('settings.sections.overview', { defaultValue: 'Overview' })}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            active={activeSection === 'setup'}
-            onClick={() => { void handleOpenSettingsSection('setup'); }}
-            role="tab"
-            aria-selected={activeSection === 'setup'}
-          >
-            {t('setup.title')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            active={activeSection === 'household'}
-            onClick={() => { void handleOpenSettingsSection('household'); }}
-            role="tab"
-            aria-selected={activeSection === 'household'}
-          >
-            {t('settings.household.title', { defaultValue: 'Household profiles' })}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            active={activeSection === 'android-tv'}
-            onClick={() => { void handleOpenSettingsSection('android-tv'); }}
-            role="tab"
-            aria-selected={activeSection === 'android-tv'}
-          >
-            {t('settings.androidTv.title')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            active={activeSection === 'scan'}
-            onClick={() => { void handleOpenSettingsSection('scan'); }}
-            role="tab"
-            aria-selected={activeSection === 'scan'}
-          >
-            {t('settings.streaming.scan.title')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            active={activeSection === 'streaming'}
-            onClick={() => { void handleOpenSettingsSection('streaming'); }}
-            role="tab"
-            aria-selected={activeSection === 'streaming'}
-          >
-            {t('settings.streaming.title')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            active={activeSection === 'advanced'}
-            onClick={() => { void handleOpenSettingsSection('advanced'); }}
-            role="tab"
-            aria-selected={activeSection === 'advanced'}
-          >
-            {t('settings.advanced.title', { defaultValue: 'Advanced tools' })}
-          </Button>
-        </div>
+        <>
+          {activeSection === 'overview' ? (
+            <section className={styles.sectionCompass} aria-label={t('settings.sectionNavLabel', { defaultValue: 'Settings sections' })}>
+              <div className={styles.sectionCompassIntro}>
+                <div>
+                  <p className={styles.sectionCompassEyebrow}>
+                    {t('settings.summary.eyebrow', { defaultValue: 'Choose the area' })}
+                  </p>
+                  <h3 className={styles.sectionCompassTitle}>
+                    {t('settings.summary.title', { defaultValue: 'Primary tasks stay large. Expert tools stay close.' })}
+                  </h3>
+                </div>
+                <p className={styles.sectionCompassCopy}>
+                  {t('settings.summary.subtitle', {
+                    defaultValue: 'Setup and household paths lead. Streaming, TV handoff and diagnostics stay one step away.',
+                  })}
+                </p>
+              </div>
+
+              <div className={styles.sectionCompassGrid}>
+                {sectionHighlights.map((highlight) => (
+                  <Card
+                    key={highlight.section}
+                    variant={highlight.variant}
+                    interactive
+                    onClick={() => { void handleOpenSettingsSection(highlight.section); }}
+                    className={[
+                      styles.sectionHighlight,
+                      highlight.emphasis === 'primary' ? styles.sectionHighlightPrimary : styles.sectionHighlightSecondary,
+                    ].join(' ')}
+                  >
+                    <CardBody className={styles.sectionHighlightBody}>
+                      <div className={styles.sectionHighlightTop}>
+                        <span className={styles.sectionHighlightEyebrow}>{highlight.eyebrow}</span>
+                        <span className={styles.sectionHighlightStatus}>{highlight.status}</span>
+                      </div>
+                      <div className={styles.sectionHighlightCopy}>
+                        <h4 className={styles.sectionHighlightTitle}>{highlight.title}</h4>
+                        <p className={styles.sectionHighlightSummary}>{highlight.summary}</p>
+                      </div>
+                      <div className={styles.sectionHighlightMeta}>
+                        <span className={styles.sectionHighlightMetaLabel}>
+                          {sectionLabelMap[highlight.section]}
+                        </span>
+                        <span className={styles.sectionHighlightMetaValue}>{highlight.meta}</span>
+                      </div>
+                    </CardBody>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <div className={styles.sectionTabsShell}>
+            <div className={styles.sectionTabs} role="tablist" aria-label={t('settings.sectionNavLabel', { defaultValue: 'Settings sections' })}>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'overview'}
+                onClick={() => { void handleOpenSettingsSection('overview'); }}
+                role="tab"
+                aria-selected={activeSection === 'overview'}
+              >
+                {t('settings.sections.overview', { defaultValue: 'Overview' })}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'setup'}
+                onClick={() => { void handleOpenSettingsSection('setup'); }}
+                role="tab"
+                aria-selected={activeSection === 'setup'}
+              >
+                {t('setup.title')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'household'}
+                onClick={() => { void handleOpenSettingsSection('household'); }}
+                role="tab"
+                aria-selected={activeSection === 'household'}
+              >
+                {t('settings.household.title', { defaultValue: 'Household profiles' })}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'android-tv'}
+                onClick={() => { void handleOpenSettingsSection('android-tv'); }}
+                role="tab"
+                aria-selected={activeSection === 'android-tv'}
+              >
+                {t('settings.androidTv.title')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'scan'}
+                onClick={() => { void handleOpenSettingsSection('scan'); }}
+                role="tab"
+                aria-selected={activeSection === 'scan'}
+              >
+                {t('settings.streaming.scan.title')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'streaming'}
+                onClick={() => { void handleOpenSettingsSection('streaming'); }}
+                role="tab"
+                aria-selected={activeSection === 'streaming'}
+              >
+                {t('settings.streaming.title')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'advanced'}
+                onClick={() => { void handleOpenSettingsSection('advanced'); }}
+                role="tab"
+                aria-selected={activeSection === 'advanced'}
+              >
+                {t('settings.advanced.title', { defaultValue: 'Advanced tools' })}
+              </Button>
+            </div>
+          </div>
+        </>
       ) : null}
 
       {showSection('setup') ? (

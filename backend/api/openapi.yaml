@@ -2672,6 +2672,7 @@ components:
           enum:
             - /problems/live/scan_unavailable
             - /problems/live/missing_scan_truth
+            - /problems/live/stale_truth
             - /problems/live/partial_truth
             - /problems/live/inactive_event_feed
             - /problems/live/failed_scan_truth
@@ -2705,6 +2706,7 @@ components:
           enum:
             - scanner_unavailable
             - missing_scan_truth
+            - stale_scan_truth
             - partial_scan_truth
             - inactive_event_feed
             - failed_scan_truth
@@ -2719,19 +2721,19 @@ components:
           items:
             type: string
       example:
-        type: /problems/live/partial_truth
-        title: Live media truth incomplete
+        type: /problems/live/stale_truth
+        title: Live media truth stale
         status: 503
         requestId: req_live_123
         code: UNAVAILABLE
-        detail: Live media truth is incomplete
+        detail: Live media truth is stale
         retryAfterSeconds: 5
-        truthState: partial
-        truthReason: partial_scan_truth
+        truthState: unverified
+        truthReason: stale_scan_truth
         truthOrigin: live_unverified
         problemFlags:
           - live_truth_unverified
-          - partial_scan_truth
+          - stale_scan_truth
 
     SessionTerminalProblem:
       type: object
@@ -3753,6 +3755,109 @@ paths:
           description: Recording not found
         "500":
           description: Failed to delete recording
+
+  /recordings/{recordingId}/delete:
+    post:
+      summary: Delete a recording via compatibility endpoint
+      description: Deletes the recording via OpenWebIF on the receiver.
+      security:
+        - BearerAuth: [v3:write]
+      operationId: postRecordingDelete
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      responses:
+        "204":
+          description: Recording deleted
+        "400":
+          description: Invalid recording reference
+        "403":
+          description: Access denied
+        "404":
+          description: Recording not found
+        "500":
+          description: Failed to delete recording
+
+  /recordings/{recordingId}/rename:
+    post:
+      summary: Rename a recording via compatibility endpoint
+      security:
+        - BearerAuth: [v3:write]
+      operationId: postRecordingRename
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+              required: [title]
+      responses:
+        "204":
+          description: Recording renamed
+        "400":
+          description: Invalid request
+        "403":
+          description: Access denied
+        "404":
+          description: Recording not found
+        "500":
+          description: Failed to rename recording
+
+  /recordings/{recordingId}/thumbnail.jpg:
+    get:
+      summary: Get recording thumbnail
+      security:
+        - BearerAuth: [v3:read]
+      operationId: getRecordingThumbnail
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+      responses:
+        "200":
+          description: Thumbnail image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Thumbnail not found
 
   /recordings/{recordingId}/status:
     get:

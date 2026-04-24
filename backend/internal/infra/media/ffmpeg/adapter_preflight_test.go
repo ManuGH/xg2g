@@ -206,10 +206,22 @@ func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
 				Status:   hardware.PathStatusVerified,
 				Reason:   "synthetic yavg 118.2",
 			}, nil
+		case hardware.PathVAAPIEncodeOnlyInterlacedHEVC:
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic yavg 121.7",
+			}, nil
 		case hardware.PathVAAPIFullInterlacedAV1:
 			return hardware.HardwarePathCapability{
 				Status: hardware.PathStatusBrokenOutput,
 				Reason: "synthetic yavg 2.4 below threshold",
+			}, nil
+		case hardware.PathVAAPIEncodeOnlyInterlacedAV1:
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic yavg 119.1",
 			}, nil
 		default:
 			return hardware.HardwarePathCapability{}, errors.New("unexpected path probe")
@@ -231,12 +243,28 @@ func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
 		t.Fatalf("unexpected hevc path capability: %#v", hevcCap)
 	}
 
+	hevcEncodeOnlyCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIEncodeOnlyInterlacedHEVC)
+	if !ok {
+		t.Fatal("expected published hevc encode-only path correctness")
+	}
+	if !hevcEncodeOnlyCap.Verified || hevcEncodeOnlyCap.Status != hardware.PathStatusVerified {
+		t.Fatalf("unexpected hevc encode-only path capability: %#v", hevcEncodeOnlyCap)
+	}
+
 	av1Cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedAV1)
 	if !ok {
 		t.Fatal("expected published av1 path correctness")
 	}
 	if av1Cap.Verified || av1Cap.Status != hardware.PathStatusBrokenOutput {
 		t.Fatalf("unexpected av1 path capability: %#v", av1Cap)
+	}
+
+	av1EncodeOnlyCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIEncodeOnlyInterlacedAV1)
+	if !ok {
+		t.Fatal("expected published av1 encode-only path correctness")
+	}
+	if !av1EncodeOnlyCap.Verified || av1EncodeOnlyCap.Status != hardware.PathStatusVerified {
+		t.Fatalf("unexpected av1 encode-only path capability: %#v", av1EncodeOnlyCap)
 	}
 }
 
@@ -354,8 +382,8 @@ func TestSelectStreamURL_FallbackOffFails(t *testing.T) {
 	if got := pErr.StructuredResult().Reason; got != ports.PreflightReasonInvalidTS {
 		t.Fatalf("expected invalid_ts structured reason, got %q", got)
 	}
-	if calls != 1 {
-		t.Fatalf("expected 1 preflight call, got %d", calls)
+	if calls != 3 {
+		t.Fatalf("expected 3 preflight calls, got %d", calls)
 	}
 }
 
@@ -388,8 +416,8 @@ func TestSelectStreamURL_NoFallbackWhenNotRelay(t *testing.T) {
 	if got := pErr.StructuredResult().Reason; got != ports.PreflightReasonInvalidTS {
 		t.Fatalf("expected invalid_ts structured reason, got %q", got)
 	}
-	if calls != 1 {
-		t.Fatalf("expected 1 preflight call, got %d", calls)
+	if calls != 3 {
+		t.Fatalf("expected 3 preflight calls, got %d", calls)
 	}
 }
 
@@ -404,7 +432,7 @@ func TestSelectStreamURL_FallbackTo8001(t *testing.T) {
 	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
 		calls++
 		if strings.Contains(rawURL, ":17999") {
-			return ports.NewPreflightResult("sync_miss", 0, 0, 0, 17999), errors.New("no ts")
+			return ports.NewPreflightResult("sync_miss", http.StatusOK, 188*3, 0, 17999), errors.New("no ts")
 		}
 		return ports.NewSuccessfulPreflightResult(188*3, 0, 8001), nil
 	}
@@ -427,13 +455,105 @@ func TestSelectStreamURL_FallbackTo8001(t *testing.T) {
 	}
 }
 
+func TestSelectStreamURL_RetriesTransientRelayShortReadBeforeFallback(t *testing.T) {
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
+
+	origRetryDelay := preflightRetryDelay
+	preflightRetryDelay = time.Millisecond
+	t.Cleanup(func() {
+		preflightRetryDelay = origRetryDelay
+	})
+
+	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
+	resolved := "http://127.0.0.1:17999/" + serviceRef
+
+	calls := 0
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
+		calls++
+		if calls == 1 {
+			return ports.NewPreflightResult("short_read", http.StatusOK, 0, 0, 17999), errors.New("short read")
+		}
+		return ports.NewSuccessfulPreflightResult(188*3, 0, 17999), nil
+	}
+
+	got, err := adapter.selectStreamURLWithPreflight(
+		context.Background(),
+		"sid-retry-relay",
+		serviceRef,
+		resolved,
+		preflight,
+	)
+	if err != nil {
+		t.Fatalf("expected retry success, got error: %v", err)
+	}
+	if got != resolved {
+		t.Fatalf("expected resolved url %q, got %q", resolved, got)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 preflight calls, got %d", calls)
+	}
+}
+
+func TestSelectStreamURL_RetriesTransient8001Fallback(t *testing.T) {
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
+
+	origRetryDelay := preflightRetryDelay
+	preflightRetryDelay = time.Millisecond
+	t.Cleanup(func() {
+		preflightRetryDelay = origRetryDelay
+	})
+
+	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
+	resolved := "http://127.0.0.1:17999/" + serviceRef
+	expectedFallback := "http://127.0.0.1:8001/" + serviceRef
+
+	relayCalls := 0
+	fallbackCalls := 0
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
+		switch {
+		case strings.Contains(rawURL, ":17999"):
+			relayCalls++
+			return ports.NewPreflightResult("short_read", http.StatusOK, 0, 0, 17999), errors.New("short read")
+		case strings.Contains(rawURL, ":8001"):
+			fallbackCalls++
+			if fallbackCalls == 1 {
+				return ports.NewPreflightResult("short_read", http.StatusOK, 28, 0, 8001), errors.New("short body")
+			}
+			return ports.NewSuccessfulPreflightResult(188*3, 0, 8001), nil
+		default:
+			t.Fatalf("unexpected preflight url %q", rawURL)
+			return ports.PreflightResult{}, nil
+		}
+	}
+
+	got, err := adapter.selectStreamURLWithPreflight(
+		context.Background(),
+		"sid-retry-fallback",
+		serviceRef,
+		resolved,
+		preflight,
+	)
+	if err != nil {
+		t.Fatalf("expected fallback retry success, got error: %v", err)
+	}
+	if got != expectedFallback {
+		t.Fatalf("expected fallback url %q, got %q", expectedFallback, got)
+	}
+	if relayCalls != preflightMaxTries {
+		t.Fatalf("expected %d relay preflight calls, got %d", preflightMaxTries, relayCalls)
+	}
+	if fallbackCalls != 2 {
+		t.Fatalf("expected 2 fallback preflight calls, got %d", fallbackCalls)
+	}
+}
+
 func TestSelectStreamURL_FallbackFailedAllStructuredResult(t *testing.T) {
 	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
 
 	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
 	resolved := "http://127.0.0.1:17999/" + serviceRef
 	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
-		return ports.NewPreflightResult("sync_miss", 0, 0, 0, 17999), errors.New("no ts")
+		return ports.NewPreflightResult("sync_miss", http.StatusOK, 188*3, 0, 17999), errors.New("no ts")
 	}
 
 	_, err := adapter.selectStreamURLWithPreflight(

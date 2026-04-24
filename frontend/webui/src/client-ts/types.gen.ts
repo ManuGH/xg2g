@@ -1482,7 +1482,7 @@ export type LivePlaybackTruthProblem = {
     /**
      * Stable live-truth problem type. Clients MUST branch on this field, not on free-text title/detail.
      */
-    type: '/problems/live/scan_unavailable' | '/problems/live/missing_scan_truth' | '/problems/live/partial_truth' | '/problems/live/inactive_event_feed' | '/problems/live/failed_scan_truth';
+    type: '/problems/live/scan_unavailable' | '/problems/live/missing_scan_truth' | '/problems/live/stale_truth' | '/problems/live/partial_truth' | '/problems/live/inactive_event_feed' | '/problems/live/failed_scan_truth';
     /**
      * Human-readable fallback title. Not for decision branching.
      */
@@ -1509,7 +1509,7 @@ export type LivePlaybackTruthProblem = {
     /**
      * Stable machine-readable reason for the degraded live truth state.
      */
-    truthReason: 'scanner_unavailable' | 'missing_scan_truth' | 'partial_scan_truth' | 'inactive_event_feed' | 'failed_scan_truth';
+    truthReason: 'scanner_unavailable' | 'missing_scan_truth' | 'stale_scan_truth' | 'partial_scan_truth' | 'inactive_event_feed' | 'failed_scan_truth';
     /**
      * Diagnostic provenance only. Clients SHOULD NOT branch on this field.
      */
@@ -2574,6 +2574,116 @@ export type DeleteRecordingResponses = {
 };
 
 export type DeleteRecordingResponse = DeleteRecordingResponses[keyof DeleteRecordingResponses];
+
+export type PostRecordingDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/delete';
+};
+
+export type PostRecordingDeleteErrors = {
+    /**
+     * Invalid recording reference
+     */
+    400: unknown;
+    /**
+     * Access denied
+     */
+    403: unknown;
+    /**
+     * Recording not found
+     */
+    404: unknown;
+    /**
+     * Failed to delete recording
+     */
+    500: unknown;
+};
+
+export type PostRecordingDeleteResponses = {
+    /**
+     * Recording deleted
+     */
+    204: void;
+};
+
+export type PostRecordingDeleteResponse = PostRecordingDeleteResponses[keyof PostRecordingDeleteResponses];
+
+export type PostRecordingRenameData = {
+    body: {
+        title: string;
+    };
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/rename';
+};
+
+export type PostRecordingRenameErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Access denied
+     */
+    403: unknown;
+    /**
+     * Recording not found
+     */
+    404: unknown;
+    /**
+     * Failed to rename recording
+     */
+    500: unknown;
+};
+
+export type PostRecordingRenameResponses = {
+    /**
+     * Recording renamed
+     */
+    204: void;
+};
+
+export type PostRecordingRenameResponse = PostRecordingRenameResponses[keyof PostRecordingRenameResponses];
+
+export type GetRecordingThumbnailData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/thumbnail.jpg';
+};
+
+export type GetRecordingThumbnailErrors = {
+    /**
+     * Thumbnail not found
+     */
+    404: unknown;
+};
+
+export type GetRecordingThumbnailResponses = {
+    /**
+     * Thumbnail image
+     */
+    200: Blob | File;
+};
+
+export type GetRecordingThumbnailResponse = GetRecordingThumbnailResponses[keyof GetRecordingThumbnailResponses];
 
 export type GetRecordingsRecordingIdStatusData = {
     body?: never;

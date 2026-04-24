@@ -74,6 +74,13 @@ interface SystemInfoViewData {
   };
 }
 
+interface SystemPulseItem {
+  label: string;
+  value: string;
+  detail: string;
+  tone: 'neutral' | 'action' | 'live' | 'warning';
+}
+
 export function SystemInfo() {
   const { t } = useTranslation();
   const {
@@ -105,19 +112,79 @@ export function SystemInfo() {
 
   const info = normalizeSystemInfo(data);
   const ramLevel = getRamLevel(info.resource.memoryUsed, info.resource.memoryTotal);
+  const totalStorageLocations = info.storage.devices.length + info.storage.locations.length;
+  const mountedStorageLocations = [...info.storage.devices, ...info.storage.locations].filter((entry) => entry.mountStatus === 'mounted').length;
+  const activeTuners = info.tuners.filter((tuner) => tuner.status !== 'idle').length;
+  const connectedInterfaces = info.network.interfaces.filter((iface) => iface.ip || iface.ipv6).length;
+  const memoryUsagePercent = calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal);
+  const systemPulseItems: SystemPulseItem[] = [
+    {
+      label: t('system.tuners'),
+      value: activeTuners > 0 ? `${activeTuners}/${info.tuners.length}` : `${info.tuners.length}`,
+      detail: activeTuners > 0
+        ? t('system.glance.tunersActive', {
+          defaultValue: '{{count}} active of {{total}}',
+          count: activeTuners,
+          total: info.tuners.length,
+        })
+        : t('system.glance.tunersIdle', { defaultValue: 'All tuners idle' }),
+      tone: activeTuners > 0 ? 'live' : 'neutral',
+    },
+    {
+      label: t('system.storage'),
+      value: `${mountedStorageLocations}`,
+      detail: totalStorageLocations > 0
+        ? t('system.glance.storageReady', {
+          defaultValue: '{{count}} of {{total}} ready',
+          count: mountedStorageLocations,
+          total: totalStorageLocations,
+        })
+        : t('system.glance.storageEmpty', { defaultValue: 'No recording target' }),
+      tone: mountedStorageLocations > 0 ? 'action' : 'warning',
+    },
+    {
+      label: t('system.memory'),
+      value: `${memoryUsagePercent}%`,
+      detail: t(`system.memoryLevel.${ramLevel}`),
+      tone: ramLevel === 'critical' ? 'warning' : ramLevel === 'warning' ? 'action' : 'neutral',
+    },
+    {
+      label: t('system.network'),
+      value: `${connectedInterfaces}`,
+      detail: info.network.interfaces.length > 0
+        ? t('system.glance.networkReady', {
+          defaultValue: '{{count}} connected',
+          count: connectedInterfaces,
+        })
+        : t('system.noInformation'),
+      tone: connectedInterfaces > 0 ? 'action' : 'warning',
+    },
+  ];
 
   return (
     <div className={styles.page}>
-      <div className={styles.header}>
-        <div>
-          <p className={styles.kicker}>{t('nav.system')}</p>
-          <h1>{t('system.receiverTitle')}</h1>
-          <p className={styles.subtitle}>{t('system.subtitle')}</p>
+      <div className={styles.heroPanel}>
+        <div className={styles.header}>
+          <div>
+            <p className={styles.kicker}>{t('nav.system')}</p>
+            <h1>{t('system.receiverTitle')}</h1>
+            <p className={styles.subtitle}>{t('system.subtitle')}</p>
+          </div>
+        </div>
+
+        <div className={styles.glanceGrid} aria-label={t('system.sectionOverview')}>
+          {systemPulseItems.map((item) => (
+            <div key={item.label} className={styles.glanceCard} data-tone={item.tone}>
+              <span className={styles.glanceLabel}>{item.label}</span>
+              <strong className={styles.glanceValue}>{item.value}</strong>
+              <span className={styles.glanceDetail}>{item.detail}</span>
+            </div>
+          ))}
         </div>
       </div>
 
       <div className={styles.grid}>
-        <Card className={styles.card}>
+        <Card className={[styles.card, styles.cardSpotlight, styles.cardHardware].join(' ')}>
           <CardBody className={styles.cardBody}>
             <div className={styles.cardHeader}>
               <div>
@@ -136,7 +203,7 @@ export function SystemInfo() {
           </CardBody>
         </Card>
 
-        <Card className={styles.card}>
+        <Card className={[styles.card, styles.cardSpotlight, styles.cardSoftware].join(' ')}>
           <CardBody className={styles.cardBody}>
             <div className={styles.cardHeader}>
               <div>
