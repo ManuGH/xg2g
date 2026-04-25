@@ -221,12 +221,13 @@ func applyEnvH264GPUSettings(
 	qpKey string,
 	maxRateKey string,
 	bufSizeKey string,
+	defaultQP int,
 	defaultMaxRateK int,
 	defaultBufSizeK int,
 ) {
 	spec.HWAccel = hwaccel
 	spec.VideoCodec = "h264"
-	spec.VideoQP = envIntBounded(qpKey, 20, 10, 40)
+	spec.VideoQP = envIntBounded(qpKey, defaultQP, 10, 40)
 	spec.VideoMaxRateK = envIntBounded(maxRateKey, defaultMaxRateK, 4000, 60000)
 	spec.VideoBufSizeK = envIntBounded(bufSizeKey, defaultBufSizeK, 8000, 120000)
 }
@@ -407,6 +408,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 					"XG2G_SAFARI_VAAPI_QP",
 					"XG2G_SAFARI_VAAPI_MAXRATE_K",
 					"XG2G_SAFARI_VAAPI_BUFSIZE_K",
+					20,
 					20000,
 					40000,
 				)
@@ -448,6 +450,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 				"XG2G_SAFARI_DIRTY_VAAPI_QP",
 				"XG2G_SAFARI_DIRTY_MAXRATE_K",
 				"XG2G_SAFARI_DIRTY_BUFSIZE_K",
+				20,
 				20000,
 				40000,
 			)
@@ -458,6 +461,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 				"XG2G_SAFARI_DIRTY_VAAPI_QP",
 				"XG2G_SAFARI_DIRTY_MAXRATE_K",
 				"XG2G_SAFARI_DIRTY_BUFSIZE_K",
+				20,
 				20000,
 				40000,
 			)
