@@ -346,7 +346,7 @@ func writeRefreshPlaylist(ctx context.Context, cfg config.AppConfig, rt config.R
 	// The runtime pool can fall back to the Enigma2 base URL even when no explicit
 	// PiconBase is configured, so gate this on the runtime pool, not on cfg.PiconBase.
 	if opts.piconPool != nil {
-		go PrewarmPicons(ctx, opts.piconPool, items)
+		go PrewarmPicons(context.WithoutCancel(ctx), opts.piconPool, items)
 	} else if cfg.PiconBase != "" {
 		logger.Debug().Msg("skipping picon pre-warm because no runtime picon pool is configured")
 	}
