@@ -19,7 +19,7 @@ func TestSqliteAuditStore_SuppressesHistoryWhenOnlyBasisChanges(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, store.DB.Close()) }()
 
-	baseTime := time.Date(2026, 3, 27, 10, 0, 0, 0, time.UTC)
+	baseTime := recentAuditBaseTime()
 	event := testDecisionEvent(baseTime, "basis-a", "output-a")
 	require.NoError(t, store.Record(context.Background(), event))
 
@@ -74,7 +74,7 @@ func TestSqliteAuditStore_PrunesHistoryByDecidedAtNotInsertionOrder(t *testing.T
 	require.NoError(t, err)
 	defer func() { require.NoError(t, store.DB.Close()) }()
 
-	baseTime := time.Date(2026, 3, 27, 11, 0, 0, 0, time.UTC)
+	baseTime := recentAuditBaseTime().Add(time.Hour)
 	for i := 1; i <= historyEntriesPerKey; i++ {
 		event := testDecisionEvent(baseTime.Add(time.Duration(i)*time.Minute), "basis-"+timeLabel(i), "output-"+timeLabel(i))
 		event.Selected.Container = "container-" + timeLabel(i)
@@ -161,7 +161,7 @@ func TestSqliteAuditStore_ShadowDivergenceAlwaysPersistsHistoryPerRequest(t *tes
 	require.NoError(t, err)
 	defer func() { require.NoError(t, store.DB.Close()) }()
 
-	baseTime := time.Date(2026, 3, 31, 18, 0, 0, 0, time.UTC)
+	baseTime := recentAuditBaseTime().Add(2 * time.Hour)
 	base := testDecisionEvent(baseTime, "basis-shadow-a", "output-shadow-a")
 	shadowEvent, err := BuildShadowDivergenceEvent(base, ShadowDivergence{
 		Predicate:                     "video",
@@ -414,6 +414,10 @@ func TestSqliteAuditStore_MigratesV3RowsToHostFingerprintSchema(t *testing.T) {
 
 	require.True(t, tableHasIndex(t, tx, "idx_decision_history_host_fingerprint"))
 	require.True(t, tableHasIndex(t, tx, "idx_decision_history_basis_host"))
+}
+
+func recentAuditBaseTime() time.Time {
+	return time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Second)
 }
 
 func testDecisionEvent(decidedAt time.Time, basisHash, outputHash string) Event {
