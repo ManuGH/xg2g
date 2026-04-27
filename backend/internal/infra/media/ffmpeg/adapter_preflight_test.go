@@ -212,11 +212,6 @@ func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
 				Status:   hardware.PathStatusVerified,
 				Reason:   "synthetic yavg 121.7",
 			}, nil
-		case hardware.PathVAAPIFullInterlacedAV1:
-			return hardware.HardwarePathCapability{
-				Status: hardware.PathStatusBrokenOutput,
-				Reason: "synthetic yavg 2.4 below threshold",
-			}, nil
 		case hardware.PathVAAPIEncodeOnlyInterlacedAV1:
 			return hardware.HardwarePathCapability{
 				Verified: true,
@@ -251,12 +246,8 @@ func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
 		t.Fatalf("unexpected hevc encode-only path capability: %#v", hevcEncodeOnlyCap)
 	}
 
-	av1Cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedAV1)
-	if !ok {
-		t.Fatal("expected published av1 path correctness")
-	}
-	if av1Cap.Verified || av1Cap.Status != hardware.PathStatusBrokenOutput {
-		t.Fatalf("unexpected av1 path capability: %#v", av1Cap)
+	if av1Cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedAV1); ok {
+		t.Fatalf("unexpected full av1 path capability for intentionally unused path: %#v", av1Cap)
 	}
 
 	av1EncodeOnlyCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIEncodeOnlyInterlacedAV1)
@@ -547,6 +538,59 @@ func TestSelectStreamURL_RetriesTransient8001Fallback(t *testing.T) {
 	}
 }
 
+func TestSelectStreamURL_Extends8001WarmupAfterRepeatedShortReads(t *testing.T) {
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
+
+	origRetryDelay := preflightRetryDelay
+	preflightRetryDelay = time.Millisecond
+	t.Cleanup(func() {
+		preflightRetryDelay = origRetryDelay
+	})
+
+	serviceRef := "1:0:19:EF75:3F9:1:C00000:0:0:0:"
+	resolved := "http://127.0.0.1:17999/" + serviceRef
+	expectedFallback := "http://127.0.0.1:8001/" + serviceRef
+
+	relayCalls := 0
+	fallbackCalls := 0
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
+		switch {
+		case strings.Contains(rawURL, ":17999"):
+			relayCalls++
+			return ports.NewPreflightResult("short_read", http.StatusOK, 0, 0, 17999), errors.New("relay warming")
+		case strings.Contains(rawURL, ":8001"):
+			fallbackCalls++
+			if fallbackCalls < 6 {
+				return ports.NewPreflightResult("short_read", http.StatusOK, 28, 0, 8001), errors.New("direct stream warming")
+			}
+			return ports.NewSuccessfulPreflightResult(188*3, 0, 8001), nil
+		default:
+			t.Fatalf("unexpected preflight url %q", rawURL)
+			return ports.PreflightResult{}, nil
+		}
+	}
+
+	got, err := adapter.selectStreamURLWithPreflight(
+		context.Background(),
+		"sid-extended-8001-warmup",
+		serviceRef,
+		resolved,
+		preflight,
+	)
+	if err != nil {
+		t.Fatalf("expected extended 8001 warmup success, got error: %v", err)
+	}
+	if got != expectedFallback {
+		t.Fatalf("expected fallback url %q, got %q", expectedFallback, got)
+	}
+	if relayCalls != preflightMaxTries {
+		t.Fatalf("expected %d relay preflight calls, got %d", preflightMaxTries, relayCalls)
+	}
+	if fallbackCalls != 6 {
+		t.Fatalf("expected 6 fallback preflight calls, got %d", fallbackCalls)
+	}
+}
+
 func TestSelectStreamURL_FallbackFailedAllStructuredResult(t *testing.T) {
 	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
 
@@ -707,8 +751,8 @@ func TestBuildArgs_WarmsStreamBeforeSkippingFPSProbe(t *testing.T) {
 	if warmupHits != 1 {
 		t.Fatalf("expected exactly one warmup request, got %d", warmupHits)
 	}
-	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=300:min-keyint=300:scenecut=0") {
-		t.Fatalf("expected cached 50fps GOP params, got %q", x264Params)
+	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=150:min-keyint=150:scenecut=0") {
+		t.Fatalf("expected cached 25fps output GOP params, got %q", x264Params)
 	}
 }
 
@@ -754,7 +798,7 @@ func TestBuildArgs_WarmupFailureFallsBackToFPSProbe(t *testing.T) {
 	if probeCalls != 1 {
 		t.Fatalf("expected warmup failure to fall back to fps probe, got %d calls", probeCalls)
 	}
-	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=300:min-keyint=300:scenecut=0") {
-		t.Fatalf("expected probed 50fps GOP params, got %q", x264Params)
+	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=150:min-keyint=150:scenecut=0") {
+		t.Fatalf("expected probed 25fps output GOP params, got %q", x264Params)
 	}
 }

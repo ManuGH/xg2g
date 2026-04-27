@@ -7,16 +7,18 @@ package playbackprofile
 import "github.com/ManuGH/xg2g/internal/normalize"
 
 const (
-	ClientSafariNative    = "safari_native"
-	ClientIOSSafariNative = "ios_safari_native"
-	ClientFirefoxHLSJS    = "firefox_hlsjs"
-	ClientChromiumHLSJS   = "chromium_hlsjs"
+	ClientSafariNative     = "safari_native"
+	ClientIOSSafariNative  = "ios_safari_native"
+	ClientFirefoxHLSJS     = "firefox_hlsjs"
+	ClientAndroidTVBrowser = "android_tv_browser"
+	ClientChromiumHLSJS    = "chromium_hlsjs"
 )
 
 var clientFixtureOrder = []string{
 	ClientSafariNative,
 	ClientIOSSafariNative,
 	ClientFirefoxHLSJS,
+	ClientAndroidTVBrowser,
 	ClientChromiumHLSJS,
 }
 
@@ -55,6 +57,22 @@ var clientFixtures = map[string]ClientPlaybackProfile{
 	}),
 	ClientFirefoxHLSJS: CanonicalizeClient(ClientPlaybackProfile{
 		DeviceType:     "firefox",
+		PlaybackEngine: "hls_js",
+		Containers:     []string{"mp4", "mpegts"},
+		VideoCodecs:    []string{"h264"},
+		AudioCodecs:    []string{"aac", "mp3"},
+		HLSPackaging:   []string{"fmp4", "ts"},
+		SupportsHLS:    true,
+		SupportsRange:  true,
+		AllowTranscode: boolPtr(true),
+		MaxVideo: &VideoConstraints{
+			Width:  3840,
+			Height: 2160,
+			FPS:    60,
+		},
+	}),
+	ClientAndroidTVBrowser: CanonicalizeClient(ClientPlaybackProfile{
+		DeviceType:     "android_tv",
 		PlaybackEngine: "hls_js",
 		Containers:     []string{"mp4", "mpegts"},
 		VideoCodecs:    []string{"h264"},

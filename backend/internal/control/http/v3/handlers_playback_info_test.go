@@ -644,6 +644,7 @@ func TestPostLivePlaybackInfo_IOSNativeKeepsSourceTruthTopLevelWhileDecisionUses
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 50},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 80},
 		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 10},
 	})
 	t.Cleanup(func() {
@@ -673,7 +674,7 @@ func TestPostLivePlaybackInfo_IOSNativeKeepsSourceTruthTopLevelWhileDecisionUses
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
 			"capabilitiesVersion":3,
-			"container":["mp4","ts"],
+			"container":["mp4","ts","fmp4"],
 			"videoCodecs":["av1","hevc","h264"],
 			"videoCodecSignals":[
 				{"codec":"av1","supported":true,"smooth":true,"powerEfficient":true},
@@ -683,6 +684,12 @@ func TestPostLivePlaybackInfo_IOSNativeKeepsSourceTruthTopLevelWhileDecisionUses
 			"supportsHls":true,
 			"supportsRange":true,
 			"deviceType":"mobile",
+			"deviceContext":{
+				"model":"iPhone 15 Pro A17 Pro",
+				"osName":"ios",
+				"osVersion":"17.5",
+				"platform":"iphone"
+			},
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,

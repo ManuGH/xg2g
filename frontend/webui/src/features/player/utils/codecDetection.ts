@@ -6,7 +6,6 @@
  */
 
 import { detectPlaybackClientFamily } from './playbackClientFamily';
-import { hasIOSNativeAV1ExperimentOverride } from './iosNativeAv1Experiment';
 
 export type PreferredCodec = 'av1' | 'hevc' | 'h264';
 
@@ -24,16 +23,13 @@ export function resetCachedCodecs(): void {
   cachedVideoCodecSignals = null;
 }
 
-function isIOSNativeRelaxedAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
+function isIOSNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
   if (!videoEl) return false;
   try {
-    if (detectPlaybackClientFamily(videoEl) !== 'ios_safari_native') {
-      return false;
-    }
+    return detectPlaybackClientFamily(videoEl) === 'ios_safari_native';
   } catch {
     return false;
   }
-  return hasIOSNativeAV1ExperimentOverride();
 }
 
 function isDesktopSafariNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
@@ -50,6 +46,26 @@ type DecodingInfoResult = {
   smooth: boolean;
   powerEfficient: boolean;
 };
+
+type MediaCapabilitiesProbeConfig = {
+  type: 'media-source' | 'file';
+  video: {
+    contentType: string;
+    width: number;
+    height: number;
+    bitrate: number;
+    framerate: number;
+  };
+};
+
+type MediaCapabilitiesProbe = {
+  decodingInfo?: (config: MediaCapabilitiesProbeConfig) => Promise<Partial<DecodingInfoResult> | null>;
+};
+
+function getMediaCapabilitiesProbe(): MediaCapabilitiesProbe | undefined {
+  if (typeof navigator === 'undefined') return undefined;
+  return (navigator as Navigator & { mediaCapabilities?: MediaCapabilitiesProbe }).mediaCapabilities;
+}
 
 function mergeDecodingInfoResult(current: DecodingInfoResult, next?: Partial<DecodingInfoResult> | null): DecodingInfoResult {
   if (!next) return current;
@@ -68,7 +84,7 @@ async function decodeInfoForContentType(contentType: string): Promise<DecodingIn
   };
 
   try {
-    const mc = (navigator as any)?.mediaCapabilities;
+    const mc = getMediaCapabilitiesProbe();
     if (mc?.decodingInfo) {
       const baseVideo = {
         contentType,
@@ -172,14 +188,14 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
   const out: PreferredCodec[] = [];
   const signalFor = (codec: PreferredCodec) => signals.find((signal) => signal.codec === codec);
   const av1Signal = signalFor('av1');
-  const allowRelaxedIOSNativeAV1 =
-    isIOSNativeRelaxedAV1ProbeEnabled(videoEl) &&
+  const allowIOSNativeAV1 =
+    isIOSNativeAV1ProbeEnabled(videoEl) &&
     (av1Signal?.supported || av1Signal?.smooth);
   const allowDesktopSafariNativeAV1 =
     isDesktopSafariNativeAV1ProbeEnabled(videoEl) &&
     (av1Signal?.supported || av1Signal?.smooth);
 
-  if (av1Signal?.powerEfficient || allowRelaxedIOSNativeAV1 || allowDesktopSafariNativeAV1) out.push('av1');
+  if (av1Signal?.powerEfficient || allowIOSNativeAV1 || allowDesktopSafariNativeAV1) out.push('av1');
   if (signalFor('hevc')?.powerEfficient || signalFor('hevc')?.smooth) out.push('hevc');
 
   // Always include H.264 as a safe fallback.

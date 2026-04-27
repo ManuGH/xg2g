@@ -479,7 +479,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesQualifiedHEVCForSafariNative(t
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, profiles.ProfileSafariHEVCHW, store.lastSession.Profile.Name)
 	require.Equal(t, profiles.ProfileSafariHEVCHW, store.lastSession.ContextData["profile"])
-	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
+	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
 	require.Equal(t, "hevc", store.lastSession.Profile.VideoCodec)
 	require.True(t, store.lastSession.Profile.TranscodeVideo)
 }
@@ -601,7 +601,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesAV1FMP4ForRuntimeCapableIOSSaf
 	serviceRef := "1:0:19:36:6:85:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
 		CapabilitiesVersion:  3,
-		Container:            []string{"mp4"},
+		Container:            []string{"mp4", "fmp4"},
 		VideoCodecs:          []string{"av1", "hevc", "h264"},
 		AudioCodecs:          []string{"aac", "ac3"},
 		SupportsHls:          boolPtr(true),
@@ -609,6 +609,18 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesAV1FMP4ForRuntimeCapableIOSSaf
 		PreferredHlsEngine:   strPtr("native"),
 		RuntimeProbeUsed:     boolPtr(true),
 		RuntimeProbeVersion:  intPtr(2),
+		DeviceType:           strPtr("iphone"),
+		DeviceContext: &PlaybackDeviceContext{
+			Model:     strPtr("iPhone 15 Pro A17 Pro"),
+			OsName:    strPtr("ios"),
+			OsVersion: strPtr("17.5"),
+			Platform:  strPtr("iphone"),
+		},
+		VideoCodecSignals: &[]PlaybackVideoCodecSignal{
+			{Codec: "av1", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+			{Codec: "hevc", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+			{Codec: "h264", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+		},
 	}
 	capHash := hashV3Capabilities(&clientCaps)
 
@@ -742,7 +754,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeH264UsesHEVCBaselineFromCli
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, profiles.ProfileSafariHEVCHW, store.lastSession.Profile.Name)
 	require.Equal(t, "hevc", store.lastSession.Profile.VideoCodec)
-	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
+	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
 }
 
 func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeH264UsesHEVCFMP4OnIOSSafariNative(t *testing.T) {
@@ -887,6 +899,18 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeAV1HEVCHintsUseAV1ProfileFo
 		PreferredHlsEngine:   strPtr("native"),
 		RuntimeProbeUsed:     boolPtr(true),
 		RuntimeProbeVersion:  intPtr(2),
+		DeviceType:           strPtr("iphone"),
+		DeviceContext: &PlaybackDeviceContext{
+			Model:     strPtr("iPhone 15 Pro A17 Pro"),
+			OsName:    strPtr("ios"),
+			OsVersion: strPtr("17.5"),
+			Platform:  strPtr("iphone"),
+		},
+		VideoCodecSignals: &[]PlaybackVideoCodecSignal{
+			{Codec: "av1", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+			{Codec: "hevc", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+			{Codec: "h264", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
+		},
 	}
 	capHash := hashV3Capabilities(&clientCaps)
 
@@ -1128,7 +1152,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeHEVCHintsKeepSafariProfileF
 	require.Equal(t, profiles.ProfileSafariHEVCHW, store.lastSession.Profile.Name)
 	require.Equal(t, profiles.ProfileSafariHEVCHW, store.lastSession.ContextData["profile"])
 	require.Equal(t, "hevc", store.lastSession.Profile.VideoCodec)
-	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
+	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
 }
 
 func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1Profile(t *testing.T) {
@@ -1176,7 +1200,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1
 	serviceRef := "1:0:19:EF75:3F9:1:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
 		CapabilitiesVersion:  3,
-		Container:            []string{"mp4", "ts"},
+		Container:            []string{"mp4", "ts", "fmp4"},
 		VideoCodecs:          []string{"av1", "hevc", "h264"},
 		AudioCodecs:          []string{"aac", "ac3", "mp3"},
 		SupportsHls:          boolPtr(true),
@@ -1184,6 +1208,12 @@ func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1
 		PreferredHlsEngine:   strPtr("native"),
 		RuntimeProbeUsed:     boolPtr(true),
 		RuntimeProbeVersion:  intPtr(2),
+		DeviceContext: &PlaybackDeviceContext{
+			Model:     strPtr("MacBook Air M3"),
+			OsName:    strPtr("macos"),
+			OsVersion: strPtr("14.4"),
+			Platform:  strPtr("macintel"),
+		},
 		VideoCodecSignals: &[]PlaybackVideoCodecSignal{
 			{Codec: "av1", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
 			{Codec: "hevc", Supported: true, Smooth: boolPtr(true), PowerEfficient: boolPtr(true)},
@@ -1236,7 +1266,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1
 	require.Equal(t, profiles.ProfileAV1HW, store.lastSession.Profile.Name)
 	require.Equal(t, profiles.ProfileAV1HW, store.lastSession.ContextData["profile"])
 	require.Equal(t, "av1", store.lastSession.Profile.VideoCodec)
-	require.Contains(t, []string{"fmp4", "mpegts"}, store.lastSession.Profile.Container)
+	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
 	require.Equal(t, playbackprofile.ClientSafariNative, store.lastSession.ContextData[model.CtxKeyClientFamily])
 	require.Equal(t, playbackprofile.ClientSafariNative, store.lastSession.PlaybackTrace.Client.ClientFamily)
 }

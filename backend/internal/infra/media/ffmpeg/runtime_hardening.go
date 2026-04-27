@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -16,9 +17,17 @@ const (
 	runtimeHardeningPlanSafariRuntimeRemuxProbe   runtimeHardeningPlanID = "safari_runtime_remux_probe"
 	runtimeHardeningPlanSafariRuntimeRemuxAllow   runtimeHardeningPlanID = "safari_runtime_remux_allowlist"
 	runtimeHardeningPlanSafariRuntimeHQAllow      runtimeHardeningPlanID = "safari_runtime_hq_allowlist"
+	runtimeHardeningPlanRuntimeHQ50Override       runtimeHardeningPlanID = "runtime_hq50_service_ref_override"
+	runtimeHardeningPlanAdaptiveTranscodeQuality  runtimeHardeningPlanID = "adaptive_transcode_quality"
 	runtimeHardeningPlanProgressiveAV1Deinterlace runtimeHardeningPlanID = "progressive_av1_deinterlace_clear"
 	runtimeHardeningPlanSafariCopyBitstreamHarden runtimeHardeningPlanID = "safari_copy_bitstream_harden"
 )
+
+type adaptiveTranscodeQualityBudget struct {
+	codec    string
+	maxRateK int
+	bufSizeK int
+}
 
 type runtimeHardeningDecision struct {
 	id            runtimeHardeningPlanID
@@ -49,6 +58,7 @@ func (a *LocalAdapter) applyRuntimeHardeningPlan(ctx context.Context, spec ports
 	evaluators := []func(context.Context, ports.StreamSpec, string) runtimeHardeningDecision{
 		a.evaluateSafariRuntimeRemuxHardening,
 		a.evaluateSafariRuntimeHQHardening,
+		a.evaluateAdaptiveTranscodeQualityHardening,
 		a.evaluateProgressiveHardwareDeinterlaceHardening,
 		a.evaluateSafariCopyBitstreamHardening,
 	}
@@ -101,6 +111,9 @@ func (a *LocalAdapter) evaluateSafariRuntimeRemuxHardening(ctx context.Context, 
 	if strings.TrimSpace(inputURL) == "" {
 		return noRuntimeHardeningDecision()
 	}
+	if shouldForceAnySafariHQForServiceRef(spec, inputURL) {
+		return noRuntimeHardeningDecision()
+	}
 	if shouldForceSafariCopyForServiceRef(spec, inputURL) {
 		a.Logger.Warn().
 			Str("sessionId", spec.SessionID).
@@ -149,21 +162,63 @@ func (a *LocalAdapter) evaluateSafariRuntimeRemuxHardening(ctx context.Context, 
 }
 
 func (a *LocalAdapter) evaluateSafariRuntimeHQHardening(_ context.Context, spec ports.StreamSpec, inputURL string) runtimeHardeningDecision {
-	if !shouldForceSafariHQForServiceRef(spec, inputURL) {
+	if !shouldForceAnySafariHQForServiceRef(spec, inputURL) {
 		return noRuntimeHardeningDecision()
 	}
 
 	forceHQ25 := shouldForceSafariHQ25ForServiceRef(spec, inputURL)
+	forceHQ50 := shouldForceSafariHQ50ForServiceRef(spec, inputURL)
+	forceSafariHQProfile := shouldForceSafariHQForServiceRef(spec, inputURL)
+	if forceHQ50 && !forceHQ25 && !forceSafariHQProfile && spec.Profile.TranscodeVideo {
+		a.Logger.Warn().
+			Str("sessionId", spec.SessionID).
+			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
+			Msg("forcing HQ50 runtime mode via service-ref allowlist")
+		profile := spec.Profile
+		profile.PolicyModeHint = ports.RuntimeModeHQ50
+		profile.ForceSafariHQ25 = false
+		profile = applySafariHQ50BitrateBudget(profile)
+		return runtimeHardeningDecision{
+			id:            runtimeHardeningPlanRuntimeHQ50Override,
+			source:        ports.RuntimeModeSourceEnvOverride,
+			effectiveMode: ports.RuntimeModeHQ50,
+			profile:       profile,
+			applied:       true,
+		}
+	}
 	a.Logger.Warn().
 		Str("sessionId", spec.SessionID).
 		Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
 		Msg("forcing safari HQ transcode path via service-ref allowlist")
 
-	profile := buildSafariRuntimeHQProfile(spec.Profile, forceHQ25)
+	profile := buildSafariRuntimeHQProfile(spec.Profile, forceHQ25, forceHQ50)
 	return runtimeHardeningDecision{
 		id:            runtimeHardeningPlanSafariRuntimeHQAllow,
 		source:        ports.RuntimeModeSourceEnvOverride,
 		effectiveMode: safariHQRuntimeMode(profile),
+		profile:       profile,
+		applied:       true,
+	}
+}
+
+func (a *LocalAdapter) evaluateAdaptiveTranscodeQualityHardening(_ context.Context, spec ports.StreamSpec, inputURL string) runtimeHardeningDecision {
+	budget, ok := adaptiveTranscodeQualityBudgetFor(spec.Profile)
+	if !ok || !shouldPromoteAdaptiveTranscodeQuality(spec, inputURL, budget) {
+		return noRuntimeHardeningDecision()
+	}
+
+	profile := applyAdaptiveTranscodeQualityBudget(spec.Profile, budget)
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
+		Str("video_codec", budget.codec).
+		Int("video_maxrate_k", profile.VideoMaxRateK).
+		Int("video_bufsize_k", profile.VideoBufSizeK).
+		Msg("adaptive transcode quality selected hq50 bitrate budget")
+	return runtimeHardeningDecision{
+		id:            runtimeHardeningPlanAdaptiveTranscodeQuality,
+		source:        ports.RuntimeModeSourceRuntimeHardening,
+		effectiveMode: ports.RuntimeModeHQ50,
 		profile:       profile,
 		applied:       true,
 	}
@@ -242,12 +297,17 @@ func buildSafariRuntimeRemuxProfile(current ports.ProfileSpec) ports.ProfileSpec
 	return next
 }
 
-func buildSafariRuntimeHQProfile(current ports.ProfileSpec, forceHQ25 bool) ports.ProfileSpec {
+func buildSafariRuntimeHQProfile(current ports.ProfileSpec, forceHQ25 bool, forceHQ50 bool) ports.ProfileSpec {
 	progressiveHQ := shouldUseProgressiveSafariHQ(current)
 
 	next := current
+	if forceHQ50 {
+		next.ForceSafariHQ25 = false
+		next.PolicyModeHint = ports.RuntimeModeHQ50
+	}
 	if forceHQ25 {
 		next.ForceSafariHQ25 = true
+		next.PolicyModeHint = ports.RuntimeModeHQ25
 	}
 	next.Name = profiles.ProfileSafariRuntimeHQ
 	next.TranscodeVideo = true
@@ -264,6 +324,108 @@ func buildSafariRuntimeHQProfile(current ports.ProfileSpec, forceHQ25 bool) port
 		next.Preset = "veryfast"
 	}
 	return next
+}
+
+func applySafariHQ50BitrateBudget(current ports.ProfileSpec) ports.ProfileSpec {
+	next := current
+	defaultMaxRateK := maxInt(next.VideoMaxRateK, 12000)
+	next.VideoMaxRateK = envIntBounded("XG2G_SAFARI_HQ50_MAXRATE_K", defaultMaxRateK, 4000, 60000)
+	defaultBufSizeK := maxInt(next.VideoBufSizeK, next.VideoMaxRateK*2)
+	next.VideoBufSizeK = envIntBounded("XG2G_SAFARI_HQ50_BUFSIZE_K", defaultBufSizeK, 8000, 120000)
+	return next
+}
+
+func applyAdaptiveTranscodeQualityBudget(current ports.ProfileSpec, budget adaptiveTranscodeQualityBudget) ports.ProfileSpec {
+	next := current
+	next.PolicyModeHint = ports.RuntimeModeHQ50
+	next.ForceSafariHQ25 = false
+	next.VideoMaxRateK = budget.maxRateK
+	next.VideoBufSizeK = budget.bufSizeK
+	return next
+}
+
+func shouldPromoteAdaptiveTranscodeQuality(spec ports.StreamSpec, inputURL string, budget adaptiveTranscodeQualityBudget) bool {
+	if !config.ParseBool("XG2G_ADAPTIVE_QUALITY_ENABLED", true) {
+		return false
+	}
+	if spec.Mode != ports.ModeLive || !spec.Profile.TranscodeVideo {
+		return false
+	}
+	if spec.Quality != ports.QualityHigh {
+		return false
+	}
+	if spec.Profile.EffectiveModeSource == ports.RuntimeModeSourceEnvOverride {
+		return false
+	}
+	if spec.Profile.ForceSafariHQ25 || spec.Profile.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {
+		return false
+	}
+	if shouldForceSafariHQ25ForServiceRef(spec, inputURL) {
+		return false
+	}
+	if !adaptiveTranscodeQualityContainerAllowed(budget.codec, spec.Profile.Container) {
+		return false
+	}
+	if spec.Profile.VideoMaxRateK > 0 && spec.Profile.VideoMaxRateK >= budget.maxRateK {
+		return false
+	}
+	return true
+}
+
+func adaptiveTranscodeQualityBudgetFor(profile ports.ProfileSpec) (adaptiveTranscodeQualityBudget, bool) {
+	switch normalizeRequestedCodec(profile.VideoCodec) {
+	case "av1":
+		if !config.ParseBool("XG2G_ADAPTIVE_AV1_QUALITY_ENABLED", true) {
+			return adaptiveTranscodeQualityBudget{}, false
+		}
+		return adaptiveCodecQualityBudget("av1", 14000, 28000), true
+	case "hevc":
+		if !config.ParseBool("XG2G_ADAPTIVE_HEVC_QUALITY_ENABLED", true) {
+			return adaptiveTranscodeQualityBudget{}, false
+		}
+		return adaptiveCodecQualityBudget("hevc", 14000, 28000), true
+	case "h264":
+		if !config.ParseBool("XG2G_ADAPTIVE_H264_QUALITY_ENABLED", true) {
+			return adaptiveTranscodeQualityBudget{}, false
+		}
+		return adaptiveCodecQualityBudget("h264", 16000, 32000), true
+	default:
+		return adaptiveTranscodeQualityBudget{}, false
+	}
+}
+
+func adaptiveCodecQualityBudget(codec string, defaultMaxRateK int, defaultBufSizeK int) adaptiveTranscodeQualityBudget {
+	codecEnv := strings.ToUpper(codec)
+	maxRateK := envIntBounded("XG2G_ADAPTIVE_"+codecEnv+"_MAXRATE_K", defaultMaxRateK, 4000, 60000)
+	defaultBufSizeK = maxInt(defaultBufSizeK, defaultMaxRateK*2)
+	if maxRateK != defaultMaxRateK {
+		defaultBufSizeK = maxRateK * 2
+	}
+	bufSizeK := envIntBounded("XG2G_ADAPTIVE_"+codecEnv+"_BUFSIZE_K", defaultBufSizeK, 8000, 120000)
+	return adaptiveTranscodeQualityBudget{
+		codec:    codec,
+		maxRateK: maxRateK,
+		bufSizeK: bufSizeK,
+	}
+}
+
+func adaptiveTranscodeQualityContainerAllowed(codec string, container string) bool {
+	container = strings.ToLower(strings.TrimSpace(container))
+	switch codec {
+	case "av1", "hevc":
+		return container == "fmp4"
+	case "h264":
+		return container == "" || container == "mpegts" || container == "fmp4"
+	default:
+		return false
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func buildProgressiveHardwareDeinterlaceProfile(current ports.ProfileSpec) ports.ProfileSpec {

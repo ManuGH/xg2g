@@ -5,6 +5,7 @@ import {
 } from "../../../lib/hostBridge";
 import {
   detectPlaybackClientFamily,
+  fallbackPlaybackCapabilitiesForClientFamily,
   normalizePlaybackClientFamily,
 } from "./playbackClientFamily";
 import {
@@ -231,6 +232,7 @@ function inferBrowserDeviceContext(): CapabilitySnapshot["deviceContext"] {
       platform?: string;
       platformVersion?: string;
     };
+    maxTouchPoints?: number;
   };
   const ua = navigator.userAgent;
   const platform = nav.userAgentData?.platform || navigator.platform || "browser";
@@ -239,10 +241,14 @@ function inferBrowserDeviceContext(): CapabilitySnapshot["deviceContext"] {
       ? nav.userAgentData.platformVersion.trim()
       : undefined;
 
+  const isIPadOSDesktopUA =
+    /Mac OS X/i.test(ua) && /Macintosh/i.test(ua) && (nav.maxTouchPoints ?? 0) > 1;
   let osName = "browser";
   let osVersion: string | undefined;
   const patterns: Array<[RegExp, string]> = [
     [/Android\s+([\d.]+)/i, "android"],
+    [/Fire\s*OS\s+([\d.]+)/i, "fireos"],
+    [/Vega\s*OS(?:\s+version:?)?\s*([\d.]+)/i, "vegaos"],
     [/(?:iPhone|iPad|CPU (?:iPhone )?OS)\s+([\d_]+)/i, "ios"],
     [/Windows NT\s+([\d.]+)/i, "windows"],
     [/Mac OS X\s+([\d_]+)/i, "macos"],
@@ -256,18 +262,79 @@ function inferBrowserDeviceContext(): CapabilitySnapshot["deviceContext"] {
       break;
     }
   }
+  if (isIPadOSDesktopUA) {
+    osName = "ipados";
+  }
   if (osName === "browser" && /Linux/i.test(ua)) {
     osName = "linux";
   }
   if (!osVersion && platformVersion) {
     osVersion = platformVersion;
   }
+  if (isFrozenWebKitMacOSVersion(ua, osName, osVersion, String(platform))) {
+    osVersion = undefined;
+  }
 
   return {
+    ...inferBrowserDeviceHints(ua),
     platform: String(platform).toLowerCase(),
     osName,
     osVersion,
   };
+}
+
+function inferBrowserDeviceHints(
+  userAgent: string,
+): Partial<NonNullable<CapabilitySnapshot["deviceContext"]>> {
+  const fireTVModel = userAgent.match(/\b(AFT[A-Z0-9]+)\b/i)?.[1];
+  if (fireTVModel) {
+    return {
+      brand: "amazon",
+      manufacturer: "Amazon",
+      product: fireTVModel.toUpperCase(),
+      device: "firetv",
+      model: fireTVModel.toUpperCase(),
+    };
+  }
+
+  if (/shield\s+android\s+tv/i.test(userAgent)) {
+    return {
+      brand: "nvidia",
+      manufacturer: "NVIDIA",
+      device: "shield",
+      model: "SHIELD Android TV",
+    };
+  }
+
+  const xiaomiModel =
+    userAgent.match(/\b(MDZ-[A-Z0-9-]+)\b/i)?.[1] ||
+    userAgent.match(/\b(MiTV-[A-Z0-9-]+)\b/i)?.[1];
+  if (xiaomiModel || /xiaomi\s+tv\s+stick\s+4k|mi\s+tv\s+stick\s+4k/i.test(userAgent)) {
+    return {
+      brand: "xiaomi",
+      manufacturer: "Xiaomi",
+      product: xiaomiModel,
+      device: "xiaomi-tv-stick",
+      model: xiaomiModel || "Xiaomi TV Stick 4K",
+    };
+  }
+
+  return {};
+}
+
+function isFrozenWebKitMacOSVersion(
+  userAgent: string,
+  osName: string,
+  osVersion: string | undefined,
+  platform: string,
+): boolean {
+  return (
+    (osName === "macos" || osName === "ipados") &&
+    osVersion === "10.15.7" &&
+    /Safari\/605\.1\.15/i.test(userAgent) &&
+    !/(Chrome|Chromium|Edg|OPR|Firefox)\//i.test(userAgent) &&
+    String(platform).toLowerCase() === "macintel"
+  );
 }
 
 function inferBrowserNetworkContext(): CapabilitySnapshot["networkContext"] {
@@ -310,6 +377,7 @@ export async function gatherPlaybackCapabilities(
 
   const probe = await probeRuntimePlaybackCapabilities(videoEl, scope);
   const clientFamilyFallback = detectPlaybackClientFamily(videoEl);
+  const familyFallback = fallbackPlaybackCapabilitiesForClientFamily(clientFamilyFallback, scope);
 
   return {
     capabilitiesVersion: 3,
@@ -322,7 +390,7 @@ export async function gatherPlaybackCapabilities(
     supportsHls: probe.hlsEngines.length > 0,
     supportsRange: probe.supportsRange,
     allowTranscode: true,
-    deviceType: "web",
+    deviceType: familyFallback.deviceType === "android_tv" ? "android_tv" : "web",
     deviceContext: inferBrowserDeviceContext(),
     networkContext: inferBrowserNetworkContext(),
     runtimeProbeUsed: probe.usedRuntimeProbe,

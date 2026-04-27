@@ -75,7 +75,7 @@ export async function probeRuntimePlaybackCapabilities(
   }
 
   const containers = ['mp4', 'ts'];
-  if (hlsJsSupported && !preferNativeHls) {
+  if (nativeHls || (hlsJsSupported && !preferNativeHls)) {
     containers.push('fmp4');
   }
 

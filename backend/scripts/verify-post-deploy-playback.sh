@@ -594,7 +594,7 @@ verify_hw_transcode_gpu() {
       ;;
   esac
   if printf '%s\n' "${pipeline_log_line}" | grep -q '"deinterlace":true'; then
-    printf '%s\n' "${ffmpeg_line}" | grep -Eq -- 'deinterlace_vaapi|yadif|bwdif=mode=send_field:parity=auto:deint=all' || fail "ffmpeg line missing expected deinterlace filter despite deinterlace=true"
+    printf '%s\n' "${ffmpeg_line}" | grep -Eq -- 'deinterlace_vaapi|yadif|bwdif=mode=send_(field|frame):parity=auto:deint=all' || fail "ffmpeg line missing expected deinterlace filter despite deinterlace=true"
   fi
 
   echo "✅ Forced ${encoder_backend^^} transcode OK (${sid}, request ${request_id:-unknown})"

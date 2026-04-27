@@ -1274,6 +1274,7 @@ export type PlaybackTrace = {
      */
     autoCodecBenchmarkClass?: string | null;
     ffmpegPlan?: PlaybackTraceFfmpegPlan;
+    runtimeDiagnostics?: PlaybackTraceRuntimeDiagnostics;
     operator?: PlaybackTraceOperator;
     firstFrameAtMs?: number | null;
     fallbackCount?: number | null;
@@ -1387,6 +1388,17 @@ export type PlaybackTraceFfmpegPlan = {
     videoCodec?: string;
     audioMode?: string;
     audioCodec?: string;
+};
+
+export type PlaybackTraceRuntimeDiagnostics = {
+    frameCount?: number;
+    fps?: number;
+    dropFrames?: number;
+    dupFrames?: number;
+    speed?: number;
+    corruptDecodedFrames?: number;
+    lastWarning?: string;
+    updatedAtUnix?: number;
 };
 
 export type PlaybackSourceProfile = {

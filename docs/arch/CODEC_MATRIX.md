@@ -18,7 +18,7 @@ Canonical source files:
 | :--- | :--- | :--- | :--- |
 | `h264` | `avc`, `avc1`, `libx264`, `video/avc` | SD/HD DVB-S/S2, DVB-T2 | Universal baseline. Every browser family supports this. |
 | `hevc` | `h265`, `h.265`, `hev1`, `hvc1`, `libx265`, `video/hevc` | UHD DVB-S2 | DirectPlay/DirectStream for Safari families only. Transcode target when source is HEVC-capable. |
-| `av1` | `av01`, `av1_vaapi`, `libsvtav1`, `libaom-av1`, `video/av01` | — | DirectPlay when client advertises support. Not an Enigma2 source codec today. |
+| `av1` | `av01`, `av1_vaapi`, `libsvtav1`, `libaom-av1`, `video/av01` | — | Gated hardware client path only. Requires runtime AV1 proof, fMP4 transport, and the AV1 client guard in `ClientAV1PlaybackAllowed(...)`. Not an Enigma2 source codec today. |
 | `mpeg2` | `mpeg-2`, `mpeg2video`, `video/mpeg2` | Legacy SD DVB | Always requires transcode for web delivery. |
 | `vp9` | `vp09`, `libvpx-vp9`, `video/x-vnd.on2.vp9` | — | DirectPlay in MKV containers. Not an Enigma2 source codec today. |
 
@@ -60,7 +60,14 @@ policy):
 | `safari_native` | h264, hevc | aac, mp3, ac3 | mp4, ts | Native HLS |
 | `ios_safari_native` | h264, hevc | aac, mp3, ac3 | mp4, ts | Native HLS |
 | `firefox_hlsjs` | h264 | aac, mp3 | mp4, ts, fmp4 | hls.js |
+| `android_tv_browser` | h264 | aac, mp3 | mp4, ts, fmp4 | hls.js |
 | `chromium_hlsjs` | h264 | aac, mp3 | mp4, ts, fmp4 | hls.js |
+
+AV1 is intentionally absent from the baseline family table. Runtime probing can
+add AV1 only through the hardware client guard documented in
+[CLIENT_PROFILES.md](../ops/CLIENT_PROFILES.md#av1-hardware-client-guard).
+That guard also requires fMP4 delivery; AV1 in MPEG-TS HLS is not a supported
+native WebKit path.
 
 ## Transcode Targets
 
@@ -69,7 +76,7 @@ What FFmpeg can encode to when a transcode path is selected (from
 
 | Kind | Supported Targets | Default |
 | :--- | :--- | :--- |
-| **Video** | `h264` (libx264), `hevc` (libx265) | h264 |
+| **Video** | `h264` (libx264), `hevc` (libx265), `av1` (VAAPI when available and client-gated) | h264 |
 | **Audio** | `aac`, `ac3`, `mp3` (libmp3lame) | aac |
 | **HLS Segments** | mpegts (`.ts`), fmp4 (`.m4s`) | mpegts |
 

@@ -1,9 +1,13 @@
 # ADR-022: Enigma2 Canonical Precedence Matrix
 
-**Status:** Accepted  
+**Status:** Accepted; transition complete
 **Date:** 2026-02-11
 
 **Update 2026-03-26:** the transition described here is complete. `openWebIF.*`, `XG2G_OWI_*`, `XG2G_STREAM_PORT`, and `XG2G_USE_WEBIF_STREAMS` are now hard-fail legacy inputs during config loading, not active fallback paths.
+
+The decision section below records the accepted transition policy. Current
+runtime behavior is stricter: canonical `enigma2.*` / `XG2G_E2_*` keys are the
+only accepted receiver configuration surface for the daemon.
 
 ## Context
 

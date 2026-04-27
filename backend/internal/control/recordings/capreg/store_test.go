@@ -216,3 +216,63 @@ func TestSourceSnapshotFingerprint_ChangesWhenSignalFPSOrBitrateBucketChanges(t 
 	require.NotEqual(t, base.Fingerprint(), withLowerSignalFPS.Fingerprint())
 	require.NotEqual(t, base.Fingerprint(), withHigherBitrateBucket.Fingerprint())
 }
+
+func TestSummarizeFeedbackObservations_TreatsBlackRenderAsDecodeWarning(t *testing.T) {
+	summary := summarizeFeedbackObservations([]PlaybackObservation{
+		{
+			ObservedAt:         time.Unix(1_700_000_200, 0).UTC(),
+			ObservationKind:    "feedback",
+			Outcome:            "warning",
+			FeedbackEvent:      "info",
+			FeedbackCode:       242,
+			FeedbackMessage:    "black_suspect",
+			SelectedVideoCodec: "av1",
+		},
+		{
+			ObservedAt:      time.Unix(1_700_000_100, 0).UTC(),
+			ObservationKind: "feedback",
+			Outcome:         "started",
+			FeedbackEvent:   "info",
+			FeedbackCode:    200,
+		},
+	})
+
+	require.Equal(t, 2, summary.SampleCount)
+	require.Equal(t, 1, summary.WarningCount)
+	require.Equal(t, 1, summary.ConsecutiveWarnings)
+	require.Equal(t, 1, summary.ConsecutiveDecodeWarnings)
+	require.Equal(t, 0, summary.ConsecutiveBufferWarnings)
+	require.Equal(t, 0, summary.ConsecutiveNetworkWarnings)
+}
+
+func TestSummarizeFeedbackObservations_TreatsRenderStableAsRecoveryStart(t *testing.T) {
+	summary := summarizeFeedbackObservations([]PlaybackObservation{
+		{
+			ObservedAt:      time.Unix(1_700_000_300, 0).UTC(),
+			ObservationKind: "feedback",
+			Outcome:         "warning",
+			FeedbackEvent:   "warning",
+			FeedbackCode:    101,
+		},
+		{
+			ObservedAt:      time.Unix(1_700_000_200, 0).UTC(),
+			ObservationKind: "feedback",
+			Outcome:         "started",
+			FeedbackEvent:   "info",
+			FeedbackCode:    241,
+		},
+		{
+			ObservedAt:      time.Unix(1_700_000_100, 0).UTC(),
+			ObservationKind: "feedback",
+			Outcome:         "started",
+			FeedbackEvent:   "info",
+			FeedbackCode:    221,
+		},
+	})
+
+	require.Equal(t, 3, summary.SampleCount)
+	require.Equal(t, 1, summary.WarningCount)
+	require.Equal(t, 1, summary.ConsecutiveWarnings)
+	require.Equal(t, 2, summary.PriorRecoveredStartStreak)
+	require.Equal(t, 241, summary.PriorRecoveryStartCode)
+}

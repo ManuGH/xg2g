@@ -8,6 +8,7 @@ The canonical fixture IDs live in:
 
 - `backend/internal/domain/playbackprofile/client_matrix.go`
 - `backend/internal/domain/playbackprofile/source_matrix.go`
+- `backend/internal/control/http/v3/autocodec/client_av1_policy.go`
 
 These names are normative and must not drift from the documentation.
 
@@ -22,6 +23,7 @@ codec/container set that `xg2g` may rely on.
 | `safari_native` | Safari on macOS | Native HLS | `mp4`, `ts` | `h264`, `hevc` | `aac`, `mp3`, `ac3` | Desktop WebKit path. |
 | `ios_safari_native` | Safari on iPhone/iPad | Native HLS | `mp4`, `ts` | `h264`, `hevc` | `aac`, `mp3`, `ac3` | Touch/mobile WebKit path. |
 | `firefox_hlsjs` | Firefox desktop web | `hls.js` | `mp4`, `ts`, `fmp4` | `h264` | `aac`, `mp3` | Conservative browser-safe web path. |
+| `android_tv_browser` | Android/Fire TV browser paths, including Shield/Silk-style clients | `hls.js` | `mp4`, `ts`, `fmp4` | `h264` | `aac`, `mp3` | TV browser baseline. AV1/HEVC require runtime proof and AV1 still needs the hardware guard. |
 | `chromium_hlsjs` | Chrome, Edge, Brave, Opera desktop web | `hls.js` | `mp4`, `ts`, `fmp4` | `h264` | `aac`, `mp3` | Chromium-brand variants reuse this family until proven otherwise. |
 
 ### Binding Rules
@@ -173,3 +175,67 @@ Interpretation:
 - For live Safari families, a `direct` decision means "no video re-encode
   required", not "no server-side media process". `xg2g` may still run FFmpeg in
   copy/remux mode to package MPEG-TS HLS and normalize audio for delivery.
+
+## AV1 Hardware Client Guard
+
+AV1 is not a baseline browser-family claim. The backend may select AV1 only
+when the client passes the dedicated hardware decode guard in
+`ClientAV1PlaybackAllowed(...)`.
+
+Required for every AV1 client:
+
+- `videoCodecs` contains `av1`.
+- `containers` contains `fmp4`.
+- `clientCapsSource` is `runtime` or `runtime_plus_family`.
+- The runtime codec signal for `av1` is supported.
+- Family fallback alone is never enough.
+- Native WebKit must use fMP4 for AV1; AV1 over MPEG-TS is not a supported
+  Safari/iPhone transport.
+
+Apple mobile policy:
+
+- `ios_safari_native` requires iOS/iPadOS 17 or newer when the OS version is
+  known.
+- Known AV1-capable markers include `A17 Pro`, `A18`, `A19`, `iPhone 15 Pro`,
+  `iPhone 15 Pro Max`, the iPhone 16 family including `iPhone 16e`, the iPhone
+  17 family, `iPhone Air`, `iPad mini A17 Pro`, `iPad Air M3`, and
+  `iPad Pro M4`.
+- Native `hw.machine` style identifiers for those iPhone generations are also
+  accepted when a native wrapper or trusted probe supplies them.
+- Known pre-AV1 markers are blocked even if a generic runtime advertises AV1:
+  `A16` and older mobile chips, non-Pro iPhone 15, iPhone 14/13/12/11/SE,
+  iPad A16, iPad Air M1/M2, and iPad Pro M1/M2.
+
+Apple desktop policy:
+
+- `safari_native` on macOS requires macOS 14 or newer when the OS version is
+  known.
+- Apple Silicon `M3`, `M4`, and newer are treated as AV1-capable.
+- `M1` and `M2` are blocked for AV1 hardware playback.
+- If Safari does not expose a reliable model, the runtime AV1 probe must still
+  prove support before AV1 can be selected.
+
+Android and generic desktop policy:
+
+- Android TV browser clients start from an H264-only baseline. AV1 is allowed
+  only when runtime probing proves AV1 and either the OS is Android 14 / SDK 34
+  or newer, or the device model is on the known hardware-AV1 allowlist.
+- Known Android/Fire TV AV1 markers include Amazon build models `AFTCL001`,
+  `AFTMA08C15`, `AFTCA002`, `AFTKRT`, `AFTKM`, `AFTKA`, `AFTGAZL`, plus Xiaomi
+  TV Stick 4K markers such as `MDZ-27-AA` / `MiTV-AYFR0`.
+- Known no-AV1 Android TV markers are blocked even with a generic smooth AV1
+  browser signal. This includes NVIDIA Shield / Tegra X1+ markers such as
+  `SHIELD Android TV`, `mdarcy`, and `foster`.
+- Android 10-13 requires a stronger runtime signal: `smooth` or
+  `powerEfficient`.
+- Windows, Linux, and VM clients require `smooth` or `powerEfficient`; a plain
+  `supported=true` signal is not enough.
+
+Operational trace fields to inspect when AV1 is expected:
+
+- `trace.clientCapsSource`
+- `trace.clientFamily`
+- `trace.selected.videoCodec`
+- `trace.selected.container`
+- `trace.targetProfile.hls.segmentContainer`
+- `trace.autoCodec.selected`

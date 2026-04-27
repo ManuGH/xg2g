@@ -48,10 +48,10 @@ export function PlayerRuntimeMeta({
       className={[
         styles.runtimePolicyMeta,
         theater ? styles.runtimePolicyMetaTheater : null,
-        variant === 'startup' ? styles.runtimePolicyMetaStartup : null,
-        variant === 'error' ? styles.runtimePolicyMetaError : null,
-        phase === 'probing' ? 'animate-runtime-policy-probing' : null,
-        phase === 'probe_regressed' ? 'animate-runtime-policy-alert' : null,
+        variant === 'startup' ? styles.runtimePolicyMetaStartup : null, // display-only: visual variant, not playback policy.
+        variant === 'error' ? styles.runtimePolicyMetaError : null, // display-only: visual variant, not playback policy.
+        phase === 'probing' ? 'animate-runtime-policy-probing' : null, // display-only: CSS animation for reported phase.
+        phase === 'probe_regressed' ? 'animate-runtime-policy-alert' : null, // display-only: CSS animation for reported phase.
       ].filter(Boolean).join(' ')}
       data-phase={phase ?? 'unknown'}
     >

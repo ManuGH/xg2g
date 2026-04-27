@@ -150,10 +150,10 @@ Optional tuning:
 Legacy `X-API-Token` header/cookie sources are supported only for migration and can be disabled explicitly:
 
 - **Flag**: `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES=true`
-- **Default**: `false` (legacy sources still accepted during migration)
+- **Default**: `true` (legacy sources are disabled unless an operator explicitly re-enables them for migration)
 - **Recommended rollout**:
   1. Migrate clients to `Authorization: Bearer <token>` (API) and `xg2g_session` cookie (media).
-  2. Enable `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES=true`.
+  2. Keep `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES=true`.
   3. Monitor auth logs for `auth.legacy_token_source` before and during cutover.
 
 ## Admission Control: Fail-Closed Policy

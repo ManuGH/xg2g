@@ -38,7 +38,11 @@ jobs:
           GOTOOLCHAIN: auto
 
       - name: Install govulncheck (pinned)
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+        run: |
+          set -euo pipefail
+          toolchain="$(go env GOVERSION)"
+          GOTOOLCHAIN="${toolchain}" go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go version -m "$(go env GOPATH)/bin/govulncheck" | sed -n '1,2p'
 
       - name: Ensure jq (for severity evaluation)
         run: |

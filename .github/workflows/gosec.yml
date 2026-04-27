@@ -36,7 +36,11 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Install gosec (pinned)
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+        run: |
+          set -euo pipefail
+          toolchain="$(go env GOVERSION)"
+          GOTOOLCHAIN="${toolchain}" go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+          go version -m "$(go env GOPATH)/bin/gosec" | sed -n '1,2p'
 
       - name: Run gosec security scan
         run: |

@@ -471,8 +471,12 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	spec.Profile.VideoCodec = codec.resolvedCodec
 	fps := a.resolveLiveFPS(ctx, spec, input.inputURL)
 	fps = a.adjustLiveFPSForRuntimeServiceOverride(spec, input.inputURL, fps)
-	gop := fps * layout.segmentDurationSec
 	targetOutputFPS := targetLiveOutputFPS(spec)
+	gopFPS := fps
+	if targetOutputFPS > 0 {
+		gopFPS = targetOutputFPS
+	}
+	gop := gopFPS * layout.segmentDurationSec
 
 	out := outputPlan{effectiveProfile: spec.Profile}
 	out.args = append(out.args,
@@ -739,6 +743,12 @@ func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamS
 }
 
 func shouldForce25FPSForLiveProfile(spec ports.StreamSpec, inputURL string) bool {
+	if shouldForceSafariHQ25ForServiceRef(spec, inputURL) {
+		return true
+	}
+	if shouldForceSafariHQ50ForServiceRef(spec, inputURL) {
+		return false
+	}
 	if shouldForceSafariHQForServiceRef(spec, inputURL) {
 		return shouldForce25FPSForSafariHQ(spec.Profile)
 	}
@@ -1019,8 +1029,9 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 func av1VAAPIGeometryPadFilter() string {
 	// Current AMD VAAPI AV1 encoders can emit 1080p bitstreams that decode as
 	// 1082-line frames. Padding the software-domain input to a 16-line height
-	// keeps the decoded geometry stable for native HLS clients.
-	return "pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
+	// keeps the decoded geometry stable for native HLS clients. Adjust SAR
+	// before padding so display aspect ratio remains unchanged after 1088p.
+	return "setsar=sar=sar*ceil(h/16)*16/h:max=1000,pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
 
 func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string {
@@ -1247,7 +1258,9 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 
 func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string {
 	deinterlaceFilter := "yadif"
-	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
+	if spec.Mode == ports.ModeLive && spec.Format == ports.FormatHLS && effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeHQ25 {
+		deinterlaceFilter = "bwdif=mode=send_frame:parity=auto:deint=all"
+	} else if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
 		deinterlaceFilter = strings.TrimSpace(a.SafariDirtyFilter)
 	} else if spec.Mode == ports.ModeLive && spec.Format == ports.FormatHLS {
 		// Generic live HLS transcodes should preserve sports motion on interlaced
@@ -1415,12 +1428,26 @@ func shouldForceSafariHQForServiceRef(spec ports.StreamSpec, inputURL string) bo
 	return serviceRefEnvContains("XG2G_SAFARI_HQ_SERVICE_REFS", targetRef)
 }
 
+func shouldForceAnySafariHQForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+	return shouldForceSafariHQForServiceRef(spec, inputURL) ||
+		shouldForceSafariHQ25ForServiceRef(spec, inputURL) ||
+		shouldForceSafariHQ50ForServiceRef(spec, inputURL)
+}
+
 func shouldForceSafariHQ25ForServiceRef(spec ports.StreamSpec, inputURL string) bool {
 	targetRef := safariRuntimeServiceRef(spec, inputURL)
 	if targetRef == "" {
 		return false
 	}
 	return serviceRefEnvContains("XG2G_SAFARI_HQ25_SERVICE_REFS", targetRef)
+}
+
+func shouldForceSafariHQ50ForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+	targetRef := safariRuntimeServiceRef(spec, inputURL)
+	if targetRef == "" {
+		return false
+	}
+	return serviceRefEnvContains("XG2G_SAFARI_HQ50_SERVICE_REFS", targetRef)
 }
 
 func safariHQRuntimeMode(profile ports.ProfileSpec) ports.RuntimeMode {
@@ -1441,6 +1468,9 @@ func shouldUseProgressiveSafariHQ(profile ports.ProfileSpec) bool {
 func shouldForce25FPSForSafariHQ(profile ports.ProfileSpec) bool {
 	if profile.ForceSafariHQ25 {
 		return true
+	}
+	if profile.EffectiveRuntimeMode == ports.RuntimeModeHQ50 || profile.PolicyModeHint == ports.RuntimeModeHQ50 {
+		return false
 	}
 	return !shouldUseProgressiveSafariHQ(profile)
 }

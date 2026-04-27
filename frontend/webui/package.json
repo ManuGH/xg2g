@@ -1,13 +1,15 @@
 {
   "name": "webui",
   "private": true,
-  "version": "3.0.0",
+  "version": "3.4.9",
   "type": "module",
+  "engines": {
+    "node": "^24.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "generate-client": "openapi-ts --input ../../backend/api/openapi.yaml --output ./src/client-ts",
-    "generate-client:legacy": "openapi --input ../../backend/api/openapi.yaml --output ./src/client-legacy --client fetch",
     "design:check": "bash scripts/verify-no-hardcoded-colors.sh && bash scripts/verify-motion-contract.sh && bash scripts/verify-no-window-dialogs.sh && bash scripts/verify-no-btn-classes.sh",
     "gate:no-appledouble": "node scripts/no-appledouble.mjs",
     "gate:no-duration-guessing": "node scripts/no-duration-guessing.mjs",
@@ -35,7 +37,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
-    "@hey-api/client-fetch": "^0.13.1",
     "@hey-api/openapi-ts": "^0.93.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -50,8 +51,6 @@
     "fast-check": "^4.5.3",
     "globals": "^17.4.0",
     "jsdom": "^28.1.0",
-    "openapi-typescript": "^7.13.0",
-    "openapi-typescript-codegen": "^0.30.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.1",
     "vite": "^7.3.2",

@@ -13,9 +13,12 @@ Preflight is a fast, deterministic gate performed before starting an FFmpeg tran
 
 ### Preflight Logic
 
-1. **Probe**: The system performs a small HTTP GET request (capped at 1s).
+1. **Probe**: The system performs a small HTTP GET request capped by
+   `enigma2.preflightTimeout` / `XG2G_E2_PREFLIGHT_TIMEOUT`.
 2. **Sync Check**: It looks for 0x47 sync bytes at 188-byte intervals.
-3. **Fallback**: If a Stream Relay source (port 17999) fails, it can optionally fall back to port 8001 (standard Enigma2 stream). Default is **off**.
+3. **Fallback**: If a Stream Relay source (port 17999) fails, xg2g can fall
+   back to port 8001 (standard Enigma2 stream). Default is **on** for receiver
+   compatibility and can be disabled when operators want strict 17999 failure.
 
 ## 2a. Configuration
 
@@ -44,7 +47,10 @@ If `resolved_url` points to `:17999` and you see:
 - `preflight_reason: timeout`
 - `preflight_bytes: 0`
 
-Then **xg2g is not the failing component**. The receiver did not deliver any TS body within the 1s gate. The correct behavior is to **reject immediately**, not wait or retry. xg2g does **not** run a retry loop on 17999; the cause is upstream.
+Then **xg2g is not the failing component**. The receiver did not deliver any TS
+body within the configured preflight gate. With `fallbackTo8001=false`, the
+correct behavior is to reject immediately instead of hiding the receiver-side
+failure.
 
 Receiver readiness gate checklist:
 
@@ -56,11 +62,13 @@ If this gate fails, the root cause is receiver-side (StreamRelay, policy, whitel
 
 ## 4. Fallback Configuration
 
-Fallback is an explicit emergency tool. It is **off by default** and should not be used as normal behavior.
+Fallback is enabled by default for compatibility with receivers that expose both
+Stream Relay (`17999`) and classic Enigma2 streaming (`8001`). Disable it when a
+failed 17999 path should fail closed instead of trying the classic stream port.
 
 | Config Key | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `false` | Fallback to port 8001 if 17999 fails. |
+| `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `true` | Fallback to port 8001 if 17999 fails. |
 
 > [!IMPORTANT]
 > Fallback only triggers for sources originally resolved to port `17999`. It attempts to reach the same host on port `8001` with the same Service Reference.

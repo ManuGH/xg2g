@@ -87,6 +87,105 @@ func TestPickProfileForCodecs_AutoUsesMeasuredHostRanking(t *testing.T) {
 	}
 }
 
+func TestRequestedCodecsForIntent_AndroidTVBrowserFamilyFallbackIsH264Only(t *testing.T) {
+	got := requestedCodecsForIntent(Intent{
+		Params: map[string]string{
+			"playback_mode":          "hlsjs",
+			"codecs":                 "av1,hevc,h264",
+			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
+		},
+	}, "hlsjs")
+	if got != "h264" {
+		t.Fatalf("requestedCodecsForIntent() = %q, want h264", got)
+	}
+}
+
+func TestRequestedCodecsForIntent_AndroidTVBrowserRuntimeHEVCStaysOptIn(t *testing.T) {
+	smooth := true
+	got := requestedCodecsForIntent(Intent{
+		Params: map[string]string{
+			"playback_mode":          "hlsjs",
+			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientAndroidTVBrowser,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"hevc", "h264"},
+			AudioCodecs:          []string{"aac", "mp3"},
+			SupportsHLS:          true,
+			PreferredHLSEngine:   "hlsjs",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "hevc", Supported: true, Smooth: &smooth},
+			},
+		},
+	}, "hlsjs")
+	if got != "hevc,h264" {
+		t.Fatalf("requestedCodecsForIntent() = %q, want hevc,h264", got)
+	}
+}
+
+func TestRequestedCodecsForIntent_AndroidTVBrowserKnownAV1DeviceCanOptIntoAV1(t *testing.T) {
+	smooth := true
+	got := requestedCodecsForIntent(Intent{
+		Params: map[string]string{
+			"playback_mode":          "hlsjs",
+			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientAndroidTVBrowser,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			AudioCodecs:          []string{"aac", "mp3"},
+			SupportsHLS:          true,
+			PreferredHLSEngine:   "hlsjs",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			DeviceType:           "android_tv",
+			DeviceContext:        &capabilities.DeviceContext{OSName: "android", OSVersion: "11", SDKInt: 30, Manufacturer: "Amazon", Model: "AFTKRT"},
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &smooth},
+				{Codec: "hevc", Supported: true, Smooth: &smooth},
+			},
+		},
+	}, "hlsjs")
+	if got != "av1,hevc,h264" {
+		t.Fatalf("requestedCodecsForIntent() = %q, want av1,hevc,h264", got)
+	}
+}
+
+func TestRequestedCodecsForIntent_AndroidTVBrowserShieldCannotOptIntoAV1(t *testing.T) {
+	smooth := true
+	got := requestedCodecsForIntent(Intent{
+		Params: map[string]string{
+			"playback_mode":          "hlsjs",
+			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
+		},
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientAndroidTVBrowser,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "h264"},
+			AudioCodecs:          []string{"aac", "mp3"},
+			SupportsHLS:          true,
+			PreferredHLSEngine:   "hlsjs",
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			DeviceType:           "android_tv",
+			DeviceContext:        &capabilities.DeviceContext{OSName: "android", OSVersion: "11", SDKInt: 30, Manufacturer: "NVIDIA", Model: "SHIELD Android TV"},
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &smooth},
+			},
+		},
+	}, "hlsjs")
+	if got != "h264" {
+		t.Fatalf("requestedCodecsForIntent() = %q, want h264", got)
+	}
+}
+
 func TestPickNativeHLSProfileForCodecs_PrefersAV1HWOnSafariNative(t *testing.T) {
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"av1_vaapi": {
@@ -235,7 +334,7 @@ func TestPickProfileForCapabilitiesForClient_IOSNativeHEVCSelectionStaysOnHWProf
 	}
 }
 
-func TestPickNativeHLSProfileForCapabilities_RuntimeAV1DoesNotRequireTSContainer(t *testing.T) {
+func TestPickNativeHLSProfileForCapabilities_RuntimeAV1UsesFMP4WithoutTSContainer(t *testing.T) {
 	t.Setenv("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", "10")
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
@@ -252,8 +351,14 @@ func TestPickNativeHLSProfileForCapabilities_RuntimeAV1DoesNotRequireTSContainer
 
 	caps := &capabilities.PlaybackCapabilities{
 		ClientCapsSource: capabilities.ClientCapsSourceRuntime,
-		Containers:       []string{"mp4"},
+		Containers:       []string{"mp4", "fmp4"},
 		VideoCodecs:      []string{"av1", "hevc", "h264"},
+		RuntimeProbeUsed: true,
+		DeviceType:       "iphone",
+		DeviceContext:    &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
+		VideoCodecSignals: []capabilities.VideoCodecSignal{
+			{Codec: "av1", Supported: true},
+		},
 	}
 
 	got := autocodec.PickNativeHLSProfileForCapabilities("ios_safari_native", caps, profiles.HWAccelAuto)
@@ -641,6 +746,9 @@ func TestResolveRequestedStartProfile_IOSNativeRuntimeAV1HEVCH264SourcePrefersAV
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
 			AudioCodecs:          []string{"aac", "ac3"},
 			SupportsHLS:          true,
+			RuntimeProbeUsed:     true,
+			DeviceType:           "iphone",
+			DeviceContext:        &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
 			VideoCodecSignals: []capabilities.VideoCodecSignal{
 				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
 				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
@@ -833,6 +941,9 @@ func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1H264SourceKeepsUniver
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
 			AudioCodecs:          []string{"aac", "ac3"},
 			SupportsHLS:          true,
+			RuntimeProbeUsed:     true,
+			DeviceType:           "iphone",
+			DeviceContext:        &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
 			VideoCodecSignals: []capabilities.VideoCodecSignal{
 				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
 				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
@@ -900,6 +1011,9 @@ func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1WithoutCopyPathPicksA
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
 			AudioCodecs:          []string{"aac", "ac3"},
 			SupportsHLS:          true,
+			RuntimeProbeUsed:     true,
+			DeviceType:           "iphone",
+			DeviceContext:        &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
 			VideoCodecSignals: []capabilities.VideoCodecSignal{
 				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
 				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},

@@ -140,6 +140,8 @@ type LocalAdapter struct {
 	activeProcs map[ports.RunHandle]*exec.Cmd
 	// finalizedProfiles keeps the finalized profile that actually launched for a handle.
 	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
+	// runtimeDiagnostics keeps the latest FFmpeg progress/source-warning snapshot.
+	runtimeDiagnostics map[ports.RunHandle]ports.RuntimeDiagnostics
 	// processDetails keeps the last meaningful failure summary for a handle.
 	processDetails map[ports.RunHandle]string
 }
@@ -297,6 +299,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FPSCacheTTL:               fpsCacheTTL,
 		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
 		finalizedProfiles:         make(map[ports.RunHandle]ports.ProfileSpec),
+		runtimeDiagnostics:        make(map[ports.RunHandle]ports.RuntimeDiagnostics),
 		processDetails:            make(map[ports.RunHandle]string),
 	}
 }
@@ -520,7 +523,6 @@ func (a *LocalAdapter) PreflightPathCorrectness() {
 	for _, req := range []pathProbeRequest{
 		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
-		{PathID: hardware.PathVAAPIFullInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 	} {
 		if req.Backend != "vaapi" || !a.VaapiEncoderVerified(req.Encoder) {
@@ -1437,6 +1439,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 				}
 			}
 			sanitizedLine := sanitizeFFmpegLogLine(line)
+			a.recordRuntimeDiagnostics(handle, line, sanitizedLine)
 			if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
 				a.recordProcessDetail(handle, detail)
 			}
@@ -1656,6 +1659,114 @@ func parseFFmpegFrameCount(line string) (int, bool) {
 	return count, true
 }
 
+func (a *LocalAdapter) recordRuntimeDiagnostics(handle ports.RunHandle, rawLine string, sanitizedLine string) {
+	if handle == "" {
+		return
+	}
+
+	var changed bool
+	nowUnix := time.Now().Unix()
+	a.mu.Lock()
+	diagnostics := a.runtimeDiagnostics[handle]
+	if frame, ok := parseFFmpegFrameCount(rawLine); ok {
+		diagnostics.FrameCount = frame
+		changed = true
+	}
+	if fps, ok := parseFFmpegFloatValue(rawLine, "fps"); ok {
+		diagnostics.FPS = fps
+		changed = true
+	}
+	if drops, ok := parseFFmpegIntValue(rawLine, "drop_frames"); ok {
+		diagnostics.DropFrames = drops
+		changed = true
+	} else if drops, ok := parseFFmpegIntValue(rawLine, "drop"); ok {
+		diagnostics.DropFrames = drops
+		changed = true
+	}
+	if duplicates, ok := parseFFmpegIntValue(rawLine, "dup_frames"); ok {
+		diagnostics.DupFrames = duplicates
+		changed = true
+	} else if duplicates, ok := parseFFmpegIntValue(rawLine, "dup"); ok {
+		diagnostics.DupFrames = duplicates
+		changed = true
+	}
+	if speed, ok := parseFFmpegFloatValue(rawLine, "speed"); ok {
+		diagnostics.Speed = speed
+		changed = true
+	}
+
+	lower := strings.ToLower(strings.TrimSpace(sanitizedLine))
+	if strings.Contains(lower, "corrupt decoded frame") {
+		diagnostics.CorruptDecodedFrames++
+		diagnostics.LastWarning = trimForLog(sanitizedLine, 240)
+		changed = true
+	} else if !isFFmpegProgressLine(lower) && (summarizeFFmpegFailureLine(lower) != "" || looksLikeFFmpegWarning(lower)) {
+		diagnostics.LastWarning = trimForLog(sanitizedLine, 240)
+		changed = true
+	}
+	if changed {
+		diagnostics.UpdatedAtUnix = nowUnix
+		if a.runtimeDiagnostics == nil {
+			a.runtimeDiagnostics = make(map[ports.RunHandle]ports.RuntimeDiagnostics)
+		}
+		a.runtimeDiagnostics[handle] = diagnostics
+	}
+	a.mu.Unlock()
+}
+
+func parseFFmpegIntValue(line string, key string) (int, bool) {
+	raw, ok := parseFFmpegValue(line, key)
+	if !ok {
+		return 0, false
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+func parseFFmpegFloatValue(line string, key string) (float64, bool) {
+	raw, ok := parseFFmpegValue(line, key)
+	if !ok {
+		return 0, false
+	}
+	raw = strings.TrimSuffix(raw, "x")
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+func parseFFmpegValue(line string, key string) (string, bool) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", false
+	}
+	idx := strings.Index(line, key+"=")
+	if idx < 0 {
+		return "", false
+	}
+	rest := strings.TrimLeft(line[idx+len(key)+1:], " ")
+	if rest == "" {
+		return "", false
+	}
+	end := 0
+	for end < len(rest) {
+		ch := rest[end]
+		if (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '+' || ch == 'x' {
+			end++
+			continue
+		}
+		break
+	}
+	if end == 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
 func extractStartupSegmentPath(line string) (string, bool) {
 	if !strings.Contains(line, "Opening ") || !strings.Contains(line, " for writing") {
 		return "", false
@@ -1718,20 +1829,23 @@ func (a *LocalAdapter) killProcessGroup(cmd *exec.Cmd) error {
 func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports.HealthStatus {
 	a.mu.Lock()
 	_, exists := a.activeProcs[handle]
+	diagnostics := a.runtimeDiagnostics[handle]
 	a.mu.Unlock()
 	if !exists {
 		// monitorProcess has finished — scanner drained, detail is final.
 		return ports.HealthStatus{
-			Healthy:   false,
-			Message:   a.processStatusMessage(handle, "process not found"),
-			LastCheck: time.Now(),
+			Healthy:     false,
+			Message:     a.processStatusMessage(handle, "process not found"),
+			LastCheck:   time.Now(),
+			Diagnostics: diagnostics,
 		}
 	}
 
 	return ports.HealthStatus{
-		Healthy:   true,
-		Message:   "process active",
-		LastCheck: time.Now(),
+		Healthy:     true,
+		Message:     "process active",
+		LastCheck:   time.Now(),
+		Diagnostics: diagnostics,
 	}
 }
 

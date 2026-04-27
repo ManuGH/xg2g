@@ -13,13 +13,14 @@ This directory contains CI/CD workflows and checks to maintain repository qualit
 - `.github/workflows/ui-contract.yml`
   Historical compatibility workflow. PR enforcement is owned by `pr-required-gates.yml`;
   this workflow remains as a push/manual backstop until an explicit branch-protection cutover.
-- `.github/workflows/phase4-guardrails.yml`
-  Historical compatibility workflow with the same role split as `ui-contract.yml`.
 - `.github/workflows/repo-health.yml`
   Repository hygiene and drift-prevention checks. This is the normative merge-policy
   authority for repo-health invariants; local Make targets only mirror it for convenience.
 
 See [docs/ops/CI_POLICY.md](../docs/ops/CI_POLICY.md) for the canonical policy.
+
+For local contributor orientation, see
+[docs/dev/REPO_MAP.md](../docs/dev/REPO_MAP.md).
 
 ## Workflows
 

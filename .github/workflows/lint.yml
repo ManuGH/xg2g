@@ -123,7 +123,7 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         if: needs.scope.outputs.webui_lint_needed == 'true'
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: "npm"
           cache-dependency-path: frontend/webui/package-lock.json
       - if: needs.scope.outputs.webui_lint_needed == 'true'

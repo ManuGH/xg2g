@@ -12,6 +12,8 @@ func NormalizeClientFamilyID(value string) string {
 		return ClientIOSSafariNative
 	case "firefox", ClientFirefoxHLSJS:
 		return ClientFirefoxHLSJS
+	case "android_tv", "android_tv_hlsjs", "shield_browser", ClientAndroidTVBrowser:
+		return ClientAndroidTVBrowser
 	case "chromium", "chrome", "edge", ClientChromiumHLSJS:
 		return ClientChromiumHLSJS
 	default:

@@ -16,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/stretchr/testify/assert"
@@ -172,6 +173,53 @@ func TestMapSessionStateResponse_ExposesAutoCodecTrace(t *testing.T) {
 	assert.Equal(t, "medium", *resp.Trace.AutoCodecPerformanceClass)
 	require.NotNil(t, resp.Trace.AutoCodecBenchmarkClass)
 	assert.Equal(t, "strong", *resp.Trace.AutoCodecBenchmarkClass)
+}
+
+func TestMapSessionStateResponse_ExposesRuntimeDiagnosticsTrace(t *testing.T) {
+	resp := mapSessionStateResponse("req-runtime-diagnostics", "", v3sessions.GetSessionResult{
+		Session: &model.SessionRecord{
+			SessionID:          "550e8400-e29b-41d4-a716-446655440100",
+			ServiceRef:         "1:0:19:91:4:85:C00000:0:0:0:",
+			Profile:            model.ProfileSpec{Name: profiles.ProfileAV1HW},
+			State:              model.SessionReady,
+			CorrelationID:      "corr-runtime-diagnostics",
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: 1700000030,
+			PlaybackTrace: &model.PlaybackTrace{
+				RuntimeDiagnostics: &ports.RuntimeDiagnostics{
+					FrameCount:           6472,
+					FPS:                  51.35,
+					DropFrames:           0,
+					DupFrames:            52,
+					Speed:                1.03,
+					CorruptDecodedFrames: 2,
+					LastWarning:          "[mpegts @ 0x123] corrupt decoded frame in stream 0",
+					UpdatedAtUnix:        1700000012,
+				},
+			},
+		},
+		Outcome: lifecycle.PublicOutcome{
+			State:      model.SessionReady,
+			Reason:     model.RNone,
+			DetailCode: model.DNone,
+		},
+		PlaybackInfo: v3sessions.SessionPlaybackInfo{
+			Mode:       model.ModeLive,
+			WindowKind: v3sessions.SessionWindowKindLive,
+		},
+	})
+
+	require.NotNil(t, resp.Trace)
+	require.NotNil(t, resp.Trace.RuntimeDiagnostics)
+	assert.Equal(t, 6472, *resp.Trace.RuntimeDiagnostics.FrameCount)
+	assert.Equal(t, float32(51.35), *resp.Trace.RuntimeDiagnostics.Fps)
+	assert.Equal(t, 0, *resp.Trace.RuntimeDiagnostics.DropFrames)
+	assert.Equal(t, 52, *resp.Trace.RuntimeDiagnostics.DupFrames)
+	assert.Equal(t, float32(1.03), *resp.Trace.RuntimeDiagnostics.Speed)
+	assert.Equal(t, 2, *resp.Trace.RuntimeDiagnostics.CorruptDecodedFrames)
+	require.NotNil(t, resp.Trace.RuntimeDiagnostics.LastWarning)
+	assert.Contains(t, *resp.Trace.RuntimeDiagnostics.LastWarning, "corrupt decoded frame")
+	assert.Equal(t, 1700000012, *resp.Trace.RuntimeDiagnostics.UpdatedAtUnix)
 }
 
 func TestMapSessionStateResponse_ExposesRuntimePolicyTimeline(t *testing.T) {

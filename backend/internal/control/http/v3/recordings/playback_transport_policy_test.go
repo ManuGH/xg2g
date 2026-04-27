@@ -76,7 +76,7 @@ func TestResolveRecordingNativeTransportPlan_AndroidTVDirectPlayTSKeepsExistingT
 	}
 }
 
-func TestResolveLiveNativeTransportPlan_ExperimentalDesktopSafariAV1TSBypassesFMP4Rewrite(t *testing.T) {
+func TestResolveLiveNativeTransportPlan_DesktopSafariAV1TSRewritesToFMP4(t *testing.T) {
 	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
 
 	plan := resolvePlaybackTransportPlan(
@@ -112,8 +112,11 @@ func TestResolveLiveNativeTransportPlan_ExperimentalDesktopSafariAV1TSBypassesFM
 		},
 	)
 
-	if plan.applied {
-		t.Fatalf("expected experimental desktop Safari AV1 TS to bypass transport rewrite, got %#v", plan)
+	if !plan.applied {
+		t.Fatalf("expected desktop Safari AV1 TS to rewrite to fMP4")
+	}
+	if plan.targetContainer != "fmp4" || plan.targetPackaging != playbackprofile.PackagingFMP4 || plan.hlsSegmentContainer != "fmp4" {
+		t.Fatalf("expected desktop Safari AV1 rewrite to fMP4, got %#v", plan)
 	}
 }
 

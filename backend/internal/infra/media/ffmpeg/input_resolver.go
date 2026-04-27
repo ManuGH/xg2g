@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	preflightMinBytes = 188 * 3
-	preflightTimeout  = 2 * time.Second
-	preflightMaxTries = 3
+	preflightMinBytes          = 188 * 3
+	preflightTimeout           = 2 * time.Second
+	preflightMaxTries          = 3
+	preflightDirectWarmupTries = 8
 )
 
 var ffmpegURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
@@ -286,7 +287,11 @@ func (a *LocalAdapter) runPreflightWithRetry(ctx context.Context, sessionID, raw
 	result, err := preflight(ctx, rawURL)
 	result = normalizeAdapterPreflightResult(result, err)
 
-	for attempt := 2; attempt <= preflightMaxTries && shouldRetryTSPreflight(result); attempt++ {
+	for attempt := 2; shouldRetryTSPreflight(result); attempt++ {
+		maxTries := maxPreflightTries(result)
+		if attempt > maxTries {
+			break
+		}
 		if waitErr := sleepWithContext(ctx, preflightRetryDelay); waitErr != nil {
 			break
 		}
@@ -295,7 +300,7 @@ func (a *LocalAdapter) runPreflightWithRetry(ctx context.Context, sessionID, raw
 			Str("sessionId", sessionID).
 			Str("url", sanitizeURLForLog(rawURL)).
 			Int("attempt", attempt).
-			Int("max_attempts", preflightMaxTries).
+			Int("max_attempts", maxTries).
 			Int("preflight_bytes", result.Bytes).
 			Str("preflight_reason", preflightReason(result)).
 			Str("preflight_detail", result.FailureDetail()).
@@ -311,6 +316,18 @@ func (a *LocalAdapter) runPreflightWithRetry(ctx context.Context, sessionID, raw
 	}
 
 	return result, err
+}
+
+func maxPreflightTries(result ports.PreflightResult) int {
+	normalized := result.Normalized()
+	if normalized.ResolvedPort == 8001 || normalized.ResolvedPort == 8002 {
+		if normalized.HTTPStatus == 0 || normalized.HTTPStatus == http.StatusOK {
+			if normalized.Reason == ports.PreflightReasonCorruptInput && normalized.Bytes < preflightMinBytes {
+				return preflightDirectWarmupTries
+			}
+		}
+	}
+	return preflightMaxTries
 }
 
 func shouldRetryTSPreflight(result ports.PreflightResult) bool {

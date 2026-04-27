@@ -1,21 +1,24 @@
-const isDev = import.meta.env.DEV;
+const debugLogsEnabled =
+  import.meta.env.DEV &&
+  (import.meta.env.MODE !== 'test' || import.meta.env.VITE_XG2G_TEST_DEBUG_LOGS === '1') &&
+  import.meta.env.VITE_XG2G_DEBUG_LOGS !== '0';
 
 export function debugLog(...args: unknown[]): void {
-  if (!isDev) {
+  if (!debugLogsEnabled) {
     return;
   }
   console.log(...args);
 }
 
 export function debugWarn(...args: unknown[]): void {
-  if (!isDev) {
+  if (!debugLogsEnabled) {
     return;
   }
   console.warn(...args);
 }
 
 export function debugError(...args: unknown[]): void {
-  if (!isDev) {
+  if (!debugLogsEnabled) {
     return;
   }
   console.error(...args);

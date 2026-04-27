@@ -274,6 +274,6 @@ All errors include `request_id` for traceability.
 
 ## References
 
-- CTO Review: Stop-the-Line Requirements (2026-01-18)
+- Architecture review: Stop-the-Line Requirements (2026-01-18)
 - OpenAPI: `api/openapi.yaml` (decision block)
 - Contract Tests: `testdata/contract/p4_1/*.json`

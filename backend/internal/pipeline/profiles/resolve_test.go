@@ -192,14 +192,14 @@ func TestResolve_ProfileSafariCPUFallbackPresetCanBeOverridden(t *testing.T) {
 	assert.Equal(t, "fast", spec.Preset)
 }
 
-func TestResolve_SafariHEVCBrowserUsesMPEGTS(t *testing.T) {
+func TestResolve_SafariHEVCBrowserUsesFMP4(t *testing.T) {
 	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
 	specCPU := Resolve(ProfileSafariHEVC, safariUA, 0, nil, GPUBackendNone, HWAccelAuto)
-	assert.Equal(t, "mpegts", specCPU.Container)
+	assert.Equal(t, "fmp4", specCPU.Container)
 
 	specHW := Resolve(ProfileSafariHEVCHW, safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
-	assert.Equal(t, "mpegts", specHW.Container)
+	assert.Equal(t, "fmp4", specHW.Container)
 	assert.Equal(t, "vaapi", specHW.HWAccel)
 	assert.Equal(t, "hevc", specHW.VideoCodec)
 	assert.Equal(t, 20, specHW.VideoQP)
@@ -299,7 +299,7 @@ func TestPrefersNativeFMP4Packaging_MapsProfileBias(t *testing.T) {
 	assert.True(t, PrefersNativeFMP4Packaging(ProfileSafariHEVCHW))
 	assert.True(t, PrefersNativeFMP4Packaging("safari_hevc_hw_ll"))
 	assert.True(t, PrefersNativeFMP4Packaging(ProfileH264FMP4))
-	assert.False(t, PrefersNativeFMP4Packaging(ProfileAV1HW))
+	assert.True(t, PrefersNativeFMP4Packaging(ProfileAV1HW))
 	assert.False(t, PrefersNativeFMP4Packaging(ProfileCopy))
 }
 

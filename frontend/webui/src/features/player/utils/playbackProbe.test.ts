@@ -62,7 +62,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.hlsJs).toBe(false);
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
-    expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
     expect(probe.audioCodecs).toEqual(['aac', 'mp3', 'ac3']);
     expect(probe.videoCodecs).toContain('h264');
     expect(probe.videoCodecSignals).toEqual([
@@ -121,7 +121,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.hlsJs).toBe(true);
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
-    expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
     expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
   });
 
@@ -176,24 +176,16 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.hlsJs).toBe(true);
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
-    expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
     expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
   });
 
-  it('keeps native HLS on touch WebKit when the iOS AV1 experiment enables AV1', async () => {
+  it('keeps native HLS on touch WebKit when the iOS runtime reports AV1 support', async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     Object.defineProperty(navigator, 'maxTouchPoints', {
       configurable: true,
       value: 5,
     });
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: {
-        ...originalLocation,
-        search: '?xg2g_ios_native_av1=1',
-      },
-    });
-
     const video = document.createElement('video') as HTMLVideoElement & {
       webkitEnterFullscreen?: () => void;
     };
@@ -212,7 +204,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.hlsJs).toBe(true);
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
-    expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
     expect(probe.videoCodecs).toEqual(['av1', 'h264']);
   });
 });

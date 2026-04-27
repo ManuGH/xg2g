@@ -65,6 +65,21 @@ function hasValidHeartbeatInterval(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (isRecord(error) && typeof error.message === 'string') return error.message;
+  return '';
+}
+
+function errorDetails(error: unknown): Record<string, unknown> | null {
+  if (!isRecord(error) || !isRecord(error.details)) return null;
+  return error.details;
+}
+
 export function useLiveSessionController({
   token,
   apiBase,
@@ -428,10 +443,10 @@ export function useLiveSessionController({
         }
         await sleep(SESSION_READY_POLL_MS);
       } catch (err) {
-        const e = err as any;
-        const msg = e?.message || '';
-        const status = e?.details?.status as number | undefined;
-        if (e?.details?.contractError) {
+        const details = errorDetails(err);
+        const msg = errorMessage(err);
+        const status = typeof details?.status === 'number' ? details.status : undefined;
+        if (details?.contractError === true) {
           throw err;
         }
         if (
@@ -448,7 +463,7 @@ export function useLiveSessionController({
         }
         if (i === maxAttempts - 1) {
           const details = {
-            ...(e?.details && typeof e.details === 'object' ? e.details : {}),
+            ...(errorDetails(err) ?? {}),
             sessionId: trackedSessionId,
             waitedMs: maxAttempts * SESSION_READY_POLL_MS,
             pollMs: SESSION_READY_POLL_MS

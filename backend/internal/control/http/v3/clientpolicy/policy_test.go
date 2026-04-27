@@ -34,10 +34,32 @@ func TestApplyStartPackagingPolicy_IOSAV1ForcesFMP4(t *testing.T) {
 	}
 }
 
-func TestApplyStartPackagingPolicy_DesktopSafariKeepsExperimentalAV1TS(t *testing.T) {
+func TestApplyStartPackagingPolicy_DesktopSafariAV1ForcesFMP4(t *testing.T) {
 	spec := ApplyStartPackagingPolicy(
 		playbackprofile.ClientSafariNative,
 		profiles.ProfileAV1HW,
+		model.ProfileSpec{Container: "mpegts"},
+	)
+	if spec.Container != "fmp4" {
+		t.Fatalf("ApplyStartPackagingPolicy() container = %q, want %q", spec.Container, "fmp4")
+	}
+}
+
+func TestApplyStartPackagingPolicy_DesktopSafariHEVCForcesFMP4(t *testing.T) {
+	spec := ApplyStartPackagingPolicy(
+		playbackprofile.ClientSafariNative,
+		profiles.ProfileSafariHEVCHW,
+		model.ProfileSpec{Container: "mpegts"},
+	)
+	if spec.Container != "fmp4" {
+		t.Fatalf("ApplyStartPackagingPolicy() container = %q, want %q", spec.Container, "fmp4")
+	}
+}
+
+func TestApplyStartPackagingPolicy_NonWebKitHEVCKeepsContainer(t *testing.T) {
+	spec := ApplyStartPackagingPolicy(
+		"chromium_hlsjs",
+		profiles.ProfileSafariHEVCHW,
 		model.ProfileSpec{Container: "mpegts"},
 	)
 	if spec.Container != "mpegts" {
@@ -54,7 +76,7 @@ func TestWantsFMP4Packaging_ClientFamilyFallback(t *testing.T) {
 	}
 }
 
-func TestAllowExperimentalNativeAV1TransportStream_DesktopSafariOnly(t *testing.T) {
+func TestAllowExperimentalNativeAV1TransportStream_DisablesNativeWebKitAV1TS(t *testing.T) {
 	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
 
 	target := playbackprofile.TargetPlaybackProfile{
@@ -69,13 +91,13 @@ func TestAllowExperimentalNativeAV1TransportStream_DesktopSafariOnly(t *testing.
 		},
 	}
 
-	if !AllowExperimentalNativeAV1TransportStream(capabilities.PlaybackCapabilities{
+	if AllowExperimentalNativeAV1TransportStream(capabilities.PlaybackCapabilities{
 		ClientFamilyFallback: playbackprofile.ClientSafariNative,
 		ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
 		VideoCodecs:          []string{"av1", "hevc", "h264"},
 		Containers:           []string{"ts", "fmp4"},
 	}, "av1", target) {
-		t.Fatal("expected desktop Safari runtime AV1 TS experiment to stay enabled")
+		t.Fatal("did not expect desktop Safari to keep the AV1 TS experiment")
 	}
 
 	if AllowExperimentalNativeAV1TransportStream(capabilities.PlaybackCapabilities{

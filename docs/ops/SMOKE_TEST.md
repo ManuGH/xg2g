@@ -1,99 +1,57 @@
-# End-to-End Smoke Test
+# Smoke Test
 
-**Duration**: 5 minutes  
-**Purpose**: Verify product works from user perspective before release
+Use this page as the quick smoke-test router. The canonical operator-grade
+matrix lives in [Service Smoke](SERVICE_SMOKE.md).
 
----
+## Production Or Staging Host
 
-## Quick Test Matrix
-
-### 1. Cold Start
+Preferred path after a deploy:
 
 ```bash
-docker run -d --name xg2g-smoke -p 8088:8088 \
-  -v /tmp/xg2g-test:/data \
-  -e XG2G_E2_HOST="192.168.1.50" \
-  xg2g:3.1.5
-
-sleep 5
-curl -f http://localhost:8088/healthz  # Expect: 200 OK
-docker logs xg2g-smoke | grep -i "panic\|fatal"  # Expect: empty
+sudo /srv/xg2g/scripts/run-service-smoke.sh
+sudo /srv/xg2g/scripts/verify-post-deploy-playback.sh
 ```
 
-**Pass:** Container starts, health check passes, no panics.
+The post-deploy verifier proves auth-gated HLS, DVR manifest semantics, and
+hardware-transcode reachability where expected.
 
----
+## Local Container Sanity Check
 
-### 2. Auth/Security
+This is only a container boot sanity check. It does not replace the service
+smoke matrix and it does not prove real receiver playback.
 
 ```bash
-# No auth → should fail
-curl -i http://localhost:8088/api/v3/channels
-# Expect: 401 Unauthorized or 403 Forbidden
+token="$(openssl rand -hex 32)"
+decision_secret="$(openssl rand -hex 32)"
 
-# Valid auth → should work
-curl -i -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8088/api/v3/channels
-# Expect: 200 OK with channel list
+docker run -d --rm --name xg2g-smoke -p 8088:8088 \
+  -e XG2G_E2_HOST="http://192.168.1.50" \
+  -e XG2G_API_TOKEN="$token" \
+  -e XG2G_API_TOKEN_SCOPES="v3:admin" \
+  -e XG2G_DECISION_SECRET="$decision_secret" \
+  ghcr.io/manugh/xg2g:v3.4.9
+
+curl -fsS http://localhost:8088/healthz
+curl -fsS -H "Authorization: Bearer $token" \
+  http://localhost:8088/api/v3/system/healthz
+
+if docker logs xg2g-smoke 2>&1 | grep -Ei "panic|fatal"; then
+  echo "unexpected panic/fatal log output" >&2
+  docker stop xg2g-smoke
+  false
+fi
+docker stop xg2g-smoke
 ```
 
-**Pass:** Unauthorized requests blocked, valid auth works.
+Expected result:
 
----
+- `/healthz` responds.
+- Authenticated `/api/v3/system/healthz` responds.
+- Logs contain no panic/fatal messages.
 
-### 3. Live Stream
+## What Not To Use
 
-```bash
-# Start stream
-CHANNEL_ID=$(curl -s http://localhost:8088/api/v3/channels | jq -r '.[0].id')
-curl -s -X POST http://localhost:8088/api/v3/sessions \
-  -H "Content-Type: application/json" \
-  -d "{\"channel_id\":\"$CHANNEL_ID\"}" | jq .
-
-# Check CPU (copy mode should be <10%)
-docker stats xg2g-smoke --no-stream --format "{{.CPUPerc}}"
-```
-
-**Pass:** Stream starts, low CPU usage (no unnecessary transcoding).
-
----
-
-### 4. VOD Build
-
-```bash
-# Start VOD build
-curl -s -X POST http://localhost:8088/api/v3/recordings/REC_ID/vod | jq .
-
-# Monitor job (check logs for completion)
-docker logs -f xg2g-smoke
-
-# Verify no partial files
-ls /tmp/xg2g-test/vod/  # Should have complete files only, no .tmp
-```
-
-**Pass:** VOD builds complete, no partial artifacts.
-
----
-
-## Summary
-
-| Flow | Status | Critical Issue |
-|------|--------|----------------|
-| Cold Start | ☐ | Container crash / panic |
-| Auth/Security | ☐ | 500 errors / bypass |
-| Live-TV | ☐ | Stream fails / high CPU |
-| VOD | ☐ | Partial files / cleanup |
-
-**Rule**: All ✅ → Release ready. Any ❌ → Fix first.
-
----
-
-## CI Integration
-
-```yaml
-- name: E2E Smoke
-  run: |
-    docker run -d --name smoke -p 8088:8088 xg2g:3.1.5
-    sleep 5
-    curl -f http://localhost:8088/healthz || exit 1
-    docker stop smoke && docker rm smoke
-```
+- Do not use old `xg2g:3.1.5` examples.
+- Do not run without `XG2G_DECISION_SECRET`; live playback startup requires it.
+- Do not treat unauthenticated `/api/v3/*` success as valid. Control-plane API
+  calls must require auth.

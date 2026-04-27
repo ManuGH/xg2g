@@ -126,5 +126,5 @@ Example:
 
 ## 5) Governance: what is not allowed
 - weakening branch protection because of runner queues
-- converting required checks into optional without an explicit CTO decision
+- converting required checks into optional without an explicit maintainer decision
 - adding new required checks without a written rationale (risk, cost, determinism)

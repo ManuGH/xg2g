@@ -43,6 +43,7 @@ type startProfileResolution struct {
 	publicRequestProfile  string
 	effectiveProfileID    string
 	profileSpec           model.ProfileSpec
+	sourceProfile         *playbackprofile.SourceProfile
 	operatorSnapshot      profiles.OperatorOverrideSnapshot
 	hostPressureBand      playbackprofile.HostPressureBand
 	hostOverrideApplied   bool
@@ -132,6 +133,42 @@ func (s *Service) lookupStartCapability(serviceRef string) *scan.Capability {
 	return nil
 }
 
+func startSourceProfileFromCapability(capability *scan.Capability) *playbackprofile.SourceProfile {
+	if capability == nil {
+		return nil
+	}
+	normalized := capability.Normalized()
+	if !normalized.Usable() {
+		return nil
+	}
+
+	source := playbackprofile.SourceProfile{
+		Container:        normalized.Container,
+		VideoCodec:       normalized.VideoCodec,
+		AudioCodec:       normalized.AudioCodec,
+		BitrateKbps:      normalized.StableBitrateKbps(),
+		Width:            normalized.Width,
+		Height:           normalized.Height,
+		FPS:              normalized.FPS,
+		Interlaced:       normalized.Interlaced,
+		AudioChannels:    normalized.AudioChannels,
+		AudioBitrateKbps: normalized.AudioBitrateKbps,
+	}
+	if source.Container == "" &&
+		source.VideoCodec == "" &&
+		source.AudioCodec == "" &&
+		source.BitrateKbps == 0 &&
+		source.Width == 0 &&
+		source.Height == 0 &&
+		source.FPS == 0 &&
+		!source.Interlaced &&
+		source.AudioChannels == 0 &&
+		source.AudioBitrateKbps == 0 {
+		return nil
+	}
+	return &source
+}
+
 func detectStartHardwareState() startHardwareState {
 	defaultBackend := hardware.PreferredGPUBackend()
 	return startHardwareState{
@@ -216,6 +253,7 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 	resolution := startProfileResolution{
 		requestedPlaybackMode: requestedPlaybackMode,
 		publicRequestProfile:  profiles.PublicProfileName(reqProfileID),
+		sourceProfile:         startSourceProfileFromCapability(capability),
 	}
 	operatorCfg := s.deps.PlaybackOperator()
 	resolution.effectiveProfileID, resolution.operatorSnapshot = profiles.ResolveRequestedProfileWithSourceOperatorOverride(reqProfileID, string(intent.Mode), intent.ServiceRef, operatorCfg)
@@ -496,6 +534,7 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
 	session.ContextData = buildStartRequestParams(intent, resolution)
 	session.PlaybackTrace = &model.PlaybackTrace{
+		Source:              resolution.sourceProfile,
 		RequestProfile:      resolution.publicRequestProfile,
 		RequestedIntent:     resolution.publicRequestProfile,
 		ResolvedIntent:      resolution.resolvedIntent,
@@ -686,7 +725,7 @@ func requestedCodecsFromClientCaps(intent Intent, requestedPlaybackMode string) 
 	if requestedPlaybackMode == "native_hls" || requestedPlaybackMode == "" {
 		source := normalize.Token(clientCaps.ClientCapsSource)
 		if source == capabilities.ClientCapsSourceRuntime || source == capabilities.ClientCapsSourceRuntimePlusFam {
-			if clientCapsHasCodec(clientCaps.VideoCodecs, "av1") {
+			if autocodec.ClientAV1PlaybackAllowed(*clientCaps, clientFamilyForIntent(intent)) {
 				codecs = append(codecs, "av1")
 			}
 		}
@@ -722,9 +761,24 @@ func requestedCodecsFromClientMatrix(intent Intent, requestedPlaybackMode string
 func allowedRequestedCodecsForClient(intent Intent, requestedPlaybackMode string) []string {
 	canonicalCaps := normalizedClientCaps(intent.ClientCaps)
 	if canonicalCaps != nil && len(canonicalCaps.VideoCodecs) > 0 {
-		return mergeRequestedCodecLists(preferredRequestedCodecOrder(canonicalCaps.VideoCodecs), matrixFallbackVideoCodecs(intent, requestedPlaybackMode))
+		codecs := preferredRequestedCodecOrder(canonicalCaps.VideoCodecs)
+		if !autocodec.ClientAV1PlaybackAllowed(*canonicalCaps, clientFamilyForIntent(intent)) {
+			codecs = removeRequestedCodec(codecs, "av1")
+		}
+		return mergeRequestedCodecLists(codecs, matrixFallbackVideoCodecs(intent, requestedPlaybackMode))
 	}
 	return matrixFallbackVideoCodecs(intent, requestedPlaybackMode)
+}
+
+func removeRequestedCodec(codecs []string, blocked string) []string {
+	out := make([]string, 0, len(codecs))
+	for _, codec := range codecs {
+		if normalize.Token(codec) == blocked {
+			continue
+		}
+		out = append(out, codec)
+	}
+	return out
 }
 
 func matrixFallbackVideoCodecs(intent Intent, requestedPlaybackMode string) []string {
@@ -735,6 +789,7 @@ func matrixFallbackVideoCodecs(intent Intent, requestedPlaybackMode string) []st
 		case playbackprofile.ClientSafariNative,
 			playbackprofile.ClientIOSSafariNative,
 			playbackprofile.ClientFirefoxHLSJS,
+			playbackprofile.ClientAndroidTVBrowser,
 			playbackprofile.ClientChromiumHLSJS:
 			return []string{"h264"}
 		}
@@ -749,7 +804,7 @@ func matrixFallbackVideoCodecs(intent Intent, requestedPlaybackMode string) []st
 	switch clientFamily {
 	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
 		return []string{"hevc", "h264"}
-	case playbackprofile.ClientFirefoxHLSJS, playbackprofile.ClientChromiumHLSJS:
+	case playbackprofile.ClientFirefoxHLSJS, playbackprofile.ClientAndroidTVBrowser, playbackprofile.ClientChromiumHLSJS:
 		return []string{"h264"}
 	default:
 		return nil

@@ -230,8 +230,8 @@ func (o *Orchestrator) startPipeline(
 		SessionID: e.SessionID,
 		Mode:      ports.ModeLive, // Default
 		Format:    ports.FormatHLS,
-		Quality:   ports.QualityStandard, // Hardcoded for simplified ProfileSpec mapping for now
-		Profile:   currentProfileSpec,    // Pass through resolved profile (GPU, codec, quality)
+		Quality:   streamQualityForProfileSpec(currentProfileSpec),
+		Profile:   currentProfileSpec, // Pass through resolved profile (GPU, codec, quality)
 		Source: ports.StreamSource{
 			ID:        sessionCtx.ServiceRef,
 			Type:      ports.SourceTuner, // Default assumes Tuner/Ref
@@ -317,12 +317,26 @@ func (o *Orchestrator) startPipeline(
 			effectiveProfile = finalized
 		}
 	}
-	o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(_ *model.SessionRecord, trace *model.PlaybackTrace) {
+	o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(r *model.SessionRecord, trace *model.PlaybackTrace) {
+		r.Profile = effectiveProfile
 		trace.InputKind = string(spec.Source.Type)
 		applyTraceEffectiveProfile(trace, effectiveProfile, string(spec.Source.Type))
 	})
 
 	return handle, effectiveProfile, nil
+}
+
+func streamQualityForProfileSpec(profile model.ProfileSpec) ports.QualityProfile {
+	if !profile.TranscodeVideo {
+		return ports.QualityStandard
+	}
+	if profile.PolicyModeHint == ports.RuntimeModeHQ50 {
+		return ports.QualityHigh
+	}
+	if profiles.PublicProfileName(profile.Name) == profiles.PublicProfileQuality {
+		return ports.QualityHigh
+	}
+	return ports.QualityStandard
 }
 
 func (o *Orchestrator) waitForReady(
@@ -354,6 +368,7 @@ func (o *Orchestrator) waitForReady(
 	for {
 		// Check process health first
 		status := o.Pipeline.Health(ctx, handle)
+		o.updatePlaybackRuntimeDiagnosticsBestEffort(hbCtx, e.SessionID, status)
 		if !status.Healthy {
 			return false, model.RProcessEnded, "process died during startup: " + status.Message
 		}
@@ -551,6 +566,8 @@ func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunH
 	const maxInterval = 5 * time.Second
 
 	status := o.Pipeline.Health(ctx, handle)
+	sessionID := sessionIDFromRunHandle(handle)
+	o.updatePlaybackRuntimeDiagnosticsBestEffort(ctx, sessionID, status)
 	if !status.Healthy {
 		// Process already exited.
 		return nil
@@ -566,6 +583,7 @@ func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunH
 			return ctx.Err()
 		case <-ticker.C:
 			status := o.Pipeline.Health(ctx, handle)
+			o.updatePlaybackRuntimeDiagnosticsBestEffort(ctx, sessionID, status)
 			if !status.Healthy {
 				// Process exited
 				return nil
@@ -821,6 +839,7 @@ func resetForFallbackRestart(r *model.SessionRecord, now time.Time) {
 		r.PlaybackTrace.StopClass = model.PlaybackStopClassNone
 		r.PlaybackTrace.FirstFrameAtUnix = 0
 		r.PlaybackTrace.FFmpegPlan = nil
+		r.PlaybackTrace.RuntimeDiagnostics = nil
 	}
 }
 

@@ -103,7 +103,7 @@ function walkDir(dir: string) {
     const stat = fs.statSync(fullPath);
 
     if (stat.isDirectory()) {
-      if (file !== 'client-ts' && file !== 'client-legacy') { // Exclude generated clients
+      if (file !== 'client-ts') { // Exclude generated clients
         walkDir(fullPath);
       }
     } else if (fullPath.endsWith('.ts') || fullPath.endsWith('.tsx')) {

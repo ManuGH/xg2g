@@ -2922,7 +2922,7 @@ func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasure
 		RequestID:        "req-live-native-av1-ts",
 		Capabilities: &capabilities.PlaybackCapabilities{
 			CapabilitiesVersion: 3,
-			Containers:          []string{"mp4", "ts"},
+			Containers:          []string{"mp4", "ts", "fmp4"},
 			VideoCodecs:         []string{"av1", "hevc", "h264"},
 			VideoCodecSignals: []capabilities.VideoCodecSignal{
 				{Codec: "av1", Supported: true, Smooth: &av1Smooth, PowerEfficient: &av1Efficient},
@@ -2938,6 +2938,7 @@ func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasure
 			RuntimeProbeVersion:  2,
 			ClientFamilyFallback: "ios_safari_native",
 			ClientCapsSource:     "runtime_plus_family",
+			DeviceContext:        &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
 		},
 	})
 	require.Nil(t, err)

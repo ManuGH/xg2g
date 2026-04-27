@@ -69,10 +69,10 @@
 
   /* Dual-Accent System */
   /* Blue = Action/Interactive */
-  --accent-action: #4ee6c1;
-  --accent-action-hover: #8af4d7;
-  --accent-action-pressed: #2db795;
-  --accent-action-subtle: rgba(78, 230, 193, 0.14);
+  --accent-action: #60a5fa;
+  --accent-action-hover: #93c5fd;
+  --accent-action-pressed: #2563eb;
+  --accent-action-subtle: rgba(96, 165, 250, 0.14);
 
   /* Amber = Live/Recording */
   --accent-live: #ffb24a;
@@ -116,7 +116,7 @@
   --shadow-shell-safe: 0 24px 54px rgba(0, 0, 0, 0.44);
   --shadow-stage: 0 42px 96px rgba(0, 0, 0, 0.46);
   --shadow-accent-live: 0 20px 52px rgba(255, 178, 74, 0.17);
-  --shadow-accent-action: 0 20px 52px rgba(78, 230, 193, 0.18);
+  --shadow-accent-action: 0 20px 52px rgba(96, 165, 250, 0.18);
   --shadow-ring-action: 0 0 0 1px color-mix(in srgb, var(--accent-action) 35%, transparent);
   --shadow-status-success: 0 0 6px rgba(52, 211, 153, 0.4);
   --shadow-status-warning: 0 0 6px rgba(251, 191, 36, 0.4);
