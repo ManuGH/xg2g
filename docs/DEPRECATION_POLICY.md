@@ -13,9 +13,9 @@ are deprecated and removed.
 
 ## Active Deprecations
 
-| Item | Replacement | Current Stage | Remove In |
-|:---|:---|:---|:---|
-| `XG2G_STREAM_PORT` | `XG2G_E2_STREAM_PORT` only when an explicit stream-port override is required | Stage 2: fail-start | v3.5.0 |
+| Item | Replacement | Remove In |
+|:---|:---|:---|
+| XG2G_STREAM_PORT | XG2G_E2_STREAM_PORT | v3.5.0 |
 
 Legacy receiver aliases such as `XG2G_STREAM_PORT`, `XG2G_OWI_*`, and
 `XG2G_USE_WEBIF_STREAMS` are not accepted by the daemon. Operators should use

@@ -75,3 +75,16 @@ func TestRecordRuntimeDiagnostics_ParsesProgressAndSourceWarnings(t *testing.T) 
 	assert.Equal(t, 1, status.Diagnostics.CorruptDecodedFrames)
 	assert.Contains(t, status.Diagnostics.LastWarning, "corrupt decoded frame")
 }
+
+func TestRecordRuntimeDiagnostics_SkipsWarningChecksForProgressLines(t *testing.T) {
+	adapter := &LocalAdapter{runtimeDiagnostics: make(map[ports.RunHandle]ports.RuntimeDiagnostics)}
+	handle := ports.RunHandle("session-1-124")
+
+	adapter.recordRuntimeDiagnostics(handle, "frame=42 fps=50.0 speed=1.0x error", "frame=42 fps=50.0 speed=1.0x error")
+
+	status := adapter.Health(nil, handle)
+	assert.Equal(t, 42, status.Diagnostics.FrameCount)
+	assert.Equal(t, 50.0, status.Diagnostics.FPS)
+	assert.Empty(t, status.Diagnostics.LastWarning)
+	assert.Equal(t, 0, status.Diagnostics.CorruptDecodedFrames)
+}

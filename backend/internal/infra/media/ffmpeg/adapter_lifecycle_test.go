@@ -295,6 +295,32 @@ func TestHealth_MonitorRemovedHandleReturnsDetail(t *testing.T) {
 	assert.Equal(t, "copy output missing codec parameters", status.Message)
 }
 
+func TestRemoveActiveProcessLockedPrunesRuntimeStateAndArchivesDetail(t *testing.T) {
+	handle := ports.RunHandle("session-4-101")
+	adapter := &LocalAdapter{
+		activeProcs: map[ports.RunHandle]*exec.Cmd{
+			handle: exec.Command("true"),
+		},
+		finalizedProfiles: map[ports.RunHandle]ports.ProfileSpec{
+			handle: {Name: "h264"},
+		},
+		runtimeDiagnostics: map[ports.RunHandle]ports.RuntimeDiagnostics{
+			handle: {FrameCount: 10},
+		},
+		processDetails: map[ports.RunHandle]string{
+			handle: "copy output missing codec parameters",
+		},
+	}
+
+	adapter.removeActiveProcessLocked(handle, true)
+
+	assert.NotContains(t, adapter.activeProcs, handle)
+	assert.NotContains(t, adapter.finalizedProfiles, handle)
+	assert.NotContains(t, adapter.runtimeDiagnostics, handle)
+	assert.NotContains(t, adapter.processDetails, handle)
+	assert.Equal(t, "copy output missing codec parameters", adapter.processStatusMessage(handle, "process not found"))
+}
+
 func TestHealth_ActiveHandleIsHealthy(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
