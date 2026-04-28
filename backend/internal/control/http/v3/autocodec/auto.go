@@ -48,7 +48,7 @@ func ResolveAutoTranscodeCodecs(caps capabilities.PlaybackCapabilities) []string
 		return nil
 	}
 
-	if av1 := signalFor("av1"); av1 != nil && av1.Supported && av1.PowerEfficient != nil && *av1.PowerEfficient {
+	if av1 := signalFor("av1"); av1 != nil && av1.Supported && ClientAV1PlaybackAllowed(caps, caps.ClientFamilyFallback) {
 		out = append(out, "av1")
 	}
 
@@ -112,6 +112,9 @@ func PickNativeHLSProfile(raw, clientFamily string, clientCaps *capabilities.Pla
 }
 
 func PickNativeHLSProfileForClientAndHost(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
+	if clientCaps != nil && !ClientAV1PlaybackAllowed(*clientCaps, clientFamily) {
+		raw = joinCodecsWithout(raw, "av1")
+	}
 	if picked := PickNativeHLSProfileForCodecsAndHost(raw, clientFamily, hwaccelMode, hostRuntime); picked != "" {
 		return picked
 	}
@@ -168,7 +171,7 @@ func PickNativeHLSProfileForCapabilitiesAndHost(clientFamily string, clientCaps 
 	candidates := make([]candidate, 0, 2)
 	if clientCaps != nil &&
 		playbackCapabilitiesHaveCodec(clientCaps.VideoCodecs, "av1") &&
-		normalize.Token(clientCaps.ClientCapsSource) != capabilities.ClientCapsSourceFamilyFallback {
+		ClientAV1PlaybackAllowed(*clientCaps, family) {
 		if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(profiles.ProfileAV1HW); ok && hardware.IsHardwareEncoderReady(requiredCodec) {
 			candidates = append(candidates, newCandidate(profiles.ProfileAV1HW, "av1", measuredProbeElapsedForCodec("av1"), 2))
 		}
@@ -515,6 +518,21 @@ func ParseCodecList(raw string) []string {
 		out = append(out, t)
 	}
 	return out
+}
+
+func joinCodecsWithout(raw string, blocked string) string {
+	codecs := ParseCodecList(raw)
+	if len(codecs) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(codecs))
+	for _, codec := range codecs {
+		if normalize.Token(codec) == blocked {
+			continue
+		}
+		out = append(out, codec)
+	}
+	return strings.Join(out, ",")
 }
 
 func capabilityForAutoCodec(codec string) hardware.HardwareEncoderCapability {

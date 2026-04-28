@@ -1,8 +1,10 @@
-# Provably Hermetic Go Build + Codegen Pipeline
+# Hermetic Go Build + Codegen Pipeline
 
 ## Overview
 
-xg2g provides **provably hermetic Go builds and code generation** - the build system works offline, without caches, without toolchain downloads, and produces deterministic output.
+xg2g provides hermetic Go builds and code generation: the build system works
+offline, without warm caches, without toolchain downloads, and produces
+deterministic output.
 
 **Scope**: This proof covers the **Go build pipeline** and **code generation from OpenAPI specs**. Runtime dependencies (FFmpeg, certificates) and test execution are outside this guarantee's scope.
 
@@ -67,7 +69,7 @@ Generated code (deterministic output)
 
 ## Enforcement Mechanisms
 
-### CTO Gate: Contract Enforcement
+### Codegen Contract Gate
 
 **Script**: [`backend/scripts/ci/ctogate_hermetic_codegen.sh`](../backend/scripts/ci/ctogate_hermetic_codegen.sh)
 
@@ -77,7 +79,7 @@ Generated code (deterministic output)
 
 ### Adversarial Offline Proof
 
-**CI Step**: "Hermetic Build Proof (Adversarial-Grade)"
+**CI Step**: "Hermetic Build Proof"
 
 Environment:
 
@@ -134,14 +136,13 @@ git diff --exit-code -- backend/internal/api backend/internal/control/http/v3
 
 ### CI Proof
 
-See [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) - step
-"Hermetic Build Proof (Adversarial-Grade)"
-
-Every push proves the guarantee under adversarial conditions.
+See [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) for the current
+PR gate and [`mk/verify.mk`](../mk/verify.mk) for the generated-artifact gates.
+The local offline build path is `make build-offline`.
 
 ## Explicit Boundaries (Out of Scope)
 
-### ❌ Runtime Hermeticity
+### Runtime Hermeticity
 
 - **FFmpeg**: External runtime dependency (not part of Go build)
 - **Certificates**: System trust store (OS-level)
@@ -149,14 +150,14 @@ Every push proves the guarantee under adversarial conditions.
 
 **Rationale**: These are runtime concerns, distinct from build hermeticity.
 
-### ❌ Test Hermeticity
+### Test Hermeticity
 
 - Unit tests may depend on external services (mock receivers, etc.)
 - Integration tests may require network access
 
 **Rationale**: Test hermeticity requires separate proof with test-specific constraints. Current proof is **build + codegen only**.
 
-### ❌ OS Package Dependencies
+### OS Package Dependencies
 
 - System packages outside Go ecosystem (e.g., `apt install`)
 - Use Docker base image pinning for full isolation
@@ -167,7 +168,7 @@ Every push proves the guarantee under adversarial conditions.
 
 ### Reproducible Builds
 
-Same input → Same output, always. Critical for:
+Same input, same output, always. Critical for:
 
 - Build artifact verification
 - Supply chain auditing
@@ -211,7 +212,7 @@ Every CI run includes:
 
 This guarantee is **mechanically enforced**, not manually maintained:
 
-- **CTO Gate** prevents contract violations in CI
+- **Codegen contract gate** prevents contract violations in CI
 - **Adversarial proof** runs on every push
 - **Quality gates** enforce invariants before merge
 
@@ -229,7 +230,7 @@ governance and generated code trust.
 
 ---
 
-**This is not a convention - it's a proven, mechanically enforced guarantee.**
+**This is not a convention - it is a mechanically enforced guarantee.**
 
 Verified as of: January 2026  
 CI proof: See latest `main` branch workflow runs

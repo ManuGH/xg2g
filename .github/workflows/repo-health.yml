@@ -33,6 +33,9 @@ jobs:
         run: |
           "$(go env GOPATH)/bin/actionlint" -color
 
+      - name: Verify workflow action refs are SHA-pinned
+        run: ./backend/scripts/verify-action-pins.sh --local-only
+
   check-large-files:
     name: Prevent Large Files
     runs-on: ubuntu-latest

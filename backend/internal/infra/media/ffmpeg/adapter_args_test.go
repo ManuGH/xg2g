@@ -494,7 +494,7 @@ func TestBuildArgs_SafariHQAllowlistUsesHighBitrate25pTranscode(t *testing.T) {
 
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Equal(t, "bwdif=mode=send_field:parity=auto:deint=all", vf)
+	assert.Equal(t, "bwdif=mode=send_frame:parity=auto:deint=all", vf)
 
 	preset, ok := valueAfter(args, "-preset")
 	require.True(t, ok)
@@ -1401,7 +1401,7 @@ func TestBuildArgs_CPUProfileDriven(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 	assert.Contains(t, args, "libx264")
-	assert.Contains(t, args, "bwdif=mode=send_field:parity=auto:deint=all")
+	assert.Contains(t, args, "bwdif=mode=send_frame:parity=auto:deint=all")
 	assert.Contains(t, args, "veryfast")
 	assert.Contains(t, args, "18")
 	assert.Contains(t, args, "-maxrate")
@@ -1950,6 +1950,7 @@ func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T
 }
 
 func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
+	t.Setenv("XG2G_ADAPTIVE_QUALITY_ENABLED", "false")
 	hardware.SetPathCapabilities(map[string]hardware.HardwarePathCapability{
 		hardware.PathVAAPIEncodeOnlyInterlacedAV1: {
 			Verified: true,
@@ -1998,11 +1999,97 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 	assert.NotContains(t, args, "-hwaccel", "verified AV1 uses encode-only even when full VAAPI was requested")
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "bwdif=")
+	assert.Contains(t, vf, "bwdif=mode=send_frame:parity=auto:deint=all")
 	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
 	assert.Contains(t, vf, "format=nv12,hwupload")
+	outputFPS, ok := valueAfter(args, "-r")
+	require.True(t, ok)
+	assert.Equal(t, "25", outputFPS)
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, "50", gop)
 	assert.Contains(t, args, "av1_vaapi")
 	assert.NotContains(t, args, "h264_vaapi")
+}
+
+func TestBuildArgs_AV1HWHQ50ServiceRefPreserves50fpsMotion(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_HQ50_SERVICE_REFS", "1:0:19:91:4:85:C00000:0:0:0:")
+	hardware.SetPathCapabilities(map[string]hardware.HardwarePathCapability{
+		hardware.PathVAAPIEncodeOnlyInterlacedAV1: {
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   "synthetic yavg 118.8",
+		},
+	})
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.vaapiEncoders = map[string]bool{
+		"h264_vaapi": true,
+		"av1_vaapi":  true,
+	}
+	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
+		return &vod.StreamInfo{
+			Container: "ts",
+			Video: vod.VideoStreamInfo{
+				CodecName:  "h264",
+				Interlaced: true,
+			},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-hq50-service-ref",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityHigh,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			PolicyModeHint: ports.RuntimeModeHQ25,
+			Container:      "fmp4",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			Deinterlace:    true,
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "1:0:19:91:4:85:C00000:0:0:0:",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	streamURL := "http://127.0.0.1:17999/1:0:19:91:4:85:C00000:0:0:0:"
+	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	require.NoError(t, err)
+	args := plan.args
+
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "bwdif=mode=send_field:parity=auto:deint=all")
+	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
+	assert.NotContains(t, args, "-r", "HQ50 must not clamp output framerate")
+	gop, ok := valueAfter(args, "-g")
+	require.True(t, ok)
+	assert.Equal(t, "100", gop, "HQ50 fMP4 startup segments should keep a 50fps GOP cadence")
+	maxrate, ok := valueAfter(args, "-maxrate")
+	require.True(t, ok)
+	assert.Equal(t, "12000k", maxrate)
+	bufsize, ok := valueAfter(args, "-bufsize")
+	require.True(t, ok)
+	assert.Equal(t, "24000k", bufsize)
+	assert.Contains(t, args, "av1_vaapi")
+	assert.Equal(t, ports.RuntimeModeHQ50, plan.effectiveProfile.EffectiveRuntimeMode)
+	assert.Equal(t, ports.RuntimeModeSourceEnvOverride, plan.effectiveProfile.EffectiveModeSource)
 }
 
 func TestBuildArgs_AV1HWInterlacedDoesNotUseOnlyVerifiedFullPath(t *testing.T) {
@@ -2185,7 +2272,7 @@ func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok, "x264 params should be present")
-	assert.Contains(t, x264Params, "keyint=300:min-keyint=300:scenecut=0")
+	assert.Contains(t, x264Params, "keyint=150:min-keyint=150:scenecut=0")
 }
 
 func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
@@ -2226,13 +2313,13 @@ func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
 	require.NoError(t, err)
 	x264Params1, ok := valueAfter(args1, "-x264-params")
 	require.True(t, ok, "x264 params should be present in first run")
-	assert.Contains(t, x264Params1, "keyint=96:min-keyint=96:scenecut=0")
+	assert.Contains(t, x264Params1, "keyint=50:min-keyint=50:scenecut=0")
 
 	args2, err := adapter.buildArgs(context.Background(), spec, "http://example.com/live2")
 	require.NoError(t, err)
 	x264Params2, ok := valueAfter(args2, "-x264-params")
 	require.True(t, ok, "x264 params should be present in second run")
-	assert.Contains(t, x264Params2, "keyint=96:min-keyint=96:scenecut=0")
+	assert.Contains(t, x264Params2, "keyint=50:min-keyint=50:scenecut=0")
 	assert.Equal(t, 1, probeCalls, "second run should reuse cached fps without probing again")
 }
 
@@ -2419,7 +2506,7 @@ func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
-	assert.Contains(t, x264Params, "keyint=300:min-keyint=300:scenecut=0")
+	assert.Contains(t, x264Params, "keyint=150:min-keyint=150:scenecut=0")
 }
 
 func TestBuildArgs_SkipsFPSProbeForStreamRelayInput(t *testing.T) {
@@ -2496,5 +2583,5 @@ func TestBuildArgs_UsesCachedFPSForStreamRelayInput(t *testing.T) {
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
-	assert.Contains(t, x264Params, "keyint=300:min-keyint=300:scenecut=0")
+	assert.Contains(t, x264Params, "keyint=150:min-keyint=150:scenecut=0")
 }

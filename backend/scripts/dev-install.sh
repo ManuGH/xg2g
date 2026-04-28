@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_EXAMPLE="${REPO_ROOT}/.env.example"
 ENV_FILE="${REPO_ROOT}/.env"
 WEBUI_DIR="${REPO_ROOT}/frontend/webui"
+NODE_TOOLCHAIN_CHECK="${REPO_ROOT}/backend/scripts/check-node-toolchain.sh"
 LIB_ENV="${REPO_ROOT}/backend/scripts/lib/env.sh"
 
 source "${LIB_ENV}"
@@ -59,7 +60,9 @@ warn_placeholders() {
 
 main() {
   need_cmd openssl
+  need_cmd node
   need_cmd npm
+  "${NODE_TOOLCHAIN_CHECK}"
 
   ensure_env_file
   ensure_decision_secret

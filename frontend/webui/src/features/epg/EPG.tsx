@@ -71,6 +71,35 @@ function createEpgError(
   });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringifyUnknown(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error && value.message) return value.message;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatTimerCreateError(error: unknown): string {
+  const body = isRecord(error) ? error.body : undefined;
+  if (isRecord(body) && typeof body.title === 'string' && body.title) {
+    return body.title;
+  }
+  if (body !== undefined) {
+    return stringifyUnknown(body);
+  }
+  return stringifyUnknown(error);
+}
+
+function isAbortError(error: unknown): boolean {
+  return isRecord(error) && error.name === 'AbortError';
+}
+
 export default function EPG({
   channels,
   bouquets = [],
@@ -149,14 +178,9 @@ export default function EPG({
         });
         toast({ kind: 'success', message: t('epg.recordSuccess') });
         loadTimers(); // Refresh feedback immediately
-      } catch (err: any) {
+      } catch (err) {
         debugError(formatError(err));
-        let msg = err.message || JSON.stringify(err);
-        if (err.body?.title) {
-          msg = err.body.title;
-        } else if (err.body) {
-          msg = JSON.stringify(err.body);
-        }
+        const msg = formatTimerCreateError(err);
         toast({ kind: 'error', message: t('epg.recordError', { error: msg }) });
       }
     },
@@ -209,8 +233,7 @@ export default function EPG({
       if (signal.aborted) return;
 
       // Observability (DEV only)
-      const isDev = (import.meta as any).env?.DEV;
-      if (isDev) {
+      if (import.meta.env.DEV) {
         debugLog(
           'EPG Load [%s]',
           state.filters.timeRange === 336 ? 'All' : `${state.filters.timeRange}h`
@@ -224,8 +247,8 @@ export default function EPG({
       }
 
       dispatch({ type: 'LOAD_SUCCESS', payload: { events } });
-    } catch (err: any) {
-      if (err.name === 'AbortError') return;
+    } catch (err) {
+      if (isAbortError(err)) return;
       debugError('EPG load failed:', formatError(err));
       if (isUnauthorizedError(err)) {
         return;
@@ -268,7 +291,7 @@ export default function EPG({
       });
 
       dispatch({ type: 'SEARCH_SUCCESS', payload: { events } });
-    } catch (err: any) {
+    } catch (err) {
       debugError(formatError(err));
       if (isUnauthorizedError(err)) {
         return;

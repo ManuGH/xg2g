@@ -6,7 +6,7 @@ Approved copy for public GitHub surfaces.
 
 **Description**
 
-`Browser-ready HLS gateway for Enigma2. Delivers H.264/AAC/fMP4 and native TS to Safari, iPhone, iPad, Chrome, and modern TVs.`
+`Self-hosted live-TV gateway for Enigma2. MPEG-TS in, browser-ready HLS out for Safari, iPhone, iPad, Chrome, TVs, and operators.`
 
 **Website**
 
@@ -16,11 +16,11 @@ Approved copy for public GitHub surfaces.
 
 ### Option A: xg2g-focused
 
-`Building operator-grade streaming tools for Enigma2 and browser playback.`
+`Building self-hosted streaming tools for Enigma2 and browser playback.`
 
 ### Option B: broader future-proof profile
 
-`Building operator-grade self-hosted streaming and homelab infrastructure tools.`
+`Building self-hosted streaming and homelab infrastructure tools.`
 
 ## Release Description Pattern
 

@@ -253,6 +253,7 @@ func PrefersNativeFMP4Packaging(profile string) bool {
 		ProfileSafariHEVC,
 		ProfileSafariHEVCHW,
 		ProfileSafariHEVCHWLL,
+		ProfileAV1HW,
 		ProfileH264FMP4,
 		ProfileAndroid:
 		return true
@@ -522,13 +523,12 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		applyDVRWindow(&spec, dvrWindowSec)
 	case ProfileSafariHEVC:
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		// Experimental: HEVC Live Transcoding (CPU)
-		// Browser Safari has shown almost-black output on this host when HEVC live
-		// transcodes are packaged as fMP4. Keep browser-native Safari on classic
-		// MPEG-TS HLS; app-native clients can still use fMP4.
+		// HEVC live output must use fMP4/CMAF packaging for native WebKit HLS.
+		// HEVC in MPEG-TS is a fragile path and can surface as black video while
+		// the playlist and segments are still delivered successfully.
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
-		spec.Container = safariFamilyContainer(isSafari)
+		spec.Container = "fmp4"
 		spec.Deinterlace = interlacedOrUnknown(cap)
 		spec.VideoCRF = 22        // Conservative start for x265
 		spec.VideoMaxRateK = 5000 // Strict VBV Cap
@@ -539,11 +539,11 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
 		// GPU-Accelerated HEVC (VAAPI) - Recommended for multi-stream
 		// 10x faster than CPU, ~10% CPU usage per stream
-		// Browser Safari stays on MPEG-TS HLS here as well; the host-specific
-		// HEVC live issue is tied to fMP4 packaging, not the encoder itself.
+		// Keep WebKit on fMP4/CMAF; HEVC in MPEG-TS can be served successfully
+		// by the backend but still fail to present video in native Safari.
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
-		spec.Container = safariFamilyContainer(isSafari)
+		spec.Container = "fmp4"
 		// Respect existing scan truth so progressive HEVC candidates do not enter
 		// the conservative interlaced path and get downgraded to H.264 before launch.
 		spec.Deinterlace = interlacedOrUnknown(cap)

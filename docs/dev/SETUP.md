@@ -5,7 +5,7 @@
 | Tool | Version | Notes |
 | :--- | :--- | :--- |
 | **Go** | 1.25.9+ | Pinned in `backend/go.mod` |
-| **Node.js** | 22+ | Used for WebUI build and tests |
+| **Node.js** | 24 LTS | Pinned in `.node-version`, `.nvmrc`, and `mise.toml` |
 | **Docker** | Recent | Required for container builds and integration tests |
 | **Make** | GNU Make | Build orchestration |
 
@@ -17,6 +17,10 @@ Optional helpers:
   [.devcontainer/devcontainer.json](../../.devcontainer/devcontainer.json) for a
   containerized workstation that bootstraps the repo with the same
   `make install`, `make dev-tools`, and `make doctor` flow.
+
+If you are new to the repository, read the [Repository Map](REPO_MAP.md) after
+setup. It explains the main directories, generated artifacts, and required
+local gates.
 
 ## First-Time Setup
 

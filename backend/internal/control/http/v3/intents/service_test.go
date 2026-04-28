@@ -402,6 +402,68 @@ func TestService_ProcessIntent_StartPersistsCanonicalClientSnapshot(t *testing.T
 	}
 }
 
+func TestService_ProcessIntent_StartPersistsScannerSourceTrace(t *testing.T) {
+	deps := newMockDeps()
+	const serviceRef = "1:0:1:1337:42:99:0:0:0:0:"
+	deps.scanner = &mockChannelScanner{
+		found: true,
+		capability: scan.Capability{
+			ServiceRef:       serviceRef,
+			State:            scan.CapabilityStateOK,
+			Container:        "mpegts",
+			VideoCodec:       "h264",
+			AudioCodec:       "ac3",
+			BitrateKbps:      8000,
+			BitrateMeanKbps:  9500,
+			BitratePeakKbps:  12000,
+			BitrateSamples:   4,
+			Width:            1920,
+			Height:           1080,
+			FPS:              25,
+			Interlaced:       true,
+			AudioChannels:    2,
+			AudioBitrateKbps: 384,
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-source-trace",
+		ServiceRef:    serviceRef,
+		Params:        map[string]string{"profile": "high"},
+		CorrelationID: "corr-source-trace",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil || deps.store.putSession.PlaybackTrace == nil {
+		t.Fatal("expected playback trace to be persisted")
+	}
+	source := deps.store.putSession.PlaybackTrace.Source
+	if source == nil {
+		t.Fatal("expected scanner source trace to be persisted")
+	}
+	if source.Container != "ts" || source.VideoCodec != "h264" || source.AudioCodec != "ac3" {
+		t.Fatalf("expected normalized media truth in source trace, got %#v", source)
+	}
+	if source.BitrateKbps != 10200 {
+		t.Fatalf("expected stable bitrate 10200kbps, got %#v", source)
+	}
+	if source.Width != 1920 || source.Height != 1080 || source.FPS != 25 || !source.Interlaced {
+		t.Fatalf("expected video source details, got %#v", source)
+	}
+	if source.AudioChannels != 2 || source.AudioBitrateKbps != 384 {
+		t.Fatalf("expected audio source details, got %#v", source)
+	}
+}
+
 func TestService_ProcessIntent_StartPreservesExplicitQualityIntentInTrace(t *testing.T) {
 	deps := newMockDeps()
 	svc := NewService(deps)

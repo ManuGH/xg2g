@@ -46,6 +46,26 @@ describe('playbackClientFamily', () => {
     expect(detectPlaybackClientFamily(null)).toBe('firefox_hlsjs');
   });
 
+  it('detects NVIDIA Shield browser as Android TV browser', () => {
+    setUserAgent('Mozilla/5.0 (Linux; Android 11; SHIELD Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    expect(detectPlaybackClientFamily(null)).toBe('android_tv_browser');
+
+    const fallback = fallbackPlaybackCapabilitiesForClientFamily('android_tv_browser', 'live');
+    expect(fallback.deviceType).toBe('android_tv');
+    expect(fallback.videoCodecs).toEqual(['h264']);
+    expect(fallback.hlsEngines).toEqual(['hlsjs']);
+  });
+
+  it('detects Fire TV build models as Android TV browsers', () => {
+    setUserAgent('Mozilla/5.0 (Linux; Android 11; AFTKRT Build/RS8141) AppleWebKit/537.36 (KHTML, like Gecko) Silk/124.0 Safari/537.36');
+    expect(detectPlaybackClientFamily(null)).toBe('android_tv_browser');
+  });
+
+  it('detects Vega OS Fire TV build models without Android in the user agent', () => {
+    setUserAgent('Mozilla/5.0 (Linux; Vega OS 1.1; AFTCL001) AppleWebKit/537.36 (KHTML, like Gecko) Silk/124.0 Safari/537.36');
+    expect(detectPlaybackClientFamily(null)).toBe('android_tv_browser');
+  });
+
   it('keeps family fallback capability variants scoped by playback type', () => {
     const live = fallbackPlaybackCapabilitiesForClientFamily('safari_native', 'live');
     const recording = fallbackPlaybackCapabilitiesForClientFamily('safari_native', 'recording');

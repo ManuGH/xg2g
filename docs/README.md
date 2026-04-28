@@ -1,51 +1,68 @@
-# xg2g Documentation Portal
+# xg2g Documentation
 
-[![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+This is the documentation entrypoint. Use it as the router, not as a dumping
+ground for implementation detail.
 
-xg2g documentation is split by audience so new users, operators, and
-contributors can reach the right surface quickly.
+## Read First
 
-## Start Here
+| Need | Start Here |
+| :--- | :--- |
+| Run xg2g for the first time | [Product README](../README.md) |
+| Understand the repository | [Repository Map](dev/REPO_MAP.md) |
+| Set up a dev machine | [Developer Setup](dev/SETUP.md) |
+| Deploy or operate the service | [Operations Index](ops/README.md) |
+| Understand architecture and ownership | [Architecture Index](arch/README.md) |
+| Work on the WebUI | [WebUI Index](webui/README.md) |
+| Prepare a release | [Release Index](release/README.md) |
 
-- Product overview: [README.md](../README.md)
-- API docs: [manugh.github.io/xg2g](https://manugh.github.io/xg2g/)
-- Design source of truth: [decision/SPEC_INDEX.md](decision/SPEC_INDEX.md)
+## Documentation Areas
 
-## Evaluate xg2g
+| Area | Purpose |
+| :--- | :--- |
+| [guides/](guides/README.md) | User-facing setup, configuration, and reference material. |
+| [ops/](ops/README.md) | Deployment, runtime contracts, runbooks, incident response, and security operations. |
+| [arch/](arch/README.md) | System design, package ownership, playback decision rules, codec/container behavior. |
+| [dev/](dev/README.md) | Contributor setup, repo map, local workflow, workspace hygiene. |
+| [webui/](webui/README.md) | UI contracts, telemetry, error mapping, frontend/backend consumption rules. |
+| [ADR/](ADR/README.md) | Accepted architecture decisions and historical context. |
+| [decision/](decision/SPEC_INDEX.md) | Normative decision-engine specs. |
+| [release/](release/README.md) | Release templates, release notes, and GitHub copy. |
 
-- [Architecture Overview](arch/ARCHITECTURE.md)
-- [Playback topology](arch/ENIGMA2_STREAMING_TOPOLOGY.md)
-- [Product policy](PRODUCT_POLICY.md)
-- [ADR index](ADR/README.md)
+## Operational Shortcuts
 
-## Operate xg2g
+| Task | Document |
+| :--- | :--- |
+| Configure xg2g | [Configuration Guide](guides/CONFIGURATION.md) |
+| Deploy with systemd/Compose | [Deployment Guide](ops/DEPLOYMENT.md) |
+| Debug failed CI | [CI Failure Playbook](ops/CI_FAILURE_PLAYBOOK.md) |
+| Debug playback decision behavior | [Decision Incident Playbook](ops/INCIDENT_PLAYBOOK_DECISION.md) |
+| Check browser/client playback policy | [Client Profiles](ops/CLIENT_PROFILES.md) |
+| Check codec/container rules | [Codec Matrix](arch/CODEC_MATRIX.md) |
+| Operate Safari/iOS repro checks | [Safari Repro Run](ops/SAFARI_REPRO_RUN.md) |
+| Review OpenAPI/API docs | [Published API Docs](https://manugh.github.io/xg2g/) |
 
-- [Configuration Guide](guides/CONFIGURATION.md)
-- [Deployment Guide](ops/DEPLOYMENT.md)
-- [Observability](ops/OBSERVABILITY.md)
-- [Runtime/state/session consolidation milestone](ops/RUNTIME_STATE_SESSION_CONSOLIDATION_2026-04-09.md)
-- [Security Policy](../SECURITY.md)
-- [Systemd + Compose runbook](ops/RUNBOOK_SYSTEMD_COMPOSE.md)
+## Maintenance Rules
 
-## Build and Contribute
+- Keep category README files as navigation only. Put detailed behavior in the
+  linked contract, runbook, or architecture document.
+- Update [docs/ops/CLIENT_PROFILES.md](ops/CLIENT_PROFILES.md) when browser
+  family or runtime-probe behavior changes.
+- Update [docs/arch/CODEC_MATRIX.md](arch/CODEC_MATRIX.md) when codec,
+  container, or transcode-target behavior changes.
+- Update [docs/dev/REPO_MAP.md](dev/REPO_MAP.md) when source ownership,
+  generated artifacts, or required gates change.
+- The root [README.md](../README.md) is generated from
+  [backend/templates/README.md.tmpl](../backend/templates/README.md.tmpl); edit
+  the template as the source of truth.
 
-- [Development Guide](guides/DEVELOPMENT.md)
-- [Developer Setup](dev/SETUP.md)
-- [Contributing](../CONTRIBUTING.md)
-- [Release template](release/RELEASE_TEMPLATE.md)
-- [GitHub presence copy](release/GITHUB_PRESENCE_COPY.md)
-- [CI Failure Playbook](ops/CI_FAILURE_PLAYBOOK.md)
+## Drift Checks
 
-## Structure
+Before opening a PR that changes normative docs, run the smallest relevant
+verification gate plus:
 
-- [ADR/](ADR/) explains why major decisions were made.
-- [ops/](ops/) contains runbooks, deployment contracts, and incident guidance.
-- [arch/](arch/) covers system design and service boundaries.
-- [dev/](dev/) documents local setup and contributor workflows.
+```bash
+git diff --check
+```
 
-## Governance
-
-Changes to normative documentation must stay in sync with
-[decision/SPEC_INDEX.md](decision/SPEC_INDEX.md) and the
-[PRODUCT_POLICY.md](PRODUCT_POLICY.md). CI enforces required checks on pull
-requests to reduce documentation drift.
+If generated artifacts changed, run the matching generator/verification target
+before committing.

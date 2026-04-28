@@ -55,7 +55,7 @@ describe('User-Facing Error Matrix (ERROR_MAP.md)', () => {
         code: scenario.status, // hey-api uses 'code' or 'status'? usually checking error.status
       };
 
-      // Hey-api throws errors that have 'status' property usually? or client-fetch?
+      // Hey-api generated clients may expose either code or status depending on the failure path.
       // Simulation: reject with an object that has status.
 
       // Wait, V3Player logic checks `error.status` or `response.status`.

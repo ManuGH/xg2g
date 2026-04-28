@@ -80,6 +80,22 @@ func TestConfigChecker_EnvOverlayDoesNotDrift(t *testing.T) {
 	assert.Empty(t, mismatches)
 }
 
+func TestConfigChecker_EnvOnlyModeDoesNotRequireConfigFile(t *testing.T) {
+	tmp := t.TempDir()
+	pinConfigEnv(t, tmp)
+	t.Setenv("XG2G_E2_HOST", "http://receiver.local")
+
+	cfg, err := config.NewLoader("", "test-version").Load()
+	require.NoError(t, err)
+
+	provider := &mockConfigProvider{cfg: &cfg}
+	c := checks.NewConfigChecker("", provider)
+
+	mismatches, err := c.Check(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, mismatches)
+}
+
 type mockConfigProvider struct {
 	cfg *config.AppConfig
 }

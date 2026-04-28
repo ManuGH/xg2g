@@ -351,6 +351,72 @@ func TestReportPlaybackFeedback_ProbeInfoCountsAsStarted(t *testing.T) {
 	require.Equal(t, "probe_window_started", observed.FeedbackMessage)
 }
 
+func TestReportPlaybackFeedback_HLSJSBlackRenderInfoCountsAsWarning(t *testing.T) {
+	sid := uuid.NewString()
+	store := &feedbackStore{
+		session: &model.SessionRecord{
+			SessionID:     sid,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-feedback-hls-black-001",
+			Profile: model.ProfileSpec{
+				Name:      "universal",
+				Container: "ts",
+			},
+			ContextData: map[string]string{
+				model.CtxKeyMode:            model.ModeLive,
+				model.CtxKeyDecisionRequest: "decision-req-hls-black",
+			},
+			PlaybackTrace: &model.PlaybackTrace{
+				RequestedIntent: "quality",
+				ResolvedIntent:  "quality",
+				ClientPath:      "hlsjs",
+			},
+		},
+	}
+	registry := &feedbackRegistry{
+		decisionObservation: capreg.PlaybackObservation{
+			RequestID:          "decision-req-hls-black",
+			ObservationKind:    "decision",
+			Outcome:            "predicted",
+			SourceRef:          "1:0:1:445D:453:1:C00000:0:0:0:",
+			SourceFingerprint:  "source-fp-hls-black",
+			SubjectKind:        "live",
+			RequestedIntent:    "quality",
+			ResolvedIntent:     "quality",
+			Mode:               "transcode",
+			SelectedContainer:  "fmp4",
+			SelectedVideoCodec: "av1",
+			SelectedAudioCodec: "aac",
+			HostFingerprint:    "host-fp-hls-black",
+			DeviceFingerprint:  "device-fp-hls-black",
+			ClientCapsHash:     "caps-hash-hls-black",
+		},
+	}
+
+	s := &Server{
+		cfg:                config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}},
+		v3Store:            store,
+		v3Bus:              newFeedbackBus(),
+		capabilityRegistry: registry,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/"+sid+"/feedback", strings.NewReader(`{"event":"info","code":242,"message":"black_suspect"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.ReportPlaybackFeedback(rr, req, uuid.MustParse(sid))
+	require.Equal(t, http.StatusAccepted, rr.Code)
+
+	observed := registry.lastObservation()
+	require.Equal(t, "feedback", observed.ObservationKind)
+	require.Equal(t, "warning", observed.Outcome)
+	require.Equal(t, "info", observed.FeedbackEvent)
+	require.Equal(t, 242, observed.FeedbackCode)
+	require.Equal(t, "black_suspect", observed.FeedbackMessage)
+	require.Equal(t, "av1", observed.SelectedVideoCodec)
+}
+
 func TestReportPlaybackFeedback_IgnoresSoftStartupWarningDuringWarmup(t *testing.T) {
 	sid := uuid.NewString()
 	now := time.Now().UTC()

@@ -140,9 +140,16 @@ type LocalAdapter struct {
 	activeProcs map[ports.RunHandle]*exec.Cmd
 	// finalizedProfiles keeps the finalized profile that actually launched for a handle.
 	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
+	// runtimeDiagnostics keeps the latest FFmpeg progress/source-warning snapshot.
+	runtimeDiagnostics map[ports.RunHandle]ports.RuntimeDiagnostics
 	// processDetails keeps the last meaningful failure summary for a handle.
 	processDetails map[ports.RunHandle]string
+	// completedProcessDetails briefly preserves final process summaries after active cleanup.
+	completedProcessDetails     map[ports.RunHandle]string
+	completedProcessDetailOrder []ports.RunHandle
 }
+
+const maxCompletedProcessDetails = 128
 
 // NewLocalAdapter creates a new adapter instance.
 func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration, vaapiDevice string) *LocalAdapter {
@@ -297,7 +304,9 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FPSCacheTTL:               fpsCacheTTL,
 		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
 		finalizedProfiles:         make(map[ports.RunHandle]ports.ProfileSpec),
+		runtimeDiagnostics:        make(map[ports.RunHandle]ports.RuntimeDiagnostics),
 		processDetails:            make(map[ports.RunHandle]string),
+		completedProcessDetails:   make(map[ports.RunHandle]string),
 	}
 }
 
@@ -520,7 +529,6 @@ func (a *LocalAdapter) PreflightPathCorrectness() {
 	for _, req := range []pathProbeRequest{
 		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
-		{PathID: hardware.PathVAAPIFullInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 	} {
 		if req.Backend != "vaapi" || !a.VaapiEncoderVerified(req.Encoder) {
@@ -1375,8 +1383,7 @@ func (a *LocalAdapter) FinalizedProfile(handle ports.RunHandle) (ports.ProfileSp
 func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration) {
 	defer func() {
 		a.mu.Lock()
-		delete(a.activeProcs, handle)
-		delete(a.finalizedProfiles, handle)
+		a.removeActiveProcessLocked(handle, true)
 		a.mu.Unlock()
 	}()
 
@@ -1437,6 +1444,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 				}
 			}
 			sanitizedLine := sanitizeFFmpegLogLine(line)
+			a.recordRuntimeDiagnostics(handle, line, sanitizedLine)
 			if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
 				a.recordProcessDetail(handle, detail)
 			}
@@ -1656,6 +1664,134 @@ func parseFFmpegFrameCount(line string) (int, bool) {
 	return count, true
 }
 
+func (a *LocalAdapter) recordRuntimeDiagnostics(handle ports.RunHandle, rawLine string, sanitizedLine string) {
+	if handle == "" {
+		return
+	}
+
+	nowUnix := time.Now().Unix()
+	frame, hasFrame := parseFFmpegFrameCount(rawLine)
+	fps, hasFPS := parseFFmpegFloatValue(rawLine, "fps")
+	drops, hasDrops := parseFFmpegIntValue(rawLine, "drop_frames")
+	if !hasDrops {
+		drops, hasDrops = parseFFmpegIntValue(rawLine, "drop")
+	}
+	duplicates, hasDuplicates := parseFFmpegIntValue(rawLine, "dup_frames")
+	if !hasDuplicates {
+		duplicates, hasDuplicates = parseFFmpegIntValue(rawLine, "dup")
+	}
+	speed, hasSpeed := parseFFmpegFloatValue(rawLine, "speed")
+	isProgressLine := hasFrame || hasFPS || hasDrops || hasDuplicates || hasSpeed
+
+	var corruptDecodedFrame bool
+	var warningLine string
+	if !isProgressLine {
+		lower := strings.ToLower(strings.TrimSpace(sanitizedLine))
+		if strings.Contains(lower, "corrupt decoded frame") {
+			corruptDecodedFrame = true
+			warningLine = sanitizedLine
+		} else if !isFFmpegProgressLine(lower) && (summarizeFFmpegFailureLine(lower) != "" || looksLikeFFmpegWarning(lower)) {
+			warningLine = sanitizedLine
+		}
+	}
+
+	if !isProgressLine && warningLine == "" {
+		return
+	}
+
+	var changed bool
+	a.mu.Lock()
+	diagnostics := a.runtimeDiagnostics[handle]
+	if hasFrame {
+		diagnostics.FrameCount = frame
+		changed = true
+	}
+	if hasFPS {
+		diagnostics.FPS = fps
+		changed = true
+	}
+	if hasDrops {
+		diagnostics.DropFrames = drops
+		changed = true
+	}
+	if hasDuplicates {
+		diagnostics.DupFrames = duplicates
+		changed = true
+	}
+	if hasSpeed {
+		diagnostics.Speed = speed
+		changed = true
+	}
+	if corruptDecodedFrame {
+		diagnostics.CorruptDecodedFrames++
+	}
+	if warningLine != "" {
+		diagnostics.LastWarning = trimForLog(warningLine, 240)
+		changed = true
+	}
+	if changed {
+		diagnostics.UpdatedAtUnix = nowUnix
+		if a.runtimeDiagnostics == nil {
+			a.runtimeDiagnostics = make(map[ports.RunHandle]ports.RuntimeDiagnostics)
+		}
+		a.runtimeDiagnostics[handle] = diagnostics
+	}
+	a.mu.Unlock()
+}
+
+func parseFFmpegIntValue(line string, key string) (int, bool) {
+	raw, ok := parseFFmpegValue(line, key)
+	if !ok {
+		return 0, false
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+func parseFFmpegFloatValue(line string, key string) (float64, bool) {
+	raw, ok := parseFFmpegValue(line, key)
+	if !ok {
+		return 0, false
+	}
+	raw = strings.TrimSuffix(raw, "x")
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+func parseFFmpegValue(line string, key string) (string, bool) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", false
+	}
+	idx := strings.Index(line, key+"=")
+	if idx < 0 {
+		return "", false
+	}
+	rest := strings.TrimLeft(line[idx+len(key)+1:], " ")
+	if rest == "" {
+		return "", false
+	}
+	end := 0
+	for end < len(rest) {
+		ch := rest[end]
+		if (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '+' || ch == 'x' {
+			end++
+			continue
+		}
+		break
+	}
+	if end == 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
 func extractStartupSegmentPath(line string) (string, bool) {
 	if !strings.Contains(line, "Opening ") || !strings.Contains(line, " for writing") {
 		return "", false
@@ -1685,9 +1821,8 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	a.mu.Lock()
 	cmd, exists := a.activeProcs[handle]
 	if exists {
-		delete(a.activeProcs, handle)
+		a.removeActiveProcessLocked(handle, false)
 	}
-	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
 	if !exists {
@@ -1699,6 +1834,35 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	}
 
 	return nil
+}
+
+func (a *LocalAdapter) removeActiveProcessLocked(handle ports.RunHandle, archiveDetail bool) {
+	delete(a.activeProcs, handle)
+	delete(a.finalizedProfiles, handle)
+	delete(a.runtimeDiagnostics, handle)
+	if archiveDetail {
+		a.archiveProcessDetailLocked(handle)
+	}
+	delete(a.processDetails, handle)
+}
+
+func (a *LocalAdapter) archiveProcessDetailLocked(handle ports.RunHandle) {
+	detail := strings.TrimSpace(a.processDetails[handle])
+	if detail == "" {
+		return
+	}
+	if a.completedProcessDetails == nil {
+		a.completedProcessDetails = make(map[ports.RunHandle]string)
+	}
+	if _, exists := a.completedProcessDetails[handle]; !exists {
+		a.completedProcessDetailOrder = append(a.completedProcessDetailOrder, handle)
+	}
+	a.completedProcessDetails[handle] = detail
+	for len(a.completedProcessDetailOrder) > maxCompletedProcessDetails {
+		evict := a.completedProcessDetailOrder[0]
+		a.completedProcessDetailOrder = a.completedProcessDetailOrder[1:]
+		delete(a.completedProcessDetails, evict)
+	}
 }
 
 func (a *LocalAdapter) terminateProcessGroup(cmd *exec.Cmd, sessionID string) {
@@ -1718,20 +1882,23 @@ func (a *LocalAdapter) killProcessGroup(cmd *exec.Cmd) error {
 func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports.HealthStatus {
 	a.mu.Lock()
 	_, exists := a.activeProcs[handle]
+	diagnostics := a.runtimeDiagnostics[handle]
 	a.mu.Unlock()
 	if !exists {
 		// monitorProcess has finished — scanner drained, detail is final.
 		return ports.HealthStatus{
-			Healthy:   false,
-			Message:   a.processStatusMessage(handle, "process not found"),
-			LastCheck: time.Now(),
+			Healthy:     false,
+			Message:     a.processStatusMessage(handle, "process not found"),
+			LastCheck:   time.Now(),
+			Diagnostics: diagnostics,
 		}
 	}
 
 	return ports.HealthStatus{
-		Healthy:   true,
-		Message:   "process active",
-		LastCheck: time.Now(),
+		Healthy:     true,
+		Message:     "process active",
+		LastCheck:   time.Now(),
+		Diagnostics: diagnostics,
 	}
 }
 
@@ -1799,6 +1966,10 @@ func (a *LocalAdapter) processStatusMessage(handle ports.RunHandle, fallback str
 	defer a.mu.Unlock()
 	if detail := strings.TrimSpace(a.processDetails[handle]); detail != "" {
 		delete(a.processDetails, handle)
+		return detail
+	}
+	if detail := strings.TrimSpace(a.completedProcessDetails[handle]); detail != "" {
+		delete(a.completedProcessDetails, handle)
 		return detail
 	}
 	return fallback

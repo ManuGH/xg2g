@@ -15,6 +15,7 @@ func TestClientFixtureIDs_AreStable(t *testing.T) {
 		ClientSafariNative,
 		ClientIOSSafariNative,
 		ClientFirefoxHLSJS,
+		ClientAndroidTVBrowser,
 		ClientChromiumHLSJS,
 	}
 
@@ -56,6 +57,14 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 		{
 			id:               ClientFirefoxHLSJS,
 			wantDeviceType:   "firefox",
+			wantEngine:       "hls_js",
+			wantVideoCodecs:  []string{"h264"},
+			wantAudioCodecs:  []string{"aac", "mp3"},
+			wantHLSPackaging: []string{"fmp4", "ts"},
+		},
+		{
+			id:               ClientAndroidTVBrowser,
+			wantDeviceType:   "android_tv",
 			wantEngine:       "hls_js",
 			wantVideoCodecs:  []string{"h264"},
 			wantAudioCodecs:  []string{"aac", "mp3"},

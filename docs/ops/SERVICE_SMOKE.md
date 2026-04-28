@@ -1,6 +1,6 @@
-# Service Smoke Matrix (Operator-Grade 2026)
+# Service Smoke Matrix
 
-This is a short, CTO-grade smoke matrix for the hardened systemd + Compose unit.
+This is a short smoke matrix for the hardened systemd + Compose unit.
 Run as root (or with sudo) on the host.
 
 ## Preconditions

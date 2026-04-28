@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -522,7 +523,7 @@ func (s *Server) recordPlaybackFeedbackObservation(ctx context.Context, sess *mo
 		ObservedAt:         observedAt,
 		RequestID:          decisionRequestID,
 		ObservationKind:    "feedback",
-		Outcome:            playbackFeedbackOutcome(req.Event),
+		Outcome:            playbackFeedbackOutcome(req.Event, derefInt(req.Code)),
 		SessionID:          strings.TrimSpace(sess.SessionID),
 		SourceRef:          firstNonEmptyFeedback(strings.TrimSpace(sess.ServiceRef), linked.SourceRef),
 		SourceFingerprint:  linked.SourceFingerprint,
@@ -653,7 +654,18 @@ func sessionFallbackPlanReason(sess *model.SessionRecord) string {
 	return strings.TrimSpace(sess.PlaybackTrace.Fallbacks[len(sess.PlaybackTrace.Fallbacks)-1].PlanReason)
 }
 
-func playbackFeedbackOutcome(event PlaybackFeedbackRequestEvent) string {
+const (
+	playbackInfoCodeProbeWindowConfirmed = 221
+	playbackInfoCodeNativeRenderStable   = 231
+	playbackInfoCodeNativeRenderRecover  = 232
+	playbackInfoCodeHLSJSRenderStable    = 241
+	playbackInfoCodeHLSJSRenderBlack     = 242
+)
+
+func playbackFeedbackOutcome(event PlaybackFeedbackRequestEvent, code int) string {
+	if code == playbackInfoCodeHLSJSRenderBlack {
+		return "warning"
+	}
 	switch event {
 	case PlaybackFeedbackRequestEventError:
 		return "failed"
@@ -969,6 +981,9 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 			AudioCodec: strPtr(trace.FFmpegPlan.AudioCodec),
 		}
 	}
+	if trace.RuntimeDiagnostics != nil && !trace.RuntimeDiagnostics.IsZero() {
+		dto.RuntimeDiagnostics = mapPlaybackRuntimeDiagnostics(*trace.RuntimeDiagnostics)
+	}
 
 	firstFrameAtUnix := trace.FirstFrameAtUnix
 	if firstFrameAtUnix == 0 {
@@ -1011,6 +1026,34 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 
 	return dto
+}
+
+func mapPlaybackRuntimeDiagnostics(d ports.RuntimeDiagnostics) *PlaybackTraceRuntimeDiagnostics {
+	out := &PlaybackTraceRuntimeDiagnostics{}
+	if d.FrameCount > 0 {
+		out.FrameCount = &d.FrameCount
+	}
+	if d.FPS > 0 {
+		value := float32(d.FPS)
+		out.Fps = &value
+	}
+	out.DropFrames = &d.DropFrames
+	out.DupFrames = &d.DupFrames
+	if d.Speed > 0 {
+		value := float32(d.Speed)
+		out.Speed = &value
+	}
+	if d.CorruptDecodedFrames > 0 {
+		out.CorruptDecodedFrames = &d.CorruptDecodedFrames
+	}
+	if warning := strings.TrimSpace(d.LastWarning); warning != "" {
+		out.LastWarning = &warning
+	}
+	if d.UpdatedAtUnix > 0 {
+		updatedAtUnix := int(d.UpdatedAtUnix)
+		out.UpdatedAtUnix = &updatedAtUnix
+	}
+	return out
 }
 
 func sessionRuntimePolicyPhaseName(state runtimepolicy.SessionLoopState, now time.Time) string {

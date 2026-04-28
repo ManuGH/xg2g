@@ -41,6 +41,10 @@ func (c *ConfigChecker) Check(ctx context.Context) ([]verification.Mismatch, err
 		return nil, fmt.Errorf("config provider returned nil snapshot")
 	}
 
+	if strings.TrimSpace(c.configPath) == "" {
+		return nil, nil
+	}
+
 	// 2. Ensure the declared config file still exists on disk.
 	if _, err := os.Stat(c.configPath); err != nil {
 		if os.IsNotExist(err) {

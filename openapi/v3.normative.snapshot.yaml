@@ -2172,6 +2172,8 @@ components:
           description: Benchmark capability class for the selected codec on the current host.
         ffmpegPlan:
           $ref: "#/components/schemas/PlaybackTraceFfmpegPlan"
+        runtimeDiagnostics:
+          $ref: "#/components/schemas/PlaybackTraceRuntimeDiagnostics"
         operator:
           $ref: "#/components/schemas/PlaybackTraceOperator"
         firstFrameAtMs:
@@ -2483,6 +2485,27 @@ components:
           type: string
         audioCodec:
           type: string
+
+    PlaybackTraceRuntimeDiagnostics:
+      type: object
+      additionalProperties: false
+      properties:
+        frameCount:
+          type: integer
+        fps:
+          type: number
+        dropFrames:
+          type: integer
+        dupFrames:
+          type: integer
+        speed:
+          type: number
+        corruptDecodedFrames:
+          type: integer
+        lastWarning:
+          type: string
+        updatedAtUnix:
+          type: integer
 
     PlaybackSourceProfile:
       type: object

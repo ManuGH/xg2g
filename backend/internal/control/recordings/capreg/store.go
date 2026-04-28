@@ -770,7 +770,7 @@ func isBufferingWarningCode(code int) bool {
 
 func isDecodeWarningCode(code int) bool {
 	switch code {
-	case 103:
+	case 103, 242:
 		return true
 	default:
 		return false
@@ -788,7 +788,7 @@ func isNetworkWarningCode(code int) bool {
 
 func isRecoveryStartCode(code int) bool {
 	switch code {
-	case 201, 211, 212, 213:
+	case 201, 211, 212, 213, 221, 231, 232, 241:
 		return true
 	default:
 		return false

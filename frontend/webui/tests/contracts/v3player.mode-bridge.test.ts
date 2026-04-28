@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   SERVER_PLAYBACK_MODES,
   isLiveEngineAvailable,
+  isVodStreamMode,
   mapServerModeToLiveEngine,
   parseServerPlaybackMode,
   resolveAvailableLiveEngineFromMode,
+  resolveLivePlaybackMode,
+  resolveRecordingPlaybackUiMode,
   resolveLiveEngineFromMode,
   type LiveEngineAvailability,
   type LivePlaybackEngine,
@@ -61,5 +64,31 @@ describe('Gate P: V3Player mode bridge', () => {
     expect(resolveAvailableLiveEngineFromMode('direct_mp4', availability)).toBeNull();
     expect(resolveAvailableLiveEngineFromMode('deny', availability)).toBeNull();
     expect(resolveAvailableLiveEngineFromMode('unknown_mode', availability)).toBeNull();
+  });
+
+  it('maps recording PlaybackInfo hls to the locally preferred HLS engine', () => {
+    expect(resolveRecordingPlaybackUiMode('hls', 'native')).toBe('native_hls');
+    expect(resolveRecordingPlaybackUiMode('hls', 'hlsjs')).toBe('hlsjs');
+    expect(resolveRecordingPlaybackUiMode('direct_mp4', 'native')).toBe('direct_mp4');
+    expect(resolveRecordingPlaybackUiMode('deny', 'hlsjs')).toBe('deny');
+    expect(resolveRecordingPlaybackUiMode('direct_stream', 'hlsjs')).toBeNull();
+    expect(resolveRecordingPlaybackUiMode('legacy_mode', 'native')).toBeNull();
+  });
+
+  it('maps live backend aliases to explicit player mode plus engine', () => {
+    expect(resolveLivePlaybackMode('native_hls', 'hlsjs')).toEqual({ mode: 'native_hls', engine: 'native' });
+    expect(resolveLivePlaybackMode('hlsjs', 'native')).toEqual({ mode: 'native_hls', engine: 'native' });
+    expect(resolveLivePlaybackMode('hls', 'hlsjs')).toEqual({ mode: 'hlsjs', engine: 'hlsjs' });
+    expect(resolveLivePlaybackMode('direct_stream', 'native')).toEqual({ mode: 'native_hls', engine: 'native' });
+    expect(resolveLivePlaybackMode('transcode', 'native')).toEqual({ mode: 'transcode', engine: 'native' });
+    expect(resolveLivePlaybackMode('direct_mp4', 'hlsjs')).toEqual({ mode: 'direct_mp4', engine: null });
+    expect(resolveLivePlaybackMode('deny', 'native')).toEqual({ mode: 'deny', engine: null });
+    expect(resolveLivePlaybackMode('unknown', 'native')).toBeNull();
+  });
+
+  it('keeps deny out of VOD stream modes', () => {
+    expect(isVodStreamMode('native_hls')).toBe(true);
+    expect(isVodStreamMode('transcode')).toBe(true);
+    expect(isVodStreamMode('deny')).toBe(false);
   });
 });

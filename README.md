@@ -1,5 +1,5 @@
 <!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/README.md.tmpl -->
-# xg2g - Next Gen to Go
+# xg2g
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
 [![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
@@ -11,45 +11,44 @@
   <img src="docs/assets/github/xg2g-github-hero.svg" alt="xg2g turns Enigma2 MPEG-TS into browser-ready HLS for Safari, iPhone, iPad, Chrome, and modern TVs." width="100%" />
 </p>
 
-Turn Enigma2 live TV into browser-ready playback that actually works on
-Safari, iPhone, iPad, Chrome, and modern TVs.
+<div align="center">
+  <strong>Self-hosted live-TV gateway for Enigma2.</strong><br />
+  MPEG-TS in. Browser-ready HLS out. One server-side policy for Safari,
+  iPhone, iPad, Chrome, TVs, recordings, and operator tooling.
+  <br /><br />
+  <a href="#quickstart"><strong>Quickstart</strong></a> ·
+  <a href="https://manugh.github.io/xg2g/">API Docs</a> ·
+  <a href="docs/README.md">Documentation</a> ·
+  <a href="docs/arch/CODEC_MATRIX.md">Codec Matrix</a> ·
+  <a href="https://github.com/ManuGH/xg2g/releases">Releases</a>
+</div>
 
-xg2g takes MPEG-TS from Enigma2 satellite and DVB-T2 receivers and delivers
-browser-native HLS with `.ts` segments to Apple browsers and AVPlayer-backed
-paths, falling back to browser-safe fMP4 HLS delivery when compatibility
-repair is needed. Observability,
-fail-closed auth, and operator-friendly health checks are built in.
+## What xg2g Does
 
-**Start here:** [Quickstart](#quickstart) •
-[Live API Docs](https://manugh.github.io/xg2g/) •
-[Configuration](docs/guides/CONFIGURATION.md) •
-[Architecture](docs/arch/ARCHITECTURE.md) •
-[Releases](https://github.com/ManuGH/xg2g/releases) •
-[Discussions](https://github.com/ManuGH/xg2g/discussions)
-
-## Why xg2g
-
-| Without xg2g | With xg2g |
+| | |
 | :--- | :--- |
-| Enigma2 raw MPEG-TS streams | Browser-ready HLS (native `.ts` and fMP4) |
-| Every client wants a different stream profile | One server-enforced universal delivery policy |
-| Recordings stuck on the set-top box | Seamless resume state across devices |
-| DIY proxies hide failures until users complain | Health checks, logs, metrics, and clear startup gates |
-| Ad hoc setups drift over time | Versioned images, release automation, and CI-backed changes |
+| **Receiver bridge** | Resolves Enigma2/OpenWebIF streams, including receiver-selected relay ports such as `8001` or `17999`. |
+| **Playback policy** | Chooses DirectPlay, DirectStream, or Transcode from source media, client capability, device policy, and runtime probes. |
+| **Browser delivery** | Serves HLS with native `.ts` or fMP4 segments for Safari, iPhone, iPad, Chrome, desktop browsers, and TV clients. |
+| **Operations surface** | Provides WebUI, `/api/v3`, health checks, metrics, structured logs, and deployment runbooks. |
 
-## What goes in, what comes out
+## Playback Pipeline
 
-| Input | Delivery | Targets |
-| :--- | :--- | :--- |
-| Enigma2 live MPEG-TS | HLS (`.ts` or fMP4 segments) | Safari, iPhone, iPad, Chrome, desktop browsers |
-| Enigma2 VOD / Recordings | HLS or DirectPlay | App instances, smart TVs |
+```text
+Enigma2 / OpenWebIF
+  -> receiver-resolved stream URL
+  -> xg2g decision engine
+  -> HLS packaging or hardware transcode
+  -> browser, phone, tablet, TV, or operator client
+```
 
-The decision engine evaluates **H.264, HEVC, AV1, MPEG-2, VP9** (video) and
-**AAC, AC3, E-AC3, MP2, MP3** (audio) at runtime. When no direct path is safe,
-the `universal` policy transcodes to **H.264 + AAC**. Safari families
-additionally get DirectPlay for HEVC and AC3.
+The decision engine evaluates **H.264, HEVC, AV1, MPEG-2, VP9** video and
+**AAC, AC3, E-AC3, MP2, MP3** audio at runtime. When direct playback is not
+safe, the universal fallback is **H.264 + AAC**. AV1/fMP4 is allowed only when
+the browser runtime probe and device policy both prove that the client can
+decode it safely.
 
-[Full codec matrix with alias mappings, container carry rules, and transcode targets](docs/arch/CODEC_MATRIX.md)
+[Read the codec/container matrix](docs/arch/CODEC_MATRIX.md)
 
 ## Quickstart
 
@@ -83,10 +82,11 @@ Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 > exchange is rejected over plain HTTP for non-loopback clients.
 
 **Next steps:**
+[Documentation](docs/README.md) •
 [Configuration](docs/guides/CONFIGURATION.md) •
 [Deployment](docs/ops/DEPLOYMENT.md) •
 [Security](docs/ops/SECURITY.md) •
-[Architecture](docs/arch/ARCHITECTURE.md) •
+[Architecture](docs/arch/README.md) •
 [ADRs](docs/ADR/)
 
 **Local development:**
@@ -94,6 +94,7 @@ Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 ```bash
 make install
 make dev-tools
+make doctor
 make start
 ```
 
@@ -103,6 +104,11 @@ repo in [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json).
 
 Then switch to `make start-gpu`, `make start-nvidia`, or `make dev-ui` only
 when you explicitly need a hardware-specific container path or frontend HMR.
+
+If you are new to the repository layout, read the
+[Repository Map](docs/dev/REPO_MAP.md) before editing. Local runtime outputs
+such as `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`,
+`.venv/`, and `bin/` are intentionally ignored and should not be committed.
 
 ## Status
 
@@ -120,13 +126,13 @@ Docker health checks, and CI-backed release automation are built in.
 
 | | |
 | :--- | :--- |
-| **Get started** | [10-Minute Intro](backend/NEW_HERE.md) · [Architecture](docs/arch/ARCHITECTURE.md) · [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [API Reference](https://manugh.github.io/xg2g/) · [ADRs](docs/ADR/) |
-| **Operate** | [Configuration](docs/guides/CONFIGURATION.md) · [Deployment](docs/ops/DEPLOYMENT.md) · [Observability](docs/ops/OBSERVABILITY.md) · [Security](docs/ops/SECURITY.md) · [FFmpeg Build](docs/ops/FFMPEG_BUILD.md) |
-| **Develop** | [Dev Guide](docs/guides/DEVELOPMENT.md) · [Setup](docs/dev/SETUP.md) · [Contributing](CONTRIBUTING.md) · [CI Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) |
+| **Get started** | [Documentation Portal](docs/README.md) · [10-Minute Intro](backend/NEW_HERE.md) · [Repository Map](docs/dev/REPO_MAP.md) · [API Reference](https://manugh.github.io/xg2g/) |
+| **Operate** | [Ops Index](docs/ops/README.md) · [Configuration](docs/guides/CONFIGURATION.md) · [Deployment](docs/ops/DEPLOYMENT.md) · [Client Profiles](docs/ops/CLIENT_PROFILES.md) · [Security](docs/ops/SECURITY.md) |
+| **Develop** | [Dev Index](docs/dev/README.md) · [Architecture Index](docs/arch/README.md) · [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [WebUI Index](docs/webui/README.md) · [CI Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) |
 
 ## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE)
 
-- ✅ Free for personal, homelab, and educational use
-- ❌ Commercial use requires permission
+- Free for personal, homelab, and educational use.
+- Commercial use requires permission.

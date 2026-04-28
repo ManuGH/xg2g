@@ -22,12 +22,18 @@ func setCISafeEnv(cmd *exec.Cmd, tmpDir string) {
 	)
 }
 
+func buildValidateCommand(binaryPath string) *exec.Cmd {
+	// Test binaries do not need VCS metadata, and worktree layouts in CI/dev
+	// can make VCS stamping fail before the CLI behavior is tested.
+	return exec.Command("go", "build", "-buildvcs=false", "-o", binaryPath, ".")
+}
+
 // TestValidateCLI tests the validate binary with various config files
 func TestValidateCLI(t *testing.T) {
 	// Build the validate binary for testing
 	binaryPath := filepath.Join(t.TempDir(), "validate-test")
 	// #nosec G204 -- Test code: building test binary with controlled arguments
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd := buildValidateCommand(binaryPath)
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build validate binary: %v\n%s", err, out)
 	}
@@ -117,7 +123,7 @@ func TestValidateCLI_Version(t *testing.T) {
 	// Build the validate binary for testing
 	binaryPath := filepath.Join(t.TempDir(), "validate-test")
 	// #nosec G204 -- Test code: building test binary with controlled arguments
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd := buildValidateCommand(binaryPath)
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build validate binary: %v\n%s", err, out)
 	}
@@ -149,7 +155,7 @@ func TestValidateCLI_CuratedSurface(t *testing.T) {
 	// Build the validate binary for testing
 	binaryPath := filepath.Join(t.TempDir(), "validate-test")
 	// #nosec G204
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd := buildValidateCommand(binaryPath)
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build validate binary: %v\n%s", err, out)
 	}
@@ -177,7 +183,7 @@ func TestValidateCLI_RegistryParity(t *testing.T) {
 	// Build the validate binary for testing
 	binaryPath := filepath.Join(t.TempDir(), "validate-test")
 	// #nosec G204
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd := buildValidateCommand(binaryPath)
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build validate binary: %v\n%s", err, out)
 	}

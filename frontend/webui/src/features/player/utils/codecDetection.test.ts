@@ -72,7 +72,7 @@ describe('codecDetection', () => {
     expect(preferred).toEqual(['h264']);
   });
 
-  it('keeps ios native av1 out of preferred codecs when the relaxed flag is disabled', async () => {
+  it('allows ios native av1 when the runtime probe reports support', async () => {
     (navigator as any).mediaCapabilities = {
       decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
         const contentType = video?.contentType ?? '';
@@ -108,7 +108,7 @@ describe('codecDetection', () => {
 
     const preferred = await detectPreferredCodecs(video);
 
-    expect(preferred).toEqual(['hevc', 'h264']);
+    expect(preferred).toEqual(['av1', 'hevc', 'h264']);
   });
 
   it('allows desktop safari native av1 when Safari reports decode support', async () => {
@@ -149,7 +149,7 @@ describe('codecDetection', () => {
     expect(preferred).toEqual(['av1', 'hevc', 'h264']);
   });
 
-  it('allows ios native av1 on supported-or-smooth probes when the relaxed flag is enabled', async () => {
+  it('keeps the ios native av1 query override compatible with supported-or-smooth probes', async () => {
     (navigator as any).mediaCapabilities = {
       decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
         const contentType = video?.contentType ?? '';

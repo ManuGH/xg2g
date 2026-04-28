@@ -1,4 +1,4 @@
-# Systemd + Compose Runbook (v3.1.5+)
+# Systemd + Compose Runbook
 
 Canonical guide for managing the hardened `xg2g` daemon via systemd.
 
@@ -248,4 +248,5 @@ systemctl status xg2g.service --no-pager -l
 ```
 
 ### Service Smoke Matrix
-See `docs/ops/SERVICE_SMOKE.md` for the CTO-grade start/stop matrix (negative + positive + idempotent).
+See `docs/ops/SERVICE_SMOKE.md` for the deterministic start/stop matrix
+(negative + positive + idempotent).

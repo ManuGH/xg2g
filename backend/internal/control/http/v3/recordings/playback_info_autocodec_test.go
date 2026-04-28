@@ -26,7 +26,16 @@ func TestPickPlaybackInfoAutoProfile_UsesAV1OnlyOnHealthyHost(t *testing.T) {
 	resolvedCaps := capabilities.PlaybackCapabilities{
 		ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
 		ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+		Containers:           []string{"mp4", "ts", "fmp4"},
 		VideoCodecs:          []string{"av1", "hevc", "h264"},
+		RuntimeProbeUsed:     true,
+		DeviceType:           "iphone",
+		DeviceContext:        &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
+		VideoCodecSignals: []capabilities.VideoCodecSignal{
+			{Codec: "av1", Supported: true, PowerEfficient: boolPtr(true)},
+			{Codec: "hevc", Supported: true, PowerEfficient: boolPtr(true)},
+			{Codec: "h264", Supported: true, PowerEfficient: boolPtr(true)},
+		},
 	}
 	healthyHost := playbackprofile.HostRuntimeSnapshot{
 		PerformanceClass: "high",
@@ -74,7 +83,11 @@ func TestAlignAutoCodecDecision_PersistsNeutralSelectionTrace(t *testing.T) {
 		ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
 		ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 		AllowTranscode:       &allowTranscode,
+		Containers:           []string{"mp4", "ts", "fmp4"},
 		VideoCodecs:          []string{"av1", "hevc", "h264"},
+		RuntimeProbeUsed:     true,
+		DeviceType:           "iphone",
+		DeviceContext:        &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
 		VideoCodecSignals: []capabilities.VideoCodecSignal{
 			{Codec: "av1", Supported: true, PowerEfficient: boolPtr(true)},
 			{Codec: "hevc", Supported: true, PowerEfficient: boolPtr(true)},

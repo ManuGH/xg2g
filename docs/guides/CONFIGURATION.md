@@ -1,18 +1,19 @@
-# xg2g Configuration Guide (Operator-Grade 2026)
+# xg2g Configuration Guide
 
-This document defines the normative configuration standards for production-grade xg2g deployments.
+This document defines the normative configuration standards for production xg2g deployments.
 We structure configuration into three distinct tiers.
 
 ## Philosophy
 
-**"Operator-Grade 2026"** means:
+Production configuration means:
 
 - No implicit magic (Fail-Closed).
 - Deterministic resource management.
 - Traceability by default.
 - Secure, scoped access.
 
-> "Whatever is not explicitly set is considered suspicious."
+Security-sensitive values must be explicit. Generated defaults must remain
+visible, documented, and reproducible.
 
 ---
 
@@ -372,7 +373,7 @@ forwarded-header trust evaluation.
 
 ## Summary
 
-To be "Operator-Grade" in 2026 means:
+Production-ready configuration means:
 
 1. **Explicit Auth** (Tokens + Scopes).
 2. **Persistent State**.

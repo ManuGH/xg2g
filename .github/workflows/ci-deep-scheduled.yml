@@ -1,4 +1,7 @@
 name: CI Deep Scheduled
+run-name: >-
+  CI Deep Scheduled /
+  ${{ github.event_name == 'workflow_dispatch' && 'manual' || github.event.schedule == '0 3 * * 0' && 'weekly' || 'nightly' }}
 
 on:
   workflow_dispatch:
@@ -43,7 +46,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
           cache-dependency-path: frontend/webui/package-lock.json
 
@@ -120,7 +123,7 @@ jobs:
       - name: Setup Node for OpenAPI + Markdown lint
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
           cache-dependency-path: frontend/webui/package-lock.json
 
@@ -157,8 +160,11 @@ jobs:
         run: |
           set -euo pipefail
           cd backend
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+          toolchain="$(go env GOVERSION)"
+          GOTOOLCHAIN="${toolchain}" go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          GOTOOLCHAIN="${toolchain}" go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+          go version -m "$(go env GOPATH)/bin/govulncheck" | sed -n '1,2p'
+          go version -m "$(go env GOPATH)/bin/gosec" | sed -n '1,2p'
 
       - name: Run security scanners
         run: |
@@ -209,7 +215,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
           cache-dependency-path: frontend/webui/package-lock.json
 
@@ -240,6 +246,8 @@ jobs:
     steps:
       - name: Summary (Job / Command / Exit)
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
           RACE_RESULT: ${{ needs.nightly-race.result }}
           INTEGRATION_RESULT: ${{ needs.nightly-integration.result }}
           DOC_LINT_RESULT: ${{ needs.nightly-spec-doc-lint.result }}
@@ -262,8 +270,17 @@ jobs:
           SECURITY_EXIT="$(map_exit "$SECURITY_RESULT")"
           GOVERNANCE_EXIT="$(map_exit "$GOVERNANCE_RESULT")"
 
+          case "${EVENT_NAME}:${EVENT_SCHEDULE}" in
+            workflow_dispatch:*) SUITE_LABEL="manual (nightly + weekly)" ;;
+            *:"$NIGHTLY_CRON") SUITE_LABEL="nightly" ;;
+            *:"$WEEKLY_CRON") SUITE_LABEL="weekly" ;;
+            *) SUITE_LABEL="$EVENT_NAME" ;;
+          esac
+
           {
             echo "## Deep Suite Summary"
+            echo ""
+            echo "Trigger: \`$SUITE_LABEL\`"
             echo ""
             echo "| Job | Command | Result | Exit |"
             echo "|---|---|---:|---:|"
@@ -303,12 +320,19 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-            const title = `[CI Deep] Scheduled run failed: ${process.env.GITHUB_RUN_ID}`;
+            const schedule = context.payload.schedule || "";
+            const suite =
+              schedule === process.env.NIGHTLY_CRON ? "nightly" :
+              schedule === process.env.WEEKLY_CRON ? "weekly" :
+              "scheduled";
+            const title = `[CI Deep][${suite}] Scheduled run failed: ${process.env.GITHUB_RUN_ID}`;
 
             const body = [
-              "Scheduled deep-suite run failed.",
+              `Scheduled deep-suite run failed for \`${suite}\`.`,
               "",
               `Run: ${runUrl}`,
+              `Suite: \`${suite}\``,
+              `Schedule: \`${schedule || "unknown"}\``,
               "",
               "| Job | Result |",
               "|---|---:|",
@@ -355,19 +379,31 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-            const prefix = "[CI Deep] Scheduled run failed:";
+            const titlePrefixes = [
+              "[CI Deep] Scheduled run failed:",
+              "[CI Deep][nightly] Scheduled run failed:",
+              "[CI Deep][weekly] Scheduled run failed:",
+              "[CI Deep][scheduled] Scheduled run failed:",
+            ];
             const schedule = context.payload.schedule || "";
             const { data } = await github.rest.search.issuesAndPullRequests({
-              q: `repo:${owner}/${repo} is:issue is:open in:title "${prefix}"`,
+              q: `repo:${owner}/${repo} is:issue is:open "[CI Deep]" "Scheduled run failed"`,
               per_page: 100,
             });
 
             for (const issue of data.items) {
+              if (!titlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
+                continue;
+              }
+
               const body = issue.body || "";
+              const suite = (body.match(/^Suite: `([^`]+)`/m) || [])[1] || "";
               const matchesNightly =
+                suite === "nightly" ||
                 body.includes("| weekly-security-deep | skipped |") &&
                 body.includes("| weekly-governance-deep | skipped |");
               const matchesWeekly =
+                suite === "weekly" ||
                 body.includes("| nightly-race | skipped |") &&
                 body.includes("| nightly-integration | skipped |");
 

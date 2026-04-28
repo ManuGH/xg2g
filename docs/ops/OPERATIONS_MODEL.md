@@ -1,5 +1,5 @@
 <!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/OPERATIONS_MODEL.md.tmpl -->
-# xg2g Operations Model (Operator-Grade 2026)
+# xg2g Operations Model
 
 This document defines the immutable operational contract for the `xg2g` service. Adherence to these invariants is mandatory for system stability.
 
@@ -28,4 +28,5 @@ This document defines the immutable operational contract for the `xg2g` service.
 ---
 
 > [!NOTE]
-> This model represents the "Operational Truth" as of Phase 4. Any modification to these boundaries requires a Governance Change Request (GCR).
+> This model represents the operational contract for the current release. Any
+> boundary change must update this document and the matching verification gate.

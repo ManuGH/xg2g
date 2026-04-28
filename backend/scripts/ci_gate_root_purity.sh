@@ -27,9 +27,12 @@ ALLOWLIST=(
     ".gitleaks.toml"
     ".goreleaser.yml"
     ".markdownlint.json"
+    ".node-version"
+    ".nvmrc"
     ".pre-commit-config.yaml"
     ".secrets.baseline"
     ".trivyignore"
+    ".vscode/"
 
     # Top-level documentation
     "AGENTS.md"
@@ -37,9 +40,11 @@ ALLOWLIST=(
     "CHANGELOG.md"
     "CODE_OF_CONDUCT.md"
     "CONTRIBUTING.md"
+    "DIGESTS.lock"
     "LICENSE"
     "README.md"
     "SECURITY.md"
+    "TECHNICAL_DEBT_2026.md"
 
     # Build & container
     "Dockerfile"
@@ -101,6 +106,12 @@ shopt -s dotglob
 for item in *; do
     # Skip . and ..
     [[ "$item" == "." || "$item" == ".." ]] && continue
+
+    # Ignored local runtime/build outputs are allowed to exist in a developer
+    # workspace. Root purity only guards non-ignored source-tree entries.
+    if git check-ignore --no-index -q -- "$item"; then
+        continue
+    fi
     
     if [[ ! "$item" =~ $ALLOWLIST_REGEX ]]; then
         echo "❌ VIOLATION: Forbidden item in root: $item"
@@ -112,7 +123,7 @@ shopt -u dotglob
 if [ "$VIOLATIONS" -gt 0 ]; then
     echo "--------------------------------------------------------"
     echo "🚨 FAIL: Root purity check failed with $VIOLATIONS violations."
-    echo "💡 Root must remain clean. Move results to 'artifacts/' or 'tmp/'."
+    echo "💡 Root must remain clean. Move local outputs to ignored paths such as 'artifacts/' or 'tmp/'."
     echo "--------------------------------------------------------"
     exit 1
 fi

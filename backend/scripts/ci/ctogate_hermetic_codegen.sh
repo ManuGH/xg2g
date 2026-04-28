@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# CTO Gate: Hermetic Code Generation Contract Enforcement
-# 
+# Hermetic Code Generation Contract Enforcement
+#
 # This gate ensures CI workflows only request code generation via 'make generate',
 # never invoking code generators directly. This maintains the hermetic boundary:
 # Makefile → vendor/ → tools.go
@@ -18,7 +18,7 @@ set -euo pipefail
 
 WORKFLOW_FILE="${1:-.github/workflows/ci.yml}"
 
-echo "🔍 CTO Gate: Verifying hermetic code generation contract..."
+echo "🔍 Verifying hermetic code generation contract..."
 
 # ============================================================================
 # Part 1: Allow-List Enforcement
@@ -39,7 +39,7 @@ if [ -n "$GENERATE_STEPS" ]; then
         if tail -n +$LINE_NUM "$WORKFLOW_FILE" | head -n 15 | grep -q -E '(go\s+run\s+.*oapi|go\s+install.*oapi|oapi-codegen\s)'; then
             echo "❌ Generate step at line $LINE_NUM may contain direct tool invocation"
             echo "   Allowed: 'make generate' only"
-            echo "   (This is a heuristic - see global禁 scan for canonical check)"
+            echo "   (This is a heuristic - see global forbid scan for canonical check)"
         fi
     done <<< "$GENERATE_STEPS"
 fi

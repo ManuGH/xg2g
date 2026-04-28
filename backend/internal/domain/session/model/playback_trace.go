@@ -116,6 +116,7 @@ type PlaybackTrace struct {
 	TargetProfileHash    string                                 `json:"targetProfileHash,omitempty"`
 	TargetProfile        *playbackprofile.TargetPlaybackProfile `json:"targetProfile,omitempty"`
 	FFmpegPlan           *FFmpegPlanTrace                       `json:"ffmpegPlan,omitempty"`
+	RuntimeDiagnostics   *ports.RuntimeDiagnostics              `json:"runtimeDiagnostics,omitempty"`
 	Operator             *PlaybackOperatorTrace                 `json:"operator,omitempty"`
 	Client               *PlaybackClientSnapshot                `json:"client,omitempty"`
 	HostPressureBand     string                                 `json:"hostPressureBand,omitempty"`
@@ -148,6 +149,10 @@ func (t *PlaybackTrace) Clone() *PlaybackTrace {
 	if t.FFmpegPlan != nil {
 		plan := *t.FFmpegPlan
 		cp.FFmpegPlan = &plan
+	}
+	if t.RuntimeDiagnostics != nil {
+		diagnostics := *t.RuntimeDiagnostics
+		cp.RuntimeDiagnostics = &diagnostics
 	}
 	if t.Operator != nil {
 		operator := *t.Operator

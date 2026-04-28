@@ -41,14 +41,31 @@ func ResolveProfileUserAgent(requestedPlaybackMode, clientFamily, requestUserAge
 // safeguards. The policy only mutates the resolved execution shape, not the
 // selected profile identity.
 func ApplyStartPackagingPolicy(clientFamily, effectiveProfileID string, profileSpec model.ProfileSpec) model.ProfileSpec {
-	if normalize.Token(clientFamily) == playbackprofile.ClientIOSSafariNative &&
-		profiles.NormalizeRequestedProfileID(effectiveProfileID) == profiles.ProfileAV1HW &&
+	switch normalize.Token(clientFamily) {
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	default:
+		return profileSpec
+	}
+	if requiresNativeWebKitFMP4(effectiveProfileID) &&
 		strings.EqualFold(strings.TrimSpace(profileSpec.Container), "mpegts") {
-		// iPhone AV1 stays on fMP4 even when the global AV1 MPEG-TS experiment is
-		// enabled for other playback paths.
+		// Native WebKit codec-specific starts stay on fMP4/CMAF. MPEG-TS can make
+		// HEVC/AV1 sessions look healthy at HTTP/HLS level while native playback
+		// still shows black video or stalls.
 		profileSpec.Container = "fmp4"
 	}
 	return profileSpec
+}
+
+func requiresNativeWebKitFMP4(profileID string) bool {
+	switch profiles.NormalizeRequestedProfileID(profileID) {
+	case profiles.ProfileAV1HW,
+		profiles.ProfileSafariHEVC,
+		profiles.ProfileSafariHEVCHW,
+		profiles.ProfileSafariHEVCHWLL:
+		return true
+	default:
+		return false
+	}
 }
 
 // WantsFMP4Packaging captures the client-side preference for native HLS/fMP4
@@ -66,18 +83,19 @@ func WantsFMP4Packaging(requestedProfile, clientFamily string) bool {
 	}
 }
 
-// AllowExperimentalNativeAV1TransportStream captures the one allowed exception
-// to the native fMP4 packaging preference: desktop Safari may keep the AV1 TS
-// experiment when runtime capabilities and the selected target both agree.
+// AllowsExperimentalNativeAV1TransportStream intentionally returns false for
+// native WebKit: the validated production path is AV1 in fMP4 HLS, not AV1 in
+// MPEG-TS. Keep the function for central policy readability at call sites.
 func AllowExperimentalNativeAV1TransportStream(
 	resolvedCaps capabilities.PlaybackCapabilities,
 	selectedVideoCodec string,
 	target playbackprofile.TargetPlaybackProfile,
 ) bool {
-	if !config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false) {
+	if normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientSafariNative ||
+		normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientIOSSafariNative {
 		return false
 	}
-	if normalize.Token(resolvedCaps.ClientFamilyFallback) != playbackprofile.ClientSafariNative {
+	if !config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false) {
 		return false
 	}
 	switch normalize.Token(resolvedCaps.ClientCapsSource) {

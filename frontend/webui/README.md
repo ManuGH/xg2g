@@ -2,9 +2,12 @@
 
 Web frontend for xg2g (`/ui/`) built with React + TypeScript + Vite.
 
+For documentation beyond local commands, start with
+[docs/webui/README.md](../../docs/webui/README.md).
+
 ## Prerequisites
 
-- Node.js 22+
+- Node.js 24 LTS (pinned by the repo root `.node-version` / `.nvmrc`)
 - npm
 - Backend API running on `http://localhost:8080` for local dev proxy
 
@@ -57,6 +60,7 @@ Useful overrides:
 
 ## Design And Contracts
 
+- WebUI docs index: `../../docs/webui/README.md`
 - Design contract: `frontend/webui/DESIGN.md`
 - UI contract gate script: `../../backend/scripts/check-ui-contract.sh`
 - API contract source: `../../backend/api/openapi.yaml`

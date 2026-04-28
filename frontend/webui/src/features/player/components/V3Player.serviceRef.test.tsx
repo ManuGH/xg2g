@@ -329,7 +329,7 @@ describe('V3Player ServiceRef Input', () => {
       const streamInfoBody = JSON.parse(streamInfoOptions.body);
       expect(streamInfoBody.capabilities?.clientFamilyFallback).toBe('ios_safari_native');
       expect(streamInfoBody.capabilities?.preferredHlsEngine).toBe('native');
-      expect(streamInfoBody.capabilities?.container).toEqual(['mp4', 'ts']);
+      expect(streamInfoBody.capabilities?.container).toEqual(['mp4', 'ts', 'fmp4']);
       expect(streamInfoBody.capabilities?.videoCodecs).toEqual(['av1', 'hevc', 'h264']);
 
       const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
@@ -492,6 +492,70 @@ describe('V3Player ServiceRef Input', () => {
         Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
       }
     }
+  });
+
+  it('keeps the backend live session running when the player component unmounts', async () => {
+    const response = (status: number, body: Record<string, unknown> = {}) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
+      json: vi.fn().mockResolvedValue(body),
+      text: vi.fn().mockResolvedValue(JSON.stringify(body))
+    });
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(response(200, {
+          mode: 'hls',
+          requestId: 'live-decision-background-1',
+          playbackDecisionToken: 'live-token-background-1',
+          decision: { reasons: ['hls'] }
+        }));
+      }
+      if (url.includes('/intents')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (body.type === 'stream.start') {
+          return Promise.resolve(response(200, {
+            sessionId: 'sid-live-background-1',
+            requestId: 'intent-background-1'
+          }));
+        }
+        return Promise.resolve(response(200, {}));
+      }
+      if (url.includes('/sessions/sid-live-background-1')) {
+        return Promise.resolve(response(200, {
+          id: 'sid-live-background-1',
+          state: 'READY',
+          mode: 'LIVE',
+          playbackUrl: 'http://example.com/background-live.m3u8',
+          heartbeatIntervalSeconds: 600
+        }));
+      }
+      return Promise.resolve(response(200, {}));
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { unmount } = render(<V3Player {...props} />);
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '1:0:1:7777:222:333:0:0:0:0:' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    await waitFor(() => {
+      expect(
+        (globalThis.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/sessions/sid-live-background-1'))
+      ).toBe(true);
+    });
+
+    unmount();
+
+    const stopCalls = (globalThis.fetch as any).mock.calls.filter((call: any[]) => {
+      if (!String(call[0]).includes('/intents')) return false;
+      const body = JSON.parse(String(call[1]?.body ?? '{}'));
+      return body.type === 'stream.stop' && body.sessionId === 'sid-live-background-1';
+    });
+    expect(stopCalls).toHaveLength(0);
   });
 
   it('does not call live APIs when serviceRef is empty after trimming', async () => {

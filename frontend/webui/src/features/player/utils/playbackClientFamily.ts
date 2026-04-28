@@ -5,6 +5,7 @@ export type PlaybackClientFamily =
   | 'safari_native'
   | 'ios_safari_native'
   | 'firefox_hlsjs'
+  | 'android_tv_browser'
   | 'chromium_hlsjs';
 
 export function normalizePlaybackClientFamily(
@@ -20,6 +21,11 @@ export function normalizePlaybackClientFamily(
     case 'firefox':
     case 'firefox_hlsjs':
       return 'firefox_hlsjs';
+    case 'android_tv':
+    case 'android_tv_browser':
+    case 'android_tv_hlsjs':
+    case 'shield_browser':
+      return 'android_tv_browser';
     case 'chromium':
     case 'chrome':
     case 'edge':
@@ -31,7 +37,7 @@ export function normalizePlaybackClientFamily(
 }
 
 type PlaybackClientFamilyCapabilities = {
-  deviceType: 'safari' | 'ios_safari' | 'firefox' | 'chromium';
+  deviceType: 'safari' | 'ios_safari' | 'firefox' | 'android_tv' | 'chromium';
   container: string[];
   videoCodecs: string[];
   audioCodecs: string[];
@@ -97,6 +103,24 @@ const PLAYBACK_CLIENT_FAMILY_CAPABILITIES: Record<
       preferredHlsEngine: 'hlsjs',
     },
   },
+  android_tv_browser: {
+    live: {
+      deviceType: 'android_tv',
+      container: ['mp4', 'ts', 'fmp4'],
+      videoCodecs: ['h264'],
+      audioCodecs: ['aac', 'mp3'],
+      hlsEngines: ['hlsjs'],
+      preferredHlsEngine: 'hlsjs',
+    },
+    recording: {
+      deviceType: 'android_tv',
+      container: ['mp4', 'ts', 'fmp4'],
+      videoCodecs: ['h264'],
+      audioCodecs: ['aac', 'mp3'],
+      hlsEngines: ['hlsjs'],
+      preferredHlsEngine: 'hlsjs',
+    },
+  },
   chromium_hlsjs: {
     live: {
       deviceType: 'chromium',
@@ -134,6 +158,15 @@ function isIOSUserAgent(): boolean {
   return /(iphone|ipad|ipod)/i.test(ua) || (/macintosh/i.test(ua) && hasTouchInput());
 }
 
+function isAndroidTVUserAgent(): boolean {
+  const ua = currentUserAgent();
+  return (
+    /\baft[a-z0-9]+\b/i.test(ua) ||
+    /fire\s*tv/i.test(ua) ||
+    (/android/i.test(ua) && /(android\s*tv|shield|bravia|smart[-\s]?tv|hbbtv|googletv|chromecast)/i.test(ua))
+  );
+}
+
 export function detectPlaybackClientFamily(
   videoEl: HTMLVideoElement | null
 ): PlaybackClientFamily {
@@ -149,6 +182,10 @@ export function detectPlaybackClientFamily(
     } catch {
       // Fall back to UA-based families below.
     }
+  }
+
+  if (isAndroidTVUserAgent()) {
+    return 'android_tv_browser';
   }
 
   return isFirefoxUserAgent() ? 'firefox_hlsjs' : 'chromium_hlsjs';

@@ -6,6 +6,7 @@ ENV_FILE="${REPO_ROOT}/.env"
 WEBUI_NODE_MODULES="${REPO_ROOT}/frontend/webui/node_modules"
 VARIABLES_FILE="${REPO_ROOT}/mk/variables.mk"
 GO_TOOLCHAIN_CHECK="${REPO_ROOT}/backend/scripts/check-go-toolchain.sh"
+NODE_TOOLCHAIN_CHECK="${REPO_ROOT}/backend/scripts/check-node-toolchain.sh"
 LIB_ENV="${REPO_ROOT}/backend/scripts/lib/env.sh"
 NOTES=()
 
@@ -98,6 +99,7 @@ main() {
   need_cmd make
 
   "${GO_TOOLCHAIN_CHECK}"
+  "${NODE_TOOLCHAIN_CHECK}"
   check_golangci_lint
   check_govulncheck
   check_env_file

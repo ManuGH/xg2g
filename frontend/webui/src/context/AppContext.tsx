@@ -91,7 +91,7 @@ export function AppProvider({ children }: AppProviderProps) {
   }, [resetAuthenticatedState, token]);
 
   const fetchChannels = useCallback(async (bouquetName: string): Promise<Service[]> => {
-    debugLog('[DEBUG] Fetching channels for:', bouquetName);
+    debugLog('[AppContext] Fetching channels for:', bouquetName);
     const response = await getServices(
       bouquetName ? { query: { bouquet: bouquetName } } : undefined
     );
@@ -105,9 +105,9 @@ export function AppProvider({ children }: AppProviderProps) {
       const data = await fetchChannels(bouquetName);
       setChannels(data);
       setSelectedBouquet(bouquetName);
-      debugLog('[DEBUG] Channels loaded. Count:', data.length);
+      debugLog('[AppContext] Channels loaded. Count:', data.length);
     } catch (err) {
-      debugError('[DEBUG] Failed to load channels:', formatError(err));
+      debugError('[AppContext] Failed to load channels:', formatError(err));
     } finally {
       setLoading(false);
     }
@@ -116,12 +116,12 @@ export function AppProvider({ children }: AppProviderProps) {
   const loadBouquetsAndChannels = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      debugLog('[DEBUG] Fetching bouquets...');
+      debugLog('[AppContext] Fetching bouquets...');
       const response = await getServicesBouquets();
       throwOnClientResultError(response, { source: 'AppContext.loadBouquetsAndChannels' });
       const bouquetData = response.data || [];
       setBouquets(bouquetData);
-      debugLog('[DEBUG] Bouquets loaded. Count:', bouquetData.length);
+      debugLog('[AppContext] Bouquets loaded. Count:', bouquetData.length);
 
       const currentSelectedBouquet = selectedBouquetRef.current;
       const nextSelectedBouquet = bouquetData.some((bouquet) => bouquet.name === currentSelectedBouquet)
@@ -131,12 +131,12 @@ export function AppProvider({ children }: AppProviderProps) {
       setChannels(channelData);
       selectedBouquetRef.current = nextSelectedBouquet;
       setSelectedBouquet(nextSelectedBouquet);
-      debugLog('[DEBUG] Channels loaded. Count:', channelData.length);
+      debugLog('[AppContext] Channels loaded. Count:', channelData.length);
       setDataLoaded(true);
     } catch (err) {
-      debugError('[DEBUG] Failed to load initial data:', formatError(err));
+      debugError('[AppContext] Failed to load initial data:', formatError(err));
       const apiErr = err as { status?: number };
-      debugLog('[DEBUG] Error status:', apiErr.status ?? 'unknown');
+      debugLog('[AppContext] Error status:', apiErr.status ?? 'unknown');
     } finally {
       setLoading(false);
     }

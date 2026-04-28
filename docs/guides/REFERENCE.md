@@ -21,7 +21,7 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_API_TOKEN` | Primary admin bearer token | - |
 | `XG2G_API_TOKEN_SCOPES`| Scopes for primary token (CSV) | `v3:read,v3:write` |
 | `XG2G_API_TOKENS` | Multi-token JSON list | `[{"token":"...","scopes":...}]` |
-| `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | Disable legacy `X-API-Token` header/cookie auth vectors | `false` |
+| `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | Disable legacy `X-API-Token` header/cookie auth vectors | `true` |
 
 ### V3 Streaming Engine
 
@@ -32,7 +32,7 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_STORE_BACKEND` | `sqlite` | State store: `sqlite` or `memory` |
 | `XG2G_STORE_PATH` | `/var/lib/xg2g/store` | Store path (sqlite) |
 | `XG2G_HLS_ROOT` | `${XG2G_DATA}/hls` | Directory for HLS segments |
-| `XG2G_STREAMING_POLICY`| `universal` | Only `universal` supported (ADR-00X) |
+| `XG2G_STREAMING_POLICY`| `universal` | Only `universal` supported |
 | `XG2G_TUNER_SLOTS` | (auto) | Range (e.g., `0-3`) or CSV (`0,1,2`) |
 
 ### Enigma2 Connectivity (V3)
@@ -51,7 +51,6 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_E2_USE_WEBIF_STREAMS` | `true` | Prefer `/web/stream.m3u` URL path |
 | `XG2G_E2_RESPONSE_HEADER_TIMEOUT` | `10s` | HTTP response header timeout |
 | `XG2G_E2_TUNE_TIMEOUT` | `10s` | Tune timeout before fallback/error |
-| `XG2G_E2_AUTH_MODE` | `inherit` | Auth behavior (`inherit|none|explicit`) |
 | `XG2G_E2_RATE_LIMIT` | - | Optional per-session rate limit |
 | `XG2G_E2_RATE_BURST` | - | Optional burst for rate limiting |
 | `XG2G_E2_USER_AGENT` | - | Optional User-Agent override |
@@ -86,7 +85,6 @@ Default location: `config.yaml`. Strict validation is enabled by default.
 ```yaml
 enigma2:
   baseUrl: "http://192.168.1.50"
-  streamPort: 8001
   authMode: "inherit"
 epg:
   enabled: true

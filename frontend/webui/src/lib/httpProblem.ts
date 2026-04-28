@@ -1,4 +1,4 @@
-import type { ProblemCode, ProblemDetails } from '../client-ts';
+import type { ProblemCode, ProblemDetails, TimerConflict } from '../client-ts';
 import { requestAuthRequired } from '../features/player/sessionEvents';
 
 type JsonRecord = Record<string, unknown>;
@@ -25,6 +25,27 @@ export function notifyAuthRequiredIfUnauthorizedResponse(res: Response, source?:
 
 function toOptionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function isTimerConflictType(value: unknown): value is TimerConflict['type'] {
+  return value === 'overlap' || value === 'duplicate' || value === 'tuner_limit' || value === 'unknown';
+}
+
+function isTimerConflict(value: unknown): value is TimerConflict {
+  if (!isRecord(value) || !isTimerConflictType(value.type) || !isRecord(value.blockingTimer)) {
+    return false;
+  }
+
+  const timer = value.blockingTimer;
+  return (
+    typeof timer.timerId === 'string' &&
+    typeof timer.serviceRef === 'string' &&
+    typeof timer.begin === 'number' &&
+    typeof timer.end === 'number' &&
+    typeof timer.name === 'string' &&
+    (value.overlapSeconds === undefined || typeof value.overlapSeconds === 'number') &&
+    (value.message === undefined || typeof value.message === 'string')
+  );
 }
 
 async function safeReadJsonBody(res: Response): Promise<JsonRecord | null> {
@@ -66,7 +87,10 @@ function normalizeProblemDetails(body: JsonRecord, res: Response): ProblemDetail
   const instance = toOptionalString(body.instance);
   if (instance) out.instance = instance;
   if (isRecord(body.fields)) out.fields = body.fields;
-  if (Array.isArray(body.conflicts)) out.conflicts = body.conflicts as any;
+  if (Array.isArray(body.conflicts)) {
+    const conflicts = body.conflicts.filter(isTimerConflict);
+    if (conflicts.length > 0) out.conflicts = conflicts;
+  }
 
   return out;
 }
