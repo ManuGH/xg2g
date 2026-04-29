@@ -96,3 +96,97 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes markdownlint-cli2@0.14.0 "docs/**/*.md" ".github/**/*.md" "*.md" "!CHANGELOG.md"
+
+  nightly-failure-alert:
+    name: Nightly Failure Alert
+    needs: [ci-nightly, nightly-doc-lint]
+    if: >
+      always() &&
+      github.event_name == 'schedule' &&
+      (
+        needs.ci-nightly.result == 'failure' || needs.ci-nightly.result == 'cancelled' ||
+        needs.nightly-doc-lint.result == 'failure' || needs.nightly-doc-lint.result == 'cancelled'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Create fail alert issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          NIGHTLY_GATES_RESULT: ${{ needs.ci-nightly.result }}
+          NIGHTLY_DOC_LINT_RESULT: ${{ needs.nightly-doc-lint.result }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const title = `[CI Nightly] Scheduled run failed: ${process.env.GITHUB_RUN_ID}`;
+
+            const body = [
+              "Scheduled CI Nightly run failed.",
+              "",
+              `Run: ${runUrl}`,
+              "",
+              "| Job | Result |",
+              "|---|---:|",
+              `| Nightly Gates (Deep & Expensive) | ${process.env.NIGHTLY_GATES_RESULT} |`,
+              `| Nightly Spec/Docs Lint | ${process.env.NIGHTLY_DOC_LINT_RESULT} |`,
+              "",
+              `Commit: \`${process.env.GITHUB_SHA}\``,
+              `Workflow: \`${process.env.GITHUB_WORKFLOW}\``,
+            ].join("\n");
+
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+            });
+
+  nightly-close-stale-alerts:
+    name: Nightly Close Stale Alerts
+    needs: [ci-nightly, nightly-doc-lint]
+    if: >
+      always() &&
+      github.event_name == 'schedule' &&
+      needs.ci-nightly.result != 'failure' &&
+      needs.ci-nightly.result != 'cancelled' &&
+      needs.nightly-doc-lint.result != 'failure' &&
+      needs.nightly-doc-lint.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Close stale nightly alert issues
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const prefix = "[CI Nightly] Scheduled run failed:";
+            const { data } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} is:issue is:open in:title "${prefix}"`,
+              per_page: 100,
+            });
+
+            for (const issue of data.items) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: `Closing after a successful scheduled CI Nightly run: ${runUrl}`,
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                state: "closed",
+                state_reason: "completed",
+              });
+            }
