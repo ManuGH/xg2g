@@ -183,16 +183,16 @@ func touchSegmentAccessTime(ctx context.Context, store HLSStore, req hlsRequest,
 		}
 		trace := ensureHLSAccessTrace(r)
 		if trace.LastSegmentName == req.cleanName && trace.LastSegmentAtUnix > 0 {
-			lastSegmentAt := time.Unix(trace.LastSegmentAtUnix, 0)
+			lastSegmentAt := time.UnixMilli(trace.LastSegmentAtUnix)
 			if now.Sub(lastSegmentAt) < minSegmentAccessUpdateInterval {
 				return nil
 			}
 		}
 		if trace.LastSegmentAtUnix > 0 {
-			trace.LastSegmentGapMs = durationToMilliseconds(now.Sub(time.Unix(trace.LastSegmentAtUnix, 0)))
+			trace.LastSegmentGapMs = durationToMilliseconds(now.Sub(time.UnixMilli(trace.LastSegmentAtUnix)))
 		}
 		trace.SegmentRequestCount++
-		trace.LastSegmentAtUnix = now.Unix()
+		trace.LastSegmentAtUnix = now.UnixMilli()
 		trace.LastSegmentName = req.cleanName
 		updateHLSStallRisk(r, trace, now)
 		return nil
@@ -242,7 +242,7 @@ func updateHLSStallRisk(rec *model.SessionRecord, trace *model.HLSAccessTrace, n
 	lastPlaylistAt := rec.LastPlaylistAccessAt
 	var lastSegmentAt time.Time
 	if trace.LastSegmentAtUnix > 0 {
-		lastSegmentAt = time.Unix(trace.LastSegmentAtUnix, 0)
+		lastSegmentAt = time.UnixMilli(trace.LastSegmentAtUnix)
 	}
 
 	switch {

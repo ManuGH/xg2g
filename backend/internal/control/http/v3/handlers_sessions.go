@@ -789,7 +789,8 @@ func mapPlaybackTraceHLSDebug(trace *model.PlaybackTrace) *PlaybackTraceHlsDebug
 		hasValue = true
 	}
 	if hls.LastSegmentAtUnix > 0 {
-		dto.LastSegmentAtMs = optionalIntPtr(int(hls.LastSegmentAtUnix * 1000))
+		// LastSegmentAtUnix is stored as UnixMilli for sub-second precision.
+		dto.LastSegmentAtMs = optionalIntPtr(int(hls.LastSegmentAtUnix))
 		hasValue = true
 	}
 	if lastSegmentName := strings.TrimSpace(hls.LastSegmentName); lastSegmentName != "" {

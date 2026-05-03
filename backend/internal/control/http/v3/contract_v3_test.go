@@ -823,7 +823,7 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 				LastPlaylistAtUnix:     1700000001,
 				LastPlaylistIntervalMs: 2100,
 				SegmentRequestCount:    3,
-				LastSegmentAtUnix:      1700000002,
+				LastSegmentAtUnix:      1700000002000,
 				LastSegmentName:        "seg_000077.ts",
 				LastSegmentGapMs:       1800,
 				LatestSegmentLagMs:     1200,

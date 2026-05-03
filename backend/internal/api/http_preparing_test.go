@@ -107,7 +107,6 @@ func (m *MockPreparingServer) GetErrors(w http.ResponseWriter, r *http.Request) 
 func (m *MockPreparingServer) GetSystemConfig(w http.ResponseWriter, r *http.Request)            {}
 func (m *MockPreparingServer) GetSystemConnectivity(w http.ResponseWriter, r *http.Request)      {}
 func (m *MockPreparingServer) PutSystemConfig(w http.ResponseWriter, r *http.Request)            {}
-func (m *MockPreparingServer) GetSystemConnectivity(w http.ResponseWriter, r *http.Request)      {}
 func (m *MockPreparingServer) GetSystemEntitlements(w http.ResponseWriter, r *http.Request, params v3.GetSystemEntitlementsParams) {
 }
 func (m *MockPreparingServer) PostSystemEntitlementReceipt(w http.ResponseWriter, r *http.Request) {

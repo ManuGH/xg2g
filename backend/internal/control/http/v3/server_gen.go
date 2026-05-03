@@ -1547,15 +1547,19 @@ type PlaybackTrace struct {
 	FallbackCount          *int                     `json:"fallbackCount"`
 	FfmpegPlan             *PlaybackTraceFfmpegPlan `json:"ffmpegPlan,omitempty"`
 	FirstFrameAtMs         *int                     `json:"firstFrameAtMs"`
-	HostOverrideApplied    *bool                    `json:"hostOverrideApplied"`
-	HostPressureBand       *string                  `json:"hostPressureBand"`
-	InputKind              *string                  `json:"inputKind"`
-	LastFallbackReason     *string                  `json:"lastFallbackReason"`
-	Operator               *PlaybackTraceOperator   `json:"operator,omitempty"`
-	PolicyModeHint         *string                  `json:"policyModeHint"`
-	PreflightDetail        *string                  `json:"preflightDetail"`
-	PreflightReason        *string                  `json:"preflightReason"`
-	QualityRung            *string                  `json:"qualityRung"`
+
+	// HlsDebug Operator-oriented HLS delivery debug view. These fields are observational only and
+	// must not be treated as authoritative playback policy or client playback input.
+	HlsDebug            *PlaybackTraceHlsDebug `json:"hlsDebug,omitempty"`
+	HostOverrideApplied *bool                  `json:"hostOverrideApplied"`
+	HostPressureBand    *string                `json:"hostPressureBand"`
+	InputKind           *string                `json:"inputKind"`
+	LastFallbackReason  *string                `json:"lastFallbackReason"`
+	Operator            *PlaybackTraceOperator `json:"operator,omitempty"`
+	PolicyModeHint      *string                `json:"policyModeHint"`
+	PreflightDetail     *string                `json:"preflightDetail"`
+	PreflightReason     *string                `json:"preflightReason"`
+	QualityRung         *string                `json:"qualityRung"`
 
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
 	RequestId          string                           `json:"requestId"`

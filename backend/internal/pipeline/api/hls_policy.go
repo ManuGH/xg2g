@@ -128,7 +128,11 @@ func parseHLSPlaylistMetrics(content []byte) hlsPlaylistMetrics {
 		}
 
 		raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXTINF:"))
-		raw = strings.TrimSuffix(raw, ",")
+		// HLS EXTINF format: <duration>[,<title>] — strip optional title portion
+		if idx := strings.IndexByte(raw, ','); idx >= 0 {
+			raw = raw[:idx]
+		}
+		raw = strings.TrimSpace(raw)
 		duration, err := strconv.ParseFloat(raw, 64)
 		if err != nil || duration <= 0 {
 			continue
