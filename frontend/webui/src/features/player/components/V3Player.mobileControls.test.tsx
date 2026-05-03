@@ -308,13 +308,6 @@ describe('V3Player Mobile Controls', () => {
     });
 
     let paused = false;
-    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function () {
-      paused = false;
-      return Promise.resolve();
-    });
-    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function () {
-      paused = true;
-    });
 
     const props = {
       src: 'http://example.com/playlist.m3u8',
