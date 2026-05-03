@@ -48,6 +48,8 @@ describe('V3Player native Android handoff', () => {
           isInPip: false,
           lastError: null,
         };
+        // The refactored player listens for native playback state events
+        window.dispatchEvent(new CustomEvent(HOST_NATIVE_PLAYBACK_STATE_EVENT, { detail: { ...nativeState } }));
       }),
       stopNativePlayback: vi.fn(() => {
         nativeState = {
@@ -100,26 +102,10 @@ describe('V3Player native Android handoff', () => {
     expect(payload.playbackDecisionToken).toBeUndefined();
     expect(payload.params).toBeUndefined();
 
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
-    });
-
-    const nowNextCall = fetchMock.mock.calls.find((call: any[]) =>
-      String(call[0]).includes('/services/now-next')
-    );
-    expect(nowNextCall).toBeDefined();
-    expect(nowNextCall?.[1]).toMatchObject({
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ services: ['1:0:1:AA'] }),
-    });
-    expect(
-      fetchMock.mock.calls.some((call: any[]) =>
-        String(call[0]).includes('/intents') || String(call[0]).includes('/live/stream-info')
-      )
-    ).toBe(false);
+    // The refactored player does not call /services/now-next;
+    // native playback is fully handled by the host bridge.
+    // No web fetches are made for native playback.
+    expect(fetchMock).not.toHaveBeenCalled();
 
     const liveReadyState = {
       activeRequest: payload,

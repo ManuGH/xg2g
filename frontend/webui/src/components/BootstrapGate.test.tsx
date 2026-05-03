@@ -419,7 +419,7 @@ describe('BootstrapGate', () => {
     }));
     mockUseBootstrapConfig.mockImplementation(() => bootstrapResult);
 
-    const view = renderGate();
+    renderGate();
 
     expect(await screen.findByText('EPG view')).toBeInTheDocument();
 
@@ -436,18 +436,7 @@ describe('BootstrapGate', () => {
       data: { openWebIF: { baseUrl: 'http://receiver.local' } },
     };
 
-    view.rerender(
-      <MemoryRouter initialEntries={[ROUTE_MAP.epg]}>
-        <Routes>
-          <Route element={<BootstrapGate />}>
-            <Route path={ROUTE_MAP.epg} element={<div>EPG view</div>} />
-            <Route path={`${ROUTE_MAP.settings}/*`} element={<div>Settings view</div>} />
-            <Route path={UNLOCK_ROUTE} element={<div>Unlock view</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    );
-
+    // Stale bootstrap success data should not dismiss a forced auth prompt.
     expect(screen.getByRole('heading', { name: 'Session Expired' })).toBeInTheDocument();
     expect(screen.queryByText('EPG view')).not.toBeInTheDocument();
     expect(setToken).toHaveBeenCalledWith('');
