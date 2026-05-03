@@ -6,8 +6,8 @@ import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } f
 import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
 import type { AppError } from '../../types/errors';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
-import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
 import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
+import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
 import {
   describeHlsRenderProbe,
   isBlackRenderSuspect,
@@ -52,12 +52,9 @@ interface UsePlaybackEngineProps {
   runtimeProbeActive?: boolean;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
-  setError?: Dispatch<SetStateAction<string | null>>;
-  setErrorDetails?: Dispatch<SetStateAction<string | null>>;
-  setShowErrorDetails?: Dispatch<SetStateAction<boolean>>;
-  dispatchPlayerAction?: (action: any) => void;
   clearPlaybackFailure: () => void;
   reportPlaybackFailure: (error: AppError, options?: PlaybackFailureReportOptions) => void;
+  dispatchPlayerAction?: (action: any) => void;
 }
 
 interface PlaybackEngineController {
@@ -178,8 +175,15 @@ export function usePlaybackEngine({
         }
 
         setStatus('error');
-        setError(err instanceof Error && err.message ? err.message : t('player.authFailed'));
-        setErrorDetails('native_hls_auth_prime_failed');
+        reportPlaybackFailure({
+          title: err instanceof Error && err.message ? err.message : t('player.authFailed'),
+          detail: 'native_hls_auth_prime_failed',
+          retryable: false,
+          code: 'AUTH_PRIME_FAILED',
+        }, {
+          source: 'native-host',
+          code: 'AUTH_PRIME_FAILED',
+        });
         return;
       }
 
@@ -195,7 +199,7 @@ export function usePlaybackEngine({
       video.src = url;
       scheduleNativeAutoplay(video, autoplayLabel);
     })();
-  }, [isTeardownRef, primePlaybackAuth, scheduleNativeAutoplay, sessionIdRef, setError, setErrorDetails, setStatus, t, videoRef]);
+  }, [isTeardownRef, primePlaybackAuth, reportPlaybackFailure, scheduleNativeAutoplay, sessionIdRef, setStatus, t, videoRef]);
 
   const clearNativeStallRecovery = useCallback(() => {
     if (nativeStallRecoveryTimerRef.current !== null) {
@@ -609,13 +613,29 @@ export function usePlaybackEngine({
       if (attempts >= 2) {
         const started = beginSessionDecodeRecovery(4, `hlsjs_${trigger}`, () => {
           setStatus('error');
-          setError?.(t('player.networkError'));
-          setErrorDetails?.(`${trigger} (hls.js stall recovery failed)`);
+          reportMediaFailure({
+            title: t('player.networkError'),
+            detail: `${trigger} (hls.js stall recovery failed)`,
+            retryable: true,
+            code: 'HLSJS_STALL_RECOVERY_FAILED',
+          }, {
+            code: 'HLSJS_STALL_RECOVERY_FAILED',
+            recoverable: true,
+            terminal: false,
+          });
         });
         if (!started) {
           setStatus('error');
-          setError?.(t('player.networkError'));
-          setErrorDetails?.(`${trigger} (hls.js stall recovery failed)`);
+          reportMediaFailure({
+            title: t('player.networkError'),
+            detail: `${trigger} (hls.js stall recovery failed)`,
+            retryable: true,
+            code: 'HLSJS_STALL_RECOVERY_FAILED',
+          }, {
+            code: 'HLSJS_STALL_RECOVERY_FAILED',
+            recoverable: true,
+            terminal: false,
+          });
         }
       }
     }, HLS_STALL_RECOVERY_MS);
@@ -625,9 +645,8 @@ export function usePlaybackEngine({
     bufferedTailSeconds,
     hlsRef,
     isTeardownRef,
+    reportMediaFailure,
     sessionIdRef,
-    setError,
-    setErrorDetails,
     setStatus,
     t
   ]);
@@ -893,7 +912,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, sessionIdRef, setError, setErrorDetails, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -919,37 +938,6 @@ export function usePlaybackEngine({
     video.load();
     video.play().catch((err) => debugWarn('Autoplay failed', err));
   }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, videoRef]);
-
-  const waitForDirectStream = useCallback(async (url: string): Promise<void> => {
-    const maxRetries = 100;
-    let retries = 0;
-
-    while (retries < maxRetries) {
-      if (isTeardownRef.current) throw new Error('Playback cancelled');
-
-      try {
-        const res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-
-        if (res.ok || res.status === 206) {
-          return;
-        }
-
-        if (res.status === 503) {
-          await new Promise((resolve) => window.setTimeout(resolve, 1000));
-        } else {
-          throw new Error(`Unexpected status: ${res.status}`);
-        }
-      } catch (err) {
-        debugWarn('[V3Player] Probe failed', err);
-        throw new Error(t('player.networkError'));
-      }
-
-      retries++;
-    }
-
-    debugWarn('[V3Player] Direct Stream Timeout after', maxRetries, 'attempts');
-    throw new Error(t('player.timeout'));
-  }, [isTeardownRef, t]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -1189,7 +1177,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setError, setErrorDetails, setShowErrorDetails, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
 
   return {
     resetPlaybackEngine,

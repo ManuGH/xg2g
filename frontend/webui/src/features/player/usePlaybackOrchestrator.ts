@@ -1104,6 +1104,7 @@ export function usePlaybackOrchestrator(
     canSeek,
     startUnix,
     setStatus,
+    liveSeekWindow: null,
     allowNativeFullscreen: activeHlsEngine === 'native',
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen
