@@ -4,7 +4,9 @@ import type { TFunction } from 'i18next';
 import Hls from './lib/hlsRuntime';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
 import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
+import type { AppError } from '../../types/errors';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
+import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
 import {
   describeHlsRenderProbe,
@@ -50,9 +52,8 @@ interface UsePlaybackEngineProps {
   runtimeProbeActive?: boolean;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  setErrorDetails: Dispatch<SetStateAction<string | null>>;
-  setShowErrorDetails: Dispatch<SetStateAction<boolean>>;
+  clearPlaybackFailure: () => void;
+  reportPlaybackFailure: (error: AppError, options?: PlaybackFailureReportOptions) => void;
   dispatchPlayerAction?: (action: any) => void;
 }
 
@@ -60,7 +61,6 @@ interface PlaybackEngineController {
   resetPlaybackEngine: () => void;
   playHls: (url: string, engine?: PlaybackEngineName) => void;
   playDirectMp4: (url: string) => void;
-  waitForDirectStream: (url: string) => Promise<void>;
 }
 
 function playbackRecoveryInfoForWarning(code: number): { code: number; message: string } | null {
@@ -100,9 +100,8 @@ export function usePlaybackEngine({
   runtimeProbeActive = false,
   setStats,
   setStatus,
-  setError,
-  setErrorDetails,
-  setShowErrorDetails
+  clearPlaybackFailure,
+  reportPlaybackFailure
 }: UsePlaybackEngineProps): PlaybackEngineController {
   const lastHlsUrlRef = useRef<string | null>(null);
   const lastHlsEngineRef = useRef<PlaybackEngineName>('auto');
@@ -122,6 +121,13 @@ export function usePlaybackEngine({
   const activeHlsRenderProbeSessionRef = useRef<string | null>(null);
   const completedHlsRenderProbeSessionRef = useRef<string | null>(null);
   const hlsRenderProbeTimerRef = useRef<number | null>(null);
+
+  const reportMediaFailure = useCallback((error: AppError, options: PlaybackFailureReportOptions = {}) => {
+    reportPlaybackFailure(error, {
+      source: 'media-element',
+      ...options,
+    });
+  }, [reportPlaybackFailure]);
 
   const clearPendingNativeAutoplay = useCallback(() => {
     const video = videoRef.current;
@@ -169,8 +175,15 @@ export function usePlaybackEngine({
         }
 
         setStatus('error');
-        setError(err instanceof Error && err.message ? err.message : t('player.authFailed'));
-        setErrorDetails('native_hls_auth_prime_failed');
+        reportPlaybackFailure({
+          title: err instanceof Error && err.message ? err.message : t('player.authFailed'),
+          detail: 'native_hls_auth_prime_failed',
+          retryable: false,
+          code: 'AUTH_PRIME_FAILED',
+        }, {
+          source: 'native-host',
+          code: 'AUTH_PRIME_FAILED',
+        });
         return;
       }
 
@@ -186,7 +199,7 @@ export function usePlaybackEngine({
       video.src = url;
       scheduleNativeAutoplay(video, autoplayLabel);
     })();
-  }, [isTeardownRef, primePlaybackAuth, scheduleNativeAutoplay, sessionIdRef, setError, setErrorDetails, setStatus, t, videoRef]);
+  }, [isTeardownRef, primePlaybackAuth, reportPlaybackFailure, scheduleNativeAutoplay, sessionIdRef, setStatus, t, videoRef]);
 
   const clearNativeStallRecovery = useCallback(() => {
     if (nativeStallRecoveryTimerRef.current !== null) {
@@ -398,9 +411,7 @@ export function usePlaybackEngine({
     decodeRecoveryInFlightRef.current = true;
     decodeRecoveryAttemptsRef.current += 1;
     setStatus('recovering');
-    setError(null);
-    setErrorDetails(null);
-    setShowErrorDetails(false);
+    clearPlaybackFailure();
 
     void (async () => {
       try {
@@ -430,9 +441,7 @@ export function usePlaybackEngine({
         }
 
         setStatus('buffering');
-        setError(null);
-        setErrorDetails(null);
-        setShowErrorDetails(false);
+        clearPlaybackFailure();
         replayHlsRef.current?.(nextUrl, trackedEngine);
       } catch (recoveryErr) {
         debugWarn('[V3Player] Decode recovery failed', recoveryErr);
@@ -447,9 +456,7 @@ export function usePlaybackEngine({
     reportError,
     resetPlaybackEngine,
     sessionIdRef,
-    setError,
-    setErrorDetails,
-    setShowErrorDetails,
+    clearPlaybackFailure,
     setStatus,
     waitForSessionReady
   ]);
@@ -498,24 +505,39 @@ export function usePlaybackEngine({
 
       const started = beginSessionDecodeRecovery(4, `native_hls_${trigger}`, () => {
         setStatus('error');
-        setError(t('player.networkError'));
-        setErrorDetails(`${trigger} (native stall recovery failed)`);
+        reportMediaFailure({
+          title: t('player.networkError'),
+          detail: `${trigger} (native stall recovery failed)`,
+          retryable: true,
+          code: 'NATIVE_STALL_RECOVERY_FAILED',
+        }, {
+          code: 'NATIVE_STALL_RECOVERY_FAILED',
+          recoverable: true,
+          terminal: false,
+        });
       });
 
       if (!started) {
         setStatus('error');
-        setError(t('player.networkError'));
-        setErrorDetails(`${trigger} (native stall recovery failed)`);
+        reportMediaFailure({
+          title: t('player.networkError'),
+          detail: `${trigger} (native stall recovery failed)`,
+          retryable: true,
+          code: 'NATIVE_STALL_RECOVERY_FAILED',
+        }, {
+          code: 'NATIVE_STALL_RECOVERY_FAILED',
+          recoverable: true,
+          terminal: false,
+        });
       }
     }, NATIVE_STALL_RECOVERY_MS);
   }, [
     beginSessionDecodeRecovery,
     bufferedAheadSeconds,
+    reportMediaFailure,
     hlsRef,
     isTeardownRef,
     sessionIdRef,
-    setError,
-    setErrorDetails,
     setStatus,
     t
   ]);
@@ -591,13 +613,29 @@ export function usePlaybackEngine({
       if (attempts >= 2) {
         const started = beginSessionDecodeRecovery(4, `hlsjs_${trigger}`, () => {
           setStatus('error');
-          setError(t('player.networkError'));
-          setErrorDetails(`${trigger} (hls.js stall recovery failed)`);
+          reportMediaFailure({
+            title: t('player.networkError'),
+            detail: `${trigger} (hls.js stall recovery failed)`,
+            retryable: true,
+            code: 'HLSJS_STALL_RECOVERY_FAILED',
+          }, {
+            code: 'HLSJS_STALL_RECOVERY_FAILED',
+            recoverable: true,
+            terminal: false,
+          });
         });
         if (!started) {
           setStatus('error');
-          setError(t('player.networkError'));
-          setErrorDetails(`${trigger} (hls.js stall recovery failed)`);
+          reportMediaFailure({
+            title: t('player.networkError'),
+            detail: `${trigger} (hls.js stall recovery failed)`,
+            retryable: true,
+            code: 'HLSJS_STALL_RECOVERY_FAILED',
+          }, {
+            code: 'HLSJS_STALL_RECOVERY_FAILED',
+            recoverable: true,
+            terminal: false,
+          });
         }
       }
     }, HLS_STALL_RECOVERY_MS);
@@ -607,9 +645,8 @@ export function usePlaybackEngine({
     bufferedTailSeconds,
     hlsRef,
     isTeardownRef,
+    reportMediaFailure,
     sessionIdRef,
-    setError,
-    setErrorDetails,
     setStatus,
     t
   ]);
@@ -734,18 +771,39 @@ export function usePlaybackEngine({
                 debugError('[V3Player] NETWORK_ERROR 401: session recovery failed', recoveryErr);
                 hlsRef.current?.destroy();
                 setStatus('error');
-                setError(
-                  recoveryErr instanceof Error && recoveryErr.message
+                reportPlaybackFailure({
+                  title: recoveryErr instanceof Error && recoveryErr.message
                     ? recoveryErr.message
-                    : presentation.title
-                );
-                setErrorDetails(presentation.details);
+                    : presentation.title,
+                  detail: presentation.details,
+                  status: recoveryErr && typeof recoveryErr === 'object' && 'status' in recoveryErr
+                    ? (recoveryErr as { status?: number }).status
+                    : httpStatus,
+                  retryable: false,
+                  code: recoveryErr && typeof recoveryErr === 'object' && 'code' in recoveryErr
+                    ? ((recoveryErr as { code?: string }).code ?? undefined)
+                    : 'AUTH_RECOVERY_FAILED',
+                }, {
+                  source: 'native-host',
+                  code: recoveryErr && typeof recoveryErr === 'object' && 'code' in recoveryErr
+                    ? ((recoveryErr as { code?: string }).code ?? undefined)
+                    : 'AUTH_RECOVERY_FAILED',
+                });
               });
               if (!started) {
                 hlsRef.current?.destroy();
                 setStatus('error');
-                setError(presentation.title);
-                setErrorDetails(presentation.details);
+                reportMediaFailure({
+                  title: presentation.title,
+                  detail: presentation.details,
+                  status: httpStatus,
+                  retryable: true,
+                  code: 'HLS_NETWORK_AUTH_BLOCKED',
+                }, {
+                  code: 'HLS_NETWORK_AUTH_BLOCKED',
+                  recoverable: true,
+                  terminal: false,
+                });
               }
               return;
             }
@@ -763,8 +821,17 @@ export function usePlaybackEngine({
               debugError(`[V3Player] NETWORK_ERROR: max retries (${maxNetworkRetries}) exhausted`);
               hlsRef.current?.destroy();
               setStatus('error');
-              setError(presentation.title);
-              setErrorDetails(`${presentation.details} • ${maxNetworkRetries} retries exhausted`);
+              reportMediaFailure({
+                title: presentation.title,
+                detail: `${presentation.details} • ${maxNetworkRetries} retries exhausted`,
+                status: httpStatus,
+                retryable: true,
+                code: 'HLS_NETWORK_RETRIES_EXHAUSTED',
+              }, {
+                code: 'HLS_NETWORK_RETRIES_EXHAUSTED',
+                recoverable: true,
+                terminal: false,
+              });
             }
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
@@ -780,15 +847,31 @@ export function usePlaybackEngine({
                 debugError('[V3Player] MEDIA_ERROR: session reattach failed, failing terminally');
                 hlsRef.current?.destroy();
                 setStatus('error');
-                setError(presentation.title);
-                setErrorDetails(`${presentation.details} • media recovery failed`);
+                reportMediaFailure({
+                  title: presentation.title,
+                  detail: `${presentation.details} • media recovery failed`,
+                  retryable: true,
+                  code: 'HLS_MEDIA_RECOVERY_FAILED',
+                }, {
+                  code: 'HLS_MEDIA_RECOVERY_FAILED',
+                  recoverable: true,
+                  terminal: false,
+                });
               });
               if (!started) {
                 debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
                 hlsRef.current?.destroy();
                 setStatus('error');
-                setError(presentation.title);
-                setErrorDetails(`${presentation.details} • media recovery failed`);
+                reportMediaFailure({
+                  title: presentation.title,
+                  detail: `${presentation.details} • media recovery failed`,
+                  retryable: true,
+                  code: 'HLS_MEDIA_RECOVERY_FAILED',
+                }, {
+                  code: 'HLS_MEDIA_RECOVERY_FAILED',
+                  recoverable: true,
+                  terminal: false,
+                });
               }
             }
             break;
@@ -798,8 +881,15 @@ export function usePlaybackEngine({
             }
             hlsRef.current?.destroy();
             setStatus('error');
-            setError(presentation.title);
-            setErrorDetails(presentation.details);
+            reportMediaFailure({
+              title: presentation.title,
+              detail: presentation.details,
+              status: httpStatus,
+              retryable: true,
+              code: 'HLS_FATAL_ERROR',
+            }, {
+              code: 'HLS_FATAL_ERROR',
+            });
             break;
         }
       });
@@ -822,7 +912,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, sessionIdRef, setError, setErrorDetails, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -848,37 +938,6 @@ export function usePlaybackEngine({
     video.load();
     video.play().catch((err) => debugWarn('Autoplay failed', err));
   }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, videoRef]);
-
-  const waitForDirectStream = useCallback(async (url: string): Promise<void> => {
-    const maxRetries = 100;
-    let retries = 0;
-
-    while (retries < maxRetries) {
-      if (isTeardownRef.current) throw new Error('Playback cancelled');
-
-      try {
-        const res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-
-        if (res.ok || res.status === 206) {
-          return;
-        }
-
-        if (res.status === 503) {
-          await new Promise((resolve) => window.setTimeout(resolve, 1000));
-        } else {
-          throw new Error(`Unexpected status: ${res.status}`);
-        }
-      } catch (err) {
-        debugWarn('[V3Player] Probe failed', err);
-        throw new Error(t('player.networkError'));
-      }
-
-      retries++;
-    }
-
-    debugWarn('[V3Player] Direct Stream Timeout after', maxRetries, 'attempts');
-    throw new Error(t('player.timeout'));
-  }, [isTeardownRef, t]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -1006,17 +1065,11 @@ export function usePlaybackEngine({
       pendingWarningRecoveryRef.current = null;
       reportedWarningKeysRef.current.clear();
       setStatus('playing');
-      setError(null);
-      setErrorDetails(null);
-      setShowErrorDetails(false);
+      clearPlaybackFailure();
     };
 
     const onPause = () => {
       if (isTeardownRef.current) {
-        return;
-      }
-      if (videoEl.dataset.xg2gManagedPause === '1') {
-        debugLog('[V3Player] Event: pause (managed native veil hold ignored)');
         return;
       }
       clearNativeStallRecovery();
@@ -1077,8 +1130,16 @@ export function usePlaybackEngine({
 
         if (shouldAttemptNativeRecovery && beginSessionDecodeRecovery(safeCode, message, () => {
           setStatus('error');
-          setError(presentation.title);
-          setErrorDetails(`${presentation.details} • native recovery failed`);
+          reportMediaFailure({
+            title: presentation.title,
+            detail: `${presentation.details} • native recovery failed`,
+            retryable: true,
+            code: 'NATIVE_MEDIA_RECOVERY_FAILED',
+          }, {
+            code: 'NATIVE_MEDIA_RECOVERY_FAILED',
+            recoverable: true,
+            terminal: false,
+          });
         })) {
           return;
         }
@@ -1087,8 +1148,14 @@ export function usePlaybackEngine({
       }
 
       setStatus('error');
-      setError(presentation.title);
-      setErrorDetails(presentation.details);
+      reportMediaFailure({
+        title: presentation.title,
+        detail: presentation.details,
+        retryable: true,
+        code: 'MEDIA_ELEMENT_ERROR',
+      }, {
+        code: 'MEDIA_ELEMENT_ERROR',
+      });
     };
 
     videoEl.addEventListener('waiting', onWaiting);
@@ -1110,12 +1177,11 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setError, setErrorDetails, setShowErrorDetails, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
 
   return {
     resetPlaybackEngine,
     playHls,
     playDirectMp4,
-    waitForDirectStream
   };
 }

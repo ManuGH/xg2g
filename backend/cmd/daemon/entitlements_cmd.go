@@ -295,6 +295,7 @@ func getEntitlementStatusFromAPI(apiBaseURL, token, principalID string, timeout 
 		endpoint.RawQuery = query.Encode()
 	}
 
+	//nolint:gosec // G704: CLI tool intended to connect to user-provided daemon URL
 	req, err := http.NewRequest(http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return v3.EntitlementStatus{}, nil, err
@@ -324,6 +325,7 @@ func postEntitlementOverrideToAPI(apiBaseURL, token, principalID string, scopes 
 		return fmt.Errorf("encode override request: %w", err)
 	}
 
+	//nolint:gosec // G704: CLI tool intended to connect to user-provided daemon URL
 	req, err := http.NewRequest(http.MethodPost, apiBaseURL+"/system/entitlements/overrides", bytes.NewReader(reqBody))
 	if err != nil {
 		return err
@@ -337,6 +339,7 @@ func postEntitlementOverrideToAPI(apiBaseURL, token, principalID string, scopes 
 
 func deleteEntitlementOverrideFromAPI(apiBaseURL, token, principalID, scope string, timeout time.Duration) error {
 	path := apiBaseURL + "/system/entitlements/overrides/" + url.PathEscape(principalID) + "/" + url.PathEscape(scope)
+	//nolint:gosec // G704: CLI tool intended to connect to user-provided daemon URL
 	req, err := http.NewRequest(http.MethodDelete, path, nil)
 	if err != nil {
 		return err

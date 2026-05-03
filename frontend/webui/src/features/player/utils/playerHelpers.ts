@@ -7,15 +7,31 @@
  */
 
 import type { VideoElementRef } from '../../../types/v3-player';
+
 // --- Error Type ---
 
 export class PlayerError extends Error {
   details?: unknown;
+  status?: number;
+  code?: string;
+  requestId?: string;
 
   constructor(message: string, details?: unknown) {
     super(message);
     this.name = 'PlayerError';
     this.details = details;
+    if (details && typeof details === 'object') {
+      const record = details as Record<string, unknown>;
+      if (typeof record.status === 'number') {
+        this.status = record.status;
+      }
+      if (typeof record.code === 'string') {
+        this.code = record.code;
+      }
+      if (typeof record.requestId === 'string') {
+        this.requestId = record.requestId;
+      }
+    }
     Object.setPrototypeOf(this, PlayerError.prototype);
   }
 }
@@ -87,8 +103,17 @@ export function canUseDesktopWebKitFullscreen(videoEl?: VideoElementRef): boolea
   try {
     const webkitVideo = videoEl as unknown as {
       webkitEnterFullscreen?: unknown;
+      webkitSupportsPresentationMode?: unknown;
+      webkitSetPresentationMode?: unknown;
     };
-    return typeof webkitVideo.webkitEnterFullscreen === 'function' && !hasTouchInput();
+    if (hasTouchInput()) {
+      return false;
+    }
+    return (
+      typeof webkitVideo.webkitEnterFullscreen === 'function' ||
+      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
+      typeof webkitVideo.webkitSetPresentationMode === 'function'
+    );
   } catch {
     return false;
   }
@@ -119,48 +144,13 @@ export function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
   }
 }
 
-function hasDesktopWebKitPresentation(videoEl?: VideoElementRef): boolean {
-  if (!videoEl) return false;
-  try {
-    const webkitVideo = videoEl as unknown as {
-      webkitSupportsPresentationMode?: unknown;
-      webkitSetPresentationMode?: unknown;
-      webkitPresentationMode?: unknown;
-      webkitEnterFullscreen?: unknown;
-    };
-
-    return (
-      typeof webkitVideo.webkitSupportsPresentationMode === 'function' ||
-      typeof webkitVideo.webkitSetPresentationMode === 'function' ||
-      typeof webkitVideo.webkitEnterFullscreen === 'function' ||
-      'webkitPresentationMode' in webkitVideo
-    ) && !hasTouchInput();
-  } catch {
-    return false;
-  }
-}
-
-function isLikelyDesktopSafariUserAgent(): boolean {
-  try {
-    if (hasTouchInput()) return false;
-    const ua = navigator.userAgent || '';
-    if (!/safari/i.test(ua) || !/applewebkit/i.test(ua)) {
-      return false;
-    }
-    return !/(chrome|chromium|crios|fxios|firefox|edg|edgios|opr|opera|android)/i.test(ua);
-  } catch {
-    return false;
-  }
-}
-
 export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupported: boolean = false): boolean {
   if (!videoEl) return false;
   try {
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
     if (!hasNativeHls) return false;
     if (shouldForceNativeMobileHls(videoEl)) return true;
-    if (hasDesktopWebKitPresentation(videoEl)) return true;
-    if (isLikelyDesktopSafariUserAgent()) return true;
+    if (canUseDesktopWebKitFullscreen(videoEl)) return true;
 
     return !hlsJsSupported;
   } catch {

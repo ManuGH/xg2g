@@ -4,7 +4,6 @@ import type { TFunction } from 'i18next';
 import { createSession, type IntentRequest } from '../../client-ts';
 import { setClientAuthToken, throwOnClientResultError } from '../../services/clientWrapper';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
-import { telemetry } from '../../services/TelemetryService';
 import type {
   PlayerStatus,
   SessionCookieState,
@@ -13,7 +12,9 @@ import type {
   V3SessionStatusResponse,
   VideoElementRef,
 } from '../../types/v3-player';
+import type { AppError } from '../../types/errors';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
+import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 
 const SESSION_READY_TIMEOUT_MS = 60_000;
 const SESSION_READY_POLL_MS = 250;
@@ -31,7 +32,8 @@ interface UseLiveSessionControllerProps {
   setPlaybackMode: Dispatch<SetStateAction<PlaybackMode>>;
   setDurationSeconds: Dispatch<SetStateAction<number | null>>;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
-  setError: Dispatch<SetStateAction<string | null>>;
+  clearPlaybackFailure: () => void;
+  reportPlaybackFailure: (error: AppError, options?: PlaybackFailureReportOptions) => void;
   readResponseBody: ErrorBodyReader;
   createPlayerError: PlayerErrorFactory;
   onSessionSnapshot?: (session: V3SessionSnapshot) => void;
@@ -88,7 +90,8 @@ export function useLiveSessionController({
   setPlaybackMode,
   setDurationSeconds,
   setStatus,
-  setError,
+  clearPlaybackFailure,
+  reportPlaybackFailure,
   readResponseBody,
   createPlayerError,
   onSessionSnapshot
@@ -380,14 +383,6 @@ export function useLiveSessionController({
             trace: (json && typeof json === 'object' && 'trace' in json) ? (json.trace as V3SessionStatusResponse['trace']) : undefined,
           });
 
-          telemetry.emit('ui.error', {
-            status: 410,
-            code: 'SESSION_GONE',
-            reason: reason ?? null,
-            reason_detail: reasonDetail ?? null,
-            requestId
-          });
-
           if (String(reason).includes('LEASE_BUSY') || String(reasonDetail).includes('LEASE_BUSY')) {
             throw createPlayerError(t('player.leaseBusy'), details);
           }
@@ -510,7 +505,19 @@ export function useLiveSessionController({
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
           setStatus('error');
-          setError(t('player.authFailed'));
+          clearPlaybackFailure();
+          reportPlaybackFailure({
+            title: t('player.authFailed'),
+            status: 401,
+            retryable: false,
+            code: 'SESSION_UNAUTHORIZED',
+          }, {
+            source: 'native-host',
+            failureClass: 'auth',
+            retryable: false,
+            recoverable: false,
+            terminal: true,
+          });
           if (videoRef.current) {
             videoRef.current.pause();
           }
@@ -520,7 +527,19 @@ export function useLiveSessionController({
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
           setStatus('error');
-          setError(t('player.forbidden'));
+          clearPlaybackFailure();
+          reportPlaybackFailure({
+            title: t('player.forbidden'),
+            status: 403,
+            retryable: false,
+            code: 'SESSION_FORBIDDEN',
+          }, {
+            source: 'native-host',
+            failureClass: 'auth',
+            retryable: false,
+            recoverable: false,
+            terminal: true,
+          });
           if (videoRef.current) {
             videoRef.current.pause();
           }
@@ -535,7 +554,19 @@ export function useLiveSessionController({
             clearSessionLeaseState();
             setPlaybackMode('UNKNOWN');
             setStatus('error');
-            setError(t('player.sessionFailed'));
+            clearPlaybackFailure();
+            reportPlaybackFailure({
+              title: t('player.sessionFailed'),
+              status: 502,
+              retryable: true,
+              code: 'INVALID_HEARTBEAT_CONTRACT',
+            }, {
+              source: 'native-host',
+              failureClass: 'session',
+              retryable: true,
+              recoverable: true,
+              terminal: false,
+            });
             if (videoRef.current) {
               videoRef.current.pause();
             }
@@ -550,7 +581,19 @@ export function useLiveSessionController({
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
           setStatus('error');
-          setError(t('player.sessionExpired') || 'Session expired. Please restart.');
+          clearPlaybackFailure();
+          reportPlaybackFailure({
+            title: t('player.sessionExpired') || 'Session expired. Please restart.',
+            status: 410,
+            retryable: true,
+            code: 'SESSION_EXPIRED',
+          }, {
+            source: 'native-host',
+            failureClass: 'session',
+            retryable: true,
+            recoverable: true,
+            terminal: false,
+          });
           if (videoRef.current) {
             videoRef.current.pause();
           }
@@ -560,7 +603,19 @@ export function useLiveSessionController({
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
           setStatus('error');
-          setError(t('player.sessionNotFound') || 'Session no longer exists.');
+          clearPlaybackFailure();
+          reportPlaybackFailure({
+            title: t('player.sessionNotFound') || 'Session no longer exists.',
+            status: 404,
+            retryable: true,
+            code: 'SESSION_NOT_FOUND',
+          }, {
+            source: 'native-host',
+            failureClass: 'session',
+            retryable: true,
+            recoverable: true,
+            terminal: false,
+          });
           if (videoRef.current) {
             videoRef.current.pause();
           }
@@ -574,7 +629,7 @@ export function useLiveSessionController({
       debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
       window.clearInterval(timerId);
     };
-  }, [apiBase, authHeaders, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, sessionId, setError, setPlaybackMode, setStatus, t, videoRef]);
+  }, [apiBase, authHeaders, clearPlaybackFailure, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, reportPlaybackFailure, sessionId, setPlaybackMode, setStatus, t, videoRef]);
 
   useEffect(() => {
     setClientAuthToken(token);

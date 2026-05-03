@@ -10,6 +10,7 @@ import android.view.View
 import android.webkit.CookieManager
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
@@ -90,6 +91,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
+        installBackHandler()
 
         playerView = findViewById(R.id.player_view)
         overlayView = findViewById(R.id.player_overlay)
@@ -105,6 +107,14 @@ class PlayerActivity : AppCompatActivity() {
 
         showLoadingOverlay(session.state.value)
         render(session.state.value)
+    }
+
+    private fun installBackHandler() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                requestPlaybackExit()
+            }
+        })
     }
 
     override fun onStart() {
@@ -271,7 +281,6 @@ class PlayerActivity : AppCompatActivity() {
             return false
         }
         return when (event.keyCode) {
-            KeyEvent.KEYCODE_BACK,
             KeyEvent.KEYCODE_ESCAPE,
             KeyEvent.KEYCODE_MEDIA_STOP -> event.action == KeyEvent.ACTION_DOWN
             else -> false

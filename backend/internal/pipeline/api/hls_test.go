@@ -174,6 +174,140 @@ func TestTouchPlaylistAccessTime_ThrottlesRepeatedPlaylistTouch(t *testing.T) {
 	require.True(t, store.Session.LastPlaylistAccessAt.Equal(now))
 }
 
+func TestTouchPlaylistAccessTime_TracksHLSPlaybackTrace(t *testing.T) {
+	now := time.Now()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:            "sid-trace",
+			LastAccessUnix:       now.Add(-3 * time.Second).Unix(),
+			LastPlaylistAccessAt: now.Add(-3 * time.Second),
+			LatestSegmentAt:      now.Add(-2 * time.Second),
+		},
+	}
+	rec := &model.SessionRecord{
+		SessionID:            "sid-trace",
+		LastAccessUnix:       now.Add(-3 * time.Second).Unix(),
+		LastPlaylistAccessAt: now.Add(-3 * time.Second),
+		LatestSegmentAt:      now.Add(-2 * time.Second),
+	}
+
+	touchPlaylistAccessTime(context.Background(), store, hlsRequest{
+		sessionID:  "sid-trace",
+		filename:   "index.m3u8",
+		isPlaylist: true,
+	}, rec)
+
+	require.Equal(t, 1, store.UpdateSessionCalls)
+	require.NotNil(t, store.Session.PlaybackTrace)
+	require.NotNil(t, store.Session.PlaybackTrace.HLS)
+	assert.Equal(t, 1, store.Session.PlaybackTrace.HLS.PlaylistRequestCount)
+	assert.NotZero(t, store.Session.PlaybackTrace.HLS.LastPlaylistAtUnix)
+	assert.Greater(t, store.Session.PlaybackTrace.HLS.LastPlaylistIntervalMs, 0)
+	assert.GreaterOrEqual(t, store.Session.PlaybackTrace.HLS.LatestSegmentLagMs, 0)
+	assert.Equal(t, "low", store.Session.PlaybackTrace.HLS.StallRisk)
+}
+
+func TestTouchPlaylistAccessTime_DetectsPlaylistOnlyRisk(t *testing.T) {
+	now := time.Now()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:            "sid-playlist-only",
+			LastAccessUnix:       now.Add(-2 * time.Second).Unix(),
+			LastPlaylistAccessAt: now.Add(-2 * time.Second),
+			LatestSegmentAt:      now.Add(-1500 * time.Millisecond),
+			PlaybackTrace: &model.PlaybackTrace{
+				HLS: &model.HLSAccessTrace{
+					PlaylistRequestCount: 1,
+					LastPlaylistAtUnix:   now.Add(-5 * time.Second).Unix(),
+				},
+			},
+		},
+	}
+	rec := &model.SessionRecord{
+		SessionID:            "sid-playlist-only",
+		LastAccessUnix:       now.Add(-2 * time.Second).Unix(),
+		LastPlaylistAccessAt: now.Add(-2 * time.Second),
+		LatestSegmentAt:      now.Add(-1500 * time.Millisecond),
+	}
+
+	touchPlaylistAccessTime(context.Background(), store, hlsRequest{
+		sessionID:  "sid-playlist-only",
+		filename:   "index.m3u8",
+		isPlaylist: true,
+	}, rec)
+
+	require.NotNil(t, store.Session.PlaybackTrace)
+	require.NotNil(t, store.Session.PlaybackTrace.HLS)
+	assert.Equal(t, 2, store.Session.PlaybackTrace.HLS.PlaylistRequestCount)
+	assert.Equal(t, "playlist_only", store.Session.PlaybackTrace.HLS.StallRisk)
+}
+
+func TestTouchPlaylistAccessTime_DetectsProducerLagRisk(t *testing.T) {
+	now := time.Now()
+	staleProducerAt := now.Add(-20 * time.Second)
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:            "sid-producer-late",
+			LastAccessUnix:       now.Add(-2 * time.Second).Unix(),
+			LastPlaylistAccessAt: now.Add(-2 * time.Second),
+			LatestSegmentAt:      staleProducerAt,
+			PlaylistPublishedAt:  staleProducerAt,
+		},
+	}
+	rec := &model.SessionRecord{
+		SessionID:            "sid-producer-late",
+		LastAccessUnix:       now.Add(-2 * time.Second).Unix(),
+		LastPlaylistAccessAt: now.Add(-2 * time.Second),
+		LatestSegmentAt:      staleProducerAt,
+		PlaylistPublishedAt:  staleProducerAt,
+	}
+
+	touchPlaylistAccessTime(context.Background(), store, hlsRequest{
+		sessionID:  "sid-producer-late",
+		filename:   "index.m3u8",
+		isPlaylist: true,
+	}, rec)
+
+	require.NotNil(t, store.Session.PlaybackTrace)
+	require.NotNil(t, store.Session.PlaybackTrace.HLS)
+	assert.Equal(t, "producer_late", store.Session.PlaybackTrace.HLS.StallRisk)
+	assert.GreaterOrEqual(t, store.Session.PlaybackTrace.HLS.LatestSegmentLagMs, 15000)
+}
+
+func TestTouchSegmentAccessTime_TracksSegmentAccessAndClearsPlaylistOnlyRisk(t *testing.T) {
+	now := time.Now()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:            "sid-segment-touch",
+			State:                model.SessionReady,
+			LastPlaylistAccessAt: now,
+			LatestSegmentAt:      now,
+			PlaybackTrace: &model.PlaybackTrace{
+				HLS: &model.HLSAccessTrace{
+					PlaylistRequestCount: 2,
+					LastPlaylistAtUnix:   now.Unix(),
+					StallRisk:            "playlist_only",
+				},
+			},
+		},
+	}
+
+	touchSegmentAccessTime(context.Background(), store, hlsRequest{
+		sessionID: "sid-segment-touch",
+		filename:  "seg_000123.ts",
+		cleanName: "seg_000123.ts",
+		isSegment: true,
+	}, store.Session)
+
+	require.Equal(t, 1, store.UpdateSessionCalls)
+	require.NotNil(t, store.Session.PlaybackTrace)
+	require.NotNil(t, store.Session.PlaybackTrace.HLS)
+	assert.Equal(t, 1, store.Session.PlaybackTrace.HLS.SegmentRequestCount)
+	assert.Equal(t, "seg_000123.ts", store.Session.PlaybackTrace.HLS.LastSegmentName)
+	assert.NotZero(t, store.Session.PlaybackTrace.HLS.LastSegmentAtUnix)
+	assert.Equal(t, "low", store.Session.PlaybackTrace.HLS.StallRisk)
+}
+
 func TestValidateRequest_AllowsOnlyKnownHLSArtifacts(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -306,7 +440,7 @@ seg_000001.ts
 
 	// Black-Box Output Assertions (CTO Gate)
 	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "DVR MUST force EVENT type")
-	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-2,PRECISE=YES", "DVR MUST inject EXT-X-START near live edge")
+	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-8,PRECISE=YES", "DVR MUST inject EXT-X-START with enough live headroom for Safari")
 	assert.NotContains(t, content, "#EXT-X-ENDLIST", "DVR (Rolling) MUST NOT contain ENDLIST")
 	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE:VOD", "DVR MUST NOT contain VOD tag")
 
@@ -318,20 +452,25 @@ seg_000001.ts
 	assert.True(t, extM3UIdx < playlistTypeIdx && playlistTypeIdx < startTagIdx, "Semantic tags must follow header in order")
 }
 
-func TestPreferredLiveStartOffsetSeconds(t *testing.T) {
-	t.Run("uses half target duration with bounds", func(t *testing.T) {
+func TestDeriveHLSStartupPolicy(t *testing.T) {
+	t.Run("uses recent segment cadence with conservative headroom", func(t *testing.T) {
 		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000000,\nseg_000000.ts\n")
-		assert.Equal(t, 3, preferredLiveStartOffsetSeconds(raw))
+		assert.Equal(t, 12, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 
-	t.Run("clamps very small targets", func(t *testing.T) {
+	t.Run("keeps small targets away from the live edge", func(t *testing.T) {
 		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1.000000,\nseg_000000.ts\n")
-		assert.Equal(t, 2, preferredLiveStartOffsetSeconds(raw))
+		assert.Equal(t, 8, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 
 	t.Run("clamps very large targets", func(t *testing.T) {
 		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.000000,\nseg_000000.ts\n")
-		assert.Equal(t, 4, preferredLiveStartOffsetSeconds(raw))
+		assert.Equal(t, 12, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
+	})
+
+	t.Run("tracks ORF1 style short segments with extra reserve", func(t *testing.T) {
+		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:3\n#EXTINF:2.080000,\nseg_000001.ts\n#EXTINF:1.920000,\nseg_000002.ts\n#EXTINF:2.200000,\nseg_000003.ts\n#EXTINF:1.920000,\nseg_000004.ts\n#EXTINF:2.000000,\nseg_000005.ts\n#EXTINF:2.480000,\nseg_000006.ts\n")
+		assert.Equal(t, 9, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 }
 
@@ -558,4 +697,40 @@ func TestServeHLS_StartingSegmentWaitsForArtifact(t *testing.T) {
 	assert.Equal(t, "identity", w.Header().Get("Content-Encoding"))
 	assert.Empty(t, w.Header().Get("X-XG2G-Reason"))
 	assert.Equal(t, "segment-data", w.Body.String())
+}
+
+func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "segment-trace-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000123.ts"), []byte("segment-data"), 0o600))
+
+	now := time.Now()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:            sessionID,
+			State:                model.SessionReady,
+			LastPlaylistAccessAt: now,
+			LatestSegmentAt:      now,
+			PlaybackTrace: &model.PlaybackTrace{
+				HLS: &model.HLSAccessTrace{
+					PlaylistRequestCount: 2,
+					LastPlaylistAtUnix:   now.Unix(),
+				},
+			},
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/seg_000123.ts", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, tmpDir, sessionID, "seg_000123.ts")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, store.Session.PlaybackTrace)
+	require.NotNil(t, store.Session.PlaybackTrace.HLS)
+	assert.Equal(t, 1, store.Session.PlaybackTrace.HLS.SegmentRequestCount)
+	assert.Equal(t, "seg_000123.ts", store.Session.PlaybackTrace.HLS.LastSegmentName)
+	assert.Equal(t, "low", store.Session.PlaybackTrace.HLS.StallRisk)
 }

@@ -27,7 +27,7 @@ interface UsePlayerChromeProps {
   durationSeconds: number | null;
   canSeek: boolean;
   startUnix: number | null;
-  liveSeekWindow: LiveSeekWindowHint | null;
+  liveSeekWindow?: LiveSeekWindowHint | null;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
   allowNativeFullscreen: boolean;
   shouldForceNativeMobileHls: ForceNativeFn;

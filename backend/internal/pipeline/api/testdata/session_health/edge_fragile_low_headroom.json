@@ -1,0 +1,34 @@
+{
+  "name": "edge_fragile_low_headroom",
+  "context": {
+    "clientFamily": "safari_native",
+    "sessionMode": "live"
+  },
+  "trace": {
+    "client": {
+      "clientFamily": "safari_native"
+    },
+    "hls": {
+      "playlistRequestCount": 5,
+      "lastPlaylistAtUnix": 1713000101,
+      "segmentRequestCount": 4,
+      "lastSegmentAtUnix": 1713000102,
+      "lastSegmentName": "seg_000044.ts",
+      "lastSegmentGapMs": 3600,
+      "latestSegmentLagMs": 2200,
+      "stallRisk": "low",
+      "startupMode": "native_guarded",
+      "startupHeadroomSec": 8
+    }
+  },
+  "expected": {
+    "health": "edge_fragile",
+    "reasonCodes": [
+      "playlist_progress_observed",
+      "segment_progress_observed",
+      "segment_gap_observed",
+      "low_startup_headroom",
+      "client_family_webkit"
+    ]
+  }
+}

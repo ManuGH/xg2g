@@ -395,6 +395,54 @@ describe('BootstrapGate', () => {
     expect(screen.getByLabelText('API Token')).toHaveValue('live-token');
   });
 
+  it('keeps a forced auth prompt active when stale bootstrap success data is re-read', async () => {
+    const setToken = vi.fn();
+    const setPlayingChannel = vi.fn();
+    const authState = {
+      token: 'live-token',
+      hasServerSession: false,
+      isAuthenticated: true,
+      isReady: true,
+    };
+    let bootstrapResult = {
+      data: { openWebIF: { baseUrl: 'http://receiver.local' } },
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    };
+
+    mockUseAppContext.mockImplementation(() => ({
+      auth: { ...authState },
+      setToken,
+      setServerSessionAuthenticated: vi.fn(),
+      setPlayingChannel,
+    }));
+    mockUseBootstrapConfig.mockImplementation(() => bootstrapResult);
+
+    renderGate();
+
+    expect(await screen.findByText('EPG view')).toBeInTheDocument();
+
+    act(() => {
+      requestAuthRequired({ source: 'runtime-race', status: 401, code: 'AUTH_REQUIRED' });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Session Expired' })).toBeInTheDocument();
+    });
+
+    bootstrapResult = {
+      ...bootstrapResult,
+      data: { openWebIF: { baseUrl: 'http://receiver.local' } },
+    };
+
+    // Stale bootstrap success data should not dismiss a forced auth prompt.
+    expect(screen.getByRole('heading', { name: 'Session Expired' })).toBeInTheDocument();
+    expect(screen.queryByText('EPG view')).not.toBeInTheDocument();
+    expect(setToken).toHaveBeenCalledWith('');
+    expect(setPlayingChannel).toHaveBeenCalledWith(null);
+  });
+
   it('shows the token in clear text on TV hosts and supports clearing it', () => {
     window.__XG2G_HOST__ = {
       platform: 'android-tv',

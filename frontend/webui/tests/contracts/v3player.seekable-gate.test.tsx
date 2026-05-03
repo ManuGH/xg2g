@@ -90,13 +90,11 @@ describe('Gate O Phase 2: Seek/Resume Proof', () => {
       expect(sdk.postRecordingPlaybackInfo as any).toHaveBeenCalled();
     });
 
-    await waitFor(() => {
-      const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]));
-      expect(calls.some((u: string) => u.includes(`/vod/${recordingId}.mp4`))).toBe(true);
-    });
-
     const video = document.querySelector('video') as HTMLVideoElement | null;
     expect(video).toBeTruthy();
+    await waitFor(() => {
+      expect(video?.getAttribute('src') || video?.currentSrc).toContain(`/vod/${recordingId}.mp4`);
+    });
     return video as HTMLVideoElement;
   }
 

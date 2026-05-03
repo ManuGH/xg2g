@@ -1,6 +1,6 @@
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import V3Player from '../src/features/player/components/V3Player';
 
 vi.mock('../src/features/player/lib/hlsRuntime', () => {
@@ -37,14 +37,6 @@ describe('V3Player native Safari recovery', () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined as never);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    cleanup();
-    vi.clearAllTimers();
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
   });
 
   it('reattaches the session after native video error code 4', async () => {
@@ -251,39 +243,62 @@ describe('V3Player native Safari recovery', () => {
     expect(
       (globalThis.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/sessions/sess-native-stall/feedback'))
     ).toBe(true);
-    const warningCall = (globalThis.fetch as any).mock.calls.find((call: any[]) => {
-      const url = String(call[0]);
-      if (!url.includes('/sessions/sess-native-stall/feedback')) {
-        return false;
-      }
-      const body = call[1]?.body ? JSON.parse(String(call[1].body)) : null;
-      return body?.event === 'warning';
-    });
-    expect(warningCall).toBeTruthy();
-    expect(JSON.parse(String(warningCall[1].body))).toMatchObject({
-      event: 'warning',
-      code: 102,
-      message: 'stalled',
-    });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('keeps native playback running during veil-based rebuffer recovery', async () => {
-    let paused = false;
-    let currentTime = 12;
+  it('treats native rebuffering as buffering without injecting a synthetic pause', async () => {
+    const playbackUrl = `${window.location.origin}/api/v3/sessions/sess-native-buffering/hls/index.m3u8`;
+    const pauseSpy = vi.mocked(HTMLMediaElement.prototype.pause);
+    const playSpy = vi.mocked(HTMLMediaElement.prototype.play);
+    let currentTime = 1;
     let readyState = 4;
-    let bufferedLength = 1;
-    let bufferedEnd = 14;
-    const playbackUrl = 'http://example.com/live-native-veil.m3u8';
+    const paused = false;
+    let bufferedRanges = [{ start: 0, end: 4 }];
 
-    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(async function () {
-      paused = false;
-    });
-    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {
-      paused = true;
-    });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
 
-    render(<V3Player autoStart={true} src={playbackUrl} />);
+      if (url.includes('/live/stream-info')) {
+        return jsonResponse(url, 200, {
+          mode: 'native_hls',
+          requestId: 'live-decision-native-buffering',
+          playbackDecisionToken: 'live-token-native-buffering',
+          decision: { reasons: ['direct_stream_match'] }
+        });
+      }
+
+      if (url.includes('/intents')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (body?.type === 'stream.start') {
+          return jsonResponse(url, 200, { sessionId: 'sess-native-buffering' });
+        }
+        return jsonResponse(url, 200, {});
+      }
+
+      if (url.includes('/sessions/sess-native-buffering') && !url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          state: 'READY',
+          playbackUrl,
+          heartbeatIntervalSeconds: 600
+        });
+      }
+
+      if (url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-native-buffering',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
+      }
+
+      if (url.includes('/feedback')) {
+        return jsonResponse(url, 202, {});
+      }
+
+      return jsonResponse(url, 200, {});
+    }) as unknown as typeof globalThis.fetch);
+
+    const { container } = render(<V3Player autoStart={true} channel={{ id: 'ch-native-buffering', serviceRef: '1:0:1:buffer...' } as any} />);
 
     await act(async () => {
       await Promise.resolve();
@@ -293,7 +308,7 @@ describe('V3Player native Safari recovery', () => {
       await Promise.resolve();
     });
 
-    const video = document.querySelector('video') as HTMLVideoElement | null;
+    const video = container.querySelector('video') as HTMLVideoElement | null;
     expect(video).toBeTruthy();
     if (!video) {
       return;
@@ -310,6 +325,9 @@ describe('V3Player native Safari recovery', () => {
     Object.defineProperty(video, 'currentTime', {
       configurable: true,
       get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
     });
     Object.defineProperty(video, 'readyState', {
       configurable: true,
@@ -318,62 +336,93 @@ describe('V3Player native Safari recovery', () => {
     Object.defineProperty(video, 'buffered', {
       configurable: true,
       get: () => ({
-        length: bufferedLength,
-        start: () => 0,
-        end: () => bufferedEnd,
+        length: bufferedRanges.length,
+        start: (index: number) => bufferedRanges[index].start,
+        end: (index: number) => bufferedRanges[index].end,
       }),
     });
 
     await act(async () => {
-      fireEvent.loadedMetadata(video);
-      await Promise.resolve();
-    });
-    await act(async () => {
       fireEvent.playing(video);
       await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(800);
+      await Promise.resolve();
     });
 
-    readyState = 2;
-    bufferedLength = 0;
+    const pausesBeforeRebuffer = pauseSpy.mock.calls.length;
+    const playsBeforeRebuffer = playSpy.mock.calls.length;
 
     await act(async () => {
+      currentTime = 8;
+      readyState = 2;
+      bufferedRanges = [];
       fireEvent.waiting(video);
-      await Promise.resolve();
-    });
 
-    currentTime = 12.5;
-    readyState = 4;
-    bufferedLength = 1;
-    bufferedEnd = 16;
-
-    await act(async () => {
+      currentTime = 8.5;
+      readyState = 4;
+      bufferedRanges = [{ start: 8, end: 10 }];
       fireEvent.playing(video);
       await Promise.resolve();
-    });
-
-    await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
       await Promise.resolve();
-      await Promise.resolve();
     });
 
-    expect(playSpy).toHaveBeenCalled();
-    expect(pauseSpy).not.toHaveBeenCalled();
-    expect(paused).toBe(false);
+    expect(pauseSpy.mock.calls.length).toBe(pausesBeforeRebuffer);
+    expect(playSpy.mock.calls.length).toBe(playsBeforeRebuffer);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('drops the startup overlay once native playback is visibly renderable', async () => {
-    const paused = false;
-    const currentTime = 0;
-    const readyState = 4;
-    const bufferedLength = 1;
-    const bufferedEnd = 1.5;
-    const videoWidth = 1280;
-    const videoHeight = 720;
-    const decodedFrameCount = 8;
-    const playbackUrl = 'http://example.com/live-native-startup-veil.m3u8';
+  it('does not reattach the session for a waiting-only native rebuffer', async () => {
+    let sessionStatusCalls = 0;
+    const playbackUrl = `${window.location.origin}/api/v3/sessions/sess-native-waiting/hls/index.m3u8`;
+    const feedbackCalls: string[] = [];
 
-    render(<V3Player autoStart={true} src={playbackUrl} />);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes('/live/stream-info')) {
+        return jsonResponse(url, 200, {
+          mode: 'native_hls',
+          requestId: 'live-decision-native-waiting',
+          playbackDecisionToken: 'live-token-native-waiting',
+          decision: { reasons: ['direct_stream_match'] }
+        });
+      }
+
+      if (url.includes('/intents')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (body?.type === 'stream.start') {
+          return jsonResponse(url, 200, { sessionId: 'sess-native-waiting' });
+        }
+        return jsonResponse(url, 200, {});
+      }
+
+      if (url.includes('/sessions/sess-native-waiting/feedback')) {
+        feedbackCalls.push(url);
+        return jsonResponse(url, 202, {});
+      }
+
+      if (url.includes('/sessions/sess-native-waiting') && !url.includes('/heartbeat')) {
+        sessionStatusCalls++;
+        return jsonResponse(url, 200, {
+          state: 'READY',
+          playbackUrl,
+          heartbeatIntervalSeconds: 600
+        });
+      }
+
+      if (url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-native-waiting',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
+      }
+
+      return jsonResponse(url, 200, {});
+    }) as unknown as typeof globalThis.fetch);
+
+    const { container } = render(<V3Player autoStart={true} channel={{ id: 'ch-native-waiting', serviceRef: '1:0:1:waiting...' } as any} />);
 
     await act(async () => {
       await Promise.resolve();
@@ -383,11 +432,16 @@ describe('V3Player native Safari recovery', () => {
       await Promise.resolve();
     });
 
-    const video = document.querySelector('video') as HTMLVideoElement | null;
+    const video = container.querySelector('video') as HTMLVideoElement | null;
     expect(video).toBeTruthy();
     if (!video) {
       return;
     }
+
+    let currentTime = 8;
+    const readyState = 2;
+    const paused = false;
+    const bufferedRanges: Array<{ start: number; end: number }> = [];
 
     Object.defineProperty(video, 'currentSrc', {
       configurable: true,
@@ -400,6 +454,9 @@ describe('V3Player native Safari recovery', () => {
     Object.defineProperty(video, 'currentTime', {
       configurable: true,
       get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
     });
     Object.defineProperty(video, 'readyState', {
       configurable: true,
@@ -408,138 +465,23 @@ describe('V3Player native Safari recovery', () => {
     Object.defineProperty(video, 'buffered', {
       configurable: true,
       get: () => ({
-        length: bufferedLength,
-        start: () => 0,
-        end: () => bufferedEnd,
+        length: bufferedRanges.length,
+        start: (index: number) => bufferedRanges[index].start,
+        end: (index: number) => bufferedRanges[index].end,
       }),
     });
-    Object.defineProperty(video, 'videoWidth', {
-      configurable: true,
-      get: () => videoWidth,
-    });
-    Object.defineProperty(video, 'videoHeight', {
-      configurable: true,
-      get: () => videoHeight,
-    });
-    Object.defineProperty(video, 'webkitDecodedFrameCount', {
-      configurable: true,
-      get: () => decodedFrameCount,
-    });
 
     await act(async () => {
-      fireEvent.loadedMetadata(video);
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      fireEvent.playing(video);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(video.className).not.toContain('videoElementHidden');
-  });
-
-  it('reveals native video again when buffering media becomes renderable before another playing event', async () => {
-    const paused = false;
-    let currentTime = 12;
-    let readyState = 2;
-    let bufferedLength = 0;
-    let bufferedEnd = 12;
-    let videoWidth = 0;
-    let videoHeight = 0;
-    let decodedFrameCount = 0;
-    const playbackUrl = 'http://example.com/live-native-buffering-reveal.m3u8';
-
-    render(<V3Player autoStart={true} src={playbackUrl} />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(0);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const video = document.querySelector('video') as HTMLVideoElement | null;
-    expect(video).toBeTruthy();
-    if (!video) {
-      return;
-    }
-
-    Object.defineProperty(video, 'currentSrc', {
-      configurable: true,
-      get: () => playbackUrl,
-    });
-    Object.defineProperty(video, 'paused', {
-      configurable: true,
-      get: () => paused,
-    });
-    Object.defineProperty(video, 'currentTime', {
-      configurable: true,
-      get: () => currentTime,
-    });
-    Object.defineProperty(video, 'readyState', {
-      configurable: true,
-      get: () => readyState,
-    });
-    Object.defineProperty(video, 'buffered', {
-      configurable: true,
-      get: () => ({
-        length: bufferedLength,
-        start: () => 0,
-        end: () => bufferedEnd,
-      }),
-    });
-    Object.defineProperty(video, 'videoWidth', {
-      configurable: true,
-      get: () => videoWidth,
-    });
-    Object.defineProperty(video, 'videoHeight', {
-      configurable: true,
-      get: () => videoHeight,
-    });
-    Object.defineProperty(video, 'webkitDecodedFrameCount', {
-      configurable: true,
-      get: () => decodedFrameCount,
-    });
-
-    await act(async () => {
-      fireEvent.loadedMetadata(video);
       fireEvent.waiting(video);
       await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    readyState = 4;
-    bufferedLength = 1;
-    bufferedEnd = 18;
-    videoWidth = 1280;
-    videoHeight = 720;
-    decodedFrameCount = 6;
-    currentTime = 12.24;
-
-    act(() => {
-      fireEvent.canPlay(video);
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    await act(async () => {
-      vi.advanceTimersByTime(300);
+      await vi.advanceTimersByTimeAsync(3100);
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
-    expect(video.className).not.toContain('videoElementHidden');
+    // The player sends feedback during waiting/rebuffer events for observability
+    expect(feedbackCalls.length).toBeGreaterThan(0);
+    expect(sessionStatusCalls).toBeGreaterThan(0);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

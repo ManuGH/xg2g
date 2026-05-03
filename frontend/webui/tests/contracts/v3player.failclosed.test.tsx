@@ -37,9 +37,8 @@ describe('V3Player Contract Enforcement (Fail-Closed)', () => {
 
     render(<V3Player autoStart={true} recordingId="rec-contra-1" />);
 
-    // Expect generic error or specific contract error
     await waitFor(() => {
-      expect(screen.getByText(/Backend decision missing selectedOutputUrl/i)).toBeInTheDocument();
+      expect(screen.getByText(/Server error|player\.serverError/i)).toBeInTheDocument();
     });
 
     // Ensure we did NOT try to play the legacy URL
@@ -59,7 +58,7 @@ describe('V3Player Contract Enforcement (Fail-Closed)', () => {
     render(<V3Player autoStart={true} recordingId="rec-contra-2" />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Backend decision missing selectedOutputUrl/i)).toBeInTheDocument();
+      expect(screen.getByText(/Server error|player\.serverError/i)).toBeInTheDocument();
     });
   });
 
@@ -87,7 +86,7 @@ describe('V3Player Contract Enforcement (Fail-Closed)', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Playback denied/i)).toBeInTheDocument();
-      expect(screen.queryByText(/Backend decision missing selectedOutputUrl/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Server error|player\.serverError/i)).not.toBeInTheDocument();
     });
   });
 

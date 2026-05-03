@@ -5,6 +5,7 @@
 package config
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -295,6 +296,31 @@ func TestValidate_ConnectivityPublishedEndpoints(t *testing.T) {
 		err := Validate(cfg)
 		if err == nil || !strings.Contains(err.Error(), "TLSEnabled") {
 			t.Fatalf("expected tls validation error, got %v", err)
+		}
+	})
+
+	t.Run("priority must fit int32 api contract", func(t *testing.T) {
+		if strconv.IntSize <= 32 {
+			t.Skip("overflow case requires 64-bit int")
+		}
+
+		cfg := baseValidationConfig()
+		cfg.Connectivity.PublishedEndpoints = []PublishedEndpointConfig{
+			{
+				URL:             "https://public.example",
+				Kind:            "public_https",
+				Priority:        int(int64(1) << 31),
+				AllowPairing:    true,
+				AllowStreaming:  true,
+				AllowWeb:        true,
+				AllowNative:     true,
+				AdvertiseReason: "public reverse proxy",
+			},
+		}
+
+		err := Validate(cfg)
+		if err == nil || !strings.Contains(err.Error(), "priority must be between 0 and 2147483647") {
+			t.Fatalf("expected priority range validation error, got %v", err)
 		}
 	})
 }

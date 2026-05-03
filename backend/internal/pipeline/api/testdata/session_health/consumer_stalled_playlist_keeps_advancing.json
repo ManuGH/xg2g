@@ -1,0 +1,29 @@
+{
+  "name": "consumer_stalled_playlist_keeps_advancing",
+  "context": {
+    "clientFamily": "chromium_hlsjs",
+    "sessionMode": "live"
+  },
+  "trace": {
+    "client": {
+      "clientFamily": "chromium_hlsjs"
+    },
+    "hls": {
+      "playlistRequestCount": 4,
+      "lastPlaylistAtUnix": 1713000401,
+      "segmentRequestCount": 0,
+      "latestSegmentLagMs": 1400,
+      "stallRisk": "producer_late",
+      "startupMode": "balanced",
+      "startupHeadroomSec": 10
+    }
+  },
+  "expected": {
+    "health": "consumer_stalled",
+    "reasonCodes": [
+      "playlist_progress_observed",
+      "playlist_advancing_without_segments",
+      "consumer_progress_missing"
+    ]
+  }
+}

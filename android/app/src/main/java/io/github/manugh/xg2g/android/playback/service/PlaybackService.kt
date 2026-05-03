@@ -34,6 +34,7 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val superStartMode = super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
             PlayerContract.ACTION_START -> {
                 val requestJson = intent.getStringExtra(PlayerContract.EXTRA_REQUEST_JSON) ?: return START_NOT_STICKY
@@ -49,6 +50,8 @@ class PlaybackService : MediaSessionService() {
                     stopSelf()
                 }
             }
+
+            else -> return superStartMode
         }
         return START_STICKY
     }

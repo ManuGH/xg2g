@@ -67,6 +67,7 @@ func TestWriteSessionStateResponse_WritesJSONAndTraceHeader(t *testing.T) {
 	require.NotNil(t, body.Trace)
 	require.NotNil(t, body.Trace.SessionId)
 	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440001", *body.Trace.SessionId)
+	assert.Nil(t, body.Trace.HlsDebug)
 	require.NotNil(t, body.Mode)
 	assert.Equal(t, RECORDING, *body.Mode)
 	require.NotNil(t, body.WindowKind)

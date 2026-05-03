@@ -13,7 +13,12 @@ export type TelemetryEventType =
   | 'ui.failclosed'
   | 'ui.player.transition'
   | 'ui.player.recovery_attempt'
-  | 'ui.player.recovery_result';
+  | 'ui.player.recovery_result'
+  | 'playback_auth_blocked'
+  | 'playback_session_failed'
+  | 'playback_contract_blocked'
+  | 'playback_media_error'
+  | 'playback_advisory';
 
 export interface TelemetryEvent {
   type: TelemetryEventType;

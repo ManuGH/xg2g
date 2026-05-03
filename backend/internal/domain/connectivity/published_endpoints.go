@@ -7,6 +7,7 @@ package connectivity
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/netip"
 	"net/url"
 	"slices"
@@ -45,7 +46,7 @@ var (
 	ErrInvalidEndpointKind       = errors.New("published endpoint kind is invalid")
 	ErrInvalidEndpointTLSMode    = errors.New("published endpoint tls_mode is invalid")
 	ErrInvalidEndpointSource     = errors.New("published endpoint source is invalid")
-	ErrInvalidEndpointPriority   = errors.New("published endpoint priority must be >= 0")
+	ErrInvalidEndpointPriority   = fmt.Errorf("published endpoint priority must be between 0 and %d", math.MaxInt32)
 	ErrInvalidEndpointReason     = errors.New("published endpoint advertise_reason must not be empty")
 	ErrInvalidEndpointCapability = errors.New("published endpoint capabilities are invalid")
 	ErrEndpointHostRejected      = errors.New("published endpoint host is rejected")
@@ -145,7 +146,7 @@ func preparePublishedEndpoint(spec PublishedEndpoint, options ProviderOptions) (
 		return PublishedEndpoint{}, fmt.Errorf("%w: %q", ErrInvalidEndpointSource, spec.Source)
 	}
 
-	if spec.Priority < 0 {
+	if spec.Priority < 0 || spec.Priority > math.MaxInt32 {
 		return PublishedEndpoint{}, ErrInvalidEndpointPriority
 	}
 
