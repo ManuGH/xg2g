@@ -307,7 +307,7 @@ describe('V3Player Mobile Controls', () => {
       get: () => visibilityState,
     });
 
-    let paused = false;
+    const paused = false;
 
     const props = {
       src: 'http://example.com/playlist.m3u8',
