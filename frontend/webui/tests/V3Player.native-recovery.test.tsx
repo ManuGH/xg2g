@@ -481,6 +481,7 @@ describe('V3Player native Safari recovery', () => {
 
     // The player sends feedback during waiting/rebuffer events for observability
     expect(feedbackCalls.length).toBeGreaterThan(0);
+    expect(sessionStatusCalls).toBeGreaterThan(0);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
