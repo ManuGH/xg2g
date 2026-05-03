@@ -11,6 +11,7 @@ import {
   type HouseholdUnlockStatus as ApiHouseholdUnlockStatus,
 } from '../../client-ts';
 import {
+  buildClientHeaders,
   HOUSEHOLD_PROFILE_HEADER,
   throwOnClientResultError,
   unwrapClientResultOrThrow,
@@ -23,9 +24,9 @@ import {
 
 export async function fetchHouseholdProfiles(): Promise<HouseholdProfile[] | null> {
   const result = await getHouseholdProfiles({
-    headers: {
+    headers: buildClientHeaders({
       [HOUSEHOLD_PROFILE_HEADER]: null,
-    } as Record<string, unknown>,
+    }),
   });
 
   if (result.error) {
@@ -76,9 +77,9 @@ export interface HouseholdUnlockStatus {
 
 export async function fetchHouseholdUnlockStatus(): Promise<HouseholdUnlockStatus> {
   const result = await getHouseholdUnlock({
-    headers: {
+    headers: buildClientHeaders({
       [HOUSEHOLD_PROFILE_HEADER]: null,
-    } as Record<string, unknown>,
+    }),
   });
 
   return fromApiHouseholdUnlockStatus(
@@ -88,9 +89,9 @@ export async function fetchHouseholdUnlockStatus(): Promise<HouseholdUnlockStatu
 
 export async function unlockHouseholdAccess(pin: string): Promise<HouseholdUnlockStatus> {
   const result = await postHouseholdUnlock({
-    headers: {
+    headers: buildClientHeaders({
       [HOUSEHOLD_PROFILE_HEADER]: null,
-    } as Record<string, unknown>,
+    }),
     body: { pin },
   });
 
@@ -101,9 +102,9 @@ export async function unlockHouseholdAccess(pin: string): Promise<HouseholdUnloc
 
 export async function lockHouseholdAccess(): Promise<void> {
   const result = await deleteHouseholdUnlock({
-    headers: {
+    headers: buildClientHeaders({
       [HOUSEHOLD_PROFILE_HEADER]: null,
-    } as Record<string, unknown>,
+    }),
   });
 
   unwrapClientResultOrThrow<void>(result, { source: 'lockHouseholdAccess' });

@@ -16,3 +16,8 @@ are deprecated and removed.
 | Item | Replacement | Remove In |
 |:---|:---|:---|
 | XG2G_STREAM_PORT | XG2G_E2_STREAM_PORT | v3.5.0 |
+
+Legacy receiver aliases such as `XG2G_STREAM_PORT`, `XG2G_OWI_*`, and
+`XG2G_USE_WEBIF_STREAMS` are not accepted by the daemon. Operators should use
+the canonical `XG2G_E2_*` surface or leave deprecated stream-port overrides
+unset.

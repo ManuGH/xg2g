@@ -53,6 +53,12 @@ coverage.out
 coverage.html
 output.log
 transcoder.tar.gz
+test-results/
+**/test-results/
+playwright-report/
+**/playwright-report/
+coverage/
+**/coverage/
 
 # ==============================================================================
 # Dependency & Environment

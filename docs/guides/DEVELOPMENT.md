@@ -12,6 +12,9 @@ Optional bootstrap helpers:
   `make dev-tools`, and `make doctor` on first create. The devcontainer expects
   access to the host Docker socket for the `make start*` container paths.
 
+For a quick map of the repo layout, generated artifacts, and required gates, see
+[docs/dev/REPO_MAP.md](../dev/REPO_MAP.md).
+
 ### First-Time Setup
 
 Before using any of the development paths below:

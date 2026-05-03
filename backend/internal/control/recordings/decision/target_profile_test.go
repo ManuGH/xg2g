@@ -558,3 +558,357 @@ func TestDecide_HostPressureDegradesQualityIntentToCompatible(t *testing.T) {
 		t.Fatalf("expected host pressure not to flip operator override trace, got %#v", dec.Trace)
 	}
 }
+
+func TestDecide_LowHostPerformanceDegradesExpensiveQualityIntentToCompatible(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentQuality,
+		Source: Source{
+			Container:   "mpegts",
+			VideoCodec:  "mpeg2",
+			AudioCodec:  "aac",
+			BitrateKbps: 9000,
+			Width:       1920,
+			Height:      1080,
+			FPS:         25,
+			Interlaced:  true,
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy: Policy{
+			AllowTranscode: true,
+			Host: HostPolicy{
+				PerformanceClass: "low",
+			},
+		},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Video.CRF != 23 || dec.TargetProfile.Video.Preset != "fast" {
+		t.Fatalf("expected low host to clamp expensive quality video to compatible ladder, got %#v", dec.TargetProfile.Video)
+	}
+	if dec.Trace.ResolvedIntent != string(playbackprofile.IntentCompatible) {
+		t.Fatalf("expected compatible resolved intent on low host, got %#v", dec.Trace)
+	}
+	if dec.Trace.DegradedFrom != string(playbackprofile.IntentQuality) {
+		t.Fatalf("expected degradedFrom=quality on low host, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_LowHostPerformanceDegradesExtremeCompatibleIntentToRepair(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentCompatible,
+		Source: Source{
+			Container:   "mpegts",
+			VideoCodec:  "mpeg2",
+			AudioCodec:  "aac",
+			BitrateKbps: 20000,
+			Width:       3840,
+			Height:      2160,
+			FPS:         50,
+			Interlaced:  true,
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy: Policy{
+			AllowTranscode: true,
+			Host: HostPolicy{
+				PerformanceClass: "low",
+			},
+		},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Video.CRF != 28 || dec.TargetProfile.Video.Preset != "veryfast" {
+		t.Fatalf("expected low host to clamp extreme compatible video to repair ladder, got %#v", dec.TargetProfile.Video)
+	}
+	if dec.Trace.ResolvedIntent != string(playbackprofile.IntentRepair) {
+		t.Fatalf("expected repair resolved intent on very expensive source, got %#v", dec.Trace)
+	}
+	if dec.Trace.DegradedFrom != string(playbackprofile.IntentCompatible) {
+		t.Fatalf("expected degradedFrom=compatible on very expensive source, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_HighHostPerformanceKeepsQualityIntentForSameSource(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentQuality,
+		Source: Source{
+			Container:   "mpegts",
+			VideoCodec:  "mpeg2",
+			AudioCodec:  "aac",
+			BitrateKbps: 9000,
+			Width:       1920,
+			Height:      1080,
+			FPS:         25,
+			Interlaced:  true,
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy: Policy{
+			AllowTranscode: true,
+			Host: HostPolicy{
+				PerformanceClass: "high",
+			},
+		},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Video.CRF != 20 || dec.TargetProfile.Video.Preset != "slow" {
+		t.Fatalf("expected strong host to keep quality ladder, got %#v", dec.TargetProfile.Video)
+	}
+	if dec.Trace.ResolvedIntent != string(playbackprofile.IntentQuality) {
+		t.Fatalf("expected quality resolved intent on high host, got %#v", dec.Trace)
+	}
+	if dec.Trace.DegradedFrom != "" {
+		t.Fatalf("expected no degradation on high host, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_WeakBenchmarkDegradesQualityIntentEvenWithoutLowPerformanceClass(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentQuality,
+		Source: Source{
+			Container:   "mpegts",
+			VideoCodec:  "mpeg2",
+			AudioCodec:  "aac",
+			BitrateKbps: 9000,
+			Width:       1920,
+			Height:      1080,
+			FPS:         25,
+			Interlaced:  true,
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy: Policy{
+			AllowTranscode: true,
+			Host: HostPolicy{
+				PerformanceClass: "high",
+				BenchmarkClass:   "weak",
+			},
+		},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Video.CRF != 23 || dec.TargetProfile.Video.Preset != "fast" {
+		t.Fatalf("expected weak benchmark to clamp quality video to compatible ladder, got %#v", dec.TargetProfile.Video)
+	}
+	if dec.Trace.ResolvedIntent != string(playbackprofile.IntentCompatible) {
+		t.Fatalf("expected compatible resolved intent on weak benchmark host, got %#v", dec.Trace)
+	}
+	if dec.Trace.DegradedFrom != string(playbackprofile.IntentQuality) {
+		t.Fatalf("expected degradedFrom=quality on weak benchmark host, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_WeakBenchmarkDoesNotDegradeAudioOnlyTranscode(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentQuality,
+		Source: Source{
+			Container:  "mp4",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy: Policy{
+			AllowTranscode: true,
+			Host: HostPolicy{
+				PerformanceClass: "high",
+				BenchmarkClass:   "weak",
+			},
+		},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Audio.BitrateKbps != 320 {
+		t.Fatalf("expected audio-only transcode to keep quality bitrate, got %#v", dec.TargetProfile.Audio)
+	}
+	if dec.Trace.ResolvedIntent != string(playbackprofile.IntentQuality) {
+		t.Fatalf("expected quality resolved intent for audio-only transcode, got %#v", dec.Trace)
+	}
+	if dec.Trace.DegradedFrom != "" {
+		t.Fatalf("expected no degradation for audio-only transcode, got %#v", dec.Trace)
+	}
+}
+
+func TestDecide_LowBitrateConfidenceAvoidsThresholdDegradeOnLowHost(t *testing.T) {
+	base := DecisionInput{
+		RequestedIntent: playbackprofile.IntentQuality,
+		Source: Source{
+			Container:   "mpegts",
+			VideoCodec:  "mpeg2",
+			AudioCodec:  "aac",
+			BitrateKbps: 5000,
+			Width:       1280,
+			Height:      720,
+			FPS:         25,
+			Interlaced:  true,
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy: Policy{
+			AllowTranscode: true,
+			Host: HostPolicy{
+				PerformanceClass: "low",
+			},
+		},
+		APIVersion: "v3",
+	}
+
+	highConfidence := base
+	highConfidence.Source.BitrateConfidence = "high"
+	_, highDec, highProb := Decide(t.Context(), highConfidence, "test")
+	if highProb != nil || highDec == nil {
+		t.Fatalf("expected decision for high confidence source, got problem=%v", highProb)
+	}
+	if highDec.TargetProfile == nil {
+		t.Fatal("expected target profile for high confidence source")
+	}
+	if highDec.TargetProfile.Video.CRF != 23 || highDec.TargetProfile.Video.Preset != "fast" {
+		t.Fatalf("expected high confidence bitrate to keep threshold degrade to compatible, got %#v", highDec.TargetProfile.Video)
+	}
+	if highDec.Trace.ResolvedIntent != string(playbackprofile.IntentCompatible) {
+		t.Fatalf("expected compatible resolved intent on high bitrate confidence, got %#v", highDec.Trace)
+	}
+
+	lowConfidence := base
+	lowConfidence.Source.BitrateConfidence = "low"
+	_, lowDec, lowProb := Decide(t.Context(), lowConfidence, "test")
+	if lowProb != nil || lowDec == nil {
+		t.Fatalf("expected decision for low confidence source, got problem=%v", lowProb)
+	}
+	if lowDec.TargetProfile == nil {
+		t.Fatal("expected target profile for low confidence source")
+	}
+	if lowDec.TargetProfile.Video.CRF != 20 || lowDec.TargetProfile.Video.Preset != "slow" {
+		t.Fatalf("expected low bitrate confidence to avoid threshold degrade, got %#v", lowDec.TargetProfile.Video)
+	}
+	if lowDec.Trace.ResolvedIntent != string(playbackprofile.IntentQuality) {
+		t.Fatalf("expected quality resolved intent on low bitrate confidence, got %#v", lowDec.Trace)
+	}
+	if lowDec.Trace.DegradedFrom != "" {
+		t.Fatalf("expected no degradation on low bitrate confidence, got %#v", lowDec.Trace)
+	}
+}
+
+func TestDecide_LowHostPerformanceDoesNotDegradeAudioOnlyTranscode(t *testing.T) {
+	input := DecisionInput{
+		RequestedIntent: playbackprofile.IntentQuality,
+		Source: Source{
+			Container:   "mpegts",
+			VideoCodec:  "h264",
+			AudioCodec:  "ac3",
+			BitrateKbps: 18000,
+			Width:       3840,
+			Height:      2160,
+			FPS:         50,
+		},
+		Capabilities: Capabilities{
+			Version:       1,
+			Containers:    []string{"mp4"},
+			VideoCodecs:   []string{"h264"},
+			AudioCodecs:   []string{"aac"},
+			SupportsHLS:   true,
+			SupportsRange: nil,
+		},
+		Policy: Policy{
+			AllowTranscode: true,
+			Host: HostPolicy{
+				PerformanceClass: "low",
+				BenchmarkClass:   "weak",
+			},
+		},
+		APIVersion: "v3",
+	}
+
+	_, dec, prob := Decide(t.Context(), input, "test")
+	if prob != nil || dec == nil {
+		t.Fatalf("expected decision, got problem=%v", prob)
+	}
+	if dec.TargetProfile == nil {
+		t.Fatal("expected target profile")
+	}
+	if dec.TargetProfile.Video.Mode != playbackprofile.MediaModeCopy {
+		t.Fatalf("expected video copy for audio-only transcode, got %#v", dec.TargetProfile.Video)
+	}
+	if dec.TargetProfile.Audio.BitrateKbps != 320 {
+		t.Fatalf("expected low host to keep quality audio bitrate for audio-only transcode, got %#v", dec.TargetProfile.Audio)
+	}
+	if dec.Trace.ResolvedIntent != string(playbackprofile.IntentQuality) {
+		t.Fatalf("expected quality resolved intent for audio-only transcode on low host, got %#v", dec.Trace)
+	}
+	if dec.Trace.DegradedFrom != "" {
+		t.Fatalf("expected no degradation for audio-only transcode on low host, got %#v", dec.Trace)
+	}
+}

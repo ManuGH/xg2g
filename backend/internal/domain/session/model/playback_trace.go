@@ -23,6 +23,8 @@ type PlaybackFallbackTrace struct {
 	AtUnix          int64  `json:"atUnix,omitempty"`
 	Trigger         string `json:"trigger,omitempty"`
 	Reason          string `json:"reason,omitempty"`
+	PlanID          string `json:"planId,omitempty"`
+	PlanReason      string `json:"planReason,omitempty"`
 	FromProfileHash string `json:"fromProfileHash,omitempty"`
 	ToProfileHash   string `json:"toProfileHash,omitempty"`
 }
@@ -129,11 +131,17 @@ type PlaybackTrace struct {
 	TargetProfileHash    string                                 `json:"targetProfileHash,omitempty"`
 	TargetProfile        *playbackprofile.TargetPlaybackProfile `json:"targetProfile,omitempty"`
 	FFmpegPlan           *FFmpegPlanTrace                       `json:"ffmpegPlan,omitempty"`
+	RuntimeDiagnostics   *ports.RuntimeDiagnostics              `json:"runtimeDiagnostics,omitempty"`
 	Operator             *PlaybackOperatorTrace                 `json:"operator,omitempty"`
 	Client               *PlaybackClientSnapshot                `json:"client,omitempty"`
 	HLS                  *HLSAccessTrace                        `json:"hls,omitempty"`
 	HostPressureBand     string                                 `json:"hostPressureBand,omitempty"`
 	HostOverrideApplied  bool                                   `json:"hostOverrideApplied,omitempty"`
+	AutoCodecPolicy      string                                 `json:"autoCodecPolicy,omitempty"`
+	AutoCodecRequested   string                                 `json:"autoCodecRequestedCodecs,omitempty"`
+	AutoCodecSelected    string                                 `json:"autoCodecSelectedCodec,omitempty"`
+	AutoCodecHostClass   string                                 `json:"autoCodecPerformanceClass,omitempty"`
+	AutoCodecBenchClass  string                                 `json:"autoCodecBenchmarkClass,omitempty"`
 	FirstFrameAtUnix     int64                                  `json:"firstFrameAtUnix,omitempty"`
 	Fallbacks            []PlaybackFallbackTrace                `json:"fallbacks,omitempty"`
 	StopReason           string                                 `json:"stopReason,omitempty"`
@@ -157,6 +165,10 @@ func (t *PlaybackTrace) Clone() *PlaybackTrace {
 	if t.FFmpegPlan != nil {
 		plan := *t.FFmpegPlan
 		cp.FFmpegPlan = &plan
+	}
+	if t.RuntimeDiagnostics != nil {
+		diagnostics := *t.RuntimeDiagnostics
+		cp.RuntimeDiagnostics = &diagnostics
 	}
 	if t.Operator != nil {
 		operator := *t.Operator

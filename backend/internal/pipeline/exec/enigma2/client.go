@@ -39,10 +39,12 @@ type Client struct {
 	userAgent  string
 	rnd        *rand.Rand
 	mu         sync.Mutex
-	// This bypasses optional middleware issues and ensures predictable stream sourcening.
+	// UseWebIFStreams forces /web/stream.m3u resolution so the receiver decides
+	// the effective stream endpoint.
 	UseWebIFStreams bool
-	// StreamPort is the port for direct stream URLs (e.g. 8001 for Enigma2, 17999 for optional middleware).
-	// When set, ResolveStreamURL will build direct URLs instead of querying /web/stream.m3u.
+	// StreamPort is the deprecated direct fallback port. ResolveStreamURL still
+	// asks /web/stream.m3u first and only builds a direct URL from this port if
+	// receiver-side resolution fails.
 	StreamPort int
 }
 
@@ -59,7 +61,7 @@ type Options struct {
 	RateLimit             rate.Limit
 	RateLimitBurst        int
 	UseWebIFStreams       bool
-	StreamPort            int // Port for direct stream URLs (0 = use /web/stream.m3u to let receiver decide)
+	StreamPort            int // Deprecated direct fallback port; 0 disables direct fallback URL construction.
 }
 
 const (
@@ -170,6 +172,15 @@ func (c *Client) Zap(ctx context.Context, sref string) error {
 func (c *Client) GetCurrent(ctx context.Context) (*CurrentInfo, error) {
 	var res CurrentInfo
 	if err := c.get(ctx, "/api/getcurrent", nil, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// GetStatusInfo retrieves standby/playback status.
+func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
+	var res StatusInfo
+	if err := c.get(ctx, "/api/statusinfo", nil, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil

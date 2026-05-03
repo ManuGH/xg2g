@@ -8,14 +8,20 @@ import {
 
 describe('codecDetection', () => {
   const originalMediaCapabilities = (navigator as any).mediaCapabilities;
+  const originalLocation = window.location;
 
   beforeEach(() => {
     resetCachedCodecs();
     vi.restoreAllMocks();
+    window.localStorage.clear();
   });
 
   afterEach(() => {
     (navigator as any).mediaCapabilities = originalMediaCapabilities;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
+    });
   });
 
   it('marks av1 as power efficient and hevc as smooth when MediaCapabilities reports it', async () => {
@@ -64,5 +70,229 @@ describe('codecDetection', () => {
       { codec: 'h264', supported: true },
     ]);
     expect(preferred).toEqual(['h264']);
+  });
+
+  it('allows ios native av1 when the runtime probe reports support', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('av01')) {
+          return { supported: true, smooth: true, powerEfficient: false };
+        }
+        if (contentType.includes('hvc1') || contentType.includes('hev1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        if (contentType.includes('avc1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      })
+    };
+
+    const video = document.createElement('video') as HTMLVideoElement & { webkitEnterFullscreen?: () => void };
+    video.webkitEnterFullscreen = vi.fn();
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1'
+    );
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5,
+    });
+
+    const preferred = await detectPreferredCodecs(video);
+
+    expect(preferred).toEqual(['av1', 'hevc', 'h264']);
+  });
+
+  it('allows desktop safari native av1 when Safari reports decode support', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('av01')) {
+          return { supported: true, smooth: false, powerEfficient: false };
+        }
+        if (contentType.includes('hvc1') || contentType.includes('hev1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        if (contentType.includes('avc1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      })
+    };
+
+    const video = document.createElement('video');
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15'
+    );
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0,
+    });
+
+    const preferred = await detectPreferredCodecs(video);
+
+    expect(preferred).toEqual(['av1', 'hevc', 'h264']);
+  });
+
+  it('keeps the ios native av1 query override compatible with supported-or-smooth probes', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('av01')) {
+          return { supported: true, smooth: true, powerEfficient: false };
+        }
+        if (contentType.includes('hvc1') || contentType.includes('hev1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        if (contentType.includes('avc1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      })
+    };
+
+    const video = document.createElement('video') as HTMLVideoElement & { webkitEnterFullscreen?: () => void };
+    video.webkitEnterFullscreen = vi.fn();
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1'
+    );
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5,
+    });
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        search: '?xg2g_ios_native_av1=1',
+      },
+    });
+
+    const preferred = await detectPreferredCodecs(video);
+
+    expect(preferred).toEqual(['av1', 'hevc', 'h264']);
+  });
+
+  it('allows ios native av1 automatically on the staging host aliases', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('av01')) {
+          return { supported: true, smooth: true, powerEfficient: false };
+        }
+        if (contentType.includes('hvc1') || contentType.includes('hev1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        if (contentType.includes('avc1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      })
+    };
+
+    const video = document.createElement('video') as HTMLVideoElement & { webkitEnterFullscreen?: () => void };
+    video.webkitEnterFullscreen = vi.fn();
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1'
+    );
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5,
+    });
+    for (const hostname of ['xg2g.home.matrixcentral.de', 'xg2g.home.matrixcental.de']) {
+      resetCachedCodecs();
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: {
+          ...originalLocation,
+          hostname,
+          host: hostname,
+          search: '',
+        },
+      });
+
+      const preferred = await detectPreferredCodecs(video);
+      expect(preferred).toEqual(['av1', 'hevc', 'h264']);
+    }
+  });
+
+  it('recomputes preferred codecs when an ios native probe follows a cached non-native probe', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('av01')) {
+          return { supported: true, smooth: true, powerEfficient: false };
+        }
+        if (contentType.includes('hvc1') || contentType.includes('hev1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        if (contentType.includes('avc1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      })
+    };
+
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1'
+    );
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5,
+    });
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        hostname: 'xg2g.home.matrixcentral.de',
+        host: 'xg2g.home.matrixcentral.de',
+        search: '',
+      },
+    });
+
+    const warmedPreferred = await detectPreferredCodecs(null);
+    expect(warmedPreferred).toEqual(['hevc', 'h264']);
+
+    const video = document.createElement('video') as HTMLVideoElement & { webkitEnterFullscreen?: () => void };
+    video.webkitEnterFullscreen = vi.fn();
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+
+    const preferred = await detectPreferredCodecs(video);
+    expect(preferred).toEqual(['av1', 'hevc', 'h264']);
   });
 });

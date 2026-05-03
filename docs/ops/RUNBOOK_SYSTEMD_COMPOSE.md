@@ -1,4 +1,4 @@
-# Systemd + Compose Runbook (v3.1.5+)
+# Systemd + Compose Runbook
 
 Canonical guide for managing the hardened `xg2g` daemon via systemd.
 
@@ -42,8 +42,8 @@ deploy/sync.sh --check --ref <tag|sha>
 
 Post-deploy playback verification (operator-grade):
 - `verify-post-deploy-playback.sh` starts real live sessions against the local host and proves three runtime paths:
-  - tokenized HLS manifest works without cookie/header auth
-  - live DVR manifest stays sliding-window (`EXT-X-START`, no `PLAYLIST-TYPE`)
+  - live HLS media stays cookie-gated: unauthenticated manifest access returns `401`, then `POST /auth/session` mints `xg2g_session` and the same manifest/media fetch succeeds
+  - live DVR manifests stay in live/DVR semantics (`EXT-X-PLAYLIST-TYPE:EVENT` plus `EXT-X-START` when a DVR window is configured, never `VOD`)
   - forced transcode reaches a verified hardware encoder (`h264_vaapi` on `/dev/dri/renderD*` or `h264_nvenc` on an NVIDIA runtime host)
 - The script stops its probe sessions on exit and is intended for deploy-time verification, not for periodic timer-driven runtime truth checks.
 
@@ -248,4 +248,5 @@ systemctl status xg2g.service --no-pager -l
 ```
 
 ### Service Smoke Matrix
-See `docs/ops/SERVICE_SMOKE.md` for the CTO-grade start/stop matrix (negative + positive + idempotent).
+See `docs/ops/SERVICE_SMOKE.md` for the deterministic start/stop matrix
+(negative + positive + idempotent).

@@ -10,6 +10,42 @@
   background: transparent;
 }
 
+.surfaceTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.surfaceTab {
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
+}
+
+.surfaceTab:hover {
+  color: var(--text-primary);
+  border-color: var(--border-elevated);
+  transform: translateY(-1px);
+}
+
+.surfaceTabActive {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-action) 34%, var(--border-elevated) 66%);
+  background: color-mix(in srgb, var(--surface-panel-strong) 88%, var(--accent-action-subtle) 12%);
+}
+
 .toolbar {
   position: relative;
   display: flex;
@@ -807,87 +843,317 @@
   color: var(--text-primary);
 }
 
-@media (max-width: 1100px) {
-  .controls {
-    grid-template-columns: 1fr;
-  }
-
-  .toolbarHero {
-    flex-direction: column;
-  }
-
-  .toolbarRight {
-    width: 100%;
-  }
-
-  .toolbarRight button {
-    width: 100%;
-    justify-content: center;
-  }
+.page.surfaceStacked .controls {
+  grid-template-columns: 1fr;
 }
 
-@media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
+.page.surfaceStacked .toolbarHero {
+  flex-direction: column;
+}
+
+.page.surfaceStacked .toolbarRight {
+  width: 100%;
+}
+
+.page.surfaceStacked .toolbarRight button {
+  width: 100%;
+  justify-content: center;
+}
+
+.page.surfaceCompact {
+  gap: 14px;
+}
+
+.page.surfaceCompact .toolbar,
+.page.surfaceCompact .card {
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.page.surfaceCompact .toolbarTitle,
+.page.surfaceCompact .toolbarLeft h3 {
+  font-size: clamp(1.6rem, 5vw, 2.3rem);
+}
+
+.page.surfaceCompact .toolbarSummary,
+.page.surfaceCompact .toolbarLeft p {
+  font-size: 0.92rem;
+}
+
+.page.surfaceCompact .toolbarMeta {
+  gap: 10px;
+}
+
+.page.surfaceCompact .metaPill {
+  min-width: calc(50% - 5px);
+  flex: 1 1 160px;
+}
+
+.page.surfaceCompact .search {
+  flex-direction: column;
+}
+
+.page.surfaceCompact .searchRight button {
+  width: 100%;
+  justify-content: center;
+}
+
+.page.surfaceCompact .channel {
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.page.surfaceCompact .play {
+  margin-left: 0;
+}
+
+.page.surfaceCompact .logo {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+}
+
+.page.surfaceCompact .programme {
+  flex-direction: column;
+  gap: 14px;
+}
+
+.page.surfaceCompact .programmeTime {
+  min-width: 0;
+  width: 100%;
+}
+
+.page.surfaceCompactLandscape {
+  gap: 12px;
+}
+
+.page.surfaceCompactLandscape .surfaceTabs {
+  gap: 8px;
+}
+
+.page.surfaceCompactLandscape .surfaceTab {
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.page.surfaceCompactLandscape .toolbar,
+.page.surfaceCompactLandscape .card {
+  padding: 14px 16px;
+  border-radius: 20px;
+}
+
+.page.surfaceCompactLandscape .toolbar {
+  gap: 14px;
+}
+
+.page.surfaceCompactLandscape .toolbarHero {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.page.surfaceCompactLandscape .toolbarLeft {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.page.surfaceCompactLandscape .toolbarTitle,
+.page.surfaceCompactLandscape .toolbarLeft h3 {
+  font-size: clamp(1.4rem, 3.2vw, 2rem);
+}
+
+.page.surfaceCompactLandscape .toolbarSummary,
+.page.surfaceCompactLandscape .toolbarLeft p {
+  margin-top: 8px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.page.surfaceCompactLandscape .toolbarRight {
+  width: auto;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.page.surfaceCompactLandscape .toolbarRight button {
+  width: auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 14px;
+}
+
+.page.surfaceCompactLandscape .toolbarMeta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.page.surfaceCompactLandscape .metaPill {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 16px;
+}
+
+.page.surfaceCompactLandscape .controls {
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.page.surfaceCompactLandscape .filterField,
+.page.surfaceCompactLandscape .rangeGroup,
+.page.surfaceCompactLandscape .search {
+  padding: 12px 14px;
+  border-radius: 18px;
+}
+
+.page.surfaceCompactLandscape .search {
+  flex-direction: row;
+  gap: 10px;
+}
+
+.page.surfaceCompactLandscape .searchRight button {
+  width: auto;
+  min-width: 120px;
+}
+
+.page.surfaceCompactLandscape .channel {
+  gap: 12px;
+  align-items: center;
+}
+
+.page.surfaceCompactLandscape .logo {
+  width: 50px;
+  height: 50px;
+  border-radius: 16px;
+}
+
+.page.surfaceCompactLandscape .programme {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.page.surfaceCompactLandscape .programmeTime {
+  width: auto;
+  min-width: 96px;
+}
+
+@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
   .page {
-    gap: 14px;
+    gap: 12px;
+  }
+
+  .surfaceTabs {
+    gap: 8px;
+  }
+
+  .surfaceTab {
+    min-height: 38px;
+    padding: 0 14px;
   }
 
   .toolbar,
   .card {
-    border-radius: 24px;
-    padding: 18px;
+    padding: 14px 16px;
+    border-radius: 20px;
+  }
+
+  .toolbar {
+    gap: 14px;
+  }
+
+  .toolbarHero {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 12px;
+  }
+
+  .toolbarLeft {
+    flex: 1 1 auto;
+    max-width: none;
   }
 
   .toolbarTitle,
   .toolbarLeft h3 {
-    font-size: clamp(1.6rem, 5vw, 2.3rem);
+    font-size: clamp(1.4rem, 3.2vw, 2rem);
   }
 
   .toolbarSummary,
   .toolbarLeft p {
-    font-size: 0.92rem;
+    margin-top: 8px;
+    font-size: 0.86rem;
+    line-height: 1.45;
+  }
+
+  .toolbarRight {
+    width: auto;
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .toolbarRight button {
+    width: auto;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 14px;
   }
 
   .toolbarMeta {
-    gap: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
   }
 
   .metaPill {
-    min-width: calc(50% - 5px);
-    flex: 1 1 160px;
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 16px;
   }
 
+  .controls {
+    grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .filterField,
+  .rangeGroup,
   .search {
-    flex-direction: column;
-  }
-
-  .searchRight button {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .channel {
-    gap: 14px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .play {
-    margin-left: 0;
-  }
-
-  .logo {
-    width: 58px;
-    height: 58px;
+    padding: 12px 14px;
     border-radius: 18px;
   }
 
+  .search {
+    flex-direction: row;
+    gap: 10px;
+  }
+
+  .searchRight button {
+    width: auto;
+    min-width: 120px;
+  }
+
+  .channel {
+    gap: 12px;
+    align-items: center;
+  }
+
+  .logo {
+    width: 50px;
+    height: 50px;
+    border-radius: 16px;
+  }
+
   .programme {
-    flex-direction: column;
-    gap: 14px;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .programmeTime {
-    min-width: 0;
-    width: 100%;
+    width: auto;
+    min-width: 96px;
   }
 }

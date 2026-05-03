@@ -54,7 +54,7 @@ The response is the operator truth for:
 
 - effective profile and severity
 - startup/readiness/pairing/web blocking state
-- selected published endpoints for web, pairing, and native clients
+- selected published endpoints for web, pairing, and app-native playback clients
 - trusted proxy configuration
 - current request evaluation:
   - remote address

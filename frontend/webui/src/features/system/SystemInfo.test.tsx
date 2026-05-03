@@ -78,4 +78,62 @@ describe('SystemInfo', () => {
     expect(screen.getByText('192.168.1.10')).toBeInTheDocument();
     expect(screen.getByText('1 day')).toBeInTheDocument();
   });
+
+  it('renders receiver and xg2g storage classes distinctly', async () => {
+    getSystemInfo.mockResolvedValue({
+      data: {
+        hardware: {
+          brand: 'Dreambox',
+          model: 'One',
+        },
+        software: {},
+        tuners: [],
+        network: {
+          interfaces: [],
+        },
+        storage: {
+          devices: [
+            {
+              model: 'Samsung SSD',
+              mount: '/media/hdd',
+              mountStatus: 'mounted',
+              healthStatus: 'ok',
+              access: 'rw',
+              isNas: false,
+              origin: 'receiver',
+              pathType: 'receiver_attached',
+              fsType: 'ext4',
+            },
+          ],
+          locations: [
+            {
+              mount: '/mnt/storage/media',
+              mountStatus: 'mounted',
+              healthStatus: 'ok',
+              access: 'rw',
+              isNas: false,
+              origin: 'xg2g',
+              pathType: 'xg2g_aggregate',
+              fsType: 'fuse.mergerfs',
+            },
+          ],
+        },
+        runtime: {
+          uptime: '1 day',
+        },
+        resource: {
+          memoryUsed: '1024 MB',
+          memoryAvailable: '1024 MB',
+          memoryTotal: '2048 MB',
+        },
+      },
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText(/Samsung SSD/)).toBeInTheDocument();
+    expect(screen.getByText('Receiver storage')).toBeInTheDocument();
+    expect(screen.getByText('xg2g')).toBeInTheDocument();
+    expect(screen.getByText('xg2g aggregate')).toBeInTheDocument();
+  });
 });

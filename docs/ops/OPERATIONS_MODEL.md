@@ -1,5 +1,5 @@
 <!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/docs/ops/OPERATIONS_MODEL.md.tmpl -->
-# xg2g Operations Model (Operator-Grade 2026)
+# xg2g Operations Model
 
 This document defines the immutable operational contract for the `xg2g` service. Adherence to these invariants is mandatory for system stability.
 
@@ -10,7 +10,7 @@ This document defines the immutable operational contract for the `xg2g` service.
 - **Repo Truth**: The repo-side canonical deploy bundle lives under `deploy/`. For the systemd unit, the canonical source is `deploy/xg2g.service`; the installed host unit must strictly match the deployed host copy under `/srv/xg2g/docs/ops/xg2g.service`.
 - **Identity Isolation**: The service MUST run as UID `10001` (xg2g) within the container.
 - **Fail-Closed Auth**: No endpoint beyond `/healthz` and `/readyz` is accessible without a valid `XG2G_API_TOKEN`.
-- **Resource Pinning**: The container MUST use the pinned image `ghcr.io/manugh/xg2g:v3.4.6`.
+- **Resource Pinning**: The container MUST use the pinned image `ghcr.io/manugh/xg2g:v3.4.9`.
 
 ## 2. What Is Allowed To Fail (Controlled Transients)
 
@@ -28,4 +28,5 @@ This document defines the immutable operational contract for the `xg2g` service.
 ---
 
 > [!NOTE]
-> This model represents the "Operational Truth" as of Phase 4. Any modification to these boundaries requires a Governance Change Request (GCR).
+> This model represents the operational contract for the current release. Any
+> boundary change must update this document and the matching verification gate.

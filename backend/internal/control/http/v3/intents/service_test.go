@@ -9,6 +9,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
@@ -44,6 +45,17 @@ func (m *mockSessionStore) GetSession(_ context.Context, id string) (*model.Sess
 		return nil, nil
 	}
 	return m.sessions[id], nil
+}
+
+func (m *mockSessionStore) ListSessions(_ context.Context) ([]*model.SessionRecord, error) {
+	if len(m.sessions) == 0 {
+		return nil, nil
+	}
+	out := make([]*model.SessionRecord, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		out = append(out, session)
+	}
+	return out, nil
 }
 
 func (m *mockSessionStore) PutSessionWithIdempotency(_ context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) (existingID string, exists bool, err error) {
@@ -115,9 +127,11 @@ type mockDeps struct {
 	store             *mockSessionStore
 	bus               *mockEventBus
 	scanner           ChannelScanner
+	registry          capreg.Store
 	controller        AdmissionController
 	runtimeState      admission.RuntimeState
 	hostPressure      playbackprofile.HostPressureAssessment
+	hostRuntime       playbackprofile.HostRuntimeSnapshot
 	verifyAttestation bool
 	playbackOperator  config.PlaybackOperatorConfig
 	playbackKeyCalls  int
@@ -158,6 +172,8 @@ func (m *mockDeps) EventBus() EventBus { return m.bus }
 
 func (m *mockDeps) ChannelScanner() ChannelScanner { return m.scanner }
 
+func (m *mockDeps) CapabilityRegistry() capreg.Store { return m.registry }
+
 func (m *mockDeps) AdmissionController() AdmissionController { return m.controller }
 
 func (m *mockDeps) AdmissionRuntimeState(context.Context) admission.RuntimeState {
@@ -166,6 +182,10 @@ func (m *mockDeps) AdmissionRuntimeState(context.Context) admission.RuntimeState
 
 func (m *mockDeps) HostPressure(context.Context) playbackprofile.HostPressureAssessment {
 	return m.hostPressure
+}
+
+func (m *mockDeps) HostRuntime(context.Context) playbackprofile.HostRuntimeSnapshot {
+	return m.hostRuntime
 }
 
 func (m *mockDeps) VerifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode string) bool {
@@ -292,6 +312,9 @@ func TestService_ProcessIntent_StartAcceptedPublishesEvent(t *testing.T) {
 	if deps.store.putSession.PlaybackTrace.RequestProfile != "compatible" {
 		t.Fatalf("expected compatible public request profile, got %q", deps.store.putSession.PlaybackTrace.RequestProfile)
 	}
+	if deps.store.putSession.Profile.DVRWindowSec != int(deps.dvrWindow.Seconds()) {
+		t.Fatalf("expected DVR window %d seconds, got %d", int(deps.dvrWindow.Seconds()), deps.store.putSession.Profile.DVRWindowSec)
+	}
 }
 
 func TestService_ProcessIntent_StartPersistsCanonicalClientSnapshot(t *testing.T) {
@@ -362,7 +385,7 @@ func TestService_ProcessIntent_StartPersistsCanonicalClientSnapshot(t *testing.T
 	if client.PreferredHLSEngine != "hlsjs" {
 		t.Fatalf("expected preferred engine to be persisted, got %#v", client)
 	}
-	if client.DeviceType != "web" {
+	if client.DeviceType != "chromium" {
 		t.Fatalf("expected device type to be persisted, got %#v", client)
 	}
 	if !client.RuntimeProbeUsed || client.RuntimeProbeVersion != 2 {
@@ -376,6 +399,68 @@ func TestService_ProcessIntent_StartPersistsCanonicalClientSnapshot(t *testing.T
 	}
 	if client.CapturedAtUnix == 0 {
 		t.Fatalf("expected capture timestamp to be persisted, got %#v", client)
+	}
+}
+
+func TestService_ProcessIntent_StartPersistsScannerSourceTrace(t *testing.T) {
+	deps := newMockDeps()
+	const serviceRef = "1:0:1:1337:42:99:0:0:0:0:"
+	deps.scanner = &mockChannelScanner{
+		found: true,
+		capability: scan.Capability{
+			ServiceRef:       serviceRef,
+			State:            scan.CapabilityStateOK,
+			Container:        "mpegts",
+			VideoCodec:       "h264",
+			AudioCodec:       "ac3",
+			BitrateKbps:      8000,
+			BitrateMeanKbps:  9500,
+			BitratePeakKbps:  12000,
+			BitrateSamples:   4,
+			Width:            1920,
+			Height:           1080,
+			FPS:              25,
+			Interlaced:       true,
+			AudioChannels:    2,
+			AudioBitrateKbps: 384,
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-source-trace",
+		ServiceRef:    serviceRef,
+		Params:        map[string]string{"profile": "high"},
+		CorrelationID: "corr-source-trace",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil || deps.store.putSession.PlaybackTrace == nil {
+		t.Fatal("expected playback trace to be persisted")
+	}
+	source := deps.store.putSession.PlaybackTrace.Source
+	if source == nil {
+		t.Fatal("expected scanner source trace to be persisted")
+	}
+	if source.Container != "ts" || source.VideoCodec != "h264" || source.AudioCodec != "ac3" {
+		t.Fatalf("expected normalized media truth in source trace, got %#v", source)
+	}
+	if source.BitrateKbps != 10200 {
+		t.Fatalf("expected stable bitrate 10200kbps, got %#v", source)
+	}
+	if source.Width != 1920 || source.Height != 1080 || source.FPS != 25 || !source.Interlaced {
+		t.Fatalf("expected video source details, got %#v", source)
+	}
+	if source.AudioChannels != 2 || source.AudioBitrateKbps != 384 {
+		t.Fatalf("expected audio source details, got %#v", source)
 	}
 }
 
@@ -619,6 +704,281 @@ func TestService_ProcessIntent_RejectsExplicitHWProfileWhenHwaccelOff(t *testing
 	}
 }
 
+func TestService_ProcessIntent_StartUsesEncodeOnlyForIOSNativeHEVC(t *testing.T) {
+	hardware.SetVAAPIEncoderPreflight(map[string]bool{"hevc_vaapi": true})
+	hardware.SetVAAPIPreflightResult(true)
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:       model.IntentTypeStreamStart,
+		SessionID:  "sid-ios-hevc-cpu",
+		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
+		Params: map[string]string{
+			"profile":                "safari_hevc_hw",
+			model.CtxKeyClientFamily: playbackprofile.ClientIOSSafariNative,
+		},
+		CorrelationID: "corr-ios-hevc-cpu",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil {
+		t.Fatal("expected session to be persisted")
+	}
+	if deps.store.putSession.Profile.Name != "safari_hevc_hw" {
+		t.Fatalf("expected safari_hevc_hw profile, got %q", deps.store.putSession.Profile.Name)
+	}
+	if deps.store.putSession.Profile.VideoCodec != "hevc" {
+		t.Fatalf("expected hevc codec, got %q", deps.store.putSession.Profile.VideoCodec)
+	}
+	if deps.store.putSession.Profile.HWAccel != "vaapi_encode_only" {
+		t.Fatalf("expected iOS native HEVC to use encode-only GPU path, got hwaccel=%q", deps.store.putSession.Profile.HWAccel)
+	}
+}
+
+func TestService_ProcessIntent_StartAllowsFullVAAPIForIOSNativeHEVCWhenConfigured(t *testing.T) {
+	t.Setenv("XG2G_IOS_NATIVE_HEVC_HW_MODE", "full")
+
+	hardware.SetVAAPIEncoderPreflight(map[string]bool{"hevc_vaapi": true})
+	hardware.SetVAAPIPreflightResult(true)
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:       model.IntentTypeStreamStart,
+		SessionID:  "sid-ios-hevc-full",
+		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
+		Params: map[string]string{
+			"profile":                "safari_hevc_hw",
+			model.CtxKeyClientFamily: playbackprofile.ClientIOSSafariNative,
+		},
+		CorrelationID: "corr-ios-hevc-full",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil {
+		t.Fatal("expected session to be persisted")
+	}
+	if deps.store.putSession.Profile.Name != "safari_hevc_hw" {
+		t.Fatalf("expected safari_hevc_hw profile, got %q", deps.store.putSession.Profile.Name)
+	}
+	if deps.store.putSession.Profile.HWAccel != "vaapi" {
+		t.Fatalf("expected iOS native HEVC full override to keep full vaapi, got hwaccel=%q", deps.store.putSession.Profile.HWAccel)
+	}
+}
+
+func TestService_ProcessIntent_StartUsesHostRuntimeToDemoteAV1ToHEVC(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 45 * time.Millisecond},
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 10 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	deps := newMockDeps()
+	deps.hostRuntime = playbackprofile.HostRuntimeSnapshot{
+		PerformanceClass: "medium",
+		Benchmark: playbackprofile.HostBenchmarkSnapshot{
+			Codecs: []playbackprofile.HostCodecBenchmark{
+				{Codec: "av1", Class: "strong"},
+				{Codec: "hevc", Class: "strong"},
+				{Codec: "h264", Class: "strong"},
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:       model.IntentTypeStreamStart,
+		SessionID:  "sid-auto-hevc-medium-host",
+		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
+		Params: map[string]string{
+			"codecs": "av1,hevc,h264",
+		},
+		CorrelationID: "corr-auto-hevc-medium-host",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil {
+		t.Fatal("expected session to be persisted")
+	}
+	if deps.store.putSession.Profile.Name != "safari_hevc_hw" {
+		t.Fatalf("expected safari_hevc_hw profile, got %q", deps.store.putSession.Profile.Name)
+	}
+	if deps.store.putSession.Profile.VideoCodec != "hevc" {
+		t.Fatalf("expected hevc codec, got %q", deps.store.putSession.Profile.VideoCodec)
+	}
+	if deps.store.putSession.PlaybackTrace == nil {
+		t.Fatal("expected playback trace to be persisted")
+	}
+	if deps.store.putSession.PlaybackTrace.AutoCodecPolicy != "host_aware_bottleneck" {
+		t.Fatalf("expected host-aware auto codec policy, got %#v", deps.store.putSession.PlaybackTrace)
+	}
+	if deps.store.putSession.PlaybackTrace.AutoCodecRequested != "av1,hevc,h264" {
+		t.Fatalf("expected requested codecs trace, got %#v", deps.store.putSession.PlaybackTrace)
+	}
+	if deps.store.putSession.PlaybackTrace.AutoCodecSelected != "hevc" {
+		t.Fatalf("expected selected codec trace to be hevc, got %#v", deps.store.putSession.PlaybackTrace)
+	}
+	if deps.store.putSession.PlaybackTrace.AutoCodecHostClass != "medium" {
+		t.Fatalf("expected host class trace to be medium, got %#v", deps.store.putSession.PlaybackTrace)
+	}
+	if deps.store.putSession.PlaybackTrace.AutoCodecBenchClass != "strong" {
+		t.Fatalf("expected benchmark class trace to be strong, got %#v", deps.store.putSession.PlaybackTrace)
+	}
+}
+
+func TestService_ProcessIntent_StartDerivesRequestedCodecsFromClientCapsWhenMissing(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 10 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	hevcSmooth := true
+	hevcEfficient := true
+	h264Smooth := true
+	h264Efficient := true
+
+	deps := newMockDeps()
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-auto-hevc-caps",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{},
+		CorrelationID: "corr-auto-hevc-caps",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			VideoCodecs:          []string{"hevc", "h264"},
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
+				{Codec: "h264", Supported: true, Smooth: &h264Smooth, PowerEfficient: &h264Efficient},
+			},
+		},
+		Logger: zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil {
+		t.Fatal("expected session to be persisted")
+	}
+	if deps.store.putSession.Profile.Name != "h264_fmp4" {
+		t.Fatalf("expected h264_fmp4 profile, got %q", deps.store.putSession.Profile.Name)
+	}
+	if deps.store.putSession.ContextData["codecs"] != "hevc,h264" {
+		t.Fatalf("expected derived codecs in context data, got %#v", deps.store.putSession.ContextData)
+	}
+	if deps.store.putSession.PlaybackTrace == nil {
+		t.Fatal("expected playback trace to be persisted")
+	}
+	if deps.store.putSession.PlaybackTrace.AutoCodecRequested != "hevc,h264" {
+		t.Fatalf("expected derived requested codecs trace, got %#v", deps.store.putSession.PlaybackTrace)
+	}
+	if deps.store.putSession.PlaybackTrace.AutoCodecSelected != "h264" {
+		t.Fatalf("expected selected codec trace to be h264, got %#v", deps.store.putSession.PlaybackTrace)
+	}
+	if deps.store.putSession.Profile.HWAccel != "vaapi" {
+		t.Fatalf("expected generic auto path to keep the faster h264 vaapi profile, got hwaccel=%q", deps.store.putSession.Profile.HWAccel)
+	}
+}
+
+func TestService_ProcessIntent_StartUsesProgressiveScanTruthForAV1HW(t *testing.T) {
+	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
+	hardware.SetVAAPIEncoderPreflight(map[string]bool{"av1_vaapi": true})
+	hardware.SetVAAPIPreflightResult(true)
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+		hardware.SetVAAPIPreflightResult(false)
+	})
+
+	deps := newMockDeps()
+	deps.scanner = &mockChannelScanner{
+		found:      true,
+		capability: scan.Capability{Interlaced: false},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "sid-av1-progressive",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "av1_hw"},
+		CorrelationID: "corr-av1-progressive",
+		Mode:          model.ModeLive,
+		UserAgent:     "unit-test",
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if deps.store.putSession == nil {
+		t.Fatal("expected session to be persisted")
+	}
+	if deps.store.putSession.Profile.Name != "av1_hw" {
+		t.Fatalf("expected av1_hw profile, got %#v", deps.store.putSession.Profile)
+	}
+	if deps.store.putSession.Profile.VideoCodec != "av1" {
+		t.Fatalf("expected av1 codec, got %#v", deps.store.putSession.Profile)
+	}
+	if deps.store.putSession.Profile.Container != "mpegts" {
+		t.Fatalf("expected mpegts container, got %#v", deps.store.putSession.Profile)
+	}
+	if deps.store.putSession.Profile.Deinterlace {
+		t.Fatalf("expected progressive scan truth to disable deinterlace, got %#v", deps.store.putSession.Profile)
+	}
+}
+
 func TestService_ProcessIntent_StartReplayReturnsExistingSession(t *testing.T) {
 	deps := newMockDeps()
 	deps.store.putExistingID = "existing-sid"
@@ -651,6 +1011,97 @@ func TestService_ProcessIntent_StartReplayReturnsExistingSession(t *testing.T) {
 	}
 	if len(deps.bus.calls) != 0 {
 		t.Fatalf("expected no event publish on replay, got %d", len(deps.bus.calls))
+	}
+}
+
+func TestService_ProcessIntent_StartReusesMatchingActiveLiveSession(t *testing.T) {
+	deps := newMockDeps()
+	deps.store.sessions = map[string]*model.SessionRecord{
+		"existing-live": {
+			SessionID:     "existing-live",
+			ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-existing",
+			ContextData: map[string]string{
+				model.CtxKeyMode:        model.ModeLive,
+				model.CtxKeyClientPath:  "hlsjs",
+				model.CtxKeyPrincipalID: "viewer-1",
+				"capHash":               "cap-123",
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:                  model.IntentTypeStreamStart,
+		SessionID:             "new-live",
+		ServiceRef:            "1:0:1:1337:42:99:0:0:0:0:",
+		PlaybackDecisionToken: "token-123",
+		Params:                map[string]string{"playback_mode": "hlsjs", "playback_decision_token": "token-123"},
+		CorrelationID:         "corr-new",
+		Mode:                  model.ModeLive,
+		PrincipalID:           "viewer-1",
+		ClientCapHash:         "cap-123",
+		Logger:                zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "idempotent_replay" {
+		t.Fatalf("expected idempotent_replay result, got %#v", res)
+	}
+	if res.SessionID != "existing-live" {
+		t.Fatalf("expected existing live session ID, got %q", res.SessionID)
+	}
+	if deps.store.putCalls != 0 {
+		t.Fatalf("expected no idempotency write when reusing active live session, got %d", deps.store.putCalls)
+	}
+	if len(deps.bus.calls) != 0 {
+		t.Fatalf("expected no publish when reusing active live session, got %d", len(deps.bus.calls))
+	}
+}
+
+func TestService_ProcessIntent_StartDoesNotReuseDifferentClientIdentity(t *testing.T) {
+	deps := newMockDeps()
+	deps.store.sessions = map[string]*model.SessionRecord{
+		"existing-live": {
+			SessionID:     "existing-live",
+			ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+			State:         model.SessionReady,
+			CorrelationID: "corr-existing",
+			ContextData: map[string]string{
+				model.CtxKeyMode:        model.ModeLive,
+				model.CtxKeyClientPath:  "hlsjs",
+				model.CtxKeyPrincipalID: "viewer-1",
+				"capHash":               "cap-123",
+			},
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:                  model.IntentTypeStreamStart,
+		SessionID:             "new-live",
+		ServiceRef:            "1:0:1:1337:42:99:0:0:0:0:",
+		PlaybackDecisionToken: "token-999",
+		Params:                map[string]string{"playback_mode": "hlsjs", "playback_decision_token": "token-999"},
+		CorrelationID:         "corr-new",
+		Mode:                  model.ModeLive,
+		PrincipalID:           "viewer-2",
+		ClientCapHash:         "cap-999",
+		Logger:                zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result for different client identity, got %#v", res)
+	}
+	if deps.store.putCalls != 1 {
+		t.Fatalf("expected one idempotency write for new live session, got %d", deps.store.putCalls)
+	}
+	if len(deps.bus.calls) != 1 {
+		t.Fatalf("expected one publish for new live session, got %d", len(deps.bus.calls))
 	}
 }
 

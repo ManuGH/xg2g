@@ -1,7 +1,7 @@
 /* Settings page - scoped */
 
 .page {
-  max-width: 1180px;
+  max-width: var(--page-max-width-regular);
   margin: 0 auto;
   padding: 8px 0 28px;
   display: flex;
@@ -40,6 +40,205 @@
   line-height: 1.6;
 }
 
+.sectionCompass {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sectionCompassIntro {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+  align-items: end;
+  gap: 24px;
+  padding: 24px 28px;
+  border: 1px solid var(--border-base);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 52%),
+    color-mix(in srgb, var(--surface-panel) 88%, var(--surface-stage) 12%);
+  box-shadow: var(--shadow-card);
+}
+
+.sectionCompassIntro::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-action-subtle) 62%, transparent), transparent 40%),
+    radial-gradient(circle at bottom left, color-mix(in srgb, var(--accent-live-subtle) 40%, transparent), transparent 34%);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.sectionCompassIntro > * {
+  position: relative;
+  z-index: 1;
+}
+
+.sectionCompassIntro > :first-child {
+  max-width: 44rem;
+}
+
+.sectionCompassEyebrow {
+  margin: 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sectionCompassTitle {
+  margin: 0;
+  max-width: 13ch;
+  color: var(--text-primary);
+  font-size: clamp(1.45rem, 2.45vw, 2.3rem);
+  line-height: 1.02;
+}
+
+.sectionCompassCopy {
+  margin: 0;
+  max-width: 34ch;
+  min-height: 100%;
+  padding-left: 22px;
+  border-left: 1px solid color-mix(in srgb, var(--border-base) 80%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  display: flex;
+  align-items: flex-end;
+}
+
+.sectionCompassGrid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.sectionHighlight {
+  position: relative;
+  overflow: hidden;
+  grid-column: span 3;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--border-elevated) 88%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent 42%),
+    color-mix(in srgb, var(--surface-panel) 92%, var(--surface-stage) 8%);
+  box-shadow: var(--shadow-card);
+}
+
+.sectionHighlight::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-action-subtle) 68%, transparent), transparent 38%),
+    radial-gradient(circle at bottom left, color-mix(in srgb, var(--accent-live-subtle) 42%, transparent), transparent 34%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.sectionHighlightPrimary {
+  grid-column: span 6;
+}
+
+.sectionHighlightSecondary {}
+
+.sectionHighlightBody {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 206px;
+}
+
+.sectionHighlightTop,
+.sectionHighlightMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sectionHighlightEyebrow,
+.sectionHighlightMetaLabel {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sectionHighlightStatus {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-elevated) 72%, transparent);
+  background: color-mix(in srgb, var(--surface-panel-safe) 84%, transparent);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sectionHighlightCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionHighlightTitle {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(1.15rem, 1.8vw, 1.5rem);
+  line-height: 1.05;
+}
+
+.sectionHighlightSummary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.sectionHighlightMeta {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border-base) 76%, transparent);
+}
+
+.sectionHighlightMetaValue {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: right;
+}
+
+.sectionTabsShell {
+  padding: 10px;
+  border-radius: 26px;
+  border: 1px solid var(--border-base);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent 100%),
+    color-mix(in srgb, var(--surface-panel-soft) 84%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.sectionTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sectionTabs > * {
+  flex: 0 0 auto;
+}
+
 .setup {
   margin-bottom: 0;
 }
@@ -63,6 +262,16 @@
   border-bottom: 1px solid var(--border-base);
   padding-bottom: 12px;
   font-size: 1.15rem;
+}
+
+.advancedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.embeddedTool {
+  padding-top: 6px;
 }
 
 .accordionHeader {
@@ -594,6 +803,30 @@
     padding: 4px 0 20px;
   }
 
+  .sectionCompassIntro {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+    padding: 20px;
+    gap: 16px;
+  }
+
+  .sectionCompassCopy {
+    max-width: 42ch;
+    min-height: auto;
+    padding-left: 0;
+    border-left: 0;
+    display: block;
+  }
+
+  .sectionCompassGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionHighlight,
+  .sectionHighlightPrimary {
+    grid-column: span 1;
+  }
+
   .section {
     padding: 18px;
     border-radius: 24px;
@@ -618,5 +851,187 @@
   .profileEditorActions,
   .profilePanelActions {
     width: 100%;
+  }
+}
+
+@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  .page {
+    gap: 14px;
+    padding: 4px 0 18px;
+  }
+
+  .header {
+    gap: 12px;
+  }
+
+  .page h2 {
+    font-size: clamp(1.55rem, 2.8vw, 2rem);
+  }
+
+  .subtitle {
+    margin-top: 8px;
+    font-size: 0.86rem;
+    line-height: 1.45;
+  }
+
+  .sectionCompass {
+    gap: 12px;
+  }
+
+  .sectionCompassIntro {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 18px 18px 16px;
+    border-radius: 24px;
+  }
+
+  .sectionCompassTitle {
+    max-width: 20ch;
+    font-size: clamp(1.1rem, 2.1vw, 1.4rem);
+  }
+
+  .sectionCompassCopy {
+    display: none;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .sectionCompassGrid {
+    display: grid;
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(224px, 64vw);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .sectionCompassGrid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sectionHighlight,
+  .sectionHighlightPrimary,
+  .sectionHighlightSecondary {
+    grid-column: auto;
+  }
+
+  .sectionHighlightBody {
+    min-height: 146px;
+    gap: 10px;
+  }
+
+  .sectionHighlightStatus {
+    min-height: 24px;
+    padding: 0 8px;
+    font-size: 0.72rem;
+  }
+
+  .sectionHighlightTitle {
+    font-size: 1.08rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .sectionHighlightSummary {
+    font-size: 0.84rem;
+    line-height: 1.46;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .sectionHighlightMeta {
+    padding-top: 8px;
+  }
+
+  .sectionTabsShell {
+    padding: 6px;
+    border-radius: 20px;
+  }
+
+  .sectionTabs {
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .sectionTabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sectionTabs > * {
+    flex: 0 0 auto;
+  }
+
+  .section {
+    gap: 14px;
+    padding: 18px 18px 16px;
+    border-radius: 22px;
+  }
+
+  .section h3 {
+    padding-bottom: 10px;
+    font-size: 1.05rem;
+  }
+
+  .onboardingCard {
+    padding: 20px;
+  }
+
+  .onboardingHero {
+    gap: 16px;
+  }
+
+  .onboardingMeta {
+    gap: 14px;
+    margin-top: 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.8fr);
+  }
+
+  .scanControls {
+    margin-bottom: 18px;
+  }
+
+  .profileEditor {
+    gap: 14px;
+    padding: 18px;
+    border-radius: 20px;
+  }
+}
+
+@media (max-width: 932px) and (orientation: landscape) and (max-height: 430px) and (hover: none) and (pointer: coarse) {
+  .page {
+    gap: 12px;
+    padding-bottom: 16px;
+  }
+
+  .page h2 {
+    font-size: clamp(1.45rem, 2.5vw, 1.85rem);
+  }
+
+  .subtitle {
+    font-size: 0.82rem;
+  }
+
+  .sectionTabs {
+    gap: 6px;
+  }
+
+  .sectionHighlightBody {
+    min-height: 132px;
+  }
+
+  .section {
+    gap: 12px;
+    padding: 16px 16px 14px;
+    border-radius: 20px;
   }
 }

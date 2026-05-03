@@ -7,7 +7,7 @@ import type { V3PlayerProps } from '../../../types/v3-player';
 import styles from './V3Player.module.css';
 
 vi.mock('../lib/hlsRuntime', () => {
-  const HlsMock = vi.fn().mockImplementation(function (this: any) {
+const HlsMock = vi.fn().mockImplementation(function (this: any) {
     return {
       on: vi.fn(),
       loadSource: vi.fn(),
@@ -36,12 +36,34 @@ vi.mock('../client-ts', () => ({
   postLivePlaybackInfo: vi.fn()
 }));
 
+const { useUiSurfaceMock } = vi.hoisted(() => ({
+  useUiSurfaceMock: vi.fn(),
+}));
+
+vi.mock('../../../context/UiSurfaceContext', () => ({
+  useUiSurface: () => useUiSurfaceMock(),
+}));
+
+function createUiSurface(overrides: Record<string, unknown> = {}) {
+  return {
+    surface: 'small',
+    orientation: 'portrait',
+    inputMode: 'coarse',
+    heightClass: 'comfortable',
+    navMode: 'bottom',
+    width: 390,
+    height: 844,
+    ...overrides,
+  };
+}
+
 describe('V3Player Mobile Controls', () => {
   let maxTouchPointsDescriptor: PropertyDescriptor | undefined;
   let webkitEnterFullscreenDescriptor: PropertyDescriptor | undefined;
   let pictureInPictureEnabledDescriptor: PropertyDescriptor | undefined;
   let requestPictureInPictureDescriptor: PropertyDescriptor | undefined;
   let requestFullscreenDescriptor: PropertyDescriptor | undefined;
+  let visibilityStateDescriptor: PropertyDescriptor | undefined;
   const webkitEnterFullscreen = vi.fn();
   const requestFullscreen = vi.fn().mockResolvedValue(undefined);
 
@@ -52,6 +74,7 @@ describe('V3Player Mobile Controls', () => {
     pictureInPictureEnabledDescriptor = Object.getOwnPropertyDescriptor(document, 'pictureInPictureEnabled');
     requestPictureInPictureDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'requestPictureInPicture');
     requestFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLDivElement.prototype, 'requestFullscreen');
+    visibilityStateDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
 
     Object.defineProperty(window.navigator, 'maxTouchPoints', {
       configurable: true,
@@ -78,6 +101,7 @@ describe('V3Player Mobile Controls', () => {
       if (type === 'application/vnd.apple.mpegurl') return 'probably';
       return '';
     });
+    useUiSurfaceMock.mockReturnValue(createUiSurface());
   });
 
   afterEach(() => {
@@ -106,6 +130,10 @@ describe('V3Player Mobile Controls', () => {
       delete (document as any).pictureInPictureEnabled;
     }
 
+    if (visibilityStateDescriptor) {
+      Object.defineProperty(document, 'visibilityState', visibilityStateDescriptor);
+    }
+
     if (maxTouchPointsDescriptor) {
       Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
     }
@@ -125,13 +153,89 @@ describe('V3Player Mobile Controls', () => {
     });
 
     const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
+    const video = container.querySelector('video') as HTMLVideoElement;
+    const seekableStart = 90;
+    const seekableEnd = 120;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => 1
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => 1920
+    });
+    Object.defineProperty(video, 'videoHeight', {
+      configurable: true,
+      get: () => 1080
+    });
+    Object.defineProperty(video, 'seekable', {
+      configurable: true,
+      get: () => ({
+        length: seekableEnd > seekableStart ? 1 : 0,
+        start: () => seekableStart,
+        end: () => seekableEnd,
+      })
+    });
     fireEvent.click(fullscreenButton);
 
-    const video = container.querySelector('video') as HTMLVideoElement;
     expect(requestFullscreen).not.toHaveBeenCalled();
     expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
     expect(video.controls).toBe(true);
     expect(screen.queryByRole('button', { name: /player\.dvrMode/i })).not.toBeInTheDocument();
+  });
+
+  it('defers native fullscreen on touch devices until metadata is available', async () => {
+    let readyState = 0;
+    let seekableStart = 0;
+    let seekableEnd = 0;
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(Hls).not.toHaveBeenCalled();
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => (readyState >= 1 ? 1920 : 0)
+    });
+    Object.defineProperty(video, 'videoHeight', {
+      configurable: true,
+      get: () => (readyState >= 1 ? 1080 : 0)
+    });
+    Object.defineProperty(video, 'seekable', {
+      configurable: true,
+      get: () => ({
+        length: seekableEnd > seekableStart ? 1 : 0,
+        start: () => seekableStart,
+        end: () => seekableEnd,
+      })
+    });
+
+    const fullscreenButton = await screen.findByRole('button', { name: /fullscreen/i });
+    fireEvent.click(fullscreenButton);
+
+    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+
+    readyState = 1;
+    fireEvent.loadedMetadata(video);
+
+    expect(webkitEnterFullscreen).not.toHaveBeenCalled();
+
+    seekableStart = 90;
+    seekableEnd = 120;
+    fireEvent.progress(video);
+
+    expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1);
+    expect(video.controls).toBe(true);
   });
 
   it('keeps mute controls but hides the volume slider on mobile WebKit when the native HLS path is active', async () => {
@@ -152,7 +256,7 @@ describe('V3Player Mobile Controls', () => {
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });
 
-  it('does not auto-hide the bridge deck on touch devices after the idle timeout', async () => {
+  it('collapses the inline bridge deck into idle mode on touch devices after the idle timeout', async () => {
     vi.useFakeTimers();
 
     const props = {
@@ -170,8 +274,135 @@ describe('V3Player Mobile Controls', () => {
       vi.advanceTimersByTime(4000);
     });
 
-    expect(player.className).not.toContain(styles.userIdle);
+    expect(player.className).toContain(styles.userIdle);
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+  });
+
+  it('keeps roomy touch surfaces out of the compact inline chrome path', async () => {
+    useUiSurfaceMock.mockReturnValue(createUiSurface({
+      surface: 'medium',
+      width: 834,
+      height: 1112,
+    }));
+
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true,
+      onClose: vi.fn(),
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(Hls).not.toHaveBeenCalled();
+    });
+
+    const player = container.firstElementChild as HTMLElement;
+    expect(player.className).not.toContain(styles.touchInlineChrome);
+  });
+
+  it('resumes native inline playback after lock and unlock on touch devices', async () => {
+    let visibilityState: DocumentVisibilityState = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+
+    let paused = false;
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function () {
+      paused = false;
+      return Promise.resolve();
+    });
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function () {
+      paused = true;
+    });
+
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(Hls).not.toHaveBeenCalled();
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => paused,
+    });
+
+    visibilityState = 'hidden';
+    fireEvent(document, new Event('visibilitychange'));
+    expect(pauseSpy).toHaveBeenCalled();
+
+    visibilityState = 'visible';
+    fireEvent(document, new Event('visibilitychange'));
+
+    await waitFor(() => {
+      expect(playSpy).toHaveBeenCalled();
+    });
+  });
+
+  it('reloads the native inline source when unlock resume stays stuck', async () => {
+    let visibilityState: DocumentVisibilityState = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+
+    let paused = false;
+    const readyState = 1;
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {
+      paused = true;
+    });
+    const loadSpy = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true
+    } as V3PlayerProps;
+    const { container } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(Hls).not.toHaveBeenCalled();
+    });
+
+    vi.useFakeTimers();
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => paused,
+    });
+    Object.defineProperty(video, 'readyState', {
+      configurable: true,
+      get: () => readyState,
+    });
+    Object.defineProperty(video, 'currentSrc', {
+      configurable: true,
+      get: () => 'http://example.com/playlist.m3u8',
+    });
+
+    playSpy.mockClear();
+    pauseSpy.mockClear();
+    loadSpy.mockClear();
+
+    visibilityState = 'hidden';
+    fireEvent(document, new Event('visibilitychange'));
+    expect(pauseSpy).toHaveBeenCalled();
+
+    visibilityState = 'visible';
+    fireEvent(document, new Event('visibilitychange'));
+
+    await act(async () => {
+      vi.advanceTimersByTime(1700);
+    });
+    fireEvent.loadedMetadata(video);
+
+    expect(loadSpy).toHaveBeenCalled();
+    expect(playSpy).toHaveBeenCalled();
   });
 
 });

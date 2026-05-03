@@ -1,7 +1,7 @@
 # Storage Invariants
 
-To maintain "Operator-Grade" stability and data integrity, all storage
-operations in xg2g must adhere to these invariants.
+For production stability and data integrity, all storage operations in xg2g
+must adhere to these invariants.
 
 ## 1. Single Durable Truth (SDT)
 

@@ -44,6 +44,12 @@ func (m *MockPreparingServer) GetRecordings(w http.ResponseWriter, r *http.Reque
 }
 func (m *MockPreparingServer) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
+func (m *MockPreparingServer) PostRecordingDelete(w http.ResponseWriter, r *http.Request, recordingId string) {
+}
+func (m *MockPreparingServer) PostRecordingRename(w http.ResponseWriter, r *http.Request, recordingId string) {
+}
+func (m *MockPreparingServer) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, recordingId string) {
+}
 func (m *MockPreparingServer) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
 func (m *MockPreparingServer) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
@@ -99,6 +105,7 @@ func (m *MockPreparingServer) GetStreams(w http.ResponseWriter, r *http.Request)
 func (m *MockPreparingServer) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string) {}
 func (m *MockPreparingServer) GetErrors(w http.ResponseWriter, r *http.Request)                  {}
 func (m *MockPreparingServer) GetSystemConfig(w http.ResponseWriter, r *http.Request)            {}
+func (m *MockPreparingServer) GetSystemConnectivity(w http.ResponseWriter, r *http.Request)      {}
 func (m *MockPreparingServer) PutSystemConfig(w http.ResponseWriter, r *http.Request)            {}
 func (m *MockPreparingServer) GetSystemConnectivity(w http.ResponseWriter, r *http.Request)      {}
 func (m *MockPreparingServer) GetSystemEntitlements(w http.ResponseWriter, r *http.Request, params v3.GetSystemEntitlementsParams) {

@@ -63,7 +63,7 @@ func (s *Service) buildRequestHostContext(ctx context.Context) requestHostContex
 	}
 }
 
-func (s *Service) rememberCapabilitySnapshots(ctx context.Context, hostContext requestHostContext, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, resolved capabilities.PlaybackCapabilities) (string, string, string) {
+func (s *Service) rememberCapabilitySnapshots(ctx context.Context, hostContext requestHostContext, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, liveTruth *liveTruthResolution, resolved capabilities.PlaybackCapabilities) (string, string, string) {
 	registry := s.deps.CapabilityRegistry()
 	if registry == nil {
 		return "", "", ""
@@ -88,7 +88,7 @@ func (s *Service) rememberCapabilitySnapshots(ctx context.Context, hostContext r
 		}
 	}
 
-	sourceSnapshot := s.sourceSnapshotForRequest(ctx, sourceRef, req, truth)
+	sourceSnapshot := s.sourceSnapshotForRequestWithLiveTruth(ctx, sourceRef, req, truth, liveTruth)
 	sourceFingerprint := sourceSnapshot.Fingerprint()
 	if sourceFingerprint != "" {
 		if err := registry.RememberSource(ctx, sourceSnapshot); err != nil {
@@ -134,25 +134,37 @@ func (s *Service) recordCapabilityObservation(ctx context.Context, sourceRef str
 }
 
 func (s *Service) sourceSnapshotForRequest(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth) capreg.SourceSnapshot {
+	return s.sourceSnapshotForRequestWithLiveTruth(ctx, sourceRef, req, truth, nil)
+}
+
+func (s *Service) sourceSnapshotForRequestWithLiveTruth(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, liveTruth *liveTruthResolution) capreg.SourceSnapshot {
 	sourceSnapshot := capreg.SourceSnapshot{
-		SubjectKind:     string(req.SubjectKind),
-		Container:       truth.Container,
-		VideoCodec:      truth.VideoCodec,
-		AudioCodec:      truth.AudioCodec,
-		Width:           truth.Width,
-		Height:          truth.Height,
-		FPS:             truth.FPS,
-		Interlaced:      truth.Interlaced,
-		ReceiverContext: cloneReceiverContext(s.deps.ReceiverContext(ctx)),
-		UpdatedAt:       time.Now().UTC(),
+		SubjectKind:       string(req.SubjectKind),
+		Container:         truth.Container,
+		VideoCodec:        truth.VideoCodec,
+		AudioCodec:        truth.AudioCodec,
+		BitrateConfidence: truth.BitrateConfidence,
+		BitrateBucket:     sourceBitrateBucket(truth),
+		Width:             truth.Width,
+		Height:            truth.Height,
+		FPS:               truth.FPS,
+		SignalFPS:         sourceSignalFPS(truth),
+		Interlaced:        truth.Interlaced,
+		ReceiverContext:   cloneReceiverContext(s.deps.ReceiverContext(ctx)),
+		UpdatedAt:         time.Now().UTC(),
 	}
 
 	flags := make([]string, 0, 6)
 	switch req.SubjectKind {
 	case PlaybackSubjectLive:
-		origin, liveFlags := liveSourceOriginAndFlags(sourceRef, s.deps.ChannelTruthSource())
-		sourceSnapshot.Origin = origin
-		flags = append(flags, liveFlags...)
+		if liveTruth != nil {
+			sourceSnapshot.Origin = liveTruth.Origin
+			flags = append(flags, append([]string(nil), liveTruth.ProblemFlags...)...)
+		} else {
+			origin, liveFlags := liveSourceOriginAndFlags(sourceRef, s.deps.ChannelTruthSource(), PlaybackInfoRequestContext(req))
+			sourceSnapshot.Origin = origin
+			flags = append(flags, liveFlags...)
+		}
 	case PlaybackSubjectRecording:
 		sourceSnapshot.Origin = "recording_truth"
 	default:
@@ -164,8 +176,8 @@ func (s *Service) sourceSnapshotForRequest(ctx context.Context, sourceRef string
 	return sourceSnapshot
 }
 
-func liveSourceOriginAndFlags(sourceRef string, source ChannelTruthSource) (string, []string) {
-	resolution := resolveLiveTruthState(sourceRef, source)
+func liveSourceOriginAndFlags(sourceRef string, source ChannelTruthSource, requestContext string) (string, []string) {
+	resolution := resolveLiveTruthState(sourceRef, source, requestContext)
 	return resolution.Origin, append([]string(nil), resolution.ProblemFlags...)
 }
 
@@ -193,6 +205,28 @@ func sourceTruthProblemFlags(truth playback.MediaTruth) []string {
 		flags = append(flags, "missing_audio_codec")
 	}
 	return flags
+}
+
+func sourceSignalFPS(truth playback.MediaTruth) float64 {
+	if truth.SignalFPS > 0 {
+		return truth.SignalFPS
+	}
+	return truth.FPS
+}
+
+func sourceBitrateBucket(truth playback.MediaTruth) string {
+	switch {
+	case truth.BitrateKbps >= 18000:
+		return "18m_plus"
+	case truth.BitrateKbps >= 9000:
+		return "9m_18m"
+	case truth.BitrateKbps >= 5000:
+		return "5m_9m"
+	case truth.BitrateKbps > 0:
+		return "sub5m"
+	default:
+		return ""
+	}
 }
 
 func deviceIdentityForRequest(req PlaybackInfoRequest, resolved capabilities.PlaybackCapabilities) capreg.DeviceIdentity {

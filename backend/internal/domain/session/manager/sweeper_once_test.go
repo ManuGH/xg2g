@@ -206,3 +206,103 @@ func TestSweeper_SweepOnce_IdleTimeout(t *testing.T) {
 	assert.Equal(t, model.SessionStopping, got.State, "Idle session should transition to STOPPING")
 	assert.Equal(t, model.RIdleTimeout, got.Reason, "Reason should be RIdleTimeout")
 }
+
+func TestSweeper_SweepOnce_NeverConsumedSessionStopsAfterInitialGrace(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+
+	orch := &Orchestrator{
+		Store:            st,
+		Bus:              NewStubBus(),
+		Pipeline:         stub.NewAdapter(),
+		Platform:         NewStubPlatform(),
+		LeaseTTL:         30 * time.Second,
+		HeartbeatEvery:   10 * time.Second,
+		Owner:            "sweeper-never-consumed-test",
+		StartConcurrency: 5,
+		StopConcurrency:  5,
+		HLSRoot:          "/tmp/test",
+		LeaseKeyFunc:     func(e model.StartSessionEvent) string { return e.ServiceRef },
+	}
+
+	sweeper := &Sweeper{
+		Orch:      orch,
+		RecoverFn: func(context.Context) error { return nil },
+		Conf: SweeperConfig{
+			IdleTimeout:      5 * time.Minute,
+			SessionRetention: 24 * time.Hour,
+		},
+	}
+
+	sid := "sess-never-consumed"
+	now := time.Now()
+
+	_ = st.PutSession(ctx, &model.SessionRecord{
+		SessionID:            sid,
+		State:                model.SessionReady,
+		ServiceRef:           "ref:never-consumed",
+		LastAccessUnix:       now.Unix(),
+		PlaylistPublishedAt:  now.Add(-(model.IdleThreshold + time.Second)),
+		LastPlaylistAccessAt: time.Time{},
+		LatestSegmentAt:      now.Add(-2 * time.Second),
+		LeaseExpiresAtUnix:   now.Add(1 * time.Minute).Unix(),
+	})
+
+	sweeper.SweepOnce(ctx)
+
+	got, err := st.GetSession(ctx, sid)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, model.SessionStopping, got.State, "Never-consumed session should transition to STOPPING after initial grace")
+	assert.Equal(t, model.RIdleTimeout, got.Reason, "Reason should be RIdleTimeout")
+}
+
+func TestSweeper_SweepOnce_NeverConsumedSessionStaysAliveWithinInitialGrace(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+
+	orch := &Orchestrator{
+		Store:            st,
+		Bus:              NewStubBus(),
+		Pipeline:         stub.NewAdapter(),
+		Platform:         NewStubPlatform(),
+		LeaseTTL:         30 * time.Second,
+		HeartbeatEvery:   10 * time.Second,
+		Owner:            "sweeper-never-consumed-grace-test",
+		StartConcurrency: 5,
+		StopConcurrency:  5,
+		HLSRoot:          "/tmp/test",
+		LeaseKeyFunc:     func(e model.StartSessionEvent) string { return e.ServiceRef },
+	}
+
+	sweeper := &Sweeper{
+		Orch:      orch,
+		RecoverFn: func(context.Context) error { return nil },
+		Conf: SweeperConfig{
+			IdleTimeout:      5 * time.Minute,
+			SessionRetention: 24 * time.Hour,
+		},
+	}
+
+	sid := "sess-never-consumed-grace"
+	now := time.Now()
+
+	_ = st.PutSession(ctx, &model.SessionRecord{
+		SessionID:            sid,
+		State:                model.SessionReady,
+		ServiceRef:           "ref:never-consumed-grace",
+		LastAccessUnix:       now.Unix(),
+		PlaylistPublishedAt:  now.Add(-(model.IdleThreshold - time.Second)),
+		LastPlaylistAccessAt: time.Time{},
+		LatestSegmentAt:      now.Add(-2 * time.Second),
+		LeaseExpiresAtUnix:   now.Add(1 * time.Minute).Unix(),
+	})
+
+	sweeper.SweepOnce(ctx)
+
+	got, err := st.GetSession(ctx, sid)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, model.SessionReady, got.State, "Never-consumed session should remain READY within initial grace")
+	assert.Empty(t, got.Reason)
+}

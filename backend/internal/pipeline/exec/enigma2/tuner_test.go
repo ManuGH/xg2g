@@ -24,6 +24,8 @@ func TestTuner_Tune_Success(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/api/statusinfo":
+			_, _ = fmt.Fprintln(w, `{"result": true, "inStandby": "true"}`)
 		case "/api/zap":
 			_, _ = fmt.Fprintln(w, `{"result": true}`)
 		case "/api/getcurrent":
@@ -60,6 +62,8 @@ func TestTuner_Tune_Timeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/api/statusinfo":
+			_, _ = fmt.Fprintln(w, `{"result": true, "inStandby": "true"}`)
 		case "/api/zap":
 			_, _ = fmt.Fprintln(w, `{"result": true}`)
 		case "/api/getcurrent":
@@ -81,7 +85,7 @@ func TestTuner_Tune_Timeout(t *testing.T) {
 	assert.ErrorIs(t, err, ErrReadyTimeout)
 }
 
-func TestTuner_Tune_DoesNotSkipZapForRelayPort(t *testing.T) {
+func TestTuner_Tune_ZapsRelayPortWhenReceiverIsInStandby(t *testing.T) {
 	var zapCalls int32
 	var polls int32
 	targetRef := "1:0:1:123:0"
@@ -89,6 +93,8 @@ func TestTuner_Tune_DoesNotSkipZapForRelayPort(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/api/statusinfo":
+			_, _ = fmt.Fprintln(w, `{"result": true, "inStandby": "true"}`)
 		case "/api/zap":
 			atomic.AddInt32(&zapCalls, 1)
 			_, _ = fmt.Fprintln(w, `{"result": true}`)
@@ -119,6 +125,32 @@ func TestTuner_Tune_DoesNotSkipZapForRelayPort(t *testing.T) {
 	err := tuner.Tune(ctx, targetRef)
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&zapCalls))
+}
+
+func TestTuner_Tune_SkipsZapForRelayPortWhenReceiverIsActive(t *testing.T) {
+	var requests int32
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/statusinfo":
+			_, _ = fmt.Fprintln(w, `{"result": true, "inStandby": "false"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	client := NewClientWithOptions(ts.URL, Options{Timeout: time.Second, StreamPort: 17999})
+	tuner := NewTuner(client, 0, time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := tuner.Tune(ctx, "1:0:1:123:0")
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&requests))
 }
 
 func TestTuner_Tune_SkipsZapForDirectTSPort(t *testing.T) {

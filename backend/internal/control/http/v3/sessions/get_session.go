@@ -75,11 +75,15 @@ func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) SessionPla
 	if mode == model.ModeRecording {
 		durationSeconds := parseContextSeconds(session.ContextData, model.CtxKeyDurationSeconds)
 		if durationSeconds == nil {
-			return SessionPlaybackInfo{Mode: mode}
+			return SessionPlaybackInfo{
+				Mode:       mode,
+				WindowKind: SessionWindowKindVOD,
+			}
 		}
 		zero := 0.0
 		return SessionPlaybackInfo{
 			Mode:                 mode,
+			WindowKind:           SessionWindowKindVOD,
 			DurationSeconds:      durationSeconds,
 			SeekableStartSeconds: &zero,
 			SeekableEndSeconds:   durationSeconds,
@@ -92,21 +96,24 @@ func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) SessionPla
 		durationSeconds = &value
 	}
 
-	nowUnix := session.LastAccessUnix
-	if nowUnix == 0 {
-		nowUnix = session.UpdatedAtUnix
-	}
-	if nowUnix == 0 {
-		if now.IsZero() {
-			now = time.Now()
+	if session.CreatedAtUnix == 0 {
+		zero := 0.0
+		return SessionPlaybackInfo{
+			Mode:                 mode,
+			WindowKind:           resolveLiveWindowKind(durationSeconds, zero, zero),
+			DurationSeconds:      durationSeconds,
+			SeekableStartSeconds: &zero,
+			SeekableEndSeconds:   &zero,
+			LiveEdgeSeconds:      &zero,
 		}
-		nowUnix = now.Unix()
 	}
 
-	startUnix := session.CreatedAtUnix
-	if startUnix == 0 {
-		startUnix = session.UpdatedAtUnix
+	if now.IsZero() {
+		now = time.Now()
 	}
+	nowUnix := now.Unix()
+
+	startUnix := session.CreatedAtUnix
 	if startUnix == 0 {
 		startUnix = nowUnix
 	}
@@ -123,14 +130,27 @@ func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) SessionPla
 			seekableStart = 0
 		}
 	}
+	seekableEnd := liveEdge
+	windowKind := resolveLiveWindowKind(durationSeconds, seekableStart, seekableEnd)
 
 	return SessionPlaybackInfo{
 		Mode:                 mode,
+		WindowKind:           windowKind,
 		DurationSeconds:      durationSeconds,
 		SeekableStartSeconds: &seekableStart,
-		SeekableEndSeconds:   &liveEdge,
+		SeekableEndSeconds:   &seekableEnd,
 		LiveEdgeSeconds:      &liveEdge,
 	}
+}
+
+func resolveLiveWindowKind(durationSeconds *float64, seekableStart float64, seekableEnd float64) string {
+	if durationSeconds == nil || *durationSeconds <= 0 {
+		return SessionWindowKindLive
+	}
+	if seekableEnd > seekableStart {
+		return SessionWindowKindLiveDVR
+	}
+	return SessionWindowKindLive
 }
 
 func parseContextSeconds(ctx map[string]string, key string) *float64 {

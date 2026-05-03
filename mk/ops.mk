@@ -2,7 +2,7 @@
 # Operations and Orchestration
 # ===================================================================================================
 
-.PHONY: start stop start-gpu stop-gpu start-nvidia stop-nvidia up down status ps logs restart prod-up prod-down prod-ps prod-logs prod-restart release-check release changelog setup build-ffmpeg repair-metadata
+.PHONY: start stop start-gpu stop-gpu start-nvidia stop-nvidia up down status ps logs restart prod-up prod-down prod-ps prod-logs prod-restart release-check release changelog setup build-ffmpeg repair-metadata workspace-clean-preview workspace-clean workspace-clean-aggressive
 
 start: doctor ## Start the default local container stack on http://localhost:8088
 	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh base
@@ -103,3 +103,12 @@ repair-metadata: ## Remove macOS metadata
 	@if [ -f $(BACKEND_DIR)/scripts/ops/repair-metadata.sh ]; then \
 		bash ./$(BACKEND_DIR)/scripts/ops/repair-metadata.sh; \
 	fi
+
+workspace-clean-preview: ## Preview safe local workspace cleanup actions
+	@./$(BACKEND_DIR)/scripts/ops/cleanup-workspace.sh
+
+workspace-clean: ## Remove safe local build/test outputs and clean auxiliary worktrees
+	@./$(BACKEND_DIR)/scripts/ops/cleanup-workspace.sh --apply
+
+workspace-clean-aggressive: ## Also remove stale /tmp/xg2g-* dirs and local bin/ outputs
+	@./$(BACKEND_DIR)/scripts/ops/cleanup-workspace.sh --apply --aggressive

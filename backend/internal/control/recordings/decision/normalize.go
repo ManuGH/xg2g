@@ -19,14 +19,15 @@ import (
 func NormalizeInput(in DecisionInput) DecisionInput {
 	return DecisionInput{
 		Source: Source{
-			Container:   robustNorm(in.Source.Container),
-			VideoCodec:  robustNorm(in.Source.VideoCodec),
-			AudioCodec:  robustNorm(in.Source.AudioCodec),
-			BitrateKbps: in.Source.BitrateKbps,
-			Width:       in.Source.Width,
-			Height:      in.Source.Height,
-			FPS:         in.Source.FPS,
-			Interlaced:  in.Source.Interlaced,
+			Container:         robustNorm(in.Source.Container),
+			VideoCodec:        robustNorm(in.Source.VideoCodec),
+			AudioCodec:        robustNorm(in.Source.AudioCodec),
+			BitrateKbps:       in.Source.BitrateKbps,
+			BitrateConfidence: normalizeBitrateConfidence(in.Source.BitrateConfidence),
+			Width:             in.Source.Width,
+			Height:            in.Source.Height,
+			FPS:               in.Source.FPS,
+			Interlaced:        in.Source.Interlaced,
 		},
 		Capabilities: Capabilities{
 			Version:       in.Capabilities.Version,
@@ -45,7 +46,9 @@ func NormalizeInput(in DecisionInput) DecisionInput {
 				MaxQualityRung: playbackprofile.NormalizeQualityRung(string(in.Policy.Operator.MaxQualityRung)),
 			},
 			Host: HostPolicy{
-				PressureBand: playbackprofile.NormalizeHostPressureBand(string(in.Policy.Host.PressureBand)),
+				PressureBand:     playbackprofile.NormalizeHostPressureBand(string(in.Policy.Host.PressureBand)),
+				PerformanceClass: normalizeHostPerformanceClass(in.Policy.Host.PerformanceClass),
+				BenchmarkClass:   normalizeHostBenchmarkClass(in.Policy.Host.BenchmarkClass),
 			},
 		},
 		RequestedIntent: playbackprofile.NormalizeRequestedIntent(string(in.RequestedIntent)),

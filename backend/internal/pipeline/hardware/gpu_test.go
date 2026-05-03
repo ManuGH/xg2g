@@ -20,6 +20,16 @@ func resetVaapiState(t *testing.T) {
 	vaapiEncCaps = nil
 	vaapiEncMu.Unlock()
 
+	profileBenchMu.Lock()
+	cpuProfileCaps = nil
+	vaapiProfileCaps = nil
+	nvencProfileCaps = nil
+	profileBenchMu.Unlock()
+
+	pathCapsMu.Lock()
+	pathCaps = nil
+	pathCapsMu.Unlock()
+
 	nvencMu.Lock()
 	nvencChecked = false
 	nvencPassed = false
@@ -43,6 +53,16 @@ func resetVaapiState(t *testing.T) {
 		vaapiEncCaps = nil
 		vaapiEncMu.Unlock()
 
+		profileBenchMu.Lock()
+		cpuProfileCaps = nil
+		vaapiProfileCaps = nil
+		nvencProfileCaps = nil
+		profileBenchMu.Unlock()
+
+		pathCapsMu.Lock()
+		pathCaps = nil
+		pathCapsMu.Unlock()
+
 		nvencMu.Lock()
 		nvencChecked = false
 		nvencPassed = false
@@ -54,6 +74,31 @@ func resetVaapiState(t *testing.T) {
 		nvencEncCaps = nil
 		nvencEncMu.Unlock()
 	})
+}
+
+func TestHardwarePathCapabilityFor_ReturnsStoredPathTruth(t *testing.T) {
+	resetVaapiState(t)
+
+	SetPathCapabilities(map[string]HardwarePathCapability{
+		PathVAAPIFullInterlacedHEVC: {
+			Status: PathStatusBrokenOutput,
+			Reason: "synthetic luma below threshold",
+		},
+	})
+
+	cap, ok := HardwarePathCapabilityFor(PathVAAPIFullInterlacedHEVC)
+	if !ok {
+		t.Fatal("expected path capability to be available")
+	}
+	if cap.Verified {
+		t.Fatalf("expected broken path capability to stay unverified, got %#v", cap)
+	}
+	if cap.Status != PathStatusBrokenOutput {
+		t.Fatalf("unexpected path status: %#v", cap)
+	}
+	if cap.Reason == "" {
+		t.Fatalf("expected path reason to be preserved, got %#v", cap)
+	}
 }
 
 func TestIsVAAPIReady_DefaultFalse(t *testing.T) {
@@ -223,5 +268,30 @@ func TestPreferredGPUBackendForCodec_PrefersFasterVerifiedBackend(t *testing.T) 
 	}
 	if got := PreferredGPUBackend(); got != profiles.GPUBackendNVENC {
 		t.Fatalf("expected PreferredGPUBackend to follow the fastest common codec, got %q", got)
+	}
+}
+
+func TestHardwareProfileCapabilityFor_PrefersFastestMeasuredBackend(t *testing.T) {
+	resetVaapiState(t)
+
+	SetCPUProfileBenchmarks(map[string]HardwareProfileCapability{
+		"video_h264_1080p": {Verified: true, ProbeElapsed: 220},
+	})
+	SetVAAPIProfileBenchmarks(map[string]HardwareProfileCapability{
+		"video_h264_1080p": {Verified: true, ProbeElapsed: 90},
+	})
+	SetNVENCProfileBenchmarks(map[string]HardwareProfileCapability{
+		"video_h264_1080p": {Verified: true, ProbeElapsed: 110},
+	})
+
+	capability, backend, ok := HardwareProfileCapabilityFor(" video_h264_1080p ")
+	if !ok {
+		t.Fatal("expected profile capability to resolve")
+	}
+	if backend != "vaapi" {
+		t.Fatalf("expected fastest backend vaapi, got %q", backend)
+	}
+	if capability.ProbeElapsed != 90 {
+		t.Fatalf("expected vaapi probe elapsed 90, got %#v", capability)
 	}
 }

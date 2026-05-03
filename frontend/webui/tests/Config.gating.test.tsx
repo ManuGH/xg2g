@@ -13,6 +13,16 @@ vi.mock('../src/client-ts', async () => {
   };
 });
 
+vi.mock('../src/context/AppContext', () => ({
+  useAppContext: () => ({
+    auth: {
+      token: 'test-token',
+      isAuthenticated: true,
+      isReady: true,
+    },
+  }),
+}));
+
 describe('Config Component Gating Invariant (UI-INV-001)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -35,6 +35,13 @@ func (s *Server) buildPlaybackInfoHTTPResponse(ctx context.Context, deps recordi
 		playbackInfo.ClientProfile,
 		playbackInfo.OperatorRuleName,
 		playbackInfo.OperatorRuleScope,
+		playbackInfo.RuntimePolicyAction,
+		playbackInfo.RuntimePolicyPhase,
+		playbackInfo.RuntimeProbeCandidate,
+		playbackInfo.RuntimePolicyReasons,
+		playbackInfo.RuntimePolicyConstraints,
+		playbackInfo.RuntimeProbeSuccessStreak,
+		playbackInfo.RuntimeProbeFailureStreak,
 	), nil
 }
 

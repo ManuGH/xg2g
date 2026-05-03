@@ -86,7 +86,7 @@ func mapPublishedEndpointContracts(values []connectivitydomain.PublishedEndpoint
 		out = append(out, PublishedEndpoint{
 			Url:             value.URL,
 			Kind:            kind,
-			Priority:        publishedEndpointPriorityValue(value.Priority),
+			Priority:        clampPublishedEndpointPriority(value.Priority),
 			TlsMode:         tlsMode,
 			AllowPairing:    value.AllowPairing,
 			AllowStreaming:  value.AllowStreaming,
@@ -100,9 +100,13 @@ func mapPublishedEndpointContracts(values []connectivitydomain.PublishedEndpoint
 	return out
 }
 
-func publishedEndpointPriorityValue(priority int) int32 {
-	if priority < 0 || priority > math.MaxInt32 {
-		panic("published endpoint priority exceeds OpenAPI int32 contract")
+func clampPublishedEndpointPriority(priority int) int32 {
+	switch {
+	case priority > math.MaxInt32:
+		return math.MaxInt32
+	case priority < math.MinInt32:
+		return math.MinInt32
+	default:
+		return int32(priority)
 	}
-	return int32(priority)
 }

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../context/HouseholdProfilesContext';
 import { PendingChangesProvider } from '../context/PendingChangesContext';
@@ -13,6 +14,7 @@ const {
   confirm,
   toast,
   loadChannels,
+  authState,
 } = vi.hoisted(() => ({
   getSystemConfig: vi.fn(),
   getSystemConnectivity: vi.fn(),
@@ -21,6 +23,11 @@ const {
   confirm: vi.fn(),
   toast: vi.fn(),
   loadChannels: vi.fn(),
+  authState: {
+    token: 'stored-token',
+    isAuthenticated: true,
+    isReady: true,
+  },
 }));
 
 vi.mock('../client-ts', () => ({
@@ -32,6 +39,7 @@ vi.mock('../client-ts', () => ({
 
 vi.mock('../context/AppContext', () => ({
   useAppContext: () => ({
+    auth: authState,
     channels: {
       bouquets: [],
       selectedBouquet: '',
@@ -53,6 +61,16 @@ vi.mock('./Config', () => ({
   __esModule: true,
   default: () => <div data-testid="settings-config" />,
   isConfigured: (config: { openWebIF?: { baseUrl?: string } } | null) => Boolean(config?.openWebIF?.baseUrl),
+}));
+
+vi.mock('./Files', () => ({
+  __esModule: true,
+  default: () => <div data-testid="settings-files-stub">Files tool</div>,
+}));
+
+vi.mock('./Logs', () => ({
+  __esModule: true,
+  default: () => <div data-testid="settings-logs-stub">Logs tool</div>,
 }));
 
 import Settings from './Settings';
@@ -96,7 +114,7 @@ function createConnectivityContract(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderWithQueryClient() {
+function renderWithQueryClient(initialEntries: string[] = ['/settings']) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -109,21 +127,38 @@ function renderWithQueryClient() {
   });
 
   return render(
-    <QueryClientProvider client={queryClient}>
-      <PendingChangesProvider>
-        <HouseholdProfilesProvider>
-          <Settings />
-        </HouseholdProfilesProvider>
-      </PendingChangesProvider>
-    </QueryClientProvider>
+    <MemoryRouter initialEntries={initialEntries}>
+      <QueryClientProvider client={queryClient}>
+        <PendingChangesProvider>
+          <HouseholdProfilesProvider>
+            <Settings />
+          </HouseholdProfilesProvider>
+        </PendingChangesProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 
 describe('Settings', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    authState.token = 'stored-token';
+    authState.isAuthenticated = true;
+    authState.isReady = true;
     setClientAuthToken('');
     window.localStorage.clear();
+  });
+
+  it('waits for auth header hydration before loading settings queries', () => {
+    authState.token = 'stored-token';
+    authState.isAuthenticated = true;
+    authState.isReady = false;
+
+    renderWithQueryClient();
+
+    expect(getSystemConfig).not.toHaveBeenCalled();
+    expect(getSystemConnectivity).not.toHaveBeenCalled();
+    expect(getSystemScanStatus).not.toHaveBeenCalled();
   });
 
   it('loads config and scan status from shared query hooks', async () => {
@@ -148,9 +183,36 @@ describe('Settings', () => {
     renderWithQueryClient();
 
     expect(await screen.findByDisplayValue('Universal (H.264/AAC/fMP4)')).toBeInTheDocument();
-    expect(screen.getByText('Idle')).toBeInTheDocument();
+    expect(screen.getAllByText('Idle').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Files' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument();
     expect(getSystemConfig).toHaveBeenCalledTimes(1);
     expect(getSystemScanStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the embedded advanced tool from the route query', async () => {
+    getSystemConfig.mockResolvedValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        streaming: { deliveryPolicy: 'universal' },
+      },
+    });
+    getSystemConnectivity.mockResolvedValue({
+      data: createConnectivityContract(),
+    });
+    getSystemScanStatus.mockResolvedValue({
+      data: {
+        state: 'idle',
+        scannedChannels: 0,
+        totalChannels: 20,
+        updatedCount: 0,
+      },
+    });
+
+    renderWithQueryClient(['/settings?section=advanced&tool=files']);
+
+    expect(await screen.findByTestId('settings-files-stub')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to Expert tools' })).toBeInTheDocument();
   });
 
   it('starts a scan and refetches scan status', async () => {

@@ -16,9 +16,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/go-chi/chi/v5"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/rs/zerolog"
 
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -34,6 +36,8 @@ import (
 const (
 	fallbackRestartPollInterval = 50 * time.Millisecond
 	fallbackRestartTimeout      = 5 * time.Second
+	playbackErrorCodeDecode     = 3
+	playbackErrorCodeHlsStalled = 4
 )
 
 const safariFallbackBrowserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15"
@@ -92,23 +96,15 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	// 3. Check for MediaError 3 (Safari HLS decode error)
-	// We only trigger fallback if it's an error and specifically code 3
-	isDecodeError := req.Event == PlaybackFeedbackRequestEventError && req.Code != nil && *req.Code == 3
 	ctx := r.Context()
 	sess, err := store.GetSession(ctx, sessionId.String())
+	isDecodeError := shouldTriggerPlaybackFallback(req, sess)
 	if err == nil && sess != nil {
 		s.recordPlaybackFeedbackObservation(ctx, sess, req)
 	}
+	s.logPlaybackFeedback(sessionId.String(), sess, req, isDecodeError)
 
 	if !isDecodeError {
-		// Just log info/warnings
-		log.L().Info().
-			Str("sessionId", sessionId.String()).
-			Str("event", string(req.Event)).
-			Int("code", derefInt(req.Code)).
-			Str("msg", derefString(req.Message)).
-			Msg("playback feedback received")
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -173,23 +169,8 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 			fromHash = fromTarget.Hash()
 		}
 
-		switch s.Profile.Name {
-		case profiles.ProfileSafari:
-			s.Profile = nextSafariFeedbackProfile(s.Profile, s.ServiceRef)
-		default:
-			// Escalate all other failures, including safari_dirty re-failures, to repair.
-			s.Profile.Name = profiles.ProfileRepair
-			s.Profile.PolicyModeHint = ports.RuntimeModeSafe
-			s.Profile.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
-			s.Profile.TranscodeVideo = true
-			s.Profile.Deinterlace = false // Keep simple
-			s.Profile.HWAccel = ""        // Force CPU
-			s.Profile.VideoCodec = "libx264"
-			s.Profile.VideoCRF = 24
-			s.Profile.VideoMaxWidth = 1280
-			s.Profile.Preset = "veryfast"
-			s.Profile.Container = "fmp4" // Ensure FMP4 for Safari
-		}
+		fallbackPlan := nextPlaybackFeedbackPlan(s.Profile, s.ServiceRef)
+		s.Profile = fallbackPlan.profile
 
 		s.FallbackReason = fmt.Sprintf("client_report:code=%d", derefInt(req.Code))
 		s.FallbackAtUnix = now.Unix()
@@ -211,6 +192,8 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 			AtUnix:          now.Unix(),
 			Trigger:         "client_feedback",
 			Reason:          s.FallbackReason,
+			PlanID:          string(fallbackPlan.id),
+			PlanReason:      string(fallbackPlan.reason),
 			FromProfileHash: fromHash,
 			ToProfileHash:   toHash,
 		})
@@ -235,6 +218,8 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	log.L().
 		Warn().
 		Str("sessionId", sess.SessionID).
+		Str("fallback_plan", sessionFallbackPlanID(sess)).
+		Str("fallback_plan_reason", sessionFallbackPlanReason(sess)).
 		Str("fallback_profile", sess.Profile.Name).
 		Str("fallback_container", sess.Profile.Container).
 		Msg("activating safari fallback due to client error")
@@ -260,39 +245,86 @@ func shouldPreferSafariTSFallbackForServiceRef(serviceRef string) bool {
 	return serviceRefEnvContainsNormalized("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", serviceRef)
 }
 
-func nextSafariFeedbackProfile(current model.ProfileSpec, serviceRef string) model.ProfileSpec {
-	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) && !current.DisableSafariForceCopy {
-		// First Safari recovery step for allowlisted dirty relay streams: disable the
-		// runtime copy experiment and restart as the browser-safe TS transcode path.
-		next := profiles.Resolve(profiles.ProfileSafari, safariFallbackBrowserUA, current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
-		next.DisableSafariForceCopy = true
-		next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
-		return next
+func shouldTriggerPlaybackFallback(req PlaybackFeedbackRequest, sess *model.SessionRecord) bool {
+	if req.Event != PlaybackFeedbackRequestEventError || req.Code == nil {
+		return false
 	}
 
-	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) {
-		// If Safari already runs on the browser-safe TS transcode path and still
-		// reports a decode failure, escalate to a materially different low-complexity
-		// repair rung instead of restarting the exact same media profile again.
-		next := profiles.Resolve(profiles.ProfileRepair, safariFallbackBrowserUA, current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
-		next.Container = "mpegts"
-		next.Deinterlace = true
-		next.HWAccel = ""
-		next.VideoCodec = "libx264"
-		next.VideoCRF = 24
-		next.VideoMaxWidth = 1280
-		next.Preset = "veryfast"
-		next.AudioBitrateK = 192
-		next.PolicyModeHint = ports.RuntimeModeSafe
-		next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
-		return next
+	switch *req.Code {
+	case playbackErrorCodeDecode:
+		return true
+	case playbackErrorCodeHlsStalled:
+		return shouldEscalateIOSAV1HlsStall(sess)
+	default:
+		return false
+	}
+}
+
+func shouldEscalateIOSAV1HlsStall(sess *model.SessionRecord) bool {
+	if sess == nil {
+		return false
 	}
 
-	// First recovery step for general Safari failures remains the stricter
-	// dirty-stream profile.
-	next := profiles.Resolve(profiles.ProfileSafariDirty, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
-	next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
-	return next
+	if strings.TrimSpace(sessionClientFamilyForFeedback(sess)) != playbackprofile.ClientIOSSafariNative {
+		return false
+	}
+	if strings.TrimSpace(sessionClientPathForFeedback(sess)) != "hlsjs" {
+		return false
+	}
+
+	return strings.EqualFold(strings.TrimSpace(sessionTargetVideoCodecForFeedback(sess)), "av1")
+}
+
+func sessionClientFamilyForFeedback(sess *model.SessionRecord) string {
+	if sess == nil {
+		return ""
+	}
+	if sess.ContextData != nil {
+		if family := strings.TrimSpace(sess.ContextData[model.CtxKeyClientFamily]); family != "" {
+			return family
+		}
+	}
+	if sess.PlaybackTrace != nil && sess.PlaybackTrace.Client != nil {
+		return strings.TrimSpace(sess.PlaybackTrace.Client.ClientFamily)
+	}
+	return ""
+}
+
+func sessionClientPathForFeedback(sess *model.SessionRecord) string {
+	if sess == nil {
+		return ""
+	}
+	if sess.ContextData != nil {
+		if clientPath := strings.TrimSpace(sess.ContextData[model.CtxKeyClientPath]); clientPath != "" {
+			return clientPath
+		}
+	}
+	if sess.PlaybackTrace != nil {
+		return strings.TrimSpace(sess.PlaybackTrace.ClientPath)
+	}
+	return ""
+}
+
+func sessionTargetVideoCodecForFeedback(sess *model.SessionRecord) string {
+	if sess == nil {
+		return ""
+	}
+	if sess.PlaybackTrace != nil {
+		if sess.PlaybackTrace.TargetProfile != nil {
+			if codec := strings.TrimSpace(sess.PlaybackTrace.TargetProfile.Video.Codec); codec != "" {
+				return codec
+			}
+		}
+		if sess.PlaybackTrace.FFmpegPlan != nil {
+			if codec := strings.TrimSpace(sess.PlaybackTrace.FFmpegPlan.VideoCodec); codec != "" {
+				return codec
+			}
+		}
+		if codec := strings.TrimSpace(sess.PlaybackTrace.AutoCodecSelected); codec != "" {
+			return codec
+		}
+	}
+	return strings.TrimSpace(sess.Profile.VideoCodec)
 }
 
 func serviceRefEnvContainsNormalized(envKey, targetRef string) bool {
@@ -342,6 +374,10 @@ func isHexColonServiceRefForEnv(ref string) bool {
 }
 
 func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateStore, sess *model.SessionRecord) {
+	s.scheduleSessionRestart(eventBus, store, sess)
+}
+
+func (s *Server) scheduleSessionRestart(eventBus bus.Bus, store SessionStateStore, sess *model.SessionRecord) {
 	if eventBus == nil || store == nil || sess == nil {
 		return
 	}
@@ -356,7 +392,7 @@ func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateSto
 		defer cancel()
 
 		if err := waitForTerminalSession(ctx, store, sessionID); err != nil {
-			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to observe terminal state before fallback restart")
+			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to observe terminal state before session restart")
 			return
 		}
 
@@ -370,7 +406,7 @@ func (s *Server) scheduleFallbackRestart(eventBus bus.Bus, store SessionStateSto
 		}
 
 		if err := eventBus.Publish(ctx, string(model.EventStartSession), startEvt); err != nil {
-			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to publish restart event during fallback")
+			log.L().Error().Err(err).Str("sessionId", sessionID).Msg("failed to publish session restart event")
 		}
 	}()
 }
@@ -443,6 +479,17 @@ func (s *Server) recordPlaybackFeedbackObservation(ctx context.Context, sess *mo
 	if s == nil || sess == nil {
 		return
 	}
+	observedAt := time.Now().UTC()
+	if isSoftStartupPlaybackWarning(req) && sessionInPlaybackStartupWarmup(sess, s.cfg.HLS.Root, playbackStartupSoftWarningWarmup, observedAt) {
+		log.L().Info().
+			Str("sessionId", sess.SessionID).
+			Str("event", string(req.Event)).
+			Int("code", derefInt(req.Code)).
+			Str("msg", derefString(req.Message)).
+			Time("startupWarmupUntil", sessionPlaybackStartupWarmupUntil(sess, s.cfg.HLS.Root, playbackStartupSoftWarningWarmup)).
+			Msg("ignoring soft startup playback warning during warmup")
+		return
+	}
 
 	s.mu.RLock()
 	registry := s.capabilityRegistry
@@ -474,10 +521,10 @@ func (s *Server) recordPlaybackFeedbackObservation(ctx context.Context, sess *mo
 	trace := sess.PlaybackTrace
 	target := traceTargetProfileForFeedback(sess)
 	observation := capreg.PlaybackObservation{
-		ObservedAt:         time.Now().UTC(),
+		ObservedAt:         observedAt,
 		RequestID:          decisionRequestID,
 		ObservationKind:    "feedback",
-		Outcome:            playbackFeedbackOutcome(req.Event),
+		Outcome:            playbackFeedbackOutcome(req.Event, derefInt(req.Code)),
 		SessionID:          strings.TrimSpace(sess.SessionID),
 		SourceRef:          firstNonEmptyFeedback(strings.TrimSpace(sess.ServiceRef), linked.SourceRef),
 		SourceFingerprint:  linked.SourceFingerprint,
@@ -505,7 +552,121 @@ func (s *Server) recordPlaybackFeedbackObservation(ctx context.Context, sess *mo
 	}
 }
 
-func playbackFeedbackOutcome(event PlaybackFeedbackRequestEvent) string {
+func (s *Server) logPlaybackFeedback(sessionID string, sess *model.SessionRecord, req PlaybackFeedbackRequest, decodeError bool) {
+	var event *zerolog.Event
+	switch req.Event {
+	case PlaybackFeedbackRequestEventError:
+		event = log.L().Warn()
+	default:
+		event = log.L().Info()
+	}
+
+	event.
+		Str("sessionId", strings.TrimSpace(sessionID)).
+		Str("event", string(req.Event)).
+		Int("code", derefInt(req.Code)).
+		Str("msg", derefString(req.Message)).
+		Bool("decodeError", decodeError)
+
+	if sess == nil {
+		event.Msg("playback feedback received")
+		return
+	}
+
+	event.
+		Str("state", string(sess.State)).
+		Str("serviceRef", strings.TrimSpace(sess.ServiceRef)).
+		Str("profile", strings.TrimSpace(sess.Profile.Name)).
+		Str("profileContainer", strings.TrimSpace(sess.Profile.Container)).
+		Str("profileVideoCodec", strings.TrimSpace(sess.Profile.VideoCodec)).
+		Bool("firstFrameSeen", sessionHasFirstFrameArtifact(s.cfg.HLS.Root, sess.SessionID))
+
+	if sess.ContextData != nil {
+		if requestID := strings.TrimSpace(sess.ContextData[model.CtxKeyDecisionRequest]); requestID != "" {
+			event.Str("decisionRequestId", requestID)
+		}
+		if requestedPath := strings.TrimSpace(sess.ContextData[model.CtxKeyClientPath]); requestedPath != "" {
+			event.Str("contextClientPath", requestedPath)
+		}
+	}
+
+	trace := sess.PlaybackTrace
+	if trace == nil {
+		event.Msg("playback feedback received")
+		return
+	}
+
+	event.
+		Str("requestProfile", strings.TrimSpace(trace.RequestProfile)).
+		Str("requestedIntent", strings.TrimSpace(trace.RequestedIntent)).
+		Str("resolvedIntent", strings.TrimSpace(trace.ResolvedIntent)).
+		Str("clientPath", strings.TrimSpace(trace.ClientPath)).
+		Str("inputKind", strings.TrimSpace(trace.InputKind)).
+		Str("autoCodecPolicy", strings.TrimSpace(trace.AutoCodecPolicy)).
+		Str("autoCodecRequested", strings.TrimSpace(trace.AutoCodecRequested)).
+		Str("autoCodecSelected", strings.TrimSpace(trace.AutoCodecSelected)).
+		Str("autoCodecPerformanceClass", strings.TrimSpace(trace.AutoCodecHostClass)).
+		Str("autoCodecBenchmarkClass", strings.TrimSpace(trace.AutoCodecBenchClass)).
+		Str("ffmpegPackaging", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.Packaging) })).
+		Str("ffmpegContainer", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.Container) })).
+		Str("ffmpegVideoMode", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.VideoMode) })).
+		Str("ffmpegVideoCodec", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.VideoCodec) })).
+		Str("ffmpegAudioMode", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.AudioMode) })).
+		Str("ffmpegAudioCodec", traceFFmpegPlanValue(trace, func(plan *model.FFmpegPlanTrace) string { return strings.TrimSpace(plan.AudioCodec) })).
+		Str("clientFamily", traceClientValue(trace, func(client *model.PlaybackClientSnapshot) string { return strings.TrimSpace(client.ClientFamily) })).
+		Str("preferredHlsEngine", traceClientValue(trace, func(client *model.PlaybackClientSnapshot) string { return strings.TrimSpace(client.PreferredHLSEngine) }))
+
+	if trace.TargetProfile != nil {
+		event.
+			Str("targetContainer", strings.TrimSpace(trace.TargetProfile.Container)).
+			Str("targetPackaging", strings.TrimSpace(string(trace.TargetProfile.Packaging))).
+			Str("targetVideoCodec", strings.TrimSpace(trace.TargetProfile.Video.Codec)).
+			Str("targetAudioCodec", strings.TrimSpace(trace.TargetProfile.Audio.Codec))
+	}
+
+	event.Msg("playback feedback received")
+}
+
+func traceFFmpegPlanValue(trace *model.PlaybackTrace, selector func(*model.FFmpegPlanTrace) string) string {
+	if trace == nil || trace.FFmpegPlan == nil {
+		return ""
+	}
+	return selector(trace.FFmpegPlan)
+}
+
+func traceClientValue(trace *model.PlaybackTrace, selector func(*model.PlaybackClientSnapshot) string) string {
+	if trace == nil || trace.Client == nil {
+		return ""
+	}
+	return selector(trace.Client)
+}
+
+func sessionFallbackPlanID(sess *model.SessionRecord) string {
+	if sess == nil || sess.PlaybackTrace == nil || len(sess.PlaybackTrace.Fallbacks) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(sess.PlaybackTrace.Fallbacks[len(sess.PlaybackTrace.Fallbacks)-1].PlanID)
+}
+
+func sessionFallbackPlanReason(sess *model.SessionRecord) string {
+	if sess == nil || sess.PlaybackTrace == nil || len(sess.PlaybackTrace.Fallbacks) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(sess.PlaybackTrace.Fallbacks[len(sess.PlaybackTrace.Fallbacks)-1].PlanReason)
+}
+
+const (
+	playbackInfoCodeProbeWindowConfirmed = 221
+	playbackInfoCodeNativeRenderStable   = 231
+	playbackInfoCodeNativeRenderRecover  = 232
+	playbackInfoCodeHLSJSRenderStable    = 241
+	playbackInfoCodeHLSJSRenderBlack     = 242
+)
+
+func playbackFeedbackOutcome(event PlaybackFeedbackRequestEvent, code int) string {
+	if code == playbackInfoCodeHLSJSRenderBlack {
+		return "warning"
+	}
 	switch event {
 	case PlaybackFeedbackRequestEventError:
 		return "failed"
@@ -692,6 +853,12 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	if trace == nil {
 		trace = &model.PlaybackTrace{}
 	}
+	runtimeState := loadSessionRuntimePolicyState(session)
+	runtimeTimeline := loadSessionRuntimeTimeline(session)
+	runtimeReplay := loadSessionRuntimeReplay(session)
+	if runtimeReplay == nil {
+		runtimeReplay = buildSessionRuntimePolicyReplay(session)
+	}
 
 	requestProfile := strings.TrimSpace(trace.RequestProfile)
 	if requestProfile == "" {
@@ -751,6 +918,21 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	if hostPressureBand != "" {
 		dto.HostPressureBand = &hostPressureBand
 	}
+	if autoCodecPolicy := strings.TrimSpace(trace.AutoCodecPolicy); autoCodecPolicy != "" {
+		dto.AutoCodecPolicy = &autoCodecPolicy
+	}
+	if autoCodecRequested := strings.TrimSpace(trace.AutoCodecRequested); autoCodecRequested != "" {
+		dto.AutoCodecRequestedCodecs = &autoCodecRequested
+	}
+	if autoCodecSelected := strings.TrimSpace(trace.AutoCodecSelected); autoCodecSelected != "" {
+		dto.AutoCodecSelectedCodec = &autoCodecSelected
+	}
+	if autoCodecHostClass := strings.TrimSpace(trace.AutoCodecHostClass); autoCodecHostClass != "" {
+		dto.AutoCodecPerformanceClass = &autoCodecHostClass
+	}
+	if autoCodecBenchClass := strings.TrimSpace(trace.AutoCodecBenchClass); autoCodecBenchClass != "" {
+		dto.AutoCodecBenchmarkClass = &autoCodecBenchClass
+	}
 	if trace.HostOverrideApplied {
 		hostOverrideApplied := true
 		dto.HostOverrideApplied = &hostOverrideApplied
@@ -803,23 +985,62 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 		}
 	}
 
+	operator := PlaybackTraceOperator{}
+	hasOperator := false
 	if trace.Operator != nil {
-		operator := PlaybackTraceOperator{
+		operator = PlaybackTraceOperator{
 			ClientFallbackDisabled: boolPtr(trace.Operator.ClientFallbackDisabled),
 			OverrideApplied:        boolPtr(trace.Operator.OverrideApplied),
 		}
+		hasOperator = trace.Operator.ClientFallbackDisabled || trace.Operator.OverrideApplied
 		if forcedIntent := strings.TrimSpace(trace.Operator.ForcedIntent); forcedIntent != "" {
 			operator.ForcedIntent = &forcedIntent
+			hasOperator = true
 		}
 		if maxQualityRung := strings.TrimSpace(trace.Operator.MaxQualityRung); maxQualityRung != "" {
 			operator.MaxQualityRung = &maxQualityRung
+			hasOperator = true
 		}
 		if ruleName := strings.TrimSpace(trace.Operator.RuleName); ruleName != "" {
 			operator.RuleName = &ruleName
+			hasOperator = true
 		}
 		if ruleScope := strings.TrimSpace(trace.Operator.RuleScope); ruleScope != "" {
 			operator.RuleScope = &ruleScope
+			hasOperator = true
 		}
+	}
+	if runtimeAction := strings.TrimSpace(string(runtimeState.LastAction)); runtimeAction != "" {
+		operator.RuntimePolicyAction = &runtimeAction
+		hasOperator = true
+	}
+	if runtimePhase := strings.TrimSpace(sessionRuntimePolicyPhaseName(runtimeState, time.Now().UTC())); runtimePhase != "" {
+		operator.RuntimePolicyPhase = &runtimePhase
+		hasOperator = true
+	}
+	if len(runtimeState.PolicyConstraints) > 0 {
+		constraints := append([]string(nil), runtimeState.PolicyConstraints...)
+		operator.RuntimePolicyConstraints = &constraints
+		hasOperator = true
+	}
+	if len(runtimeState.Reasons) > 0 {
+		reasons := append([]string(nil), runtimeState.Reasons...)
+		operator.RuntimePolicyReasons = &reasons
+		hasOperator = true
+	}
+	if mappedReplay := mapRuntimePolicyReplay(runtimeReplay); mappedReplay != nil {
+		operator.RuntimePolicyReplay = mappedReplay
+		hasOperator = true
+	}
+	if runtimeCandidate := strings.TrimSpace(string(runtimeState.ProbeStep)); runtimeCandidate != "" {
+		operator.RuntimeProbeCandidate = &runtimeCandidate
+		hasOperator = true
+	}
+	if mappedTimeline := mapRuntimePolicyTimeline(runtimeTimeline); mappedTimeline != nil {
+		operator.RuntimePolicyTimeline = mappedTimeline
+		hasOperator = true
+	}
+	if hasOperator {
 		dto.Operator = &operator
 	}
 
@@ -834,6 +1055,9 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 			AudioMode:  strPtr(trace.FFmpegPlan.AudioMode),
 			AudioCodec: strPtr(trace.FFmpegPlan.AudioCodec),
 		}
+	}
+	if trace.RuntimeDiagnostics != nil && !trace.RuntimeDiagnostics.IsZero() {
+		dto.RuntimeDiagnostics = mapPlaybackRuntimeDiagnostics(*trace.RuntimeDiagnostics)
 	}
 
 	if hlsDebug := mapPlaybackTraceHLSDebug(trace); hlsDebug != nil {
@@ -881,4 +1105,244 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 
 	return dto
+}
+
+func mapPlaybackRuntimeDiagnostics(d ports.RuntimeDiagnostics) *PlaybackTraceRuntimeDiagnostics {
+	out := &PlaybackTraceRuntimeDiagnostics{}
+	if d.FrameCount > 0 {
+		out.FrameCount = &d.FrameCount
+	}
+	if d.FPS > 0 {
+		value := float32(d.FPS)
+		out.Fps = &value
+	}
+	out.DropFrames = &d.DropFrames
+	out.DupFrames = &d.DupFrames
+	if d.Speed > 0 {
+		value := float32(d.Speed)
+		out.Speed = &value
+	}
+	if d.CorruptDecodedFrames > 0 {
+		out.CorruptDecodedFrames = &d.CorruptDecodedFrames
+	}
+	if warning := strings.TrimSpace(d.LastWarning); warning != "" {
+		out.LastWarning = &warning
+	}
+	if d.UpdatedAtUnix > 0 {
+		updatedAtUnix := int(d.UpdatedAtUnix)
+		out.UpdatedAtUnix = &updatedAtUnix
+	}
+	return out
+}
+
+func sessionRuntimePolicyPhaseName(state runtimepolicy.SessionLoopState, now time.Time) string {
+	if state.ProbeState == runtimepolicy.ProbeLifecycleScheduled || state.ProbeState == runtimepolicy.ProbeLifecycleObserving {
+		return "probing"
+	}
+	switch strings.TrimSpace(string(state.LastAction)) {
+	case "probe_up":
+		return "probing"
+	case "cooldown":
+		return "cooldown"
+	case "degrade", "step_down":
+		return "degraded"
+	case "lock_current":
+		return "recovering"
+	}
+	if hasString(state.Reasons, runtimepolicy.ReasonProbeRecentlyRegressed, runtimepolicy.ReasonProbeWindowRegressed) || state.ProbeState == runtimepolicy.ProbeLifecycleAborted {
+		return "probe_regressed"
+	}
+	if !state.CooldownUntil.IsZero() && state.CooldownUntil.After(now) {
+		return "cooldown"
+	}
+	switch state.ConfidenceState {
+	case runtimepolicy.ConfidenceRecovery:
+		return "recovering"
+	case runtimepolicy.ConfidenceLow:
+		return "degraded"
+	case runtimepolicy.ConfidenceStable, runtimepolicy.ConfidenceHigh:
+		return "stable"
+	default:
+		return ""
+	}
+}
+
+func mapRuntimePolicyTimeline(timeline []runtimepolicy.TickTrace) *[]PlaybackTraceRuntimeTick {
+	if len(timeline) == 0 {
+		return nil
+	}
+	out := make([]PlaybackTraceRuntimeTick, 0, len(timeline))
+	for _, tick := range timeline {
+		dto := PlaybackTraceRuntimeTick{
+			TickAt:             tick.TickAt,
+			ConfidenceScore:    toIntPtr(tick.ConfidenceScore),
+			ConfidenceState:    strPtr(string(tick.ConfidenceState)),
+			PolicyAction:       strPtr(string(tick.PolicyAction)),
+			PlannedTransition:  strPtr(string(tick.PlannedTransition)),
+			ExecutedTransition: strPtr(string(tick.ExecutedTransition)),
+			ActiveStep:         strPtr(string(tick.ActiveStep)),
+			TargetStep:         strPtr(string(tick.TargetStep)),
+			ProbeStep:          strPtr(string(tick.ProbeStep)),
+			ProbeState:         strPtr(string(tick.ProbeState)),
+		}
+		if !tick.CooldownUntil.IsZero() {
+			cooldown := tick.CooldownUntil
+			dto.CooldownUntil = &cooldown
+		}
+		if len(tick.Blockers) > 0 {
+			blockers := append([]string(nil), tick.Blockers...)
+			dto.Blockers = &blockers
+		}
+		if len(tick.Reasons) > 0 {
+			reasons := append([]string(nil), tick.Reasons...)
+			dto.Reasons = &reasons
+		}
+		out = append(out, dto)
+	}
+	return &out
+}
+
+func mapRuntimePolicyReplay(replay *runtimepolicy.RuntimePolicyReplay) *PlaybackTraceRuntimeReplay {
+	if replay == nil {
+		return nil
+	}
+	out := &PlaybackTraceRuntimeReplay{
+		Metadata:     mapRuntimePolicyReplayMetadata(replay.Metadata),
+		InitialState: mapRuntimePolicyReplayState(replay.InitialState),
+		FinalState:   mapRuntimePolicyReplayState(replay.FinalState),
+	}
+	if len(replay.Ticks) > 0 {
+		ticks := make([]PlaybackTraceRuntimeReplayTick, 0, len(replay.Ticks))
+		for _, tick := range replay.Ticks {
+			ticks = append(ticks, PlaybackTraceRuntimeReplayTick{
+				Input:    mapRuntimePolicyReplayTickInput(tick.Input),
+				Expected: mapRuntimePolicyReplayTickExpected(tick.Expected),
+			})
+		}
+		out.Ticks = &ticks
+	}
+	return out
+}
+
+func mapRuntimePolicyReplayMetadata(metadata runtimepolicy.ReplayMetadata) *PlaybackTraceRuntimeReplayMetadata {
+	if metadata.SessionID == "" && metadata.ServiceRef == "" && metadata.ClientPath == "" && metadata.SourceType == "" && metadata.InitialTarget == runtimepolicy.PlaybackStepUnknown {
+		return nil
+	}
+	return &PlaybackTraceRuntimeReplayMetadata{
+		SessionId:     strPtr(metadata.SessionID),
+		ServiceRef:    strPtr(metadata.ServiceRef),
+		ClientPath:    strPtr(metadata.ClientPath),
+		SourceType:    strPtr(metadata.SourceType),
+		InitialTarget: strPtr(string(metadata.InitialTarget)),
+	}
+}
+
+func mapRuntimePolicyReplayState(state runtimepolicy.SessionLoopState) *PlaybackTraceRuntimeReplayState {
+	if state.CurrentStep == runtimepolicy.PlaybackStepUnknown &&
+		state.TargetStep == runtimepolicy.PlaybackStepUnknown &&
+		state.ProbeStep == runtimepolicy.PlaybackStepUnknown &&
+		state.ProbeState == runtimepolicy.ProbeLifecycleNone &&
+		state.ConfidenceScore == 0 &&
+		state.ConfidenceState == "" &&
+		state.CooldownUntil.IsZero() &&
+		state.LastAction == "" &&
+		len(state.PolicyConstraints) == 0 &&
+		len(state.Reasons) == 0 {
+		return nil
+	}
+	out := &PlaybackTraceRuntimeReplayState{
+		ConfidenceScore: toIntPtr(state.ConfidenceScore),
+		ConfidenceState: strPtr(string(state.ConfidenceState)),
+		CurrentStep:     strPtr(string(state.CurrentStep)),
+		LastAction:      strPtr(string(state.LastAction)),
+		TargetStep:      strPtr(string(state.TargetStep)),
+		ProbeStep:       strPtr(string(state.ProbeStep)),
+		ProbeState:      strPtr(string(state.ProbeState)),
+	}
+	if !state.CooldownUntil.IsZero() {
+		cooldown := state.CooldownUntil
+		out.CooldownUntil = &cooldown
+	}
+	if len(state.PolicyConstraints) > 0 {
+		constraints := append([]string(nil), state.PolicyConstraints...)
+		out.PolicyConstraints = &constraints
+	}
+	if len(state.Reasons) > 0 {
+		reasons := append([]string(nil), state.Reasons...)
+		out.Reasons = &reasons
+	}
+	return out
+}
+
+func mapRuntimePolicyReplayTickInput(input runtimepolicy.ReplayTickInput) *PlaybackTraceRuntimeReplayTickInput {
+	out := &PlaybackTraceRuntimeReplayTickInput{
+		ObservedStep: strPtr(string(input.ObservedStep)),
+		TargetStep:   strPtr(string(input.TargetStep)),
+		TickAt:       input.TickAt,
+	}
+	out.Confidence = mapRuntimePolicyReplayTickInputConfidence(input.Confidence)
+	return out
+}
+
+func mapRuntimePolicyReplayTickInputConfidence(snapshot runtimepolicy.ConfidenceSnapshot) *PlaybackTraceRuntimeReplayTickInputConfidence {
+	out := &PlaybackTraceRuntimeReplayTickInputConfidence{
+		Score:       toIntPtr(snapshot.Score),
+		State:       strPtr(string(snapshot.State)),
+		WindowCount: toIntPtr(snapshot.WindowCount),
+	}
+	if !snapshot.StateSince.IsZero() {
+		stateSince := snapshot.StateSince
+		out.StateSince = &stateSince
+	}
+	if !snapshot.CooldownUntil.IsZero() {
+		cooldown := snapshot.CooldownUntil
+		out.CooldownUntil = &cooldown
+	}
+	if len(snapshot.PolicyConstraints) > 0 {
+		constraints := append([]string(nil), snapshot.PolicyConstraints...)
+		out.PolicyConstraints = &constraints
+	}
+	if len(snapshot.Reasons) > 0 {
+		reasons := append([]string(nil), snapshot.Reasons...)
+		out.Reasons = &reasons
+	}
+	return out
+}
+
+func mapRuntimePolicyReplayTickExpected(expected runtimepolicy.ReplayTickExpectation) *PlaybackTraceRuntimeReplayTickExpected {
+	out := &PlaybackTraceRuntimeReplayTickExpected{
+		Action:             strPtr(string(expected.Action)),
+		ActiveStep:         strPtr(string(expected.ActiveStep)),
+		PlannedTransition:  strPtr(string(expected.PlannedTransition)),
+		ExecutedTransition: strPtr(string(expected.ExecutedTransition)),
+		ProbeStep:          strPtr(string(expected.ProbeStep)),
+		ProbeState:         strPtr(string(expected.ProbeState)),
+		RuntimePhase:       strPtr(expected.RuntimePhase),
+	}
+	if len(expected.Blockers) > 0 {
+		blockers := append([]string(nil), expected.Blockers...)
+		out.Blockers = &blockers
+	}
+	if len(expected.Reasons) > 0 {
+		reasons := append([]string(nil), expected.Reasons...)
+		out.Reasons = &reasons
+	}
+	return out
+}
+
+func toIntPtr(i int) *int { return &i }
+
+func hasString(values []string, targets ...string) bool {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		for _, target := range targets {
+			if value == strings.TrimSpace(target) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -11,6 +11,9 @@ export type TelemetryEventType =
   | 'ui.error'
   | 'ui.auth_error'
   | 'ui.failclosed'
+  | 'ui.player.transition'
+  | 'ui.player.recovery_attempt'
+  | 'ui.player.recovery_result'
   | 'playback_auth_blocked'
   | 'playback_session_failed'
   | 'playback_contract_blocked'
@@ -22,6 +25,25 @@ export interface TelemetryEvent {
   payload: any;
   meta?: any;
 }
+
+export type PlayerTransitionAxis =
+  | 'liveFlowPhase'
+  | 'vodFlowPhase'
+  | 'srcFlowPhase'
+  | 'playbackPhase';
+
+export interface PlayerTransitionTelemetryPayload {
+  axis: PlayerTransitionAxis;
+  from: string | null;
+  to: string | null;
+  playbackMode: string | null;
+  hasSrc: boolean;
+  sessionId?: string;
+  traceId?: string;
+  recordingId?: string;
+}
+
+export type PlayerRecoveryPath = 'live' | 'vod' | 'src';
 
 class TelemetryService {
   private queue: TelemetryEvent[] = [];

@@ -15,12 +15,18 @@ const (
 
 func ResolveRuntimeProbeCapabilities(in PlaybackCapabilities) PlaybackCapabilities {
 	base := in
+	priorSource := normalize.Token(base.ClientCapsSource)
 	familyID := normalize.Token(base.ClientFamilyFallback)
 	familyCaps, ok := familyFallbackCapabilities(familyID)
 	if !ok {
 		out := CanonicalizeCapabilities(base)
-		if out.RuntimeProbeUsed {
+		switch {
+		case out.RuntimeProbeUsed && priorSource == ClientCapsSourceRuntimePlusFam:
+			out.ClientCapsSource = ClientCapsSourceRuntimePlusFam
+		case out.RuntimeProbeUsed:
 			out.ClientCapsSource = ClientCapsSourceRuntime
+		case priorSource == ClientCapsSourceFamilyFallback:
+			out.ClientCapsSource = ClientCapsSourceFamilyFallback
 		}
 		return out
 	}
@@ -77,11 +83,11 @@ func ResolveRuntimeProbeCapabilities(in PlaybackCapabilities) PlaybackCapabiliti
 
 	out := CanonicalizeCapabilities(base)
 	switch {
-	case out.RuntimeProbeUsed && usedFamily:
+	case out.RuntimeProbeUsed && (usedFamily || priorSource == ClientCapsSourceRuntimePlusFam):
 		out.ClientCapsSource = ClientCapsSourceRuntimePlusFam
 	case out.RuntimeProbeUsed:
 		out.ClientCapsSource = ClientCapsSourceRuntime
-	case usedFamily:
+	case usedFamily || priorSource == ClientCapsSourceFamilyFallback:
 		out.ClientCapsSource = ClientCapsSourceFamilyFallback
 	}
 	return out

@@ -2,11 +2,15 @@
    CTO Contract: Token-only, no gradients, glow only for status */
 
 .card {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-base);
-  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 42%),
+    var(--bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
+  border-radius: calc(var(--radius-lg) + 6px);
   padding: 24px;
-  box-shadow: var(--shadow-card);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
   transition: none;
 }
 
@@ -21,18 +25,23 @@
 .interactive:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-hover);
+  border-color: color-mix(in srgb, var(--accent-action) 24%, var(--border-elevated) 76%);
 }
 
 /* Accent variant: Live/Recording ONLY */
 .accentLive {
-  border-color: var(--accent-live);
-  box-shadow: var(--shadow-accent-live);
+  border-color: color-mix(in srgb, var(--accent-live) 54%, var(--border-elevated) 46%);
+  box-shadow:
+    var(--shadow-accent-live),
+    inset 0 1px 0 color-mix(in srgb, var(--accent-live) 14%, transparent);
 }
 
 /* Action variant: Primary CTA areas */
 .accentAction {
-  border-color: var(--accent-action);
-  box-shadow: var(--shadow-accent-action);
+  border-color: color-mix(in srgb, var(--accent-action) 54%, var(--border-elevated) 46%);
+  box-shadow:
+    var(--shadow-accent-action),
+    inset 0 1px 0 color-mix(in srgb, var(--accent-action) 14%, transparent);
 }
 
 .header {
@@ -71,3 +80,18 @@
   align-items: center;
 }
 
+@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  .card {
+    padding: 18px;
+  }
+
+  .header {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+  }
+
+  .footer {
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+}

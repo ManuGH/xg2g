@@ -298,6 +298,10 @@ export type SessionResponse = {
      */
     mode?: 'LIVE' | 'RECORDING';
     /**
+     * Playback window topology for the session.
+     */
+    windowKind?: 'live' | 'live-dvr' | 'vod' | 'unknown';
+    /**
      * DVR window length for live sessions, in seconds.
      */
     durationSeconds?: number;
@@ -484,6 +488,14 @@ export type StorageItem = {
     model?: string;
     capacity?: string;
     mount?: string;
+    /**
+     * Storage perspective: receiver or xg2g.
+     */
+    origin?: string;
+    /**
+     * Topology class of the path: receiver_attached, receiver_share, xg2g_local, xg2g_share, xg2g_aggregate, or unknown.
+     */
+    pathType?: string;
     mountStatus: 'mounted' | 'unmounted' | 'unknown';
     /**
      * Status of the storage device. 'skipped' indicates the monitor was too busy to evaluate.
@@ -1241,7 +1253,28 @@ export type PlaybackTrace = {
     preflightDetail?: string | null;
     targetProfileHash?: string | null;
     targetProfile?: PlaybackTargetProfile;
+    /**
+     * Neutral selection policy identifier used for automatic codec choice.
+     */
+    autoCodecPolicy?: string | null;
+    /**
+     * Comma-separated codec preference set considered during automatic codec choice.
+     */
+    autoCodecRequestedCodecs?: string | null;
+    /**
+     * Codec selected from the automatic codec preference set.
+     */
+    autoCodecSelectedCodec?: string | null;
+    /**
+     * Host performance class observed during automatic codec choice.
+     */
+    autoCodecPerformanceClass?: string | null;
+    /**
+     * Benchmark capability class for the selected codec on the current host.
+     */
+    autoCodecBenchmarkClass?: string | null;
     ffmpegPlan?: PlaybackTraceFfmpegPlan;
+    runtimeDiagnostics?: PlaybackTraceRuntimeDiagnostics;
     operator?: PlaybackTraceOperator;
     hlsDebug?: PlaybackTraceHlsDebug;
     firstFrameAtMs?: number | null;
@@ -1294,10 +1327,97 @@ export type PlaybackTraceHlsDebug = {
 export type PlaybackTraceOperator = {
     forcedIntent?: string | null;
     maxQualityRung?: string | null;
+    runtimePolicyAction?: string | null;
+    runtimePolicyPhase?: string | null;
+    runtimeProbeCandidate?: string | null;
+    runtimePolicyReasons?: Array<string> | null;
+    runtimePolicyConstraints?: Array<string> | null;
+    runtimePolicyReplay?: PlaybackTraceRuntimeReplay;
+    runtimePolicyTimeline?: Array<PlaybackTraceRuntimeTick> | null;
+    runtimeProbeSuccessStreak?: number | null;
+    runtimeProbeFailureStreak?: number | null;
     ruleName?: string | null;
     ruleScope?: string | null;
     clientFallbackDisabled?: boolean;
     overrideApplied?: boolean;
+};
+
+export type PlaybackTraceRuntimeReplay = {
+    metadata?: PlaybackTraceRuntimeReplayMetadata;
+    initialState?: PlaybackTraceRuntimeReplayState;
+    finalState?: PlaybackTraceRuntimeReplayState;
+    ticks?: Array<PlaybackTraceRuntimeReplayTick> | null;
+};
+
+export type PlaybackTraceRuntimeReplayMetadata = {
+    sessionId?: string | null;
+    serviceRef?: string | null;
+    clientPath?: string | null;
+    sourceType?: string | null;
+    initialTarget?: string | null;
+};
+
+export type PlaybackTraceRuntimeReplayState = {
+    confidenceScore?: number | null;
+    confidenceState?: string | null;
+    cooldownUntil?: string | null;
+    currentStep?: string | null;
+    lastAction?: string | null;
+    policyConstraints?: Array<string> | null;
+    probeState?: string | null;
+    probeStep?: string | null;
+    reasons?: Array<string> | null;
+    targetStep?: string | null;
+};
+
+export type PlaybackTraceRuntimeReplayTick = {
+    input?: PlaybackTraceRuntimeReplayTickInput;
+    expected?: PlaybackTraceRuntimeReplayTickExpected;
+};
+
+export type PlaybackTraceRuntimeReplayTickInput = {
+    confidence?: PlaybackTraceRuntimeReplayTickInputConfidence;
+    observedStep?: string | null;
+    targetStep?: string | null;
+    tickAt: string;
+};
+
+export type PlaybackTraceRuntimeReplayTickInputConfidence = {
+    score?: number | null;
+    state?: string | null;
+    stateSince?: string | null;
+    cooldownUntil?: string | null;
+    policyConstraints?: Array<string> | null;
+    reasons?: Array<string> | null;
+    windowCount?: number | null;
+};
+
+export type PlaybackTraceRuntimeReplayTickExpected = {
+    action?: string | null;
+    activeStep?: string | null;
+    blockers?: Array<string> | null;
+    plannedTransition?: string | null;
+    executedTransition?: string | null;
+    probeStep?: string | null;
+    probeState?: string | null;
+    reasons?: Array<string> | null;
+    runtimePhase?: string | null;
+};
+
+export type PlaybackTraceRuntimeTick = {
+    tickAt: string;
+    confidenceScore?: number | null;
+    confidenceState?: string | null;
+    policyAction?: string | null;
+    plannedTransition?: string | null;
+    executedTransition?: string | null;
+    activeStep?: string | null;
+    targetStep?: string | null;
+    probeStep?: string | null;
+    probeState?: string | null;
+    cooldownUntil?: string | null;
+    blockers?: Array<string> | null;
+    reasons?: Array<string> | null;
 };
 
 export type PlaybackTraceFfmpegPlan = {
@@ -1309,6 +1429,17 @@ export type PlaybackTraceFfmpegPlan = {
     videoCodec?: string;
     audioMode?: string;
     audioCodec?: string;
+};
+
+export type PlaybackTraceRuntimeDiagnostics = {
+    frameCount?: number;
+    fps?: number;
+    dropFrames?: number;
+    dupFrames?: number;
+    speed?: number;
+    corruptDecodedFrames?: number;
+    lastWarning?: string;
+    updatedAtUnix?: number;
 };
 
 export type PlaybackSourceProfile = {
@@ -1404,7 +1535,7 @@ export type LivePlaybackTruthProblem = {
     /**
      * Stable live-truth problem type. Clients MUST branch on this field, not on free-text title/detail.
      */
-    type: '/problems/live/scan_unavailable' | '/problems/live/missing_scan_truth' | '/problems/live/partial_truth' | '/problems/live/inactive_event_feed' | '/problems/live/failed_scan_truth';
+    type: '/problems/live/scan_unavailable' | '/problems/live/missing_scan_truth' | '/problems/live/stale_truth' | '/problems/live/partial_truth' | '/problems/live/inactive_event_feed' | '/problems/live/failed_scan_truth';
     /**
      * Human-readable fallback title. Not for decision branching.
      */
@@ -1431,7 +1562,7 @@ export type LivePlaybackTruthProblem = {
     /**
      * Stable machine-readable reason for the degraded live truth state.
      */
-    truthReason: 'scanner_unavailable' | 'missing_scan_truth' | 'partial_scan_truth' | 'inactive_event_feed' | 'failed_scan_truth';
+    truthReason: 'scanner_unavailable' | 'missing_scan_truth' | 'stale_scan_truth' | 'partial_scan_truth' | 'inactive_event_feed' | 'failed_scan_truth';
     /**
      * Diagnostic provenance only. Clients SHOULD NOT branch on this field.
      */
@@ -1640,6 +1771,10 @@ export type RecordingItem = {
      */
     length?: string;
     filename?: string;
+    /**
+     * Whether the current runtime can rename this recording via a writable locally mapped filesystem path. Clients MUST fail closed when this field is absent or false.
+     */
+    localWritable?: boolean;
     /**
      * Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
      */
@@ -2492,6 +2627,138 @@ export type DeleteRecordingResponses = {
 };
 
 export type DeleteRecordingResponse = DeleteRecordingResponses[keyof DeleteRecordingResponses];
+
+export type PostRecordingDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/delete';
+};
+
+export type PostRecordingDeleteErrors = {
+    /**
+     * Invalid recording reference
+     */
+    400: ProblemDetails;
+    /**
+     * Access denied
+     */
+    403: ProblemDetails;
+    /**
+     * Recording not found
+     */
+    404: ProblemDetails;
+    /**
+     * Failed to delete recording
+     */
+    500: ProblemDetails;
+};
+
+export type PostRecordingDeleteError = PostRecordingDeleteErrors[keyof PostRecordingDeleteErrors];
+
+export type PostRecordingDeleteResponses = {
+    /**
+     * Recording deleted
+     */
+    204: void;
+};
+
+export type PostRecordingDeleteResponse = PostRecordingDeleteResponses[keyof PostRecordingDeleteResponses];
+
+export type PostRecordingRenameData = {
+    body: {
+        title: string;
+    };
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/rename';
+};
+
+export type PostRecordingRenameErrors = {
+    /**
+     * Invalid request
+     */
+    400: ProblemDetails;
+    /**
+     * Access denied
+     */
+    403: ProblemDetails;
+    /**
+     * Recording not found
+     */
+    404: ProblemDetails;
+    /**
+     * Rename unsupported for this recording
+     */
+    422: ProblemDetails;
+    /**
+     * Failed to rename recording
+     */
+    500: ProblemDetails;
+};
+
+export type PostRecordingRenameError = PostRecordingRenameErrors[keyof PostRecordingRenameErrors];
+
+export type PostRecordingRenameResponses = {
+    /**
+     * Recording renamed
+     */
+    204: void;
+};
+
+export type PostRecordingRenameResponse = PostRecordingRenameResponses[keyof PostRecordingRenameResponses];
+
+export type GetRecordingThumbnailData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/thumbnail.jpg';
+};
+
+export type GetRecordingThumbnailErrors = {
+    /**
+     * Invalid recording reference
+     */
+    400: ProblemDetails;
+    /**
+     * Access denied
+     */
+    403: ProblemDetails;
+    /**
+     * Recording thumbnail not found
+     */
+    404: ProblemDetails;
+    /**
+     * Thumbnail cache unavailable
+     */
+    500: ProblemDetails;
+};
+
+export type GetRecordingThumbnailError = GetRecordingThumbnailErrors[keyof GetRecordingThumbnailErrors];
+
+export type GetRecordingThumbnailResponses = {
+    /**
+     * JPEG thumbnail
+     */
+    200: Blob | File;
+};
+
+export type GetRecordingThumbnailResponse = GetRecordingThumbnailResponses[keyof GetRecordingThumbnailResponses];
 
 export type GetRecordingsRecordingIdStatusData = {
     body?: never;

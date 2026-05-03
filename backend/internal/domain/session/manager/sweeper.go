@@ -26,6 +26,22 @@ type Sweeper struct {
 	RecoverFn func(context.Context) error // optional; if nil, uses Orch.recoverStaleLeases
 }
 
+func effectiveIdleStopThreshold(r *model.SessionRecord, idleTimeout time.Duration) time.Duration {
+	if idleTimeout <= 0 {
+		return 0
+	}
+	if r == nil {
+		return idleTimeout
+	}
+	// Starts that published a playlist but never served a single consumer request
+	// should not pin tuners for the full long-session idle timeout. Keep the
+	// shorter initial-consumer grace aligned with the lifecycle idle threshold.
+	if r.LastPlaylistAccessAt.IsZero() && !r.PlaylistPublishedAt.IsZero() && model.IdleThreshold < idleTimeout {
+		return model.IdleThreshold
+	}
+	return idleTimeout
+}
+
 // Run starts the sweeper loop. It periodically calls SweepOnce on a ticker.
 func (s *Sweeper) Run(ctx context.Context) {
 	if s.Conf.Interval <= 0 {
@@ -115,8 +131,9 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 				return nil
 			}
 			lifecycleState := model.DeriveLifecycleState(r, now)
+			idleStopThreshold := effectiveIdleStopThreshold(r, s.Conf.IdleTimeout)
 			if (lifecycleState == model.LifecycleIdle || lifecycleState == model.LifecycleStalled) &&
-				model.PlaylistAccessExceeded(r, now, s.Conf.IdleTimeout) {
+				model.PlaylistAccessExceeded(r, now, idleStopThreshold) {
 				toStop = append(toStop, r.SessionID)
 			}
 		}

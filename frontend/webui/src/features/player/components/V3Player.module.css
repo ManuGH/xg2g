@@ -10,28 +10,103 @@
 }
 
 .container.overlay {
+  --recording-watch-width: min(1560px, calc(100vw - 24px), calc((100dvh - 180px) * 16 / 9));
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
   height: 100dvh;
-  background:
-    radial-gradient(circle at 18% 20%, var(--accent-action-subtle), transparent 24%),
-    radial-gradient(circle at 82% 18%, var(--accent-live-subtle), transparent 24%),
-    linear-gradient(180deg, var(--bg-base), var(--bg-elevated));
+  padding: calc(10px + var(--sat)) 12px calc(32px + var(--sab));
+  background: color-mix(in srgb, var(--bg-base) 96%, black 4%);
   z-index: 9999;
-  justify-content: center;
-  align-items: center;
+  justify-content: flex-start;
+  align-items: stretch;
+  overflow: auto;
+}
+
+.container.recordingPage {
+  --recording-watch-width: min(1480px, calc(100vw - 48px), calc((100dvh - 240px) * 16 / 9));
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+.container.fullscreenActive {
+  padding: 0;
+  overflow: hidden;
+}
+
+.playerFrame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.playerFrameOverlay {
+  width: var(--recording-watch-width);
+  height: auto;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  max-height: calc(100dvh - 180px);
+  margin: 0 auto;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--bg-video);
+  box-shadow:
+    0 14px 32px color-mix(in srgb, var(--bg-video) 28%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--border-base) 85%, transparent);
+}
+
+.playerFramePage {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  max-height: calc(100dvh - 240px);
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--bg-video);
+  box-shadow:
+    0 18px 40px color-mix(in srgb, var(--bg-video) 32%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--border-base) 85%, transparent);
+}
+
+.playerFrameFullscreen {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  aspect-ratio: auto;
+  max-height: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .controlsHeader {
+  --player-chrome-shell:
+    linear-gradient(180deg, color-mix(in srgb, white 4%, transparent), transparent 34%),
+    color-mix(in srgb, var(--surface-shell-strong) 88%, var(--bg-video) 12%);
+  --player-control-plate:
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent),
+    color-mix(in srgb, var(--surface-panel-soft) 76%, var(--bg-video) 24%);
+  --player-control-plate-strong:
+    linear-gradient(180deg, color-mix(in srgb, white 4%, transparent), transparent),
+    color-mix(in srgb, var(--surface-panel-strong) 72%, var(--bg-video) 28%);
+  --player-control-border: color-mix(in srgb, var(--border-base) 82%, transparent);
+  --player-control-border-strong: color-mix(in srgb, var(--border-elevated) 84%, transparent);
+  --player-control-shadow:
+    0 16px 34px color-mix(in srgb, var(--bg-video) 24%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   margin: 0;
-  padding: 32px 24px calc(24px + var(--sab));
+  padding: 28px 20px calc(20px + var(--sab));
   display: flex;
   gap: 16px;
   z-index: 50;
@@ -42,6 +117,7 @@
     opacity var(--motion-standard) var(--ease-standard),
     transform var(--motion-standard) var(--ease-standard);
   transform: translateY(8px);
+  isolation: isolate;
 }
 
 .controlsHeader::before {
@@ -49,13 +125,34 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, transparent 0%, var(--surface-panel-soft) 22%, var(--surface-panel-strong) 100%);
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--surface-panel-soft) 68%, transparent) 24%, color-mix(in srgb, var(--bg-video) 82%, var(--surface-panel) 18%) 100%);
   pointer-events: none;
 }
 
 .controlsHeader > * {
   position: relative;
   z-index: 1;
+}
+
+.controlsHeaderTheater {
+  left: 18px;
+  right: 18px;
+  bottom: calc(16px + var(--sab));
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px 18px;
+  align-items: end;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bg-video) 82%, var(--surface-panel) 18%);
+  border: 1px solid color-mix(in srgb, var(--border-elevated) 82%, transparent);
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--bg-video) 22%, transparent);
+}
+
+.controlsHeaderTheater::before {
+  display: none;
 }
 
 .container:hover:not(.userIdle) .controlsHeader,
@@ -78,6 +175,8 @@
   transition: opacity 0.5s ease-out;
 }
 
+.touchInlineChrome {}
+
 .videoWrapper {
   width: 100%;
   height: 100%;
@@ -97,9 +196,12 @@
 
 .videoElement {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   display: block;
   object-fit: contain;
+  object-position: center center;
   background: var(--bg-video);
   transition: opacity 220ms ease;
 }
@@ -134,29 +236,80 @@
 
 .overlayTitle {
   position: absolute;
-  top: 24px;
-  left: 24px;
+  top: 18px;
+  left: 18px;
   margin: 0;
   z-index: 40;
   pointer-events: none;
   font-family: var(--font-heading);
   font-size: clamp(1.1rem, 1.7vw, 1.5rem);
   color: var(--text-primary);
-  padding: 12px 16px;
-  border-radius: 20px;
-  border: 1px solid var(--border-base);
+  padding: 10px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border-base) 84%, transparent);
   background:
-    linear-gradient(180deg, var(--bg-hover), transparent),
-    var(--surface-shell);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: var(--shadow-card);
+    linear-gradient(180deg, color-mix(in srgb, white 4%, transparent), transparent),
+    color-mix(in srgb, var(--bg-video) 84%, var(--surface-panel) 16%);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--bg-video) 24%, transparent);
   opacity: 0;
   transition: opacity var(--motion-standard);
 }
 
 .container:hover:not(.userIdle) .overlayTitle {
   opacity: 1;
+}
+
+.mobileInlineMeta {
+  display: none;
+}
+
+.mobileInlineMetaCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobileInlineMetaEyebrow {
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mobileInlineMetaTitle {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: 0.98rem;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobileInlineControls {
+  gap: 12px;
+}
+
+.inlineDvrHint {
+  margin-top: 6px;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.mobileInlinePrimaryActions,
+.mobileInlineSecondaryActions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  align-items: center;
 }
 
 .spinnerOverlay {
@@ -199,6 +352,25 @@
   box-shadow: none;
 }
 
+.spinnerOverlayRecording {
+  top: auto;
+  left: 20px;
+  right: 20px;
+  bottom: calc(20px + var(--sab));
+  transform: none;
+  width: auto;
+  max-width: 760px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border-color: color-mix(in srgb, var(--border-base) 84%, transparent);
+  background: color-mix(in srgb, var(--bg-video) 84%, var(--surface-panel) 16%);
+  backdrop-filter: blur(12px) saturate(115%);
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--bg-video) 30%, transparent);
+}
+
 .spinnerBadge {
   width: 88px;
   height: 88px;
@@ -213,11 +385,29 @@
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
 }
 
+.spinnerBadgeRecording {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  color: var(--text-primary);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-action) 20%, white 6%), transparent),
+    color-mix(in srgb, var(--surface-panel-strong) 84%, var(--accent-action-subtle) 16%);
+}
+
+.spinnerMediaIcon {
+  width: 30px;
+  height: 30px;
+  display: block;
+  fill: currentColor;
+  filter: drop-shadow(0 8px 18px color-mix(in srgb, var(--bg-video) 38%, transparent));
+}
+
 .spinnerContent {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -233,9 +423,10 @@
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: clamp(1.25rem, 2.1vw, 1.8rem);
+  font-size: clamp(1.15rem, 1.8vw, 1.6rem);
   line-height: 1.08;
   text-wrap: balance;
+  overflow-wrap: anywhere;
 }
 
 .spinnerStatusRow {
@@ -253,7 +444,7 @@
 
 .spinnerLabel {
   color: var(--text-primary);
-  font-size: clamp(1.05rem, 1.4vw, 1.18rem);
+  font-size: clamp(0.98rem, 1.2vw, 1.08rem);
   font-weight: 600;
   line-height: 1.4;
 }
@@ -315,6 +506,24 @@
   width: min(560px, calc(100vw - 40px));
 }
 
+.statsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.statsHeaderCopy {
+  min-width: 0;
+}
+
+.statsHeaderActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .statsGrid {
   display: flex;
   flex-direction: column;
@@ -351,6 +560,27 @@
   word-break: break-word;
 }
 
+.runtimeTimelineList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.runtimeReplayActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.runtimeReplayStatus {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .errorToast {
   position: absolute;
   bottom: 100px;
@@ -384,6 +614,13 @@
   color: var(--status-error);
   font-weight: 600;
   font-size: var(--text-sm);
+}
+
+.errorSupport {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  max-width: 52ch;
 }
 
 .errorDetailsButton {
@@ -448,25 +685,23 @@
 
 .closeButton {
   position: absolute;
-  top: 24px;
-  right: 24px;
-  background:
-    linear-gradient(180deg, var(--surface-highlight), transparent),
-    var(--surface-shell);
-  border: 1px solid var(--border-elevated);
+  top: 16px;
+  right: 16px;
+  background: color-mix(in srgb, var(--bg-video) 80%, var(--surface-panel) 20%);
+  border: 1px solid color-mix(in srgb, var(--border-base) 86%, transparent);
   color: var(--text-primary);
-  width: 44px;
-  height: 44px;
-  border-radius: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 200;
-  font-size: 18px;
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: var(--shadow-card);
+  font-size: 16px;
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--bg-video) 26%, transparent);
   transition:
     background var(--motion-standard) var(--ease-standard),
     border-color var(--motion-standard) var(--ease-standard),
@@ -474,33 +709,125 @@
 }
 
 .closeButton:hover {
-  background:
-    linear-gradient(180deg, var(--surface-highlight), transparent),
-    var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 76%, var(--bg-video) 24%);
   color: var(--text-primary);
-  border-color: var(--status-error-border);
+  border-color: color-mix(in srgb, var(--status-error-border) 86%, transparent);
   transform: translateY(-1px);
+}
+
+.watchSurface {
+  width: var(--recording-watch-width);
+  max-width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.playerFrameWatchSurface {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.watchLayout {
+  width: 100%;
+  margin: 0;
+  display: block;
+  padding-bottom: 12px;
+}
+
+.watchMain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.watchTitle {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: clamp(1.3rem, 1.8vw, 1.85rem);
+  line-height: 1.14;
+  overflow-wrap: anywhere;
+}
+
+.watchMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.watchResumeHint {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-base) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-panel) 72%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.watchDescription {
+  margin: 0;
+  max-width: 82ch;
+  color: var(--text-secondary);
+  line-height: 1.55;
 }
 
 .vodControls {
   flex: 1;
   display: flex;
-  align-items: center;
-  gap: 16px;
-  background:
-    linear-gradient(180deg, var(--surface-highlight), transparent),
-    var(--surface-panel);
-  padding: 12px 20px;
-  border-radius: 24px;
-  border: 1px solid var(--border-elevated);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  background: color-mix(in srgb, var(--bg-video) 78%, var(--surface-panel) 22%);
+  padding: 10px 16px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--border-elevated) 82%, transparent);
   min-width: 300px;
-  backdrop-filter: blur(22px) saturate(155%);
-  -webkit-backdrop-filter: blur(22px) saturate(155%);
-  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--bg-video) 18%, transparent);
+}
+
+.vodControlsTheater {
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  gap: 14px;
 }
 
 .seekControls {
-  min-width: 520px;
+  min-width: min(720px, 100%);
+}
+
+.transportControls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.transportControlsTheater {
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: nowrap;
 }
 
 .seekButtons {
@@ -515,6 +842,108 @@
 
 .playPauseButton {
   flex-shrink: 0;
+}
+
+.controlIcon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+.playPauseIcon {
+  width: 20px;
+  height: 20px;
+}
+
+.controlsHeaderTheater .seekButtons {
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.controlsHeaderTheater .seekButtons > * {
+  flex: 0 0 auto;
+}
+
+.controlsHeaderTheater .playPauseButton {
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.vodScrubArea {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.vodScrubTimes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  font-feature-settings: 'tnum' 1;
+}
+
+.vodScrubTrack {
+  position: relative;
+  width: 100%;
+  height: 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  touch-action: none;
+  background: color-mix(in srgb, var(--surface-panel-strong) 74%, black 26%);
+  border: 1px solid color-mix(in srgb, var(--border-base) 78%, white 22%);
+  overflow: hidden;
+  transition:
+    border-color var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard),
+    background var(--motion-standard) var(--ease-standard);
+}
+
+.vodScrubTrack:focus-visible {
+  outline: 2px solid var(--accent-action);
+  outline-offset: 3px;
+}
+
+.vodScrubTrackDisabled {
+  cursor: default;
+  touch-action: auto;
+  opacity: 0.72;
+}
+
+.vodScrubTrackDisabled:focus-visible {
+  outline: none;
+}
+
+.vodScrubFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--xg2g-seek-progress, 0%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-action), var(--accent-live));
+  pointer-events: none;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent-action) 22%, transparent);
+}
+
+.vodScrubThumb {
+  position: absolute;
+  top: 50%;
+  left: var(--xg2g-seek-progress, 0%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--text-primary);
+  border: 2px solid var(--accent-action);
+  box-shadow: var(--shadow-accent-action);
+  pointer-events: none;
+  opacity: 0.9;
+  transition:
+    transform var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
 }
 
 .seekSliderGroup {
@@ -583,19 +1012,130 @@
   flex-wrap: wrap;
 }
 
+.runtimePolicyMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-video) 74%, var(--surface-panel) 26%);
+  border: 1px solid color-mix(in srgb, var(--border-elevated) 80%, transparent);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  min-width: 0;
+  transition:
+    border-color var(--motion-standard) var(--ease-standard),
+    background-color var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
+}
+
+.runtimePolicyMetaTheater {
+  padding: 4px 8px;
+  border-radius: 14px;
+  background: transparent;
+  border: 1px solid var(--player-control-border);
+}
+
+.runtimePolicyMetaStartup {
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--surface-panel) 74%, transparent);
+}
+
+.runtimePolicyMetaError {
+  align-self: flex-start;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--surface-panel) 76%, var(--bg-video) 24%);
+}
+
+.runtimePolicyMetaChip {
+  flex-shrink: 0;
+}
+
+.runtimePolicyMetaHint {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.runtimePolicyMeta[data-phase='probing'] {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-action) 10%, transparent), transparent 62%),
+    color-mix(in srgb, var(--bg-video) 68%, var(--surface-panel) 32%);
+  border-color: color-mix(in srgb, var(--accent-action) 48%, var(--border-elevated) 52%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-action) 12%, transparent),
+    0 10px 24px color-mix(in srgb, var(--accent-action) 12%, transparent);
+}
+
+.runtimePolicyMeta[data-phase='cooldown'] {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-live) 8%, transparent), transparent 70%),
+    color-mix(in srgb, var(--bg-video) 70%, var(--surface-panel) 30%);
+  border-color: color-mix(in srgb, var(--accent-live) 40%, var(--border-elevated) 60%);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-live) 10%, transparent);
+}
+
+.runtimePolicyMeta[data-phase='recovering'] {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-live) 8%, transparent), transparent 72%),
+    color-mix(in srgb, var(--bg-video) 69%, var(--surface-panel) 31%);
+  border-color: color-mix(in srgb, var(--accent-live) 34%, var(--border-elevated) 66%);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-live) 10%, transparent);
+}
+
+.runtimePolicyMeta[data-phase='degraded'],
+.runtimePolicyMeta[data-phase='probe_regressed'] {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--state-danger) 12%, transparent), transparent 68%),
+    color-mix(in srgb, var(--bg-video) 70%, var(--surface-panel) 30%);
+  border-color: color-mix(in srgb, var(--state-danger) 44%, var(--border-elevated) 56%);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--state-danger) 12%, transparent);
+}
+
+.runtimePolicyMeta[data-phase='probe_regressed'] {
+}
+
+.runtimePolicyMeta[data-phase='probing'] .runtimePolicyMetaHint,
+.runtimePolicyMeta[data-phase='cooldown'] .runtimePolicyMetaHint,
+.runtimePolicyMeta[data-phase='recovering'] .runtimePolicyMetaHint {
+  color: var(--text-primary);
+}
+
+.runtimePolicyMeta[data-phase='degraded'] .runtimePolicyMetaHint,
+.runtimePolicyMeta[data-phase='probe_regressed'] .runtimePolicyMetaHint {
+  color: color-mix(in srgb, var(--state-danger) 74%, var(--text-primary) 26%);
+}
+
+.utilityControlsTheater {
+  margin-left: 0;
+  align-self: end;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
 .volumeControl {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
-  background:
-    linear-gradient(180deg, var(--surface-highlight), transparent),
-    var(--surface-panel-soft);
-  border-radius: 18px;
-  border: 1px solid var(--border-elevated);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--bg-video) 76%, var(--surface-panel) 24%);
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border-elevated) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
   flex-wrap: wrap;
+}
+
+.volumeControlTheater {
+  min-width: 0;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 14px;
 }
 
 .audioToggleButton {
@@ -611,6 +1151,29 @@
   line-height: 1;
 }
 
+.audioToggleLabel {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.volumeControlTheater .audioToggleButton {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+.volumeControlTheater .audioToggleIcon {
+  font-size: 14px;
+}
+
 .volumeSlider {
   flex: 1 1 96px;
   width: 80px;
@@ -620,6 +1183,11 @@
   background: var(--surface-highlight);
   border-radius: 999px;
   outline: none;
+}
+
+.volumeControlTheater .volumeSlider {
+  flex: 0 0 76px;
+  width: 76px;
 }
 
 .volumeSlider::-webkit-slider-thumb {
@@ -642,21 +1210,455 @@
 
 .liveButton {
   min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background:
-    linear-gradient(180deg, var(--surface-highlight), transparent),
-    var(--accent-live-subtle);
-  border: 1px solid var(--status-warning-border);
+    linear-gradient(180deg, color-mix(in srgb, white 4%, transparent), transparent),
+    color-mix(in srgb, var(--accent-live-subtle) 74%, var(--surface-panel) 26%);
+  border: 1px solid color-mix(in srgb, var(--accent-live) 28%, var(--border-base) 72%);
   color: var(--text-primary);
   padding: 0 14px;
-  border-radius: 14px;
+  border-radius: 999px;
   cursor: pointer;
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+  transition:
+    background var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
 }
 
 .liveButtonActive {
-  background: var(--accent-live);
-  color: var(--bg-base);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 5%, transparent), transparent),
+    color-mix(in srgb, var(--accent-live) 70%, var(--surface-panel) 30%);
+  color: var(--text-primary);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent-live) 18%, transparent);
+}
+
+@media (min-width: 769px) {
+  .controlsHeader:not(.controlsHeaderTheater) {
+    left: 12px;
+    right: 12px;
+    bottom: calc(10px + var(--sab));
+    width: auto;
+    padding: 0 6px 8px;
+    justify-content: flex-end;
+    gap: 10px 14px;
+    border-radius: 0;
+    background: none;
+    border: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    transform: translateY(8px);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater)::before {
+    display: block;
+    inset: -72px -18px -8px;
+    background:
+      linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg-video) 28%, transparent) 34%, color-mix(in srgb, var(--bg-video) 88%, transparent) 100%);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater)::after {
+    display: none;
+  }
+
+  .container:hover:not(.userIdle) .controlsHeader:not(.controlsHeaderTheater),
+  .controlsHeader:not(.controlsHeaderTheater):focus-within {
+    transform: translateY(0);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) {
+    align-items: end;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .vodControls {
+    flex: 1 1 560px;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    gap: 8px;
+    border-radius: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .vodScrubArea {
+    gap: 5px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .vodScrubTimes {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: color-mix(in srgb, var(--text-primary) 84%, transparent);
+    text-shadow: 0 1px 2px color-mix(in srgb, var(--bg-video) 70%, transparent);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .vodScrubTimes span:first-child {
+    color: var(--text-primary);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .vodScrubTrack {
+    height: 4px;
+    border: none;
+    background: color-mix(in srgb, var(--text-primary) 26%, transparent);
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .vodScrubThumb {
+    width: 12px;
+    height: 12px;
+    border: none;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.7);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--bg-video) 38%, transparent);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .vodScrubTrack:hover .vodScrubThumb,
+  .controlsHeader:not(.controlsHeaderTheater) .vodScrubTrack:focus-visible .vodScrubThumb,
+  .container:hover:not(.userIdle) .controlsHeader:not(.controlsHeaderTheater) .vodScrubThumb {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .transportControls {
+    gap: 8px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .seekButtons {
+    gap: 2px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    border: none;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .seekButtons > :first-child {
+    display: none;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) :global(button[data-size="md"]) {
+    min-height: 36px;
+    min-width: 36px;
+    padding: 0 9px;
+    gap: 6px;
+    font-size: 0.78rem;
+    border-radius: 999px;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) :global(button[data-size="sm"]) {
+    min-height: 34px;
+    min-width: 34px;
+    padding: 0 9px;
+    gap: 5px;
+    font-size: 0.76rem;
+    border-radius: 999px;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) :global(button[data-variant="ghost"]) {
+    background: transparent;
+    border-color: transparent;
+    color: color-mix(in srgb, var(--text-primary) 88%, transparent);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) :global(button[data-variant="ghost"]:hover:not(:disabled)) {
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+    border-color: transparent;
+    color: var(--text-primary);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) :global(button[data-variant="ghost"][data-active="true"]) {
+    background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+    border-color: transparent;
+    color: var(--text-primary);
+    box-shadow: none;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .playPauseButton {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 16px;
+    border-radius: 999px;
+    border: none;
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 90%, white 10%), color-mix(in srgb, var(--accent-live) 82%, var(--accent-action) 18%));
+    color: var(--bg-video);
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--bg-video) 34%, transparent);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .utilityControls {
+    gap: 2px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    border: none;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .runtimePolicyMeta {
+    padding: 4px 8px;
+    gap: 6px;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .volumeControl {
+    gap: 8px;
+    padding: 0;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    flex-wrap: nowrap;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .audioToggleButton {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 999px;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .audioToggleLabel {
+    display: none;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .audioToggleIcon {
+    display: none;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .volumeSlider {
+    flex-basis: 78px;
+    width: 78px;
+    height: 4px;
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .liveButton {
+    min-height: 32px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    background: color-mix(in srgb, var(--bg-video) 54%, transparent);
+    border-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
+  }
+
+  .controlsHeader:not(.controlsHeaderTheater) .liveButton::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--accent-live);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent-live) 34%, transparent);
+    margin-right: 6px;
+  }
+
+  .controlsHeaderTheater {
+    left: 14px;
+    right: 14px;
+    bottom: calc(14px + var(--sab));
+    padding: 12px 14px;
+    gap: 12px 14px;
+    border-radius: 22px;
+    background: var(--player-chrome-shell);
+    border: 1px solid var(--player-control-border-strong);
+    box-shadow: var(--player-control-shadow);
+  }
+
+  .controlsHeaderTheater .vodControlsTheater {
+    gap: 12px;
+  }
+
+  .controlsHeaderTheater::after {
+    content: '';
+    position: absolute;
+    inset: 1px 1px auto;
+    height: 40%;
+    border-radius: inherit;
+    background: linear-gradient(180deg, color-mix(in srgb, white 5%, transparent), transparent);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .controlsHeaderTheater .vodScrubArea {
+    gap: 6px;
+    padding: 10px 12px 11px;
+    border-radius: 16px;
+    background: var(--player-control-plate-strong);
+    border: 1px solid var(--player-control-border);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+  }
+
+  .controlsHeaderTheater .vodScrubTimes {
+    font-size: 11px;
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+  }
+
+  .controlsHeaderTheater .vodScrubTimes span:first-child {
+    color: var(--text-primary);
+  }
+
+  .controlsHeaderTheater .vodScrubTrack {
+    height: 10px;
+    border: none;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, black 22%, transparent), transparent),
+      color-mix(in srgb, var(--bg-video) 78%, var(--surface-panel) 22%);
+    box-shadow:
+      inset 0 1px 3px color-mix(in srgb, black 40%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--border-base) 64%, transparent);
+    overflow: visible;
+  }
+
+  .controlsHeaderTheater .vodScrubThumb {
+    width: 14px;
+    height: 14px;
+    border: 2px solid color-mix(in srgb, var(--bg-video) 58%, white 42%);
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--accent-action) 18%, transparent),
+      0 6px 16px color-mix(in srgb, var(--bg-video) 32%, transparent);
+  }
+
+  .controlsHeaderTheater .transportControlsTheater {
+    gap: 8px;
+  }
+
+  .controlsHeaderTheater .seekButtons {
+    gap: 6px;
+    padding: 4px;
+    border-radius: 14px;
+    background: var(--player-control-plate);
+    border: 1px solid var(--player-control-border);
+  }
+
+  .controlsHeaderTheater :global(button[data-size="sm"]) {
+    min-height: 36px;
+    min-width: 36px;
+    padding: 0 10px;
+    gap: 6px;
+    font-size: var(--text-xs);
+    border-radius: 12px;
+  }
+
+  .controlsHeaderTheater :global(button[data-variant="ghost"]) {
+    background: color-mix(in srgb, var(--surface-panel-soft) 86%, transparent);
+    border-color: color-mix(in srgb, var(--border-base) 72%, transparent);
+    color: var(--text-secondary);
+  }
+
+  .controlsHeaderTheater :global(button[data-variant="ghost"]:hover:not(:disabled)) {
+    background: color-mix(in srgb, var(--surface-panel-strong) 88%, transparent);
+    border-color: color-mix(in srgb, var(--border-elevated) 82%, transparent);
+    color: var(--text-primary);
+  }
+
+  .controlsHeaderTheater :global(button[data-variant="ghost"][data-active="true"]) {
+    background: color-mix(in srgb, var(--accent-action-subtle) 78%, var(--surface-panel) 22%);
+    border-color: color-mix(in srgb, var(--accent-action) 64%, transparent);
+    color: var(--accent-action-hover);
+    box-shadow: none;
+  }
+
+  .controlsHeaderTheater .playPauseButton {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 18px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, white 18%, transparent);
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 90%, white 10%), color-mix(in srgb, var(--accent-live) 82%, var(--accent-action) 18%));
+    color: var(--bg-video);
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--accent-action) 18%, transparent);
+  }
+
+  .controlsHeaderTheater .utilityControlsTheater {
+    gap: 6px;
+    padding: 4px;
+    border-radius: 16px;
+    background: var(--player-control-plate);
+    border: 1px solid var(--player-control-border);
+  }
+
+  .controlsHeaderTheater .runtimePolicyMetaTheater {
+    padding: 3px 6px;
+  }
+
+  .controlsHeaderTheater .volumeControlTheater {
+    gap: 8px;
+    padding: 0;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .controlsHeaderTheater .volumeControlTheater .audioToggleButton {
+    width: auto;
+    min-width: 0;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 10px;
+    border-radius: 10px;
+  }
+
+  .controlsHeaderTheater .volumeControlTheater .audioToggleIcon {
+    display: none;
+  }
+
+  .controlsHeaderTheater .volumeControlTheater .audioToggleLabel {
+    font-size: 11px;
+  }
+
+  .controlsHeaderTheater .volumeControlTheater .volumeSlider {
+    flex-basis: 58px;
+    width: 58px;
+  }
+
+  .controlsHeaderTheater .liveButton {
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+  }
+
+  .playerFrameOverlay .closeButton {
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+  }
+
+  .playerFrameOverlay .overlayTitle {
+    top: 12px;
+    left: 12px;
+    padding: 7px 10px;
+    font-size: clamp(0.9rem, 1.1vw, 1.05rem);
+    border-radius: 12px;
+  }
 }
 
 .resumeOverlay {
@@ -699,209 +1701,495 @@
   flex-wrap: wrap;
 }
 
-/* Mobile Adjustments */
-@media (max-width: 768px) {
-  .spinnerOverlay {
-    top: auto;
-    left: 16px;
-    right: 16px;
-    bottom: calc(108px + var(--sab));
-    transform: none;
-    min-width: 0;
-    width: auto;
-    grid-template-columns: 1fr;
-    padding: 14px 16px;
-    gap: 12px;
-    border-radius: 22px;
-  }
-
-  .spinnerBadge {
-    width: 58px;
-    height: 58px;
-    border-radius: 20px;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-  }
-
-  .spinnerContent {
-    gap: 8px;
-  }
-
-  .spinnerTitle {
-    font-size: 1.2rem;
-  }
-
-  .spinnerLabel {
-    font-size: var(--text-xs);
-    text-align: center;
-  }
-
-  .spinnerSupport {
-    font-size: var(--text-xs);
-  }
-
-  .spinnerMeta {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .spinnerElapsed {
-    align-self: flex-end;
-  }
-
-  .spinnerActions {
-    justify-content: flex-start;
-  }
-
-  .controlsHeader {
-    padding: 16px 16px calc(16px + var(--sab));
-    opacity: 1;
-    transform: none;
-    gap: 12px;
-    align-items: stretch;
-  }
-
-  .statsOverlay {
-    right: 16px;
-    top: 88px;
-    width: calc(100% - 32px);
-  }
-
-  .overlayTitle {
-    top: calc(16px + var(--sat));
-    left: 16px;
-    right: 72px;
-    padding: 10px 14px;
-    font-size: 1rem;
-  }
-
-  .closeButton {
-    top: calc(16px + var(--sat));
-    right: 16px;
-  }
-
-  .errorToast {
-    left: 16px;
-    right: 16px;
-    bottom: calc(96px + var(--sab));
-    transform: none;
-    min-width: 0;
-    max-width: none;
-    width: auto;
-    padding: 14px 16px;
-    border-radius: 20px;
-    gap: 10px;
-  }
-
-  .errorMain {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-
-  .errorText {
-    line-height: 1.35;
-  }
-
-  .errorDetailsButton {
-    align-self: flex-start;
-  }
-
-  .errorDetailsContent {
-    max-height: 140px;
-    font-size: var(--text-xs);
-  }
-
-  .vodControls,
-  .seekControls {
-    min-width: 0;
-    width: 100%;
-    padding: 14px;
-    gap: 12px;
-    border-radius: 22px;
-  }
-
-  .seekControls {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .seekButtons {
-    width: 100%;
-    gap: 8px;
-  }
-
-  .seekButtons > * {
-    flex: 1 1 0;
-  }
-
-  .playPauseButton {
-    align-self: center;
-  }
-
-  .seekSliderGroup {
-    min-width: 0;
-  }
-
-  .vodTime,
-  .vodTimeTotal {
-    min-width: 48px;
-    font-size: 11px;
-  }
-
-  .utilityControls {
-    width: 100%;
-    margin-left: 0;
-    justify-content: flex-start;
-    gap: 8px;
-  }
-
-  .volumeControl {
-    flex: 1 1 100%;
-    min-width: 0;
-    padding: 8px 12px;
-  }
-
-  .audioToggleButton {
-    flex: 1 1 100%;
-    justify-content: center;
-  }
-
-  .volumeSlider {
-    flex-basis: 100%;
-    width: 100%;
-    min-width: 72px;
-  }
+.container.surfaceTheaterStack .controlsHeaderTheater {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
 }
 
-@media (max-width: 768px) and (orientation: landscape), (max-height: 500px) {
-  .controlsHeader {
-    top: auto;
-    max-height: calc(100dvh - 88px - var(--sat) - var(--sab));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
-    padding-top: 12px;
-  }
+.container.surfaceTheaterStack .transportControlsTheater {
+  flex-wrap: wrap;
+}
 
-  .vodControls,
-  .seekControls,
-  .utilityControls,
-  .volumeControl {
-    width: 100%;
-  }
+.container.surfaceTheaterStack .utilityControlsTheater {
+  justify-content: flex-start;
+  align-self: stretch;
+}
 
-  .utilityControls {
-    gap: 10px;
-    align-content: flex-start;
-  }
+.container.surfaceCompact.overlay {
+  justify-content: center;
+  align-items: center;
+}
 
-  .deviceVolumeHint {
-    white-space: normal;
-  }
+.container.surfaceCompact.overlay .playerFrameOverlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  background: color-mix(in srgb, var(--bg-video) 90%, var(--surface-panel) 10%);
+}
+
+.container.surfaceCompact.overlay .playerFrameOverlay .videoWrapper {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.container.surfaceCompact.overlay .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  margin-top: 0;
+  padding: 12px 14px calc(12px + var(--sab));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent),
+    color-mix(in srgb, var(--surface-panel-strong) 84%, var(--bg-video) 16%);
+  border-top: 1px solid color-mix(in srgb, var(--border-elevated) 84%, transparent);
+  transform: none;
+}
+
+.container.surfaceCompact.overlay .playerFrameOverlay .controlsHeader:not(.controlsHeaderTheater) .mobileInlineMeta {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 0 2px;
+}
+
+.container.surfaceCompact.overlay .playerFrameOverlay .videoWrapper .overlayTitle {
+  display: none;
+}
+
+.container.surfaceCompact .spinnerOverlay {
+  top: auto;
+  left: 16px;
+  right: 16px;
+  bottom: calc(108px + var(--sab));
+  transform: none;
+  min-width: 0;
+  width: auto;
+  grid-template-columns: 1fr;
+  padding: 14px 16px;
+  gap: 12px;
+  border-radius: 22px;
+}
+
+.container.surfaceCompact .spinnerBadge {
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
+}
+
+.container.surfaceCompact .spinnerBadgeRecording {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+}
+
+.container.surfaceCompact .spinnerMediaIcon {
+  width: 28px;
+  height: 28px;
+}
+
+.container.surfaceCompact .spinner {
+  width: 32px;
+  height: 32px;
+}
+
+.container.surfaceCompact .spinnerContent {
+  gap: 8px;
+}
+
+.container.surfaceCompact .spinnerTitle {
+  font-size: 1.2rem;
+}
+
+.container.surfaceCompact .spinnerLabel {
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.container.surfaceCompact .spinnerSupport {
+  font-size: var(--text-xs);
+}
+
+.container.surfaceCompact .spinnerMeta {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.container.surfaceCompact .spinnerElapsed {
+  align-self: flex-end;
+}
+
+.container.surfaceCompact .spinnerActions {
+  justify-content: flex-start;
+}
+
+.container.surfaceCompact .controlsHeader {
+  padding: 14px 16px calc(14px + var(--sab));
+  opacity: 1;
+  transform: none;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.container.surfaceCompact .controlsHeaderTheater {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.container.surfaceCompact .statsOverlay {
+  right: 16px;
+  top: 88px;
+  width: calc(100% - 32px);
+}
+
+.container.surfaceCompact .overlayTitle {
+  top: calc(16px + var(--sat));
+  left: 16px;
+  right: 72px;
+  padding: 10px 14px;
+  font-size: 1rem;
+}
+
+.container.surfaceCompact .closeButton {
+  top: calc(16px + var(--sat));
+  right: 16px;
+}
+
+.container.surfaceCompact.overlay {
+  padding: 0;
+}
+
+.container.surfaceCompact.recordingPage {
+  --recording-watch-width: 100%;
+}
+
+.container.surfaceCompact .playerFrameOverlay {
+  width: 100vw;
+  height: min(100dvh, calc(100vw * 9 / 16));
+  max-height: 100dvh;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.container.surfaceCompact .playerFramePage {
+  max-height: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.container.surfaceCompact .watchSurface {
+  width: 100%;
+  gap: 14px;
+}
+
+.container.surfaceCompact .watchLayout {
+  width: 100%;
+  margin: 0;
+  padding: 0 16px;
+}
+
+.container.surfaceCompact .watchTitle {
+  font-size: 1.25rem;
+}
+
+.container.surfaceCompact .watchDescription {
+  font-size: var(--text-sm);
+}
+
+.container.surfaceCompact .errorToast {
+  left: 16px;
+  right: 16px;
+  bottom: calc(96px + var(--sab));
+  transform: none;
+  min-width: 0;
+  max-width: none;
+  width: auto;
+  padding: 14px 16px;
+  border-radius: 20px;
+  gap: 10px;
+}
+
+.container.surfaceCompact .errorMain {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.container.surfaceCompact .errorText {
+  line-height: 1.35;
+}
+
+.container.surfaceCompact .errorDetailsButton {
+  align-self: flex-start;
+}
+
+.container.surfaceCompact .errorDetailsContent {
+  max-height: 140px;
+  font-size: var(--text-xs);
+}
+
+.container.surfaceCompact .vodControls,
+.container.surfaceCompact .seekControls {
+  min-width: 0;
+  width: 100%;
+  padding: 12px 13px;
+  gap: 10px;
+  border-radius: 18px;
+}
+
+.container.surfaceCompact .seekControls {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.container.surfaceCompact .seekButtons {
+  width: 100%;
+  gap: 8px;
+}
+
+.container.surfaceCompact .seekButtons > * {
+  flex: 1 1 0;
+}
+
+.container.surfaceCompact .playPauseButton {
+  align-self: center;
+  min-width: 46px;
+  min-height: 46px;
+}
+
+.container.surfaceCompact .mobileInlinePrimaryActions,
+.container.surfaceCompact .mobileInlineSecondaryActions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.container.surfaceCompact .mobileInlinePrimaryActions :global(button[data-size="sm"]),
+.container.surfaceCompact .mobileInlineSecondaryActions :global(button[data-size="sm"]) {
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 0.78rem;
+}
+
+.container.surfaceCompact .mobileInlinePrimaryActions .playPauseButton {
+  justify-self: center;
+}
+
+.container.surfaceCompact .mobileInlineSecondaryActions .liveButton {
+  min-width: 0;
+  justify-self: stretch;
+  text-align: center;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater),
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls,
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .seekControls {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) {
+  padding-top: 10px;
+  padding-bottom: calc(10px + var(--sab));
+  gap: 8px;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .mobileInlineMeta,
+.container.surfaceCompact.touchInlineChrome.userIdle .vodScrubArea,
+.container.surfaceCompact.touchInlineChrome.userIdle .mobileInlinePrimaryActions {
+  display: none;
+}
+
+.container.surfaceCompact.touchInlineChrome.userIdle .mobileInlineControls {
+  gap: 0;
+}
+
+.container.surfaceCompact .seekSliderGroup {
+  min-width: 0;
+}
+
+.container.surfaceCompact .vodTime,
+.container.surfaceCompact .vodTimeTotal {
+  min-width: 48px;
+  font-size: 11px;
+}
+
+.container.surfaceCompact .utilityControls {
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  justify-content: space-between;
+  align-self: stretch;
+  gap: 10px;
+}
+
+.container.surfaceCompact .volumeControl {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(100%, 208px);
+  padding: 8px 12px;
+}
+
+.container.surfaceCompact .audioToggleButton {
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+.container.surfaceCompact .volumeSlider {
+  flex: 1 1 96px;
+  width: auto;
+  min-width: 72px;
+  max-width: 120px;
+}
+
+.container.surfaceCompact .deviceVolumeHint {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.container.surfaceCompact .spinnerOverlayRecording {
+  left: 16px;
+  bottom: calc(16px + var(--sab));
+  width: calc(100% - 32px);
+}
+
+.container.surfaceTight .controlsHeader {
+  top: auto;
+  max-height: calc(100dvh - 88px - var(--sat) - var(--sab));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding-top: 12px;
+}
+
+.container.surfaceTight .vodControls,
+.container.surfaceTight .seekControls {
+  width: 100%;
+}
+
+.container.surfaceTight .utilityControls {
+  gap: 10px;
+  max-width: calc(100% - 12px);
+  align-content: flex-start;
+}
+
+.container.surfaceTight .volumeControl {
+  width: auto;
+  max-width: min(100%, 220px);
+}
+
+.container.surfaceTight .deviceVolumeHint {
+  white-space: normal;
+}
+
+.container.surfaceTight.touchInlineChrome .controlsHeader:not(.controlsHeaderTheater) {
+  left: 10px;
+  right: 10px;
+  bottom: calc(10px + var(--sab));
+  padding: 8px 10px calc(8px + var(--sab));
+  gap: 6px;
+  align-items: stretch;
+  opacity: 1;
+  transform: none;
+  max-height: min(156px, calc(100dvh - 56px - var(--sat) - var(--sab)));
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineMeta {
+  display: none;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineControls {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(176px, 0.8fr);
+  gap: 6px 8px;
+  padding: 8px 10px;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineControls .vodScrubArea {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineControls .vodScrubTimes {
+  font-size: 9px;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlinePrimaryActions,
+.container.surfaceTight.touchInlineChrome .mobileInlineSecondaryActions {
+  width: 100%;
+  gap: 4px;
+  align-self: stretch;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlinePrimaryActions {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineSecondaryActions {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlinePrimaryActions :global(button[data-size="sm"]),
+.container.surfaceTight.touchInlineChrome .mobileInlineSecondaryActions :global(button[data-size="sm"]) {
+  min-height: 30px;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 0.68rem;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlinePrimaryActions .playPauseButton {
+  min-width: 34px;
+  min-height: 34px;
+}
+
+.container.surfaceTight.touchInlineChrome .mobileInlineSecondaryActions .liveButton {
+  min-height: 30px;
+  padding: 0 6px;
+  letter-spacing: 0.05em;
+}
+
+.container.surfaceTight.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater),
+.container.surfaceTight.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .vodControls,
+.container.surfaceTight.touchInlineChrome.userIdle .controlsHeader:not(.controlsHeaderTheater) .seekControls {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.container.surfaceTight.touchInlineChrome .closeButton {
+  top: calc(10px + var(--sat));
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  font-size: 14px;
 }

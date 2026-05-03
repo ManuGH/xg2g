@@ -46,9 +46,11 @@ interface LiveSessionController {
   reportError: (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
   ensureSessionCookie: () => Promise<void>;
   recoverSessionCookie: (source: string) => Promise<boolean>;
+  primePlaybackAuth: (playbackUrl: string, source: string) => Promise<void>;
   setActiveSessionId: (sessionId: string | null) => void;
   clearSessionLeaseState: () => void;
   sendStopIntent: (sessionId: string | null, force?: boolean) => Promise<void>;
+  refreshSessionSnapshot: (sessionId?: string | null) => Promise<V3SessionStatusResponse | null>;
   waitForSessionReady: (sessionId: string, maxAttempts?: number) => Promise<V3SessionStatusResponse>;
 }
 
@@ -63,6 +65,21 @@ function sleep(ms: number): Promise<void> {
 
 function hasValidHeartbeatInterval(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (isRecord(error) && typeof error.message === 'string') return error.message;
+  return '';
+}
+
+function errorDetails(error: unknown): Record<string, unknown> | null {
+  if (!isRecord(error) || !isRecord(error.details)) return null;
+  return error.details;
 }
 
 export function useLiveSessionController({
@@ -168,6 +185,37 @@ export function useLiveSessionController({
     return { response: retriedResponse, recovered: true };
   }, [recoverSessionCookie, token]);
 
+  const primePlaybackAuth = useCallback(async (playbackUrl: string, source: string): Promise<void> => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    let resolvedUrl: URL;
+    try {
+      resolvedUrl = new URL(playbackUrl, window.location.origin);
+    } catch {
+      return;
+    }
+
+    if (resolvedUrl.origin !== window.location.origin || !resolvedUrl.pathname.startsWith('/api/v3/')) {
+      return;
+    }
+
+    const { response } = await fetchWithRecoveredSessionCookie(source, () => fetch(resolvedUrl.toString(), {
+      method: 'HEAD',
+      cache: 'no-store',
+      credentials: 'same-origin',
+    }));
+
+    if (response.status === 401) {
+      throw createPlayerError(t('player.authFailed'), {
+        url: response.url || resolvedUrl.toString(),
+        status: 401,
+        requestId: response.headers.get('X-Request-ID') || undefined,
+      });
+    }
+  }, [createPlayerError, fetchWithRecoveredSessionCookie, t]);
+
   const setActiveSessionId = useCallback((nextSessionId: string | null) => {
     sessionIdRef.current = nextSessionId;
     setSessionId(nextSessionId);
@@ -212,6 +260,41 @@ export function useLiveSessionController({
     setLeaseExpiresAt(session.leaseExpiresAt ?? null);
     onSessionSnapshot?.(session);
   }, [onSessionSnapshot, setDurationSeconds, setPlaybackMode]);
+
+  const refreshSessionSnapshot = useCallback(async (targetSessionId?: string | null): Promise<V3SessionStatusResponse | null> => {
+    const trackedSessionId = targetSessionId ?? sessionIdRef.current;
+    if (!trackedSessionId) {
+      return null;
+    }
+
+    try {
+      const { response: res } = await fetchWithRecoveredSessionCookie(
+        'useLiveSessionController.refreshSessionSnapshot',
+        () => fetch(`${apiBase}/sessions/${trackedSessionId}`, {
+          headers: authHeaders()
+        })
+      );
+
+      if (!res.ok) {
+        debugWarn('[V3Player][Session] Snapshot refresh failed', {
+          sessionId: trackedSessionId,
+          status: res.status,
+        });
+        return null;
+      }
+
+      const session: V3SessionStatusResponse = await res.json();
+      if (sessionIdRef.current !== trackedSessionId) {
+        return null;
+      }
+
+      applySessionInfo(session);
+      return session;
+    } catch (err) {
+      debugWarn('[V3Player][Session] Snapshot refresh error', err);
+      return null;
+    }
+  }, [apiBase, applySessionInfo, authHeaders, fetchWithRecoveredSessionCookie]);
 
   const waitForSessionReady = useCallback(async (
     trackedSessionId: string,
@@ -355,10 +438,10 @@ export function useLiveSessionController({
         }
         await sleep(SESSION_READY_POLL_MS);
       } catch (err) {
-        const e = err as any;
-        const msg = e?.message || '';
-        const status = e?.details?.status as number | undefined;
-        if (e?.details?.contractError) {
+        const details = errorDetails(err);
+        const msg = errorMessage(err);
+        const status = typeof details?.status === 'number' ? details.status : undefined;
+        if (details?.contractError === true) {
           throw err;
         }
         if (
@@ -375,7 +458,7 @@ export function useLiveSessionController({
         }
         if (i === maxAttempts - 1) {
           const details = {
-            ...(e?.details && typeof e.details === 'object' ? e.details : {}),
+            ...(errorDetails(err) ?? {}),
             sessionId: trackedSessionId,
             waitedMs: maxAttempts * SESSION_READY_POLL_MS,
             pollMs: SESSION_READY_POLL_MS
@@ -391,7 +474,7 @@ export function useLiveSessionController({
       waitedMs: maxAttempts * SESSION_READY_POLL_MS,
       pollMs: SESSION_READY_POLL_MS
     });
-  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, onSessionSnapshot, readResponseBody, setStatus, t]);
+  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, fetchWithRecoveredSessionCookie, onSessionSnapshot, readResponseBody, setStatus, t]);
 
   useEffect(() => {
     if (!sessionId || !heartbeatInterval) {
@@ -491,6 +574,7 @@ export function useLiveSessionController({
           }
           setLeaseExpiresAt(data.leaseExpiresAt);
           debugLog('[V3Player][Heartbeat] Lease extended:', data.leaseExpiresAt);
+          void refreshSessionSnapshot(trackedSessionId);
         } else if (res.status === 410) {
           debugError('[V3Player][Heartbeat] Session expired (410)');
           window.clearInterval(timerId);
@@ -545,19 +629,7 @@ export function useLiveSessionController({
       debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
       window.clearInterval(timerId);
     };
-  }, [
-    apiBase,
-    authHeaders,
-    clearPlaybackFailure,
-    clearSessionLeaseState,
-    heartbeatInterval,
-    reportPlaybackFailure,
-    sessionId,
-    setPlaybackMode,
-    setStatus,
-    t,
-    videoRef,
-  ]);
+  }, [apiBase, authHeaders, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, sessionId, setError, setPlaybackMode, setStatus, t, videoRef]);
 
   useEffect(() => {
     setClientAuthToken(token);
@@ -572,9 +644,11 @@ export function useLiveSessionController({
     reportError,
     ensureSessionCookie,
     recoverSessionCookie,
+    primePlaybackAuth,
     setActiveSessionId,
     clearSessionLeaseState,
     sendStopIntent,
+    refreshSessionSnapshot,
     waitForSessionReady
   };
 }

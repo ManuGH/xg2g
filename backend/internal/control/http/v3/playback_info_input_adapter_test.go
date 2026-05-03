@@ -138,3 +138,22 @@ func TestParseLivePlaybackPostInput_MissingServiceRef(t *testing.T) {
 	assert.Equal(t, problemcode.CodeInvalidInput, problem.code)
 	assert.Equal(t, "serviceRef is required", problem.detail)
 }
+
+func TestParseLivePlaybackPostInput_RecognizesPreviewContextHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(`{
+		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0",
+		"capabilities":{
+			"capabilitiesVersion":2,
+			"container":["mpegts"],
+			"videoCodecs":["h264"],
+			"audioCodecs":["aac"]
+		}
+	}`))
+	req.Header.Set("X-XG2G-Playback-Info-Context", "epg_badge")
+
+	input, problem := parseLivePlaybackPostInput(req)
+
+	require.Nil(t, problem)
+	assert.Equal(t, "1:0:1:1234:5678:9ABC:0:0:0:0", input.serviceRef)
+	require.NotNil(t, input.capabilities)
+}

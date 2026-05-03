@@ -14,6 +14,7 @@ const originalWebkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDe
   HTMLVideoElement.prototype,
   'webkitSupportsPresentationMode'
 );
+const originalLocation = window.location;
 
 describe('probeRuntimePlaybackCapabilities', () => {
   beforeEach(() => {
@@ -33,9 +34,13 @@ describe('probeRuntimePlaybackCapabilities', () => {
         originalWebkitSupportsPresentationModeDescriptor
       );
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
     }
+
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
+    });
   });
 
   it('prefers native HLS when hls.js is unavailable and keeps live ac3 support', async () => {
@@ -57,7 +62,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.hlsJs).toBe(false);
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
-    expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
     expect(probe.audioCodecs).toEqual(['aac', 'mp3', 'ac3']);
     expect(probe.videoCodecs).toContain('h264');
     expect(probe.videoCodecSignals).toEqual([
@@ -67,7 +72,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     ]);
   });
 
-  it('uses hls.js plus fmp4 on non-native clients and strips recording ac3', async () => {
+  it('uses hls.js plus fmp4 on MSE/hls.js clients and strips recording ac3', async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
 
     const video = document.createElement('video');
@@ -92,7 +97,7 @@ describe('probeRuntimePlaybackCapabilities', () => {
     ]);
   });
 
-  it('prefers native HLS on desktop WebKit when native playback is available', async () => {
+  it('still prefers native HLS on desktop WebKit when hls.js is available', async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     Object.defineProperty(navigator, 'maxTouchPoints', {
       configurable: true,
@@ -116,8 +121,36 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.hlsJs).toBe(true);
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
-    expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
     expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
+  });
+
+  it('advertises desktop Safari AV1 when the native runtime reports support', async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 0,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn(),
+    });
+
+    const video = document.createElement('video');
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+
+    const probe = await probeRuntimePlaybackCapabilities(video, 'live');
+
+    expect(probe.nativeHls).toBe(true);
+    expect(probe.preferredHlsEngine).toBe('native');
+    expect(probe.videoCodecs).toEqual(['av1', 'h264']);
+    expect(probe.videoCodecSignals[0]).toEqual({ codec: 'av1', supported: true });
   });
 
   it('prefers native HLS on touch WebKit even when hls.js is available', async () => {
@@ -143,7 +176,35 @@ describe('probeRuntimePlaybackCapabilities', () => {
     expect(probe.hlsJs).toBe(true);
     expect(probe.preferredHlsEngine).toBe('native');
     expect(probe.hlsEngines).toEqual(['native']);
-    expect(probe.containers).toEqual(['mp4', 'ts']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
     expect(probe.videoCodecSignals[2]).toEqual({ codec: 'h264', supported: true });
+  });
+
+  it('keeps native HLS on touch WebKit when the iOS runtime reports AV1 support', async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 5,
+    });
+    const video = document.createElement('video') as HTMLVideoElement & {
+      webkitEnterFullscreen?: () => void;
+    };
+    video.webkitEnterFullscreen = vi.fn();
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type === 'application/vnd.apple.mpegurl') return 'probably';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('hev1') || type.includes('hvc1')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+
+    const probe = await probeRuntimePlaybackCapabilities(video, 'live');
+
+    expect(probe.nativeHls).toBe(true);
+    expect(probe.hlsJs).toBe(true);
+    expect(probe.preferredHlsEngine).toBe('native');
+    expect(probe.hlsEngines).toEqual(['native']);
+    expect(probe.containers).toEqual(['mp4', 'ts', 'fmp4']);
+    expect(probe.videoCodecs).toEqual(['av1', 'h264']);
   });
 });

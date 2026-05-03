@@ -101,6 +101,9 @@ func problemSpecForPlaybackInfoError(schemaType string, err *v3recordings.Playba
 		case "missing_scan_truth":
 			problemType = "live/missing_scan_truth"
 			title = "Live media truth missing"
+		case "stale_scan_truth":
+			problemType = "live/stale_truth"
+			title = "Live media truth stale"
 		case "inactive_event_feed":
 			problemType = "live/inactive_event_feed"
 			title = "Live event feed inactive"

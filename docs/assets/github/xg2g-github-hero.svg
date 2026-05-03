@@ -1,94 +1,115 @@
-<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">xg2g GitHub hero</title>
-  <desc id="desc">Diagram showing Enigma2 MPEG-TS transformed by xg2g into browser-ready HLS for Safari, iPhone, iPad, Chrome, and operator tools.</desc>
+  <desc id="desc">Dark technical hero showing xg2g turning Enigma2 MPEG-TS into policy-controlled HLS for browsers, phones, tablets, and TVs.</desc>
   <defs>
-    <linearGradient id="bg" x1="108" y1="80" x2="1070" y2="660" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFF7EA"/>
-      <stop offset="0.55" stop-color="#F7EFE4"/>
-      <stop offset="1" stop-color="#E9F2F8"/>
+    <linearGradient id="bg" x1="78" y1="48" x2="1188" y2="636" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#07151B"/>
+      <stop offset="0.54" stop-color="#0D2933"/>
+      <stop offset="1" stop-color="#163A43"/>
     </linearGradient>
-    <linearGradient id="panel" x1="318" y1="164" x2="844" y2="574" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#17324D"/>
-      <stop offset="1" stop-color="#1E4B6E"/>
+    <linearGradient id="signal" x1="184" y1="136" x2="1054" y2="526" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#36D1A7"/>
+      <stop offset="0.48" stop-color="#5FB9E9"/>
+      <stop offset="1" stop-color="#FFB84D"/>
     </linearGradient>
-    <linearGradient id="accent" x1="248" y1="194" x2="1034" y2="434" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F3AA3B"/>
-      <stop offset="1" stop-color="#E86A33"/>
+    <linearGradient id="panel" x1="324" y1="154" x2="824" y2="496" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102F3A"/>
+      <stop offset="1" stop-color="#0A1F28"/>
     </linearGradient>
-    <filter id="shadow" x="64" y="62" width="1072" height="596" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
-      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
-      <feOffset dy="18"/>
-      <feGaussianBlur stdDeviation="22"/>
-      <feColorMatrix type="matrix" values="0 0 0 0 0.0901961 0 0 0 0 0.196078 0 0 0 0 0.301961 0 0 0 0.18 0"/>
-      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_2"/>
-      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_2" result="shape"/>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.211 0 0 0 0 0.82 0 0 0 0 0.655 0 0 0 0.42 0"/>
+      <feBlend in="SourceGraphic" result="shape"/>
+    </filter>
+    <filter id="shadow" x="0" y="0" width="1280" height="640" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.28"/>
     </filter>
   </defs>
 
-  <rect width="1200" height="720" rx="28" fill="url(#bg)"/>
-  <circle cx="150" cy="104" r="84" fill="#F3AA3B" fill-opacity="0.13"/>
-  <circle cx="1054" cy="596" r="144" fill="#5CA5D8" fill-opacity="0.10"/>
-  <path d="M84 146C194 94 301 74 407 84C507 93 611 131 713 126C822 121 918 68 1045 88" stroke="#17324D" stroke-opacity="0.08" stroke-width="3"/>
-  <path d="M102 604C231 552 342 548 470 576C607 606 732 652 854 624C933 606 1006 554 1110 554" stroke="#E86A33" stroke-opacity="0.16" stroke-width="3"/>
+  <rect width="1280" height="640" rx="34" fill="url(#bg)"/>
+  <g opacity="0.18">
+    <path d="M0 108H1280" stroke="#FFF8EA"/>
+    <path d="M0 216H1280" stroke="#FFF8EA"/>
+    <path d="M0 324H1280" stroke="#FFF8EA"/>
+    <path d="M0 432H1280" stroke="#FFF8EA"/>
+    <path d="M0 540H1280" stroke="#FFF8EA"/>
+    <path d="M128 0V640" stroke="#FFF8EA"/>
+    <path d="M256 0V640" stroke="#FFF8EA"/>
+    <path d="M384 0V640" stroke="#FFF8EA"/>
+    <path d="M512 0V640" stroke="#FFF8EA"/>
+    <path d="M640 0V640" stroke="#FFF8EA"/>
+    <path d="M768 0V640" stroke="#FFF8EA"/>
+    <path d="M896 0V640" stroke="#FFF8EA"/>
+    <path d="M1024 0V640" stroke="#FFF8EA"/>
+    <path d="M1152 0V640" stroke="#FFF8EA"/>
+  </g>
+  <circle cx="1118" cy="126" r="206" fill="#36D1A7" fill-opacity="0.11"/>
+  <circle cx="108" cy="532" r="180" fill="#FFB84D" fill-opacity="0.13"/>
+  <path d="M88 406C220 334 324 344 438 392C556 442 652 502 780 456C906 410 1018 294 1198 336" stroke="url(#signal)" stroke-width="8" stroke-linecap="round" opacity="0.68"/>
+  <path d="M94 198C242 122 360 134 498 204C638 276 742 300 884 214C982 154 1062 136 1196 168" stroke="#FFF8EA" stroke-width="2" stroke-linecap="round" opacity="0.18"/>
 
   <g filter="url(#shadow)">
-    <rect x="92" y="80" width="1016" height="540" rx="28" fill="#FFFFFF"/>
+    <rect x="64" y="58" width="1152" height="524" rx="32" fill="#07151B" fill-opacity="0.72" stroke="#FFF8EA" stroke-opacity="0.13"/>
   </g>
 
-  <rect x="124" y="110" width="952" height="92" rx="22" fill="#F7EFE4"/>
-  <text x="156" y="146" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="0.14em">BROWSER-READY ENIGMA2 STREAMING</text>
-  <text x="156" y="184" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="40" font-weight="700">From receiver MPEG-TS to HLS that actually plays</text>
+  <g transform="translate(104 98)">
+    <rect x="0" y="0" width="206" height="42" rx="21" fill="#36D1A7" fill-opacity="0.14" stroke="#36D1A7" stroke-opacity="0.42"/>
+    <circle cx="24" cy="21" r="6" fill="#36D1A7"/>
+    <text x="42" y="27" fill="#8BE9D0" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="2.2">LIVE TV GATEWAY</text>
+  </g>
 
-  <rect x="148" y="238" width="192" height="232" rx="26" fill="#FFF7EA" stroke="#17324D" stroke-opacity="0.12"/>
-  <text x="176" y="286" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="700">Source</text>
-  <text x="176" y="330" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="32" font-weight="700">Enigma2</text>
-  <text x="176" y="362" fill="#4C5B69" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="20">Satellite / DVB-T2</text>
-  <rect x="176" y="392" width="136" height="36" rx="18" fill="#17324D"/>
-  <text x="198" y="416" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="16" font-weight="700">MPEG-TS input</text>
-  <path d="M196 453H292" stroke="#E86A33" stroke-width="6" stroke-linecap="round"/>
-  <path d="M264 437L296 453L264 469" fill="#E86A33"/>
+  <text x="104" y="224" fill="#FFF8EA" font-family="Iowan Old Style, Georgia, Times New Roman, serif" font-size="104" font-weight="700" letter-spacing="-8">xg2g</text>
+  <text x="104" y="286" fill="#FFF8EA" fill-opacity="0.88" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="33" font-weight="800">Enigma2 to browser-ready HLS.</text>
+  <text x="104" y="326" fill="#FFF8EA" fill-opacity="0.66" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="23">Policy-controlled playback for Safari, iPhone, iPad,</text>
+  <text x="104" y="358" fill="#FFF8EA" fill-opacity="0.66" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="23">Chrome, TVs, recordings, and operator tooling.</text>
 
-  <rect x="364" y="214" width="452" height="278" rx="34" fill="url(#panel)"/>
-  <rect x="396" y="246" width="124" height="34" rx="17" fill="#2B8A74"/>
-  <text x="423" y="268" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="15" font-weight="700">Gateway</text>
-  <text x="398" y="340" fill="#FFFFFF" font-family="Georgia, Times New Roman, serif" font-size="64" font-weight="700">xg2g</text>
-  <text x="398" y="378" fill="#D6E4EE" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="22">Server-enforced delivery policy</text>
-  <rect x="398" y="410" width="112" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
-  <text x="426" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">H.264</text>
-  <rect x="524" y="410" width="98" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
-  <text x="558" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">AAC</text>
-  <rect x="636" y="410" width="130" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
-  <text x="652" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">fMP4 / TS</text>
-  <rect x="780" y="410" width="72" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.14"/>
-  <text x="800" y="435" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="17" font-weight="700">HLS</text>
+  <g transform="translate(104 396)">
+    <rect x="0" y="0" width="168" height="48" rx="24" fill="#FFB84D"/>
+    <text x="26" y="31" fill="#16120C" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="900">Quickstart</text>
+    <rect x="184" y="0" width="178" height="48" rx="24" fill="#FFF8EA" fill-opacity="0.1" stroke="#FFF8EA" stroke-opacity="0.2"/>
+    <text x="214" y="31" fill="#FFF8EA" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="800">API Docs</text>
+    <rect x="378" y="0" width="168" height="48" rx="24" fill="#FFF8EA" fill-opacity="0.1" stroke="#FFF8EA" stroke-opacity="0.2"/>
+    <text x="410" y="31" fill="#FFF8EA" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="800">Web UI</text>
+  </g>
 
-  <path d="M342 354H390" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
-  <path d="M364 338L396 354L364 370" fill="#E86A33"/>
-  <path d="M816 354H864" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
-  <path d="M836 338L868 354L836 370" fill="#E86A33"/>
+  <g transform="translate(104 496)">
+    <rect x="0" y="0" width="180" height="58" rx="20" fill="#FFF8EA" fill-opacity="0.08" stroke="#FFF8EA" stroke-opacity="0.13"/>
+    <text x="24" y="25" fill="#36D1A7" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="15" font-weight="900">INPUT</text>
+    <text x="24" y="46" fill="#FFF8EA" fill-opacity="0.84" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="800">MPEG-TS</text>
+    <rect x="198" y="0" width="180" height="58" rx="20" fill="#FFF8EA" fill-opacity="0.08" stroke="#FFF8EA" stroke-opacity="0.13"/>
+    <text x="222" y="25" fill="#5FB9E9" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="15" font-weight="900">OUTPUT</text>
+    <text x="222" y="46" fill="#FFF8EA" fill-opacity="0.84" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="800">HLS / fMP4</text>
+    <rect x="396" y="0" width="180" height="58" rx="20" fill="#FFF8EA" fill-opacity="0.08" stroke="#FFF8EA" stroke-opacity="0.13"/>
+    <text x="420" y="25" fill="#FFB84D" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="15" font-weight="900">POLICY</text>
+    <text x="420" y="46" fill="#FFF8EA" fill-opacity="0.84" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18" font-weight="800">Direct/transcode</text>
+  </g>
 
-  <rect x="876" y="224" width="164" height="96" rx="24" fill="#F8FBFF" stroke="#17324D" stroke-opacity="0.10"/>
-  <text x="908" y="263" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="26" font-weight="700">Safari</text>
-  <text x="908" y="292" fill="#4C5B69" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18">macOS and iOS</text>
+  <g transform="translate(730 116)" filter="url(#glow)">
+    <rect x="0" y="0" width="416" height="382" rx="30" fill="url(#panel)" stroke="#FFF8EA" stroke-opacity="0.18"/>
+    <rect x="24" y="24" width="368" height="54" rx="18" fill="#FFF8EA" fill-opacity="0.08"/>
+    <circle cx="50" cy="51" r="6" fill="#F16B36"/>
+    <circle cx="72" cy="51" r="6" fill="#FFB84D"/>
+    <circle cx="94" cy="51" r="6" fill="#36D1A7"/>
+    <text x="126" y="58" fill="#FFF8EA" fill-opacity="0.65" font-family="SFMono-Regular, Consolas, monospace" font-size="15">/api/v3/sessions</text>
 
-  <rect x="876" y="336" width="164" height="96" rx="24" fill="#FFF7EA" stroke="#17324D" stroke-opacity="0.10"/>
-  <text x="908" y="375" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="26" font-weight="700">iPhone</text>
-  <text x="908" y="404" fill="#4C5B69" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18">iPad and AirPlay</text>
-
-  <rect x="876" y="448" width="164" height="96" rx="24" fill="#EEF6FB" stroke="#17324D" stroke-opacity="0.10"/>
-  <text x="908" y="487" fill="#16324F" font-family="Georgia, Times New Roman, serif" font-size="26" font-weight="700">Chrome</text>
-  <text x="908" y="516" fill="#4C5B69" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="18">Desktop and TVs</text>
-
-  <rect x="148" y="506" width="214" height="72" rx="22" fill="#17324D"/>
-  <text x="176" y="550" fill="#FFFFFF" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="20" font-weight="700">UI + API control surface</text>
-
-  <rect x="388" y="520" width="202" height="58" rx="20" fill="#F7EFE4"/>
-  <text x="418" y="557" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="19" font-weight="700">Auth + scopes</text>
-
-  <rect x="610" y="520" width="202" height="58" rx="20" fill="#EEF6FB"/>
-  <text x="636" y="557" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="19" font-weight="700">Health + metrics</text>
-
-  <rect x="832" y="520" width="208" height="58" rx="20" fill="#FFF4DE"/>
-  <text x="862" y="557" fill="#16324F" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="19" font-weight="700">Release-ready builds</text>
+    <g transform="translate(24 106)">
+      <rect x="0" y="0" width="368" height="58" rx="17" fill="#FFF8EA" fill-opacity="0.08" stroke="#FFF8EA" stroke-opacity="0.08"/>
+      <rect x="18" y="16" width="62" height="26" rx="8" fill="#FFB84D"/>
+      <text x="30" y="34" fill="#16120C" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="13" font-weight="900">POST</text>
+      <text x="100" y="36" fill="#FFF8EA" font-family="SFMono-Regular, Consolas, monospace" font-size="16">start live session</text>
+    </g>
+    <g transform="translate(24 178)">
+      <rect x="0" y="0" width="368" height="58" rx="17" fill="#FFF8EA" fill-opacity="0.08" stroke="#FFF8EA" stroke-opacity="0.08"/>
+      <rect x="18" y="16" width="62" height="26" rx="8" fill="#5FB9E9"/>
+      <text x="34" y="34" fill="#07151B" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="13" font-weight="900">GET</text>
+      <text x="100" y="36" fill="#FFF8EA" font-family="SFMono-Regular, Consolas, monospace" font-size="16">stream.m3u8</text>
+    </g>
+    <g transform="translate(24 250)">
+      <rect x="0" y="0" width="368" height="58" rx="17" fill="#FFF8EA" fill-opacity="0.08" stroke="#FFF8EA" stroke-opacity="0.08"/>
+      <rect x="18" y="16" width="62" height="26" rx="8" fill="#36D1A7"/>
+      <text x="34" y="34" fill="#07151B" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="13" font-weight="900">HLS</text>
+      <text x="100" y="36" fill="#FFF8EA" font-family="SFMono-Regular, Consolas, monospace" font-size="16">browser playback</text>
+    </g>
+    <text x="24" y="344" fill="#FFF8EA" fill-opacity="0.58" font-family="Avenir Next, Trebuchet MS, Arial, sans-serif" font-size="16">Auth, health, metrics, decisions, and media delivery.</text>
+  </g>
 </svg>

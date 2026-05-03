@@ -60,6 +60,11 @@ type refreshOptions struct {
 	piconPool *PiconPool
 }
 
+type resolvedBouquet struct {
+	Name string
+	Ref  string
+}
+
 func WithPiconPool(pool *PiconPool) RefreshOption {
 	return func(opts *refreshOptions) {
 		opts.piconPool = pool
@@ -138,65 +143,13 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 	metrics.RecordBouquetsCount(len(bouquets))
 	span.SetAttributes(attribute.Int("bouquets.count", len(bouquets)))
 
-	// Build reverse lookup map (ref -> name) for backward compatibility with configs
-	// that specify bouquet references instead of bouquet names.
-	bouquetRefs := make(map[string]string, len(bouquets))
-	for name, ref := range bouquets {
-		bouquetRefs[ref] = name
-	}
-
-	// Support comma-separated bouquet list (e.g., "Category A,Favourites,Sports")
-	requestedBouquets := make([]string, 0)
-	for _, name := range strings.Split(cfg.Bouquet, ",") {
-		trimmed := strings.TrimSpace(name)
-		if trimmed != "" {
-			requestedBouquets = append(requestedBouquets, trimmed)
-		}
-	}
-	if len(requestedBouquets) == 0 {
-		for name := range bouquets {
-			requestedBouquets = append(requestedBouquets, name)
-		}
-		sort.Strings(requestedBouquets)
+	validBouquets, usingAllBouquets, err := resolveRefreshBouquets(cfg.Bouquet, bouquets)
+	if usingAllBouquets {
 		logger.Info().
-			Int("bouquets", len(requestedBouquets)).
+			Int("bouquets", len(validBouquets)).
 			Msg("no bouquets configured; using all available bouquets")
 	}
-
-	// Pre-flight validation: check ALL requested bouquets exist before processing
-	var missingBouquets []string
-	type resolvedBouquet struct {
-		Name string
-		Ref  string
-	}
-	validBouquets := make([]resolvedBouquet, 0, len(requestedBouquets))
-	for _, bouquetName := range requestedBouquets {
-		if bouquetName == "" {
-			continue
-		}
-
-		// Preferred: bouquet configured by name
-		if ref, ok := bouquets[bouquetName]; ok {
-			validBouquets = append(validBouquets, resolvedBouquet{Name: bouquetName, Ref: ref})
-			continue
-		}
-
-		// Backward compatibility: bouquet configured by reference string
-		if name, ok := bouquetRefs[bouquetName]; ok {
-			validBouquets = append(validBouquets, resolvedBouquet{Name: name, Ref: bouquetName})
-			continue
-		}
-
-		missingBouquets = append(missingBouquets, bouquetName)
-	}
-
-	// If ANY requested bouquet is missing, fail early with comprehensive error
-	if len(missingBouquets) > 0 {
-		availableNames := make([]string, 0, len(bouquets))
-		for name := range bouquets {
-			availableNames = append(availableNames, name)
-		}
-		err = WrapBouquetNotFoundError(fmt.Errorf("bouquets not found: %v; available bouquets: %v", missingBouquets, availableNames))
+	if err != nil {
 		metrics.IncRefreshFailure("bouquets")
 		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "bouquets"), err).Msg("configured bouquets not found")
 		return nil, err
@@ -291,146 +244,13 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 	}
 	metrics.RecordChannelTypeCounts(hd, sd, radio, unknown)
 
-	// Write M3U playlist (filename configurable via ENV)
-	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, rt.PlaylistFilename)
+	if err := writeRefreshPlaylist(ctx, cfg, rt, items, refreshOpts); err != nil {
+		return nil, err
+	}
+
+	epgProgrammesCount, err := writeRefreshXMLTV(ctx, cfg, rt, client, items)
 	if err != nil {
-		err = WrapPlaylistPathError(fmt.Errorf("invalid playlist path: %w", err))
-		logJobError("refresh", logger.Error().Err(err).Str("playlist", rt.PlaylistFilename), err).Msg("invalid playlist path")
-		metrics.IncRefreshFailure("playlist_path_invalid")
 		return nil, err
-	}
-
-	// Trigger background picon pre-warm (don't block refresh).
-	// The runtime pool can fall back to the Enigma2 base URL even when no explicit
-	// PiconBase is configured, so gate this on the runtime pool, not on cfg.PiconBase.
-	if refreshOpts.piconPool != nil {
-		go PrewarmPicons(ctx, refreshOpts.piconPool, items)
-	} else if cfg.PiconBase != "" {
-		logger.Debug().Msg("skipping picon pre-warm because no runtime picon pool is configured")
-	}
-
-	// Generate M3U
-	// Pass Public URL to M3U writer for absolute paths in M3U (Plex compatibility)
-	// WebUI uses relative paths internally
-	publicURL := rt.PublicURL
-	if err := writeM3U(ctx, playlistPath, items, publicURL, rt.XTvgURL); err != nil {
-		metrics.IncRefreshFailure("write_m3u")
-		metrics.RecordPlaylistFileValidity("m3u", false)
-		err = fmt.Errorf("failed to write M3U playlist: %w", err)
-		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "write_m3u").Str("path", playlistPath), err).Msg("failed to write M3U playlist")
-		return nil, err
-	}
-	// Verify M3U file exists and is readable
-	if _, err := os.Stat(playlistPath); err == nil {
-		metrics.RecordPlaylistFileValidity("m3u", true)
-	} else {
-		metrics.RecordPlaylistFileValidity("m3u", false)
-	}
-	logger.Info().
-		Str("event", "playlist.write").
-		Str("path", playlistPath).
-		Int("channels", len(items)).
-		Msg("playlist written")
-
-	// Track EPG programmes count for status reporting
-	var epgProgrammesCount int
-
-	// Optional XMLTV generation
-	if cfg.XMLTVPath != "" {
-		xmlCh := make([]epg.Channel, 0, len(items))
-		for _, it := range items {
-			if len(xmlCh) < 5 {
-				logger.Info().Str("channel", it.Name).Str("sref", it.ServiceRef).Msg("Debug: XMLTV Channel")
-			}
-			ch := epg.Channel{ID: it.ServiceRef, DisplayName: []string{it.Name}}
-			if it.TvgLogo != "" {
-				// Use absolute URL for XMLTV as well (Plex requirement)
-				logo := it.TvgLogo
-				if publicURL != "" && strings.HasPrefix(logo, "/") {
-					logo = strings.TrimRight(publicURL, "/") + logo
-				}
-				ch.Icon = &epg.Icon{Src: logo}
-			}
-			xmlCh = append(xmlCh, ch)
-		}
-
-		xmltvFullPath := filepath.Join(cfg.DataDir, cfg.XMLTVPath)
-		var xmlErr error
-		var allProgrammes []epg.Programme
-
-		// EPG Programme collection (if enabled)
-		if cfg.EPGEnabled {
-			logger.Info().
-				Str("event", "epg.start").
-				Int("channels", len(items)).
-				Int("days", cfg.EPGDays).
-				Msg("starting EPG collection")
-
-			epgStartTime := time.Now()
-			programmes := collectEPGProgrammes(ctx, client, items, cfg)
-			epgDuration := time.Since(epgStartTime).Seconds()
-
-			if len(programmes) == 0 {
-				logger.Warn().
-					Str("event", "epg.no_data").
-					Msg("EPG collection returned no data")
-			}
-			allProgrammes = programmes
-			epgProgrammesCount = len(allProgrammes)
-
-			// Count channels with EPG data
-			channelsWithData := 0
-			if len(allProgrammes) > 0 {
-				channelMap := make(map[string]bool)
-				for _, prog := range allProgrammes {
-					channelMap[prog.Channel] = true
-				}
-				channelsWithData = len(channelMap)
-			}
-
-			metrics.RecordEPGCollection(len(allProgrammes), channelsWithData, epgDuration)
-
-			logger.Info().
-				Str("event", "epg.collected").
-				Int("programmes", len(allProgrammes)).
-				Int("channels_with_data", channelsWithData).
-				Float64("duration_seconds", epgDuration).
-				Msg("EPG collection completed")
-		}
-
-		// Write XMLTV with or without programmes (atomically via temp file)
-		var tv epg.TV
-		if cfg.EPGEnabled && len(allProgrammes) > 0 {
-			tv = epg.GenerateXMLTV(xmlCh, allProgrammes)
-		} else {
-			tv = epg.GenerateXMLTV(xmlCh, nil)
-		}
-		xmlErr = writeXMLTV(ctx, xmltvFullPath, tv)
-
-		metrics.RecordXMLTV(true, len(xmlCh), xmlErr)
-		if xmlErr != nil {
-			metrics.IncRefreshFailure("xmltv")
-			metrics.RecordPlaylistFileValidity("xmltv", false)
-			xmlErr = fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, xmlErr)
-			logJobError("refresh", logger.Error().Err(xmlErr).Str("event", "refresh.failed").Str("stage", "xmltv").Str("path", xmltvFullPath), xmlErr).Msg("failed to write XMLTV file")
-			return nil, xmlErr
-		}
-		// Verify XMLTV file exists and is readable
-		if _, err := os.Stat(xmltvFullPath); err == nil {
-			metrics.RecordPlaylistFileValidity("xmltv", true)
-		} else {
-			metrics.RecordPlaylistFileValidity("xmltv", false)
-		}
-
-		logger.Info().
-			Str("event", "xmltv.success").
-			Str("path", xmltvFullPath).
-			Int("channels", len(xmlCh)).
-			Int("programmes", len(allProgrammes)).
-			Msg("XMLTV generated")
-	} else {
-		metrics.RecordXMLTV(false, 0, nil)
-		metrics.RecordPlaylistFileValidity("xmltv", false) // XMLTV disabled
 	}
 
 	// Calculate job duration
@@ -457,6 +277,214 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 		Int("channels", status.Channels).
 		Msg("refresh completed")
 	return status, nil
+}
+
+func resolveRefreshBouquets(configured string, bouquets map[string]string) ([]resolvedBouquet, bool, error) {
+	bouquetRefs := make(map[string]string, len(bouquets))
+	for name, ref := range bouquets {
+		bouquetRefs[ref] = name
+	}
+
+	requestedBouquets := requestedRefreshBouquets(configured)
+	usingAllBouquets := len(requestedBouquets) == 0
+	if usingAllBouquets {
+		for name := range bouquets {
+			requestedBouquets = append(requestedBouquets, name)
+		}
+		sort.Strings(requestedBouquets)
+	}
+
+	validBouquets := make([]resolvedBouquet, 0, len(requestedBouquets))
+	missingBouquets := make([]string, 0)
+	for _, bouquetName := range requestedBouquets {
+		if ref, ok := bouquets[bouquetName]; ok {
+			validBouquets = append(validBouquets, resolvedBouquet{Name: bouquetName, Ref: ref})
+			continue
+		}
+
+		if name, ok := bouquetRefs[bouquetName]; ok {
+			validBouquets = append(validBouquets, resolvedBouquet{Name: name, Ref: bouquetName})
+			continue
+		}
+
+		missingBouquets = append(missingBouquets, bouquetName)
+	}
+
+	if len(missingBouquets) > 0 {
+		availableNames := make([]string, 0, len(bouquets))
+		for name := range bouquets {
+			availableNames = append(availableNames, name)
+		}
+		return nil, usingAllBouquets, WrapBouquetNotFoundError(fmt.Errorf("bouquets not found: %v; available bouquets: %v", missingBouquets, availableNames))
+	}
+
+	return validBouquets, usingAllBouquets, nil
+}
+
+func requestedRefreshBouquets(configured string) []string {
+	requested := make([]string, 0)
+	for _, name := range strings.Split(configured, ",") {
+		trimmed := strings.TrimSpace(name)
+		if trimmed != "" {
+			requested = append(requested, trimmed)
+		}
+	}
+	return requested
+}
+
+func writeRefreshPlaylist(ctx context.Context, cfg config.AppConfig, rt config.RuntimeSnapshot, items []playlist.Item, opts refreshOptions) error {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+
+	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, rt.PlaylistFilename)
+	if err != nil {
+		err = WrapPlaylistPathError(fmt.Errorf("invalid playlist path: %w", err))
+		logJobError("refresh", logger.Error().Err(err).Str("playlist", rt.PlaylistFilename), err).Msg("invalid playlist path")
+		metrics.IncRefreshFailure("playlist_path_invalid")
+		return err
+	}
+
+	// The runtime pool can fall back to the Enigma2 base URL even when no explicit
+	// PiconBase is configured, so gate this on the runtime pool, not on cfg.PiconBase.
+	if opts.piconPool != nil {
+		go PrewarmPicons(context.WithoutCancel(ctx), opts.piconPool, items)
+	} else if cfg.PiconBase != "" {
+		logger.Debug().Msg("skipping picon pre-warm because no runtime picon pool is configured")
+	}
+
+	// Pass Public URL to M3U writer for absolute paths in M3U (Plex compatibility).
+	// WebUI uses relative paths internally.
+	if err := writeM3U(ctx, playlistPath, items, rt.PublicURL, rt.XTvgURL); err != nil {
+		metrics.IncRefreshFailure("write_m3u")
+		metrics.RecordPlaylistFileValidity("m3u", false)
+		err = fmt.Errorf("failed to write M3U playlist: %w", err)
+		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "write_m3u").Str("path", playlistPath), err).Msg("failed to write M3U playlist")
+		return err
+	}
+
+	if _, err := os.Stat(playlistPath); err == nil {
+		metrics.RecordPlaylistFileValidity("m3u", true)
+	} else {
+		metrics.RecordPlaylistFileValidity("m3u", false)
+	}
+	logger.Info().
+		Str("event", "playlist.write").
+		Str("path", playlistPath).
+		Int("channels", len(items)).
+		Msg("playlist written")
+
+	return nil
+}
+
+func writeRefreshXMLTV(ctx context.Context, cfg config.AppConfig, rt config.RuntimeSnapshot, client epgFetchClient, items []playlist.Item) (int, error) {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+
+	if cfg.XMLTVPath == "" {
+		metrics.RecordXMLTV(false, 0, nil)
+		metrics.RecordPlaylistFileValidity("xmltv", false) // XMLTV disabled
+		return 0, nil
+	}
+
+	xmlCh := buildXMLTVChannels(ctx, items, rt.PublicURL)
+	xmltvFullPath := filepath.Join(cfg.DataDir, cfg.XMLTVPath)
+	allProgrammes := collectRefreshEPGProgrammes(ctx, cfg, client, items)
+
+	var programmesForXMLTV []epg.Programme
+	if cfg.EPGEnabled && len(allProgrammes) > 0 {
+		programmesForXMLTV = allProgrammes
+	}
+	tv := epg.GenerateXMLTV(xmlCh, programmesForXMLTV)
+	xmlErr := writeXMLTV(ctx, xmltvFullPath, tv)
+
+	metrics.RecordXMLTV(true, len(xmlCh), xmlErr)
+	if xmlErr != nil {
+		metrics.IncRefreshFailure("xmltv")
+		metrics.RecordPlaylistFileValidity("xmltv", false)
+		xmlErr = fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, xmlErr)
+		logJobError("refresh", logger.Error().Err(xmlErr).Str("event", "refresh.failed").Str("stage", "xmltv").Str("path", xmltvFullPath), xmlErr).Msg("failed to write XMLTV file")
+		return 0, xmlErr
+	}
+
+	if _, err := os.Stat(xmltvFullPath); err == nil {
+		metrics.RecordPlaylistFileValidity("xmltv", true)
+	} else {
+		metrics.RecordPlaylistFileValidity("xmltv", false)
+	}
+
+	logger.Info().
+		Str("event", "xmltv.success").
+		Str("path", xmltvFullPath).
+		Int("channels", len(xmlCh)).
+		Int("programmes", len(allProgrammes)).
+		Msg("XMLTV generated")
+
+	return len(allProgrammes), nil
+}
+
+func buildXMLTVChannels(ctx context.Context, items []playlist.Item, publicURL string) []epg.Channel {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+
+	xmlCh := make([]epg.Channel, 0, len(items))
+	for _, it := range items {
+		if len(xmlCh) < 5 {
+			logger.Info().Str("channel", it.Name).Str("sref", it.ServiceRef).Msg("Debug: XMLTV Channel")
+		}
+		ch := epg.Channel{ID: it.ServiceRef, DisplayName: []string{it.Name}}
+		if it.TvgLogo != "" {
+			logo := it.TvgLogo
+			if publicURL != "" && strings.HasPrefix(logo, "/") {
+				logo = strings.TrimRight(publicURL, "/") + logo
+			}
+			ch.Icon = &epg.Icon{Src: logo}
+		}
+		xmlCh = append(xmlCh, ch)
+	}
+	return xmlCh
+}
+
+func collectRefreshEPGProgrammes(ctx context.Context, cfg config.AppConfig, client epgFetchClient, items []playlist.Item) []epg.Programme {
+	if !cfg.EPGEnabled {
+		return nil
+	}
+
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+	logger.Info().
+		Str("event", "epg.start").
+		Int("channels", len(items)).
+		Int("days", cfg.EPGDays).
+		Msg("starting EPG collection")
+
+	epgStartTime := time.Now()
+	allProgrammes := collectEPGProgrammes(ctx, client, items, cfg)
+	epgDuration := time.Since(epgStartTime).Seconds()
+
+	if len(allProgrammes) == 0 {
+		logger.Warn().
+			Str("event", "epg.no_data").
+			Msg("EPG collection returned no data")
+	}
+
+	channelsWithData := countProgrammeChannels(allProgrammes)
+	metrics.RecordEPGCollection(len(allProgrammes), channelsWithData, epgDuration)
+
+	logger.Info().
+		Str("event", "epg.collected").
+		Int("programmes", len(allProgrammes)).
+		Int("channels_with_data", channelsWithData).
+		Float64("duration_seconds", epgDuration).
+		Msg("EPG collection completed")
+
+	return allProgrammes
+}
+
+func countProgrammeChannels(programmes []epg.Programme) int {
+	if len(programmes) == 0 {
+		return 0
+	}
+	channels := make(map[string]bool)
+	for _, prog := range programmes {
+		channels[prog.Channel] = true
+	}
+	return len(channels)
 }
 
 func safeURLHost(raw string) string {

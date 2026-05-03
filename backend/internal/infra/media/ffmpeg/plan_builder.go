@@ -19,8 +19,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	infraffmpeg "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
+
+const experimentalInterlacedVAAPICodecsEnv = "XG2G_EXPERIMENTAL_ALLOW_UNVERIFIED_INTERLACED_VAAPI_CODECS"
 
 type inputPlan struct {
 	args     []string
@@ -33,6 +36,7 @@ type codecPlan struct {
 	hwBackend     profiles.GPUBackend
 	fullVAAPI     bool
 	preInputArgs  []string
+	pathID        string
 }
 
 type outputPlan struct {
@@ -43,6 +47,7 @@ type outputPlan struct {
 type finalizedPlan struct {
 	args             []string
 	effectiveProfile ports.ProfileSpec
+	pathID           string
 }
 
 type liveSegmentLayout struct {
@@ -52,12 +57,15 @@ type liveSegmentLayout struct {
 }
 
 func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamSpec, inputURL string) (finalizedPlan, error) {
-	codecPhase, err := a.planCodec(spec)
+	inputPhase, err := a.planInput(spec, inputURL)
 	if err != nil {
 		return finalizedPlan{}, err
 	}
+	if spec.Mode == ports.ModeLive {
+		spec = a.FinalizePlan(ctx, spec, inputPhase.inputURL)
+	}
 
-	inputPhase, err := a.planInput(spec, inputURL)
+	codecPhase, err := a.planCodec(spec)
 	if err != nil {
 		return finalizedPlan{}, err
 	}
@@ -68,6 +76,7 @@ func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamS
 	result := finalizedPlan{
 		args:             args,
 		effectiveProfile: spec.Profile,
+		pathID:           codecPhase.pathID,
 	}
 
 	if spec.Mode == ports.ModeLive {
@@ -119,9 +128,6 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 
 	requestedBackend := backendForHWAccel(spec.Profile.HWAccel)
 	useHWPath := requestedBackend != profiles.GPUBackendNone
-	if isPreferHWProfile(spec.Profile.Name) && len(a.supportedHWCodecs()) > 0 {
-		useHWPath = true
-	}
 
 	hardHWRequest := requestedBackend != profiles.GPUBackendNone && !isPreferHWProfile(spec.Profile.Name)
 	decisionIn := codecdecision.Input{
@@ -176,6 +182,7 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 	}
 	hwBackend := profiles.GPUBackendNone
 	fullVAAPI := false
+	pathID := ""
 
 	preInputArgs := make([]string, 0, 6)
 	if useHW {
@@ -189,6 +196,20 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 
 		switch hwBackend {
 		case profiles.GPUBackendVAAPI:
+			if spec.Profile.Deinterlace && !vaapiInterlacedCodecIsSafe(resolvedCodec) {
+				if experimentalAllowUnverifiedInterlacedVAAPICodec(resolvedCodec) {
+					a.Logger.Warn().
+						Str("requested_codec", resolvedCodec).
+						Str("override_env", experimentalInterlacedVAAPICodecsEnv).
+						Msg("allowing unverified interlaced vaapi codec via experimental override")
+				} else if !a.anyVerifiedVAAPIInterlacedPathForCodec(resolvedCodec, profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)) {
+					a.Logger.Warn().
+						Str("requested_codec", resolvedCodec).
+						Str("fallback_codec", "h264").
+						Msg("interlaced vaapi codec downgraded until path correctness is verified")
+					resolvedCodec = "h264"
+				}
+			}
 			if a.VaapiDevice == "" {
 				return codecPlan{}, fmt.Errorf("vaapi requested by profile but no vaapi device configured on adapter")
 			}
@@ -201,6 +222,32 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			}
 			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
 			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
+			if normalizeRequestedCodec(resolvedCodec) == "av1" {
+				// Keep AV1 on the encode-only path even when a caller requested
+				// full VAAPI. This preserves a software-domain normalization step
+				// before hwupload, which is required to avoid malformed 1080p AV1
+				// output on current AMD VAAPI stacks.
+				fullVAAPI = false
+			}
+			if spec.Profile.Deinterlace {
+				fullPathID := vaapiPathCorrectnessIDFor(resolvedCodec, true)
+				if fullVAAPI && fullPathID != "" {
+					capability, ok := hardware.HardwarePathCapabilityFor(fullPathID)
+					if !ok || capability.Status != hardware.PathStatusVerified {
+						fullVAAPI = false
+						a.Logger.Info().
+							Str("path_id", fullPathID).
+							Str("status", capability.Status).
+							Str("reason", capability.Reason).
+							Msg("vaapi full pipeline disabled by path correctness matrix")
+					}
+				}
+				if fullVAAPI {
+					pathID = fullPathID
+				} else {
+					pathID = vaapiPathCorrectnessIDFor(resolvedCodec, false)
+				}
+			}
 			if fullVAAPI {
 				preInputArgs = append(preInputArgs,
 					"-hwaccel", "vaapi",
@@ -226,7 +273,87 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		hwBackend:     hwBackend,
 		fullVAAPI:     fullVAAPI,
 		preInputArgs:  preInputArgs,
+		pathID:        pathID,
 	}, nil
+}
+
+func vaapiPathCorrectnessIDFor(codec string, full bool) string {
+	switch strings.TrimSpace(codec) {
+	case "hevc":
+		if full {
+			return hardware.PathVAAPIFullInterlacedHEVC
+		}
+		return hardware.PathVAAPIEncodeOnlyInterlacedHEVC
+	case "av1":
+		if full {
+			return hardware.PathVAAPIFullInterlacedAV1
+		}
+		return hardware.PathVAAPIEncodeOnlyInterlacedAV1
+	default:
+		return ""
+	}
+}
+
+func vaapiInterlacedCodecIsSafe(codec string) bool {
+	switch strings.TrimSpace(codec) {
+	case "hevc", "av1":
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *LocalAdapter) anyVerifiedVAAPIInterlacedPathForCodec(codec string, fullRequested bool) bool {
+	codec = normalizeRequestedCodec(codec)
+	if codec == "av1" {
+		// AV1 VAAPI is intentionally forced through encode-only later in the
+		// planner, so a verified full path alone must not unlock it.
+		fullRequested = false
+	}
+
+	candidates := []bool{false}
+	if fullRequested {
+		candidates = []bool{true, false}
+	}
+	for _, full := range candidates {
+		pathID := vaapiPathCorrectnessIDFor(codec, full)
+		if pathID == "" {
+			continue
+		}
+		capability, ok := hardware.HardwarePathCapabilityFor(pathID)
+		if ok && capability.Status == hardware.PathStatusVerified {
+			return true
+		}
+	}
+	return false
+}
+
+func experimentalAllowUnverifiedInterlacedVAAPICodec(codec string) bool {
+	codec = normalizeRequestedCodec(codec)
+	if codec != "hevc" && codec != "av1" {
+		return false
+	}
+	raw := strings.TrimSpace(config.ParseString(experimentalInterlacedVAAPICodecsEnv, ""))
+	if raw == "" {
+		return false
+	}
+	for _, item := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	}) {
+		if normalizeRequestedCodec(item) == codec {
+			return true
+		}
+	}
+	return false
+}
+
+func strictLiveIngestCodec(codec string) bool {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "hevc", "av1":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputPlan, error) {
@@ -237,10 +364,13 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 	analyzeDuration := strings.TrimSpace(a.AnalyzeDuration)
 	probeSize := strings.TrimSpace(a.ProbeSize)
 	baseInputArgs := make([]string, 0, 20)
-	if v := strings.TrimSpace(a.IngestErrDetect); v != "" {
+	strictIngest := spec.Source.Type != ports.SourceFile &&
+		spec.Profile.TranscodeVideo &&
+		strictLiveIngestCodec(spec.Profile.VideoCodec)
+	if v := strings.TrimSpace(a.IngestErrDetect); v != "" && !strictIngest {
 		baseInputArgs = append(baseInputArgs, "-err_detect", v)
 	}
-	if v := strings.TrimSpace(a.IngestMaxErrorRate); v != "" {
+	if v := strings.TrimSpace(a.IngestMaxErrorRate); v != "" && !strictIngest {
 		baseInputArgs = append(baseInputArgs, "-max_error_rate", v)
 	}
 	baseInputArgs = append(baseInputArgs, "-ignore_unknown")
@@ -284,7 +414,7 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 			"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
 			"-headers", headers,
 		)
-		if v := strings.TrimSpace(a.IngestFlags2); v != "" {
+		if v := strings.TrimSpace(a.IngestFlags2); v != "" && !strictIngest {
 			baseInputArgs = append(baseInputArgs, "-flags2", v)
 		}
 	}
@@ -338,18 +468,27 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	if err != nil {
 		return outputPlan{}, err
 	}
-	spec = a.FinalizePlan(ctx, spec, input.inputURL)
+	spec.Profile.VideoCodec = codec.resolvedCodec
 	fps := a.resolveLiveFPS(ctx, spec, input.inputURL)
 	fps = a.adjustLiveFPSForRuntimeServiceOverride(spec, input.inputURL, fps)
-	gop := fps * layout.segmentDurationSec
+	targetOutputFPS := targetLiveOutputFPS(spec)
+	gopFPS := fps
+	if targetOutputFPS > 0 {
+		gopFPS = targetOutputFPS
+	}
+	gop := gopFPS * layout.segmentDurationSec
 
 	out := outputPlan{effectiveProfile: spec.Profile}
 	out.args = append(out.args,
 		"-map", "0:v:0?",
 		"-map", "0:a:0?",
 	)
+	if targetOutputFPS > 0 {
+		out.args = append(out.args, "-r", strconv.Itoa(targetOutputFPS))
+	}
 
 	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec)
+	out.args = appendLiveVideoContainerTags(out.args, spec, codec.resolvedCodec)
 	out.args = appendLiveAudioArgs(out.args, spec)
 	out.args = a.appendLiveHLSArgs(out.args, spec, layout)
 	out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID))
@@ -362,7 +501,7 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		segmentDurationSec: a.SegmentSeconds,
 		listSize:           10,
 	}
-	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && layout.segmentDurationSec > safariDirtyHLSTimeSec {
+	if shouldUseShortFMP4StartupSegments(spec) && layout.segmentDurationSec > safariDirtyHLSTimeSec {
 		layout.segmentDurationSec = safariDirtyHLSTimeSec
 		layout.initSegmentDurationSec = safariDirtyHLSInitTimeSec
 		if layout.initSegmentDurationSec > layout.segmentDurationSec {
@@ -379,6 +518,27 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		}
 	}
 	return layout, nil
+}
+
+func shouldUseShortFMP4StartupSegments(spec ports.StreamSpec) bool {
+	if spec.Mode != ports.ModeLive || !spec.Profile.TranscodeVideo {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+		return false
+	}
+
+	switch profiles.NormalizeRequestedProfileID(spec.Profile.Name) {
+	case profiles.ProfileSafariDirty,
+		profiles.ProfileSafariHEVCHW,
+		profiles.ProfileSafariHEVCHWLL,
+		profiles.ProfileAV1HW:
+		// Native iOS fMP4 transcodes benefit from a denser startup GOP cadence.
+		// The default 6-second layout makes first attach visibly sluggish.
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *LocalAdapter) defaultLiveFPS(spec ports.StreamSpec, inputURL string) int {
@@ -560,136 +720,8 @@ func (a *LocalAdapter) isValidFPS(fps int) bool {
 	return fps >= a.FPSMin && fps <= a.FPSMax
 }
 
-func (a *LocalAdapter) FinalizePlan(ctx context.Context, spec ports.StreamSpec, inputURL string) ports.StreamSpec {
-	spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
-	if spec.Profile.EffectiveModeSource == "" || spec.Profile.EffectiveModeSource == ports.RuntimeModeSourceUnknown {
-		spec.Profile.EffectiveModeSource = ports.RuntimeModeSourceResolve
-	}
-
-	var (
-		overridden bool
-		source     ports.RuntimeModeSource
-	)
-
-	spec, overridden, source = a.applySafariRuntimeRemuxOverride(ctx, spec, inputURL)
-	if overridden {
-		spec.Profile.EffectiveRuntimeMode = ports.RuntimeModeCopy
-		spec.Profile.EffectiveModeSource = source
-	}
-
-	spec, overridden, source = a.applySafariRuntimeHQOverride(ctx, spec, inputURL)
-	if overridden {
-		spec.Profile.EffectiveRuntimeMode = safariHQRuntimeMode(spec.Profile)
-		spec.Profile.EffectiveModeSource = source
-	}
-
-	if !spec.Profile.TranscodeVideo && shouldHardenSafariCopyBitstream(spec, inputURL) {
-		spec.Profile.EffectiveRuntimeMode = ports.RuntimeModeCopyHardened
-		spec.Profile.EffectiveModeSource = ports.RuntimeModeSourceEnvOverride
-	}
-
-	if spec.Profile.EffectiveRuntimeMode == "" || spec.Profile.EffectiveRuntimeMode == ports.RuntimeModeUnknown {
-		spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
-	}
-	return spec
-}
-
-func (a *LocalAdapter) applySafariRuntimeRemuxOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {
-	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Name), profiles.ProfileSafari) {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if !spec.Profile.TranscodeVideo {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if strings.TrimSpace(inputURL) == "" {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if shouldForceSafariCopyForServiceRef(spec, inputURL) {
-		a.Logger.Warn().
-			Str("sessionId", spec.SessionID).
-			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
-			Msg("forcing safari remux path via service-ref allowlist")
-		spec.Profile.TranscodeVideo = false
-		spec.Profile.Deinterlace = false
-		spec.Profile.Container = "mpegts"
-		if spec.Profile.AudioBitrateK <= 0 {
-			spec.Profile.AudioBitrateK = 192
-		}
-		return spec, true, ports.RuntimeModeSourceEnvOverride
-	}
-
-	probeTimeout := a.SafariRuntimeProbeTimeout
-	if probeTimeout <= 0 {
-		probeTimeout = 6 * time.Second
-	}
-	info, err := a.runSafariRuntimeProbeWithRetry(ctx, spec.SessionID, inputURL, probeTimeout)
-	if err != nil {
-		a.Logger.Info().
-			Err(err).
-			Str("sessionId", spec.SessionID).
-			Str("input_url", sanitizeURLForLog(inputURL)).
-			Dur("probe_timeout", probeTimeout).
-			Msg("safari runtime probe failed; keeping transcode path")
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if !strings.EqualFold(strings.TrimSpace(info.Video.CodecName), "h264") || info.Video.Interlaced {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-
-	a.Logger.Info().
-		Str("sessionId", spec.SessionID).
-		Str("video_codec", info.Video.CodecName).
-		Bool("interlaced", info.Video.Interlaced).
-		Str("container", info.Container).
-		Msg("safari runtime probe selected remux path")
-	spec.Profile.TranscodeVideo = false
-	spec.Profile.Deinterlace = false
-	// Native Safari is tolerant on MPEG-TS HLS, but remuxed broadcast H.264
-	// inside fMP4 has shown audio-only / black-video failures in production.
-	// Keep the runtime-remux optimization, but package it as classic TS HLS.
-	spec.Profile.Container = "mpegts"
-	if spec.Profile.AudioBitrateK <= 0 {
-		spec.Profile.AudioBitrateK = 192
-	}
-	return spec, true, ports.RuntimeModeSourceRuntimeHardening
-}
-
-func (a *LocalAdapter) applySafariRuntimeHQOverride(ctx context.Context, spec ports.StreamSpec, inputURL string) (ports.StreamSpec, bool, ports.RuntimeModeSource) {
-	if !shouldForceSafariHQForServiceRef(spec, inputURL) {
-		return spec, false, ports.RuntimeModeSourceUnknown
-	}
-	if shouldForceSafariHQ25ForServiceRef(spec, inputURL) {
-		spec.Profile.ForceSafariHQ25 = true
-	}
-	progressiveHQ := shouldUseProgressiveSafariHQ(spec.Profile)
-
-	a.Logger.Warn().
-		Str("sessionId", spec.SessionID).
-		Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
-		Msg("forcing safari HQ transcode path via service-ref allowlist")
-
-	spec.Profile.Name = "safari_hq"
-	spec.Profile.TranscodeVideo = true
-	spec.Profile.Deinterlace = !progressiveHQ
-	spec.Profile.Container = "mpegts"
-	spec.Profile.HWAccel = ""
-	spec.Profile.VideoCodec = "libx264"
-	spec.Profile.VideoCRF = 16
-	spec.Profile.VideoMaxRateK = 12000
-	spec.Profile.VideoBufSizeK = 24000
-	spec.Profile.AudioBitrateK = 256
-	spec.Profile.Preset = "fast"
-	if progressiveHQ {
-		spec.Profile.Preset = "veryfast"
-	}
-	return spec, true, ports.RuntimeModeSourceEnvOverride
-}
-
 func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamSpec, inputURL string, fps int) int {
-	if !shouldForceSafariHQForServiceRef(spec, inputURL) {
-		return fps
-	}
-	if !shouldForce25FPSForSafariHQ(spec.Profile) {
+	if !shouldForce25FPSForLiveProfile(spec, inputURL) {
 		return fps
 	}
 
@@ -698,13 +730,55 @@ func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamS
 		return fps
 	}
 
-	a.Logger.Info().
+	logEvt := a.Logger.Info().
 		Str("sessionId", spec.SessionID).
-		Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
 		Int("cached_or_detected_fps", fps).
 		Int("override_fps", targetFPS).
-		Msg("forcing 25fps for safari HQ service override")
+		Str("runtime_mode", string(effectiveLiveRuntimeMode(spec.Profile)))
+	if serviceRef := safariRuntimeServiceRef(spec, inputURL); serviceRef != "" {
+		logEvt = logEvt.Str("service_ref", serviceRef)
+	}
+	logEvt.Msg("forcing 25fps for live runtime profile")
 	return targetFPS
+}
+
+func shouldForce25FPSForLiveProfile(spec ports.StreamSpec, inputURL string) bool {
+	if shouldForceSafariHQ25ForServiceRef(spec, inputURL) {
+		return true
+	}
+	if shouldForceSafariHQ50ForServiceRef(spec, inputURL) {
+		return false
+	}
+	if shouldForceSafariHQForServiceRef(spec, inputURL) {
+		return shouldForce25FPSForSafariHQ(spec.Profile)
+	}
+	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
+		return false
+	}
+	return normalizeRequestedCodec(spec.Profile.VideoCodec) == "hevc"
+}
+
+func effectiveLiveRuntimeMode(profile ports.ProfileSpec) ports.RuntimeMode {
+	if profile.EffectiveRuntimeMode != "" && profile.EffectiveRuntimeMode != ports.RuntimeModeUnknown {
+		return profile.EffectiveRuntimeMode
+	}
+	if profile.PolicyModeHint != "" && profile.PolicyModeHint != ports.RuntimeModeUnknown {
+		return profile.PolicyModeHint
+	}
+	return profiles.RuntimeModeHintFromProfile(profile)
+}
+
+func targetLiveOutputFPS(spec ports.StreamSpec) int {
+	if spec.Mode != ports.ModeLive {
+		return 0
+	}
+	if !spec.Profile.TranscodeVideo {
+		return 0
+	}
+	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
+		return 0
+	}
+	return 25
 }
 
 func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.StreamSpec, inputURL string, codec codecPlan, gop, segmentDurationSec int) []string {
@@ -738,6 +812,16 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec) []string {
 		"-sn",
 		"-f", "hls",
 	)
+}
+
+func appendLiveVideoContainerTags(args []string, spec ports.StreamSpec, outputCodec string) []string {
+	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+		return args
+	}
+	if !strings.EqualFold(strings.TrimSpace(outputCodec), "hevc") {
+		return args
+	}
+	return append(args, "-tag:v", "hvc1")
 }
 
 func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, layout liveSegmentLayout) []string {
@@ -882,6 +966,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	}
 	args = append(args, "-c:v", encoder)
 	args = appendVaapiRateControlArgs(args, prof)
+	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
 		"-g", strconv.Itoa(gop),
@@ -906,10 +991,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		Bool("deinterlace", prof.Deinterlace).
 		Msg("pipeline video: vaapi encode only")
 
-	filter := "format=nv12,hwupload"
-	if prof.Deinterlace {
-		filter = a.deinterlaceFilterForProfile(spec) + "," + filter
-	}
+	filter := a.vaapiEncodeOnlyFilter(spec, outputCodec)
 	args = append(args, "-vf", filter)
 
 	encoder := "h264_vaapi"
@@ -921,6 +1003,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	}
 	args = append(args, "-c:v", encoder)
 	args = appendVaapiRateControlArgs(args, prof)
+	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
 		"-g", strconv.Itoa(gop),
@@ -929,6 +1012,26 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		"-profile:v", "main",
 	)
 	return args
+}
+
+func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec string) string {
+	parts := make([]string, 0, 4)
+	if spec.Profile.Deinterlace {
+		parts = append(parts, a.deinterlaceFilterForProfile(spec))
+	}
+	if normalizeRequestedCodec(outputCodec) == "av1" {
+		parts = append(parts, av1VAAPIGeometryPadFilter())
+	}
+	parts = append(parts, "format=nv12", "hwupload")
+	return strings.Join(parts, ",")
+}
+
+func av1VAAPIGeometryPadFilter() string {
+	// Current AMD VAAPI AV1 encoders can emit 1080p bitstreams that decode as
+	// 1082-line frames. Padding the software-domain input to a 16-line height
+	// keeps the decoded geometry stable for native HLS clients. Adjust SAR
+	// before padding so display aspect ratio remains unchanged after 1088p.
+	return "setsar=sar=sar*ceil(h/16)*16/h:max=1000,pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
 
 func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string {
@@ -1023,6 +1126,35 @@ func appendNVENCRateControlArgs(args []string, prof ports.ProfileSpec) []string 
 	}
 
 	return append(args, "-cq", "23")
+}
+
+func appendConservativeHEVCVAAPIArgs(args []string, spec ports.StreamSpec, outputCodec string) []string {
+	if !useConservativeHEVCVAAPILivePreset(spec, outputCodec) {
+		return args
+	}
+	// iOS-native HEVC fMP4 attaches are sensitive to open-GOP recovery behavior.
+	// Keep the VAAPI bitstream conservative so every forced segment boundary lands
+	// on a full IDR, avoid B-frame reordering, and include AUD markers for
+	// stricter Apple decoders.
+	return append(args,
+		"-bf", "0",
+		"-aud", "1",
+		"-idr_interval", "1",
+		"-tier", "main",
+	)
+}
+
+func useConservativeHEVCVAAPILivePreset(spec ports.StreamSpec, outputCodec string) bool {
+	if spec.Mode != ports.ModeLive {
+		return false
+	}
+	if normalizeRequestedCodec(outputCodec) != "hevc" {
+		return false
+	}
+	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
 }
 
 func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, inputURL string) []string {
@@ -1126,7 +1258,9 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 
 func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string {
 	deinterlaceFilter := "yadif"
-	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
+	if spec.Mode == ports.ModeLive && spec.Format == ports.FormatHLS && effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeHQ25 {
+		deinterlaceFilter = "bwdif=mode=send_frame:parity=auto:deint=all"
+	} else if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
 		deinterlaceFilter = strings.TrimSpace(a.SafariDirtyFilter)
 	} else if spec.Mode == ports.ModeLive && spec.Format == ports.FormatHLS {
 		// Generic live HLS transcodes should preserve sports motion on interlaced
@@ -1294,12 +1428,26 @@ func shouldForceSafariHQForServiceRef(spec ports.StreamSpec, inputURL string) bo
 	return serviceRefEnvContains("XG2G_SAFARI_HQ_SERVICE_REFS", targetRef)
 }
 
+func shouldForceAnySafariHQForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+	return shouldForceSafariHQForServiceRef(spec, inputURL) ||
+		shouldForceSafariHQ25ForServiceRef(spec, inputURL) ||
+		shouldForceSafariHQ50ForServiceRef(spec, inputURL)
+}
+
 func shouldForceSafariHQ25ForServiceRef(spec ports.StreamSpec, inputURL string) bool {
 	targetRef := safariRuntimeServiceRef(spec, inputURL)
 	if targetRef == "" {
 		return false
 	}
 	return serviceRefEnvContains("XG2G_SAFARI_HQ25_SERVICE_REFS", targetRef)
+}
+
+func shouldForceSafariHQ50ForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+	targetRef := safariRuntimeServiceRef(spec, inputURL)
+	if targetRef == "" {
+		return false
+	}
+	return serviceRefEnvContains("XG2G_SAFARI_HQ50_SERVICE_REFS", targetRef)
 }
 
 func safariHQRuntimeMode(profile ports.ProfileSpec) ports.RuntimeMode {
@@ -1320,6 +1468,9 @@ func shouldUseProgressiveSafariHQ(profile ports.ProfileSpec) bool {
 func shouldForce25FPSForSafariHQ(profile ports.ProfileSpec) bool {
 	if profile.ForceSafariHQ25 {
 		return true
+	}
+	if profile.EffectiveRuntimeMode == ports.RuntimeModeHQ50 || profile.PolicyModeHint == ports.RuntimeModeHQ50 {
+		return false
 	}
 	return !shouldUseProgressiveSafariHQ(profile)
 }

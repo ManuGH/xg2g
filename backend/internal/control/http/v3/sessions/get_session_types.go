@@ -22,9 +22,17 @@ type GetSessionResult struct {
 	PlaybackInfo SessionPlaybackInfo
 }
 
+const (
+	SessionWindowKindUnknown = "unknown"
+	SessionWindowKindLive    = "live"
+	SessionWindowKindLiveDVR = "live-dvr"
+	SessionWindowKindVOD     = "vod"
+)
+
 // SessionPlaybackInfo holds transport-neutral playback window data derived from a session record.
 type SessionPlaybackInfo struct {
 	Mode                 string
+	WindowKind           string
 	DurationSeconds      *float64
 	SeekableStartSeconds *float64
 	SeekableEndSeconds   *float64

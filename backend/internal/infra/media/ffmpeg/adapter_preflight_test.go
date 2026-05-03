@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/rs/zerolog"
 )
 
@@ -52,6 +54,208 @@ func TestDeriveVAAPIEncoderCapabilities_FallsBackToFastestVerifiedBaseline(t *te
 	}
 	if caps["av1_vaapi"].AutoEligible {
 		t.Fatalf("expected slower av1_vaapi to stay out of auto ladder: %#v", caps["av1_vaapi"])
+	}
+}
+
+func TestDeriveProfileCapabilities_PreservesMeasuredProfiles(t *testing.T) {
+	t.Parallel()
+
+	caps := deriveProfileCapabilities(map[string]time.Duration{
+		playbackprofile.BenchmarkProfileAudioAACStereo:   35 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2641080P:   90 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2641080I:   180 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2641080I50: 310 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2642160P:   420 * time.Millisecond,
+		playbackprofile.BenchmarkProfileVideoH2642160P50: 820 * time.Millisecond,
+	})
+
+	if !caps[playbackprofile.BenchmarkProfileAudioAACStereo].Verified || caps[playbackprofile.BenchmarkProfileAudioAACStereo].ProbeElapsed != 35*time.Millisecond {
+		t.Fatalf("expected audio profile capability, got %#v", caps[playbackprofile.BenchmarkProfileAudioAACStereo])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2641080P].Verified || caps[playbackprofile.BenchmarkProfileVideoH2641080P].ProbeElapsed != 90*time.Millisecond {
+		t.Fatalf("expected 1080p profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2641080P])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2641080I].Verified || caps[playbackprofile.BenchmarkProfileVideoH2641080I].ProbeElapsed != 180*time.Millisecond {
+		t.Fatalf("expected 1080i profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2641080I])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2641080I50].Verified || caps[playbackprofile.BenchmarkProfileVideoH2641080I50].ProbeElapsed != 310*time.Millisecond {
+		t.Fatalf("expected 1080i50 profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2641080I50])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2642160P].Verified || caps[playbackprofile.BenchmarkProfileVideoH2642160P].ProbeElapsed != 420*time.Millisecond {
+		t.Fatalf("expected 2160p profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2642160P])
+	}
+	if !caps[playbackprofile.BenchmarkProfileVideoH2642160P50].Verified || caps[playbackprofile.BenchmarkProfileVideoH2642160P50].ProbeElapsed != 820*time.Millisecond {
+		t.Fatalf("expected 2160p50 profile capability, got %#v", caps[playbackprofile.BenchmarkProfileVideoH2642160P50])
+	}
+}
+
+func TestPreflightTranscodeProfiles_PublishesMeasuredProfileBenchmarks(t *testing.T) {
+	adapter := NewLocalAdapter("ffmpeg", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128")
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true}
+	adapter.nvencEncoders = map[string]bool{"h264_nvenc": true}
+	adapter.profileProbeFn = func(_ context.Context, req profileProbeRequest) (time.Duration, error) {
+		switch req.Backend + ":" + req.ProfileID {
+		case "cpu:" + playbackprofile.BenchmarkProfileAudioAACStereo:
+			return 35 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2641080P:
+			return 220 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2641080I:
+			return 360 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2641080I50:
+			return 520 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2641080P:
+			return 80 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2641080I:
+			return 170 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2641080I50:
+			return 260 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2642160P:
+			return 410 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2642160P50:
+			return 760 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2641080P:
+			return 95 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2641080I:
+			return 210 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2641080I50:
+			return 240 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2642160P:
+			return 330 * time.Millisecond, nil
+		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2642160P50:
+			return 610 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2642160P:
+			return 780 * time.Millisecond, nil
+		case "cpu:" + playbackprofile.BenchmarkProfileVideoH2642160P50:
+			return 1400 * time.Millisecond, nil
+		default:
+			return 0, errors.New("unexpected profile probe")
+		}
+	}
+
+	hardware.SetCPUProfileBenchmarks(nil)
+	hardware.SetVAAPIProfileBenchmarks(nil)
+	hardware.SetNVENCProfileBenchmarks(nil)
+	t.Cleanup(func() {
+		hardware.SetCPUProfileBenchmarks(nil)
+		hardware.SetVAAPIProfileBenchmarks(nil)
+		hardware.SetNVENCProfileBenchmarks(nil)
+	})
+
+	adapter.PreflightTranscodeProfiles()
+
+	cpuCap, cpuBackend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2641080P)
+	if !ok {
+		t.Fatal("expected published 1080p profile benchmark")
+	}
+	if cpuBackend != "vaapi" || cpuCap.ProbeElapsed != 80*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 1080p, got backend=%q cap=%#v", cpuBackend, cpuCap)
+	}
+
+	interlacedCap, interlacedBackend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2641080I)
+	if !ok {
+		t.Fatal("expected published 1080i profile benchmark")
+	}
+	if interlacedBackend != "vaapi" || interlacedCap.ProbeElapsed != 170*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 1080i, got backend=%q cap=%#v", interlacedBackend, interlacedCap)
+	}
+
+	interlaced50Cap, interlaced50Backend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2641080I50)
+	if !ok {
+		t.Fatal("expected published 1080i50 profile benchmark")
+	}
+	if interlaced50Backend != "nvenc" || interlaced50Cap.ProbeElapsed != 240*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 1080i50, got backend=%q cap=%#v", interlaced50Backend, interlaced50Cap)
+	}
+
+	audioCap, audioBackend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileAudioAACStereo)
+	if !ok {
+		t.Fatal("expected published audio profile benchmark")
+	}
+	if audioBackend != "cpu" || audioCap.ProbeElapsed != 35*time.Millisecond {
+		t.Fatalf("expected cpu audio profile benchmark, got backend=%q cap=%#v", audioBackend, audioCap)
+	}
+
+	uhdCap, uhdBackend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2642160P)
+	if !ok {
+		t.Fatal("expected published 2160p profile benchmark")
+	}
+	if uhdBackend != "nvenc" || uhdCap.ProbeElapsed != 330*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 2160p, got backend=%q cap=%#v", uhdBackend, uhdCap)
+	}
+
+	uhd50Cap, uhd50Backend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoH2642160P50)
+	if !ok {
+		t.Fatal("expected published 2160p50 profile benchmark")
+	}
+	if uhd50Backend != "nvenc" || uhd50Cap.ProbeElapsed != 610*time.Millisecond {
+		t.Fatalf("expected fastest measured backend to win for 2160p50, got backend=%q cap=%#v", uhd50Backend, uhd50Cap)
+	}
+}
+
+func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
+	adapter := NewLocalAdapter("ffmpeg", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128")
+	adapter.vaapiEncoders = map[string]bool{
+		"hevc_vaapi": true,
+		"av1_vaapi":  true,
+	}
+	adapter.pathProbeFn = func(_ context.Context, req pathProbeRequest) (hardware.HardwarePathCapability, error) {
+		switch req.PathID {
+		case hardware.PathVAAPIFullInterlacedHEVC:
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic yavg 118.2",
+			}, nil
+		case hardware.PathVAAPIEncodeOnlyInterlacedHEVC:
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic yavg 121.7",
+			}, nil
+		case hardware.PathVAAPIEncodeOnlyInterlacedAV1:
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic yavg 119.1",
+			}, nil
+		default:
+			return hardware.HardwarePathCapability{}, errors.New("unexpected path probe")
+		}
+	}
+
+	hardware.SetPathCapabilities(nil)
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter.PreflightPathCorrectness()
+
+	hevcCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedHEVC)
+	if !ok {
+		t.Fatal("expected published hevc path correctness")
+	}
+	if !hevcCap.Verified || hevcCap.Status != hardware.PathStatusVerified {
+		t.Fatalf("unexpected hevc path capability: %#v", hevcCap)
+	}
+
+	hevcEncodeOnlyCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIEncodeOnlyInterlacedHEVC)
+	if !ok {
+		t.Fatal("expected published hevc encode-only path correctness")
+	}
+	if !hevcEncodeOnlyCap.Verified || hevcEncodeOnlyCap.Status != hardware.PathStatusVerified {
+		t.Fatalf("unexpected hevc encode-only path capability: %#v", hevcEncodeOnlyCap)
+	}
+
+	if av1Cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedAV1); ok {
+		t.Fatalf("unexpected full av1 path capability for intentionally unused path: %#v", av1Cap)
+	}
+
+	av1EncodeOnlyCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIEncodeOnlyInterlacedAV1)
+	if !ok {
+		t.Fatal("expected published av1 encode-only path correctness")
+	}
+	if !av1EncodeOnlyCap.Verified || av1EncodeOnlyCap.Status != hardware.PathStatusVerified {
+		t.Fatalf("unexpected av1 encode-only path capability: %#v", av1EncodeOnlyCap)
 	}
 }
 
@@ -169,8 +373,8 @@ func TestSelectStreamURL_FallbackOffFails(t *testing.T) {
 	if got := pErr.StructuredResult().Reason; got != ports.PreflightReasonInvalidTS {
 		t.Fatalf("expected invalid_ts structured reason, got %q", got)
 	}
-	if calls != 1 {
-		t.Fatalf("expected 1 preflight call, got %d", calls)
+	if calls != 3 {
+		t.Fatalf("expected 3 preflight calls, got %d", calls)
 	}
 }
 
@@ -203,8 +407,8 @@ func TestSelectStreamURL_NoFallbackWhenNotRelay(t *testing.T) {
 	if got := pErr.StructuredResult().Reason; got != ports.PreflightReasonInvalidTS {
 		t.Fatalf("expected invalid_ts structured reason, got %q", got)
 	}
-	if calls != 1 {
-		t.Fatalf("expected 1 preflight call, got %d", calls)
+	if calls != 3 {
+		t.Fatalf("expected 3 preflight calls, got %d", calls)
 	}
 }
 
@@ -219,7 +423,7 @@ func TestSelectStreamURL_FallbackTo8001(t *testing.T) {
 	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
 		calls++
 		if strings.Contains(rawURL, ":17999") {
-			return ports.NewPreflightResult("sync_miss", 0, 0, 0, 17999), errors.New("no ts")
+			return ports.NewPreflightResult("sync_miss", http.StatusOK, 188*3, 0, 17999), errors.New("no ts")
 		}
 		return ports.NewSuccessfulPreflightResult(188*3, 0, 8001), nil
 	}
@@ -242,13 +446,158 @@ func TestSelectStreamURL_FallbackTo8001(t *testing.T) {
 	}
 }
 
+func TestSelectStreamURL_RetriesTransientRelayShortReadBeforeFallback(t *testing.T) {
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
+
+	origRetryDelay := preflightRetryDelay
+	preflightRetryDelay = time.Millisecond
+	t.Cleanup(func() {
+		preflightRetryDelay = origRetryDelay
+	})
+
+	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
+	resolved := "http://127.0.0.1:17999/" + serviceRef
+
+	calls := 0
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
+		calls++
+		if calls == 1 {
+			return ports.NewPreflightResult("short_read", http.StatusOK, 0, 0, 17999), errors.New("short read")
+		}
+		return ports.NewSuccessfulPreflightResult(188*3, 0, 17999), nil
+	}
+
+	got, err := adapter.selectStreamURLWithPreflight(
+		context.Background(),
+		"sid-retry-relay",
+		serviceRef,
+		resolved,
+		preflight,
+	)
+	if err != nil {
+		t.Fatalf("expected retry success, got error: %v", err)
+	}
+	if got != resolved {
+		t.Fatalf("expected resolved url %q, got %q", resolved, got)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 preflight calls, got %d", calls)
+	}
+}
+
+func TestSelectStreamURL_RetriesTransient8001Fallback(t *testing.T) {
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
+
+	origRetryDelay := preflightRetryDelay
+	preflightRetryDelay = time.Millisecond
+	t.Cleanup(func() {
+		preflightRetryDelay = origRetryDelay
+	})
+
+	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
+	resolved := "http://127.0.0.1:17999/" + serviceRef
+	expectedFallback := "http://127.0.0.1:8001/" + serviceRef
+
+	relayCalls := 0
+	fallbackCalls := 0
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
+		switch {
+		case strings.Contains(rawURL, ":17999"):
+			relayCalls++
+			return ports.NewPreflightResult("short_read", http.StatusOK, 0, 0, 17999), errors.New("short read")
+		case strings.Contains(rawURL, ":8001"):
+			fallbackCalls++
+			if fallbackCalls == 1 {
+				return ports.NewPreflightResult("short_read", http.StatusOK, 28, 0, 8001), errors.New("short body")
+			}
+			return ports.NewSuccessfulPreflightResult(188*3, 0, 8001), nil
+		default:
+			t.Fatalf("unexpected preflight url %q", rawURL)
+			return ports.PreflightResult{}, nil
+		}
+	}
+
+	got, err := adapter.selectStreamURLWithPreflight(
+		context.Background(),
+		"sid-retry-fallback",
+		serviceRef,
+		resolved,
+		preflight,
+	)
+	if err != nil {
+		t.Fatalf("expected fallback retry success, got error: %v", err)
+	}
+	if got != expectedFallback {
+		t.Fatalf("expected fallback url %q, got %q", expectedFallback, got)
+	}
+	if relayCalls != preflightMaxTries {
+		t.Fatalf("expected %d relay preflight calls, got %d", preflightMaxTries, relayCalls)
+	}
+	if fallbackCalls != 2 {
+		t.Fatalf("expected 2 fallback preflight calls, got %d", fallbackCalls)
+	}
+}
+
+func TestSelectStreamURL_Extends8001WarmupAfterRepeatedShortReads(t *testing.T) {
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
+
+	origRetryDelay := preflightRetryDelay
+	preflightRetryDelay = time.Millisecond
+	t.Cleanup(func() {
+		preflightRetryDelay = origRetryDelay
+	})
+
+	serviceRef := "1:0:19:EF75:3F9:1:C00000:0:0:0:"
+	resolved := "http://127.0.0.1:17999/" + serviceRef
+	expectedFallback := "http://127.0.0.1:8001/" + serviceRef
+
+	relayCalls := 0
+	fallbackCalls := 0
+	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
+		switch {
+		case strings.Contains(rawURL, ":17999"):
+			relayCalls++
+			return ports.NewPreflightResult("short_read", http.StatusOK, 0, 0, 17999), errors.New("relay warming")
+		case strings.Contains(rawURL, ":8001"):
+			fallbackCalls++
+			if fallbackCalls < 6 {
+				return ports.NewPreflightResult("short_read", http.StatusOK, 28, 0, 8001), errors.New("direct stream warming")
+			}
+			return ports.NewSuccessfulPreflightResult(188*3, 0, 8001), nil
+		default:
+			t.Fatalf("unexpected preflight url %q", rawURL)
+			return ports.PreflightResult{}, nil
+		}
+	}
+
+	got, err := adapter.selectStreamURLWithPreflight(
+		context.Background(),
+		"sid-extended-8001-warmup",
+		serviceRef,
+		resolved,
+		preflight,
+	)
+	if err != nil {
+		t.Fatalf("expected extended 8001 warmup success, got error: %v", err)
+	}
+	if got != expectedFallback {
+		t.Fatalf("expected fallback url %q, got %q", expectedFallback, got)
+	}
+	if relayCalls != preflightMaxTries {
+		t.Fatalf("expected %d relay preflight calls, got %d", preflightMaxTries, relayCalls)
+	}
+	if fallbackCalls != 6 {
+		t.Fatalf("expected 6 fallback preflight calls, got %d", fallbackCalls)
+	}
+}
+
 func TestSelectStreamURL_FallbackFailedAllStructuredResult(t *testing.T) {
 	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0, "")
 
 	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
 	resolved := "http://127.0.0.1:17999/" + serviceRef
 	preflight := func(ctx context.Context, rawURL string) (ports.PreflightResult, error) {
-		return ports.NewPreflightResult("sync_miss", 0, 0, 0, 17999), errors.New("no ts")
+		return ports.NewPreflightResult("sync_miss", http.StatusOK, 188*3, 0, 17999), errors.New("no ts")
 	}
 
 	_, err := adapter.selectStreamURLWithPreflight(
@@ -402,8 +751,8 @@ func TestBuildArgs_WarmsStreamBeforeSkippingFPSProbe(t *testing.T) {
 	if warmupHits != 1 {
 		t.Fatalf("expected exactly one warmup request, got %d", warmupHits)
 	}
-	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=300:min-keyint=300:scenecut=0") {
-		t.Fatalf("expected cached 50fps GOP params, got %q", x264Params)
+	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=150:min-keyint=150:scenecut=0") {
+		t.Fatalf("expected cached 25fps output GOP params, got %q", x264Params)
 	}
 }
 
@@ -449,7 +798,7 @@ func TestBuildArgs_WarmupFailureFallsBackToFPSProbe(t *testing.T) {
 	if probeCalls != 1 {
 		t.Fatalf("expected warmup failure to fall back to fps probe, got %d calls", probeCalls)
 	}
-	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=300:min-keyint=300:scenecut=0") {
-		t.Fatalf("expected probed 50fps GOP params, got %q", x264Params)
+	if x264Params, ok := valueAfter(args, "-x264-params"); !ok || !strings.Contains(x264Params, "keyint=150:min-keyint=150:scenecut=0") {
+		t.Fatalf("expected probed 25fps output GOP params, got %q", x264Params)
 	}
 }

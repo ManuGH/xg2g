@@ -1,15 +1,18 @@
-# xg2g Architecture – Complete System Explanation
+# xg2g Architecture Reference
 
 **Author:** Engineering Leadership
 **Date:** 2026-01-11
 **Status:** Active Reference
 **Audience:** Senior engineers, contributors, code reviewers
 
-**Note:** This is a **10/10 explanation** (complete, precise, actionable). The **architecture itself is 10/10** against the criteria in Section 4 (layering enforced with zero exemptions).
+This document describes the active backend architecture and the invariants that
+reviewers should enforce. For navigation, start with
+[Architecture Index](README.md). For package ownership rules, use
+[Package Layout](PACKAGE_LAYOUT.md).
 
 ---
 
-## 1. Executive Summary: Zielbild & Guardrails
+## 1. Executive Summary: Target Model And Guardrails
 
 ### Product Core
 
@@ -31,7 +34,7 @@ xg2g is a **DVB-T2/Satellite streaming gateway** that:
 2. **Security Fail-Closed:** Authentication required by default. Scopes enforced at handler entry. No opt-in security.
 3. **Config as Product Surface:** YAML config is the user-facing interface. Validation errors must be clear and actionable.
 4. **Deterministic Boot:** `WireServices()` constructs graph (pure), `Start()` launches side effects. Tests prove this.
-5. **Observability as Vertrag:** Structured logs (zerolog), OpenTelemetry traces, Prometheus metrics are **required**, not optional.
+5. **Observability Contract:** Structured logs (zerolog), OpenTelemetry traces, Prometheus metrics are **required**, not optional.
 6. **OpenAPI Drift Prevention:** DTOs are canonical. Codegen ensures client/server stay in sync.
 
 ### Layer Model (Outside-In)
@@ -458,6 +461,7 @@ feature-local modules).
 
 **Policy:**
 
+- `internal/core` is removed and guarded by tests.
 - Do not recreate `internal/core`.
 - Place new code in semantically explicit packages only.
 
@@ -649,43 +653,26 @@ $ go test ./internal/validate -run TestLayering
 
 ---
 
-## 4. 10/10 Definition & Current Scorecard
+## 4. Architecture Quality Bar
 
-### What Does 10/10 Mean?
-
-A 10/10 architecture satisfies **all** of these criteria:
+The architecture is considered healthy only while these criteria remain true:
 
 | Criterion | Definition | Enforcement |
 |-----------|------------|-------------|
-| **No Naming Doppelwelten** | One term per concept (e.g., `infra`, not `infra` + `infrastructure`) | Manual review + docs |
-| **Feature Ownership Eindeutig** | Every feature has a clear home (e.g., VOD = `control/vod/` + `library/`) | PACKAGE_LAYOUT.md |
+| **No Duplicate Namespaces** | One term per concept, for example `infra`, not `infra` plus `infrastructure` | Manual review + docs |
+| **Clear Feature Ownership** | Every feature has a clear home, for example VOD = `control/vod/` plus `library/` | PACKAGE_LAYOUT.md |
 | **Layering Mechanically Enforced** | Import rules proven by tests | `internal/validate/imports_test.go` |
 | **No Zombie Config** | All config fields are validated and used | `config/validation.go` |
 | **Deterministic Boot** | `WireServices()` is pure, `Start()` has side effects | `bootstrap/*_test.go` |
-| **Observability as Vertrag** | Logs, traces, metrics are required (not optional) | Middleware enforces |
+| **Observability Contract** | Logs, traces, metrics are required, not optional | Middleware enforces |
 | **OpenAPI Drift Prevention** | DTOs are canonical, codegen enforces sync | `control/http/v3/types/` |
 | **No Utils Hell** | No `common/`, `helpers/`, `utils/` packages | `TestNoUtilsPackages` |
 | **Fail-Closed Security** | Auth required by default, scopes enforced | Middleware + tests |
 | **Tests Prove Invariants** | Layering, wiring, config validated by tests | `internal/validate/`, `bootstrap/` |
 
----
-
-### Current Score: **10/10**
-
-| Criterion | Status | Score | Gap |
-|-----------|--------|-------|-----|
-| No Naming Doppelwelten | ✅ Fixed (`infra` consolidated) | 1.0 | None |
-| Feature Ownership | ✅ Documented (PACKAGE_LAYOUT.md) | 1.0 | None |
-| Layering Enforced | ✅ Enforced (zero exemptions) | 1.0 | None |
-| No Zombie Config | ✅ Validation comprehensive | 1.0 | None |
-| Deterministic Boot | ✅ Bootstrap tests prove it | 1.0 | None |
-| Observability | ✅ Middleware enforces | 1.0 | None |
-| OpenAPI Drift | ✅ Codegen active | 1.0 | None |
-| No Utils Hell | ✅ Tests prevent (`internal/core` removed + guardrails) | 1.0 | None |
-| Fail-Closed Security | ✅ Middleware enforces | 1.0 | None |
-| Tests Prove Invariants | ✅ Layering tests have zero exemptions | 1.0 | None |
-
-**Gap to 10/10:** None.
+Do not describe architecture health as a subjective score. Reviewers should
+look for mechanical proof: tests, import gates, generated-artifact checks, and
+clear ownership boundaries.
 
 ---
 
@@ -716,19 +703,15 @@ PASS  # Zero exemptions
 
 ---
 
-## 6. 10/10 Definition Extended: What Gets Us There
+## 6. What The Architecture Enables
 
-### Missing Pieces for 10/10
-
-None (see Scorecard). `internal/core` is removed and guarded by tests.
-
-### What 10/10 Enables
-
-1. **Velocity:** New features have clear placement (no "where does this go?" discussions)
-2. **Confidence:** Tests prove layering (can't accidentally break architecture)
-3. **Onboarding:** New engineers read ARCHITECTURE.md → know the system
-4. **Refactoring Safety:** Layering tests catch regressions immediately
-5. **Tech Debt Visibility:** Layering violations fail CI (no exemptions)
+1. **Velocity:** New features have clear placement, reducing ownership debates.
+2. **Confidence:** Tests prove layering instead of relying on convention.
+3. **Onboarding:** Contributors can move from the repo map to package ownership
+   without reading every package first.
+4. **Refactoring Safety:** Layering tests catch regressions immediately.
+5. **Tech Debt Visibility:** Layering violations fail CI instead of becoming
+   undocumented exceptions.
 
 ---
 

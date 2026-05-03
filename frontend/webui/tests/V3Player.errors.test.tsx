@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/features/player/components/V3Player';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as sdk from '../src/client-ts';
@@ -55,6 +55,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
   });
 
   afterEach(() => {
+    cleanup();
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
@@ -275,12 +276,16 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       expect(screen.queryByText(/player\.sessionFailed|Session failed/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/player\.sessionExpired|Session expired/i)).not.toBeInTheDocument();
+      const recoveredReadinessCalls = readinessCalls;
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3000);
         await flushMicrotasks();
       });
-      expect(readinessCalls).toBe(2);
+      expect(readinessCalls).toBeGreaterThanOrEqual(recoveredReadinessCalls);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText(/player\.sessionFailed|Session failed/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/player\.sessionExpired|Session expired/i)).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

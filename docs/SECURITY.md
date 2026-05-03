@@ -2,9 +2,8 @@
 
 ## Scanner Signal Governance
 
-To maintain a "100% Signal" security gate, the scanner configuration is
-optimized to eliminate false positives in immutable, machine-generated
-artifacts.
+The scanner configuration is tuned to keep findings actionable while excluding
+immutable, machine-generated artifacts that cannot be fixed safely by hand.
 
 ### 1. Generated Code Trust (exclude-generated)
 
@@ -60,5 +59,6 @@ must be accompanied by a justification comment.
 
 ---
 
-**Policy Status**: CTO-Mandated 2026
-**Compliance**: High Signal, Zero Tolerance for Un-audited Exceptions.
+**Policy Status**: Active
+**Compliance Goal**: actionable findings, documented exceptions, and no
+unreviewed `#nosec` annotations.

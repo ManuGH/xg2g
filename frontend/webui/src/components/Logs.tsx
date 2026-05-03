@@ -3,15 +3,23 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getLogs, type LogEntry } from '../client-ts';
 import { toAppError } from '../lib/appErrors';
+import { ROUTE_MAP } from '../routes';
 import { unwrapClientResultOrThrow } from '../services/clientWrapper';
 import type { AppError } from '../types/errors';
 import { Button } from './ui';
 import ErrorPanel from './ErrorPanel';
+import LegacyRouteNotice from './LegacyRouteNotice';
 import styles from './Logs.module.css';
 
-export default function Logs() {
+interface LogsProps {
+  showLegacyNotice?: boolean;
+}
+
+export default function Logs({ showLegacyNotice = true }: LogsProps) {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<AppError | null>(null);
@@ -37,6 +45,15 @@ export default function Logs() {
 
   return (
     <div className={`${styles.view} animate-enter`.trim()}>
+      {showLegacyNotice ? (
+        <LegacyRouteNotice
+          parentLabel={t('nav.playerSettings')}
+          description={t('legacyRoute.logsDescription', {
+            defaultValue: 'Diagnostics stay available for direct access, but most households should enter this area from Settings.',
+          })}
+          route={ROUTE_MAP.settings}
+        />
+      ) : null}
       <div className={styles.header}>
         <h3>Recent Logs</h3>
         <Button onClick={fetchLogs} disabled={loading} variant="secondary" size="sm">

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -60,6 +61,67 @@ func (m *mockOWI) GetEPG(_ context.Context, sRef string, _ int) ([]openwebif.EPG
 			SRef:        sRef,
 		},
 	}, nil
+}
+
+func TestResolveRefreshBouquets_AllUsesSortedNames(t *testing.T) {
+	bouquets := map[string]string{
+		"Movies":     "ref-movies",
+		"Favourites": "ref-favourites",
+	}
+
+	got, usingAll, err := resolveRefreshBouquets(" ", bouquets)
+	if err != nil {
+		t.Fatalf("resolveRefreshBouquets returned error: %v", err)
+	}
+	if !usingAll {
+		t.Fatal("expected empty configured bouquet to use all bouquets")
+	}
+
+	want := []resolvedBouquet{
+		{Name: "Favourites", Ref: "ref-favourites"},
+		{Name: "Movies", Ref: "ref-movies"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("resolved bouquets = %#v, want %#v", got, want)
+	}
+}
+
+func TestResolveRefreshBouquets_CommaNamesAndRefs(t *testing.T) {
+	bouquets := map[string]string{
+		"Movies":     "ref-movies",
+		"Favourites": "ref-favourites",
+	}
+
+	got, usingAll, err := resolveRefreshBouquets(" ref-movies, Favourites ", bouquets)
+	if err != nil {
+		t.Fatalf("resolveRefreshBouquets returned error: %v", err)
+	}
+	if usingAll {
+		t.Fatal("expected explicitly configured bouquets")
+	}
+
+	want := []resolvedBouquet{
+		{Name: "Movies", Ref: "ref-movies"},
+		{Name: "Favourites", Ref: "ref-favourites"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("resolved bouquets = %#v, want %#v", got, want)
+	}
+}
+
+func TestResolveRefreshBouquets_ReportsEveryMissingBouquet(t *testing.T) {
+	bouquets := map[string]string{"Favourites": "ref-favourites"}
+
+	_, usingAll, err := resolveRefreshBouquets(" Missing, Also Missing ", bouquets)
+	if err == nil {
+		t.Fatal("expected missing bouquet error")
+	}
+	if usingAll {
+		t.Fatal("expected explicitly configured bouquets")
+	}
+	if !strings.Contains(err.Error(), "bouquets not found: [Missing Also Missing]") {
+		t.Fatalf("error = %q, want all missing bouquets listed", err.Error())
+	}
 }
 
 // refreshWithClient is a test helper that allows injecting a mock client.

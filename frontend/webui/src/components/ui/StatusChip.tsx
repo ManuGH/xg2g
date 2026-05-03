@@ -4,7 +4,7 @@
 
 import styles from './StatusChip.module.css';
 
-export type ChipState = 'idle' | 'success' | 'warning' | 'error' | 'live' | 'recording';
+export type ChipState = 'idle' | 'success' | 'warning' | 'error' | 'live' | 'recording' | 'pending' | 'deleting';
 
 export interface StatusChipProps {
   state: ChipState;
@@ -14,7 +14,7 @@ export interface StatusChipProps {
 }
 
 // Icon mapping - CTO Contract: Unicode only, no emojis
-const StateIcons: Record<ChipState, string> = {
+const StateIcons: Partial<Record<ChipState, string>> = {
   idle: '○',         // U+25CB - Empty circle
   success: '✓',      // U+2713 - Check mark
   warning: '⚠',      // U+26A0 - Warning sign

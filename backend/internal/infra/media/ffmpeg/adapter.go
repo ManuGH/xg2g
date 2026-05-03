@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
@@ -40,6 +41,9 @@ const (
 	defaultAV1VAAPIAutoRatioMax  = 2.50
 	defaultHEVCNVENCAutoRatioMax = 1.75
 	defaultAV1NVENCAutoRatioMax  = 2.50
+
+	defaultRuntimePathCorrectnessMinYAvg = 8.0
+	defaultRuntimePathCorrectnessChecks  = 2
 )
 
 // vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
@@ -47,6 +51,27 @@ var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi", "av1_vaapi"}
 
 // nvencEncodersToTest is the list of NVENC encoders verified during preflight.
 var nvencEncodersToTest = []string{"h264_nvenc", "hevc_nvenc", "av1_nvenc"}
+
+var startupProfilesToBenchmark = []string{
+	playbackports.BenchmarkProfileAudioAACStereo,
+	playbackports.BenchmarkProfileVideoH2641080P,
+	playbackports.BenchmarkProfileVideoH2641080I,
+	playbackports.BenchmarkProfileVideoH2641080I50,
+	playbackports.BenchmarkProfileVideoH2642160P,
+	playbackports.BenchmarkProfileVideoH2642160P50,
+}
+
+type profileProbeRequest struct {
+	ProfileID string
+	Backend   string
+	Encoder   string
+}
+
+type pathProbeRequest struct {
+	PathID  string
+	Backend string
+	Encoder string
+}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
@@ -97,6 +122,11 @@ type LocalAdapter struct {
 	nvencEncoderCaps          map[string]hardware.NVENCEncoderCapability
 	nvencChecked              bool
 	nvencErr                  error
+	profileBenchmarksChecked  bool
+	profileProbeFn            func(context.Context, profileProbeRequest) (time.Duration, error)
+	pathCorrectnessChecked    bool
+	pathProbeFn               func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
+	signalStatsYAvgFn         func(context.Context, string) (float64, error)
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
@@ -110,9 +140,16 @@ type LocalAdapter struct {
 	activeProcs map[ports.RunHandle]*exec.Cmd
 	// finalizedProfiles keeps the finalized profile that actually launched for a handle.
 	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
+	// runtimeDiagnostics keeps the latest FFmpeg progress/source-warning snapshot.
+	runtimeDiagnostics map[ports.RunHandle]ports.RuntimeDiagnostics
 	// processDetails keeps the last meaningful failure summary for a handle.
 	processDetails map[ports.RunHandle]string
+	// completedProcessDetails briefly preserves final process summaries after active cleanup.
+	completedProcessDetails     map[ports.RunHandle]string
+	completedProcessDetailOrder []ports.RunHandle
 }
+
+const maxCompletedProcessDetails = 128
 
 // NewLocalAdapter creates a new adapter instance.
 func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration, vaapiDevice string) *LocalAdapter {
@@ -267,7 +304,9 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FPSCacheTTL:               fpsCacheTTL,
 		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
 		finalizedProfiles:         make(map[ports.RunHandle]ports.ProfileSpec),
+		runtimeDiagnostics:        make(map[ports.RunHandle]ports.RuntimeDiagnostics),
 		processDetails:            make(map[ports.RunHandle]string),
+		completedProcessDetails:   make(map[ports.RunHandle]string),
 	}
 }
 
@@ -449,6 +488,77 @@ func (a *LocalAdapter) PreflightNVENC() error {
 	return nil
 }
 
+// PreflightTranscodeProfiles measures a small set of synthetic startup probes
+// so host decisions can distinguish between audio-only, progressive, deinterlaced,
+// and UHD realtime paths.
+func (a *LocalAdapter) PreflightTranscodeProfiles() {
+	if a.profileBenchmarksChecked {
+		return
+	}
+	a.profileBenchmarksChecked = true
+
+	a.Logger.Info().Msg("transcode profile preflight: starting")
+
+	cpuSamples := a.measureProfileBenchmarks("cpu", "libx264")
+	hardware.SetCPUProfileBenchmarks(deriveProfileCapabilities(cpuSamples))
+
+	if a.VaapiEncoderVerified("h264_vaapi") {
+		vaapiSamples := a.measureProfileBenchmarks("vaapi", "h264_vaapi")
+		hardware.SetVAAPIProfileBenchmarks(deriveProfileCapabilities(vaapiSamples))
+	} else {
+		hardware.SetVAAPIProfileBenchmarks(nil)
+	}
+
+	if a.NVENCEncoderVerified("h264_nvenc") {
+		nvencSamples := a.measureProfileBenchmarks("nvenc", "h264_nvenc")
+		hardware.SetNVENCProfileBenchmarks(deriveProfileCapabilities(nvencSamples))
+	} else {
+		hardware.SetNVENCProfileBenchmarks(nil)
+	}
+}
+
+// PreflightPathCorrectness validates a small set of host-specific media paths
+// whose encoder availability alone is not sufficient to trust output quality.
+func (a *LocalAdapter) PreflightPathCorrectness() {
+	if a.pathCorrectnessChecked {
+		return
+	}
+	a.pathCorrectnessChecked = true
+
+	capabilities := make(map[string]hardware.HardwarePathCapability)
+	for _, req := range []pathProbeRequest{
+		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
+		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
+		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
+	} {
+		if req.Backend != "vaapi" || !a.VaapiEncoderVerified(req.Encoder) {
+			continue
+		}
+		capability, err := a.testPathCorrectness(req)
+		if err != nil {
+			capability = hardware.HardwarePathCapability{
+				Status: hardware.PathStatusPreflightFailed,
+				Reason: err.Error(),
+			}
+			a.Logger.Warn().
+				Err(err).
+				Str("path_id", req.PathID).
+				Str("encoder", req.Encoder).
+				Msg("path correctness preflight failed")
+		} else {
+			a.Logger.Info().
+				Str("path_id", req.PathID).
+				Str("encoder", req.Encoder).
+				Str("status", capability.Status).
+				Str("reason", capability.Reason).
+				Msg("path correctness preflight result")
+		}
+		capabilities[req.PathID] = capability
+	}
+
+	hardware.SetPathCapabilities(capabilities)
+}
+
 // testVaapiEncoder runs a real 5-frame encode test for a specific VAAPI encoder.
 func (a *LocalAdapter) testVaapiEncoder(encoder string) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -486,6 +596,429 @@ func (a *LocalAdapter) testNVENCEncoder(encoder string) (time.Duration, error) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
+	}
+	return time.Since(start), nil
+}
+
+func (a *LocalAdapter) measureProfileBenchmarks(backend, encoder string) map[string]time.Duration {
+	profilesToBenchmark := profileBenchmarksForBackend(backend)
+	samples := make(map[string]time.Duration, len(profilesToBenchmark))
+	for _, profileID := range profilesToBenchmark {
+		elapsed, err := a.testProfileBenchmark(backend, encoder, profileID)
+		if err != nil {
+			a.Logger.Warn().
+				Err(err).
+				Str("backend", backend).
+				Str("encoder", encoder).
+				Str("profile_benchmark", profileID).
+				Msg("transcode profile preflight: synthetic profile probe failed")
+			continue
+		}
+		samples[profileID] = elapsed
+		a.Logger.Info().
+			Str("backend", backend).
+			Str("encoder", encoder).
+			Str("profile_benchmark", profileID).
+			Dur("probe_elapsed", elapsed).
+			Msg("transcode profile preflight: synthetic profile probe verified")
+	}
+	return samples
+}
+
+func (a *LocalAdapter) testProfileBenchmark(backend, encoder, profileID string) (time.Duration, error) {
+	req := profileProbeRequest{
+		ProfileID: profileID,
+		Backend:   backend,
+		Encoder:   encoder,
+	}
+	if a.profileProbeFn != nil {
+		return a.profileProbeFn(context.Background(), req)
+	}
+
+	if profileID == playbackports.BenchmarkProfileAudioAACStereo {
+		return a.testAudioAACProfile()
+	}
+
+	switch backend {
+	case "cpu":
+		return a.testCPUH264Profile(profileID, encoder)
+	case "vaapi":
+		return a.testVAAPIH264Profile(profileID, encoder)
+	case "nvenc":
+		return a.testNVENCH264Profile(profileID, encoder)
+	default:
+		return 0, fmt.Errorf("unsupported benchmark backend %q", backend)
+	}
+}
+
+func (a *LocalAdapter) testPathCorrectness(req pathProbeRequest) (hardware.HardwarePathCapability, error) {
+	if a.pathProbeFn != nil {
+		return a.pathProbeFn(context.Background(), req)
+	}
+	switch req.PathID {
+	case hardware.PathVAAPIFullInterlacedHEVC, hardware.PathVAAPIFullInterlacedAV1:
+		return a.testVAAPIInterlacedPathCorrectness(req.Encoder, true)
+	case hardware.PathVAAPIEncodeOnlyInterlacedHEVC, hardware.PathVAAPIEncodeOnlyInterlacedAV1:
+		return a.testVAAPIInterlacedPathCorrectness(req.Encoder, false)
+	default:
+		return hardware.HardwarePathCapability{}, fmt.Errorf("unsupported path correctness probe %q", req.PathID)
+	}
+}
+
+func profileBenchmarksForBackend(backend string) []string {
+	switch backend {
+	case "cpu":
+		return startupProfilesToBenchmark
+	case "vaapi", "nvenc":
+		return []string{
+			playbackports.BenchmarkProfileVideoH2641080P,
+			playbackports.BenchmarkProfileVideoH2641080I,
+			playbackports.BenchmarkProfileVideoH2641080I50,
+			playbackports.BenchmarkProfileVideoH2642160P,
+			playbackports.BenchmarkProfileVideoH2642160P50,
+		}
+	default:
+		return nil
+	}
+}
+
+func (a *LocalAdapter) testAudioAACProfile() (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	args := []string{
+		"-f", "lavfi",
+		"-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+		"-t", "0.2",
+		"-vn",
+		"-c:a", "aac",
+		"-b:a", "256k",
+		"-ac", "2",
+		"-ar", "48000",
+		"-f", "null", "-",
+	}
+	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func (a *LocalAdapter) testCPUH264Profile(profileID, encoder string) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
+	defer cancel()
+
+	args := []string{
+		"-f", "lavfi",
+		"-i", profileBenchmarkInput(profileID),
+	}
+	if filter := cpuProfileBenchmarkFilter(profileID); filter != "" {
+		args = append(args, "-vf", filter)
+	}
+	args = append(args,
+		"-c:v", encoder,
+		"-preset", "veryfast",
+		"-frames:v", "5",
+		"-f", "null", "-",
+	)
+	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func (a *LocalAdapter) testVAAPIH264Profile(profileID, encoder string) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
+	defer cancel()
+
+	filter, err := vaapiProfileBenchmarkFilter(profileID)
+	if err != nil {
+		return 0, err
+	}
+	args := []string{
+		"-vaapi_device", a.VaapiDevice,
+		"-f", "lavfi",
+		"-i", profileBenchmarkInput(profileID),
+		"-vf", filter,
+		"-c:v", encoder,
+		"-frames:v", "5",
+		"-f", "null", "-",
+	}
+	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string, full bool) (hardware.HardwarePathCapability, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	tempDir, err := os.MkdirTemp("", "xg2g-path-correctness-*")
+	if err != nil {
+		return hardware.HardwarePathCapability{}, fmt.Errorf("mktemp path correctness probe: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	outPath := filepath.Join(tempDir, "probe.mkv")
+	filter := "format=nv12,setfield=tff,hwupload,deinterlace_vaapi"
+	if !full {
+		filter = vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder)
+	}
+	encodeArgs := []string{
+		"-y",
+		"-vaapi_device", a.VaapiDevice,
+		"-f", "lavfi",
+		"-i", "testsrc2=duration=0.4:size=1920x1080:rate=25",
+		"-vf", filter,
+		"-c:v", encoder,
+		"-frames:v", "5",
+		outPath,
+	}
+	if _, err := runProfileBenchmarkCommand(ctx, a.BinPath, encodeArgs); err != nil {
+		return hardware.HardwarePathCapability{}, fmt.Errorf("encode correctness probe failed: %w", err)
+	}
+
+	lumaYAvg, err := a.measureSignalStatsYAvg(ctx, outPath)
+	if err != nil {
+		if !full && normalizeRequestedCodec(encoder) == "av1" && isAV1SignalStatsDecodeUnavailable(err) && outputFileHasBytes(outPath) {
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic av1 encode verified; local signalstats decode unavailable",
+			}, nil
+		}
+		return hardware.HardwarePathCapability{}, fmt.Errorf("signalstats correctness probe failed: %w", err)
+	}
+	if lumaYAvg < 32 {
+		return hardware.HardwarePathCapability{
+			Status: hardware.PathStatusBrokenOutput,
+			Reason: fmt.Sprintf("synthetic yavg %.2f below threshold", lumaYAvg),
+		}, nil
+	}
+
+	return hardware.HardwarePathCapability{
+		Verified: true,
+		Status:   hardware.PathStatusVerified,
+		Reason:   fmt.Sprintf("synthetic yavg %.2f", lumaYAvg),
+	}, nil
+}
+
+func vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder string) string {
+	parts := []string{
+		"setfield=tff",
+		"bwdif=mode=send_field:parity=auto:deint=all",
+	}
+	if normalizeRequestedCodec(encoder) == "av1" {
+		parts = append(parts, av1VAAPIGeometryPadFilter())
+	}
+	parts = append(parts, "format=nv12", "hwupload")
+	return strings.Join(parts, ",")
+}
+
+func isAV1SignalStatsDecodeUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "doesn't support hardware accelerated av1 decoding") ||
+		strings.Contains(msg, "error submitting packet to decoder")
+}
+
+func outputFileHasBytes(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
+}
+
+func (a *LocalAdapter) testNVENCH264Profile(profileID, encoder string) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
+	defer cancel()
+
+	args := []string{
+		"-f", "lavfi",
+		"-i", profileBenchmarkInput(profileID),
+	}
+	if filter := nvencProfileBenchmarkFilter(profileID); filter != "" {
+		args = append(args, "-vf", filter)
+	}
+	args = append(args,
+		"-c:v", encoder,
+		"-frames:v", "5",
+		"-f", "null", "-",
+	)
+	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
+}
+
+func cpuProfileBenchmarkFilter(profileID string) string {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackports.BenchmarkProfileVideoH2641080I, playbackports.BenchmarkProfileVideoH2641080I50:
+		return "setfield=tff,bwdif=mode=send_field:parity=auto:deint=all"
+	default:
+		return ""
+	}
+}
+
+func vaapiProfileBenchmarkFilter(profileID string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackports.BenchmarkProfileVideoH2641080P:
+		return "format=nv12,hwupload", nil
+	case playbackports.BenchmarkProfileVideoH2641080I50:
+		return "format=nv12,setfield=tff,hwupload,deinterlace_vaapi", nil
+	case playbackports.BenchmarkProfileVideoH2642160P:
+		return "format=nv12,hwupload", nil
+	case playbackports.BenchmarkProfileVideoH2642160P50:
+		return "format=nv12,hwupload", nil
+	case playbackports.BenchmarkProfileVideoH2641080I:
+		return "format=nv12,setfield=tff,hwupload,deinterlace_vaapi", nil
+	default:
+		return "", fmt.Errorf("unsupported vaapi benchmark profile %q", profileID)
+	}
+}
+
+func nvencProfileBenchmarkFilter(profileID string) string {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackports.BenchmarkProfileVideoH2641080I, playbackports.BenchmarkProfileVideoH2641080I50:
+		return "setfield=tff,bwdif=mode=send_field:parity=auto:deint=all"
+	default:
+		return ""
+	}
+}
+
+func profileBenchmarkInput(profileID string) string {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackports.BenchmarkProfileVideoH2642160P50:
+		return "testsrc=duration=0.2:size=3840x2160:rate=50"
+	case playbackports.BenchmarkProfileVideoH2642160P:
+		return "testsrc=duration=0.2:size=3840x2160:rate=25"
+	case playbackports.BenchmarkProfileVideoH2641080I50:
+		return "testsrc=duration=0.2:size=1920x1080:rate=50"
+	default:
+		return "testsrc=duration=0.2:size=1920x1080:rate=25"
+	}
+}
+
+func profileBenchmarkTimeout(profileID string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackports.BenchmarkProfileVideoH2642160P50:
+		return 22 * time.Second
+	case playbackports.BenchmarkProfileVideoH2642160P:
+		return 18 * time.Second
+	case playbackports.BenchmarkProfileVideoH2641080I50:
+		return 15 * time.Second
+	default:
+		return 12 * time.Second
+	}
+}
+
+func (a *LocalAdapter) measureSignalStatsYAvg(ctx context.Context, mediaPath string) (float64, error) {
+	if a.signalStatsYAvgFn != nil {
+		return a.signalStatsYAvgFn(ctx, mediaPath)
+	}
+	args := []string{
+		"-v", "info",
+		"-hwaccel", "none",
+		"-i", mediaPath,
+		"-vf", "signalstats,metadata=mode=print",
+		"-frames:v", "1",
+		"-f", "null", "-",
+	}
+	// #nosec G204 -- BinPath is trusted from config and mediaPath is a local temp path.
+	cmd := exec.CommandContext(ctx, a.BinPath, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("measure signalstats: %w (output: %s)", err, string(out))
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		const prefix = "lavfi.signalstats.YAVG="
+		idx := strings.Index(line, prefix)
+		if idx < 0 {
+			continue
+		}
+		value := strings.TrimSpace(line[idx+len(prefix):])
+		yavg, parseErr := strconv.ParseFloat(value, 64)
+		if parseErr != nil {
+			return 0, fmt.Errorf("parse signalstats yavg %q: %w", value, parseErr)
+		}
+		return yavg, nil
+	}
+	return 0, errors.New("lavfi.signalstats.YAVG not found")
+}
+
+func (a *LocalAdapter) observeRuntimePathCorrectness(ctx context.Context, handle ports.RunHandle, cmd *exec.Cmd, sessionID, pathID string) {
+	if strings.TrimSpace(pathID) == "" || !ports.IsSafeSessionID(sessionID) {
+		return
+	}
+
+	playlistPath := filepath.Join(ports.SessionHLSDir(a.HLSRoot, sessionID), "index.m3u8")
+	deadline := time.Now().Add(20 * time.Second)
+	minYAvg := envFloatBounded("XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG", defaultRuntimePathCorrectnessMinYAvg, 1.0, 64.0)
+	requiredLowObservations := envIntBounded("XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", defaultRuntimePathCorrectnessChecks, 1, 4)
+	lowObservations := 0
+
+	for time.Now().Before(deadline) {
+		if ctx.Err() != nil {
+			return
+		}
+
+		probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		yavg, err := a.measureSignalStatsYAvg(probeCtx, playlistPath)
+		cancel()
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		a.Logger.Info().
+			Str("session_id", sessionID).
+			Str("path_id", pathID).
+			Float64("yavg", yavg).
+			Msg("runtime path correctness observation")
+
+		if yavg < minYAvg {
+			lowObservations++
+			if lowObservations < requiredLowObservations {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			reason := fmt.Sprintf("runtime yavg %.2f below threshold %.2f", yavg, minYAvg)
+			a.updateRuntimePathCapability(pathID, hardware.HardwarePathCapability{
+				Status: hardware.PathStatusBrokenOutput,
+				Reason: reason,
+			})
+			a.recordProcessDetail(handle, "runtime path correctness failed - black output detected")
+			a.Logger.Error().
+				Str("session_id", sessionID).
+				Str("path_id", pathID).
+				Float64("yavg", yavg).
+				Float64("threshold", minYAvg).
+				Msg("runtime path correctness marked path as broken_output")
+			a.terminateProcessGroup(cmd, sessionID)
+			return
+		}
+
+		reason := fmt.Sprintf("runtime yavg %.2f", yavg)
+		a.updateRuntimePathCapability(pathID, hardware.HardwarePathCapability{
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   reason,
+		})
+		a.Logger.Info().
+			Str("session_id", sessionID).
+			Str("path_id", pathID).
+			Float64("yavg", yavg).
+			Msg("runtime path correctness verified path")
+		return
+	}
+}
+
+func (a *LocalAdapter) updateRuntimePathCapability(pathID string, capability hardware.HardwarePathCapability) {
+	current := hardware.HardwarePathCapabilities()
+	if current == nil {
+		current = make(map[string]hardware.HardwarePathCapability)
+	}
+	current[pathID] = capability
+	hardware.SetPathCapabilities(current)
+}
+
+func runProfileBenchmarkCommand(ctx context.Context, binPath string, args []string) (time.Duration, error) {
+	start := time.Now()
+	// #nosec G204 -- BinPath is trusted from config and args are fixed synthetic probes.
+	cmd := exec.CommandContext(ctx, binPath, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("profile benchmark failed: %w (output: %s)", err, string(out))
 	}
 	return time.Since(start), nil
 }
@@ -569,6 +1102,24 @@ func selectHardwareAutoBaseline(samples map[string]time.Duration) (time.Duration
 		}
 	}
 	return baseline, baseline > 0
+}
+
+func deriveProfileCapabilities(samples map[string]time.Duration) map[string]hardware.HardwareProfileCapability {
+	if len(samples) == 0 {
+		return nil
+	}
+
+	caps := make(map[string]hardware.HardwareProfileCapability, len(samples))
+	for profileID, elapsed := range samples {
+		if elapsed <= 0 {
+			continue
+		}
+		caps[strings.ToLower(strings.TrimSpace(profileID))] = hardware.HardwareProfileCapability{
+			Verified:     true,
+			ProbeElapsed: elapsed,
+		}
+	}
+	return caps
 }
 
 func (a *LocalAdapter) hardwareEncoderVerified(backend profiles.GPUBackend, encoder string) bool {
@@ -808,8 +1359,8 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	a.finalizedProfiles[handle] = plan.effectiveProfile
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
-	//nolint:gosec // G118: background monitor lifecycle is bound to the provided session context
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
+
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(sourceKey, spec.SessionID)
 	}
@@ -829,11 +1380,10 @@ func (a *LocalAdapter) FinalizedProfile(handle ports.RunHandle) (ports.ProfileSp
 	return profile, true
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, startTimeout time.Duration) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration) {
 	defer func() {
 		a.mu.Lock()
-		delete(a.activeProcs, handle)
-		delete(a.finalizedProfiles, handle)
+		a.removeActiveProcessLocked(handle, true)
 		a.mu.Unlock()
 	}()
 
@@ -844,6 +1394,8 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 	}
 	wdCtx, wdCancel := context.WithCancel(parentCtx)
 	defer wdCancel()
+	observerCtx, observerCancel := context.WithCancel(parentCtx)
+	defer observerCancel()
 
 	wdErrCh := make(chan error, 1)
 	go func() {
@@ -860,6 +1412,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		scanner.Split(scanFFmpegLogTokens)
 		firstFrameLogged := false
 		firstSegmentLogged := false
+		outputObserverStarted := false
 
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -884,9 +1437,14 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 						Str("startup_phase", "first_segment_write").
 						Str("segment_path", segmentPath).
 						Msg("ffmpeg first segment write observed")
+					if pathID != "" && !outputObserverStarted {
+						outputObserverStarted = true
+						go a.observeRuntimePathCorrectness(observerCtx, handle, cmd, sessionID, pathID)
+					}
 				}
 			}
 			sanitizedLine := sanitizeFFmpegLogLine(line)
+			a.recordRuntimeDiagnostics(handle, line, sanitizedLine)
 			if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
 				a.recordProcessDetail(handle, detail)
 			}
@@ -1000,8 +1558,11 @@ func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profi
 	overrideFloor := 30 * time.Second
 	if profile.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {
 		overrideFloor = 60 * time.Second
-	} else if !strings.EqualFold(strings.TrimSpace(profile.Name), "safari") && !strings.EqualFold(strings.TrimSpace(profile.Name), "safari_hq") {
-		return timeout
+	} else {
+		normalizedProfile := profiles.NormalizeRequestedProfileID(profile.Name)
+		if normalizedProfile != profiles.ProfileSafari && normalizedProfile != profiles.ProfileSafariRuntimeHQ {
+			return timeout
+		}
 	}
 
 	overrideMs := envIntBounded(
@@ -1103,6 +1664,134 @@ func parseFFmpegFrameCount(line string) (int, bool) {
 	return count, true
 }
 
+func (a *LocalAdapter) recordRuntimeDiagnostics(handle ports.RunHandle, rawLine string, sanitizedLine string) {
+	if handle == "" {
+		return
+	}
+
+	nowUnix := time.Now().Unix()
+	frame, hasFrame := parseFFmpegFrameCount(rawLine)
+	fps, hasFPS := parseFFmpegFloatValue(rawLine, "fps")
+	drops, hasDrops := parseFFmpegIntValue(rawLine, "drop_frames")
+	if !hasDrops {
+		drops, hasDrops = parseFFmpegIntValue(rawLine, "drop")
+	}
+	duplicates, hasDuplicates := parseFFmpegIntValue(rawLine, "dup_frames")
+	if !hasDuplicates {
+		duplicates, hasDuplicates = parseFFmpegIntValue(rawLine, "dup")
+	}
+	speed, hasSpeed := parseFFmpegFloatValue(rawLine, "speed")
+	isProgressLine := hasFrame || hasFPS || hasDrops || hasDuplicates || hasSpeed
+
+	var corruptDecodedFrame bool
+	var warningLine string
+	if !isProgressLine {
+		lower := strings.ToLower(strings.TrimSpace(sanitizedLine))
+		if strings.Contains(lower, "corrupt decoded frame") {
+			corruptDecodedFrame = true
+			warningLine = sanitizedLine
+		} else if !isFFmpegProgressLine(lower) && (summarizeFFmpegFailureLine(lower) != "" || looksLikeFFmpegWarning(lower)) {
+			warningLine = sanitizedLine
+		}
+	}
+
+	if !isProgressLine && warningLine == "" {
+		return
+	}
+
+	var changed bool
+	a.mu.Lock()
+	diagnostics := a.runtimeDiagnostics[handle]
+	if hasFrame {
+		diagnostics.FrameCount = frame
+		changed = true
+	}
+	if hasFPS {
+		diagnostics.FPS = fps
+		changed = true
+	}
+	if hasDrops {
+		diagnostics.DropFrames = drops
+		changed = true
+	}
+	if hasDuplicates {
+		diagnostics.DupFrames = duplicates
+		changed = true
+	}
+	if hasSpeed {
+		diagnostics.Speed = speed
+		changed = true
+	}
+	if corruptDecodedFrame {
+		diagnostics.CorruptDecodedFrames++
+	}
+	if warningLine != "" {
+		diagnostics.LastWarning = trimForLog(warningLine, 240)
+		changed = true
+	}
+	if changed {
+		diagnostics.UpdatedAtUnix = nowUnix
+		if a.runtimeDiagnostics == nil {
+			a.runtimeDiagnostics = make(map[ports.RunHandle]ports.RuntimeDiagnostics)
+		}
+		a.runtimeDiagnostics[handle] = diagnostics
+	}
+	a.mu.Unlock()
+}
+
+func parseFFmpegIntValue(line string, key string) (int, bool) {
+	raw, ok := parseFFmpegValue(line, key)
+	if !ok {
+		return 0, false
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+func parseFFmpegFloatValue(line string, key string) (float64, bool) {
+	raw, ok := parseFFmpegValue(line, key)
+	if !ok {
+		return 0, false
+	}
+	raw = strings.TrimSuffix(raw, "x")
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+func parseFFmpegValue(line string, key string) (string, bool) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", false
+	}
+	idx := strings.Index(line, key+"=")
+	if idx < 0 {
+		return "", false
+	}
+	rest := strings.TrimLeft(line[idx+len(key)+1:], " ")
+	if rest == "" {
+		return "", false
+	}
+	end := 0
+	for end < len(rest) {
+		ch := rest[end]
+		if (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '+' || ch == 'x' {
+			end++
+			continue
+		}
+		break
+	}
+	if end == 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
 func extractStartupSegmentPath(line string) (string, bool) {
 	if !strings.Contains(line, "Opening ") || !strings.Contains(line, " for writing") {
 		return "", false
@@ -1132,9 +1821,8 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	a.mu.Lock()
 	cmd, exists := a.activeProcs[handle]
 	if exists {
-		delete(a.activeProcs, handle)
+		a.removeActiveProcessLocked(handle, false)
 	}
-	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
 	if !exists {
@@ -1146,6 +1834,35 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	}
 
 	return nil
+}
+
+func (a *LocalAdapter) removeActiveProcessLocked(handle ports.RunHandle, archiveDetail bool) {
+	delete(a.activeProcs, handle)
+	delete(a.finalizedProfiles, handle)
+	delete(a.runtimeDiagnostics, handle)
+	if archiveDetail {
+		a.archiveProcessDetailLocked(handle)
+	}
+	delete(a.processDetails, handle)
+}
+
+func (a *LocalAdapter) archiveProcessDetailLocked(handle ports.RunHandle) {
+	detail := strings.TrimSpace(a.processDetails[handle])
+	if detail == "" {
+		return
+	}
+	if a.completedProcessDetails == nil {
+		a.completedProcessDetails = make(map[ports.RunHandle]string)
+	}
+	if _, exists := a.completedProcessDetails[handle]; !exists {
+		a.completedProcessDetailOrder = append(a.completedProcessDetailOrder, handle)
+	}
+	a.completedProcessDetails[handle] = detail
+	for len(a.completedProcessDetailOrder) > maxCompletedProcessDetails {
+		evict := a.completedProcessDetailOrder[0]
+		a.completedProcessDetailOrder = a.completedProcessDetailOrder[1:]
+		delete(a.completedProcessDetails, evict)
+	}
 }
 
 func (a *LocalAdapter) terminateProcessGroup(cmd *exec.Cmd, sessionID string) {
@@ -1165,20 +1882,23 @@ func (a *LocalAdapter) killProcessGroup(cmd *exec.Cmd) error {
 func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports.HealthStatus {
 	a.mu.Lock()
 	_, exists := a.activeProcs[handle]
+	diagnostics := a.runtimeDiagnostics[handle]
 	a.mu.Unlock()
 	if !exists {
 		// monitorProcess has finished — scanner drained, detail is final.
 		return ports.HealthStatus{
-			Healthy:   false,
-			Message:   a.processStatusMessage(handle, "process not found"),
-			LastCheck: time.Now(),
+			Healthy:     false,
+			Message:     a.processStatusMessage(handle, "process not found"),
+			LastCheck:   time.Now(),
+			Diagnostics: diagnostics,
 		}
 	}
 
 	return ports.HealthStatus{
-		Healthy:   true,
-		Message:   "process active",
-		LastCheck: time.Now(),
+		Healthy:     true,
+		Message:     "process active",
+		LastCheck:   time.Now(),
+		Diagnostics: diagnostics,
 	}
 }
 
@@ -1248,11 +1968,17 @@ func (a *LocalAdapter) processStatusMessage(handle ports.RunHandle, fallback str
 		delete(a.processDetails, handle)
 		return detail
 	}
+	if detail := strings.TrimSpace(a.completedProcessDetails[handle]); detail != "" {
+		delete(a.completedProcessDetails, handle)
+		return detail
+	}
 	return fallback
 }
 
 func processDetailPriority(detail string) int {
 	switch detail {
+	case "runtime path correctness failed - black output detected":
+		return 55
 	case "transcode stalled - no progress detected":
 		return 50
 	case "copy output missing codec parameters":

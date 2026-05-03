@@ -17,11 +17,14 @@ import (
 )
 
 const (
-	preflightMinBytes = 188 * 3
-	preflightTimeout  = 2 * time.Second
+	preflightMinBytes          = 188 * 3
+	preflightTimeout           = 2 * time.Second
+	preflightMaxTries          = 3
+	preflightDirectWarmupTries = 8
 )
 
 var ffmpegURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
+var preflightRetryDelay = 750 * time.Millisecond
 
 type preflightFn func(context.Context, string) (ports.PreflightResult, error)
 
@@ -35,8 +38,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 		Str("startup_phase", "input_preflight_started").
 		Str("resolved_url", sanitizeURLForLog(streamURL)).
 		Msg("stream input preflight started")
-	result, err := preflight(ctx, streamURL)
-	result = normalizeAdapterPreflightResult(result, err)
+	result, err := a.runPreflightWithRetry(ctx, sessionID, streamURL, preflight)
 	a.Logger.Info().
 		Str("session_id", sessionID).
 		Str("startup_phase", "input_preflight_finished").
@@ -108,8 +110,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Int("resolved_port", result.ResolvedPort).
 			Msg("fallback to 8001 activated after streamrelay preflight failure")
 
-		fallbackResult, fallbackErr := preflight(ctx, fallbackURL)
-		fallbackResult = normalizeAdapterPreflightResult(fallbackResult, fallbackErr)
+		fallbackResult, fallbackErr := a.runPreflightWithRetry(ctx, sessionID, fallbackURL, preflight)
 		if fallbackErr == nil && fallbackResult.OK {
 			return fallbackURL, nil
 		}
@@ -123,8 +124,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			u.RawQuery = q.Encode()
 			origURL := u.String()
 
-			origRes, origErr := preflight(ctx, origURL)
-			origRes = normalizeAdapterPreflightResult(origRes, origErr)
+			origRes, origErr := a.runPreflightWithRetry(ctx, sessionID, origURL, preflight)
 			if origErr == nil && origRes.OK {
 				a.Logger.Info().Str("url", sanitizeURLForLog(origURL)).Msg("fallback to original URL succeeded (M3U)")
 				return origURL, nil
@@ -283,6 +283,79 @@ func preflightReason(result ports.PreflightResult) string {
 	return string(ports.PreflightReasonUnknown)
 }
 
+func (a *LocalAdapter) runPreflightWithRetry(ctx context.Context, sessionID, rawURL string, preflight preflightFn) (ports.PreflightResult, error) {
+	result, err := preflight(ctx, rawURL)
+	result = normalizeAdapterPreflightResult(result, err)
+
+	for attempt := 2; shouldRetryTSPreflight(result); attempt++ {
+		maxTries := maxPreflightTries(result)
+		if attempt > maxTries {
+			break
+		}
+		if waitErr := sleepWithContext(ctx, preflightRetryDelay); waitErr != nil {
+			break
+		}
+		a.Logger.Warn().
+			Str("event", "input_preflight_retry").
+			Str("sessionId", sessionID).
+			Str("url", sanitizeURLForLog(rawURL)).
+			Int("attempt", attempt).
+			Int("max_attempts", maxTries).
+			Int("preflight_bytes", result.Bytes).
+			Str("preflight_reason", preflightReason(result)).
+			Str("preflight_detail", result.FailureDetail()).
+			Int("http_status", result.HTTPStatus).
+			Int("resolved_port", result.ResolvedPort).
+			Msg("retrying transient stream input preflight")
+
+		result, err = preflight(ctx, rawURL)
+		result = normalizeAdapterPreflightResult(result, err)
+		if err == nil && result.OK {
+			return result, nil
+		}
+	}
+
+	return result, err
+}
+
+func maxPreflightTries(result ports.PreflightResult) int {
+	normalized := result.Normalized()
+	if normalized.ResolvedPort == 8001 || normalized.ResolvedPort == 8002 {
+		if normalized.HTTPStatus == 0 || normalized.HTTPStatus == http.StatusOK {
+			if normalized.Reason == ports.PreflightReasonCorruptInput && normalized.Bytes < preflightMinBytes {
+				return preflightDirectWarmupTries
+			}
+		}
+	}
+	return preflightMaxTries
+}
+
+func shouldRetryTSPreflight(result ports.PreflightResult) bool {
+	normalized := result.Normalized()
+	if normalized.OK {
+		return false
+	}
+
+	switch normalized.ResolvedPort {
+	case 17999, 8001, 8002:
+	default:
+		return false
+	}
+
+	if normalized.HTTPStatus != 0 && normalized.HTTPStatus != http.StatusOK {
+		return false
+	}
+
+	switch normalized.Reason {
+	case ports.PreflightReasonTimeout:
+		return true
+	case ports.PreflightReasonCorruptInput, ports.PreflightReasonInvalidTS:
+		return normalized.Bytes < preflightMinBytes
+	default:
+		return false
+	}
+}
+
 func hasTSSync(buf []byte) bool {
 	if len(buf) < preflightMinBytes {
 		return false
@@ -329,6 +402,17 @@ func defaultPortForScheme(scheme string) string {
 		return "443"
 	}
 	return "80"
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func sanitizeURLForLog(rawURL string) string {

@@ -33,6 +33,37 @@ func TestManager_RunBackground_SkipsWarmCache(t *testing.T) {
 	require.False(t, manager.RunBackground(), "warm cache should prevent startup/background scan")
 }
 
+func TestManager_GetStatus_DerivesIdleProgressFromWarmCache(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Now().UTC()
+	serviceRef := "1:0:1:ABC"
+	store.Update(Capability{
+		ServiceRef:  serviceRef,
+		Container:   "ts",
+		VideoCodec:  "h264",
+		AudioCodec:  "aac",
+		Resolution:  "1920x1080",
+		Codec:       "h264",
+		State:       CapabilityStateOK,
+		LastScan:    now,
+		LastAttempt: now,
+		LastSuccess: now,
+		NextRetryAt: now.Add(12 * time.Hour),
+	})
+
+	playlistPath := filepath.Join(t.TempDir(), "playlist.m3u")
+	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U\n#EXTINF:-1,Test\nhttp://receiver.example/"+serviceRef+"\n"), 0o600))
+
+	manager := NewManager(store, playlistPath, nil)
+	status := manager.GetStatus()
+
+	assert.Equal(t, "idle", status.State)
+	assert.Equal(t, 1, status.TotalChannels)
+	assert.Equal(t, 1, status.ScannedChannels)
+	assert.Equal(t, 1, status.UpdatedCount)
+	assert.Equal(t, now.Unix(), status.FinishedAt)
+}
+
 func TestManager_RunBackgroundForce_StartsWithWarmCache(t *testing.T) {
 	store := NewMemoryStore()
 	now := time.Now().UTC()

@@ -295,6 +295,32 @@ func TestHealth_MonitorRemovedHandleReturnsDetail(t *testing.T) {
 	assert.Equal(t, "copy output missing codec parameters", status.Message)
 }
 
+func TestRemoveActiveProcessLockedPrunesRuntimeStateAndArchivesDetail(t *testing.T) {
+	handle := ports.RunHandle("session-4-101")
+	adapter := &LocalAdapter{
+		activeProcs: map[ports.RunHandle]*exec.Cmd{
+			handle: exec.Command("true"),
+		},
+		finalizedProfiles: map[ports.RunHandle]ports.ProfileSpec{
+			handle: {Name: "h264"},
+		},
+		runtimeDiagnostics: map[ports.RunHandle]ports.RuntimeDiagnostics{
+			handle: {FrameCount: 10},
+		},
+		processDetails: map[ports.RunHandle]string{
+			handle: "copy output missing codec parameters",
+		},
+	}
+
+	adapter.removeActiveProcessLocked(handle, true)
+
+	assert.NotContains(t, adapter.activeProcs, handle)
+	assert.NotContains(t, adapter.finalizedProfiles, handle)
+	assert.NotContains(t, adapter.runtimeDiagnostics, handle)
+	assert.NotContains(t, adapter.processDetails, handle)
+	assert.Equal(t, "copy output missing codec parameters", adapter.processStatusMessage(handle, "process not found"))
+}
+
 func TestHealth_ActiveHandleIsHealthy(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
@@ -378,6 +404,140 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 	marker, err := os.ReadFile(markerPath)
 	require.NoError(t, err)
 	assert.NotEmpty(t, strings.TrimSpace(string(marker)))
+}
+
+func TestMonitorProcess_RuntimePathCorrectnessMarksBrokenAndStopsProcess(t *testing.T) {
+	hardware.SetPathCapabilities(nil)
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		1500*time.Millisecond,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		1100*time.Millisecond,
+		"",
+	)
+	observations := 0
+	adapter.signalStatsYAvgFn = func(ctx context.Context, mediaPath string) (float64, error) {
+		observations++
+		return 2.5, nil
+	}
+
+	stderr, writer, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = stderr.Close()
+		_ = writer.Close()
+	})
+
+	cmd := exec.Command("sh", "-c", "printf 'frame=    1\\n' 1>&2; exec sleep 30")
+	procgroup.Set(cmd)
+	require.NoError(t, cmd.Start())
+	go func() {
+		defer writer.Close()
+		_, _ = io.WriteString(writer, "frame=    1 fps=0.0 q=0.0\rOpening '/tmp/seg_000001.m4s' for writing\n")
+	}()
+
+	handle := ports.RunHandle("session-path-broken-123")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-broken", profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(6 * time.Second):
+		t.Fatal("monitorProcess did not terminate broken output path in time")
+	}
+
+	status := adapter.Health(context.Background(), handle)
+	assert.False(t, status.Healthy)
+	assert.Equal(t, "runtime path correctness failed - black output detected", status.Message)
+	cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIEncodeOnlyInterlacedHEVC)
+	require.True(t, ok)
+	assert.Equal(t, hardware.PathStatusBrokenOutput, cap.Status)
+	assert.GreaterOrEqual(t, observations, 2)
+}
+
+func TestMonitorProcess_RuntimePathCorrectnessMarksVerified(t *testing.T) {
+	hardware.SetPathCapabilities(nil)
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		1500*time.Millisecond,
+		false,
+		2*time.Second,
+		6,
+		5*time.Second,
+		1100*time.Millisecond,
+		"",
+	)
+	adapter.signalStatsYAvgFn = func(ctx context.Context, mediaPath string) (float64, error) {
+		return 126.0, nil
+	}
+
+	stderr, writer, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = stderr.Close()
+		_ = writer.Close()
+	})
+
+	cmd := exec.Command("sh", "-c", "sleep 1")
+	require.NoError(t, cmd.Start())
+	go func() {
+		defer writer.Close()
+		_, _ = io.WriteString(writer, "frame=    1 fps=0.0 q=0.0\rOpening '/tmp/seg_000001.m4s' for writing\n")
+	}()
+
+	handle := ports.RunHandle("session-path-verified-123")
+	adapter.mu.Lock()
+	adapter.activeProcs[handle] = cmd
+	adapter.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-verified", profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("monitorProcess did not finish in time")
+	}
+
+	cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIEncodeOnlyInterlacedHEVC)
+	require.True(t, ok)
+	assert.True(t, cap.Verified)
+	assert.Equal(t, hardware.PathStatusVerified, cap.Status)
 }
 
 func TestMonitorProcess_RecordsVAAPIRuntimeFailureForVAAPIError(t *testing.T) {
@@ -513,7 +673,7 @@ func TestMonitorProcess_RecordsNVENCRuntimeFailureForNVENCError(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", profiles.GPUBackendNVENC, adapter.StartTimeout)
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", profiles.GPUBackendNVENC, "", adapter.StartTimeout)
 		close(done)
 	}()
 

@@ -118,9 +118,6 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 	if serviceRef == "" {
 		return Capability{}, false, fmt.Errorf("scan: service ref required")
 	}
-	if err := m.waitForPlaybackIdle(ctx); err != nil {
-		return Capability{}, false, err
-	}
 
 	channel, found, err := m.lookupChannel(serviceRef)
 	if err != nil {
@@ -212,8 +209,76 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 
 func (m *Manager) GetStatus() ScanStatus {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.status
+	status := m.status
+	m.mu.RUnlock()
+
+	if status.State != "idle" || status.TotalChannels > 0 || status.ScannedChannels > 0 || status.UpdatedCount > 0 {
+		return status
+	}
+
+	return m.deriveIdleStatusFromCache(status)
+}
+
+func (m *Manager) deriveIdleStatusFromCache(status ScanStatus) ScanStatus {
+	if m == nil || m.store == nil || strings.TrimSpace(m.m3uPath) == "" {
+		return status
+	}
+
+	content, err := os.ReadFile(m.m3uPath)
+	if err != nil {
+		return status
+	}
+
+	channels := m3u.Parse(string(content))
+	if len(channels) == 0 {
+		return status
+	}
+
+	seen := make(map[string]struct{}, len(channels))
+	total := 0
+	cached := 0
+	latestFinishedAt := int64(0)
+
+	for _, ch := range channels {
+		serviceRef := ExtractServiceRef(ch.URL)
+		if serviceRef == "" {
+			continue
+		}
+		if _, ok := seen[serviceRef]; ok {
+			continue
+		}
+		seen[serviceRef] = struct{}{}
+		total++
+
+		cap, found := m.store.Get(serviceRef)
+		if !found {
+			continue
+		}
+		cached++
+
+		anchor := cap.LastSuccess
+		if anchor.IsZero() {
+			anchor = cap.LastScan
+		}
+		if anchor.IsZero() {
+			anchor = cap.LastAttempt
+		}
+		if ts := anchor.UTC().Unix(); ts > latestFinishedAt {
+			latestFinishedAt = ts
+		}
+	}
+
+	if total == 0 {
+		return status
+	}
+
+	status.TotalChannels = total
+	status.ScannedChannels = cached
+	status.UpdatedCount = cached
+	if latestFinishedAt > 0 {
+		status.FinishedAt = latestFinishedAt
+	}
+	return status
 }
 
 // Close releases the underlying capability store resources.
@@ -636,7 +701,9 @@ func needsExtendedMediaTruthRetry(info *vod.StreamInfo) bool {
 		return false
 	}
 	return strings.TrimSpace(info.Video.CodecName) != "" &&
-		(strings.TrimSpace(info.Container) == "" || strings.TrimSpace(info.Audio.CodecName) == "")
+		(strings.TrimSpace(info.Container) == "" ||
+			strings.TrimSpace(info.Audio.CodecName) == "" ||
+			info.BitrateKbps == 0)
 }
 
 func streamInfoFromCapability(cap Capability) *vod.StreamInfo {
@@ -644,22 +711,36 @@ func streamInfoFromCapability(cap Capability) *vod.StreamInfo {
 	if normalized.Container == "" &&
 		normalized.VideoCodec == "" &&
 		normalized.AudioCodec == "" &&
+		normalized.BitrateKbps == 0 &&
 		normalized.Width == 0 &&
 		normalized.Height == 0 &&
-		normalized.FPS == 0 {
+		normalized.FPS == 0 &&
+		normalized.SignalFPS == 0 &&
+		normalized.FieldOrder == "" &&
+		normalized.AudioChannels == 0 &&
+		normalized.AudioBitrateKbps == 0 &&
+		normalized.AudioSampleRate == 0 &&
+		normalized.AudioChannelLayout == "" {
 		return nil
 	}
 	return &vod.StreamInfo{
-		Container: normalized.Container,
+		Container:   normalized.Container,
+		BitrateKbps: normalized.BitrateKbps,
 		Video: vod.VideoStreamInfo{
 			CodecName:  normalized.VideoCodec,
 			Width:      normalized.Width,
 			Height:     normalized.Height,
 			FPS:        normalized.FPS,
+			SignalFPS:  normalized.SignalFPS,
 			Interlaced: normalized.Interlaced,
+			FieldOrder: normalized.FieldOrder,
 		},
 		Audio: vod.AudioStreamInfo{
-			CodecName: normalized.AudioCodec,
+			CodecName:     normalized.AudioCodec,
+			SampleRate:    normalized.AudioSampleRate,
+			Channels:      normalized.AudioChannels,
+			BitrateKbps:   normalized.AudioBitrateKbps,
+			ChannelLayout: normalized.AudioChannelLayout,
 		},
 	}
 }
@@ -672,9 +753,16 @@ func isRicherMediaTruth(base *vod.StreamInfo, candidate *vod.StreamInfo) bool {
 		return strings.TrimSpace(candidate.Container) != "" ||
 			strings.TrimSpace(candidate.Video.CodecName) != "" ||
 			strings.TrimSpace(candidate.Audio.CodecName) != "" ||
+			candidate.BitrateKbps > 0 ||
 			candidate.Video.Width > 0 ||
 			candidate.Video.Height > 0 ||
-			candidate.Video.FPS > 0
+			candidate.Video.FPS > 0 ||
+			candidate.Video.SignalFPS > 0 ||
+			strings.TrimSpace(candidate.Video.FieldOrder) != "" ||
+			candidate.Audio.Channels > 0 ||
+			candidate.Audio.BitrateKbps > 0 ||
+			candidate.Audio.SampleRate > 0 ||
+			strings.TrimSpace(candidate.Audio.ChannelLayout) != ""
 	}
 
 	added := false
@@ -687,6 +775,9 @@ func isRicherMediaTruth(base *vod.StreamInfo, candidate *vod.StreamInfo) bool {
 	if !compareStrictAdditiveString(base.Audio.CodecName, candidate.Audio.CodecName, &added) {
 		return false
 	}
+	if !compareStrictAdditiveInt(base.BitrateKbps, candidate.BitrateKbps, &added) {
+		return false
+	}
 	if !compareStrictAdditiveInt(base.Video.Width, candidate.Video.Width, &added) {
 		return false
 	}
@@ -694,6 +785,24 @@ func isRicherMediaTruth(base *vod.StreamInfo, candidate *vod.StreamInfo) bool {
 		return false
 	}
 	if !compareStrictAdditiveFloat(base.Video.FPS, candidate.Video.FPS, &added) {
+		return false
+	}
+	if !compareStrictAdditiveFloat(base.Video.SignalFPS, candidate.Video.SignalFPS, &added) {
+		return false
+	}
+	if !compareStrictAdditiveString(base.Video.FieldOrder, candidate.Video.FieldOrder, &added) {
+		return false
+	}
+	if !compareStrictAdditiveInt(base.Audio.Channels, candidate.Audio.Channels, &added) {
+		return false
+	}
+	if !compareStrictAdditiveInt(base.Audio.BitrateKbps, candidate.Audio.BitrateKbps, &added) {
+		return false
+	}
+	if !compareStrictAdditiveInt(base.Audio.SampleRate, candidate.Audio.SampleRate, &added) {
+		return false
+	}
+	if !compareStrictAdditiveString(base.Audio.ChannelLayout, candidate.Audio.ChannelLayout, &added) {
 		return false
 	}
 	return added
@@ -894,6 +1003,9 @@ func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRe
 		cap.Container = info.Container
 		cap.VideoCodec = strings.TrimSpace(info.Video.CodecName)
 		cap.AudioCodec = strings.TrimSpace(info.Audio.CodecName)
+		if info.BitrateKbps > 0 {
+			cap = cap.WithObservedBitrateKbps(info.BitrateKbps)
+		}
 		cap.Codec = ""
 		if cap.VideoCodec != "" {
 			cap.Codec = cap.VideoCodec
@@ -904,6 +1016,24 @@ func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRe
 		cap.Width = info.Video.Width
 		cap.Height = info.Video.Height
 		cap.FPS = info.Video.FPS
+		if info.Video.SignalFPS > 0 {
+			cap.SignalFPS = info.Video.SignalFPS
+		}
+		if fieldOrder := strings.TrimSpace(info.Video.FieldOrder); fieldOrder != "" {
+			cap.FieldOrder = fieldOrder
+		}
+		if info.Audio.Channels > 0 {
+			cap.AudioChannels = info.Audio.Channels
+		}
+		if info.Audio.BitrateKbps > 0 {
+			cap.AudioBitrateKbps = info.Audio.BitrateKbps
+		}
+		if info.Audio.SampleRate > 0 {
+			cap.AudioSampleRate = info.Audio.SampleRate
+		}
+		if channelLayout := strings.TrimSpace(info.Audio.ChannelLayout); channelLayout != "" {
+			cap.AudioChannelLayout = channelLayout
+		}
 	}
 	if cap.Width > 0 && cap.Height > 0 {
 		cap.Resolution = fmt.Sprintf("%dx%d", cap.Width, cap.Height)
@@ -911,6 +1041,9 @@ func (m *Manager) capabilityFromProbe(existing Capability, found bool, serviceRe
 		cap.Resolution = ""
 	}
 	cap.State = inferCapabilityState(cap.Resolution, cap.Codec)
+	if cap.State == CapabilityStateOK && !hasCompleteMediaTruth(cap.Container, cap.VideoCodec, cap.AudioCodec) {
+		cap.State = CapabilityStatePartial
+	}
 	if cap.State == CapabilityStateFailed {
 		if isLikelyInactiveEventFeed(channelName, nil) {
 			cap.State = CapabilityStateInactiveEventFeed

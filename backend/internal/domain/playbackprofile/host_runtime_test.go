@@ -39,3 +39,50 @@ func TestCanonicalizeHostRuntime_NormalizesNegativeValues(t *testing.T) {
 		t.Fatalf("expected canonicalized hardware codec set, got %#v", got.Capabilities.HardwareVideoCodec)
 	}
 }
+
+func TestBenchmarkClassForCodec_PrefersCodecSpecificClassBeforeAggregate(t *testing.T) {
+	got := BenchmarkClassForCodec(HostBenchmarkSnapshot{
+		Class: "strong",
+		Codecs: []HostCodecBenchmark{
+			{Codec: "h264", Class: "weak"},
+			{Codec: "hevc", Class: "strong"},
+		},
+	}, " H264 ")
+
+	if got != "weak" {
+		t.Fatalf("expected codec-specific h264 class, got %q", got)
+	}
+}
+
+func TestBenchmarkClassForCodec_FallsBackToAggregateClass(t *testing.T) {
+	got := BenchmarkClassForCodec(HostBenchmarkSnapshot{
+		Class: "moderate",
+	}, "av1")
+
+	if got != "moderate" {
+		t.Fatalf("expected aggregate benchmark fallback, got %q", got)
+	}
+}
+
+func TestBenchmarkClassForProfile_PrefersProfileSpecificClassBeforeAggregate(t *testing.T) {
+	got := BenchmarkClassForProfile(HostBenchmarkSnapshot{
+		Class: "strong",
+		Profiles: []HostProfileBenchmark{
+			{ProfileID: BenchmarkProfileVideoH2641080I, Class: "weak"},
+		},
+	}, " VIDEO_H264_1080I ")
+
+	if got != "weak" {
+		t.Fatalf("expected profile-specific benchmark class, got %q", got)
+	}
+}
+
+func TestBenchmarkClassForProfile_FallsBackToAggregateClass(t *testing.T) {
+	got := BenchmarkClassForProfile(HostBenchmarkSnapshot{
+		Class: "moderate",
+	}, BenchmarkProfileVideoH2642160P)
+
+	if got != "moderate" {
+		t.Fatalf("expected aggregate profile fallback, got %q", got)
+	}
+}

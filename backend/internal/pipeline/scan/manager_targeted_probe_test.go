@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/domain/vod"
@@ -69,4 +70,31 @@ func TestManager_ProbeCapability_StoresFailedTargetedProbeState(t *testing.T) {
 
 	_, usable := manager.GetCapability(serviceRef)
 	require.False(t, usable)
+}
+
+func TestManager_ProbeCapability_DoesNotWaitForPlaybackIdle(t *testing.T) {
+	store := NewMemoryStore()
+	serviceRef := "1:0:1:ABC"
+	playlistPath := filepath.Join(t.TempDir(), "playlist.m3u")
+	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U\n#EXTINF:-1,Test\nhttp://receiver.example/"+serviceRef+"\n"), 0o600))
+
+	manager := NewManager(store, playlistPath, nil)
+	var activePlaybackChecks atomic.Int32
+	manager.ActivePlaybackFn = func(ctx context.Context) (bool, error) {
+		activePlaybackChecks.Add(1)
+		return true, nil
+	}
+	manager.probeFn = func(ctx context.Context, probeURL string, opts infra.ProbeOptions) (*vod.StreamInfo, error) {
+		return &vod.StreamInfo{
+			Container: "ts",
+			Video:     vod.VideoStreamInfo{CodecName: "h264"},
+			Audio:     vod.AudioStreamInfo{CodecName: "aac"},
+		}, nil
+	}
+
+	capability, found, err := manager.ProbeCapability(context.Background(), serviceRef)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, capability.HasMediaTruth())
+	require.Zero(t, activePlaybackChecks.Load())
 }

@@ -3,6 +3,8 @@ package capabilities
 import (
 	"sort"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // PlaybackCapabilities represents the core capability set for playback decisions.
@@ -83,7 +85,7 @@ func CanonicalizeCapabilities(in PlaybackCapabilities) PlaybackCapabilities {
 	out.DeviceContext = canonicalDeviceContext(out.DeviceContext)
 	out.NetworkContext = canonicalNetworkContext(out.NetworkContext)
 	out.PreferredHLSEngine = strings.ToLower(strings.TrimSpace(out.PreferredHLSEngine))
-	out.ClientFamilyFallback = strings.ToLower(strings.TrimSpace(out.ClientFamilyFallback))
+	out.ClientFamilyFallback = playbackprofile.NormalizeClientFamilyID(out.ClientFamilyFallback)
 	out.ClientCapsSource = strings.ToLower(strings.TrimSpace(out.ClientCapsSource))
 	if out.RuntimeProbeVersion < 0 {
 		out.RuntimeProbeVersion = 0

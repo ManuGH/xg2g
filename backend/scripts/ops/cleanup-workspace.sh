@@ -8,7 +8,10 @@ Usage: cleanup-workspace.sh [--apply] [--aggressive]
 Dry-run by default. With --apply, removes safe local workspace clutter:
 - clean git worktrees under .worktrees/ and /tmp/xg2g-*
 - stale /tmp/xg2g-* directories (with --aggressive)
+- reproducible local test/build outputs
 - known local root log artifacts
+
+Runtime state such as data/ and logs/ is reported but not removed.
 
 Options:
   --apply       Execute cleanup actions (default is preview only)
@@ -73,6 +76,19 @@ act() {
   fi
 }
 
+remove_path_if_exists() {
+  local path="$1"
+  local rel
+
+  [[ -e "$path" || -L "$path" ]] || return 0
+  rel="${path#"$ROOT"/}"
+  if [[ "$path" == "$ROOT" || "$rel" == "$path" || "$rel" == "." || "$rel" == "" ]]; then
+    echo "SKIP: unsafe cleanup path $path"
+    return 0
+  fi
+  act "rm -rf $rel" rm -rf "$path"
+}
+
 maybe_remove_worktree() {
   local path="$1"
   if [[ "$path" == "$ROOT" || "$path" == "$CURRENT" ]]; then
@@ -129,6 +145,45 @@ for f in "$ROOT"/full_v3_test*.log; do
 done
 echo
 
+echo "== Local build and test outputs =="
+for path in \
+  "$ROOT/artifacts" \
+  "$ROOT/test-results" \
+  "$ROOT/playwright-report" \
+  "$ROOT/coverage" \
+  "$ROOT/frontend/webui/dist" \
+  "$ROOT/backend/coverage.out" \
+  "$ROOT/coverage.out" \
+  "$ROOT/coverage.html"; do
+  remove_path_if_exists "$path"
+done
+if [[ "$AGGRESSIVE" -eq 1 ]]; then
+  for path in \
+    "$ROOT/bin"; do
+    remove_path_if_exists "$path"
+  done
+else
+  for path in \
+    "$ROOT/bin"; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    echo "DRYRUN: aggressive local build output candidate: ${path#"$ROOT"/}"
+  done
+fi
+echo
+
+echo "== Runtime and dependency state =="
+for path in \
+  "$ROOT/data" \
+  "$ROOT/logs" \
+  "$ROOT/node_modules" \
+  "$ROOT/frontend/webui/node_modules" \
+  "$ROOT/backend/.venv" \
+  "$ROOT/.venv"; do
+  [[ -e "$path" || -L "$path" ]] || continue
+  echo "SKIP: local state kept by cleanup script: ${path#"$ROOT"/}"
+done
+echo
+
 echo "== Prune worktree metadata =="
 act "git worktree prune" git -C "$ROOT" worktree prune
 
@@ -137,4 +192,3 @@ if [[ "$APPLY" -eq 1 ]]; then
 else
   echo "Preview complete. Re-run with --apply to execute."
 fi
-

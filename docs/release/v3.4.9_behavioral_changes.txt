@@ -1,0 +1,2 @@
+- WebUI now uses the Signal Studio visual system with a deeper broadcast stage, teal action accents, warmer live-state treatment, and stronger glass surfaces across shell, navigation, and dashboard.
+- The dashboard home view now presents a larger operator summary, a decorative signal dial, stronger task-first cards, and clearer diagnostic hierarchy without changing playback or API behavior.

@@ -35,7 +35,7 @@ func TestOperatorRoutes_InternalAllowlist(t *testing.T) {
 	require.NoError(t, err)
 
 	expected := map[string]methodSet{
-		"/internal/setup/validate":        {"POST": {}},
+		"/internal/setup/validate":       {"POST": {}},
 		"/internal/system/config/reload": {"POST": {}},
 	}
 	require.Equal(t, expected, got)
@@ -104,6 +104,19 @@ func TestOperatorRoutes_InternalEndpointsRequireAdminScope(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPublicRoutes_IndexHTMLRedirectsToUI(t *testing.T) {
+	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
+	router := mustBuildChiRouter(s)
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/index.html", nil)
+	res := httptest.NewRecorder()
+
+	router.ServeHTTP(res, req)
+
+	require.Equal(t, http.StatusTemporaryRedirect, res.Code)
+	require.Equal(t, "/ui/", res.Header().Get("Location"))
 }
 
 func mustBuildChiRouter(s *Server) chi.Router {

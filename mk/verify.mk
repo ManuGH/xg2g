@@ -2,7 +2,7 @@
 # Governance and Verification Gates
 # ===================================================================================================
 
-.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-public-deployment gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout
+.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout
 
 verify: verify-generated-artifacts verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract ## Run all governance verification gates
 
@@ -94,6 +94,7 @@ verify-no-hls-startup-policy-client-usage: ## Verify HLS startup policy debug fi
 	@./$(FRONTEND_DIR)/webui/scripts/verify-no-hls-startup-policy-client-usage.sh
 
 gate-repo-hygiene: ## Local wrapper for repository health checks; GitHub repo-health.yml is authoritative
+	@./$(BACKEND_DIR)/scripts/ci_gate_root_purity.sh
 	@./$(BACKEND_DIR)/scripts/ci/check-large-files.sh
 	@./$(BACKEND_DIR)/scripts/ci/check-test-assets-location.sh
 	@./$(BACKEND_DIR)/scripts/ci_gate_repo_hygiene.sh
@@ -115,3 +116,9 @@ verify-systemd-runtime-contract: ## Verify systemd/runtime env contract semantic
 
 verify-installation-contract: ## Verify packaging/install-time host layout contract
 	@./$(BACKEND_DIR)/scripts/verify-installation-contract.sh
+
+verify-capacity-autocodec-demotion: ## Verify deterministic auto-codec capacity/demotion behavior
+	@./$(BACKEND_DIR)/scripts/verify-capacity-autocodec-demotion.sh
+
+verify-codec-path-matrix: ## Verify x264/x265/AV1 codec-path matrix and iOS codec-path policy
+	@./$(BACKEND_DIR)/scripts/verify-codec-path-matrix.sh

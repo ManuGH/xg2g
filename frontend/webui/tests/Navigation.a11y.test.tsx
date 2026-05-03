@@ -71,7 +71,7 @@ describe('Navigation semantics', () => {
     const current = links.filter(link => link.getAttribute('aria-current') === 'page');
     expect(current).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('link', { name: /nav\.dashboard|dashboard/i }));
+    fireEvent.click(screen.getByRole('link', { name: /nav\.dashboard|start/i }));
     await waitFor(() => {
       expect(screen.getByTestId('pathname')).toHaveTextContent(ROUTE_MAP.dashboard);
     });

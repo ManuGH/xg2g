@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/problemcode"
@@ -75,6 +77,21 @@ type NetworkInterfaceInfo struct {
 type StorageInfo struct {
 	Devices   *[]StorageItem `json:"devices,omitempty"`
 	Locations *[]StorageItem `json:"locations,omitempty"`
+}
+
+type storageOriginHint string
+
+const (
+	storageOriginReceiver storageOriginHint = "receiver"
+	storageOriginXG2G     storageOriginHint = "xg2g"
+)
+
+type storageDescriptor struct {
+	Path     string
+	Model    string
+	Capacity string
+	Origin   storageOriginHint
+	TypeHint string
 }
 
 // RuntimeInfo represents runtime information
@@ -188,13 +205,16 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		locations = nil
 	}
 
-	locationItems := make([]StorageItem, 0)
-	for _, loc := range locations {
-		if loc.Path != "" {
-			item := s.checkStorageItem(loc.Path, "Aufnahme-Verzeichnis", "")
-			locationItems = append(locationItems, item)
-		}
+	deviceItems := make([]StorageItem, 0, len(info.Info.HDD))
+	for _, dev := range info.Info.HDD {
+		deviceItems = append(deviceItems, s.checkStorageItem(storageDescriptor{
+			Path:     dev.Mount,
+			Model:    dev.Model,
+			Capacity: dev.FriendlyCapacity,
+			Origin:   storageOriginReceiver,
+		}))
 	}
+	locationItems := s.collectStorageLocationItems(locations)
 
 	// Convert to API response
 	// Note: We use empty strings instead of "N/A" to allow omitempty to work.
@@ -217,7 +237,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		},
 		Tuners:  convertTuners(info.Info.Tuners, info.Info.Streams, statusInfo),
 		Network: convertNetwork(info.Info.IFaces),
-		Storage: s.convertStorage(info.Info.HDD, locationItems),
+		Storage: s.convertStorage(deviceItems, locationItems),
 		Runtime: RuntimeInfo{
 			Uptime: info.Info.Uptime,
 		},
@@ -266,6 +286,12 @@ func (s *Server) getStoragePaths(ctx context.Context) []string {
 		log.L().Warn().Msg("storage_monitor: OpenWebIF client not available or wrong type")
 	}
 
+	for _, desc := range collectConfiguredStorageDescriptors(&cfg) {
+		if desc.Path != "" {
+			unique[desc.Path] = struct{}{}
+		}
+	}
+
 	log.L().Debug().Int("unique_paths", len(unique)).Msg("storage_monitor: getStoragePaths result")
 
 	paths := make([]string, 0, len(unique))
@@ -274,6 +300,153 @@ func (s *Server) getStoragePaths(ctx context.Context) []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+func collectConfiguredStorageDescriptors(cfg *config.AppConfig) []storageDescriptor {
+	if cfg == nil {
+		return nil
+	}
+
+	merged := make(map[string]storageDescriptor)
+	add := func(desc storageDescriptor) {
+		cleanPath := strings.TrimSpace(desc.Path)
+		if cleanPath == "" {
+			return
+		}
+		cleanPath = filepath.Clean(cleanPath)
+		key := string(desc.Origin) + "\x00" + cleanPath
+		desc.Path = cleanPath
+		if existing, ok := merged[key]; ok {
+			if existing.TypeHint == "" && desc.TypeHint != "" {
+				existing.TypeHint = desc.TypeHint
+			}
+			if existing.Model == "" && desc.Model != "" {
+				existing.Model = desc.Model
+			}
+			if existing.Capacity == "" && desc.Capacity != "" {
+				existing.Capacity = desc.Capacity
+			}
+			merged[key] = existing
+			return
+		}
+		merged[key] = desc
+	}
+
+	for id, path := range cfg.RecordingRoots {
+		add(storageDescriptor{
+			Path:   path,
+			Model:  strings.TrimSpace(id),
+			Origin: storageOriginXG2G,
+		})
+	}
+	for _, mapping := range cfg.RecordingPathMappings {
+		add(storageDescriptor{
+			Path:   mapping.LocalRoot,
+			Origin: storageOriginXG2G,
+		})
+	}
+	for _, root := range cfg.Library.Roots {
+		add(storageDescriptor{
+			Path:     root.Path,
+			Model:    strings.TrimSpace(root.ID),
+			Origin:   storageOriginXG2G,
+			TypeHint: strings.TrimSpace(root.Type),
+		})
+	}
+
+	out := make([]storageDescriptor, 0, len(merged))
+	for _, desc := range merged {
+		out = append(out, desc)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Origin != out[j].Origin {
+			return out[i].Origin < out[j].Origin
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out
+}
+
+func (s *Server) collectStorageLocationItems(receiverLocations []openwebif.MovieLocation) []StorageItem {
+	descriptors := make([]storageDescriptor, 0, len(receiverLocations))
+	for _, loc := range receiverLocations {
+		if strings.TrimSpace(loc.Path) == "" {
+			continue
+		}
+		descriptors = append(descriptors, storageDescriptor{
+			Path:   loc.Path,
+			Origin: storageOriginReceiver,
+		})
+	}
+
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+	descriptors = append(descriptors, collectConfiguredStorageDescriptors(&cfg)...)
+
+	items := make([]StorageItem, 0, len(descriptors))
+	for _, desc := range descriptors {
+		items = append(items, s.checkStorageItem(desc))
+	}
+	return items
+}
+
+func deriveStoragePathType(origin storageOriginHint, mount, model, fsType, typeHint string) string {
+	switch origin {
+	case storageOriginReceiver:
+		if isNetworkFs(fsType) || hasNetworkStorageHint(mount, model, typeHint) {
+			return "receiver_share"
+		}
+		return "receiver_attached"
+	case storageOriginXG2G:
+		if isAggregateFs(fsType) || hasAggregateStorageHint(mount, model, typeHint) {
+			return "xg2g_aggregate"
+		}
+		if isNetworkFs(fsType) || hasNetworkStorageHint(mount, model, typeHint) {
+			return "xg2g_share"
+		}
+		if strings.TrimSpace(mount) != "" || strings.TrimSpace(model) != "" {
+			return "xg2g_local"
+		}
+	}
+	return "unknown"
+}
+
+func hasNetworkStorageHint(values ...string) bool {
+	for _, value := range values {
+		low := strings.ToLower(strings.TrimSpace(value))
+		if low == "" {
+			continue
+		}
+		if low == "nfs" || low == "smb" || low == "cifs" {
+			return true
+		}
+		if strings.Contains(low, "/media/net") ||
+			strings.Contains(low, "nfs") ||
+			strings.Contains(low, "smb") ||
+			strings.Contains(low, "cifs") ||
+			strings.Contains(low, "network") ||
+			strings.Contains(low, "remote") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAggregateStorageHint(values ...string) bool {
+	for _, value := range values {
+		low := strings.ToLower(strings.TrimSpace(value))
+		if low == "" {
+			continue
+		}
+		if strings.Contains(low, "mergerfs") ||
+			strings.Contains(low, "mergefs") ||
+			strings.Contains(low, "unionfs") ||
+			strings.Contains(low, "overlay") {
+			return true
+		}
+	}
+	return false
 }
 
 // calculateMemory computes memory values from OpenWebIF data
@@ -392,13 +565,10 @@ func convertNetwork(ifaces []openwebif.NetworkInterface) NetworkInfo {
 }
 
 // convertStorage converts HDDInfo to StorageInfo
-func (s *Server) convertStorage(devices []openwebif.HDDInfo, locations []StorageItem) StorageInfo {
+func (s *Server) convertStorage(devices []StorageItem, locations []StorageItem) StorageInfo {
 	var devsPtr *[]StorageItem
 	if len(devices) > 0 {
-		devs := make([]StorageItem, len(devices))
-		for i, dev := range devices {
-			devs[i] = s.checkStorageItem(dev.Mount, dev.Model, dev.FriendlyCapacity)
-		}
+		devs := append([]StorageItem(nil), devices...)
 		devsPtr = &devs
 	}
 
@@ -414,8 +584,11 @@ func (s *Server) convertStorage(devices []openwebif.HDDInfo, locations []Storage
 }
 
 // checkStorageItem performs accessibility checks and NAS detection
-func (s *Server) checkStorageItem(mount, model, capacity string) StorageItem {
+func (s *Server) checkStorageItem(desc storageDescriptor) StorageItem {
 	item := StorageItem{}
+	mount := strings.TrimSpace(desc.Path)
+	model := strings.TrimSpace(desc.Model)
+	capacity := strings.TrimSpace(desc.Capacity)
 	if mount != "" {
 		item.Mount = &mount
 	}
@@ -449,23 +622,17 @@ func (s *Server) checkStorageItem(mount, model, capacity string) StorageItem {
 		item.CheckedAt = &health.CheckedAt
 	}
 
-	// NAS Detection (Heuristics + Mount Info)
-	lowMount := strings.ToLower(mount)
-	lowModel := strings.ToLower(model)
-
-	if health.FsType != "" {
-		item.IsNas = isNasFs(health.FsType)
-	} else if strings.Contains(lowMount, "nfs") ||
-		strings.Contains(lowMount, "smb") ||
-		strings.Contains(lowMount, "cifs") ||
-		strings.Contains(lowMount, "net") ||
-		strings.Contains(lowMount, "mergerfs") ||
-		strings.Contains(lowModel, "nas") ||
-		strings.Contains(lowModel, "net") {
-		item.IsNas = true
-	} else {
-		item.IsNas = false
+	origin := string(desc.Origin)
+	if strings.TrimSpace(origin) != "" {
+		item.Origin = &origin
 	}
+
+	pathType := deriveStoragePathType(desc.Origin, mount, model, health.FsType, desc.TypeHint)
+	if pathType != "" {
+		item.PathType = &pathType
+	}
+
+	item.IsNas = pathType == "receiver_share" || pathType == "xg2g_share"
 
 	return item
 }

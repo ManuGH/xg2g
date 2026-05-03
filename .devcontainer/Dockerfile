@@ -4,7 +4,7 @@ ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000
 
-COPY --from=node:22-bookworm /usr/local/ /usr/local/
+COPY --from=node:24-bookworm /usr/local/ /usr/local/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash-completion \

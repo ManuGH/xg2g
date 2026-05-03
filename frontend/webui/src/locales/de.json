@@ -1,8 +1,8 @@
 {
   "nav": {
-    "dashboard": "Dashboard",
+    "dashboard": "Start",
     "recordings": "Aufnahmen",
-    "epg": "TV/EPG",
+    "epg": "Fernsehen",
     "timers": "Timer",
     "series": "Serien",
     "files": "Dateien",
@@ -12,12 +12,20 @@
     "logout": "Abmelden",
     "more": "Mehr",
     "config": "Einrichtung",
-    "sectionControl": "Steuerung",
-    "sectionBrowse": "Durchsuchen",
+    "sectionControl": "Start",
+    "sectionBrowse": "Medien",
     "sectionSystem": "System",
-    "controlSurfaces": "Mehr Werkzeuge",
+    "controlSurfaces": "Weitere Bereiche",
     "sheetEyebrow": "Navigation",
-    "sheetTitle": "Mehr Werkzeuge",
+    "sheetTitle": "Weitere Bereiche",
+    "currentArea": "Aktueller Bereich",
+    "displaySize": {
+      "label": "Ansichtsgröße",
+      "hint": "Das Layout passt sich automatisch an. Hier änderst du nur die Lesbarkeit.",
+      "compact": "Kompakt",
+      "normal": "Standard",
+      "large": "Groß"
+    },
     "cards": {
       "boxStreaming": {
         "title": "Receiver Verbindung",
@@ -73,6 +81,15 @@
     "receiverUnavailable": "Receiver ist im Standby (Leerlauf)",
     "noCurrentProgram": "Keine aktuellen Programminformationen"
   },
+  "legacyRoute": {
+    "eyebrow": "Expertenweg",
+    "title": "Diese Seite gehört jetzt zu {{parent}}",
+    "openParent": "{{parent}} öffnen",
+    "timersDescription": "Für die meisten Wege planst du Aufnahmen direkt im Fernsehen. Diese Seite bleibt für die direkte Timer-Verwaltung erhalten.",
+    "seriesDescription": "Serienregeln bleiben als Expertenwerkzeug verfügbar. Für normales DVR-Browsing startest du jetzt bei Aufnahmen.",
+    "filesDescription": "Playlist- und Guide-Dateien bleiben als Expertenwerkzeug verfügbar. Du erreichst sie jetzt auch über Einstellungen.",
+    "logsDescription": "Diagnose-Logs bleiben direkt erreichbar, gehören für die meisten Haushalte aber unter Einstellungen."
+  },
   "player": {
     "status": "Status",
     "resolution": "Auflösung",
@@ -91,6 +108,11 @@
     "segDuration": "Seg Dauer",
     "closePlayer": "Player schließen",
     "preparingDirectPlay": "Direktwiedergabe wird vorbereitet...",
+    "preparingRecordingPlayback": "Aufnahme wird geöffnet…",
+    "recordingFallbackTitle": "Aufnahme",
+    "recordingStartupEyebrow": "Aufnahme",
+    "recordingStartupStatus": "Startet",
+    "recordingStartupSupport": "Quelle wird vorbereitet. Die Wiedergabe startet gleich.",
     "serviceRefPlaceholder": "Service-Ref (1:0:1...)",
     "serviceRefRequired": "Service-Ref ist erforderlich.",
     "seekBack15m": "15 Min. zurück",
@@ -101,6 +123,7 @@
     "seekForward15s": "15 Sek. vor",
     "seekForward60s": "60 Sek. vor",
     "seekForward15m": "15 Min. vor",
+    "seekTimeline": "Zeitleiste",
     "goLive": "Live gehen",
     "fullscreenLabel": "Vollbild",
     "exitFullscreenLabel": "Vollbild beenden",
@@ -162,8 +185,15 @@
     "resumeTitle": "Wiedergabe fortsetzen?",
     "resumePrompt": "Ab {{time}} fortsetzen?",
     "resumeAction": "Fortsetzen",
+    "resumeFrom": "Weiter bei {{time}}",
     "startOver": "Von vorn beginnen",
     "dvrMode": "DVR-Modus",
+    "inlineDvrFullscreenHint": "Für DVR-Scrubbing am iPhone ins Vollbild wechseln.",
+    "mobilePlaybackWindowBadge": {
+      "live": "Live",
+      "dvr": "DVR",
+      "vod": "Replay"
+    },
     "preparing": "Wird vorbereitet...",
     "timeout": "Zeitüberschreitung",
     "networkError": "Netzwerkfehler",
@@ -173,7 +203,49 @@
     "playbackError": "Wiedergabefehler",
     "streamUrlMissing": "Stream-URL fehlt",
     "sessionExpired": "Sitzung abgelaufen. Bitte neu starten.",
-    "sessionNotFound": "Sitzung existiert nicht mehr."
+    "sessionNotFound": "Sitzung existiert nicht mehr.",
+    "watchSurfaceLabel": "Details zur Aufnahmen-Wiedergabe",
+    "playbackWindow": "Wiedergabefenster",
+    "playbackWindowKinds": {
+      "live": "Nur live",
+      "live-dvr": "Live mit DVR-Fenster",
+      "vod": "Auf Abruf",
+      "unknown": "Unbekannt"
+    },
+    "runtimePolicyPhase": "Policy-Phase",
+    "runtimePolicyPhases": {
+      "probing": "Probe läuft",
+      "cooldown": "Abklingphase",
+      "probe_regressed": "Probe zurückgefallen",
+      "recovering": "Erholung",
+      "degraded": "Herabgestuft",
+      "stable": "Stabil",
+      "unknown": "Unbekannt"
+    },
+    "copyRuntimeReplay": "Replay kopieren",
+    "runtimeReplayCopied": "Replay kopiert",
+    "runtimeReplayCopyFailed": "Replay konnte nicht kopiert werden",
+    "runtimePolicySupport": {
+      "genericProfile": "dem aktuellen Profil",
+      "startup": {
+        "probing": "{{profile}} wird kurz getestet. Wenn es stabil bleibt, läuft die Wiedergabe dort weiter.",
+        "cooldown": "{{profile}} wird kurz gehalten, bevor die nächste Anpassung erlaubt ist.",
+        "probeRegressed": "Ein höheres Profil war gerade instabil. Deshalb bleibt die Wiedergabe vorerst auf {{profile}}.",
+        "recovering": "Die letzte Instabilität wird gerade abgefangen, bevor der nächste Schritt folgt.",
+        "degraded": "{{profile}} wird vorerst genutzt, um die Wiedergabe stabil zu halten."
+      },
+      "error": {
+        "probing": "Beim Test von {{profile}} ist die Wiedergabe weggerutscht.",
+        "cooldown": "Vor der nächsten Profiländerung läuft gerade eine kurze Abklingphase.",
+        "probeRegressed": "Ein höheres Profil ist gerade zurückgefallen. {{profile}} bleibt deshalb kurz fixiert.",
+        "recovering": "Die Sitzung liegt nach der letzten Instabilität noch im Erholungsfenster.",
+        "degraded": "Der Player ist bereits auf {{profile}} heruntergegangen, um Stabilität zu sichern."
+      }
+    },
+    "liveWindowState": "Live-Fenster",
+    "liveWindowReady": "Fenster bereit",
+    "liveWindowAtEdge": "Am Live-Rand",
+    "liveWindowBehindEdge": "{{seconds}}s hinter Live"
   },
   "dashboard": {
     "controlSummary": "Kontrollübersicht",
@@ -259,11 +331,64 @@
     "timeJustNow": "Gerade eben",
     "timeMinutesAgo": "vor {{count}} Min.",
     "timeHoursAgo": "vor {{count}} Std.",
+    "heroAside": {
+      "eyebrow": "Nächster sinnvoller Schritt",
+      "profileLabel": "Aktives Profil",
+      "standbyTitle": "Starte mit Fernsehen, sobald der Receiver wieder wach ist",
+      "standbyDetail": "Die Box schläft gerade. Gehe zuerst über Fernsehen, damit Guide- und Senderstatus wieder sauber aufgebaut werden.",
+      "streamingTitle": "Wiedergabe läuft bereits über die Bridge",
+      "streamingDetail": "Nutze Aufnahmen für die nächste Aufgabe oder springe zurück zu Fernsehen, ohne die aktuelle Operator-Übersicht zu verlieren.",
+      "readyTitle": "Alles ist bereit für den normalen Haushaltsweg",
+      "readyDetail": "Fernsehen ist der schnellste Einstieg. Aufnahmen und Einrichtung bleiben einen Klick entfernt, wenn das Profil sie erlaubt."
+    },
+    "start": {
+      "eyebrow": "Hier anfangen",
+      "title": "Wähle die Aufgabe, nicht das Werkzeug",
+      "subtitle": "Jeder Bereich folgt jetzt zuerst der Haushalts-Aufgabe. Direkte Expertenwege bleiben separat darunter.",
+      "status": {
+        "ready": "Jetzt bereit",
+        "standby": "Receiver im Standby",
+        "available": "In diesem Profil verfügbar",
+        "blocked": "In diesem Profil gesperrt"
+      },
+      "live": {
+        "step": "Schritt 1",
+        "title": "Fernsehen öffnen",
+        "description": "Öffne Guide und Senderliste und starte Wiedergabe über den einfachsten Einstieg.",
+        "detailReady": "Guide, Senderliste und Timer-Planung liegen jetzt an einem Ort.",
+        "detailStandby": "Der Receiver ist im Standby. Wecke ihn zuerst, damit Guide- und Senderdaten neu geladen werden.",
+        "action": "Fernsehen öffnen"
+      },
+      "recordings": {
+        "step": "Schritt 2",
+        "title": "Aufnahmen öffnen",
+        "description": "Setze angefangene Sitzungen fort, durchsuche Ordner und halte DVR-Wiedergabe getrennt von Live-TV.",
+        "detailManage": "Serienregeln bleiben in diesem Bereich, wenn du sie brauchst.",
+        "detailWatch": "Dieses Profil kann Aufnahmen ansehen, aber keine DVR-Regeln ändern.",
+        "detailBlocked": "Dieses Profil kann Aufnahmen gerade nicht öffnen.",
+        "action": "Aufnahmen öffnen"
+      },
+      "settings": {
+        "step": "Schritt 3",
+        "title": "Einrichtung und Haushalt",
+        "description": "Receiver-Setup, Haushaltsprofile und Streaming-Standards bleiben gesammelt unter Einstellungen.",
+        "detailReady": "Nutze das für Hilfe beim Einrichten statt für direkte Expertenwerkzeuge.",
+        "detailBlocked": "Dieses Profil kann Einstellungen gerade nicht öffnen.",
+        "action": "Einrichtung öffnen"
+      }
+    },
+    "shortcuts": {
+      "eyebrow": "Direktwege",
+      "title": "Einen Bereich direkt öffnen",
+      "subtitle": "Nutze diese Abkürzungen, wenn du das genaue Ziel schon kennst."
+    },
     "logLevelError": "Fehler",
     "logLevelWarn": "Warnung",
     "logLevelInfo": "Info"
   },
   "epg": {
+    "backToGuide": "Zurück zu Fernsehen",
+    "sectionNavLabel": "Fernsehbereiche",
     "pageTitle": "EPG Übersicht ({{count}})",
     "timeRange": "Zeitraum",
     "rangeNowTo6h": "jetzt bis +6h",
@@ -290,12 +415,18 @@
     "showLess": "Weniger anzeigen"
   },
   "recordings": {
+    "seriesRulesAction": "Serienregeln",
+    "backToLibrary": "Zurück zu Aufnahmen",
+    "sectionNavLabel": "Aufnahmebereiche",
     "libraryRoot": "Mediathek",
     "profileBlocked": "Das aktive Profil darf keine Aufnahmen öffnen.",
     "loading": "Aufnahmen werden geladen...",
     "eyebrow": "DVR-Mediathek",
     "title": "Aufnahmen",
-    "summary": "Durchsuche abgeschlossene Aufnahmen, laufende Mitschnitte und Wiedereinstiegspunkte über alle konfigurierten Speicherorte.",
+    "summary": "Finde Aufnahmen schnell, setze laufende Sitzungen fort und starte Wiedergabe ohne Umwege.",
+    "seriesTitle": "Serienregeln",
+    "seriesSummary": "Automatisiere wiederkehrende DVR-Regeln, ohne den normalen Aufnahmeweg in eine Expertenoberfläche zu verwandeln.",
+    "seriesContext": "Power-User-Regeln bleiben hier gebündelt, während der Standardweg für Haushalte auf Browsing und Wiedergabe fokussiert bleibt.",
     "browsingRoot": "Ansicht: {{root}}",
     "browsingPath": "Ansicht: {{root}} / {{path}}",
     "metricItems": "Elemente",
@@ -329,12 +460,28 @@
     "descriptionFallback": "Keine Beschreibung verfügbar.",
     "emptyLocation": "Keine Aufnahmen an diesem Ort gefunden.",
     "emptyFilter": "Keine Aufnahmen passen zum aktuellen Filter.",
+    "continueWatchingTitle": "Weitersehen",
+    "latestTitle": "Neueste Aufnahmen",
+    "openPreplay": "Öffnen",
+    "preplayEyebrow": "Aufnahme",
+    "closePreplay": "Aufnahme schließen",
+    "untitled": "Aufnahme",
+    "resumeProgress": "Weiter bei {{time}}",
+    "playAction": "Abspielen",
+    "resumeAction": "Fortsetzen ab {{time}}",
+    "restartAction": "Neu starten",
     "loadingPlayer": "Player wird vorbereitet...",
+    "loadingPlayerHint": "Player und Aufnahme werden vorbereitet.",
+    "renameAction": "Umbenennen",
+    "renamePrompt": "Neuer Name für „{{title}}“",
+    "renameSuccess": "Aufnahme erfolgreich umbenannt.",
+    "renameError": "Fehler beim Umbenennen der Aufnahme.",
     "selectionMode": "Auswahlmodus",
     "deleteSelected": "Ausgewählte löschen ({{count}})",
     "cancelSelection": "Abbrechen",
+    "confirmDeleteOne": "Möchten Sie „{{title}}“ wirklich unwiderruflich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
     "confirmDelete": "Möchten Sie {{count}} Aufnahmen wirklich unwiderruflich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
-    "deleteSuccess": "{{count}} Aufnahmen erfolgreich gelöscht.",
+    "deleteSuccess": "Erfolgreich {{count}} Aufnahmen gelöscht.",
     "deletePartial": "{{success}} Aufnahmen gelöscht. {{failed}} fehlgeschlagen.",
     "deleteError": "Fehler beim Löschen der Aufnahmen."
   },
@@ -379,10 +526,62 @@
     "regenerateErrorTitle": "Playlist-Dateien konnten nicht neu erzeugt werden"
   },
   "settings": {
+    "backToOverview": "Zurück zur Übersicht",
+    "backToSection": "Zurück zu {{section}}",
+    "sectionNavLabel": "Einstellungsbereiche",
+    "sections": {
+      "overview": "Übersicht"
+    },
+    "context": {
+      "section": {
+        "setup": "Führt dich erneut durch die Grundkonfiguration und bleibt direkt per URL erreichbar.",
+        "household": "Profile, Favoriten und Berechtigungen liegen jetzt als eigener Einstellungsbereich unter Einstellungen.",
+        "android-tv": "Die TV-Übergabe ist jetzt ein eigener Bereich innerhalb der Einstellungen.",
+        "scan": "Der Senderscan ist jetzt als direkter Unterbereich der Einstellungen erreichbar.",
+        "streaming": "Streaming-Vorgaben liegen jetzt in einem klaren Unterbereich der Einstellungen.",
+        "advanced": "Expertenwerkzeuge liegen gesammelt unter dem erweiterten Einstellungsbereich."
+      },
+      "tool": {
+        "files": "Playlist-, Guide- und Kompatibilitätsfeeds liegen jetzt unter dem Expertenbereich der Einstellungen.",
+        "logs": "Diagnose- und Serverereignisse liegen jetzt unter dem Expertenbereich der Einstellungen."
+      }
+    },
+    "advanced": {
+      "title": "Expertenbereich",
+      "subtitle": "Dateibrowser und Diagnose-Logs bleiben hier erreichbar, ohne die Hauptnavigation weiter aufzublähen."
+    },
     "kicker": "System",
     "title": "Einstellungen",
     "subtitle": "Receiver-Setup konfigurieren und Streaming-Defaults wählen. Das Setup bleibt hier nach der Ersteinrichtung.",
     "saved": "Einstellungen automatisch gespeichert",
+    "summary": {
+      "eyebrow": "Bereich wählen",
+      "title": "Die Hauptaufgaben führen. Expertenwerkzeuge bleiben nah dran.",
+      "subtitle": "Setup und Haushalt stehen vorne. Streaming, TV-Übergabe und Diagnose bleiben direkt daneben erreichbar.",
+      "primary": "Hauptpfad",
+      "secondary": "Nebenpfad",
+      "ready": "Bereit",
+      "attention": "Braucht Setup",
+      "protected": "Geschützt",
+      "open": "Offen",
+      "available": "Verfügbar",
+      "live": "Live",
+      "modeLan": "LAN",
+      "modePublic": "Public",
+      "setupConfigured": "Die Basisverbindung ist verifiziert. Das Setup lässt sich jederzeit neu öffnen, ohne den Rest der Oberfläche aufzureißen.",
+      "setupPending": "Schließe zuerst das Ersteinrichtungs-Setup ab, bevor Apps gekoppelt und die restliche Oberfläche feinjustiert werden.",
+      "setupMeta": "{{mode}} Modus",
+      "householdBody": "{{count}} Profile stehen bereit. Favoriten, DVR-Rechte und Einstellungszugriff bleiben hier sauber gebündelt.",
+      "householdMetaProtected": "PIN aktiv",
+      "householdMetaOpen": "Kein PIN",
+      "androidTvBody": "Übergib den aktiven Server an Android TV und Fire TV, ohne lange URLs mit der Fernbedienung einzutippen.",
+      "androidTvMetaReady": "App-Übergabe bereit",
+      "androidTvMetaBlocked": "Kein Native-Endpoint",
+      "scanBody": "Halte Codec- und Container-Truth aktuell, damit spätere Playback-Entscheidungen verlässlich bleiben.",
+      "streamingBody": "Die Auslieferung bleibt bewusst eng geführt, damit Browser im ganzen Haushalt konsistent reagieren.",
+      "advancedBody": "Dateien und Logs bleiben erreichbar, ohne die Hauptnavigation in ein Wartungsmenü zu verwandeln.",
+      "toolsCount": "{{count}} Werkzeuge"
+    },
     "androidTv": {
       "title": "Android TV",
       "subtitle": "Verknüpfe die Android-TV-App mit diesem Server, ohne die URL auf dem Fernseher eintippen zu müssen.",
@@ -438,8 +637,8 @@
         "hint": "Passt die Qualität automatisch an, damit die Wiedergabe bei langsamen Verbindungen stabil bleibt."
       },
       "scan": {
-        "title": "Smart Profil Scanner",
-        "description": "Scannt alle Kanäle im Hintergrund auf Interlacing. Ermöglicht GPU-Beschleunigung für spezifische Kanäle.",
+        "title": "Media Truth Scan",
+        "description": "Scannt alle Kanäle im Hintergrund auf Container-, Codec-, Auflösungs- und Interlacing-Truth. Diese Medienwahrheit steuert spätere Profil- und GPU-Entscheidungen.",
         "start": "Scan Starten",
         "status": {
           "label": "Status",
@@ -633,6 +832,18 @@
     "drives": "Laufwerke",
     "internal": "Intern",
     "nas": "NAS",
+    "storageOrigin": {
+      "receiver": "Receiver",
+      "xg2g": "xg2g"
+    },
+    "storageType": {
+      "receiver_attached": "Receiver-Speicher",
+      "receiver_share": "Receiver-Share",
+      "xg2g_local": "xg2g Lokal",
+      "xg2g_share": "xg2g Share",
+      "xg2g_aggregate": "xg2g MergeFS",
+      "unknown": "Unbekannt"
+    },
     "paths": "Aufnahme-Pfade",
     "healthLabel": "Gesundheit",
     "check": "Prüfung",
@@ -644,6 +855,13 @@
       "normal": "Normal",
       "warning": "Erhöht",
       "critical": "Hoch"
+    },
+    "glance": {
+      "tunersActive": "{{count}} aktiv von {{total}}",
+      "tunersIdle": "Alle Tuner im Leerlauf",
+      "storageReady": "{{count}} von {{total}} bereit",
+      "storageEmpty": "Kein Aufnahmeziel",
+      "networkReady": "{{count}} verbunden"
     },
     "noInformation": "Keine Informationen verfügbar.",
     "loadError": "System-Informationen konnten nicht geladen werden: {{error}}",

@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
@@ -55,4 +56,35 @@ func TestProcessDetailPriority_PrefersCodecParamsOverPrematureStreamEnd(t *testi
 		processDetailPriority("copy output missing codec parameters"),
 		processDetailPriority("upstream stream ended prematurely"),
 	)
+}
+
+func TestRecordRuntimeDiagnostics_ParsesProgressAndSourceWarnings(t *testing.T) {
+	adapter := &LocalAdapter{runtimeDiagnostics: make(map[ports.RunHandle]ports.RuntimeDiagnostics)}
+	handle := ports.RunHandle("session-1-123")
+
+	adapter.recordRuntimeDiagnostics(handle, "frame=6472 fps=51.35 drop_frames=0 dup_frames=52 speed=1.03x", "")
+	adapter.recordRuntimeDiagnostics(handle, "[mpegts @ 0x123] corrupt decoded frame in stream 0", "[mpegts @ 0x123] corrupt decoded frame in stream 0")
+
+	status := adapter.Health(nil, handle)
+	assert.False(t, status.Healthy)
+	assert.Equal(t, 6472, status.Diagnostics.FrameCount)
+	assert.Equal(t, 51.35, status.Diagnostics.FPS)
+	assert.Equal(t, 0, status.Diagnostics.DropFrames)
+	assert.Equal(t, 52, status.Diagnostics.DupFrames)
+	assert.Equal(t, 1.03, status.Diagnostics.Speed)
+	assert.Equal(t, 1, status.Diagnostics.CorruptDecodedFrames)
+	assert.Contains(t, status.Diagnostics.LastWarning, "corrupt decoded frame")
+}
+
+func TestRecordRuntimeDiagnostics_SkipsWarningChecksForProgressLines(t *testing.T) {
+	adapter := &LocalAdapter{runtimeDiagnostics: make(map[ports.RunHandle]ports.RuntimeDiagnostics)}
+	handle := ports.RunHandle("session-1-124")
+
+	adapter.recordRuntimeDiagnostics(handle, "frame=42 fps=50.0 speed=1.0x error", "frame=42 fps=50.0 speed=1.0x error")
+
+	status := adapter.Health(nil, handle)
+	assert.Equal(t, 42, status.Diagnostics.FrameCount)
+	assert.Equal(t, 50.0, status.Diagnostics.FPS)
+	assert.Empty(t, status.Diagnostics.LastWarning)
+	assert.Equal(t, 0, status.Diagnostics.CorruptDecodedFrames)
 }

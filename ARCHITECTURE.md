@@ -1,13 +1,12 @@
 # Architecture Documentation
 
-**Complete system architecture documentation has moved to:**
+System architecture documentation lives under [docs/arch/](docs/arch/README.md).
 
-📘 **[docs/arch/ARCHITECTURE.md](docs/arch/ARCHITECTURE.md)** - Complete 10/10 explanation
+Start with:
 
-See also:
-- [Package Layout Policy](docs/arch/PACKAGE_LAYOUT.md) - Layering rules
-- [Repository Structure Audit](docs/arch/AUDIT_REPO_STRUCTURE.md) - Findings & PRs
+- [Architecture Reference](docs/arch/ARCHITECTURE.md) - system model and invariants
+- [Package Layout Policy](docs/arch/PACKAGE_LAYOUT.md) - package ownership and layering rules
+- [Codec Matrix](docs/arch/CODEC_MATRIX.md) - codec/container truth
 
----
-
-*This file is kept as a stub for discoverability. Do not duplicate content here.*
+This root file is kept only for discoverability. Do not duplicate architecture
+content here.

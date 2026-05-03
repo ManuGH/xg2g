@@ -54,6 +54,10 @@ func mapSessionStateResponse(reqID string, hlsRoot string, result v3sessions.Get
 		m := SessionResponseMode(mode)
 		resp.Mode = &m
 	}
+	if windowKind := result.PlaybackInfo.WindowKind; windowKind != "" {
+		wk := SessionResponseWindowKind(windowKind)
+		resp.WindowKind = &wk
+	}
 	resp.DurationSeconds = toFloat32Ptr(result.PlaybackInfo.DurationSeconds)
 	resp.SeekableStartSeconds = toFloat32Ptr(result.PlaybackInfo.SeekableStartSeconds)
 	resp.SeekableEndSeconds = toFloat32Ptr(result.PlaybackInfo.SeekableEndSeconds)

@@ -5,6 +5,8 @@
  * Probes browser codec support via MediaCapabilities, MediaSource, and HTMLVideoElement APIs.
  */
 
+import { detectPlaybackClientFamily } from './playbackClientFamily';
+
 export type PreferredCodec = 'av1' | 'hevc' | 'h264';
 
 export type VideoCodecSignal = {
@@ -14,13 +16,29 @@ export type VideoCodecSignal = {
   powerEfficient?: boolean;
 };
 
-let cachedPreferredCodecs: PreferredCodec[] | null = null;
 let cachedVideoCodecSignals: VideoCodecSignal[] | null = null;
 
 /** Reset cached codecs (for testing). */
 export function resetCachedCodecs(): void {
-  cachedPreferredCodecs = null;
   cachedVideoCodecSignals = null;
+}
+
+function isIOSNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
+  if (!videoEl) return false;
+  try {
+    return detectPlaybackClientFamily(videoEl) === 'ios_safari_native';
+  } catch {
+    return false;
+  }
+}
+
+function isDesktopSafariNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
+  if (!videoEl) return false;
+  try {
+    return detectPlaybackClientFamily(videoEl) === 'safari_native';
+  } catch {
+    return false;
+  }
 }
 
 type DecodingInfoResult = {
@@ -28,6 +46,26 @@ type DecodingInfoResult = {
   smooth: boolean;
   powerEfficient: boolean;
 };
+
+type MediaCapabilitiesProbeConfig = {
+  type: 'media-source' | 'file';
+  video: {
+    contentType: string;
+    width: number;
+    height: number;
+    bitrate: number;
+    framerate: number;
+  };
+};
+
+type MediaCapabilitiesProbe = {
+  decodingInfo?: (config: MediaCapabilitiesProbeConfig) => Promise<Partial<DecodingInfoResult> | null>;
+};
+
+function getMediaCapabilitiesProbe(): MediaCapabilitiesProbe | undefined {
+  if (typeof navigator === 'undefined') return undefined;
+  return (navigator as Navigator & { mediaCapabilities?: MediaCapabilitiesProbe }).mediaCapabilities;
+}
 
 function mergeDecodingInfoResult(current: DecodingInfoResult, next?: Partial<DecodingInfoResult> | null): DecodingInfoResult {
   if (!next) return current;
@@ -46,7 +84,7 @@ async function decodeInfoForContentType(contentType: string): Promise<DecodingIn
   };
 
   try {
-    const mc = (navigator as any)?.mediaCapabilities;
+    const mc = getMediaCapabilitiesProbe();
     if (mc?.decodingInfo) {
       const baseVideo = {
         contentType,
@@ -146,19 +184,23 @@ export async function detectVideoCodecSignals(videoEl?: HTMLVideoElement | null)
 }
 
 export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): Promise<PreferredCodec[]> {
-  if (cachedPreferredCodecs) return cachedPreferredCodecs;
-
   const signals = await detectVideoCodecSignals(videoEl);
   const out: PreferredCodec[] = [];
   const signalFor = (codec: PreferredCodec) => signals.find((signal) => signal.codec === codec);
+  const av1Signal = signalFor('av1');
+  const allowIOSNativeAV1 =
+    isIOSNativeAV1ProbeEnabled(videoEl) &&
+    (av1Signal?.supported || av1Signal?.smooth);
+  const allowDesktopSafariNativeAV1 =
+    isDesktopSafariNativeAV1ProbeEnabled(videoEl) &&
+    (av1Signal?.supported || av1Signal?.smooth);
 
-  if (signalFor('av1')?.powerEfficient) out.push('av1');
+  if (av1Signal?.powerEfficient || allowIOSNativeAV1 || allowDesktopSafariNativeAV1) out.push('av1');
   if (signalFor('hevc')?.powerEfficient || signalFor('hevc')?.smooth) out.push('hevc');
 
   // Always include H.264 as a safe fallback.
   // If the platform surprisingly doesn't report support, keep it anyway: server will still fall back if needed.
   out.push('h264');
 
-  cachedPreferredCodecs = Array.from(new Set(out));
-  return out;
+  return Array.from(new Set(out));
 }

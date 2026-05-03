@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/stretchr/testify/require"
 )
 
@@ -116,8 +117,68 @@ func TestStartPipeline_RecordsEffectiveRuntimeModeFromFinalizedProfile(t *testin
 	updated, err := st.GetSession(ctx, sid)
 	require.NoError(t, err)
 	require.NotNil(t, updated)
+	require.Equal(t, ports.RuntimeModeCopyHardened, updated.Profile.EffectiveRuntimeMode)
+	require.Equal(t, ports.RuntimeModeSourceEnvOverride, updated.Profile.EffectiveModeSource)
+	require.False(t, updated.Profile.TranscodeVideo)
+	require.Equal(t, "mpegts", updated.Profile.Container)
 	require.NotNil(t, updated.PlaybackTrace)
 	require.Equal(t, ports.RuntimeModeHQ25, updated.PlaybackTrace.PolicyModeHint)
 	require.Equal(t, ports.RuntimeModeCopyHardened, updated.PlaybackTrace.EffectiveRuntimeMode)
 	require.Equal(t, ports.RuntimeModeSourceEnvOverride, updated.PlaybackTrace.EffectiveModeSource)
+}
+
+func TestStreamQualityForProfileSpec(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile model.ProfileSpec
+		want    ports.QualityProfile
+	}{
+		{
+			name: "av1 quality transcode uses high quality stream spec",
+			profile: model.ProfileSpec{
+				Name:           profiles.ProfileAV1HW,
+				TranscodeVideo: true,
+			},
+			want: ports.QualityHigh,
+		},
+		{
+			name: "hevc quality transcode uses high quality stream spec",
+			profile: model.ProfileSpec{
+				Name:           profiles.ProfileSafariHEVCHW,
+				TranscodeVideo: true,
+			},
+			want: ports.QualityHigh,
+		},
+		{
+			name: "runtime hq50 transcode uses high quality stream spec",
+			profile: model.ProfileSpec{
+				Name:           "custom",
+				PolicyModeHint: ports.RuntimeModeHQ50,
+				TranscodeVideo: true,
+			},
+			want: ports.QualityHigh,
+		},
+		{
+			name: "repair transcode stays standard",
+			profile: model.ProfileSpec{
+				Name:           profiles.ProfileRepair,
+				TranscodeVideo: true,
+			},
+			want: ports.QualityStandard,
+		},
+		{
+			name: "copy path stays standard",
+			profile: model.ProfileSpec{
+				Name:           profiles.ProfileHigh,
+				TranscodeVideo: false,
+			},
+			want: ports.QualityStandard,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, streamQualityForProfileSpec(tt.profile))
+		})
+	}
 }

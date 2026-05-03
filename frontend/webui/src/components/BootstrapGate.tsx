@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
 import { ClientRequestError } from '../services/clientWrapper';
 import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import { useAppContext } from '../context/AppContext';
-import { queryKeys, useBootstrapConfig } from '../hooks/useServerQueries';
+import { useBootstrapConfig } from '../hooks/useServerQueries';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
 import { resolveHostEnvironment } from '../lib/hostBridge';
 import { normalizePathname, ROUTE_MAP, UNLOCK_ROUTE } from '../routes';
@@ -15,6 +14,7 @@ import LoadingSkeleton from './LoadingSkeleton';
 import { Button } from './ui';
 
 type AuthPromptReason = 'missing' | 'expired';
+type AuthRetryState = { token: string; phase: 'pending' | 'fetching' | 'settled' };
 
 // Keep purchase and diagnostics routes in this list when they must remain reachable
 // while the monetization gate is locked, otherwise the user cannot complete unlock.
@@ -53,15 +53,16 @@ export default function BootstrapGate() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { auth, setToken, setPlayingChannel, setServerSessionAuthenticated } = useAppContext();
-  const queryClient = useQueryClient();
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const isTvHost = hostEnvironment.isTv;
   const authReady = auth.isReady ?? true;
   const hasToken = Boolean(auth.token?.trim());
   const [tokenValue, setTokenValue] = useState('');
   const [forcedAuthPrompt, setForcedAuthPrompt] = useState<AuthPromptReason | null>(null);
+  const [authRetry, setAuthRetry] = useState<AuthRetryState | null>(null);
   const [isTokenVisible, setIsTokenVisible] = useState<boolean>(() => isTvHost);
   const inputRef = useRef<HTMLInputElement>(null);
+  const authRetryInFlightRef = useRef(false);
   const {
     data: config = null,
     error,
@@ -70,6 +71,7 @@ export default function BootstrapGate() {
   } = useBootstrapConfig(authReady);
 
   const handleAuthRequired = useCallback(() => {
+    setAuthRetry(null);
     setForcedAuthPrompt(auth.isAuthenticated ? 'expired' : 'missing');
     setTokenValue((current) => current.trim() || auth.token || '');
     setPlayingChannel(null);
@@ -88,6 +90,12 @@ export default function BootstrapGate() {
 
   const bootstrapStatus = getErrorStatus(error);
   const isUnauthorized = bootstrapStatus === 401;
+  const isSuppressingBootstrap401 = Boolean(
+    authRetry &&
+    authRetry.token === auth.token &&
+    authRetry.phase !== 'settled'
+  );
+  const shouldTreatAsUnauthorized = isUnauthorized && !isSuppressingBootstrap401;
   const bypassRoute = isBypassRoute(pathname);
   const monetizationLocked = Boolean(
     config?.monetization?.enabled &&
@@ -102,7 +110,7 @@ export default function BootstrapGate() {
     if (!authReady) {
       return null;
     }
-    if (isUnauthorized) {
+    if (shouldTreatAsUnauthorized) {
       return auth.isAuthenticated ? 'expired' : 'missing';
     }
     if (error) {
@@ -115,25 +123,45 @@ export default function BootstrapGate() {
       return 'missing';
     }
     return null;
-  }, [auth.isAuthenticated, authReady, config, error, forcedAuthPrompt, isUnauthorized]);
+  }, [auth.isAuthenticated, authReady, config, error, forcedAuthPrompt, shouldTreatAsUnauthorized]);
 
   useEffect(() => {
-    if (forcedAuthPrompt) {
+    if (!config || shouldTreatAsUnauthorized || forcedAuthPrompt !== null) {
+      return;
+    }
+    setAuthRetry(null);
+    setServerSessionAuthenticated(true);
+    setTokenValue('');
+  }, [config, forcedAuthPrompt, setServerSessionAuthenticated, shouldTreatAsUnauthorized]);
+
+  useEffect(() => {
+    if (authReady && shouldTreatAsUnauthorized) {
+      handleAuthRequired();
+    }
+  }, [authReady, handleAuthRequired, shouldTreatAsUnauthorized]);
+
+  useEffect(() => {
+    if (
+      !authRetry ||
+      authRetry.phase !== 'pending' ||
+      !authReady ||
+      auth.token !== authRetry.token ||
+      authRetryInFlightRef.current
+    ) {
       return;
     }
 
-    if (config && !isUnauthorized) {
-      setServerSessionAuthenticated(true);
-      setForcedAuthPrompt(null);
-      setTokenValue('');
-    }
-  }, [config, forcedAuthPrompt, isUnauthorized, setServerSessionAuthenticated]);
-
-  useEffect(() => {
-    if (isUnauthorized) {
-      handleAuthRequired();
-    }
-  }, [handleAuthRequired, isUnauthorized]);
+    authRetryInFlightRef.current = true;
+    setAuthRetry((current) => (
+      current?.token === authRetry.token ? { ...current, phase: 'fetching' } : current
+    ));
+    void refetch().finally(() => {
+      authRetryInFlightRef.current = false;
+      setAuthRetry((current) => (
+        current?.token === authRetry.token ? { ...current, phase: 'settled' } : current
+      ));
+    });
+  }, [auth.token, authReady, authRetry, refetch]);
 
   useEffect(() => {
     if (authReason !== null) {
@@ -158,15 +186,9 @@ export default function BootstrapGate() {
       return;
     }
 
-    // Clear stale 401 bootstrap state before we apply the replacement token.
-    // Otherwise the old unauthorized query error can immediately trip the
-    // auth-required effect again and wipe the fresh token during re-auth.
-    void queryClient.resetQueries({
-      queryKey: queryKeys.bootstrapConfig,
-      exact: true,
-    });
     setForcedAuthPrompt(null);
     setTokenValue(token);
+    setAuthRetry({ token, phase: 'pending' });
     setToken(token);
   };
 
@@ -254,7 +276,7 @@ export default function BootstrapGate() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || isSuppressingBootstrap401) {
     return <LoadingSkeleton variant="gate" label={t('app.initializing', { defaultValue: 'Initializing...' })} />;
   }
 

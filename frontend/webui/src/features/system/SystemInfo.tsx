@@ -41,6 +41,8 @@ interface SystemInfoViewData {
       model: string;
       capacity: string;
       mount: string;
+      origin?: string;
+      pathType?: string;
       mountStatus: 'mounted' | 'unmounted' | 'unknown';
       healthStatus: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
       access: 'none' | 'ro' | 'rw';
@@ -52,6 +54,8 @@ interface SystemInfoViewData {
       model: string;
       capacity: string;
       mount: string;
+      origin?: string;
+      pathType?: string;
       mountStatus: 'mounted' | 'unmounted' | 'unknown';
       healthStatus: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
       access: 'none' | 'ro' | 'rw';
@@ -68,6 +72,13 @@ interface SystemInfoViewData {
     memoryAvailable: string;
     memoryUsed: string;
   };
+}
+
+interface SystemPulseItem {
+  label: string;
+  value: string;
+  detail: string;
+  tone: 'neutral' | 'action' | 'live' | 'warning';
 }
 
 export function SystemInfo() {
@@ -101,19 +112,79 @@ export function SystemInfo() {
 
   const info = normalizeSystemInfo(data);
   const ramLevel = getRamLevel(info.resource.memoryUsed, info.resource.memoryTotal);
+  const totalStorageLocations = info.storage.devices.length + info.storage.locations.length;
+  const mountedStorageLocations = [...info.storage.devices, ...info.storage.locations].filter((entry) => entry.mountStatus === 'mounted').length;
+  const activeTuners = info.tuners.filter((tuner) => tuner.status !== 'idle').length;
+  const connectedInterfaces = info.network.interfaces.filter((iface) => iface.ip || iface.ipv6).length;
+  const memoryUsagePercent = calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal);
+  const systemPulseItems: SystemPulseItem[] = [
+    {
+      label: t('system.tuners'),
+      value: activeTuners > 0 ? `${activeTuners}/${info.tuners.length}` : `${info.tuners.length}`,
+      detail: activeTuners > 0
+        ? t('system.glance.tunersActive', {
+          defaultValue: '{{count}} active of {{total}}',
+          count: activeTuners,
+          total: info.tuners.length,
+        })
+        : t('system.glance.tunersIdle', { defaultValue: 'All tuners idle' }),
+      tone: activeTuners > 0 ? 'live' : 'neutral',
+    },
+    {
+      label: t('system.storage'),
+      value: `${mountedStorageLocations}`,
+      detail: totalStorageLocations > 0
+        ? t('system.glance.storageReady', {
+          defaultValue: '{{count}} of {{total}} ready',
+          count: mountedStorageLocations,
+          total: totalStorageLocations,
+        })
+        : t('system.glance.storageEmpty', { defaultValue: 'No recording target' }),
+      tone: mountedStorageLocations > 0 ? 'action' : 'warning',
+    },
+    {
+      label: t('system.memory'),
+      value: `${memoryUsagePercent}%`,
+      detail: t(`system.memoryLevel.${ramLevel}`),
+      tone: ramLevel === 'critical' ? 'warning' : ramLevel === 'warning' ? 'action' : 'neutral',
+    },
+    {
+      label: t('system.network'),
+      value: `${connectedInterfaces}`,
+      detail: info.network.interfaces.length > 0
+        ? t('system.glance.networkReady', {
+          defaultValue: '{{count}} connected',
+          count: connectedInterfaces,
+        })
+        : t('system.noInformation'),
+      tone: connectedInterfaces > 0 ? 'action' : 'warning',
+    },
+  ];
 
   return (
     <div className={styles.page}>
-      <div className={styles.header}>
-        <div>
-          <p className={styles.kicker}>{t('nav.system')}</p>
-          <h1>{t('system.receiverTitle')}</h1>
-          <p className={styles.subtitle}>{t('system.subtitle')}</p>
+      <div className={styles.heroPanel}>
+        <div className={styles.header}>
+          <div>
+            <p className={styles.kicker}>{t('nav.system')}</p>
+            <h1>{t('system.receiverTitle')}</h1>
+            <p className={styles.subtitle}>{t('system.subtitle')}</p>
+          </div>
+        </div>
+
+        <div className={styles.glanceGrid} aria-label={t('system.sectionOverview')}>
+          {systemPulseItems.map((item) => (
+            <div key={item.label} className={styles.glanceCard} data-tone={item.tone}>
+              <span className={styles.glanceLabel}>{item.label}</span>
+              <strong className={styles.glanceValue}>{item.value}</strong>
+              <span className={styles.glanceDetail}>{item.detail}</span>
+            </div>
+          ))}
         </div>
       </div>
 
       <div className={styles.grid}>
-        <Card className={styles.card}>
+        <Card className={[styles.card, styles.cardSpotlight, styles.cardHardware].join(' ')}>
           <CardBody className={styles.cardBody}>
             <div className={styles.cardHeader}>
               <div>
@@ -132,7 +203,7 @@ export function SystemInfo() {
           </CardBody>
         </Card>
 
-        <Card className={styles.card}>
+        <Card className={[styles.card, styles.cardSpotlight, styles.cardSoftware].join(' ')}>
           <CardBody className={styles.cardBody}>
             <div className={styles.cardHeader}>
               <div>
@@ -248,8 +319,11 @@ export function SystemInfo() {
                     <span className={[styles.label, styles.textTruncate].join(' ')} title={dev.model}>
                       {dev.model}:
                     </span>
+                    <span className={[styles.tag, styles.tagIntern].join(' ')}>
+                      {resolveStorageOriginLabel(t, dev.origin)}
+                    </span>
                     <span className={[styles.tag, dev.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
-                      {dev.isNas ? t('system.nas') : t('system.internal')}
+                      {resolveStoragePathTypeLabel(t, dev.pathType, dev.isNas)}
                       {dev.fsType && <small> ({dev.fsType})</small>}
                     </span>
                   </div>
@@ -295,8 +369,11 @@ export function SystemInfo() {
                     <span className={[styles.value, styles.mono, styles.textTruncate].join(' ')} title={loc.mount}>
                       {loc.mount}
                     </span>
+                    <span className={[styles.tag, styles.tagIntern].join(' ')}>
+                      {resolveStorageOriginLabel(t, loc.origin)}
+                    </span>
                     <span className={[styles.tag, loc.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
-                      {loc.isNas ? t('system.nas') : t('system.internal')}
+                      {resolveStoragePathTypeLabel(t, loc.pathType, loc.isNas)}
                       {loc.fsType && <small> ({loc.fsType})</small>}
                     </span>
                   </div>
@@ -464,6 +541,8 @@ function normalizeSystemInfo(data: ApiSystemInfoData): SystemInfoViewData {
         model: device.model ?? '',
         capacity: device.capacity ?? '',
         mount: device.mount ?? '',
+        origin: device.origin,
+        pathType: device.pathType,
         mountStatus: device.mountStatus ?? 'unknown',
         healthStatus: device.healthStatus ?? 'unknown',
         access: device.access ?? 'none',
@@ -475,6 +554,8 @@ function normalizeSystemInfo(data: ApiSystemInfoData): SystemInfoViewData {
         model: location.model ?? '',
         capacity: location.capacity ?? '',
         mount: location.mount ?? '',
+        origin: location.origin,
+        pathType: location.pathType,
         mountStatus: location.mountStatus ?? 'unknown',
         healthStatus: location.healthStatus ?? 'unknown',
         access: location.access ?? 'none',
@@ -492,6 +573,31 @@ function normalizeSystemInfo(data: ApiSystemInfoData): SystemInfoViewData {
       memoryUsed: data.resource?.memoryUsed ?? '0 kB',
     },
   };
+}
+
+function resolveStorageOriginLabel(
+  t: ReturnType<typeof useTranslation>['t'],
+  origin?: string,
+): string {
+  return origin === 'xg2g' ? t('system.storageOrigin.xg2g') : t('system.storageOrigin.receiver');
+}
+
+function resolveStoragePathTypeLabel(
+  t: ReturnType<typeof useTranslation>['t'],
+  pathType?: string,
+  isNas?: boolean,
+): string {
+  switch (pathType) {
+    case 'receiver_attached':
+    case 'receiver_share':
+    case 'xg2g_local':
+    case 'xg2g_share':
+    case 'xg2g_aggregate':
+    case 'unknown':
+      return t(`system.storageType.${pathType}`);
+    default:
+      return isNas ? t('system.nas') : t('system.internal');
+  }
 }
 
 // Parse memory string like "757824 kB" to bytes

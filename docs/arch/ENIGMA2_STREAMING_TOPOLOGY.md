@@ -1,14 +1,18 @@
 ## 9. Production Integration: Enigma2 Streaming Topology
 
-**Author:** CTO Review  
-**Date:** 2026-01-18  
-**Status:** Validated (Field-Proven Architecture)
+**Author:** xg2g maintainers
+**Date:** 2026-01-18
+**Status:** Runtime reference
 
 ### Executive Summary
 
-This section documents the **real-world Enigma2 streaming chain** as deployed in production DVB-S2 + FBC environments. This is not a theoretical model - it's the canonical topology that xg2g correctly implements.
+This section documents the Enigma2 streaming chain used by xg2g in DVB-S2 and
+FBC receiver environments. The important rule is simple: resolve the effective
+stream URL through OpenWebIF first, then fall back to a direct stream port only
+when receiver-side resolution fails.
 
-**Key Insight:** xg2g doesn't "emulate IPTV" - it models the actual DVB-S2 → Enigma2 → HTTP streaming pipeline used by thousands of setups.
+**Key Insight:** xg2g does not emulate IPTV. It models the actual DVB-S2 to
+Enigma2 to HTTP streaming pipeline.
 
 ---
 
@@ -65,11 +69,13 @@ DVB-S2 Satellite (e.g., Orbital Position 19.2°E)
 | Port       | Component          | Responsibility                           | Protocol      |
 |-------|------------------|----------------------------------------------|---------------|
 | **80/443** | OpenWebIF    | Web UI, API endpoints, M3U generation        | HTTP(S)       |
-| **8001**   | Enigma2 Stream | **Native streaming port** (canonical)       | HTTP (MPEG-TS)|
+| **8001**   | Enigma2 Stream | **Native streaming port / direct fallback** | HTTP (MPEG-TS)|
 | **17999**  | Optional Middleware | Stream processing proxy (optional)        | HTTP (MPEG-TS) |
 
-**Critical Default:** `StreamPort = 8001`  
-→ This is **truth**, not configuration. Optional middleware internally calls Enigma2:8001 for the raw stream.
+**Compatibility default:** `enigma2.streamPort = 8001` remains in the registry
+as a deprecated direct fallback. Live playback still queries
+`/web/stream.m3u` first so the receiver can return `8001`, `17999`, or another
+effective stream endpoint.
 
 ---
 
@@ -150,7 +156,8 @@ stream_relay_port    = 17999
 4. **Middleware** returns processed stream to client
 
 **xg2g Integration:**  
-xg2g calls `http://{enigma2}:8001/...` directly (native port), using standard Enigma2 streaming.
+xg2g asks OpenWebIF for the effective stream URL first. If that fails, the
+deprecated `enigma2.streamPort` value is used to construct a direct fallback URL.
 
 ---
 
@@ -182,7 +189,10 @@ In setups with optional relay middleware (e.g., StreamRelay), the flow is as fol
 6. **Enigma2:8001** → Delivers MPEG-TS via Tuner.
 7. **Middleware** → Processes the TS and returns it to the Client with `HTTP/1.0 200 OK` and `Server: stream_enigma2`.
 
-**XG2G Integration:** By using `useWebIFStreams: true`, xg2g follows this entire chain automatically, respecting the receiver's choice of port (8001 vs 17999).
+**XG2G Integration:** Live playback follows this chain automatically through
+`ResolveStreamURL`. `useWebIFStreams: true` forces the same receiver-resolved URL
+style on OpenWebIF client surfaces that would otherwise build direct channel
+URLs.
 
 #### StreamRelay Technical Constraints
 
@@ -212,25 +222,26 @@ With optional middleware:
 Client → Middleware:17999 → Enigma2:8001 (proxy)
 ```
 
-**xg2g Default:**
+**xg2g compatibility default:**
 
 ```go
 // internal/config/registry.go
 {Path: "enigma2.streamPort", Default: 8001, Status: StatusDeprecated}
 ```
 
-**Why 8001 is Canonical:**
+**Why 8001 still exists:**
 
-1. Optional middleware typically calls Enigma2:8001 in the background
-2. Direct streaming uses 8001 as the native port
-3. Changing this breaks compatibility with existing setups
+1. Optional middleware typically calls Enigma2:8001 in the background.
+2. Direct streaming uses 8001 as the native port.
+3. Keeping the default avoids breaking existing direct-port setups.
 
 **Deprecation Note:**  
 `StreamPort` is deprecated because:
 
-- Modern setups use **automatic port discovery** (OpenWebIF API)
-- Optional middleware abstracts the underlying port
-- Hardcoding 8001 is correct for 99.9% of real-world deployments
+- Modern live playback uses **receiver-side stream resolution** through OpenWebIF.
+- Optional middleware abstracts the underlying port.
+- Hardcoding 8001 in operator config hides whether the receiver actually
+  selected a relay endpoint such as `17999`.
 
 ---
 
@@ -250,12 +261,14 @@ vlc http://192.0.2.10/web/stream.m3u?ref=1:0:19:EF:1A:85:C00000:0:0:0:
 ```
 
 **Expected Result:**
-✅ Stream opens immediately  
-✅ Main display (TV) continues on current channel  
-✅ Tuner allocation: 1 of 8 FBC tuners used  
+- Stream opens immediately.
+- Main display continues on the current channel.
+- Tuner allocation consumes one free FBC tuner.
 
 **xg2g Implementation:**  
-Calls `http://192.0.2.10:8001/{serviceref}` → Same behavior, no zapping, independent tuner.
+Calls `/web/stream.m3u?ref=...`, follows the receiver-returned URL, and only
+falls back to `http://192.0.2.10:8001/{serviceref}` if OpenWebIF resolution
+fails.
 
 ---
 
@@ -264,15 +277,16 @@ Calls `http://192.0.2.10:8001/{serviceref}` → Same behavior, no zapping, indep
 **What xg2g Does:**
 
 - Calls Enigma2 OpenWebIF API (Port 80) for metadata (EPG, services, timers)
-- Requests streams via **Port 8001** (native Enigma2 streaming)
+- Resolves live stream URLs through OpenWebIF, then falls back to the deprecated
+  direct stream port only if resolution fails
 - Converts MPEG-TS → HLS for Safari/iOS compatibility
 - Manages session lifecycle (FFmpeg → HLS segmenter)
 
 **What xg2g Does NOT Do:**
 
-- ❌ Process encrypted streams (delegates to middleware if configured)
-- ❌ Manage DVB tuners directly (delegates to Enigma2)
-- ❌ Implement DVR scheduling (delegates to Enigma2 timers)
+- Process encrypted streams (delegates to middleware if configured)
+- Manage DVB tuners directly (delegates to Enigma2)
+- Implement DVR scheduling (delegates to Enigma2 timers)
 
 **Role Summary:**  
 xg2g is an **orchestration layer**, not a replacement for Enigma2 or optional middleware.
@@ -285,12 +299,13 @@ xg2g is an **orchestration layer**, not a replacement for Enigma2 or optional mi
 
 The streaming chain documented here is:
 
-- ✅ **Field-proven** (generic DVB-S2 production deployments)
-- ✅ **Mechanically enforced** (defaults align with optional middleware + Enigma2)
-- ✅ **Testable** (integration tests validate port behavior)
+- **Field-proven** in DVB-S2 production deployments.
+- **Mechanically enforced** by config registry defaults and stream-resolution tests.
+- **Testable** through OpenWebIF-first and direct-fallback test cases.
 
 **Consequence:**  
-Any "fix" that deviates from Port 8001 or the FBC allocation model **breaks compatibility** with real-world setups.
+Do not remove the 8001 fallback or bypass FBC tuner allocation, but do not
+force 8001 ahead of receiver-resolved stream URLs.
 
 ---
 

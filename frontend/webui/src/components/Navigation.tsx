@@ -3,7 +3,10 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import { usePendingChanges } from '../context/PendingChangesContext';
+import { useUiScale } from '../context/UiScaleContext';
 import { resolveHostEnvironment } from '../lib/hostBridge';
+import { resolveAppRouteContext } from '../lib/routeContext';
+import type { UiScale } from '../lib/uiScale';
 import { ROUTE_MAP, normalizePathname, type AppView } from '../routes';
 import styles from './Navigation.module.css';
 
@@ -115,7 +118,7 @@ function NavIcon({ name, className = '' }: { name: IconName; className?: string 
 
 export default function Navigation({ onLogout }: NavigationProps) {
   const { t } = useTranslation();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const {
     profiles,
@@ -125,10 +128,10 @@ export default function Navigation({ onLogout }: NavigationProps) {
     pinConfigured,
     isUnlocked,
     canAccessDvrPlayback,
-    canManageDvr,
     canAccessSettings,
   } = useHouseholdProfiles();
   const { confirmPendingChanges } = usePendingChanges();
+  const { scale, setScale } = useUiScale();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -137,45 +140,53 @@ export default function Navigation({ onLogout }: NavigationProps) {
   const restoreFocusRef = useRef(false);
   const sheetTitleId = useId();
   const sheetId = useId();
+  const routeContext = useMemo(() => resolveAppRouteContext(pathname, search, t), [pathname, search, t]);
   const sectionLabels: Record<NavSection, string> = {
-    quick: t('nav.sectionControl', { defaultValue: 'Control' }),
-    main: t('nav.sectionBrowse', { defaultValue: 'Browse' }),
+    quick: t('nav.sectionControl', { defaultValue: 'Start' }),
+    main: t('nav.sectionBrowse', { defaultValue: 'Media' }),
     footer: t('nav.sectionSystem', { defaultValue: 'System' })
   };
+  const displayScaleOptions = useMemo<Array<{ value: UiScale; buttonLabel: string; spokenLabel: string }>>(() => [
+    {
+      value: 'compact',
+      buttonLabel: 'A-',
+      spokenLabel: t('nav.displaySize.compact', { defaultValue: 'Compact' }),
+    },
+    {
+      value: 'normal',
+      buttonLabel: 'A',
+      spokenLabel: t('nav.displaySize.normal', { defaultValue: 'Default' }),
+    },
+    {
+      value: 'large',
+      buttonLabel: 'A+',
+      spokenLabel: t('nav.displaySize.large', { defaultValue: 'Large' }),
+    },
+  ], [t]);
 
   const navItems = useMemo<NavItem[]>(() => [
     { id: 'dashboard', label: t('nav.dashboard'), section: 'quick' },
     { id: 'epg', label: t('nav.epg'), section: 'main' },
     { id: 'recordings', label: t('nav.recordings'), section: 'main' },
-    { id: 'timers', label: t('nav.timers'), section: 'main' },
-    { id: 'series', label: t('nav.series'), section: 'main' },
-    { id: 'files', label: t('nav.files'), section: 'main' },
-    { id: 'logs', label: t('nav.logs'), section: 'main' },
+    { id: 'system', label: t('nav.system', { defaultValue: 'System' }), section: 'footer' },
     { id: 'settings', label: t('nav.playerSettings'), section: 'footer' },
-    { id: 'system', label: t('nav.system', { defaultValue: 'System' }), section: 'footer' }
   ], [t]);
 
   const visibleNavItems = useMemo(() => navItems.filter((item) => {
     switch (item.id) {
       case 'recordings':
         return canAccessDvrPlayback;
-      case 'timers':
-      case 'series':
-        return canManageDvr;
-      case 'logs':
       case 'settings':
       case 'system':
         return canAccessSettings;
       default:
         return true;
     }
-  }), [canAccessDvrPlayback, canAccessSettings, canManageDvr, navItems]);
+  }), [canAccessDvrPlayback, canAccessSettings, navItems]);
 
-  const profileAccessLabel = canManageDvr
-    ? t('nav.profileAccess.manage', { defaultValue: 'Live + DVR verwalten' })
-    : canAccessDvrPlayback
-      ? t('nav.profileAccess.playback', { defaultValue: 'Live + Aufnahmen ansehen' })
-      : t('nav.profileAccess.live', { defaultValue: 'Nur Live-TV' });
+  const profileAccessLabel = canAccessDvrPlayback
+    ? t('nav.profileAccess.playback', { defaultValue: 'Live + Aufnahmen ansehen' })
+    : t('nav.profileAccess.live', { defaultValue: 'Nur Live-TV' });
 
   const closeMoreMenu = useCallback((restoreFocus: boolean) => {
     restoreFocusRef.current = restoreFocus;
@@ -256,7 +267,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
     if (showMoreMenuRef.current) {
       closeMoreMenu(false);
     }
-  }, [closeMoreMenu, pathname]);
+  }, [closeMoreMenu, pathname, search]);
 
   useEffect(() => {
     if (!showMoreMenu) {
@@ -346,6 +357,43 @@ export default function Navigation({ onLogout }: NavigationProps) {
     </NavLink>
   );
 
+  const renderDisplayScaleControl = (appearance: 'desktop' | 'sheet') => (
+    <section
+      className={[
+        styles.displaySection,
+        appearance === 'sheet' ? styles.sheetDisplaySection : null,
+      ].filter(Boolean).join(' ')}
+      aria-label={t('nav.displaySize.label', { defaultValue: 'Display size' })}
+    >
+      <div className={styles.displayCopy}>
+        <p className={styles.displayLabel}>{t('nav.displaySize.label', { defaultValue: 'Display size' })}</p>
+        <p className={styles.displayHint}>{t('nav.displaySize.hint', { defaultValue: 'Saved on this device.' })}</p>
+      </div>
+      <div
+        className={styles.scaleGroup}
+        role="group"
+        aria-label={t('nav.displaySize.label', { defaultValue: 'Display size' })}
+      >
+        {displayScaleOptions.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={[
+              styles.scaleButton,
+              scale === option.value ? styles.scaleButtonActive : null,
+            ].filter(Boolean).join(' ')}
+            aria-pressed={scale === option.value}
+            aria-label={`${t('nav.displaySize.label', { defaultValue: 'Display size' })}: ${option.spokenLabel}`}
+            onClick={() => setScale(option.value)}
+          >
+            <span className={styles.scaleGlyph} aria-hidden="true">{option.buttonLabel}</span>
+            <span className={styles.scaleText}>{option.spokenLabel}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+
   return (
     <>
       <aside className={styles.desktopShell}>
@@ -381,6 +429,8 @@ export default function Navigation({ onLogout }: NavigationProps) {
             <span className={styles.profileHint}>{profileAccessLabel}</span>
           </div>
 
+          {renderDisplayScaleControl('desktop')}
+
           <div className={styles.desktopSection}>
             <span className={styles.sectionTitle}>{sectionLabels.quick}</span>
             <div className={styles.navList}>
@@ -415,6 +465,14 @@ export default function Navigation({ onLogout }: NavigationProps) {
       </aside>
 
       <div className={styles.mobileShell}>
+        {routeContext.showMobileContext && routeContext.mobileContextLabel && (
+          <div className={styles.mobileContextBar} aria-live="polite">
+            <p className={styles.mobileContextEyebrow}>
+              {t('nav.currentArea', { defaultValue: 'Current area' })}
+            </p>
+            <p className={styles.mobileContextLabel}>{routeContext.mobileContextLabel}</p>
+          </div>
+        )}
         <nav
           className={styles.mobileNav}
           role="navigation"
@@ -465,7 +523,10 @@ export default function Navigation({ onLogout }: NavigationProps) {
               <div className={styles.sheetHeader}>
                 <div>
                   <p className={styles.sheetEyebrow}>{t('nav.sheetEyebrow', { defaultValue: 'Navigation' })}</p>
-                  <h2 id={sheetTitleId} className={styles.sheetTitle}>{t('nav.sheetTitle', { defaultValue: 'Control surfaces' })}</h2>
+                  <h2 id={sheetTitleId} className={styles.sheetTitle}>{t('nav.sheetTitle', { defaultValue: 'More sections' })}</h2>
+                  {routeContext.showMobileContext && routeContext.mobileContextLabel && (
+                    <p className={styles.sheetContext}>{routeContext.mobileContextLabel}</p>
+                  )}
                 </div>
                 <button
                   ref={closeButtonRef}
@@ -496,6 +557,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
                   </select>
                   <span className={styles.profileHint}>{profileAccessLabel}</span>
                 </div>
+                {renderDisplayScaleControl('sheet')}
                 {overflowSections.map((section) => (
                   <section key={section.id} className={styles.sheetSection} aria-label={section.label}>
                     <p className={styles.sheetSectionTitle}>{section.label}</p>

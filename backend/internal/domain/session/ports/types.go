@@ -112,9 +112,34 @@ type ProfileSpec struct {
 // RunHandle is an opaque token for a running pipeline.
 type RunHandle string
 
+// RuntimeDiagnostics is a live snapshot of encoder/source health reported by
+// the active media pipeline.
+type RuntimeDiagnostics struct {
+	FrameCount           int     `json:"frameCount,omitempty"`
+	FPS                  float64 `json:"fps,omitempty"`
+	DropFrames           int     `json:"dropFrames,omitempty"`
+	DupFrames            int     `json:"dupFrames,omitempty"`
+	Speed                float64 `json:"speed,omitempty"`
+	CorruptDecodedFrames int     `json:"corruptDecodedFrames,omitempty"`
+	LastWarning          string  `json:"lastWarning,omitempty"`
+	UpdatedAtUnix        int64   `json:"updatedAtUnix,omitempty"`
+}
+
+func (d RuntimeDiagnostics) IsZero() bool {
+	return d.FrameCount == 0 &&
+		d.FPS == 0 &&
+		d.DropFrames == 0 &&
+		d.DupFrames == 0 &&
+		d.Speed == 0 &&
+		d.CorruptDecodedFrames == 0 &&
+		d.LastWarning == "" &&
+		d.UpdatedAtUnix == 0
+}
+
 // HealthStatus indicates the operational state of the pipeline.
 type HealthStatus struct {
-	Healthy   bool
-	Message   string
-	LastCheck time.Time
+	Healthy     bool
+	Message     string
+	LastCheck   time.Time
+	Diagnostics RuntimeDiagnostics
 }

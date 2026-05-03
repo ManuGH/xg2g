@@ -4,6 +4,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import React, { useReducer, useEffect, useCallback, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { epgReducer, createInitialEpgState } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';
@@ -15,12 +16,19 @@ import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
 import ErrorPanel from '../../components/ErrorPanel';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
+import SectionContextBar from '../../components/SectionContextBar';
 import { toAppError } from '../../lib/appErrors';
 import { isUnauthorizedError } from '../player/sessionEvents';
 import { normalizeEpgText } from '../../utils/text';
 import { debugError, debugLog, formatError } from '../../utils/logging';
 import { useUiOverlay } from '../../context/UiOverlayContext';
+import { useUiSurface } from '../../context/UiSurfaceContext';
 import type { AppError } from '../../types/errors';
+import Timers from '../../components/Timers';
+import {
+  buildEpgRoute,
+  type EpgSection,
+} from '../../routes';
 import styles from './EPG.module.css';
 
 const RECORD_SUPPORTED = true; // Feature flag
@@ -63,6 +71,35 @@ function createEpgError(
   });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringifyUnknown(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error && value.message) return value.message;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatTimerCreateError(error: unknown): string {
+  const body = isRecord(error) ? error.body : undefined;
+  if (isRecord(body) && typeof body.title === 'string' && body.title) {
+    return body.title;
+  }
+  if (body !== undefined) {
+    return stringifyUnknown(body);
+  }
+  return stringifyUnknown(error);
+}
+
+function isAbortError(error: unknown): boolean {
+  return isRecord(error) && error.name === 'AbortError';
+}
+
 export default function EPG({
   channels,
   bouquets = [],
@@ -70,15 +107,22 @@ export default function EPG({
   onPlay,
 }: EpgProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { search } = useLocation();
   const { confirm, toast } = useUiOverlay();
+  const uiSurface = useUiSurface();
   const {
     selectedProfile,
-    selectedProfileId,
     isReady,
     isFavoriteService,
     toggleFavoriteService,
     canManageDvr,
   } = useHouseholdProfiles();
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+  const requestedSection = searchParams.get('section');
+  const activeSection: EpgSection = requestedSection === 'timers' && canManageDvr
+    ? 'timers'
+    : 'guide';
   const [state, dispatch] = useReducer(epgReducer, undefined, createInitialEpgState);
   const [timers, setTimers] = React.useState<Timer[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
@@ -89,7 +133,7 @@ export default function EPG({
   // ============================================================================
 
   const loadTimers = useCallback(async () => {
-    if (!isReady) {
+    if (!isReady || !canManageDvr) {
       return;
     }
 
@@ -99,17 +143,17 @@ export default function EPG({
     } catch (err) {
       debugError('Failed to fetch timers for EPG', formatError(err));
     }
-  }, [isReady]);
+  }, [canManageDvr, isReady]);
 
   useEffect(() => {
-    if (!isReady) {
+    if (!isReady || activeSection !== 'guide' || !canManageDvr) {
       return;
     }
 
     loadTimers();
     const interval = setInterval(loadTimers, 30000); // Poll every 30s
     return () => clearInterval(interval);
-  }, [isReady, loadTimers]);
+  }, [activeSection, canManageDvr, isReady, loadTimers]);
 
   const handleRecord = useCallback(
     async (event: EpgEvent) => {
@@ -134,14 +178,9 @@ export default function EPG({
         });
         toast({ kind: 'success', message: t('epg.recordSuccess') });
         loadTimers(); // Refresh feedback immediately
-      } catch (err: any) {
+      } catch (err) {
         debugError(formatError(err));
-        let msg = err.message || JSON.stringify(err);
-        if (err.body?.title) {
-          msg = err.body.title;
-        } else if (err.body) {
-          msg = JSON.stringify(err.body);
-        }
+        const msg = formatTimerCreateError(err);
         toast({ kind: 'error', message: t('epg.recordError', { error: msg }) });
       }
     },
@@ -194,8 +233,7 @@ export default function EPG({
       if (signal.aborted) return;
 
       // Observability (DEV only)
-      const isDev = (import.meta as any).env?.DEV;
-      if (isDev) {
+      if (import.meta.env.DEV) {
         debugLog(
           'EPG Load [%s]',
           state.filters.timeRange === 336 ? 'All' : `${state.filters.timeRange}h`
@@ -209,8 +247,8 @@ export default function EPG({
       }
 
       dispatch({ type: 'LOAD_SUCCESS', payload: { events } });
-    } catch (err: any) {
-      if (err.name === 'AbortError') return;
+    } catch (err) {
+      if (isAbortError(err)) return;
       debugError('EPG load failed:', formatError(err));
       if (isUnauthorizedError(err)) {
         return;
@@ -220,18 +258,18 @@ export default function EPG({
         payload: { error: createEpgError(err, t, 'epg.loadError') }
       });
     }
-  }, [isReady, selectedProfileId, state.filters.timeRange, state.filters.bouquetId, t]);
+  }, [isReady, state.filters.timeRange, state.filters.bouquetId, t]);
 
   // Initial load + auto-refresh every 5 minutes
   useEffect(() => {
-    if (!isReady) {
+    if (!isReady || activeSection !== 'guide') {
       return;
     }
 
     loadEpgEvents();
     const interval = setInterval(loadEpgEvents, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [isReady, loadEpgEvents]);
+  }, [activeSection, isReady, loadEpgEvents]);
 
   // ============================================================================
   // Search Logic
@@ -253,7 +291,7 @@ export default function EPG({
       });
 
       dispatch({ type: 'SEARCH_SUCCESS', payload: { events } });
-    } catch (err: any) {
+    } catch (err) {
       debugError(formatError(err));
       if (isUnauthorizedError(err)) {
         return;
@@ -263,7 +301,7 @@ export default function EPG({
         payload: { error: createEpgError(err, t, 'epg.searchError') }
       });
     }
-  }, [isReady, selectedProfileId, state.filters.query, state.filters.bouquetId, t]);
+  }, [isReady, state.filters.query, state.filters.bouquetId, t]);
 
   // Clear search when query is emptied
   useEffect(() => {
@@ -388,119 +426,193 @@ export default function EPG({
     dispatch({ type: 'TOGGLE_SEARCH_CHANNEL', payload: { channelId: serviceRef } });
   }, []);
 
+  const handleSectionChange = useCallback((nextSection: EpgSection) => {
+    if (activeSection === nextSection) {
+      return;
+    }
+
+    navigate(buildEpgRoute(nextSection));
+  }, [activeSection, navigate]);
+
   const showSearchResults = state.searchLoadState === 'ready' && visibleSearchEventCount > 0;
   const showMainList = state.loadState === 'ready' && !showSearchResults;
+  const useStackedSurface = uiSurface.width < 1100;
+  const useCompactSurface =
+    uiSurface.width < 768 ||
+    (uiSurface.inputMode === 'coarse' && uiSurface.heightClass !== 'comfortable');
+  const useCompactLandscapeSurface =
+    uiSurface.inputMode === 'coarse' &&
+    uiSurface.orientation === 'landscape' &&
+    uiSurface.width < 932;
 
   return (
-    <div className={[styles.page, 'animate-enter'].join(' ')}>
-      {/* Toolbar */}
-      <EpgToolbar
-        channelCount={visibleChannels.length}
-        favoriteCount={visibleFavoriteCount}
-        showFavoritesOnly={showFavoritesOnly}
-        filters={state.filters}
-        bouquets={bouquets}
-        loadState={state.loadState}
-        searchLoadState={state.searchLoadState}
-        onFilterChange={handleFilterChange}
-        onRefresh={loadEpgEvents}
-        onToggleFavorites={() => setShowFavoritesOnly((current) => !current)}
-        onSearch={runSearch}
-      />
-
-      {showFavoritesOnly && visibleChannels.length === 0 && (
-        <div className={styles.card}>
-          {t('epg.noFavorites', { defaultValue: 'Dieses Profil hat noch keine Senderfavoriten.' })}
+    <div
+      className={[
+        styles.page,
+        'animate-enter',
+        useStackedSurface ? styles.surfaceStacked : null,
+        useCompactSurface ? styles.surfaceCompact : null,
+        useCompactLandscapeSurface ? styles.surfaceCompactLandscape : null,
+      ].filter(Boolean).join(' ')}
+    >
+      {canManageDvr ? (
+        <div className={styles.surfaceTabs} role="tablist" aria-label={t('epg.sectionNavLabel', { defaultValue: 'Live TV sections' })}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === 'guide'}
+            className={[
+              styles.surfaceTab,
+              activeSection === 'guide' ? styles.surfaceTabActive : null,
+            ].filter(Boolean).join(' ')}
+            onClick={() => handleSectionChange('guide')}
+          >
+            {t('nav.epg')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === 'timers'}
+            className={[
+              styles.surfaceTab,
+              activeSection === 'timers' ? styles.surfaceTabActive : null,
+            ].filter(Boolean).join(' ')}
+            onClick={() => handleSectionChange('timers')}
+          >
+            {t('nav.timers')}
+          </button>
         </div>
-      )}
+      ) : null}
 
-      {/* Search Error */}
-      {state.searchError && (
-        <ErrorPanel
-          error={state.searchError}
-          onRetry={() => { void runSearch(); }}
-          titleAs="h3"
+      {activeSection === 'timers' ? (
+        <SectionContextBar
+          segments={[
+            {
+              label: t('nav.epg'),
+              onClick: () => handleSectionChange('guide'),
+            },
+            {
+              label: t('nav.timers'),
+            },
+          ]}
+          actionLabel={t('epg.backToGuide', { defaultValue: 'Back to Live TV' })}
+          onAction={() => handleSectionChange('guide')}
         />
-      )}
+      ) : null}
 
-      {/* Search Loading */}
-      {state.searchLoadState === 'loading' && state.filters.query?.trim() && (
-        <LoadingSkeleton
-          variant="section"
-          label={t('common.loading', { defaultValue: 'Loading...' })}
-        />
-      )}
+      {activeSection === 'guide' ? (
+        <>
+          <EpgToolbar
+            channelCount={visibleChannels.length}
+            favoriteCount={visibleFavoriteCount}
+            showFavoritesOnly={showFavoritesOnly}
+            filters={state.filters}
+            bouquets={bouquets}
+            loadState={state.loadState}
+            searchLoadState={state.searchLoadState}
+            onFilterChange={handleFilterChange}
+            onRefresh={loadEpgEvents}
+            onToggleFavorites={() => setShowFavoritesOnly((current) => !current)}
+            onSearch={runSearch}
+            extraActions={canManageDvr ? (
+              <button type="button" onClick={() => handleSectionChange('timers')}>
+                <span className={styles.actionIcon} aria-hidden="true">⏱</span>
+                <span className={styles.actionLabel}>{t('nav.timers')}</span>
+              </button>
+            ) : null}
+          />
 
-      {/* Search No Results */}
-      {state.searchLoadState === 'ready' &&
-        visibleSearchEventCount === 0 &&
-        !state.searchError &&
-        state.filters.query?.trim() && (
-          <div className={styles.card}>
-            {t('epg.noResults', { query: state.filters.query.trim() })}
-          </div>
-        )}
+          {showFavoritesOnly && visibleChannels.length === 0 && (
+            <div className={styles.card}>
+              {t('epg.noFavorites', { defaultValue: 'Dieses Profil hat noch keine Senderfavoriten.' })}
+            </div>
+          )}
 
-      {/* Search Results */}
-      {showSearchResults && (
-        <div className={styles.card}>
-          <div className={styles.channel}>
-            <div className={styles.channelMeta}>
-              <div className={styles.channelName}>
-                {t('epg.searchResults', { query: state.filters.query?.trim() })}
+          {state.searchError && (
+            <ErrorPanel
+              error={state.searchError}
+              onRetry={() => { void runSearch(); }}
+              titleAs="h3"
+            />
+          )}
+
+          {state.searchLoadState === 'loading' && state.filters.query?.trim() && (
+            <LoadingSkeleton
+              variant="section"
+              label={t('common.loading', { defaultValue: 'Loading...' })}
+            />
+          )}
+
+          {state.searchLoadState === 'ready' &&
+            visibleSearchEventCount === 0 &&
+            !state.searchError &&
+            state.filters.query?.trim() && (
+              <div className={styles.card}>
+                {t('epg.noResults', { query: state.filters.query.trim() })}
+              </div>
+            )}
+
+          {showSearchResults && (
+            <div className={styles.card}>
+              <div className={styles.channel}>
+                <div className={styles.channelMeta}>
+                  <div className={styles.channelName}>
+                    {t('epg.searchResults', { query: state.filters.query?.trim() })}
+                  </div>
+                </div>
+              </div>
+              <div className={styles.programmes}>
+                <EpgChannelList
+                  mode="search"
+                  channels={visibleChannels}
+                  eventsByServiceRef={visibleSearchEventsByServiceRef}
+                  favoriteServiceRefs={favoriteServiceRefs}
+                  currentTime={state.currentTime}
+                  timeRangeHours={state.filters.timeRange}
+                  expandedChannels={state.expandedSearchChannels}
+                  onToggleExpand={handleToggleSearchChannel}
+                  onPlay={onPlay}
+                  onToggleFavorite={toggleFavoriteService}
+                  onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
+                  isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
+                />
               </div>
             </div>
-          </div>
-          <div className={styles.programmes}>
+          )}
+
+          {state.loadState === 'loading' && (
+            <LoadingSkeleton
+              variant="section"
+              label={t('epg.loading')}
+            />
+          )}
+          {state.error && (
+            <ErrorPanel
+              error={state.error}
+              onRetry={() => { void loadEpgEvents(); }}
+              titleAs="h3"
+            />
+          )}
+
+          {showMainList && (
             <EpgChannelList
-              mode="search"
+              mode="main"
               channels={visibleChannels}
-              eventsByServiceRef={visibleSearchEventsByServiceRef}
+              eventsByServiceRef={visibleMainEventsByServiceRef}
               favoriteServiceRefs={favoriteServiceRefs}
               currentTime={state.currentTime}
               timeRangeHours={state.filters.timeRange}
-              expandedChannels={state.expandedSearchChannels}
-              onToggleExpand={handleToggleSearchChannel}
+              expandedChannels={state.expandedChannels}
+              onToggleExpand={handleToggleChannel}
               onPlay={onPlay}
               onToggleFavorite={toggleFavoriteService}
               onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
               isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
             />
-          </div>
-        </div>
-      )}
-
-      {/* Main View Loading/Error */}
-      {state.loadState === 'loading' && (
-        <LoadingSkeleton
-          variant="section"
-          label={t('epg.loading')}
-        />
-      )}
-      {state.error && (
-        <ErrorPanel
-          error={state.error}
-          onRetry={() => { void loadEpgEvents(); }}
-          titleAs="h3"
-        />
-      )}
-
-      {/* Main Channel List */}
-      {showMainList && (
-        <EpgChannelList
-          mode="main"
-          channels={visibleChannels}
-          eventsByServiceRef={visibleMainEventsByServiceRef}
-          favoriteServiceRefs={favoriteServiceRefs}
-          currentTime={state.currentTime}
-          timeRangeHours={state.filters.timeRange}
-          expandedChannels={state.expandedChannels}
-          onToggleExpand={handleToggleChannel}
-          onPlay={onPlay}
-          onToggleFavorite={toggleFavoriteService}
-          onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
-          isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
-        />
+          )}
+        </>
+      ) : (
+        <Timers showLegacyNotice={false} />
       )}
     </div>
   );

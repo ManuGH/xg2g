@@ -103,6 +103,7 @@ func TestServiceGetSessionReadyRecordingPlaybackInfo(t *testing.T) {
 	require.NotNil(t, got.Session)
 	assert.Equal(t, model.SessionReady, got.Outcome.State)
 	assert.Equal(t, model.ModeRecording, got.PlaybackInfo.Mode)
+	assert.Equal(t, SessionWindowKindVOD, got.PlaybackInfo.WindowKind)
 	require.NotNil(t, got.PlaybackInfo.DurationSeconds)
 	assert.Equal(t, 3600.0, *got.PlaybackInfo.DurationSeconds)
 	require.NotNil(t, got.PlaybackInfo.SeekableStartSeconds)
@@ -110,4 +111,119 @@ func TestServiceGetSessionReadyRecordingPlaybackInfo(t *testing.T) {
 	require.NotNil(t, got.PlaybackInfo.SeekableEndSeconds)
 	assert.Equal(t, 3600.0, *got.PlaybackInfo.SeekableEndSeconds)
 	assert.Nil(t, got.PlaybackInfo.LiveEdgeSeconds)
+}
+
+func TestServiceGetSessionReadyLivePlaybackInfoWindowKinds(t *testing.T) {
+	now := time.Unix(1700000030, 0)
+
+	t.Run("live_without_dvr_window", func(t *testing.T) {
+		svc := NewService(fakeDeps{store: fakeStore{session: &model.SessionRecord{
+			SessionID:     "550e8400-e29b-41d4-a716-446655440002",
+			State:         model.SessionReady,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			UpdatedAtUnix: 1700000030,
+			CreatedAtUnix: 1700000030,
+			Profile: model.ProfileSpec{
+				Name: "compatible",
+			},
+		}}})
+
+		got, err := svc.GetSession(context.Background(), GetSessionRequest{
+			SessionID: "550e8400-e29b-41d4-a716-446655440002",
+			Now:       now,
+		})
+
+		require.Nil(t, err)
+		assert.Equal(t, model.ModeLive, got.PlaybackInfo.Mode)
+		assert.Equal(t, SessionWindowKindLive, got.PlaybackInfo.WindowKind)
+		require.NotNil(t, got.PlaybackInfo.SeekableStartSeconds)
+		require.NotNil(t, got.PlaybackInfo.SeekableEndSeconds)
+		assert.Equal(t, *got.PlaybackInfo.SeekableStartSeconds, *got.PlaybackInfo.SeekableEndSeconds)
+	})
+
+	t.Run("live_with_dvr_window", func(t *testing.T) {
+		svc := NewService(fakeDeps{store: fakeStore{session: &model.SessionRecord{
+			SessionID:     "550e8400-e29b-41d4-a716-446655440003",
+			State:         model.SessionReady,
+			ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+			UpdatedAtUnix: 1700000030,
+			CreatedAtUnix: 1700000000,
+			Profile: model.ProfileSpec{
+				Name:         "compatible",
+				DVRWindowSec: 300,
+			},
+		}}})
+
+		got, err := svc.GetSession(context.Background(), GetSessionRequest{
+			SessionID: "550e8400-e29b-41d4-a716-446655440003",
+			Now:       now,
+		})
+
+		require.Nil(t, err)
+		assert.Equal(t, model.ModeLive, got.PlaybackInfo.Mode)
+		assert.Equal(t, SessionWindowKindLiveDVR, got.PlaybackInfo.WindowKind)
+		require.NotNil(t, got.PlaybackInfo.DurationSeconds)
+		assert.Equal(t, 300.0, *got.PlaybackInfo.DurationSeconds)
+		require.NotNil(t, got.PlaybackInfo.SeekableStartSeconds)
+		require.NotNil(t, got.PlaybackInfo.SeekableEndSeconds)
+		assert.Equal(t, 0.0, *got.PlaybackInfo.SeekableStartSeconds)
+		assert.Equal(t, 30.0, *got.PlaybackInfo.SeekableEndSeconds)
+		require.NotNil(t, got.PlaybackInfo.LiveEdgeSeconds)
+		assert.Equal(t, 30.0, *got.PlaybackInfo.LiveEdgeSeconds)
+	})
+
+	t.Run("live_dvr_uses_current_time_not_stale_last_access", func(t *testing.T) {
+		svc := NewService(fakeDeps{store: fakeStore{session: &model.SessionRecord{
+			SessionID:      "550e8400-e29b-41d4-a716-446655440004",
+			State:          model.SessionReady,
+			ServiceRef:     "1:0:1:445D:453:1:C00000:0:0:0:",
+			UpdatedAtUnix:  1700000060,
+			LastAccessUnix: 1700000030,
+			CreatedAtUnix:  1700000000,
+			Profile: model.ProfileSpec{
+				Name:         "compatible",
+				DVRWindowSec: 300,
+			},
+		}}})
+
+		got, err := svc.GetSession(context.Background(), GetSessionRequest{
+			SessionID: "550e8400-e29b-41d4-a716-446655440004",
+			Now:       time.Unix(1700000090, 0),
+		})
+
+		require.Nil(t, err)
+		require.NotNil(t, got.PlaybackInfo.LiveEdgeSeconds)
+		require.NotNil(t, got.PlaybackInfo.SeekableStartSeconds)
+		require.NotNil(t, got.PlaybackInfo.SeekableEndSeconds)
+		assert.Equal(t, 90.0, *got.PlaybackInfo.LiveEdgeSeconds)
+		assert.Equal(t, 0.0, *got.PlaybackInfo.SeekableStartSeconds)
+		assert.Equal(t, 90.0, *got.PlaybackInfo.SeekableEndSeconds)
+	})
+}
+
+func TestServiceGetSessionReadyLivePlaybackInfoWithoutCreatedAtFallsBackToNeutralWindow(t *testing.T) {
+	svc := NewService(fakeDeps{store: fakeStore{session: &model.SessionRecord{
+		SessionID:     "550e8400-e29b-41d4-a716-446655440005",
+		State:         model.SessionReady,
+		ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+		UpdatedAtUnix: 1700000030,
+		Profile: model.ProfileSpec{
+			Name: "compatible",
+		},
+	}}})
+
+	got, err := svc.GetSession(context.Background(), GetSessionRequest{
+		SessionID: "550e8400-e29b-41d4-a716-446655440005",
+		Now:       time.Unix(1700000090, 0),
+	})
+
+	require.Nil(t, err)
+	assert.Equal(t, model.ModeLive, got.PlaybackInfo.Mode)
+	assert.Equal(t, SessionWindowKindLive, got.PlaybackInfo.WindowKind)
+	require.NotNil(t, got.PlaybackInfo.SeekableStartSeconds)
+	require.NotNil(t, got.PlaybackInfo.SeekableEndSeconds)
+	require.NotNil(t, got.PlaybackInfo.LiveEdgeSeconds)
+	assert.Equal(t, 0.0, *got.PlaybackInfo.SeekableStartSeconds)
+	assert.Equal(t, 0.0, *got.PlaybackInfo.SeekableEndSeconds)
+	assert.Equal(t, 0.0, *got.PlaybackInfo.LiveEdgeSeconds)
 }

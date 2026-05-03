@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/playlist"
 )
 
 func TestRefresh_IntegrationSuccess(t *testing.T) {
@@ -201,6 +202,60 @@ func TestRefresh_WithRuntimePoolPrewarmsPicons(t *testing.T) {
 	t.Fatalf("expected prewarmed picon file %q", wantFile)
 }
 
+func TestWriteRefreshPlaylistPrewarmsPiconsWithCanceledRefreshContext(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/picon/", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, ".png") {
+			t.Fatalf("unexpected picon path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("fake-png"))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir:   tmp,
+		PiconBase: srv.URL,
+	}
+
+	pool, err := NewPiconPoolForConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewPiconPoolForConfig returned error: %v", err)
+	}
+	defer pool.Stop()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	serviceRef := "1:0:19:BBB:1:1:C00000:0:0:0:"
+	storeRef := strings.TrimRight(strings.ReplaceAll(serviceRef, ":", "_"), "_")
+	items := []playlist.Item{{
+		Name:       "Chan B",
+		TvgLogo:    "/logos/" + storeRef + ".png?v=1",
+		URL:        "http://stream/chan-b",
+		ServiceRef: serviceRef,
+	}}
+
+	rt := config.BuildSnapshot(cfg, config.DefaultEnv()).Runtime
+	if err := writeRefreshPlaylist(ctx, cfg, rt, items, refreshOptions{piconPool: pool}); err != nil {
+		t.Fatalf("writeRefreshPlaylist returned error: %v", err)
+	}
+
+	wantFile := filepath.Join(tmp, "picons", storeRef+".png")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(wantFile); err == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("expected prewarm to ignore refresh context cancellation and write picon file %q", wantFile)
+}
+
 func TestRefresh_WithRuntimePoolPrewarmsPiconsWithoutExplicitPiconBase(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/bouquets", func(w http.ResponseWriter, _ *http.Request) {
@@ -222,6 +277,12 @@ func TestRefresh_WithRuntimePoolPrewarmsPiconsWithoutExplicitPiconBase(t *testin
 		if !strings.HasSuffix(r.URL.Path, ".png") {
 			t.Fatalf("unexpected picon path %q", r.URL.Path)
 		}
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "root" || pass != "secret" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="OpenWebif"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		// Simulate the real-world receiver behavior: HD refs 404, normalized SD-style refs exist.
 		if strings.Contains(r.URL.Path, "1_0_19_") {
 			http.NotFound(w, r)
@@ -241,6 +302,8 @@ func TestRefresh_WithRuntimePoolPrewarmsPiconsWithoutExplicitPiconBase(t *testin
 	cfg := config.AppConfig{
 		DataDir: tmp,
 		Enigma2: config.Enigma2Settings{
+			Username:   "root",
+			Password:   "secret",
 			BaseURL:    srv.URL,
 			StreamPort: 8001,
 		},

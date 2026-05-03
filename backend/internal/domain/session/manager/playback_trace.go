@@ -60,6 +60,28 @@ func (o *Orchestrator) updatePlaybackTraceBestEffort(ctx context.Context, sessio
 	}
 }
 
+func (o *Orchestrator) updatePlaybackRuntimeDiagnosticsBestEffort(ctx context.Context, sessionID string, status ports.HealthStatus) {
+	if status.Diagnostics.IsZero() {
+		return
+	}
+	diagnostics := status.Diagnostics
+	o.updatePlaybackTraceBestEffort(ctx, sessionID, func(_ *model.SessionRecord, trace *model.PlaybackTrace) {
+		trace.RuntimeDiagnostics = &diagnostics
+	})
+}
+
+func sessionIDFromRunHandle(handle ports.RunHandle) string {
+	raw := strings.TrimSpace(string(handle))
+	if raw == "" {
+		return ""
+	}
+	idx := strings.LastIndex(raw, "-")
+	if idx <= 0 {
+		return raw
+	}
+	return raw[:idx]
+}
+
 func firstFrameUnixFromArtifacts(hlsRoot, sessionID string) int64 {
 	markerPath := model.SessionFirstFrameMarkerPath(hlsRoot, sessionID)
 	if strings.TrimSpace(markerPath) == "" {

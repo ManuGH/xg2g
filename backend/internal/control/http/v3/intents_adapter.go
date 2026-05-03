@@ -7,6 +7,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/metrics"
 )
@@ -49,6 +50,12 @@ func (d *serverIntentDeps) ChannelScanner() v3intents.ChannelScanner {
 	return d.s.sessionsModuleDeps().channelScanner
 }
 
+func (d *serverIntentDeps) CapabilityRegistry() capreg.Store {
+	d.s.mu.RLock()
+	defer d.s.mu.RUnlock()
+	return d.s.capabilityRegistry
+}
+
 func (d *serverIntentDeps) AdmissionController() v3intents.AdmissionController {
 	return d.s.sessionsModuleDeps().admission
 }
@@ -60,6 +67,10 @@ func (d *serverIntentDeps) AdmissionRuntimeState(ctx context.Context) admission.
 
 func (d *serverIntentDeps) HostPressure(ctx context.Context) playbackprofile.HostPressureAssessment {
 	return d.s.currentHostPressure(ctx)
+}
+
+func (d *serverIntentDeps) HostRuntime(ctx context.Context) playbackprofile.HostRuntimeSnapshot {
+	return d.s.currentHostRuntime(ctx)
 }
 
 func (d *serverIntentDeps) VerifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode string) bool {

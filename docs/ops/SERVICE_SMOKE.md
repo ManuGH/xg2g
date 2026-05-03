@@ -1,6 +1,6 @@
-# Service Smoke Matrix (Operator-Grade 2026)
+# Service Smoke Matrix
 
-This is a short, CTO-grade smoke matrix for the hardened systemd + Compose unit.
+This is a short smoke matrix for the hardened systemd + Compose unit.
 Run as root (or with sudo) on the host.
 
 ## Preconditions
@@ -20,6 +20,12 @@ After a real deploy, run the playback verifier as a second step:
 ```bash
 sudo /srv/xg2g/scripts/verify-post-deploy-playback.sh
 ```
+
+What that verifier now proves:
+- live HLS manifests are not anonymously readable
+- `POST /auth/session` mints `xg2g_session` and unlocks the same live manifest/media path
+- DVR-enabled live manifests use `EVENT` semantics instead of `VOD`
+- forced transcode still lands on the expected hardware encoder backend
 
 On NVIDIA-only hosts, you can pin the expected hardware backend explicitly:
 ```bash

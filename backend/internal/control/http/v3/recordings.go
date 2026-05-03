@@ -37,6 +37,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 		return
 	}
 	profile = household.NormalizeProfile(profile)
+	canManageDvr := household.CanManageDVR(profile)
 
 	// 1. Parse Query
 	var qRootID, qPath string
@@ -79,6 +80,9 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			Length:           strPtr(m.Length),
 			Filename:         strPtr(m.Filename),
 			Status:           mapRecordingItemStatus(m.Status),
+		}
+		if canManageDvr {
+			item.LocalWritable = boolPtr(recordingLocalAdminWritable(deps, m.ServiceRef))
 		}
 
 		if m.DurationSeconds != nil {
