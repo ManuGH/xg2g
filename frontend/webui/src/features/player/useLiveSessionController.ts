@@ -629,7 +629,7 @@ export function useLiveSessionController({
       debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
       window.clearInterval(timerId);
     };
-  }, [apiBase, authHeaders, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, sessionId, setError, setPlaybackMode, setStatus, t, videoRef]);
+  }, [apiBase, authHeaders, clearPlaybackFailure, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, reportPlaybackFailure, sessionId, setPlaybackMode, setStatus, t, videoRef]);
 
   useEffect(() => {
     setClientAuthToken(token);

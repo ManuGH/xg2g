@@ -7,6 +7,7 @@ import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse
 import type { AppError } from '../../types/errors';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
+import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import {
   describeHlsRenderProbe,
   isBlackRenderSuspect,
@@ -51,10 +52,12 @@ interface UsePlaybackEngineProps {
   runtimeProbeActive?: boolean;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  setErrorDetails: Dispatch<SetStateAction<string | null>>;
-  setShowErrorDetails: Dispatch<SetStateAction<boolean>>;
+  setError?: Dispatch<SetStateAction<string | null>>;
+  setErrorDetails?: Dispatch<SetStateAction<string | null>>;
+  setShowErrorDetails?: Dispatch<SetStateAction<boolean>>;
   dispatchPlayerAction?: (action: any) => void;
+  clearPlaybackFailure: () => void;
+  reportPlaybackFailure: (error: AppError, options?: PlaybackFailureReportOptions) => void;
 }
 
 interface PlaybackEngineController {
@@ -606,13 +609,13 @@ export function usePlaybackEngine({
       if (attempts >= 2) {
         const started = beginSessionDecodeRecovery(4, `hlsjs_${trigger}`, () => {
           setStatus('error');
-          setError(t('player.networkError'));
-          setErrorDetails(`${trigger} (hls.js stall recovery failed)`);
+          setError?.(t('player.networkError'));
+          setErrorDetails?.(`${trigger} (hls.js stall recovery failed)`);
         });
         if (!started) {
           setStatus('error');
-          setError(t('player.networkError'));
-          setErrorDetails(`${trigger} (hls.js stall recovery failed)`);
+          setError?.(t('player.networkError'));
+          setErrorDetails?.(`${trigger} (hls.js stall recovery failed)`);
         }
       }
     }, HLS_STALL_RECOVERY_MS);
