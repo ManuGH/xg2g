@@ -39,12 +39,6 @@
   background: color-mix(in srgb, var(--accent-danger) 10%, var(--card-bg));
 }
 
-.empty {
-  margin: 0;
-  padding: 18px 4px;
-  color: var(--text-muted);
-}
-
 .tableWrap {
   background: var(--card-bg);
   border: 1px solid var(--border-subtle);

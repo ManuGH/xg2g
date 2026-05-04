@@ -9,7 +9,7 @@ import { toAppError } from '../lib/appErrors';
 import { ROUTE_MAP } from '../routes';
 import { unwrapClientResultOrThrow } from '../services/clientWrapper';
 import type { AppError } from '../types/errors';
-import { Button } from './ui';
+import { Button, EmptyState } from './ui';
 import ErrorPanel from './ErrorPanel';
 import LegacyRouteNotice from './LegacyRouteNotice';
 import styles from './Logs.module.css';
@@ -64,7 +64,9 @@ export default function Logs({ showLegacyNotice = true }: LogsProps) {
       {error ? <ErrorPanel error={error} onRetry={fetchLogs} titleAs="h3" /> : null}
 
       {logs.length === 0 ? (
-        !loading && !error ? <p className={styles.empty}>No logs available.</p> : null
+        !loading && !error ? (
+          <EmptyState variant="inline" icon="○" title="No logs available." />
+        ) : null
       ) : (
         <div className={styles.tableWrap}>
           <table className={styles.table}>

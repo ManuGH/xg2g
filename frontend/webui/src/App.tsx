@@ -35,6 +35,7 @@ const RecordingsList = lazy(() => import('./components/RecordingsList'));
 const Settings = lazy(() => import('./components/Settings'));
 const SystemInfo = lazy(() => import('./features/system/SystemInfo').then(m => ({ default: m.SystemInfo })));
 const UnlockStatus = lazy(() => import('./features/unlock/UnlockStatus').then(m => ({ default: m.UnlockStatus })));
+const EmptyStatePlayground = lazy(() => import('./dev/EmptyStatePlayground'));
 
 function ProfileRouteGate({ allowed, children }: { allowed: boolean; children: ReactElement }) {
   return allowed ? children : <Navigate to={ROUTE_MAP.dashboard} replace />;
@@ -120,6 +121,9 @@ function App() {
       )}
 
       <Routes>
+        {import.meta.env.DEV && (
+          <Route path="/__playground/empty-state" element={<EmptyStatePlayground />} />
+        )}
         <Route element={<BootstrapGate />}>
           <Route element={<AppShell onLogout={auth.isAuthenticated ? handleLogout : undefined} />}>
             <Route path={ROUTE_MAP.dashboard} element={<Dashboard />} />

@@ -16,7 +16,7 @@ import { usePlayerHistoryBridge } from '../features/player/usePlayerHistoryBridg
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useRecordings } from '../hooks/useServerQueries';
 import { toAppError } from '../lib/appErrors';
-import { Button, Card, CardBody, StatusChip, type ChipState } from './ui';
+import { Button, Card, CardBody, EmptyState, StatusChip, type ChipState } from './ui';
 import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
 import styles from './Recordings.module.css';
@@ -768,9 +768,7 @@ export default function RecordingsList() {
   if (!canAccessDvrPlayback) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
-        <div className={styles.emptyState}>
-          <p>{t('recordings.profileBlocked')}</p>
-        </div>
+        <EmptyState icon="⛔" title={t('recordings.profileBlocked')} />
       </div>
     );
   }
@@ -1048,13 +1046,14 @@ export default function RecordingsList() {
       )}
 
       {(!data?.directories?.length && !visibleRecordings.length) && (
-        <div className={styles.emptyState}>
-          <p>
-            {filterMode === 'all'
+        <EmptyState
+          icon="○"
+          title={
+            filterMode === 'all'
               ? t('recordings.emptyLocation')
-              : t('recordings.emptyFilter')}
-          </p>
-        </div>
+              : t('recordings.emptyFilter')
+          }
+        />
       )}
 
       {preplayRecording && preplayStatus && (

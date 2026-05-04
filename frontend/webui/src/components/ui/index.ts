@@ -12,3 +12,6 @@ export type { ButtonLinkProps } from './ButtonLink';
 
 export { StatusChip } from './StatusChip';
 export type { StatusChipProps, ChipState } from './StatusChip';
+
+export { EmptyState } from './EmptyState';
+export type { EmptyStateProps, EmptyStateVariant } from './EmptyState';
