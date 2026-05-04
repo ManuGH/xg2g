@@ -50,7 +50,7 @@ export default function Timers({ showLegacyNotice = true }: TimersProps) {
   const { data: capabilities = null } = useDvrCapabilities();
   const deleteTimerMutation = useDeleteTimerMutation();
   const loading = isPending || isFetching;
-  const errorMessage = error ? 'Failed to load timers. Ensure backend is running and authenticated.' : null;
+  const errorMessage = error ? t('timers.loadError') : null;
   const visibleTimers = filterTimersForProfile(selectedProfile, timers);
   const availableServices = filterServicesForProfile(selectedProfile, channels.channels);
 
@@ -117,15 +117,15 @@ export default function Timers({ showLegacyNotice = true }: TimersProps) {
       {!canManageDvr && !loading && !errorMessage && (
         <EmptyState
           icon="⛔"
-          title="Dieses Profil darf den DVR nicht bedienen."
+          title={t('timers.dvrBlocked')}
         />
       )}
 
       {!loading && !errorMessage && canManageDvr && visibleTimers.length === 0 && (
         <EmptyState
           icon="○"
-          title="No timers scheduled."
-          description="Create a timer from the EPG or recordings to schedule a recording."
+          title={t('timers.empty')}
+          description={t('timers.emptyHint')}
         />
       )}
 

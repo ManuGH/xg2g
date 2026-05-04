@@ -53,6 +53,7 @@
     "notAvailable": "N/A",
     "close": "Close",
     "refresh": "Refresh",
+    "refreshing": "Refreshing...",
     "retry": "Retry",
     "start": "Start",
     "stop": "Stop",
@@ -89,6 +90,15 @@
     "seriesDescription": "Series rules remain available as an expert workflow. For normal DVR browsing, start in Recordings.",
     "filesDescription": "Playlist and guide feeds stay available as expert tools. You can now also reach them from Settings.",
     "logsDescription": "Diagnostics stay directly accessible, but most households should enter this area from Settings."
+  },
+  "logs": {
+    "empty": "No logs available."
+  },
+  "timers": {
+    "empty": "No timers scheduled.",
+    "emptyHint": "Create a timer from the EPG or recordings to schedule a recording.",
+    "dvrBlocked": "Dieses Profil darf den DVR nicht bedienen.",
+    "loadError": "Failed to load timers. Ensure backend is running and authenticated."
   },
   "player": {
     "status": "Status",

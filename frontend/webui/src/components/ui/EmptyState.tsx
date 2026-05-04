@@ -38,7 +38,7 @@ export function EmptyState({
           {icon}
         </span>
       ) : null}
-      {title ? <p className={styles.title}>{title}</p> : null}
+      {title ? <h3 className={styles.title}>{title}</h3> : null}
       {description ? <p className={styles.description}>{description}</p> : null}
       {action ? <div className={styles.action}>{action}</div> : null}
     </div>

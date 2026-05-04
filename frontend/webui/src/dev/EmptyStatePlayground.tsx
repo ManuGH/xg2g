@@ -8,7 +8,7 @@ const wrap: React.CSSProperties = {
   inset: 0,
   overflowY: 'auto',
   padding: 24,
-  background: 'var(--surface-stage, #0a0a0a)',
+  background: 'var(--surface-stage)',
   color: 'var(--text-primary)',
   fontFamily: 'var(--font-body)',
   zIndex: 9999,

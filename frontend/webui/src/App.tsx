@@ -122,7 +122,7 @@ function App() {
 
       <Routes>
         {import.meta.env.DEV && (
-          <Route path="/__playground/empty-state" element={<EmptyStatePlayground />} />
+          <Route path="/__playground/empty-state" element={<Suspense fallback={<div className="loading-spinner"></div>}><EmptyStatePlayground /></Suspense>} />
         )}
         <Route element={<BootstrapGate />}>
           <Route element={<AppShell onLogout={auth.isAuthenticated ? handleLogout : undefined} />}>

@@ -57,7 +57,7 @@ export default function Logs({ showLegacyNotice = true }: LogsProps) {
       <div className={styles.header}>
         <h3>Recent Logs</h3>
         <Button onClick={fetchLogs} disabled={loading} variant="secondary" size="sm">
-          {loading ? 'Refreshing...' : 'Refresh'}
+          {loading ? t('common.refreshing') : t('common.refresh')}
         </Button>
       </div>
 
@@ -65,7 +65,7 @@ export default function Logs({ showLegacyNotice = true }: LogsProps) {
 
       {logs.length === 0 ? (
         !loading && !error ? (
-          <EmptyState variant="inline" icon="○" title="No logs available." />
+          <EmptyState variant="inline" icon="○" title={t('logs.empty')} />
         ) : null
       ) : (
         <div className={styles.tableWrap}>
