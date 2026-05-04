@@ -92,7 +92,7 @@ export default function Timers({ showLegacyNotice = true }: TimersProps) {
         />
       ) : null}
       <div className={styles.toolbar}>
-        <h2>Scheduled Recordings</h2>
+        <h2>{t('timers.scheduledRecordings')}</h2>
         <div className={styles.actions}>
           <Button
             size="sm"

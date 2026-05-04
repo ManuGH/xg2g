@@ -98,6 +98,7 @@
     "empty": "Keine Timer geplant.",
     "emptyHint": "Erstelle einen Timer über das Fernsehen oder Aufnahmen, um eine Aufnahme zu planen.",
     "dvrBlocked": "Dieses Profil darf den DVR nicht bedienen.",
+    "scheduledRecordings": "Geplante Aufnahmen",
     "loadError": "Timer konnten nicht geladen werden. Stelle sicher, dass das Backend läuft und authentifiziert ist."
   },
   "player": {

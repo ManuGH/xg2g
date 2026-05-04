@@ -97,7 +97,8 @@
   "timers": {
     "empty": "No timers scheduled.",
     "emptyHint": "Create a timer from the EPG or recordings to schedule a recording.",
-    "dvrBlocked": "Dieses Profil darf den DVR nicht bedienen.",
+    "dvrBlocked": "This profile does not have permission to use the DVR.",
+    "scheduledRecordings": "Scheduled Recordings",
     "loadError": "Failed to load timers. Ensure backend is running and authenticated."
   },
   "player": {
