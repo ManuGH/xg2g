@@ -53,6 +53,7 @@
     "notAvailable": "k. A.",
     "close": "Schließen",
     "refresh": "Aktualisieren",
+    "refreshing": "Aktualisiere...",
     "retry": "Erneut versuchen",
     "start": "Start",
     "stop": "Stop",
@@ -89,6 +90,16 @@
     "seriesDescription": "Serienregeln bleiben als Expertenwerkzeug verfügbar. Für normales DVR-Browsing startest du jetzt bei Aufnahmen.",
     "filesDescription": "Playlist- und Guide-Dateien bleiben als Expertenwerkzeug verfügbar. Du erreichst sie jetzt auch über Einstellungen.",
     "logsDescription": "Diagnose-Logs bleiben direkt erreichbar, gehören für die meisten Haushalte aber unter Einstellungen."
+  },
+  "logs": {
+    "empty": "Keine Logs verfügbar."
+  },
+  "timers": {
+    "empty": "Keine Timer geplant.",
+    "emptyHint": "Erstelle einen Timer über das Fernsehen oder Aufnahmen, um eine Aufnahme zu planen.",
+    "dvrBlocked": "Dieses Profil darf den DVR nicht bedienen.",
+    "scheduledRecordings": "Geplante Aufnahmen",
+    "loadError": "Timer konnten nicht geladen werden. Stelle sicher, dass das Backend läuft und authentifiziert ist."
   },
   "player": {
     "status": "Status",

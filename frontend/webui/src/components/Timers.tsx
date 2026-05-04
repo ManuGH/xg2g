@@ -13,7 +13,7 @@ import { debugWarn } from '../utils/logging';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useDeleteTimerMutation, useDvrCapabilities, useTimers } from '../hooks/useServerQueries';
 import { ROUTE_MAP } from '../routes';
-import { Button } from './ui';
+import { Button, EmptyState } from './ui';
 import LegacyRouteNotice from './LegacyRouteNotice';
 import styles from './Timers.module.css';
 
@@ -50,7 +50,7 @@ export default function Timers({ showLegacyNotice = true }: TimersProps) {
   const { data: capabilities = null } = useDvrCapabilities();
   const deleteTimerMutation = useDeleteTimerMutation();
   const loading = isPending || isFetching;
-  const errorMessage = error ? 'Failed to load timers. Ensure backend is running and authenticated.' : null;
+  const errorMessage = error ? t('timers.loadError') : null;
   const visibleTimers = filterTimersForProfile(selectedProfile, timers);
   const availableServices = filterServicesForProfile(selectedProfile, channels.channels);
 
@@ -92,7 +92,7 @@ export default function Timers({ showLegacyNotice = true }: TimersProps) {
         />
       ) : null}
       <div className={styles.toolbar}>
-        <h2>Scheduled Recordings</h2>
+        <h2>{t('timers.scheduledRecordings')}</h2>
         <div className={styles.actions}>
           <Button
             size="sm"
@@ -115,11 +115,18 @@ export default function Timers({ showLegacyNotice = true }: TimersProps) {
       {loading && <div className={styles.loading}>Loading...</div>}
       {errorMessage && <div className={styles.errorBanner} role="alert">{errorMessage}</div>}
       {!canManageDvr && !loading && !errorMessage && (
-        <div className={styles.empty}>Dieses Profil darf den DVR nicht bedienen.</div>
+        <EmptyState
+          icon="⛔"
+          title={t('timers.dvrBlocked')}
+        />
       )}
 
       {!loading && !errorMessage && canManageDvr && visibleTimers.length === 0 && (
-        <div className={styles.empty}>No timers scheduled.</div>
+        <EmptyState
+          icon="○"
+          title={t('timers.empty')}
+          description={t('timers.emptyHint')}
+        />
       )}
 
       <div className={styles.list}>

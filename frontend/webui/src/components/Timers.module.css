@@ -113,15 +113,6 @@
   flex-shrink: 0;
 }
 
-.empty {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--text-muted);
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  border: 1px dashed var(--border-subtle);
-}
-
 .loading {
   padding: 32px;
   text-align: center;

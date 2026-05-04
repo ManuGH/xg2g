@@ -591,15 +591,6 @@
   overflow: hidden;
 }
 
-.emptyState {
-  text-align: center;
-  padding: 72px 28px;
-  color: var(--text-tertiary);
-  background: color-mix(in srgb, var(--surface-stage-strong) 72%, transparent);
-  border-radius: 18px;
-  border: 1px dashed color-mix(in srgb, var(--border-base) 82%, transparent);
-}
-
 .watchPage {
   max-width: 1640px;
   padding-top: 8px;

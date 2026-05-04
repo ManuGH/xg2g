@@ -1,0 +1,54 @@
+/* EmptyState Primitive - Broadcast Console 2026
+   Token-only, no gradients. Two visual flavors: panel (boxed) and inline. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.panel {
+  padding: 60px 24px;
+  background: color-mix(in srgb, var(--surface-stage-strong, var(--bg-card)) 72%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--border-base) 82%, transparent);
+  border-radius: var(--radius-lg);
+}
+
+.inline {
+  padding: 18px 4px;
+  gap: 6px;
+}
+
+.icon {
+  font-size: 32px;
+  line-height: 1;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.inline .icon {
+  font-size: 20px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.description {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  max-width: 48ch;
+}
+
+.action {
+  margin-top: 8px;
+}
