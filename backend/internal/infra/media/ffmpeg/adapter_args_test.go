@@ -19,22 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func indexOf(args []string, target string) int {
-	for i, a := range args {
-		if a == target {
-			return i
-		}
-	}
-	return -1
-}
 
-func valueAfter(args []string, flag string) (string, bool) {
-	idx := indexOf(args, flag)
-	if idx < 0 || idx+1 >= len(args) {
-		return "", false
-	}
-	return args[idx+1], true
-}
 
 func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 	adapter := NewLocalAdapter(
@@ -76,10 +61,7 @@ func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 }
 
 func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "legacy-1",
@@ -113,10 +95,7 @@ func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 }
 
 func TestBuildArgs_HighProfileUsesVideoCopy(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "copy-1",
@@ -145,10 +124,7 @@ func TestBuildArgs_HighProfileUsesVideoCopy(t *testing.T) {
 }
 
 func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
 		return &vod.StreamInfo{
 			Container: "ts",
@@ -194,10 +170,7 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 }
 
 func TestBuildArgsWithPlan_RecordsEffectiveRuntimeModeAfterRuntimeRemux(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
 		return &vod.StreamInfo{
 			Container: "ts",
@@ -235,10 +208,7 @@ func TestBuildArgsWithPlan_RecordsEffectiveRuntimeModeAfterRuntimeRemux(t *testi
 }
 
 func TestBuildArgs_SafariRuntimeProbeRetriesTransientStreamRelayStartup(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	probeCalls := 0
 	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
@@ -286,10 +256,7 @@ func TestBuildArgs_SafariRuntimeProbeRetriesTransientStreamRelayStartup(t *testi
 }
 
 func TestBuildArgs_SafariRuntimeProbeRetryUsesFreshTimeoutPerAttempt(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.SafariRuntimeProbeTimeout = 2 * time.Second
 
 	deadlines := make([]time.Time, 0, 2)
@@ -338,10 +305,7 @@ func TestBuildArgs_SafariRuntimeProbeRetryUsesFreshTimeoutPerAttempt(t *testing.
 func TestBuildArgs_SafariRuntimeProbeCanForceCopyForAllowlistedServiceRef(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
 		t.Fatal("allowlisted service ref should bypass safari runtime probe")
 		return nil, nil
@@ -383,10 +347,7 @@ func TestBuildArgs_SafariRuntimeProbeCanForceCopyForAllowlistedServiceRef(t *tes
 func TestBuildArgs_SafariRuntimeProbeAllowlistMatchesCanonicalServiceRefWithoutTrailingColon(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
 		t.Fatal("canonical allowlisted service ref should bypass safari runtime probe")
 		return nil, nil
@@ -428,10 +389,7 @@ func TestBuildArgs_SafariRuntimeProbeAllowlistMatchesCanonicalServiceRefWithoutT
 func TestBuildArgs_SafariForceCopyAllowlistCanBeDisabledByProfile(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "safari-force-copy-disabled",
@@ -464,10 +422,7 @@ func TestBuildArgs_SafariForceCopyAllowlistCanBeDisabledByProfile(t *testing.T) 
 func TestBuildArgs_SafariHQAllowlistUsesHighBitrate25pTranscode(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_HQ_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "safari-hq-skyf1",
@@ -536,10 +491,7 @@ func TestBuildArgs_SafariHQAllowlistUsesHighBitrate25pTranscode(t *testing.T) {
 func TestBuildArgs_SafariHQAllowlistKeepsProgressive50fpsSourcesProgressive(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_HQ_SERVICE_REFS", "1:0:19:132F:3EF:1:C00000:0:0:0:")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "safari-hq-orf1",
@@ -607,10 +559,7 @@ func TestBuildArgs_SafariHQAllowlistKeepsProgressive50fpsSourcesProgressive(t *t
 func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_HQ_SERVICE_REFS", "1:0:19:132F:3EF:1:C00000:0:0:0:")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "safari-hq-orf1-hq25",
@@ -664,10 +613,7 @@ func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *
 	t.Setenv("XG2G_SAFARI_HQ_SERVICE_REFS", "1:0:19:132F:3EF:1:C00000:0:0:0:")
 	t.Setenv("XG2G_SAFARI_HQ25_SERVICE_REFS", "1:0:19:132F:3EF:1:C00000:0:0:0:")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "safari-hq-orf1-env-hq25",
@@ -710,10 +656,7 @@ func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *
 }
 
 func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -798,10 +741,7 @@ func TestShouldRetrySafariRuntimeProbe_TransientStreamRelayOnly(t *testing.T) {
 }
 
 func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true} // simulate passed preflight
 
 	spec := ports.StreamSpec{
@@ -866,10 +806,7 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 
 func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_DIRTY_DEINTERLACE_FILTER", "bwdif=mode=send_frame:parity=auto:deint=all")
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -923,10 +860,7 @@ func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
 }
 
 func TestBuildArgs_VaapiHEVC(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -964,10 +898,7 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 }
 
 func TestBuildArgs_VaapiHEVCMPEGTSDoesNotEmitHVC1OrFMP4Init(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -1007,10 +938,7 @@ func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T
 		hardware.SetPathCapabilities(nil)
 	})
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -1060,10 +988,7 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPathWhenVerified(t *testing
 		hardware.SetPathCapabilities(nil)
 	})
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -1115,10 +1040,7 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 		hardware.SetPathCapabilities(nil)
 	})
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -1156,10 +1078,7 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 }
 
 func TestBuildArgs_SafariHEVCHWUsesShortStartupSegments(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 45*time.Minute, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"), withDVRWindow(45*time.Minute))
 	adapter.vaapiEncoders = map[string]bool{"hevc_vaapi": true}
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		return 25, "r_frame_rate", nil
@@ -1207,10 +1126,7 @@ func TestBuildArgs_SafariHEVCHWUsesShortStartupSegments(t *testing.T) {
 }
 
 func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -1248,10 +1164,7 @@ func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t 
 }
 
 func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.nvencEncoders = map[string]bool{"h264_nvenc": true, "hevc_nvenc": true}
 
 	spec := ports.StreamSpec{
@@ -1293,10 +1206,7 @@ func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
 }
 
 func TestBuildArgs_VaapiNoPreflightFails(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	// vaapiEncoders is nil (preflight not run)
 
 	spec := ports.StreamSpec{
@@ -1319,10 +1229,7 @@ func TestBuildArgs_VaapiNoPreflightFails(t *testing.T) {
 }
 
 func TestBuildArgs_VaapiNoDeviceFails(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "", // no device
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-nodevice",
@@ -1344,10 +1251,7 @@ func TestBuildArgs_VaapiNoDeviceFails(t *testing.T) {
 }
 
 func TestBuildArgs_VaapiDefaultQuality(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -1373,10 +1277,7 @@ func TestBuildArgs_VaapiDefaultQuality(t *testing.T) {
 }
 
 func TestBuildArgs_CPUProfileDriven(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "cpu-profile",
@@ -1411,10 +1312,7 @@ func TestBuildArgs_CPUProfileDriven(t *testing.T) {
 }
 
 func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "ingest-flags",
@@ -1464,10 +1362,7 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 }
 
 func TestBuildArgs_HEVCTranscodeUsesStrictLiveIngest(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "hevc-strict-ingest",
@@ -1502,10 +1397,7 @@ func TestBuildArgs_HEVCTranscodeUsesStrictLiveIngest(t *testing.T) {
 }
 
 func TestBuildArgs_StreamRelayPassthroughUsesFastLiveProbe(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "streamrelay-ingest-flags",
@@ -1540,10 +1432,7 @@ func TestBuildArgs_StreamRelayPassthroughUsesFastLiveProbe(t *testing.T) {
 }
 
 func TestBuildArgs_StreamRelayTranscodeUsesRobustLiveProbe(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "streamrelay-transcode-probe",
@@ -1572,10 +1461,7 @@ func TestBuildArgs_StreamRelayTranscodeUsesRobustLiveProbe(t *testing.T) {
 
 func TestBuildArgs_PassthroughLogsDirectDecisionSummary(t *testing.T) {
 	var buf bytes.Buffer
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(&buf),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t, withLogBuf(&buf))
 
 	spec := ports.StreamSpec{
 		SessionID: "direct-summary",
@@ -1602,10 +1488,7 @@ func TestBuildArgs_PassthroughLogsDirectDecisionSummary(t *testing.T) {
 }
 
 func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t, withFFprobeBin("ffprobe"))
 
 	args := adapter.buildFPSProbeArgs("http://example.com/stream", false)
 	protocolWhitelist, ok := valueAfter(args, "-protocol_whitelist")
@@ -1638,10 +1521,7 @@ func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
 }
 
 func TestBuildArgs_FileInputsDoNotUseProtocolWhitelist(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 
 	spec := ports.StreamSpec{
 		SessionID: "file-no-whitelist",
@@ -1662,10 +1542,7 @@ func TestBuildArgs_FileInputsDoNotUseProtocolWhitelist(t *testing.T) {
 }
 
 func TestBuildFPSProbeArgs_FileInputsDoNotUseProtocolWhitelist(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t, withFFprobeBin("ffprobe"))
 
 	args := adapter.buildFPSProbeArgs("/tmp/example.ts", false)
 	assert.Equal(t, -1, indexOf(args, "-protocol_whitelist"))
@@ -1673,10 +1550,7 @@ func TestBuildFPSProbeArgs_FileInputsDoNotUseProtocolWhitelist(t *testing.T) {
 
 func TestBuildArgs_ResilientIngestToggleOff(t *testing.T) {
 	t.Setenv("XG2G_RESILIENT_INGEST", "false")
-	adapter := NewLocalAdapter(
-		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t, withFFprobeBin("ffprobe"))
 
 	spec := ports.StreamSpec{
 		SessionID: "ingest-toggle-off",
@@ -1709,10 +1583,7 @@ func TestBuildArgs_ResilientIngestToggleOff(t *testing.T) {
 }
 
 func TestBuildArgs_LiveInputOverridesDoNotAffectFileOrFPSProbe(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t, withFFprobeBin("ffprobe"))
 
 	fileSpec := ports.StreamSpec{
 		SessionID: "file-input",
@@ -1750,10 +1621,7 @@ func TestBuildArgs_LiveInputOverridesDoNotAffectFileOrFPSProbe(t *testing.T) {
 
 func TestBuildArgs_LiveInputNoBufferOptIn(t *testing.T) {
 	t.Setenv("XG2G_LIVE_NOBUFFER", "true")
-	adapter := NewLocalAdapter(
-		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t, withFFprobeBin("ffprobe"))
 
 	spec := ports.StreamSpec{
 		SessionID: "live-nobuffer",
@@ -1777,10 +1645,7 @@ func TestBuildArgs_LiveInputNoBufferOptIn(t *testing.T) {
 }
 
 func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	// AV1 not verified, but H264/HEVC are.
 	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
@@ -1812,10 +1677,7 @@ func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
 func TestBuildArgs_AV1HWUsesMPEGTSSegmentsWhenExperimentalFlagEnabled(t *testing.T) {
 	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
 
 	spec := ports.StreamSpec{
@@ -1851,10 +1713,7 @@ func TestBuildArgs_AV1HWUsesMPEGTSSegmentsWhenExperimentalFlagEnabled(t *testing
 func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
 	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
 	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
 		return &vod.StreamInfo{
@@ -1911,10 +1770,7 @@ func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T
 		hardware.SetPathCapabilities(nil)
 	})
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
@@ -1962,10 +1818,7 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 		hardware.SetPathCapabilities(nil)
 	})
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
@@ -2025,10 +1878,7 @@ func TestBuildArgs_AV1HWHQ50ServiceRefPreserves50fpsMotion(t *testing.T) {
 		hardware.SetPathCapabilities(nil)
 	})
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
@@ -2104,10 +1954,7 @@ func TestBuildArgs_AV1HWInterlacedDoesNotUseOnlyVerifiedFullPath(t *testing.T) {
 		hardware.SetPathCapabilities(nil)
 	})
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
@@ -2144,10 +1991,7 @@ func TestBuildArgs_AV1HWInterlacedDoesNotUseOnlyVerifiedFullPath(t *testing.T) {
 func TestBuildArgs_AV1HWInterlacedExperimentalOverrideUsesAV1EncodeOnlyPath(t *testing.T) {
 	t.Setenv(experimentalInterlacedVAAPICodecsEnv, "av1")
 
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"))
 	adapter.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
@@ -2189,10 +2033,7 @@ func TestBuildArgs_AV1HWInterlacedExperimentalOverrideUsesAV1EncodeOnlyPath(t *t
 }
 
 func TestBuildArgs_AV1HWUsesShortStartupSegments(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 45*time.Minute, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
+	adapter := newTestAdapter(t, withVaapiDevice("/dev/dri/renderD128"), withDVRWindow(45*time.Minute))
 	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		return 25, "r_frame_rate", nil
@@ -2240,10 +2081,7 @@ func TestBuildArgs_AV1HWUsesShortStartupSegments(t *testing.T) {
 }
 
 func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		return 0, "", errors.New("signal: killed")
 	}
@@ -2278,10 +2116,7 @@ func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {
 func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
 	t.Setenv("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", "true")
 	t.Setenv("XG2G_SKIP_FPS_PROBE_WARMUP", "0s")
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 2, 0, 0, "",
-	)
+	adapter := newTestAdapter(t, withSegmentSeconds(2))
 	probeCalls := 0
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		probeCalls++
@@ -2324,10 +2159,7 @@ func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
 }
 
 func TestBuildArgs_IgnoresOutOfRangeLastKnownFPS(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		return 0, "", errors.New("signal: killed")
 	}
@@ -2360,10 +2192,7 @@ func TestBuildArgs_IgnoresOutOfRangeLastKnownFPS(t *testing.T) {
 }
 
 func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 45*time.Minute, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t, withDVRWindow(45*time.Minute))
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		return 50, "r_frame_rate", nil
 	}
@@ -2425,10 +2254,7 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 }
 
 func TestBuildArgs_UsesFMP4SegmentsWhenContainerRequested(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		return 25, "r_frame_rate", nil
 	}
@@ -2472,10 +2298,7 @@ func TestBuildArgs_UsesFMP4SegmentsWhenContainerRequested(t *testing.T) {
 func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
 	t.Setenv("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", "true")
 	t.Setenv("XG2G_SKIP_FPS_PROBE_WARMUP", "0s")
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	probeCalls := 0
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		probeCalls++
@@ -2510,10 +2333,7 @@ func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
 }
 
 func TestBuildArgs_SkipsFPSProbeForStreamRelayInput(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	probeCalls := 0
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		probeCalls++
@@ -2547,10 +2367,7 @@ func TestBuildArgs_SkipsFPSProbeForStreamRelayInput(t *testing.T) {
 }
 
 func TestBuildArgs_UsesCachedFPSForStreamRelayInput(t *testing.T) {
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
-	)
+	adapter := newTestAdapter(t)
 	probeCalls := 0
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		probeCalls++
