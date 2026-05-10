@@ -52,10 +52,6 @@ import {
   classifyNormalizedContractFailure,
 } from './semantics/playbackFailureSemantics';
 import {
-  mapPlaybackAdvisoryToTelemetryEvents,
-  mapPlaybackFailureToTelemetryEvents,
-} from './semantics/playbackTelemetryMapping';
-import {
   getNativePlaybackState,
   onNativePlaybackState,
   requestHostInputFocus,
@@ -92,10 +88,6 @@ import {
   buildBlockedContractError,
 } from './orchestrator/contractErrors';
 import {
-  NATIVE_VIDEO_REVEAL_STARTUP,
-  NATIVE_VIDEO_REVEAL_REBUFFER,
-  NATIVE_VIDEO_REBUFFER_VEIL_MS,
-  NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS,
   NATIVE_PLAYER_STATE_IDLE,
   supportsManagedNativePlayback,
   resolveNativePlaybackStatus,
@@ -104,6 +96,11 @@ import { resolveSessionPhaseFromState } from './orchestrator/sessionPhase';
 import { useEpochManager } from './orchestrator/useEpochManager';
 import { usePlaybackStateSetters } from './orchestrator/usePlaybackStateSetters';
 import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCleanup';
+import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
+import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
+import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
+import { useStartupElapsed } from './orchestrator/useStartupElapsed';
+import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
 
 
 export interface PlaybackOrchestratorRefs {
@@ -294,11 +291,6 @@ export function usePlaybackOrchestrator(
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
   const [sessionPlaybackTrace, setSessionPlaybackTrace] = useState<PlaybackTraceContract | null>(null);
   const [sessionProfileReason, setSessionProfileReason] = useState<string | null>(null);
-  const [startupElapsedSeconds, setStartupElapsedSeconds] = useState(0);
-  const [showBufferingOverlay, setShowBufferingOverlay] = useState(false);
-  const [showNativeVideo, setShowNativeVideo] = useState(true);
-  const [showNativeVideoVeil, setShowNativeVideoVeil] = useState(false);
-  const [nativeVeilResumeArmed, setNativeVeilResumeArmed] = useState(false);
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const isNativePlaybackHost = supportsManagedNativePlayback(hostEnvironment);
   const [nativePlaybackState, setNativePlaybackState] = useState<HostNativePlaybackState | null>(null);
@@ -322,26 +314,18 @@ export function usePlaybackOrchestrator(
   // ADR-00X: Profile-related refs removed (universal policy only)
   const isTeardownRef = useRef<boolean>(false);
   const userPauseIntentRef = useRef<boolean>(false);
-  const startupStartedAtRef = useRef<number | null>(null);
-  const bufferingOverlayTimerRef = useRef<number | null>(null);
-  const nativeVideoShownRef = useRef(false);
-  const nativeVideoHoldPositionRef = useRef<number | null>(null);
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
   const nativePlaybackWasActiveRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
-  const lastFailureTelemetryKeyRef = useRef<string | null>(null);
-  const lastAdvisoryTelemetryKeyRef = useRef<string | null>(null);
 
   const lastDecodedRef = useRef<number>(0);
 
   // Resume State
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
-  const [isDocumentVisible, setIsDocumentVisible] = useState(
-    () => typeof document === 'undefined' || document.visibilityState !== 'hidden'
-  );
+  const isDocumentVisible = useDocumentVisibility();
 
   useEffect(() => {
     playbackStateRef.current = playbackState;
@@ -374,52 +358,11 @@ export function usePlaybackOrchestrator(
     }
   }, [error?.detail]);
 
-  useEffect(() => {
-    if (!failure) {
-      lastFailureTelemetryKeyRef.current = null;
-      return;
-    }
-
-    const telemetryKey = [
-      playbackState.epoch.playback,
-      failure.class,
-      failure.code,
-      failure.status ?? '-',
-      failure.telemetryContext ?? '-',
-      failure.appError?.requestId ?? '-',
-    ].join(':');
-
-    if (lastFailureTelemetryKeyRef.current === telemetryKey) {
-      return;
-    }
-
-    lastFailureTelemetryKeyRef.current = telemetryKey;
-    mapPlaybackFailureToTelemetryEvents(failure).forEach((event) => {
-      telemetry.emit(event.type, event.payload);
-    });
-  }, [failure, playbackState.epoch.playback]);
-
-  useEffect(() => {
-    if (!lastAdvisory) {
-      lastAdvisoryTelemetryKeyRef.current = null;
-      return;
-    }
-
-    const telemetryKey = [
-      playbackState.epoch.playback,
-      lastAdvisory.code,
-      lastAdvisory.source,
-    ].join(':');
-
-    if (lastAdvisoryTelemetryKeyRef.current === telemetryKey) {
-      return;
-    }
-
-    lastAdvisoryTelemetryKeyRef.current = telemetryKey;
-    mapPlaybackAdvisoryToTelemetryEvents(lastAdvisory).forEach((event) => {
-      telemetry.emit(event.type, event.payload);
-    });
-  }, [lastAdvisory, playbackState.epoch.playback]);
+  useTelemetryEmitter({
+    failure,
+    lastAdvisory,
+    playbackEpoch: playbackState.epoch.playback,
+  });
 
   const normalizeRuntimePlaybackError = useCallback((value: unknown, fallbackTitle: string): AppError => {
     const status =
@@ -631,34 +574,6 @@ export function usePlaybackOrchestrator(
 
   // --- Core Helpers & Wrappers (Memoized) ---
 
-  const clearPlaybackSelection = useCallback(() => {
-    activeRecordingRef.current = null;
-    nativePlaybackWasActiveRef.current = false;
-    nativeVideoShownRef.current = false;
-    nativeVideoHoldPositionRef.current = null;
-    clearNativeVideoVeilTimers();
-    setNativePlaybackState(null);
-    setNativeSessionId(null);
-    setActiveRecordingId(null);
-    setVodStreamMode(null);
-    setActiveHlsEngine(null);
-    setShowNativeVideo(true);
-    setShowNativeVideoVeil(false);
-    setNativeVeilResumeArmed(false);
-    setCapabilitySnapshot(null);
-    setPlaybackObservability(null);
-    setSessionPlaybackTrace(null);
-    setSessionProfileReason(null);
-  }, [clearNativeVideoVeilTimers]);
-
-  const clearPlaybackState = useCallback(() => {
-    clearPlaybackSelection();
-    clearVodRetry();
-    clearVodFetch();
-    clearSessionLeaseState();
-    resetChromeState();
-  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
-
   const getBufferedAheadSeconds = useCallback((): number => {
     const video = videoRef.current;
     if (!video || !video.buffered.length) {
@@ -676,6 +591,45 @@ export function usePlaybackOrchestrator(
     const finalEnd = video.buffered.end(video.buffered.length - 1);
     return finalEnd > video.currentTime ? finalEnd - video.currentTime : 0;
   }, [videoRef]);
+
+  const {
+    showNativeVideo,
+    showNativeVideoVeil,
+    resetNativeVideoState,
+  } = useNativeVideoReveal({
+    isNativeEngine: activeHlsEngine === 'native',
+    status,
+    videoRef,
+    getBufferedAheadSeconds,
+    nativeVideoRevealTimerRef,
+    nativeVideoVeilRevealTimerRef,
+    nativeVideoVeilClearTimerRef,
+    clearNativeVideoRevealTimer,
+    clearNativeVideoVeilTimers,
+  });
+
+  const clearPlaybackSelection = useCallback(() => {
+    activeRecordingRef.current = null;
+    nativePlaybackWasActiveRef.current = false;
+    resetNativeVideoState();
+    setNativePlaybackState(null);
+    setNativeSessionId(null);
+    setActiveRecordingId(null);
+    setVodStreamMode(null);
+    setActiveHlsEngine(null);
+    setCapabilitySnapshot(null);
+    setPlaybackObservability(null);
+    setSessionPlaybackTrace(null);
+    setSessionProfileReason(null);
+  }, [resetNativeVideoState, setActiveHlsEngine, setVodStreamMode]);
+
+  const clearPlaybackState = useCallback(() => {
+    clearPlaybackSelection();
+    clearVodRetry();
+    clearVodFetch();
+    clearSessionLeaseState();
+    resetChromeState();
+  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
 
   const cleanupPlaybackResources = useCallback(() => {
     const activeHls = hlsRef.current;
@@ -1818,192 +1772,13 @@ export function usePlaybackOrchestrator(
     });
   }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
-  useEffect(() => {
-    if (bufferingOverlayTimerRef.current !== null) {
-      window.clearTimeout(bufferingOverlayTimerRef.current);
-      bufferingOverlayTimerRef.current = null;
-    }
+  const showBufferingOverlay = useBufferingOverlay(status);
 
-    if (status !== 'buffering') {
-      setShowBufferingOverlay(false);
-      return;
-    }
-
-    bufferingOverlayTimerRef.current = window.setTimeout(() => {
-      bufferingOverlayTimerRef.current = null;
-      setShowBufferingOverlay(true);
-    }, 325);
-
-    return () => {
-      if (bufferingOverlayTimerRef.current !== null) {
-        window.clearTimeout(bufferingOverlayTimerRef.current);
-        bufferingOverlayTimerRef.current = null;
-      }
-    };
-  }, [status]);
-
-  useEffect(() => {
-    if (!isNativeEngine) {
-      clearNativeVideoRevealTimer();
-      clearNativeVideoVeilTimers();
-      nativeVideoShownRef.current = false;
-      nativeVideoHoldPositionRef.current = null;
-      setShowNativeVideo(true);
-      setShowNativeVideoVeil(false);
-      setNativeVeilResumeArmed(false);
-      return;
-    }
-
-    if (status === 'starting' || status === 'priming' || status === 'building' || status === 'buffering' || status === 'recovering') {
-      clearNativeVideoRevealTimer();
-      clearNativeVideoVeilTimers();
-      if (showNativeVideo) {
-        nativeVideoHoldPositionRef.current = videoRef.current?.currentTime ?? null;
-      }
-      setShowNativeVideo(false);
-      setShowNativeVideoVeil(true);
-      setNativeVeilResumeArmed(false);
-      return;
-    }
-
-    if (status === 'idle' || status === 'error' || status === 'stopped') {
-      clearNativeVideoRevealTimer();
-      clearNativeVideoVeilTimers();
-      nativeVideoShownRef.current = false;
-      nativeVideoHoldPositionRef.current = null;
-      setShowNativeVideo(true);
-      setShowNativeVideoVeil(false);
-      setNativeVeilResumeArmed(false);
-      return;
-    }
-
-    if (status === 'paused') {
-      clearNativeVideoRevealTimer();
-      clearNativeVideoVeilTimers();
-      nativeVideoHoldPositionRef.current = null;
-      setShowNativeVideo(true);
-      setShowNativeVideoVeil(false);
-      setNativeVeilResumeArmed(false);
-      return;
-    }
-
-    if (showNativeVideo) {
-      return;
-    }
-
-    const revealThresholds = nativeVideoShownRef.current
-      ? NATIVE_VIDEO_REVEAL_REBUFFER
-      : NATIVE_VIDEO_REVEAL_STARTUP;
-
-    const waitForStablePlayback = () => {
-      const video = videoRef.current;
-      if (!video) {
-        nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.retryMs);
-        return;
-      }
-
-      const bufferAheadSeconds = getBufferedAheadSeconds();
-      const holdPosition = nativeVideoHoldPositionRef.current;
-      const playbackAdvancedEnough =
-        holdPosition === null || !Number.isFinite(holdPosition)
-          ? true
-          : Math.max(0, video.currentTime - holdPosition) >= revealThresholds.minAdvanceSeconds;
-      const playbackResumeSatisfied = revealThresholds.requirePlaybackResume
-        ? !video.paused
-        : (status === 'ready' || !video.paused);
-      const readyForReveal =
-        video.readyState >= 3 &&
-        playbackResumeSatisfied &&
-        playbackAdvancedEnough &&
-        (video.readyState >= 4 || bufferAheadSeconds >= revealThresholds.minBufferSeconds);
-
-      if (readyForReveal) {
-        nativeVideoRevealTimerRef.current = null;
-        const isRebufferReveal = nativeVideoShownRef.current;
-        nativeVideoShownRef.current = true;
-        nativeVideoHoldPositionRef.current = null;
-        setShowNativeVideo(true);
-        clearNativeVideoVeilTimers();
-        if (isRebufferReveal) {
-          setShowNativeVideoVeil(true);
-          setNativeVeilResumeArmed(false);
-          nativeVideoVeilRevealTimerRef.current = window.setTimeout(() => {
-            nativeVideoVeilRevealTimerRef.current = null;
-            setNativeVeilResumeArmed(true);
-          }, NATIVE_VIDEO_REBUFFER_VEIL_MS);
-        } else {
-          setShowNativeVideoVeil(true);
-          setNativeVeilResumeArmed(true);
-        }
-        return;
-      }
-
-      nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.retryMs);
-    };
-
-    clearNativeVideoRevealTimer();
-    nativeVideoRevealTimerRef.current = window.setTimeout(waitForStablePlayback, revealThresholds.stableMs);
-
-    return () => {
-      clearNativeVideoRevealTimer();
-      clearNativeVideoVeilTimers();
-    };
-  }, [
-    clearNativeVideoRevealTimer,
-    clearNativeVideoVeilTimers,
-    getBufferedAheadSeconds,
-    isNativeEngine,
-    nativeVideoRevealTimerRef,
-    nativeVideoVeilRevealTimerRef,
-    showNativeVideo,
-    status,
-    videoRef,
-  ]);
-
-  useEffect(() => {
-    if (!isOverlayStartupStatus) {
-      startupStartedAtRef.current = null;
-      setStartupElapsedSeconds(0);
-      return;
-    }
-
-    if (startupStartedAtRef.current === null) {
-      startupStartedAtRef.current = Date.now();
-    }
-
-    const updateElapsed = () => {
-      const startedAt = startupStartedAtRef.current;
-      if (startedAt === null) {
-        setStartupElapsedSeconds(0);
-        return;
-      }
-      setStartupElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    };
-
-    updateElapsed();
-    const timer = window.setInterval(updateElapsed, 1000);
-    return () => window.clearInterval(timer);
-  }, [isOverlayStartupStatus]);
+  const startupElapsedSeconds = useStartupElapsed(isOverlayStartupStatus);
 
   useEffect(() => {
     return () => {
       cleanupPlaybackResourcesRef.current();
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      setIsDocumentVisible(document.visibilityState !== 'hidden');
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pageshow', handleVisibilityChange);
-    window.addEventListener('pagehide', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pageshow', handleVisibilityChange);
-      window.removeEventListener('pagehide', handleVisibilityChange);
     };
   }, []);
 
@@ -2080,50 +1855,6 @@ export function usePlaybackOrchestrator(
       nativeVideoTempMutedRef.current = false;
     }
   }, [isNativeEngine, showNativeBufferingMask, videoRef]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    if (!(isNativeEngine && showNativeVideoVeil && showNativeVideo && nativeVeilResumeArmed)) {
-      return;
-    }
-
-    const releaseVeil = () => {
-      clearNativeVideoVeilTimers();
-      nativeVideoVeilClearTimerRef.current = window.setTimeout(() => {
-        nativeVideoVeilClearTimerRef.current = null;
-        setShowNativeVideoVeil(false);
-        setNativeVeilResumeArmed(false);
-      }, NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS);
-    };
-
-    const handlePlaying = () => {
-      releaseVeil();
-    };
-    const handleProgress = () => {
-      if (!video.paused && video.readyState >= 3) {
-        releaseVeil();
-      }
-    };
-
-    if (!video.paused && video.readyState >= 3) {
-      releaseVeil();
-      return;
-    }
-
-    video.addEventListener('playing', handlePlaying, { once: true });
-    video.addEventListener('timeupdate', handleProgress);
-    video.addEventListener('canplay', handleProgress);
-
-    return () => {
-      video.removeEventListener('playing', handlePlaying);
-      video.removeEventListener('timeupdate', handleProgress);
-      video.removeEventListener('canplay', handleProgress);
-    };
-  }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, nativeVideoVeilClearTimerRef, showNativeVideo, showNativeVideoVeil, videoRef]);
 
   const effectiveClientPath =
     sessionPlaybackTrace?.clientPath ||
