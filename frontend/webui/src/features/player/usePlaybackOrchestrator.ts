@@ -1,16 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import Hls from './lib/hlsRuntime';
 import {
   postRecordingPlaybackInfo,
   type IntentRequest,
-  type PlaybackSourceProfile,
   type PlaybackTrace as PlaybackTraceContract,
-  type PlaybackTraceFfmpegPlan,
-  type PlaybackTraceOperator,
-  type PlaybackTargetProfile,
 } from '../../client-ts';
 import { getApiBaseUrl } from '../../services/clientWrapper';
 import { telemetry } from '../../services/TelemetryService';
@@ -48,25 +43,13 @@ import { normalizePlayerError } from '../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import { useTvInitialFocus } from '../../hooks/useTvInitialFocus';
 import {
-  buildPlaybackFailure,
   createInitialPlaybackDomainState,
   playbackMachine,
 } from './orchestrator/playbackMachine';
-import type {
-  PlaybackContractState,
-  SessionPhase,
-  VodStreamMode,
-} from './orchestrator/playbackTypes';
+import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
-import type {
-  NormalizedBlockedPlaybackContract,
-  NormalizedPlaybackDecisionObservability,
-  NormalizedPlayablePlaybackContract,
-} from './contracts/normalizedPlaybackTypes';
 import {
-  buildPlaybackAdvisorySignal,
   classifyNormalizedContractFailure,
-  type PlaybackFailureReportOptions,
 } from './semantics/playbackFailureSemantics';
 import {
   mapPlaybackAdvisoryToTelemetryEvents,
@@ -82,385 +65,46 @@ import {
   stopNativePlayback,
 } from '../../lib/hostBridge';
 import type {
-  HostEnvironment,
   NativePlaybackRequest,
   NativePlaybackState as HostNativePlaybackState,
 } from '../../lib/hostBridge';
 import type { AppError } from '../../types/errors';
+import {
+  formatSourceProfileSummary,
+  formatFfmpegPlanSummary,
+  formatFirstFrameLabel,
+  formatFallbackSummary,
+  formatStopSummary,
+  formatHostPressureSummary,
+  extractPlaybackTrace,
+  formatClientPath,
+  formatRequestProfileLabel,
+  resolveAutoTranscodeCodecs,
+  formatQualityRungLabel,
+  formatBooleanLabel,
+  formatTargetProfileSummary,
+  formatExecutionLabel,
+  resolvePlaybackObservability,
+  type PlaybackObservability,
+} from './orchestrator/observabilityFormatters';
+import {
+  buildContractState,
+  buildBlockedContractError,
+} from './orchestrator/contractErrors';
+import {
+  NATIVE_VIDEO_REVEAL_STARTUP,
+  NATIVE_VIDEO_REVEAL_REBUFFER,
+  NATIVE_VIDEO_REBUFFER_VEIL_MS,
+  NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS,
+  NATIVE_PLAYER_STATE_IDLE,
+  supportsManagedNativePlayback,
+  resolveNativePlaybackStatus,
+} from './orchestrator/nativePlaybackHelpers';
+import { resolveSessionPhaseFromState } from './orchestrator/sessionPhase';
+import { useEpochManager } from './orchestrator/useEpochManager';
+import { usePlaybackStateSetters } from './orchestrator/usePlaybackStateSetters';
+import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCleanup';
 
-type PlaybackObservability = {
-  clientPath: string | null;
-  requestProfile: string | null;
-  requestedIntent: string | null;
-  resolvedIntent: string | null;
-  qualityRung: string | null;
-  audioQualityRung: string | null;
-  videoQualityRung: string | null;
-  degradedFrom: string | null;
-  hostPressureBand: string | null;
-  hostOverrideApplied: boolean;
-  targetProfileHash: string | null;
-  targetProfile: PlaybackTargetProfile | null;
-  operator: PlaybackTraceOperator | null;
-  selectedOutputKind: string | null;
-};
-
-function formatSourceProfileSummary(source: PlaybackSourceProfile | null | undefined): string {
-  if (!source) return '-';
-
-  const resolution = source.width && source.height ? `${source.width}x${source.height}` : null;
-  const fps = source.fps ? `${source.fps}fps` : null;
-  const video = [source.container || null, source.videoCodec || null, resolution, fps].filter(Boolean).join(' · ');
-  const audio = [
-    source.audioCodec || null,
-    source.audioChannels ? `${source.audioChannels}ch` : null,
-    source.audioBitrateKbps ? `@${source.audioBitrateKbps}k` : null,
-  ].filter(Boolean).join('/');
-
-  return [video || '-', audio ? `a:${audio}` : null].filter(Boolean).join(' · ');
-}
-
-function formatFfmpegPlanSummary(plan: PlaybackTraceFfmpegPlan | null | undefined): string {
-  if (!plan) return '-';
-  const video = [plan.videoMode || null, plan.videoCodec || null].filter(Boolean).join('/');
-  const audio = [plan.audioMode || null, plan.audioCodec || null].filter(Boolean).join('/');
-  const execution = plan.hwAccel || 'none';
-  return [
-    plan.inputKind || null,
-    plan.packaging || plan.container || null,
-    video ? `v:${video}` : null,
-    audio ? `a:${audio}` : null,
-    execution,
-  ].filter(Boolean).join(' · ');
-}
-
-function formatFirstFrameLabel(firstFrameAtMs: number | null | undefined): string {
-  if (!firstFrameAtMs || firstFrameAtMs <= 0) return '-';
-  return new Date(firstFrameAtMs).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-function formatFallbackSummary(trace: PlaybackTraceContract | null | undefined): string {
-  if (!trace) return '-';
-  const count = typeof trace.fallbackCount === 'number' ? trace.fallbackCount : 0;
-  const lastReason = trace.lastFallbackReason || null;
-  if (count <= 0 && !lastReason) return '-';
-  return [count > 0 ? String(count) : null, lastReason].filter(Boolean).join(' · ');
-}
-
-function formatStopSummary(trace: PlaybackTraceContract | null | undefined): string {
-  if (!trace) return '-';
-  return [trace.stopClass || null, trace.stopReason || null].filter(Boolean).join(' · ') || '-';
-}
-
-function formatHostPressureSummary(hostPressureBand: string | null, hostOverrideApplied: boolean): string {
-  if (!hostPressureBand) return '-';
-  return hostOverrideApplied ? `${hostPressureBand} · applied` : hostPressureBand;
-}
-
-function extractPlaybackTrace(value: unknown): PlaybackTraceContract | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-  if (typeof record.requestId === 'string' && (
-    'sessionId' in record ||
-    'source' in record ||
-    'targetProfileHash' in record ||
-    'targetProfile' in record ||
-    'ffmpegPlan' in record ||
-    'stopReason' in record ||
-    'stopClass' in record
-  )) {
-    return record as unknown as PlaybackTraceContract;
-  }
-
-  if ('trace' in record) {
-    return extractPlaybackTrace(record.trace);
-  }
-  if ('body' in record) {
-    return extractPlaybackTrace(record.body);
-  }
-  if ('details' in record) {
-    return extractPlaybackTrace(record.details);
-  }
-
-  return null;
-}
-
-function formatClientPath(snapshot: CapabilitySnapshot | null): string {
-  if (!snapshot) return '-';
-  const preferred = snapshot.preferredHlsEngine ?? '-';
-  const engines = snapshot.hlsEngines?.length ? snapshot.hlsEngines.join('/') : null;
-  return engines ? `${preferred} (${engines})` : preferred;
-}
-
-function formatRequestProfileLabel(profile: string | null): string {
-  switch (profile) {
-    case 'generic':
-    case 'high':
-      return 'compatible';
-    case 'low':
-      return 'bandwidth';
-    case 'copy':
-      return 'direct';
-    default:
-      return profile || '-';
-  }
-}
-
-function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null): string[] {
-  if (!snapshot) return [];
-
-  const out: string[] = [];
-  const signals = Array.isArray(snapshot.videoCodecSignals) ? snapshot.videoCodecSignals : [];
-  const signalFor = (codec: string) => signals.find((signal) => signal.codec === codec);
-
-  const av1 = signalFor('av1');
-  if (av1?.supported && av1.powerEfficient) {
-    out.push('av1');
-  }
-
-  const hevc = signalFor('hevc');
-  if (hevc?.supported && (hevc.powerEfficient || hevc.smooth)) {
-    out.push('hevc');
-  }
-
-  if (snapshot.videoCodecs.includes('h264') || out.length === 0) {
-    out.push('h264');
-  }
-
-  return Array.from(new Set(out));
-}
-
-function formatQualityRungLabel(rung: string | null): string {
-  if (!rung) return '-';
-  return rung.split('_').join(' ');
-}
-
-function formatBooleanLabel(value: boolean): string {
-  return value ? 'yes' : 'no';
-}
-
-function formatTargetProfileSummary(target: PlaybackTargetProfile | null): string {
-  if (!target) return '-';
-
-  const videoMode = target.video?.mode || '-';
-  const videoCodec = target.video?.codec ? `/${target.video.codec}` : '';
-  const videoCRF = target.video?.crf ? `/crf${target.video.crf}` : '';
-  const videoPreset = target.video?.preset ? `/${target.video.preset}` : '';
-  const audioMode = target.audio?.mode || '-';
-  const audioCodec = target.audio?.codec ? `/${target.audio.codec}` : '';
-  const audioChannels = target.audio?.channels ? `/${target.audio.channels}ch` : '';
-  const audioBitrate = target.audio?.bitrateKbps ? `@${target.audio.bitrateKbps}k` : '';
-  const packaging = target.packaging || target.container || '-';
-
-  return [
-    packaging,
-    `v:${videoMode}${videoCodec}${videoCRF}${videoPreset}`,
-    `a:${audioMode}${audioCodec}${audioChannels}${audioBitrate}`
-  ].join(' · ');
-}
-
-function formatExecutionLabel(target: PlaybackTargetProfile | null): string {
-  if (!target?.hwAccel || target.hwAccel === 'none') {
-    return 'CPU';
-  }
-  return target.hwAccel.toUpperCase();
-}
-
-function resolvePlaybackObservability(
-  decision: NormalizedPlaybackDecisionObservability | null,
-  clientPath: string | null
-): PlaybackObservability | null {
-  if (!decision) {
-    if (!clientPath) return null;
-    return {
-      clientPath,
-      requestProfile: null,
-      requestedIntent: null,
-      resolvedIntent: null,
-      qualityRung: null,
-      audioQualityRung: null,
-      videoQualityRung: null,
-      degradedFrom: null,
-      hostPressureBand: null,
-      hostOverrideApplied: false,
-      targetProfileHash: null,
-      targetProfile: null,
-      operator: null,
-      selectedOutputKind: null,
-    };
-  }
-
-  return {
-    clientPath,
-    requestProfile: decision.requestProfile,
-    requestedIntent: decision.requestedIntent,
-    resolvedIntent: decision.resolvedIntent,
-    qualityRung: decision.qualityRung,
-    audioQualityRung: decision.audioQualityRung,
-    videoQualityRung: decision.videoQualityRung,
-    degradedFrom: decision.degradedFrom,
-    hostPressureBand: decision.hostPressureBand,
-    hostOverrideApplied: decision.hostOverrideApplied,
-    targetProfileHash: decision.targetProfileHash,
-    targetProfile: decision.targetProfile,
-    operator: decision.operator,
-    selectedOutputKind: decision.selectedOutputKind,
-  };
-}
-
-function buildContractState(
-  kind: PlaybackContractState['kind'],
-  contract: NormalizedPlayablePlaybackContract,
-  streamUrl: string | null,
-): PlaybackContractState {
-  return {
-    kind,
-    requestId: contract.observability.requestId,
-    mode: contract.playback.mode,
-    streamUrl,
-    canSeek: contract.playback.seekable,
-    live: contract.playback.live,
-    autoplayAllowed: contract.playback.autoplayAllowed,
-    sessionRequired: contract.session.required,
-    sessionId: contract.session.sessionId,
-    expiresAt: contract.session.expiresAt,
-    decisionToken: contract.session.decisionToken,
-    durationSeconds: contract.media.durationSeconds,
-    startUnix: contract.media.startUnix,
-    mimeType: contract.media.mimeType,
-  };
-}
-
-function resolveContractFailureTitle(
-  contract: NormalizedBlockedPlaybackContract,
-  t: TFunction,
-): string {
-  switch (contract.failure.kind) {
-    case 'auth':
-      return t('player.authFailed');
-    case 'session':
-    case 'unavailable':
-      return t('player.notAvailable');
-    case 'unsupported':
-      return contract.failure.code === 'playback_denied'
-        ? t('player.playbackDenied')
-        : t('player.serverError');
-    case 'contract':
-    default:
-      return t('player.serverError');
-  }
-}
-
-function buildBlockedContractError(
-  contract: NormalizedBlockedPlaybackContract,
-  t: TFunction,
-): AppError {
-  const title = resolveContractFailureTitle(contract, t);
-  const detailParts = [
-    contract.failure.message,
-    contract.observability.backendReason,
-    contract.observability.requestId ? `requestId=${contract.observability.requestId}` : null,
-  ].filter(Boolean);
-
-  return {
-    title,
-    detail: detailParts.length > 0 ? detailParts.join(' · ') : undefined,
-    retryable: contract.failure.retryable,
-    code: contract.failure.code,
-    requestId: contract.observability.requestId ?? undefined,
-  };
-}
-
-type NativeVideoRevealThresholds = {
-  stableMs: number;
-  retryMs: number;
-  minBufferSeconds: number;
-  minAdvanceSeconds: number;
-  requirePlaybackResume: boolean;
-};
-
-const NATIVE_VIDEO_REVEAL_STARTUP: NativeVideoRevealThresholds = {
-  stableMs: 650,
-  retryMs: 250,
-  minBufferSeconds: 0.75,
-  minAdvanceSeconds: 0.12,
-  requirePlaybackResume: false,
-};
-
-const NATIVE_VIDEO_REVEAL_REBUFFER: NativeVideoRevealThresholds = {
-  stableMs: 420,
-  retryMs: 160,
-  minBufferSeconds: 0.5,
-  minAdvanceSeconds: 0.22,
-  requirePlaybackResume: true,
-};
-
-const NATIVE_VIDEO_REBUFFER_VEIL_MS = 2300;
-const NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS = 140;
-const NATIVE_PLAYER_STATE_IDLE = 1;
-const NATIVE_PLAYER_STATE_BUFFERING = 2;
-const NATIVE_PLAYER_STATE_READY = 3;
-const NATIVE_PLAYER_STATE_ENDED = 4;
-
-function supportsManagedNativePlayback(environment: HostEnvironment): boolean {
-  return environment.supportsNativePlayback
-    && (environment.platform === 'android' || environment.platform === 'android-tv');
-}
-
-function resolveNativePlaybackStatus(state: HostNativePlaybackState | null): PlayerStatus | null {
-  if (!state?.activeRequest) {
-    if (state?.lastError) {
-      return 'error';
-    }
-    if (state?.playerState === NATIVE_PLAYER_STATE_ENDED) {
-      return 'stopped';
-    }
-    return null;
-  }
-
-  if (state.lastError) {
-    return 'error';
-  }
-
-  switch (state.playerState) {
-    case NATIVE_PLAYER_STATE_BUFFERING:
-      return state.session ? 'buffering' : 'starting';
-    case NATIVE_PLAYER_STATE_READY:
-      return state.playWhenReady ? 'playing' : 'paused';
-    case NATIVE_PLAYER_STATE_ENDED:
-      return 'stopped';
-    case NATIVE_PLAYER_STATE_IDLE:
-    default:
-      return state.session ? 'buffering' : 'starting';
-  }
-}
-
-function resolveSessionPhaseFromState(state: V3SessionSnapshot['state'] | undefined): SessionPhase | null {
-  switch (state) {
-    case 'STARTING':
-    case 'IDLE':
-    case 'PRIMING':
-      return 'starting';
-    case 'READY':
-    case 'DRAINING':
-      return 'ready';
-    case 'STOPPING':
-    case 'STOPPED':
-    case 'CANCELLED':
-      return 'stopped';
-    case 'FAILED':
-      return 'error';
-    default:
-      return null;
-  }
-}
 
 export interface PlaybackOrchestratorRefs {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -616,10 +260,21 @@ export function usePlaybackOrchestrator(
     createInitialPlaybackDomainState,
   );
   const playbackStateRef = useRef(playbackState);
-  const playbackEpochRef = useRef(playbackState.epoch.playback);
-  const sessionEpochRef = useRef(playbackState.epoch.session);
-  const acceptedPlaybackEpochRef = useRef(playbackState.epoch.playback);
-  const acceptedSessionEpochRef = useRef(playbackState.epoch.session);
+  const {
+    acceptedPlaybackEpochRef,
+    acceptedSessionEpochRef,
+    allocatePlaybackEpoch,
+    beginPlaybackAttempt,
+    markPlaybackStopped,
+    allocateSessionEpoch,
+    isStalePlaybackEpoch,
+    isStaleSessionEpoch,
+  } = useEpochManager({
+    initialEpoch: playbackState.epoch,
+    trackedEpoch: playbackState.epoch,
+    dispatchPlayback,
+    requestedDuration,
+  });
 
   const {
     traceId,
@@ -650,9 +305,17 @@ export function usePlaybackOrchestrator(
   const [nativeSessionId, setNativeSessionId] = useState<string | null>(null);
 
   const mounted = useRef<boolean>(false);
-  const vodRetryRef = useRef<number | null>(null);
-  const recordingTimeoutRef = useRef<number | null>(null);
-  const vodFetchRef = useRef<AbortController | null>(null);
+  const {
+    vodRetryRef,
+    vodFetchRef,
+    nativeVideoRevealTimerRef,
+    nativeVideoVeilRevealTimerRef,
+    nativeVideoVeilClearTimerRef,
+    clearVodRetry,
+    clearVodFetch,
+    clearNativeVideoVeilTimers,
+    clearNativeVideoRevealTimer,
+  } = usePlaybackResourceCleanup();
   const activeRecordingRef = useRef<string | null>(null);
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const startIntentInFlight = useRef<boolean>(false);
@@ -661,9 +324,6 @@ export function usePlaybackOrchestrator(
   const userPauseIntentRef = useRef<boolean>(false);
   const startupStartedAtRef = useRef<number | null>(null);
   const bufferingOverlayTimerRef = useRef<number | null>(null);
-  const nativeVideoRevealTimerRef = useRef<number | null>(null);
-  const nativeVideoVeilRevealTimerRef = useRef<number | null>(null);
-  const nativeVideoVeilClearTimerRef = useRef<number | null>(null);
   const nativeVideoShownRef = useRef(false);
   const nativeVideoHoldPositionRef = useRef<number | null>(null);
   const nativeVideoTempMutedRef = useRef(false);
@@ -685,198 +345,28 @@ export function usePlaybackOrchestrator(
 
   useEffect(() => {
     playbackStateRef.current = playbackState;
-    acceptedPlaybackEpochRef.current = playbackState.epoch.playback;
-    acceptedSessionEpochRef.current = playbackState.epoch.session;
   }, [playbackState]);
 
-  const allocatePlaybackEpoch = useCallback(() => {
-    playbackEpochRef.current += 1;
-    sessionEpochRef.current = 0;
-    return playbackEpochRef.current;
-  }, []);
-
-  const beginPlaybackAttempt = useCallback((
-    epoch: number,
-    nextPlaybackMode: 'LIVE' | 'VOD' | 'UNKNOWN',
-    nextStatus: PlayerStatus,
-  ) => {
-    acceptedPlaybackEpochRef.current = epoch;
-    acceptedSessionEpochRef.current = 0;
-    dispatchPlayback({
-      type: 'normative.playback.attempt.started',
-      epoch,
-      playbackMode: nextPlaybackMode,
-      status: nextStatus,
-      requestedDuration,
-    });
-  }, [requestedDuration]);
-
-  const markPlaybackStopped = useCallback((epoch: number) => {
-    acceptedPlaybackEpochRef.current = epoch;
-    acceptedSessionEpochRef.current = 0;
-    dispatchPlayback({
-      type: 'normative.playback.stopped',
-      epoch,
-    });
-  }, []);
-
-  const allocateSessionEpoch = useCallback((playbackEpoch: number) => {
-    sessionEpochRef.current += 1;
-    const sessionEpoch = sessionEpochRef.current;
-    acceptedSessionEpochRef.current = sessionEpoch;
-    dispatchPlayback({
-      type: 'normative.session.attempt.started',
-      playbackEpoch,
-      sessionEpoch,
-    });
-    return sessionEpoch;
-  }, []);
-
-  const isStalePlaybackEpoch = useCallback((epoch: number) => (
-    epoch !== playbackEpochRef.current
-  ), []);
-
-  const isStaleSessionEpoch = useCallback((playbackEpoch: number, sessionEpoch: number) => (
-    playbackEpoch !== playbackEpochRef.current || sessionEpoch !== sessionEpochRef.current
-  ), []);
-
-  const setTraceId = useCallback<Dispatch<SetStateAction<string>>>((next) => {
-    const currentTraceId = playbackStateRef.current.traceId;
-    const resolvedTraceId = typeof next === 'function' ? next(currentTraceId) : next;
-    dispatchPlayback({
-      type: 'normative.playback.trace.updated',
-      epoch: acceptedPlaybackEpochRef.current,
-      traceId: resolvedTraceId,
-    });
-  }, []);
-
-  const setStatus = useCallback<Dispatch<SetStateAction<PlayerStatus>>>((next) => {
-    const currentStatus = playbackStateRef.current.status;
-    const resolvedStatus = typeof next === 'function' ? next(currentStatus) : next;
-    dispatchPlayback({
-      type: 'normative.media.status.changed',
-      epoch: acceptedPlaybackEpochRef.current,
-      status: resolvedStatus,
-    });
-  }, []);
-
-  const setPlaybackMode = useCallback<Dispatch<SetStateAction<'LIVE' | 'VOD' | 'UNKNOWN'>>>((next) => {
-    const currentMode = playbackStateRef.current.playbackMode;
-    const resolvedMode = typeof next === 'function' ? next(currentMode) : next;
-    dispatchPlayback({
-      type: 'normative.playback.mode.changed',
-      epoch: acceptedPlaybackEpochRef.current,
-      playbackMode: resolvedMode,
-    });
-  }, []);
-
-  const setDurationSeconds = useCallback<Dispatch<SetStateAction<number | null>>>((next) => {
-    const currentDurationSeconds = playbackStateRef.current.durationSeconds;
-    const resolvedDurationSeconds = typeof next === 'function' ? next(currentDurationSeconds) : next;
-    dispatchPlayback({
-      type: 'normative.playback.duration.changed',
-      epoch: acceptedPlaybackEpochRef.current,
-      durationSeconds: resolvedDurationSeconds,
-    });
-  }, []);
-
-  const setVodStreamMode = useCallback<Dispatch<SetStateAction<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>>>((next) => {
-    const currentMode = playbackStateRef.current.vodStreamMode;
-    const resolvedMode = typeof next === 'function' ? next(currentMode) : next;
-    dispatchPlayback({
-      type: 'normative.playback.vod_mode.changed',
-      epoch: acceptedPlaybackEpochRef.current,
-      vodStreamMode: resolvedMode,
-    });
-  }, []);
-
-  const setActiveHlsEngine = useCallback<Dispatch<SetStateAction<'native' | 'hlsjs' | null>>>((next) => {
-    const currentEngine = playbackStateRef.current.activeHlsEngine;
-    const resolvedEngine = typeof next === 'function' ? next(currentEngine) : next;
-    dispatchPlayback({
-      type: 'normative.media.engine.selected',
-      epoch: acceptedPlaybackEpochRef.current,
-      engine: resolvedEngine,
-    });
-  }, []);
-
-  const setCanSeek = useCallback<Dispatch<SetStateAction<boolean>>>((next) => {
-    const currentCanSeek = playbackStateRef.current.canSeek;
-    const resolvedCanSeek = typeof next === 'function' ? next(currentCanSeek) : next;
-    dispatchPlayback({
-      type: 'normative.playback.seekability.changed',
-      epoch: acceptedPlaybackEpochRef.current,
-      canSeek: resolvedCanSeek,
-    });
-  }, []);
-
-  const setStartUnix = useCallback<Dispatch<SetStateAction<number | null>>>((next) => {
-    const currentStartUnix = playbackStateRef.current.startUnix;
-    const resolvedStartUnix = typeof next === 'function' ? next(currentStartUnix) : next;
-    dispatchPlayback({
-      type: 'normative.playback.start_unix.changed',
-      epoch: acceptedPlaybackEpochRef.current,
-      startUnix: resolvedStartUnix,
-    });
-  }, []);
-
-  const setPlayerError = useCallback((
-    nextError: AppError | null,
-    options: PlaybackFailureReportOptions & {
-      messageKey?: string | null;
-      playerStatus?: PlayerStatus;
-    } = {},
-  ) => {
-    if (!nextError) {
-      dispatchPlayback({ type: 'normative.playback.failure.cleared' });
-      return;
-    }
-    dispatchPlayback({
-      type: 'normative.playback.failure.raised',
-      epoch: acceptedPlaybackEpochRef.current,
-      status: options.playerStatus,
-      failure: buildPlaybackFailure(nextError, options.source ?? 'orchestrator', {
-        class: options.failureClass,
-        code: options.code ?? nextError.code ?? undefined,
-        message: nextError.title,
-        terminal: options.terminal,
-        retryable: options.retryable,
-        recoverable: options.recoverable,
-        userVisible: options.userVisible,
-        policyImpact: options.policyImpact,
-        messageKey: options.messageKey,
-        telemetryContext: options.telemetryContext,
-        telemetryReason: options.telemetryReason,
-      }),
-    });
-  }, []);
-
-  const reportPlaybackFailure = useCallback((
-    nextError: AppError,
-    options: PlaybackFailureReportOptions = {},
-  ) => {
-    setShowErrorDetails(false);
-    setPlayerError(nextError, options);
-  }, [setPlayerError]);
-
-  const clearPlaybackFailure = useCallback(() => {
-    dispatchPlayback({ type: 'normative.playback.failure.cleared' });
-    setShowErrorDetails(false);
-  }, []);
-
-  const clearPlayerError = useCallback(() => {
-    clearPlaybackFailure();
-  }, [clearPlaybackFailure]);
-
-  const recordContractAdvisories = useCallback((epoch: number, warnings: Parameters<typeof buildPlaybackAdvisorySignal>[0][]) => {
-    warnings.forEach((warning) => {
-      dispatchPlayback({
-        type: 'advisory.signal.recorded',
-        epoch,
-        advisory: buildPlaybackAdvisorySignal(warning),
-      });
-    });
-  }, []);
+  const {
+    setTraceId,
+    setStatus,
+    setPlaybackMode,
+    setDurationSeconds,
+    setVodStreamMode,
+    setActiveHlsEngine,
+    setCanSeek,
+    setStartUnix,
+    setPlayerError,
+    reportPlaybackFailure,
+    clearPlaybackFailure,
+    clearPlayerError,
+    recordContractAdvisories,
+  } = usePlaybackStateSetters({
+    dispatchPlayback,
+    playbackStateRef,
+    acceptedPlaybackEpochRef,
+    setShowErrorDetails,
+  });
 
   useEffect(() => {
     if (!error?.detail) {
@@ -1007,7 +497,7 @@ export function usePlaybackOrchestrator(
     }
     setSessionProfileReason(session.profileReason ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
-  }, [mergeSessionPlaybackTrace, setTraceId]);
+  }, [acceptedPlaybackEpochRef, acceptedSessionEpochRef, mergeSessionPlaybackTrace, setTraceId]);
 
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
@@ -1141,39 +631,6 @@ export function usePlaybackOrchestrator(
 
   // --- Core Helpers & Wrappers (Memoized) ---
 
-  const clearRecordingTimeout = useCallback(() => {
-    if (recordingTimeoutRef.current !== null) {
-      window.clearTimeout(recordingTimeoutRef.current);
-      recordingTimeoutRef.current = null;
-    }
-  }, []);
-
-  const clearVodRetry = useCallback(() => {
-    if (vodRetryRef.current !== null) {
-      window.clearTimeout(vodRetryRef.current);
-      vodRetryRef.current = null;
-    }
-    clearRecordingTimeout();
-  }, [clearRecordingTimeout]);
-
-  const clearVodFetch = useCallback(() => {
-    if (vodFetchRef.current) {
-      vodFetchRef.current.abort();
-      vodFetchRef.current = null;
-    }
-  }, []);
-
-  const clearNativeVideoVeilTimers = useCallback(() => {
-    if (nativeVideoVeilRevealTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoVeilRevealTimerRef.current);
-      nativeVideoVeilRevealTimerRef.current = null;
-    }
-    if (nativeVideoVeilClearTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoVeilClearTimerRef.current);
-      nativeVideoVeilClearTimerRef.current = null;
-    }
-  }, []);
-
   const clearPlaybackSelection = useCallback(() => {
     activeRecordingRef.current = null;
     nativePlaybackWasActiveRef.current = false;
@@ -1201,13 +658,6 @@ export function usePlaybackOrchestrator(
     clearSessionLeaseState();
     resetChromeState();
   }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
-
-  const clearNativeVideoRevealTimer = useCallback(() => {
-    if (nativeVideoRevealTimerRef.current !== null) {
-      window.clearTimeout(nativeVideoRevealTimerRef.current);
-      nativeVideoRevealTimerRef.current = null;
-    }
-  }, []);
 
   const getBufferedAheadSeconds = useCallback((): number => {
     const video = videoRef.current;
@@ -1779,6 +1229,8 @@ export function usePlaybackOrchestrator(
     sleep,
     t,
     teardownActivePlayback,
+    vodFetchRef,
+    vodRetryRef,
   ]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
@@ -2501,6 +1953,8 @@ export function usePlaybackOrchestrator(
     clearNativeVideoVeilTimers,
     getBufferedAheadSeconds,
     isNativeEngine,
+    nativeVideoRevealTimerRef,
+    nativeVideoVeilRevealTimerRef,
     showNativeVideo,
     status,
     videoRef,
@@ -2669,7 +2123,7 @@ export function usePlaybackOrchestrator(
       video.removeEventListener('timeupdate', handleProgress);
       video.removeEventListener('canplay', handleProgress);
     };
-  }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, showNativeVideo, showNativeVideoVeil, videoRef]);
+  }, [clearNativeVideoVeilTimers, isNativeEngine, nativeVeilResumeArmed, nativeVideoVeilClearTimerRef, showNativeVideo, showNativeVideoVeil, videoRef]);
 
   const effectiveClientPath =
     sessionPlaybackTrace?.clientPath ||
