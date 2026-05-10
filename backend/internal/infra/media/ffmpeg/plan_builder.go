@@ -965,7 +965,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
-	args = appendVaapiRateControlArgs(args, prof)
+	args = appendVaapiRateControlArgs(args, prof, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
@@ -974,7 +974,9 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		"-flags", "+cgop",
 	)
 
-	args = append(args, "-profile:v", "main")
+	if normalizeRequestedCodec(outputCodec) != "av1" {
+		args = append(args, "-profile:v", "main")
+	}
 	return args
 }
 
@@ -1002,15 +1004,17 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
-	args = appendVaapiRateControlArgs(args, prof)
+	args = appendVaapiRateControlArgs(args, prof, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = append(args,
 		"-g", strconv.Itoa(gop),
 		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
 		"-flags", "+cgop",
-		"-profile:v", "main",
 	)
+	if normalizeRequestedCodec(outputCodec) != "av1" {
+		args = append(args, "-profile:v", "main")
+	}
 	return args
 }
 
@@ -1034,7 +1038,8 @@ func av1VAAPIGeometryPadFilter() string {
 	return "setsar=sar=sar*ceil(h/16)*16/h:max=1000,pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
 
-func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string {
+func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCodec string) []string {
+	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
 	if prof.VideoQP > 0 {
 		args = append(args,
 			"-rc_mode", "CQP",
@@ -1046,20 +1051,39 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec) []string 
 		if prof.VideoBufSizeK > 0 {
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
 		}
+		if isAV1 {
+			args = append(args, "-async_depth", "1")
+		}
 		return args
 	}
 
 	if prof.VideoMaxRateK > 0 {
+		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate.
+		// Use VBR with a 25% target headroom to keep the encoder ring stable.
+		bV := prof.VideoMaxRateK
+		if isAV1 {
+			bV = (prof.VideoMaxRateK * 3) / 4
+			if bV < 1 {
+				bV = 1
+			}
+		}
 		args = append(args,
-			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+			"-b:v", fmt.Sprintf("%dk", bV),
 			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
 		)
 		if prof.VideoBufSizeK > 0 {
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
 		}
+		if isAV1 {
+			args = append(args, "-async_depth", "1")
+		}
 		return args
 	}
 
+	if isAV1 {
+		args = append(args, "-rc_mode", "CQP", "-global_quality", "28", "-async_depth", "1")
+		return args
+	}
 	return append(args, "-global_quality", "23")
 }
 
