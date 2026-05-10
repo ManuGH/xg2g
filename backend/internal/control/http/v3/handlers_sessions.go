@@ -568,6 +568,8 @@ func (s *Server) logPlaybackFeedback(sessionID string, sess *model.SessionRecord
 		Str("msg", derefString(req.Message)).
 		Bool("decodeError", decodeError)
 
+	appendPlaybackContextFields(event, req.Context)
+
 	if sess == nil {
 		event.Msg("playback feedback received")
 		return
@@ -625,6 +627,27 @@ func (s *Server) logPlaybackFeedback(sessionID string, sess *model.SessionRecord
 	}
 
 	event.Msg("playback feedback received")
+}
+
+func appendPlaybackContextFields(event *zerolog.Event, ctx *PlaybackEngineErrorContext) {
+	if ctx == nil {
+		return
+	}
+	if ctx.Engine != nil {
+		event.Str("playbackEngine", string(*ctx.Engine))
+	}
+	if ctx.Phase != nil {
+		event.Str("playbackPhase", string(*ctx.Phase))
+	}
+	if ctx.AttemptId != nil {
+		event.Int("playbackAttemptId", *ctx.AttemptId)
+	}
+	if ctx.PlaybackEpoch != nil {
+		event.Int("playbackEpoch", *ctx.PlaybackEpoch)
+	}
+	if ctx.RecoveryAttempt != nil {
+		event.Int("playbackRecoveryAttempt", *ctx.RecoveryAttempt)
+	}
 }
 
 func traceFFmpegPlanValue(trace *model.PlaybackTrace, selector func(*model.FFmpegPlanTrace) string) string {

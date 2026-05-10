@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
-import { createSession, type IntentRequest } from '../../client-ts';
+import { createSession, type IntentRequest, type PlaybackEngineErrorContext } from '../../client-ts';
 import { setClientAuthToken, throwOnClientResultError } from '../../services/clientWrapper';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import type {
@@ -110,7 +110,12 @@ export function useLiveSessionController({
     return headers;
   }, [token]);
 
-  const reportError = useCallback(async (event: 'error' | 'warning' | 'info', code: number, msg?: string) => {
+  const reportError = useCallback(async (
+    event: 'error' | 'warning' | 'info',
+    code: number,
+    msg?: string,
+    context?: PlaybackEngineErrorContext,
+  ) => {
     if (!sessionIdRef.current) return;
     try {
       await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
@@ -119,7 +124,8 @@ export function useLiveSessionController({
         body: JSON.stringify({
           event,
           code,
-          message: msg
+          message: msg,
+          ...(context ? { context } : {}),
         })
       });
     } catch (err) {

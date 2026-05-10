@@ -5,6 +5,7 @@ import Hls from './lib/hlsRuntime';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
 import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
 import type { AppError } from '../../types/errors';
+import type { PlaybackEngineErrorContext } from '../../client-ts';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
@@ -16,7 +17,12 @@ import {
 } from './playbackRenderProbe';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
-type ReportErrorFn = (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
+type ReportErrorFn = (
+  event: 'error' | 'warning' | 'info',
+  code: number,
+  msg?: string,
+  context?: PlaybackEngineErrorContext,
+) => Promise<void>;
 type PreferNativeFn = (videoEl?: VideoElementRef, hlsJsSupported?: boolean) => boolean;
 type WaitForSessionReadyFn = (sessionId: string, maxAttempts?: number) => Promise<V3SessionStatusResponse>;
 type PrimePlaybackAuthFn = (playbackUrl: string, source: string) => Promise<void>;
@@ -44,6 +50,7 @@ interface UsePlaybackEngineProps {
   sessionIdRef: MutableRefObject<string | null>;
   isTeardownRef: MutableRefObject<boolean>;
   lastDecodedRef: MutableRefObject<number>;
+  playbackEpochRef: MutableRefObject<number>;
   t: TFunction;
   reportError: ReportErrorFn;
   waitForSessionReady: WaitForSessionReadyFn;
@@ -92,6 +99,7 @@ export function usePlaybackEngine({
   sessionIdRef,
   isTeardownRef,
   lastDecodedRef,
+  playbackEpochRef,
   t,
   reportError,
   waitForSessionReady,
@@ -274,6 +282,26 @@ export function usePlaybackEngine({
     };
   }, [bufferedAheadSeconds]);
 
+  const playbackEngineContext = useCallback((
+    phase: NonNullable<PlaybackEngineErrorContext['phase']>,
+    extras?: { engine?: PlaybackEngineErrorContext['engine']; recoveryAttempt?: number },
+  ): PlaybackEngineErrorContext => {
+    const liveEngine = lastHlsEngineRef.current;
+    const engine: PlaybackEngineErrorContext['engine'] =
+      extras?.engine ?? (liveEngine === 'auto' ? 'unknown' : liveEngine);
+    const epoch = playbackEpochRef.current;
+    const ctx: PlaybackEngineErrorContext = {
+      engine,
+      phase,
+      playbackEpoch: epoch,
+      attemptId: epoch,
+    };
+    if (extras?.recoveryAttempt !== undefined) {
+      ctx.recoveryAttempt = extras.recoveryAttempt;
+    }
+    return ctx;
+  }, [playbackEpochRef]);
+
   const scheduleHlsRenderProbe = useCallback((videoEl: NonNullable<VideoElementRef>, trackedSessionId: string) => {
     if (lastHlsEngineRef.current !== 'hlsjs') {
       clearHlsRenderProbe(false);
@@ -288,7 +316,12 @@ export function usePlaybackEngine({
 
     const started = captureHlsRenderProbeSnapshot(videoEl);
     activeHlsRenderProbeSessionRef.current = trackedSessionId;
-    void reportError('info', PLAYBACK_INFO_CODE_HLSJS_RENDER_PLAYING, describeHlsRenderProbe('playing', started));
+    void reportError(
+      'info',
+      PLAYBACK_INFO_CODE_HLSJS_RENDER_PLAYING,
+      describeHlsRenderProbe('playing', started),
+      playbackEngineContext('decode', { engine: 'hlsjs' }),
+    );
 
     hlsRenderProbeTimerRef.current = window.setTimeout(() => {
       hlsRenderProbeTimerRef.current = null;
@@ -308,12 +341,18 @@ export function usePlaybackEngine({
       void reportError(
         'info',
         blackSuspect ? PLAYBACK_INFO_CODE_HLSJS_RENDER_BLACK : PLAYBACK_INFO_CODE_HLSJS_RENDER_STABLE,
-        describeHlsRenderProbe(blackSuspect ? 'black_suspect' : 'stable', settled, started)
+        describeHlsRenderProbe(blackSuspect ? 'black_suspect' : 'stable', settled, started),
+        playbackEngineContext('decode', { engine: 'hlsjs' }),
       );
     }, HLSJS_RENDER_PROBE_MS);
-  }, [captureHlsRenderProbeSnapshot, clearHlsRenderProbe, isTeardownRef, reportError, sessionIdRef]);
+  }, [captureHlsRenderProbeSnapshot, clearHlsRenderProbe, isTeardownRef, playbackEngineContext, reportError, sessionIdRef]);
 
-  const reportPlaybackWarning = useCallback((code: number, message: string) => {
+  const reportPlaybackWarning = useCallback((
+    code: number,
+    message: string,
+    phase: NonNullable<PlaybackEngineErrorContext['phase']>,
+    recoveryAttempt?: number,
+  ) => {
     const trackedSessionId = sessionIdRef.current;
     if (!trackedSessionId) {
       return;
@@ -324,8 +363,11 @@ export function usePlaybackEngine({
     }
     reportedWarningKeysRef.current.add(key);
     pendingWarningRecoveryRef.current = playbackRecoveryInfoForWarning(code);
-    void reportError('warning', code, message);
-  }, [reportError, sessionIdRef]);
+    void reportError('warning', code, message, playbackEngineContext(
+      phase,
+      recoveryAttempt !== undefined ? { recoveryAttempt } : undefined,
+    ));
+  }, [playbackEngineContext, reportError, sessionIdRef]);
 
   const updateStats = useCallback((hls: Hls) => {
     if (!hls) return;
@@ -413,9 +455,13 @@ export function usePlaybackEngine({
     setStatus('recovering');
     clearPlaybackFailure();
 
+    const trackedRecoveryAttempt = decodeRecoveryAttemptsRef.current;
     void (async () => {
       try {
-        await reportError('error', code, message);
+        await reportError('error', code, message, playbackEngineContext('recovery', {
+          engine: trackedEngine === 'auto' ? 'unknown' : trackedEngine,
+          recoveryAttempt: trackedRecoveryAttempt,
+        }));
         await new Promise((resolve) => window.setTimeout(resolve, 750));
 
         if (sessionIdRef.current !== trackedSessionId) {
@@ -453,6 +499,7 @@ export function usePlaybackEngine({
 
     return true;
   }, [
+    playbackEngineContext,
     reportError,
     resetPlaybackEngine,
     sessionIdRef,
@@ -765,7 +812,7 @@ export function usePlaybackEngine({
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
             if (httpStatus === 401 && sessionIdRef.current) {
-              void reportError('error', 0, `${data.type}: ${data.details}`);
+              void reportError('error', 0, `${data.type}: ${data.details}`, playbackEngineContext('network', { engine: 'hlsjs' }));
               debugWarn('[V3Player] NETWORK_ERROR 401: attempting session recovery before failing');
               const started = beginSessionDecodeRecovery(0, `${data.type}: ${data.details}`, (recoveryErr) => {
                 debugError('[V3Player] NETWORK_ERROR 401: session recovery failed', recoveryErr);
@@ -810,13 +857,16 @@ export function usePlaybackEngine({
             if (networkRetryCount < maxNetworkRetries) {
               const backoffMs = Math.min(1000 * Math.pow(2, networkRetryCount), networkBackoffCapMs);
               networkRetryCount++;
-              reportPlaybackWarning(PLAYBACK_WARNING_CODE_NETWORK_RETRY, 'hlsjs_network_retry');
+              reportPlaybackWarning(PLAYBACK_WARNING_CODE_NETWORK_RETRY, 'hlsjs_network_retry', 'network', networkRetryCount);
               debugWarn(`[V3Player] NETWORK_ERROR recovery attempt ${networkRetryCount}/${maxNetworkRetries}, backoff ${backoffMs}ms`);
               setStatus('recovering');
               window.setTimeout(() => hls.startLoad(), backoffMs);
             } else {
               if (sessionIdRef.current) {
-                void reportError('error', 0, `${data.type}: ${data.details}`);
+                void reportError('error', 0, `${data.type}: ${data.details}`, playbackEngineContext('network', {
+                  engine: 'hlsjs',
+                  recoveryAttempt: networkRetryCount,
+                }));
               }
               debugError(`[V3Player] NETWORK_ERROR: max retries (${maxNetworkRetries}) exhausted`);
               hlsRef.current?.destroy();
@@ -837,7 +887,7 @@ export function usePlaybackEngine({
           case Hls.ErrorTypes.MEDIA_ERROR:
             if (!mediaRecoveryAttempted) {
               mediaRecoveryAttempted = true;
-              reportPlaybackWarning(PLAYBACK_WARNING_CODE_DECODER_RECOVERY, 'hlsjs_media_recovery');
+              reportPlaybackWarning(PLAYBACK_WARNING_CODE_DECODER_RECOVERY, 'hlsjs_media_recovery', 'recovery', 1);
               debugWarn('[V3Player] MEDIA_ERROR: attempting single recovery');
               setStatus('recovering');
               hls.recoverMediaError();
@@ -877,7 +927,7 @@ export function usePlaybackEngine({
             break;
           default:
             if (sessionIdRef.current) {
-              void reportError('error', 0, `${data.type}: ${data.details}`);
+              void reportError('error', 0, `${data.type}: ${data.details}`, playbackEngineContext('decode', { engine: 'hlsjs' }));
             }
             hlsRef.current?.destroy();
             setStatus('error');
@@ -912,7 +962,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, reportError, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, playbackEngineContext, reportError, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -970,7 +1020,7 @@ export function usePlaybackEngine({
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       setStatus('buffering');
-      reportPlaybackWarning(PLAYBACK_WARNING_CODE_WAITING, 'waiting');
+      reportPlaybackWarning(PLAYBACK_WARNING_CODE_WAITING, 'waiting', 'decode');
       scheduleNativeStallRecovery(videoEl, 'waiting');
       scheduleHlsStallRecovery(videoEl, 'waiting');
     };
@@ -1002,7 +1052,7 @@ export function usePlaybackEngine({
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       setStatus('buffering');
-      reportPlaybackWarning(PLAYBACK_WARNING_CODE_STALLED, 'stalled');
+      reportPlaybackWarning(PLAYBACK_WARNING_CODE_STALLED, 'stalled', 'decode');
       scheduleNativeStallRecovery(videoEl, 'stalled');
       scheduleHlsStallRecovery(videoEl, 'stalled');
     };
@@ -1033,12 +1083,17 @@ export function usePlaybackEngine({
         reportedPlayingSessionRef.current = trackedSessionId;
         if (runtimeProbeActive) {
           reportedProbeStartedSessionRef.current = trackedSessionId;
-          void reportError('info', PLAYBACK_INFO_CODE_PROBE_WINDOW_STARTED, 'probe_window_started');
+          void reportError('info', PLAYBACK_INFO_CODE_PROBE_WINDOW_STARTED, 'probe_window_started', playbackEngineContext('decode'));
         } else {
-          void reportError('info', 200, 'playing');
+          void reportError('info', 200, 'playing', playbackEngineContext('decode'));
         }
       } else if (trackedSessionId && pendingWarningRecoveryRef.current) {
-        void reportError('info', pendingWarningRecoveryRef.current.code, pendingWarningRecoveryRef.current.message);
+        void reportError(
+          'info',
+          pendingWarningRecoveryRef.current.code,
+          pendingWarningRecoveryRef.current.message,
+          playbackEngineContext('recovery'),
+        );
       }
       if (
         runtimeProbeActive &&
@@ -1052,7 +1107,7 @@ export function usePlaybackEngine({
             return;
           }
           reportedProbeConfirmedSessionRef.current = trackedSessionId;
-          void reportError('info', PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED, 'probe_window_confirmed');
+          void reportError('info', PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED, 'probe_window_confirmed', playbackEngineContext('decode'));
         }, PROBE_CONFIRMATION_MS);
       } else if (!runtimeProbeActive) {
         clearProbeConfirmation();
@@ -1144,7 +1199,7 @@ export function usePlaybackEngine({
           return;
         }
 
-        void reportError('error', safeCode, message);
+        void reportError('error', safeCode, message, playbackEngineContext('decode'));
       }
 
       setStatus('error');
@@ -1177,7 +1232,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
 
   return {
     resetPlaybackEngine,
