@@ -212,7 +212,34 @@ func safariFamilyContainer(isSafari bool) string {
 }
 
 func interlacedOrUnknown(cap *scan.Capability) bool {
-	return cap == nil || cap.Interlaced
+	return cap == nil || cap.Interlaced || isLikelyPALSDInterlaced(cap)
+}
+
+// isLikelyPALSDInterlaced guards against scanner false-negatives on PAL SD
+// MPEG-2 sources: 720x576 @ ~25 fps mpeg2video is interlaced 576i50 in practice
+// across all DVB-S/T/C broadcast SD channels. A single-shot ffprobe sample can
+// occasionally report `progressive` (e.g. caught between IDR boundaries), which
+// would otherwise disable deinterlacing and stall AV1 encode paths that cannot
+// consume interlaced frames.
+func isLikelyPALSDInterlaced(cap *scan.Capability) bool {
+	if cap == nil {
+		return false
+	}
+	codec := cap.VideoCodec
+	if codec == "" {
+		codec = cap.Codec
+	}
+	if codec != "mpeg2video" {
+		return false
+	}
+	if cap.Width != 720 || cap.Height != 576 {
+		return false
+	}
+	fps := cap.FPS
+	if fps <= 0 {
+		fps = cap.SignalFPS
+	}
+	return fps > 24.5 && fps < 25.5
 }
 
 func applyEnvH264GPUSettings(
