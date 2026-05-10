@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import Hls from './lib/hlsRuntime';
 import {
   postRecordingPlaybackInfo,
-  type IntentRequest,
   type PlaybackTrace as PlaybackTraceContract,
 } from '../../client-ts';
 import { getApiBaseUrl } from '../../services/clientWrapper';
@@ -27,7 +26,6 @@ import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import {
   PlayerError,
   readResponseBody,
-  extractCapHashFromDecisionToken,
   hasTouchInput,
   canUseDesktopWebKitFullscreen,
   shouldForceNativeMobileHls,
@@ -49,9 +47,6 @@ import {
 import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
 import {
-  classifyNormalizedContractFailure,
-} from './semantics/playbackFailureSemantics';
-import {
   requestHostInputFocus,
   resolveHostEnvironment,
   setHostPlaybackActive,
@@ -68,7 +63,6 @@ import {
   extractPlaybackTrace,
   formatClientPath,
   formatRequestProfileLabel,
-  resolveAutoTranscodeCodecs,
   formatQualityRungLabel,
   formatBooleanLabel,
   formatTargetProfileSummary,
@@ -76,10 +70,7 @@ import {
   resolvePlaybackObservability,
   type PlaybackObservability,
 } from './orchestrator/observabilityFormatters';
-import {
-  buildContractState,
-  buildBlockedContractError,
-} from './orchestrator/contractErrors';
+import { buildContractState } from './orchestrator/contractErrors';
 import {
   supportsManagedNativePlayback,
 } from './orchestrator/nativePlaybackHelpers';
@@ -93,6 +84,21 @@ import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
 import { useNativePlaybackBridge } from './orchestrator/useNativePlaybackBridge';
+import {
+  buildAuthDeniedFailure,
+  buildBlockedContractFailure,
+  buildContractConsumedTelemetry,
+  buildLeaseBusyFailure,
+  buildLiveIntentBody,
+  buildMissingDecisionTokenFailure,
+  buildMissingOutputUrlFailure,
+  buildRecordingGoneFailure,
+  buildServiceRefRequiredFailure,
+  buildUnsupportedLiveModeFailure,
+  prepareForPlaybackAttempt,
+  resolveLiveEngineFromMode,
+  resolveResumeStateFromContract,
+} from './orchestrator/startupHelpers';
 
 
 export interface PlaybackOrchestratorRefs {
@@ -729,10 +735,9 @@ export function usePlaybackOrchestrator(
 
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
     const playbackEpoch = allocatePlaybackEpoch();
-    if (hasActivePlayback()) {
-      await teardownActivePlayback();
-    } else {
-      clearPlaybackState();
+    {
+      const teardown = prepareForPlaybackAttempt({ hasActivePlayback, teardownActivePlayback, clearPlaybackState });
+      if (teardown) await teardown;
     }
     beginPlaybackAttempt(playbackEpoch, 'VOD', 'building');
     activeRecordingRef.current = id;
@@ -772,71 +777,28 @@ export function usePlaybackOrchestrator(
           if (error) {
             if (notifyAuthRequiredIfUnauthorizedResponse(response, 'V3Player.recordingPlaybackInfo')) {
               setStatus('error');
-              reportPlaybackFailure({
-                title: t('player.authFailed'),
-                status: 401,
-                retryable: false,
-                code: 'AUTH_DENIED',
-              }, {
-                source: 'backend',
-                failureClass: 'auth',
-                retryable: false,
-                recoverable: false,
-                terminal: true,
-              });
+              const failure = buildAuthDeniedFailure(t, 401);
+              reportPlaybackFailure(failure.appError, failure.options);
               return;
             }
             if (response.status === 403) {
               setStatus('error');
-              reportPlaybackFailure({
-                title: t('player.forbidden'),
-                status: 403,
-                retryable: false,
-                code: 'AUTH_DENIED',
-              }, {
-                source: 'backend',
-                failureClass: 'auth',
-                retryable: false,
-                recoverable: false,
-                terminal: true,
-              });
+              const failure = buildAuthDeniedFailure(t, 403);
+              reportPlaybackFailure(failure.appError, failure.options);
               return;
             }
             if (response.status === 410) {
               setStatus('error');
-              reportPlaybackFailure({
-                title: t('player.notAvailable'),
-                status: 410,
-                retryable: false,
-                code: 'RECORDING_GONE',
-              }, {
-                source: 'backend',
-                failureClass: 'contract',
-                retryable: false,
-                recoverable: false,
-                terminal: true,
-                telemetryContext: 'V3Player.recording.contract.blocked',
-              });
+              const failure = buildRecordingGoneFailure(t);
+              reportPlaybackFailure(failure.appError, failure.options);
               return;
             }
             if (response.status === 409) {
               const retryAfterHeader = response.headers.get('Retry-After');
               const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
-              const retryHint = retryAfter > 0 ? ` ${t('player.retryAfter', { seconds: retryAfter })}` : '';
               setStatus('error');
-              reportPlaybackFailure({
-                title: `${t('player.leaseBusy')}${retryHint}`,
-                status: 409,
-                retryable: true,
-                code: 'LEASE_BUSY',
-              }, {
-                source: 'backend',
-                failureClass: 'contract',
-                retryable: true,
-                recoverable: false,
-                terminal: false,
-                telemetryContext: 'V3Player.recording.contract.blocked',
-              });
+              const failure = buildLeaseBusyFailure(retryAfter, t);
+              reportPlaybackFailure(failure.appError, failure.options);
               return;
             }
             if (response.status === 503) {
@@ -878,13 +840,7 @@ export function usePlaybackOrchestrator(
         debugLog('[V3Player] Normalized recording contract:', normalizedContract);
         recordContractAdvisories(playbackEpoch, normalizedContract.advisory.warnings);
 
-        telemetry.emit('ui.contract.consumed', {
-          mode: 'normalized',
-          kind: normalizedContract.kind,
-          fields: normalizedContract.kind === 'playable'
-            ? ['kind', 'playback.mode', 'playback.outputUrl', 'playback.seekable']
-            : ['kind', 'failure.kind', 'failure.code'],
-        });
+        telemetry.emit('ui.contract.consumed', buildContractConsumedTelemetry(normalizedContract, 'recording'));
 
         if (normalizedContract.observability.requestId) {
           setTraceId(normalizedContract.observability.requestId);
@@ -895,19 +851,9 @@ export function usePlaybackOrchestrator(
         ));
 
         if (normalizedContract.kind === 'blocked') {
-          const blockedFailure = classifyNormalizedContractFailure(normalizedContract.failure);
           setStatus('error');
-          reportPlaybackFailure(buildBlockedContractError(normalizedContract, t), {
-            source: 'backend',
-            failureClass: blockedFailure.class,
-            code: blockedFailure.code,
-            retryable: blockedFailure.retryable,
-            recoverable: blockedFailure.recoverable,
-            terminal: blockedFailure.terminal,
-            policyImpact: blockedFailure.policyImpact,
-            telemetryContext: 'V3Player.recording.contract.blocked',
-            telemetryReason: normalizedContract.observability.backendReason ?? normalizedContract.failure.code,
-          });
+          const failure = buildBlockedContractFailure(normalizedContract, 'recording', t);
+          reportPlaybackFailure(failure.appError, failure.options);
           return;
         }
 
@@ -915,19 +861,8 @@ export function usePlaybackOrchestrator(
         streamUrl = normalizedContract.playback.outputUrl ?? '';
         if (!streamUrl) {
           setStatus('error');
-          reportPlaybackFailure({
-            title: t('player.serverError'),
-            detail: 'Normalized recording contract missing outputUrl',
-            retryable: false,
-            code: 'MISSING_OUTPUT_URL',
-          }, {
-            source: 'backend',
-            failureClass: 'contract',
-            retryable: false,
-            recoverable: false,
-            terminal: true,
-            telemetryContext: 'V3Player.recording.output_url.missing',
-          });
+          const failure = buildMissingOutputUrlFailure(t);
+          reportPlaybackFailure(failure.appError, failure.options);
           return;
         }
 
@@ -951,26 +886,13 @@ export function usePlaybackOrchestrator(
           setDurationSeconds(playbackDurationSeconds);
         }
 
-        const recordingIsSeekable = normalizedContract.playback.seekable;
-        setCanSeek(recordingIsSeekable);
+        setCanSeek(normalizedContract.playback.seekable);
         if (normalizedContract.media.startUnix) setStartUnix(normalizedContract.media.startUnix);
 
-        // Resume State
-        if (
-          recordingIsSeekable &&
-          normalizedContract.resume &&
-          normalizedContract.resume.posSeconds >= 15 &&
-          !normalizedContract.resume.finished
-        ) {
-          const d = normalizedContract.resume.durationSeconds || (playbackDurationSeconds || 0);
-          if (!d || normalizedContract.resume.posSeconds < d - 10) {
-            setResumeState({
-              posSeconds: normalizedContract.resume.posSeconds,
-              durationSeconds: normalizedContract.resume.durationSeconds || undefined,
-              finished: normalizedContract.resume.finished || undefined
-            });
-            setShowResumeOverlay(true);
-          }
+        const nextResume = resolveResumeStateFromContract(normalizedContract, playbackDurationSeconds);
+        if (nextResume) {
+          setResumeState(nextResume);
+          setShowResumeOverlay(true);
         }
       } catch (e: unknown) {
         if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
@@ -1081,11 +1003,13 @@ export function usePlaybackOrchestrator(
         }
         if (nativeHost) {
           const playbackEpoch = allocatePlaybackEpoch();
-          if (hasActivePlayback() || nativePlaybackState?.activeRequest) {
-            await teardownActivePlayback();
-          } else {
-            clearPlaybackState();
-          }
+          const teardown = prepareForPlaybackAttempt({
+            hasActivePlayback,
+            teardownActivePlayback,
+            clearPlaybackState,
+            hasActiveNativeRequest: Boolean(nativePlaybackState?.activeRequest),
+          });
+          if (teardown) await teardown;
           beginPlaybackAttempt(playbackEpoch, 'VOD', 'starting');
           beginNativePlayback({
             kind: 'recording',
@@ -1103,11 +1027,10 @@ export function usePlaybackOrchestrator(
       if (src) {
         debugLog('[V3Player] startStream: src path', { hasSrc: true });
         const playbackEpoch = allocatePlaybackEpoch();
-        if (hasActivePlayback()) {
-          await teardownActivePlayback();
-        } else {
-          clearPlaybackState();
-        }
+        {
+      const teardown = prepareForPlaybackAttempt({ hasActivePlayback, teardownActivePlayback, clearPlaybackState });
+      if (teardown) await teardown;
+    }
         beginPlaybackAttempt(playbackEpoch, requestedDuration ? 'VOD' : 'LIVE', 'buffering');
         const srcEngine = resolvePreferredHlsEngine();
         playHls(src, srcEngine);
@@ -1118,25 +1041,15 @@ export function usePlaybackOrchestrator(
       const ref = (refToUse || sRef || '').trim();
       if (!ref) {
         setStatus('error');
-        reportPlaybackFailure({
-          title: t('player.serviceRefRequired'),
-          retryable: false,
-          code: 'SERVICE_REF_REQUIRED',
-        }, {
-          source: 'orchestrator',
-          failureClass: 'contract',
-          retryable: false,
-          recoverable: false,
-          terminal: true,
-        });
+        const failure = buildServiceRefRequiredFailure(t);
+        reportPlaybackFailure(failure.appError, failure.options);
         return;
       }
       const playbackEpoch = allocatePlaybackEpoch();
-      if (hasActivePlayback()) {
-        await teardownActivePlayback();
-      } else {
-        clearPlaybackState();
-      }
+      {
+      const teardown = prepareForPlaybackAttempt({ hasActivePlayback, teardownActivePlayback, clearPlaybackState });
+      if (teardown) await teardown;
+    }
       beginPlaybackAttempt(playbackEpoch, 'LIVE', 'starting');
       let newSessionId: string | null = null;
       let sessionEpoch = 0;
@@ -1255,13 +1168,7 @@ export function usePlaybackOrchestrator(
         debugLog('[V3Player] Normalized live contract:', normalizedContract);
         recordContractAdvisories(playbackEpoch, normalizedContract.advisory.warnings);
 
-        telemetry.emit('ui.contract.consumed', {
-          mode: 'normalized',
-          kind: normalizedContract.kind,
-          fields: normalizedContract.kind === 'playable'
-            ? ['kind', 'playback.mode', 'session.decisionToken']
-            : ['kind', 'failure.kind', 'failure.code'],
-        });
+        telemetry.emit('ui.contract.consumed', buildContractConsumedTelemetry(normalizedContract, 'live'));
 
         if (normalizedContract.observability.requestId) {
           setTraceId(normalizedContract.observability.requestId);
@@ -1272,19 +1179,9 @@ export function usePlaybackOrchestrator(
         ));
 
         if (normalizedContract.kind === 'blocked') {
-          const blockedFailure = classifyNormalizedContractFailure(normalizedContract.failure);
           setStatus('error');
-          reportPlaybackFailure(buildBlockedContractError(normalizedContract, t), {
-            source: 'backend',
-            failureClass: blockedFailure.class,
-            code: blockedFailure.code,
-            retryable: blockedFailure.retryable,
-            recoverable: blockedFailure.recoverable,
-            terminal: blockedFailure.terminal,
-            policyImpact: blockedFailure.policyImpact,
-            telemetryContext: 'V3Player.live.contract.blocked',
-            telemetryReason: normalizedContract.observability.backendReason ?? normalizedContract.failure.code,
-          });
+          const failure = buildBlockedContractFailure(normalizedContract, 'live', t);
+          reportPlaybackFailure(failure.appError, failure.options);
           return;
         }
 
@@ -1298,74 +1195,21 @@ export function usePlaybackOrchestrator(
         const liveDecisionToken = normalizedContract.session.decisionToken;
         if (!liveDecisionToken) {
           setStatus('error');
-          reportPlaybackFailure({
-            title: t('player.serverError'),
-            detail: 'Backend live decision missing playbackDecisionToken',
-            retryable: false,
-            code: 'PLAYBACK_DECISION_TOKEN_MISSING',
-          }, {
-            source: 'backend',
-            failureClass: 'contract',
-            retryable: false,
-            recoverable: false,
-            terminal: true,
-            telemetryContext: 'V3Player.live.playback_decision_token.missing',
-          });
+          const failure = buildMissingDecisionTokenFailure(t);
+          reportPlaybackFailure(failure.appError, failure.options);
           return;
         }
 
-        if (liveMode === 'native_hls') {
-          liveEngine = 'native';
-        } else if (liveMode === 'hlsjs') {
-          liveEngine = 'hlsjs';
-        } else if (liveMode === 'transcode') {
-          liveEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
-        } else {
+        const engineDecision = resolveLiveEngineFromMode(liveMode, requestCaps, resolvePreferredHlsEngineForCapabilities);
+        if ('unsupported' in engineDecision) {
           setStatus('error');
-          reportPlaybackFailure({
-            title: t('player.serverError'),
-            detail: `Unsupported live playback mode: ${liveMode}`,
-            retryable: false,
-            code: 'UNSUPPORTED_LIVE_MODE',
-          }, {
-            source: 'backend',
-            failureClass: 'contract',
-            retryable: false,
-            recoverable: false,
-            terminal: true,
-            telemetryContext: 'V3Player.live.mode.unsupported',
-          });
+          const failure = buildUnsupportedLiveModeFailure(liveMode, t);
+          reportPlaybackFailure(failure.appError, failure.options);
           return;
         }
+        liveEngine = engineDecision.engine;
 
-        const intentParams: Record<string, string> = {
-          playback_mode: liveMode,
-        };
-        if (requestCaps.clientFamilyFallback) {
-          intentParams.client_family = requestCaps.clientFamilyFallback;
-        }
-        if (requestCaps.preferredHlsEngine) {
-          intentParams.preferred_hls_engine = requestCaps.preferredHlsEngine;
-        }
-        if (requestCaps.deviceType) {
-          intentParams.device_type = requestCaps.deviceType;
-        }
-        const autoCodecs = resolveAutoTranscodeCodecs(requestCaps);
-        if (autoCodecs.length > 0) {
-          intentParams.codecs = autoCodecs.join(',');
-        }
-        const capHash = extractCapHashFromDecisionToken(liveDecisionToken);
-        if (capHash) {
-          intentParams.capHash = capHash;
-        }
-
-        const intentBody: IntentRequest = {
-          type: 'stream.start',
-          serviceRef: ref,
-          playbackDecisionToken: liveDecisionToken,
-          client: requestCaps,
-          ...(Object.keys(intentParams).length > 0 ? { params: intentParams } : {})
-        };
+        const intentBody = buildLiveIntentBody(ref, liveDecisionToken, requestCaps, liveMode);
         sessionEpoch = allocateSessionEpoch(playbackEpoch);
 
         // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
