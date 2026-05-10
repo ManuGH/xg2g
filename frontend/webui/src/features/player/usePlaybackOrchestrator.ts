@@ -52,17 +52,10 @@ import {
   classifyNormalizedContractFailure,
 } from './semantics/playbackFailureSemantics';
 import {
-  getNativePlaybackState,
-  onNativePlaybackState,
   requestHostInputFocus,
   resolveHostEnvironment,
   setHostPlaybackActive,
-  startNativePlayback,
   stopNativePlayback,
-} from '../../lib/hostBridge';
-import type {
-  NativePlaybackRequest,
-  NativePlaybackState as HostNativePlaybackState,
 } from '../../lib/hostBridge';
 import type { AppError } from '../../types/errors';
 import {
@@ -88,9 +81,7 @@ import {
   buildBlockedContractError,
 } from './orchestrator/contractErrors';
 import {
-  NATIVE_PLAYER_STATE_IDLE,
   supportsManagedNativePlayback,
-  resolveNativePlaybackStatus,
 } from './orchestrator/nativePlaybackHelpers';
 import { resolveSessionPhaseFromState } from './orchestrator/sessionPhase';
 import { useEpochManager } from './orchestrator/useEpochManager';
@@ -101,6 +92,7 @@ import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
+import { useNativePlaybackBridge } from './orchestrator/useNativePlaybackBridge';
 
 
 export interface PlaybackOrchestratorRefs {
@@ -293,8 +285,6 @@ export function usePlaybackOrchestrator(
   const [sessionProfileReason, setSessionProfileReason] = useState<string | null>(null);
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const isNativePlaybackHost = supportsManagedNativePlayback(hostEnvironment);
-  const [nativePlaybackState, setNativePlaybackState] = useState<HostNativePlaybackState | null>(null);
-  const [nativeSessionId, setNativeSessionId] = useState<string | null>(null);
 
   const mounted = useRef<boolean>(false);
   const {
@@ -316,7 +306,6 @@ export function usePlaybackOrchestrator(
   const userPauseIntentRef = useRef<boolean>(false);
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
-  const nativePlaybackWasActiveRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
 
@@ -417,6 +406,29 @@ export function usePlaybackOrchestrator(
       setTraceId(nextTrace.requestId);
     }
   }, []);
+
+  const {
+    nativePlaybackState,
+    nativeSessionId,
+    beginNativePlayback,
+    resetBridgeState,
+  } = useNativePlaybackBridge({
+    isNativePlaybackHost,
+    resolvePreferredHlsEngine,
+    pipeline: {
+      setActiveHlsEngine,
+      setActiveRecordingId,
+      setPlaybackMode,
+      setStatus,
+      setTraceId,
+      setSessionProfileReason,
+      setPlaybackObservability,
+      mergeSessionPlaybackTrace,
+      clearPlayerError,
+      reportPlaybackFailure,
+    },
+    activeRecordingRef,
+  });
 
   const handleSessionSnapshot = useCallback((session: V3SessionSnapshot) => {
     const activeLiveSessionId = activeLiveSessionIdRef.current;
@@ -610,10 +622,8 @@ export function usePlaybackOrchestrator(
 
   const clearPlaybackSelection = useCallback(() => {
     activeRecordingRef.current = null;
-    nativePlaybackWasActiveRef.current = false;
     resetNativeVideoState();
-    setNativePlaybackState(null);
-    setNativeSessionId(null);
+    resetBridgeState();
     setActiveRecordingId(null);
     setVodStreamMode(null);
     setActiveHlsEngine(null);
@@ -621,7 +631,7 @@ export function usePlaybackOrchestrator(
     setPlaybackObservability(null);
     setSessionPlaybackTrace(null);
     setSessionProfileReason(null);
-  }, [resetNativeVideoState, setActiveHlsEngine, setVodStreamMode]);
+  }, [resetBridgeState, resetNativeVideoState, setActiveHlsEngine, setVodStreamMode]);
 
   const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
@@ -711,139 +721,6 @@ export function usePlaybackOrchestrator(
     isNativePlaybackHost,
     nativePlaybackState,
   ]);
-
-  const beginNativePlayback = useCallback((request: NativePlaybackRequest): void => {
-    const started = startNativePlayback(request);
-    if (!started) {
-      throw new Error('Native playback bridge unavailable');
-    }
-
-    nativePlaybackWasActiveRef.current = true;
-    setNativePlaybackState({
-      activeRequest: request,
-      session: null,
-      playerState: NATIVE_PLAYER_STATE_IDLE,
-      playWhenReady: true,
-      isInPip: false,
-      lastError: null,
-    });
-    clearPlayerError();
-    setActiveHlsEngine(null);
-    if (request.kind === 'recording') {
-      activeRecordingRef.current = request.recordingId;
-      setActiveRecordingId(request.recordingId);
-      setPlaybackMode('VOD');
-    } else {
-      activeRecordingRef.current = null;
-      setActiveRecordingId(null);
-      setPlaybackMode('LIVE');
-    }
-    setStatus('starting');
-  }, [clearPlayerError, setPlaybackMode, setStatus]);
-
-  const syncNativePlaybackState = useCallback((nextState: HostNativePlaybackState | null) => {
-    if (!isNativePlaybackHost) {
-      return;
-    }
-
-    setNativePlaybackState(nextState);
-
-    const hadActiveNativePlayback = nativePlaybackWasActiveRef.current;
-    const activeRequest = nextState?.activeRequest ?? null;
-    const hasActiveNativePlayback = nextState != null && activeRequest != null;
-    nativePlaybackWasActiveRef.current = hasActiveNativePlayback;
-
-    if (!hasActiveNativePlayback) {
-      if (hadActiveNativePlayback) {
-        activeRecordingRef.current = null;
-        setNativeSessionId(null);
-        setActiveRecordingId(null);
-        setActiveHlsEngine(null);
-        setPlaybackMode('UNKNOWN');
-        if (nextState?.lastError) {
-          reportPlaybackFailure({
-            title: nextState.lastError,
-            retryable: true,
-            code: 'NATIVE_HOST_ERROR',
-          }, {
-            source: 'native-host',
-            failureClass: 'media',
-            retryable: true,
-            recoverable: true,
-            terminal: false,
-          });
-          setStatus('error');
-        } else {
-          setStatus('stopped');
-        }
-      }
-      return;
-    }
-
-    const resolvedState = nextState;
-    const diagnostics = resolvedState.diagnostics ?? null;
-    const nextNativeSessionId =
-      resolvedState.session?.sessionId ??
-      (typeof diagnostics?.trace?.sessionId === 'string' ? diagnostics.trace.sessionId : null) ??
-      (resolvedState.session?.trace && typeof resolvedState.session.trace === 'object' && typeof resolvedState.session.trace.sessionId === 'string'
-        ? resolvedState.session.trace.sessionId
-        : null);
-    setNativeSessionId(nextNativeSessionId);
-
-    const nextTraceId = diagnostics?.requestId ?? resolvedState.session?.requestId ?? null;
-    if (nextTraceId) {
-      setTraceId(nextTraceId);
-    }
-
-    const nextProfileReason = resolvedState.session?.profileReason ?? diagnostics?.profileReason ?? null;
-    setSessionProfileReason(nextProfileReason);
-
-    if (diagnostics?.playbackInfo) {
-      const diagnosticsContract = normalizePlaybackInfo(diagnostics.playbackInfo, {
-        surface: nextNativeSessionId ? 'live' : 'recording',
-        preferredHlsEngine: resolvePreferredHlsEngine(),
-      });
-      setPlaybackObservability(resolvePlaybackObservability(
-        diagnosticsContract.observability.decision,
-        typeof diagnostics.trace?.clientPath === 'string' ? diagnostics.trace.clientPath : 'android/native'
-      ));
-    }
-
-    mergeSessionPlaybackTrace(extractPlaybackTrace(diagnostics?.trace));
-    mergeSessionPlaybackTrace(extractPlaybackTrace(resolvedState.session?.trace));
-
-    if (resolvedState.lastError) {
-      reportPlaybackFailure({
-        title: resolvedState.lastError,
-        retryable: true,
-        code: 'NATIVE_HOST_ERROR',
-      }, {
-        source: 'native-host',
-        failureClass: 'media',
-        retryable: true,
-        recoverable: true,
-        terminal: false,
-      });
-    } else {
-      clearPlayerError();
-    }
-
-    if (activeRequest.kind === 'recording') {
-      activeRecordingRef.current = activeRequest.recordingId;
-      setActiveRecordingId(activeRequest.recordingId);
-      setPlaybackMode('VOD');
-    } else {
-      activeRecordingRef.current = null;
-      setActiveRecordingId(null);
-      setPlaybackMode('LIVE');
-    }
-    setActiveHlsEngine(null);
-
-    const mappedStatus = resolveNativePlaybackStatus(nextState);
-    if (mappedStatus) {
-      setStatus(mappedStatus);
-    }
-  }, [clearPlayerError, isNativePlaybackHost, resolvePreferredHlsEngine, setPlaybackMode, setPlayerError, setStatus]);
 
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
@@ -1673,23 +1550,6 @@ export function usePlaybackOrchestrator(
       if (ref) setSRef(ref);
     }
   }, [channel]);
-
-  useEffect(() => {
-    if (!isNativePlaybackHost) {
-      setNativePlaybackState(null);
-      nativePlaybackWasActiveRef.current = false;
-      return;
-    }
-
-    syncNativePlaybackState(getNativePlaybackState());
-    const unsubscribe = onNativePlaybackState((nextState) => {
-      syncNativePlaybackState(nextState);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [isNativePlaybackHost, syncNativePlaybackState]);
 
   useEffect(() => {
     if (!autoStart || mounted.current) return;
