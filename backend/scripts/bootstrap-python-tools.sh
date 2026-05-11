@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "${BACKEND_DIR}/.." && pwd)"
 VENV_DIR="${REPO_ROOT}/.venv"
-REQ_FILE="${REPO_ROOT}/scripts/requirements-python-tools.txt"
+REQ_FILE="${BACKEND_DIR}/scripts/requirements-python-tools.txt"
 STAMP_FILE="${VENV_DIR}/.xg2g-python-tools.sha256"
 
 if ! command -v python3 >/dev/null 2>&1; then
