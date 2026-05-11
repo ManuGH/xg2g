@@ -259,10 +259,8 @@ func (s *Server) getStoragePaths(ctx context.Context) []string {
 
 	client := s.owi(cfg, snap)
 	if c, ok := client.(*openwebif.Client); ok && c != nil {
-		about, err := c.About(ctx)
-		if err != nil {
-			log.L().Error().Err(err).Msg("storage_monitor: failed to get About info")
-		} else if about != nil {
+		about := s.currentReceiverAbout(ctx)
+		if about != nil {
 			log.L().Debug().Int("hdd_count", len(about.Info.HDD)).Msg("storage_monitor: found HDDs in About")
 			for _, hdd := range about.Info.HDD {
 				if hdd.Mount != "" {
@@ -271,15 +269,11 @@ func (s *Server) getStoragePaths(ctx context.Context) []string {
 			}
 		}
 
-		locs, err := c.GetLocations(ctx)
-		if err != nil {
-			log.L().Error().Err(err).Msg("storage_monitor: failed to get Locations")
-		} else {
-			log.L().Debug().Int("location_count", len(locs)).Msg("storage_monitor: found locations")
-			for _, loc := range locs {
-				if loc.Path != "" {
-					unique[loc.Path] = struct{}{}
-				}
+		locs := s.currentReceiverLocations(ctx)
+		log.L().Debug().Int("location_count", len(locs)).Msg("storage_monitor: found locations")
+		for _, loc := range locs {
+			if loc.Path != "" {
+				unique[loc.Path] = struct{}{}
 			}
 		}
 	} else {
