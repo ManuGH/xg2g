@@ -164,4 +164,54 @@ class ServerTargetResolverTest {
 
         assertNull(resolved)
     }
+
+    @Test
+    fun `isServerSwitch returns false when no existing server is configured`() {
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = null,
+                configuredBaseUrl = "https://tv.example/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns false when normalized URLs match`() {
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://tv.example/ui",
+                configuredBaseUrl = "https://tv.example/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns true when host differs`() {
+        assertTrue(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://real.example/ui/",
+                configuredBaseUrl = "https://attacker.example/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns true when scheme differs`() {
+        assertTrue(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://demo.example/ui/",
+                configuredBaseUrl = "http://demo.example/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns false when configured base url is null`() {
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://demo.example/ui/",
+                configuredBaseUrl = null
+            )
+        )
+    }
 }

@@ -84,4 +84,8 @@
     <string name="native_playback_status_idle">Waiting for native playback request</string>
     <string name="native_playback_status_error">Playback error: %1$s</string>
     <string name="native_playback_status_active">Playback %1$s</string>
+    <string name="server_switch_confirm_title">Switch xg2g server?</string>
+    <string name="server_switch_confirm_message">A link wants to change your xg2g server from\n\n%1$s\n\nto\n\n%2$s\n\nOnly continue if you initiated this change.</string>
+    <string name="server_switch_confirm_accept">Switch</string>
+    <string name="server_switch_confirm_decline">Keep current</string>
 </resources>
