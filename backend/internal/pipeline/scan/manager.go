@@ -435,6 +435,11 @@ func (m *Manager) runBackground(force bool) bool {
 			if attempt < scanRetryMaxAttempts {
 				log.L().Error().Err(err).Int("attempt", attempt).Int("max_attempts", scanRetryMaxAttempts).Dur("next_retry_in", backoff).Msg("scan: background scan failed, scheduling retry")
 
+				// Re-arm force scan so the next retry re-evaluates all channels.
+				// mergeFailedAttempt sets NextRetryAt to failureRetryWindow (24h), which
+				// would otherwise cause filterProbeCandidates to skip the failed channels.
+				m.forceScan.Store(true)
+
 				select {
 				case <-time.After(backoff):
 				case <-baseCtx.Done():
