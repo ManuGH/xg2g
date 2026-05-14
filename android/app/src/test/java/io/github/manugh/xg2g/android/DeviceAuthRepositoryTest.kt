@@ -353,6 +353,36 @@ class DeviceAuthRepositoryTest {
         assertEquals("ensure_auth_session", telemetry.events.single().stage)
     }
 
+    @Test
+    fun `matchesServerUrl matches stored URL with explicit default https port`() {
+        val state = PersistedDeviceAuthState(
+            serverUrl = "https://demo.example:443/ui/",
+            deviceGrantId = "dgr-1",
+            deviceGrant = "grant-secret"
+        )
+        assertTrue(state.matchesServerUrl("https://demo.example/ui/"))
+    }
+
+    @Test
+    fun `matchesServerUrl matches stored URL with explicit default http port`() {
+        val state = PersistedDeviceAuthState(
+            serverUrl = "http://demo.example:80/ui/",
+            deviceGrantId = "dgr-1",
+            deviceGrant = "grant-secret"
+        )
+        assertTrue(state.matchesServerUrl("http://demo.example/ui/"))
+    }
+
+    @Test
+    fun `matchesServerUrl rejects stored URL with non-default port`() {
+        val state = PersistedDeviceAuthState(
+            serverUrl = "https://demo.example:8080/ui/",
+            deviceGrantId = "dgr-1",
+            deviceGrant = "grant-secret"
+        )
+        assertFalse(state.matchesServerUrl("https://demo.example/ui/"))
+    }
+
     private fun <T> runSuspend(block: suspend () -> T): T {
         return kotlinx.coroutines.runBlocking { block() }
     }
