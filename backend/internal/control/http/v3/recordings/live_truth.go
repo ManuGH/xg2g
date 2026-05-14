@@ -25,7 +25,22 @@ const (
 	liveTruthOriginUnverified = "live_unverified"
 )
 
-const liveTruthFreshnessWindow = 2 * time.Hour
+// liveTruthFreshnessWindow is the maximum age of a scan-probed capability
+// entry before live playback truth considers it stale. Overridable at
+// startup via SetLiveTruthFreshnessWindow.
+var liveTruthFreshnessWindow = 2 * time.Hour
+
+// SetLiveTruthFreshnessWindow allows operators to override the stale scan
+// truth threshold at startup (e.g. from config/env). Must be called before
+// the first live playback info request.
+func SetLiveTruthFreshnessWindow(d time.Duration) {
+	if d <= 0 {
+		log.L().Warn().Dur("attempted", d).Msg("live_truth: ignoring non-positive freshness window, keeping default")
+		return
+	}
+	liveTruthFreshnessWindow = d
+	log.L().Info().Dur("freshness_window", d).Msg("live_truth: stale scan truth threshold updated")
+}
 
 type liveTruthResolution struct {
 	Truth        playback.MediaTruth

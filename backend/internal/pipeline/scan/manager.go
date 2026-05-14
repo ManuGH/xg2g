@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,13 +28,17 @@ import (
 )
 
 const (
-	backgroundScanTimeout = 30 * time.Minute
-	resolveM3UTimeout     = 2 * time.Second
-	defaultProbeTimeout   = 8 * time.Second
-	extendedProbeTimeout  = 20 * time.Second
+	backgroundScanTimeout    = 30 * time.Minute
+	resolveM3UTimeout        = 2 * time.Second
+	defaultProbeTimeout      = 8 * time.Second
+	extendedProbeTimeout     = 20 * time.Second
 
 	extendedProbeAnalyzeDuration = 15 * time.Second
 	extendedProbeSizeBytes       = 8 << 20
+
+	scanRetryInitialDelay    = 5 * time.Minute
+	scanRetryMaxDelay        = 30 * time.Minute
+	scanRetryMaxAttempts     = 3
 )
 
 var errLifecycleContextNotAttached = errors.New("scan: lifecycle context not attached")
@@ -407,10 +412,39 @@ func (m *Manager) runBackground(force bool) bool {
 	go func() {
 		defer m.bgWG.Done()
 		defer m.isScanning.Store(false)
-		ctx, cancel := context.WithTimeout(baseCtx, backgroundScanTimeout)
-		defer cancel()
-		if err := m.executeScan(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			log.L().Error().Err(err).Msg("scan: background scan failed")
+
+		backoff := scanRetryInitialDelay
+		for attempt := 1; attempt <= scanRetryMaxAttempts; attempt++ {
+			ctx, cancel := context.WithTimeout(baseCtx, backgroundScanTimeout)
+			err := m.executeScan(ctx)
+			cancel()
+
+			if err == nil {
+				return
+			}
+
+			if errors.Is(err, context.Canceled) {
+				if baseCtx.Err() != nil {
+					log.L().Warn().Err(err).Int("attempt", attempt).Msg("scan: lifecycle cancelled, stopping retry")
+				} else {
+					log.L().Warn().Err(err).Int("attempt", attempt).Msg("scan: scan cancelled internally, stopping retry")
+				}
+				return
+			}
+
+			log.L().Error().Err(err).Int("attempt", attempt).Int("max_attempts", scanRetryMaxAttempts).Dur("next_retry_in", backoff).Msg("scan: background scan failed, scheduling retry")
+
+			select {
+			case <-time.After(backoff):
+			case <-baseCtx.Done():
+				log.L().Warn().Err(baseCtx.Err()).Int("attempt", attempt).Msg("scan: lifecycle cancelled during retry backoff")
+				return
+			}
+
+			backoff *= 2
+			if backoff > scanRetryMaxDelay {
+				backoff = scanRetryMaxDelay
+			}
 		}
 	}()
 	return true
@@ -468,6 +502,12 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 
 	channels := m3u.Parse(string(content))
 	log.L().Info().Int("count", len(channels)).Msg("scan: playlist loaded")
+
+	// Shuffle channel order so a single dead service-ref cannot starve the rest
+	// across consecutive scan runs.
+	rand.Shuffle(len(channels), func(i, j int) {
+		channels[i], channels[j] = channels[j], channels[i]
+	})
 
 	m.mu.Lock()
 	m.status.TotalChannels = len(channels)
