@@ -93,6 +93,9 @@ type Server struct {
 	receiverAbout          *openwebif.AboutInfo
 	receiverAboutAt        time.Time
 	receiverAboutEpoch     uint64
+	receiverLocations      []openwebif.MovieLocation
+	receiverLocationsAt    time.Time
+	receiverLocationsEpoch uint64
 	configManager          *config.Manager
 	configMu               sync.Mutex // Serializes configuration updates
 	epgCacheTime           time.Time

@@ -10,7 +10,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
-const receiverAboutCacheTTL = 5 * time.Minute
+const (
+	receiverAboutCacheTTL     = 5 * time.Minute
+	receiverLocationsCacheTTL = 5 * time.Minute
+)
 
 func (s *Server) currentReceiverContext(ctx context.Context) *capreg.ReceiverContext {
 	about := s.currentReceiverAbout(ctx)
@@ -28,7 +31,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 	cachedEpoch := s.receiverAboutEpoch
 	s.mu.RUnlock()
 
-	if cached != nil && cachedEpoch == snap.Epoch && time.Since(cachedAt) < receiverAboutCacheTTL {
+	if !cachedAt.IsZero() && cachedEpoch == snap.Epoch && time.Since(cachedAt) < receiverAboutCacheTTL {
 		return cached
 	}
 
@@ -39,7 +42,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 		cachedEpoch := s.receiverAboutEpoch
 		currentSnap := s.snap
 		s.mu.RUnlock()
-		if cached != nil && cachedEpoch == currentSnap.Epoch && time.Since(cachedAt) < receiverAboutCacheTTL {
+		if !cachedAt.IsZero() && cachedEpoch == currentSnap.Epoch && time.Since(cachedAt) < receiverAboutCacheTTL {
 			return cached, nil
 		}
 
@@ -54,7 +57,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 			return (*openwebif.AboutInfo)(nil), nil
 		}
 
-		upstreamCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		upstreamCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
 
 		about, err := client.About(upstreamCtx)
@@ -64,7 +67,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 
 		s.mu.Lock()
 		s.receiverAbout = about
-		s.receiverAboutAt = time.Now().UTC()
+		s.receiverAboutAt = time.Now()
 		s.receiverAboutEpoch = currentSnap.Epoch
 		s.mu.Unlock()
 		return about, nil
@@ -75,6 +78,63 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 	}
 	about, _ := val.(*openwebif.AboutInfo)
 	return about
+}
+
+func (s *Server) currentReceiverLocations(ctx context.Context) []openwebif.MovieLocation {
+	s.mu.RLock()
+	snap := s.snap
+	cached := s.receiverLocations
+	cachedAt := s.receiverLocationsAt
+	cachedEpoch := s.receiverLocationsEpoch
+	s.mu.RUnlock()
+
+	if !cachedAt.IsZero() && cachedEpoch == snap.Epoch && time.Since(cachedAt) < receiverLocationsCacheTTL {
+		return cached
+	}
+
+	val, err, _ := s.receiverSfg.Do("receiver-locations", func() (interface{}, error) {
+		s.mu.RLock()
+		cached := s.receiverLocations
+		cachedAt := s.receiverLocationsAt
+		cachedEpoch := s.receiverLocationsEpoch
+		currentSnap := s.snap
+		s.mu.RUnlock()
+		if !cachedAt.IsZero() && cachedEpoch == currentSnap.Epoch && time.Since(cachedAt) < receiverLocationsCacheTTL {
+			return cached, nil
+		}
+
+		s.mu.RLock()
+		cfg := s.cfg
+		currentSnap = s.snap
+		s.mu.RUnlock()
+
+		owiClient := s.owi(cfg, currentSnap)
+		client, ok := owiClient.(*openwebif.Client)
+		if !ok || client == nil {
+			return ([]openwebif.MovieLocation)(nil), nil
+		}
+
+		upstreamCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+
+		locs, err := client.GetLocations(upstreamCtx)
+		if err != nil {
+			return nil, err
+		}
+
+		s.mu.Lock()
+		s.receiverLocations = locs
+		s.receiverLocationsAt = time.Now()
+		s.receiverLocationsEpoch = currentSnap.Epoch
+		s.mu.Unlock()
+		return locs, nil
+	})
+	if err != nil {
+		log.L().Debug().Err(err).Msg("receiver context: failed to query receiver locations")
+		return nil
+	}
+	locs, _ := val.([]openwebif.MovieLocation)
+	return locs
 }
 
 func receiverContextFromAbout(about *openwebif.AboutInfo) *capreg.ReceiverContext {
