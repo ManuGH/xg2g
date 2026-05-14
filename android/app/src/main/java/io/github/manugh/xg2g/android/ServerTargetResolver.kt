@@ -165,7 +165,7 @@ internal object ServerTargetResolver {
         val host = uri.host ?: return null
         val authority = buildString {
             append(host)
-            if (uri.port != -1) {
+            if (uri.port != -1 && !isDefaultPort(scheme, uri.port)) {
                 append(':')
                 append(uri.port)
             }
@@ -178,6 +178,11 @@ internal object ServerTargetResolver {
             null,
             null
         ).toString()
+    }
+
+    private fun isDefaultPort(scheme: String, port: Int): Boolean {
+        return (scheme == "https" && port == 443) ||
+            (scheme == "http" && port == 80)
     }
 
     /**
@@ -221,7 +226,7 @@ internal object ServerTargetResolver {
         val host = uri.host ?: return null
         val authority = buildString {
             append(host)
-            if (uri.port != -1) {
+            if (uri.port != -1 && !isDefaultPort(scheme, uri.port)) {
                 append(':')
                 append(uri.port)
             }

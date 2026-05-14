@@ -734,9 +734,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         if (configuredBaseUrl == null) {
-            if (savedInstanceState == null) {
-                showSetupUi()
-            }
+            showSetupUi()
             return
         }
 
@@ -757,7 +755,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     commitIntentConfiguration(
                         intent = intent,
-                        savedInstanceState = savedInstanceState,
+                        savedInstanceState = null,
                         existingBaseUrl = existingBaseUrl,
                         configuredBaseUrl = configuredBaseUrl,
                         routeReason = routeReason

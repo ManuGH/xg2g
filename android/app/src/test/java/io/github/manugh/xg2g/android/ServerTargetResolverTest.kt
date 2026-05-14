@@ -214,4 +214,38 @@ class ServerTargetResolverTest {
             )
         )
     }
+
+    @Test
+    fun `isServerSwitch returns false when only default port differs`() {
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://demo.example/ui/",
+                configuredBaseUrl = "https://demo.example:443/ui/"
+            )
+        )
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "http://demo.example/ui/",
+                configuredBaseUrl = "http://demo.example:80/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `normalizeServerUrl strips default https port`() {
+        val normalized = ServerTargetResolver.normalizeServerUrl("https://demo.example:443/ui/")
+        assertEquals("https://demo.example/ui/", normalized)
+    }
+
+    @Test
+    fun `normalizeServerUrl strips default http port`() {
+        val normalized = ServerTargetResolver.normalizeServerUrl("http://demo.example:80/")
+        assertEquals("http://demo.example/ui/", normalized)
+    }
+
+    @Test
+    fun `normalizeServerUrl preserves non-default port`() {
+        val normalized = ServerTargetResolver.normalizeServerUrl("https://demo.example:8080/app")
+        assertEquals("https://demo.example:8080/app/", normalized)
+    }
 }
