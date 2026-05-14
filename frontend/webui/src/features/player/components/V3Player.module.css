@@ -675,6 +675,25 @@
   word-break: break-all;
   max-height: 200px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, #ffffff 35%, transparent) transparent;
+}
+
+.errorDetailsContent::-webkit-scrollbar {
+  width: 4px;
+}
+
+.errorDetailsContent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.errorDetailsContent::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, #ffffff 35%, transparent);
+  border-radius: 4px;
+}
+
+.errorDetailsContent::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, #ffffff 65%, transparent);
 }
 
 .errorDetailsPre {
@@ -2083,6 +2102,26 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   padding-top: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, #ffffff 35%, transparent) transparent;
+  scrollbar-gutter: stable;
+}
+
+.container.surfaceTight .controlsHeader::-webkit-scrollbar {
+  width: 4px;
+}
+
+.container.surfaceTight .controlsHeader::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.container.surfaceTight .controlsHeader::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, #ffffff 35%, transparent);
+  border-radius: 4px;
+}
+
+.container.surfaceTight .controlsHeader::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, #ffffff 65%, transparent);
 }
 
 .container.surfaceTight .vodControls,
