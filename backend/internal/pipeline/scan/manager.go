@@ -434,16 +434,18 @@ func (m *Manager) runBackground(force bool) bool {
 
 			log.L().Error().Err(err).Int("attempt", attempt).Int("max_attempts", scanRetryMaxAttempts).Dur("next_retry_in", backoff).Msg("scan: background scan failed, scheduling retry")
 
-			select {
-			case <-time.After(backoff):
-			case <-baseCtx.Done():
-				log.L().Warn().Err(baseCtx.Err()).Int("attempt", attempt).Msg("scan: lifecycle cancelled during retry backoff")
-				return
-			}
+			if attempt < scanRetryMaxAttempts {
+				select {
+				case <-time.After(backoff):
+				case <-baseCtx.Done():
+					log.L().Warn().Err(baseCtx.Err()).Int("attempt", attempt).Msg("scan: lifecycle cancelled during retry backoff")
+					return
+				}
 
-			backoff *= 2
-			if backoff > scanRetryMaxDelay {
-				backoff = scanRetryMaxDelay
+				backoff *= 2
+				if backoff > scanRetryMaxDelay {
+					backoff = scanRetryMaxDelay
+				}
 			}
 		}
 	}()
