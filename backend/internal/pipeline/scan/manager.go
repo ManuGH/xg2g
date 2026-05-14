@@ -28,17 +28,17 @@ import (
 )
 
 const (
-	backgroundScanTimeout    = 30 * time.Minute
-	resolveM3UTimeout        = 2 * time.Second
-	defaultProbeTimeout      = 8 * time.Second
-	extendedProbeTimeout     = 20 * time.Second
+	backgroundScanTimeout = 30 * time.Minute
+	resolveM3UTimeout     = 2 * time.Second
+	defaultProbeTimeout   = 8 * time.Second
+	extendedProbeTimeout  = 20 * time.Second
 
 	extendedProbeAnalyzeDuration = 15 * time.Second
 	extendedProbeSizeBytes       = 8 << 20
 
-	scanRetryInitialDelay    = 5 * time.Minute
-	scanRetryMaxDelay        = 30 * time.Minute
-	scanRetryMaxAttempts     = 3
+	scanRetryInitialDelay = 5 * time.Minute
+	scanRetryMaxDelay     = 30 * time.Minute
+	scanRetryMaxAttempts  = 3
 )
 
 var errLifecycleContextNotAttached = errors.New("scan: lifecycle context not attached")
@@ -432,9 +432,9 @@ func (m *Manager) runBackground(force bool) bool {
 				return
 			}
 
-			log.L().Error().Err(err).Int("attempt", attempt).Int("max_attempts", scanRetryMaxAttempts).Dur("next_retry_in", backoff).Msg("scan: background scan failed, scheduling retry")
-
 			if attempt < scanRetryMaxAttempts {
+				log.L().Error().Err(err).Int("attempt", attempt).Int("max_attempts", scanRetryMaxAttempts).Dur("next_retry_in", backoff).Msg("scan: background scan failed, scheduling retry")
+
 				select {
 				case <-time.After(backoff):
 				case <-baseCtx.Done():
@@ -446,6 +446,8 @@ func (m *Manager) runBackground(force bool) bool {
 				if backoff > scanRetryMaxDelay {
 					backoff = scanRetryMaxDelay
 				}
+			} else {
+				log.L().Error().Err(err).Int("attempt", attempt).Int("max_attempts", scanRetryMaxAttempts).Msg("scan: background scan failed, max attempts reached")
 			}
 		}
 	}()
