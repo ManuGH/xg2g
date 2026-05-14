@@ -256,6 +256,7 @@ export function usePlaybackOrchestrator(
   );
   const playbackStateRef = useRef(playbackState);
   const {
+    playbackEpochRef,
     acceptedPlaybackEpochRef,
     acceptedSessionEpochRef,
     allocatePlaybackEpoch,
@@ -580,6 +581,7 @@ export function usePlaybackOrchestrator(
     sessionIdRef,
     isTeardownRef,
     lastDecodedRef,
+    playbackEpochRef,
     t,
     reportError,
     waitForSessionReady,

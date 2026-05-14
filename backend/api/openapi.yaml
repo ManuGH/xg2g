@@ -783,6 +783,41 @@ components:
           type: string
         details:
           type: object
+        context:
+          $ref: "#/components/schemas/PlaybackEngineErrorContext"
+          description: |
+            Optional client-side correlation context (engine, phase, attempt id).
+            Backend logs this field if present; not persisted.
+
+    PlaybackEngineErrorContext:
+      type: object
+      additionalProperties: false
+      description: |
+        Correlation context attached by the WebUI playback engine to feedback events.
+        All fields optional; absence indicates the call-site could not determine the value.
+      properties:
+        attemptId:
+          type: integer
+          minimum: 0
+          description: |
+            Stable identifier per playback attempt; today equals playbackEpoch.
+            Wire-format is integer; the frontend type may widen to string in the future.
+        playbackEpoch:
+          type: integer
+          minimum: 0
+          description: Snapshot of the orchestrator's playback epoch at log time.
+        engine:
+          type: string
+          enum: [hlsjs, native, direct, auto, unknown]
+          description: Active playback engine at log time.
+        phase:
+          type: string
+          enum: [engine-select, attach, manifest, decode, network, recovery, teardown]
+          description: Lifecycle phase at log time.
+        recoveryAttempt:
+          type: integer
+          minimum: 0
+          description: Counter value (decode/network/stall) at log time, where locally known.
 
     # ==================== Legacy Schemas ====================
     Error:

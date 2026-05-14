@@ -419,6 +419,37 @@ export type PlaybackFeedbackRequest = {
     details?: {
         [key: string]: unknown;
     };
+    context?: PlaybackEngineErrorContext;
+};
+
+/**
+ * Correlation context attached by the WebUI playback engine to feedback events.
+ * All fields optional; absence indicates the call-site could not determine the value.
+ *
+ */
+export type PlaybackEngineErrorContext = {
+    /**
+     * Stable identifier per playback attempt; today equals playbackEpoch.
+     * Wire-format is integer; the frontend type may widen to string in the future.
+     *
+     */
+    attemptId?: number;
+    /**
+     * Snapshot of the orchestrator's playback epoch at log time.
+     */
+    playbackEpoch?: number;
+    /**
+     * Active playback engine at log time.
+     */
+    engine?: 'hlsjs' | 'native' | 'direct' | 'auto' | 'unknown';
+    /**
+     * Lifecycle phase at log time.
+     */
+    phase?: 'engine-select' | 'attach' | 'manifest' | 'decode' | 'network' | 'recovery' | 'teardown';
+    /**
+     * Counter value (decode/network/stall) at log time, where locally known.
+     */
+    recoveryAttempt?: number;
 };
 
 export type Error = {
