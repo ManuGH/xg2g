@@ -164,4 +164,88 @@ class ServerTargetResolverTest {
 
         assertNull(resolved)
     }
+
+    @Test
+    fun `isServerSwitch returns false when no existing server is configured`() {
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = null,
+                configuredBaseUrl = "https://tv.example/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns false when normalized URLs match`() {
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://tv.example/ui",
+                configuredBaseUrl = "https://tv.example/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns true when host differs`() {
+        assertTrue(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://real.example/ui/",
+                configuredBaseUrl = "https://attacker.example/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns true when scheme differs`() {
+        assertTrue(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://demo.example/ui/",
+                configuredBaseUrl = "http://demo.example/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns false when configured base url is null`() {
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://demo.example/ui/",
+                configuredBaseUrl = null
+            )
+        )
+    }
+
+    @Test
+    fun `isServerSwitch returns false when only default port differs`() {
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "https://demo.example/ui/",
+                configuredBaseUrl = "https://demo.example:443/ui/"
+            )
+        )
+        assertFalse(
+            ServerTargetResolver.isServerSwitch(
+                existingBaseUrl = "http://demo.example/ui/",
+                configuredBaseUrl = "http://demo.example:80/ui/"
+            )
+        )
+    }
+
+    @Test
+    fun `normalizeServerUrl strips default https port`() {
+        val normalized = ServerTargetResolver.normalizeServerUrl("https://demo.example:443/ui/")
+        assertEquals("https://demo.example/ui/", normalized)
+    }
+
+    @Test
+    fun `normalizeServerUrl strips default http port`() {
+        val normalized = ServerTargetResolver.normalizeServerUrl("http://demo.example:80/")
+        assertEquals("http://demo.example/ui/", normalized)
+    }
+
+    @Test
+    fun `normalizeServerUrl preserves non-default port`() {
+        val normalized = ServerTargetResolver.normalizeServerUrl("https://demo.example:8080/app")
+        assertEquals("https://demo.example:8080/app/", normalized)
+    }
 }

@@ -165,7 +165,7 @@ internal object ServerTargetResolver {
         val host = uri.host ?: return null
         val authority = buildString {
             append(host)
-            if (uri.port != -1) {
+            if (uri.port != -1 && !isDefaultPort(scheme, uri.port)) {
                 append(':')
                 append(uri.port)
             }
@@ -178,6 +178,27 @@ internal object ServerTargetResolver {
             null,
             null
         ).toString()
+    }
+
+    private fun isDefaultPort(scheme: String, port: Int): Boolean {
+        return (scheme == "https" && port == 443) ||
+            (scheme == "http" && port == 80)
+    }
+
+    /**
+     * Returns true when applying [configuredBaseUrl] would replace a different,
+     * already-configured server URL. Both inputs are normalized through
+     * [normalizeServerUrl] before comparison so that trailing-slash or default-port
+     * differences do not trigger a spurious switch.
+     *
+     * Used by MainActivity to decide whether to prompt the user before persisting
+     * a base URL derived from an intent extra, https deep link, or xg2g:// custom
+     * scheme. See issue #421.
+     */
+    fun isServerSwitch(existingBaseUrl: String?, configuredBaseUrl: String?): Boolean {
+        val existing = existingBaseUrl?.let(::normalizeServerUrl) ?: return false
+        val configured = configuredBaseUrl?.let(::normalizeServerUrl) ?: return false
+        return existing != configured
     }
 
     fun isSameOrigin(targetUrl: String, baseUrl: String): Boolean {
@@ -205,7 +226,7 @@ internal object ServerTargetResolver {
         val host = uri.host ?: return null
         val authority = buildString {
             append(host)
-            if (uri.port != -1) {
+            if (uri.port != -1 && !isDefaultPort(scheme, uri.port)) {
                 append(':')
                 append(uri.port)
             }

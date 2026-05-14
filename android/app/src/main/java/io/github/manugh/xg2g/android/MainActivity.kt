@@ -13,6 +13,7 @@ import android.view.WindowManager
 import android.webkit.URLUtil
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -128,52 +129,11 @@ class MainActivity : AppCompatActivity() {
         installBackHandler()
         observeNativePlaybackState()
 
-        val existingBaseUrl = serverSettingsStore.getServerUrl()
-        val configuredBaseUrl = ServerTargetResolver.resolveConfiguredBaseUrl(
-            existingBaseUrl = existingBaseUrl,
-            overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
-            deepLinkUrl = intent.dataString
+        applyIntentConfiguration(
+            intent = intent,
+            savedInstanceState = savedInstanceState,
+            routeReason = "on_create"
         )
-        applyResolvedDeviceAuth(
-            existingBaseUrl = existingBaseUrl,
-            configuredBaseUrl = configuredBaseUrl,
-            intent = intent
-        )
-        sessionAuthToken = resolveSessionAuthToken(
-            existingBaseUrl = existingBaseUrl,
-            configuredBaseUrl = configuredBaseUrl,
-            intent = intent
-        )
-        if (configuredBaseUrl != null) {
-            serverSettingsStore.saveServerUrl(configuredBaseUrl)
-            val startUrl = ServerTargetResolver.resolveStartUrl(
-                baseUrl = configuredBaseUrl,
-                overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
-                deepLinkUrl = intent.dataString
-            )
-            lastRequestedUrl = startUrl
-            if (savedInstanceState == null) {
-                routeInitialDestination(
-                    baseUrl = configuredBaseUrl,
-                    startUrl = startUrl,
-                    reason = "on_create"
-                )
-            } else {
-                lastRequestedUrl = savedInstanceState.getString(STATE_LAST_REQUESTED_URL) ?: startUrl
-                val restoredState = webViewController.restoreState(savedInstanceState)
-                if (restoredState == null || webView.url.isNullOrBlank()) {
-                    routeInitialDestination(
-                        baseUrl = configuredBaseUrl,
-                        startUrl = lastRequestedUrl,
-                        reason = "restore_missing_webview_state"
-                    )
-                } else if (!webViewController.hasCustomView()) {
-                    setUiState(MainUiState.Content)
-                }
-            }
-        } else {
-            showSetupUi()
-        }
     }
 
     private fun observeNativePlaybackState() {
@@ -189,35 +149,11 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val existingBaseUrl = serverSettingsStore.getServerUrl()
-        val configuredBaseUrl = ServerTargetResolver.resolveConfiguredBaseUrl(
-            existingBaseUrl = existingBaseUrl,
-            overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
-            deepLinkUrl = intent.dataString
+        applyIntentConfiguration(
+            intent = intent,
+            savedInstanceState = null,
+            routeReason = "on_new_intent"
         )
-        applyResolvedDeviceAuth(
-            existingBaseUrl = existingBaseUrl,
-            configuredBaseUrl = configuredBaseUrl,
-            intent = intent
-        )
-        sessionAuthToken = resolveSessionAuthToken(
-            existingBaseUrl = existingBaseUrl,
-            configuredBaseUrl = configuredBaseUrl,
-            intent = intent
-        )
-        if (configuredBaseUrl != null) {
-            serverSettingsStore.saveServerUrl(configuredBaseUrl)
-            val startUrl = ServerTargetResolver.resolveStartUrl(
-                baseUrl = configuredBaseUrl,
-                overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
-                deepLinkUrl = intent.dataString
-            )
-            routeInitialDestination(
-                baseUrl = configuredBaseUrl,
-                startUrl = startUrl,
-                reason = "on_new_intent"
-            )
-        }
     }
 
     override fun onResume() {
@@ -735,7 +671,11 @@ class MainActivity : AppCompatActivity() {
         if (explicitToken != null) {
             return explicitToken
         }
-        if (configuredBaseUrl != null && configuredBaseUrl != existingBaseUrl) {
+        // Normalize before comparing so default-port differences do not falsely
+        // suppress the legacy auth token on upgrade (see also applyResolvedDeviceAuth).
+        val normalizedExisting = existingBaseUrl?.let(ServerTargetResolver::normalizeServerUrl)
+        val normalizedConfigured = configuredBaseUrl?.let(ServerTargetResolver::normalizeServerUrl)
+        if (normalizedConfigured != null && normalizedConfigured != normalizedExisting) {
             return null
         }
         return sessionAuthToken
@@ -758,7 +698,14 @@ class MainActivity : AppCompatActivity() {
         configuredBaseUrl: String?,
         intent: Intent
     ) {
-        if (configuredBaseUrl != null && configuredBaseUrl != existingBaseUrl) {
+        // Normalize both sides so that default-port differences (e.g. :443 vs stripped)
+        // do not falsely trigger auth-state clearing. This is defensive — callers
+        // already normalize through ServerSettingsStore.getServerUrl() and
+        // ServerTargetResolver.resolveConfiguredBaseUrl(), but this ensures
+        // correctness regardless of caller conventions.
+        val normalizedExisting = existingBaseUrl?.let(ServerTargetResolver::normalizeServerUrl)
+        val normalizedConfigured = configuredBaseUrl?.let(ServerTargetResolver::normalizeServerUrl)
+        if (normalizedConfigured != null && normalizedConfigured != normalizedExisting) {
             Log.i(
                 TAG,
                 "event=device_auth_state_cleared reason=base_url_changed previousBaseUrl=$existingBaseUrl newBaseUrl=$configuredBaseUrl"
@@ -783,6 +730,147 @@ class MainActivity : AppCompatActivity() {
             )
         }
         deviceAuthRepository.applyLaunchCredentials(configuredBaseUrl, launchCredentials)
+    }
+
+    private fun applyIntentConfiguration(
+        intent: Intent,
+        savedInstanceState: Bundle?,
+        routeReason: String
+    ) {
+        val existingBaseUrl = serverSettingsStore.getServerUrl()
+        val configuredBaseUrl = ServerTargetResolver.resolveConfiguredBaseUrl(
+            existingBaseUrl = existingBaseUrl,
+            overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
+            deepLinkUrl = intent.dataString
+        )
+
+        if (configuredBaseUrl == null) {
+            showSetupUi()
+            return
+        }
+
+        if (existingBaseUrl != null &&
+            ServerTargetResolver.isServerSwitch(existingBaseUrl, configuredBaseUrl)
+        ) {
+            Log.i(
+                TAG,
+                "event=server_switch_prompted reason=$routeReason previousBaseUrl=$existingBaseUrl newBaseUrl=$configuredBaseUrl"
+            )
+            promptServerSwitchConfirmation(
+                currentBaseUrl = existingBaseUrl,
+                newBaseUrl = configuredBaseUrl,
+                onAccept = {
+                    Log.i(
+                        TAG,
+                        "event=server_switch_accepted previousBaseUrl=$existingBaseUrl newBaseUrl=$configuredBaseUrl"
+                    )
+                    commitIntentConfiguration(
+                        intent = intent,
+                        savedInstanceState = null,
+                        existingBaseUrl = existingBaseUrl,
+                        configuredBaseUrl = configuredBaseUrl,
+                        routeReason = routeReason
+                    )
+                },
+                onDecline = {
+                    Log.w(
+                        TAG,
+                        "event=server_switch_declined previousBaseUrl=$existingBaseUrl rejectedBaseUrl=$configuredBaseUrl"
+                    )
+                    // Keep existing server; drop all intent-derived auth and start URL.
+                    commitIntentConfiguration(
+                        intent = Intent(),
+                        savedInstanceState = savedInstanceState,
+                        existingBaseUrl = existingBaseUrl,
+                        configuredBaseUrl = existingBaseUrl,
+                        routeReason = "${routeReason}_switch_declined"
+                    )
+                }
+            )
+            return
+        }
+
+        commitIntentConfiguration(
+            intent = intent,
+            savedInstanceState = savedInstanceState,
+            existingBaseUrl = existingBaseUrl,
+            configuredBaseUrl = configuredBaseUrl,
+            routeReason = routeReason
+        )
+    }
+
+    private fun commitIntentConfiguration(
+        intent: Intent,
+        savedInstanceState: Bundle?,
+        existingBaseUrl: String?,
+        configuredBaseUrl: String,
+        routeReason: String
+    ) {
+        applyResolvedDeviceAuth(
+            existingBaseUrl = existingBaseUrl,
+            configuredBaseUrl = configuredBaseUrl,
+            intent = intent
+        )
+        sessionAuthToken = resolveSessionAuthToken(
+            existingBaseUrl = existingBaseUrl,
+            configuredBaseUrl = configuredBaseUrl,
+            intent = intent
+        )
+        serverSettingsStore.saveServerUrl(configuredBaseUrl)
+
+        val startUrl = ServerTargetResolver.resolveStartUrl(
+            baseUrl = configuredBaseUrl,
+            overrideUrl = intent.getStringExtra(ServerTargetResolver.EXTRA_BASE_URL),
+            deepLinkUrl = intent.dataString
+        )
+        lastRequestedUrl = startUrl
+
+        if (savedInstanceState == null) {
+            routeInitialDestination(
+                baseUrl = configuredBaseUrl,
+                startUrl = startUrl,
+                reason = routeReason
+            )
+            return
+        }
+
+        lastRequestedUrl = savedInstanceState.getString(STATE_LAST_REQUESTED_URL) ?: startUrl
+        val restoredState = webViewController.restoreState(savedInstanceState)
+        if (restoredState == null || webView.url.isNullOrBlank()) {
+            routeInitialDestination(
+                baseUrl = configuredBaseUrl,
+                startUrl = lastRequestedUrl,
+                reason = "restore_missing_webview_state"
+            )
+        } else if (!webViewController.hasCustomView()) {
+            setUiState(MainUiState.Content)
+        }
+    }
+
+    private fun promptServerSwitchConfirmation(
+        currentBaseUrl: String,
+        newBaseUrl: String,
+        onAccept: () -> Unit,
+        onDecline: () -> Unit
+    ) {
+        if (isFinishing || isDestroyed) {
+            onDecline()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.server_switch_confirm_title)
+            .setMessage(getString(R.string.server_switch_confirm_message, currentBaseUrl, newBaseUrl))
+            .setPositiveButton(R.string.server_switch_confirm_accept) { dialog, _ ->
+                dialog.dismiss()
+                onAccept()
+            }
+            .setNegativeButton(R.string.server_switch_confirm_decline) { dialog, _ ->
+                dialog.dismiss()
+                onDecline()
+            }
+            .setOnCancelListener { onDecline() }
+            .setCancelable(true)
+            .show()
     }
 
     private fun routeInitialDestination(baseUrl: String, startUrl: String, reason: String) {

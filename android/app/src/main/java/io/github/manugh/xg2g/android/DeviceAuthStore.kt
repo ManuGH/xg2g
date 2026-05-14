@@ -31,6 +31,14 @@ internal data class PersistedDeviceAuthState(
         if (serverUrl == normalizedServerUrl) {
             return true
         }
+        // Normalize the persisted serverUrl so that old state saved with an
+        // explicit default port (e.g. https://host:443/ui/) still matches the
+        // stripped canonical form (https://host/ui/). Without this, upgrade
+        // silently orphans all existing device auth and forces re-authentication.
+        val normalizedStored = ServerTargetResolver.normalizeServerUrl(serverUrl)
+        if (normalizedStored == normalizedServerUrl) {
+            return true
+        }
         return matchesPublishedEndpointServerUrl(normalizedServerUrl, publishedEndpoints)
     }
 
