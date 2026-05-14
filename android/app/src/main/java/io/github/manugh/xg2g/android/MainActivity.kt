@@ -671,7 +671,11 @@ class MainActivity : AppCompatActivity() {
         if (explicitToken != null) {
             return explicitToken
         }
-        if (configuredBaseUrl != null && configuredBaseUrl != existingBaseUrl) {
+        // Normalize before comparing so default-port differences do not falsely
+        // suppress the legacy auth token on upgrade (see also applyResolvedDeviceAuth).
+        val normalizedExisting = existingBaseUrl?.let(ServerTargetResolver::normalizeServerUrl)
+        val normalizedConfigured = configuredBaseUrl?.let(ServerTargetResolver::normalizeServerUrl)
+        if (normalizedConfigured != null && normalizedConfigured != normalizedExisting) {
             return null
         }
         return sessionAuthToken
@@ -694,7 +698,14 @@ class MainActivity : AppCompatActivity() {
         configuredBaseUrl: String?,
         intent: Intent
     ) {
-        if (configuredBaseUrl != null && configuredBaseUrl != existingBaseUrl) {
+        // Normalize both sides so that default-port differences (e.g. :443 vs stripped)
+        // do not falsely trigger auth-state clearing. This is defensive — callers
+        // already normalize through ServerSettingsStore.getServerUrl() and
+        // ServerTargetResolver.resolveConfiguredBaseUrl(), but this ensures
+        // correctness regardless of caller conventions.
+        val normalizedExisting = existingBaseUrl?.let(ServerTargetResolver::normalizeServerUrl)
+        val normalizedConfigured = configuredBaseUrl?.let(ServerTargetResolver::normalizeServerUrl)
+        if (normalizedConfigured != null && normalizedConfigured != normalizedExisting) {
             Log.i(
                 TAG,
                 "event=device_auth_state_cleared reason=base_url_changed previousBaseUrl=$existingBaseUrl newBaseUrl=$configuredBaseUrl"
