@@ -31,7 +31,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 	cachedEpoch := s.receiverAboutEpoch
 	s.mu.RUnlock()
 
-	if cached != nil && cachedEpoch == snap.Epoch && time.Since(cachedAt) < receiverAboutCacheTTL {
+	if !cachedAt.IsZero() && cachedEpoch == snap.Epoch && time.Since(cachedAt) < receiverAboutCacheTTL {
 		return cached
 	}
 
@@ -42,7 +42,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 		cachedEpoch := s.receiverAboutEpoch
 		currentSnap := s.snap
 		s.mu.RUnlock()
-		if cached != nil && cachedEpoch == currentSnap.Epoch && time.Since(cachedAt) < receiverAboutCacheTTL {
+		if !cachedAt.IsZero() && cachedEpoch == currentSnap.Epoch && time.Since(cachedAt) < receiverAboutCacheTTL {
 			return cached, nil
 		}
 
@@ -57,7 +57,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 			return (*openwebif.AboutInfo)(nil), nil
 		}
 
-		upstreamCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		upstreamCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
 
 		about, err := client.About(upstreamCtx)
@@ -67,7 +67,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 
 		s.mu.Lock()
 		s.receiverAbout = about
-		s.receiverAboutAt = time.Now().UTC()
+		s.receiverAboutAt = time.Now()
 		s.receiverAboutEpoch = currentSnap.Epoch
 		s.mu.Unlock()
 		return about, nil
@@ -88,7 +88,7 @@ func (s *Server) currentReceiverLocations(ctx context.Context) []openwebif.Movie
 	cachedEpoch := s.receiverLocationsEpoch
 	s.mu.RUnlock()
 
-	if cached != nil && cachedEpoch == snap.Epoch && time.Since(cachedAt) < receiverLocationsCacheTTL {
+	if !cachedAt.IsZero() && cachedEpoch == snap.Epoch && time.Since(cachedAt) < receiverLocationsCacheTTL {
 		return cached
 	}
 
@@ -99,7 +99,7 @@ func (s *Server) currentReceiverLocations(ctx context.Context) []openwebif.Movie
 		cachedEpoch := s.receiverLocationsEpoch
 		currentSnap := s.snap
 		s.mu.RUnlock()
-		if cached != nil && cachedEpoch == currentSnap.Epoch && time.Since(cachedAt) < receiverLocationsCacheTTL {
+		if !cachedAt.IsZero() && cachedEpoch == currentSnap.Epoch && time.Since(cachedAt) < receiverLocationsCacheTTL {
 			return cached, nil
 		}
 
@@ -114,7 +114,7 @@ func (s *Server) currentReceiverLocations(ctx context.Context) []openwebif.Movie
 			return ([]openwebif.MovieLocation)(nil), nil
 		}
 
-		upstreamCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		upstreamCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
 
 		locs, err := client.GetLocations(upstreamCtx)
@@ -124,7 +124,7 @@ func (s *Server) currentReceiverLocations(ctx context.Context) []openwebif.Movie
 
 		s.mu.Lock()
 		s.receiverLocations = locs
-		s.receiverLocationsAt = time.Now().UTC()
+		s.receiverLocationsAt = time.Now()
 		s.receiverLocationsEpoch = currentSnap.Epoch
 		s.mu.Unlock()
 		return locs, nil
