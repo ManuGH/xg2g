@@ -310,6 +310,8 @@
 .recordingCard {
   position: relative;
   overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 320px;
 }
 
 .recordingCardFeatured .itemName {
