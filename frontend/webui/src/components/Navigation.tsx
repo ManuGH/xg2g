@@ -8,6 +8,7 @@ import { resolveHostEnvironment } from '../lib/hostBridge';
 import { resolveAppRouteContext } from '../lib/routeContext';
 import type { UiScale } from '../lib/uiScale';
 import { ROUTE_MAP, normalizePathname, type AppView } from '../routes';
+import { prefetchRoute } from '../routePrefetch';
 import styles from './Navigation.module.css';
 
 type NavSection = 'quick' | 'main' | 'footer';
@@ -342,6 +343,9 @@ export default function Navigation({ onLogout }: NavigationProps) {
       key={`${appearance}-${item.id}`}
       to={ROUTE_MAP[item.id]}
       onClick={(event) => { void handleNavItemClick(event, ROUTE_MAP[item.id], appearance); }}
+      onMouseEnter={() => prefetchRoute(item.id)}
+      onFocus={() => prefetchRoute(item.id)}
+      onTouchStart={() => prefetchRoute(item.id)}
       className={[
         styles.navItem,
         appearance === 'mobile' ? styles.mobileItem : null,

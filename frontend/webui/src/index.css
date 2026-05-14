@@ -445,24 +445,45 @@ a:hover {
 }
 
 /* Custom Scrollbar */
+:root {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent-action) 55%, transparent) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-input);
-  border-radius: 10px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--accent-action);
-  border-radius: 10px;
-  border: 2px solid var(--bg-input);
+  background: color-mix(in srgb, var(--accent-action) 55%, transparent);
+  border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-action-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    scrollbar-color: var(--accent-action) var(--bg-input);
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--bg-input);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--accent-action);
+  }
 }
 
 /* Hide scrollbar (utility) */

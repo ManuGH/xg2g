@@ -273,8 +273,27 @@
   grid-auto-columns: minmax(320px, 380px);
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  padding-bottom: 6px;
+  padding-bottom: 10px;
   scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent-action) 45%, transparent) transparent;
+  scrollbar-gutter: stable;
+}
+
+.resumeShelf::-webkit-scrollbar {
+  height: 4px;
+}
+
+.resumeShelf::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.resumeShelf::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent-action) 45%, transparent);
+  border-radius: 4px;
+}
+
+.resumeShelf::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-action-hover);
 }
 
 .grid {
@@ -291,6 +310,8 @@
 .recordingCard {
   position: relative;
   overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 320px;
 }
 
 .recordingCardFeatured .itemName {

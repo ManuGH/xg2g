@@ -284,6 +284,8 @@ function RecordingPreviewArtwork({ recording, authToken }: { recording: Recordin
           data-testid="recording-thumbnail"
           src={resolvedThumbnailUrl}
           alt=""
+          loading="lazy"
+          decoding="async"
           draggable={false}
         />
       ) : null}

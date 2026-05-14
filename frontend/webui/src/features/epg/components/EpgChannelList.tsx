@@ -308,6 +308,8 @@ function ChannelHeader({
           <img
             src={logo}
             alt={displayName}
+            loading="lazy"
+            decoding="async"
             onError={() => setImageFailed(true)}
           />
         ) : (

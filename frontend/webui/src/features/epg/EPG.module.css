@@ -392,6 +392,8 @@
   margin-bottom: 18px;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--border-base);
+  content-visibility: auto;
+  contain-intrinsic-size: 0 104px;
 }
 
 .channelPlayable {
