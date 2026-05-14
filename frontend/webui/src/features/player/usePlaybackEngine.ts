@@ -1094,6 +1094,7 @@ export function usePlaybackEngine({
           pendingWarningRecoveryRef.current.message,
           playbackEngineContext('recovery'),
         );
+        pendingWarningRecoveryRef.current = null;
       }
       if (
         runtimeProbeActive &&
