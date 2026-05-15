@@ -2,7 +2,7 @@ import type { V3SessionSnapshot } from '../../../types/v3-player';
 import type { SessionPhase } from './playbackTypes';
 
 export function resolveSessionPhaseFromState(state: V3SessionSnapshot['state'] | undefined): SessionPhase | null {
-  switch (state) {
+  switch (state) { // xg2g:allow-webui-logic – maps backend session state to simplified UI phase; not backend FSM
     case 'STARTING':
     case 'IDLE':
     case 'PRIMING':
