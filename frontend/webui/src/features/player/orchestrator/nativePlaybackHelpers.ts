@@ -52,7 +52,7 @@ export function resolveNativePlaybackStatus(state: HostNativePlaybackState | nul
     return 'error';
   }
 
-  switch (state.playerState) {
+  switch (state.playerState) { // xg2g:allow-webui-logic – maps native browser player states to UI status; not backend FSM
     case NATIVE_PLAYER_STATE_BUFFERING:
       return state.session ? 'buffering' : 'starting';
     case NATIVE_PLAYER_STATE_READY:
