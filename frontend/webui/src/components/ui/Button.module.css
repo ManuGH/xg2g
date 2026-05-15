@@ -46,18 +46,16 @@
 }
 
 .button[data-variant="primary"] {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 92%, white 8%), color-mix(in srgb, var(--accent-live) 56%, var(--accent-action) 44%));
+  background: var(--accent-action);
   color: var(--bg-video);
-  border-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
-  box-shadow: 0 14px 28px color-mix(in srgb, var(--accent-action) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent-action-hover) 38%, transparent);
+  box-shadow: var(--shadow-ring-action);
 }
 
 .button[data-variant="primary"]:hover:not(:disabled) {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-action-hover) 94%, white 6%), color-mix(in srgb, var(--accent-live-hover) 58%, var(--accent-action-hover) 42%));
+  background: var(--accent-action-hover);
   transform: translateY(-1px);
-  box-shadow: 0 18px 34px color-mix(in srgb, var(--accent-action) 22%, transparent);
+  box-shadow: var(--shadow-accent-action);
 }
 
 .button[data-variant="secondary"] {

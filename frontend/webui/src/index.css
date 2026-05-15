@@ -146,9 +146,6 @@
     linear-gradient(180deg, color-mix(in srgb, black 8%, transparent), transparent 26%),
     linear-gradient(180deg, transparent 44%, color-mix(in srgb, black 58%, transparent) 100%);
   --gradient-app-stage:
-    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--accent-action) 18%, transparent), transparent 28%),
-    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--accent-live) 14%, transparent), transparent 24%),
-    radial-gradient(circle at 42% 92%, color-mix(in srgb, var(--status-info) 10%, transparent), transparent 34%),
     linear-gradient(145deg, color-mix(in srgb, var(--bg-base) 94%, var(--accent-action) 6%), var(--bg-video));
   --gradient-surface-hero:
     linear-gradient(135deg, color-mix(in srgb, var(--surface-panel-strong) 88%, var(--accent-action-subtle) 12%), color-mix(in srgb, var(--surface-shell-safe) 90%, var(--accent-live-subtle) 10%));
@@ -275,15 +272,7 @@ body {
 }
 
 body::before {
-  content: '';
-  position: fixed;
-  inset: -12% -8%;
-  background:
-    radial-gradient(circle at 16% 12%, color-mix(in srgb, var(--accent-action) 16%, transparent), transparent 28%),
-    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--accent-live) 12%, transparent), transparent 22%),
-    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--text-primary) 6%, transparent), transparent 36%);
-  pointer-events: none;
-  z-index: 0;
+  display: none;
 }
 
 body::after {
@@ -295,7 +284,7 @@ body::after {
     linear-gradient(90deg, color-mix(in srgb, var(--text-primary) 2%, transparent) 1px, transparent 1px);
   background-size: 100% 124px, 124px 100%;
   mask-image: linear-gradient(180deg, color-mix(in srgb, black 52%, transparent), transparent 82%);
-  opacity: 0.16;
+  opacity: 0.08;
   pointer-events: none;
   z-index: 0;
 }

@@ -3,7 +3,7 @@
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 20px;
   padding: 4px 0 28px;
 }
 
@@ -20,12 +20,12 @@
 .signalSurface {
   position: relative;
   overflow: hidden;
-  border-radius: 32px;
-  border: 1px solid color-mix(in srgb, var(--accent-action) 14%, var(--border-base) 86%);
-  background: var(--gradient-surface-quiet);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-panel) 86%, var(--surface-stage) 14%);
   box-shadow:
     var(--shadow-card),
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .summaryCard::before,
@@ -33,69 +33,48 @@
 .shortcutsSurface::before,
 .streamSurface::before,
 .signalSurface::before {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-  inset: auto auto -28% -12%;
-  width: 48%;
-  height: 56%;
-  background: radial-gradient(circle at center, color-mix(in srgb, var(--accent-action) 16%, transparent), transparent 70%);
+  display: none;
 }
 
 .summaryCard::after {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-  inset: -22% -8% auto auto;
-  width: 42%;
-  height: 58%;
-  background: radial-gradient(circle at center, color-mix(in srgb, var(--accent-live) 14%, transparent), transparent 70%);
+  display: none;
 }
 
 .summaryCard {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: clamp(28px, 3vw, 42px);
+  padding: clamp(22px, 2.2vw, 32px);
   min-height: 0;
-  background:
-    radial-gradient(circle at 9% 18%, color-mix(in srgb, var(--accent-action) 18%, transparent), transparent 34%),
-    radial-gradient(circle at 96% 12%, color-mix(in srgb, var(--accent-live) 15%, transparent), transparent 30%),
-    var(--gradient-surface-hero);
+  background: color-mix(in srgb, var(--surface-panel-strong) 86%, var(--surface-stage) 14%);
   border-color: color-mix(in srgb, var(--accent-action) 24%, var(--border-elevated) 76%);
 }
 
 .summaryStreaming {
-  background:
-    radial-gradient(circle at 14% 16%, color-mix(in srgb, var(--accent-live) 18%, transparent), transparent 34%),
-    linear-gradient(135deg, color-mix(in srgb, var(--surface-panel-strong) 90%, var(--accent-live-subtle) 10%), color-mix(in srgb, var(--surface-stage) 86%, var(--accent-action-subtle) 14%));
+  background: color-mix(in srgb, var(--surface-panel-strong) 86%, var(--accent-live-subtle) 14%);
 }
 
 .summaryControl {
-  background:
-    radial-gradient(circle at 12% 16%, color-mix(in srgb, var(--accent-action) 18%, transparent), transparent 34%),
-    var(--gradient-surface-hero);
+  background: color-mix(in srgb, var(--surface-panel-strong) 88%, var(--accent-action-subtle) 12%);
 }
 
 .summaryStandby {
-  background:
-    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--status-warning) 14%, transparent), transparent 32%),
-    linear-gradient(135deg, color-mix(in srgb, var(--surface-shell) 88%, var(--surface-stage) 12%), var(--surface-shell-safe));
+  background: color-mix(in srgb, var(--surface-shell) 88%, var(--status-warning-subtle) 12%);
 }
 
 .summaryHeroGrid {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1.22fr) minmax(360px, 0.78fr);
-  gap: 22px;
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.72fr);
+  gap: 18px;
   align-items: stretch;
 }
 
 .summaryHeroMain {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
 }
 
@@ -126,20 +105,20 @@
 .summaryTitle {
   margin: 0;
   font-family: var(--font-heading);
-  font-size: clamp(2.55rem, 4.6vw, 5.25rem);
-  line-height: 0.9;
-  letter-spacing: -0.065em;
+  font-size: clamp(2rem, 3.3vw, 3.9rem);
+  line-height: 1;
+  letter-spacing: 0;
   color: var(--text-primary);
-  max-width: 15ch;
+  max-width: 18ch;
   text-wrap: balance;
 }
 
 .summaryDescription {
-  margin: 18px 0 0;
+  margin: 12px 0 0;
   max-width: 64ch;
   color: var(--text-secondary);
-  font-size: clamp(1rem, 1.4vw, 1.12rem);
-  line-height: 1.65;
+  font-size: var(--text-base);
+  line-height: 1.5;
 }
 
 .summaryChips {
@@ -156,28 +135,19 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 24px 24px 22px;
+  gap: 16px;
+  padding: 20px;
   min-width: 0;
-  border-radius: 28px;
+  border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--accent-live) 18%, var(--border-elevated) 82%);
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 46%),
-    color-mix(in srgb, var(--surface-panel-safe) 84%, var(--surface-stage) 16%);
+  background: color-mix(in srgb, var(--surface-panel-safe) 88%, var(--surface-stage) 12%);
   box-shadow:
     var(--shadow-card),
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .summarySpotlight::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-live) 13%, transparent), transparent 42%),
-    radial-gradient(circle at bottom left, color-mix(in srgb, var(--accent-action) 12%, transparent), transparent 34%);
-  opacity: 0.78;
-  pointer-events: none;
+  display: none;
 }
 
 .summarySpotlight > * {
@@ -194,15 +164,12 @@
 
 .signalDial {
   position: relative;
-  width: min(100%, 260px);
+  width: min(100%, 220px);
   aspect-ratio: 2.4;
   margin: -2px 0 2px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent-action) 22%, var(--border-base) 78%);
-  background:
-    radial-gradient(circle at 18% 50%, color-mix(in srgb, var(--accent-action) 38%, transparent), transparent 18%),
-    radial-gradient(circle at 68% 48%, color-mix(in srgb, var(--accent-live) 22%, transparent), transparent 24%),
-    linear-gradient(90deg, color-mix(in srgb, var(--surface-muted) 94%, transparent), color-mix(in srgb, var(--surface-panel-soft) 88%, transparent));
+  background: color-mix(in srgb, var(--surface-muted) 94%, var(--accent-action-subtle) 6%);
   overflow: hidden;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent),
@@ -262,9 +229,9 @@
   max-width: 20ch;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: clamp(1.5rem, 2.25vw, 2.05rem);
-  line-height: 1.02;
-  letter-spacing: -0.045em;
+  font-size: clamp(1.35rem, 1.8vw, 1.75rem);
+  line-height: 1.08;
+  letter-spacing: 0;
   text-wrap: balance;
 }
 
@@ -312,13 +279,13 @@
 .summaryMetrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
 }
 
 .metricCard,
 .contextCard {
-  padding: 20px 22px;
-  border-radius: 24px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
@@ -336,10 +303,10 @@
 .metricValue {
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: clamp(1.12rem, 1.8vw, 1.38rem);
+  font-size: clamp(1.02rem, 1.35vw, 1.2rem);
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 
@@ -396,7 +363,7 @@
 
 .startSurface,
 .shortcutsSurface {
-  padding: 24px;
+  padding: 20px;
 }
 
 .startHeader {
@@ -419,7 +386,7 @@
 .startGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
 }
 
 .startCard {
@@ -427,18 +394,17 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
-  min-height: 260px;
-  padding: 22px;
-  border-radius: 26px;
+  min-height: 220px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 48%),
     color-mix(in srgb, var(--surface-muted) 72%, transparent);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent),
-    0 16px 34px color-mix(in srgb, black 16%, transparent);
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
   transition:
     border-color var(--motion-standard) var(--ease-standard),
     transform var(--motion-standard) var(--ease-standard),
@@ -454,11 +420,7 @@
 }
 
 .startCard::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.8;
+  display: none;
 }
 
 .startCard[data-card="live"] {
@@ -468,20 +430,10 @@
     color-mix(in srgb, var(--surface-panel-safe) 82%, var(--surface-stage) 18%);
 }
 
-.startCard[data-card="live"]::before {
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-action-subtle) 82%, transparent), transparent 44%),
-    linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent-action-subtle) 22%, transparent));
-}
-
 .startCard[data-card="recordings"] {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 46%),
     color-mix(in srgb, var(--surface-panel) 84%, var(--surface-stage) 16%);
-}
-
-.startCard[data-card="recordings"]::before {
-  background: radial-gradient(circle at top right, color-mix(in srgb, var(--accent-live-subtle) 50%, transparent), transparent 42%);
 }
 
 .startCard[data-card="settings"] {
@@ -489,10 +441,6 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 46%),
     color-mix(in srgb, var(--surface-panel-soft) 84%, var(--surface-stage) 16%);
-}
-
-.startCard[data-card="settings"]::before {
-  background: radial-gradient(circle at top right, color-mix(in srgb, var(--status-success-subtle) 68%, transparent), transparent 42%);
 }
 
 .startCard > * {
@@ -519,9 +467,9 @@
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: clamp(1.22rem, 1.8vw, 1.55rem);
+  font-size: clamp(1.12rem, 1.45vw, 1.35rem);
   line-height: 1.08;
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
 }
 
 .startCardDescription,
@@ -669,7 +617,7 @@
 
 @media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
   .page {
-    gap: 16px;
+    gap: 14px;
   }
 
   .summaryCard,
@@ -677,45 +625,61 @@
   .shortcutsSurface,
   .streamSurface,
   .signalSurface {
-    border-radius: 24px;
+    border-radius: var(--radius-lg);
   }
 
   .summaryCard {
-    padding: 18px;
+    padding: 14px;
     gap: 0;
   }
 
   .startSurface,
   .shortcutsSurface {
-    padding: 16px;
+    padding: 14px;
+  }
+
+  .startSurface {
+    margin-top: calc(76px + var(--sab));
   }
 
   .summaryHeroGrid {
-    gap: 14px;
+    gap: 12px;
   }
 
   .summaryHeroMain {
-    gap: 14px;
+    gap: 12px;
   }
 
   .summaryHeader {
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
   }
 
   .summarySpotlight {
-    gap: 14px;
-    padding: 18px;
-    border-radius: 22px;
+    gap: 12px;
+    padding: 14px;
+    border-radius: var(--radius-lg);
+    border-color: var(--border-base);
+    background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
   }
 
-  .summarySpotlightHeader {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
+  .summarySpotlightHeader,
+  .summarySpotlightTitle,
+  .summarySpotlightCopy,
   .summarySpotlightMeta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: none;
+  }
+
+  .summarySpotlightActions {
+    margin-top: 0;
+  }
+
+  .summarySpotlightActions > * {
+    flex: 1 1 100%;
+  }
+
+  .signalDial {
+    display: none;
   }
 
   .startHeader,
@@ -725,12 +689,13 @@
 
   .startHeader {
     flex-direction: column;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 
   .startCard {
-    padding: 16px;
-    border-radius: 18px;
+    min-height: 0;
+    padding: 14px;
+    border-radius: var(--radius-lg);
   }
 
   .startCardHeader {
@@ -747,7 +712,7 @@
 
   .summaryTitle {
     max-width: none;
-    font-size: clamp(1.45rem, 4.6vw, 2.1rem);
+    font-size: clamp(1.45rem, 4.6vw, 1.9rem);
   }
 
   .summaryDescription {
@@ -762,13 +727,14 @@
   }
 
   .summaryMetrics {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .metricCard,
   .contextCard {
-    padding: 14px 16px;
-    border-radius: 18px;
+    padding: 12px;
+    border-radius: var(--radius-lg);
   }
 
   .timelineHeader {
@@ -778,7 +744,7 @@
 
   .streamSurface,
   .signalSurface {
-    padding: 16px;
+    padding: 14px;
   }
 }
 
@@ -786,6 +752,10 @@
   .page {
     gap: 14px;
     padding-bottom: 20px;
+  }
+
+  .summarySpotlightMeta {
+    grid-template-columns: 1fr;
   }
 }
 

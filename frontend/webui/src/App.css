@@ -1,55 +1,28 @@
 /* App shell - keep global footprint minimal */
 
 .app-container {
-  margin-left: calc(var(--nav-shell-width) + 44px);
+  margin-left: calc(var(--nav-shell-width) + 34px);
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 18px 24px 30px 0;
+  padding: 16px 20px 28px 0;
 }
 
 .content-area {
   position: relative;
   overflow: hidden;
-  max-width: calc(var(--content-max-width) + 40px);
+  max-width: calc(var(--content-max-width) + 24px);
   margin: 0 auto;
-  min-height: calc(100vh - 36px);
-  min-height: calc(100dvh - 36px);
-  padding: clamp(22px, 2vw, 34px);
-  border-radius: 42px;
-  border: 1px solid color-mix(in srgb, var(--accent-action) 18%, var(--border-base) 82%);
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 34%),
-    color-mix(in srgb, var(--surface-shell-strong) 86%, var(--surface-stage) 14%);
+  min-height: calc(100vh - 32px);
+  min-height: calc(100dvh - 32px);
+  padding: clamp(18px, 1.6vw, 28px);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-base);
+  background: color-mix(in srgb, var(--surface-shell-strong) 92%, var(--surface-stage) 8%);
   box-shadow:
-    var(--shadow-stage),
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
-  backdrop-filter: blur(30px) saturate(124%);
-  -webkit-backdrop-filter: blur(30px) saturate(124%);
-}
-
-.content-area::before,
-.content-area::after {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-}
-
-.content-area::before {
-  inset: -20% auto auto -10%;
-  width: 54%;
-  height: 54%;
-  background:
-    radial-gradient(circle at center, color-mix(in srgb, var(--accent-action) 24%, transparent), transparent 68%);
-  opacity: 0.8;
-}
-
-.content-area::after {
-  inset: auto -12% -28% auto;
-  width: 48%;
-  height: 54%;
-  background:
-    radial-gradient(circle at center, color-mix(in srgb, var(--accent-live) 18%, transparent), transparent 70%);
-  opacity: 0.72;
+    var(--shadow-shell-safe),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
+  backdrop-filter: blur(18px) saturate(112%);
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
 }
 
 .content-area > * {
@@ -75,14 +48,9 @@
   -webkit-backdrop-filter: none;
 }
 
-:root[data-xg2g-host-platform="android-tv"] .content-area::before,
-:root[data-xg2g-host-platform="android-tv"] .content-area::after {
-  display: none;
-}
-
 :root[data-ui-nav-mode='bottom'] .app-container {
   margin-left: 0;
-  padding: 12px max(12px, var(--sar)) calc(92px + var(--sab)) max(12px, var(--sal));
+  padding: 10px max(10px, var(--sar)) calc(104px + var(--sab)) max(10px, var(--sal));
 }
 
 @media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
@@ -98,20 +66,6 @@
     background: color-mix(in srgb, var(--surface-shell-safe) 82%, var(--surface-stage) 18%);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
-  }
-
-  .content-area::before {
-    inset: -18% auto auto -6%;
-    width: 36%;
-    height: 42%;
-    opacity: 0.55;
-  }
-
-  .content-area::after {
-    inset: auto -8% -18% auto;
-    width: 34%;
-    height: 40%;
-    opacity: 0.45;
   }
 }
 
