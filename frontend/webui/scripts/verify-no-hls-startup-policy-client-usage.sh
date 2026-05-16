@@ -7,8 +7,13 @@ cd "$ROOT_DIR"
 PATTERN='\b(startupMode|startupHeadroomSec|startupReasons)\b'
 ALLOW_TAG='xg2g:allow-startup-policy-debug'
 
-if ! command -v rg >/dev/null 2>&1; then
-  echo "❌ rg is required for verify-no-hls-startup-policy-client-usage.sh"
+if command -v rg >/dev/null 2>&1; then
+  SEARCH_TOOL="rg"
+elif command -v grep >/dev/null 2>&1; then
+  echo "⚠️  rg not found; falling back to grep -rnE"
+  SEARCH_TOOL="grep"
+else
+  echo "❌ Neither rg nor grep found; cannot proceed."
   exit 1
 fi
 
@@ -26,7 +31,11 @@ if [ "${#scan_targets[@]}" -eq 0 ]; then
   exit 0
 fi
 
-matches="$(rg -n -- "$PATTERN" "${scan_targets[@]}" || true)"
+if [ "$SEARCH_TOOL" = "rg" ]; then
+  matches="$(rg -n -- "$PATTERN" "${scan_targets[@]}" || true)"
+else
+  matches="$(grep -rnE -- "$PATTERN" "${scan_targets[@]}" || true)"
+fi
 
 if [ -z "$matches" ]; then
   echo "✅ HLS startup policy debug fields are not used in product WebUI code."
