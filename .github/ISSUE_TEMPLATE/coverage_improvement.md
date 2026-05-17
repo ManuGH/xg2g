@@ -1,10 +1,14 @@
 ---
 name: "Coverage Improvement"
-about: "Gezielte Testabdeckung für eine Komponente erhöhen"
+about: "Increase targeted test coverage for a component"
 labels: ["coverage-improvement", "testing"]
 ---
 
-## Komponente
+> **Note**: This project follows an English-only policy.
+> Please write your issue in English to ensure it can be understood by all
+> contributors.
+
+## Component
 
 - [ ] api
 - [ ] proxy
@@ -13,53 +17,53 @@ labels: ["coverage-improvement", "testing"]
 - [ ] playlist
 - [ ] owi
 
-## Ist-/Soll-Coverage
+## Current / Target Coverage
 
-- **Ist:** <!-- z.B. 64.4% -->
-- **Ziel (PR):** <!-- z.B. +3..8 %-Pkt. oder API ≥70% -->
+- **Current:** <!-- e.g. 64.4% -->
+- **Target (PR):** <!-- e.g. +3..8 pp, or API ≥70% -->
 
-## Maßnahmen (ankreuzen)
+## Approach (check all that apply)
 
-- [ ] Interfaces extrahieren / Abhängigkeiten invertieren
-- [ ] Table-driven Tests für Handler
-- [ ] Circuit-Breaker State-Tests
-- [ ] Fake-FFmpeg / Fake-Prober
-- [ ] Fehlerpfade (Timeout, Exit≠0, leere Streams)
-- [ ] Contract-Test gegen Mock-OWI (CI-only)
-- [ ] I/O-Abstraktion (`io.Reader`/`io.Writer`)
-- [ ] Chaos-nahe Tests (Latenz, Upstream-Fehler)
+- [ ] Extract interfaces / invert dependencies
+- [ ] Table-driven tests for handlers
+- [ ] Circuit-breaker state tests
+- [ ] Fake FFmpeg / fake prober
+- [ ] Error paths (timeout, non-zero exit, empty streams)
+- [ ] Contract test against mock OpenWebIF (CI-only)
+- [ ] I/O abstraction (`io.Reader` / `io.Writer`)
+- [ ] Chaos-style tests (latency, upstream failure)
 
-## Test-Flags
+## Test Flags
 
-- [ ] unittests
+- [ ] unit tests
 - [ ] integration
 - [ ] contract
 
-## Abnahmekriterien
+## Acceptance Criteria
 
-- [ ] Patch ≥90%
-- [ ] Komponente +X %-Pkt.
-- [ ] Flaky-Rate <5%
-- [ ] CI-Zeit nicht erhöht (oder begründet)
-- [ ] Tests sind deterministisch (keine Sleeps)
+- [ ] Patch coverage ≥90%
+- [ ] Component coverage +X pp
+- [ ] Flaky rate <5%
+- [ ] CI time not increased (or justified)
+- [ ] Tests are deterministic (no sleeps)
 
-## Referenz
+## References
 
 - [Coverage workflow](../workflows/coverage.yml)
 - [CI Failure Playbook](../../docs/ops/CI_FAILURE_PLAYBOOK.md)
 
-## Implementierungsplan
+## Implementation Plan
 
-<!-- Beschreibe die konkreten Schritte: -->
+<!-- Describe the concrete steps: -->
 1.
 2.
 3.
 
 ## Definition of Done
 
-- [ ] Tests geschrieben und lokal erfolgreich
-- [ ] Coverage-Ziel erreicht (lokal mit `go tool cover`)
-- [ ] CI passing (alle Checks grün)
-- [ ] Codecov Patch Coverage ≥90%
-- [ ] Keine Flaky Tests (3x lokal ohne Fehler)
-- [ ] Code-Review approved
+- [ ] Tests written and passing locally
+- [ ] Coverage target reached (locally with `go tool cover`)
+- [ ] CI passing (all checks green)
+- [ ] Codecov patch coverage ≥90%
+- [ ] No flaky tests (3x locally without failure)
+- [ ] Code review approved
