@@ -2,12 +2,16 @@
 
 ## Unreleased
 
-### Behavioral Changes (v3.4.9)
+## [v3.4.9] - 2026-05-17
+
+### Behavioral Changes
 
 - WebUI now uses the Signal Studio visual system with a deeper broadcast stage, teal action accents, warmer live-state treatment, and stronger glass surfaces across shell, navigation, and dashboard.
 - The dashboard home view now presents a larger operator summary, a decorative signal dial, stronger task-first cards, and clearer diagnostic hierarchy without changing playback or API behavior.
 
-### Behavioral Changes (v3.4.7)
+## [v3.4.7] - 2026-04-19
+
+### Behavioral Changes
 
 - iPhone and iPad native Live-DVR playback now keeps the timeline moving across lock/unlock and foreground resume instead of freezing the remaining time until the next playlist access.
 - Background media-truth scanning can now be disabled explicitly for staging or playback-focused deployments so live debugging no longer competes with a cold full-channel scan.
