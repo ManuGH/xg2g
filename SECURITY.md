@@ -35,5 +35,5 @@ Please include:
 ## Security References
 
 - [Security invariants](docs/ops/SECURITY.md)
-- [Security and trust boundaries](docs/SECURITY.md)
+- [Scanner signal governance](docs/SCANNER_GOVERNANCE.md)
 - [Observability](docs/ops/OBSERVABILITY.md)

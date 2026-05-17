@@ -225,7 +225,7 @@ This guarantee is **mechanically enforced**, not manually maintained:
 The hermetic build process is the foundation for our security trust model.
 By proving that our tools and code-generation paths are immutable and
 deterministic, we can safely optimize scanner signal for handwritten code.
-See [SECURITY.md](./SECURITY.md) for details on signal
+See [SCANNER_GOVERNANCE.md](./SCANNER_GOVERNANCE.md) for details on signal
 governance and generated code trust.
 
 ---

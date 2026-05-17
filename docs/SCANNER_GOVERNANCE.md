@@ -1,6 +1,4 @@
-# Security & Trust Boundaries
-
-## Scanner Signal Governance
+# Scanner Signal Governance
 
 The scanner configuration is tuned to keep findings actionable while excluding
 immutable, machine-generated artifacts that cannot be fixed safely by hand.
