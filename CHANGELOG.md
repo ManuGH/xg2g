@@ -9,13 +9,6 @@
 - WebUI now uses the Signal Studio visual system with a deeper broadcast stage, teal action accents, warmer live-state treatment, and stronger glass surfaces across shell, navigation, and dashboard.
 - The dashboard home view now presents a larger operator summary, a decorative signal dial, stronger task-first cards, and clearer diagnostic hierarchy without changing playback or API behavior.
 
-## [v3.4.7] - 2026-04-19
-
-### Behavioral Changes
-
-- iPhone and iPad native Live-DVR playback now keeps the timeline moving across lock/unlock and foreground resume instead of freezing the remaining time until the next playlist access.
-- Background media-truth scanning can now be disabled explicitly for staging or playback-focused deployments so live debugging no longer competes with a cold full-channel scan.
-
 ### Release Notes
 
 - Playback decisions now follow an intent-based profile strategy with a quality ladder for audio and video.
@@ -32,6 +25,21 @@
 - Client matrix fixtures, table-driven tests, and hysteresis-based host pressure handling now cover the new playback decision paths.
 - Capacity and performance demotion for auto-codec selection are now verified through a deterministic repo harness, and the new verifier is wired into the existing PR and online quality gates.
 - Configuration surfaces and ops documentation were extended for playback operator rules and the new diagnostic fields.
+
+## [v3.4.8] - 2026-04-22
+
+### Behavioral Changes
+
+- iPhone and iPad native Live-DVR playback now keeps the seek window and remaining time advancing across lock/unlock and foreground resume, instead of freezing until the next playlist fetch reaches the server again.
+- iOS Safari native live playback now uses the hardened fMP4 AV1 path and earlier render reveal handling, reducing audio-only and black-screen startup failures during native playback.
+- Background media-truth scanning can now be disabled explicitly via `XG2G_BACKGROUND_SCAN_ENABLED=false`, which is useful for staging or playback-debug deployments where a cold full-channel scan would otherwise load the receiver and obscure live-session behavior.
+
+## [v3.4.7] - 2026-04-19
+
+### Behavioral Changes
+
+- iPhone and iPad native Live-DVR playback now keeps the timeline moving across lock/unlock and foreground resume instead of freezing the remaining time until the next playlist access.
+- Background media-truth scanning can now be disabled explicitly for staging or playback-focused deployments so live debugging no longer competes with a cold full-channel scan.
 
 ### Bug Fixes
 
@@ -797,9 +805,4 @@ Operational changes:
 ### Behavioral Changes (v3.4.3)
 
 - Auto codec selection now reports its policy, requested codec set, selected codec, and host/benchmark classes in playback traces, so operators can understand why a specific setup preferred AV1, HEVC, or H.264 without relying on setup-specific assumptions.
-### Behavioral Changes (v3.4.8)
-Operational changes:
-- iPhone and iPad native Live-DVR playback now keeps the seek window and remaining time advancing across lock/unlock and foreground resume, instead of freezing until the next playlist fetch reaches the server again.
-- iOS Safari native live playback now uses the hardened fMP4 AV1 path and earlier render reveal handling, reducing audio-only and black-screen startup failures during native playback.
-- Background media-truth scanning can now be disabled explicitly via `XG2G_BACKGROUND_SCAN_ENABLED=false`, which is useful for staging or playback-debug deployments where a cold full-channel scan would otherwise load the receiver and obscure live-session behavior.
 
