@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/playback"
@@ -25,7 +26,26 @@ const (
 	liveTruthOriginUnverified = "live_unverified"
 )
 
-const liveTruthFreshnessWindow = 2 * time.Hour
+// liveTruthFreshnessWindow is the maximum age of a scan-probed capability
+// entry before live playback truth considers it stale. Overridable at
+// startup via SetLiveTruthFreshnessWindow.
+var liveTruthFreshnessWindow atomic.Int64
+
+func init() {
+	liveTruthFreshnessWindow.Store(int64(2 * time.Hour))
+}
+
+// SetLiveTruthFreshnessWindow allows operators to override the stale scan
+// truth threshold at startup (e.g. from config/env). Must be called before
+// the first live playback info request.
+func SetLiveTruthFreshnessWindow(d time.Duration) {
+	if d <= 0 {
+		log.L().Warn().Dur("attempted", d).Msg("live_truth: ignoring non-positive freshness window, keeping default")
+		return
+	}
+	liveTruthFreshnessWindow.Store(int64(d))
+	log.L().Info().Dur("freshness_window", d).Msg("live_truth: stale scan truth threshold updated")
+}
 
 type liveTruthResolution struct {
 	Truth        playback.MediaTruth
@@ -149,7 +169,7 @@ func liveTruthFreshEnough(cap scan.Capability, now time.Time) bool {
 	if anchor.IsZero() {
 		return true
 	}
-	return now.Sub(anchor) <= liveTruthFreshnessWindow
+	return now.Sub(anchor) <= time.Duration(liveTruthFreshnessWindow.Load())
 }
 
 func unverifiedLiveTruth(serviceRef string, state liveTruthState, reason string, cap scan.Capability, flags []string, requestContext string) liveTruthResolution {
