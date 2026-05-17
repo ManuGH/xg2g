@@ -43,7 +43,10 @@ test-race: ## Run tests with race detection
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=../$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && \
+	  COVERPKG="$$(GOTOOLCHAIN=local "$$GO_BIN" list ./internal/... ./test/... 2>/dev/null | paste -sd, -)"; \
+	  if [ -z "$$COVERPKG" ]; then COVERPKG="./internal/..."; fi; \
+	  GOTOOLCHAIN=local "$$GO_BIN" test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=../$(ARTIFACTS_DIR)/coverage.out -coverpkg="$$COVERPKG" ./...
 	@$(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
 	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
 	@$(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1
