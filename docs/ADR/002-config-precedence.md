@@ -31,6 +31,6 @@ We need deterministic, reviewable runtime behavior.
 
 ## References (Docs / Code)
 
-- Normative contract: `docs/SECURITY.md`, `docs/ops/CONTRACT_INVARIANTS.md`
+- Normative contract: `docs/SCANNER_GOVERNANCE.md`, `docs/ops/CONTRACT_INVARIANTS.md`
 - Env reading and snapshot build: `internal/config`
 - CI tripwire: `.github/workflows/lint.yml`
