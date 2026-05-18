@@ -44,9 +44,9 @@ test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
 	@mkdir -p $(ARTIFACTS_DIR)
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && { \
-	  GOTOOLCHAIN=local "$$GO_BIN" test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out -coverpkg=./internal/...,./test/... ./...; \
-	  GOTOOLCHAIN=local "$$GO_BIN" tool cover -html=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out -o $(CURDIR)/$(ARTIFACTS_DIR)/coverage.html; \
-	  echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"; \
+	  GOTOOLCHAIN=local "$$GO_BIN" test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out -coverpkg=./internal/...,./test/... ./... && \
+	  GOTOOLCHAIN=local "$$GO_BIN" tool cover -html=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out -o $(CURDIR)/$(ARTIFACTS_DIR)/coverage.html && \
+	  echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html" && \
 	  GOTOOLCHAIN=local "$$GO_BIN" tool cover -func=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out | tail -1; \
 	}
 
