@@ -38,18 +38,16 @@ export function supportsManagedNativePlayback(environment: HostEnvironment): boo
 }
 
 export function resolveNativePlaybackStatus(state: HostNativePlaybackState | null): PlayerStatus | null {
-  if (!state?.activeRequest) {
-    if (state?.lastError) {
-      return 'error';
-    }
-    if (state?.playerState === NATIVE_PLAYER_STATE_ENDED) {
-      return 'stopped';
-    }
+  if (!state) {
     return null;
   }
 
   if (state.lastError) {
     return 'error';
+  }
+
+  if (!state.activeRequest) {
+    return state.playerState === NATIVE_PLAYER_STATE_ENDED ? 'stopped' : null;
   }
 
   switch (state.playerState) { // xg2g:allow-webui-logic – maps native browser player states to UI status; not backend FSM
