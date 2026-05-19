@@ -80,8 +80,8 @@ COPY backend/contracts/version_matrix.json ../../backend/contracts/version_matri
 RUN npm run build
 
 # Stage 3: Build xg2g application
-# Keep in sync with go.mod (currently requires Go 1.25.9).
-FROM golang:1.25.9 AS app-builder
+# Keep in sync with go.mod (currently requires Go 1.25.10).
+FROM golang:1.25.10 AS app-builder
 ARG BUILD_VERSION
 ARG BUILD_COMMIT
 ARG BUILD_DATE
