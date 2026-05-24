@@ -18,6 +18,9 @@ import (
 // inline styles only; inline <script> remains disallowed.
 const DefaultCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'"
 
+// DefaultPermissionsPolicy denies powerful features the app does not use.
+const DefaultPermissionsPolicy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
 // SecurityHeaders returns a middleware that adds common security headers to all responses.
 // It requires trustedProxies to safely evaluate X-Forwarded-Proto headers.
 func SecurityHeaders(csp string, trustedProxies []*net.IPNet) func(http.Handler) http.Handler {
@@ -62,7 +65,7 @@ func SecurityHeaders(csp string, trustedProxies []*net.IPNet) func(http.Handler)
 			w.Header().Set("Referrer-Policy", "no-referrer")
 
 			// Permissions-Policy: deny powerful features the app does not use.
-			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+			w.Header().Set("Permissions-Policy", DefaultPermissionsPolicy)
 
 			next.ServeHTTP(w, r)
 		})
