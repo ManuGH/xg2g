@@ -1320,7 +1320,7 @@ export function usePlaybackOrchestrator(
         const intentRecord = intentJson && typeof intentJson === 'object' ? (intentJson as Record<string, unknown>) : null;
         const intentRequestId =
           (typeof intentRecord?.requestId === 'string' ? intentRecord.requestId : undefined) ??
-          res.headers.get('X-Request-ID') ??
+          (res.headers?.get ? res.headers.get('X-Request-ID') : undefined) ??
           undefined;
         newSessionId = typeof intentRecord?.sessionId === 'string' ? intentRecord.sessionId.trim() || null : null;
         if (!newSessionId) {
