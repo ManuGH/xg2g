@@ -1,0 +1,38 @@
+# Dockerized e2e test lab for the xg2g WebUI.
+# Runs Playwright + real Chromium + real hls.js against the Fastify fixture
+# server — fully isolated, touches no real backend and no production deploy.
+# Build context MUST be the repo root:
+#   docker build -f backend/e2e/Dockerfile.e2e -t xg2g-e2e .
+#   docker run --rm xg2g-e2e
+#
+# The Playwright base image bundles the browsers. ffmpeg is added to generate
+# the HLS fixture at build time (no committed binary, no host dependency).
+FROM mcr.microsoft.com/playwright:v1.58.0-jammy
+
+ENV CI=1
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+
+# Root deps provide @playwright/test (resolved by the config under backend/e2e).
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# WebUI deps (vite dev server is started by the Playwright webServer config).
+COPY frontend/webui/package.json frontend/webui/package-lock.json ./frontend/webui/
+RUN cd frontend/webui && npm ci --no-audit --no-fund
+
+# Fixture-server deps.
+COPY backend/e2e/fixture-server/package.json backend/e2e/fixture-server/package-lock.json ./backend/e2e/fixture-server/
+RUN cd backend/e2e/fixture-server && npm ci --no-audit --no-fund
+
+# Source.
+COPY frontend/webui ./frontend/webui
+COPY backend/e2e ./backend/e2e
+
+# Generate the HLS fixture into backend/e2e/fixtures/hls.
+RUN bash backend/e2e/scripts/gen-hls-fixture.sh
+
+# The config's webServer block starts both the fixture server and vite dev.
+CMD ["npx", "playwright", "test", "-c", "backend/e2e/playwright.config.ts"]

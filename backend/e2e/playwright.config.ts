@@ -50,6 +50,10 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         locale: 'en-US',
+        // Allow programmatic playback in headless Chromium for the playback smoke.
+        launchOptions: {
+          args: ['--autoplay-policy=no-user-gesture-required'],
+        },
       },
     },
   ],

@@ -77,6 +77,7 @@ webui-browser-smoke: ## Run the Playwright browser smoke against the fixture-bac
 	@[ -d node_modules/@playwright/test ] || npm ci
 	@[ -d $(FRONTEND_DIR)/webui/node_modules/vite ] || (cd $(FRONTEND_DIR)/webui && npm ci)
 	@[ -d $(BACKEND_DIR)/e2e/fixture-server/node_modules/fastify ] || (cd $(BACKEND_DIR)/e2e/fixture-server && npm ci)
+	@bash $(BACKEND_DIR)/e2e/scripts/gen-hls-fixture.sh
 	@npx playwright test --config $(BACKEND_DIR)/e2e/playwright.config.ts --project=chromium
 	@echo "✅ WebUI browser smoke passed"
 
