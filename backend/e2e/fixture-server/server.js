@@ -60,14 +60,14 @@ async function handleRequest(request, reply) {
   }
 
   // Find matching endpoint. Exact (path + query string) wins; fall back to
-  // pathname-only so endpoints with dynamic query params (e.g. /epg?from=..&to=..,
-  // whose timestamps are computed at runtime) can still be matched by a static
-  // scenario entry. Exact precedence means query-specific entries (e.g.
-  // /services?bouquet=Favorites) still resolve before the bare-path fallback.
+  // bare-path entries only so query-specific scenario entries (e.g.
+  // /services?bouquet=Favorites) are never incorrectly matched by a request
+  // with a different query string. Bare-path entries are those defined without
+  // a '?' in their path.
   const reqPathname = request.url.split('?')[0];
   const match =
-    activeScenario.endpoints.find(e => e.path === request.url && e.method === request.method) ||
-    activeScenario.endpoints.find(e => e.path.split('?')[0] === reqPathname && e.method === request.method);
+    activeScenario.endpoints?.find(e => e.path === request.url && e.method === request.method) ||
+    activeScenario.endpoints?.find(e => e.path && !e.path.includes('?') && e.path.split('?')[0] === reqPathname && e.method === request.method);
 
   if (match) {
     const { status, body, headers, delayMs } = match.response;
@@ -89,6 +89,10 @@ async function handleRequest(request, reply) {
 // primePlaybackAuth's HEAD pre-flight.
 fastify.get('/api/v3/sessions/:sessionId/hls/:filename', async (request, reply) => {
   const filename = path.basename(request.params.filename); // prevent traversal
+  if (filename === '..' || filename === '.') {
+    reply.code(400).send({ error: 'Invalid filename' });
+    return;
+  }
   const ext = path.extname(filename);
   const contentType = HLS_CONTENT_TYPES[ext];
   if (!contentType) {
@@ -96,7 +100,7 @@ fastify.get('/api/v3/sessions/:sessionId/hls/:filename', async (request, reply) 
     return;
   }
   const filePath = path.join(HLS_FIXTURE_DIR, filename);
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     reply.code(404).send({ error: 'HLS fixture not found', filename });
     return;
   }
