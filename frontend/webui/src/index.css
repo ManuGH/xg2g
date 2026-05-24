@@ -12,9 +12,9 @@
   --ui-density-scale: calc(var(--ui-density-scale-user) * var(--ui-density-scale-surface));
 
   /* Typography Stack */
-  --font-heading: 'Space Grotesk', -apple-system, sans-serif;
-  --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
+  --font-heading: 'Space Grotesk Variable', 'Space Grotesk', -apple-system, sans-serif;
+  --font-body: 'IBM Plex Sans Variable', 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
 
   /* Type Scale (16px base) */
   --text-display: 2rem;
