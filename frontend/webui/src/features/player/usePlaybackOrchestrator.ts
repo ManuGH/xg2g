@@ -11,7 +11,6 @@ import { telemetry } from '../../services/TelemetryService';
 import type {
   V3PlayerProps,
   PlayerStatus,
-  V3SessionResponse,
   V3SessionSnapshot,
   HlsInstanceRef,
   VideoElementRef
@@ -1310,19 +1309,34 @@ export function usePlaybackOrchestrator(
           });
         }
 
-        const data: V3SessionResponse = await res.json();
-        newSessionId = data.sessionId ?? null;
+        // raw-fetch-justified bypasses the generated client, so the
+        // IntentAcceptedResponse arrives as unvalidated JSON. Guard the one
+        // load-bearing field explicitly: sessionId must be a non-empty string
+        // (a non-string truthy value would otherwise slip through `?? null` and
+        // poison the session poll). On violation, surface a typed contract error
+        // carrying the requestId — like the other failures in this flow, not a
+        // bare Error.
+        const intentJson: unknown = await res.json();
+        const intentRecord = intentJson && typeof intentJson === 'object' ? (intentJson as Record<string, unknown>) : null;
+        const intentRequestId =
+          (typeof intentRecord?.requestId === 'string' ? intentRecord.requestId : undefined) ??
+          (res.headers?.get ? res.headers.get('X-Request-ID') : undefined) ??
+          undefined;
+        newSessionId = typeof intentRecord?.sessionId === 'string' ? intentRecord.sessionId.trim() || null : null;
         if (!newSessionId) {
-          throw new Error('Intent response missing sessionId');
+          throw normalizePlayerError(
+            { title: t('player.sessionFailed'), detail: 'Intent response missing or invalid sessionId.', requestId: intentRequestId },
+            { fallbackTitle: t('player.sessionFailed') },
+          );
         }
-        if (data.requestId) setTraceId(data.requestId);
+        if (intentRequestId) setTraceId(intentRequestId);
         setActiveSessionId(newSessionId);
         dispatchPlayback({
           type: 'normative.session.phase.changed',
           playbackEpoch,
           sessionEpoch,
           phase: 'starting',
-          requestId: data.requestId ?? null,
+          requestId: intentRequestId ?? null,
         });
         const session = await waitForSessionReady(newSessionId);
         if (isStaleSessionEpoch(playbackEpoch, sessionEpoch)) {
@@ -1335,7 +1349,7 @@ export function usePlaybackOrchestrator(
           playbackEpoch,
           sessionEpoch,
           phase: 'ready',
-          requestId: session.requestId ?? data.requestId ?? null,
+          requestId: session.requestId ?? intentRequestId ?? null,
         });
         setStatus('ready');
         const streamUrl = session.playbackUrl;

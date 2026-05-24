@@ -146,6 +146,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # ffmpeg generates the HLS fixture for the real-hls.js playback spec;
+          # without it that spec skips itself (see scripts/gen-hls-fixture.sh).
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
           npx playwright install --with-deps chromium
           make webui-browser-smoke
 

@@ -1,11 +1,11 @@
 # xg2g WebUI Design System - Broadcast Console 2026
 
-**Version:** 2.0 (Broadcast-Console)  
-**Last Updated:** 2026-01-18  
+**Version:** 2.1 (Broadcast-Console, principles-only)  
+**Last Updated:** 2026-05-24  
 **Status:** Production  
 **Philosophy:** Professional broadcast console - precision over spectacle
 
-> This document defines the formal design contract for the xg2g WebUI. All UI changes must conform to these rules to maintain consistency and quality.
+> This document defines the design **principles, patterns, and invariants** for the xg2g WebUI. Concrete token values (colors, shadows, spacing) live exclusively in `src/index.css` — that file is the single source of truth for implementation. This doc explains the *why* and the *contract*; the CSS is the *what*.
 
 ---
 
@@ -20,13 +20,12 @@
 7. [Accessibility](#accessibility-global-guard)
 8. [Playback Governance](#playback-governance)
 9. [Contract Rules & Stop Criteria](#contract-rules--stop-criteria)
-10. [Review Checklist](#review-checklist)
 
 ---
 
 ## 2026 Token Set - Broadcast Console
 
-> **CTO Contract:** These tokens are the source of truth. No hardcoded colors or magic numbers. Violations break the design system.
+> **Rule:** No hardcoded colors or magic numbers in feature code. All values flow through tokens defined in `src/index.css`. The lint gate `verify-no-hardcoded-colors.sh` enforces this.
 
 ### Typography Stack
 
@@ -85,63 +84,36 @@
 
 ### Color System - Warm Neutrals + Dual Accent
 
-#### Background Layers (Warm Shift)
+Concrete hex/rgba values live in `src/index.css`. This section defines the **token families and their semantic usage**.
 
-```css
---bg-base: #0d0e12;        /* Slightly warm black base */
---bg-elevated: #16171d;    /* Card/panel backgrounds */
---bg-overlay: #1d1f26;     /* Modals, popovers */
---bg-hover: #24262e;       /* Interactive hover states */
---bg-input: #1a1c23;       /* Form input backgrounds */
-```
+#### Background Layers — Warm Shift
 
-**Rationale:** Warmer than pure slate (#0f172a) - less clinical, better for long operator sessions.
+Tokens: `--bg-base`, `--bg-elevated`, `--bg-overlay`, `--bg-hover`, `--bg-input`.
+
+**Rationale:** Warmer than pure slate — less clinical, better for long operator sessions. Hierarchy goes from `base` (page) → `elevated` (cards) → `overlay` (modals).
 
 #### Text Hierarchy
 
-```css
---text-primary: #f5f5f7;   /* High contrast - headings, key data */
---text-secondary: #a1a5b3; /* Standard UI labels, body text */
---text-tertiary: #6b7080;  /* Metadata, timestamps, hints */
---text-disabled: #4a4d5a;  /* Disabled states */
-```
+Tokens: `--text-primary`, `--text-secondary`, `--text-tertiary`, `--text-disabled`.
 
-**Contrast Ratios (WCAG AAA):**
+**Contrast targets (WCAG AAA against `--bg-base`):**
 
-- Primary on Base: 16:1
-- Secondary on Base: 8:1
-- Tertiary on Base: 4.8:1
+- Primary: ≥ 14:1 (headings, key data)
+- Secondary: ≥ 7:1 (standard UI labels, body)
+- Tertiary: ≥ 4.5:1 (metadata, hints)
+- Disabled: visibly differentiated, not necessarily AAA
+
+If you change a text or background token in `src/index.css`, re-check the ratios.
 
 #### Dual-Accent Semantic System
 
-**Blue = Action/Interactive**
+**Blue = Action / Interactive** — `--accent-action`, `--accent-action-hover`, `--accent-action-pressed`, `--accent-action-subtle`.
 
-```css
---accent-action: #4a90f5;           /* Primary CTA, links, focus */
---accent-action-hover: #5c9ff7;     /* Hover state */
---accent-action-pressed: #3a7fe3;   /* Active/pressed state */
---accent-action-subtle: rgba(74, 144, 245, 0.12);  /* Subtle backgrounds */
-```
+**Amber = Live / Recording (Critical Status)** — `--accent-live`, `--accent-live-hover`, `--accent-live-pulse`, `--accent-live-subtle`.
 
-**Amber = Live/Recording (Critical Status)**
+**Semantic States** — `--status-success` (healthy/connected), `--status-warning` (degraded), `--status-error` (failed), `--status-info` (neutral information).
 
-```css
---accent-live: #f59f0a;             /* LIVE broadcasts, REC indicator */
---accent-live-hover: #f7b035;       /* Hover state */
---accent-live-pulse: #fbbf33;       /* Pulse animation glow */
---accent-live-subtle: rgba(245, 159, 10, 0.12);
-```
-
-**Semantic States**
-
-```css
---status-success: #34d399;  /* Healthy, connected, operational */
---status-warning: #fbbf24;  /* Caution, partial data, degraded */
---status-error: #f87171;    /* Failed, disconnected, critical */
---status-info: #60a5fa;     /* Neutral information */
-```
-
-**Usage Rules:**
+**Usage Rules (hard):**
 
 - Blue for ALL user actions (buttons, links, navigation)
 - Amber ONLY for live/recording states (never decorative)
@@ -150,38 +122,19 @@
 
 #### Borders & Dividers
 
-```css
---border-base: rgba(255, 255, 255, 0.08);      /* Standard borders */
---border-elevated: rgba(255, 255, 255, 0.12);  /* Emphasized borders */
---border-focus: var(--accent-action);          /* Focus rings */
-```
+Tokens: `--border-base` (standard), `--border-elevated` (emphasized), `--border-focus` (alias of `--accent-action`).
 
 ### Surface Treatment - Subtle & Technical
 
-#### Shadow System (Refined)
+#### Shadow Hierarchy
 
-```css
-/* Level 1 - Resting (Standard Cards) */
---shadow-card: 
-  inset 0 1px 0 rgba(255, 255, 255, 0.03),  /* Top highlight */
-  0 2px 8px rgba(0, 0, 0, 0.4);             /* Subtle lift */
+Three intent-levels, all defined in `src/index.css`:
 
-/* Level 2 - Hover (Elevated) */
---shadow-hover: 
-  inset 0 1px 0 rgba(255, 255, 255, 0.04),
-  0 4px 16px rgba(0, 0, 0, 0.5);
+- **`--shadow-card`** — resting state for standard cards. Subtle lift only.
+- **`--shadow-hover`** — interactive lift on hover/focus.
+- **`--shadow-accent-live` / `--shadow-accent-action`** — accent-tinted shadow for live/recording surfaces and primary actions respectively.
 
-/* Level 3 - Active/Accent (Live/Recording Cards) */
---shadow-accent-live: 
-  inset 0 1px 0 rgba(245, 159, 10, 0.15),
-  0 4px 16px rgba(245, 159, 10, 0.12);
-
---shadow-accent-action: 
-  inset 0 1px 0 rgba(74, 144, 245, 0.15),
-  0 4px 16px rgba(74, 144, 245, 0.12);
-```
-
-**No Glow on Standard Elements** - reserved for status only
+**Hard rule:** No glow on standard elements. Glow/accent-shadow is reserved for status-bearing surfaces only.
 
 #### Card Patterns
 
@@ -212,40 +165,14 @@ border-color: var(--border-elevated);
 
 ### Background Texture - Grain/Scanline
 
-**CTO Performance Guard:** Opacity ≤ 0.04, GPU-friendly, no repaint on scroll.
+Subtle scanline + grain via `body::before` / `body::after` (implemented in `src/index.css`).
 
-```css
-/* Scanline effect */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: 
-    repeating-linear-gradient(
-      0deg,
-      rgba(255, 255, 255, 0.015) 0px,
-      transparent 1px,
-      transparent 2px
-    );
-  pointer-events: none;
-  opacity: 0.5;
-  z-index: -1;
-}
+**Hard performance guard:**
 
-/* Grain/noise texture */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-size: 200px 200px;
-  opacity: 0.03;  /* Hard limit: ≤ 0.04 */
-  pointer-events: none;
-  mix-blend-mode: overlay;
-  z-index: -1;
-}
-```
-
-**Feature Flag Ready:** If Safari/iPad performance degrades, disable via CSS class.
+- Texture opacity ≤ 0.04
+- Fixed-position, `pointer-events: none`, `z-index: -1`
+- No repaint on scroll
+- Disablable via CSS class if Safari/iPad performance degrades
 
 ---
 
@@ -292,13 +219,13 @@ transition-timing-function: var(--ease-standard);
 - Navigation selection
 - Focus states
 
-**Token Mapping (SSoT)**
+**Motion Tokens** (defined in `src/index.css`):
 
-Tokens are defined in `src/index.css` and mirrored here (DESIGN.md is the contract):
+- `--motion-standard` — interactions (~180ms)
+- `--motion-slow` — non-critical UI transitions (~220ms upper bound)
+- `--ease-standard` — standard ease (cubic-bezier-ish, defined in CSS)
 
-- `--motion-standard`: 180ms (interactions)
-- `--motion-slow`: 220ms (non-critical UI transitions)
-- `--ease-standard`: cubic-bezier(0.4, 0, 0.2, 1)
+**Hard rule:** Interaction durations must stay in the 160–220ms band. Anything slower is rejected.
 
 #### 3. Status Pulse (Live/Recording ONLY)
 
@@ -515,7 +442,7 @@ Allowed: spinner rotation for loading states, defined globally in `index.css` (`
 
  **Reject if:**
 
-- Hardcoded hex colors outside DESIGN.md
+- Hardcoded hex colors outside `src/index.css` (enforced by `verify-no-hardcoded-colors.sh`)
 - Continuous animation without status purpose
 - Glow on non-status elements
 - Typography outside defined stack
@@ -534,6 +461,7 @@ Allowed: spinner rotation for loading states, defined globally in `index.css` (`
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | 2026-05-24 | Hex/rgba tables removed; `src/index.css` is the single source of truth for token values. This doc keeps principles, patterns, and invariants only. |
 | 2.0 | 2026-01-18 | Broadcast-Console design system |
 | 1.0 | 2026-01-18 | Initial design system |
 
@@ -626,6 +554,3 @@ Ensure `Session-ID` and `Request-ID` are passed to the frontend in all playback 
 
 ---
 
-## Review Checklist
-
-```

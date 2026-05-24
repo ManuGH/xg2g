@@ -1,0 +1,188 @@
+{
+  "meta": {
+    "id": "playback-lease-busy",
+    "description": "Live playback CAPACITY-REJECTION path: every tuner busy. Identical to playback-live up to the intent, but GET /sessions/{id} returns state=FAILED, reason=R_LEASE_BUSY (no playbackUrl). useLiveSessionController.waitForSessionReady (~L421-425) detects FAILED + LEASE_BUSY and throws player.leaseBusy -> the player shows the 'all tuners in use' surface, hls.js is never reached (so this scenario needs no HLS fixture). The error surfaces at the session poll, NOT at POST /intents, so stream.start is unchanged from the happy path and the exact-path matcher's start/stop limitation does not apply here."
+  },
+  "capabilities": {
+    "contracts.playbackInfoDecision": "absent"
+  },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/v3/system/capabilities",
+      "response": { "status": 200, "body": { "contracts.playbackInfoDecision": "absent" } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/errors",
+      "response": { "status": 200, "body": { "items": [] } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/system/config",
+      "response": { "status": 200, "body": { "openWebIF": { "baseUrl": "http://receiver.local", "streamPort": 8001 } } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/household/profiles",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "id": "household-default",
+            "name": "Household",
+            "kind": "adult",
+            "maxFsk": null,
+            "allowedBouquets": [],
+            "allowedServiceRefs": [],
+            "favoriteServiceRefs": [],
+            "permissions": { "dvrPlayback": true, "dvrManage": true, "settings": true }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/household/unlock",
+      "response": { "status": 200, "body": { "pinConfigured": false, "unlocked": false } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/services/bouquets",
+      "response": { "status": 200, "body": [ { "name": "Favorites", "services": 1 } ] }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/services?bouquet=Favorites",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "id": "srv-ard-hd",
+            "name": "Das Erste HD",
+            "group": "Favorites",
+            "enabled": true,
+            "serviceRef": "1:0:1:6DCA:44D:1:C00000:0:0:0:"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/system/health",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "receiver": { "status": "ok", "lastCheck": "2026-04-08T10:00:00Z" },
+          "epg": { "status": "ok", "missingChannels": 0 },
+          "version": "v3.0.0",
+          "uptimeSeconds": 3600
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/receiver/current",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "channel": { "name": "Das Erste HD", "ref": "1:0:1:6DCA:44D:1:C00000:0:0:0:" },
+          "now": { "title": "Tagesschau", "description": "Playback smoke", "beginTimestamp": 1775641200, "durationSec": 1800 },
+          "next": { "title": "Brennpunkt" }
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/streams",
+      "response": { "status": 200, "body": [] }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/dvr/status",
+      "response": { "status": 200, "body": { "isRecording": false } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/services",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "id": "srv-ard-hd",
+            "name": "Das Erste HD",
+            "group": "Favorites",
+            "enabled": true,
+            "serviceRef": "1:0:1:6DCA:44D:1:C00000:0:0:0:"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/epg",
+      "response": { "status": 200, "body": [] }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/timers",
+      "response": { "status": 200, "body": { "items": [] } }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v3/sessions",
+      "response": { "status": 200, "body": { "ok": true } }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v3/live/stream-info",
+      "response": {
+        "status": 200,
+        "body": {
+          "requestId": "req-info-1",
+          "mode": "hlsjs",
+          "playbackDecisionToken": "e2e-decision-token",
+          "isSeekable": false,
+          "durationSeconds": 0,
+          "decision": { "mode": "hlsjs" }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v3/intents",
+      "response": {
+        "status": 202,
+        "body": { "sessionId": "e2e-live-1", "requestId": "req-e2e-1", "status": "accepted" }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/sessions/e2e-live-1",
+      "response": {
+        "status": 200,
+        "body": {
+          "sessionId": "e2e-live-1",
+          "state": "FAILED",
+          "mode": "LIVE",
+          "reason": "R_LEASE_BUSY",
+          "reasonDetail": "All tuners are currently in use.",
+          "heartbeatIntervalSeconds": 10,
+          "leaseExpiresAt": "2030-01-01T00:00:00Z",
+          "requestId": "req-e2e-1"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v3/sessions/e2e-live-1/heartbeat",
+      "response": {
+        "status": 200,
+        "body": { "acknowledged": true, "sessionId": "e2e-live-1", "leaseExpiresAt": "2030-01-01T00:00:00Z" }
+      }
+    }
+  ],
+  "expectations": { "ui": [], "telemetry": [] }
+}

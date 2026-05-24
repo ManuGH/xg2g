@@ -74,6 +74,10 @@ Useful overrides:
 
 ## Security Note
 
-Auth tokens are stored in `sessionStorage` (not `localStorage`) to avoid
-persistence across browser restarts. Clearing auth state removes stored token
-and auth headers.
+Auth tokens are persisted in `localStorage` under `XG2G_API_TOKEN` so the
+session survives browser restarts. Tokens previously written to
+`sessionStorage` by older builds are migrated to `localStorage` on first read
+and then cleared from `sessionStorage`. A boot-token can be injected via the
+URL hash (`#xg2g_boot_token=...`); it is consumed once, persisted, and the
+hash is stripped via `history.replaceState`. Clearing auth state removes the
+stored token and auth headers.

@@ -1,0 +1,51 @@
+# Dockerized e2e test lab for the xg2g WebUI.
+# Runs Playwright + real Chromium + real hls.js against the Fastify fixture
+# server — fully isolated, touches no real backend and no production deploy.
+# Build context MUST be the repo root:
+#   docker build -f backend/e2e/Dockerfile.e2e -t xg2g-e2e .
+#   docker run --rm xg2g-e2e
+#
+# The Playwright base image bundles the browsers. ffmpeg is added to generate
+# the HLS fixture at build time (no committed binary, no host dependency).
+FROM mcr.microsoft.com/playwright:v1.58.0-jammy
+
+ENV CI=1
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+
+# Root deps provide @playwright/test (resolved by the config under backend/e2e).
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# WebUI deps (vite dev server is started by the Playwright webServer config).
+COPY frontend/webui/package.json frontend/webui/package-lock.json ./frontend/webui/
+WORKDIR /app/frontend/webui
+RUN npm ci --no-audit --no-fund
+
+# Fixture-server deps.
+WORKDIR /app
+COPY backend/e2e/fixture-server/package.json backend/e2e/fixture-server/package-lock.json ./backend/e2e/fixture-server/
+WORKDIR /app/backend/e2e/fixture-server
+RUN npm ci --no-audit --no-fund
+
+# Source — reset WORKDIR before copying the rest of the tree.
+WORKDIR /app
+COPY frontend/webui ./frontend/webui
+COPY backend/e2e ./backend/e2e
+
+# Generate the HLS fixture into backend/e2e/fixtures/hls.
+RUN bash backend/e2e/scripts/gen-hls-fixture.sh
+
+# Switch to the pre-existing non-root user (pwuser, uid 1000) shipped by the playwright base image.
+USER pwuser
+
+# Quick health check: fixture server listens on 3001.
+# The fixture server registers POST /__admin/scenario, not GET.
+# Probe with POST and accept 200 (id found) or 404 (id not found) as alive.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "var h=require('http');var r=h.request('http://localhost:3001/__admin/scenario',{method:'POST',headers:{'Content-Type':'application/json'}},function(s){process.exit(s.statusCode===200||s.statusCode===404?0:1)});r.on('error',function(){process.exit(1)});r.end(JSON.stringify({id:'probe'}))"
+
+# The config's webServer block starts both the fixture server and vite dev.
+CMD ["npx", "playwright", "test", "-c", "backend/e2e/playwright.config.ts"]

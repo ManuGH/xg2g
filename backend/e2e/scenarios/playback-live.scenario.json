@@ -1,0 +1,188 @@
+{
+  "meta": {
+    "id": "playback-live",
+    "description": "Live playback happy-path for the real-hls.js smoke. Flow (verified against usePlaybackOrchestrator.ts / useLiveSessionController.ts / generated client types.gen.ts as of 2026-05-24): POST /live/stream-info returns the playback contract (mode=hlsjs + playbackDecisionToken; live decisions carry no outputUrl — the HLS URL comes from the session) -> POST /intents returns 202 IntentAcceptedResponse {sessionId, requestId, status:accepted} -> GET /sessions/{id} polled until state=READY with playbackUrl + heartbeatIntervalSeconds -> POST /sessions/{id}/heartbeat. The decision token is MANDATORY for live (orchestrator fails closed without it); the contracts.playbackInfoDecision capability does NOT gate it (useCapabilities is a hardcoded stub). Session id is fixed to 'e2e-live-1' so the dynamic /sessions/{id} endpoints match the exact-path fixture server. HLS playlist + segments are served by the fixture-server static route under /api/v3/sessions/{id}/hls/, not by these endpoints. Known matcher limitation: stream.start and stream.stop are both POST /intents and cannot be distinguished by path."
+  },
+  "capabilities": {
+    "contracts.playbackInfoDecision": "absent"
+  },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/v3/system/capabilities",
+      "response": { "status": 200, "body": { "contracts.playbackInfoDecision": "absent" } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/errors",
+      "response": { "status": 200, "body": { "items": [] } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/system/config",
+      "response": { "status": 200, "body": { "openWebIF": { "baseUrl": "http://receiver.local", "streamPort": 8001 } } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/household/profiles",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "id": "household-default",
+            "name": "Household",
+            "kind": "adult",
+            "maxFsk": null,
+            "allowedBouquets": [],
+            "allowedServiceRefs": [],
+            "favoriteServiceRefs": [],
+            "permissions": { "dvrPlayback": true, "dvrManage": true, "settings": true }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/household/unlock",
+      "response": { "status": 200, "body": { "pinConfigured": false, "unlocked": false } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/services/bouquets",
+      "response": { "status": 200, "body": [ { "name": "Favorites", "services": 1 } ] }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/services?bouquet=Favorites",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "id": "srv-ard-hd",
+            "name": "Das Erste HD",
+            "group": "Favorites",
+            "enabled": true,
+            "serviceRef": "1:0:1:6DCA:44D:1:C00000:0:0:0:"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/system/health",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "receiver": { "status": "ok", "lastCheck": "2026-04-08T10:00:00Z" },
+          "epg": { "status": "ok", "missingChannels": 0 },
+          "version": "v3.0.0",
+          "uptimeSeconds": 3600
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/receiver/current",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "channel": { "name": "Das Erste HD", "ref": "1:0:1:6DCA:44D:1:C00000:0:0:0:" },
+          "now": { "title": "Tagesschau", "description": "Playback smoke", "beginTimestamp": 1775641200, "durationSec": 1800 },
+          "next": { "title": "Brennpunkt" }
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/streams",
+      "response": { "status": 200, "body": [] }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/dvr/status",
+      "response": { "status": 200, "body": { "isRecording": false } }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/services",
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "id": "srv-ard-hd",
+            "name": "Das Erste HD",
+            "group": "Favorites",
+            "enabled": true,
+            "serviceRef": "1:0:1:6DCA:44D:1:C00000:0:0:0:"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/epg",
+      "response": { "status": 200, "body": [] }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/timers",
+      "response": { "status": 200, "body": { "items": [] } }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v3/sessions",
+      "response": { "status": 200, "body": { "ok": true } }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v3/live/stream-info",
+      "response": {
+        "status": 200,
+        "body": {
+          "requestId": "req-info-1",
+          "mode": "hlsjs",
+          "playbackDecisionToken": "e2e-decision-token",
+          "isSeekable": false,
+          "durationSeconds": 0,
+          "decision": { "mode": "hlsjs" }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v3/intents",
+      "response": {
+        "status": 202,
+        "body": { "sessionId": "e2e-live-1", "requestId": "req-e2e-1", "status": "accepted" }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v3/sessions/e2e-live-1",
+      "response": {
+        "status": 200,
+        "body": {
+          "sessionId": "e2e-live-1",
+          "state": "READY",
+          "mode": "LIVE",
+          "playbackUrl": "/api/v3/sessions/e2e-live-1/hls/index.m3u8",
+          "heartbeatIntervalSeconds": 10,
+          "durationSeconds": 0,
+          "leaseExpiresAt": "2030-01-01T00:00:00Z",
+          "requestId": "req-e2e-1"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v3/sessions/e2e-live-1/heartbeat",
+      "response": {
+        "status": 200,
+        "body": { "acknowledged": true, "sessionId": "e2e-live-1", "leaseExpiresAt": "2030-01-01T00:00:00Z" }
+      }
+    }
+  ],
+  "expectations": { "ui": [], "telemetry": [] }
+}
