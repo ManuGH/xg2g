@@ -231,6 +231,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 			"X-Frame-Options":        "DENY",
 			"X-Content-Type-Options": "nosniff",
 			"Referrer-Policy":        "no-referrer",
+			"Permissions-Policy":     "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 		}
 		for k, v := range expected {
 			if got := headers.Get(k); got != v {
@@ -246,9 +247,9 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		requireCSPTokens(t, cspDirectives, "frame-ancestors", "'none'")
 		requireCSPTokens(t, cspDirectives, "script-src", "'self'")
 		requireCSPTokens(t, cspDirectives, "style-src", "'self'", "'unsafe-inline'")
-		requireCSPTokens(t, cspDirectives, "img-src", "'self'", "data:", "blob:", "https://cdn.plyr.io")
-		requireCSPTokens(t, cspDirectives, "media-src", "'self'", "blob:", "data:", "https://cdn.plyr.io")
-		requireCSPTokens(t, cspDirectives, "connect-src", "'self'", "https://cdn.plyr.io")
+		requireCSPTokens(t, cspDirectives, "img-src", "'self'", "data:", "blob:")
+		requireCSPTokens(t, cspDirectives, "media-src", "'self'", "blob:", "data:")
+		requireCSPTokens(t, cspDirectives, "connect-src", "'self'")
 	})
 
 	// --- 3. Stream Proxy Removed (v3) ---

@@ -12,9 +12,14 @@ import (
 	"strings"
 )
 
-// DefaultCSP allows loading styles/images from common CDNs for Plyr,
-// and allows unsafe-inline for React/Plyr dynamic styles.
-const DefaultCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cdn.plyr.io; media-src 'self' blob: data: https://cdn.plyr.io; connect-src 'self' https://cdn.plyr.io; frame-ancestors 'none'"
+// DefaultCSP keeps the app fully same-origin: no external script/style/img/
+// media/connect origins (the previous https://cdn.plyr.io allowance was dead —
+// the player is hls.js, not Plyr). style-src allows 'unsafe-inline' for React's
+// inline styles only; inline <script> remains disallowed.
+const DefaultCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'"
+
+// DefaultPermissionsPolicy denies powerful features the app does not use.
+const DefaultPermissionsPolicy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 
 // SecurityHeaders returns a middleware that adds common security headers to all responses.
 // It requires trustedProxies to safely evaluate X-Forwarded-Proto headers.
@@ -58,6 +63,9 @@ func SecurityHeaders(csp string, trustedProxies []*net.IPNet) func(http.Handler)
 
 			// Referrer-Policy
 			w.Header().Set("Referrer-Policy", "no-referrer")
+
+			// Permissions-Policy: deny powerful features the app does not use.
+			w.Header().Set("Permissions-Policy", DefaultPermissionsPolicy)
 
 			next.ServeHTTP(w, r)
 		})

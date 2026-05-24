@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os/exec"
 	"testing"
@@ -69,7 +70,13 @@ func TestHandleMonitor_ContextCancelKillsProcess(t *testing.T) {
 	select {
 	case err := <-h.done:
 		require.Error(t, err)
-		assert.ErrorIs(t, err, context.Canceled)
+		// exec.CommandContext may kill the process before the monitor's
+		// context-cancellation select branch wins, yielding signal: killed
+		// instead of context.Canceled. Accept either.
+		if !errors.Is(err, context.Canceled) {
+			assert.ErrorContains(t, err, "killed",
+				"expected context.Canceled or signal: killed, got %v", err)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("monitor did not terminate canceled process in time")
 	}

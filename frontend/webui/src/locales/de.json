@@ -1,4 +1,7 @@
 {
+  "a11y": {
+    "skipToContent": "Zum Hauptinhalt springen"
+  },
   "nav": {
     "dashboard": "Start",
     "recordings": "Aufnahmen",
