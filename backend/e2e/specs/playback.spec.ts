@@ -79,6 +79,10 @@ test.describe('WebUI live playback (real hls.js)', () => {
  * not at the intent, so stream.start is identical to the happy path.
  */
 test.describe('WebUI live playback errors', () => {
+  // Serial mode: each test mutates the fixture server's global activeScenario
+  // via POST /__admin/scenario. Parallel workers would overwrite each other's
+  // scenario, causing nondeterministic cross-scenario flakes.
+  test.describe.configure({ mode: 'serial' });
   async function startPlaybackUnder(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext, scenarioId: string) {
     const response = await request.post(`${fixtureServerUrl}/__admin/scenario`, { data: { id: scenarioId } });
     expect(response.ok()).toBeTruthy();

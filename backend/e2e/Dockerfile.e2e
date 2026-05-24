@@ -42,8 +42,10 @@ RUN bash backend/e2e/scripts/gen-hls-fixture.sh
 USER pwuser
 
 # Quick health check: fixture server listens on 3001.
+# The fixture server registers POST /__admin/scenario, not GET.
+# Probe with POST and accept 200 (id found) or 404 (id not found) as alive.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3001/__admin/scenario', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+  CMD node -e "var h=require('http');var r=h.request('http://localhost:3001/__admin/scenario',{method:'POST',headers:{'Content-Type':'application/json'}},function(s){process.exit(s.statusCode===200||s.statusCode===404?0:1)});r.on('error',function(){process.exit(1)});r.end(JSON.stringify({id:'probe'}))"
 
 # The config's webServer block starts both the fixture server and vite dev.
 CMD ["npx", "playwright", "test", "-c", "backend/e2e/playwright.config.ts"]
