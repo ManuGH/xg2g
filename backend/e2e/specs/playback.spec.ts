@@ -102,4 +102,13 @@ test.describe('WebUI live playback errors', () => {
     await startPlaybackUnder(page, request, 'playback-denied');
     await expect(page.getByText(/playback denied/i)).toBeVisible({ timeout: 15_000 });
   });
+
+  // Fires the intent-boundary guard: a 202 with no sessionId must surface an
+  // error, not poison the session poll with a null id. This is the load test
+  // for the guard added alongside this spec — proving it actually catches a
+  // malformed contract, not just that the happy path passes a valid one.
+  test('malformed intent (202 without sessionId) → "session failed" surface', async ({ page, request }) => {
+    await startPlaybackUnder(page, request, 'playback-bad-intent');
+    await expect(page.getByText(/session failed/i)).toBeVisible({ timeout: 15_000 });
+  });
 });
