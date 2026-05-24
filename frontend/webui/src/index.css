@@ -672,3 +672,25 @@ a:hover {
     transform: none !important;
   }
 }
+
+/* Accessibility: skip-to-content link. Off-screen until focused (no transition,
+   so it respects the motion contract). Colors come from tokens only. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -4rem;
+  z-index: 1000;
+  padding: 0.5rem 0.875rem;
+  background: var(--accent-action);
+  color: var(--bg-base);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 0.5rem;
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}

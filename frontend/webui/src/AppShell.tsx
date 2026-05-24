@@ -68,8 +68,9 @@ export default function AppShell({ onLogout }: AppShellProps) {
 
   return (
     <>
+      <a className="skip-link" href="#main-content">{t('a11y.skipToContent')}</a>
       {!usesNativeTvNavigation && <Navigation onLogout={onLogout} />}
-      <main className="content-area">
+      <main className="content-area" id="main-content">
         <ErrorBoundary
           homeHref={ROUTE_MAP.dashboard}
           resetKey={normalizedPathname}
