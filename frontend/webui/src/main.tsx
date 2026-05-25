@@ -5,7 +5,7 @@
 
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
+import AppRouter from './AppRouter';
 // Self-hosted fonts (no external Google CDN call). Variable axes match the
 // previous wght@400..700 / 400..600 / 400..500 usage.
 import '@fontsource-variable/space-grotesk';
@@ -53,7 +53,7 @@ const root = createRoot(document.getElementById('root')!);
 
 void i18nReady.finally(() => {
   root.render(
-    <BrowserRouter>
+    <AppRouter>
       <ErrorBoundary
         fallbackTitle="xg2g could not be loaded"
         fallbackDetail="Try again to restore the interface."
@@ -75,6 +75,6 @@ void i18nReady.finally(() => {
           </UiSurfaceProvider>
         </QueryClientProvider>
       </ErrorBoundary>
-    </BrowserRouter>,
+    </AppRouter>,
   );
 });
