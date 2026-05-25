@@ -51,6 +51,8 @@ func (s *Server) newRouter() chi.Router {
 		RateLimitGlobalRPS: s.cfg.RateLimitGlobal,
 		RateLimitBurst:     s.cfg.RateLimitBurst,
 		RateLimitWhitelist: s.cfg.RateLimitWhitelist,
+
+		MaxRequestBodyBytes: middleware.DefaultMaxRequestBodyBytes,
 	})
 	return r
 }
