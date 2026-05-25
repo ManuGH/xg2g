@@ -277,8 +277,12 @@ func buildRegistry() (*Registry, error) {
 		{Path: "limits.max_transcodes", Env: "XG2G_MAX_TRANSCODES", FieldPath: "Limits.MaxTranscodes", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 
 		// --- RESILIENCE: TIMEOUTS ---
-		{Path: "timeouts.transcode_start", Env: "", FieldPath: "Timeouts.TranscodeStart", Profile: ProfileAdvanced, Status: StatusActive, Default: 15 * time.Second},
-		{Path: "timeouts.transcode_no_progress", Env: "", FieldPath: "Timeouts.TranscodeNoProgress", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
+		// Live broadcasts join mid-stream and can take 15-20s to reach a decodable
+		// keyframe; a 15s start budget killed the first ffmpeg attempt and forced a
+		// wasteful full retry. 30s covers the join so the first attempt succeeds.
+		// Env-tunable so it can be lowered for low-latency sources.
+		{Path: "timeouts.transcode_start", Env: "XG2G_TRANSCODE_START_TIMEOUT", FieldPath: "Timeouts.TranscodeStart", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
+		{Path: "timeouts.transcode_no_progress", Env: "XG2G_TRANSCODE_NO_PROGRESS_TIMEOUT", FieldPath: "Timeouts.TranscodeNoProgress", Profile: ProfileAdvanced, Status: StatusActive, Default: 45 * time.Second},
 		{Path: "timeouts.kill_grace", Env: "", FieldPath: "Timeouts.KillGrace", Profile: ProfileAdvanced, Status: StatusActive, Default: 2 * time.Second},
 
 		// --- RESILIENCE: BREAKER ---
