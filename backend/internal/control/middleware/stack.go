@@ -37,6 +37,9 @@ type StackConfig struct {
 	RateLimitGlobalRPS int
 	RateLimitBurst     int
 	RateLimitWhitelist []string
+
+	// MaxRequestBodyBytes caps the size of inbound request bodies (0 disables).
+	MaxRequestBodyBytes int64
 }
 
 // NewRouter constructs a chi router with the canonical middleware stack applied.
@@ -52,6 +55,10 @@ func ApplyStack(r chi.Router, cfg StackConfig) {
 	r.Use(Recoverer)
 	// 2. RequestID (correlation early)
 	r.Use(RequestID)
+	// 2b. Body-size backstop (bound memory before any handler reads the body)
+	if cfg.MaxRequestBodyBytes > 0 {
+		r.Use(MaxBodyBytes(cfg.MaxRequestBodyBytes))
+	}
 	// 3. CORS (so OPTIONS and browser clients behave)
 	if cfg.EnableCORS {
 		r.Use(CORS(cfg.AllowedOrigins, cfg.CORSAllowCredentials))
