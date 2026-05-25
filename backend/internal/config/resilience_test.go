@@ -42,14 +42,28 @@ func TestResilienceDefaults(t *testing.T) {
 	assert.Equal(t, 2, cfg.Limits.MaxTranscodes)
 	assert.True(t, cfg.Engine.Enabled) // Default from registry
 
-	assert.Equal(t, 15*time.Second, cfg.Timeouts.TranscodeStart)
-	assert.Equal(t, 30*time.Second, cfg.Timeouts.TranscodeNoProgress)
+	assert.Equal(t, 30*time.Second, cfg.Timeouts.TranscodeStart)
+	assert.Equal(t, 45*time.Second, cfg.Timeouts.TranscodeNoProgress)
 	assert.Equal(t, 2*time.Second, cfg.Timeouts.KillGrace)
 
 	assert.Equal(t, 5*time.Minute, cfg.Breaker.Window)
 	assert.Equal(t, 10, cfg.Breaker.MinAttempts)
 	assert.Equal(t, 7, cfg.Breaker.FailuresThreshold)
 	assert.Equal(t, 5, cfg.Breaker.ConsecutiveThreshold)
+}
+
+func TestTranscodeTimeoutsEnvOverride(t *testing.T) {
+	l, _ := setupConfigTest(t)
+	t.Setenv("XG2G_TRANSCODE_START_TIMEOUT", "12s")
+	t.Setenv("XG2G_TRANSCODE_NO_PROGRESS_TIMEOUT", "40s")
+
+	cfg, err := l.Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, 12*time.Second, cfg.Timeouts.TranscodeStart, "env must override TranscodeStart")
+	assert.Equal(t, 40*time.Second, cfg.Timeouts.TranscodeNoProgress, "env must override TranscodeNoProgress")
+	// Invariant the validator enforces: NoProgress must stay greater than Start.
+	assert.Greater(t, cfg.Timeouts.TranscodeNoProgress, cfg.Timeouts.TranscodeStart)
 }
 
 func TestResilienceZeroOverrides(t *testing.T) {
