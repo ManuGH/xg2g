@@ -1073,11 +1073,26 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 }
 
 func av1VAAPIGeometryPadFilter() string {
-	// Current AMD VAAPI AV1 encoders can emit 1080p bitstreams that decode as
-	// 1082-line frames. Padding the software-domain input to a 16-line height
-	// keeps the decoded geometry stable for native HLS clients. Adjust SAR
-	// before padding so display aspect ratio remains unchanged after 1088p.
-	return "setsar=sar=sar*ceil(h/16)*16/h:max=1000,pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
+	// Two geometry corrections, AV1-only, applied in the software domain before
+	// hwupload:
+	//
+	//  1. Upscale sub-720p sources to at least 720 lines. Apple's M-series AV1
+	//     hardware decoder renders HD AV1 (>= 720p) correctly but produces black
+	//     video for SD-resolution AV1 (e.g. 720x576) while audio keeps playing.
+	//     We upscale instead of downgrading to H.264 because AV1 keeps the
+	//     quality advantage (less banding) even on SD content. The target width
+	//     is derived from the input display aspect ratio so the result has square
+	//     pixels (sar 1:1) and the DAR is preserved; HD sources (ih >= 720) pass
+	//     through unscaled. The escaped commas keep max(720,ih) inside the scale
+	//     expression rather than splitting the filtergraph.
+	//
+	//  2. Current AMD VAAPI AV1 encoders can emit 1080p bitstreams that decode as
+	//     1082-line frames. Padding to a 16-line height keeps the decoded
+	//     geometry stable for native HLS clients; SAR is adjusted before padding
+	//     so the display aspect ratio is unchanged after 1088p.
+	return "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos," +
+		"setsar=sar=sar*ceil(h/16)*16/h:max=1000," +
+		"pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
 
 func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCodec string) []string {
