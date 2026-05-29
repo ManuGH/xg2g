@@ -473,12 +473,14 @@ func (o *Orchestrator) registerActive(id string, cancel context.CancelFunc) {
 		o.active = make(map[string]context.CancelFunc)
 	}
 	o.active[id] = cancel
+	setSessionsActive(len(o.active))
 }
 
 func (o *Orchestrator) unregisterActive(id string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	delete(o.active, id)
+	setSessionsActive(len(o.active))
 }
 
 func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, ok bool, err error) {
