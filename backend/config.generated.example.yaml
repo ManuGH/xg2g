@@ -150,7 +150,7 @@ server:
 sessions:
   expiry_check_interval: 1m
   heartbeat_interval: 30s
-  lease_ttl: 2h
+  lease_ttl: 2m
 store:
   backend: sqlite
   path: /var/lib/xg2g/store
@@ -158,8 +158,8 @@ streaming:
   delivery_policy: universal
 timeouts:
   kill_grace: 2s
-  transcode_no_progress: 30s
-  transcode_start: 15s
+  transcode_no_progress: 45s
+  transcode_start: 30s
 tls:
   cert: ""
   enabled: false
