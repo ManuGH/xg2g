@@ -3,9 +3,11 @@ package ffmpeg
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -207,8 +209,20 @@ func (a *LocalAdapter) buildFPSProbeArgs(inputURL string, retry bool) []string {
 		}
 	}
 
+	// Extract credentials from the URL and pass them via -headers so they
+	// do not leak through /proc/<pid>/cmdline of the ffprobe subprocess.
+	headers := "Connection: close\r\n"
+	if u, err := url.Parse(inputURL); err == nil && u.User != nil {
+		pwd, _ := u.User.Password()
+		auth := u.User.Username() + ":" + pwd
+		headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
+		u.User = nil
+		inputURL = u.String()
+	}
+
 	args := []string{
 		"-v", "error",
+		"-headers", headers,
 	}
 	if whitelist, ok := infraffmpeg.InputProtocolWhitelist(inputURL); ok {
 		args = append(args, "-protocol_whitelist", whitelist)
