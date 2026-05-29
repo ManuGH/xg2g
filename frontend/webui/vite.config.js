@@ -42,27 +42,14 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Separate the lighter HLS.js runtime into its own chunk (loaded only with V3Player)
-          'hls': ['hls.js/light'],
-          // React and core libraries
-          'vendor-react': ['react', 'react-dom', 'react-dom/client'],
-          // Keep routing stable across app-level changes.
-          'vendor-router': ['react-router-dom'],
-          // TanStack Query is part of app bootstrap but changes far less often than app code.
-          'vendor-query': ['@tanstack/react-query'],
-          // i18n runtime stays stable while locale JSON loads on demand per language.
-          'vendor-i18n': [
-            'i18next',
-            'react-i18next',
-            './src/i18n.ts'
-          ],
-          // Generated API client
-          'api-client': [
-            './src/client-ts/client.gen.ts',
-            './src/client-ts/sdk.gen.ts',
-            './src/client-ts/types.gen.ts'
-          ]
+        // Vite 8 / Rolldown requires manualChunks as a function, not an object.
+        manualChunks(id) {
+          if (id.includes('/node_modules/hls.js/')) return 'hls'
+          if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'vendor-react'
+          if (id.includes('/node_modules/react-router-dom/')) return 'vendor-router'
+          if (id.includes('/node_modules/@tanstack/react-query/')) return 'vendor-query'
+          if (id.includes('/node_modules/i18next/') || id.includes('/node_modules/react-i18next/') || id.endsWith('/src/i18n.ts')) return 'vendor-i18n'
+          if (id.endsWith('/src/client-ts/client.gen.ts') || id.endsWith('/src/client-ts/sdk.gen.ts') || id.endsWith('/src/client-ts/types.gen.ts')) return 'api-client'
         }
       }
     }
