@@ -1014,11 +1014,19 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 		dto.PreflightDetail = &preflightDetail
 	}
 
-	target := trace.TargetProfile
+	// Statistics never lie: the displayed output profile must reflect what
+	// ffmpeg actually runs (session.Profile, kept in sync through recovery and
+	// runtime transitions), NOT the decision engine's earlier prediction that
+	// may still sit on the trace. Derive the live target + hash from the
+	// executed profile so the panel can never report a transcode it isn't doing.
+	target := model.TraceTargetProfileFromProfile(session.Profile)
+	if target == nil {
+		target = trace.TargetProfile
+	}
 	if target != nil {
-		dto.TargetProfile = mapTargetProfile(target)
-		hash := strings.TrimSpace(trace.TargetProfileHash)
-		if hash != "" {
+		canonical := playbackprofile.CanonicalizeTarget(*target)
+		dto.TargetProfile = mapTargetProfile(&canonical)
+		if hash := playbackprofile.HashTarget(canonical); hash != "" {
 			dto.TargetProfileHash = &hash
 		}
 	}
