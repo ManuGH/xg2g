@@ -2,7 +2,7 @@ version: 2
 updates:
   # Go dependencies (Bundle everything into one PR)
   - package-ecosystem: "gomod"
-    directory: "/"
+    directory: "/backend"
     schedule:
       interval: "daily"
       time: "04:00"
@@ -21,7 +21,10 @@ updates:
 
   # WebUI dependencies (Bundle everything into one PR)
   - package-ecosystem: "npm"
-    directory: "/webui"
+    directories:
+      - "/"
+      - "/frontend/webui"
+      - "/backend/e2e/fixture-server"
     schedule:
       interval: "daily"
       time: "04:00"
