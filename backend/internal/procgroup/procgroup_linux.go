@@ -120,18 +120,18 @@ func groupGoneWithin(pid int, d time.Duration) bool {
 	if syscall.Kill(-pid, 0) == syscall.ESRCH {
 		return true
 	}
+	deadline := time.Now().Add(d)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	deadline := time.Now().Add(d)
+	// Single-channel ticker loop: for range would be cleaner per S1000, but
+	// the ticker never closes so the compiler would reject missing return.
 	for {
-		select {
-		case <-ticker.C:
-			if syscall.Kill(-pid, 0) == syscall.ESRCH {
-				return true
-			}
-			if time.Now().After(deadline) {
-				return syscall.Kill(-pid, 0) == syscall.ESRCH
-			}
+		<-ticker.C
+		if syscall.Kill(-pid, 0) == syscall.ESRCH {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return syscall.Kill(-pid, 0) == syscall.ESRCH
 		}
 	}
 }
