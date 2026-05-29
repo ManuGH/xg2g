@@ -85,10 +85,23 @@ var (
 		},
 		[]string{"previous_state"},
 	)
+
+	// Live active-session truth gauge, fed from the orchestrator's o.active map
+	// via registerActive/unregisterActive. Mirrors the SetTunersInUse pattern and
+	// matches the Grafana dashboard's existing xg2g_v3_sessions_active query.
+	sessionsActive = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "xg2g_v3_sessions_active",
+		Help: "Current number of active (running) sessions tracked by the orchestrator.",
+	})
 )
 
 func observeTTFP(profile string, start time.Time) {
 	timeToFirstPlaylist.WithLabelValues(profile).Observe(time.Since(start).Seconds())
+}
+
+// setSessionsActive publishes the current live session count to the gauge.
+func setSessionsActive(n int) {
+	sessionsActive.Set(float64(n))
 }
 
 func recordSessionStartOutcome(result string, reason model.ReasonCode, profile string) {

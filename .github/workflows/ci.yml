@@ -110,3 +110,35 @@ jobs:
         # The default PR gate is intentionally deterministic and must not
         # depend on optional ffmpeg/system-package availability.
         run: make ci-pr
+
+  race-pr:
+    name: CI / Race Detector (live concurrency packages)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GOTOOLCHAIN: auto
+      TZ: UTC
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+          cache: false
+        env:
+          GOTOOLCHAIN: auto
+
+      - name: Run scoped race detector
+        # Packages where the live transcode/session concurrency lives. These
+        # are exactly the packages a fix to the session/ffmpeg/bus hot path
+        # touches, and they were previously only covered by the nightly
+        # full ./... -race run (ci-deep-scheduled.yml) — too late to block a
+        # regression merging. Scoped + deterministic (no ffmpeg binary needed).
+        run: make test-race-pr

@@ -84,7 +84,12 @@ jobs:
 
           skip_reason=""
           webui_gate_needed=false
-          if printf '%s\n' "$changed_files" | grep -Eq '^(frontend/webui/|backend/e2e/|\.github/workflows/pr-required-gates\.yml$)'; then
+          # The browser smoke includes the real-hls.js playback spec, so it must
+          # also run when the live playback path changes on the backend: the
+          # transcode pipeline (infra/media/ffmpeg), the session lifecycle
+          # (domain/session) and the HTTP layer that serves HLS + sessions
+          # (control/http/v3). Previously a pure transcode/session PR skipped it.
+          if printf '%s\n' "$changed_files" | grep -Eq '^(frontend/webui/|backend/e2e/|backend/internal/infra/media/ffmpeg/|backend/internal/domain/session/|backend/internal/control/http/v3/|\.github/workflows/pr-required-gates\.yml$)'; then
             webui_gate_needed=true
           fi
 

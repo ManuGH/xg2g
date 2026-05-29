@@ -40,6 +40,19 @@ func (e *OWIError) Error() string {
 	return msg
 }
 
-func (e *OWIError) Unwrap() error {
-	return e.Sentinel
+// Unwrap exposes both the boundary sentinel and the nested lower-level error so
+// errors.Is/As can reach either branch. Callers match the sentinel
+// (errors.Is(err, ErrTimeout)); the circuit breaker and retry classifier reach
+// the nested net.Error / context error to decide whether a failure is technical.
+// Returning only the sentinel (a plain errors.New) hid the transport error and
+// stopped the breaker from ever tripping on dial timeouts / connection refused.
+func (e *OWIError) Unwrap() []error {
+	errs := make([]error, 0, 2)
+	if e.Sentinel != nil {
+		errs = append(errs, e.Sentinel)
+	}
+	if e.Err != nil {
+		errs = append(errs, e.Err)
+	}
+	return errs
 }

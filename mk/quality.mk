@@ -2,7 +2,7 @@
 # Quality Assurance Targets
 # ===================================================================================================
 
-.PHONY: lint lint-fix test test-race test-cover cover test-all test-integration smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools
+.PHONY: lint lint-fix test test-race test-race-pr test-cover cover test-all test-integration smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools
 
 lint: ## Run golangci-lint with all checks
 	@echo "Running golangci-lint..."
@@ -39,6 +39,16 @@ test-race: ## Run tests with race detection
 	@echo "Running tests with race detection..."
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test ./... -v -race -count=1 -timeout=$(GO_TEST_RACE_TIMEOUT)
 	@echo "✅ Race detection tests passed"
+
+test-race-pr: ## Race detector scoped to live concurrency-critical packages (PR gate; deterministic, no ffmpeg binary)
+	@echo "Running scoped race detector (PR gate)..."
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -race -count=1 -timeout=$(GO_TEST_RACE_TIMEOUT) \
+		./internal/domain/session/... \
+		./internal/pipeline/bus/... \
+		./internal/infra/media/ffmpeg/... \
+		./internal/procgroup/... \
+		./internal/openwebif/...
+	@echo "✅ Scoped race detection (PR gate) passed"
 
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."

@@ -472,13 +472,20 @@ func (o *Orchestrator) registerActive(id string, cancel context.CancelFunc) {
 	if o.active == nil {
 		o.active = make(map[string]context.CancelFunc)
 	}
+	// PR-P9-2-3: Call the old cancel before overwriting to prevent resource leaks
+	// (goroutines, timers) associated with the previous context.
+	if oldCancel, exists := o.active[id]; exists && oldCancel != nil {
+		oldCancel()
+	}
 	o.active[id] = cancel
+	setSessionsActive(len(o.active))
 }
 
 func (o *Orchestrator) unregisterActive(id string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	delete(o.active, id)
+	setSessionsActive(len(o.active))
 }
 
 func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, ok bool, err error) {
