@@ -61,6 +61,11 @@ func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string,
 		pwd, _ := u.User.Password()
 		auth := u.User.Username() + ":" + pwd
 		headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
+		// Strip userinfo from the probe URL now that credentials are in the
+		// Authorization header, so they cannot leak via /proc/<pid>/cmdline
+		// of the ffprobe subprocess.
+		u.User = nil
+		path = u.String()
 	}
 
 	args := []string{

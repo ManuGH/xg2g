@@ -28,6 +28,14 @@ const experimentalInterlacedVAAPICodecsEnv = "XG2G_EXPERIMENTAL_ALLOW_UNVERIFIED
 type inputPlan struct {
 	args     []string
 	inputURL string
+
+	// authURL preserves the original input URL with userinfo credentials
+	// before they are stripped from inputURL.  Probe functions (ffprobe,
+	// warmup HTTP GET, safari runtime probe) use this URL so they can
+	// authenticate against protected sources even though the main ffmpeg
+	// -i argument has been sanitised to prevent credential leakage via
+	// /proc/<pid>/cmdline.
+	authURL string
 }
 
 type codecPlan struct {
@@ -62,7 +70,12 @@ func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamS
 		return finalizedPlan{}, err
 	}
 	if spec.Mode == ports.ModeLive {
-		spec = a.FinalizePlan(ctx, spec, inputPhase.inputURL)
+		// Pass the original (pre-sanitisation) URL so that any probe calls
+		// inside FinalizePlan (e.g. safari runtime probe) can authenticate
+		// against protected sources.  Service-ref extraction uses the same
+		// host/path/query structure either way, so the credentials in the
+		// userinfo portion do not interfere.
+		spec = a.FinalizePlan(ctx, spec, inputPhase.authURL)
 	}
 
 	codecPhase, err := a.planCodec(spec)
@@ -357,6 +370,21 @@ func strictLiveIngestCodec(codec string) bool {
 }
 
 func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputPlan, error) {
+	// Early initialisation: if inputURL is empty for a URL source, use
+	// spec.Source.ID directly so the credential-stripping logic below
+	// always acts on the actual source URL.  Without this, url.Parse("")
+	// yields a nil User and the stripping block is skipped entirely,
+	// allowing raw credentials to flow through to ffmpeg's -i argument.
+	if inputURL == "" && spec.Source.Type == ports.SourceURL {
+		inputURL = spec.Source.ID
+	}
+
+	// Preserve the original URL before credential stripping so that probe
+	// functions (ffprobe, warmup HTTP, safari runtime probe) can still
+	// authenticate against protected sources even after the main ffmpeg -i
+	// argument has been sanitised.
+	authURL := inputURL
+
 	fflags := strings.TrimSpace(a.IngestFFlags)
 	if fflags == "" {
 		fflags = "+genpts+discardcorrupt+flush_packets"
@@ -407,6 +435,11 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 				auth := u.User.Username() + ":"
 				headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
 			}
+			// Credentials now travel in the Authorization header; strip them from
+			// the URL so they cannot leak into ffmpeg's argv (/proc/<pid>/cmdline)
+			// or any logged command line.
+			u.User = nil
+			inputURL = u.String()
 		}
 
 		baseInputArgs = append(baseInputArgs,
@@ -439,7 +472,8 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		"-reconnect_on_http_error", "4xx,5xx",
 	)
 
-	phase := inputPlan{inputURL: inputURL}
+	phase := inputPlan{inputURL: inputURL, authURL: authURL}
+
 	switch spec.Source.Type {
 	case ports.SourceTuner:
 		if phase.inputURL == "" {
@@ -469,7 +503,15 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		return outputPlan{}, err
 	}
 	spec.Profile.VideoCodec = codec.resolvedCodec
-	fps := a.resolveLiveFPS(ctx, spec, input.inputURL)
+	// Use the pre-sanitisation URL so ffprobe/warmup probes can authenticate
+	// against protected sources.  adjustLiveFPSForRuntimeServiceOverride only
+	// extracts the service ref from the URL structure and works correctly with
+	// either version.
+	probeURL := input.authURL
+	if probeURL == "" {
+		probeURL = input.inputURL
+	}
+	fps := a.resolveLiveFPS(ctx, spec, probeURL)
 	fps = a.adjustLiveFPSForRuntimeServiceOverride(spec, input.inputURL, fps)
 	targetOutputFPS := targetLiveOutputFPS(spec)
 	gopFPS := fps
