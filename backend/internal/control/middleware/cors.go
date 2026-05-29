@@ -37,9 +37,20 @@ func CORS(allowedOrigins []string, allowCredentials bool) func(http.Handler) htt
 			// disallowed or origin-less callers leaks the API's method/header
 			// surface and is what "Allow-* on disallowed origins" flagged.
 			if origin != "" && (allowAll || allowed[origin]) {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				if allowCredentials {
-					w.Header().Set("Access-Control-Allow-Credentials", "true")
+				if allowAll {
+					// Wildcard: emit * instead of reflecting the request Origin.
+					// Per the Fetch spec, Access-Control-Allow-Origin: * cannot carry
+					// Access-Control-Allow-Credentials: true.  When allowCredentials is
+					// true alongside a wildcard origin list, we suppress the credentials
+					// header — reflecting the actual origin would allow any arbitrary
+					// website to make credentialed cross-origin requests, which is a
+					// classic CORS misconfiguration.
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				} else {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					if allowCredentials {
+						w.Header().Set("Access-Control-Allow-Credentials", "true")
+					}
 				}
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT, PATCH")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token, Authorization")
