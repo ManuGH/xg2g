@@ -77,3 +77,60 @@ func killGroup(pid int, grace, timeout time.Duration) error {
 		return ErrKillFailed
 	}
 }
+
+func terminateGroup(pid int) error {
+	if pid <= 0 {
+		return nil
+	}
+	// -pid targets the PGID leader and all children (requires Setpgid at spawn).
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
+		if err == syscall.ESRCH {
+			return nil
+		}
+		// Group signalling restricted/failed: fall back to the leader.
+		_ = syscall.Kill(pid, syscall.SIGTERM)
+	}
+	return nil
+}
+
+// killGroupGraceful sends SIGTERM, waits grace, then SIGKILL to the process
+// group, observing liveness with signal 0 instead of reaping. The exec.Cmd
+// owner reaps concurrently via cmd.Wait, so a zombie leader clears promptly and
+// this never calls wait4 itself.
+func killGroupGraceful(pid int, grace, timeout time.Duration) error {
+	if pid <= 0 {
+		return nil
+	}
+	log.L().Debug().Int("pid", pid).Msg("sending SIGTERM to process group (non-reaping)")
+	_ = terminateGroup(pid)
+	if groupGoneWithin(pid, grace) {
+		return nil
+	}
+	log.L().Warn().Int("pid", pid).Msg("SIGTERM grace period exceeded, sending SIGKILL to process group")
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+	if groupGoneWithin(pid, timeout) {
+		return nil
+	}
+	return ErrKillFailed
+}
+
+func groupGoneWithin(pid int, d time.Duration) bool {
+	if syscall.Kill(-pid, 0) == syscall.ESRCH {
+		return true
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.After(d)
+	for {
+		select {
+		case <-deadline:
+			return syscall.Kill(-pid, 0) == syscall.ESRCH
+		case <-ticker.C:
+			if syscall.Kill(-pid, 0) == syscall.ESRCH {
+				return true
+			}
+		}
+	}
+}
