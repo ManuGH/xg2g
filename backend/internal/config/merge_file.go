@@ -48,6 +48,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	l.mergeFilePicons(dst, src)
 	l.mergeFileHDHR(dst, src)
 	l.mergeFileHLS(dst, src)
+	l.mergeFileSessions(dst, src)
 	l.mergeFileFFmpeg(dst, src)
 	l.mergeFileEngine(dst, src)
 	l.mergeFileTLS(dst, src)
@@ -419,6 +420,22 @@ func (l *Loader) mergeFileHLS(dst *AppConfig, src *FileConfig) {
 		}
 		if src.HLS.ReadySegments > 0 {
 			dst.HLS.ReadySegments = src.HLS.ReadySegments
+		}
+	}
+}
+
+func (l *Loader) mergeFileSessions(dst *AppConfig, src *FileConfig) {
+	// Sessions (ADR-009 lease lifecycle). Without this merge, sessions.* YAML was
+	// a dead no-op and the lease_ttl default was effectively hardcoded.
+	if src.Sessions != nil {
+		if src.Sessions.LeaseTTL > 0 {
+			dst.Sessions.LeaseTTL = src.Sessions.LeaseTTL
+		}
+		if src.Sessions.HeartbeatInterval > 0 {
+			dst.Sessions.HeartbeatInterval = src.Sessions.HeartbeatInterval
+		}
+		if src.Sessions.ExpiryCheckInterval > 0 {
+			dst.Sessions.ExpiryCheckInterval = src.Sessions.ExpiryCheckInterval
 		}
 	}
 }

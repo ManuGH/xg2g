@@ -29,6 +29,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvCanonicalEnigma2(cfg)
 	l.mergeEnvTunerSlots(cfg)
 	l.mergeEnvResilience(cfg)
+	l.mergeEnvSessions(cfg)
 	l.mergeEnvCanonicalStore(cfg)
 	l.mergeEnvCanonicalHLS(cfg)
 	l.mergeEnvCanonicalFFmpeg(cfg)
@@ -206,6 +207,13 @@ func (l *Loader) mergeEnvTunerSlots(cfg *AppConfig) {
 			cfg.Engine.TunerSlots = slots
 		}
 	}
+}
+
+func (l *Loader) mergeEnvSessions(cfg *AppConfig) {
+	// Sessions lease lifecycle (ADR-009). Env overrides file/default.
+	cfg.Sessions.LeaseTTL = l.envDuration("XG2G_SESSION_LEASE_TTL", cfg.Sessions.LeaseTTL)
+	cfg.Sessions.HeartbeatInterval = l.envDuration("XG2G_SESSION_HEARTBEAT_INTERVAL", cfg.Sessions.HeartbeatInterval)
+	cfg.Sessions.ExpiryCheckInterval = l.envDuration("XG2G_SESSION_EXPIRY_CHECK_INTERVAL", cfg.Sessions.ExpiryCheckInterval)
 }
 
 func (l *Loader) mergeEnvResilience(cfg *AppConfig) {

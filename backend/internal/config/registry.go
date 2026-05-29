@@ -237,9 +237,9 @@ func buildRegistry() (*Registry, error) {
 		{Path: "verification.interval", Env: "XG2G_VERIFY_INTERVAL", FieldPath: "Verification.Interval", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
 
 		// --- SESSIONS (ADR-009) ---
-		{Path: "sessions.lease_ttl", Env: "", FieldPath: "Sessions.LeaseTTL", Profile: ProfileAdvanced, Status: StatusActive, Default: 2 * time.Hour},
-		{Path: "sessions.heartbeat_interval", Env: "", FieldPath: "Sessions.HeartbeatInterval", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
-		{Path: "sessions.expiry_check_interval", Env: "", FieldPath: "Sessions.ExpiryCheckInterval", Profile: ProfileAdvanced, Status: StatusActive, Default: 1 * time.Minute},
+		{Path: "sessions.lease_ttl", Env: "XG2G_SESSION_LEASE_TTL", FieldPath: "Sessions.LeaseTTL", Profile: ProfileAdvanced, Status: StatusActive, Default: 120 * time.Second},
+		{Path: "sessions.heartbeat_interval", Env: "XG2G_SESSION_HEARTBEAT_INTERVAL", FieldPath: "Sessions.HeartbeatInterval", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
+		{Path: "sessions.expiry_check_interval", Env: "XG2G_SESSION_EXPIRY_CHECK_INTERVAL", FieldPath: "Sessions.ExpiryCheckInterval", Profile: ProfileAdvanced, Status: StatusActive, Default: 1 * time.Minute},
 
 		// --- RECORDINGS ---
 		{Path: "recording_roots", Env: "", FieldPath: "RecordingRoots", Profile: ProfileAdvanced, Status: StatusActive},

@@ -981,7 +981,7 @@
           "type": "string"
         },
         "lease_ttl": {
-          "default": "2h",
+          "default": "2m",
           "type": "string"
         }
       },
@@ -1016,11 +1016,11 @@
           "type": "string"
         },
         "transcode_no_progress": {
-          "default": "30s",
+          "default": "45s",
           "type": "string"
         },
         "transcode_start": {
-          "default": "15s",
+          "default": "30s",
           "type": "string"
         }
       },

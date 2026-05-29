@@ -272,9 +272,9 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
-| `sessions.expiry_check_interval` | - | `1m` | Active | Advanced |
-| `sessions.heartbeat_interval` | - | `30s` | Active | Advanced |
-| `sessions.lease_ttl` | - | `2h` | Active | Advanced |
+| `sessions.expiry_check_interval` | `XG2G_SESSION_EXPIRY_CHECK_INTERVAL` | `1m` | Active | Advanced |
+| `sessions.heartbeat_interval` | `XG2G_SESSION_HEARTBEAT_INTERVAL` | `30s` | Active | Advanced |
+| `sessions.lease_ttl` | `XG2G_SESSION_LEASE_TTL` | `2m` | Active | Advanced |
 
 ### store
 
@@ -294,8 +294,8 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `timeouts.kill_grace` | - | `2s` | Active | Advanced |
-| `timeouts.transcode_no_progress` | - | `30s` | Active | Advanced |
-| `timeouts.transcode_start` | - | `15s` | Active | Advanced |
+| `timeouts.transcode_no_progress` | `XG2G_TRANSCODE_NO_PROGRESS_TIMEOUT` | `45s` | Active | Advanced |
+| `timeouts.transcode_start` | `XG2G_TRANSCODE_START_TIMEOUT` | `30s` | Active | Advanced |
 
 ### tls
 
