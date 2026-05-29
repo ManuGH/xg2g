@@ -776,6 +776,9 @@ export function usePlaybackOrchestrator(
           });
 
           if (error) {
+            if (!response) {
+              throw new Error(JSON.stringify(error));
+            }
             if (notifyAuthRequiredIfUnauthorizedResponse(response, 'V3Player.recordingPlaybackInfo')) {
               setStatus('error');
               const failure = buildAuthDeniedFailure(t, 401);
