@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -388,6 +389,19 @@ func (s *Server) scheduleSessionRestart(eventBus bus.Bus, store SessionStateStor
 	restartCtx := s.runtimeContextOrBackground()
 
 	go func() {
+		// Detached, long-lived goroutine on the live path: a panic here would
+		// otherwise take down the whole daemon. The bus is now panic-safe; this
+		// is defence-in-depth for any future fault in the restart path.
+		defer func() {
+			if r := recover(); r != nil {
+				log.L().Error().
+					Interface("panic", r).
+					Str("sessionId", sessionID).
+					Str("stack", string(debug.Stack())).
+					Msg("session restart goroutine recovered from panic")
+			}
+		}()
+
 		ctx, cancel := context.WithTimeout(restartCtx, fallbackRestartTimeout)
 		defer cancel()
 

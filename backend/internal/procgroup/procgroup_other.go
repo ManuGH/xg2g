@@ -52,3 +52,32 @@ func killGroup(pid int, grace, timeout time.Duration) error {
 		return ErrKillFailed
 	}
 }
+
+func terminateGroup(pid int) error {
+	if pid <= 0 {
+		return nil
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return nil
+	}
+	_ = proc.Signal(os.Interrupt)
+	return nil
+}
+
+// killGroupGraceful is a best-effort, non-reaping fallback for non-linux hosts:
+// it signals then force-kills the leader (no process-group semantics) and lets
+// the exec.Cmd owner reap via cmd.Wait.
+func killGroupGraceful(pid int, grace, _ time.Duration) error {
+	if pid <= 0 {
+		return nil
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return nil
+	}
+	_ = proc.Signal(os.Interrupt)
+	time.Sleep(grace)
+	_ = proc.Kill()
+	return nil
+}
