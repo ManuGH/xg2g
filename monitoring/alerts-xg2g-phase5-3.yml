@@ -7,19 +7,22 @@
 # no live caller (capacity is enforced via tuner leases, host pressure via the live
 # CPU snapshot). Alerting on never-emitted series is a permanent false-positive that
 # trains operators to ignore the page, so those rules were removed rather than kept
-# as lies. What remains is the one invariant backed by metrics the daemon actually
-# emits: tuner leases held for an extended period without session activity.
+# as lies. What remains is backed by metrics the daemon actually emits: a tuner
+# lease held while the orchestrator reports zero active sessions, which pinpoints a
+# leak rather than a legitimately long-running session.
 groups:
   - name: xg2g_session_invariants
     interval: 30s
     rules:
       - alert: XG2G_TunerLeakSuspected
         expr: |
-          xg2g_tuners_in_use > 0
+          (xg2g_tuners_in_use > 0)
+          and
+          (xg2g_v3_sessions_active == 0)
         for: 5m
         labels:
           severity: critical
           gate: "nightly"
         annotations:
-          summary: "Tuner leak suspected (tuners in use for extended period)"
-          description: "xg2g_tuners_in_use > 0 for 5 minutes without releasing. Tuner leases not released or session teardown stuck."
+          summary: "Tuner leak suspected (tuners held with no active sessions)"
+          description: "xg2g_tuners_in_use > 0 while xg2g_v3_sessions_active == 0 for 5 minutes: a tuner lease was not released after its session ended. Both gauges are emitted by the live session orchestrator."
