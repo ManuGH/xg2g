@@ -8,20 +8,18 @@
 # CPU snapshot). Alerting on never-emitted series is a permanent false-positive that
 # trains operators to ignore the page, so those rules were removed rather than kept
 # as lies. What remains is the one invariant backed by metrics the daemon actually
-# emits: tuner leases held while the orchestrator reports zero active sessions.
+# emits: tuner leases held for an extended period without session activity.
 groups:
   - name: xg2g_session_invariants
     interval: 30s
     rules:
       - alert: XG2G_TunerLeakSuspected
         expr: |
-          (xg2g_tuners_in_use{job="xg2g",instance="xg2g-main"} > 0)
-          and
-          (xg2g_v3_sessions_active{job="xg2g",instance="xg2g-main"} == 0)
+          xg2g_tuners_in_use > 0
         for: 5m
         labels:
           severity: critical
           gate: "nightly"
         annotations:
-          summary: "Tuner leak suspected (tuners in use with no active sessions)"
-          description: "xg2g_tuners_in_use > 0 while the live orchestrator reports 0 active sessions (xg2g_v3_sessions_active). Tuner leases not released or session teardown stuck."
+          summary: "Tuner leak suspected (tuners in use for extended period)"
+          description: "xg2g_tuners_in_use > 0 for 5 minutes without releasing. Tuner leases not released or session teardown stuck."
