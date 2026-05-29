@@ -58,7 +58,7 @@ func (b *MemoryBus) Publish(ctx context.Context, topic string, msg Message) erro
 }
 
 func (b *MemoryBus) Subscribe(_ context.Context, topic string) (Subscriber, error) {
-	s := &memSub{b: b, topic: topic, ch: make(chan Message, 64)}
+	s := &memSub{b: b, topic: topic, ch: make(chan Message, 64), done: make(chan struct{})}
 
 	b.mu.Lock()
 	b.subs[topic] = append(b.subs[topic], s)
@@ -77,6 +77,12 @@ type memSub struct {
 	// two are mutually exclusive, a publish can never send on a closed channel.
 	mu     sync.RWMutex
 	closed bool
+
+	// done is closed by Close before acquiring mu (write), giving in-flight
+	// delivers a way to bail out when the subscriber stops draining. Without it
+	// a publish blocked on a full channel behind a long-lived context would
+	// prevent Close from ever acquiring the write lock, causing a deadlock.
+	done chan struct{}
 }
 
 func (s *memSub) C() <-chan Message {
@@ -107,6 +113,8 @@ func (s *memSub) deliver(ctx context.Context, topic string, msg Message) error {
 				Msg("memory bus failed to publish due to context cancellation")
 		}
 		return fmt.Errorf("publish topic %q: %w", topic, ctx.Err())
+	case <-s.done:
+		return nil
 	}
 }
 
@@ -126,6 +134,11 @@ func (s *memSub) Close() error {
 		s.b.subs[s.topic] = out
 	}
 	s.b.mu.Unlock()
+
+	// Signal in-flight delivers to bail out before acquiring the write lock.
+	// This avoids a deadlock where a publish blocked on a full channel behind a
+	// long-lived context holds the read lock and prevents Close from proceeding.
+	close(s.done)
 
 	// Close the channel under the write lock so it cannot race an in-flight
 	// deliver (which holds the read lock while selecting on ch). Closing the
