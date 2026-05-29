@@ -24,6 +24,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": false,
     /* Incremental Migration Settings */
     "allowJs": true,
     "checkJs": false,
