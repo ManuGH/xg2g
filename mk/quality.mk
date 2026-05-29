@@ -129,7 +129,7 @@ quality-gates-offline: ## Offline-only gates (no network, no codegen)
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" vet ./...
 	@echo "✅ Offline gates passed"
 
-quality-gates-online: verify-generated-artifacts verify-release-output-contract verify-v3-fanout verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-capacity-autocodec-demotion verify-codec-path-matrix gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
+quality-gates-online: verify-generated-artifacts verify-release-output-contract verify-v3-fanout verify-dead-packages verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-capacity-autocodec-demotion verify-codec-path-matrix gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
