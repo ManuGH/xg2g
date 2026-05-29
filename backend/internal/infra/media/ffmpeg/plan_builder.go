@@ -407,6 +407,11 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 				auth := u.User.Username() + ":"
 				headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
 			}
+			// Credentials now travel in the Authorization header; strip them from
+			// the URL so they cannot leak into ffmpeg's argv (/proc/<pid>/cmdline)
+			// or any logged command line.
+			u.User = nil
+			inputURL = u.String()
 		}
 
 		baseInputArgs = append(baseInputArgs,
