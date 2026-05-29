@@ -225,6 +225,9 @@ func (l *Loader) mergeEnvResilience(cfg *AppConfig) {
 	if v := l.envInt("XG2G_MAX_TRANSCODES", -1); v >= 0 {
 		cfg.Limits.MaxTranscodes = v
 	}
+	// Timeouts env overrides (resilience concern, not canonical ffmpeg config)
+	cfg.Timeouts.TranscodeStart = l.envDuration("XG2G_TRANSCODE_START_TIMEOUT", cfg.Timeouts.TranscodeStart)
+	cfg.Timeouts.TranscodeNoProgress = l.envDuration("XG2G_TRANSCODE_NO_PROGRESS_TIMEOUT", cfg.Timeouts.TranscodeNoProgress)
 }
 
 func (l *Loader) mergeEnvCanonicalStore(cfg *AppConfig) {
@@ -246,8 +249,6 @@ func (l *Loader) mergeEnvCanonicalFFmpeg(cfg *AppConfig) {
 	cfg.FFmpeg.Bin = l.envString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)
 	cfg.FFmpeg.FFprobeBin = l.envString("XG2G_FFPROBE_BIN", cfg.FFmpeg.FFprobeBin)
 	cfg.FFmpeg.KillTimeout = l.envDuration("XG2G_FFMPEG_KILL_TIMEOUT", cfg.FFmpeg.KillTimeout)
-	cfg.Timeouts.TranscodeStart = l.envDuration("XG2G_TRANSCODE_START_TIMEOUT", cfg.Timeouts.TranscodeStart)
-	cfg.Timeouts.TranscodeNoProgress = l.envDuration("XG2G_TRANSCODE_NO_PROGRESS_TIMEOUT", cfg.Timeouts.TranscodeNoProgress)
 	if raw, ok := l.envLookup(vaapiDeviceEnvKey); ok {
 		cfg.FFmpeg.VaapiDevice = strings.TrimSpace(raw)
 	} else {
