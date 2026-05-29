@@ -746,7 +746,7 @@ export function usePlaybackOrchestrator(
     clearPlayerError();
 
     let abortController: AbortController | null = null;
-    let requestCaps: CapabilitySnapshot | null = null;
+    let requestCaps: CapabilitySnapshot | null;
 
     try {
       await ensureSessionCookie();
