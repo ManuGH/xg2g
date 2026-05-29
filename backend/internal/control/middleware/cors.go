@@ -31,20 +31,21 @@ func CORS(allowedOrigins []string, allowCredentials bool) func(http.Handler) htt
 			// Special case: "*" in configuration allows all origins (with optional credentials).
 			allowAll := allowed["*"]
 
-			if origin != "" {
-				if allowAll || allowed[origin] {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-					if allowCredentials {
-						w.Header().Set("Access-Control-Allow-Credentials", "true")
-					}
+			// Only emit CORS response headers when the origin is actually allowed.
+			// Access-Control-Allow-Methods/Headers/Expose-Headers/Max-Age are only
+			// meaningful alongside an allowed Allow-Origin; emitting them for
+			// disallowed or origin-less callers leaks the API's method/header
+			// surface and is what "Allow-* on disallowed origins" flagged.
+			if origin != "" && (allowAll || allowed[origin]) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				if allowCredentials {
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
 				}
-				// If not allowed, we don't set the header, browser blocks it.
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT, PATCH")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token, Authorization")
+				w.Header().Set("Access-Control-Expose-Headers", "Retry-After, Content-Length, Date, X-Request-ID")
+				w.Header().Set("Access-Control-Max-Age", "600")
 			}
-
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT, PATCH")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token, Authorization")
-			w.Header().Set("Access-Control-Expose-Headers", "Retry-After, Content-Length, Date, X-Request-ID")
-			w.Header().Set("Access-Control-Max-Age", "600")
 
 			// Always set Vary: Origin to prevent cache poisoning/confusion
 			vary := w.Header().Get("Vary")
