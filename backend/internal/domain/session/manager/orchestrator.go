@@ -472,6 +472,11 @@ func (o *Orchestrator) registerActive(id string, cancel context.CancelFunc) {
 	if o.active == nil {
 		o.active = make(map[string]context.CancelFunc)
 	}
+	// PR-P9-2-3: Call the old cancel before overwriting to prevent resource leaks
+	// (goroutines, timers) associated with the previous context.
+	if oldCancel, exists := o.active[id]; exists && oldCancel != nil {
+		oldCancel()
+	}
 	o.active[id] = cancel
 	setSessionsActive(len(o.active))
 }
