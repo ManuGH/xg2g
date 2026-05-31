@@ -140,6 +140,8 @@ type LocalAdapter struct {
 	activeProcs map[ports.RunHandle]*exec.Cmd
 	// finalizedProfiles keeps the finalized profile that actually launched for a handle.
 	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
+	// executedPlans keeps the execution-truth plan parsed from the real argv that launched for a handle.
+	executedPlans map[ports.RunHandle]ports.ExecutedFFmpegPlan
 	// runtimeDiagnostics keeps the latest FFmpeg progress/source-warning snapshot.
 	runtimeDiagnostics map[ports.RunHandle]ports.RuntimeDiagnostics
 	// processDetails keeps the last meaningful failure summary for a handle.
@@ -304,6 +306,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FPSCacheTTL:               fpsCacheTTL,
 		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
 		finalizedProfiles:         make(map[ports.RunHandle]ports.ProfileSpec),
+		executedPlans:             make(map[ports.RunHandle]ports.ExecutedFFmpegPlan),
 		runtimeDiagnostics:        make(map[ports.RunHandle]ports.RuntimeDiagnostics),
 		processDetails:            make(map[ports.RunHandle]string),
 		completedProcessDetails:   make(map[ports.RunHandle]string),
@@ -1372,6 +1375,9 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	a.mu.Lock()
 	a.activeProcs[handle] = cmd
 	a.finalizedProfiles[handle] = plan.effectiveProfile
+	// Execution truth: capture the plan parsed from the REAL argv we just handed
+	// to the process, so observers report what ffmpeg runs, not a prediction.
+	a.executedPlans[handle] = executedFFmpegPlanFromArgs(args)
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
@@ -1393,6 +1399,20 @@ func (a *LocalAdapter) FinalizedProfile(handle ports.RunHandle) (ports.ProfileSp
 		return ports.ProfileSpec{}, false
 	}
 	return profile, true
+}
+
+// ExecutedFFmpegPlan returns the execution-truth plan parsed from the real argv
+// of the process launched for the handle. It is the un-lie-able source for
+// "what ffmpeg runs", as opposed to any profile-derived prediction.
+func (a *LocalAdapter) ExecutedFFmpegPlan(handle ports.RunHandle) (ports.ExecutedFFmpegPlan, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	plan, ok := a.executedPlans[handle]
+	if !ok {
+		return ports.ExecutedFFmpegPlan{}, false
+	}
+	return plan, true
 }
 
 func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration) {
@@ -1854,6 +1874,7 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 func (a *LocalAdapter) removeActiveProcessLocked(handle ports.RunHandle, archiveDetail bool) {
 	delete(a.activeProcs, handle)
 	delete(a.finalizedProfiles, handle)
+	delete(a.executedPlans, handle)
 	delete(a.runtimeDiagnostics, handle)
 	if archiveDetail {
 		a.archiveProcessDetailLocked(handle)

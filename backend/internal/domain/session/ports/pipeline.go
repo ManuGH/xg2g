@@ -21,3 +21,23 @@ type MediaPipeline interface {
 type FinalizedProfileProvider interface {
 	FinalizedProfile(handle RunHandle) (ProfileSpec, bool)
 }
+
+// ExecutedFFmpegPlan is the execution-truth view of the ffmpeg command that was
+// actually spawned, derived by parsing the FINAL argv handed to the process —
+// never a profile prediction. Anything that surfaces "what ffmpeg runs" must
+// source from this so the displayed plan cannot drift from the real process.
+type ExecutedFFmpegPlan struct {
+	Container  string
+	Packaging  string
+	HWAccel    string
+	VideoMode  string
+	VideoCodec string
+	AudioMode  string
+	AudioCodec string
+}
+
+// ExecutedFFmpegPlanProvider exposes the execution-truth ffmpeg plan parsed from
+// the real argv of the process launched for a handle.
+type ExecutedFFmpegPlanProvider interface {
+	ExecutedFFmpegPlan(handle RunHandle) (ExecutedFFmpegPlan, bool)
+}

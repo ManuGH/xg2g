@@ -317,10 +317,28 @@ func (o *Orchestrator) startPipeline(
 			effectiveProfile = finalized
 		}
 	}
+	var executedPlan *ports.ExecutedFFmpegPlan
+	if execProvider, ok := o.Pipeline.(ports.ExecutedFFmpegPlanProvider); ok {
+		if executed, found := execProvider.ExecutedFFmpegPlan(handle); found {
+			executedPlan = &executed
+		}
+	}
 	o.updatePlaybackTraceBestEffort(hbCtx, e.SessionID, func(r *model.SessionRecord, trace *model.PlaybackTrace) {
 		r.Profile = effectiveProfile
 		trace.InputKind = string(spec.Source.Type)
 		applyTraceEffectiveProfile(trace, effectiveProfile, string(spec.Source.Type))
+		// Statistics never lie: replace the profile prediction with the plan parsed
+		// from the real argv. A mismatch means the finalized profile no longer
+		// describes what ffmpeg runs — surface it loudly rather than display a lie.
+		if executedPlan != nil {
+			if mismatch := applyTraceExecutedFFmpegPlan(trace, *executedPlan, string(spec.Source.Type)); mismatch != "" {
+				startupLogger.Warn().
+					Str("session_id", e.SessionID).
+					Str("run_handle", string(handle)).
+					Str("plan_mismatch", mismatch).
+					Msg("ffmpeg executed plan diverges from finalized profile prediction")
+			}
+		}
 	})
 
 	return handle, effectiveProfile, nil
