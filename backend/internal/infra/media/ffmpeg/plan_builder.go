@@ -1097,10 +1097,19 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	if spec.Profile.Deinterlace {
 		parts = append(parts, a.deinterlaceFilterForProfile(spec))
 	}
-	if normalizeRequestedCodec(outputCodec) == "av1" {
+	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
+	if isAV1 {
 		parts = append(parts, av1VAAPIGeometryPadFilter())
 	}
-	parts = append(parts, "format=nv12", "hwupload")
+	// AV1 encodes 10-bit (p010 -> AV1 Main, which covers 8/10-bit). The extra
+	// precision reduces encoder-introduced banding on gradients even from an
+	// 8-bit source — the same quality rationale as the AV1 upscale above.
+	// H.264/HEVC stay 8-bit (nv12) for broad client-decode compatibility.
+	uploadFormat := "nv12"
+	if isAV1 {
+		uploadFormat = "p010le"
+	}
+	parts = append(parts, "format="+uploadFormat, "hwupload")
 	return strings.Join(parts, ",")
 }
 

@@ -45,7 +45,7 @@ func TestVaapiEncodeOnlyFilter_GeometryUpscaleIsAV1Only(t *testing.T) {
 
 	av1 := a.vaapiEncodeOnlyFilter(spec, "av1")
 	assert.Contains(t, av1, av1VAAPIGeometryPadFilter(), "av1 must get the geometry upscale/pad")
-	assert.Contains(t, av1, "format=nv12,hwupload")
+	assert.Contains(t, av1, "format=p010le,hwupload")
 
 	for _, codec := range []string{"h264", "hevc"} {
 		got := a.vaapiEncodeOnlyFilter(spec, codec)
