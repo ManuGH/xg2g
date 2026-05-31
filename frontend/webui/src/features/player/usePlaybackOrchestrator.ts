@@ -79,6 +79,7 @@ import { usePlaybackStateSetters } from './orchestrator/usePlaybackStateSetters'
 import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCleanup';
 import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
+import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
@@ -312,6 +313,7 @@ export function usePlaybackOrchestrator(
   const userPauseIntentRef = useRef<boolean>(false);
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
+  const wasHiddenRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
 
@@ -1534,6 +1536,63 @@ export function usePlaybackOrchestrator(
       debugWarn('[V3Player] Host resume play blocked', err);
     });
   }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
+
+  // Browser (non-TV) foreground recovery. iOS Safari and desktop browsers
+  // suspend the decoder while backgrounded and do not auto-resume inline
+  // <video> on return — the frame stays black/frozen. Repair only on the
+  // hidden->visible edge; deliberately NO pause-on-hide (that would break
+  // desktop tab-switches). TV keeps its own effect above, untouched.
+  useEffect(() => {
+    if (hostEnvironment.isTv) {
+      return;
+    }
+    if (isNativePlaybackHost && nativePlaybackState?.activeRequest) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (!isDocumentVisible) {
+      wasHiddenRef.current = true;
+      return;
+    }
+
+    const wasHidden = wasHiddenRef.current;
+    wasHiddenRef.current = false;
+
+    const action = decideForegroundResume({
+      wasHidden,
+      isPiP: document.pictureInPictureElement === video,
+      status,
+      userPaused: userPauseIntentRef.current,
+      hasTerminal: hasTerminalStatus,
+    });
+
+    if (action === 'none') {
+      return;
+    }
+
+    if (action === 'retry') {
+      // Reaped session (heartbeat 410/404 during background) — re-establish.
+      void handleRetry();
+      return;
+    }
+
+    // action === 'play'
+    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    void video.play().catch((err: unknown) => {
+      if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
+        // iOS blocked the programmatic resume; the existing play/pause control
+        // is the user-gesture tap-to-resume.
+        setStatus('paused');
+      } else {
+        debugWarn('[V3Player] Browser resume play blocked', err);
+      }
+    });
+  }, [handleRetry, hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
   const showBufferingOverlay = useBufferingOverlay(status);
 
