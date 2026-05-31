@@ -296,6 +296,33 @@ body::after {
   min-height: 100dvh;
 }
 
+/* iOS Safari paint guard.
+   On real iOS (Metal compositor) three decorative effects make large elements
+   render as an opaque BLACK layer even though the DOM and data are fine — a GPU
+   compositing bug that does NOT reproduce in other WebKit builds:
+     1. backdrop-filter on a near-full-viewport element (e.g. .content-area),
+     2. background-attachment: fixed on the body behind it,
+     3. a position:fixed + mask-image overlay (body::after).
+   All three are purely cosmetic and every glass surface already has a solid
+   background, so disable them on touch devices to guarantee the UI paints.
+   Desktop (fine pointer) keeps the full glass treatment. */
+@media (hover: none) and (pointer: coarse) {
+  *,
+  *::before,
+  *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  body {
+    background-attachment: scroll;
+  }
+
+  body::after {
+    display: none;
+  }
+}
+
 /* Typography Hierarchy */
 h1,
 h2,
