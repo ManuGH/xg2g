@@ -1,6 +1,6 @@
 // Application Context - Centralized State Management with TypeScript
 
-import { createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { getServices, getServicesBouquets } from '../client-ts';
 import { setClientAuthToken, throwOnClientResultError } from '../services/clientWrapper';
@@ -146,7 +146,10 @@ export function AppProvider({ children }: AppProviderProps) {
     flushSync(() => setPlayingChannel(channel));
   }, []);
 
-  const contextValue: AppContextType = {
+  // Memoized so consumers do not re-render when AppProvider re-renders without
+  // an actual state change. All action fns below are stable (useState setters
+  // / useCallback), so the value only changes on real state transitions.
+  const contextValue = useMemo<AppContextType>(() => ({
     // State
     auth: {
       token,
@@ -176,7 +179,14 @@ export function AppProvider({ children }: AppProviderProps) {
     setPlayingChannel,
     handlePlay,
     loadBouquetsAndChannels
-  };
+  }), [
+    token, hasServerSession, authReady,
+    bouquets, selectedBouquet, channels, loading,
+    playingChannel, dataLoaded,
+    setToken, setServerSessionAuthenticated, setBouquets, setSelectedBouquet,
+    setChannels, setLoading, loadChannels, setPlayingChannel, handlePlay,
+    loadBouquetsAndChannels,
+  ]);
 
   return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>;
 }
