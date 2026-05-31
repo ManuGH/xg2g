@@ -247,6 +247,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		requireCSPTokens(t, cspDirectives, "frame-ancestors", "'none'")
 		requireCSPTokens(t, cspDirectives, "script-src", "'self'")
 		requireCSPTokens(t, cspDirectives, "style-src", "'self'", "'unsafe-inline'")
+		requireCSPTokens(t, cspDirectives, "font-src", "'self'", "data:")
 		requireCSPTokens(t, cspDirectives, "img-src", "'self'", "data:", "blob:")
 		requireCSPTokens(t, cspDirectives, "media-src", "'self'", "blob:", "data:")
 		requireCSPTokens(t, cspDirectives, "connect-src", "'self'")
