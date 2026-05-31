@@ -1157,7 +1157,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 
 	if prof.VideoMaxRateK > 0 {
 		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate.
-		// Use VBR with a 25% target headroom to keep the encoder ring stable.
+		// Use a 25% target headroom (-b:v = 75% of -maxrate) to keep the ring stable.
 		bV := prof.VideoMaxRateK
 		if isAV1 {
 			bV = (prof.VideoMaxRateK * 3) / 4
@@ -1165,12 +1165,26 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 				bV = 1
 			}
 		}
+		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard
+		// ceiling. Verified on this AMD stack (Mesa 25.0.7 / VCN4): QVBR holds the
+		// cap, is sustained-stable, and is immune to the b:v==maxrate ring-stall
+		// that constrains plain VBR. QVBR REQUIRES -b:v ("Bitrate must be set for
+		// QVBR RC mode"), which is set above. Disable with XG2G_AV1_QVBR=false to
+		// fall back to implicit VBR; tune the quality target with
+		// XG2G_AV1_QVBR_QUALITY (AV1 scale 0-255, lower = higher quality).
+		av1QVBR := isAV1 && envBool("XG2G_AV1_QVBR", true)
+		if av1QVBR {
+			args = append(args, "-rc_mode", "QVBR")
+		}
 		args = append(args,
 			"-b:v", fmt.Sprintf("%dk", bV),
 			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
 		)
 		if prof.VideoBufSizeK > 0 {
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+		if av1QVBR {
+			args = append(args, "-global_quality", strconv.Itoa(envIntBounded("XG2G_AV1_QVBR_QUALITY", 110, 1, 255)))
 		}
 		if isAV1 {
 			args = append(args, "-async_depth", "1")
