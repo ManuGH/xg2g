@@ -85,6 +85,18 @@ export function buildPlayerRuntimeTelemetryModel({
   nativePlaybackSessionId,
 }: BuildPlayerRuntimeTelemetryModelInput): PlayerRuntimeTelemetryModel {
   const hasSessionTrace = sessionPlaybackTrace !== null;
+  // Statistics never lie: the EXECUTION-OUTPUT fields below (target profile,
+  // hash, quality rungs, degradedFrom — i.e. what ffmpeg actually produces) must
+  // never fall back to the pre-roll stream-info prediction (playbackObservability)
+  // once a playback session exists. Gating those on session existence rather than
+  // trace arrival closes the startup window where the session id is already known
+  // but GET /sessions has not yet delivered the executed trace — the window that
+  // previously showed the preview's predicted container/codec (e.g. fmp4) instead
+  // of what ffmpeg runs (mpegts). Request-context fields (client path, request
+  // profile, intents) and host condition keep the trace gate: they describe the
+  // request, not the output, so the preview is a faithful source during startup.
+  const hasActiveOrStartingSession =
+    Boolean(sessionId || nativeSessionId || nativePlaybackSessionId) || hasSessionTrace;
   const effectiveClientPath =
     sessionPlaybackTrace?.clientPath ||
     (!hasSessionTrace ? playbackObservability?.clientPath : null) ||
@@ -109,27 +121,27 @@ export function buildPlayerRuntimeTelemetryModel({
     null;
   const effectiveQualityRung =
     sessionPlaybackTrace?.qualityRung ??
-    (!hasSessionTrace ? playbackObservability?.qualityRung : null) ??
+    (!hasActiveOrStartingSession ? playbackObservability?.qualityRung : null) ??
     null;
   const effectiveAudioQualityRung =
     sessionPlaybackTrace?.audioQualityRung ??
-    (!hasSessionTrace ? playbackObservability?.audioQualityRung : null) ??
+    (!hasActiveOrStartingSession ? playbackObservability?.audioQualityRung : null) ??
     null;
   const effectiveVideoQualityRung =
     sessionPlaybackTrace?.videoQualityRung ??
-    (!hasSessionTrace ? playbackObservability?.videoQualityRung : null) ??
+    (!hasActiveOrStartingSession ? playbackObservability?.videoQualityRung : null) ??
     null;
   const effectiveDegradedFrom =
     sessionPlaybackTrace?.degradedFrom ??
-    (!hasSessionTrace ? playbackObservability?.degradedFrom : null) ??
+    (!hasActiveOrStartingSession ? playbackObservability?.degradedFrom : null) ??
     null;
   const effectiveTargetProfile =
     sessionPlaybackTrace?.targetProfile ??
-    (!hasSessionTrace ? playbackObservability?.targetProfile : null) ??
+    (!hasActiveOrStartingSession ? playbackObservability?.targetProfile : null) ??
     null;
   const effectiveTargetProfileHash =
     sessionPlaybackTrace?.targetProfileHash ??
-    (!hasSessionTrace ? playbackObservability?.targetProfileHash : null) ??
+    (!hasActiveOrStartingSession ? playbackObservability?.targetProfileHash : null) ??
     null;
   const effectiveHostPressureBand =
     sessionPlaybackTrace?.hostPressureBand ??

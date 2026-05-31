@@ -114,7 +114,8 @@ describe('buildPlayerRuntimeTelemetryModel', () => {
     expect(model.hostPressureSummary).toBe('low');
   });
 
-  it('falls back through active session ids, observability, and capability snapshot', () => {
+  it('keeps request-context preview fallbacks but suppresses predicted output during the startup window', () => {
+    // Active/starting session (id known) but GET /sessions trace not yet landed.
     const model = buildPlayerRuntimeTelemetryModel({
       sessionPlaybackTrace: null,
       playbackObservability: observability,
@@ -125,15 +126,35 @@ describe('buildPlayerRuntimeTelemetryModel', () => {
       nativePlaybackSessionId: 'host-session',
     });
 
+    // Request-context + host condition keep the preview fallback (describe the
+    // request, not the output): faithful during startup.
     expect(model.effectiveClientPath).toBe('hlsjs');
     expect(model.effectiveSessionId).toBe('native-session');
     expect(model.effectiveRequestedIntent).toBe('generic');
     expect(model.effectiveResolvedIntent).toBe('generic');
-    expect(model.effectiveQualityRung).toBe('quality_audio_aac_160_stereo');
     expect(model.selectedOutputKind).toBe('hls');
     expect(model.runtimePolicyReasonsSummary).toBe('-');
     expect(model.runtimeProbeTrustSummary).toBe('-');
     expect(model.hostPressureSummary).toBe('medium · applied');
+
+    // Execution-OUTPUT fields must NOT show the prediction once a session exists:
+    // no executed trace yet -> null (rendered as "—"), never the preview guess.
+    expect(model.effectiveQualityRung).toBeNull();
+    expect(model.effectiveTargetProfile).toBeNull();
+    expect(model.effectiveTargetProfileHash).toBeNull();
+
+    // No session at all: the preview IS the right source for the player panel.
+    const previewOnly = buildPlayerRuntimeTelemetryModel({
+      sessionPlaybackTrace: null,
+      playbackObservability: observability,
+      capabilitySnapshot,
+      effectiveOperator: null,
+      sessionId: null,
+      nativeSessionId: null,
+      nativePlaybackSessionId: null,
+    });
+    expect(previewOnly.effectiveQualityRung).toBe('quality_audio_aac_160_stereo');
+    expect(previewOnly.effectiveTargetProfileHash).toBe('observed-hash');
 
     expect(buildPlayerRuntimeTelemetryModel({
       sessionPlaybackTrace: null,
