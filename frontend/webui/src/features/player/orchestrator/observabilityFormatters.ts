@@ -87,6 +87,17 @@ export function extractPlaybackTrace(value: unknown): PlaybackTraceContract | nu
   }
 
   const record = value as Record<string, unknown>;
+  // A session/response wrapper nests the executed trace under `.trace`. Descend
+  // FIRST: the wrapper itself also carries a top-level requestId + sessionId,
+  // which would otherwise match the "looks like a trace" heuristic below and
+  // return the wrapper (missing targetProfile / ffmpegPlan) — the bug that left
+  // the live stats panel blank for the controller (native HLS) snapshot path.
+  if ('trace' in record && record.trace) {
+    const nested = extractPlaybackTrace(record.trace);
+    if (nested) {
+      return nested;
+    }
+  }
   if (typeof record.requestId === 'string' && (
     'sessionId' in record ||
     'source' in record ||
@@ -99,9 +110,6 @@ export function extractPlaybackTrace(value: unknown): PlaybackTraceContract | nu
     return record as unknown as PlaybackTraceContract;
   }
 
-  if ('trace' in record) {
-    return extractPlaybackTrace(record.trace);
-  }
   if ('body' in record) {
     return extractPlaybackTrace(record.body);
   }
