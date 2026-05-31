@@ -1105,12 +1105,21 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	// precision reduces encoder-introduced banding on gradients even from an
 	// 8-bit source — the same quality rationale as the AV1 upscale above.
 	// H.264/HEVC stay 8-bit (nv12) for broad client-decode compatibility.
-	// Optional perceptual sharpening, applied in the software domain at final
-	// resolution before hwupload. A re-encode can never recover detail the source
-	// already lost, but CAS (AMD Contrast Adaptive Sharpening) makes edges visibly
-	// crisper than the source with far less haloing than unsharp. Verified clean on
-	// 1080i sports at strength 0.5; >=1.0 amplifies sensor noise. Only transcode
-	// paths reach this filter — copy passthrough stays bit-exact and untouched.
+	// Optional software-domain enhancement chain at final resolution, before
+	// hwupload — "clean, then sharpen". Denoise strips broadcast compression grain
+	// so CAS enhances real edges instead of noise; deband smooths gradient banding
+	// (paired with the 10-bit output); CAS makes edges visibly crisper than the
+	// source with far less haloing than unsharp. These are software filters and
+	// roughly halve encoder headroom (verified ~2.4x -> ~1.3x realtime on 1080i
+	// sports — still real-time for one session, thinner for concurrent ones), so
+	// they default conservatively and are env-tunable. Only transcode paths reach
+	// here — copy passthrough stays bit-exact and untouched.
+	if f := transcodeDenoiseFilter(); f != "" {
+		parts = append(parts, f)
+	}
+	if f := transcodeDebandFilter(); f != "" {
+		parts = append(parts, f)
+	}
 	if f := transcodeSharpenFilter(); f != "" {
 		parts = append(parts, f)
 	}
@@ -1131,6 +1140,28 @@ func transcodeSharpenFilter() string {
 		return ""
 	}
 	return fmt.Sprintf("cas=strength=%.2f", s)
+}
+
+// transcodeDenoiseFilter returns an hqdn3d denoise expression for the transcode
+// chain, or "" when disabled. XG2G_TRANSCODE_DENOISE scales a conservative base
+// (0 disables, default 0.6, capped at 1.5); spatial and temporal strengths scale
+// together. Encoder cost is fixed regardless of strength, so the strength is a
+// pure quality knob (lower = gentler, preserves more fine detail).
+func transcodeDenoiseFilter() string {
+	s := envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5)
+	if s <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("hqdn3d=%.1f:%.1f:%.1f:%.1f", 4*s, 3*s, 6*s, 4*s)
+}
+
+// transcodeDebandFilter returns a deband expression for the transcode chain, or
+// "" when disabled via XG2G_TRANSCODE_DEBAND=false (default on; deband is gentle).
+func transcodeDebandFilter() string {
+	if !envBool("XG2G_TRANSCODE_DEBAND", true) {
+		return ""
+	}
+	return "deband"
 }
 
 func av1VAAPIGeometryPadFilter() string {
