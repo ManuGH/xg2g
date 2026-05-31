@@ -62,7 +62,7 @@
   /* High contrast */
   --text-secondary: #b7c6c4;
   /* Standard UI */
-  --text-tertiary: #78908d;
+  --text-tertiary: #9aaca8;
   /* Metadata */
   --text-disabled: #586a68;
   /* Disabled */
@@ -104,7 +104,7 @@
   --overlay-backdrop-strong: rgba(0, 0, 0, 0.8);
 
   /* Borders */
-  --border-base: rgba(255, 255, 255, 0.09);
+  --border-base: rgba(255, 255, 255, 0.12);
   --border-elevated: rgba(255, 255, 255, 0.16);
   --border-strong: rgba(255, 255, 255, 0.24);
   --border-focus: var(--accent-action);
@@ -390,6 +390,23 @@ button:disabled {
 }
 
 button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+}
+
+/* Links, role-interactive elements and form fields get the same visible focus
+   ring on the desktop path (the TV path already has its own below). Without
+   this they fall back to the UA default, which is near-invisible on the dark
+   theme. */
+a:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="switch"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 3px;
 }
