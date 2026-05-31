@@ -17,10 +17,18 @@ import (
 )
 
 const (
-	preflightMinBytes          = 188 * 3
+	preflightMinBytes          = 188 * 3  // sync floor: never raised, keeps preflight latency/timeout behaviour unchanged
+	preflightScanBytes         = 188 * 48 // best-effort upper bound scanned for scrambling (9024B); only what the relay delivers for free is used
 	preflightTimeout           = 2 * time.Second
 	preflightMaxTries          = 3
 	preflightDirectWarmupTries = 8
+)
+
+// Scramble detection thresholds — deliberately conservative so a clear channel
+// (or a tiny sample) can never be falsely classified as encrypted.
+const (
+	tsScrambleMinPackets = 24  // require a meaningful sample before classifying
+	tsScrambleThreshold  = 0.5 // majority of aligned packets must carry the scrambling bits
 )
 
 var ffmpegURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
@@ -68,6 +76,26 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Int("http_status", result.HTTPStatus).
 			Int("resolved_port", result.ResolvedPort).
 			Msg("streamrelay preflight failed")
+	}
+
+	if result.Normalized().Reason == ports.PreflightReasonScrambled {
+		a.Logger.Warn().
+			Str("event", "preflight_scrambled").
+			Str("sessionId", sessionID).
+			Str("service_ref", serviceRef).
+			Str("resolved_url", resolvedLogURL).
+			Int("preflight_bytes", result.Bytes).
+			Int64("preflight_latency_ms", result.LatencyMs).
+			Int("resolved_port", result.ResolvedPort).
+			Msg("stream is scrambled (encrypted, control word missing) — receiver could not descramble it; not falling back, the same service stays scrambled on every port")
+		return "", ports.NewPreflightError(ports.PreflightResult{
+			Reason:       ports.PreflightReasonScrambled,
+			Detail:       "scrambled",
+			HTTPStatus:   result.HTTPStatus,
+			Bytes:        result.Bytes,
+			LatencyMs:    result.LatencyMs,
+			ResolvedPort: result.ResolvedPort,
+		})
 	}
 
 	if isRelay && a.FallbackTo8001 {
@@ -229,7 +257,7 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 		return result, fmt.Errorf("preflight http status %d", resp.StatusCode)
 	}
 
-	buf := make([]byte, preflightMinBytes)
+	buf := make([]byte, preflightScanBytes)
 	n, err := io.ReadAtLeast(resp.Body, buf, preflightMinBytes)
 	result.Bytes = n
 
@@ -254,6 +282,18 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	if !hasTSSync(buf) {
 		result.Detail = "sync_miss"
 		return result, fmt.Errorf("preflight ts sync missing")
+	}
+
+	if fraction, packets := tsScrambledFraction(buf[:n]); packets >= tsScrambleMinPackets && fraction >= tsScrambleThreshold {
+		result.Detail = "scrambled"
+		result.Reason = ports.PreflightReasonScrambled
+		a.Logger.Warn().
+			Str("url", sanitizeURLForLog(rawURL)).
+			Int("scanned_packets", packets).
+			Str("scrambled_fraction", fmt.Sprintf("%.2f", fraction)).
+			Int("resolved_port", result.ResolvedPort).
+			Msg("preflight sample is scrambled (encrypted payload, transport_scrambling_control set)")
+		return result, fmt.Errorf("preflight stream is scrambled (encrypted, not descrambled)")
 	}
 
 	result = ports.NewSuccessfulPreflightResult(n, latency.Milliseconds(), result.ResolvedPort)
@@ -349,6 +389,11 @@ func shouldRetryTSPreflight(result ports.PreflightResult) bool {
 	switch normalized.Reason {
 	case ports.PreflightReasonTimeout:
 		return true
+	case ports.PreflightReasonScrambled:
+		// Retry within the bounded window: a freshly tuned relay can forward a
+		// brief scrambled prefix before the control word locks. If it is still
+		// scrambled after the retries it is genuinely undescramblable.
+		return true
 	case ports.PreflightReasonCorruptInput, ports.PreflightReasonInvalidTS:
 		return normalized.Bytes < preflightMinBytes
 	default:
@@ -361,6 +406,30 @@ func hasTSSync(buf []byte) bool {
 		return false
 	}
 	return buf[0] == 0x47 && buf[188] == 0x47 && buf[376] == 0x47
+}
+
+// tsScrambledFraction reports the fraction of 188-byte MPEG-TS packets in buf
+// whose transport_scrambling_control bits (the top two bits of byte 3) are set,
+// i.e. the payload is encrypted and was not descrambled by the receiver. buf
+// must be packet-aligned at offset 0 — callers gate this on hasTSSync. Scanning
+// stops at the first packet that loses 0x47 alignment so a mid-buffer glitch
+// cannot inflate the count. Returns (0, 0) when no aligned packet is found.
+func tsScrambledFraction(buf []byte) (fraction float64, packets int) {
+	const pktLen = 188
+	scrambled, total := 0, 0
+	for off := 0; off+pktLen <= len(buf); off += pktLen {
+		if buf[off] != 0x47 {
+			break // lost packet alignment; only trust the aligned prefix
+		}
+		total++
+		if buf[off+3]&0xC0 != 0 { // transport_scrambling_control != 00
+			scrambled++
+		}
+	}
+	if total == 0 {
+		return 0, 0
+	}
+	return float64(scrambled) / float64(total), total
 }
 
 func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {

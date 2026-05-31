@@ -22,6 +22,7 @@ const (
 	PreflightReasonNotFound           PreflightReason = "not_found"
 	PreflightReasonBadGateway         PreflightReason = "bad_gateway"
 	PreflightReasonInvalidTS          PreflightReason = "invalid_ts"
+	PreflightReasonScrambled          PreflightReason = "scrambled"
 	PreflightReasonNoVideo            PreflightReason = "no_video"
 	PreflightReasonCorruptInput       PreflightReason = "corrupt_input"
 	PreflightReasonInvalidSource      PreflightReason = "invalid_source"
@@ -106,6 +107,8 @@ func ClassifyPreflightReason(detail string, httpStatus int) PreflightReason {
 		return PreflightReasonInvalidTS
 	case "short_read":
 		return PreflightReasonCorruptInput
+	case "scrambled", "encrypted":
+		return PreflightReasonScrambled
 	case "timeout":
 		return PreflightReasonTimeout
 	case "request_failed", "unreachable":
@@ -156,6 +159,8 @@ func ClassifyPreflightReason(detail string, httpStatus int) PreflightReason {
 		return PreflightReasonBadGateway
 	case strings.Contains(raw, "no_video"):
 		return PreflightReasonNoVideo
+	case strings.Contains(raw, "scrambl"), strings.Contains(raw, "encrypt"):
+		return PreflightReasonScrambled
 	case strings.Contains(raw, "corrupt"), strings.Contains(raw, "short_read"):
 		return PreflightReasonCorruptInput
 	case strings.Contains(raw, "sync"), strings.Contains(raw, "ts"):
