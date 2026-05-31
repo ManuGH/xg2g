@@ -518,7 +518,15 @@ export function usePlaybackOrchestrator(
         if (cancelled) {
           return;
         }
-        mergeSessionPlaybackTrace(extractPlaybackTrace(session));
+        // GET /sessions/{id} wraps the executed trace under `.trace`. Its top
+        // level also carries requestId + sessionId, which would make
+        // extractPlaybackTrace mistake the wrapper for the trace itself and miss
+        // targetProfile / ffmpegPlan. Descend into `.trace` explicitly.
+        const tracePayload =
+          session && typeof session === 'object' && 'trace' in session
+            ? (session as { trace?: unknown }).trace
+            : session;
+        mergeSessionPlaybackTrace(extractPlaybackTrace(tracePayload));
       } catch {
         // Best-effort telemetry; transient errors must never disturb playback.
       }
