@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
 func TestExecutedFFmpegPlanFromArgs(t *testing.T) {
@@ -144,6 +145,27 @@ func TestExecutedFFmpegPlanFromArgs(t *testing.T) {
 			got := executedFFmpegPlanFromArgs(tc.args)
 			if got != tc.want {
 				t.Fatalf("executedFFmpegPlanFromArgs mismatch\n got: %+v\nwant: %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolvedExecutedHWAccel(t *testing.T) {
+	cases := []struct {
+		name string
+		in   codecPlan
+		want string
+	}{
+		{"copy/none", codecPlan{useHW: false}, ""},
+		{"cpu transcode/none", codecPlan{useHW: false, hwBackend: profiles.GPUBackendNone}, ""},
+		{"vaapi full", codecPlan{useHW: true, hwBackend: profiles.GPUBackendVAAPI, fullVAAPI: true}, "vaapi"},
+		{"vaapi encode-only (downgraded full / av1)", codecPlan{useHW: true, hwBackend: profiles.GPUBackendVAAPI, fullVAAPI: false}, "vaapi_encode_only"},
+		{"nvenc", codecPlan{useHW: true, hwBackend: profiles.GPUBackendNVENC}, "nvenc"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolvedExecutedHWAccel(tc.in); got != tc.want {
+				t.Fatalf("resolvedExecutedHWAccel(%+v) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
 	}

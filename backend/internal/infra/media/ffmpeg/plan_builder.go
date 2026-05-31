@@ -290,6 +290,30 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 	}, nil
 }
 
+// resolvedExecutedHWAccel maps the resolved codec plan to the hwAccel label the
+// emitted argv actually carries: full VAAPI emits "-hwaccel vaapi" ("vaapi"); a
+// *_vaapi encoder without it is encode-only ("vaapi_encode_only"); NVENC is
+// "nvenc"; copy and CPU emit no "-hwaccel" (empty = none). Used to keep the
+// effective profile — and the predicted FFmpeg plan derived from it — in
+// lockstep with execution, so a planner downgrade (full VAAPI -> encode-only,
+// or GPU -> CPU fallback) never diverges the prediction from the real argv.
+func resolvedExecutedHWAccel(codec codecPlan) string {
+	if !codec.useHW {
+		return ""
+	}
+	switch codec.hwBackend {
+	case profiles.GPUBackendVAAPI:
+		if codec.fullVAAPI {
+			return "vaapi"
+		}
+		return "vaapi_encode_only"
+	case profiles.GPUBackendNVENC:
+		return "nvenc"
+	default:
+		return ""
+	}
+}
+
 func vaapiPathCorrectnessIDFor(codec string, full bool) string {
 	switch strings.TrimSpace(codec) {
 	case "hevc":
@@ -534,6 +558,14 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	out.args = appendLiveAudioArgs(out.args, spec)
 	out.args = a.appendLiveHLSArgs(out.args, spec, layout)
 	out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID))
+
+	// One source of truth: record the hwAccel the emitted argv actually reflects,
+	// so the profile-derived predicted FFmpeg plan matches execution. The planner
+	// can downgrade full VAAPI -> encode-only (unverified interlaced HEVC/AV1,
+	// forced AV1) or fall back off the GPU; without this writeback the prediction
+	// (profile.HWAccel) would diverge from the real argv, causing a spurious
+	// plan_mismatch warning. VideoCodec is already synced to codec.resolvedCodec.
+	out.effectiveProfile.HWAccel = resolvedExecutedHWAccel(codec)
 
 	return out, nil
 }
