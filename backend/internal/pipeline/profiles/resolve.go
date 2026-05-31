@@ -376,6 +376,12 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 
 	spec := newResolvedSpec(canonical)
 
+	// Carry the verified source height so downstream bitrate budgeting can scale
+	// with resolution (SD sources get a lower ceiling than HD).
+	if cap != nil && cap.Height > 0 {
+		spec.VideoSourceHeight = cap.Height
+	}
+
 	switch canonical {
 	case ProfileCopy:
 		spec.PolicyModeHint = ports.RuntimeModeCopy
