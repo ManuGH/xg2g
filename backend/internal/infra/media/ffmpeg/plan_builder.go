@@ -1105,12 +1105,32 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	// precision reduces encoder-introduced banding on gradients even from an
 	// 8-bit source — the same quality rationale as the AV1 upscale above.
 	// H.264/HEVC stay 8-bit (nv12) for broad client-decode compatibility.
+	// Optional perceptual sharpening, applied in the software domain at final
+	// resolution before hwupload. A re-encode can never recover detail the source
+	// already lost, but CAS (AMD Contrast Adaptive Sharpening) makes edges visibly
+	// crisper than the source with far less haloing than unsharp. Verified clean on
+	// 1080i sports at strength 0.5; >=1.0 amplifies sensor noise. Only transcode
+	// paths reach this filter — copy passthrough stays bit-exact and untouched.
+	if f := transcodeSharpenFilter(); f != "" {
+		parts = append(parts, f)
+	}
 	uploadFormat := "nv12"
 	if isAV1 {
 		uploadFormat = "p010le"
 	}
 	parts = append(parts, "format="+uploadFormat, "hwupload")
 	return strings.Join(parts, ",")
+}
+
+// transcodeSharpenFilter returns a CAS sharpening filter expression for the
+// transcode chain, or "" when disabled. Strength is XG2G_TRANSCODE_SHARPEN
+// (0 disables, default 0.5, capped at 1.0 — above ~0.8 it amplifies noise).
+func transcodeSharpenFilter() string {
+	s := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 0.5, 0.0, 1.0)
+	if s <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("cas=strength=%.2f", s)
 }
 
 func av1VAAPIGeometryPadFilter() string {
