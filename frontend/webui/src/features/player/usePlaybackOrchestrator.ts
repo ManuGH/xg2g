@@ -524,7 +524,6 @@ export function usePlaybackOrchestrator(
     // edge); the broader nativePlaybackState.session.sessionId can outlive an
     // ended session until full teardown.
     if (!nativeSessionId) {
-
       return;
     }
     let cancelled = false;
