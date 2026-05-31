@@ -10,8 +10,8 @@ import (
 )
 
 func TestTranscodeSharpenFilter(t *testing.T) {
-	t.Run("default is a clean CAS strength", func(t *testing.T) {
-		assert.Equal(t, "cas=strength=0.50", transcodeSharpenFilter())
+	t.Run("default is a clean luma unsharp", func(t *testing.T) {
+		assert.Equal(t, "unsharp=5:5:1.50:5:5:0.0", transcodeSharpenFilter())
 	})
 
 	t.Run("zero disables sharpening", func(t *testing.T) {
@@ -19,14 +19,14 @@ func TestTranscodeSharpenFilter(t *testing.T) {
 		assert.Equal(t, "", transcodeSharpenFilter())
 	})
 
-	t.Run("tunable strength", func(t *testing.T) {
+	t.Run("tunable amount", func(t *testing.T) {
 		t.Setenv("XG2G_TRANSCODE_SHARPEN", "0.7")
-		assert.Equal(t, "cas=strength=0.70", transcodeSharpenFilter())
+		assert.Equal(t, "unsharp=5:5:0.70:5:5:0.0", transcodeSharpenFilter())
 	})
 
-	t.Run("clamped to 1.0 (above amplifies noise)", func(t *testing.T) {
-		t.Setenv("XG2G_TRANSCODE_SHARPEN", "2.0")
-		assert.Equal(t, "cas=strength=1.00", transcodeSharpenFilter())
+	t.Run("clamped to 3.0", func(t *testing.T) {
+		t.Setenv("XG2G_TRANSCODE_SHARPEN", "5")
+		assert.Equal(t, "unsharp=5:5:3.00:5:5:0.0", transcodeSharpenFilter())
 	})
 }
 

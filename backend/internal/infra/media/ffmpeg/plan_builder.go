@@ -1107,9 +1107,10 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	// H.264/HEVC stay 8-bit (nv12) for broad client-decode compatibility.
 	// Optional software-domain enhancement chain at final resolution, before
 	// hwupload — "clean, then sharpen". Denoise strips broadcast compression grain
-	// so CAS enhances real edges instead of noise; deband smooths gradient banding
-	// (paired with the 10-bit output); CAS makes edges visibly crisper than the
-	// source with far less haloing than unsharp. These are software filters and
+	// so the sharpener enhances real edges instead of noise; deband smooths gradient
+	// banding (paired with the 10-bit output); the sharpener (luma unsharp) makes
+	// edges visibly crisper, mimicking the edge enhancement a TV applies. These are
+	// software filters and
 	// roughly halve encoder headroom (verified ~2.4x -> ~1.3x realtime on 1080i
 	// sports — still real-time for one session, thinner for concurrent ones), so
 	// they default conservatively and are env-tunable. Only transcode paths reach
@@ -1131,15 +1132,19 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	return strings.Join(parts, ",")
 }
 
-// transcodeSharpenFilter returns a CAS sharpening filter expression for the
-// transcode chain, or "" when disabled. Strength is XG2G_TRANSCODE_SHARPEN
-// (0 disables, default 0.5, capped at 1.0 — above ~0.8 it amplifies noise).
+// transcodeSharpenFilter returns a luma unsharp-mask expression for the transcode
+// chain, or "" when disabled. XG2G_TRANSCODE_SHARPEN is the unsharp luma amount
+// (0 disables, default 1.5, capped at 3.0). Unsharp gives more visible, "TV-like"
+// edge crispness than CAS — broadcast TVs apply aggressive edge enhancement by
+// default — and was verified clean on 1080i wide shots up to ~1.5; chroma is left
+// untouched to avoid colour fringing. It adds perceived crispness on edges/lines
+// but cannot restore fine detail the source or the re-encode already discarded.
 func transcodeSharpenFilter() string {
-	s := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 0.5, 0.0, 1.0)
-	if s <= 0 {
+	amount := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 1.5, 0.0, 3.0)
+	if amount <= 0 {
 		return ""
 	}
-	return fmt.Sprintf("cas=strength=%.2f", s)
+	return fmt.Sprintf("unsharp=5:5:%.2f:5:5:0.0", amount)
 }
 
 // transcodeDenoiseFilter returns an hqdn3d denoise expression for the transcode
