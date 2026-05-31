@@ -27,6 +27,7 @@ import { applyUiSurfaceToDocument, resolveUiSurface } from './lib/uiSurface.ts';
 import { setClientAuthToken } from './services/clientWrapper';
 import { ROUTE_MAP } from './routes.ts';
 import { getStoredToken } from './utils/tokenStorage';
+import { safeLocalStorage } from './lib/safeStorage.ts';
 
 // TanStack Query Client Configuration
 // Phase 1: Server-State Layer (2026 State-of-the-Art)
@@ -46,7 +47,7 @@ const queryClient = new QueryClient({
 setClientAuthToken(getStoredToken());
 const hostEnvironment = resolveHostEnvironment();
 applyHostEnvironmentToDocument(hostEnvironment);
-applyUiScaleToDocument(readStoredUiScale(window.localStorage), document.documentElement);
+applyUiScaleToDocument(readStoredUiScale(safeLocalStorage()), document.documentElement);
 applyUiSurfaceToDocument(resolveUiSurface(window, hostEnvironment), document.documentElement);
 
 const root = createRoot(document.getElementById('root')!);

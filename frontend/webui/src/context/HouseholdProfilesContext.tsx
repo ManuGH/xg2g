@@ -34,6 +34,7 @@ import {
 } from '../features/household/model';
 import { useUiOverlay } from './UiOverlayContext';
 import { formatError } from '../utils/logging';
+import { readLocalStorageItem, safeLocalStorage, writeLocalStorageItem } from '../lib/safeStorage';
 
 const HOUSEHOLD_SELECTED_PROFILE_STORAGE_KEY = 'xg2g.household.selected-profile.v1';
 const HOUSEHOLD_PROFILES_SYNC_STORAGE_KEY = 'xg2g.household.profiles.sync.v1';
@@ -208,7 +209,7 @@ export function HouseholdProfilesProvider({ children }: { children: ReactNode })
       return;
     }
 
-    window.localStorage.setItem(HOUSEHOLD_SELECTED_PROFILE_STORAGE_KEY, selectedProfile.id);
+    writeLocalStorageItem(HOUSEHOLD_SELECTED_PROFILE_STORAGE_KEY, selectedProfile.id);
   }, [selectedProfile.id]);
 
   useEffect(() => {
@@ -231,7 +232,7 @@ export function HouseholdProfilesProvider({ children }: { children: ReactNode })
     }
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.storageArea && event.storageArea !== window.localStorage) {
+      if (event.storageArea && event.storageArea !== safeLocalStorage()) {
         return;
       }
 
@@ -459,7 +460,7 @@ function readStoredSelectedProfileId(): string {
     return DEFAULT_HOUSEHOLD_PROFILE_ID;
   }
 
-  return window.localStorage.getItem(HOUSEHOLD_SELECTED_PROFILE_STORAGE_KEY)?.trim() || DEFAULT_HOUSEHOLD_PROFILE_ID;
+  return readLocalStorageItem(HOUSEHOLD_SELECTED_PROFILE_STORAGE_KEY)?.trim() || DEFAULT_HOUSEHOLD_PROFILE_ID;
 }
 
 function emitProfilesSync(): void {
@@ -467,7 +468,7 @@ function emitProfilesSync(): void {
     return;
   }
 
-  window.localStorage.setItem(HOUSEHOLD_PROFILES_SYNC_STORAGE_KEY, String(Date.now()));
+  writeLocalStorageItem(HOUSEHOLD_PROFILES_SYNC_STORAGE_KEY, String(Date.now()));
 }
 
 function resolveSelectedProfileId(
