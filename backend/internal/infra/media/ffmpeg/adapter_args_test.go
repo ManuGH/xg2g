@@ -184,7 +184,7 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 	assert.NotContains(t, args, "yadif", "runtime-probed remux path must not inject deinterlace filters")
 	assert.Contains(t, args, "-c:a")
 	assert.Contains(t, args, "aac")
-	assert.NotContains(t, args, "dump_extra=freq=keyframe", "normal safari runtime remux should not force the hardened copy bitstream filter")
+	assert.Contains(t, args, "dump_extra=freq=keyframe", "live copy must repeat SPS/PPS on keyframes so each HLS segment is independently decodable (no frozen opening frame)")
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
 	require.True(t, ok)

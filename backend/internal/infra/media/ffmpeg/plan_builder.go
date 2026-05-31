@@ -1239,7 +1239,16 @@ func useConservativeHEVCVAAPILivePreset(spec ports.StreamSpec, outputCodec strin
 }
 
 func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, inputURL string) []string {
-	hardenedBitstream := shouldHardenSafariCopyBitstream(spec, inputURL)
+	liveCopy := spec.Source.Type != ports.SourceFile
+	// Harden every LIVE copy, not just the force-copy allowlist: broadcast/relay
+	// H.264 carries SPS/PPS sparsely (often only in the PMT / first IDR), so a
+	// copied HLS segment can start with slices referencing parameter sets the
+	// client has not seen yet -> a frozen/garbled opening frame until the next
+	// in-band SPS/PPS arrives (observed as `non-existing PPS 0` / `no frame!`).
+	// dump_extra=freq=keyframe repeats the extradata before every keyframe so
+	// each segment is independently decodable; it is a no-op when the parameter
+	// sets are already present. The allowlist still covers VOD/file copy.
+	hardenedBitstream := liveCopy || shouldHardenSafariCopyBitstream(spec, inputURL)
 
 	a.Logger.Info().
 		Str("sessionId", spec.SessionID).
@@ -1253,12 +1262,12 @@ func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, 
 	// -enc_time_base:v demux forces the muxer to derive timestamps from
 	// the demuxer timebase (which igndts+genpts have already cleaned)
 	// instead of the raw packet DTS, eliminating A/V desync in copy mode.
-	if spec.Source.Type != ports.SourceFile {
+	if liveCopy {
 		args = append(args, "-enc_time_base:v", "demux")
 	}
 	if hardenedBitstream {
-		// Repeat H.264 extradata on keyframes so Safari can recover SPS/PPS
-		// more reliably from dirty relay streams while staying in copy mode.
+		// Repeat H.264 extradata on keyframes so the client can recover SPS/PPS
+		// at every segment boundary while staying in copy mode.
 		args = append(args, "-bsf:v", "dump_extra=freq=keyframe")
 	}
 	return args
