@@ -503,14 +503,17 @@ export function usePlaybackOrchestrator(
   // ONLY: it never sends heartbeats or stop intents, so the bridge's session
   // lifecycle is untouched and playback cannot be affected.
   useEffect(() => {
-    const nativeSid = nativeSessionId ?? nativePlaybackState?.session?.sessionId ?? null;
-    if (!nativeSid) {
+    // Tie the poll's lifetime to nativeSessionId only. The bridge nulls it on
+    // stop, so we never keep polling a cleanly-ended session (the lingering-poll
+    // edge); the broader nativePlaybackState.session.sessionId can outlive an
+    // ended session until full teardown.
+    if (!nativeSessionId) {
       return;
     }
     let cancelled = false;
     const pollNativeTrace = async () => {
       try {
-        const res = await fetch(`${apiBase}/sessions/${nativeSid}`, { headers: authHeaders() });
+        const res = await fetch(`${apiBase}/sessions/${nativeSessionId}`, { headers: authHeaders() });
         if (cancelled || !res.ok) {
           return;
         }
@@ -530,7 +533,7 @@ export function usePlaybackOrchestrator(
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [nativeSessionId, nativePlaybackState?.session?.sessionId, apiBase, authHeaders, mergeSessionPlaybackTrace]);
+  }, [nativeSessionId, apiBase, authHeaders, mergeSessionPlaybackTrace]);
 
   const clearSessionLeaseState = useCallback(() => {
     activeLiveSessionIdRef.current = null;
