@@ -495,6 +495,42 @@ export function usePlaybackOrchestrator(
     setActiveSessionIdBase(nextSessionId);
   }, [setActiveSessionIdBase]);
 
+  // Native playback (managed Safari/iOS native HLS) runs through the native
+  // bridge and never drives the MSE controller's snapshot loop, so the executed
+  // session trace (GET /sessions) previously never reached the stats panel —
+  // it fell back to the pre-roll prediction and could mislabel container/codec.
+  // Poll the native session's trace read-only and merge it. This is telemetry
+  // ONLY: it never sends heartbeats or stop intents, so the bridge's session
+  // lifecycle is untouched and playback cannot be affected.
+  useEffect(() => {
+    const nativeSid = nativeSessionId ?? nativePlaybackState?.session?.sessionId ?? null;
+    if (!nativeSid) {
+      return;
+    }
+    let cancelled = false;
+    const pollNativeTrace = async () => {
+      try {
+        const res = await fetch(`${apiBase}/sessions/${nativeSid}`, { headers: authHeaders() });
+        if (cancelled || !res.ok) {
+          return;
+        }
+        const session = await res.json();
+        if (cancelled) {
+          return;
+        }
+        mergeSessionPlaybackTrace(extractPlaybackTrace(session));
+      } catch {
+        // Best-effort telemetry; transient errors must never disturb playback.
+      }
+    };
+    void pollNativeTrace();
+    const intervalId = window.setInterval(pollNativeTrace, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [nativeSessionId, nativePlaybackState?.session?.sessionId, apiBase, authHeaders, mergeSessionPlaybackTrace]);
+
   const clearSessionLeaseState = useCallback(() => {
     activeLiveSessionIdRef.current = null;
     clearSessionLeaseStateBase();
@@ -1579,6 +1615,15 @@ export function usePlaybackOrchestrator(
     }
   }, [isNativeEngine, showNativeBufferingMask, videoRef]);
 
+  // Statistics never lie: once a session exists (or is starting), the EXECUTION-
+  // OUTPUT fields must reflect that session's executed trace, never the pre-roll
+  // prediction (playbackObservability). The trace lands via the native poll / MSE
+  // snapshot loop; until then show nothing rather than a guess. Request-context
+  // fields (client path, profile, intents, host) keep the preview — they describe
+  // the request, not the output, so the preview is faithful during startup.
+  const hasActiveOrStartingSession =
+    Boolean(sessionIdRef.current || nativeSessionId || nativePlaybackState?.session?.sessionId) ||
+    sessionPlaybackTrace !== null;
   const effectiveClientPath =
     sessionPlaybackTrace?.clientPath ||
     playbackObservability?.clientPath ||
@@ -1603,27 +1648,27 @@ export function usePlaybackOrchestrator(
     null;
   const effectiveQualityRung =
     sessionPlaybackTrace?.qualityRung ??
-    playbackObservability?.qualityRung ??
+    (!hasActiveOrStartingSession ? playbackObservability?.qualityRung : null) ??
     null;
   const effectiveAudioQualityRung =
     sessionPlaybackTrace?.audioQualityRung ??
-    playbackObservability?.audioQualityRung ??
+    (!hasActiveOrStartingSession ? playbackObservability?.audioQualityRung : null) ??
     null;
   const effectiveVideoQualityRung =
     sessionPlaybackTrace?.videoQualityRung ??
-    playbackObservability?.videoQualityRung ??
+    (!hasActiveOrStartingSession ? playbackObservability?.videoQualityRung : null) ??
     null;
   const effectiveDegradedFrom =
     sessionPlaybackTrace?.degradedFrom ??
-    playbackObservability?.degradedFrom ??
+    (!hasActiveOrStartingSession ? playbackObservability?.degradedFrom : null) ??
     null;
   const effectiveTargetProfile =
     sessionPlaybackTrace?.targetProfile ??
-    playbackObservability?.targetProfile ??
+    (!hasActiveOrStartingSession ? playbackObservability?.targetProfile : null) ??
     null;
   const effectiveTargetProfileHash =
     sessionPlaybackTrace?.targetProfileHash ??
-    playbackObservability?.targetProfileHash ??
+    (!hasActiveOrStartingSession ? playbackObservability?.targetProfileHash : null) ??
     null;
   const effectiveOperator =
     sessionPlaybackTrace?.operator ??
