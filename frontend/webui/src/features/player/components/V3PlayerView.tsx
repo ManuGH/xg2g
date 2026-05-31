@@ -1,5 +1,6 @@
 import type { RefObject } from 'react';
 import { Button, Card, StatusChip } from '../../../components/ui';
+import { useUiSurface } from '../../../context/UiSurfaceContext';
 import type { VideoElementRef } from '../../../types/v3-player';
 import type {
   PlaybackOrchestratorActions,
@@ -22,6 +23,11 @@ export function V3PlayerView({
   viewState,
   actions,
 }: V3PlayerViewProps) {
+  // On phone-sized surfaces apply the compact mobile player layout (full-bleed
+  // video, repositioned chrome). The styles existed in V3Player.module.css but
+  // were never wired up, so the player rendered letterboxed on phones.
+  const { surface } = useUiSurface();
+  const isCompactSurface = surface === 'small';
   return (
     <div
       ref={containerRef}
@@ -30,6 +36,7 @@ export function V3PlayerView({
         'animate-enter',
         viewState.useOverlayLayout ? styles.overlay : null,
         viewState.userIdle ? styles.userIdle : null,
+        isCompactSurface ? styles.surfaceCompact : null,
       ].filter(Boolean).join(' ')}
     >
       {viewState.showCloseButton && (
