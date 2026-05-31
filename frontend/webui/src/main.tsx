@@ -52,7 +52,7 @@ applyUiSurfaceToDocument(resolveUiSurface(window, hostEnvironment), document.doc
 
 const root = createRoot(document.getElementById('root')!);
 
-void i18nReady.finally(() => {
+function renderApp() {
   root.render(
     <AppRouter>
       <ErrorBoundary
@@ -78,4 +78,16 @@ void i18nReady.finally(() => {
       </ErrorBoundary>
     </AppRouter>,
   );
-});
+}
+
+// Mount as soon as translations are ready, but NEVER block the UI on them: on
+// iOS Safari the locale chunk's dynamic import() can stall indefinitely, which
+// left i18nReady pending, root.render() uncalled, and #root empty (a black
+// screen). Cap the wait so the app always mounts; untranslated keys fill in
+// when the bundle arrives.
+void Promise.race([
+  i18nReady.catch(() => undefined),
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 1200);
+  }),
+]).then(renderApp);

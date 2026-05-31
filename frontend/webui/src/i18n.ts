@@ -62,32 +62,34 @@ function syncDocumentLanguage(language: string): void {
 
 const initialLanguage = detectInitialLanguage();
 
-export const i18nReady = (async () => {
-  const translation = await loadTranslation(initialLanguage);
+// Initialise i18next SYNCHRONOUSLY at module load so the React tree can always
+// mount. Translations are loaded asynchronously (dynamic import) and attached
+// when ready. Previously the initial render was gated on the translation
+// import completing; on iOS Safari that dynamic import() can stall
+// indefinitely, so the gating promise never settled, root.render() never ran,
+// and #root stayed empty — a black screen with the app effectively dead.
+// With useSuspense:false, t() returns keys until the bundle arrives, which
+// keeps the UI visible instead of blank.
+void i18n.use(initReactI18next).init({
+  resources: {},
+  lng: initialLanguage,
+  fallbackLng: false,
+  supportedLngs: SUPPORTED_LANGUAGES,
+  nonExplicitSupportedLngs: true,
+  load: 'languageOnly',
+  interpolation: {
+    escapeValue: false,
+  },
+  react: {
+    useSuspense: false,
+  },
+});
+syncDocumentLanguage(i18n.language);
+i18n.on('languageChanged', syncDocumentLanguage);
 
-  await i18n
-    .use(initReactI18next)
-    .init({
-      resources: {
-        [initialLanguage]: { translation },
-      },
-      lng: initialLanguage,
-      fallbackLng: false,
-      supportedLngs: SUPPORTED_LANGUAGES,
-      nonExplicitSupportedLngs: true,
-      load: 'languageOnly',
-      interpolation: {
-        escapeValue: false,
-      },
-      react: {
-        useSuspense: false,
-      },
-    });
-
-  syncDocumentLanguage(i18n.language);
-  i18n.on('languageChanged', syncDocumentLanguage);
-  return i18n;
-})();
+// Resolves once the initial language bundle is attached. The UI does NOT block
+// on this (see main.tsx) — it only governs when translated strings appear.
+export const i18nReady = ensureLanguageLoaded(initialLanguage).then(() => i18n);
 
 export async function setLanguage(language: string): Promise<void> {
   const normalized = normalizeLanguage(language);
