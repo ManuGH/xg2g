@@ -503,7 +503,15 @@
   top: 24px;
   right: 72px;
   z-index: 60;
-  width: min(560px, calc(100vw - 40px));
+  /* Stay inside the player on every viewport: width leaves room for the
+     right offset + a left gutter; height is capped to the dynamic viewport
+     and scrolls internally so a long stats list never spills past the player
+     edges ("reißt aus dem Player"). */
+  width: min(560px, calc(100% - 96px));
+  max-height: min(calc(100% - 48px), calc(100dvh - 96px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .statsHeader {
