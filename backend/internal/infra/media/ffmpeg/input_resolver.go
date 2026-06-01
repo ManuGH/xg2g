@@ -258,15 +258,20 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	}
 
 	buf := make([]byte, preflightScanBytes)
-	n, err := io.ReadAtLeast(resp.Body, buf, preflightMinBytes)
-	// After meeting the minimum, best-effort read the rest of the scan window
-	// so the scramble classifier has enough TS packets to make a decision.
-	// ReadAtLeast may return after just preflightMinBytes even when the body
-	// has more data; ReadFull picks up the remainder without blocking forever
-	// because the HTTP body's Content-Length bounds it.
-	if err == nil {
-		m, _ := io.ReadFull(resp.Body, buf[n:])
-		n += m
+	n, err := io.ReadFull(io.LimitReader(resp.Body, int64(preflightScanBytes)), buf)
+	// ReadFull tries to fill the entire scan window; if the body ends
+	// earlier that is fine — we classify on whatever packets are present.
+	// The alternative (ReadAtLeast with a minimum) returns after only a few
+	// packets and leaves scramble detection dead for most streaming sources.
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		err = nil
+	}
+	// If we got fewer bytes than the minimum required for sync/scramble
+	// classification, treat it as a short read rather than a sync miss so
+	// the caller can distinguish a truncated body from a valid stream that
+	// happens to lack the sync byte.
+	if n < preflightMinBytes && err == nil {
+		err = io.ErrUnexpectedEOF
 	}
 	result.Bytes = n
 
