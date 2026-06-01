@@ -439,17 +439,18 @@ seg_000001.ts
 	assert.Equal(t, "application/vnd.apple.mpegurl", resp.Header.Get("Content-Type"))
 
 	// Black-Box Output Assertions (CTO Gate)
-	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "DVR MUST force EVENT type")
+	// DVR live MUST stay a standard sliding LIVE playlist: no forced PLAYLIST-TYPE.
+	// EXT-X-PLAYLIST-TYPE:EVENT is append-only per spec and breaks the moment
+	// delete_segments prunes the window head (~at DVR-window age) -> client hard-stop.
+	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE", "DVR live MUST NOT force a playlist type so delete_segments can slide the window without violating an append-only EVENT contract")
 	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-8,PRECISE=YES", "DVR MUST inject EXT-X-START with enough live headroom for Safari")
 	assert.NotContains(t, content, "#EXT-X-ENDLIST", "DVR (Rolling) MUST NOT contain ENDLIST")
-	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE:VOD", "DVR MUST NOT contain VOD tag")
 
-	// Check tag order
+	// Check tag order: the start tag follows the header.
 	extM3UIdx := strings.Index(content, "#EXTM3U")
-	playlistTypeIdx := strings.Index(content, "#EXT-X-PLAYLIST-TYPE")
 	startTagIdx := strings.Index(content, "#EXT-X-START")
 
-	assert.True(t, extM3UIdx < playlistTypeIdx && playlistTypeIdx < startTagIdx, "Semantic tags must follow header in order")
+	assert.True(t, extM3UIdx < startTagIdx, "EXT-X-START must follow the #EXTM3U header")
 }
 
 func TestDeriveHLSStartupPolicy(t *testing.T) {
