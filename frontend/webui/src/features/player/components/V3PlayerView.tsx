@@ -79,7 +79,7 @@ export function V3PlayerView({
       >
         {viewState.showPlaybackChrome && (viewState.programmeTitle || viewState.channelName) && (
           <div className={styles.overlayTitle}>
-            {viewState.channelName && viewState.programmeTitle && (
+            {viewState.channelName && viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
               <span className={styles.overlayChannelEyebrow}>{viewState.channelName}</span>
             )}
             <span className={styles.overlayProgrammeTitle}>{viewState.programmeTitle ?? viewState.channelName}</span>

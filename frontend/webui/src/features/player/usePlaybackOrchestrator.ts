@@ -1836,7 +1836,9 @@ export function usePlaybackOrchestrator(
     : [];
   const viewState: V3PlayerViewState = {
     channelName: channel?.name ?? null,
-    programmeTitle: playbackMode === 'LIVE' ? (liveNowPlaying.title ?? channel?.name ?? null) : (channel?.name ?? null),
+    // Live: the real EPG programme title (null until/unless known — the view
+    // falls back to the channel name for the title line). Recording: its title.
+    programmeTitle: playbackMode === 'LIVE' ? liveNowPlaying.title : (channel?.name ?? null),
     programmeDesc: playbackMode === 'LIVE' ? liveNowPlaying.desc : null,
     useOverlayLayout: Boolean(onClose),
     userIdle: isIdle,
