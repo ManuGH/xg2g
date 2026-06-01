@@ -502,6 +502,14 @@ export function usePlaybackOrchestrator(
     setActiveSessionIdBase(nextSessionId);
   }, [setActiveSessionIdBase]);
 
+  // Stabilize callback refs for the native trace poll so the effect never
+  // re-creates its interval when authHeaders or mergeSessionPlaybackTrace are
+  // recreated (e.g. when token changes).
+  const authHeadersRef = useRef(authHeaders);
+  const mergeSessionPlaybackTraceRef = useRef(mergeSessionPlaybackTrace);
+  useEffect(() => { authHeadersRef.current = authHeaders; });
+  useEffect(() => { mergeSessionPlaybackTraceRef.current = mergeSessionPlaybackTrace; });
+
   // Native playback (managed Safari/iOS native HLS) runs through the native
   // bridge and never drives the MSE controller's snapshot loop, so the executed
   // session trace (GET /sessions) previously never reached the stats panel —
@@ -520,7 +528,7 @@ export function usePlaybackOrchestrator(
     let cancelled = false;
     const pollNativeTrace = async () => {
       try {
-        const res = await fetch(`${apiBase}/sessions/${nativeSessionId}`, { headers: authHeaders() });
+        const res = await fetch(`${apiBase}/sessions/${nativeSessionId}`, { headers: authHeadersRef.current() });
         if (cancelled || !res.ok) {
           return;
         }
@@ -529,7 +537,7 @@ export function usePlaybackOrchestrator(
           return;
         }
         // extractPlaybackTrace descends into the response's `.trace` wrapper.
-        mergeSessionPlaybackTrace(extractPlaybackTrace(session));
+        mergeSessionPlaybackTraceRef.current(extractPlaybackTrace(session));
       } catch {
         // Best-effort telemetry; transient errors must never disturb playback.
       }
@@ -540,7 +548,7 @@ export function usePlaybackOrchestrator(
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [nativeSessionId, apiBase, authHeaders, mergeSessionPlaybackTrace]);
+  }, [nativeSessionId, apiBase]);
 
   const clearSessionLeaseState = useCallback(() => {
     activeLiveSessionIdRef.current = null;

@@ -259,6 +259,15 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 
 	buf := make([]byte, preflightScanBytes)
 	n, err := io.ReadAtLeast(resp.Body, buf, preflightMinBytes)
+	// After meeting the minimum, best-effort read the rest of the scan window
+	// so the scramble classifier has enough TS packets to make a decision.
+	// ReadAtLeast may return after just preflightMinBytes even when the body
+	// has more data; ReadFull picks up the remainder without blocking forever
+	// because the HTTP body's Content-Length bounds it.
+	if err == nil {
+		m, _ := io.ReadFull(resp.Body, buf[n:])
+		n += m
+	}
 	result.Bytes = n
 
 	latency := time.Since(start)
