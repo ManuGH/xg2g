@@ -1381,6 +1381,88 @@ describe('V3Player ServiceRef Input', () => {
     unmount();
   });
 
+  it('does not veil (no buffering) when seeking to an already-buffered target', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'hls',
+            requestId: 'live-decision-sk',
+            playbackDecisionToken: 'live-token-sk',
+            decision: { reasons: ['hls'] },
+          }))
+        });
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({ sessionId: 'sid-live-sk', requestId: 'intent-req-sk' })
+        });
+      }
+      if (url.includes('/sessions/sid-live-sk')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({
+            id: 'sid-live-sk',
+            state: 'READY',
+            mode: 'LIVE',
+            playbackUrl: 'http://example.com/live-sk.m3u8',
+            heartbeatIntervalSeconds: 600
+          })
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { container, unmount } = render(<V3Player {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:321:222:33AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+    });
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    expect(video).toBeTruthy();
+
+    // Element is playing with the seek target resident in the buffer.
+    Object.defineProperty(video, 'paused', { value: false, configurable: true });
+    Object.defineProperty(video, 'readyState', { value: 4, configurable: true });
+    Object.defineProperty(video, 'currentTime', { value: 100, configurable: true });
+    Object.defineProperty(video, 'buffered', {
+      value: { length: 1, start: () => 0, end: () => 9999 },
+      configurable: true,
+    });
+    // Reach a steady non-buffering state first.
+    fireEvent.playing(video);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
+
+    // In-buffer seek must NOT flip to buffering (no veil flash).
+    fireEvent.seeking(video);
+    await Promise.resolve();
+    expect(screen.getByRole('status')).not.toHaveTextContent(/buffering/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+
+    unmount();
+  });
+
   it('recovers live playback state through stalled and playing events', async () => {
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/live/stream-info')) {

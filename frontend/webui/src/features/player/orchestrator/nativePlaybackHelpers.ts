@@ -35,8 +35,17 @@ export const NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS = 140;
 // picture (device-confirmed 2026-06-01: paused=false, readyState=4, currentTime
 // advancing, visibility:hidden). This watchdog reveals whenever the element
 // itself proves it is playing, independent of the FSM.
-export const NATIVE_VIDEO_WATCHDOG_INTERVAL_MS = 500;
+// 250ms (was 500): halves the worst-case visible-black latency after a resume.
+// The reveal still requires advancedSeconds >= 0.15, so at 250ms any stream
+// playing >= 0.6x realtime meets the threshold and the frozen-frame invariant
+// holds. (Irrelevant while backgrounded — Safari coalesces timers to >=1s; that
+// case is covered by foregroundResume's play()->'playing'.)
+export const NATIVE_VIDEO_WATCHDOG_INTERVAL_MS = 250;
 export const NATIVE_VIDEO_WATCHDOG_MIN_ADVANCE_SECONDS = 0.15;
+
+// Minimum buffered headroom (seconds) past the seek target for it to count as
+// "already in memory". Mirrors the onWaiting buffer-health gate so the two agree.
+export const NATIVE_VIDEO_INMEMORY_SEEK_MIN_HEADROOM_SECONDS = 0.5;
 
 // shouldForceRevealNativeVideo decides whether the hidden native <video> has
 // proven itself to be genuinely playing and must therefore be revealed. It only
@@ -50,6 +59,21 @@ export function shouldForceRevealNativeVideo(args: {
 }): boolean {
   const minAdvance = args.minAdvanceSeconds ?? NATIVE_VIDEO_WATCHDOG_MIN_ADVANCE_SECONDS;
   return !args.paused && args.readyState >= 3 && args.advancedSeconds >= minAdvance;
+}
+
+// isInMemorySeekTarget decides whether a just-issued seek landed on data that is
+// already buffered and decodable. When true, the seek resumes instantly and the
+// buffering veil must NOT show (Plex-like in-buffer scrubbing). When false (seek
+// to un-buffered data, or element not ready), the caller veils as before;
+// onWaiting/onStalled remain the safety net if this prediction is wrong.
+export function isInMemorySeekTarget(args: {
+  paused: boolean;
+  readyState: number;
+  bufferedAheadSeconds: number;
+  minHeadroomSeconds?: number;
+}): boolean {
+  const minHeadroom = args.minHeadroomSeconds ?? NATIVE_VIDEO_INMEMORY_SEEK_MIN_HEADROOM_SECONDS;
+  return !args.paused && args.readyState >= 3 && args.bufferedAheadSeconds > minHeadroom;
 }
 export const NATIVE_PLAYER_STATE_IDLE = 1;
 export const NATIVE_PLAYER_STATE_BUFFERING = 2;

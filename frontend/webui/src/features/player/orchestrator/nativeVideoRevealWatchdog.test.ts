@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   NATIVE_VIDEO_WATCHDOG_MIN_ADVANCE_SECONDS,
   shouldForceRevealNativeVideo,
+  isInMemorySeekTarget,
 } from './nativePlaybackHelpers';
 
 describe('shouldForceRevealNativeVideo', () => {
@@ -49,6 +50,41 @@ describe('shouldForceRevealNativeVideo', () => {
         readyState: 3,
         advancedSeconds: NATIVE_VIDEO_WATCHDOG_MIN_ADVANCE_SECONDS,
       }),
+    ).toBe(true);
+  });
+});
+
+describe('isInMemorySeekTarget', () => {
+  it('treats a buffered, decodable, playing target as in-memory (no veil)', () => {
+    expect(
+      isInMemorySeekTarget({ paused: false, readyState: 4, bufferedAheadSeconds: 12 }),
+    ).toBe(true);
+  });
+
+  it('veils when the target is not buffered (headroom <= 0.5)', () => {
+    expect(
+      isInMemorySeekTarget({ paused: false, readyState: 4, bufferedAheadSeconds: 0 }),
+    ).toBe(false);
+    expect(
+      isInMemorySeekTarget({ paused: false, readyState: 4, bufferedAheadSeconds: 0.5 }),
+    ).toBe(false);
+  });
+
+  it('veils when the element is not yet decodable (readyState < 3)', () => {
+    expect(
+      isInMemorySeekTarget({ paused: false, readyState: 2, bufferedAheadSeconds: 12 }),
+    ).toBe(false);
+  });
+
+  it('veils while paused', () => {
+    expect(
+      isInMemorySeekTarget({ paused: true, readyState: 4, bufferedAheadSeconds: 12 }),
+    ).toBe(false);
+  });
+
+  it('reveals just past the headroom threshold', () => {
+    expect(
+      isInMemorySeekTarget({ paused: false, readyState: 3, bufferedAheadSeconds: 0.51 }),
     ).toBe(true);
   });
 });

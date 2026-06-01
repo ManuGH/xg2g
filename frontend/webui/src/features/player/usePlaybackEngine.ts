@@ -15,6 +15,7 @@ import {
   readPlaybackFrameCounters,
   type HlsRenderProbeSnapshot,
 } from './playbackRenderProbe';
+import { isInMemorySeekTarget } from './orchestrator/nativePlaybackHelpers';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
 type ReportErrorFn = (
@@ -1067,6 +1068,21 @@ export function usePlaybackEngine({
       clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
+
+      // In-buffer seek: when the seek target is already buffered and decodable
+      // (currentTime == target the moment 'seeking' fires), playback resumes
+      // instantly, so do NOT flash the buffering veil — Plex-like in-memory
+      // scrubbing. onWaiting/onStalled remain the safety net if this prediction
+      // is wrong; worst case is the old behavior, never a stuck black frame.
+      const headroom = bufferedAheadSeconds(videoEl);
+      if (isInMemorySeekTarget({ paused: videoEl.paused, readyState: videoEl.readyState, bufferedAheadSeconds: headroom })) {
+        debugLog('[V3Player] Event: seeking (in-buffer, no veil)', {
+          headroom: headroom.toFixed(1),
+          readyState: videoEl.readyState,
+        });
+        return;
+      }
+
       debugLog('[V3Player] Event: seeking -> buffering');
       setStatus('buffering');
     };
@@ -1229,7 +1245,17 @@ export function usePlaybackEngine({
       }
       clearNativeStallRecovery();
       clearHlsStallRecovery();
-      setStatus((prev) => (prev === 'buffering' ? 'playing' : prev));
+      setStatus((prev) => {
+        if (prev === 'buffering') return 'playing';
+        // Also un-stick the in-place recoveries (hls.js recoverMediaError /
+        // startLoad) which can leave status pinned at 'recovering' while the
+        // element decodes again. Do NOT touch the async session-reattach path
+        // (decodeRecoveryInFlightRef true): it still holds the stale source for
+        // ~850ms before teardown+replay, so flipping to 'playing' there would
+        // un-veil right before the source is swapped.
+        if (prev === 'recovering' && !decodeRecoveryInFlightRef.current) return 'playing';
+        return prev;
+      });
     };
 
     videoEl.addEventListener('waiting', onWaiting);
@@ -1253,7 +1279,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('timeupdate', onTimeUpdate);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
 
   return {
     resetPlaybackEngine,
