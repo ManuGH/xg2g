@@ -32,7 +32,6 @@ interface UsePlayerChromeProps {
   allowNativeFullscreen: boolean;
   shouldForceNativeMobileHls: ForceNativeFn;
   canUseDesktopWebKitFullscreen: DesktopFullscreenFn;
-  recoverInlineLiveSeek?: (targetSeconds: number) => boolean;
   onNativeFullscreenExit?: (details: { currentTime: number | null; wasPaused: boolean }) => void;
   mediaTitle?: string | null;
   mediaSubtitle?: string | null;
@@ -125,7 +124,6 @@ export function usePlayerChrome({
   allowNativeFullscreen,
   shouldForceNativeMobileHls,
   canUseDesktopWebKitFullscreen,
-  recoverInlineLiveSeek,
   onNativeFullscreenExit,
   mediaTitle,
   mediaSubtitle,
@@ -363,10 +361,6 @@ export function usePlayerChrome({
     if (seekableEnd > seekableStart) {
       clamped = Math.min(Math.max(targetSeconds, seekableStart), seekableEnd);
     }
-    if (recoverInlineLiveSeek?.(clamped)) {
-      setCurrentPlaybackTime(clamped);
-      return;
-    }
     video.currentTime = clamped;
 
     // Live/DVR seeks land on un-buffered (transcoded) or evicted data; Safari
@@ -385,7 +379,7 @@ export function usePlayerChrome({
         video.addEventListener('loadedmetadata', resume, { once: true });
       }
     }
-  }, [canRunSeekCommand, recoverInlineLiveSeek, seekableEnd, seekableStart, userPauseIntentRef, videoRef]);
+  }, [canRunSeekCommand, seekableEnd, seekableStart, userPauseIntentRef, videoRef]);
 
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;
