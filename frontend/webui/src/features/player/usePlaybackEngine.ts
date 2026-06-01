@@ -1214,12 +1214,31 @@ export function usePlaybackEngine({
       });
     };
 
+    const onTimeUpdate = () => {
+      // Ground-truth buffering recovery. `timeupdate` only fires while
+      // currentTime is genuinely advancing, so if the FSM is still pinned at
+      // 'buffering' while the element is decoding (a transient waiting/seeking
+      // after pause->resume that never got a follow-up 'playing' event), the
+      // resume already succeeded. Unstick it to 'playing' so the reveal path
+      // shows the picture instead of holding the veil indefinitely.
+      // Device-confirmed 2026-06-01: audio plays, currentTime advances,
+      // readyState 4, but the element stayed veiled because status stuck at
+      // 'buffering'.
+      if (isTeardownRef.current || videoEl.paused || videoEl.readyState < 3) {
+        return;
+      }
+      clearNativeStallRecovery();
+      clearHlsStallRecovery();
+      setStatus((prev) => (prev === 'buffering' ? 'playing' : prev));
+    };
+
     videoEl.addEventListener('waiting', onWaiting);
     videoEl.addEventListener('stalled', onStalled);
     videoEl.addEventListener('seeking', onSeeking);
     videoEl.addEventListener('seeked', onSeeked);
     videoEl.addEventListener('playing', onPlaying);
     videoEl.addEventListener('pause', onPause);
+    videoEl.addEventListener('timeupdate', onTimeUpdate);
     videoEl.addEventListener('error', onError);
 
     return () => {
@@ -1231,6 +1250,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('seeked', onSeeked);
       videoEl.removeEventListener('playing', onPlaying);
       videoEl.removeEventListener('pause', onPause);
+      videoEl.removeEventListener('timeupdate', onTimeUpdate);
       videoEl.removeEventListener('error', onError);
     };
   }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
