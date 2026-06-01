@@ -895,6 +895,10 @@ export type NowNextRequest = {
 export type NowNextEntry = {
     title: string;
     /**
+     * Short programme synopsis (one or two sentences)
+     */
+    desc?: string;
+    /**
      * Unix timestamp (seconds)
      */
     start: number;

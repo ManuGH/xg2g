@@ -34,6 +34,8 @@ function createActions(): PlaybackOrchestratorActions {
 function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerViewState {
   return {
     channelName: 'Das Erste HD',
+    programmeTitle: null,
+    programmeDesc: null,
     useOverlayLayout: false,
     userIdle: false,
     showCloseButton: false,
@@ -195,5 +197,52 @@ describe('V3PlayerView', () => {
     expect(actions.seekToLiveEdge).toHaveBeenCalledTimes(1);
     expect(actions.resumeFrom).toHaveBeenCalledWith(42);
     expect(actions.startOver).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the now-playing programme title + synopsis with the channel as eyebrow', () => {
+    const actions = createActions();
+    const viewState = createViewState({
+      showPlaybackChrome: true,
+      channelName: 'ServusTV HD',
+      programmeTitle: 'Servus am Abend',
+      programmeDesc: 'Hintergründig und informativ. Das bewegt Österreich heute.',
+    });
+
+    render(
+      <V3PlayerView
+        containerRef={createRef<HTMLDivElement>()}
+        videoRef={createRef<HTMLVideoElement>()}
+        resumePrimaryActionRef={createRef<HTMLButtonElement>()}
+        viewState={viewState}
+        actions={actions}
+      />
+    );
+
+    expect(screen.getByText('Servus am Abend')).toBeInTheDocument();
+    expect(screen.getByText('Hintergründig und informativ. Das bewegt Österreich heute.')).toBeInTheDocument();
+    expect(screen.getByText('ServusTV HD')).toBeInTheDocument();
+  });
+
+  it('falls back to the channel name as the title when no programme is known', () => {
+    const actions = createActions();
+    const viewState = createViewState({
+      showPlaybackChrome: true,
+      channelName: 'ORF 1 HD',
+      programmeTitle: null,
+      programmeDesc: null,
+    });
+
+    render(
+      <V3PlayerView
+        containerRef={createRef<HTMLDivElement>()}
+        videoRef={createRef<HTMLVideoElement>()}
+        resumePrimaryActionRef={createRef<HTMLButtonElement>()}
+        viewState={viewState}
+        actions={actions}
+      />
+    );
+
+    // Channel name shown once, as the title (no separate eyebrow when there is no programme).
+    expect(screen.getAllByText('ORF 1 HD')).toHaveLength(1);
   });
 });

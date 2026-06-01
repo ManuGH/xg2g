@@ -83,6 +83,7 @@ import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
+import { useLiveNowPlaying } from './useLiveNowPlaying';
 import { useNativePlaybackBridge } from './orchestrator/useNativePlaybackBridge';
 import {
   buildAuthDeniedFailure,
@@ -115,6 +116,8 @@ export interface V3PlayerLabeledValue {
 
 export interface V3PlayerViewState {
   channelName: string | null;
+  programmeTitle: string | null;
+  programmeDesc: string | null;
   useOverlayLayout: boolean;
   userIdle: boolean;
   showCloseButton: boolean;
@@ -604,6 +607,10 @@ export function usePlaybackOrchestrator(
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen
   });
+
+  // Live now-playing EPG (current programme title + synopsis, auto-refreshes
+  // when the programme changes). Disabled for recordings (fixed title).
+  const liveNowPlaying = useLiveNowPlaying(sRef, playbackMode === 'LIVE');
 
   // Resume Hook
   useResume({
@@ -1824,6 +1831,8 @@ export function usePlaybackOrchestrator(
     : [];
   const viewState: V3PlayerViewState = {
     channelName: channel?.name ?? null,
+    programmeTitle: playbackMode === 'LIVE' ? (liveNowPlaying.title ?? channel?.name ?? null) : (channel?.name ?? null),
+    programmeDesc: playbackMode === 'LIVE' ? liveNowPlaying.desc : null,
     useOverlayLayout: Boolean(onClose),
     userIdle: isIdle,
     showCloseButton: Boolean(onClose),

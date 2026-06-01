@@ -1168,6 +1168,9 @@ type MonetizationStatus struct {
 
 // NowNextEntry defines model for NowNextEntry.
 type NowNextEntry struct {
+	// Desc Short programme synopsis (one or two sentences)
+	Desc *string `json:"desc,omitempty"`
+
 	// End Unix timestamp (seconds)
 	End int `json:"end"`
 
