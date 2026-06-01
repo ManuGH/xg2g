@@ -27,6 +27,30 @@ export const NATIVE_VIDEO_REVEAL_REBUFFER: NativeVideoRevealThresholds = {
 
 export const NATIVE_VIDEO_REBUFFER_VEIL_MS = 2300;
 export const NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS = 140;
+
+// Ground-truth reveal watchdog. The status FSM can get pinned at (or oscillate
+// around) 'buffering' after a pause→resume on a live stream while the underlying
+// <video> is already decoding frames again. When that happens the FSM-gated
+// reveal never fires and the element is held at visibility:hidden over a healthy
+// picture (device-confirmed 2026-06-01: paused=false, readyState=4, currentTime
+// advancing, visibility:hidden). This watchdog reveals whenever the element
+// itself proves it is playing, independent of the FSM.
+export const NATIVE_VIDEO_WATCHDOG_INTERVAL_MS = 500;
+export const NATIVE_VIDEO_WATCHDOG_MIN_ADVANCE_SECONDS = 0.15;
+
+// shouldForceRevealNativeVideo decides whether the hidden native <video> has
+// proven itself to be genuinely playing and must therefore be revealed. It only
+// returns true when frames are actually moving, so a real rebuffer (currentTime
+// frozen) keeps the veil up and we never reveal a stalled/black frame.
+export function shouldForceRevealNativeVideo(args: {
+  paused: boolean;
+  readyState: number;
+  advancedSeconds: number;
+  minAdvanceSeconds?: number;
+}): boolean {
+  const minAdvance = args.minAdvanceSeconds ?? NATIVE_VIDEO_WATCHDOG_MIN_ADVANCE_SECONDS;
+  return !args.paused && args.readyState >= 3 && args.advancedSeconds >= minAdvance;
+}
 export const NATIVE_PLAYER_STATE_IDLE = 1;
 export const NATIVE_PLAYER_STATE_BUFFERING = 2;
 export const NATIVE_PLAYER_STATE_READY = 3;
