@@ -84,6 +84,7 @@ import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
 import { useLiveNowPlaying } from './useLiveNowPlaying';
+import { getManagedMseAv1Support, formatManagedMseAv1 } from './utils/managedMseAv1';
 import { useNativePlaybackBridge } from './orchestrator/useNativePlaybackBridge';
 import {
   buildAuthDeniedFailure,
@@ -1780,7 +1781,11 @@ export function usePlaybackOrchestrator(
         : supportsNativeFullscreen
           ? 'webkit-available'
           : 'web-only';
+  // Stage 0 capability gate readout for the Stats panel (paste-free device check).
+  const mseAv1Readout = useMemo(() => formatManagedMseAv1(getManagedMseAv1Support()), []);
+
   const statsRows: V3PlayerLabeledValue[] = [
+    { label: t('player.av1Mms', { defaultValue: 'AV1/MMS' }), value: mseAv1Readout },
     { label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
     { label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
     { label: t('player.clientPath', { defaultValue: 'Client Path' }), value: effectiveClientPath || '-' },
