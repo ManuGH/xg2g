@@ -426,7 +426,7 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") && forcePlaylistType != "" {
+		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") && (forcePlaylistType != "" || isDvrLive) {
 			continue
 		}
 		if line == "#EXTM3U" && (forcePlaylistType != "" || insertStartTag != "") && !insertedHeader {
