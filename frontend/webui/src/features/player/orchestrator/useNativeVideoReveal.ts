@@ -6,6 +6,8 @@ import {
   NATIVE_VIDEO_REVEAL_STARTUP,
   NATIVE_VIDEO_REBUFFER_VEIL_MS,
   NATIVE_VIDEO_UNVEIL_AFTER_PLAYING_MS,
+  NATIVE_VIDEO_WATCHDOG_INTERVAL_MS,
+  shouldForceRevealNativeVideo,
 } from './nativePlaybackHelpers';
 
 interface UseNativeVideoRevealArgs {
@@ -220,6 +222,59 @@ export function useNativeVideoReveal({
     nativeVideoVeilClearTimerRef,
     showNativeVideo,
     showNativeVideoVeil,
+    videoRef,
+  ]);
+
+  // Ground-truth reveal watchdog. Independent of the status FSM (deliberately
+  // NOT depending on `status`, so a buffering<->playing oscillation cannot keep
+  // restarting the sampler): while the native video is hidden, poll the element
+  // itself and reveal as soon as it is demonstrably decoding frames. This is the
+  // safety net for the pause->resume->black case where the FSM stays pinned at
+  // 'buffering' even though the <video> is playing. It only reveals on real
+  // forward progress, so a genuine rebuffer keeps the veil up.
+  useEffect(() => {
+    if (!isNativeEngine || showNativeVideo) {
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    let lastSampledTime = video.currentTime;
+    const intervalId = window.setInterval(() => {
+      const current = videoRef.current;
+      if (!current) {
+        return;
+      }
+      const advancedSeconds = current.currentTime - lastSampledTime;
+      lastSampledTime = current.currentTime;
+      if (
+        shouldForceRevealNativeVideo({
+          paused: current.paused,
+          readyState: current.readyState,
+          advancedSeconds,
+        })
+      ) {
+        window.clearInterval(intervalId);
+        nativeVideoShownRef.current = true;
+        nativeVideoHoldPositionRef.current = null;
+        clearNativeVideoRevealTimer();
+        clearNativeVideoVeilTimers();
+        setShowNativeVideo(true);
+        setShowNativeVideoVeil(false);
+        setNativeVeilResumeArmed(false);
+      }
+    }, NATIVE_VIDEO_WATCHDOG_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    clearNativeVideoRevealTimer,
+    clearNativeVideoVeilTimers,
+    isNativeEngine,
+    showNativeVideo,
     videoRef,
   ]);
 

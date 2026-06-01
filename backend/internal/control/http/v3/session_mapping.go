@@ -75,6 +75,8 @@ func mapDetailCode(code model.ReasonDetailCode) string {
 		return "failed to open upstream input"
 	case model.DInvalidUpstreamInput:
 		return "invalid upstream input data"
+	case model.DUpstreamScrambled:
+		return "upstream stream is scrambled (encrypted, could not be descrambled)"
 	case model.DCopyOutputMissingCodec:
 		return "copy output missing codec parameters"
 	default:

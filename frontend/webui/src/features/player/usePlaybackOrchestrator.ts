@@ -79,9 +79,12 @@ import { usePlaybackStateSetters } from './orchestrator/usePlaybackStateSetters'
 import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCleanup';
 import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
+import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
+import { useLiveNowPlaying } from './useLiveNowPlaying';
+import { getManagedMseAv1Support, formatManagedMseAv1 } from './utils/managedMseAv1';
 import { useNativePlaybackBridge } from './orchestrator/useNativePlaybackBridge';
 import {
   buildAuthDeniedFailure,
@@ -114,6 +117,8 @@ export interface V3PlayerLabeledValue {
 
 export interface V3PlayerViewState {
   channelName: string | null;
+  programmeTitle: string | null;
+  programmeDesc: string | null;
   useOverlayLayout: boolean;
   userIdle: boolean;
   showCloseButton: boolean;
@@ -208,6 +213,7 @@ export interface PlaybackOrchestratorActions {
   retry(): Promise<void>;
   seekBy(deltaSeconds: number): void;
   seekTo(positionSeconds: number): void;
+  seekToLiveEdge(): void;
   togglePlayPause(): void;
   updateServiceRef(nextValue: string): void;
   submitServiceRef(nextValue?: string): void;
@@ -312,6 +318,7 @@ export function usePlaybackOrchestrator(
   const userPauseIntentRef = useRef<boolean>(false);
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
+  const wasHiddenRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
 
@@ -495,6 +502,54 @@ export function usePlaybackOrchestrator(
     setActiveSessionIdBase(nextSessionId);
   }, [setActiveSessionIdBase]);
 
+  // Stabilize callback refs for the native trace poll so the effect never
+  // re-creates its interval when authHeaders or mergeSessionPlaybackTrace are
+  // recreated (e.g. when token changes).
+  const authHeadersRef = useRef(authHeaders);
+  const mergeSessionPlaybackTraceRef = useRef(mergeSessionPlaybackTrace);
+  useEffect(() => { authHeadersRef.current = authHeaders; });
+  useEffect(() => { mergeSessionPlaybackTraceRef.current = mergeSessionPlaybackTrace; });
+
+  // Native playback (managed Safari/iOS native HLS) runs through the native
+  // bridge and never drives the MSE controller's snapshot loop, so the executed
+  // session trace (GET /sessions) previously never reached the stats panel —
+  // it fell back to the pre-roll prediction and could mislabel container/codec.
+  // Poll the native session's trace read-only and merge it. This is telemetry
+  // ONLY: it never sends heartbeats or stop intents, so the bridge's session
+  // lifecycle is untouched and playback cannot be affected.
+  useEffect(() => {
+    // Tie the poll's lifetime to nativeSessionId only. The bridge nulls it on
+    // stop, so we never keep polling a cleanly-ended session (the lingering-poll
+    // edge); the broader nativePlaybackState.session.sessionId can outlive an
+    // ended session until full teardown.
+    if (!nativeSessionId) {
+      return;
+    }
+    let cancelled = false;
+    const pollNativeTrace = async () => {
+      try {
+        const res = await fetch(`${apiBase}/sessions/${nativeSessionId}`, { headers: authHeadersRef.current() });
+        if (cancelled || !res.ok) {
+          return;
+        }
+        const session = await res.json();
+        if (cancelled) {
+          return;
+        }
+        // extractPlaybackTrace descends into the response's `.trace` wrapper.
+        mergeSessionPlaybackTraceRef.current(extractPlaybackTrace(session));
+      } catch {
+        // Best-effort telemetry; transient errors must never disturb playback.
+      }
+    };
+    void pollNativeTrace();
+    const intervalId = window.setInterval(pollNativeTrace, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [nativeSessionId, apiBase]);
+
   const clearSessionLeaseState = useCallback(() => {
     activeLiveSessionIdRef.current = null;
     clearSessionLeaseStateBase();
@@ -531,6 +586,7 @@ export function usePlaybackOrchestrator(
     endTimeDisplay,
     formatClock,
     seekTo,
+    seekToLiveEdge,
     seekBy,
     seekWhenReady,
     togglePlayPause,
@@ -560,6 +616,10 @@ export function usePlaybackOrchestrator(
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen
   });
+
+  // Live now-playing EPG (current programme title + synopsis, auto-refreshes
+  // when the programme changes). Disabled for recordings (fixed title).
+  const liveNowPlaying = useLiveNowPlaying(sRef, playbackMode === 'LIVE');
 
   // Resume Hook
   useResume({
@@ -1495,6 +1555,63 @@ export function usePlaybackOrchestrator(
     });
   }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
+  // Browser (non-TV) foreground recovery. iOS Safari and desktop browsers
+  // suspend the decoder while backgrounded and do not auto-resume inline
+  // <video> on return — the frame stays black/frozen. Repair only on the
+  // hidden->visible edge; deliberately NO pause-on-hide (that would break
+  // desktop tab-switches). TV keeps its own effect above, untouched.
+  useEffect(() => {
+    if (hostEnvironment.isTv) {
+      return;
+    }
+    if (isNativePlaybackHost && nativePlaybackState?.activeRequest) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (!isDocumentVisible) {
+      wasHiddenRef.current = true;
+      return;
+    }
+
+    const wasHidden = wasHiddenRef.current;
+    wasHiddenRef.current = false;
+
+    const action = decideForegroundResume({
+      wasHidden,
+      isPiP: document.pictureInPictureElement === video,
+      status,
+      userPaused: userPauseIntentRef.current,
+      hasTerminal: hasTerminalStatus,
+    });
+
+    if (action === 'none') {
+      return;
+    }
+
+    if (action === 'retry') {
+      // Reaped session (heartbeat 410/404 during background) — re-establish.
+      void handleRetry();
+      return;
+    }
+
+    // action === 'play'
+    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    void video.play().catch((err: unknown) => {
+      if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
+        // iOS blocked the programmatic resume; the existing play/pause control
+        // is the user-gesture tap-to-resume.
+        setStatus('paused');
+      } else {
+        debugWarn('[V3Player] Browser resume play blocked', err);
+      }
+    });
+  }, [handleRetry, hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
+
   const showBufferingOverlay = useBufferingOverlay(status);
 
   const startupElapsedSeconds = useStartupElapsed(isOverlayStartupStatus);
@@ -1579,6 +1696,15 @@ export function usePlaybackOrchestrator(
     }
   }, [isNativeEngine, showNativeBufferingMask, videoRef]);
 
+  // Statistics never lie: once a session exists (or is starting), the EXECUTION-
+  // OUTPUT fields must reflect that session's executed trace, never the pre-roll
+  // prediction (playbackObservability). The trace lands via the native poll / MSE
+  // snapshot loop; until then show nothing rather than a guess. Request-context
+  // fields (client path, profile, intents, host) keep the preview — they describe
+  // the request, not the output, so the preview is faithful during startup.
+  const hasActiveOrStartingSession =
+    Boolean(sessionIdRef.current || nativeSessionId || nativePlaybackState?.session?.sessionId) ||
+    sessionPlaybackTrace !== null;
   const effectiveClientPath =
     sessionPlaybackTrace?.clientPath ||
     playbackObservability?.clientPath ||
@@ -1603,27 +1729,27 @@ export function usePlaybackOrchestrator(
     null;
   const effectiveQualityRung =
     sessionPlaybackTrace?.qualityRung ??
-    playbackObservability?.qualityRung ??
+    (!hasActiveOrStartingSession ? playbackObservability?.qualityRung : null) ??
     null;
   const effectiveAudioQualityRung =
     sessionPlaybackTrace?.audioQualityRung ??
-    playbackObservability?.audioQualityRung ??
+    (!hasActiveOrStartingSession ? playbackObservability?.audioQualityRung : null) ??
     null;
   const effectiveVideoQualityRung =
     sessionPlaybackTrace?.videoQualityRung ??
-    playbackObservability?.videoQualityRung ??
+    (!hasActiveOrStartingSession ? playbackObservability?.videoQualityRung : null) ??
     null;
   const effectiveDegradedFrom =
     sessionPlaybackTrace?.degradedFrom ??
-    playbackObservability?.degradedFrom ??
+    (!hasActiveOrStartingSession ? playbackObservability?.degradedFrom : null) ??
     null;
   const effectiveTargetProfile =
     sessionPlaybackTrace?.targetProfile ??
-    playbackObservability?.targetProfile ??
+    (!hasActiveOrStartingSession ? playbackObservability?.targetProfile : null) ??
     null;
   const effectiveTargetProfileHash =
     sessionPlaybackTrace?.targetProfileHash ??
-    playbackObservability?.targetProfileHash ??
+    (!hasActiveOrStartingSession ? playbackObservability?.targetProfileHash : null) ??
     null;
   const effectiveOperator =
     sessionPlaybackTrace?.operator ??
@@ -1663,7 +1789,11 @@ export function usePlaybackOrchestrator(
         : supportsNativeFullscreen
           ? 'webkit-available'
           : 'web-only';
+  // Stage 0 capability gate readout for the Stats panel (paste-free device check).
+  const mseAv1Readout = useMemo(() => formatManagedMseAv1(getManagedMseAv1Support()), []);
+
   const statsRows: V3PlayerLabeledValue[] = [
+    { label: t('player.av1Mms', { defaultValue: 'AV1/MMS' }), value: mseAv1Readout },
     { label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
     { label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
     { label: t('player.clientPath', { defaultValue: 'Client Path' }), value: effectiveClientPath || '-' },
@@ -1714,6 +1844,10 @@ export function usePlaybackOrchestrator(
     : [];
   const viewState: V3PlayerViewState = {
     channelName: channel?.name ?? null,
+    // Live: the real EPG programme title (null until/unless known — the view
+    // falls back to the channel name for the title line). Recording: its title.
+    programmeTitle: playbackMode === 'LIVE' ? liveNowPlaying.title : (channel?.name ?? null),
+    programmeDesc: playbackMode === 'LIVE' ? liveNowPlaying.desc : null,
     useOverlayLayout: Boolean(onClose),
     userIdle: isIdle,
     showCloseButton: Boolean(onClose),
@@ -1814,6 +1948,7 @@ export function usePlaybackOrchestrator(
     retry: handleRetry,
     seekBy,
     seekTo,
+    seekToLiveEdge,
     togglePlayPause,
     updateServiceRef: setSRef,
     submitServiceRef(nextValue) {

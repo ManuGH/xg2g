@@ -3,6 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 
+import { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppRouter from './AppRouter';
@@ -27,6 +28,13 @@ import { applyUiSurfaceToDocument, resolveUiSurface } from './lib/uiSurface.ts';
 import { setClientAuthToken } from './services/clientWrapper';
 import { ROUTE_MAP } from './routes.ts';
 import { getStoredToken } from './utils/tokenStorage';
+import { safeLocalStorage } from './lib/safeStorage.ts';
+import { ensureCanonicalBasePath, cleanupStaleServiceWorkers } from './bootRecovery.ts';
+
+// Recover from stale service workers and non-canonical (basename-less) URLs
+// before anything renders, so the router never refuses to render (black screen).
+cleanupStaleServiceWorkers();
+ensureCanonicalBasePath();
 
 // TanStack Query Client Configuration
 // Phase 1: Server-State Layer (2026 State-of-the-Art)
@@ -46,12 +54,12 @@ const queryClient = new QueryClient({
 setClientAuthToken(getStoredToken());
 const hostEnvironment = resolveHostEnvironment();
 applyHostEnvironmentToDocument(hostEnvironment);
-applyUiScaleToDocument(readStoredUiScale(window.localStorage), document.documentElement);
+applyUiScaleToDocument(readStoredUiScale(safeLocalStorage()), document.documentElement);
 applyUiSurfaceToDocument(resolveUiSurface(window, hostEnvironment), document.documentElement);
 
 const root = createRoot(document.getElementById('root')!);
 
-void i18nReady.finally(() => {
+function renderApp() {
   root.render(
     <AppRouter>
       <ErrorBoundary
@@ -59,7 +67,11 @@ void i18nReady.finally(() => {
         fallbackDetail="Try again to restore the interface."
         homeHref={ROUTE_MAP.dashboard}
       >
-        <QueryClientProvider client={queryClient}>
+        {/* Root Suspense safety net: any suspension above the app's own
+            boundaries commits this fallback instead of leaving #root empty
+            (which rendered as a black screen on iOS Safari). */}
+        <Suspense fallback={<div className="loading-spinner" />}>
+          <QueryClientProvider client={queryClient}>
           <UiSurfaceProvider>
             <UiScaleProvider>
               <UiOverlayProvider>
@@ -73,8 +85,21 @@ void i18nReady.finally(() => {
               </UiOverlayProvider>
             </UiScaleProvider>
           </UiSurfaceProvider>
-        </QueryClientProvider>
+          </QueryClientProvider>
+        </Suspense>
       </ErrorBoundary>
     </AppRouter>,
   );
-});
+}
+
+// Mount as soon as translations are ready, but NEVER block the UI on them: on
+// iOS Safari the locale chunk's dynamic import() can stall indefinitely, which
+// left i18nReady pending, root.render() uncalled, and #root empty (a black
+// screen). Cap the wait so the app always mounts; untranslated keys fill in
+// when the bundle arrives.
+void Promise.race([
+  i18nReady.catch(() => undefined),
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 1200);
+  }),
+]).then(renderApp);

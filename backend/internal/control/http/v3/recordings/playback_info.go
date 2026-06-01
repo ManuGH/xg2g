@@ -389,6 +389,28 @@ func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.P
 		return
 	}
 
+	// Copy-first: if the decision engine already keeps the video on the copy
+	// path (ModeTranscode driven only by the audio codec while the video stays
+	// copy), do NOT let the auto-codec re-encode it. buildTargetProfile has
+	// already produced video=copy + audio=transcode/AAC — exactly what
+	// stream.start runs for this source — so the preview must report that copy.
+	// Re-encoding a copyable source only loses quality and made the stats panel
+	// lie (it predicted a phantom transcode the executed stream never performs).
+	// Resolving a fresh profile here is wrong: ProfileSafari with a nil capability
+	// snapshot falls through to its interlaced/unknown branch (TranscodeVideo=true)
+	// and would clobber the copy. Just skip the auto-codec; it still applies below
+	// when the video itself needs transcoding (video.Mode == transcode).
+	if dec.TargetProfile != nil && dec.TargetProfile.Video.Mode == playbackprofile.MediaModeCopy {
+		// Surface the audio transcode the target already specifies
+		// (buildTargetProfile forces Audio -> transcode/AAC when the video stays
+		// copy) so the selected formats match the executed stream. Leave the
+		// copied video and container untouched.
+		if audioCodec := strings.TrimSpace(dec.TargetProfile.Audio.Codec); audioCodec != "" {
+			dec.Selected.AudioCodec = audioCodec
+		}
+		return
+	}
+
 	profileID := pickPlaybackInfoAutoProfile(resolvedCaps, hostRuntime)
 	if profileID == "" {
 		return

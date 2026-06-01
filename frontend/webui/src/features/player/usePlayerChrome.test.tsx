@@ -74,6 +74,15 @@ function HookHarness({
       <button onClick={chrome.togglePlayPause} type="button">
         playpause
       </button>
+      <button onClick={chrome.seekToLiveEdge} type="button">
+        golive
+      </button>
+      <button onClick={() => chrome.seekBy(-15)} type="button">
+        seekback
+      </button>
+      <button onClick={() => chrome.seekTo(50)} type="button">
+        seekto
+      </button>
     </div>
   );
 }
@@ -452,6 +461,91 @@ describe('usePlayerChrome', () => {
     await waitFor(() => {
       expect(webkitExitFullscreen).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('seekToLiveEdge lands a safety margin behind the edge, never on it', async () => {
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        liveSeekWindow={{ start: 0, end: 120, liveEdge: 120 }}
+      />
+    );
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    let currentTime = 30;
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
+    });
+    Object.defineProperty(video, 'paused', { configurable: true, get: () => false });
+    // Establish the seekable window (end=120).
+    Object.defineProperty(video, 'seekable', {
+      configurable: true,
+      get: () => ({ length: 1, start: () => 0, end: () => 120 }),
+    });
+    fireEvent(video, new Event('loadedmetadata'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'golive' }));
+
+    // 120 - 6 (safety gap) = 114; must NOT be the exact edge (120).
+    expect(currentTime).toBe(114);
+    expect(currentTime).toBeLessThan(120);
+  });
+
+  it('auto-resumes playback after a live seek when the user did not pause', async () => {
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        liveSeekWindow={{ start: 0, end: 120, liveEdge: 120 }}
+      />
+    );
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    let currentTime = 60;
+    Object.defineProperty(video, 'currentTime', { configurable: true, get: () => currentTime, set: (v: number) => { currentTime = v; } });
+    Object.defineProperty(video, 'paused', { configurable: true, get: () => true });
+    Object.defineProperty(video, 'readyState', { configurable: true, get: () => 1 });
+    Object.defineProperty(video, 'seekable', { configurable: true, get: () => ({ length: 1, start: () => 0, end: () => 120 }) });
+    const playSpy = vi.fn().mockResolvedValue(undefined);
+    video.play = playSpy;
+    fireEvent(video, new Event('loadedmetadata'));
+
+    // Backward DVR seek that lands the element paused (transcoded/evicted) must resume.
+    fireEvent.click(screen.getByRole('button', { name: 'seekback' }));
+
+    expect(currentTime).toBe(45); // 60 - 15
+    expect(playSpy).toHaveBeenCalled();
+  });
+
+  it('does not auto-resume after a seek when the user deliberately paused', async () => {
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        liveSeekWindow={{ start: 0, end: 120, liveEdge: 120 }}
+      />
+    );
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    let currentTime = 60;
+    let paused = false;
+    Object.defineProperty(video, 'currentTime', { configurable: true, get: () => currentTime, set: (v: number) => { currentTime = v; } });
+    Object.defineProperty(video, 'paused', { configurable: true, get: () => paused });
+    Object.defineProperty(video, 'readyState', { configurable: true, get: () => 1 });
+    Object.defineProperty(video, 'seekable', { configurable: true, get: () => ({ length: 1, start: () => 0, end: () => 120 }) });
+    const playSpy = vi.fn().mockResolvedValue(undefined);
+    video.play = playSpy;
+    video.pause = vi.fn(() => { paused = true; });
+    fireEvent(video, new Event('loadedmetadata'));
+
+    // User deliberately pauses -> sets the pause intent.
+    fireEvent.click(screen.getByRole('button', { name: 'playpause' }));
+    expect(paused).toBe(true);
+
+    // A subsequent seek must NOT auto-resume against the user's intent.
+    fireEvent.click(screen.getByRole('button', { name: 'seekback' }));
+    expect(currentTime).toBe(45);
+    expect(playSpy).not.toHaveBeenCalled();
   });
 
   it('defaults touch live DVR slightly behind the live edge', async () => {

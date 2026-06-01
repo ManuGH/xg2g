@@ -36,7 +36,7 @@
     "resolvedIntent": "compatible",
     "stopClass": null,
     "stopReason": null,
-    "targetProfileHash": null,
+    "targetProfile": {"audio":{"bitrateKbps":192,"channels":2,"codec":"aac","mode":"transcode","sampleRate":48000},"container":"mpegts","hls":{"enabled":true,"segmentContainer":"mpegts","segmentSeconds":0},"hwAccel":"none","packaging":"ts","video":{"codec":"","fps":0,"height":0,"mode":"copy","width":0}}, "targetProfileHash": "52feee7bb2a64404f195adda750cdc8ced9e3b230ff97d918453a314ed20d74d",
     "videoQualityRung": null
   },
   "correlationId": "corr-test-001",

@@ -108,7 +108,14 @@ function Files({ showLegacyNotice = true }: FilesProps) {
   ];
 
   const copyToClipboard = (value: string) => {
-    void navigator.clipboard.writeText(value);
+    // navigator.clipboard is undefined in insecure contexts (plain http on the
+    // LAN/staging) — guard so the click handler never throws there.
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      return;
+    }
+    void navigator.clipboard.writeText(value).catch(() => {
+      // Best effort: clipboard write can reject (permission/focus); ignore.
+    });
   };
 
   return (

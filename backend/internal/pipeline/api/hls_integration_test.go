@@ -134,7 +134,9 @@ func TestSafariHLSSmoke(t *testing.T) {
 
 	// Contract Assertions
 	assert.Contains(t, content, "#EXT-X-INDEPENDENT-SEGMENTS", "Must claim independent segments")
-	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "Must be EVENT playlist")
+	// Live DVR stays a sliding LIVE playlist (no forced EVENT type): EVENT is
+	// append-only and breaks when delete_segments prunes the window head.
+	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "Live DVR must NOT be an EVENT playlist (append-only type breaks under delete_segments)")
 	assert.Contains(t, content, "#EXT-X-PROGRAM-DATE-TIME:", "Must contain program date time")
 
 	// Safari DVR: Check for EXT-X-START tag (critical for scrubber)

@@ -91,7 +91,7 @@ func TestHWAccelHEVCProfiles(t *testing.T) {
 		{"safari_hevc_hw+auto+gpu → vaapi", "safari_hevc_hw", HWAccelAuto, true, "vaapi", "hevc"},
 		{"safari_hevc_hw+auto+no-gpu → x265", "safari_hevc_hw", HWAccelAuto, false, "", "hevc"},
 		{"safari_hevc_hw+off+gpu → x265", "safari_hevc_hw", HWAccelOff, true, "", "hevc"},
-		{"safari_hevc_hw_ll+force+gpu → vaapi+llhls", "safari_hevc_hw_ll", HWAccelForce, true, "vaapi", "hevc"},
+		{"safari_hevc_hw_ll+force+gpu → vaapi (no LL-HLS emitted)", "safari_hevc_hw_ll", HWAccelForce, true, "vaapi", "hevc"},
 	}
 
 	for _, tt := range tests {
@@ -102,7 +102,7 @@ func TestHWAccelHEVCProfiles(t *testing.T) {
 			assert.Equal(t, tt.expectedCodec, spec.VideoCodec, "codec")
 
 			if tt.profile == "safari_hevc_hw_ll" {
-				assert.True(t, spec.LLHLS, "LL-HLS must be enabled for safari_hevc_hw_ll")
+				assert.False(t, spec.LLHLS, "LL-HLS flag stays false: the ffmpeg layer does not emit LL-HLS partials")
 			}
 		})
 	}

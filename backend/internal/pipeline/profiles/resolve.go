@@ -376,6 +376,12 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 
 	spec := newResolvedSpec(canonical)
 
+	// Carry the verified source height so downstream bitrate budgeting can scale
+	// with resolution (SD sources get a lower ceiling than HD).
+	if cap != nil && cap.Height > 0 {
+		spec.VideoSourceHeight = cap.Height
+	}
+
 	switch canonical {
 	case ProfileCopy:
 		spec.PolicyModeHint = ports.RuntimeModeCopy
@@ -510,7 +516,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
 		spec.TranscodeVideo = true
 		spec.Deinterlace = true
-		spec.LLHLS = true
+		spec.LLHLS = false // classic HLS is served; the ffmpeg layer does not emit LL-HLS partials
 		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
 		spec.AudioBitrateK = 192
 		applyDVRWindow(&spec, dvrWindowSec)
@@ -560,7 +566,6 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.VideoCRF = 22        // Conservative start for x265
 		spec.VideoMaxRateK = 5000 // Strict VBV Cap
 		spec.VideoBufSizeK = 10000
-		spec.BFrames = 2 // B-Frames now work with FFmpeg master (sdtp bug fixed)
 		spec.AudioBitrateK = 192
 	case ProfileSafariHEVCHW:
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
@@ -597,7 +602,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.VideoCodec = "hevc"
 		spec.Container = "fmp4"
 		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.LLHLS = true // Enable Low-Latency HLS with 0.5s part-segments
+		spec.LLHLS = false // LL-HLS part-segments are not emitted yet; do not advertise what we do not serve
 		spec.VideoQP = envIntBounded("XG2G_SAFARI_HEVC_VAAPI_QP", 20, 10, 40)
 		spec.VideoMaxRateK = 5000
 		spec.VideoBufSizeK = 10000

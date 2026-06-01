@@ -2,9 +2,10 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { lazy, Suspense, useEffect, useMemo, type ReactElement } from 'react';
+import { Suspense, useEffect, useMemo, type ReactElement } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import './App.css';
+import { lazyWithRetry } from './lib/lazyWithRetry';
 import { useAppContext } from './context/AppContext';
 import { useHouseholdProfiles } from './context/HouseholdProfilesContext';
 import { useUiOverlay } from './context/UiOverlayContext';
@@ -28,14 +29,14 @@ import { formatError } from './utils/logging';
 
 // Lazy load feature views (Phase 4: Bundle optimization)
 // V3Player is lazy loaded because it includes heavy HLS.js dependency
-const V3Player = lazy(() => import('./features/player/components/V3Player'));
-const Dashboard = lazy(() => import('./components/Dashboard'));
-const EPG = lazy(() => import('./features/epg/EPG'));
-const RecordingsList = lazy(() => import('./components/RecordingsList'));
-const Settings = lazy(() => import('./components/Settings'));
-const SystemInfo = lazy(() => import('./features/system/SystemInfo').then(m => ({ default: m.SystemInfo })));
-const UnlockStatus = lazy(() => import('./features/unlock/UnlockStatus').then(m => ({ default: m.UnlockStatus })));
-const EmptyStatePlayground = lazy(() => import('./dev/EmptyStatePlayground'));
+const V3Player = lazyWithRetry(() => import('./features/player/components/V3Player'));
+const Dashboard = lazyWithRetry(() => import('./components/Dashboard'));
+const EPG = lazyWithRetry(() => import('./features/epg/EPG'));
+const RecordingsList = lazyWithRetry(() => import('./components/RecordingsList'));
+const Settings = lazyWithRetry(() => import('./components/Settings'));
+const SystemInfo = lazyWithRetry(() => import('./features/system/SystemInfo').then(m => ({ default: m.SystemInfo })));
+const UnlockStatus = lazyWithRetry(() => import('./features/unlock/UnlockStatus').then(m => ({ default: m.UnlockStatus })));
+const EmptyStatePlayground = lazyWithRetry(() => import('./dev/EmptyStatePlayground'));
 
 function ProfileRouteGate({ allowed, children }: { allowed: boolean; children: ReactElement }) {
   return allowed ? children : <Navigate to={ROUTE_MAP.dashboard} replace />;

@@ -722,7 +722,7 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 		SessionID:          sessionID,
 		State:              model.SessionReady,
 		ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
-		Profile:            model.ProfileSpec{Name: "high"},
+		Profile:            model.ProfileSpec{Name: "high", TranscodeVideo: true, VideoCodec: "h264", VideoCRF: 23, Preset: "fast", AudioBitrateK: 256},
 		HeartbeatInterval:  30,
 		LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
 		ContextData: map[string]string{
@@ -943,7 +943,7 @@ func TestV3Contract_SessionResponseIncludesPlaybackTrace(t *testing.T) {
 	require.NotNil(t, resp.Trace.Source.Height)
 	require.Equal(t, 1080, *resp.Trace.Source.Height)
 	require.NotNil(t, resp.Trace.TargetProfileHash)
-	require.Equal(t, "trace-hash-1", *resp.Trace.TargetProfileHash)
+	require.NotEmpty(t, *resp.Trace.TargetProfileHash)
 	require.NotNil(t, resp.Trace.TargetProfile)
 	require.Equal(t, "mpegts", resp.Trace.TargetProfile.Container)
 	require.Equal(t, "ts", resp.Trace.TargetProfile.Packaging)

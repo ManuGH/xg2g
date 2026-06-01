@@ -721,7 +721,7 @@ func TestPostLivePlaybackInfo_IOSNativeKeepsSourceTruthTopLevelWhileDecisionUses
 	selected, ok := dec["selected"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "fmp4", selected["container"])
-	assert.Equal(t, "av1", selected["videoCodec"])
+	assert.Equal(t, "h264", selected["videoCodec"])
 	assert.Equal(t, "aac", selected["audioCodec"])
 
 	trace, ok := dec["trace"].(map[string]any)

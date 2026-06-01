@@ -15,6 +15,7 @@ import {
   readPlaybackFrameCounters,
   type HlsRenderProbeSnapshot,
 } from './playbackRenderProbe';
+import { isInMemorySeekTarget } from './orchestrator/nativePlaybackHelpers';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
 type ReportErrorFn = (
@@ -1067,6 +1068,21 @@ export function usePlaybackEngine({
       clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
+
+      // In-buffer seek: when the seek target is already buffered and decodable
+      // (currentTime == target the moment 'seeking' fires), playback resumes
+      // instantly, so do NOT flash the buffering veil — Plex-like in-memory
+      // scrubbing. onWaiting/onStalled remain the safety net if this prediction
+      // is wrong; worst case is the old behavior, never a stuck black frame.
+      const headroom = bufferedAheadSeconds(videoEl);
+      if (isInMemorySeekTarget({ paused: videoEl.paused, readyState: videoEl.readyState, bufferedAheadSeconds: headroom })) {
+        debugLog('[V3Player] Event: seeking (in-buffer, no veil)', {
+          headroom: headroom.toFixed(1),
+          readyState: videoEl.readyState,
+        });
+        return;
+      }
+
       debugLog('[V3Player] Event: seeking -> buffering');
       setStatus('buffering');
     };
@@ -1214,12 +1230,41 @@ export function usePlaybackEngine({
       });
     };
 
+    const onTimeUpdate = () => {
+      // Ground-truth buffering recovery. `timeupdate` only fires while
+      // currentTime is genuinely advancing, so if the FSM is still pinned at
+      // 'buffering' while the element is decoding (a transient waiting/seeking
+      // after pause->resume that never got a follow-up 'playing' event), the
+      // resume already succeeded. Unstick it to 'playing' so the reveal path
+      // shows the picture instead of holding the veil indefinitely.
+      // Device-confirmed 2026-06-01: audio plays, currentTime advances,
+      // readyState 4, but the element stayed veiled because status stuck at
+      // 'buffering'.
+      if (isTeardownRef.current || videoEl.paused || videoEl.readyState < 3) {
+        return;
+      }
+      clearNativeStallRecovery();
+      clearHlsStallRecovery();
+      setStatus((prev) => {
+        if (prev === 'buffering') return 'playing';
+        // Also un-stick the in-place recoveries (hls.js recoverMediaError /
+        // startLoad) which can leave status pinned at 'recovering' while the
+        // element decodes again. Do NOT touch the async session-reattach path
+        // (decodeRecoveryInFlightRef true): it still holds the stale source for
+        // ~850ms before teardown+replay, so flipping to 'playing' there would
+        // un-veil right before the source is swapped.
+        if (prev === 'recovering' && !decodeRecoveryInFlightRef.current) return 'playing';
+        return prev;
+      });
+    };
+
     videoEl.addEventListener('waiting', onWaiting);
     videoEl.addEventListener('stalled', onStalled);
     videoEl.addEventListener('seeking', onSeeking);
     videoEl.addEventListener('seeked', onSeeked);
     videoEl.addEventListener('playing', onPlaying);
     videoEl.addEventListener('pause', onPause);
+    videoEl.addEventListener('timeupdate', onTimeUpdate);
     videoEl.addEventListener('error', onError);
 
     return () => {
@@ -1231,9 +1276,10 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('seeked', onSeeked);
       videoEl.removeEventListener('playing', onPlaying);
       videoEl.removeEventListener('pause', onPause);
+      videoEl.removeEventListener('timeupdate', onTimeUpdate);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
 
   return {
     resetPlaybackEngine,

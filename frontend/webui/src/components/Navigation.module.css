@@ -524,6 +524,14 @@
   }
 }
 
+/* Single source of truth for nav layout is data-ui-nav-mode (set from the JS
+   surface breakpoint at <960px), not the 768px media query. Without this the
+   desktop rail stayed visible from 769–959px while the bottom nav also showed
+   (iPad portrait, large phones landscape, foldables). */
+:global(:root[data-ui-nav-mode='bottom']) .desktopShell {
+  display: none;
+}
+
 :global(:root[data-ui-nav-mode='bottom']) .mobileShell {
   display: block;
   position: fixed;

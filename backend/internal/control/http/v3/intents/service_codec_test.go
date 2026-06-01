@@ -702,7 +702,11 @@ func TestResolveRequestedStartProfile_DesktopSafariNativeH264SourceKeepsSafariPr
 	}
 }
 
-func TestResolveRequestedStartProfile_IOSNativeRuntimeAV1HEVCH264SourcePrefersAV1Profile(t *testing.T) {
+// Copy-first: even on an AV1-capable iOS client, a progressive H.264 source the
+// client can play natively must stay on the copy/remux path. Re-encoding a
+// directly-playable source to AV1 only loses quality; AV1/HEVC are reserved for
+// sources that genuinely cannot be copied (interlaced or unsupported codecs).
+func TestResolveRequestedStartProfile_IOSNativeRuntimeAV1HEVCProgressiveH264SourcePrefersCopy(t *testing.T) {
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},
@@ -769,8 +773,10 @@ func TestResolveRequestedStartProfile_IOSNativeRuntimeAV1HEVCH264SourcePrefersAV
 	if playbackMode != "native_hls" {
 		t.Fatalf("resolveRequestedStartProfile() playbackMode = %q, want %q", playbackMode, "native_hls")
 	}
-	if profileID != profiles.ProfileAV1HW {
-		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileAV1HW)
+	// Copy-first: progressive H.264 the client plays natively → copy/remux
+	// (ProfileSafari), not an AV1 re-encode. AV1 only where copy is impossible.
+	if profileID != profiles.ProfileSafari {
+		t.Fatalf("resolveRequestedStartProfile() profileID = %q, want %q", profileID, profiles.ProfileSafari)
 	}
 }
 

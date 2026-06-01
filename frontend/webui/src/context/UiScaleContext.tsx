@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { UI_SCALE_STORAGE_KEY, applyUiScaleToDocument, getDefaultUiScale, parseUiScale, readStoredUiScale, type UiScale } from '../lib/uiScale';
+import { safeLocalStorage, writeLocalStorageItem } from '../lib/safeStorage';
 
 interface UiScaleContextValue {
   scale: UiScale;
@@ -18,7 +19,7 @@ function resolveInitialUiScale(): UiScale {
     return getDefaultUiScale();
   }
 
-  return readStoredUiScale(window.localStorage);
+  return readStoredUiScale(safeLocalStorage());
 }
 
 export function useUiScale(): UiScaleContextValue {
@@ -30,12 +31,12 @@ export function UiScaleProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     applyUiScaleToDocument(scale, document.documentElement);
-    window.localStorage.setItem(UI_SCALE_STORAGE_KEY, scale);
+    writeLocalStorageItem(UI_SCALE_STORAGE_KEY, scale);
   }, [scale]);
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
-      if (event.storageArea && event.storageArea !== window.localStorage) {
+      if (event.storageArea && event.storageArea !== safeLocalStorage()) {
         return;
       }
 

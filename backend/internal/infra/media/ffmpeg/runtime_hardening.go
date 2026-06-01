@@ -373,25 +373,51 @@ func shouldPromoteAdaptiveTranscodeQuality(spec ports.StreamSpec, inputURL strin
 }
 
 func adaptiveTranscodeQualityBudgetFor(profile ports.ProfileSpec) (adaptiveTranscodeQualityBudget, bool) {
-	switch normalizeRequestedCodec(profile.VideoCodec) {
-	case "av1":
-		if !config.ParseBool("XG2G_ADAPTIVE_AV1_QUALITY_ENABLED", true) {
-			return adaptiveTranscodeQualityBudget{}, false
-		}
-		return adaptiveCodecQualityBudget("av1", 14000, 28000), true
-	case "hevc":
-		if !config.ParseBool("XG2G_ADAPTIVE_HEVC_QUALITY_ENABLED", true) {
-			return adaptiveTranscodeQualityBudget{}, false
-		}
-		return adaptiveCodecQualityBudget("hevc", 14000, 28000), true
-	case "h264":
-		if !config.ParseBool("XG2G_ADAPTIVE_H264_QUALITY_ENABLED", true) {
-			return adaptiveTranscodeQualityBudget{}, false
-		}
-		return adaptiveCodecQualityBudget("h264", 16000, 32000), true
+	codec := normalizeRequestedCodec(profile.VideoCodec)
+	switch codec {
+	case "av1", "hevc", "h264":
 	default:
 		return adaptiveTranscodeQualityBudget{}, false
 	}
+	if !config.ParseBool("XG2G_ADAPTIVE_"+strings.ToUpper(codec)+"_QUALITY_ENABLED", true) {
+		return adaptiveTranscodeQualityBudget{}, false
+	}
+	defaultMaxRateK, defaultBufSizeK := adaptiveQualityLadder(codec, profile.VideoSourceHeight)
+	return adaptiveCodecQualityBudget(codec, defaultMaxRateK, defaultBufSizeK), true
+}
+
+// adaptiveQualityLadder returns the resolution-aware quality ceiling (maxrate,
+// bufsize in kbit) the adaptive-quality hardening may promote to, scaled by the
+// scanned source height and output codec. SD sources get a low ceiling so the
+// promote-only logic in shouldPromoteAdaptiveTranscodeQuality does NOT
+// over-provision them; HD keeps the prior high ceiling. AV1/HEVC get less than
+// H.264 at the same resolution (better compression). Source height 0/unknown
+// falls back to the prior per-codec defaults, so behaviour is unchanged when
+// the scan truth is missing.
+func adaptiveQualityLadder(codec string, sourceHeight int) (maxRateK, bufSizeK int) {
+	pick := func(av1, hevc, h264 int) int {
+		switch codec {
+		case "h264":
+			return h264
+		case "hevc":
+			return hevc
+		default:
+			return av1
+		}
+	}
+	switch {
+	case sourceHeight <= 0: // unknown -> prior defaults
+		maxRateK = pick(14000, 14000, 16000)
+	case sourceHeight <= 576: // SD (e.g. PAL 720x576)
+		maxRateK = pick(5000, 6000, 7000)
+	case sourceHeight <= 720:
+		maxRateK = pick(8000, 10000, 12000)
+	case sourceHeight <= 1080: // HD -> unchanged high ceiling
+		maxRateK = pick(14000, 14000, 16000)
+	default: // UHD
+		maxRateK = pick(22000, 24000, 30000)
+	}
+	return maxRateK, maxRateK * 2
 }
 
 func adaptiveCodecQualityBudget(codec string, defaultMaxRateK int, defaultBufSizeK int) adaptiveTranscodeQualityBudget {

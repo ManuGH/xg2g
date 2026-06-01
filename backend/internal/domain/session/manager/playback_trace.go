@@ -137,3 +137,50 @@ func applyTraceEffectiveProfile(trace *model.PlaybackTrace, profile model.Profil
 	}
 	trace.FFmpegPlan = model.TraceFFmpegPlanFromProfile(profile, inputKind, 0)
 }
+
+// applyTraceExecutedFFmpegPlan overwrites the profile-derived ffmpeg plan on the
+// trace with the execution-truth plan parsed from the real argv. It must be
+// called AFTER applyTraceEffectiveProfile (which seeds the profile prediction)
+// so it can compare the two and report any divergence — a stats-integrity signal
+// meaning the finalized profile no longer describes what ffmpeg actually runs.
+// The returned string is empty when they agree, otherwise a human-readable diff.
+func applyTraceExecutedFFmpegPlan(trace *model.PlaybackTrace, executed ports.ExecutedFFmpegPlan, inputKind string) string {
+	if trace == nil {
+		return ""
+	}
+	executedPlan := &model.FFmpegPlanTrace{
+		InputKind:  inputKind,
+		Container:  executed.Container,
+		Packaging:  executed.Packaging,
+		HWAccel:    executed.HWAccel,
+		VideoMode:  executed.VideoMode,
+		VideoCodec: executed.VideoCodec,
+		AudioMode:  executed.AudioMode,
+		AudioCodec: executed.AudioCodec,
+	}
+	mismatch := describeFFmpegPlanMismatch(trace.FFmpegPlan, executedPlan)
+	trace.FFmpegPlan = executedPlan
+	return mismatch
+}
+
+// describeFFmpegPlanMismatch reports the fields where the profile-predicted plan
+// diverges from the executed plan. Empty result == the prediction matched reality.
+func describeFFmpegPlanMismatch(predicted, executed *model.FFmpegPlanTrace) string {
+	if predicted == nil || executed == nil {
+		return ""
+	}
+	var diffs []string
+	add := func(field, want, got string) {
+		if !strings.EqualFold(strings.TrimSpace(want), strings.TrimSpace(got)) {
+			diffs = append(diffs, field+":"+want+"!="+got)
+		}
+	}
+	add("container", predicted.Container, executed.Container)
+	add("packaging", predicted.Packaging, executed.Packaging)
+	add("hwAccel", predicted.HWAccel, executed.HWAccel)
+	add("videoMode", predicted.VideoMode, executed.VideoMode)
+	add("videoCodec", predicted.VideoCodec, executed.VideoCodec)
+	add("audioMode", predicted.AudioMode, executed.AudioMode)
+	add("audioCodec", predicted.AudioCodec, executed.AudioCodec)
+	return strings.Join(diffs, " ")
+}

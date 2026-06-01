@@ -1,6 +1,13 @@
 // I18n configuration v2
 import i18n, { type ResourceLanguage } from 'i18next';
 import { initReactI18next } from 'react-i18next';
+// Locales are bundled STATICALLY (not dynamic import()). On iOS Safari the
+// dynamic import() of a locale chunk can stall indefinitely; when the initial
+// language bundle was therefore absent at first render, react-i18next treated
+// the namespace as not-ready and the tree never committed (black screen).
+// Bundling the (small) JSON eagerly removes that failure mode entirely.
+import deTranslation from './locales/de.json';
+import enTranslation from './locales/en.json';
 
 const SUPPORTED_LANGUAGES = ['de', 'en'] as const;
 type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
@@ -18,13 +25,13 @@ function normalizeLanguage(value?: string | null): SupportedLanguage {
   return SUPPORTED_LANGUAGES.includes(base) ? base : DEFAULT_LANGUAGE;
 }
 
-async function loadTranslation(language: SupportedLanguage): Promise<ResourceLanguage> {
+function loadTranslation(language: SupportedLanguage): ResourceLanguage {
   switch (language) {
     case 'de':
-      return (await import('./locales/de.json')).default;
+      return deTranslation as ResourceLanguage;
     case 'en':
     default:
-      return (await import('./locales/en.json')).default;
+      return enTranslation as ResourceLanguage;
   }
 }
 
@@ -50,7 +57,7 @@ async function ensureLanguageLoaded(language: SupportedLanguage): Promise<void> 
     return;
   }
 
-  const translation = await loadTranslation(language);
+  const translation = loadTranslation(language);
   i18n.addResourceBundle(language, 'translation', translation, true, true);
 }
 
@@ -62,32 +69,32 @@ function syncDocumentLanguage(language: string): void {
 
 const initialLanguage = detectInitialLanguage();
 
-export const i18nReady = (async () => {
-  const translation = await loadTranslation(initialLanguage);
+// Initialise i18next SYNCHRONOUSLY at module load with ALL language bundles
+// present (they are imported statically above). The tree can mount immediately,
+// useTranslation is always "ready" (no missing-namespace suspend), and there is
+// no dynamic import that could stall on iOS Safari.
+void i18n.use(initReactI18next).init({
+  resources: {
+    de: { translation: deTranslation as ResourceLanguage },
+    en: { translation: enTranslation as ResourceLanguage },
+  },
+  lng: initialLanguage,
+  fallbackLng: false,
+  supportedLngs: SUPPORTED_LANGUAGES,
+  nonExplicitSupportedLngs: true,
+  load: 'languageOnly',
+  interpolation: {
+    escapeValue: false,
+  },
+  react: {
+    useSuspense: false,
+  },
+});
+syncDocumentLanguage(i18n.language);
+i18n.on('languageChanged', syncDocumentLanguage);
 
-  await i18n
-    .use(initReactI18next)
-    .init({
-      resources: {
-        [initialLanguage]: { translation },
-      },
-      lng: initialLanguage,
-      fallbackLng: false,
-      supportedLngs: SUPPORTED_LANGUAGES,
-      nonExplicitSupportedLngs: true,
-      load: 'languageOnly',
-      interpolation: {
-        escapeValue: false,
-      },
-      react: {
-        useSuspense: false,
-      },
-    });
-
-  syncDocumentLanguage(i18n.language);
-  i18n.on('languageChanged', syncDocumentLanguage);
-  return i18n;
-})();
+// Locales are bundled statically, so i18n is fully ready synchronously.
+export const i18nReady = Promise.resolve(i18n);
 
 export async function setLanguage(language: string): Promise<void> {
   const normalized = normalizeLanguage(language);

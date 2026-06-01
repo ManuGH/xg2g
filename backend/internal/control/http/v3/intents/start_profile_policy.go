@@ -39,17 +39,35 @@ func resolveRequestedStartProfilePolicy(input startProfilePolicyInput) (string, 
 				return picked, nil
 			}
 		case "native_hls":
-			// When native HLS has a real runtime probe, trust the runtime-signaled
-			// heavy-codec path before falling back to the legacy Safari copy/remux
-			// shortcut. This keeps stream.start aligned with /live/stream-info when
-			// the latter already determined that native HLS must transcode.
+			// Copy-first: a source the client can natively play (progressive,
+			// client-supported codec, within the client's limits) must stay on the
+			// copy/remux path. Re-encoding a directly-playable source only loses
+			// quality and burns GPU, so copy-eligibility wins even over the
+			// runtime-signalled heavy-codec path. Interlaced and unsupported sources
+			// fail sourceVideoCanStayOnCopyPath and fall through to the transcode
+			// paths below.
+			//
+			// Limitation (documented, not yet closeable): the live scan surfaces
+			// only codec/resolution/fps/interlaced — NOT H.264 profile/level or bit
+			// depth — so this predicate cannot fully prove a copied stream decodes
+			// on every client (e.g. a High-profile broadcast to a Baseline-only
+			// device). The runtime decode-error -> ProfileRepair transcode ladder
+			// (POST playback feedback, handlers_sessions) is the backstop: a copy
+			// that fails to decode self-heals to a transcode rather than persisting
+			// as a black screen. The typed EvaluateVideoCompatibility matrix would
+			// add bit-depth gating but is still shadow-only (over-blocks live
+			// sources that lack a scanned bit depth), so it is intentionally NOT
+			// used as a gate here yet.
+			if shouldPreferMappedStartProfile(input.RequestedPlaybackMode, input.ClientFamily, input.Capability, input.ClientCaps) {
+				return copyPreferredStartProfile(input.RequestedPlaybackMode, input.ClientFamily), nil
+			}
+			// No copy path: trust the runtime-signalled heavy-codec decision first,
+			// then the host-aware fallback. Keeps stream.start aligned with
+			// /live/stream-info when the source genuinely must transcode.
 			if shouldPreferRuntimeNativeHLSProfile(input.ClientCaps) {
 				if picked := pickNativeHLSProfileWithHost(input.RequestedCodecs, input.ClientFamily, input.ClientCaps, input.HWAccelMode, input.HostRuntime); picked != "" {
 					return picked, nil
 				}
-			}
-			if shouldPreferMappedStartProfile(input.RequestedPlaybackMode, input.ClientFamily, input.Capability, input.ClientCaps) {
-				return copyPreferredStartProfile(input.RequestedPlaybackMode, input.ClientFamily), nil
 			}
 			if picked := pickNativeHLSProfileWithHost(input.RequestedCodecs, input.ClientFamily, input.ClientCaps, input.HWAccelMode, input.HostRuntime); picked != "" &&
 				!shouldPreferRuntimeNativeHLSProfile(input.ClientCaps) {

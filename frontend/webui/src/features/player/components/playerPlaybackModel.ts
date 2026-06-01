@@ -31,6 +31,15 @@ export function extractPlaybackTrace(value: unknown): PlaybackTraceContract | nu
   }
 
   const record = value as Record<string, unknown>;
+  // A session/response wrapper nests the executed trace under `.trace`. Descend
+  // FIRST: the wrapper's own top-level sessionId would otherwise match the
+  // marker heuristic below and return the wrapper (missing targetProfile).
+  if ('trace' in record && record.trace) {
+    const nested = extractPlaybackTrace(record.trace);
+    if (nested) {
+      return nested;
+    }
+  }
   const hasTraceMarker =
     'sessionId' in record ||
     'source' in record ||
@@ -43,9 +52,6 @@ export function extractPlaybackTrace(value: unknown): PlaybackTraceContract | nu
     return record as unknown as PlaybackTraceContract;
   }
 
-  if ('trace' in record) {
-    return extractPlaybackTrace(record.trace);
-  }
   if ('body' in record) {
     return extractPlaybackTrace(record.body);
   }

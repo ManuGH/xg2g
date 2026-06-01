@@ -26,6 +26,8 @@ func preflightStartReasonError(err error) (*ports.PreflightError, bool, error) {
 		return pErr, true, newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, detail, err)
 	case ports.PreflightReasonInvalidTS, ports.PreflightReasonNoVideo, ports.PreflightReasonCorruptInput:
 		return pErr, true, newReasonError(model.RUpstreamCorrupt, detail, err)
+	case ports.PreflightReasonScrambled:
+		return pErr, true, newReasonErrorWithDetail(model.RUpstreamScrambled, model.DUpstreamScrambled, detail, err)
 	default:
 		return pErr, true, newReasonError(model.RTuneFailed, detail, err)
 	}

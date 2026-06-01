@@ -64,7 +64,11 @@
   inset: -26% auto auto -4%;
   width: 40%;
   height: 56%;
-  background: color-mix(in srgb, var(--accent-action-subtle) 72%, transparent);
+  background: radial-gradient(
+    60% 60% at 0% 0%,
+    color-mix(in srgb, var(--accent-action-subtle) 72%, transparent),
+    transparent 72%
+  );
   pointer-events: none;
 }
 
@@ -115,6 +119,7 @@
 
 .toolbarRight {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
 }
 

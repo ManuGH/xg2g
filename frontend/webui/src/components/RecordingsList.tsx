@@ -5,7 +5,8 @@
 // Phase 2E: Recordings View refactored to primitives (Card + StatusChip)
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
-import React, { useState, useEffect, lazy, Suspense, useRef, type CSSProperties } from 'react';
+import React, { useState, useEffect, Suspense, useRef, type CSSProperties } from 'react';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
@@ -31,7 +32,7 @@ const loadV3Player = () => {
   return v3PlayerModulePromise;
 };
 
-const V3Player = lazy(loadV3Player);
+const V3Player = lazyWithRetry(loadV3Player);
 
 // Simple Icons
 const FolderIcon = ({ className }: { className?: string }) => (

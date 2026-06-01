@@ -101,6 +101,7 @@ type ProfileSpec struct {
 	VideoCRF               int               `json:"videoCrf,omitempty"`
 	VideoQP                int               `json:"videoQp,omitempty"`
 	VideoMaxWidth          int               `json:"videoMaxWidth,omitempty"`
+	VideoSourceHeight      int               `json:"videoSourceHeight,omitempty"` // scanned source height; drives resolution-aware bitrate budgeting
 	VideoMaxRateK          int               `json:"videoMaxRateK,omitempty"`
 	VideoBufSizeK          int               `json:"videoBufSizeK,omitempty"`
 	BFrames                int               `json:"bframes,omitempty"`

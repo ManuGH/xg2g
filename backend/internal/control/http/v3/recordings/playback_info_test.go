@@ -2946,12 +2946,12 @@ func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasure
 	require.NotNil(t, res.Decision.TargetProfile)
 	assert.Equal(t, decision.ModeTranscode, res.Decision.Mode)
 	assert.Equal(t, "hls", res.Decision.SelectedOutputKind)
-	assert.Equal(t, "av1", res.Decision.Selected.VideoCodec)
+	assert.Equal(t, "h264", res.Decision.Selected.VideoCodec)
 	assert.Equal(t, "fmp4", res.Decision.Selected.Container)
 	assert.Equal(t, "fmp4", res.Decision.TargetProfile.Container)
 	assert.Equal(t, playbackprofile.PackagingFMP4, res.Decision.TargetProfile.Packaging)
 	assert.Equal(t, "fmp4", res.Decision.TargetProfile.HLS.SegmentContainer)
-	assert.Equal(t, "av1", res.Decision.TargetProfile.Video.Codec)
+	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
 }
 
 func TestService_ResolvePlaybackInfo_LiveRepairIntentSkipsAutoCodecUpgrade(t *testing.T) {
