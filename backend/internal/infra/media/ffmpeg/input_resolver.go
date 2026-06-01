@@ -266,6 +266,12 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	if err == io.EOF || err == io.ErrUnexpectedEOF {
 		err = nil
 	}
+	// If we got at least the minimum sample, classify what we have even
+	// when the full scan window wasn't filled (e.g. timeout on a slow or
+	// bursty live source).
+	if n >= preflightMinBytes && err != nil {
+		err = nil
+	}
 	// If we got fewer bytes than the minimum required for sync/scramble
 	// classification, treat it as a short read rather than a sync miss so
 	// the caller can distinguish a truncated body from a valid stream that
