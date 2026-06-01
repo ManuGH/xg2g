@@ -234,7 +234,7 @@ export function V3PlayerView({
               {viewState.isLiveMode && (
                 <button
                   className={[styles.liveButton, viewState.isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                  onClick={() => actions.seekTo(viewState.seekableEnd)}
+                  onClick={() => actions.seekToLiveEdge()}
                   title={viewState.liveButtonLabel}
                   aria-label={viewState.liveButtonLabel}
                 >

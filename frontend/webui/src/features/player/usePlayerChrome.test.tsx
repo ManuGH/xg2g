@@ -74,6 +74,9 @@ function HookHarness({
       <button onClick={chrome.togglePlayPause} type="button">
         playpause
       </button>
+      <button onClick={chrome.seekToLiveEdge} type="button">
+        golive
+      </button>
     </div>
   );
 }
@@ -452,6 +455,38 @@ describe('usePlayerChrome', () => {
     await waitFor(() => {
       expect(webkitExitFullscreen).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('seekToLiveEdge lands a safety margin behind the edge, never on it', async () => {
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        liveSeekWindow={{ start: 0, end: 120, liveEdge: 120 }}
+      />
+    );
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    let currentTime = 30;
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value;
+      },
+    });
+    Object.defineProperty(video, 'paused', { configurable: true, get: () => false });
+    // Establish the seekable window (end=120).
+    Object.defineProperty(video, 'seekable', {
+      configurable: true,
+      get: () => ({ length: 1, start: () => 0, end: () => 120 }),
+    });
+    fireEvent(video, new Event('loadedmetadata'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'golive' }));
+
+    // 120 - 6 (safety gap) = 114; must NOT be the exact edge (120).
+    expect(currentTime).toBe(114);
+    expect(currentTime).toBeLessThan(120);
   });
 
   it('defaults touch live DVR slightly behind the live edge', async () => {

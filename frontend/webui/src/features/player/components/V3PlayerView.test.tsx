@@ -13,6 +13,7 @@ function createActions(): PlaybackOrchestratorActions {
     retry: vi.fn().mockResolvedValue(undefined),
     seekBy: vi.fn(),
     seekTo: vi.fn(),
+    seekToLiveEdge: vi.fn(),
     togglePlayPause: vi.fn(),
     updateServiceRef: vi.fn(),
     submitServiceRef: vi.fn(),
@@ -189,7 +190,9 @@ describe('V3PlayerView', () => {
 
     expect(actions.seekBy).toHaveBeenCalledWith(-60);
     expect(actions.seekTo).toHaveBeenNthCalledWith(1, 115);
-    expect(actions.seekTo).toHaveBeenNthCalledWith(2, 220);
+    // The LIVE button now goes through seekToLiveEdge (lands behind the edge),
+    // not a raw seekTo(seekableEnd) which stalled on the un-decodable boundary.
+    expect(actions.seekToLiveEdge).toHaveBeenCalledTimes(1);
     expect(actions.resumeFrom).toHaveBeenCalledWith(42);
     expect(actions.startOver).toHaveBeenCalledTimes(1);
   });

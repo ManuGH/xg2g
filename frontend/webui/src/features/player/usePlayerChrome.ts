@@ -72,6 +72,7 @@ interface PlayerChromeController {
   endTimeDisplay: string;
   formatClock: (value: number) => string;
   seekTo: (targetSeconds: number) => void;
+  seekToLiveEdge: () => void;
   seekBy: (deltaSeconds: number) => void;
   seekWhenReady: (target: number) => void;
   togglePlayPause: () => void;
@@ -99,6 +100,14 @@ const initialStats: PlayerStats = {
 };
 
 const touchLiveDvrDefaultOffsetSeconds = 18;
+
+// Seconds behind the live edge that the "LIVE" button targets. Seeking to the
+// exact seekableEnd lands on the newest, not-yet-decodable boundary: Safari
+// stalls there and currentTime stops advancing, which also blocks the
+// timeupdate/watchdog reveal -> permanent black (device-confirmed 2026-06-01:
+// "Bild schwarz wenn man auf Live klickt"). Landing a few seconds back puts the
+// playhead inside already-buffered, decodable data.
+const liveEdgeSeekSafetyGapSeconds = 6;
 
 export function usePlayerChrome({
   autoStart,
@@ -366,6 +375,18 @@ export function usePlayerChrome({
     if (!video) return;
     seekTo(video.currentTime + deltaSeconds);
   }, [seekTo, videoRef]);
+
+  // "Go LIVE": never seek to the exact edge (stalls -> black). Target a safe
+  // margin behind it, clamped into the seekable window, and resume playback.
+  const seekToLiveEdge = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || seekableEnd <= seekableStart) return;
+    const target = Math.max(seekableStart, seekableEnd - liveEdgeSeekSafetyGapSeconds);
+    seekTo(target);
+    if (video.paused) {
+      video.play().catch((err) => debugWarn('Go-live play failed', err));
+    }
+  }, [seekTo, seekableEnd, seekableStart, videoRef]);
 
   const seekWhenReady = useCallback((target: number) => {
     const video = videoRef.current;
@@ -1276,6 +1297,7 @@ export function usePlayerChrome({
     endTimeDisplay,
     formatClock,
     seekTo,
+    seekToLiveEdge,
     seekBy,
     seekWhenReady,
     togglePlayPause,

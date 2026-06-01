@@ -209,6 +209,7 @@ export interface PlaybackOrchestratorActions {
   retry(): Promise<void>;
   seekBy(deltaSeconds: number): void;
   seekTo(positionSeconds: number): void;
+  seekToLiveEdge(): void;
   togglePlayPause(): void;
   updateServiceRef(nextValue: string): void;
   submitServiceRef(nextValue?: string): void;
@@ -573,6 +574,7 @@ export function usePlaybackOrchestrator(
     endTimeDisplay,
     formatClock,
     seekTo,
+    seekToLiveEdge,
     seekBy,
     seekWhenReady,
     togglePlayPause,
@@ -1922,6 +1924,7 @@ export function usePlaybackOrchestrator(
     retry: handleRetry,
     seekBy,
     seekTo,
+    seekToLiveEdge,
     togglePlayPause,
     updateServiceRef: setSRef,
     submitServiceRef(nextValue) {
