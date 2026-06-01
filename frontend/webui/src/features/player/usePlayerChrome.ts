@@ -368,7 +368,24 @@ export function usePlayerChrome({
       return;
     }
     video.currentTime = clamped;
-  }, [canRunSeekCommand, recoverInlineLiveSeek, seekableEnd, seekableStart, videoRef]);
+
+    // Live/DVR seeks land on un-buffered (transcoded) or evicted data; Safari
+    // leaves the element PAUSED after such a seek, so the picture freezes/blacks
+    // and never resumes until a manual Play. Re-assert playback intent unless
+    // the user deliberately paused. Mirrors seekWhenReady's readyState gate; the
+    // `video.paused` guard makes this a no-op on in-buffer seeks that keep
+    // playing, so it never fights the shipped isInMemorySeekTarget path.
+    if (!userPauseIntentRef.current && video.paused) {
+      const resume = () => {
+        video.play().catch((err) => debugWarn('Live seek resume play failed', err));
+      };
+      if (video.readyState >= 1) {
+        resume();
+      } else {
+        video.addEventListener('loadedmetadata', resume, { once: true });
+      }
+    }
+  }, [canRunSeekCommand, recoverInlineLiveSeek, seekableEnd, seekableStart, userPauseIntentRef, videoRef]);
 
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;
