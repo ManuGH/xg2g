@@ -48,33 +48,21 @@ changelog:
       - "^docs:"
       - "^test:"
 
-dockers:
-  - image_templates:
-      - "ghcr.io/manugh/xg2g:{{ .Tag }}-amd64"
+dockers_v2:
+  - id: xg2g
     dockerfile: infrastructure/docker/Dockerfile.release
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.source={{ .GitURL }}"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-  - image_templates:
-      - "ghcr.io/manugh/xg2g:{{ .Tag }}-arm64"
-    dockerfile: infrastructure/docker/Dockerfile.release
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.source={{ .GitURL }}"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-
-docker_manifests:
-  - name_template: "ghcr.io/manugh/xg2g:{{ .Tag }}"
-    image_templates:
-      - "ghcr.io/manugh/xg2g:{{ .Tag }}-amd64"
-      - "ghcr.io/manugh/xg2g:{{ .Tag }}-arm64"
-  - name_template: "ghcr.io/manugh/xg2g:latest"
-    image_templates:
-      - "ghcr.io/manugh/xg2g:{{ .Tag }}-amd64"
-      - "ghcr.io/manugh/xg2g:{{ .Tag }}-arm64"
+    images:
+      - "ghcr.io/manugh/xg2g"
+    tags:
+      - "{{ .Tag }}"
+      - "latest"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    sbom: false
+    labels:
+      org.opencontainers.image.source: "{{ .GitURL }}"
+      org.opencontainers.image.version: "{{ .Version }}"
 
 release:
   github:
