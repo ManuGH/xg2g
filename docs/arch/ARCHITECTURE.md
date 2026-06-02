@@ -678,7 +678,7 @@ clear ownership boundaries.
 
 ## 5. Layering Exemptions (Resolved) – Notes & History
 
-Layering is enforced mechanically by `internal/validate/imports_test.go` with **zero exemptions**.
+Layering is enforced mechanically by `internal/validate/imports_test.go`: **no forbidden cross-layer imports except the designated boundary types** (`domain/*/ports` interfaces and `domain/vod` data types). Those allowances are by design (dependency inversion), **not grandfathered exceptions** — there is no per-file exemption list. See the notes below.
 
 Historically, two areas were easy to misclassify during reviews:
 
@@ -698,7 +698,7 @@ Where shared pure data types are needed by both infra and control (e.g., FFmpeg 
 
 ```bash
 $ go test ./internal/validate -run TestLayeringRules
-PASS  # Zero exemptions
+PASS  # No grandfathered exemptions (ports/vod allowances are by design)
 ```
 
 ---
@@ -719,13 +719,13 @@ PASS  # Zero exemptions
 
 **Context:** Before building more foundational feature work (e.g. playback decision engine), we enforce a clean layer structure.
 
-**Status:** Completed. Layering rules are enforced with zero exemptions.
+**Status:** Completed. Layering rules are enforced with no grandfathered exemptions (the `domain/*/ports` and `domain/vod` cross-layer allowances are by design, not exceptions).
 
 **Acceptance Criteria:**
 
 ```bash
 $ go test ./internal/validate -run TestLayeringRules
-PASS  # Zero exemptions
+PASS  # No grandfathered exemptions (ports/vod allowances are by design)
 
 $ go test ./...
 PASS  # All tests green
