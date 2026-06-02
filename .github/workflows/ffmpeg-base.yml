@@ -10,6 +10,7 @@ on:
       - "backend/scripts/ffmpeg-wrapper.sh"
       - "backend/scripts/ffprobe-wrapper.sh"
       - "mk/variables.mk"
+      - ".github/workflows/ffmpeg-base.yml"
   workflow_dispatch:
 
 concurrency:
@@ -19,8 +20,66 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  IMAGE: ghcr.io/manugh/xg2g-ffmpeg
+
 jobs:
-  build-and-push:
+  # Build each architecture on its NATIVE runner (no QEMU emulation).
+  # amd64 -> ubuntu-latest, arm64 -> ubuntu-24.04-arm (GA, free on public repos).
+  build:
+    name: build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Resolve FFmpeg version
+        id: ffmpeg
+        run: |
+          version="$(sed -n 's/^FFMPEG_VERSION := //p' mk/variables.mk | head -n 1 | tr -d '[:space:]')"
+          test -n "${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Push a per-arch tag (e.g. :8.1-arm64). The manifest list is assembled in `merge`.
+      # On non-main refs push is disabled, so this acts as a native build-only validation.
+      - name: Build per-arch image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: Dockerfile.ffmpeg-base
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ env.IMAGE }}:${{ steps.ffmpeg.outputs.version }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=ffmpeg-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=ffmpeg-${{ matrix.arch }}
+
+  # Combine the per-arch tags into a single multi-arch manifest list with the
+  # canonical tags (version, latest, sha). Only on main, where the arch tags exist.
+  merge:
+    name: merge manifest
+    needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,12 +94,9 @@ jobs:
           test -n "${version}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
-
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        if: github.ref == 'refs/heads/main'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -49,26 +105,22 @@ jobs:
       - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         id: meta
         with:
-          images: ghcr.io/${{ github.repository_owner }}/xg2g-ffmpeg
+          images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=${{ steps.ffmpeg.outputs.version }}
             type=raw,value=latest
             type=sha
 
-      - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
-        id: build_base
-        with:
-          context: .
-          file: Dockerfile.ffmpeg-base
-          push: ${{ github.ref == 'refs/heads/main' }}
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Output base digest
-        if: always()
+      - name: Create multi-arch manifest from per-arch tags
         run: |
-          echo "ffmpeg base version: ${{ steps.ffmpeg.outputs.version }}" | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "ffmpeg base digest: ${{ steps.build_base.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            "${IMAGE}:${{ steps.ffmpeg.outputs.version }}-amd64" \
+            "${IMAGE}:${{ steps.ffmpeg.outputs.version }}-arm64"
+
+      - name: Inspect published manifest
+        run: |
+          {
+            echo "ffmpeg base: ${IMAGE}:${{ steps.ffmpeg.outputs.version }}"
+            docker buildx imagetools inspect "${IMAGE}:${{ steps.ffmpeg.outputs.version }}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
