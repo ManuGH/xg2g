@@ -817,3 +817,10 @@ Operational changes:
 Documentation:
 - docs/STREAMING_CONFIGURATION.md documents the DVR-window disk budget per codec (x264, HEVC, AV1) for four concurrent streams over a full 4h30m window.
 
+### Behavioral Changes (v3.5.1)
+Operational changes:
+- Release container images are now published multi-architecture (linux/amd64 and linux/arm64). xg2g can run on arm64 hosts (Raspberry Pi, arm64 SBCs, ARM NAS) in addition to x86-64. Note: hardware transcoding (VAAPI/NVENC) remains x86-only; on arm64 ffmpeg runs software encode / remux.
+- The bundled FFmpeg runtime is updated from 8.1 to 8.1.1 (upstream bugfix/security patch; no API or behaviour change per FFmpeg's patch-release policy).
+
+No application behaviour changes — this is an availability (multi-arch) and dependency-patch release.
+
