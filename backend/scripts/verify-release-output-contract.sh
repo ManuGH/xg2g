@@ -29,8 +29,7 @@ ALLOWED_GORELEASER_TOP_LEVEL_KEYS=(
   "checksum"
   "snapshot"
   "changelog"
-  "dockers"
-  "docker_manifests"
+  "dockers_v2"
   "release"
 )
 
