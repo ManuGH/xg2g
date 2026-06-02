@@ -29,7 +29,7 @@ docker run -d --rm --name xg2g-smoke -p 8088:8088 \
   -e XG2G_API_TOKEN="$token" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   -e XG2G_DECISION_SECRET="$decision_secret" \
-  ghcr.io/manugh/xg2g:v3.4.9
+  ghcr.io/manugh/xg2g:v3.5.0
 
 curl -fsS http://localhost:8088/healthz
 curl -fsS -H "Authorization: Bearer $token" \

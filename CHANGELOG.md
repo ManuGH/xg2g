@@ -806,3 +806,14 @@ Operational changes:
 
 - Auto codec selection now reports its policy, requested codec set, selected codec, and host/benchmark classes in playback traces, so operators can understand why a specific setup preferred AV1, HEVC, or H.264 without relying on setup-specific assumptions.
 
+### Behavioral Changes (v3.5.0)
+Operational changes:
+- Live DVR playlists are no longer forced to EXT-X-PLAYLIST-TYPE:EVENT. They are now served as a sliding live window with an advancing media sequence, so live timeshift no longer hard-stops once the window fills (previously a hard cut after ~45 min). The rewind window slides; live playback rolls indefinitely.
+- The DVR rewind window is configured via XG2G_HLS_DVR_WINDOW (seconds). There is no hard upper cap; the value drives both the HLS list size and the seekable start. Example: 16200 = 4h30m rolling timeshift.
+- The player now shows a now-playing overlay (channel, programme title, and a short EPG description) for live and recordings. For live it refreshes automatically when the programme changes.
+- iOS Safari native live HLS playback is more robust: pause then resume and timeline seeks no longer leave audio playing with a black picture, in-buffer seeks resume without re-veiling, the LIVE button seeks safely behind the live edge, and seeks on the transcoded path auto-resume.
+- The Statistics overlay is correctly sized on small viewports and now reports ManagedMediaSource/MSE AV1 decode capability. This is diagnostic groundwork only; the experimental hls.js/MSE engine flag is present but off and inert by default.
+
+Documentation:
+- docs/STREAMING_CONFIGURATION.md documents the DVR-window disk budget per codec (x264, HEVC, AV1) for four concurrent streams over a full 4h30m window.
+
