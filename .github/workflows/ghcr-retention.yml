@@ -4,16 +4,18 @@ name: ghcr-retention
 # Every push to main publishes a `sha-<commit>` dev image (+ untagged manifest
 # children), so the package accumulates thousands of versions over time.
 #
-# SAFETY: starts dry-run-only and manual. Add a PAT secret, dispatch with the
-# default (dry-run) to review what WOULD be deleted, then re-dispatch with
-# dry-run unchecked to actually delete. A weekly schedule is added only once the
-# dry-run output has been reviewed.
+# ARMED: the weekly schedule runs LIVE (deletes). Manual dispatch defaults to
+# dry-run (preview) for safety — uncheck the input to delete on demand.
+#
+# Protects `latest` / `main` / release tags (`v*`); prunes `sha-*` + untagged
+# versions older than 4 weeks, always keeping the 30 most recent.
 #
 # Requires repo secret GHCR_CLEANUP_TOKEN: a classic PAT with `delete:packages`
-# (+ `read:packages`). GITHUB_TOKEN cannot use the tag-protection filters, so a
-# PAT is required to keep `latest` / `main` / release tags safe.
+# (+ `read:packages`). GITHUB_TOKEN cannot use the tag-protection filters.
 
 on:
+  schedule:
+    - cron: "0 4 * * 1" # weekly, Monday 04:00 UTC — runs live
   workflow_dispatch:
     inputs:
       dry-run:
@@ -42,4 +44,5 @@ jobs:
           cut-off: 4w
           # ...and always keep the 30 most recent tagged versions regardless of age.
           keep-n-most-recent: 30
-          dry-run: ${{ inputs.dry-run }}
+          # Scheduled runs delete; manual dispatch defaults to dry-run (the input).
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
