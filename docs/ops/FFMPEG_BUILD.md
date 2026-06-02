@@ -12,7 +12,7 @@ xg2g uses a **pinned, reproducible FFmpeg build** (8.1) bundled into the contain
 - Scoped (no global LD_LIBRARY_PATH leak)
 - Explicit (contract via ENV in Dockerfile)
 - Auditable (verification commands below)
-- Published separately as `ghcr.io/manugh/xg2g-ffmpeg:8.1`
+- Published separately as `ghcr.io/manugh/xg2g-ffmpeg:8.1.1`
 - Reused by tagged release images so tag cuts do not rebuild FFmpeg from source
 
 ## Architecture
@@ -190,7 +190,7 @@ export LD_LIBRARY_PATH=/opt/ffmpeg/lib
 
 `Dockerfile.ffmpeg-base` is the canonical FFmpeg container build. The
 `.github/workflows/ffmpeg-base.yml` workflow publishes
-`ghcr.io/manugh/xg2g-ffmpeg:8.1` from `main` whenever FFmpeg build inputs
+`ghcr.io/manugh/xg2g-ffmpeg:8.1.1` from `main` whenever FFmpeg build inputs
 change. Tagged releases then inherit that base image instead of recompiling
 FFmpeg inside the release workflow.
 
