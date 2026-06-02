@@ -6,7 +6,8 @@
 ARG FFMPEG_BASE_IMAGE=ghcr.io/manugh/xg2g-ffmpeg:8.1
 FROM ${FFMPEG_BASE_IMAGE} AS runtime
 
-COPY --chown=xg2g:xg2g xg2g /usr/local/bin/xg2g
+ARG TARGETPLATFORM
+COPY --chown=xg2g:xg2g ${TARGETPLATFORM}/xg2g /usr/local/bin/xg2g
 
 USER 10001:10001
 WORKDIR /var/lib/xg2g
