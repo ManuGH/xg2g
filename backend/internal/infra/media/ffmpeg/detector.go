@@ -18,7 +18,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+)
+
+// Decode-verify thresholds (B1). "verified" means the encoded output decoded to
+// a complete, non-black, non-flat frame sequence — not merely "the encoder
+// exited 0 while discarding its output".
+const (
+	decodeVerifyFrames   = 10
+	decodeVerifyMinYAvg  = 32.0
+	decodeVerifyMinRange = 16.0
 )
 
 type Detector struct {
@@ -43,6 +53,14 @@ type Detector struct {
 	nvencErr                 error
 	profileBenchmarksChecked bool
 	profileProbeFn           func(context.Context, profileProbeRequest) (time.Duration, error)
+
+	// B1 decode-verify seams + state.
+	decodeVerifyFn    func(context.Context, string, string, int) (hardware.EncoderVerdict, string)
+	decodeStatsFn     func(context.Context, string, string) (int, float64, float64, error)
+	softwareDecoderFn func(string) (string, bool)
+	minDecodeYAvg     float64 // overridable threshold; <=0 means decodeVerifyMinYAvg
+	decodersOnce      sync.Once
+	decodersAvail     map[string]bool
 }
 
 func newDetector(binPath string, logger zerolog.Logger, vaapiDevice, hlsRoot string) *Detector {
@@ -60,6 +78,7 @@ func publishEncoderGauges(encoders []string, caps map[string]hardware.HardwareEn
 		c, ok := caps[enc]
 		metricsgpu.SetEncoderVerified(enc, ok && c.Verified)
 		metricsgpu.SetEncoderAutoEligible(enc, ok && c.AutoEligible)
+		metricsgpu.SetEncoderUnverifiable(enc, ok && c.Verdict == hardware.VerdictUnverifiable)
 	}
 }
 
@@ -102,23 +121,27 @@ func (d *Detector) PreflightVAAPI() error {
 	}
 	encoderList := string(checkOut)
 
-	// 3. Test each encoder with a real 5-frame encode
+	// 3. Probe each encoder, then decode-verify its output (three-state verdict:
+	// verified / withheld / unverifiable). Only "verified" encoders are admitted.
 	verifiedElapsed := make(map[string]time.Duration, len(vaapiEncodersToTest))
+	verdicts := make(map[string]hardware.EncoderVerdict, len(vaapiEncodersToTest))
+	reasons := make(map[string]string, len(vaapiEncodersToTest))
 	for _, enc := range vaapiEncodersToTest {
 		if !strings.Contains(encoderList, enc) {
 			d.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
+			verdicts[enc] = hardware.VerdictWithheld
+			reasons[enc] = "encoder not in ffmpeg build"
 			continue
 		}
-		elapsed, err := d.testVaapiEncoder(enc)
-		if err != nil {
-			d.Logger.Warn().Err(err).Str("encoder", enc).Msg("vaapi preflight: encoder test failed")
-		} else {
+		elapsed, verdict, reason := d.probeAndVerifyVaapiEncoder(enc)
+		verdicts[enc] = verdict
+		reasons[enc] = reason
+		if verdict == hardware.VerdictVerified {
 			d.vaapiEncoders[enc] = true
 			verifiedElapsed[enc] = elapsed
-			d.Logger.Info().
-				Str("encoder", enc).
-				Dur("probe_elapsed", elapsed).
-				Msg("vaapi preflight: encoder verified")
+			d.Logger.Info().Str("encoder", enc).Dur("probe_elapsed", elapsed).Msg("vaapi preflight: encoder verified")
+		} else {
+			d.Logger.Warn().Str("encoder", enc).Str("verdict", string(verdict)).Str("reason", reason).Msg("vaapi preflight: encoder not admitted")
 		}
 	}
 
@@ -135,6 +158,26 @@ func (d *Detector) PreflightVAAPI() error {
 		envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", capability.DefaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
 		envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", capability.DefaultAV1VAAPIAutoRatioMax, 1.0, 10.0),
 	)
+	// Overlay the three-state verdict onto every probed encoder so the record
+	// carries withheld/unverifiable too (B3 fleet visibility), while admission
+	// (cap.Verified) stays fail-closed for anything not VerdictVerified.
+	if d.vaapiEncoderCaps == nil {
+		d.vaapiEncoderCaps = make(map[string]hardware.VAAPIEncoderCapability, len(vaapiEncodersToTest))
+	}
+	for _, enc := range vaapiEncodersToTest {
+		verdict, ok := verdicts[enc]
+		if !ok {
+			continue
+		}
+		cap := d.vaapiEncoderCaps[enc] // zero value (Verified=false) for non-verified encoders
+		cap.Verdict = verdict
+		cap.Reason = reasons[enc]
+		cap.Verified = verdict == hardware.VerdictVerified
+		if !cap.Verified {
+			cap.AutoEligible = false
+		}
+		d.vaapiEncoderCaps[enc] = cap
+	}
 	for _, enc := range vaapiEncodersToTest {
 		cap, ok := d.vaapiEncoderCaps[enc]
 		if !ok || !cap.Verified {
@@ -271,26 +314,186 @@ func (d *Detector) PreflightTranscodeProfiles() {
 	}
 }
 
-// testVaapiEncoder runs a real 5-frame encode test for a specific VAAPI encoder.
-func (d *Detector) testVaapiEncoder(encoder string) (time.Duration, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// probeAndVerifyVaapiEncoder encodes a short synthetic clip with the given VAAPI
+// encoder to a real file, then decode-verifies the output. It returns the encode
+// elapsed time and a three-state verdict (verified/withheld/unverifiable).
+func (d *Detector) probeAndVerifyVaapiEncoder(encoder string) (time.Duration, hardware.EncoderVerdict, string) {
+	tmpDir, err := os.MkdirTemp("", "xg2g-encode-verify-*")
+	if err != nil {
+		return 0, hardware.VerdictUnverifiable, "mktemp: " + err.Error()
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	outPath := filepath.Join(tmpDir, "probe.mkv")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	dur := float64(decodeVerifyFrames)/25.0 + 0.04
 	start := time.Now()
-	// #nosec G204 -- BinPath and VaapiDevice are trusted from config
+	// #nosec G204 -- BinPath/VaapiDevice are trusted config; outPath is a local temp.
 	cmd := exec.CommandContext(ctx, d.BinPath,
+		"-y",
 		"-vaapi_device", d.VaapiDevice,
 		"-f", "lavfi",
-		"-i", "testsrc=duration=0.2:size=1280x720:rate=25",
+		"-i", fmt.Sprintf("testsrc2=size=1280x720:rate=25:duration=%0.2f", dur),
 		"-vf", "format=nv12,hwupload",
 		"-c:v", encoder,
-		"-frames:v", "5",
+		"-frames:v", strconv.Itoa(decodeVerifyFrames),
+		outPath,
+	)
+	if out, encErr := cmd.CombinedOutput(); encErr != nil {
+		// Encoder failed to open/run: the hardware cannot produce this output.
+		return time.Since(start), hardware.VerdictWithheld, fmt.Sprintf("encode failed: %v (%s)", encErr, tailSummary(string(out), 2))
+	}
+	elapsed := time.Since(start)
+	verdict, reason := d.decodeVerifyEncode(ctx, outPath, normalizeRequestedCodec(encoder), decodeVerifyFrames)
+	return elapsed, verdict, reason
+}
+
+// decodeVerifyEncode decode-verifies an encoded file with a forced *software*
+// decoder, returning a three-state verdict. "verified" requires the output to
+// decode to the full frame count, be non-black (mean YAVG >= threshold) and
+// carry spatial content (max luma range >= decodeVerifyMinRange). If no software
+// decoder for the codec exists it returns "unverifiable" (fail-closed: never
+// trust "bytes were produced").
+func (d *Detector) decodeVerifyEncode(ctx context.Context, path, codec string, expectedFrames int) (hardware.EncoderVerdict, string) {
+	if d.decodeVerifyFn != nil {
+		return d.decodeVerifyFn(ctx, path, codec, expectedFrames)
+	}
+	swDec, ok := d.softwareDecoderFor(codec)
+	if !ok {
+		return hardware.VerdictUnverifiable, fmt.Sprintf("no software %s decoder available to verify output", codec)
+	}
+	frames, meanYAvg, maxRange, err := d.decodeStats(ctx, path, swDec)
+	if err != nil {
+		// Decoder is present but decoding failed -> the bitstream is bad.
+		return hardware.VerdictWithheld, fmt.Sprintf("software decode (%s) failed: %v", swDec, err)
+	}
+	minYAvg := d.minDecodeYAvg
+	if minYAvg <= 0 {
+		minYAvg = decodeVerifyMinYAvg
+	}
+	switch {
+	case frames < expectedFrames:
+		return hardware.VerdictWithheld, fmt.Sprintf("partial decode: %d/%d frames", frames, expectedFrames)
+	case meanYAvg < minYAvg:
+		return hardware.VerdictWithheld, fmt.Sprintf("output too dark: mean YAVG %.1f < %.1f", meanYAvg, minYAvg)
+	case maxRange < decodeVerifyMinRange:
+		return hardware.VerdictWithheld, fmt.Sprintf("flat output: max luma range %.1f < %.1f", maxRange, decodeVerifyMinRange)
+	}
+	return hardware.VerdictVerified, ""
+}
+
+// decodeStats software-decodes path with the given decoder and returns the
+// decoded frame count, mean luma (YAVG) and the maximum per-frame luma range
+// (YMAX-YMIN) via the signalstats filter.
+func (d *Detector) decodeStats(ctx context.Context, path, swDecoder string) (frames int, meanYAvg float64, maxRange float64, err error) {
+	if d.decodeStatsFn != nil {
+		return d.decodeStatsFn(ctx, path, swDecoder)
+	}
+	// #nosec G204 -- BinPath/swDecoder are trusted; path is a local temp file.
+	cmd := exec.CommandContext(ctx, d.BinPath,
+		"-v", "info",
+		"-c:v", swDecoder,
+		"-i", path,
+		"-vf", "signalstats,metadata=mode=print",
 		"-f", "null", "-",
 	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		return 0, 0, 0, fmt.Errorf("%w (%s)", runErr, tailSummary(string(out), 2))
 	}
-	return time.Since(start), nil
+	var sum, curMin float64
+	haveMin := false
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.Contains(line, "lavfi.signalstats.YAVG="):
+			if v, ok := parseSignalStat(line, "lavfi.signalstats.YAVG="); ok {
+				frames++
+				sum += v
+			}
+		case strings.Contains(line, "lavfi.signalstats.YMIN="):
+			if v, ok := parseSignalStat(line, "lavfi.signalstats.YMIN="); ok {
+				curMin, haveMin = v, true
+			}
+		case strings.Contains(line, "lavfi.signalstats.YMAX="):
+			if v, ok := parseSignalStat(line, "lavfi.signalstats.YMAX="); ok && haveMin && v-curMin > maxRange {
+				maxRange = v - curMin
+			}
+		}
+	}
+	if frames == 0 {
+		return 0, 0, 0, errors.New("no decoded frames")
+	}
+	return frames, sum / float64(frames), maxRange, nil
+}
+
+func parseSignalStat(line, prefix string) (float64, bool) {
+	_, after, ok := strings.Cut(line, prefix)
+	if !ok {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(strings.TrimSpace(after), 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// softwareDecoderFor returns the preferred software decoder ffmpeg can use to
+// validate output for the given codec, and whether one is available at all.
+func (d *Detector) softwareDecoderFor(codec string) (string, bool) {
+	if d.softwareDecoderFn != nil {
+		return d.softwareDecoderFn(codec)
+	}
+	candidates := map[string][]string{
+		"av1":  {"libdav1d", "libaom-av1", "av1"},
+		"hevc": {"hevc"},
+		"h264": {"h264"},
+	}
+	avail := d.availableDecoders()
+	for _, dec := range candidates[normalizeRequestedCodec(codec)] {
+		if avail[dec] {
+			return dec, true
+		}
+	}
+	return "", false
+}
+
+// availableDecoders parses `ffmpeg -decoders` once and caches the decoder names.
+func (d *Detector) availableDecoders() map[string]bool {
+	d.decodersOnce.Do(func() {
+		set := map[string]bool{}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// #nosec G204 -- BinPath is trusted from config.
+		out, err := exec.CommandContext(ctx, d.BinPath, "-hide_banner", "-decoders").Output()
+		if err == nil {
+			for _, line := range strings.Split(string(out), "\n") {
+				fields := strings.Fields(line)
+				// Lines look like " V....D libdav1d AV1 ...": flags then name.
+				if len(fields) >= 2 && strings.HasPrefix(fields[0], "V") {
+					set[fields[1]] = true
+				}
+			}
+		}
+		d.decodersAvail = set
+	})
+	return d.decodersAvail
+}
+
+// tailSummary returns the last n non-empty lines of s joined by "; ".
+func tailSummary(s string, n int) string {
+	var lines []string
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "; ")
 }
 
 func (d *Detector) testNVENCEncoder(encoder string) (time.Duration, error) {

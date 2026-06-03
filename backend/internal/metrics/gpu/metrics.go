@@ -145,6 +145,20 @@ var (
 		[]string{"encoder"},
 	)
 
+	// EncoderUnverifiable reports whether an encoder's output could NOT be
+	// validated (1) — no software decoder available — as distinct from withheld
+	// (verified=0, unverifiable=0 = proven-bad output). Three states:
+	// verified=1 → verified; verified=0,unverifiable=0 → withheld; unverifiable=1.
+	EncoderUnverifiable = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "xg2g",
+			Subsystem: "gpu",
+			Name:      "encoder_unverifiable",
+			Help:      "Whether a hardware encoder's output could not be verified for lack of a software decoder (1) or not (0)",
+		},
+		[]string{"encoder"},
+	)
+
 	// RuntimeDemotionTotal counts hardware-encoder demotions triggered by repeated
 	// runtime encode failures, after which the backend falls back to CPU/software.
 	RuntimeDemotionTotal = promauto.NewCounterVec(
@@ -173,6 +187,12 @@ var (
 // SetEncoderVerified records whether a hardware encoder passed startup preflight.
 func SetEncoderVerified(encoder string, verified bool) {
 	EncoderVerified.WithLabelValues(encoder).Set(boolToGauge(verified))
+}
+
+// SetEncoderUnverifiable records whether a hardware encoder's output could not
+// be validated (no software decoder), as distinct from proven-bad (withheld).
+func SetEncoderUnverifiable(encoder string, unverifiable bool) {
+	EncoderUnverifiable.WithLabelValues(encoder).Set(boolToGauge(unverifiable))
 }
 
 // SetEncoderAutoEligible records whether a hardware encoder is auto-eligible.
