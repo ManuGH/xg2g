@@ -72,6 +72,7 @@ export function importWithRetry<T>(
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirror React.lazy's own signature
 export function lazyWithRetry<T extends ComponentType<any>>(
   factory: () => Promise<{ default: T }>,
   options?: RetryOptions,
