@@ -116,9 +116,6 @@ type LocalAdapter struct {
 	SafariRuntimeProbeTimeout time.Duration
 	VaapiDevice               string // e.g. "/dev/dri/renderD128"; empty = no VAAPI
 	detector                  *Detector
-	pathCorrectnessChecked    bool
-	pathProbeFn               func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
-	signalStatsYAvgFn         func(context.Context, string) (float64, error)
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
@@ -254,7 +251,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 			DisableCompression:    true,
 		},
 	}
-	return &LocalAdapter{
+	adapter := &LocalAdapter{
 		BinPath:                   binPath,
 		FFprobeBin:                strings.TrimSpace(ffprobeBin),
 		HLSRoot:                   hlsRoot,
@@ -294,7 +291,6 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		SkipFPSProbeWarmup:        skipFPSProbeWarmup,
 		SafariRuntimeProbeTimeout: time.Duration(safariRuntimeProbeTimeoutMs) * time.Millisecond,
 		VaapiDevice:               strings.TrimSpace(vaapiDevice),
-		detector:                  newDetector(binPath, logger, strings.TrimSpace(vaapiDevice)),
 		lastKnownFPS:              make(map[string]fpsCacheEntry),
 		FPSCacheTTL:               fpsCacheTTL,
 		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
@@ -304,62 +300,10 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		processDetails:            make(map[ports.RunHandle]string),
 		completedProcessDetails:   make(map[ports.RunHandle]string),
 	}
-}
-
-// PreflightPathCorrectness validates a small set of host-specific media paths
-// whose encoder availability alone is not sufficient to trust output quality.
-func (a *LocalAdapter) PreflightPathCorrectness() {
-	if a.pathCorrectnessChecked {
-		return
-	}
-	a.pathCorrectnessChecked = true
-
-	capabilities := make(map[string]hardware.HardwarePathCapability)
-	for _, req := range []pathProbeRequest{
-		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
-		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
-		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
-	} {
-		if req.Backend != "vaapi" || !a.detector.VaapiEncoderVerified(req.Encoder) {
-			continue
-		}
-		capability, err := a.testPathCorrectness(req)
-		if err != nil {
-			capability = hardware.HardwarePathCapability{
-				Status: hardware.PathStatusPreflightFailed,
-				Reason: err.Error(),
-			}
-			a.Logger.Warn().
-				Err(err).
-				Str("path_id", req.PathID).
-				Str("encoder", req.Encoder).
-				Msg("path correctness preflight failed")
-		} else {
-			a.Logger.Info().
-				Str("path_id", req.PathID).
-				Str("encoder", req.Encoder).
-				Str("status", capability.Status).
-				Str("reason", capability.Reason).
-				Msg("path correctness preflight result")
-		}
-		capabilities[req.PathID] = capability
-	}
-
-	hardware.SetPathCapabilities(capabilities)
-}
-
-func (a *LocalAdapter) testPathCorrectness(req pathProbeRequest) (hardware.HardwarePathCapability, error) {
-	if a.pathProbeFn != nil {
-		return a.pathProbeFn(context.Background(), req)
-	}
-	switch req.PathID {
-	case hardware.PathVAAPIFullInterlacedHEVC, hardware.PathVAAPIFullInterlacedAV1:
-		return a.testVAAPIInterlacedPathCorrectness(req.Encoder, true)
-	case hardware.PathVAAPIEncodeOnlyInterlacedHEVC, hardware.PathVAAPIEncodeOnlyInterlacedAV1:
-		return a.testVAAPIInterlacedPathCorrectness(req.Encoder, false)
-	default:
-		return hardware.HardwarePathCapability{}, fmt.Errorf("unsupported path correctness probe %q", req.PathID)
-	}
+	adapter.detector = newDetector(binPath, logger, strings.TrimSpace(vaapiDevice), hlsRoot)
+	adapter.detector.recordProcessDetail = adapter.recordProcessDetail
+	adapter.detector.terminateProcessGroup = adapter.terminateProcessGroup
+	return adapter
 }
 
 func profileBenchmarksForBackend(backend string) []string {
@@ -377,60 +321,6 @@ func profileBenchmarksForBackend(backend string) []string {
 	default:
 		return nil
 	}
-}
-
-func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string, full bool) (hardware.HardwarePathCapability, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	tempDir, err := os.MkdirTemp("", "xg2g-path-correctness-*")
-	if err != nil {
-		return hardware.HardwarePathCapability{}, fmt.Errorf("mktemp path correctness probe: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	outPath := filepath.Join(tempDir, "probe.mkv")
-	filter := "format=nv12,setfield=tff,hwupload,deinterlace_vaapi"
-	if !full {
-		filter = vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder)
-	}
-	encodeArgs := []string{
-		"-y",
-		"-vaapi_device", a.VaapiDevice,
-		"-f", "lavfi",
-		"-i", "testsrc2=duration=0.4:size=1920x1080:rate=25",
-		"-vf", filter,
-		"-c:v", encoder,
-		"-frames:v", "5",
-		outPath,
-	}
-	if _, err := runProfileBenchmarkCommand(ctx, a.BinPath, encodeArgs); err != nil {
-		return hardware.HardwarePathCapability{}, fmt.Errorf("encode correctness probe failed: %w", err)
-	}
-
-	lumaYAvg, err := a.measureSignalStatsYAvg(ctx, outPath)
-	if err != nil {
-		if !full && normalizeRequestedCodec(encoder) == "av1" && isAV1SignalStatsDecodeUnavailable(err) && outputFileHasBytes(outPath) {
-			return hardware.HardwarePathCapability{
-				Verified: true,
-				Status:   hardware.PathStatusVerified,
-				Reason:   "synthetic av1 encode verified; local signalstats decode unavailable",
-			}, nil
-		}
-		return hardware.HardwarePathCapability{}, fmt.Errorf("signalstats correctness probe failed: %w", err)
-	}
-	if lumaYAvg < 32 {
-		return hardware.HardwarePathCapability{
-			Status: hardware.PathStatusBrokenOutput,
-			Reason: fmt.Sprintf("synthetic yavg %.2f below threshold", lumaYAvg),
-		}, nil
-	}
-
-	return hardware.HardwarePathCapability{
-		Verified: true,
-		Status:   hardware.PathStatusVerified,
-		Reason:   fmt.Sprintf("synthetic yavg %.2f", lumaYAvg),
-	}, nil
 }
 
 func vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder string) string {
@@ -518,118 +408,6 @@ func profileBenchmarkTimeout(profileID string) time.Duration {
 	default:
 		return 12 * time.Second
 	}
-}
-
-func (a *LocalAdapter) measureSignalStatsYAvg(ctx context.Context, mediaPath string) (float64, error) {
-	if a.signalStatsYAvgFn != nil {
-		return a.signalStatsYAvgFn(ctx, mediaPath)
-	}
-	args := []string{
-		"-v", "info",
-		"-hwaccel", "none",
-		"-i", mediaPath,
-		"-vf", "signalstats,metadata=mode=print",
-		"-frames:v", "1",
-		"-f", "null", "-",
-	}
-	// #nosec G204 -- BinPath is trusted from config and mediaPath is a local temp path.
-	cmd := exec.CommandContext(ctx, a.BinPath, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("measure signalstats: %w (output: %s)", err, string(out))
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		const prefix = "lavfi.signalstats.YAVG="
-		idx := strings.Index(line, prefix)
-		if idx < 0 {
-			continue
-		}
-		value := strings.TrimSpace(line[idx+len(prefix):])
-		yavg, parseErr := strconv.ParseFloat(value, 64)
-		if parseErr != nil {
-			return 0, fmt.Errorf("parse signalstats yavg %q: %w", value, parseErr)
-		}
-		return yavg, nil
-	}
-	return 0, errors.New("lavfi.signalstats.YAVG not found")
-}
-
-func (a *LocalAdapter) observeRuntimePathCorrectness(ctx context.Context, handle ports.RunHandle, cmd *exec.Cmd, sessionID, pathID string) {
-	if strings.TrimSpace(pathID) == "" || !ports.IsSafeSessionID(sessionID) {
-		return
-	}
-
-	playlistPath := filepath.Join(ports.SessionHLSDir(a.HLSRoot, sessionID), "index.m3u8")
-	deadline := time.Now().Add(20 * time.Second)
-	minYAvg := envFloatBounded("XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG", defaultRuntimePathCorrectnessMinYAvg, 1.0, 64.0)
-	requiredLowObservations := envIntBounded("XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", defaultRuntimePathCorrectnessChecks, 1, 4)
-	lowObservations := 0
-
-	for time.Now().Before(deadline) {
-		if ctx.Err() != nil {
-			return
-		}
-
-		probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-		yavg, err := a.measureSignalStatsYAvg(probeCtx, playlistPath)
-		cancel()
-		if err != nil {
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		a.Logger.Info().
-			Str("session_id", sessionID).
-			Str("path_id", pathID).
-			Float64("yavg", yavg).
-			Msg("runtime path correctness observation")
-
-		if yavg < minYAvg {
-			lowObservations++
-			if lowObservations < requiredLowObservations {
-				time.Sleep(1 * time.Second)
-				continue
-			}
-
-			reason := fmt.Sprintf("runtime yavg %.2f below threshold %.2f", yavg, minYAvg)
-			a.updateRuntimePathCapability(pathID, hardware.HardwarePathCapability{
-				Status: hardware.PathStatusBrokenOutput,
-				Reason: reason,
-			})
-			a.recordProcessDetail(handle, "runtime path correctness failed - black output detected")
-			a.Logger.Error().
-				Str("session_id", sessionID).
-				Str("path_id", pathID).
-				Float64("yavg", yavg).
-				Float64("threshold", minYAvg).
-				Msg("runtime path correctness marked path as broken_output")
-			a.terminateProcessGroup(cmd, sessionID)
-			return
-		}
-
-		reason := fmt.Sprintf("runtime yavg %.2f", yavg)
-		a.updateRuntimePathCapability(pathID, hardware.HardwarePathCapability{
-			Verified: true,
-			Status:   hardware.PathStatusVerified,
-			Reason:   reason,
-		})
-		a.Logger.Info().
-			Str("session_id", sessionID).
-			Str("path_id", pathID).
-			Float64("yavg", yavg).
-			Msg("runtime path correctness verified path")
-		return
-	}
-}
-
-func (a *LocalAdapter) updateRuntimePathCapability(pathID string, capability hardware.HardwarePathCapability) {
-	current := hardware.HardwarePathCapabilities()
-	if current == nil {
-		current = make(map[string]hardware.HardwarePathCapability)
-	}
-	current[pathID] = capability
-	hardware.SetPathCapabilities(current)
 }
 
 func runProfileBenchmarkCommand(ctx context.Context, binPath string, args []string) (time.Duration, error) {
@@ -923,7 +701,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 						Msg("ffmpeg first segment write observed")
 					if pathID != "" && !outputObserverStarted {
 						outputObserverStarted = true
-						go a.observeRuntimePathCorrectness(observerCtx, handle, cmd, sessionID, pathID)
+						go a.detector.observeRuntimePathCorrectness(observerCtx, handle, cmd, sessionID, pathID)
 					}
 				}
 			}
@@ -1677,3 +1455,5 @@ func summarizeProcessExit(procErr error) string {
 func (a *LocalAdapter) PreflightVAAPI() error       { return a.detector.PreflightVAAPI() }
 func (a *LocalAdapter) PreflightNVENC() error       { return a.detector.PreflightNVENC() }
 func (a *LocalAdapter) PreflightTranscodeProfiles() { a.detector.PreflightTranscodeProfiles() }
+
+func (a *LocalAdapter) PreflightPathCorrectness() { a.detector.PreflightPathCorrectness() }

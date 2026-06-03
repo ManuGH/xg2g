@@ -430,7 +430,7 @@ func TestMonitorProcess_RuntimePathCorrectnessMarksBrokenAndStopsProcess(t *test
 		"",
 	)
 	observations := 0
-	adapter.signalStatsYAvgFn = func(ctx context.Context, mediaPath string) (float64, error) {
+	adapter.detector.signalStatsYAvgFn = func(ctx context.Context, mediaPath string) (float64, error) {
 		observations++
 		return 2.5, nil
 	}
@@ -499,7 +499,7 @@ func TestMonitorProcess_RuntimePathCorrectnessMarksVerified(t *testing.T) {
 		1100*time.Millisecond,
 		"",
 	)
-	adapter.signalStatsYAvgFn = func(ctx context.Context, mediaPath string) (float64, error) {
+	adapter.detector.signalStatsYAvgFn = func(ctx context.Context, mediaPath string) (float64, error) {
 		return 126.0, nil
 	}
 
