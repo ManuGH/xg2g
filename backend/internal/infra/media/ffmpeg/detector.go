@@ -493,14 +493,30 @@ func parseSignalStat(line, prefix string) (float64, bool) {
 	return v, true
 }
 
-// softwareDecoderFor returns the preferred software decoder ffmpeg can use to
+// softwareDecoderFor returns a *trusted* software decoder ffmpeg can use to
 // validate output for the given codec, and whether one is available at all.
+//
+// For AV1 the native ffmpeg "av1" decoder is deliberately EXCLUDED from the
+// trusted set. It is a parser / hardware front-end with no working standalone
+// software decode path ("ffmpeg -h decoder=av1" lists only vaapi/vulkan), so it
+// cannot decode real-world AV1 at ANY bit depth — it fails outright on both the
+// encoder's 10-bit p010 output and 8-bit nv12 ("Error submitting packet to
+// decoder: Function not implemented"). Trusting it as a verify-oracle turned "we
+// have no decoder that can check this" into a false VerdictWithheld ("the HW
+// can't encode AV1") instead of the honest VerdictUnverifiable ("we couldn't
+// verify"). That confusion is exactly what the three-state verdict exists to
+// prevent, so only libdav1d/libaom-av1 may verify AV1; their absence yields
+// unverifiable, never withheld. The native hevc/h264 decoders are complete and
+// stay trusted.
 func (d *Detector) softwareDecoderFor(codec string) (string, bool) {
 	if d.softwareDecoderFn != nil {
 		return d.softwareDecoderFn(codec)
 	}
 	candidates := map[string][]string{
-		"av1":  {"libdav1d", "libaom-av1", "av1"},
+		// No native "av1": it is a parser/HW front-end that can't software-decode AV1
+		// at any bit depth, so its presence must not flip an unverifiable host to a
+		// false withheld.
+		"av1":  {"libdav1d", "libaom-av1"},
 		"hevc": {"hevc"},
 		"h264": {"h264"},
 	}
