@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	_ "modernc.org/sqlite" // SQLite driver registration
 )
 
 func normalizeInstallRoot(root string) string {
