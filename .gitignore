@@ -35,6 +35,7 @@ pkg/
 /xg2g
 /xg2g-*
 /backend/xg2g-daemon
+/backend/daemon
 /daemon
 /daemon-*
 /v3probe

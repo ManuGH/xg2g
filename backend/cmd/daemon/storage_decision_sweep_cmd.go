@@ -201,16 +201,7 @@ func executeStorageDecisionSweep(opts storageDecisionSweepOptions) (storageDecis
 		}
 	}
 
-	cfg.DataDir = dataDir
-	cfg.Store.Path = filepath.Dir(capabilitiesDBPath)
-	cfg.Store.Backend = "sqlite"
-	if strings.TrimSpace(cfg.FFmpeg.Bin) == "" {
-		cfg.FFmpeg.Bin = "ffmpeg"
-	}
-	cfg.FFmpeg.FFprobeBin = config.ResolveFFprobeBin(cfg.FFmpeg.FFprobeBin, cfg.FFmpeg.Bin)
-	if strings.TrimSpace(cfg.HLS.Root) == "" {
-		cfg.HLS.Root = filepath.Join(dataDir, "hls")
-	}
+	applyStorageDecisionSweepConfigDefaults(&cfg, dataDir, capabilitiesDBPath)
 
 	scanStore, err := scan.NewSqliteStore(capabilitiesDBPath)
 	if err != nil {
@@ -234,20 +225,7 @@ func executeStorageDecisionSweep(opts storageDecisionSweepOptions) (storageDecis
 		}
 		defer func() { _ = os.Remove(tempPlaylist) }()
 
-		e2 := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, enigma2.Options{
-			Timeout:               cfg.Enigma2.Timeout,
-			ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout,
-			MaxRetries:            cfg.Enigma2.Retries,
-			Backoff:               cfg.Enigma2.Backoff,
-			MaxBackoff:            cfg.Enigma2.MaxBackoff,
-			Username:              cfg.Enigma2.Username,
-			Password:              cfg.Enigma2.Password,
-			UserAgent:             cfg.Enigma2.UserAgent,
-			RateLimit:             rate.Limit(cfg.Enigma2.RateLimit),
-			RateLimitBurst:        cfg.Enigma2.RateBurst,
-			UseWebIFStreams:       cfg.Enigma2.UseWebIFStreams,
-			StreamPort:            cfg.Enigma2.StreamPort,
-		})
+		e2 := newStorageDecisionSweepEnigma2Client(cfg)
 
 		manager := scan.NewManager(scanStore, tempPlaylist, e2)
 		manager.AttachLifecycle(ctx)
@@ -283,11 +261,81 @@ func executeStorageDecisionSweep(opts storageDecisionSweepOptions) (storageDecis
 		SkipScan:         opts.SkipScan,
 		ClientFamilies:   storageDecisionSweepClientFamilyNames(profiles),
 		ScannedServices:  collectStorageDecisionSweepScanRows(scanStore, selections),
-		Decisions:        make([]storageDecisionSweepDecision, 0, len(selections)*len(profiles)),
+		Decisions:        nil,
 	}
 	result.ScopeKey = computeStorageDecisionSweepScopeKey(opts, playlistName, result.ClientFamilies)
+	result.Decisions = collectStorageDecisionSweepDecisions(ctx, service, scanStore, selections, profiles, opts)
 
+	sortStorageDecisionSweepResult(&result)
+
+	finalizeStorageDecisionSweepCoverage(&result)
+	result.Summary = summarizeStorageDecisionSweep(result)
+	if !opts.NoState {
+		statePath := resolveStorageDecisionSweepStatePath(dataDir, strings.TrimSpace(opts.StatePath))
+		result.StatePath = statePath
+		previous, err := loadStorageDecisionSweepState(statePath)
+		if err != nil {
+			return storageDecisionSweep{}, fmt.Errorf("load sweep state: %w", err)
+		}
+		result.Diff = diffStorageDecisionSweep(previous, result, statePath)
+		if err := persistStorageDecisionSweepState(statePath, result); err != nil {
+			return storageDecisionSweep{}, fmt.Errorf("persist sweep state: %w", err)
+		}
+	}
+	return result, nil
+}
+
+// applyStorageDecisionSweepConfigDefaults pins the loaded config to the sweep's
+// data dir and capability store and fills in the ffmpeg/HLS defaults the sweep
+// relies on, mutating cfg in place exactly as the inline setup did.
+func applyStorageDecisionSweepConfigDefaults(cfg *config.AppConfig, dataDir, capabilitiesDBPath string) {
+	cfg.DataDir = dataDir
+	cfg.Store.Path = filepath.Dir(capabilitiesDBPath)
+	cfg.Store.Backend = "sqlite"
+	if strings.TrimSpace(cfg.FFmpeg.Bin) == "" {
+		cfg.FFmpeg.Bin = "ffmpeg"
+	}
+	cfg.FFmpeg.FFprobeBin = config.ResolveFFprobeBin(cfg.FFmpeg.FFprobeBin, cfg.FFmpeg.Bin)
+	if strings.TrimSpace(cfg.HLS.Root) == "" {
+		cfg.HLS.Root = filepath.Join(dataDir, "hls")
+	}
+}
+
+// newStorageDecisionSweepEnigma2Client builds the Enigma2 client used by the
+// forced scan from the resolved config, preserving the exact option mapping.
+func newStorageDecisionSweepEnigma2Client(cfg config.AppConfig) *enigma2.Client {
+	return enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, enigma2.Options{
+		Timeout:               cfg.Enigma2.Timeout,
+		ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout,
+		MaxRetries:            cfg.Enigma2.Retries,
+		Backoff:               cfg.Enigma2.Backoff,
+		MaxBackoff:            cfg.Enigma2.MaxBackoff,
+		Username:              cfg.Enigma2.Username,
+		Password:              cfg.Enigma2.Password,
+		UserAgent:             cfg.Enigma2.UserAgent,
+		RateLimit:             rate.Limit(cfg.Enigma2.RateLimit),
+		RateLimitBurst:        cfg.Enigma2.RateBurst,
+		UseWebIFStreams:       cfg.Enigma2.UseWebIFStreams,
+		StreamPort:            cfg.Enigma2.StreamPort,
+	})
+}
+
+// collectStorageDecisionSweepDecisions resolves a decision row for every usable
+// selection/client-profile pair, preserving the original skip rules, error
+// handling, append ordering, and pre-sized slice capacity.
+func collectStorageDecisionSweepDecisions(
+	ctx context.Context,
+	service *v3recordings.Service,
+	scanStore *scan.SqliteStore,
+	selections []storageDecisionSweepSelection,
+	profiles []storageDecisionSweepClientProfile,
+	opts storageDecisionSweepOptions,
+) []storageDecisionSweepDecision {
+	decisions := make([]storageDecisionSweepDecision, 0, len(selections)*len(profiles))
 	for _, selection := range selections {
+		if ctx.Err() != nil {
+			break
+		}
 		capability, found := scanStore.Get(selection.ServiceRef)
 		truthStatus := deriveTruthStatus(found, capability)
 		if !found || !capability.Usable() {
@@ -315,7 +363,7 @@ func executeStorageDecisionSweep(opts storageDecisionSweepOptions) (storageDecis
 			})
 			if playbackErr != nil {
 				row.Error = playbackErr.Error()
-				result.Decisions = append(result.Decisions, row)
+				decisions = append(decisions, row)
 				continue
 			}
 			row.ClientCapsSourceCode = strings.TrimSpace(res.ResolvedCapabilities.ClientCapsSource)
@@ -325,10 +373,15 @@ func executeStorageDecisionSweep(opts storageDecisionSweepOptions) (storageDecis
 			row.EffectiveIntent = strings.TrimSpace(res.Decision.Trace.ResolvedIntent)
 			row.TargetProfileSummary = summarizeTargetProfile(res.Decision.TargetProfile)
 			row.Reasons = storageDecisionSweepReasonStrings(res.Decision.Reasons)
-			result.Decisions = append(result.Decisions, row)
+			decisions = append(decisions, row)
 		}
 	}
+	return decisions
+}
 
+// sortStorageDecisionSweepResult applies the deterministic ordering of scanned
+// services and decisions, identical to the inline sort.SliceStable calls.
+func sortStorageDecisionSweepResult(result *storageDecisionSweep) {
 	sort.SliceStable(result.ScannedServices, func(i, j int) bool {
 		if result.ScannedServices[i].Bouquet != result.ScannedServices[j].Bouquet {
 			return result.ScannedServices[i].Bouquet < result.ScannedServices[j].Bouquet
@@ -347,22 +400,6 @@ func executeStorageDecisionSweep(opts storageDecisionSweepOptions) (storageDecis
 		}
 		return result.Decisions[i].ClientFamily < result.Decisions[j].ClientFamily
 	})
-
-	finalizeStorageDecisionSweepCoverage(&result)
-	result.Summary = summarizeStorageDecisionSweep(result)
-	if !opts.NoState {
-		statePath := resolveStorageDecisionSweepStatePath(dataDir, strings.TrimSpace(opts.StatePath))
-		result.StatePath = statePath
-		previous, err := loadStorageDecisionSweepState(statePath)
-		if err != nil {
-			return storageDecisionSweep{}, fmt.Errorf("load sweep state: %w", err)
-		}
-		result.Diff = diffStorageDecisionSweep(previous, result, statePath)
-		if err := persistStorageDecisionSweepState(statePath, result); err != nil {
-			return storageDecisionSweep{}, fmt.Errorf("persist sweep state: %w", err)
-		}
-	}
-	return result, nil
 }
 
 func storageDecisionSweepHasRelevantDiff(result storageDecisionSweep) bool {
