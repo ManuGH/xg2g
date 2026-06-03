@@ -24,7 +24,13 @@ import (
 
 // Decode-verify thresholds (B1). "verified" means the encoded output decoded to
 // a complete, non-black, non-flat frame sequence — not merely "the encoder
-// exited 0 while discarding its output".
+// exited 0 while discarding its output". The luma-range check is WITHIN-frame
+// (catches a flat/uniform field); it does NOT catch a content-rich freeze (a
+// dead stream repeating one good frame). That is a runtime pathology a fresh
+// preflight encode cannot exhibit anyway, and is deferred to the live runtime
+// watchdog (observeRuntimePathCorrectness) — an empirical YDIF temporal check
+// was rejected because it did not separate freeze from motion on synthetic
+// clips (frozen YDIF 3.25 > animated 2.80).
 const (
 	decodeVerifyFrames   = 10
 	decodeVerifyMinYAvg  = 32.0
@@ -318,11 +324,22 @@ func (d *Detector) PreflightTranscodeProfiles() {
 // encoder to a real file, then decode-verifies the output. It returns the encode
 // elapsed time and a three-state verdict (verified/withheld/unverifiable).
 func (d *Detector) probeAndVerifyVaapiEncoder(encoder string) (time.Duration, hardware.EncoderVerdict, string) {
-	tmpDir, err := os.MkdirTemp("", "xg2g-encode-verify-*")
-	if err != nil {
-		return 0, hardware.VerdictUnverifiable, "mktemp: " + err.Error()
+	// Probe artifacts go under a guaranteed-writable working dir (HLSRoot, which
+	// the media pipeline already writes segments to) so a read-only/distroless
+	// rootfs with a non-writable /tmp does not turn a filesystem problem into a
+	// false "unverifiable". A genuine setup failure is reported with a
+	// filesystem-specific reason that is never confused with "no software decoder".
+	tmpBase := d.HLSRoot
+	if tmpBase == "" {
+		tmpBase = os.TempDir()
+	} else if mkErr := os.MkdirAll(tmpBase, 0o750); mkErr != nil {
+		tmpBase = os.TempDir()
 	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, err := os.MkdirTemp(tmpBase, "encode-verify-*")
+	if err != nil {
+		return 0, hardware.VerdictUnverifiable, "probe setup failed (cannot create temp dir): " + err.Error()
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }() // cleans up on every path incl. withheld/unverifiable/crash
 	outPath := filepath.Join(tmpDir, "probe.mkv")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
