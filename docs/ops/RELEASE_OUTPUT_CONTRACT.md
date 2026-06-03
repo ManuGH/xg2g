@@ -26,10 +26,10 @@ Each tagged release must publish exactly these GitHub release assets:
 
 - `xg2g_<version>_linux_amd64.tar.gz`
 - `xg2g_<version>_linux_arm64.tar.gz`
-- `xg2g_<version>_darwin_amd64.tar.gz`
-- `xg2g_<version>_darwin_arm64.tar.gz`
-- `xg2g_<version>_windows_amd64.tar.gz`
 - `checksums.txt`
+
+xg2g is a Linux server (Docker/systemd); macOS and Windows binaries are not
+built or published.
 
 `<version>` means the tag version without the leading `v`.
 
@@ -37,7 +37,7 @@ Each tagged release must publish exactly these GitHub release assets:
 
 Every release archive must contain:
 
-- one platform daemon binary: `xg2g` or `xg2g.exe`
+- the daemon binary: `xg2g`
 - `README.md`
 - `LICENSE`
 - `backend/VERSION`
@@ -50,13 +50,12 @@ required payload entries may be nested, but they must be present.
 
 Each tagged release must publish exactly these registry-facing outputs:
 
-- `ghcr.io/manugh/xg2g:vX.Y.Z-amd64`
-- `ghcr.io/manugh/xg2g:vX.Y.Z-arm64`
 - `ghcr.io/manugh/xg2g:vX.Y.Z`
 - `ghcr.io/manugh/xg2g:latest`
 
-The architecture-specific tags and the version manifest are normative release
-outputs. `latest` is also part of the current release contract.
+The version tag and `latest` are published by GoReleaser `dockers_v2` as single
+multi-architecture manifests (`linux/amd64` + `linux/arm64`); there are no
+per-architecture suffix tags. Both manifests are normative release outputs.
 
 ## Non-Contract Outputs / Explicit Exclusions
 
