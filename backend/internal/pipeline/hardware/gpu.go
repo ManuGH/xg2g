@@ -177,7 +177,7 @@ func SetVAAPIEncoderCapabilities(capabilities map[string]HardwareEncoderCapabili
 	}
 	vaapiEncCaps = make(map[string]HardwareEncoderCapability, len(capabilities))
 	for k, v := range capabilities {
-		if v.Verified {
+		if v.Verified || v.Verified8Bit || v.Verified10Bit {
 			vaapiEncCaps[k] = v
 		}
 	}
