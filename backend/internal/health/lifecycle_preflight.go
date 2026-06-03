@@ -206,89 +206,131 @@ func evaluateLifecycleRuntimeChecks(cfg config.AppConfig, add func(LifecyclePref
 		return err
 	}
 
-	if cfg.APIListenAddr != "" {
-		_, port, err := net.SplitHostPort(cfg.APIListenAddr)
-		if err != nil {
-			add(LifecyclePreflightFinding{
-				Code:     "runtime.api_listen_addr.invalid",
-				Severity: LifecyclePreflightSeverityFatal,
-				Contract: "runtime",
-				Field:    "APIListenAddr",
-				Summary:  "API listen address is invalid",
-				Detail:   err.Error(),
-			})
-		} else {
-			portNum, err := strconv.Atoi(port)
-			if err != nil || portNum < 0 || portNum > 65535 {
-				add(LifecyclePreflightFinding{
-					Code:     "runtime.api_listen_port.invalid",
-					Severity: LifecyclePreflightSeverityFatal,
-					Contract: "runtime",
-					Field:    "APIListenAddr",
-					Summary:  "API listen port is invalid",
-					Detail:   fmt.Sprintf("invalid port %q in %q", port, cfg.APIListenAddr),
-				})
-			}
+	evaluateRuntimeAPIListenAddr(cfg, add)
+	evaluateRuntimeEnigma2BaseURL(cfg, add)
+	evaluateRuntimeTLS(cfg, add)
+
+	if err := evaluateRuntimeRecordingRoots(cfg, add); err != nil {
+		return err
+	}
+
+	storeBackend := strings.ToLower(strings.TrimSpace(cfg.Store.Backend))
+	if storeBackend != "memory" {
+		if err := addWritableDirFinding(add, "runtime", "runtime.store_path.not_writable", "Store.Path", "store path must be writable", cfg.Store.Path, true); err != nil {
+			return err
 		}
 	}
 
-	if strings.TrimSpace(cfg.Enigma2.BaseURL) != "" {
-		u, err := url.Parse(cfg.Enigma2.BaseURL)
-		if err != nil {
-			add(LifecyclePreflightFinding{
-				Code:     "runtime.enigma2_base_url.invalid",
-				Severity: LifecyclePreflightSeverityFatal,
-				Contract: "runtime",
-				Field:    "Enigma2.BaseURL",
-				Summary:  "Enigma2 base URL is invalid",
-				Detail:   err.Error(),
-			})
-		} else if u.Scheme != "http" && u.Scheme != "https" {
-			add(LifecyclePreflightFinding{
-				Code:     "runtime.enigma2_base_url.scheme_invalid",
-				Severity: LifecyclePreflightSeverityFatal,
-				Contract: "runtime",
-				Field:    "Enigma2.BaseURL",
-				Summary:  "Enigma2 base URL must use http or https",
-				Detail:   fmt.Sprintf("unsupported scheme %q", u.Scheme),
-			})
+	if cfg.Engine.Enabled {
+		if err := evaluateRuntimeEngineChecks(cfg, storeBackend, add); err != nil {
+			return err
 		}
 	}
 
-	if cfg.TLSCert != "" || cfg.TLSKey != "" {
-		if cfg.TLSCert == "" || cfg.TLSKey == "" {
-			add(LifecyclePreflightFinding{
-				Code:     "runtime.tls.partial",
-				Severity: LifecyclePreflightSeverityFatal,
-				Contract: "runtime",
-				Field:    "TLS",
-				Summary:  "TLS requires both certificate and key",
-				Detail:   "set both TLSCert and TLSKey or neither",
-			})
-		} else {
-			if err := checkFileReadable(cfg.TLSCert); err != nil {
-				add(LifecyclePreflightFinding{
-					Code:     "runtime.tls.cert_unreadable",
-					Severity: LifecyclePreflightSeverityFatal,
-					Contract: "runtime",
-					Field:    "TLSCert",
-					Summary:  "TLS certificate is not readable",
-					Detail:   err.Error(),
-				})
-			}
-			if err := checkFileReadable(cfg.TLSKey); err != nil {
-				add(LifecyclePreflightFinding{
-					Code:     "runtime.tls.key_unreadable",
-					Severity: LifecyclePreflightSeverityFatal,
-					Contract: "runtime",
-					Field:    "TLSKey",
-					Summary:  "TLS key is not readable",
-					Detail:   err.Error(),
-				})
-			}
-		}
+	evaluateRuntimeConnectivityContract(cfg, add)
+	evaluateRuntimePublicExposureSecurity(cfg, add)
+
+	return nil
+}
+
+func evaluateRuntimeAPIListenAddr(cfg config.AppConfig, add func(LifecyclePreflightFinding)) {
+	if cfg.APIListenAddr == "" {
+		return
 	}
 
+	_, port, err := net.SplitHostPort(cfg.APIListenAddr)
+	if err != nil {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.api_listen_addr.invalid",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "runtime",
+			Field:    "APIListenAddr",
+			Summary:  "API listen address is invalid",
+			Detail:   err.Error(),
+		})
+		return
+	}
+
+	portNum, err := strconv.Atoi(port)
+	if err != nil || portNum < 0 || portNum > 65535 {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.api_listen_port.invalid",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "runtime",
+			Field:    "APIListenAddr",
+			Summary:  "API listen port is invalid",
+			Detail:   fmt.Sprintf("invalid port %q in %q", port, cfg.APIListenAddr),
+		})
+	}
+}
+
+func evaluateRuntimeEnigma2BaseURL(cfg config.AppConfig, add func(LifecyclePreflightFinding)) {
+	if strings.TrimSpace(cfg.Enigma2.BaseURL) == "" {
+		return
+	}
+
+	u, err := url.Parse(cfg.Enigma2.BaseURL)
+	if err != nil {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.enigma2_base_url.invalid",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "runtime",
+			Field:    "Enigma2.BaseURL",
+			Summary:  "Enigma2 base URL is invalid",
+			Detail:   err.Error(),
+		})
+	} else if u.Scheme != "http" && u.Scheme != "https" {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.enigma2_base_url.scheme_invalid",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "runtime",
+			Field:    "Enigma2.BaseURL",
+			Summary:  "Enigma2 base URL must use http or https",
+			Detail:   fmt.Sprintf("unsupported scheme %q", u.Scheme),
+		})
+	}
+}
+
+func evaluateRuntimeTLS(cfg config.AppConfig, add func(LifecyclePreflightFinding)) {
+	if cfg.TLSCert == "" && cfg.TLSKey == "" {
+		return
+	}
+
+	if cfg.TLSCert == "" || cfg.TLSKey == "" {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.tls.partial",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "runtime",
+			Field:    "TLS",
+			Summary:  "TLS requires both certificate and key",
+			Detail:   "set both TLSCert and TLSKey or neither",
+		})
+		return
+	}
+
+	if err := checkFileReadable(cfg.TLSCert); err != nil {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.tls.cert_unreadable",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "runtime",
+			Field:    "TLSCert",
+			Summary:  "TLS certificate is not readable",
+			Detail:   err.Error(),
+		})
+	}
+	if err := checkFileReadable(cfg.TLSKey); err != nil {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.tls.key_unreadable",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "runtime",
+			Field:    "TLSKey",
+			Summary:  "TLS key is not readable",
+			Detail:   err.Error(),
+		})
+	}
+}
+
+func evaluateRuntimeRecordingRoots(cfg config.AppConfig, add func(LifecyclePreflightFinding)) error {
 	for id, path := range cfg.RecordingRoots {
 		field := fmt.Sprintf("RecordingRoots.%s", id)
 		if strings.TrimSpace(path) == "" {
@@ -316,73 +358,71 @@ func evaluateLifecycleRuntimeChecks(cfg config.AppConfig, add func(LifecyclePref
 			return err
 		}
 	}
+	return nil
+}
 
-	storeBackend := strings.ToLower(strings.TrimSpace(cfg.Store.Backend))
-	if storeBackend != "memory" {
-		if err := addWritableDirFinding(add, "runtime", "runtime.store_path.not_writable", "Store.Path", "store path must be writable", cfg.Store.Path, true); err != nil {
-			return err
-		}
+func evaluateRuntimeEngineChecks(cfg config.AppConfig, storeBackend string, add func(LifecyclePreflightFinding)) error {
+	if err := addWritableDirFinding(add, "runtime", "runtime.hls_root.not_writable", "HLS.Root", "HLS root must be writable", cfg.HLS.Root, true); err != nil {
+		return err
 	}
 
-	if cfg.Engine.Enabled {
-		if err := addWritableDirFinding(add, "runtime", "runtime.hls_root.not_writable", "HLS.Root", "HLS root must be writable", cfg.HLS.Root, true); err != nil {
-			return err
+	if !strings.EqualFold(cfg.Engine.Mode, "virtual") {
+		ffmpegBin := strings.TrimSpace(cfg.FFmpeg.Bin)
+		if ffmpegBin == "" {
+			ffmpegBin = "ffmpeg"
 		}
-
-		if !strings.EqualFold(cfg.Engine.Mode, "virtual") {
-			ffmpegBin := strings.TrimSpace(cfg.FFmpeg.Bin)
-			if ffmpegBin == "" {
-				ffmpegBin = "ffmpeg"
-			}
-			if _, err := exec.LookPath(ffmpegBin); err != nil {
-				add(LifecyclePreflightFinding{
-					Code:     "runtime.ffmpeg.not_found",
-					Severity: LifecyclePreflightSeverityFatal,
-					Contract: "runtime",
-					Field:    "FFmpeg.Bin",
-					Summary:  "ffmpeg binary is not available",
-					Detail:   err.Error(),
-				})
-			}
-		}
-
-		if strings.EqualFold(cfg.Store.Backend, "memory") {
+		if _, err := exec.LookPath(ffmpegBin); err != nil {
 			add(LifecyclePreflightFinding{
-				Code:     "runtime.store_backend.memory",
-				Severity: LifecyclePreflightSeverityWarn,
+				Code:     "runtime.ffmpeg.not_found",
+				Severity: LifecyclePreflightSeverityFatal,
 				Contract: "runtime",
-				Field:    "Store.Backend",
-				Summary:  "engine uses in-memory store",
-				Detail:   "sessions and device state will not survive restart while Store.Backend=memory",
-			})
-		}
-
-		tempDir := filepath.Clean(os.TempDir())
-		dataDir := filepath.Clean(cfg.DataDir)
-		if tempDir != "." && (dataDir == tempDir || strings.HasPrefix(dataDir, tempDir+string(filepath.Separator))) {
-			add(LifecyclePreflightFinding{
-				Code:     "runtime.data_dir.under_temp",
-				Severity: LifecyclePreflightSeverityWarn,
-				Contract: "runtime",
-				Field:    "DataDir",
-				Summary:  "data directory is under a temp path",
-				Detail:   "cached data and product state may be lost on reboot",
-			})
-		}
-
-		storePath := filepath.Clean(cfg.Store.Path)
-		if storeBackend != "memory" && tempDir != "." && (storePath == tempDir || strings.HasPrefix(storePath, tempDir+string(filepath.Separator))) {
-			add(LifecyclePreflightFinding{
-				Code:     "runtime.store_path.under_temp",
-				Severity: LifecyclePreflightSeverityWarn,
-				Contract: "runtime",
-				Field:    "Store.Path",
-				Summary:  "store path is under a temp path",
-				Detail:   "durable state may be lost on reboot",
+				Field:    "FFmpeg.Bin",
+				Summary:  "ffmpeg binary is not available",
+				Detail:   err.Error(),
 			})
 		}
 	}
 
+	if strings.EqualFold(cfg.Store.Backend, "memory") {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.store_backend.memory",
+			Severity: LifecyclePreflightSeverityWarn,
+			Contract: "runtime",
+			Field:    "Store.Backend",
+			Summary:  "engine uses in-memory store",
+			Detail:   "sessions and device state will not survive restart while Store.Backend=memory",
+		})
+	}
+
+	tempDir := filepath.Clean(os.TempDir())
+	dataDir := filepath.Clean(cfg.DataDir)
+	if tempDir != "." && (dataDir == tempDir || strings.HasPrefix(dataDir, tempDir+string(filepath.Separator))) {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.data_dir.under_temp",
+			Severity: LifecyclePreflightSeverityWarn,
+			Contract: "runtime",
+			Field:    "DataDir",
+			Summary:  "data directory is under a temp path",
+			Detail:   "cached data and product state may be lost on reboot",
+		})
+	}
+
+	storePath := filepath.Clean(cfg.Store.Path)
+	if storeBackend != "memory" && tempDir != "." && (storePath == tempDir || strings.HasPrefix(storePath, tempDir+string(filepath.Separator))) {
+		add(LifecyclePreflightFinding{
+			Code:     "runtime.store_path.under_temp",
+			Severity: LifecyclePreflightSeverityWarn,
+			Contract: "runtime",
+			Field:    "Store.Path",
+			Summary:  "store path is under a temp path",
+			Detail:   "durable state may be lost on reboot",
+		})
+	}
+
+	return nil
+}
+
+func evaluateRuntimeConnectivityContract(cfg config.AppConfig, add func(LifecyclePreflightFinding)) {
 	connectivityReport, err := config.BuildConnectivityContract(cfg)
 	if err != nil {
 		add(LifecyclePreflightFinding{
@@ -393,29 +433,32 @@ func evaluateLifecycleRuntimeChecks(cfg config.AppConfig, add func(LifecyclePref
 			Summary:  "public deployment contract evaluation failed",
 			Detail:   err.Error(),
 		})
-	} else {
-		for _, finding := range connectivityReport.Findings {
-			severity := lifecycleSeverityFromConnectivityFinding(finding)
-			if severity == LifecyclePreflightSeverityOK {
-				continue
-			}
-
-			detail := strings.TrimSpace(finding.Detail)
-			if detail == "" {
-				detail = strings.TrimSpace(finding.Summary)
-			}
-
-			add(LifecyclePreflightFinding{
-				Code:     finding.Code,
-				Severity: severity,
-				Contract: "public_deployment_contract",
-				Field:    finding.Field,
-				Summary:  finding.Summary,
-				Detail:   detail,
-			})
-		}
+		return
 	}
 
+	for _, finding := range connectivityReport.Findings {
+		severity := lifecycleSeverityFromConnectivityFinding(finding)
+		if severity == LifecyclePreflightSeverityOK {
+			continue
+		}
+
+		detail := strings.TrimSpace(finding.Detail)
+		if detail == "" {
+			detail = strings.TrimSpace(finding.Summary)
+		}
+
+		add(LifecyclePreflightFinding{
+			Code:     finding.Code,
+			Severity: severity,
+			Contract: "public_deployment_contract",
+			Field:    finding.Field,
+			Summary:  finding.Summary,
+			Detail:   detail,
+		})
+	}
+}
+
+func evaluateRuntimePublicExposureSecurity(cfg config.AppConfig, add func(LifecyclePreflightFinding)) {
 	for _, finding := range config.PublicExposureSecurityFindings(cfg) {
 		add(LifecyclePreflightFinding{
 			Code:     "public_exposure_security_contract.rejected",
@@ -426,8 +469,6 @@ func evaluateLifecycleRuntimeChecks(cfg config.AppConfig, add func(LifecyclePref
 			Detail:   finding.Message,
 		})
 	}
-
-	return nil
 }
 
 func addWritableDirFinding(add func(LifecyclePreflightFinding), contract, code, field, summary, path string, createIfMissing bool) error {
