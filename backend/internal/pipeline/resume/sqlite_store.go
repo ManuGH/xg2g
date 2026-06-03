@@ -80,7 +80,7 @@ func (s *SqliteStore) migrate() error {
 	}
 
 	if currentVersion < schemaVersion {
-		hasFingerprint, err := tableHasColumn(tx, "resume_states", "fingerprint")
+		hasFingerprint, err := sqlite.TableHasColumn(tx, "resume_states", "fingerprint")
 		if err != nil {
 			return err
 		}
@@ -148,30 +148,4 @@ func (s *SqliteStore) Delete(ctx context.Context, principalID, recordingKey stri
 
 func (s *SqliteStore) Close() error {
 	return s.DB.Close()
-}
-
-func tableHasColumn(tx *sql.Tx, table string, column string) (bool, error) {
-	rows, err := tx.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var (
-			cid        int
-			name       string
-			columnType string
-			notNull    int
-			defaultVal sql.NullString
-			pk         int
-		)
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
 }
