@@ -211,3 +211,38 @@ func BenchmarkRecordStreamDetectionError(b *testing.B) {
 		RecordStreamDetectionError("8001", "timeout")
 	}
 }
+
+func TestEncoderCapabilityGauges(t *testing.T) {
+	EncoderVerified.Reset()
+	EncoderAutoEligible.Reset()
+
+	SetEncoderVerified("av1_vaapi", true)
+	SetEncoderVerified("hevc_vaapi", false)
+	SetEncoderAutoEligible("av1_vaapi", true)
+
+	if got := testutil.ToFloat64(EncoderVerified.WithLabelValues("av1_vaapi")); got != 1 {
+		t.Errorf("av1_vaapi verified: want 1, got %v", got)
+	}
+	if got := testutil.ToFloat64(EncoderVerified.WithLabelValues("hevc_vaapi")); got != 0 {
+		t.Errorf("hevc_vaapi verified: want 0, got %v", got)
+	}
+	if got := testutil.ToFloat64(EncoderAutoEligible.WithLabelValues("av1_vaapi")); got != 1 {
+		t.Errorf("av1_vaapi auto-eligible: want 1, got %v", got)
+	}
+}
+
+func TestRuntimeDemotionTelemetry(t *testing.T) {
+	RuntimeDemotionTotal.Reset()
+	RuntimeEncodeFailureTotal.Reset()
+
+	RecordRuntimeEncodeFailure("vaapi")
+	RecordRuntimeEncodeFailure("vaapi")
+	RecordRuntimeDemotion("vaapi")
+
+	if got := testutil.ToFloat64(RuntimeEncodeFailureTotal.WithLabelValues("vaapi")); got != 2 {
+		t.Errorf("vaapi runtime failures: want 2, got %v", got)
+	}
+	if got := testutil.ToFloat64(RuntimeDemotionTotal.WithLabelValues("vaapi")); got != 1 {
+		t.Errorf("vaapi demotions: want 1, got %v", got)
+	}
+}
