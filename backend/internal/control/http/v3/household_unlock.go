@@ -56,7 +56,7 @@ func (s *Server) PostHouseholdUnlock(w http.ResponseWriter, r *http.Request, par
 		return
 	}
 
-	setServerCookie(w, &http.Cookie{
+	setServerCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly+SameSite=Lax set; Secure=s.requestIsHTTPS(r) is request-derived, opaque to gosec
 		Name:     householdUnlockCookieName,
 		Value:    sessionID,
 		Path:     "/api/v3/",
@@ -129,7 +129,7 @@ func setServerCookie(w http.ResponseWriter, cookie *http.Cookie) {
 }
 
 func clearServerCookie(w http.ResponseWriter, name, path string, secure bool) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- cookie cleared with HttpOnly+SameSite=Lax+Secure set, MaxAge=-1
 		Name:     strings.TrimSpace(name),
 		Value:    "",
 		Path:     path,

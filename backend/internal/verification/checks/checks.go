@@ -111,7 +111,7 @@ func NewRealRunner() *RealRunner {
 }
 
 func (r *RealRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- internal verification runner; name/args are trusted internal values, never request input
 	return cmd.Output()
 }
 

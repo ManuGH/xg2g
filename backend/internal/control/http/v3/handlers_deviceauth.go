@@ -137,7 +137,7 @@ func (s *Server) CompleteWebBootstrap(w http.ResponseWriter, r *http.Request, bo
 		return
 	}
 
-	http.Redirect(w, r, result.TargetPath, http.StatusSeeOther)
+	http.Redirect(w, r, result.TargetPath, http.StatusSeeOther) // #nosec G710 -- TargetPath normalized to a same-origin absolute path (normalizeWebBootstrapTargetPath rejects scheme/host/userinfo/'//')
 }
 
 func writeDeviceSessionServiceError(w http.ResponseWriter, r *http.Request, err error) {

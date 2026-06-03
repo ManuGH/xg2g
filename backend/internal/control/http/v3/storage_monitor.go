@@ -231,7 +231,7 @@ func (m *StorageMonitor) probe(ctx context.Context, path string) ProbeResult {
 		Access:       StorageItemAccessNone,
 	}
 
-	cmd := exec.CommandContext(probeCtx, "/bin/sh", "-c", storageProbeScript, "xg2g-storage-probe", path)
+	cmd := exec.CommandContext(probeCtx, "/bin/sh", "-c", storageProbeScript, "xg2g-storage-probe", path) // #nosec G204 -- constant storageProbeScript; path passed as positional arg, not interpolated into the script
 	out, err := cmd.Output()
 	if err != nil {
 		if probeCtx.Err() == context.DeadlineExceeded {
