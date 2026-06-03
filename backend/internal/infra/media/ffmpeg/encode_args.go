@@ -12,6 +12,29 @@ func usesLegacyCPUDefaults(spec ports.StreamSpec, outputCodec string) bool {
 	return prof.Name == "" && prof.VideoCodec == "" && !prof.TranscodeVideo && outputCodec == "h264"
 }
 
+// appendVideoGOPArgs appends the GOP/keyframe cadence shared verbatim by every
+// hardware and CPU encoder path. Kept identical so forced segment boundaries
+// align across transcode modes.
+func appendVideoGOPArgs(args []string, gop, segmentSec int) []string {
+	return append(args,
+		"-g", strconv.Itoa(gop),
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
+		"-flags", "+cgop",
+	)
+}
+
+// vaapiEncoderForCodec maps the requested output codec to its VAAPI encoder name.
+func vaapiEncoderForCodec(outputCodec string) string {
+	switch outputCodec {
+	case "hevc":
+		return "hevc_vaapi"
+	case "av1":
+		return "av1_vaapi"
+	default:
+		return "h264_vaapi"
+	}
+}
+
 func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
 	prof := spec.Profile
 	a.Logger.Info().
@@ -29,22 +52,11 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		args = append(args, "-vf", "deinterlace_vaapi")
 	}
 
-	encoder := "h264_vaapi"
-	switch outputCodec {
-	case "hevc":
-		encoder = "hevc_vaapi"
-	case "av1":
-		encoder = "av1_vaapi"
-	}
-	args = append(args, "-c:v", encoder)
+	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
-	args = append(args,
-		"-g", strconv.Itoa(gop),
-		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
-		"-flags", "+cgop",
-	)
+	args = appendVideoGOPArgs(args, gop, segmentSec)
 
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
@@ -68,22 +80,11 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	filter := a.vaapiEncodeOnlyFilter(spec, outputCodec)
 	args = append(args, "-vf", filter)
 
-	encoder := "h264_vaapi"
-	switch outputCodec {
-	case "hevc":
-		encoder = "hevc_vaapi"
-	case "av1":
-		encoder = "av1_vaapi"
-	}
-	args = append(args, "-c:v", encoder)
+	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
-	args = append(args,
-		"-g", strconv.Itoa(gop),
-		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
-		"-flags", "+cgop",
-	)
+	args = appendVideoGOPArgs(args, gop, segmentSec)
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
 	}
@@ -278,11 +279,7 @@ func (a *LocalAdapter) buildNVENCVideoArgs(args []string, spec ports.StreamSpec,
 	}
 	args = append(args, "-c:v", encoder)
 	args = appendNVENCRateControlArgs(args, prof)
-	args = append(args,
-		"-g", strconv.Itoa(gop),
-		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
-		"-flags", "+cgop",
-	)
+	args = appendVideoGOPArgs(args, gop, segmentSec)
 	if outputCodec != "av1" {
 		args = append(args, "-profile:v", "main")
 	}
@@ -445,10 +442,8 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 	if codec == "libx264" {
 		args = append(args, "-x264-params", fmt.Sprintf("keyint=%d:min-keyint=%d:scenecut=0", gop, gop))
 	}
+	args = appendVideoGOPArgs(args, gop, segmentSec)
 	args = append(args,
-		"-g", strconv.Itoa(gop),
-		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
-		"-flags", "+cgop",
 		"-pix_fmt", "yuv420p",
 		"-profile:v", "main",
 	)
