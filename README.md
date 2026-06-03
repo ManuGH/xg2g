@@ -14,9 +14,12 @@
 <div align="center">
   <strong>Watch your Enigma2 receiver's live TV and recordings in any browser —
   no app to install.</strong><br />
-  Point xg2g at your VU+ / Dreambox, open a URL on your iPhone, iPad, Mac, PC, or
-  TV, and it just plays — xg2g picks direct-play, remux, or hardware transcode
-  per stream and per device.
+  Point xg2g at your VU+ / Dreambox and it streams to Safari, Chrome, iPhone,
+  iPad, Mac, PC, and TVs — picking direct-play, remux, or hardware transcode per
+  device so you never fiddle with codecs.
+  <br /><br />
+  Local access works out of the box; to use it from another device, serve it over
+  HTTPS via a reverse proxy — see Getting Started.
   <br /><br />
   <em>Self-hosted live-TV gateway for Enigma2 — MPEG-TS in, browser-ready HLS out.</em>
   <br /><br />
