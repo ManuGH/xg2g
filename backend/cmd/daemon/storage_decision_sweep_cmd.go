@@ -333,6 +333,9 @@ func collectStorageDecisionSweepDecisions(
 ) []storageDecisionSweepDecision {
 	decisions := make([]storageDecisionSweepDecision, 0, len(selections)*len(profiles))
 	for _, selection := range selections {
+		if ctx.Err() != nil {
+			break
+		}
 		capability, found := scanStore.Get(selection.ServiceRef)
 		truthStatus := deriveTruthStatus(found, capability)
 		if !found || !capability.Usable() {
