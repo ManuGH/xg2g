@@ -624,7 +624,7 @@ func (m *Manager) resolveProbeURL(ctx context.Context, ch m3u.Channel, sRef stri
 			probeURL = freshURL
 			resolved = true
 			log.L().Debug().Str("sref", sRef).Str("fresh_url", freshURL).Msg("scan: resolved fresh stream url")
-		} else {
+		} else if ctx.Err() == nil {
 			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: failed to resolve fresh url, falling back to m3u")
 		}
 	}
@@ -644,7 +644,7 @@ func (m *Manager) resolveProbeURL(ctx context.Context, ch m3u.Channel, sRef stri
 // result carries richer media truth.
 func (m *Manager) probeChannelMediaTruth(ctx context.Context, ch m3u.Channel, sRef, probeURL string, existingCap Capability, found bool) (*vod.StreamInfo, error) {
 	res, successfulProbeURL, err := m.probeWithFallbacks(ctx, sRef, ch.URL, probeURL, infra.ProbeOptions{}, defaultProbeTimeout)
-	if shouldAttemptExtendedRetry(existingCap, found, res, err) {
+	if ctx.Err() == nil && shouldAttemptExtendedRetry(existingCap, found, res, err) {
 		retryInitialURL := successfulProbeURL
 		if strings.TrimSpace(retryInitialURL) == "" {
 			retryInitialURL = probeURL
@@ -673,7 +673,9 @@ func (m *Manager) probeChannelMediaTruth(ctx context.Context, ch m3u.Channel, sR
 		}
 		switch {
 		case retryErr != nil:
-			log.L().Warn().Err(retryErr).Str("sref", sRef).Msg("scan: extended probe retry failed")
+			if ctx.Err() == nil {
+				log.L().Warn().Err(retryErr).Str("sref", sRef).Msg("scan: extended probe retry failed")
+			}
 		case isRicherMediaTruth(retryBase, retryRes):
 			res = retryRes
 			err = nil
@@ -692,8 +694,11 @@ func (m *Manager) applyScanRateLimit(ctx context.Context) error {
 
 	failCount := atomic.LoadInt32(&m.consecutiveFailureCount)
 	if failCount > 0 {
-		multiplier := 1 << (failCount - 1)
-		backoff := min(time.Duration(multiplier)*time.Second, 30*time.Second)
+		backoff := 30 * time.Second
+		if failCount < 6 {
+			multiplier := 1 << (failCount - 1)
+			backoff = min(time.Duration(multiplier)*time.Second, 30*time.Second)
+		}
 		if backoff > delay {
 			delay = backoff
 		}
