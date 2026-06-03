@@ -36,9 +36,6 @@ func extractServiceRefFromURL(inputURL string) string {
 	if path == "" {
 		return ""
 	}
-	if decoded, err := url.PathUnescape(path); err == nil {
-		path = decoded
-	}
 	return normalizeServiceRef(path)
 }
 

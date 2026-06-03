@@ -127,9 +127,6 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		phase.args = append(phase.args, netInputArgs...)
 		phase.args = append(phase.args, "-i", phase.inputURL)
 	case ports.SourceURL:
-		if phase.inputURL == "" {
-			phase.inputURL = spec.Source.ID
-		}
 		phase.args = append(phase.args, netInputArgs...)
 		phase.args = append(phase.args, "-i", phase.inputURL)
 	case ports.SourceFile:
