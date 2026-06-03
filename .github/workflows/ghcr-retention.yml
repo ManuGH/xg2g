@@ -1,0 +1,48 @@
+name: ghcr-retention
+
+# Prunes stale versions of the ghcr.io/manugh/xg2g container package.
+# Every push to main publishes a `sha-<commit>` dev image (+ untagged manifest
+# children), so the package accumulates thousands of versions over time.
+#
+# ARMED: the weekly schedule runs LIVE (deletes). Manual dispatch defaults to
+# dry-run (preview) for safety — uncheck the input to delete on demand.
+#
+# Protects `latest` / `main` / release tags (`v*`); prunes `sha-*` + untagged
+# versions older than 4 weeks, always keeping the 30 most recent.
+#
+# Requires repo secret GHCR_CLEANUP_TOKEN: a classic PAT with `delete:packages`
+# (+ `read:packages`). GITHUB_TOKEN cannot use the tag-protection filters.
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # weekly, Monday 04:00 UTC — runs live
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Preview only — list what would be deleted, delete nothing (uncheck to actually delete)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune stale xg2g image versions
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
+        with:
+          account: user
+          token: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+          image-names: "xg2g"
+          # Protect floating + release tags; everything else (sha-* dev tags) is a candidate.
+          image-tags: "!latest !main !v*"
+          # Also prune untagged manifest children (the bulk of the bloat).
+          tag-selection: both
+          # Only touch versions older than 4 weeks...
+          cut-off: 4w
+          # ...and always keep the 30 most recent tagged versions regardless of age.
+          keep-n-most-recent: 30
+          # Scheduled runs delete; manual dispatch defaults to dry-run (the input).
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}

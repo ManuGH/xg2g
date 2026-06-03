@@ -1,9 +1,9 @@
 #!/bin/bash
 # FFmpeg Auto-Build Script for xg2g
-# Builds pinned FFmpeg 8.1 with HLS/VAAPI/NVENC/x264/AAC support
+# Builds pinned FFmpeg 8.1.1 with HLS/VAAPI/NVENC/x264/AAC support
 set -euo pipefail
 
-FFMPEG_VERSION="8.1"
+FFMPEG_VERSION="8.1.1"
 FFMPEG_URL="https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"
 NVCODEC_HEADERS_VERSION="n13.0.19.0"
 NVCODEC_HEADERS_REPO="https://git.videolan.org/git/ffmpeg/nv-codec-headers.git"
@@ -24,7 +24,7 @@ fi
 
 # Verify checksum (sha256)
 echo "Verifying checksum..."
-EXPECTED_SHA256="b072aed6871998cce9b36e7774033105ca29e33632be5b6347f3206898e0756a"
+EXPECTED_SHA256="b6863adde98898f42602017462871b5f6333e65aec803fdd7a6308639c52edf3"
 VERIFY_LINE="${EXPECTED_SHA256}  ffmpeg-${FFMPEG_VERSION}.tar.xz"
 verify_checksum() {
     if command -v sha256sum >/dev/null 2>&1; then

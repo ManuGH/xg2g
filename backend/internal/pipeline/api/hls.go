@@ -391,46 +391,57 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	forcePlaylistType := ""
 	insertStartTag := ""
 	var startupPolicy *hlsStartupPolicy
+	// Live DVR must stay a standard LIVE sliding-window playlist. ffmpeg advances
+	// EXT-X-MEDIA-SEQUENCE and prunes the oldest segments (-hls_flags
+	// delete_segments) once the window is full. EXT-X-PLAYLIST-TYPE:EVENT is
+	// append-only per the HLS spec, so the moment the window fills (~at the
+	// DVR-window age) and pruning begins, an EVENT-typed playlist becomes invalid
+	// and clients hard-stop — observed as a clean cut at exactly the DVR-window
+	// duration. A plain live playlist slides indefinitely and stays seekable
+	// within the retained window, which is the actual DVR behaviour we want.
+	isDvrLive := !rec.Profile.VOD && rec.Profile.DVRWindowSec > 0
 	if rec.Profile.VOD {
 		forcePlaylistType = "VOD"
-	} else if rec.Profile.DVRWindowSec > 0 {
-		forcePlaylistType = "EVENT"
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(source, 1024*1024))
 	if err != nil {
 		return nil, nil, fmt.Errorf("read playlist: %w", err)
 	}
-	if forcePlaylistType == "EVENT" {
-		// Start Safari with explicit headroom behind live instead of at the full DVR window head.
-		// The reserve absorbs playlist polling and segment timing jitter that otherwise shows up as
-		// immediate rebuffering after a seemingly clean start on fragile/native HLS clients.
+	if isDvrLive {
+		// Start clients with explicit headroom behind the live edge instead of at
+		// the very head (EXT-X-START is valid for live playlists too). The reserve
+		// absorbs playlist-poll/segment-timing jitter that otherwise shows up as
+		// immediate rebuffering after a seemingly clean start on fragile/native
+		// HLS clients.
 		policy := deriveHLSStartupPolicy(rec, raw)
 		startupPolicy = &policy
 		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", startupPolicy.StartupHeadroomSec)
 	}
 
-	insertedPlaylistType := false
+	insertedHeader := false
 	insertedStartTag := false
 	var b bytes.Buffer
 
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") && forcePlaylistType != "" {
+		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") && (forcePlaylistType != "" || isDvrLive) {
 			continue
 		}
-		if line == "#EXTM3U" && forcePlaylistType != "" && !insertedPlaylistType {
+		if line == "#EXTM3U" && (forcePlaylistType != "" || insertStartTag != "") && !insertedHeader {
 			b.WriteString(line)
 			b.WriteByte('\n')
-			b.WriteString("#EXT-X-PLAYLIST-TYPE:" + forcePlaylistType)
-			b.WriteByte('\n')
-			insertedPlaylistType = true
+			if forcePlaylistType != "" {
+				b.WriteString("#EXT-X-PLAYLIST-TYPE:" + forcePlaylistType)
+				b.WriteByte('\n')
+			}
 			if insertStartTag != "" && !insertedStartTag {
 				b.WriteString(insertStartTag)
 				b.WriteByte('\n')
 				insertedStartTag = true
 			}
+			insertedHeader = true
 			continue
 		}
 		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {

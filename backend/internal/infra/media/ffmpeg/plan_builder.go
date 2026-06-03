@@ -1105,12 +1105,68 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	// precision reduces encoder-introduced banding on gradients even from an
 	// 8-bit source — the same quality rationale as the AV1 upscale above.
 	// H.264/HEVC stay 8-bit (nv12) for broad client-decode compatibility.
+	// Optional software-domain enhancement chain at final resolution, before
+	// hwupload — "clean, then sharpen". Denoise strips broadcast compression grain
+	// so the sharpener enhances real edges instead of noise; deband smooths gradient
+	// banding (paired with the 10-bit output); the sharpener (luma unsharp) makes
+	// edges visibly crisper, mimicking the edge enhancement a TV applies. These are
+	// software filters and
+	// roughly halve encoder headroom (verified ~2.4x -> ~1.3x realtime on 1080i
+	// sports — still real-time for one session, thinner for concurrent ones), so
+	// they default conservatively and are env-tunable. Only transcode paths reach
+	// here — copy passthrough stays bit-exact and untouched.
+	if f := transcodeDenoiseFilter(); f != "" {
+		parts = append(parts, f)
+	}
+	if f := transcodeDebandFilter(); f != "" {
+		parts = append(parts, f)
+	}
+	if f := transcodeSharpenFilter(); f != "" {
+		parts = append(parts, f)
+	}
 	uploadFormat := "nv12"
 	if isAV1 {
 		uploadFormat = "p010le"
 	}
 	parts = append(parts, "format="+uploadFormat, "hwupload")
 	return strings.Join(parts, ",")
+}
+
+// transcodeSharpenFilter returns a luma unsharp-mask expression for the transcode
+// chain, or "" when disabled. XG2G_TRANSCODE_SHARPEN is the unsharp luma amount
+// (0 disables, default 1.5, capped at 3.0). Unsharp gives more visible, "TV-like"
+// edge crispness than CAS — broadcast TVs apply aggressive edge enhancement by
+// default — and was verified clean on 1080i wide shots up to ~1.5; chroma is left
+// untouched to avoid colour fringing. It adds perceived crispness on edges/lines
+// but cannot restore fine detail the source or the re-encode already discarded.
+func transcodeSharpenFilter() string {
+	amount := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 1.5, 0.0, 3.0)
+	if amount <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("unsharp=5:5:%.2f:5:5:0.0", amount)
+}
+
+// transcodeDenoiseFilter returns an hqdn3d denoise expression for the transcode
+// chain, or "" when disabled. XG2G_TRANSCODE_DENOISE scales a conservative base
+// (0 disables, default 0.6, capped at 1.5); spatial and temporal strengths scale
+// together. Encoder cost is fixed regardless of strength, so the strength is a
+// pure quality knob (lower = gentler, preserves more fine detail).
+func transcodeDenoiseFilter() string {
+	s := envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5)
+	if s <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("hqdn3d=%.1f:%.1f:%.1f:%.1f", 4*s, 3*s, 6*s, 4*s)
+}
+
+// transcodeDebandFilter returns a deband expression for the transcode chain, or
+// "" when disabled via XG2G_TRANSCODE_DEBAND=false (default on; deband is gentle).
+func transcodeDebandFilter() string {
+	if !envBool("XG2G_TRANSCODE_DEBAND", true) {
+		return ""
+	}
+	return "deband"
 }
 
 func av1VAAPIGeometryPadFilter() string {
@@ -1157,7 +1213,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 
 	if prof.VideoMaxRateK > 0 {
 		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate.
-		// Use VBR with a 25% target headroom to keep the encoder ring stable.
+		// Use a 25% target headroom (-b:v = 75% of -maxrate) to keep the ring stable.
 		bV := prof.VideoMaxRateK
 		if isAV1 {
 			bV = (prof.VideoMaxRateK * 3) / 4
@@ -1165,12 +1221,26 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 				bV = 1
 			}
 		}
+		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard
+		// ceiling. Verified on this AMD stack (Mesa 25.0.7 / VCN4): QVBR holds the
+		// cap, is sustained-stable, and is immune to the b:v==maxrate ring-stall
+		// that constrains plain VBR. QVBR REQUIRES -b:v ("Bitrate must be set for
+		// QVBR RC mode"), which is set above. Disable with XG2G_AV1_QVBR=false to
+		// fall back to implicit VBR; tune the quality target with
+		// XG2G_AV1_QVBR_QUALITY (AV1 scale 0-255, lower = higher quality).
+		av1QVBR := isAV1 && envBool("XG2G_AV1_QVBR", true)
+		if av1QVBR {
+			args = append(args, "-rc_mode", "QVBR")
+		}
 		args = append(args,
 			"-b:v", fmt.Sprintf("%dk", bV),
 			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
 		)
 		if prof.VideoBufSizeK > 0 {
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+		if av1QVBR {
+			args = append(args, "-global_quality", strconv.Itoa(envIntBounded("XG2G_AV1_QVBR_QUALITY", 110, 1, 255)))
 		}
 		if isAV1 {
 			args = append(args, "-async_depth", "1")

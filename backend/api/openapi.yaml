@@ -1502,6 +1502,9 @@ components:
       properties:
         title:
           type: string
+        desc:
+          type: string
+          description: Short programme synopsis (one or two sentences)
         start:
           type: integer
           description: Unix timestamp (seconds)

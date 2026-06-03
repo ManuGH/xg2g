@@ -77,8 +77,16 @@ export function V3PlayerView({
           viewState.showNativeBufferingMask ? styles.videoWrapperMasked : null,
         ].filter(Boolean).join(' ')}
       >
-        {viewState.channelName && viewState.showPlaybackChrome && (
-          <h3 className={styles.overlayTitle}>{viewState.channelName}</h3>
+        {viewState.showPlaybackChrome && (viewState.programmeTitle || viewState.channelName) && (
+          <div className={styles.overlayTitle}>
+            {viewState.channelName && viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
+              <span className={styles.overlayChannelEyebrow}>{viewState.channelName}</span>
+            )}
+            <span className={styles.overlayProgrammeTitle}>{viewState.programmeTitle ?? viewState.channelName}</span>
+            {viewState.programmeDesc && (
+              <span className={styles.overlayProgrammeDesc}>{viewState.programmeDesc}</span>
+            )}
+          </div>
         )}
         {viewState.showNativeBufferingMask && (
           <div className={styles.nativeBufferingMask} aria-hidden="true"></div>
@@ -234,7 +242,7 @@ export function V3PlayerView({
               {viewState.isLiveMode && (
                 <button
                   className={[styles.liveButton, viewState.isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                  onClick={() => actions.seekTo(viewState.seekableEnd)}
+                  onClick={() => actions.seekToLiveEdge()}
                   title={viewState.liveButtonLabel}
                   aria-label={viewState.liveButtonLabel}
                 >

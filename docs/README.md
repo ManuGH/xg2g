@@ -1,45 +1,60 @@
 # xg2g Documentation
 
-This is the documentation entrypoint. Use it as the router, not as a dumping
-ground for implementation detail.
+Start with your role. Each lane links only the docs you need; the full
+directory and contributor governance are at the bottom.
 
-## Read First
+## Run xg2g — User
 
-| Need | Start Here |
+You want to stream your Enigma2 receiver in a browser.
+
+| Step | Document |
 | :--- | :--- |
-| Run xg2g for the first time | [Product README](../README.md) |
-| Understand the repository | [Repository Map](dev/REPO_MAP.md) |
-| Set up a dev machine | [Developer Setup](dev/SETUP.md) |
-| Deploy or operate the service | [Operations Index](ops/README.md) |
-| Understand architecture and ownership | [Architecture Index](arch/README.md) |
-| Work on the WebUI | [WebUI Index](webui/README.md) |
-| Prepare a release | [Release Index](release/README.md) |
+| Get streaming, step by step | [Getting Started](guides/GETTING_STARTED.md) |
+| Install in one command | [Quickstart](../README.md#quickstart) |
+| Set the essential options | [Configuration → Essential](guides/CONFIGURATION.md#essential-start-here) |
+| Full configuration reference | [Configuration Guide](guides/CONFIGURATION.md) |
+| Understand playback & codecs | [Codec Matrix](arch/CODEC_MATRIX.md) |
+| Something not working? | [Troubleshooting](guides/TROUBLESHOOTING.md) |
+| Published API reference | [API Docs](https://manugh.github.io/xg2g/) |
 
-## Documentation Areas
+## Operate xg2g — Operator
 
-| Area | Purpose |
-| :--- | :--- |
-| [guides/](guides/README.md) | User-facing setup, configuration, and reference material. |
-| [ops/](ops/README.md) | Deployment, runtime contracts, runbooks, incident response, and security operations. |
-| [arch/](arch/README.md) | System design, package ownership, playback decision rules, codec/container behavior. |
-| [dev/](dev/README.md) | Contributor setup, repo map, local workflow, workspace hygiene. |
-| [webui/](webui/README.md) | UI contracts, telemetry, error mapping, frontend/backend consumption rules. |
-| [ADR/](ADR/README.md) | Accepted architecture decisions and historical context. |
-| [decision/](decision/SPEC_INDEX.md) | Normative decision-engine specs. |
-| [release/](release/README.md) | Release templates, release notes, and GitHub copy. |
-
-## Operational Shortcuts
+You run xg2g as a service for others.
 
 | Task | Document |
 | :--- | :--- |
-| Configure xg2g | [Configuration Guide](guides/CONFIGURATION.md) |
-| Deploy with systemd/Compose | [Deployment Guide](ops/DEPLOYMENT.md) |
-| Debug failed CI | [CI Failure Playbook](ops/CI_FAILURE_PLAYBOOK.md) |
-| Debug playback decision behavior | [Decision Incident Playbook](ops/INCIDENT_PLAYBOOK_DECISION.md) |
-| Check browser/client playback policy | [Client Profiles](ops/CLIENT_PROFILES.md) |
-| Check codec/container rules | [Codec Matrix](arch/CODEC_MATRIX.md) |
-| Operate Safari/iOS repro checks | [Safari Repro Run](ops/SAFARI_REPRO_RUN.md) |
-| Review OpenAPI/API docs | [Published API Docs](https://manugh.github.io/xg2g/) |
+| Deploy (systemd / Compose) | [Deployment Guide](ops/DEPLOYMENT.md) |
+| Security operations | [Security](ops/SECURITY.md) |
+| Browser / client playback policy | [Client Profiles](ops/CLIENT_PROFILES.md) |
+| Runbooks & incident response | [Operations Index](ops/README.md) |
+| Decision-engine incidents | [Decision Incident Playbook](ops/INCIDENT_PLAYBOOK_DECISION.md) |
+
+## Develop xg2g — Contributor
+
+You change the code.
+
+| Need | Document |
+| :--- | :--- |
+| Fast repository orientation | [Repository Map](dev/REPO_MAP.md) |
+| Local setup & pinned tools | [Developer Setup](dev/SETUP.md) |
+| Contributor index | [Dev Index](dev/README.md) |
+| Architecture & ownership | [Architecture Index](arch/README.md) |
+| WebUI contracts | [WebUI Index](webui/README.md) |
+| Accepted decisions | [ADRs](ADR/README.md) |
+| Release process | [Release Index](release/README.md) |
+
+## All Documentation Areas
+
+| Area | Audience | Purpose |
+| :--- | :--- | :--- |
+| [guides/](guides/README.md) | User | Setup, configuration, and reference material. |
+| [ops/](ops/README.md) | Operator | Deployment, runtime contracts, runbooks, incident response, security ops. |
+| [arch/](arch/README.md) | Contributor | System design, package ownership, playback decision rules, codec behavior. |
+| [dev/](dev/README.md) | Contributor | Contributor setup, repo map, local workflow, workspace hygiene. |
+| [webui/](webui/README.md) | Contributor | UI contracts, telemetry, error mapping, frontend/backend rules. |
+| [ADR/](ADR/README.md) | Contributor | Accepted architecture decisions and historical context. |
+| [decision/](decision/SPEC_INDEX.md) | Contributor | Normative decision-engine specs. |
+| [release/](release/README.md) | Maintainer | Release templates, release notes, and GitHub copy. |
 
 ## Maintenance Rules
 

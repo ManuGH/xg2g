@@ -12,11 +12,19 @@
 </p>
 
 <div align="center">
-  <strong>Self-hosted live-TV gateway for Enigma2.</strong><br />
-  MPEG-TS in. Browser-ready HLS out. One server-side policy for Safari,
-  iPhone, iPad, Chrome, TVs, recordings, and operator tooling.
+  <strong>Watch your Enigma2 receiver's live TV and recordings in any browser —
+  no app to install.</strong><br />
+  Point xg2g at your VU+ / Dreambox and it streams to Safari, Chrome, iPhone,
+  iPad, Mac, PC, and TVs — picking direct-play, remux, or hardware transcode per
+  device so you never fiddle with codecs.
   <br /><br />
-  <a href="#quickstart"><strong>Quickstart</strong></a> ·
+  Local access works out of the box; to use it from another device, serve it over
+  HTTPS via a reverse proxy — see Getting Started.
+  <br /><br />
+  <em>Self-hosted live-TV gateway for Enigma2 — MPEG-TS in, browser-ready HLS out.</em>
+  <br /><br />
+  <a href="docs/guides/GETTING_STARTED.md"><strong>Getting Started</strong></a> ·
+  <a href="#quickstart">Quickstart</a> ·
   <a href="https://manugh.github.io/xg2g/">API Docs</a> ·
   <a href="docs/README.md">Documentation</a> ·
   <a href="docs/arch/CODEC_MATRIX.md">Codec Matrix</a> ·
@@ -25,12 +33,12 @@
 
 ## What xg2g Does
 
-| | |
-| :--- | :--- |
-| **Receiver bridge** | Resolves Enigma2/OpenWebIF streams, including receiver-selected relay ports such as `8001` or `17999`. |
-| **Playback policy** | Chooses DirectPlay, DirectStream, or Transcode from source media, client capability, device policy, and runtime probes. |
-| **Browser delivery** | Serves HLS with native `.ts` or fMP4 segments for Safari, iPhone, iPad, Chrome, desktop browsers, and TV clients. |
-| **Operations surface** | Provides WebUI, `/api/v3`, health checks, metrics, structured logs, and deployment runbooks. |
+- **Live TV in the browser** — your receiver's channels play in Safari, Chrome, and on iPhone, iPad, Mac, PC, and modern TVs, with no native app.
+- **It just plays** — xg2g picks direct-play, remux, or hardware transcode per stream and per device, so you don't fiddle with codecs or formats.
+- **Your recordings, too** — browse and play the recordings on your receiver the same way.
+- **Built to run** — WebUI, a versioned `/api/v3`, health checks, Prometheus metrics, structured logs, and deployment runbooks.
+
+It bridges Enigma2/OpenWebIF (including receiver relay ports like `8001` or `17999`) and serves standards-based HLS — see the pipeline below.
 
 ## Playback Pipeline
 
@@ -38,7 +46,7 @@
 Enigma2 / OpenWebIF
   -> receiver-resolved stream URL
   -> xg2g decision engine
-  -> HLS packaging or hardware transcode
+  -> ffmpeg: remux to HLS (transcode to H.264/AAC when needed)
   -> browser, phone, tablet, TV, or operator client
 ```
 
@@ -48,12 +56,21 @@ safe, the universal fallback is **H.264 + AAC**. AV1/fMP4 is allowed only when
 the browser runtime probe and device policy both prove that the client can
 decode it safely.
 
+**FFmpeg is the playback engine for every browser stream** — it remuxes the
+receiver's MPEG-TS into HLS, copying audio/video when they are already
+browser-safe. Most broadcast channels are not: MPEG-2/HEVC video or AC3/MP2
+audio, and non-Safari browsers need H.264/AAC — so **playback usually also
+transcodes**, which costs real CPU. On x86 hosts xg2g offloads video encoding to
+a GPU/iGPU (VAAPI/NVENC); on arm64 it transcodes in software. FFmpeg is bundled
+in the Docker image; size your host for the concurrent streams you expect.
+
 [Read the codec/container matrix](docs/arch/CODEC_MATRIX.md)
 
 ## Quickstart
 
-**Prerequisites:** Docker, `openssl`, and an Enigma2 receiver reachable on your
-network
+**Prerequisites:** Docker, `openssl`, an Enigma2 receiver reachable on your
+network, and a host with enough CPU for transcoding (x86 hosts can offload video
+encoding to a GPU/iGPU — see Playback Pipeline above)
 
 ```bash
 docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \
@@ -61,7 +78,7 @@ docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   -e XG2G_DECISION_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/manugh/xg2g:v3.4.9
+  ghcr.io/manugh/xg2g:v3.5.1
 ```
 
 Check the service health:
@@ -71,6 +88,11 @@ curl -fsS http://localhost:8088/readyz
 ```
 
 Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
+
+The published image is multi-architecture (`linux/amd64` and `linux/arm64`),
+so xg2g runs on x86-64 servers and on arm64 hosts (Raspberry Pi, arm64 NAS).
+Hardware transcoding (VAAPI/NVENC) is x86-only; on arm64, ffmpeg uses software
+encoding.
 
 > `XG2G_DECISION_SECRET` is mandatory. xg2g refuses to start without a live
 > playback signing secret.
@@ -117,9 +139,9 @@ such as `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`,
 | **API** | Stable (v3) | SemVer |
 | **WebUI** | Stable | Thin Client |
 | **Streaming** | Production | Universal Policy |
-| **FFmpeg** | Pinned (8.1) | Bundled in Docker image |
+| **FFmpeg** | Pinned (8.1.1) | Bundled in Docker image |
 
-Structured logs, Prometheus metrics, OpenTelemetry traces, fail-closed auth,
+Structured logs, Prometheus metrics, OpenTelemetry traces (opt-in), fail-closed auth,
 Docker health checks, and CI-backed release automation are built in.
 
 ## Documentation

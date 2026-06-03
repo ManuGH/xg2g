@@ -1,24 +1,28 @@
-# Guides Index
+# User Guides
 
-Use this area for user-facing setup, configuration, and reference material.
-Operational incident response belongs in `docs/ops/`.
+User-facing setup, configuration, and reference material for running xg2g.
+Operational incident response lives in [`docs/ops/`](../ops/README.md);
+contributor workflow lives in [`docs/dev/`](../dev/README.md).
 
 ## Guides
 
 | Need | Document |
 | :--- | :--- |
-| Configure xg2g | [Configuration](CONFIGURATION.md) |
-| Full generated reference | [Reference](REFERENCE.md) |
-| Config ownership and surfaces | [Config Surfaces](CONFIG_SURFACES.md) |
-| Local development workflow | [Development](DEVELOPMENT.md) |
+| Get streaming for the first time | [Getting Started](GETTING_STARTED.md) |
+| Configure xg2g (essentials first) | [Configuration](CONFIGURATION.md#essential-start-here) |
+| Full configuration reference | [Configuration](CONFIGURATION.md) |
+| Generated option reference | [Reference](REFERENCE.md) |
+| Fix a problem | [Troubleshooting](TROUBLESHOOTING.md) |
 
 ## Machine-Readable Reference
 
 | Artifact | Purpose |
 | :--- | :--- |
-| [config.schema.json](config.schema.json) | JSON schema for config-aware tooling. |
+| [config.schema.json](config.schema.json) | JSON schema for config-aware tooling and editor validation. |
+| [CONFIG_SURFACES.md](CONFIG_SURFACES.md) | Generated inventory of every file referencing `XG2G_*` keys (config-ownership reference). |
 
 ## Maintenance Rule
 
-Guides should explain the supported path. Historical failures, incidents, and
-host-specific notes should live in `docs/ops/` and be linked only when useful.
+Guides explain the supported path for users. Historical failures, incidents, and
+host-specific notes belong in [`docs/ops/`](../ops/README.md); contributor and
+build workflow belongs in [`docs/dev/`](../dev/README.md).

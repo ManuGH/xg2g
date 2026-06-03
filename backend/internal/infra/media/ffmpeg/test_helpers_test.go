@@ -8,7 +8,14 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// noopStartupSpan returns a non-recording span for tests that drive the monitor
+// directly without an active tracer provider.
+func noopStartupSpan() trace.Span {
+	return trace.SpanFromContext(context.Background())
+}
 
 func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]string, error) {
 	plan, err := a.buildArgsWithPlan(ctx, spec, inputURL)
@@ -23,7 +30,7 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 	if usesVAAPI {
 		backend = profiles.GPUBackendVAAPI
 	}
-	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, backend, "", a.StartTimeout)
+	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, backend, "", a.StartTimeout, noopStartupSpan(), time.Now())
 }
 
 func (a *LocalAdapter) startTimeoutForSpec(spec ports.StreamSpec) time.Duration {

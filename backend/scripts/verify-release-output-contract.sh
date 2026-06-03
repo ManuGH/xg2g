@@ -29,8 +29,7 @@ ALLOWED_GORELEASER_TOP_LEVEL_KEYS=(
   "checksum"
   "snapshot"
   "changelog"
-  "dockers"
-  "docker_manifests"
+  "dockers_v2"
   "release"
 )
 
@@ -102,11 +101,8 @@ expected_bundle_files() {
 
   cat <<EOF
 checksums.txt
-xg2g_${plain}_darwin_amd64.tar.gz
-xg2g_${plain}_darwin_arm64.tar.gz
 xg2g_${plain}_linux_amd64.tar.gz
 xg2g_${plain}_linux_arm64.tar.gz
-xg2g_${plain}_windows_amd64.tar.gz
 EOF
 }
 
@@ -140,7 +136,7 @@ verify_doc_contract() {
   assert_contains "${DOC}" 'Non-Contract Outputs / Explicit Exclusions' "release output doc section"
   assert_contains "${DOC}" 'checksums.txt' "release output doc asset"
   assert_contains "${DOC}" 'xg2g_<version>_linux_amd64.tar.gz' "release output doc asset"
-  assert_contains "${DOC}" 'ghcr.io/manugh/xg2g:vX.Y.Z-amd64' "release output doc registry tag"
+  assert_contains "${DOC}" 'ghcr.io/manugh/xg2g:vX.Y.Z' "release output doc registry tag"
   assert_contains "${DOC}" 'backend/scripts/verify-release-output-contract.sh' "release output doc verifier"
   assert_contains "${DOC}" 'backend/VERSION' "release output doc version source"
   assert_contains "${DOC}" 'RELEASE_MANIFEST.json' "release output doc exclusion"
@@ -181,10 +177,12 @@ verify_goreleaser_contract() {
   assert_contains "${GORELEASER_CFG}" 'backend/VERSION' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'docs/**' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'name_template: "checksums.txt"' "goreleaser checksum naming"
-  assert_contains "${GORELEASER_CFG}" 'ghcr.io/manugh/xg2g:{{ .Tag }}-amd64' "goreleaser amd64 image tag"
-  assert_contains "${GORELEASER_CFG}" 'ghcr.io/manugh/xg2g:{{ .Tag }}-arm64' "goreleaser arm64 image tag"
-  assert_contains "${GORELEASER_CFG}" 'name_template: "ghcr.io/manugh/xg2g:{{ .Tag }}"' "goreleaser manifest tag"
-  assert_contains "${GORELEASER_CFG}" 'name_template: "ghcr.io/manugh/xg2g:latest"' "goreleaser latest manifest"
+  assert_contains "${GORELEASER_CFG}" 'dockers_v2:' "goreleaser dockers_v2 block"
+  assert_contains "${GORELEASER_CFG}" '- "ghcr.io/manugh/xg2g"' "goreleaser dockers_v2 image"
+  assert_contains "${GORELEASER_CFG}" '- "{{ .Tag }}"' "goreleaser dockers_v2 version tag"
+  assert_contains "${GORELEASER_CFG}" '- "latest"' "goreleaser dockers_v2 latest tag"
+  assert_contains "${GORELEASER_CFG}" '- linux/amd64' "goreleaser dockers_v2 amd64 platform"
+  assert_contains "${GORELEASER_CFG}" '- linux/arm64' "goreleaser dockers_v2 arm64 platform"
   assert_not_contains "${GORELEASER_CFG}" 'build-ffmpeg.sh' "goreleaser release ffmpeg source build"
 }
 
@@ -342,9 +340,6 @@ create_synthetic_bundle() {
   done <<'EOF'
 linux:amd64
 linux:arm64
-darwin:amd64
-darwin:arm64
-windows:amd64
 EOF
 
   (

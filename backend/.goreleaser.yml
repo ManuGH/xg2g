@@ -151,5 +151,3 @@ release:
     ---
 
     **Full Changelog**: https://github.com/ManuGH/xg2g/compare/{{ .PreviousTag }}...{{ .Tag }}
-
-    🤖 Built with [Claude Code](https://claude.com/claude-code)

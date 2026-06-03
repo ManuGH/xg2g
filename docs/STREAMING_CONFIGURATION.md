@@ -127,6 +127,51 @@ The adaptive path does not override explicit HQ25 caps or service-reference
 runtime overrides. AV1 keeps the legacy `XG2G_ADAPTIVE_AV1_QUALITY_ENABLED`
 switch for existing deployments.
 
+## DVR Window Disk Budget
+
+The live DVR is a **rolling** window: `XG2G_HLS_DVR_WINDOW` controls how far back
+you can rewind. ffmpeg keeps `ceil(window / segmentSeconds)` segments on disk and
+prunes the oldest as new ones arrive (`-hls_flags delete_segments`), so an active
+session never grows past **one window's worth**, and its segments are freed when
+the session ends. Disk to provision therefore scales with `window × bitrate ×
+concurrent streams`.
+
+Rule of thumb (decimal GB):
+
+```
+GB per stream ≈ total_bitrate_Mbit × window_seconds ÷ 8000
+```
+
+For the **4 h 30 m** window (`XG2G_HLS_DVR_WINDOW=4h30m` → 16 200 s) at a typical
+1080p sustained rate (video + ~0.2 Mbit AAC), per active stream and for **4
+concurrent streams**:
+
+| Codec | Typical sustained | GB / stream (4:30) | 4 streams |
+| :--- | :--- | :--- | :--- |
+| AV1 | ~5 Mbit/s | ~10.5 GB | **~42 GB** |
+| HEVC (H.265) | ~7 Mbit/s | ~14.6 GB | **~58 GB** |
+| H.264 / x264 | ~10 Mbit/s | ~20.6 GB | **~82 GB** |
+
+Worst case, if a session sustains the configured **maxrate ceiling** (AV1/HEVC
+`14000k`, H.264 `16000k`, see *Adaptive Quality Budgets* above):
+
+| Codec | At maxrate | GB / stream (4:30) | 4 streams |
+| :--- | :--- | :--- | :--- |
+| AV1 / HEVC | 14 Mbit/s | ~28.7 GB | **~115 GB** |
+| H.264 / x264 | 16 Mbit/s | ~32.8 GB | **~131 GB** |
+
+Notes:
+
+- **Plan for the worst case.** A pure-AV1 household is ~42 GB; a worst-case
+  H.264-at-cap household is ~131 GB. Provision for the codecs and quality you
+  actually run.
+- **Direct-play (copy) channels** are not transcoded — their on-disk size equals
+  the *source* bitrate (e.g. a 720p broadcast at ~3–5 Mbit/s ≈ 6–10 GB/stream for
+  4:30), independent of the codec rows above.
+- AV1's figure depends on the QVBR quality knob (`XG2G_AV1_QVBR_QUALITY`); an
+  aggressive high-bitrate setting moves AV1 toward the maxrate row.
+- These cover live DVR segments only — recordings are accounted separately.
+
 ## Summary Checklist
 
 - [ ] `XG2G_E2_STREAM_PORT` is unset unless a direct fallback override is intentional.

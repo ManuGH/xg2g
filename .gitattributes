@@ -87,5 +87,10 @@ tools/ linguist-vendored=false
 *.txt linguist-generated=true
 *.xml linguist-generated=true
 coverage.out linguist-generated=true
-dist/ linguist-generated=true
-node_modules/ linguist-generated=true
+**/dist/** linguist-generated=true
+**/node_modules/** linguist-generated=true
+
+# Generated source (exclude from GitHub language stats -> bar reflects hand-written code)
+frontend/webui/src/client-ts/** linguist-generated=true
+backend/internal/api/server_gen.go linguist-generated=true
+backend/internal/control/http/v3/server_gen.go linguist-generated=true

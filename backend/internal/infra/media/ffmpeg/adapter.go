@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -27,7 +28,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/procgroup"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -1325,10 +1330,24 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		Str("startup_phase", "ffmpeg_args_build_started").
 		Str("input_url", sanitizeURLForLog(inputURL)).
 		Msg("ffmpeg args build started")
-	plan, err := a.buildArgsWithPlan(ctx, spec, inputURL)
+	// Span covering the playback decision + ffprobe probes (the untraced gap
+	// between request and spawn). No-op when tracing is off. planCtx lets any
+	// probe spans added later nest under this one.
+	planCtx, planSpan := telemetry.Tracer("xg2g.ffmpeg").Start(ctx, "playback.plan",
+		trace.WithAttributes(
+			attribute.String("xg2g.session_id", spec.SessionID),
+			attribute.String("xg2g.source_type", fmt.Sprintf("%v", spec.Source.Type)),
+		),
+	)
+	plan, err := a.buildArgsWithPlan(planCtx, spec, inputURL)
 	if err != nil {
+		planSpan.RecordError(err)
+		planSpan.SetStatus(codes.Error, "plan build failed")
+		planSpan.End()
 		return "", fmt.Errorf("failed to build args: %w", err)
 	}
+	planSpan.SetAttributes(attribute.String("xg2g.path_id", plan.pathID))
+	planSpan.End()
 	args := plan.args
 	a.Logger.Info().
 		Str("session_id", spec.SessionID).
@@ -1361,7 +1380,22 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	}
 	cmd.Stdout = nil
 
+	// Span covering ffmpeg spawn -> first HLS segment (the user-perceived startup
+	// latency). No-op when tracing is disabled; ended exactly once in the monitor.
+	spawnedAt := time.Now()
+	_, startupSpan := telemetry.Tracer("xg2g.ffmpeg").Start(ctx, "ffmpeg.startup",
+		trace.WithAttributes(
+			attribute.String("xg2g.session_id", spec.SessionID),
+			attribute.String("xg2g.source_type", fmt.Sprintf("%v", spec.Source.Type)),
+			attribute.String("xg2g.hw_backend", fmt.Sprintf("%v", argsHardwareBackend(args))),
+			attribute.String("xg2g.path_id", plan.pathID),
+		),
+	)
+
 	if err := cmd.Start(); err != nil {
+		startupSpan.RecordError(err)
+		startupSpan.SetStatus(codes.Error, "ffmpeg start failed")
+		startupSpan.End()
 		return "", fmt.Errorf("ffmpeg start failed: %w", err)
 	}
 
@@ -1381,7 +1415,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile))
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt)
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(sourceKey, spec.SessionID)
 	}
@@ -1415,11 +1449,22 @@ func (a *LocalAdapter) ExecutedFFmpegPlan(handle ports.RunHandle) (ports.Execute
 	return plan, true
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time) {
 	defer func() {
 		a.mu.Lock()
 		a.removeActiveProcessLocked(handle, true)
 		a.mu.Unlock()
+	}()
+
+	// End the startup span exactly once: success is recorded on first segment;
+	// any other exit path (start timeout, early ffmpeg exit, ctx cancel) is an error.
+	var sawFirstSegment atomic.Bool
+	endStartupSpan := sync.OnceFunc(func() { startupSpan.End() })
+	defer func() {
+		if !sawFirstSegment.Load() {
+			startupSpan.SetStatus(codes.Error, "ffmpeg exited before first HLS segment")
+		}
+		endStartupSpan()
 	}()
 
 	wd := watchdog.New(startTimeout, a.StallTimeout)
@@ -1466,6 +1511,10 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			if !firstSegmentLogged {
 				if segmentPath, ok := extractStartupSegmentPath(line); ok {
 					firstSegmentLogged = true
+					sawFirstSegment.Store(true)
+					startupSpan.SetAttributes(attribute.Int64("xg2g.time_to_first_segment_ms", time.Since(spawnedAt).Milliseconds()))
+					startupSpan.SetStatus(codes.Ok, "")
+					endStartupSpan()
 					wd.ObserveProgress()
 					a.Logger.Info().
 						Str("session_id", sessionID).

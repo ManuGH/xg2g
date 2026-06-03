@@ -439,17 +439,72 @@ seg_000001.ts
 	assert.Equal(t, "application/vnd.apple.mpegurl", resp.Header.Get("Content-Type"))
 
 	// Black-Box Output Assertions (CTO Gate)
-	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "DVR MUST force EVENT type")
+	// DVR live MUST stay a standard sliding LIVE playlist: no forced PLAYLIST-TYPE.
+	// EXT-X-PLAYLIST-TYPE:EVENT is append-only per spec and breaks the moment
+	// delete_segments prunes the window head (~at DVR-window age) -> client hard-stop.
+	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE", "DVR live MUST NOT force a playlist type so delete_segments can slide the window without violating an append-only EVENT contract")
 	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-8,PRECISE=YES", "DVR MUST inject EXT-X-START with enough live headroom for Safari")
 	assert.NotContains(t, content, "#EXT-X-ENDLIST", "DVR (Rolling) MUST NOT contain ENDLIST")
-	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE:VOD", "DVR MUST NOT contain VOD tag")
 
-	// Check tag order
+	// Check tag order: the start tag follows the header.
 	extM3UIdx := strings.Index(content, "#EXTM3U")
-	playlistTypeIdx := strings.Index(content, "#EXT-X-PLAYLIST-TYPE")
 	startTagIdx := strings.Index(content, "#EXT-X-START")
 
-	assert.True(t, extM3UIdx < playlistTypeIdx && playlistTypeIdx < startTagIdx, "Semantic tags must follow header in order")
+	assert.True(t, extM3UIdx < startTagIdx, "EXT-X-START must follow the #EXTM3U header")
+}
+
+// Boundary regression for the 45-min hard stop: once the DVR window fills,
+// ffmpeg prunes the playlist head and advances EXT-X-MEDIA-SEQUENCE. The served
+// playlist MUST stay a valid sliding LIVE playlist (no append-only EVENT type,
+// no ENDLIST) at that point, or clients cut out at exactly the window age.
+func TestServeHLS_DVRSlidingPastWindowFill(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "dvr-rolled-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0750))
+
+	// Window has rolled past fill: high media-sequence, head segments pruned.
+	rawManifest := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:1350
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:45:00+0000
+#EXTINF:2.000000,
+seg_001350.ts
+#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:45:02+0000
+#EXTINF:2.000000,
+seg_001351.ts
+`
+	manifestPath := filepath.Join(sessionDir, "index.m3u8")
+	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionReady,
+			Profile: model.ProfileSpec{
+				Name:         "safari",
+				DVRWindowSec: 2700,
+			},
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
+	w := httptest.NewRecorder()
+	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+
+	resp := w.Result()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	content := string(body)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE", "rolled DVR window MUST stay a sliding LIVE playlist (no forced type)")
+	assert.NotContains(t, content, "#EXT-X-ENDLIST", "rolled DVR window MUST NOT signal end")
+	assert.Contains(t, content, "#EXT-X-MEDIA-SEQUENCE:1350", "advanced media-sequence MUST be preserved")
+	assert.Contains(t, content, "seg_001350.ts", "retained segments MUST still be served")
+	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=", "DVR start-headroom tag MUST still be injected after the window rolls")
 }
 
 func TestDeriveHLSStartupPolicy(t *testing.T) {

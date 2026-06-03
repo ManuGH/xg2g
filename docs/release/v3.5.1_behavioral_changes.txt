@@ -1,0 +1,5 @@
+Operational changes:
+- Release container images are now published multi-architecture (linux/amd64 and linux/arm64). xg2g can run on arm64 hosts (Raspberry Pi, arm64 SBCs, ARM NAS) in addition to x86-64. Note: hardware transcoding (VAAPI/NVENC) remains x86-only; on arm64 ffmpeg runs software encode / remux.
+- The bundled FFmpeg runtime is updated from 8.1 to 8.1.1 (upstream bugfix/security patch; no API or behaviour change per FFmpeg's patch-release policy).
+
+No application behaviour changes — this is an availability (multi-arch) and dependency-patch release.

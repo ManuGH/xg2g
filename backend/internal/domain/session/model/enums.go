@@ -127,7 +127,8 @@ const (
 	RDeadlineExceeded        ReasonCode = "R_DEADLINE_EXCEEDED"
 	RIdleTimeout             ReasonCode = "R_IDLE_TIMEOUT"
 	RClientStop              ReasonCode = "R_CLIENT_STOP"
-	RUpstreamCorrupt         ReasonCode = "R_UPSTREAM_CORRUPT" // Upstream source is corrupt or missing keyframes
+	RUpstreamCorrupt         ReasonCode = "R_UPSTREAM_CORRUPT"   // Upstream source is corrupt or missing keyframes
+	RUpstreamScrambled       ReasonCode = "R_UPSTREAM_SCRAMBLED" // Upstream stream is scrambled (encrypted, receiver could not descramble)
 	RInternalInvariantBreach ReasonCode = "R_INTERNAL_INVARIANT_BREACH"
 )
 
@@ -148,6 +149,7 @@ const (
 	DUpstreamEndedPrematurely  ReasonDetailCode = "D_UPSTREAM_ENDED_PREMATURELY"
 	DUpstreamInputOpenFailed   ReasonDetailCode = "D_UPSTREAM_INPUT_OPEN_FAILED"
 	DInvalidUpstreamInput      ReasonDetailCode = "D_INVALID_UPSTREAM_INPUT"
+	DUpstreamScrambled         ReasonDetailCode = "D_UPSTREAM_SCRAMBLED"
 	DCopyOutputMissingCodec    ReasonDetailCode = "D_COPY_OUTPUT_MISSING_CODEC"
 )
 

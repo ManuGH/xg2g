@@ -19,7 +19,7 @@ export function getDefaultUiScale(): UiScale {
 }
 
 export function readStoredUiScale(storage: Pick<Storage, 'getItem'> | null | undefined): UiScale {
-  let stored: UiScale | null = null;
+  let stored: UiScale | null;
   try {
     stored = parseUiScale(storage?.getItem(UI_SCALE_STORAGE_KEY));
   } catch {

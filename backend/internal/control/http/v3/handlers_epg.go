@@ -31,6 +31,7 @@ type nowNextRequest struct {
 
 type epgEntry struct {
 	Title      string `json:"title,omitempty"`
+	Desc       string `json:"desc,omitempty"`  // short programme synopsis
 	Start      int64  `json:"start,omitempty"` // unix seconds
 	End        int64  `json:"end,omitempty"`   // unix seconds
 	StartXMLTV string `json:"startXmltv,omitempty"`
@@ -124,6 +125,9 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 				End:        stop.Unix(),
 				StartXMLTV: program.Start,
 				EndXMLTV:   program.Stop,
+			}
+			if program.Desc != nil {
+				entry.Desc = program.Desc.Text
 			}
 
 			if now.After(start) && now.Before(stop) {

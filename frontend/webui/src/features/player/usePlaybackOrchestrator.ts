@@ -83,6 +83,8 @@ import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
+import { useLiveNowPlaying } from './useLiveNowPlaying';
+import { getManagedMseAv1Support, formatManagedMseAv1 } from './utils/managedMseAv1';
 import { useNativePlaybackBridge } from './orchestrator/useNativePlaybackBridge';
 import {
   buildAuthDeniedFailure,
@@ -115,6 +117,8 @@ export interface V3PlayerLabeledValue {
 
 export interface V3PlayerViewState {
   channelName: string | null;
+  programmeTitle: string | null;
+  programmeDesc: string | null;
   useOverlayLayout: boolean;
   userIdle: boolean;
   showCloseButton: boolean;
@@ -209,6 +213,7 @@ export interface PlaybackOrchestratorActions {
   retry(): Promise<void>;
   seekBy(deltaSeconds: number): void;
   seekTo(positionSeconds: number): void;
+  seekToLiveEdge(): void;
   togglePlayPause(): void;
   updateServiceRef(nextValue: string): void;
   submitServiceRef(nextValue?: string): void;
@@ -497,6 +502,14 @@ export function usePlaybackOrchestrator(
     setActiveSessionIdBase(nextSessionId);
   }, [setActiveSessionIdBase]);
 
+  // Stabilize callback refs for the native trace poll so the effect never
+  // re-creates its interval when authHeaders or mergeSessionPlaybackTrace are
+  // recreated (e.g. when token changes).
+  const authHeadersRef = useRef(authHeaders);
+  const mergeSessionPlaybackTraceRef = useRef(mergeSessionPlaybackTrace);
+  useEffect(() => { authHeadersRef.current = authHeaders; });
+  useEffect(() => { mergeSessionPlaybackTraceRef.current = mergeSessionPlaybackTrace; });
+
   // Native playback (managed Safari/iOS native HLS) runs through the native
   // bridge and never drives the MSE controller's snapshot loop, so the executed
   // session trace (GET /sessions) previously never reached the stats panel —
@@ -515,7 +528,7 @@ export function usePlaybackOrchestrator(
     let cancelled = false;
     const pollNativeTrace = async () => {
       try {
-        const res = await fetch(`${apiBase}/sessions/${nativeSessionId}`, { headers: authHeaders() });
+        const res = await fetch(`${apiBase}/sessions/${nativeSessionId}`, { headers: authHeadersRef.current() });
         if (cancelled || !res.ok) {
           return;
         }
@@ -524,7 +537,7 @@ export function usePlaybackOrchestrator(
           return;
         }
         // extractPlaybackTrace descends into the response's `.trace` wrapper.
-        mergeSessionPlaybackTrace(extractPlaybackTrace(session));
+        mergeSessionPlaybackTraceRef.current(extractPlaybackTrace(session));
       } catch {
         // Best-effort telemetry; transient errors must never disturb playback.
       }
@@ -535,7 +548,7 @@ export function usePlaybackOrchestrator(
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [nativeSessionId, apiBase, authHeaders, mergeSessionPlaybackTrace]);
+  }, [nativeSessionId, apiBase]);
 
   const clearSessionLeaseState = useCallback(() => {
     activeLiveSessionIdRef.current = null;
@@ -573,6 +586,7 @@ export function usePlaybackOrchestrator(
     endTimeDisplay,
     formatClock,
     seekTo,
+    seekToLiveEdge,
     seekBy,
     seekWhenReady,
     togglePlayPause,
@@ -602,6 +616,10 @@ export function usePlaybackOrchestrator(
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen
   });
+
+  // Live now-playing EPG (current programme title + synopsis, auto-refreshes
+  // when the programme changes). Disabled for recordings (fixed title).
+  const liveNowPlaying = useLiveNowPlaying(sRef, playbackMode === 'LIVE');
 
   // Resume Hook
   useResume({
@@ -1771,7 +1789,11 @@ export function usePlaybackOrchestrator(
         : supportsNativeFullscreen
           ? 'webkit-available'
           : 'web-only';
+  // Stage 0 capability gate readout for the Stats panel (paste-free device check).
+  const mseAv1Readout = useMemo(() => formatManagedMseAv1(getManagedMseAv1Support()), []);
+
   const statsRows: V3PlayerLabeledValue[] = [
+    { label: t('player.av1Mms', { defaultValue: 'AV1/MMS' }), value: mseAv1Readout },
     { label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
     { label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
     { label: t('player.clientPath', { defaultValue: 'Client Path' }), value: effectiveClientPath || '-' },
@@ -1822,6 +1844,10 @@ export function usePlaybackOrchestrator(
     : [];
   const viewState: V3PlayerViewState = {
     channelName: channel?.name ?? null,
+    // Live: the real EPG programme title (null until/unless known — the view
+    // falls back to the channel name for the title line). Recording: its title.
+    programmeTitle: playbackMode === 'LIVE' ? liveNowPlaying.title : (channel?.name ?? null),
+    programmeDesc: playbackMode === 'LIVE' ? liveNowPlaying.desc : null,
     useOverlayLayout: Boolean(onClose),
     userIdle: isIdle,
     showCloseButton: Boolean(onClose),
@@ -1922,6 +1948,7 @@ export function usePlaybackOrchestrator(
     retry: handleRetry,
     seekBy,
     seekTo,
+    seekToLiveEdge,
     togglePlayPause,
     updateServiceRef: setSRef,
     submitServiceRef(nextValue) {
