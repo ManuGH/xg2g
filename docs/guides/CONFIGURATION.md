@@ -36,6 +36,22 @@ Live playback startup also requires `XG2G_DECISION_SECRET` in the process
 environment. This is the canonical environment variable for
 `api.playbackDecisionSecret` and is enforced during server wiring.
 
+## Observability (opt-in tracing)
+
+OpenTelemetry tracing is **off by default** and activates only when an OTLP
+endpoint is configured. The codebase is already instrumented (HTTP requests, the
+Enigma2/OpenWebIF client, the recordings decision path, background jobs); setting
+an endpoint exports those spans to your collector (Jaeger, Tempo, Grafana, …).
+These keys are read directly at startup and are not part of the generated
+registry table below.
+
+| Env | Default | Purpose |
+| --- | --- | --- |
+| `XG2G_OTEL_ENDPOINT` | (unset) | OTLP collector endpoint (e.g. `localhost:4317`). Unset = tracing disabled. |
+| `XG2G_OTEL_PROTOCOL` | `grpc` | OTLP exporter protocol: `grpc` or `http`. |
+| `XG2G_OTEL_SAMPLING` | `1.0` | Trace sampling rate, `0.0`–`1.0`. |
+| `XG2G_OTEL_ENVIRONMENT` | `production` | `deployment.environment` resource attribute. |
+
 <!-- BEGIN GENERATED CONFIG OPTIONS -->
 ## Registry Options (Generated)
 

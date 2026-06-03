@@ -141,7 +141,7 @@ such as `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`,
 | **Streaming** | Production | Universal Policy |
 | **FFmpeg** | Pinned (8.1.1) | Bundled in Docker image |
 
-Structured logs, Prometheus metrics, OpenTelemetry traces, fail-closed auth,
+Structured logs, Prometheus metrics, OpenTelemetry traces (opt-in), fail-closed auth,
 Docker health checks, and CI-backed release automation are built in.
 
 ## Documentation
