@@ -19,12 +19,12 @@ You need:
   If that fails, fix receiver reachability first — xg2g talks to it over
   OpenWebIF.
 - **`openssl`**, or any way to generate random secrets.
-- **Enough CPU for transcoding.** Watching in a browser usually means xg2g
-  transcodes to H.264/AAC, because broadcast sources are typically MPEG-2/HEVC
-  video with AC3/MP2 audio. That uses FFmpeg and real CPU. On x86 you can offload
-  video encoding to a GPU/iGPU (VAAPI/NVENC); arm64 is software-only and much
-  heavier. Plan for meaningful CPU (or a GPU encode session) per concurrent
-  stream.
+- **Enough CPU for transcoding.** xg2g always runs FFmpeg to package the
+  receiver's stream into HLS for the browser; when the source isn't browser-safe
+  (usually — MPEG-2/HEVC video or AC3/MP2 audio), it also transcodes to H.264/AAC,
+  which is the CPU-heavy part. On x86 you can offload video encoding to a GPU/iGPU
+  (VAAPI/NVENC); arm64 is software-only and much heavier. Plan for meaningful CPU
+  (or a GPU encode session) per concurrent stream.
 
 ## 1. Start xg2g
 

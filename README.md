@@ -46,7 +46,7 @@ It bridges Enigma2/OpenWebIF (including receiver relay ports like `8001` or `179
 Enigma2 / OpenWebIF
   -> receiver-resolved stream URL
   -> xg2g decision engine
-  -> HLS packaging or hardware transcode
+  -> ffmpeg: remux to HLS (transcode to H.264/AAC when needed)
   -> browser, phone, tablet, TV, or operator client
 ```
 
@@ -56,11 +56,13 @@ safe, the universal fallback is **H.264 + AAC**. AV1/fMP4 is allowed only when
 the browser runtime probe and device policy both prove that the client can
 decode it safely.
 
-Most broadcast channels are MPEG-2 or HEVC video with AC3/MP2 audio, while
-browsers (especially outside Safari) need H.264/AAC — so **watching in a browser
-usually means transcoding**, which costs real CPU. On x86 hosts xg2g can offload
-video encoding to a GPU/iGPU (VAAPI/NVENC); on arm64 it transcodes in software.
-Size your host for the number of concurrent streams you expect.
+**FFmpeg is the playback engine for every browser stream** — it remuxes the
+receiver's MPEG-TS into HLS, copying audio/video when they are already
+browser-safe. Most broadcast channels are not: MPEG-2/HEVC video or AC3/MP2
+audio, and non-Safari browsers need H.264/AAC — so **playback usually also
+transcodes**, which costs real CPU. On x86 hosts xg2g offloads video encoding to
+a GPU/iGPU (VAAPI/NVENC); on arm64 it transcodes in software. FFmpeg is bundled
+in the Docker image; size your host for the concurrent streams you expect.
 
 [Read the codec/container matrix](docs/arch/CODEC_MATRIX.md)
 
