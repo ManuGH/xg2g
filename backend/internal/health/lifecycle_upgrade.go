@@ -63,138 +63,7 @@ func evaluateLifecycleUpgradeAssessment(cfg config.AppConfig, opts LifecyclePref
 			Detail:   "re-run with --runtime-snapshot to compare the live deployment against the target release",
 		})
 	} else {
-		assessment.CurrentImage = strings.TrimSpace(opts.RuntimeSnapshot.Compose.Image)
-		assessment.TargetImage = strings.TrimSpace(opts.RuntimeSnapshot.Compose.RepoImage)
-		assessment.CurrentRelease = extractLifecycleRelease(assessment.CurrentImage)
-		assessment.TargetRelease = resolveLifecycleTargetRelease(opts, assessment.TargetImage, opts.RuntimeSnapshot.Build.Release)
-
-		switch {
-		case assessment.CurrentRelease == "":
-			add(LifecyclePreflightFinding{
-				Code:     "upgrade.current_release.unknown",
-				Severity: LifecyclePreflightSeverityBlock,
-				Contract: "upgrade_migration_contract",
-				Field:    "runtime.compose.image",
-				Summary:  "current runtime release could not be determined from the live compose image",
-				Detail:   assessment.CurrentImage,
-			})
-		case !semver.IsValid(assessment.CurrentRelease):
-			add(LifecyclePreflightFinding{
-				Code:     "upgrade.current_release.invalid",
-				Severity: LifecyclePreflightSeverityFatal,
-				Contract: "upgrade_migration_contract",
-				Field:    "runtime.compose.image",
-				Summary:  "current runtime release is not a valid semantic version",
-				Detail:   assessment.CurrentRelease,
-			})
-		}
-
-		switch {
-		case assessment.TargetRelease == "":
-			add(LifecyclePreflightFinding{
-				Code:     "upgrade.target_release.unknown",
-				Severity: LifecyclePreflightSeverityBlock,
-				Contract: "upgrade_migration_contract",
-				Field:    "targetRelease",
-				Summary:  "target release could not be determined",
-				Detail:   "provide --target-version or ensure the repo deploy bundle pins a tagged release image",
-			})
-		case !semver.IsValid(assessment.TargetRelease):
-			add(LifecyclePreflightFinding{
-				Code:     "upgrade.target_release.invalid",
-				Severity: LifecyclePreflightSeverityFatal,
-				Contract: "upgrade_migration_contract",
-				Field:    "targetRelease",
-				Summary:  "target release is not a valid semantic version",
-				Detail:   assessment.TargetRelease,
-			})
-		}
-
-		if assessment.TargetImage != "" {
-			targetImageRelease := extractLifecycleRelease(assessment.TargetImage)
-			if targetImageRelease != "" && assessment.TargetRelease != "" && targetImageRelease != assessment.TargetRelease {
-				add(LifecyclePreflightFinding{
-					Code:     "upgrade.target_release.repo_image_mismatch",
-					Severity: LifecyclePreflightSeverityBlock,
-					Contract: "upgrade_migration_contract",
-					Field:    "targetRelease",
-					Summary:  "target release does not match the repo deploy bundle image tag",
-					Detail:   fmt.Sprintf("target=%s repoImage=%s", assessment.TargetRelease, targetImageRelease),
-				})
-			}
-		}
-
-		if semver.IsValid(assessment.CurrentRelease) && semver.IsValid(assessment.TargetRelease) {
-			switch cmp := semver.Compare(assessment.CurrentRelease, assessment.TargetRelease); {
-			case cmp > 0:
-				add(LifecyclePreflightFinding{
-					Code:     "upgrade.release.downgrade_requested",
-					Severity: LifecyclePreflightSeverityBlock,
-					Contract: "upgrade_migration_contract",
-					Field:    "targetRelease",
-					Summary:  "upgrade target is older than the current runtime release",
-					Detail:   fmt.Sprintf("current=%s target=%s", assessment.CurrentRelease, assessment.TargetRelease),
-				})
-			case cmp == 0:
-				add(LifecyclePreflightFinding{
-					Code:     "upgrade.release.already_current",
-					Severity: LifecyclePreflightSeverityWarn,
-					Contract: "upgrade_migration_contract",
-					Field:    "targetRelease",
-					Summary:  "target release already matches the current runtime release",
-					Detail:   assessment.TargetRelease,
-				})
-			}
-		}
-
-		legacyEnvKeys := config.FindLegacyEnvKeys(presentKeysAsEnviron(opts.RuntimeSnapshot.Env.PresentKeys))
-		for _, key := range legacyEnvKeys {
-			assessment.DeprecatedSurfaces = append(assessment.DeprecatedSurfaces, "env:"+key)
-			add(LifecyclePreflightFinding{
-				Code:     "upgrade.runtime_env.legacy_key",
-				Severity: LifecyclePreflightSeverityBlock,
-				Contract: "upgrade_migration_contract",
-				Field:    "runtime.env",
-				Summary:  "runtime env file still uses a removed legacy key",
-				Detail:   key,
-			})
-		}
-		deprecatedRuntimeEnvKeys := configuredDeprecatedRuntimeEnvKeys(opts.RuntimeSnapshot.Env.PresentKeys)
-		for _, key := range deprecatedRuntimeEnvKeys {
-			assessment.DeprecatedSurfaces = append(assessment.DeprecatedSurfaces, "env:"+key)
-			add(LifecyclePreflightFinding{
-				Code:     "upgrade.runtime_env.deprecated_key",
-				Severity: LifecyclePreflightSeverityBlock,
-				Contract: "upgrade_migration_contract",
-				Field:    "runtime.env",
-				Summary:  "runtime env file still configures a deprecated key",
-				Detail:   key,
-			})
-		}
-
-		assessment.StateSchemas = assessLifecycleUpgradeSchemas(opts.RuntimeSnapshot.State.SQLiteSchemas)
-		for _, schema := range assessment.StateSchemas {
-			switch schema.Status {
-			case LifecycleUpgradeSchemaStatusMigrationRequired:
-				add(LifecyclePreflightFinding{
-					Code:     "upgrade.state_schema.migration_required",
-					Severity: LifecyclePreflightSeverityWarn,
-					Contract: "upgrade_migration_contract",
-					Field:    "state." + schema.ID,
-					Summary:  "state store will require migration on first start of the target release",
-					Detail:   fmt.Sprintf("%s: current=%d target=%d", schema.Path, derefInt(schema.CurrentUserVersion), derefInt(schema.ExpectedUserVersion)),
-				})
-			case LifecycleUpgradeSchemaStatusForwardIncompatible:
-				add(LifecyclePreflightFinding{
-					Code:     "upgrade.state_schema.forward_incompatible",
-					Severity: LifecyclePreflightSeverityBlock,
-					Contract: "upgrade_migration_contract",
-					Field:    "state." + schema.ID,
-					Summary:  "state store schema is newer than the target release supports",
-					Detail:   fmt.Sprintf("%s: current=%d target=%d", schema.Path, derefInt(schema.CurrentUserVersion), derefInt(schema.ExpectedUserVersion)),
-				})
-			}
-		}
+		evaluateLifecycleRuntimeUpgrade(assessment, opts, add)
 	}
 
 	if opts.FileConfig == nil {
@@ -209,8 +78,174 @@ func evaluateLifecycleUpgradeAssessment(cfg config.AppConfig, opts LifecyclePref
 		return assessment
 	}
 
-	assessment.FileConfigVersion = fileConfigVersion(*opts.FileConfig)
-	updated, changes, err := config.MigrateFileConfig(*opts.FileConfig, config.V3ConfigVersion)
+	evaluateLifecycleFileConfigUpgrade(assessment, *opts.FileConfig, add)
+	assessment.DeprecatedSurfaces = slices.Compact(assessment.DeprecatedSurfaces)
+	return assessment
+}
+
+// evaluateLifecycleRuntimeUpgrade performs the runtime-snapshot-backed portion of
+// the upgrade assessment: it populates the image/release fields on the assessment
+// and emits findings about release validity, repo image consistency, release
+// direction, deprecated env surfaces, and SQLite state-schema migrations.
+func evaluateLifecycleRuntimeUpgrade(assessment *LifecycleUpgradeAssessment, opts LifecyclePreflightOptions, add func(LifecyclePreflightFinding)) {
+	assessment.CurrentImage = strings.TrimSpace(opts.RuntimeSnapshot.Compose.Image)
+	assessment.TargetImage = strings.TrimSpace(opts.RuntimeSnapshot.Compose.RepoImage)
+	assessment.CurrentRelease = extractLifecycleRelease(assessment.CurrentImage)
+	assessment.TargetRelease = resolveLifecycleTargetRelease(opts, assessment.TargetImage, opts.RuntimeSnapshot.Build.Release)
+
+	evaluateLifecycleReleaseConsistency(assessment, add)
+	evaluateLifecycleRuntimeEnvSurfaces(assessment, opts.RuntimeSnapshot.Env.PresentKeys, add)
+	evaluateLifecycleStateSchemas(assessment, opts.RuntimeSnapshot.State.SQLiteSchemas, add)
+}
+
+// evaluateLifecycleReleaseConsistency validates the current and target releases
+// derived onto the assessment and emits findings for unknown/invalid versions,
+// repo image tag mismatches, and downgrade/already-current upgrade directions.
+func evaluateLifecycleReleaseConsistency(assessment *LifecycleUpgradeAssessment, add func(LifecyclePreflightFinding)) {
+	switch {
+	case assessment.CurrentRelease == "":
+		add(LifecyclePreflightFinding{
+			Code:     "upgrade.current_release.unknown",
+			Severity: LifecyclePreflightSeverityBlock,
+			Contract: "upgrade_migration_contract",
+			Field:    "runtime.compose.image",
+			Summary:  "current runtime release could not be determined from the live compose image",
+			Detail:   assessment.CurrentImage,
+		})
+	case !semver.IsValid(assessment.CurrentRelease):
+		add(LifecyclePreflightFinding{
+			Code:     "upgrade.current_release.invalid",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "upgrade_migration_contract",
+			Field:    "runtime.compose.image",
+			Summary:  "current runtime release is not a valid semantic version",
+			Detail:   assessment.CurrentRelease,
+		})
+	}
+
+	switch {
+	case assessment.TargetRelease == "":
+		add(LifecyclePreflightFinding{
+			Code:     "upgrade.target_release.unknown",
+			Severity: LifecyclePreflightSeverityBlock,
+			Contract: "upgrade_migration_contract",
+			Field:    "targetRelease",
+			Summary:  "target release could not be determined",
+			Detail:   "provide --target-version or ensure the repo deploy bundle pins a tagged release image",
+		})
+	case !semver.IsValid(assessment.TargetRelease):
+		add(LifecyclePreflightFinding{
+			Code:     "upgrade.target_release.invalid",
+			Severity: LifecyclePreflightSeverityFatal,
+			Contract: "upgrade_migration_contract",
+			Field:    "targetRelease",
+			Summary:  "target release is not a valid semantic version",
+			Detail:   assessment.TargetRelease,
+		})
+	}
+
+	if assessment.TargetImage != "" {
+		targetImageRelease := extractLifecycleRelease(assessment.TargetImage)
+		if targetImageRelease != "" && assessment.TargetRelease != "" && targetImageRelease != assessment.TargetRelease {
+			add(LifecyclePreflightFinding{
+				Code:     "upgrade.target_release.repo_image_mismatch",
+				Severity: LifecyclePreflightSeverityBlock,
+				Contract: "upgrade_migration_contract",
+				Field:    "targetRelease",
+				Summary:  "target release does not match the repo deploy bundle image tag",
+				Detail:   fmt.Sprintf("target=%s repoImage=%s", assessment.TargetRelease, targetImageRelease),
+			})
+		}
+	}
+
+	if semver.IsValid(assessment.CurrentRelease) && semver.IsValid(assessment.TargetRelease) {
+		switch cmp := semver.Compare(assessment.CurrentRelease, assessment.TargetRelease); {
+		case cmp > 0:
+			add(LifecyclePreflightFinding{
+				Code:     "upgrade.release.downgrade_requested",
+				Severity: LifecyclePreflightSeverityBlock,
+				Contract: "upgrade_migration_contract",
+				Field:    "targetRelease",
+				Summary:  "upgrade target is older than the current runtime release",
+				Detail:   fmt.Sprintf("current=%s target=%s", assessment.CurrentRelease, assessment.TargetRelease),
+			})
+		case cmp == 0:
+			add(LifecyclePreflightFinding{
+				Code:     "upgrade.release.already_current",
+				Severity: LifecyclePreflightSeverityWarn,
+				Contract: "upgrade_migration_contract",
+				Field:    "targetRelease",
+				Summary:  "target release already matches the current runtime release",
+				Detail:   assessment.TargetRelease,
+			})
+		}
+	}
+}
+
+// evaluateLifecycleRuntimeEnvSurfaces records deprecated/legacy runtime env keys
+// onto the assessment and emits a blocking finding for each.
+func evaluateLifecycleRuntimeEnvSurfaces(assessment *LifecycleUpgradeAssessment, presentKeys []string, add func(LifecyclePreflightFinding)) {
+	legacyEnvKeys := config.FindLegacyEnvKeys(presentKeysAsEnviron(presentKeys))
+	for _, key := range legacyEnvKeys {
+		assessment.DeprecatedSurfaces = append(assessment.DeprecatedSurfaces, "env:"+key)
+		add(LifecyclePreflightFinding{
+			Code:     "upgrade.runtime_env.legacy_key",
+			Severity: LifecyclePreflightSeverityBlock,
+			Contract: "upgrade_migration_contract",
+			Field:    "runtime.env",
+			Summary:  "runtime env file still uses a removed legacy key",
+			Detail:   key,
+		})
+	}
+	deprecatedRuntimeEnvKeys := configuredDeprecatedRuntimeEnvKeys(presentKeys)
+	for _, key := range deprecatedRuntimeEnvKeys {
+		assessment.DeprecatedSurfaces = append(assessment.DeprecatedSurfaces, "env:"+key)
+		add(LifecyclePreflightFinding{
+			Code:     "upgrade.runtime_env.deprecated_key",
+			Severity: LifecyclePreflightSeverityBlock,
+			Contract: "upgrade_migration_contract",
+			Field:    "runtime.env",
+			Summary:  "runtime env file still configures a deprecated key",
+			Detail:   key,
+		})
+	}
+}
+
+// evaluateLifecycleStateSchemas assesses the runtime SQLite schemas, stores the
+// result on the assessment, and emits findings for schemas that require migration
+// or are forward-incompatible with the target release.
+func evaluateLifecycleStateSchemas(assessment *LifecycleUpgradeAssessment, schemas []LifecycleRuntimeSQLiteSchema, add func(LifecyclePreflightFinding)) {
+	assessment.StateSchemas = assessLifecycleUpgradeSchemas(schemas)
+	for _, schema := range assessment.StateSchemas {
+		switch schema.Status {
+		case LifecycleUpgradeSchemaStatusMigrationRequired:
+			add(LifecyclePreflightFinding{
+				Code:     "upgrade.state_schema.migration_required",
+				Severity: LifecyclePreflightSeverityWarn,
+				Contract: "upgrade_migration_contract",
+				Field:    "state." + schema.ID,
+				Summary:  "state store will require migration on first start of the target release",
+				Detail:   fmt.Sprintf("%s: current=%d target=%d", schema.Path, derefInt(schema.CurrentUserVersion), derefInt(schema.ExpectedUserVersion)),
+			})
+		case LifecycleUpgradeSchemaStatusForwardIncompatible:
+			add(LifecyclePreflightFinding{
+				Code:     "upgrade.state_schema.forward_incompatible",
+				Severity: LifecyclePreflightSeverityBlock,
+				Contract: "upgrade_migration_contract",
+				Field:    "state." + schema.ID,
+				Summary:  "state store schema is newer than the target release supports",
+				Detail:   fmt.Sprintf("%s: current=%d target=%d", schema.Path, derefInt(schema.CurrentUserVersion), derefInt(schema.ExpectedUserVersion)),
+			})
+		}
+	}
+}
+
+// evaluateLifecycleFileConfigUpgrade performs the raw-file-config portion of the
+// upgrade assessment: it records the file config version, evaluates config
+// migration, and records deprecated YAML config paths, emitting findings for each.
+func evaluateLifecycleFileConfigUpgrade(assessment *LifecycleUpgradeAssessment, fileConfig config.FileConfig, add func(LifecyclePreflightFinding)) {
+	assessment.FileConfigVersion = fileConfigVersion(fileConfig)
+	updated, changes, err := config.MigrateFileConfig(fileConfig, config.V3ConfigVersion)
 	_ = updated
 	if err != nil {
 		add(LifecyclePreflightFinding{
@@ -233,7 +268,7 @@ func evaluateLifecycleUpgradeAssessment(cfg config.AppConfig, opts LifecyclePref
 		})
 	}
 
-	for _, path := range config.DeprecatedFileConfigPaths(*opts.FileConfig) {
+	for _, path := range config.DeprecatedFileConfigPaths(fileConfig) {
 		assessment.DeprecatedSurfaces = append(assessment.DeprecatedSurfaces, "file:"+path)
 		add(LifecyclePreflightFinding{
 			Code:     "upgrade.config.deprecated_path",
@@ -244,8 +279,6 @@ func evaluateLifecycleUpgradeAssessment(cfg config.AppConfig, opts LifecyclePref
 			Detail:   path,
 		})
 	}
-	assessment.DeprecatedSurfaces = slices.Compact(assessment.DeprecatedSurfaces)
-	return assessment
 }
 
 func resolveLifecycleTargetRelease(opts LifecyclePreflightOptions, targetImage, buildRelease string) string {
