@@ -4,14 +4,18 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg/capability"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/rs/zerolog"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +24,13 @@ type Detector struct {
 	BinPath     string
 	Logger      zerolog.Logger
 	VaapiDevice string
+	HLSRoot     string
+
+	pathCorrectnessChecked bool
+	pathProbeFn            func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
+	signalStatsYAvgFn      func(context.Context, string) (float64, error)
+	recordProcessDetail    func(ports.RunHandle, string)
+	terminateProcessGroup  func(*exec.Cmd, string)
 
 	vaapiEncoders            map[string]bool
 	vaapiEncoderCaps         map[string]hardware.VAAPIEncoderCapability
@@ -33,8 +44,8 @@ type Detector struct {
 	profileProbeFn           func(context.Context, profileProbeRequest) (time.Duration, error)
 }
 
-func newDetector(binPath string, logger zerolog.Logger, vaapiDevice string) *Detector {
-	return &Detector{BinPath: binPath, Logger: logger, VaapiDevice: vaapiDevice}
+func newDetector(binPath string, logger zerolog.Logger, vaapiDevice, hlsRoot string) *Detector {
+	return &Detector{BinPath: binPath, Logger: logger, VaapiDevice: vaapiDevice, HLSRoot: hlsRoot}
 }
 
 // PreflightVAAPI validates that the configured VAAPI device is functional.
@@ -494,4 +505,238 @@ func (d *Detector) preferredHardwareBackendForCodec(codec string) profiles.GPUBa
 		return profiles.GPUBackendNone
 	}
 	return bestBackend
+}
+
+// PreflightPathCorrectness validates a small set of host-specific media paths
+// whose encoder availability alone is not sufficient to trust output quality.
+func (d *Detector) PreflightPathCorrectness() {
+	if d.pathCorrectnessChecked {
+		return
+	}
+	d.pathCorrectnessChecked = true
+
+	capabilities := make(map[string]hardware.HardwarePathCapability)
+	for _, req := range []pathProbeRequest{
+		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
+		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
+		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
+	} {
+		if req.Backend != "vaapi" || !d.VaapiEncoderVerified(req.Encoder) {
+			continue
+		}
+		capability, err := d.testPathCorrectness(req)
+		if err != nil {
+			capability = hardware.HardwarePathCapability{
+				Status: hardware.PathStatusPreflightFailed,
+				Reason: err.Error(),
+			}
+			d.Logger.Warn().
+				Err(err).
+				Str("path_id", req.PathID).
+				Str("encoder", req.Encoder).
+				Msg("path correctness preflight failed")
+		} else {
+			d.Logger.Info().
+				Str("path_id", req.PathID).
+				Str("encoder", req.Encoder).
+				Str("status", capability.Status).
+				Str("reason", capability.Reason).
+				Msg("path correctness preflight result")
+		}
+		capabilities[req.PathID] = capability
+	}
+
+	hardware.SetPathCapabilities(capabilities)
+}
+
+func (d *Detector) testPathCorrectness(req pathProbeRequest) (hardware.HardwarePathCapability, error) {
+	if d.pathProbeFn != nil {
+		return d.pathProbeFn(context.Background(), req)
+	}
+	switch req.PathID {
+	case hardware.PathVAAPIFullInterlacedHEVC, hardware.PathVAAPIFullInterlacedAV1:
+		return d.testVAAPIInterlacedPathCorrectness(req.Encoder, true)
+	case hardware.PathVAAPIEncodeOnlyInterlacedHEVC, hardware.PathVAAPIEncodeOnlyInterlacedAV1:
+		return d.testVAAPIInterlacedPathCorrectness(req.Encoder, false)
+	default:
+		return hardware.HardwarePathCapability{}, fmt.Errorf("unsupported path correctness probe %q", req.PathID)
+	}
+}
+
+func (d *Detector) testVAAPIInterlacedPathCorrectness(encoder string, full bool) (hardware.HardwarePathCapability, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	tempDir, err := os.MkdirTemp("", "xg2g-path-correctness-*")
+	if err != nil {
+		return hardware.HardwarePathCapability{}, fmt.Errorf("mktemp path correctness probe: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	outPath := filepath.Join(tempDir, "probe.mkv")
+	filter := "format=nv12,setfield=tff,hwupload,deinterlace_vaapi"
+	if !full {
+		filter = vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder)
+	}
+	encodeArgs := []string{
+		"-y",
+		"-vaapi_device", d.VaapiDevice,
+		"-f", "lavfi",
+		"-i", "testsrc2=duration=0.4:size=1920x1080:rate=25",
+		"-vf", filter,
+		"-c:v", encoder,
+		"-frames:v", "5",
+		outPath,
+	}
+	if _, err := runProfileBenchmarkCommand(ctx, d.BinPath, encodeArgs); err != nil {
+		return hardware.HardwarePathCapability{}, fmt.Errorf("encode correctness probe failed: %w", err)
+	}
+
+	lumaYAvg, err := d.measureSignalStatsYAvg(ctx, outPath)
+	if err != nil {
+		if !full && normalizeRequestedCodec(encoder) == "av1" && isAV1SignalStatsDecodeUnavailable(err) && outputFileHasBytes(outPath) {
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic av1 encode verified; local signalstats decode unavailable",
+			}, nil
+		}
+		return hardware.HardwarePathCapability{}, fmt.Errorf("signalstats correctness probe failed: %w", err)
+	}
+	if lumaYAvg < 32 {
+		return hardware.HardwarePathCapability{
+			Status: hardware.PathStatusBrokenOutput,
+			Reason: fmt.Sprintf("synthetic yavg %.2f below threshold", lumaYAvg),
+		}, nil
+	}
+
+	return hardware.HardwarePathCapability{
+		Verified: true,
+		Status:   hardware.PathStatusVerified,
+		Reason:   fmt.Sprintf("synthetic yavg %.2f", lumaYAvg),
+	}, nil
+}
+
+func (d *Detector) measureSignalStatsYAvg(ctx context.Context, mediaPath string) (float64, error) {
+	if d.signalStatsYAvgFn != nil {
+		return d.signalStatsYAvgFn(ctx, mediaPath)
+	}
+	args := []string{
+		"-v", "info",
+		"-hwaccel", "none",
+		"-i", mediaPath,
+		"-vf", "signalstats,metadata=mode=print",
+		"-frames:v", "1",
+		"-f", "null", "-",
+	}
+	// #nosec G204 -- BinPath is trusted from config and mediaPath is a local temp path.
+	cmd := exec.CommandContext(ctx, d.BinPath, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("measure signalstats: %w (output: %s)", err, string(out))
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		const prefix = "lavfi.signalstats.YAVG="
+		idx := strings.Index(line, prefix)
+		if idx < 0 {
+			continue
+		}
+		value := strings.TrimSpace(line[idx+len(prefix):])
+		yavg, parseErr := strconv.ParseFloat(value, 64)
+		if parseErr != nil {
+			return 0, fmt.Errorf("parse signalstats yavg %q: %w", value, parseErr)
+		}
+		return yavg, nil
+	}
+	return 0, errors.New("lavfi.signalstats.YAVG not found")
+}
+
+func (d *Detector) observeRuntimePathCorrectness(ctx context.Context, handle ports.RunHandle, cmd *exec.Cmd, sessionID, pathID string) {
+	if strings.TrimSpace(pathID) == "" || !ports.IsSafeSessionID(sessionID) {
+		return
+	}
+
+	playlistPath := filepath.Join(ports.SessionHLSDir(d.HLSRoot, sessionID), "index.m3u8")
+	deadline := time.Now().Add(20 * time.Second)
+	minYAvg := envFloatBounded("XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG", defaultRuntimePathCorrectnessMinYAvg, 1.0, 64.0)
+	requiredLowObservations := envIntBounded("XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", defaultRuntimePathCorrectnessChecks, 1, 4)
+	lowObservations := 0
+
+	for time.Now().Before(deadline) {
+		if ctx.Err() != nil {
+			return
+		}
+
+		probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		yavg, err := d.measureSignalStatsYAvg(probeCtx, playlistPath)
+		cancel()
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+			}
+			continue
+		}
+
+		d.Logger.Info().
+			Str("session_id", sessionID).
+			Str("path_id", pathID).
+			Float64("yavg", yavg).
+			Msg("runtime path correctness observation")
+
+		if yavg < minYAvg {
+			lowObservations++
+			if lowObservations < requiredLowObservations {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(1 * time.Second):
+				}
+				continue
+			}
+
+			reason := fmt.Sprintf("runtime yavg %.2f below threshold %.2f", yavg, minYAvg)
+			d.updateRuntimePathCapability(pathID, hardware.HardwarePathCapability{
+				Status: hardware.PathStatusBrokenOutput,
+				Reason: reason,
+			})
+			if d.recordProcessDetail != nil {
+				d.recordProcessDetail(handle, "runtime path correctness failed - black output detected")
+			}
+			d.Logger.Error().
+				Str("session_id", sessionID).
+				Str("path_id", pathID).
+				Float64("yavg", yavg).
+				Float64("threshold", minYAvg).
+				Msg("runtime path correctness marked path as broken_output")
+			if d.terminateProcessGroup != nil {
+				d.terminateProcessGroup(cmd, sessionID)
+			}
+			return
+		}
+
+		reason := fmt.Sprintf("runtime yavg %.2f", yavg)
+		d.updateRuntimePathCapability(pathID, hardware.HardwarePathCapability{
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   reason,
+		})
+		d.Logger.Info().
+			Str("session_id", sessionID).
+			Str("path_id", pathID).
+			Float64("yavg", yavg).
+			Msg("runtime path correctness verified path")
+		return
+	}
+}
+
+func (d *Detector) updateRuntimePathCapability(pathID string, capability hardware.HardwarePathCapability) {
+	current := hardware.HardwarePathCapabilities()
+	if current == nil {
+		current = make(map[string]hardware.HardwarePathCapability)
+	}
+	current[pathID] = capability
+	hardware.SetPathCapabilities(current)
 }

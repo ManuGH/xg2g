@@ -127,7 +127,7 @@ func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
 		"hevc_vaapi": true,
 		"av1_vaapi":  true,
 	}
-	adapter.pathProbeFn = func(_ context.Context, req pathProbeRequest) (hardware.HardwarePathCapability, error) {
+	adapter.detector.pathProbeFn = func(_ context.Context, req pathProbeRequest) (hardware.HardwarePathCapability, error) {
 		switch req.PathID {
 		case hardware.PathVAAPIFullInterlacedHEVC:
 			return hardware.HardwarePathCapability{
