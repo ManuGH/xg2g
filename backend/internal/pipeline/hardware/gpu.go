@@ -33,8 +33,33 @@ const (
 	PathStatusPreflightFailed = "preflight_failed"
 )
 
+// EncoderVerdict is the three-state result of capability probing. The crucial
+// distinction is withheld vs unverifiable: "the hardware cannot produce good
+// output" is a different fleet fact from "we could not check the output", and
+// fleet visibility (B3) depends on telling them apart.
+type EncoderVerdict string
+
+const (
+	// VerdictVerified: encoded output decoded to a complete, non-black, non-flat
+	// frame sequence. Safe to admit.
+	VerdictVerified EncoderVerdict = "verified"
+	// VerdictWithheld: the encoder ran but the output is bad (encode failed, or
+	// the decode-verify found partial/black/flat output, or decode failed while a
+	// software decoder WAS present). Do not admit.
+	VerdictWithheld EncoderVerdict = "withheld"
+	// VerdictUnverifiable: no software decoder was available to validate the
+	// output, so correctness could not be established. Fail-closed: do not admit,
+	// but record this as distinct from a proven-bad encoder.
+	VerdictUnverifiable EncoderVerdict = "unverifiable"
+)
+
 type HardwareEncoderCapability struct {
+	// Verified stays true iff Verdict == VerdictVerified, so existing admission
+	// (IsHardwareEncoderReady -> cap.Verified) keeps working unchanged and
+	// fail-closed for withheld/unverifiable.
 	Verified     bool
+	Verdict      EncoderVerdict
+	Reason       string
 	ProbeElapsed time.Duration
 	AutoEligible bool
 }
