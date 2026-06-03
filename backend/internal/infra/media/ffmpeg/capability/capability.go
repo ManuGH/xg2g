@@ -41,14 +41,18 @@ func DeriveHardwareEncoderCapabilities(samples map[string]time.Duration, hevcRat
 	}
 
 	for encoder, elapsed := range samples {
+		if elapsed <= 0 {
+			continue
+		}
+		normEncoder := strings.ToLower(strings.TrimSpace(encoder))
 		cap := hardware.HardwareEncoderCapability{
 			Verified:     true,
 			ProbeElapsed: elapsed,
-			AutoEligible: strings.HasPrefix(encoder, "h264_"),
+			AutoEligible: strings.HasPrefix(normEncoder, "h264_"),
 		}
 		if !cap.AutoEligible {
 			ratio := float64(elapsed) / float64(baseline)
-			switch encoder {
+			switch normEncoder {
 			case "hevc_vaapi", "hevc_nvenc":
 				cap.AutoEligible = ratio <= hevcRatioMax
 			case "av1_vaapi", "av1_nvenc":
@@ -57,7 +61,7 @@ func DeriveHardwareEncoderCapabilities(samples map[string]time.Duration, hevcRat
 				cap.AutoEligible = true
 			}
 		}
-		caps[encoder] = cap
+		caps[normEncoder] = cap
 	}
 
 	return caps
@@ -65,8 +69,10 @@ func DeriveHardwareEncoderCapabilities(samples map[string]time.Duration, hevcRat
 
 func SelectHardwareAutoBaseline(samples map[string]time.Duration) (time.Duration, bool) {
 	for _, key := range []string{"h264_vaapi", "h264_nvenc"} {
-		if elapsed, ok := samples[key]; ok && elapsed > 0 {
-			return elapsed, true
+		for enc, elapsed := range samples {
+			if strings.ToLower(strings.TrimSpace(enc)) == key && elapsed > 0 {
+				return elapsed, true
+			}
 		}
 	}
 	var baseline time.Duration
