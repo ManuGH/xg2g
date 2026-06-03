@@ -421,7 +421,7 @@ func logConfigFingerprint(logger zerolog.Logger, cfg config.AppConfig) {
 	canonicalCfg := config.Clone(cfg)
 	canonicalCfg.Monetization = canonicalCfg.Monetization.Normalized()
 
-	configBytes, marshalErr := json.Marshal(canonicalCfg)
+	configBytes, marshalErr := json.Marshal(canonicalCfg) // #nosec G117 -- marshaled only to compute a sha256 fingerprint; bytes (incl. APIToken) are hashed, never logged or persisted
 	if marshalErr != nil {
 		return
 	}

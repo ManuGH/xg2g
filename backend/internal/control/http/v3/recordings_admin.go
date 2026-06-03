@@ -388,7 +388,7 @@ func updateRecordingMetaTitle(localPath, title string) error {
 	}
 
 	tmpPath := metaPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(updated), mode); err != nil {
+	if err := os.WriteFile(tmpPath, []byte(updated), mode); err != nil { // #nosec G703 -- tmpPath derives from resolver-confined localPath (same path justified for G304 above)
 		return fmt.Errorf("write recording meta: %w", err)
 	}
 	if err := os.Rename(tmpPath, metaPath); err != nil {

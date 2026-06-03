@@ -210,7 +210,7 @@ func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, toke
 	if maxAge <= 0 {
 		maxAge = sessionCookieMaxAgeSeconds
 	}
-	setServerCookie(w, &http.Cookie{
+	setServerCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly+SameSite=Lax set; Secure=effectiveHTTPS is request-derived, opaque to gosec
 		Name:     sessionCookieName,
 		Value:    sessionID,
 		Path:     "/api/v3/",
