@@ -105,21 +105,8 @@ func (s *SqliteStore) Delete(ctx context.Context, principalID, scope, source str
 }
 
 func (s *SqliteStore) migrate() error {
-	var currentVersion int
-	if err := s.DB.QueryRow(`PRAGMA user_version`).Scan(&currentVersion); err != nil {
-		return err
-	}
-	if currentVersion >= sqliteSchemaVersion {
-		return nil
-	}
-
-	tx, err := s.DB.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err := tx.Exec(`
+	return sqlitepkg.RunMigration(s.DB, sqliteSchemaVersion, func(tx *sql.Tx, currentVersion int) error {
+		if _, err := tx.Exec(`
 		CREATE TABLE IF NOT EXISTS entitlements (
 			principal_id TEXT NOT NULL,
 			scope TEXT NOT NULL,
@@ -132,19 +119,16 @@ func (s *SqliteStore) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_entitlements_principal ON entitlements(principal_id, scope);
 		CREATE INDEX IF NOT EXISTS idx_entitlements_expires ON entitlements(expires_at_ms);
 	`); err != nil {
-		return err
-	}
-
-	if currentVersion < sqliteSchemaVersion {
-		if err := normalizeEntitlementsTable(tx); err != nil {
 			return err
 		}
-	}
 
-	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, sqliteSchemaVersion)); err != nil {
-		return err
-	}
-	return tx.Commit()
+		if currentVersion < sqliteSchemaVersion {
+			if err := normalizeEntitlementsTable(tx); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // normalizeEntitlementsTable rewrites legacy rows into canonical storage form.

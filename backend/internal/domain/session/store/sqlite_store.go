@@ -45,30 +45,15 @@ func (s *SqliteStore) Close() error {
 }
 
 func (s *SqliteStore) migrate() error {
-	var currentVersion int
-	err := s.DB.QueryRow("PRAGMA user_version").Scan(&currentVersion)
-	if err != nil {
-		return err
-	}
+	return sqlite.RunMigration(s.DB, schemaVersion, func(tx *sql.Tx, currentVersion int) error {
+		// Drop existing if version mismatch (it's shadow impl, so we can be destructive during dev)
+		if currentVersion > 0 && currentVersion < 2 {
+			_, _ = tx.Exec("DROP TABLE IF EXISTS sessions")
+			_, _ = tx.Exec("DROP TABLE IF EXISTS idempotency")
+			_, _ = tx.Exec("DROP TABLE IF EXISTS leases")
+		}
 
-	if currentVersion >= schemaVersion {
-		return nil
-	}
-
-	tx, err := s.DB.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Drop existing if version mismatch (it's shadow impl, so we can be destructive during dev)
-	if currentVersion > 0 && currentVersion < 2 {
-		_, _ = tx.Exec("DROP TABLE IF EXISTS sessions")
-		_, _ = tx.Exec("DROP TABLE IF EXISTS idempotency")
-		_, _ = tx.Exec("DROP TABLE IF EXISTS leases")
-	}
-
-	schema := `
+		schema := `
 	CREATE TABLE IF NOT EXISTS sessions (
 		session_id TEXT PRIMARY KEY,
 		service_ref TEXT NOT NULL,
@@ -124,23 +109,19 @@ func (s *SqliteStore) migrate() error {
 	);
 	`
 
-	if _, err := tx.Exec(schema); err != nil {
-		return err
-	}
+		if _, err := tx.Exec(schema); err != nil {
+			return err
+		}
 
-	if currentVersion < 4 {
-		_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_code TEXT")
-		_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_debug TEXT")
-	}
-	if currentVersion < 5 {
-		_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN playback_trace_json TEXT")
-	}
-
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+		if currentVersion < 4 {
+			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_code TEXT")
+			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_debug TEXT")
+		}
+		if currentVersion < 5 {
+			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN playback_trace_json TEXT")
+		}
+		return nil
+	})
 }
 
 // --- Session CRUD ---
