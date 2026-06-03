@@ -113,11 +113,16 @@ func (s *SqliteStore) migrate() error {
 			return err
 		}
 
-		if currentVersion > 0 && currentVersion < 4 {
+		// Keep these unguarded by currentVersion>0 to handle legacy databases with
+		// user_version=0 but an existing sessions table missing v4/v5 columns.
+		// CREATE TABLE IF NOT EXISTS above is a no-op when the table exists, so the
+		// ALTER TABLE is needed to upgrade the legacy schema. On a fresh database
+		// the ALTER TABLE is a harmless no-op (error is silently discarded with _,_).
+		if currentVersion < 4 {
 			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_code TEXT")
 			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_debug TEXT")
 		}
-		if currentVersion > 0 && currentVersion < 5 {
+		if currentVersion < 5 {
 			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN playback_trace_json TEXT")
 		}
 		return nil
