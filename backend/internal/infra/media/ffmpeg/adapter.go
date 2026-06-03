@@ -114,17 +114,8 @@ type LocalAdapter struct {
 	SkipFPSProbeOnCache       bool
 	SkipFPSProbeWarmup        time.Duration
 	SafariRuntimeProbeTimeout time.Duration
-	VaapiDevice               string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
-	vaapiEncoders             map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
-	vaapiEncoderCaps          map[string]hardware.VAAPIEncoderCapability
-	vaapiDeviceChecked        bool            // device-level preflight ran
-	vaapiDeviceErr            error           // device-level preflight error
-	nvencEncoders             map[string]bool // per-encoder preflight results ("h264_nvenc" -> true)
-	nvencEncoderCaps          map[string]hardware.NVENCEncoderCapability
-	nvencChecked              bool
-	nvencErr                  error
-	profileBenchmarksChecked  bool
-	profileProbeFn            func(context.Context, profileProbeRequest) (time.Duration, error)
+	VaapiDevice               string // e.g. "/dev/dri/renderD128"; empty = no VAAPI
+	detector                  *Detector
 	pathCorrectnessChecked    bool
 	pathProbeFn               func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
 	signalStatsYAvgFn         func(context.Context, string) (float64, error)
@@ -303,6 +294,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		SkipFPSProbeWarmup:        skipFPSProbeWarmup,
 		SafariRuntimeProbeTimeout: time.Duration(safariRuntimeProbeTimeoutMs) * time.Millisecond,
 		VaapiDevice:               strings.TrimSpace(vaapiDevice),
+		detector:                  newDetector(binPath, logger, strings.TrimSpace(vaapiDevice)),
 		lastKnownFPS:              make(map[string]fpsCacheEntry),
 		FPSCacheTTL:               fpsCacheTTL,
 		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
@@ -311,213 +303,6 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		runtimeDiagnostics:        make(map[ports.RunHandle]ports.RuntimeDiagnostics),
 		processDetails:            make(map[ports.RunHandle]string),
 		completedProcessDetails:   make(map[ports.RunHandle]string),
-	}
-}
-
-// PreflightVAAPI validates that the configured VAAPI device is functional.
-// Tests each available encoder (h264_vaapi, hevc_vaapi) independently.
-// Results are cached per-encoder: buildArgs checks the specific encoder.
-func (a *LocalAdapter) PreflightVAAPI() error {
-	if a.VaapiDevice == "" {
-		return nil
-	}
-	if a.vaapiDeviceChecked {
-		return a.vaapiDeviceErr
-	}
-
-	a.vaapiEncoders = make(map[string]bool)
-	a.vaapiEncoderCaps = make(map[string]hardware.VAAPIEncoderCapability)
-	a.vaapiDeviceChecked = true
-
-	a.Logger.Info().Str("device", a.VaapiDevice).Msg("vaapi preflight: starting")
-
-	// 1. Device accessible
-	if _, err := os.Stat(a.VaapiDevice); err != nil {
-		a.vaapiDeviceErr = fmt.Errorf("vaapi device not accessible: %w", err)
-		a.Logger.Error().Err(a.vaapiDeviceErr).Str("device", a.VaapiDevice).Msg("vaapi preflight: device stat failed")
-		hardware.SetVAAPIEncoderCapabilities(nil)
-		hardware.SetVAAPIPreflightResult(false)
-		return a.vaapiDeviceErr
-	}
-
-	// 2. Enumerate available VAAPI encoders
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	// #nosec G204 -- BinPath is trusted from config
-	checkCmd := exec.CommandContext(ctx, a.BinPath, "-hide_banner", "-encoders")
-	checkOut, err := checkCmd.Output()
-	if err != nil {
-		a.vaapiDeviceErr = fmt.Errorf("vaapi preflight: ffmpeg -encoders failed: %w", err)
-		a.Logger.Error().Err(a.vaapiDeviceErr).Msg("vaapi preflight: encoder check failed")
-		hardware.SetVAAPIEncoderCapabilities(nil)
-		hardware.SetVAAPIPreflightResult(false)
-		return a.vaapiDeviceErr
-	}
-	encoderList := string(checkOut)
-
-	// 3. Test each encoder with a real 5-frame encode
-	verifiedElapsed := make(map[string]time.Duration, len(vaapiEncodersToTest))
-	for _, enc := range vaapiEncodersToTest {
-		if !strings.Contains(encoderList, enc) {
-			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
-			continue
-		}
-		elapsed, err := a.testVaapiEncoder(enc)
-		if err != nil {
-			a.Logger.Warn().Err(err).Str("encoder", enc).Msg("vaapi preflight: encoder test failed")
-		} else {
-			a.vaapiEncoders[enc] = true
-			verifiedElapsed[enc] = elapsed
-			a.Logger.Info().
-				Str("encoder", enc).
-				Dur("probe_elapsed", elapsed).
-				Msg("vaapi preflight: encoder verified")
-		}
-	}
-
-	if len(a.vaapiEncoders) == 0 {
-		a.vaapiDeviceErr = fmt.Errorf("vaapi preflight: no working VAAPI encoders found")
-		a.Logger.Error().Err(a.vaapiDeviceErr).Msg("vaapi preflight: failed")
-		hardware.SetVAAPIEncoderCapabilities(nil)
-		hardware.SetVAAPIPreflightResult(false)
-		return a.vaapiDeviceErr
-	}
-
-	a.vaapiEncoderCaps = capability.DeriveVAAPIEncoderCapabilities(
-		verifiedElapsed,
-		envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", capability.DefaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
-		envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", capability.DefaultAV1VAAPIAutoRatioMax, 1.0, 10.0),
-	)
-	for _, enc := range vaapiEncodersToTest {
-		cap, ok := a.vaapiEncoderCaps[enc]
-		if !ok || !cap.Verified {
-			continue
-		}
-		a.Logger.Info().
-			Str("encoder", enc).
-			Dur("probe_elapsed", cap.ProbeElapsed).
-			Bool("auto_eligible", cap.AutoEligible).
-			Msg("vaapi preflight: encoder capability")
-	}
-
-	// Publish per-encoder results for higher layers (HTTP/profile selection).
-	hardware.SetVAAPIEncoderCapabilities(a.vaapiEncoderCaps)
-
-	hardware.SetVAAPIPreflightResult(true)
-	a.Logger.Info().
-		Str("device", a.VaapiDevice).
-		Int("verified_encoders", len(a.vaapiEncoders)).
-		Msg("vaapi preflight: passed")
-	return nil
-}
-
-// PreflightNVENC validates that the visible NVIDIA runtime can execute real NVENC encodes.
-func (a *LocalAdapter) PreflightNVENC() error {
-	if !hardware.HasNVENC() {
-		return nil
-	}
-	if a.nvencChecked {
-		return a.nvencErr
-	}
-
-	a.nvencEncoders = make(map[string]bool)
-	a.nvencEncoderCaps = make(map[string]hardware.NVENCEncoderCapability)
-	a.nvencChecked = true
-
-	a.Logger.Info().Msg("nvenc preflight: starting")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	// #nosec G204 -- BinPath is trusted from config
-	checkCmd := exec.CommandContext(ctx, a.BinPath, "-hide_banner", "-encoders")
-	checkOut, err := checkCmd.Output()
-	if err != nil {
-		a.nvencErr = fmt.Errorf("nvenc preflight: ffmpeg -encoders failed: %w", err)
-		a.Logger.Error().Err(a.nvencErr).Msg("nvenc preflight: encoder check failed")
-		hardware.SetNVENCEncoderCapabilities(nil)
-		hardware.SetNVENCPreflightResult(false)
-		return a.nvencErr
-	}
-	encoderList := string(checkOut)
-
-	verifiedElapsed := make(map[string]time.Duration, len(nvencEncodersToTest))
-	for _, enc := range nvencEncodersToTest {
-		if !strings.Contains(encoderList, enc) {
-			a.Logger.Info().Str("encoder", enc).Msg("nvenc preflight: encoder not in ffmpeg build, skipping")
-			continue
-		}
-		elapsed, err := a.testNVENCEncoder(enc)
-		if err != nil {
-			a.Logger.Warn().Err(err).Str("encoder", enc).Msg("nvenc preflight: encoder test failed")
-		} else {
-			a.nvencEncoders[enc] = true
-			verifiedElapsed[enc] = elapsed
-			a.Logger.Info().
-				Str("encoder", enc).
-				Dur("probe_elapsed", elapsed).
-				Msg("nvenc preflight: encoder verified")
-		}
-	}
-
-	if len(a.nvencEncoders) == 0 {
-		a.nvencErr = fmt.Errorf("nvenc preflight: no working NVENC encoders found")
-		a.Logger.Error().Err(a.nvencErr).Msg("nvenc preflight: failed")
-		hardware.SetNVENCEncoderCapabilities(nil)
-		hardware.SetNVENCPreflightResult(false)
-		return a.nvencErr
-	}
-
-	a.nvencEncoderCaps = capability.DeriveNVENCEncoderCapabilities(
-		verifiedElapsed,
-		envFloatBounded("XG2G_HEVC_NVENC_AUTO_RATIO_MAX", capability.DefaultHEVCNVENCAutoRatioMax, 1.0, 10.0),
-		envFloatBounded("XG2G_AV1_NVENC_AUTO_RATIO_MAX", capability.DefaultAV1NVENCAutoRatioMax, 1.0, 10.0),
-	)
-	for _, enc := range nvencEncodersToTest {
-		cap, ok := a.nvencEncoderCaps[enc]
-		if !ok || !cap.Verified {
-			continue
-		}
-		a.Logger.Info().
-			Str("encoder", enc).
-			Dur("probe_elapsed", cap.ProbeElapsed).
-			Bool("auto_eligible", cap.AutoEligible).
-			Msg("nvenc preflight: encoder capability")
-	}
-
-	hardware.SetNVENCEncoderCapabilities(a.nvencEncoderCaps)
-	hardware.SetNVENCPreflightResult(true)
-	a.Logger.Info().
-		Int("verified_encoders", len(a.nvencEncoders)).
-		Msg("nvenc preflight: passed")
-	return nil
-}
-
-// PreflightTranscodeProfiles measures a small set of synthetic startup probes
-// so host decisions can distinguish between audio-only, progressive, deinterlaced,
-// and UHD realtime paths.
-func (a *LocalAdapter) PreflightTranscodeProfiles() {
-	if a.profileBenchmarksChecked {
-		return
-	}
-	a.profileBenchmarksChecked = true
-
-	a.Logger.Info().Msg("transcode profile preflight: starting")
-
-	cpuSamples := a.measureProfileBenchmarks("cpu", "libx264")
-	hardware.SetCPUProfileBenchmarks(capability.DeriveProfileCapabilities(cpuSamples))
-
-	if a.VaapiEncoderVerified("h264_vaapi") {
-		vaapiSamples := a.measureProfileBenchmarks("vaapi", "h264_vaapi")
-		hardware.SetVAAPIProfileBenchmarks(capability.DeriveProfileCapabilities(vaapiSamples))
-	} else {
-		hardware.SetVAAPIProfileBenchmarks(nil)
-	}
-
-	if a.NVENCEncoderVerified("h264_nvenc") {
-		nvencSamples := a.measureProfileBenchmarks("nvenc", "h264_nvenc")
-		hardware.SetNVENCProfileBenchmarks(capability.DeriveProfileCapabilities(nvencSamples))
-	} else {
-		hardware.SetNVENCProfileBenchmarks(nil)
 	}
 }
 
@@ -535,7 +320,7 @@ func (a *LocalAdapter) PreflightPathCorrectness() {
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 	} {
-		if req.Backend != "vaapi" || !a.VaapiEncoderVerified(req.Encoder) {
+		if req.Backend != "vaapi" || !a.detector.VaapiEncoderVerified(req.Encoder) {
 			continue
 		}
 		capability, err := a.testPathCorrectness(req)
@@ -561,98 +346,6 @@ func (a *LocalAdapter) PreflightPathCorrectness() {
 	}
 
 	hardware.SetPathCapabilities(capabilities)
-}
-
-// testVaapiEncoder runs a real 5-frame encode test for a specific VAAPI encoder.
-func (a *LocalAdapter) testVaapiEncoder(encoder string) (time.Duration, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	start := time.Now()
-	// #nosec G204 -- BinPath and VaapiDevice are trusted from config
-	cmd := exec.CommandContext(ctx, a.BinPath,
-		"-vaapi_device", a.VaapiDevice,
-		"-f", "lavfi",
-		"-i", "testsrc=duration=0.2:size=1280x720:rate=25",
-		"-vf", "format=nv12,hwupload",
-		"-c:v", encoder,
-		"-frames:v", "5",
-		"-f", "null", "-",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
-	}
-	return time.Since(start), nil
-}
-
-func (a *LocalAdapter) testNVENCEncoder(encoder string) (time.Duration, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	start := time.Now()
-	// #nosec G204 -- BinPath is trusted from config
-	cmd := exec.CommandContext(ctx, a.BinPath,
-		"-f", "lavfi",
-		"-i", "testsrc=duration=0.2:size=1280x720:rate=25",
-		"-c:v", encoder,
-		"-frames:v", "5",
-		"-f", "null", "-",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
-	}
-	return time.Since(start), nil
-}
-
-func (a *LocalAdapter) measureProfileBenchmarks(backend, encoder string) map[string]time.Duration {
-	profilesToBenchmark := profileBenchmarksForBackend(backend)
-	samples := make(map[string]time.Duration, len(profilesToBenchmark))
-	for _, profileID := range profilesToBenchmark {
-		elapsed, err := a.testProfileBenchmark(backend, encoder, profileID)
-		if err != nil {
-			a.Logger.Warn().
-				Err(err).
-				Str("backend", backend).
-				Str("encoder", encoder).
-				Str("profile_benchmark", profileID).
-				Msg("transcode profile preflight: synthetic profile probe failed")
-			continue
-		}
-		samples[profileID] = elapsed
-		a.Logger.Info().
-			Str("backend", backend).
-			Str("encoder", encoder).
-			Str("profile_benchmark", profileID).
-			Dur("probe_elapsed", elapsed).
-			Msg("transcode profile preflight: synthetic profile probe verified")
-	}
-	return samples
-}
-
-func (a *LocalAdapter) testProfileBenchmark(backend, encoder, profileID string) (time.Duration, error) {
-	req := profileProbeRequest{
-		ProfileID: profileID,
-		Backend:   backend,
-		Encoder:   encoder,
-	}
-	if a.profileProbeFn != nil {
-		return a.profileProbeFn(context.Background(), req)
-	}
-
-	if profileID == playbackports.BenchmarkProfileAudioAACStereo {
-		return a.testAudioAACProfile()
-	}
-
-	switch backend {
-	case "cpu":
-		return a.testCPUH264Profile(profileID, encoder)
-	case "vaapi":
-		return a.testVAAPIH264Profile(profileID, encoder)
-	case "nvenc":
-		return a.testNVENCH264Profile(profileID, encoder)
-	default:
-		return 0, fmt.Errorf("unsupported benchmark backend %q", backend)
-	}
 }
 
 func (a *LocalAdapter) testPathCorrectness(req pathProbeRequest) (hardware.HardwarePathCapability, error) {
@@ -684,64 +377,6 @@ func profileBenchmarksForBackend(backend string) []string {
 	default:
 		return nil
 	}
-}
-
-func (a *LocalAdapter) testAudioAACProfile() (time.Duration, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-
-	args := []string{
-		"-f", "lavfi",
-		"-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-		"-t", "0.2",
-		"-vn",
-		"-c:a", "aac",
-		"-b:a", "256k",
-		"-ac", "2",
-		"-ar", "48000",
-		"-f", "null", "-",
-	}
-	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
-}
-
-func (a *LocalAdapter) testCPUH264Profile(profileID, encoder string) (time.Duration, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
-	defer cancel()
-
-	args := []string{
-		"-f", "lavfi",
-		"-i", profileBenchmarkInput(profileID),
-	}
-	if filter := cpuProfileBenchmarkFilter(profileID); filter != "" {
-		args = append(args, "-vf", filter)
-	}
-	args = append(args,
-		"-c:v", encoder,
-		"-preset", "veryfast",
-		"-frames:v", "5",
-		"-f", "null", "-",
-	)
-	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
-}
-
-func (a *LocalAdapter) testVAAPIH264Profile(profileID, encoder string) (time.Duration, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
-	defer cancel()
-
-	filter, err := vaapiProfileBenchmarkFilter(profileID)
-	if err != nil {
-		return 0, err
-	}
-	args := []string{
-		"-vaapi_device", a.VaapiDevice,
-		"-f", "lavfi",
-		"-i", profileBenchmarkInput(profileID),
-		"-vf", filter,
-		"-c:v", encoder,
-		"-frames:v", "5",
-		"-f", "null", "-",
-	}
-	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
 }
 
 func (a *LocalAdapter) testVAAPIInterlacedPathCorrectness(encoder string, full bool) (hardware.HardwarePathCapability, error) {
@@ -822,25 +457,6 @@ func isAV1SignalStatsDecodeUnavailable(err error) bool {
 func outputFileHasBytes(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Size() > 0
-}
-
-func (a *LocalAdapter) testNVENCH264Profile(profileID, encoder string) (time.Duration, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), profileBenchmarkTimeout(profileID))
-	defer cancel()
-
-	args := []string{
-		"-f", "lavfi",
-		"-i", profileBenchmarkInput(profileID),
-	}
-	if filter := nvencProfileBenchmarkFilter(profileID); filter != "" {
-		args = append(args, "-vf", filter)
-	}
-	args = append(args,
-		"-c:v", encoder,
-		"-frames:v", "5",
-		"-f", "null", "-",
-	)
-	return runProfileBenchmarkCommand(ctx, a.BinPath, args)
 }
 
 func cpuProfileBenchmarkFilter(profileID string) string {
@@ -1027,93 +643,10 @@ func runProfileBenchmarkCommand(ctx context.Context, binPath string, args []stri
 	return time.Since(start), nil
 }
 
-// VaapiEncoderVerified returns true if the given encoder passed preflight.
-func (a *LocalAdapter) VaapiEncoderVerified(encoder string) bool {
-	return a.vaapiEncoders[encoder]
-}
-
-// VaapiEncoderAutoEligible returns true if the encoder is verified and suitable
-// for generic automatic codec selection on this host.
-func (a *LocalAdapter) VaapiEncoderAutoEligible(encoder string) bool {
-	cap, ok := a.vaapiEncoderCaps[encoder]
-	return ok && cap.Verified && cap.AutoEligible
-}
-
-func (a *LocalAdapter) NVENCEncoderVerified(encoder string) bool {
-	return a.nvencEncoders[encoder]
-}
-
-func (a *LocalAdapter) NVENCEncoderAutoEligible(encoder string) bool {
-	cap, ok := a.nvencEncoderCaps[encoder]
-	return ok && cap.Verified && cap.AutoEligible
-}
-
-func (a *LocalAdapter) hardwareEncoderVerified(backend profiles.GPUBackend, encoder string) bool {
-	switch backend {
-	case profiles.GPUBackendVAAPI:
-		return a.VaapiEncoderVerified(encoder)
-	case profiles.GPUBackendNVENC:
-		return a.NVENCEncoderVerified(encoder)
-	default:
-		return false
-	}
-}
-
-func (a *LocalAdapter) hardwareEncoderAutoEligible(backend profiles.GPUBackend, encoder string) bool {
-	switch backend {
-	case profiles.GPUBackendVAAPI:
-		return a.VaapiEncoderAutoEligible(encoder)
-	case profiles.GPUBackendNVENC:
-		return a.NVENCEncoderAutoEligible(encoder)
-	default:
-		return false
-	}
-}
-
-func (a *LocalAdapter) hardwareEncoderCapability(backend profiles.GPUBackend, encoder string) (hardware.HardwareEncoderCapability, bool) {
-	switch backend {
-	case profiles.GPUBackendVAAPI:
-		cap, ok := a.vaapiEncoderCaps[encoder]
-		return cap, ok
-	case profiles.GPUBackendNVENC:
-		cap, ok := a.nvencEncoderCaps[encoder]
-		return cap, ok
-	default:
-		return hardware.HardwareEncoderCapability{}, false
-	}
-}
-
-func (a *LocalAdapter) preferredHardwareBackendForCodec(codec string) profiles.GPUBackend {
-	var (
-		bestBackend profiles.GPUBackend
-		bestCap     hardware.HardwareEncoderCapability
-		ok          bool
-	)
-	for _, backend := range []profiles.GPUBackend{profiles.GPUBackendVAAPI, profiles.GPUBackendNVENC} {
-		encoder, exists := capability.EncoderNameForBackend(codec, backend)
-		if !exists || !a.hardwareEncoderVerified(backend, encoder) {
-			continue
-		}
-		cap, exists := a.hardwareEncoderCapability(backend, encoder)
-		if !exists {
-			cap = hardware.HardwareEncoderCapability{Verified: true}
-		}
-		if !ok || capability.BetterLocalHardwareCapability(backend, cap, bestBackend, bestCap) {
-			bestBackend = backend
-			bestCap = cap
-			ok = true
-		}
-	}
-	if !ok {
-		return profiles.GPUBackendNone
-	}
-	return bestBackend
-}
-
 func (a *LocalAdapter) supportedHWCodecsLocal() []string {
 	codecs := make([]string, 0, 3)
 	for _, codec := range []string{"h264", "hevc", "av1"} {
-		if a.preferredHardwareBackendForCodec(codec) != profiles.GPUBackendNone {
+		if a.detector.preferredHardwareBackendForCodec(codec) != profiles.GPUBackendNone {
 			codecs = append(codecs, codec)
 		}
 	}
@@ -1128,7 +661,7 @@ func (a *LocalAdapter) autoHWCodecsLocal() []string {
 			if !ok {
 				continue
 			}
-			if a.hardwareEncoderAutoEligible(backend, encoder) {
+			if a.detector.hardwareEncoderAutoEligible(backend, encoder) {
 				codecs = append(codecs, codec)
 				break
 			}
@@ -2138,3 +1671,9 @@ func summarizeProcessExit(procErr error) string {
 	}
 	return "process exited unexpectedly"
 }
+
+// Preflight delegators keep the adapter's external surface (bootstrap wiring)
+// stable while encoder-capability detection lives in the Detector.
+func (a *LocalAdapter) PreflightVAAPI() error       { return a.detector.PreflightVAAPI() }
+func (a *LocalAdapter) PreflightNVENC() error       { return a.detector.PreflightNVENC() }
+func (a *LocalAdapter) PreflightTranscodeProfiles() { a.detector.PreflightTranscodeProfiles() }

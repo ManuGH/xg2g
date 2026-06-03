@@ -108,7 +108,7 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 	if useHW {
 		hwBackend = requestedBackend
 		if hwBackend == profiles.GPUBackendNone {
-			hwBackend = a.preferredHardwareBackendForCodec(resolvedCodec)
+			hwBackend = a.detector.preferredHardwareBackendForCodec(resolvedCodec)
 		}
 		if hwBackend == profiles.GPUBackendNone {
 			return codecPlan{}, fmt.Errorf("hardware path selected but no verified backend is available for codec %s", resolvedCodec)
@@ -137,8 +137,8 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			if !ok {
 				return codecPlan{}, fmt.Errorf("unsupported vaapi codec resolved by decision engine: %s", resolvedCodec)
 			}
-			if !a.VaapiEncoderVerified(reqEncoder) {
-				return codecPlan{}, fmt.Errorf("vaapi encoder %s not verified by preflight (device=%s, deviceErr=%v)", reqEncoder, a.VaapiDevice, a.vaapiDeviceErr)
+			if !a.detector.VaapiEncoderVerified(reqEncoder) {
+				return codecPlan{}, fmt.Errorf("vaapi encoder %s not verified by preflight (device=%s, deviceErr=%v)", reqEncoder, a.VaapiDevice, a.detector.vaapiDeviceErr)
 			}
 			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
 			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
@@ -179,8 +179,8 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			if !ok {
 				return codecPlan{}, fmt.Errorf("unsupported nvenc codec resolved by decision engine: %s", resolvedCodec)
 			}
-			if !a.NVENCEncoderVerified(reqEncoder) {
-				return codecPlan{}, fmt.Errorf("nvenc encoder %s not verified by preflight (nvencErr=%v)", reqEncoder, a.nvencErr)
+			if !a.detector.NVENCEncoderVerified(reqEncoder) {
+				return codecPlan{}, fmt.Errorf("nvenc encoder %s not verified by preflight (nvencErr=%v)", reqEncoder, a.detector.nvencErr)
 			}
 		default:
 			return codecPlan{}, fmt.Errorf("unsupported hardware backend %q", hwBackend)
