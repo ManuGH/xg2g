@@ -134,7 +134,11 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 		return nil, err
 	}
 
-	items, err := buildPlaylistItems(ctx, client, validBouquets, rt)
+	var proxyBase string
+	if rt.UseProxyURLs {
+		proxyBase = strings.TrimRight(rt.ProxyBaseURL, "/")
+	}
+	items, err := buildPlaylistItems(ctx, client, validBouquets, proxyBase)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +222,7 @@ func fetchRefreshBouquets(ctx context.Context, client *openwebif.Client, span tr
 // buildPlaylistItems fetches the services for every resolved bouquet and turns them
 // into playlist items, preserving bouquet ordering for sequential channel numbering.
 // It records the per-bouquet service counts and the aggregate channel-type counts.
-func buildPlaylistItems(ctx context.Context, client *openwebif.Client, validBouquets []resolvedBouquet, rt config.RuntimeSnapshot) ([]playlist.Item, error) {
+func buildPlaylistItems(ctx context.Context, client *openwebif.Client, validBouquets []resolvedBouquet, proxyBase string) ([]playlist.Item, error) {
 	logger := xglog.WithComponentFromContext(ctx, "jobs")
 
 	var items []playlist.Item
@@ -242,7 +246,7 @@ func buildPlaylistItems(ctx context.Context, client *openwebif.Client, validBouq
 		metrics.RecordServicesCount(bouquetName, len(services))
 
 		for _, s := range services {
-			item, class, ok := buildPlaylistItem(ctx, client, s, bouquetName, channelNumber, rt)
+			item, class, ok := buildPlaylistItem(ctx, client, s, bouquetName, channelNumber, proxyBase)
 			if !ok {
 				continue
 			}
@@ -272,7 +276,7 @@ func buildPlaylistItems(ctx context.Context, client *openwebif.Client, validBouq
 // and validating the stream URL, applying optional proxy rewriting, and computing the
 // picon logo URL. It returns the item, its channel-type classification, and ok=false
 // when the service should be skipped (stream URL build or validation failure).
-func buildPlaylistItem(ctx context.Context, client *openwebif.Client, s [2]string, bouquetName string, channelNumber int, rt config.RuntimeSnapshot) (playlist.Item, string, bool) {
+func buildPlaylistItem(ctx context.Context, client *openwebif.Client, s [2]string, bouquetName string, channelNumber int, proxyBase string) (playlist.Item, string, bool) {
 	logger := xglog.WithComponentFromContext(ctx, "jobs")
 
 	name, ref := s[0], s[1]
@@ -299,11 +303,10 @@ func buildPlaylistItem(ctx context.Context, client *openwebif.Client, s [2]strin
 		return playlist.Item{}, "", false
 	}
 
-	// If XG2G_USE_PROXY_URLS=true, rewrite URLs to point to xg2g proxy
+	// If proxyBase is configured, rewrite URLs to point to xg2g proxy
 	// This enables audio transcoding and smart stream detection for Plex/Jellyfin
-	if rt.UseProxyURLs {
+	if proxyBase != "" {
 		// Always rewrite using the known service reference (avoids dropping query params for WebIF URLs).
-		proxyBase := strings.TrimRight(rt.ProxyBaseURL, "/")
 		streamURL = proxyBase + "/" + ref
 	}
 
