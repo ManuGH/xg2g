@@ -80,6 +80,7 @@ import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCl
 import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
+import { startResumePlaybackRecovery } from './orchestrator/resumePlaybackRecovery';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
@@ -1600,16 +1601,22 @@ export function usePlaybackOrchestrator(
       return;
     }
 
-    // action === 'play'
+    // action === 'play'. A single play() right after a page-freeze often fizzles —
+    // the element is still suspended and discards it, so the frame stays black until
+    // the user mashes play a few times. Nudge play() until currentTime actually
+    // advances (the only proof the decoder accepted the resume), bounded; the
+    // returned cancel cleans it up if the page hides again mid-recovery.
     setStatus((current) => (current === 'paused' ? 'buffering' : current));
-    void video.play().catch((err: unknown) => {
-      if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
-        // iOS blocked the programmatic resume; the existing play/pause control
-        // is the user-gesture tap-to-resume.
-        setStatus('paused');
-      } else {
-        debugWarn('[V3Player] Browser resume play blocked', err);
-      }
+    return startResumePlaybackRecovery(video, {
+      onBlocked: (err: unknown) => {
+        if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
+          // iOS blocked the programmatic resume; the play/pause control is the
+          // user-gesture tap-to-resume.
+          setStatus('paused');
+        } else {
+          debugWarn('[V3Player] Browser resume play blocked', err);
+        }
+      },
     });
   }, [handleRetry, hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
