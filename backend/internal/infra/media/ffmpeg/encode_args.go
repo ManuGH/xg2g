@@ -24,8 +24,10 @@ func appendVideoGOPArgs(args []string, gop, segmentSec int) []string {
 }
 
 // vaapiEncoderForCodec maps the requested output codec to its VAAPI encoder name.
+// Uses normalizeRequestedCodec to handle aliases (e.g. "h265" → "hevc_vaapi")
+// and case/whitespace variations, consistent with other codec switches in this file.
 func vaapiEncoderForCodec(outputCodec string) string {
-	switch outputCodec {
+	switch normalizeRequestedCodec(outputCodec) {
 	case "hevc":
 		return "hevc_vaapi"
 	case "av1":
