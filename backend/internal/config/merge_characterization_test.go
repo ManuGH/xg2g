@@ -128,3 +128,31 @@ func TestMergeEnvConfig_AppliesCanonicalMaxBackoffEnv(t *testing.T) {
 		t.Fatalf("expected maxBackoff from canonical enigma2 env key, got %v", cfg.Enigma2.MaxBackoff)
 	}
 }
+
+// TestMergeFileConfig_AppliesStoreAndStreaming guards the fix for the YAML
+// store:/streaming: sections that FileConfig declared but mergeFileConfig
+// previously dropped silently (despite being documented in the schema/example).
+func TestMergeFileConfig_AppliesStoreAndStreaming(t *testing.T) {
+	loader := NewLoader("", "test")
+	cfg := AppConfig{}
+	if err := loader.setDefaults(&cfg); err != nil {
+		t.Fatalf("setDefaults() failed: %v", err)
+	}
+
+	src := &FileConfig{
+		Store:     &StoreConfig{Backend: "memory", Path: "/custom/store/path.db"},
+		Streaming: &StreamingConfig{DeliveryPolicy: "universal"},
+	}
+	if err := loader.mergeFileConfig(&cfg, src); err != nil {
+		t.Fatalf("mergeFileConfig() failed: %v", err)
+	}
+	if cfg.Store.Path != "/custom/store/path.db" {
+		t.Fatalf("YAML store.path not applied (was silently dropped before): %+v", cfg.Store)
+	}
+	if cfg.Store.Backend != "memory" {
+		t.Fatalf("YAML store.backend not applied: %+v", cfg.Store)
+	}
+	if cfg.Streaming.DeliveryPolicy != "universal" {
+		t.Fatalf("YAML streaming.deliveryPolicy not applied: %+v", cfg.Streaming)
+	}
+}

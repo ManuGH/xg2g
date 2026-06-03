@@ -46,6 +46,8 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	l.mergeFileNetwork(dst, src)
 	l.mergeFileConnectivity(dst, src)
 	l.mergeFileMetrics(dst, src)
+	l.mergeFileStore(dst, src)
+	l.mergeFileStreaming(dst, src)
 	l.mergeFilePicons(dst, src)
 	l.mergeFileHDHR(dst, src)
 	l.mergeFileHLS(dst, src)
@@ -632,5 +634,30 @@ func (l *Loader) mergeFileVOD(dst *AppConfig, src *FileConfig) {
 			CacheTTL:        dst.VODCacheTTL.String(),
 			CacheMaxEntries: dst.VODCacheMaxEntries,
 		}
+	}
+}
+
+// mergeFileStore applies the YAML `store:` section (previously declared in
+// FileConfig but silently dropped). Env (XG2G_STORE_*) still overrides afterward.
+func (l *Loader) mergeFileStore(dst *AppConfig, src *FileConfig) {
+	if src.Store == nil {
+		return
+	}
+	if src.Store.Backend != "" {
+		dst.Store.Backend = src.Store.Backend
+	}
+	if src.Store.Path != "" {
+		dst.Store.Path = expandEnv(src.Store.Path)
+	}
+}
+
+// mergeFileStreaming applies the YAML `streaming:` section (previously declared
+// in FileConfig but silently dropped). Env (XG2G_STREAMING_POLICY) overrides after.
+func (l *Loader) mergeFileStreaming(dst *AppConfig, src *FileConfig) {
+	if src.Streaming == nil {
+		return
+	}
+	if src.Streaming.DeliveryPolicy != "" {
+		dst.Streaming.DeliveryPolicy = src.Streaming.DeliveryPolicy
 	}
 }
