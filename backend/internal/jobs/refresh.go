@@ -115,33 +115,12 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 		return nil, err
 	}
 
-	owiOpts := openwebif.Options{
-		Timeout:         cfg.Enigma2.Timeout,
-		MaxRetries:      cfg.Enigma2.Retries,
-		Backoff:         cfg.Enigma2.Backoff,
-		MaxBackoff:      cfg.Enigma2.MaxBackoff,
-		Username:        cfg.Enigma2.Username,
-		Password:        cfg.Enigma2.Password,
-		UseWebIFStreams: cfg.Enigma2.UseWebIFStreams,
-		StreamBaseURL:   rt.OpenWebIF.StreamBaseURL,
+	client := newRefreshClient(cfg, rt)
 
-		HTTPMaxConnsPerHost: rt.OpenWebIF.HTTPMaxConnsPerHost,
-	}
-	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, owiOpts)
-
-	// Fetch bouquets with tracing
-	span.AddEvent("fetching bouquets")
-	bouquets, err := client.Bouquets(ctx)
+	bouquets, err := fetchRefreshBouquets(ctx, client, span)
 	if err != nil {
-		err = WrapBouquetsFetchError(fmt.Errorf("failed to fetch bouquets: %w", err))
-		metrics.IncRefreshFailure("bouquets")
-		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "bouquets"), err).Msg("failed to fetch bouquets")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to fetch bouquets")
 		return nil, err
 	}
-	metrics.RecordBouquetsCount(len(bouquets))
-	span.SetAttributes(attribute.Int("bouquets.count", len(bouquets)))
 
 	validBouquets, usingAllBouquets, err := resolveRefreshBouquets(cfg.Bouquet, bouquets)
 	if usingAllBouquets {
@@ -155,94 +134,14 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 		return nil, err
 	}
 
-	var items []playlist.Item
-	// Channel type counters for the last refresh
-	hd, sd, radio, unknown := 0, 0, 0, 0
-	// Channel counter for tvg-chno (position across all bouquets)
-	// This ensures Threadfin/Plex display channels in bouquet order
-	channelNumber := 1
-
-	for _, b := range validBouquets {
-		bouquetName := b.Name
-		bouquetRef := b.Ref
-
-		services, err := client.Services(ctx, bouquetRef)
-		if err != nil {
-			err = WrapServicesFetchError(fmt.Errorf("failed to fetch services for bouquet %q: %w", bouquetName, err))
-			metrics.IncRefreshFailure("services")
-			logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "services").Str("bouquet", bouquetName), err).Msg("failed to fetch services")
-			return nil, err
-		}
-		metrics.RecordServicesCount(bouquetName, len(services))
-
-		for _, s := range services {
-			name, ref := s[0], s[1]
-			streamURL, err := client.StreamURL(ctx, ref, name)
-			if err != nil {
-				err = WrapStreamURLBuildError(fmt.Errorf("failed to build stream URL for %q: %w", name, err))
-				logJobError("refresh", logger.Warn().Err(err).Str("service", name), err).Msg("failed to build stream URL")
-				metrics.IncStreamURLBuild("failure")
-				metrics.IncRefreshFailure("streamurl")
-				continue
-			}
-			metrics.IncStreamURLBuild("success")
-
-			// Validate stream URL structure
-			validator := validate.New()
-			validator.StreamURL("streamURL", streamURL)
-			if !validator.IsValid() {
-				logger.Warn().
-					Str("service", name).
-					Str("url_host", safeURLHost(streamURL)).
-					Str("validation_error", validator.Err().Error()).
-					Msg("stream URL validation failed")
-				metrics.IncStreamURLBuild("validation_failure")
-				continue
-			}
-
-			// If XG2G_USE_PROXY_URLS=true, rewrite URLs to point to xg2g proxy
-			// This enables audio transcoding and smart stream detection for Plex/Jellyfin
-			if rt.UseProxyURLs {
-				// Always rewrite using the known service reference (avoids dropping query params for WebIF URLs).
-				proxyBase := strings.TrimRight(rt.ProxyBaseURL, "/")
-				streamURL = proxyBase + "/" + ref
-			}
-
-			// Use local proxy for picons to avoid Mixed Content / CORS issues
-			// Use underscore-based naming for browser compatibility
-			piconRef := strings.ReplaceAll(ref, ":", "_")
-			piconRef = strings.TrimRight(piconRef, "_")
-
-			// Use relative URL for internal components (WebUI, API)
-			// The M3U writer will prepend the public URL if configured
-			logoURL := fmt.Sprintf("/logos/%s.png?v=%d", piconRef, time.Now().Unix())
-
-			// Naive channel type classification based on name/ref hints.
-			lr := strings.ToLower(name + " " + ref)
-			switch {
-			case strings.Contains(lr, "radio") || strings.HasPrefix(ref, "1:0:2:"):
-				radio++
-			case strings.Contains(lr, "hd"):
-				hd++
-			case strings.Contains(lr, "sd"):
-				sd++
-			default:
-				unknown++
-			}
-
-			items = append(items, playlist.Item{
-				Name:       name,
-				TvgID:      ref,           // Use ServiceRef as TvgID (raw numbers preferred by user)
-				TvgChNo:    channelNumber, // Sequential numbering based on bouquet position
-				TvgLogo:    logoURL,
-				Group:      bouquetName, // Use actual bouquet name as group
-				URL:        streamURL,
-				ServiceRef: ref, // Explicitly store ref for EPG fetching
-			})
-			channelNumber++
-		}
+	var proxyBase string
+	if rt.UseProxyURLs {
+		proxyBase = strings.TrimRight(rt.ProxyBaseURL, "/")
 	}
-	metrics.RecordChannelTypeCounts(hd, sd, radio, unknown)
+	items, err := buildPlaylistItems(ctx, client, validBouquets, proxyBase)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := writeRefreshPlaylist(ctx, cfg, rt, items, refreshOpts); err != nil {
 		return nil, err
@@ -277,6 +176,173 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 		Int("channels", status.Channels).
 		Msg("refresh completed")
 	return status, nil
+}
+
+// newRefreshClient builds the OpenWebIF client used for a refresh cycle from the
+// configuration and runtime snapshots.
+func newRefreshClient(cfg config.AppConfig, rt config.RuntimeSnapshot) *openwebif.Client {
+	owiOpts := openwebif.Options{
+		Timeout:         cfg.Enigma2.Timeout,
+		MaxRetries:      cfg.Enigma2.Retries,
+		Backoff:         cfg.Enigma2.Backoff,
+		MaxBackoff:      cfg.Enigma2.MaxBackoff,
+		Username:        cfg.Enigma2.Username,
+		Password:        cfg.Enigma2.Password,
+		UseWebIFStreams: cfg.Enigma2.UseWebIFStreams,
+		StreamBaseURL:   rt.OpenWebIF.StreamBaseURL,
+
+		HTTPMaxConnsPerHost: rt.OpenWebIF.HTTPMaxConnsPerHost,
+	}
+	return openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, owiOpts)
+}
+
+// fetchRefreshBouquets retrieves the available bouquets, recording the relevant
+// tracing events, metrics, and span attributes. On failure it wraps the error and
+// records it on the span.
+func fetchRefreshBouquets(ctx context.Context, client *openwebif.Client, span trace.Span) (map[string]string, error) {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+
+	// Fetch bouquets with tracing
+	span.AddEvent("fetching bouquets")
+	bouquets, err := client.Bouquets(ctx)
+	if err != nil {
+		err = WrapBouquetsFetchError(fmt.Errorf("failed to fetch bouquets: %w", err))
+		metrics.IncRefreshFailure("bouquets")
+		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "bouquets"), err).Msg("failed to fetch bouquets")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to fetch bouquets")
+		return nil, err
+	}
+	metrics.RecordBouquetsCount(len(bouquets))
+	span.SetAttributes(attribute.Int("bouquets.count", len(bouquets)))
+
+	return bouquets, nil
+}
+
+// buildPlaylistItems fetches the services for every resolved bouquet and turns them
+// into playlist items, preserving bouquet ordering for sequential channel numbering.
+// It records the per-bouquet service counts and the aggregate channel-type counts.
+func buildPlaylistItems(ctx context.Context, client *openwebif.Client, validBouquets []resolvedBouquet, proxyBase string) ([]playlist.Item, error) {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+
+	var items []playlist.Item
+	// Channel type counters for the last refresh
+	hd, sd, radio, unknown := 0, 0, 0, 0
+	// Channel counter for tvg-chno (position across all bouquets)
+	// This ensures Threadfin/Plex display channels in bouquet order
+	channelNumber := 1
+
+	for _, b := range validBouquets {
+		bouquetName := b.Name
+		bouquetRef := b.Ref
+
+		services, err := client.Services(ctx, bouquetRef)
+		if err != nil {
+			err = WrapServicesFetchError(fmt.Errorf("failed to fetch services for bouquet %q: %w", bouquetName, err))
+			metrics.IncRefreshFailure("services")
+			logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "services").Str("bouquet", bouquetName), err).Msg("failed to fetch services")
+			return nil, err
+		}
+		metrics.RecordServicesCount(bouquetName, len(services))
+
+		for _, s := range services {
+			item, class, ok := buildPlaylistItem(ctx, client, s, bouquetName, channelNumber, proxyBase)
+			if !ok {
+				continue
+			}
+
+			// Naive channel type classification based on name/ref hints.
+			switch class {
+			case "radio":
+				radio++
+			case "hd":
+				hd++
+			case "sd":
+				sd++
+			default:
+				unknown++
+			}
+
+			items = append(items, item)
+			channelNumber++
+		}
+	}
+	metrics.RecordChannelTypeCounts(hd, sd, radio, unknown)
+
+	return items, nil
+}
+
+// buildPlaylistItem converts a single service entry into a playlist item, building
+// and validating the stream URL, applying optional proxy rewriting, and computing the
+// picon logo URL. It returns the item, its channel-type classification, and ok=false
+// when the service should be skipped (stream URL build or validation failure).
+func buildPlaylistItem(ctx context.Context, client *openwebif.Client, s [2]string, bouquetName string, channelNumber int, proxyBase string) (playlist.Item, string, bool) {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+
+	name, ref := s[0], s[1]
+	streamURL, err := client.StreamURL(ctx, ref, name)
+	if err != nil {
+		err = WrapStreamURLBuildError(fmt.Errorf("failed to build stream URL for %q: %w", name, err))
+		logJobError("refresh", logger.Warn().Err(err).Str("service", name), err).Msg("failed to build stream URL")
+		metrics.IncStreamURLBuild("failure")
+		metrics.IncRefreshFailure("streamurl")
+		return playlist.Item{}, "", false
+	}
+	metrics.IncStreamURLBuild("success")
+
+	// Validate stream URL structure
+	validator := validate.New()
+	validator.StreamURL("streamURL", streamURL)
+	if !validator.IsValid() {
+		logger.Warn().
+			Str("service", name).
+			Str("url_host", safeURLHost(streamURL)).
+			Str("validation_error", validator.Err().Error()).
+			Msg("stream URL validation failed")
+		metrics.IncStreamURLBuild("validation_failure")
+		return playlist.Item{}, "", false
+	}
+
+	// If proxyBase is configured, rewrite URLs to point to xg2g proxy
+	// This enables audio transcoding and smart stream detection for Plex/Jellyfin
+	if proxyBase != "" {
+		// Always rewrite using the known service reference (avoids dropping query params for WebIF URLs).
+		streamURL = proxyBase + "/" + ref
+	}
+
+	// Use local proxy for picons to avoid Mixed Content / CORS issues
+	// Use underscore-based naming for browser compatibility
+	piconRef := strings.ReplaceAll(ref, ":", "_")
+	piconRef = strings.TrimRight(piconRef, "_")
+
+	// Use relative URL for internal components (WebUI, API)
+	// The M3U writer will prepend the public URL if configured
+	logoURL := fmt.Sprintf("/logos/%s.png?v=%d", piconRef, time.Now().Unix())
+
+	// Naive channel type classification based on name/ref hints.
+	lr := strings.ToLower(name + " " + ref)
+	var class string
+	switch {
+	case strings.Contains(lr, "radio") || strings.HasPrefix(ref, "1:0:2:"):
+		class = "radio"
+	case strings.Contains(lr, "hd"):
+		class = "hd"
+	case strings.Contains(lr, "sd"):
+		class = "sd"
+	default:
+		class = "unknown"
+	}
+
+	item := playlist.Item{
+		Name:       name,
+		TvgID:      ref,           // Use ServiceRef as TvgID (raw numbers preferred by user)
+		TvgChNo:    channelNumber, // Sequential numbering based on bouquet position
+		TvgLogo:    logoURL,
+		Group:      bouquetName, // Use actual bouquet name as group
+		URL:        streamURL,
+		ServiceRef: ref, // Explicitly store ref for EPG fetching
+	}
+	return item, class, true
 }
 
 func resolveRefreshBouquets(configured string, bouquets map[string]string) ([]resolvedBouquet, bool, error) {
