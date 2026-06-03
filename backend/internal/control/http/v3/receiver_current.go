@@ -70,7 +70,7 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 
 	// Get current service info with singleflight protection
 	// Get current service info with singleflight protection
-	val, err, _ := s.receiverSfg.Do("getcurrent", func() (interface{}, error) {
+	val, err, _ := s.receiverSfg.Do("getcurrent", func() (any, error) {
 		return client.GetCurrent(ctx)
 	})
 

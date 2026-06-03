@@ -282,7 +282,7 @@ func (s *SqliteStore) GetSession(ctx context.Context, id string) (*model.Session
 
 func (s *SqliteStore) QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error) {
 	query := "SELECT * FROM sessions WHERE 1=1"
-	args := []interface{}{}
+	args := []any{}
 
 	if len(filter.States) > 0 {
 		query += " AND state IN ("
@@ -511,7 +511,7 @@ func (l *sqliteLease) Owner() string        { return l.owner }
 func (l *sqliteLease) ExpiresAt() time.Time { return l.expires }
 
 func scanSession(scanner interface {
-	Scan(dest ...interface{}) error
+	Scan(dest ...any) error
 }) (*model.SessionRecord, error) {
 	var rec model.SessionRecord
 	var profileJSON, contextJSON, playbackTraceJSON []byte

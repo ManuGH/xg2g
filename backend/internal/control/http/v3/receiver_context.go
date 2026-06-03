@@ -35,7 +35,7 @@ func (s *Server) currentReceiverAbout(ctx context.Context) *openwebif.AboutInfo 
 		return cached
 	}
 
-	val, err, _ := s.receiverSfg.Do("receiver-about", func() (interface{}, error) {
+	val, err, _ := s.receiverSfg.Do("receiver-about", func() (any, error) {
 		s.mu.RLock()
 		cached := s.receiverAbout
 		cachedAt := s.receiverAboutAt
@@ -92,7 +92,7 @@ func (s *Server) currentReceiverLocations(ctx context.Context) []openwebif.Movie
 		return cached
 	}
 
-	val, err, _ := s.receiverSfg.Do("receiver-locations", func() (interface{}, error) {
+	val, err, _ := s.receiverSfg.Do("receiver-locations", func() (any, error) {
 		s.mu.RLock()
 		cached := s.receiverLocations
 		cachedAt := s.receiverLocationsAt

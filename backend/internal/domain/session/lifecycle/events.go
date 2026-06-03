@@ -24,7 +24,7 @@ const (
 
 // Event carries optional domain metadata for a transition.
 type Event struct {
-	Kind   EventKind
-	Reason model.ReasonCode
+	Kind       EventKind
+	Reason     model.ReasonCode
 	DetailCode model.ReasonDetailCode
 }

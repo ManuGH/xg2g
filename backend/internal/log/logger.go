@@ -247,10 +247,10 @@ func WithTraceContext(ctx context.Context) zerolog.Logger {
 
 // LogBuffer implementation
 type LogEntry struct {
-	Timestamp time.Time              `json:"timestamp"`
-	Level     string                 `json:"level"`
-	Message   string                 `json:"message"`
-	Fields    map[string]interface{} `json:"fields,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
+	Level     string         `json:"level"`
+	Message   string         `json:"message"`
+	Fields    map[string]any `json:"fields,omitempty"`
 }
 
 const maxLogEntries = 100

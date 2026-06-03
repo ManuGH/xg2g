@@ -40,7 +40,7 @@ func (s *Server) GetLibraryRoots(w http.ResponseWriter, r *http.Request) {
 // GetLibraryRootItems implements ServerInterface.
 // Per P0+ Gate #2: Returns 503 with Retry-After if scan running.
 // Phase 0 MVP: Direct param parsing + JSON encoding (type mapping refinement in Phase 1).
-func (s *Server) GetLibraryRootItems(w http.ResponseWriter, r *http.Request, rootId string, params interface{}) {
+func (s *Server) GetLibraryRootItems(w http.ResponseWriter, r *http.Request, rootId string, params any) {
 	s.mu.RLock()
 	librarySvc := s.libraryService
 	s.mu.RUnlock()
@@ -87,7 +87,7 @@ func (s *Server) GetLibraryRootItems(w http.ResponseWriter, r *http.Request, roo
 	}
 
 	// Build response (Phase 0 MVP: direct JSON encoding)
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"items":  items,
 		"total":  total,
 		"limit":  limit,

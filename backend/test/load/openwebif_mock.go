@@ -204,7 +204,7 @@ func (m *MockServer) calculateLatency() time.Duration {
 
 func (m *MockServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status":  "ok",
 		"version": "mock-1.0.0",
 	})
@@ -219,7 +219,7 @@ func (m *MockServer) handleBouquets(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"bouquets": bouquets,
 	})
 }
@@ -239,7 +239,7 @@ func (m *MockServer) handleGetServices(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"services": services,
 	})
 }
@@ -353,13 +353,13 @@ func (e *EPGMockServer) handleEPG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate EPG events
-	events := make([]map[string]interface{}, 0, e.epgConfig.EventsPerChannel)
+	events := make([]map[string]any, 0, e.epgConfig.EventsPerChannel)
 	now := time.Now()
 
 	for i := 0; i < e.epgConfig.EventsPerChannel; i++ {
 		start := now.Add(time.Duration(i) * e.epgConfig.EventDuration)
 
-		event := map[string]interface{}{
+		event := map[string]any{
 			"id":              strconv.Itoa(1000 + i),
 			"begin_timestamp": start.Unix(),
 			"duration_sec":    int(e.epgConfig.EventDuration.Seconds()),
@@ -376,7 +376,7 @@ func (e *EPGMockServer) handleEPG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"events": events,
 	})
 }

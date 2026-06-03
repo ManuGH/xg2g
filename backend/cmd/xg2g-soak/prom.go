@@ -189,11 +189,11 @@ func (p *PromClient) WaitStable(query string, target float64, stableFor, timeout
 type promQueryResult struct {
 	Status string `json:"status"`
 	Data   struct {
-		ResultType string        `json:"resultType"`
-		Value      []interface{} `json:"value"` // For scalar
+		ResultType string `json:"resultType"`
+		Value      []any  `json:"value"` // For scalar
 		Result     []struct {
 			Metric map[string]string `json:"metric"`
-			Value  []interface{}     `json:"value"`
+			Value  []any             `json:"value"`
 		} `json:"result"` // For vector
 	} `json:"data"`
 }

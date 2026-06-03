@@ -34,11 +34,11 @@ func ServiceRef(s string) string {
 	return s
 }
 
-// MapHash takes any map[string]interface{} (used often for capabilities or query params),
+// MapHash takes any map[string]any (used often for capabilities or query params),
 // deterministically marshals it using Go's built-in sorted json.Marshal algorithm,
 // and returns a SHA-256 hexadecimal string representation.
 // This is used for generating cryptographically stable `capHash` bindings in JWT tokens.
-func MapHash(m map[string]interface{}) (string, error) {
+func MapHash(m map[string]any) (string, error) {
 	if len(m) == 0 {
 		return "", nil // Empty map has no hash signature
 	}

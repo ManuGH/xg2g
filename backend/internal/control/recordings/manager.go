@@ -103,7 +103,7 @@ func (pm *probeManager) triggerProbe(key, serviceRef, sourceURL, localPath strin
 	}
 	// De-duplicate concurrent triggers across goroutines using the ResolveKey (usually hashed source)
 	executed := false
-	_, _, shared := pm.sf.Do(key, func() (interface{}, error) {
+	_, _, shared := pm.sf.Do(key, func() (any, error) {
 		executed = true
 		probeID := probeIDForKey(key)
 		startedAt := time.Now()

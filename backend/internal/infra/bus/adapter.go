@@ -16,7 +16,7 @@ func NewAdapter(b bus.Bus) *Adapter {
 	return &Adapter{inner: b}
 }
 
-func (a *Adapter) Publish(ctx context.Context, topic string, event interface{}) error {
+func (a *Adapter) Publish(ctx context.Context, topic string, event any) error {
 	return a.inner.Publish(ctx, topic, event)
 }
 
@@ -32,7 +32,7 @@ type subAdapter struct {
 	inner bus.Subscriber
 }
 
-func (s *subAdapter) C() <-chan interface{} {
+func (s *subAdapter) C() <-chan any {
 	return s.inner.C()
 }
 

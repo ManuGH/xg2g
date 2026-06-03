@@ -19,3 +19,12 @@ linters:
 linters-settings:
   staticcheck:
     checks: ["all"]
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      rewrite-rules:
+        - pattern: 'interface{}'
+          replacement: 'any'

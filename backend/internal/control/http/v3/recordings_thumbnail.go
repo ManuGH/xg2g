@@ -118,7 +118,7 @@ func ensureRecordingThumbnail(ctx context.Context, cfg config.AppConfig, sourceP
 		return nil
 	}
 
-	_, err, _ = recordingThumbnailBuildGroup.Do(thumbnailPath, func() (interface{}, error) {
+	_, err, _ = recordingThumbnailBuildGroup.Do(thumbnailPath, func() (any, error) {
 		if thumbnailInfo, statErr := os.Stat(thumbnailPath); statErr == nil && recordingThumbnailIsFresh(sourceInfo, thumbnailInfo) {
 			return nil, nil
 		}

@@ -53,7 +53,7 @@ type HealthResponse struct {
 	Uptime    int64                  `json:"uptime,omitempty"` // Uptime in seconds since startup
 	Timestamp time.Time              `json:"timestamp"`
 	Checks    map[string]CheckResult `json:"checks,omitempty"`
-	Details   map[string]interface{} `json:"details,omitempty"`
+	Details   map[string]any         `json:"details,omitempty"`
 }
 
 // ReadinessResponse represents the readiness check response
@@ -63,7 +63,7 @@ type ReadinessResponse struct {
 	Timestamp time.Time              `json:"timestamp"`
 	Error     string                 `json:"error,omitempty"`
 	Checks    map[string]CheckResult `json:"checks,omitempty"`
-	Details   map[string]interface{} `json:"details,omitempty"`
+	Details   map[string]any         `json:"details,omitempty"`
 }
 
 // Checker defines the interface for health checks
@@ -190,7 +190,7 @@ func (m *Manager) Ready(ctx context.Context, verbose bool) ReadinessResponse {
 	m.mu.RUnlock()
 
 	// Use singleflight to prevent thundering herd on upstream.
-	val, err, _ := m.sfg.Do("readiness", func() (interface{}, error) {
+	val, err, _ := m.sfg.Do("readiness", func() (any, error) {
 		// Use DETACHED context for the shared probe.
 		// This prevents the first caller's context cancellation from aborting the shared run.
 		probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

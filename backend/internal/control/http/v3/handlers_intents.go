@@ -169,7 +169,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			} else if rawCapHash := normalize.Token(params["cap_hash"]); rawCapHash != "" {
 				expectedHash = rawCapHash
 			} else {
-				genericMap := make(map[string]interface{}, len(params))
+				genericMap := make(map[string]any, len(params))
 				for k, v := range params {
 					genericMap[k] = v
 				}

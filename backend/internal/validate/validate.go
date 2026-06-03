@@ -17,9 +17,9 @@ import (
 
 // Error represents a validation error
 type Error struct {
-	Field   string      // Field name that failed validation
-	Value   interface{} // The invalid value
-	Message string      // Human-readable error message
+	Field   string // Field name that failed validation
+	Value   any    // The invalid value
+	Message string // Human-readable error message
 }
 
 // Error implements the error interface
@@ -45,7 +45,7 @@ func New() *Validator {
 }
 
 // AddError adds a validation error
-func (v *Validator) AddError(field, message string, value interface{}) {
+func (v *Validator) AddError(field, message string, value any) {
 	v.errors = append(v.errors, Error{
 		Field:   field,
 		Value:   value,
@@ -234,7 +234,7 @@ func (v *Validator) NonNegative(field string, value int) {
 
 // Custom allows custom validation logic
 // The validator function should return an error if validation fails
-func (v *Validator) Custom(field string, value interface{}, validator func(interface{}) error) {
+func (v *Validator) Custom(field string, value any, validator func(any) error) {
 	if err := validator(value); err != nil {
 		v.AddError(field, err.Error(), value)
 	}
