@@ -648,7 +648,7 @@ func (l *Loader) mergeFileStore(dst *AppConfig, src *FileConfig) {
 		dst.Store.Backend = src.Store.Backend
 	}
 	if src.Store.Path != "" {
-		dst.Store.Path = src.Store.Path
+		dst.Store.Path = expandEnv(src.Store.Path)
 	}
 }
 
