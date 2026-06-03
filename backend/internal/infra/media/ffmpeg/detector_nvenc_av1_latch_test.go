@@ -22,55 +22,54 @@ import (
 // the post-latch assertions go red; over-reach to h264_nvenc and the surgical-scope
 // assertions go red. No NVIDIA hardware required.
 func TestNVENCAV1FailClosed_NotAdmittedWithoutDecodeVerify(t *testing.T) {
-	// Post-derive state on an NVIDIA host: exit-0 "verified" everything.
-	derived := map[string]hardware.NVENCEncoderCapability{
-		"h264_nvenc": {Verified: true, AutoEligible: true, ProbeElapsed: 10 * time.Millisecond},
-		"av1_nvenc":  {Verified: true, AutoEligible: true, ProbeElapsed: 20 * time.Millisecond},
+	// av1_nvenc admission is gated by THREE distinct stores; a latch that closes two
+	// of three leaves a silent hole. This test drives all three real gates:
+	//   1. global nvencEncCaps    -> hardware.IsNVENCEncoderReady (+ IsHardwareEncoderReady,
+	//      the autocodec/intent/B3 funnel) — set from d.nvencEncoderCaps via Set, filtered on Verified.
+	//   2. detector d.nvencEncoders -> d.NVENCEncoderVerified (the plan_codec gate).
+	//   3. detector d.nvencEncoderCaps -> d.NVENCEncoderAutoEligible.
+	// Post-derive state on an NVIDIA host: exit-0 "verified" everything in all three.
+	d := &Detector{
+		nvencEncoders: map[string]bool{"h264_nvenc": true, "av1_nvenc": true},
+		nvencEncoderCaps: map[string]hardware.NVENCEncoderCapability{
+			"h264_nvenc": {Verified: true, AutoEligible: true, ProbeElapsed: 10 * time.Millisecond},
+			"av1_nvenc":  {Verified: true, AutoEligible: true, ProbeElapsed: 20 * time.Millisecond},
+		},
 	}
-	nvencEncoders := map[string]bool{"h264_nvenc": true, "av1_nvenc": true}
-
 	t.Cleanup(func() { hardware.SetNVENCEncoderCapabilities(nil) })
 
-	// BUG DEMONSTRATION: pre-latch, av1_nvenc is admitted at the real global gate.
-	hardware.SetNVENCEncoderCapabilities(derived)
+	// BUG DEMONSTRATION: pre-latch, ALL THREE readers admit av1_nvenc.
+	hardware.SetNVENCEncoderCapabilities(d.nvencEncoderCaps)
 	hardware.SetNVENCPreflightResult(true)
-	if !hardware.IsNVENCEncoderReady("av1_nvenc") {
-		t.Fatal("precondition: pre-latch, exit-0 av1_nvenc IS admitted — the false-verified gap this latch closes")
+	if !d.NVENCEncoderVerified("av1_nvenc") || !d.NVENCEncoderAutoEligible("av1_nvenc") || !hardware.IsNVENCEncoderReady("av1_nvenc") {
+		t.Fatal("precondition: pre-latch, exit-0 av1_nvenc is admitted by all three readers — the false-verified gap this latch closes")
 	}
 
-	// APPLY THE LATCH.
-	clampUnverifiedNVENCAV1(derived, nvencEncoders)
+	// APPLY THE LATCH, then mirror to the global store exactly as PreflightNVENC does.
+	clampUnverifiedNVENCAV1(d.nvencEncoderCaps, d.nvencEncoders)
+	hardware.SetNVENCEncoderCapabilities(d.nvencEncoderCaps)
 
-	// Detector-side bool map (plan_codec gate via NVENCEncoderVerified): dropped.
-	if nvencEncoders["av1_nvenc"] {
-		t.Error("av1_nvenc must be removed from the detector nvencEncoders map (plan_codec admission path)")
+	// ALL THREE readers must now refuse av1_nvenc — completeness, no silent third path.
+	if d.NVENCEncoderVerified("av1_nvenc") {
+		t.Error("store 2 (nvencEncoders / plan_codec gate): av1_nvenc still admitted")
 	}
-	// Cap: unverifiable, not verified, not auto-eligible; ProbeElapsed kept for the gauge.
-	got := derived["av1_nvenc"]
-	if got.Verdict != hardware.VerdictUnverifiable {
-		t.Errorf("av1_nvenc verdict = %q, want unverifiable", got.Verdict)
+	if d.NVENCEncoderAutoEligible("av1_nvenc") {
+		t.Error("store 3 (nvencEncoderCaps / NVENCEncoderAutoEligible): av1_nvenc still auto-eligible")
 	}
-	if got.Verified || got.AutoEligible {
-		t.Errorf("av1_nvenc must be fail-closed: Verified=%v AutoEligible=%v, want both false", got.Verified, got.AutoEligible)
-	}
-	if got.ProbeElapsed != 20*time.Millisecond {
-		t.Errorf("av1_nvenc ProbeElapsed should be preserved for observability, got %v", got.ProbeElapsed)
-	}
-	// Surgical: h264_nvenc untouched on both paths (latch is av1-only; NVIDIA host keeps HW H264/HEVC).
-	if h := derived["h264_nvenc"]; !h.Verified || !h.AutoEligible {
-		t.Error("h264_nvenc must stay verified+auto-eligible (latch is av1-only)")
-	}
-	if !nvencEncoders["h264_nvenc"] {
-		t.Error("h264_nvenc must stay in the detector nvencEncoders map (latch is av1-only)")
-	}
-
-	// REAL global admission gate after the latch: av1 closed, h264 open.
-	hardware.SetNVENCEncoderCapabilities(derived)
 	if hardware.IsNVENCEncoderReady("av1_nvenc") {
-		t.Error("post-latch: av1_nvenc must NOT be admitted at the global NVENC gate")
+		t.Error("store 1 (global nvencEncCaps / IsNVENCEncoderReady+IsHardwareEncoderReady): av1_nvenc still admitted")
 	}
-	if !hardware.IsNVENCEncoderReady("h264_nvenc") {
-		t.Error("post-latch: h264_nvenc must remain admitted")
+	// Explicit three-state label retained for the gauge; ProbeElapsed preserved.
+	if got := d.nvencEncoderCaps["av1_nvenc"]; got.Verdict != hardware.VerdictUnverifiable || got.Verified || got.AutoEligible {
+		t.Errorf("av1_nvenc cap = %+v, want {Verdict:unverifiable, Verified:false, AutoEligible:false}", got)
+	}
+	if got := d.nvencEncoderCaps["av1_nvenc"].ProbeElapsed; got != 20*time.Millisecond {
+		t.Errorf("av1_nvenc ProbeElapsed must be preserved for observability, got %v", got)
+	}
+
+	// SURGICAL: h264_nvenc untouched on every one of the three readers (latch is av1-only).
+	if !d.NVENCEncoderVerified("h264_nvenc") || !d.NVENCEncoderAutoEligible("h264_nvenc") || !hardware.IsNVENCEncoderReady("h264_nvenc") {
+		t.Error("h264_nvenc must remain admitted on all three readers — an NVIDIA host keeps HW H264/HEVC")
 	}
 }
 
