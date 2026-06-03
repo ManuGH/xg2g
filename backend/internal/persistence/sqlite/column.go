@@ -3,13 +3,15 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // TableHasColumn reports whether the given SQLite table has a column with the
 // given name (via PRAGMA table_info). Shared helper — was copy-pasted verbatim
 // into the capreg, decision-audit, and resume stores.
 func TableHasColumn(tx *sql.Tx, table, column string) (bool, error) {
-	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	escapedTable := strings.ReplaceAll(table, `"`, `""`)
+	rows, err := tx.Query(fmt.Sprintf(`PRAGMA table_info("%s")`, escapedTable))
 	if err != nil {
 		return false, err
 	}
