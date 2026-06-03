@@ -43,7 +43,8 @@ endpoint is configured. The codebase is already instrumented (HTTP requests, the
 Enigma2/OpenWebIF client, the recordings decision path, background jobs); setting
 an endpoint exports those spans to your collector (Jaeger, Tempo, Grafana, …).
 These keys are read directly at startup and are not part of the generated
-registry table below.
+registry table below. For the full tracing guide (spans, end-to-end trace,
+usage), see the [Observability guide](../ops/OBSERVABILITY.md).
 
 | Env | Default | Purpose |
 | --- | --- | --- |

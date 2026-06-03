@@ -3,6 +3,12 @@
 **Status:** Accepted  
 **Date:** 2025-12-19
 
+**Update (2026-06-03):** The exporter is now actually initialized at startup
+(`cmd/daemon/main.go` -> `telemetry.NewProvider`), gated on `XG2G_OTEL_ENDPOINT`.
+Previously the instrumentation existed but the provider was never created, so no
+traces were exported. Added spans: `playback.plan` (decision + ffprobe probes)
+and `ffmpeg.startup` (spawn -> first segment). See `docs/ops/OBSERVABILITY.md`.
+
 ## Context
 
 The sharp edges in `xg2g` are in streaming and receiver integration. When failures occur (HLS readiness, ffmpeg exits, upstream errors), we need correlation across:

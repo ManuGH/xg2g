@@ -47,10 +47,44 @@ Rebuffer proxy thresholds:
 
 ## Tracing (OpenTelemetry)
 
-- **Status:** Opt-in (see ADR-004)
-- **Configuration:** `config.yaml` → `telemetry.otlp_endpoint`
-- **Middleware:** `internal/control/middleware/stack.go`
-- **Exporter:** OTLP/gRPC to configured endpoint
+- **Status:** Opt-in, **off by default**. Instrumentation is always compiled in;
+  the exporter activates **only when `XG2G_OTEL_ENDPOINT` is set**. Otherwise a
+  no-op provider is installed at startup, so spans cost nothing. See ADR-004.
+- **Enable it** — point at a collector (Jaeger, Tempo, Grafana, …) and set:
+  - `XG2G_OTEL_ENDPOINT` — OTLP endpoint, e.g. `tempo:4317` (unset = disabled)
+  - `XG2G_OTEL_PROTOCOL` — `grpc` (default) or `http`
+  - `XG2G_OTEL_SAMPLING` — `0.0`–`1.0` (default `1.0`)
+  - `XG2G_OTEL_ENVIRONMENT` — `deployment.environment` attribute (default `production`)
+- **Wired at:** `cmd/daemon/main.go` (`telemetry.NewProvider` + graceful shutdown);
+  ingress spans via the canonical middleware stack (`internal/control/middleware/`).
+
+### Spans — the live-playback trace
+
+When enabled, one playback attempt produces an end-to-end trace:
+
+```text
+HTTP request                  (middleware: internal/control/middleware/)
+  ├─ playback.plan            decision + ffprobe probes; attr: xg2g.path_id
+  └─ ffmpeg.startup           spawn -> first HLS segment;
+                              attr: xg2g.time_to_first_segment_ms,
+                                    xg2g.session_id, xg2g.source_type, xg2g.hw_backend
+```
+
+Also instrumented: the Enigma2/OpenWebIF client (`xg2g.enigma2`, incl. retries),
+the recordings decision path, and background refresh jobs.
+
+- **Log ↔ trace correlation:** request logs carry `trace_id` / `span_id`
+  (`internal/log/logger.go`), so you can pivot from a log line to its trace.
+- **No credential leak:** span URL labels are path-only (`traceLabels`).
+
+### Deliberately NOT traced (do not re-litigate)
+
+- Prometheus metrics and zerolog logs are **not** migrated to OTel — they work;
+  migration would be churn. Tracing is the only OTel signal exported.
+- No per-HLS-segment spans (high-frequency file serving = trace spam; throughput
+  is covered by metrics above).
+- No long-lived steady-state transcode spans (use the watchdog metrics/events).
+- SQLite queries are not traced (no current latency concern).
 
 ## Health & Readiness
 
