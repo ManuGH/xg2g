@@ -62,6 +62,15 @@ type HardwareEncoderCapability struct {
 	Reason       string
 	ProbeElapsed time.Duration
 	AutoEligible bool
+
+	// Per-bit-depth verification (B2). Production drives AV1 at 10-bit (p010le)
+	// while 8-bit (nv12) is the broad-compat depth; recording both lets plan-time
+	// gating reject "10-bit AV1 on 8-bit-only hardware" and lets fleet visibility
+	// (B3) distinguish a host that does AV1 8-bit but not 10-bit. For the overall
+	// Verified verdict an encoder is judged at the bit depth it is used at in
+	// production (AV1: 10-bit; H.264/HEVC: 8-bit).
+	Verified8Bit  bool
+	Verified10Bit bool
 }
 
 type VAAPIEncoderCapability = HardwareEncoderCapability
@@ -168,7 +177,7 @@ func SetVAAPIEncoderCapabilities(capabilities map[string]HardwareEncoderCapabili
 	}
 	vaapiEncCaps = make(map[string]HardwareEncoderCapability, len(capabilities))
 	for k, v := range capabilities {
-		if v.Verified {
+		if v.Verified || v.Verified8Bit || v.Verified10Bit {
 			vaapiEncCaps[k] = v
 		}
 	}

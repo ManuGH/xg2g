@@ -137,6 +137,12 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			if !ok {
 				return codecPlan{}, fmt.Errorf("unsupported vaapi codec resolved by decision engine: %s", resolvedCodec)
 			}
+			// For AV1 this gate now means "verified at 10-bit (p010)": av1_vaapi
+			// only enters the verified set via the production-bit-depth (p010)
+			// decode-verify (see PreflightVAAPI), so a host that only does 8-bit AV1
+			// is not admitted here and never emits the p010 AV1 path. No separate
+			// 10-bit check is needed — it would diverge from this single source of
+			// truth (VaapiEncoder10BitVerified stays for fleet visibility / B3).
 			if !a.detector.VaapiEncoderVerified(reqEncoder) {
 				return codecPlan{}, fmt.Errorf("vaapi encoder %s not verified by preflight (device=%s, deviceErr=%v)", reqEncoder, a.VaapiDevice, a.detector.vaapiDeviceErr)
 			}
