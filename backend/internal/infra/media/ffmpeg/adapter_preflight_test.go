@@ -20,9 +20,9 @@ import (
 
 func TestPreflightTranscodeProfiles_PublishesMeasuredProfileBenchmarks(t *testing.T) {
 	adapter := NewLocalAdapter("ffmpeg", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128")
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true}
-	adapter.nvencEncoders = map[string]bool{"h264_nvenc": true}
-	adapter.profileProbeFn = func(_ context.Context, req profileProbeRequest) (time.Duration, error) {
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true}
+	adapter.detector.nvencEncoders = map[string]bool{"h264_nvenc": true}
+	adapter.detector.profileProbeFn = func(_ context.Context, req profileProbeRequest) (time.Duration, error) {
 		switch req.Backend + ":" + req.ProfileID {
 		case "cpu:" + playbackprofile.BenchmarkProfileAudioAACStereo:
 			return 35 * time.Millisecond, nil
@@ -123,7 +123,7 @@ func TestPreflightTranscodeProfiles_PublishesMeasuredProfileBenchmarks(t *testin
 
 func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
 	adapter := NewLocalAdapter("ffmpeg", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128")
-	adapter.vaapiEncoders = map[string]bool{
+	adapter.detector.vaapiEncoders = map[string]bool{
 		"hevc_vaapi": true,
 		"av1_vaapi":  true,
 	}

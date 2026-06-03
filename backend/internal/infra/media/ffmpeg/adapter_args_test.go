@@ -714,7 +714,7 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "safari-hevc-hq25-progressive",
@@ -802,7 +802,7 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true} // simulate passed preflight
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true} // simulate passed preflight
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-1",
@@ -870,7 +870,7 @@ func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-encode-only",
@@ -927,7 +927,7 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-hevc",
@@ -968,7 +968,7 @@ func TestBuildArgs_VaapiHEVCMPEGTSDoesNotEmitHVC1OrFMP4Init(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-hevc-mpegts",
@@ -1011,7 +1011,7 @@ func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-hevc-deinterlace-encode-only",
@@ -1064,7 +1064,7 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPathWhenVerified(t *testing
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-hevc-deinterlace-encode-only-verified",
@@ -1119,7 +1119,7 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-hevc-deinterlace-full",
@@ -1160,7 +1160,7 @@ func TestBuildArgs_SafariHEVCHWUsesShortStartupSegments(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 45*time.Minute, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"hevc_vaapi": true}
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		return 25, "r_frame_rate", nil
 	}
@@ -1211,7 +1211,7 @@ func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t 
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "hevc-hw-profile-cpu-fallback",
@@ -1252,7 +1252,7 @@ func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
 	)
-	adapter.nvencEncoders = map[string]bool{"h264_nvenc": true, "hevc_nvenc": true}
+	adapter.detector.nvencEncoders = map[string]bool{"h264_nvenc": true, "hevc_nvenc": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "nvenc-encode-only",
@@ -1348,7 +1348,7 @@ func TestBuildArgs_VaapiDefaultQuality(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-default-q",
@@ -1782,7 +1782,7 @@ func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
 	// AV1 not verified, but H264/HEVC are.
-	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "av1-fallback",
@@ -1816,7 +1816,7 @@ func TestBuildArgs_AV1HWUsesMPEGTSSegmentsWhenExperimentalFlagEnabled(t *testing
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"av1_vaapi": true}
 
 	spec := ports.StreamSpec{
 		SessionID: "av1-ts",
@@ -1855,7 +1855,7 @@ func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"av1_vaapi": true}
 	adapter.streamProbeFn = func(ctx context.Context, inputURL string) (*vod.StreamInfo, error) {
 		return &vod.StreamInfo{
 			Container: "ts",
@@ -1915,7 +1915,7 @@ func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{
+	adapter.detector.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
 	}
@@ -1966,7 +1966,7 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{
+	adapter.detector.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
 	}
@@ -2029,7 +2029,7 @@ func TestBuildArgs_AV1HWHQ50ServiceRefPreserves50fpsMotion(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{
+	adapter.detector.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
 	}
@@ -2108,7 +2108,7 @@ func TestBuildArgs_AV1HWInterlacedDoesNotUseOnlyVerifiedFullPath(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{
+	adapter.detector.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
 	}
@@ -2148,7 +2148,7 @@ func TestBuildArgs_AV1HWInterlacedExperimentalOverrideUsesAV1EncodeOnlyPath(t *t
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{
+	adapter.detector.vaapiEncoders = map[string]bool{
 		"h264_vaapi": true,
 		"av1_vaapi":  true,
 	}
@@ -2193,7 +2193,7 @@ func TestBuildArgs_AV1HWUsesShortStartupSegments(t *testing.T) {
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 45*time.Minute, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
-	adapter.vaapiEncoders = map[string]bool{"av1_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"av1_vaapi": true}
 	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
 		return 25, "r_frame_rate", nil
 	}
