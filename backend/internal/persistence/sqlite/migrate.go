@@ -25,6 +25,15 @@ func RunMigration(db *sql.DB, targetVersion int, apply func(tx *sql.Tx, currentV
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Double-check inside the transaction to avoid a TOCTOU race when multiple
+	// goroutines or application instances call RunMigration concurrently.
+	if err := tx.QueryRow(`PRAGMA user_version`).Scan(&currentVersion); err != nil {
+		return err
+	}
+	if currentVersion >= targetVersion {
+		return nil
+	}
+
 	if err := apply(tx, currentVersion); err != nil {
 		return err
 	}

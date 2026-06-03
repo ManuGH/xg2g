@@ -64,7 +64,7 @@ func (s *SqliteStore) migrate() error {
 			return err
 		}
 
-		if currentVersion < schemaVersion {
+		if currentVersion > 0 && currentVersion < schemaVersion {
 			hasFingerprint, err := sqlite.TableHasColumn(tx, "resume_states", "fingerprint")
 			if err != nil {
 				return err

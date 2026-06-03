@@ -113,11 +113,11 @@ func (s *SqliteStore) migrate() error {
 			return err
 		}
 
-		if currentVersion < 4 {
+		if currentVersion > 0 && currentVersion < 4 {
 			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_code TEXT")
 			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN reason_detail_debug TEXT")
 		}
-		if currentVersion < 5 {
+		if currentVersion > 0 && currentVersion < 5 {
 			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN playback_trace_json TEXT")
 		}
 		return nil

@@ -122,7 +122,7 @@ func (s *SqliteStore) migrate() error {
 			return err
 		}
 
-		if currentVersion < sqliteSchemaVersion {
+		if currentVersion > 0 && currentVersion < sqliteSchemaVersion {
 			if err := normalizeEntitlementsTable(tx); err != nil {
 				return err
 			}

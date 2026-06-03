@@ -181,7 +181,7 @@ func (s *SqliteStore) migrate() error {
 			return err
 		}
 
-		if currentVersion < sqliteSchemaVersion {
+		if currentVersion > 0 && currentVersion < sqliteSchemaVersion {
 			if err := normalizeProfilesTable(tx); err != nil {
 				return err
 			}
