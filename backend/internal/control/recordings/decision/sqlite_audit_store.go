@@ -162,11 +162,11 @@ func createAuditSchemaV4(tx *sql.Tx) error {
 }
 
 func migrateAuditSchemaV1ToV2(tx *sql.Tx) error {
-	currentHasOrigin, err := tableHasColumn(tx, "decision_current", "origin")
+	currentHasOrigin, err := sqlite.TableHasColumn(tx, "decision_current", "origin")
 	if err != nil {
 		return err
 	}
-	historyHasOrigin, err := tableHasColumn(tx, "decision_history", "origin")
+	historyHasOrigin, err := sqlite.TableHasColumn(tx, "decision_history", "origin")
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func migrateAuditSchemaV1ToV2(tx *sql.Tx) error {
 }
 
 func migrateAuditSchemaV2ToV3(tx *sql.Tx) error {
-	currentHasShadow, err := tableHasColumn(tx, "decision_current", "shadow_json")
+	currentHasShadow, err := sqlite.TableHasColumn(tx, "decision_current", "shadow_json")
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func migrateAuditSchemaV2ToV3(tx *sql.Tx) error {
 		}
 	}
 
-	historyHasShadow, err := tableHasColumn(tx, "decision_history", "shadow_json")
+	historyHasShadow, err := sqlite.TableHasColumn(tx, "decision_history", "shadow_json")
 	if err != nil {
 		return err
 	}
@@ -291,7 +291,7 @@ func migrateAuditSchemaV2ToV3(tx *sql.Tx) error {
 }
 
 func migrateAuditSchemaV3ToV4(tx *sql.Tx) error {
-	currentHasHostFingerprint, err := tableHasColumn(tx, "decision_current", "host_fingerprint")
+	currentHasHostFingerprint, err := sqlite.TableHasColumn(tx, "decision_current", "host_fingerprint")
 	if err != nil {
 		return err
 	}
@@ -301,7 +301,7 @@ func migrateAuditSchemaV3ToV4(tx *sql.Tx) error {
 		}
 	}
 
-	historyHasHostFingerprint, err := tableHasColumn(tx, "decision_history", "host_fingerprint")
+	historyHasHostFingerprint, err := sqlite.TableHasColumn(tx, "decision_history", "host_fingerprint")
 	if err != nil {
 		return err
 	}
@@ -312,33 +312,6 @@ func migrateAuditSchemaV3ToV4(tx *sql.Tx) error {
 	}
 
 	return createAuditSchemaV4(tx)
-}
-
-func tableHasColumn(tx *sql.Tx, table string, column string) (bool, error) {
-	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var cid int
-		var name string
-		var columnType string
-		var notNull int
-		var defaultValue sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, err
-	}
-	return false, nil
 }
 
 func (s *SqliteAuditStore) Record(ctx context.Context, event Event) error {

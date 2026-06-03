@@ -240,7 +240,7 @@ func migrateSchemaV7ToV8(tx *sql.Tx) error {
 }
 
 func ensureSchemaV8Columns(tx *sql.Tx) error {
-	hasSourceFingerprint, err := tableHasColumn(tx, "capability_observations", "source_fingerprint")
+	hasSourceFingerprint, err := sqlitepkg.TableHasColumn(tx, "capability_observations", "source_fingerprint")
 	if err != nil {
 		return err
 	}
@@ -264,7 +264,7 @@ func ensureSchemaV8Columns(tx *sql.Tx) error {
 		{name: "feedback_code", columnType: "INTEGER", defaultExpr: "0"},
 		{name: "feedback_message", columnType: "TEXT", defaultExpr: "''"},
 	} {
-		hasColumn, err := tableHasColumn(tx, "capability_observations", column.name)
+		hasColumn, err := sqlitepkg.TableHasColumn(tx, "capability_observations", column.name)
 		if err != nil {
 			return err
 		}
@@ -275,7 +275,7 @@ func ensureSchemaV8Columns(tx *sql.Tx) error {
 			return err
 		}
 	}
-	hasReceiverContext, err := tableHasColumn(tx, "capability_sources", "receiver_context_json")
+	hasReceiverContext, err := sqlitepkg.TableHasColumn(tx, "capability_sources", "receiver_context_json")
 	if err != nil {
 		return err
 	}
@@ -284,7 +284,7 @@ func ensureSchemaV8Columns(tx *sql.Tx) error {
 			return err
 		}
 	}
-	hasBitrateConfidence, err := tableHasColumn(tx, "capability_sources", "bitrate_confidence")
+	hasBitrateConfidence, err := sqlitepkg.TableHasColumn(tx, "capability_sources", "bitrate_confidence")
 	if err != nil {
 		return err
 	}
@@ -293,7 +293,7 @@ func ensureSchemaV8Columns(tx *sql.Tx) error {
 			return err
 		}
 	}
-	hasBitrateBucket, err := tableHasColumn(tx, "capability_sources", "bitrate_bucket")
+	hasBitrateBucket, err := sqlitepkg.TableHasColumn(tx, "capability_sources", "bitrate_bucket")
 	if err != nil {
 		return err
 	}
@@ -302,7 +302,7 @@ func ensureSchemaV8Columns(tx *sql.Tx) error {
 			return err
 		}
 	}
-	hasSignalFPS, err := tableHasColumn(tx, "capability_sources", "signal_fps")
+	hasSignalFPS, err := sqlitepkg.TableHasColumn(tx, "capability_sources", "signal_fps")
 	if err != nil {
 		return err
 	}
@@ -312,7 +312,7 @@ func ensureSchemaV8Columns(tx *sql.Tx) error {
 		}
 	}
 	for _, column := range []string{"brand", "product", "device_name"} {
-		hasColumn, err := tableHasColumn(tx, "capability_devices", column)
+		hasColumn, err := sqlitepkg.TableHasColumn(tx, "capability_devices", column)
 		if err != nil {
 			return err
 		}
@@ -893,31 +893,4 @@ func (s *SqliteStore) Close() error {
 		return nil
 	}
 	return s.DB.Close()
-}
-
-func tableHasColumn(tx *sql.Tx, table string, column string) (bool, error) {
-	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var cid int
-		var name string
-		var columnType string
-		var notNull int
-		var defaultValue sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, err
-	}
-	return false, nil
 }

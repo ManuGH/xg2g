@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
 	"path/filepath"
 	"testing"
 	"time"
@@ -318,19 +319,19 @@ func TestSqliteAuditStore_MigratesV1RowsToRuntimeOrigin(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback() }()
 
-	currentHasShadow, err := tableHasColumn(tx, "decision_current", "shadow_json")
+	currentHasShadow, err := sqlite.TableHasColumn(tx, "decision_current", "shadow_json")
 	require.NoError(t, err)
 	require.True(t, currentHasShadow)
 
-	historyHasShadow, err := tableHasColumn(tx, "decision_history", "shadow_json")
+	historyHasShadow, err := sqlite.TableHasColumn(tx, "decision_history", "shadow_json")
 	require.NoError(t, err)
 	require.True(t, historyHasShadow)
 
-	currentHasHostFingerprint, err := tableHasColumn(tx, "decision_current", "host_fingerprint")
+	currentHasHostFingerprint, err := sqlite.TableHasColumn(tx, "decision_current", "host_fingerprint")
 	require.NoError(t, err)
 	require.True(t, currentHasHostFingerprint)
 
-	historyHasHostFingerprint, err := tableHasColumn(tx, "decision_history", "host_fingerprint")
+	historyHasHostFingerprint, err := sqlite.TableHasColumn(tx, "decision_history", "host_fingerprint")
 	require.NoError(t, err)
 	require.True(t, historyHasHostFingerprint)
 
@@ -404,11 +405,11 @@ func TestSqliteAuditStore_MigratesV3RowsToHostFingerprintSchema(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback() }()
 
-	currentHasHostFingerprint, err := tableHasColumn(tx, "decision_current", "host_fingerprint")
+	currentHasHostFingerprint, err := sqlite.TableHasColumn(tx, "decision_current", "host_fingerprint")
 	require.NoError(t, err)
 	require.True(t, currentHasHostFingerprint)
 
-	historyHasHostFingerprint, err := tableHasColumn(tx, "decision_history", "host_fingerprint")
+	historyHasHostFingerprint, err := sqlite.TableHasColumn(tx, "decision_history", "host_fingerprint")
 	require.NoError(t, err)
 	require.True(t, historyHasHostFingerprint)
 
