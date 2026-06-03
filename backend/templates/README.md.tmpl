@@ -55,12 +55,19 @@ safe, the universal fallback is **H.264 + AAC**. AV1/fMP4 is allowed only when
 the browser runtime probe and device policy both prove that the client can
 decode it safely.
 
+Most broadcast channels are MPEG-2 or HEVC video with AC3/MP2 audio, while
+browsers (especially outside Safari) need H.264/AAC — so **watching in a browser
+usually means transcoding**, which costs real CPU. On x86 hosts xg2g can offload
+video encoding to a GPU/iGPU (VAAPI/NVENC); on arm64 it transcodes in software.
+Size your host for the number of concurrent streams you expect.
+
 [Read the codec/container matrix](docs/arch/CODEC_MATRIX.md)
 
 ## Quickstart
 
-**Prerequisites:** Docker, `openssl`, and an Enigma2 receiver reachable on your
-network
+**Prerequisites:** Docker, `openssl`, an Enigma2 receiver reachable on your
+network, and a host with enough CPU for transcoding (x86 hosts can offload video
+encoding to a GPU/iGPU — see Playback Pipeline above)
 
 ```bash
 docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \

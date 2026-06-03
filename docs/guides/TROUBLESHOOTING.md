@@ -53,6 +53,13 @@ Hardware transcoding (VAAPI/NVENC) is **x86-only**. On arm64 (Raspberry Pi,
 arm64 NAS) xg2g runs ffmpeg in software, which is much heavier. Prefer channels
 that direct-play or remux, or run on x86-64 if you need hardware transcode.
 
+## Choppy playback or very high CPU
+
+You're transcoding on too little hardware. Watching in a browser usually means
+xg2g transcodes to H.264/AAC (broadcast sources are typically MPEG-2/HEVC video
+with AC3/MP2 audio). Use an x86 host with GPU/iGPU encoding (VAAPI/NVENC), reduce
+concurrent streams, or prefer clients/channels that can direct-play.
+
 ## Where to look
 
 - Logs: `docker logs xg2g` (structured JSON; set `XG2G_LOG_LEVEL=debug` for more).
