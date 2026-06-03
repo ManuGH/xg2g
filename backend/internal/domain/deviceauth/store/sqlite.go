@@ -43,21 +43,8 @@ func (s *SqliteStore) Close() error {
 }
 
 func (s *SqliteStore) migrate() error {
-	var currentVersion int
-	if err := s.DB.QueryRow("PRAGMA user_version").Scan(&currentVersion); err != nil {
-		return err
-	}
-	if currentVersion >= sqliteSchemaVersion {
-		return nil
-	}
-
-	tx, err := s.DB.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	schema := `
+	return sqlitepkg.RunMigration(s.DB, sqliteSchemaVersion, func(tx *sql.Tx, currentVersion int) error {
+		schema := `
 	CREATE TABLE IF NOT EXISTS pairings (
 		pairing_id TEXT PRIMARY KEY,
 		pairing_secret_hash TEXT NOT NULL,
@@ -130,13 +117,11 @@ func (s *SqliteStore) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_web_bootstraps_source_session_id ON web_bootstraps(source_access_session_id);
 	`
-	if _, err := tx.Exec(schema); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", sqliteSchemaVersion)); err != nil {
-		return err
-	}
-	return tx.Commit()
+		if _, err := tx.Exec(schema); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (s *SqliteStore) PutPairing(ctx context.Context, record *model.PairingRecord) error {

@@ -36,23 +36,8 @@ func NewSqliteStore(dbPath string) (*SqliteStore, error) {
 }
 
 func (s *SqliteStore) migrate() error {
-	var currentVersion int
-	err := s.DB.QueryRow("PRAGMA user_version").Scan(&currentVersion)
-	if err != nil {
-		return err
-	}
-
-	if currentVersion >= schemaVersion {
-		return nil
-	}
-
-	tx, err := s.DB.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	schema := `
+	return sqlite.RunMigration(s.DB, schemaVersion, func(tx *sql.Tx, currentVersion int) error {
+		schema := `
 	CREATE TABLE IF NOT EXISTS resume_states (
 		principal_id TEXT NOT NULL,
 		recording_id TEXT NOT NULL,
@@ -75,27 +60,23 @@ func (s *SqliteStore) migrate() error {
 	);
 	`
 
-	if _, err := tx.Exec(schema); err != nil {
-		return err
-	}
-
-	if currentVersion < schemaVersion {
-		hasFingerprint, err := sqlite.TableHasColumn(tx, "resume_states", "fingerprint")
-		if err != nil {
+		if _, err := tx.Exec(schema); err != nil {
 			return err
 		}
-		if !hasFingerprint {
-			if _, err := tx.Exec(`ALTER TABLE resume_states ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''`); err != nil {
+
+		if currentVersion > 0 && currentVersion < schemaVersion {
+			hasFingerprint, err := sqlite.TableHasColumn(tx, "resume_states", "fingerprint")
+			if err != nil {
 				return err
 			}
+			if !hasFingerprint {
+				if _, err := tx.Exec(`ALTER TABLE resume_states ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''`); err != nil {
+					return err
+				}
+			}
 		}
-	}
-
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+		return nil
+	})
 }
 
 func (s *SqliteStore) Put(ctx context.Context, principalID, recordingKey string, state *State) error {
