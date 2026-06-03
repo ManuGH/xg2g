@@ -88,6 +88,38 @@ func publishEncoderGauges(encoders []string, caps map[string]hardware.HardwareEn
 	}
 }
 
+// applyEncoderVerdicts overlays the three-state verdict + per-bit-depth results
+// onto the derived capability map. The admission field cap.Verified — the SINGLE
+// field every gate reads (autocodec via IsHardwareEncoderReady -> cap.Verified;
+// plan_codec via the verified set, which is set from the same production-format
+// verdict) and the ONLY field B3 may export as "admitted" — is DERIVED here from
+// the bit depth production drives this codec at (AV1: 10-bit p010; others: 8-bit
+// nv12). It is never set independently, so the exported fingerprint cannot
+// diverge from what admission applies. Verified8Bit/Verified10Bit are per-depth
+// detail (both fully decode-verified) and gate NOTHING by themselves.
+func applyEncoderVerdicts(caps map[string]hardware.VAAPIEncoderCapability, encoders []string, verdicts map[string]hardware.EncoderVerdict, reasons map[string]string, verified8, verified10 map[string]bool) {
+	for _, enc := range encoders {
+		verdict, ok := verdicts[enc]
+		if !ok {
+			continue
+		}
+		cap := caps[enc] // zero value for non-verified encoders
+		cap.Verdict = verdict
+		cap.Reason = reasons[enc]
+		cap.Verified8Bit = verified8[enc]
+		cap.Verified10Bit = verified10[enc]
+		if normalizeRequestedCodec(enc) == "av1" {
+			cap.Verified = cap.Verified10Bit
+		} else {
+			cap.Verified = cap.Verified8Bit
+		}
+		if !cap.Verified {
+			cap.AutoEligible = false
+		}
+		caps[enc] = cap
+	}
+}
+
 func (d *Detector) PreflightVAAPI() error {
 	publishEncoderGauges(vaapiEncodersToTest, nil)
 	if d.VaapiDevice == "" {
@@ -183,28 +215,10 @@ func (d *Detector) PreflightVAAPI() error {
 		envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", capability.DefaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
 		envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", capability.DefaultAV1VAAPIAutoRatioMax, 1.0, 10.0),
 	)
-	// Overlay the three-state verdict onto every probed encoder so the record
-	// carries withheld/unverifiable too (B3 fleet visibility), while admission
-	// (cap.Verified) stays fail-closed for anything not VerdictVerified.
 	if d.vaapiEncoderCaps == nil {
 		d.vaapiEncoderCaps = make(map[string]hardware.VAAPIEncoderCapability, len(vaapiEncodersToTest))
 	}
-	for _, enc := range vaapiEncodersToTest {
-		verdict, ok := verdicts[enc]
-		if !ok {
-			continue
-		}
-		cap := d.vaapiEncoderCaps[enc] // zero value (Verified=false) for non-verified encoders
-		cap.Verdict = verdict
-		cap.Reason = reasons[enc]
-		cap.Verified = verdict == hardware.VerdictVerified
-		cap.Verified8Bit = verified8[enc]
-		cap.Verified10Bit = verified10[enc]
-		if !cap.Verified {
-			cap.AutoEligible = false
-		}
-		d.vaapiEncoderCaps[enc] = cap
-	}
+	applyEncoderVerdicts(d.vaapiEncoderCaps, vaapiEncodersToTest, verdicts, reasons, verified8, verified10)
 	for _, enc := range vaapiEncodersToTest {
 		cap, ok := d.vaapiEncoderCaps[enc]
 		if !ok || !cap.Verified {
