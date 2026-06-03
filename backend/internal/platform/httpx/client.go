@@ -22,15 +22,9 @@ func NewClient(timeout time.Duration) *http.Client {
 		timeout = defaultClientTimeout
 	}
 
-	dialTimeout := timeout
-	if dialTimeout > defaultDialTimeout {
-		dialTimeout = defaultDialTimeout
-	}
+	dialTimeout := min(timeout, defaultDialTimeout)
 
-	responseHeaderTimeout := timeout
-	if responseHeaderTimeout > defaultResponseHeaderTimeout {
-		responseHeaderTimeout = defaultResponseHeaderTimeout
-	}
+	responseHeaderTimeout := min(timeout, defaultResponseHeaderTimeout)
 
 	return &http.Client{
 		Timeout: timeout,

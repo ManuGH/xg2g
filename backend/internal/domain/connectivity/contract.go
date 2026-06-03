@@ -474,12 +474,7 @@ func severityRank(value FindingSeverity) int {
 }
 
 func hasScope(scopes []FindingScope, want FindingScope) bool {
-	for _, scope := range scopes {
-		if scope == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(scopes, want)
 }
 
 func originListAllowsAll(origins []string) bool {

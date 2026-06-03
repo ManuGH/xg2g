@@ -35,7 +35,7 @@ func LoadDeprecations() ([]Deprecation, error) {
 		return nil, err
 	}
 
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		path := filepath.Join(curr, "docs", "deprecations.json")
 		if _, err := os.Stat(path); err == nil {
 			// #nosec G304 - path is constructed locally with hardcoded filename relative to CWD

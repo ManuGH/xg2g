@@ -22,14 +22,8 @@ func (s *Service) ListSessionsDebug(ctx context.Context, req ListSessionsDebugRe
 	}
 
 	total := len(allSessions)
-	start := req.Offset
-	if start > total {
-		start = total
-	}
-	end := start + req.Limit
-	if end > total {
-		end = total
-	}
+	start := min(req.Offset, total)
+	end := min(start+req.Limit, total)
 	sessions := allSessions[start:end]
 
 	return ListSessionsDebugResult{

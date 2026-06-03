@@ -1,6 +1,7 @@
 package hardware
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
@@ -146,10 +147,8 @@ func classifyHostPressure(snapshot playbackprofile.HostRuntimeSnapshot) (playbac
 }
 
 func appendHostPressureSignal(signals []playbackprofile.HostPressureSignal, signal playbackprofile.HostPressureSignal) []playbackprofile.HostPressureSignal {
-	for _, existing := range signals {
-		if existing == signal {
-			return signals
-		}
+	if slices.Contains(signals, signal) {
+		return signals
 	}
 	return append(signals, signal)
 }

@@ -7,6 +7,7 @@ package store
 import (
 	"context"
 	"errors"
+	"maps"
 	"sort"
 	"sync"
 	"time"
@@ -340,9 +341,7 @@ func cloneSessionRecord(rec *model.SessionRecord) *model.SessionRecord {
 	cp := *rec
 	if rec.ContextData != nil {
 		cp.ContextData = make(map[string]string, len(rec.ContextData))
-		for k, v := range rec.ContextData {
-			cp.ContextData[k] = v
-		}
+		maps.Copy(cp.ContextData, rec.ContextData)
 	}
 	cp.PlaybackTrace = rec.PlaybackTrace.Clone()
 	return &cp

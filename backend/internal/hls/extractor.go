@@ -53,8 +53,8 @@ func ExtractSegmentTruth(playlist string) (*SegmentTruth, error) {
 			continue
 		}
 
-		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
-			pdtStr := strings.TrimPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:")
+		if after, ok := strings.CutPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:"); ok {
+			pdtStr := after
 			t, err := time.Parse(time.RFC3339Nano, pdtStr)
 			if err != nil {
 				// Retry without Nano if needed
@@ -76,9 +76,9 @@ func ExtractSegmentTruth(playlist string) (*SegmentTruth, error) {
 			continue
 		}
 
-		if strings.HasPrefix(line, "#EXTINF:") {
+		if after, ok := strings.CutPrefix(line, "#EXTINF:"); ok {
 			// Format: #EXTINF:10.000,
-			durPart := strings.TrimPrefix(line, "#EXTINF:")
+			durPart := after
 			if idx := strings.Index(durPart, ","); idx != -1 {
 				durPart = durPart[:idx]
 			}

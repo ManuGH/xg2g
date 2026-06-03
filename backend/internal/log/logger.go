@@ -318,7 +318,7 @@ func (w *structuredBufferWriter) Write(p []byte) (n int, err error) {
 
 	// Process lines outside of the framing lock to reduce contention
 	start := 0
-	for i := 0; i < len(lines); i++ {
+	for i := range lines {
 		if lines[i] == '\n' {
 			w.processLine(lines[start:i])
 			start = i + 1

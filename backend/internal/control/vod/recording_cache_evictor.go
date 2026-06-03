@@ -140,7 +140,7 @@ func evictRecordingCache(
 
 	if len(remaining) > maxEntries {
 		overflow := len(remaining) - maxEntries
-		for i := 0; i < overflow; i++ {
+		for i := range overflow {
 			toDelete[remaining[i].path] = struct{}{}
 			reasons[remaining[i].path] = CacheEvictReasonMaxEntries
 		}
@@ -162,10 +162,7 @@ func evictRecordingCache(
 		}
 	}
 
-	res.Entries = len(dirs) - res.EvictedTTL - res.EvictedMaxEntries
-	if res.Entries < 0 {
-		res.Entries = 0
-	}
+	res.Entries = max(len(dirs)-res.EvictedTTL-res.EvictedMaxEntries, 0)
 	return res, nil
 }
 

@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -456,7 +457,7 @@ func buildPlaybackConfidenceWindowsFromObservations(observations []capreg.Playba
 	for key := range buckets {
 		starts = append(starts, key)
 	}
-	sort.Slice(starts, func(i, j int) bool { return starts[i] < starts[j] })
+	slices.Sort(starts)
 
 	windows := make([]runtimepolicy.WindowFeatures, 0, len(starts))
 	for _, key := range starts {

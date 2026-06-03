@@ -580,7 +580,7 @@ func (s *Service) persistStartSession(ctx context.Context, intent Intent, store 
 	}
 
 	persisted := false
-	for attempt := 0; attempt < startReplayRecoveryAttempts; attempt++ {
+	for attempt := range startReplayRecoveryAttempts {
 		existingID, exists, err := store.PutSessionWithIdempotency(ctx, session, idempotencyKey, admissionLeaseTTL)
 		if err != nil {
 			intent.Logger.Error().Err(err).Msg("failed to persist intent")

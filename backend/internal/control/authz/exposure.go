@@ -6,6 +6,7 @@ package authz
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 )
@@ -195,9 +196,7 @@ func MissingExposurePolicies() []string {
 
 func ExposurePolicies() map[string]ExposurePolicy {
 	out := make(map[string]ExposurePolicy, len(operationExposurePolicies))
-	for operationID, policy := range operationExposurePolicies {
-		out[operationID] = policy
-	}
+	maps.Copy(out, operationExposurePolicies)
 	return out
 }
 

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -196,9 +197,7 @@ func CollectLifecycleRuntimeSnapshot(ctx context.Context, cfg config.AppConfig, 
 			snapshot.Compose.Image = strings.TrimSpace(svc.Image)
 			snapshot.Compose.EnvFiles = append([]string(nil), svc.EnvFile...)
 			snapshot.Compose.Environment = map[string]string{}
-			for k, v := range svc.Environment {
-				snapshot.Compose.Environment[k] = v
-			}
+			maps.Copy(snapshot.Compose.Environment, svc.Environment)
 			snapshot.Compose.Volumes = append([]LifecycleRuntimeVolumeSnapshot(nil), svc.Volumes...)
 		}
 	}

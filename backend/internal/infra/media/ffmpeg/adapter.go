@@ -841,7 +841,7 @@ func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profi
 }
 
 func argsHardwareBackend(args []string) profiles.GPUBackend {
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		if args[i] == "-vaapi_device" {
 			return profiles.GPUBackendVAAPI
 		}
@@ -902,11 +902,11 @@ func scanFFmpegLogTokens(data []byte, atEOF bool) (advance int, token []byte, er
 }
 
 func parseFFmpegFrameCount(line string) (int, bool) {
-	idx := strings.Index(line, "frame=")
-	if idx < 0 {
+	_, after, ok := strings.Cut(line, "frame=")
+	if !ok {
 		return 0, false
 	}
-	rest := strings.TrimLeft(line[idx+len("frame="):], " ")
+	rest := strings.TrimLeft(after, " ")
 	if rest == "" {
 		return 0, false
 	}

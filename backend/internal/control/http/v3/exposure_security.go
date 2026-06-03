@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,10 +88,7 @@ func (s *Server) ExposureSecurityMiddleware(next http.Handler) http.Handler {
 			allowed, retryAfter := s.allowExposureRequest(r, operationID, policy)
 			if !allowed {
 				s.logExposureRateLimit(r, operationID, policy)
-				retryAfterSeconds := int(math.Ceil(retryAfter.Seconds()))
-				if retryAfterSeconds < 1 {
-					retryAfterSeconds = 1
-				}
+				retryAfterSeconds := max(int(math.Ceil(retryAfter.Seconds())), 1)
 				w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
 				w.Header().Set("X-RateLimit-Class", string(policy.RateLimitClass))
 				writeRegisteredProblem(w, r, http.StatusTooManyRequests, "security/rate_limited", "Rate Limit Exceeded", problemcode.CodeRateLimitExceeded, "Too many requests for this endpoint exposure class.", map[string]any{
@@ -188,8 +186,8 @@ func (s *Server) exposureClientKey(r *http.Request, cfg config.AppConfig) string
 func forwardedForIPs(raw string) []net.IP {
 	parts := strings.Split(raw, ",")
 	out := make([]net.IP, 0, len(parts))
-	for i := len(parts) - 1; i >= 0; i-- {
-		candidate := net.ParseIP(strings.TrimSpace(parts[i]))
+	for _, v := range slices.Backward(parts) {
+		candidate := net.ParseIP(strings.TrimSpace(v))
 		if candidate == nil {
 			continue
 		}

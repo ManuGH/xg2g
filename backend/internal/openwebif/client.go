@@ -1480,10 +1480,7 @@ func (c *Client) backoffDuration(attempt int) time.Duration {
 		return 0
 	}
 	factor := 1 << (attempt - 1)
-	d := time.Duration(factor) * c.backoff
-	if d > c.maxBackoff {
-		d = c.maxBackoff
-	}
+	d := min(time.Duration(factor)*c.backoff, c.maxBackoff)
 	return d
 }
 
@@ -1539,10 +1536,7 @@ func wrapError(operation string, err error, status int, body []byte) error {
 
 	// Append body snippet if available (useful for Enigma2 stack traces)
 	if len(body) > 0 {
-		limit := 500
-		if len(body) < limit {
-			limit = len(body)
-		}
+		limit := min(len(body), 500)
 		snippet = string(body[:limit])
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
 		snippet = strings.ReplaceAll(snippet, "\r", "")
@@ -1553,10 +1547,7 @@ func wrapError(operation string, err error, status int, body []byte) error {
 			if idx := strings.Index(strings.ToLower(snippet), pattern); idx != -1 {
 				// Redact 16 chars or until space after the pattern
 				start := idx + len(pattern)
-				end := start + 16
-				if end > len(snippet) {
-					end = len(snippet)
-				}
+				end := min(start+16, len(snippet))
 				if spaceIdx := strings.Index(snippet[start:end], " "); spaceIdx != -1 {
 					end = start + spaceIdx
 				}
@@ -1869,8 +1860,8 @@ func extractHost(base string) string {
 			return u.Host
 		}
 	}
-	if idx := strings.Index(base, "/"); idx >= 0 {
-		return base[:idx]
+	if before, _, ok := strings.Cut(base, "/"); ok {
+		return before
 	}
 	return base
 }

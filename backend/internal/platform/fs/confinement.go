@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -109,8 +110,8 @@ func resolveWithExistingPrefix(path string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("failed to resolve path: %w", err)
 			}
-			for i := len(missingParts) - 1; i >= 0; i-- {
-				resolved = filepath.Join(resolved, missingParts[i])
+			for _, v := range slices.Backward(missingParts) {
+				resolved = filepath.Join(resolved, v)
 			}
 			return resolved, nil
 		}

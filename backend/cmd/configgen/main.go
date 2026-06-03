@@ -659,7 +659,7 @@ func schemaItemsForEntry(entry config.ConfigEntry) map[string]any {
 }
 
 func resolveFieldType(path string) (reflect.Type, bool) {
-	cfgType := reflect.TypeOf(config.AppConfig{})
+	cfgType := reflect.TypeFor[config.AppConfig]()
 	parts := strings.Split(path, ".")
 	curr := cfgType
 	for _, part := range parts {

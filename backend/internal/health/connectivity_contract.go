@@ -6,6 +6,7 @@ package health
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -106,10 +107,5 @@ func summarizeConnectivityFindings(report connectivitydomain.ContractReport, sco
 }
 
 func hasConnectivityScope(scopes []connectivitydomain.FindingScope, want connectivitydomain.FindingScope) bool {
-	for _, scope := range scopes {
-		if scope == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(scopes, want)
 }

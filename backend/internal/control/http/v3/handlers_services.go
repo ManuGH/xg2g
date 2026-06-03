@@ -104,7 +104,6 @@ func (s *Server) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {
 	resp := make([]Bouquet, 0, len(bouquets))
 	for _, b := range bouquets {
 		// Scoping
-		b := b
 		resp = append(resp, Bouquet{
 			Name:     &b.Name,
 			Services: &b.Count,

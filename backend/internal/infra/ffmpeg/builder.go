@@ -30,8 +30,8 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 
 	// Handle file:// URI scheme for local files
 	inputPath := spec.Input
-	if strings.HasPrefix(inputPath, "file://") {
-		raw := strings.TrimPrefix(inputPath, "file://")
+	if after, ok := strings.CutPrefix(inputPath, "file://"); ok {
+		raw := after
 		if decoded, err := url.PathUnescape(raw); err == nil {
 			inputPath = decoded
 		}

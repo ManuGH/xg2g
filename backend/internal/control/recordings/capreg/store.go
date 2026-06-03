@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -353,8 +354,8 @@ func (s *MemoryStore) LookupDecisionObservation(_ context.Context, requestID str
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for idx := len(s.observations) - 1; idx >= 0; idx-- {
-		observation := s.observations[idx]
+	for _, v := range slices.Backward(s.observations) {
+		observation := v
 		if observation.RequestID != requestID || observation.ObservationKind != "decision" {
 			continue
 		}

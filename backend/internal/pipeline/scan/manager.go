@@ -677,10 +677,7 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 		failCount := atomic.LoadInt32(&m.consecutiveFailureCount)
 		if failCount > 0 {
 			multiplier := 1 << (failCount - 1)
-			backoff := time.Duration(multiplier) * time.Second
-			if backoff > 30*time.Second {
-				backoff = 30 * time.Second
-			}
+			backoff := min(time.Duration(multiplier)*time.Second, 30*time.Second)
 			if backoff > delay {
 				delay = backoff
 			}

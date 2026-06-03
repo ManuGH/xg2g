@@ -3,6 +3,7 @@ package recordings
 import (
 	"errors"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -102,11 +103,8 @@ func ParseRecordingDurationSeconds(length string) (int64, error) {
 	if len(fields) == 2 {
 		found := false
 		suffix := strings.ToLower(fields[1])
-		for _, s := range suffixes {
-			if suffix == s {
-				found = true
-				break
-			}
+		if slices.Contains(suffixes, suffix) {
+			found = true
 		}
 		if !found {
 			return 0, ErrDurationInvalid

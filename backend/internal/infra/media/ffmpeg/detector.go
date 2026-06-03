@@ -638,11 +638,11 @@ func (d *Detector) measureSignalStatsYAvg(ctx context.Context, mediaPath string)
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		const prefix = "lavfi.signalstats.YAVG="
-		idx := strings.Index(line, prefix)
-		if idx < 0 {
+		_, after, ok := strings.Cut(line, prefix)
+		if !ok {
 			continue
 		}
-		value := strings.TrimSpace(line[idx+len(prefix):])
+		value := strings.TrimSpace(after)
 		yavg, parseErr := strconv.ParseFloat(value, 64)
 		if parseErr != nil {
 			return 0, fmt.Errorf("parse signalstats yavg %q: %w", value, parseErr)

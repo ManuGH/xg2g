@@ -367,10 +367,7 @@ func shouldRetry(resp *http.Response, err error) bool {
 }
 
 func (c *Client) backoffFor(attempt int) time.Duration {
-	wait := c.backoff * time.Duration(1<<attempt)
-	if wait > c.maxBackoff {
-		wait = c.maxBackoff
-	}
+	wait := min(c.backoff*time.Duration(1<<attempt), c.maxBackoff)
 	jitter := time.Duration(c.randInt63n(int64(wait/5 + 1)))
 	return wait + jitter
 }

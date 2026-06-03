@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -136,10 +137,8 @@ func (t *truthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (p
 		return mt, ErrNotFound{RecordingID: serviceRef}
 	case TruthStatusUpstreamUnavailable:
 		// Check for specific failure signals
-		for _, r := range outcome.Reasons {
-			if r == ReasonProbeFailed {
-				return mt, ErrUpstream{Op: "probe", Cause: fmt.Errorf("probe failed permanently: %w", playback.ErrUpstream)}
-			}
+		if slices.Contains(outcome.Reasons, ReasonProbeFailed) {
+			return mt, ErrUpstream{Op: "probe", Cause: fmt.Errorf("probe failed permanently: %w", playback.ErrUpstream)}
 		}
 		// Generic Upstream
 		return mt, ErrUpstream{Op: "upstream", Cause: playback.ErrUpstream}

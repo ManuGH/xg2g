@@ -68,19 +68,13 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 	}
 	if shouldUseShortFMP4StartupSegments(spec) && layout.segmentDurationSec > safariDirtyHLSTimeSec {
 		layout.segmentDurationSec = safariDirtyHLSTimeSec
-		layout.initSegmentDurationSec = safariDirtyHLSInitTimeSec
-		if layout.initSegmentDurationSec > layout.segmentDurationSec {
-			layout.initSegmentDurationSec = layout.segmentDurationSec
-		}
+		layout.initSegmentDurationSec = min(safariDirtyHLSInitTimeSec, layout.segmentDurationSec)
 	}
 	if layout.segmentDurationSec <= 0 {
 		return liveSegmentLayout{}, fmt.Errorf("invalid hls segment seconds: %d", layout.segmentDurationSec)
 	}
 	if a.DVRWindow > 0 {
-		layout.listSize = int(math.Ceil(a.DVRWindow.Seconds() / float64(layout.segmentDurationSec)))
-		if layout.listSize < 3 {
-			layout.listSize = 3
-		}
+		layout.listSize = max(int(math.Ceil(a.DVRWindow.Seconds()/float64(layout.segmentDurationSec))), 3)
 	}
 	return layout, nil
 }

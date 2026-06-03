@@ -147,11 +147,8 @@ func RunReplay(replay RuntimePolicyReplay) ReplayResult {
 
 func CompareReplayExpectations(replay RuntimePolicyReplay, result ReplayResult) []ReplayMismatch {
 	var mismatches []ReplayMismatch
-	limit := len(replay.Ticks)
-	if len(result.Ticks) < limit {
-		limit = len(result.Ticks)
-	}
-	for i := 0; i < limit; i++ {
+	limit := min(len(result.Ticks), len(replay.Ticks))
+	for i := range limit {
 		expected := replay.Ticks[i].Expected
 		actual := result.Ticks[i]
 		if expected.Action != actual.Decision.Action {

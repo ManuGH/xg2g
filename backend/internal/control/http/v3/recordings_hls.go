@@ -345,10 +345,7 @@ func (s *Server) writeArtifactError(w http.ResponseWriter, r *http.Request, reco
 		metrics.IncPlaybackError(playbackSchemaRecordingLabel, stage, "RECORDING_PREPARING")
 		retrySec := 5
 		if err.RetryAfter > 0 {
-			retrySec = int(err.RetryAfter.Seconds())
-			if retrySec < 1 {
-				retrySec = 1
-			}
+			retrySec = max(int(err.RetryAfter.Seconds()), 1)
 		}
 		s.writePreparingResponse(w, r, recordingId, "PREPARING", retrySec)
 	case artifacts.CodeNotFound:

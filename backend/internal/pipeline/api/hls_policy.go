@@ -115,8 +115,8 @@ func parseHLSPlaylistMetrics(content []byte) hlsPlaylistMetrics {
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
-			raw := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
+		if after, ok := strings.CutPrefix(line, "#EXT-X-TARGETDURATION:"); ok {
+			raw := strings.TrimSpace(after)
 			target, err := strconv.Atoi(raw)
 			if err == nil && target > 0 {
 				metrics.TargetDurationSec = target

@@ -134,7 +134,6 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsP
 	var resp []LogEntry
 	for _, e := range entries {
 		// Scoping for pointer safety in loop
-		e := e
 		resp = append(resp, LogEntry{
 			Level:   &e.Level,
 			Message: &e.Message,

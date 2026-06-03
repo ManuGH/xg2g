@@ -62,8 +62,8 @@ func extractPiconRefs(items []playlist.Item) map[string]bool {
 		if idx := strings.Index(filename, "?"); idx != -1 {
 			filename = filename[:idx]
 		}
-		if idx := strings.Index(filename, ".png"); idx != -1 {
-			refUnderscore := filename[:idx]
+		if before, _, ok := strings.Cut(filename, ".png"); ok {
+			refUnderscore := before
 			// Convert Underscore -> Colon for Upstream URL generation
 			refColon := strings.ReplaceAll(refUnderscore, "_", ":")
 			refs[refColon] = true

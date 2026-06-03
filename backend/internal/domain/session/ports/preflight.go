@@ -137,8 +137,8 @@ func ClassifyPreflightReason(detail string, httpStatus int) PreflightReason {
 		return PreflightReasonInternal
 	}
 
-	if strings.HasPrefix(raw, "http_status_") {
-		code, err := strconv.Atoi(strings.TrimPrefix(raw, "http_status_"))
+	if after, ok := strings.CutPrefix(raw, "http_status_"); ok {
+		code, err := strconv.Atoi(after)
 		if err == nil {
 			if reason := classifyPreflightHTTPStatus(code); reason != "" {
 				return reason

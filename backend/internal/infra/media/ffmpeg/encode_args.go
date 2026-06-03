@@ -217,10 +217,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 		// Use a 25% target headroom (-b:v = 75% of -maxrate) to keep the ring stable.
 		bV := prof.VideoMaxRateK
 		if isAV1 {
-			bV = (prof.VideoMaxRateK * 3) / 4
-			if bV < 1 {
-				bV = 1
-			}
+			bV = max((prof.VideoMaxRateK*3)/4, 1)
 		}
 		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard
 		// ceiling. Verified on this AMD stack (Mesa 25.0.7 / VCN4): QVBR holds the

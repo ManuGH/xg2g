@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -295,12 +296,7 @@ func principalHasScope(principal *auth.Principal, scope string) bool {
 	if principal == nil || scope == "" {
 		return false
 	}
-	for _, candidate := range principal.Scopes {
-		if candidate == scope {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(principal.Scopes, scope)
 }
 
 func buildMonetizationStatus(cfg config.MonetizationConfig, principal *auth.Principal) *MonetizationStatus {

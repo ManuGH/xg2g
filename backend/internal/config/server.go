@@ -136,10 +136,7 @@ func ParseServerConfigForApp(cfg AppConfig) ServerConfig {
 		maxHeaderBytes = base.MaxHeaderBytes
 	}
 
-	shutdownTimeout := ParseDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", base.ShutdownTimeout)
-	if shutdownTimeout < 3*time.Second {
-		shutdownTimeout = 3 * time.Second
-	}
+	shutdownTimeout := max(ParseDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", base.ShutdownTimeout), 3*time.Second)
 
 	return ServerConfig{
 		ListenAddr:      listen,

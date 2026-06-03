@@ -1,6 +1,7 @@
 package runtimepolicy
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -558,10 +559,5 @@ func maxTime(a, b time.Time) time.Time {
 }
 
 func hasString(values []string, needle string) bool {
-	for _, value := range values {
-		if value == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, needle)
 }

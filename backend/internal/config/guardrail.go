@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -148,12 +149,7 @@ func isLegacyEnvHandledByGuardrail(key string) bool {
 	if key == "XG2G_FFMPEG_PATH" {
 		return true
 	}
-	for _, legacyKey := range legacyCompatEnvKeys {
-		if key == legacyKey {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(legacyCompatEnvKeys, key)
 }
 
 func legacyCompatEnvDiagnostic(key, value string) (legacyEnvDiagnostic, bool) {

@@ -328,7 +328,7 @@ func buildRegistry() (*Registry, error) {
 
 // ValidateFieldCoverage uses reflection to ensure every field in AppConfig is registered.
 func (r *Registry) ValidateFieldCoverage(cfg AppConfig) error {
-	t := reflect.TypeOf(cfg)
+	t := reflect.TypeFor[AppConfig]()
 	return r.validateStruct("", t)
 }
 

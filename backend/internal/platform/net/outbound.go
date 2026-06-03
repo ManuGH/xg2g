@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -173,12 +174,7 @@ func schemeAllowed(allowed []string, scheme string) bool {
 }
 
 func portAllowed(allowed []int, port int) bool {
-	for _, p := range allowed {
-		if p == port {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, port)
 }
 
 func urlPort(u *url.URL, scheme string) (int, error) {
