@@ -11,11 +11,16 @@
 </p>
 
 <div align="center">
-  <strong>Self-hosted live-TV gateway for Enigma2.</strong><br />
-  MPEG-TS in. Browser-ready HLS out. One server-side policy for Safari,
-  iPhone, iPad, Chrome, TVs, recordings, and operator tooling.
+  <strong>Watch your Enigma2 receiver's live TV and recordings in any browser —
+  no app to install.</strong><br />
+  Point xg2g at your VU+ / Dreambox, open a URL on your iPhone, iPad, Mac, PC, or
+  TV, and it just plays — xg2g picks direct-play, remux, or hardware transcode
+  per stream and per device.
   <br /><br />
-  <a href="#quickstart"><strong>Quickstart</strong></a> ·
+  <em>Self-hosted live-TV gateway for Enigma2 — MPEG-TS in, browser-ready HLS out.</em>
+  <br /><br />
+  <a href="docs/guides/GETTING_STARTED.md"><strong>Getting Started</strong></a> ·
+  <a href="#quickstart">Quickstart</a> ·
   <a href="https://manugh.github.io/xg2g/">API Docs</a> ·
   <a href="docs/README.md">Documentation</a> ·
   <a href="docs/arch/CODEC_MATRIX.md">Codec Matrix</a> ·
@@ -24,12 +29,12 @@
 
 ## What xg2g Does
 
-| | |
-| :--- | :--- |
-| **Receiver bridge** | Resolves Enigma2/OpenWebIF streams, including receiver-selected relay ports such as `8001` or `17999`. |
-| **Playback policy** | Chooses DirectPlay, DirectStream, or Transcode from source media, client capability, device policy, and runtime probes. |
-| **Browser delivery** | Serves HLS with native `.ts` or fMP4 segments for Safari, iPhone, iPad, Chrome, desktop browsers, and TV clients. |
-| **Operations surface** | Provides WebUI, `/api/v3`, health checks, metrics, structured logs, and deployment runbooks. |
+- **Live TV in the browser** — your receiver's channels play in Safari, Chrome, and on iPhone, iPad, Mac, PC, and modern TVs, with no native app.
+- **It just plays** — xg2g picks direct-play, remux, or hardware transcode per stream and per device, so you don't fiddle with codecs or formats.
+- **Your recordings, too** — browse and play the recordings on your receiver the same way.
+- **Built to run** — WebUI, a versioned `/api/v3`, health checks, Prometheus metrics, structured logs, and deployment runbooks.
+
+It bridges Enigma2/OpenWebIF (including receiver relay ports like `8001` or `17999`) and serves standards-based HLS — see the pipeline below.
 
 ## Playback Pipeline
 
