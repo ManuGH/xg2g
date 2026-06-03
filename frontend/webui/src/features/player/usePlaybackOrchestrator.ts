@@ -510,6 +510,7 @@ export function usePlaybackOrchestrator(
   useEffect(() => { authHeadersRef.current = authHeaders; });
   useEffect(() => { mergeSessionPlaybackTraceRef.current = mergeSessionPlaybackTrace; });
 
+
   // Native playback (managed Safari/iOS native HLS) runs through the native
   // bridge and never drives the MSE controller's snapshot loop, so the executed
   // session trace (GET /sessions) previously never reached the stats panel —
