@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx264-dev \
     libx265-dev \
     libva-dev \
+    libdav1d-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Build FFmpeg
@@ -50,6 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libva2 \
     libx264-164 \
     libx265-215 \
+    libdav1d7 \
     && if [ "${TARGETARCH}" = "amd64" ]; then \
         apt-get install -y --no-install-recommends intel-media-va-driver; \
       fi \

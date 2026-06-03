@@ -68,6 +68,7 @@ echo "Configuring FFmpeg..."
   --enable-gpl \
   --enable-libx264 \
   --enable-libx265 \
+  --enable-libdav1d \
   --enable-vaapi \
   --enable-nvenc \
   --enable-protocol=hls \
