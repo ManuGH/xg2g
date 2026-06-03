@@ -566,76 +566,10 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 
 		existingCap, found := m.store.Get(sRef)
 
-		// Resolve stream URL:
-		// 1. Try Enigma2 Client resolution (Smart Player Logic)
-		// 2. Fallback to M3U resolution (Stale Playlist)
-		probeURL := ch.URL
-		resolved := false
-
-		if m.e2Client != nil && sRef != "" {
-			// Use a short context for resolution
-			resCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			freshURL, err := m.e2Client.ResolveStreamURL(resCtx, sRef)
-			cancel()
-
-			if err == nil && freshURL != "" {
-				probeURL = freshURL
-				resolved = true
-				log.L().Debug().Str("sref", sRef).Str("fresh_url", freshURL).Msg("scan: resolved fresh stream url")
-			} else {
-				log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: failed to resolve fresh url, falling back to m3u")
-			}
-		}
-
-		if !resolved {
-			resCtx, resCancel := context.WithTimeout(ctx, resolveM3UTimeout)
-			res, err := resolveStreamURL(resCtx, ch.URL)
-			resCancel()
-			if err == nil && res != "" {
-				probeURL = res
-			}
-		}
+		probeURL := m.resolveProbeURL(ctx, ch, sRef)
 
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
-		res, successfulProbeURL, err := m.probeWithFallbacks(ctx, sRef, ch.URL, probeURL, infra.ProbeOptions{}, defaultProbeTimeout)
-		if shouldAttemptExtendedRetry(existingCap, found, res, err) {
-			retryInitialURL := successfulProbeURL
-			if strings.TrimSpace(retryInitialURL) == "" {
-				retryInitialURL = probeURL
-			}
-			log.L().Info().
-				Str("sref", sRef).
-				Dur("timeout", extendedProbeTimeout).
-				Dur("analyzeduration", extendedProbeAnalyzeDuration).
-				Int64("probesize_bytes", extendedProbeSizeBytes).
-				Msg("scan: media truth incomplete, retrying with extended ffprobe budget")
-
-			retryRes, _, retryErr := m.probeWithFallbacks(
-				ctx,
-				sRef,
-				ch.URL,
-				retryInitialURL,
-				infra.ProbeOptions{
-					AnalyzeDuration: extendedProbeAnalyzeDuration,
-					ProbeSizeBytes:  extendedProbeSizeBytes,
-				},
-				extendedProbeTimeout,
-			)
-			retryBase := res
-			if retryBase == nil && found {
-				retryBase = streamInfoFromCapability(existingCap)
-			}
-			switch {
-			case retryErr != nil:
-				log.L().Warn().Err(retryErr).Str("sref", sRef).Msg("scan: extended probe retry failed")
-			case isRicherMediaTruth(retryBase, retryRes):
-				res = retryRes
-				err = nil
-				log.L().Info().Str("sref", sRef).Msg("scan: extended probe retry enriched media truth")
-			default:
-				log.L().Warn().Str("sref", sRef).Msg("scan: extended probe retry returned conflicting or non-additive media truth; keeping original result")
-			}
-		}
+		res, err := m.probeChannelMediaTruth(ctx, ch, sRef, probeURL, existingCap, found)
 		fromStore := found && existingCap.Usable()
 
 		scanned++
@@ -670,34 +604,119 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 			m.mu.Unlock()
 		}
 
-		// Phase 2: Production-Grade Rate Limiting
-		delay := m.ProbeDelay
-
-		// 1. Adaptive Backoff: Increase delay on consecutive failures
-		failCount := atomic.LoadInt32(&m.consecutiveFailureCount)
-		if failCount > 0 {
-			multiplier := 1 << (failCount - 1)
-			backoff := min(time.Duration(multiplier)*time.Second, 30*time.Second)
-			if backoff > delay {
-				delay = backoff
-			}
-			log.L().Debug().Int32("consecutive_failures", failCount).Dur("adaptive_delay", delay).Msg("scan: applying adaptive backoff")
+		if err := m.applyScanRateLimit(ctx); err != nil {
+			return err
 		}
+	}
+	return nil
+}
 
-		// 2. Apply Delay with Jitter (±20%)
-		if delay > 0 {
-			jitter := time.Duration(0)
-			if jitterRange := int64(delay / 5); jitterRange > 0 {
-				jitterN, err := cryptoRandInt63n(jitterRange)
-				if err != nil {
-					log.L().Warn().Err(err).Msg("scan: jitter entropy unavailable, continuing without jitter")
-				} else {
-					jitter = time.Duration(jitterN) - (delay / 10)
-				}
+// resolveProbeURL resolves the best stream URL to probe for a channel: a fresh
+// Enigma2-resolved URL when available, else the (optionally resolved) M3U URL.
+func (m *Manager) resolveProbeURL(ctx context.Context, ch m3u.Channel, sRef string) string {
+	probeURL := ch.URL
+	resolved := false
+	if m.e2Client != nil && sRef != "" {
+		resCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		freshURL, err := m.e2Client.ResolveStreamURL(resCtx, sRef)
+		cancel()
+		if err == nil && freshURL != "" {
+			probeURL = freshURL
+			resolved = true
+			log.L().Debug().Str("sref", sRef).Str("fresh_url", freshURL).Msg("scan: resolved fresh stream url")
+		} else if ctx.Err() == nil {
+			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: failed to resolve fresh url, falling back to m3u")
+		}
+	}
+	if !resolved {
+		resCtx, resCancel := context.WithTimeout(ctx, resolveM3UTimeout)
+		res, err := resolveStreamURL(resCtx, ch.URL)
+		resCancel()
+		if err == nil && res != "" {
+			probeURL = res
+		}
+	}
+	return probeURL
+}
+
+// probeChannelMediaTruth probes a channel and, when the initial result is
+// incomplete, retries once with an extended ffprobe budget, keeping whichever
+// result carries richer media truth.
+func (m *Manager) probeChannelMediaTruth(ctx context.Context, ch m3u.Channel, sRef, probeURL string, existingCap Capability, found bool) (*vod.StreamInfo, error) {
+	res, successfulProbeURL, err := m.probeWithFallbacks(ctx, sRef, ch.URL, probeURL, infra.ProbeOptions{}, defaultProbeTimeout)
+	if ctx.Err() == nil && shouldAttemptExtendedRetry(existingCap, found, res, err) {
+		retryInitialURL := successfulProbeURL
+		if strings.TrimSpace(retryInitialURL) == "" {
+			retryInitialURL = probeURL
+		}
+		log.L().Info().
+			Str("sref", sRef).
+			Dur("timeout", extendedProbeTimeout).
+			Dur("analyzeduration", extendedProbeAnalyzeDuration).
+			Int64("probesize_bytes", extendedProbeSizeBytes).
+			Msg("scan: media truth incomplete, retrying with extended ffprobe budget")
+
+		retryRes, _, retryErr := m.probeWithFallbacks(
+			ctx,
+			sRef,
+			ch.URL,
+			retryInitialURL,
+			infra.ProbeOptions{
+				AnalyzeDuration: extendedProbeAnalyzeDuration,
+				ProbeSizeBytes:  extendedProbeSizeBytes,
+			},
+			extendedProbeTimeout,
+		)
+		retryBase := res
+		if retryBase == nil && found {
+			retryBase = streamInfoFromCapability(existingCap)
+		}
+		switch {
+		case retryErr != nil:
+			if ctx.Err() == nil {
+				log.L().Warn().Err(retryErr).Str("sref", sRef).Msg("scan: extended probe retry failed")
 			}
-			if err := sleepCtx(ctx, delay+jitter); err != nil {
-				return err
+		case isRicherMediaTruth(retryBase, retryRes):
+			res = retryRes
+			err = nil
+			log.L().Info().Str("sref", sRef).Msg("scan: extended probe retry enriched media truth")
+		default:
+			log.L().Warn().Str("sref", sRef).Msg("scan: extended probe retry returned conflicting or non-additive media truth; keeping original result")
+		}
+	}
+	return res, err
+}
+
+// applyScanRateLimit paces the scan loop: adaptive backoff on consecutive
+// failures plus ±20% jitter, interruptible by ctx.
+func (m *Manager) applyScanRateLimit(ctx context.Context) error {
+	delay := m.ProbeDelay
+
+	failCount := atomic.LoadInt32(&m.consecutiveFailureCount)
+	if failCount > 0 {
+		backoff := 30 * time.Second
+		if failCount < 6 {
+			multiplier := 1 << (failCount - 1)
+			backoff = min(time.Duration(multiplier)*time.Second, 30*time.Second)
+		}
+		if backoff > delay {
+			delay = backoff
+		}
+		log.L().Debug().Int32("consecutive_failures", failCount).Dur("adaptive_delay", delay).Msg("scan: applying adaptive backoff")
+	}
+
+	if delay > 0 {
+		jitter := time.Duration(0)
+		if jitterRange := int64(delay / 5); jitterRange > 0 {
+			jitterN, err := cryptoRandInt63n(jitterRange)
+			if err != nil {
+				log.L().Warn().Err(err).Msg("scan: jitter entropy unavailable, continuing without jitter")
+			} else {
+				jitter = time.Duration(jitterN) - (delay / 10)
 			}
+		}
+		if err := sleepCtx(ctx, delay+jitter); err != nil {
+			return err
 		}
 	}
 	return nil
