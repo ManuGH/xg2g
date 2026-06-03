@@ -113,8 +113,10 @@ jobs:
 
       - name: Create multi-arch manifest from per-arch tags
         run: |
+          # Build "-t <tag>" args as an array so word-splitting is explicit (SC2046-clean)
+          mapfile -t TAG_ARGS < <(jq -r '.tags[] | "-t\n" + .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            "${TAG_ARGS[@]}" \
             "${IMAGE}:${{ steps.ffmpeg.outputs.version }}-amd64" \
             "${IMAGE}:${{ steps.ffmpeg.outputs.version }}-arm64"
 
