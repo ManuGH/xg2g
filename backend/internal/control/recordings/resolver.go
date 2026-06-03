@@ -209,17 +209,11 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 
 func (r *PlaybackInfoResolver) resolvePreparing(ctx context.Context, serviceRef string) (PlaybackInfoResult, error) {
 	truth, err := r.GetMediaTruth(ctx, serviceRef)
-	if err != nil {
-		return PlaybackInfoResult{}, err
-	}
 
 	res := PlaybackInfoResult{
 		Decision: playback.Decision{
 			Mode:   playback.ModeDeny,
 			Reason: playback.ReasonPreparing,
-		},
-		MediaInfo: playback.MediaInfo{
-			// Status field removed as it doesn't exist in playback.MediaInfo
 		},
 		TruthStatus: string(truth.Status),
 		ProbeState:  string(truth.ProbeState),
@@ -230,6 +224,26 @@ func (r *PlaybackInfoResolver) resolvePreparing(ctx context.Context, serviceRef 
 		res.TruthReasons = append(res.TruthReasons, string(rc))
 	}
 
+	if err != nil {
+		return res, err
+	}
+
+	// Populate from truth on success (truth.Status is already set above)
+	if truth.Container != "" {
+		container := truth.Container
+		res.Container = &container
+		res.MediaInfo.Container = truth.Container
+	}
+	if truth.VideoCodec != "" {
+		videoCodec := truth.VideoCodec
+		res.VideoCodec = &videoCodec
+		res.MediaInfo.VideoCodec = truth.VideoCodec
+	}
+	if truth.AudioCodec != "" {
+		audioCodec := truth.AudioCodec
+		res.AudioCodec = &audioCodec
+		res.MediaInfo.AudioCodec = truth.AudioCodec
+	}
 	return res, ErrPreparing{RecordingID: serviceRef}
 }
 
