@@ -22,6 +22,7 @@ import (
 	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
+	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg/capability"
 	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
@@ -41,11 +42,6 @@ const (
 	safariDirtyHLSTimeSec = 2
 	// safariDirtyHLSInitTimeSec allows a shorter startup segment before steady-state.
 	safariDirtyHLSInitTimeSec = 1
-	// Relative startup-cost thresholds for automatic codec promotion above H.264.
-	defaultHEVCVAAPIAutoRatioMax = 1.75
-	defaultAV1VAAPIAutoRatioMax  = 2.50
-	defaultHEVCNVENCAutoRatioMax = 1.75
-	defaultAV1NVENCAutoRatioMax  = 2.50
 
 	defaultRuntimePathCorrectnessMinYAvg = 8.0
 	defaultRuntimePathCorrectnessChecks  = 2
@@ -387,10 +383,10 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 		return a.vaapiDeviceErr
 	}
 
-	a.vaapiEncoderCaps = deriveVAAPIEncoderCapabilities(
+	a.vaapiEncoderCaps = capability.DeriveVAAPIEncoderCapabilities(
 		verifiedElapsed,
-		envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", defaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
-		envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", defaultAV1VAAPIAutoRatioMax, 1.0, 10.0),
+		envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", capability.DefaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
+		envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", capability.DefaultAV1VAAPIAutoRatioMax, 1.0, 10.0),
 	)
 	for _, enc := range vaapiEncodersToTest {
 		cap, ok := a.vaapiEncoderCaps[enc]
@@ -471,10 +467,10 @@ func (a *LocalAdapter) PreflightNVENC() error {
 		return a.nvencErr
 	}
 
-	a.nvencEncoderCaps = deriveNVENCEncoderCapabilities(
+	a.nvencEncoderCaps = capability.DeriveNVENCEncoderCapabilities(
 		verifiedElapsed,
-		envFloatBounded("XG2G_HEVC_NVENC_AUTO_RATIO_MAX", defaultHEVCNVENCAutoRatioMax, 1.0, 10.0),
-		envFloatBounded("XG2G_AV1_NVENC_AUTO_RATIO_MAX", defaultAV1NVENCAutoRatioMax, 1.0, 10.0),
+		envFloatBounded("XG2G_HEVC_NVENC_AUTO_RATIO_MAX", capability.DefaultHEVCNVENCAutoRatioMax, 1.0, 10.0),
+		envFloatBounded("XG2G_AV1_NVENC_AUTO_RATIO_MAX", capability.DefaultAV1NVENCAutoRatioMax, 1.0, 10.0),
 	)
 	for _, enc := range nvencEncodersToTest {
 		cap, ok := a.nvencEncoderCaps[enc]
@@ -508,18 +504,18 @@ func (a *LocalAdapter) PreflightTranscodeProfiles() {
 	a.Logger.Info().Msg("transcode profile preflight: starting")
 
 	cpuSamples := a.measureProfileBenchmarks("cpu", "libx264")
-	hardware.SetCPUProfileBenchmarks(deriveProfileCapabilities(cpuSamples))
+	hardware.SetCPUProfileBenchmarks(capability.DeriveProfileCapabilities(cpuSamples))
 
 	if a.VaapiEncoderVerified("h264_vaapi") {
 		vaapiSamples := a.measureProfileBenchmarks("vaapi", "h264_vaapi")
-		hardware.SetVAAPIProfileBenchmarks(deriveProfileCapabilities(vaapiSamples))
+		hardware.SetVAAPIProfileBenchmarks(capability.DeriveProfileCapabilities(vaapiSamples))
 	} else {
 		hardware.SetVAAPIProfileBenchmarks(nil)
 	}
 
 	if a.NVENCEncoderVerified("h264_nvenc") {
 		nvencSamples := a.measureProfileBenchmarks("nvenc", "h264_nvenc")
-		hardware.SetNVENCProfileBenchmarks(deriveProfileCapabilities(nvencSamples))
+		hardware.SetNVENCProfileBenchmarks(capability.DeriveProfileCapabilities(nvencSamples))
 	} else {
 		hardware.SetNVENCProfileBenchmarks(nil)
 	}
@@ -1052,84 +1048,6 @@ func (a *LocalAdapter) NVENCEncoderAutoEligible(encoder string) bool {
 	return ok && cap.Verified && cap.AutoEligible
 }
 
-func deriveVAAPIEncoderCapabilities(samples map[string]time.Duration, hevcRatioMax, av1RatioMax float64) map[string]hardware.VAAPIEncoderCapability {
-	return deriveHardwareEncoderCapabilities(samples, hevcRatioMax, av1RatioMax)
-}
-
-func deriveNVENCEncoderCapabilities(samples map[string]time.Duration, hevcRatioMax, av1RatioMax float64) map[string]hardware.NVENCEncoderCapability {
-	return deriveHardwareEncoderCapabilities(samples, hevcRatioMax, av1RatioMax)
-}
-
-func deriveHardwareEncoderCapabilities(samples map[string]time.Duration, hevcRatioMax, av1RatioMax float64) map[string]hardware.HardwareEncoderCapability {
-	if len(samples) == 0 {
-		return nil
-	}
-
-	caps := make(map[string]hardware.HardwareEncoderCapability, len(samples))
-	baseline, ok := selectHardwareAutoBaseline(samples)
-	if !ok {
-		return caps
-	}
-
-	for encoder, elapsed := range samples {
-		cap := hardware.HardwareEncoderCapability{
-			Verified:     true,
-			ProbeElapsed: elapsed,
-			AutoEligible: strings.HasPrefix(encoder, "h264_"),
-		}
-		if !cap.AutoEligible {
-			ratio := float64(elapsed) / float64(baseline)
-			switch encoder {
-			case "hevc_vaapi", "hevc_nvenc":
-				cap.AutoEligible = ratio <= hevcRatioMax
-			case "av1_vaapi", "av1_nvenc":
-				cap.AutoEligible = ratio <= av1RatioMax
-			default:
-				cap.AutoEligible = true
-			}
-		}
-		caps[encoder] = cap
-	}
-
-	return caps
-}
-
-func selectHardwareAutoBaseline(samples map[string]time.Duration) (time.Duration, bool) {
-	for _, key := range []string{"h264_vaapi", "h264_nvenc"} {
-		if elapsed, ok := samples[key]; ok && elapsed > 0 {
-			return elapsed, true
-		}
-	}
-	var baseline time.Duration
-	for _, elapsed := range samples {
-		if elapsed <= 0 {
-			continue
-		}
-		if baseline == 0 || elapsed < baseline {
-			baseline = elapsed
-		}
-	}
-	return baseline, baseline > 0
-}
-
-func deriveProfileCapabilities(samples map[string]time.Duration) map[string]hardware.HardwareProfileCapability {
-	if len(samples) == 0 {
-		return nil
-	}
-
-	caps := make(map[string]hardware.HardwareProfileCapability, len(samples))
-	for profileID, elapsed := range samples {
-		if elapsed <= 0 {
-			continue
-		}
-		caps[strings.ToLower(strings.TrimSpace(profileID))] = hardware.HardwareProfileCapability{
-			Verified:     true,
-			ProbeElapsed: elapsed,
-		}
-	}
-	return caps
-}
-
 func (a *LocalAdapter) hardwareEncoderVerified(backend profiles.GPUBackend, encoder string) bool {
 	switch backend {
 	case profiles.GPUBackendVAAPI:
@@ -1172,7 +1090,7 @@ func (a *LocalAdapter) preferredHardwareBackendForCodec(codec string) profiles.G
 		ok          bool
 	)
 	for _, backend := range []profiles.GPUBackend{profiles.GPUBackendVAAPI, profiles.GPUBackendNVENC} {
-		encoder, exists := encoderNameForBackend(codec, backend)
+		encoder, exists := capability.EncoderNameForBackend(codec, backend)
 		if !exists || !a.hardwareEncoderVerified(backend, encoder) {
 			continue
 		}
@@ -1180,7 +1098,7 @@ func (a *LocalAdapter) preferredHardwareBackendForCodec(codec string) profiles.G
 		if !exists {
 			cap = hardware.HardwareEncoderCapability{Verified: true}
 		}
-		if !ok || betterLocalHardwareCapability(backend, cap, bestBackend, bestCap) {
+		if !ok || capability.BetterLocalHardwareCapability(backend, cap, bestBackend, bestCap) {
 			bestBackend = backend
 			bestCap = cap
 			ok = true
@@ -1190,57 +1108,6 @@ func (a *LocalAdapter) preferredHardwareBackendForCodec(codec string) profiles.G
 		return profiles.GPUBackendNone
 	}
 	return bestBackend
-}
-
-func betterLocalHardwareCapability(candidateBackend profiles.GPUBackend, candidateCap hardware.HardwareEncoderCapability, bestBackend profiles.GPUBackend, bestCap hardware.HardwareEncoderCapability) bool {
-	if candidateCap.AutoEligible != bestCap.AutoEligible {
-		return candidateCap.AutoEligible
-	}
-
-	candidateMeasured := candidateCap.ProbeElapsed > 0
-	bestMeasured := bestCap.ProbeElapsed > 0
-	if candidateMeasured != bestMeasured {
-		return candidateMeasured
-	}
-	if candidateMeasured && candidateCap.ProbeElapsed != bestCap.ProbeElapsed {
-		return candidateCap.ProbeElapsed < bestCap.ProbeElapsed
-	}
-
-	switch candidateBackend {
-	case profiles.GPUBackendVAAPI:
-		return bestBackend != profiles.GPUBackendVAAPI
-	case profiles.GPUBackendNVENC:
-		return bestBackend == profiles.GPUBackendNone
-	default:
-		return false
-	}
-}
-
-func encoderNameForBackend(codec string, backend profiles.GPUBackend) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(codec)) {
-	case "h264":
-		switch backend {
-		case profiles.GPUBackendVAAPI:
-			return "h264_vaapi", true
-		case profiles.GPUBackendNVENC:
-			return "h264_nvenc", true
-		}
-	case "hevc":
-		switch backend {
-		case profiles.GPUBackendVAAPI:
-			return "hevc_vaapi", true
-		case profiles.GPUBackendNVENC:
-			return "hevc_nvenc", true
-		}
-	case "av1":
-		switch backend {
-		case profiles.GPUBackendVAAPI:
-			return "av1_vaapi", true
-		case profiles.GPUBackendNVENC:
-			return "av1_nvenc", true
-		}
-	}
-	return "", false
 }
 
 func (a *LocalAdapter) supportedHWCodecsLocal() []string {
@@ -1257,7 +1124,7 @@ func (a *LocalAdapter) autoHWCodecsLocal() []string {
 	codecs := make([]string, 0, 3)
 	for _, codec := range []string{"h264", "hevc", "av1"} {
 		for _, backend := range []profiles.GPUBackend{profiles.GPUBackendVAAPI, profiles.GPUBackendNVENC} {
-			encoder, ok := encoderNameForBackend(codec, backend)
+			encoder, ok := capability.EncoderNameForBackend(codec, backend)
 			if !ok {
 				continue
 			}
