@@ -72,6 +72,11 @@ curl -fsS http://localhost:8088/readyz
 
 Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 
+The published image is multi-architecture (`linux/amd64` and `linux/arm64`),
+so xg2g runs on x86-64 servers and on arm64 hosts (Raspberry Pi, arm64 NAS).
+Hardware transcoding (VAAPI/NVENC) is x86-only; on arm64, ffmpeg uses software
+encoding.
+
 > `XG2G_DECISION_SECRET` is mandatory. xg2g refuses to start without a live
 > playback signing secret.
 >
@@ -117,7 +122,7 @@ such as `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`,
 | **API** | Stable (v3) | SemVer |
 | **WebUI** | Stable | Thin Client |
 | **Streaming** | Production | Universal Policy |
-| **FFmpeg** | Pinned (8.1) | Bundled in Docker image |
+| **FFmpeg** | Pinned (8.1.1) | Bundled in Docker image |
 
 Structured logs, Prometheus metrics, OpenTelemetry traces, fail-closed auth,
 Docker health checks, and CI-backed release automation are built in.

@@ -17,6 +17,14 @@ VERSION="$(cat "${VERSION_FILE}" | tr -d '[:space:]')"
 
 echo "🛠️  Rendering docs for version: ${VERSION}"
 
+# FFmpeg pinned version comes from the SSoT (mk/variables.mk) so docs never drift.
+FFMPEG_VERSION="$(sed -nE 's/^FFMPEG_VERSION[[:space:]]*:?=[[:space:]]*//p' "${REPO_ROOT}/mk/variables.mk" | head -n1 | tr -d '[:space:]')"
+if [[ -z "${FFMPEG_VERSION}" ]]; then
+    echo "❌ Could not resolve FFMPEG_VERSION from mk/variables.mk" >&2
+    exit 1
+fi
+echo "🛠️  FFmpeg pinned version: ${FFMPEG_VERSION}"
+
 # Extract Digest from DIGESTS.lock if present
 # This is a basic parser for Step 1; Step 2 will rely on more robust validation.
 DIGEST_VAL=""
@@ -45,6 +53,7 @@ render() {
     # Replace placeholders and append
     sed -e "s/{{VERSION}}/${VERSION}/g" \
         -e "s/{{DIGEST}}/${DIGEST_VAL}/g" \
+        -e "s/{{FFMPEG_VERSION}}/${FFMPEG_VERSION}/g" \
         "$src" >> "$dst"
 
     echo "✅ Rendered: ${dst}"
@@ -56,6 +65,7 @@ render_body() {
 
     sed -e "s/{{VERSION}}/${VERSION}/g" \
         -e "s/{{DIGEST}}/${DIGEST_VAL}/g" \
+        -e "s/{{FFMPEG_VERSION}}/${FFMPEG_VERSION}/g" \
         "$src" > "$dst"
 }
 
