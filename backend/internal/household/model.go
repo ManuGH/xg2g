@@ -2,6 +2,7 @@ package household
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -125,19 +126,15 @@ func IsServiceAllowedNormalized(profile Profile, serviceRef, bouquet string) boo
 
 	normalizedServiceRef := normalizeServiceRef(serviceRef)
 	if normalizedServiceRef != "" {
-		for _, allowed := range profile.AllowedServiceRefs {
-			if allowed == normalizedServiceRef {
-				return true
-			}
+		if slices.Contains(profile.AllowedServiceRefs, normalizedServiceRef) {
+			return true
 		}
 	}
 
 	normalizedBouquet := normalizeIdentifier(bouquet)
 	if normalizedBouquet != "" {
-		for _, allowed := range profile.AllowedBouquets {
-			if allowed == normalizedBouquet {
-				return true
-			}
+		if slices.Contains(profile.AllowedBouquets, normalizedBouquet) {
+			return true
 		}
 	}
 
@@ -293,10 +290,7 @@ func normalizeMaxFSK(value *int) *int {
 	if value == nil {
 		return nil
 	}
-	normalized := *value
-	if normalized < 0 {
-		normalized = 0
-	}
+	normalized := max(*value, 0)
 	return &normalized
 }
 

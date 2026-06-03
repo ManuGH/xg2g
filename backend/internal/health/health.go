@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -725,8 +726,6 @@ func cloneChecks(in map[string]CheckResult) map[string]CheckResult {
 		return nil
 	}
 	out := make(map[string]CheckResult, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }

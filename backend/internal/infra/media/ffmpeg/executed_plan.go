@@ -19,7 +19,7 @@ func executedFFmpegPlanFromArgs(args []string) ports.ExecutedFFmpegPlan {
 	var segmentType, segmentFile, hwaccel, vcodec, acodec string
 	hasVaapiDevice := false
 
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		switch args[i] {
 		case "-hls_segment_type":
 			if i+1 < len(args) {

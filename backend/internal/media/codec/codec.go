@@ -1,5 +1,7 @@
 package codec
 
+import "slices"
+
 import "fmt"
 
 // ID identifies a normalized media codec token.
@@ -138,12 +140,7 @@ func (r CompatibilityResult) Compatible() bool {
 }
 
 func (r CompatibilityResult) Has(reason CompatibilityReason) bool {
-	for _, existing := range r.Reasons {
-		if existing == reason {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(r.Reasons, reason)
 }
 
 func (r *CompatibilityResult) Add(reason CompatibilityReason) {

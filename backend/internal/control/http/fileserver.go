@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
@@ -109,12 +110,7 @@ func validateSecureFileRequest(w http.ResponseWriter, r *http.Request, logger ze
 }
 
 func isSensitiveExtension(ext string) bool {
-	for _, denied := range sensitiveFileExtensions {
-		if ext == denied {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(sensitiveFileExtensions, ext)
 }
 
 func resolveSecureFilePath(dataDir, requestPath string) (string, error) {
@@ -235,7 +231,7 @@ func isPathTraversal(p string) bool {
 	// Work on a copy
 	decoded := p
 	// Attempt multiple decode passes to catch double/triple encodings
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		prev := decoded
 		if d, err := url.PathUnescape(decoded); err == nil {
 			decoded = d

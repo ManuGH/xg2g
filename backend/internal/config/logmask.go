@@ -66,7 +66,7 @@ func MaskSecrets(data any) any {
 	case reflect.Slice, reflect.Array:
 		length := val.Len()
 		result := make([]any, length)
-		for i := 0; i < length; i++ {
+		for i := range length {
 			result[i] = MaskSecrets(val.Index(i).Interface())
 		}
 		return result

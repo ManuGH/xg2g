@@ -7,6 +7,7 @@ package v3
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -85,12 +86,7 @@ func (s scopeSet) allows(required []Scope) bool {
 	if len(required) == 0 {
 		return true
 	}
-	for _, scope := range required {
-		if s.has(scope) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(required, s.has)
 }
 
 func (s scopeSet) has(scope Scope) bool {

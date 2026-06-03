@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -307,8 +308,7 @@ func (m *manager) Shutdown(ctx context.Context) error {
 
 	// Execute shutdown hooks in reverse order (LIFO)
 	m.logger.Debug().Int("hooks", len(m.shutdownHooks)).Msg("Executing shutdown hooks")
-	for i := len(m.shutdownHooks) - 1; i >= 0; i-- {
-		hook := m.shutdownHooks[i]
+	for _, hook := range slices.Backward(m.shutdownHooks) {
 		m.logger.Debug().Str("hook", hook.name).Msg("Executing shutdown hook")
 
 		hookStart := time.Now()

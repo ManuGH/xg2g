@@ -60,7 +60,7 @@ func (m *Manager) StartProberPool(ctx context.Context) {
 	m.started = true
 	m.mu.Unlock()
 
-	for i := 0; i < MaxConcurrentProbes; i++ {
+	for range MaxConcurrentProbes {
 		m.workerWg.Add(1)
 		go m.probeWorker(workerCtx)
 	}
@@ -148,10 +148,7 @@ func (m *Manager) runProbe(ctx context.Context, req probeRequest) error {
 			// Throttle re-probes for missing files (e.g. NAS unavailable)
 			// Backoff: 1 minute
 			lastProbe := time.Unix(0, current.UpdatedAt)
-			since := time.Since(lastProbe)
-			if since < 0 {
-				since = 0
-			}
+			since := max(time.Since(lastProbe), 0)
 			if since < 1*time.Minute {
 				m.mu.Unlock()
 				log.Debug().Str("id", id).Msg("skipping probe for MISSING artifact (throttled)")

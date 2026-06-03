@@ -8,7 +8,7 @@ import "github.com/ManuGH/xg2g/internal/admission"
 
 func NewAdmissibleAdmission() *admission.ResourceMonitor {
 	m := admission.NewResourceMonitor(1000, 1000, 10)
-	for i := 0; i < 15; i++ {
+	for range 15 {
 		m.ObserveCPULoad(0.1)
 	}
 	return m

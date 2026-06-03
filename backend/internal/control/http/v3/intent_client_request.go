@@ -2,6 +2,7 @@ package v3
 
 import (
 	"encoding/json"
+	"maps"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -35,9 +36,7 @@ func normalizeIntentClientCaps(caps *PlaybackCapabilities) *capabilities.Playbac
 func normalizeIntentParams(params *map[string]string, clientCaps *capabilities.PlaybackCapabilities, capHash string) map[string]string {
 	out := make(map[string]string)
 	if params != nil {
-		for key, value := range *params {
-			out[key] = value
-		}
+		maps.Copy(out, *params)
 	}
 	if clientCaps != nil {
 		if clientFamily := normalize.Token(clientCaps.ClientFamilyFallback); clientFamily != "" {

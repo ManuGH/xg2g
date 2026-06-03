@@ -606,12 +606,12 @@ func parsePlaybackDecisionPreviousKey(raw string) (keyID string, secret string) 
 	if value == "" {
 		return "", ""
 	}
-	idx := strings.Index(value, ":")
-	if idx < 0 {
+	before, after, ok := strings.Cut(value, ":")
+	if !ok {
 		return "", strings.TrimSpace(value)
 	}
-	keyID = strings.TrimSpace(value[:idx])
-	secret = strings.TrimSpace(value[idx+1:])
+	keyID = strings.TrimSpace(before)
+	secret = strings.TrimSpace(after)
 	return keyID, secret
 }
 

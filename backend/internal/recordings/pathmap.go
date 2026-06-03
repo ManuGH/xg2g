@@ -101,8 +101,8 @@ func (pm *PathMapper) ResolveLocalExisting(receiverPath string) (string, bool) {
 		var rel string
 		if clean == root {
 			rel = ""
-		} else if strings.HasPrefix(clean, root+"/") {
-			rel = strings.TrimPrefix(clean, root+"/")
+		} else if after, ok := strings.CutPrefix(clean, root+"/"); ok {
+			rel = after
 		} else {
 			continue
 		}
@@ -190,9 +190,9 @@ func (pm *PathMapper) ResolveLocalUnsafe(receiverPath string) (string, bool) {
 		// Check for exact match
 		if clean == root {
 			rel = ""
-		} else if strings.HasPrefix(clean, root+"/") {
+		} else if after, ok := strings.CutPrefix(clean, root+"/"); ok {
 			// Prefix match - extract relative path
-			rel = strings.TrimPrefix(clean, root+"/")
+			rel = after
 		} else {
 			// No match
 			continue

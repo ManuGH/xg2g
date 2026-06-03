@@ -128,7 +128,7 @@ func runGPUSaturationScenario(cfg Config, prom *PromClient, client *SessionClien
 
 	rejectCount := 0
 	gpuBusyRejectCount := 0
-	for i := 0; i < burstCount; i++ {
+	for i := range burstCount {
 		serviceRef := fmt.Sprintf("soak-gpu-burst-%d", i)
 		// Use Pulse - this should get gpu_busy rejection
 		res := client.StartSession(serviceRef, "pulse")

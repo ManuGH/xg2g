@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"math"
+	"slices"
 	"sort"
 )
 
@@ -221,10 +222,8 @@ func ResolveDurationTruth(in DurationTruthResolveInput) DurationTruth {
 		if !reason.Valid() {
 			return
 		}
-		for _, existing := range out.Reasons {
-			if existing == reason {
-				return
-			}
+		if slices.Contains(out.Reasons, reason) {
+			return
 		}
 		out.Reasons = append(out.Reasons, reason)
 	}

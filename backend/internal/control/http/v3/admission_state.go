@@ -63,10 +63,7 @@ func (s *storeAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeSt
 		}
 	}
 
-	availTuners := int(s.tunerCount.Load()) - activeCount
-	if availTuners < 0 {
-		availTuners = 0
-	}
+	availTuners := max(int(s.tunerCount.Load())-activeCount, 0)
 
 	return admission.RuntimeState{
 		TunerSlots:       availTuners,

@@ -289,13 +289,7 @@ func (a *LocalAdapter) detectFPS(ctx context.Context, inputURL string) (int, str
 		if !shouldRetryFPSProbe(err) {
 			return 0, "", err
 		}
-		retryTimeout := timeout * 2
-		if retryTimeout < 2500*time.Millisecond {
-			retryTimeout = 2500 * time.Millisecond
-		}
-		if retryTimeout > 8*time.Second {
-			retryTimeout = 8 * time.Second
-		}
+		retryTimeout := min(max(timeout*2, 2500*time.Millisecond), 8*time.Second)
 		retryOutput, retryErr := a.runFPSProbe(ctx, inputURL, retryTimeout, true)
 		if retryErr != nil {
 			return 0, "", fmt.Errorf("ffprobe failed after retry (primary=%v, retry=%w)", err, retryErr)

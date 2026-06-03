@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -118,13 +119,7 @@ func (v *Validator) URL(field, value string, allowedSchemes []string) {
 
 	// Check allowed schemes
 	if len(allowedSchemes) > 0 {
-		schemeValid := false
-		for _, scheme := range allowedSchemes {
-			if u.Scheme == scheme {
-				schemeValid = true
-				break
-			}
-		}
+		schemeValid := slices.Contains(allowedSchemes, u.Scheme)
 		if !schemeValid {
 			v.AddError(field,
 				fmt.Sprintf("unsupported URL scheme %q (allowed: %v)", u.Scheme, allowedSchemes),
@@ -208,10 +203,8 @@ func (v *Validator) NotEmpty(field, value string) {
 
 // OneOf validates that a value is one of the allowed values
 func (v *Validator) OneOf(field, value string, allowed []string) {
-	for _, a := range allowed {
-		if value == a {
-			return
-		}
+	if slices.Contains(allowed, value) {
+		return
 	}
 	v.AddError(field,
 		fmt.Sprintf("value must be one of %v, got %q", allowed, value),

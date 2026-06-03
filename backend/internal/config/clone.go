@@ -3,6 +3,8 @@
 
 package config
 
+import "maps"
+
 // Clone returns an alias-free deep copy of AppConfig.
 // Only reference types (maps/slices) are cloned; nested structs are copied by value.
 func Clone(in AppConfig) AppConfig {
@@ -67,9 +69,7 @@ func cloneStringMap(in map[string]string) map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }
 

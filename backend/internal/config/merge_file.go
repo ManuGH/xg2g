@@ -6,6 +6,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -141,9 +142,7 @@ func (l *Loader) mergeFileRecordingRoots(dst *AppConfig, src *FileConfig) {
 		if dst.RecordingRoots == nil {
 			dst.RecordingRoots = make(map[string]string)
 		}
-		for k, v := range src.Recording {
-			dst.RecordingRoots[k] = v
-		}
+		maps.Copy(dst.RecordingRoots, src.Recording)
 	}
 }
 

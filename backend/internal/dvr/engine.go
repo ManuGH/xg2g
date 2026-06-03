@@ -7,6 +7,7 @@ package dvr
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -235,11 +236,8 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 		if len(rule.Days) > 0 {
 			dayMatch := false
 			weekday := int(localStart.Weekday()) // 0=Sunday
-			for _, d := range rule.Days {
-				if d == weekday {
-					dayMatch = true
-					break
-				}
+			if slices.Contains(rule.Days, weekday) {
+				dayMatch = true
 			}
 			if !dayMatch {
 				continue

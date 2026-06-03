@@ -159,12 +159,12 @@ func parseLiveDecisionKeyEntry(raw string) (kid string, secret []byte) {
 	if entry == "" {
 		return "", nil
 	}
-	idx := strings.Index(entry, ":")
-	if idx < 0 {
+	before, after, ok := strings.Cut(entry, ":")
+	if !ok {
 		return "", []byte(entry)
 	}
-	kid = normalizeLiveDecisionKeyID(entry[:idx])
-	secretValue := strings.TrimSpace(entry[idx+1:])
+	kid = normalizeLiveDecisionKeyID(before)
+	secretValue := strings.TrimSpace(after)
 	if secretValue == "" {
 		return "", nil
 	}

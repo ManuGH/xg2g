@@ -608,10 +608,7 @@ func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunH
 			}
 
 			// Exponential backoff
-			interval = interval * 2
-			if interval > maxInterval {
-				interval = maxInterval
-			}
+			interval = min(interval*2, maxInterval)
 			ticker.Reset(interval)
 		}
 	}
@@ -753,16 +750,16 @@ func playlistInitSegment(content []byte) string {
 		if !strings.HasPrefix(line, "#EXT-X-MAP:") {
 			continue
 		}
-		uriIdx := strings.Index(line, `URI="`)
-		if uriIdx < 0 {
+		_, after, ok := strings.Cut(line, `URI="`)
+		if !ok {
 			continue
 		}
-		rest := line[uriIdx+len(`URI="`):]
-		endIdx := strings.IndexByte(rest, '"')
-		if endIdx < 0 {
+		rest := after
+		before0, _, ok0 := strings.Cut(rest, "\"")
+		if !ok0 {
 			continue
 		}
-		uri := strings.TrimSpace(rest[:endIdx])
+		uri := strings.TrimSpace(before0)
 		if uri == "" || strings.Contains(uri, "..") || filepath.IsAbs(uri) {
 			return ""
 		}

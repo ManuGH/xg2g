@@ -1,6 +1,8 @@
 package playback
 
 import (
+	"slices"
+
 	"github.com/ManuGH/xg2g/internal/media/codec"
 	"github.com/ManuGH/xg2g/internal/media/container"
 )
@@ -59,12 +61,7 @@ func (r CompatibilityResult) Compatible() bool {
 }
 
 func (r CompatibilityResult) Has(reason CompatibilityReason) bool {
-	for _, existing := range r.Reasons {
-		if existing == reason {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(r.Reasons, reason)
 }
 
 func (r *CompatibilityResult) Add(reason CompatibilityReason) {
@@ -120,10 +117,5 @@ func EvaluatePackagingCompatibility(matrix ClientPlaybackMatrix, request StreamR
 }
 
 func containsCodec(codecs []codec.ID, target codec.ID) bool {
-	for _, existing := range codecs {
-		if existing == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(codecs, target)
 }

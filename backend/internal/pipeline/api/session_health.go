@@ -5,6 +5,7 @@
 package api
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -255,10 +256,8 @@ func appendUniqueReason(reasons []string, code string) []string {
 	if code == "" {
 		return reasons
 	}
-	for _, existing := range reasons {
-		if existing == code {
-			return reasons
-		}
+	if slices.Contains(reasons, code) {
+		return reasons
 	}
 	return append(reasons, code)
 }

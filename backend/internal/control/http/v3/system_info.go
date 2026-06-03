@@ -450,10 +450,7 @@ func calculateMemory(totalStr, availableStr string) ResourceInfo {
 	total := parseMemKB(totalStr)
 	available := parseMemKB(availableStr)
 
-	used := total - available
-	if used < 0 {
-		used = 0
-	}
+	used := max(total-available, 0)
 
 	return ResourceInfo{
 		MemoryTotal:     totalStr,

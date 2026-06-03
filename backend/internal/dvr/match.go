@@ -6,6 +6,7 @@ package dvr
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,13 +47,7 @@ func (r *SeriesRule) Matches(epgTitle string, epgChannelRef string, epgStart tim
 	// 3. Day Match
 	if len(r.Days) > 0 {
 		day := int(epgStart.Weekday()) // 0=Sunday
-		found := false
-		for _, d := range r.Days {
-			if d == day {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(r.Days, day)
 		if !found {
 			return MatchResult{Matched: false, Reasons: []string{"day mismatch"}}
 		}

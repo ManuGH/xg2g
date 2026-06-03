@@ -210,7 +210,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	var createdTimer *openwebif.Timer
 
 verifyAddLoop:
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		checkTimers, err := client.GetTimers(r.Context())
 		if err == nil {
 			targetNormalized := strings.TrimSuffix(realSRef, ":")
@@ -401,7 +401,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	verified := false
 	var updatedTimer *openwebif.Timer
 verifyUpdateLoop:
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		checkTimers, err := client.GetTimers(ctx)
 		if err == nil {
 			targetNormalized := strings.TrimSuffix(newSRef, ":")

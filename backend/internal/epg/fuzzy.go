@@ -55,13 +55,7 @@ func levenshtein(a, b string) int {
 			del := dp[idx(i-1, j)] + 1
 			ins := dp[idx(i, j-1)] + 1
 			sub := dp[idx(i-1, j-1)] + cost
-			m := del
-			if ins < m {
-				m = ins
-			}
-			if sub < m {
-				m = sub
-			}
+			m := min(sub, min(ins, del))
 			dp[idx(i, j)] = m
 		}
 	}

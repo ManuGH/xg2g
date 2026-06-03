@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
@@ -155,8 +156,8 @@ func (g *LANGuard) resolveClientIP(r *http.Request) net.IP {
 	// Parse XFF list
 	parts := strings.Split(xff, ",")
 	// Traverse Right-to-Left
-	for i := len(parts) - 1; i >= 0; i-- {
-		ipPart := strings.TrimSpace(parts[i])
+	for _, v := range slices.Backward(parts) {
+		ipPart := strings.TrimSpace(v)
 		ip := net.ParseIP(ipPart)
 		if ip == nil {
 			continue
