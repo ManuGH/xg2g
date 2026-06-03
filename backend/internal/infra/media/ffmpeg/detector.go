@@ -305,6 +305,11 @@ func (d *Detector) PreflightNVENC() error {
 		envFloatBounded("XG2G_HEVC_NVENC_AUTO_RATIO_MAX", capability.DefaultHEVCNVENCAutoRatioMax, 1.0, 10.0),
 		envFloatBounded("XG2G_AV1_NVENC_AUTO_RATIO_MAX", capability.DefaultAV1NVENCAutoRatioMax, 1.0, 10.0),
 	)
+	// Fail-closed: NVENC has no decode-verify (testNVENCEncoder trusts exit 0 on a
+	// discarded "-f null -" output), so av1_nvenc must not be admitted on an
+	// encoder-ran signal alone — that would be a black-screen risk. See
+	// clampUnverifiedNVENCAV1.
+	clampUnverifiedNVENCAV1(d.nvencEncoderCaps, d.nvencEncoders)
 	for _, enc := range nvencEncodersToTest {
 		cap, ok := d.nvencEncoderCaps[enc]
 		if !ok || !cap.Verified {
@@ -324,6 +329,41 @@ func (d *Detector) PreflightNVENC() error {
 		Int("verified_encoders", len(d.nvencEncoders)).
 		Msg("nvenc preflight: passed")
 	return nil
+}
+
+// clampUnverifiedNVENCAV1 enforces the fail-closed latch for NVENC AV1.
+//
+// NVENC has NO decode-verify: testNVENCEncoder discards output to "-f null -" and
+// treats exit 0 as success, so DeriveHardwareEncoderCapabilities marks av1_nvenc
+// Verified=true on "the encoder ran", NOT "the output is decodable". That is the
+// exact gap B1 closed for VAAPI via decodeVerifyEncode, still wide open on NVENC —
+// and unlike the VAAPI false-WITHHELD (too cautious, safe), an unvalidated av1_nvenc
+// is false-VERIFIED: it can serve corrupt or black AV1 to a client that has no
+// software AV1 fallback. Until NVENC grows its own decode-verify, av1_nvenc is
+// reported UNVERIFIABLE and is NOT admitted — the honest three-state verdict,
+// mirroring the VAAPI verify-oracle fix. h264_nvenc/hevc_nvenc stay verified
+// (universally decodable, far lower consequence), so an NVIDIA host keeps hardware
+// HEVC/H264 and only loses unvalidated AV1.
+//
+// It closes BOTH admission paths: the per-encoder cap (Verified=false ->
+// SetNVENCEncoderCapabilities drops it -> IsNVENCEncoderReady/IsHardwareEncoderReady
+// fail) and the detector bool map (delete -> NVENCEncoderVerified, the plan_codec
+// gate, fails). The cap is retained with Verdict=unverifiable so the
+// xg2g_gpu_encoder_unverifiable gauge surfaces the asymmetry instead of it reading
+// as a plain "not present".
+func clampUnverifiedNVENCAV1(caps map[string]hardware.NVENCEncoderCapability, verified map[string]bool) {
+	const enc = "av1_nvenc"
+	cap, ok := caps[enc]
+	if !ok {
+		return
+	}
+	delete(verified, enc)
+	caps[enc] = hardware.NVENCEncoderCapability{
+		Verdict:      hardware.VerdictUnverifiable,
+		Reason:       "nvenc has no decode-verify; av1 output cannot be validated (black-screen risk) — admitted only once NVENC output validation exists",
+		ProbeElapsed: cap.ProbeElapsed,
+		// Verified / AutoEligible deliberately left false: fail-closed.
+	}
 }
 
 // PreflightTranscodeProfiles measures a small set of synthetic startup probes
