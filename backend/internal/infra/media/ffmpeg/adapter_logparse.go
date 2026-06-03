@@ -238,12 +238,37 @@ func summarizeFFmpegFailureLine(line string) string {
 	return ""
 }
 
+// looksLikeEncoderOpenFailure matches ffmpeg lines reporting a hardware encoder
+// failing to open/initialize — e.g. feeding a 10-bit surface to an 8-bit-profile
+// VAAPI encoder. ffmpeg emits these without the "vaapi"/"nvenc" token on the
+// same line (the codec name sits in a separate component-prefix line), so the
+// backend-specific matchers miss them and no GPU->CPU demotion fires. The call
+// site already gates which backend's session this applies to, so a plain
+// substring match here is safe.
+func looksLikeEncoderOpenFailure(lower string) bool {
+	for _, kw := range []string{
+		"could not open encoder",
+		"cannot open encoder",
+		"failed to open encoder",
+		"error while opening encoder",
+		"no usable encoding profile",
+	} {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 func isVAAPIRuntimeFailureLine(line string) bool {
 	lower := strings.ToLower(strings.TrimSpace(line))
 	if lower == "" {
 		return false
 	}
 	if strings.Contains(lower, "vaapi") && looksLikeFFmpegWarning(lower) {
+		return true
+	}
+	if looksLikeEncoderOpenFailure(lower) {
 		return true
 	}
 	definitiveKeywords := []string{
@@ -273,6 +298,9 @@ func isNVENCRuntimeFailureLine(line string) bool {
 		return false
 	}
 	if strings.Contains(lower, "nvenc") && looksLikeFFmpegWarning(lower) {
+		return true
+	}
+	if looksLikeEncoderOpenFailure(lower) {
 		return true
 	}
 	definitiveKeywords := []string{
