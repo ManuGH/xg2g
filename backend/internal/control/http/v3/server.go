@@ -242,7 +242,7 @@ func (s *Server) UpdateConfig(cfg config.AppConfig, snap config.Snapshot) {
 	s.cfg = cfg
 	s.snap = snap
 	s.householdUnlockTTL = cfg.Household.UnlockTTL
-	s.owiEpoch++ // Invalidate cached OWI client
+	s.owiClient = nil // Invalidate cached OWI client; s.owiEpoch is reset on next newOpenWebIFClient call
 	if state, ok := s.admissionState.(*storeAdmissionState); ok {
 		state.SetTunerCount(len(cfg.Engine.TunerSlots))
 	}

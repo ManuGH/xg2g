@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	platformpaths "github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // StartMonitor begins the background storage health checks.
@@ -27,6 +29,11 @@ func (s *Server) StartMonitor(ctx context.Context) {
 
 // StartRecordingCacheEvicter starts a background task to clean up old recording cache entries.
 func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
+	go s.startRecordingCacheEvicterLoop(ctx)
+}
+
+// startRecordingCacheEvicterLoop runs the eviction ticker loop in a background goroutine.
+func (s *Server) startRecordingCacheEvicterLoop(ctx context.Context) {
 	// Fixed cadence: eviction runs every 10 minutes. Effective TTL is bounded by this interval.
 	const interval = 10 * time.Minute
 
@@ -59,8 +66,9 @@ func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
 
 		excludedPaths := make(map[string]struct{})
 		if vodMgr != nil {
+			cacheRoot := platformpaths.RecordingArtifactsRoot(cfg.HLS.Root)
 			for _, jobID := range vodMgr.ActiveJobIDs() {
-				excludedPaths[jobID] = struct{}{}
+				excludedPaths[filepath.Join(cacheRoot, jobID)] = struct{}{}
 			}
 		}
 
