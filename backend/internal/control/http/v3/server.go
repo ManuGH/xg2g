@@ -1,23 +1,15 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package v3
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	admissionmonitor "github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/admission"
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
 	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
@@ -29,24 +21,21 @@ import (
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
-	"github.com/ManuGH/xg2g/internal/entitlements"
-	"github.com/ManuGH/xg2g/internal/household"
-	"github.com/ManuGH/xg2g/internal/receipts"
-
-	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
+	"github.com/ManuGH/xg2g/internal/entitlements"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
+	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/receipts"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
 	"golang.org/x/sync/singleflight"
 )
@@ -196,111 +185,6 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 	return s
 }
 
-// LibraryService returns the underlying library service.
-func (s *Server) LibraryService() *library.Service {
-	return s.libraryService
-}
-
-// StartMonitor begins the background storage health checks.
-func (s *Server) StartMonitor(ctx context.Context) {
-	s.monitorMu.Lock()
-	defer s.monitorMu.Unlock()
-
-	if s.storageMonitor != nil && !s.monitorStarted {
-		s.monitorStarted = true
-		go s.storageMonitor.Start(ctx, 30*time.Second, s)
-		log.L().Info().Msg("storage_monitor: background loop started")
-	}
-}
-
-// StartRecordingCacheEvicter starts a background task to clean up old recording cache entries.
-func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
-	// Fixed cadence: eviction runs every 10 minutes. Effective TTL is bounded by this interval.
-	const interval = 10 * time.Minute
-
-	warnedCadenceMismatch := false
-	runOnce := func() {
-		cfg := s.GetConfig()
-		if strings.TrimSpace(cfg.HLS.Root) == "" {
-			metrics.SetRecordingCacheEntries(0)
-			return
-		}
-		if cfg.VODCacheMaxEntries <= 0 {
-			log.L().Error().Int("maxEntries", cfg.VODCacheMaxEntries).Msg("recording cache eviction disabled: invalid maxEntries")
-			return
-		}
-		if cfg.VODCacheTTL > 0 && cfg.VODCacheTTL < interval {
-			if !warnedCadenceMismatch {
-				log.L().Warn().
-					Dur("ttl", cfg.VODCacheTTL).
-					Dur("interval", interval).
-					Msg("recording cache eviction cadence exceeds ttl")
-				warnedCadenceMismatch = true
-			}
-		} else {
-			warnedCadenceMismatch = false
-		}
-
-		s.mu.RLock()
-		vodMgr := s.vodManager
-		s.mu.RUnlock()
-
-		excludedPaths := make(map[string]struct{})
-		if vodMgr != nil {
-			for _, jobID := range vodMgr.ActiveJobIDs() {
-				excludedPaths[jobID] = struct{}{}
-			}
-		}
-
-		res, err := vod.EvictRecordingCacheWithExclusions(
-			cfg.HLS.Root,
-			cfg.VODCacheTTL,
-			cfg.VODCacheMaxEntries,
-			vod.RealClock{},
-			excludedPaths,
-		)
-		if err != nil {
-			log.L().Error().Err(err).Msg("recording cache eviction failed")
-			return
-		}
-
-		metrics.SetRecordingCacheEntries(res.Entries)
-		metrics.AddVODCacheEvicted(metrics.CacheEvictReasonTTL, res.EvictedTTL)
-		metrics.AddVODCacheEvicted(metrics.CacheEvictReasonMaxEntries, res.EvictedMaxEntries)
-		if res.Errors > 0 {
-			metrics.IncVODCacheEvictionErrors()
-			log.L().Warn().Int("errors", res.Errors).Msg("recording cache eviction completed with errors")
-		}
-
-		if vodMgr != nil {
-			pruned := vodMgr.PruneMetadata(time.Now(), cfg.VODCacheTTL, cfg.VODCacheMaxEntries)
-			metrics.AddVODMetadataPruned(metrics.CacheEvictReasonTTL, pruned.RemovedTTL)
-			metrics.AddVODMetadataPruned(metrics.CacheEvictReasonMaxEntries, pruned.RemovedMaxEntries)
-			if pruned.RemovedTTL+pruned.RemovedMaxEntries > 0 {
-				log.L().Info().
-					Int("removed_ttl", pruned.RemovedTTL).
-					Int("removed_max_entries", pruned.RemovedMaxEntries).
-					Int("remaining", pruned.Remaining).
-					Msg("recording metadata cache pruned")
-			}
-		}
-	}
-
-	runOnce()
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runOnce()
-		}
-	}
-}
-
 // SetResolver sets the V4 resolver used by GetRecordingPlaybackInfo.
 func (s *Server) SetResolver(r recservice.Resolver) {
 	s.mu.Lock()
@@ -349,86 +233,6 @@ func (s *Server) SetShutdownHandler(fn func(context.Context) error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requestShutdown = fn
-}
-
-// SetRuntimeContext binds runtime workers to the provided root context.
-func (s *Server) SetRuntimeContext(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("runtime context is nil")
-	}
-
-	s.mu.Lock()
-	if s.runtimeCancel != nil {
-		s.runtimeCancel()
-	}
-	runtimeCtx, runtimeCancel := context.WithCancel(ctx)
-	s.runtimeCtx, s.runtimeCancel = runtimeCtx, runtimeCancel
-	hostPressureMonitor := s.hostPressureMonitor
-	librarySvc := s.libraryService
-	s.mu.Unlock()
-
-	if librarySvc != nil {
-		if err := librarySvc.InitializeRoots(runtimeCtx); err != nil {
-			runtimeCancel()
-			s.mu.Lock()
-			s.runtimeCancel = nil
-			s.runtimeCtx = nil
-			s.mu.Unlock()
-			return fmt.Errorf("initialize library roots: %w", err)
-		}
-	}
-	admissionmonitor.StartCPUSampler(runtimeCtx, hostPressureMonitor, 0, nil)
-	return nil
-}
-
-// Shutdown stops v3 background workers and closes owned resources.
-func (s *Server) Shutdown(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("shutdown context is nil")
-	}
-
-	s.mu.Lock()
-	runtimeCancel := s.runtimeCancel
-	s.runtimeCancel = nil
-	s.runtimeCtx = nil
-	vodMgr := s.vodManager
-	librarySvc := s.libraryService
-	s.mu.Unlock()
-
-	if runtimeCancel != nil {
-		runtimeCancel()
-	}
-
-	var errs []error
-	if vodMgr != nil {
-		if err := vodMgr.ShutdownContext(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("vod manager shutdown: %w", err))
-		}
-	}
-	if librarySvc != nil {
-		if store := librarySvc.GetStore(); store != nil {
-			if err := store.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("library store close: %w", err))
-			}
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("v3 shutdown errors: %w", errors.Join(errs...))
-	}
-	return nil
-}
-
-// authMiddleware is the default authentication middleware.
-func (s *Server) authMiddleware(h http.Handler) http.Handler {
-	if s.AuthMiddlewareOverride != nil {
-		return s.AuthMiddlewareOverride(h)
-	}
-	return s.authMiddlewareImpl(h)
-}
-
-// AuthMiddleware exposes the canonical v3 authentication middleware.
-func (s *Server) AuthMiddleware(h http.Handler) http.Handler {
-	return s.authMiddleware(h)
 }
 
 // UpdateConfig updates the internal configuration snapshot.
@@ -655,123 +459,4 @@ func (s *Server) SetDependencies(deps Dependencies) {
 
 	// Initialize Admission State Source (Store-backed)
 	s.admissionState = newStoreAdmissionState(s.v3Store, len(s.cfg.Engine.TunerSlots))
-}
-
-// GetConfig returns a copy of the current config.
-func (s *Server) GetConfig() config.AppConfig {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.cfg
-}
-
-// GetStatus returns the current status.
-func (s *Server) GetStatus() jobs.Status {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.status
-}
-
-func (s *Server) dataFilePath(rel string) (string, error) {
-	clean := filepath.Clean(rel)
-	if filepath.IsAbs(clean) {
-		return "", fmt.Errorf("data file path must be relative: %s", rel)
-	}
-	if strings.Contains(clean, "..") {
-		return "", fmt.Errorf("data file path contains traversal: %s", rel)
-	}
-
-	s.mu.RLock()
-	dataDir := s.cfg.DataDir
-	s.mu.RUnlock()
-
-	root, err := filepath.Abs(dataDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve data directory: %w", err)
-	}
-
-	full := filepath.Join(root, clean)
-	resolvedRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		resolvedRoot = root
-	}
-
-	resolved := full
-	//nolint:gosec // G703: path is strictly sanitized and bounded to configured DataDir
-	if info, statErr := os.Stat(full); statErr == nil {
-		if info.IsDir() {
-			return "", fmt.Errorf("data file path points to directory: %s", rel)
-		}
-		if resolvedPath, evalErr := filepath.EvalSymlinks(full); evalErr == nil {
-			resolved = resolvedPath
-		}
-	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return "", fmt.Errorf("stat data file: %w", statErr)
-	} else {
-		// File might be generated later; still ensure parent directories stay within root.
-		dir := filepath.Dir(full)
-		//nolint:gosec // G703: path is strictly sanitized and bounded to configured DataDir
-		if _, dirErr := os.Stat(dir); dirErr == nil {
-			if realDir, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
-				resolved = filepath.Join(realDir, filepath.Base(full))
-			}
-		}
-	}
-
-	relToRoot, err := filepath.Rel(resolvedRoot, resolved)
-	if err != nil {
-		return "", fmt.Errorf("resolve relative path: %w", err)
-	}
-	if strings.HasPrefix(relToRoot, "..") || filepath.IsAbs(relToRoot) {
-		return "", fmt.Errorf("data file escapes data directory: %s", rel)
-	}
-
-	return resolved, nil
-}
-
-// owi returns a ReceiverControl, using the injected factory if present (tests)
-// or falling back to the cached production client.
-func (s *Server) owi(cfg config.AppConfig, snap config.Snapshot) ReceiverControl {
-	if s.owiFactory != nil {
-		return s.owiFactory(cfg, snap)
-	}
-	return s.newOpenWebIFClient(cfg, snap)
-}
-
-// newOpenWebIFClient gets or creates a cached client from config
-func (s *Server) newOpenWebIFClient(cfg config.AppConfig, snap config.Snapshot) *openwebif.Client {
-	// 1. Fast path: Read lock check
-	s.mu.RLock()
-	cachedClient := s.owiClient
-	cachedEpoch := s.owiEpoch
-	s.mu.RUnlock()
-
-	// If cached match, assume safe to use (Client is thread-safe)
-	if cachedClient != nil && cachedEpoch == snap.Epoch {
-		return cachedClient
-	}
-
-	// 2. Slow path: Write lock
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Double check
-	if s.owiClient != nil && s.owiEpoch == snap.Epoch {
-		return s.owiClient
-	}
-
-	// Rebuild
-	log.L().Debug().Uint64("epoch", snap.Epoch).Msg("recreating OpenWebIF client")
-	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, openwebif.Options{
-		Timeout:             cfg.Enigma2.Timeout,
-		Username:            cfg.Enigma2.Username,
-		Password:            cfg.Enigma2.Password,
-		UseWebIFStreams:     cfg.Enigma2.UseWebIFStreams,
-		StreamBaseURL:       snap.Runtime.OpenWebIF.StreamBaseURL,
-		HTTPMaxConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
-	})
-
-	s.owiClient = client
-	s.owiEpoch = snap.Epoch
-
-	return client
 }
