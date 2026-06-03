@@ -292,9 +292,30 @@ type Dependencies struct {
 }
 
 // SetDependencies injects shared services into the handler.
+//
+// It runs under s.mu and delegates the per-field wiring to focused helpers
+// that must NOT re-acquire the lock. The ordering below is significant:
+// applyServiceDependencies assigns s.recordingPathMapper, which
+// applyVODDependencies reads when constructing the artifacts resolver, and it
+// assigns s.v3Store, which the concluding admission-state initialization reads.
 func (s *Server) SetDependencies(deps Dependencies) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	s.applyServiceDependencies(deps)
+	s.applyDeviceAuthDependencies(deps)
+	s.applyVODDependencies(deps)
+
+	// Initialize Admission State Source (Store-backed)
+	s.admissionState = newStoreAdmissionState(s.v3Store, len(s.cfg.Engine.TunerSlots))
+}
+
+// applyServiceDependencies copies the straightforward, side-effect-free service
+// fields from deps onto the Server, clearing each one when its dependency is nil.
+// Must be called with s.mu held. The device-auth and VOD wiring is handled by
+// dedicated helpers because those involve additional construction and side
+// effects beyond a plain field assignment.
+func (s *Server) applyServiceDependencies(deps Dependencies) {
 	if !isNil(deps.Bus) {
 		s.v3Bus = deps.Bus
 	} else {
@@ -305,18 +326,6 @@ func (s *Server) SetDependencies(deps Dependencies) {
 		s.v3Store = deps.Store
 	} else {
 		s.v3Store = nil
-	}
-
-	if !isNil(deps.DeviceAuthStore) {
-		s.deviceAuthStateStore = deps.DeviceAuthStore
-		s.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
-			StateStore:                 deps.DeviceAuthStore,
-			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
-		})
-		s.deviceAuthV3Service = v3deviceauth.NewService(v3deviceauth.Deps{
-			StateStore:                 deps.DeviceAuthStore,
-			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
-		})
 	}
 
 	if !isNil(deps.ResumeStore) {
@@ -409,18 +418,6 @@ func (s *Server) SetDependencies(deps Dependencies) {
 		s.seriesEngine = nil
 	}
 
-	if !isNil(deps.VODManager) {
-		s.vodManager = deps.VODManager
-		if s.runtimeCtx != nil {
-			s.vodManager.StartProberPool(s.runtimeCtx)
-		}
-		// PR3: Initialize Artifacts Resolver
-		s.artifacts = artifacts.New(&s.cfg, deps.VODManager, s.recordingPathMapper)
-	} else {
-		s.vodManager = nil
-		s.artifacts = nil
-	}
-
 	if !isNil(deps.EPGCache) {
 		s.epgCache = deps.EPGCache
 	} else {
@@ -456,7 +453,44 @@ func (s *Server) SetDependencies(deps Dependencies) {
 	} else {
 		s.recordingsService = nil
 	}
+}
 
-	// Initialize Admission State Source (Store-backed)
-	s.admissionState = newStoreAdmissionState(s.v3Store, len(s.cfg.Engine.TunerSlots))
+// applyDeviceAuthDependencies wires the device-auth state store and, when it is
+// present, (re)constructs the pairing and device-auth v3 services bound to it.
+// Unlike the plain service fields, a nil DeviceAuthStore leaves the existing
+// wiring untouched (there is no else branch in the original behavior).
+// Must be called with s.mu held.
+func (s *Server) applyDeviceAuthDependencies(deps Dependencies) {
+	if !isNil(deps.DeviceAuthStore) {
+		s.deviceAuthStateStore = deps.DeviceAuthStore
+		s.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
+			StateStore:                 deps.DeviceAuthStore,
+			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
+		})
+		s.deviceAuthV3Service = v3deviceauth.NewService(v3deviceauth.Deps{
+			StateStore:                 deps.DeviceAuthStore,
+			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
+		})
+	}
+}
+
+// applyVODDependencies wires the VOD manager and its dependent artifacts
+// resolver. When a manager is supplied it starts the prober pool if a runtime
+// context is already available and builds the artifacts resolver from the
+// current config, manager, and (previously assigned) recording path mapper.
+// When absent, both the manager and the artifacts resolver are cleared.
+// Must be called with s.mu held, and after applyServiceDependencies so that
+// s.recordingPathMapper reflects the latest deps.PathMapper.
+func (s *Server) applyVODDependencies(deps Dependencies) {
+	if !isNil(deps.VODManager) {
+		s.vodManager = deps.VODManager
+		if s.runtimeCtx != nil {
+			s.vodManager.StartProberPool(s.runtimeCtx)
+		}
+		// PR3: Initialize Artifacts Resolver
+		s.artifacts = artifacts.New(&s.cfg, deps.VODManager, s.recordingPathMapper)
+	} else {
+		s.vodManager = nil
+		s.artifacts = nil
+	}
 }
