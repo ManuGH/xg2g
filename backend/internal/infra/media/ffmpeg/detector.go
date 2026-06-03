@@ -672,7 +672,11 @@ func (d *Detector) observeRuntimePathCorrectness(ctx context.Context, handle por
 		yavg, err := d.measureSignalStatsYAvg(probeCtx, playlistPath)
 		cancel()
 		if err != nil {
-			time.Sleep(1 * time.Second)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+			}
 			continue
 		}
 
@@ -685,7 +689,11 @@ func (d *Detector) observeRuntimePathCorrectness(ctx context.Context, handle por
 		if yavg < minYAvg {
 			lowObservations++
 			if lowObservations < requiredLowObservations {
-				time.Sleep(1 * time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(1 * time.Second):
+				}
 				continue
 			}
 
@@ -694,14 +702,18 @@ func (d *Detector) observeRuntimePathCorrectness(ctx context.Context, handle por
 				Status: hardware.PathStatusBrokenOutput,
 				Reason: reason,
 			})
-			d.recordProcessDetail(handle, "runtime path correctness failed - black output detected")
+			if d.recordProcessDetail != nil {
+				d.recordProcessDetail(handle, "runtime path correctness failed - black output detected")
+			}
 			d.Logger.Error().
 				Str("session_id", sessionID).
 				Str("path_id", pathID).
 				Float64("yavg", yavg).
 				Float64("threshold", minYAvg).
 				Msg("runtime path correctness marked path as broken_output")
-			d.terminateProcessGroup(cmd, sessionID)
+			if d.terminateProcessGroup != nil {
+				d.terminateProcessGroup(cmd, sessionID)
+			}
 			return
 		}
 
