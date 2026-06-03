@@ -41,6 +41,26 @@ environment. This is the canonical environment variable for
 
 This section is generated from `internal/config/registry.go`. Do not edit by hand.
 
+### Essential (start here)
+
+The core knobs for a typical deployment. Everything in the per-area sections below is advanced or optional; these same keys also appear in their group sections.
+
+| Path | Env | Default |
+| --- | --- | --- |
+| `api.listenAddr` | `XG2G_LISTEN` | `127.0.0.1:8088` |
+| `api.token` | `XG2G_API_TOKEN` | - |
+| `bouquets` | `XG2G_BOUQUET` | - |
+| `dataDir` | `XG2G_DATA` | `/tmp` |
+| `enigma2.baseUrl` | `XG2G_E2_HOST` | - |
+| `enigma2.password` | `XG2G_E2_PASS` | - |
+| `enigma2.username` | `XG2G_E2_USER` | - |
+| `epg.days` | `XG2G_EPG_DAYS` | `14` |
+| `epg.enabled` | `XG2G_EPG_ENABLED` | `true` |
+| `logLevel` | `XG2G_LOG_LEVEL` | `info` |
+| `picons.baseUrl` | `XG2G_PICON_BASE` | - |
+| `streaming.delivery_policy` | `XG2G_STREAMING_POLICY` | `universal` |
+| `version` | `XG2G_VERSION` | - |
+
 ### api
 
 | Path | Env | Default | Status | Profile |

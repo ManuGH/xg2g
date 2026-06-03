@@ -162,6 +162,8 @@ func buildConfigDoc(entries []config.ConfigEntry) string {
 	b.WriteString("\n## Registry Options (Generated)\n\n")
 	b.WriteString("This section is generated from `internal/config/registry.go`. Do not edit by hand.\n\n")
 
+	writeEssentialSection(&b, entries)
+
 	for _, group := range groups {
 		entries := grouped[group]
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
@@ -187,6 +189,39 @@ func buildConfigDoc(entries []config.ConfigEntry) string {
 	}
 	b.WriteString(docEndMarker)
 	return b.String()
+}
+
+// writeEssentialSection emits a curated "start here" table of the Simple-profile
+// keys (the core knobs a typical deployment sets) ahead of the full per-area
+// reference. These keys also appear in their group sections below.
+func writeEssentialSection(b *strings.Builder, entries []config.ConfigEntry) {
+	var essential []config.ConfigEntry
+	for _, entry := range entries {
+		if entry.Profile == config.ProfileSimple && entry.Status == config.StatusActive {
+			essential = append(essential, entry)
+		}
+	}
+	if len(essential) == 0 {
+		return
+	}
+	sort.Slice(essential, func(i, j int) bool { return essential[i].Path < essential[j].Path })
+
+	b.WriteString("### Essential (start here)\n\n")
+	b.WriteString("The core knobs for a typical deployment. Everything in the per-area sections below is advanced or optional; these same keys also appear in their group sections.\n\n")
+	b.WriteString("| Path | Env | Default |\n")
+	b.WriteString("| --- | --- | --- |\n")
+	for _, entry := range essential {
+		env := "-"
+		if entry.Env != "" {
+			env = fmt.Sprintf("`%s`", entry.Env)
+		}
+		def := "-"
+		if entry.Default != nil {
+			def = fmt.Sprintf("`%s`", formatDefault(entry.Default))
+		}
+		b.WriteString(fmt.Sprintf("| `%s` | %s | %s |\n", entry.Path, env, def))
+	}
+	b.WriteString("\n")
 }
 
 func replaceGeneratedSection(content string, generated string) (string, error) {
