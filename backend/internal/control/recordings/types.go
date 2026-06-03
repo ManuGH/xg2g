@@ -33,7 +33,7 @@ type PlaybackDecision string
 const (
 	DecisionDirectPlay   PlaybackDecision = "direct_play"
 	DecisionDirectStream PlaybackDecision = "direct_stream"
-	DecisionTranscode    PlaybackDecision = "transcoder"
+	DecisionTranscode    PlaybackDecision = "transcode"
 )
 
 type CachePolicy string

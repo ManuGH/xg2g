@@ -38,7 +38,7 @@ type PlaybackMode string
 const (
 	ModeDirectPlay   PlaybackMode = "direct_play"   // Client plays strict format directly
 	ModeDirectStream PlaybackMode = "direct_stream" // Remux container only (no re-encode)
-	ModeTranscode    PlaybackMode = "transcoder"    // Re-encode required
+	ModeTranscode    PlaybackMode = "transcode"     // Re-encode required
 	ModeError        PlaybackMode = "error"         // Hard failure (e.g. not found)
 	ModeDeny         PlaybackMode = "deny"          // Access forbidden or preparing
 )
