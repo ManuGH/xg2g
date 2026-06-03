@@ -29,7 +29,7 @@ type OWIMovie struct {
 	Length              string
 	Filename            string
 	Begin               int
-	Filesize            interface{} // Can be string or number, parsed by service/client
+	Filesize            any // Can be string or number, parsed by service/client
 }
 
 type OWITimer struct {

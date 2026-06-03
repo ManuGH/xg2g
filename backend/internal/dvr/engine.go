@@ -55,7 +55,7 @@ func NewSeriesEngine(cfg config.AppConfig, rules *Manager, clientFactory func() 
 // ruleID: optional, if set only runs this specific rule
 func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID string) ([]SeriesRuleRunReport, error) {
 	// 1. Singleflight to prevent concurrent runs
-	res, err, _ := e.sfg.Do("run", func() (interface{}, error) {
+	res, err, _ := e.sfg.Do("run", func() (any, error) {
 		jobStart := time.Now()
 		e.logger.Info().Str("trigger", trigger).Str("rule_id", ruleID).Msg("starting series engine run")
 

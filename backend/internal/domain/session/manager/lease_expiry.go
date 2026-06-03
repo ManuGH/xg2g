@@ -17,7 +17,7 @@ import (
 )
 
 type stopEventBus interface {
-	Publish(ctx context.Context, topic string, event interface{}) error
+	Publish(ctx context.Context, topic string, event any) error
 }
 
 // LeaseExpiryWorker runs a background goroutine that expires sessions

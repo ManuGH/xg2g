@@ -202,7 +202,7 @@ func (w *epgAdapter) GetPrograms(ctx context.Context) ([]epg.Programme, error) {
 	}
 
 	// Singleflight for Concurrency Protection
-	result, err, _ := s.epgSfg.Do("epg-load", func() (interface{}, error) {
+	result, err, _ := s.epgSfg.Do("epg-load", func() (any, error) {
 		//nolint:gosec // G703: path is strictly sanitized by dataFilePath
 		fileInfo, err := os.Stat(xmltvPath)
 		if err != nil {

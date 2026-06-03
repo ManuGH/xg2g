@@ -14,10 +14,10 @@ import (
 
 func illegalTransition(rec *model.SessionRecord, from model.SessionState, ev EventKind, now time.Time) (Transition, error) {
 	tr := Transition{
-		From:   from,
-		To:     model.SessionFailed,
-		Event:  ev,
-		Reason: model.RInternalInvariantBreach,
+		From:        from,
+		To:          model.SessionFailed,
+		Event:       ev,
+		Reason:      model.RInternalInvariantBreach,
 		DetailCode:  model.DInternalInvariantBreach,
 		DetailDebug: fmt.Sprintf("illegal transition: %s + %v", from, ev),
 	}

@@ -51,9 +51,9 @@ func Recoverer(next http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
 				_ = json.NewEncoder(w).Encode(map[string]any{
-					"error":      "Internal server error",
+					"error":     "Internal server error",
 					"requestId": reqID,
-					"message":    "An unexpected error occurred. Please try again later.",
+					"message":   "An unexpected error occurred. Please try again later.",
 				})
 			}
 		}()

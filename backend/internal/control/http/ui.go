@@ -61,4 +61,3 @@ func writeUIHTMLResponse(w http.ResponseWriter, status int, title, message strin
 		message,
 	)
 }
-

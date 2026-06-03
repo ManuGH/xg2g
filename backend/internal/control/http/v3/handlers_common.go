@@ -77,7 +77,7 @@ func writeRegisteredProblem(w http.ResponseWriter, r *http.Request, status int, 
 
 // isNil is a robust nil check that handles the "typed nil interface" trap
 // for all nillable types (Ptr, Map, Slice, Func, Interface, Chan).
-func isNil(i interface{}) bool {
+func isNil(i any) bool {
 	if i == nil {
 		return true
 	}

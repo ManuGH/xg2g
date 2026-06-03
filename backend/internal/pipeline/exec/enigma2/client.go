@@ -203,7 +203,7 @@ func (c *Client) GetSignal(ctx context.Context) (*Signal, error) {
 	return &res, nil
 }
 
-func (c *Client) get(ctx context.Context, path string, params url.Values, v interface{}) error {
+func (c *Client) get(ctx context.Context, path string, params url.Values, v any) error {
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
 		return fmt.Errorf("invalid base URL: %w", err)

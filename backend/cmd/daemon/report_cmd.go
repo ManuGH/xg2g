@@ -60,8 +60,8 @@ var reportCmd = &cobra.Command{
 	},
 }
 
-func buildReportData(port int, token string) map[string]interface{} {
-	report := make(map[string]interface{})
+func buildReportData(port int, token string) map[string]any {
+	report := make(map[string]any)
 
 	// A. Status (API)
 	url := fmt.Sprintf("http://localhost:%d/api/v3/status", port)
@@ -79,7 +79,7 @@ func buildReportData(port int, token string) map[string]interface{} {
 	} else {
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode == http.StatusOK {
-			var status interface{}
+			var status any
 			if decodeErr := json.NewDecoder(resp.Body).Decode(&status); decodeErr != nil {
 				report["status_error"] = fmt.Sprintf("failed to decode status response: %v", decodeErr)
 			} else {
@@ -107,7 +107,7 @@ func buildReportData(port int, token string) map[string]interface{} {
 	}
 
 	// B. Fingerprint (Local)
-	report["fingerprint"] = map[string]interface{}{
+	report["fingerprint"] = map[string]any{
 		"os":            runtime.GOOS,
 		"arch":          runtime.GOARCH,
 		"cpus":          runtime.NumCPU(),

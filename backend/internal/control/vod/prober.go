@@ -83,7 +83,7 @@ func (m *Manager) probeWorker(ctx context.Context) {
 
 func (m *Manager) processProbe(ctx context.Context, req probeRequest) {
 	// Stampede prevention
-	_, err, _ := m.sfg.Do(req.ServiceRef, func() (interface{}, error) {
+	_, err, _ := m.sfg.Do(req.ServiceRef, func() (any, error) {
 		if runErr := m.runProbe(ctx, req); runErr != nil {
 			return nil, runErr
 		}

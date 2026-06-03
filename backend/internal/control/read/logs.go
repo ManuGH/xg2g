@@ -11,7 +11,7 @@ type LogEntry struct {
 	Level   string
 	Message string
 	Time    time.Time
-	Fields  map[string]interface{}
+	Fields  map[string]any
 }
 
 // LogSource defines the minimal interface required to fetch log data.

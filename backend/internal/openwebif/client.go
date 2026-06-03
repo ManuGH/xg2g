@@ -139,15 +139,15 @@ type AboutInfo struct {
 		Mem3 string `json:"mem3"` // Friendly summary, e.g. "548180 kB frei / 757484 kB insgesamt"
 
 		// Software versions
-		OEVer               string      `json:"oever"`               // OE-Alliance version
-		ImageVer            string      `json:"imagever"`            // OpenATV version
-		ImageDistro         string      `json:"imagedistro"`         // "openatv"
-		FriendlyImageDistro string      `json:"friendlyimagedistro"` // "OpenATV"
-		EnigmaVer           string      `json:"enigmaver"`           // Enigma2 date
-		KernelVer           string      `json:"kernelver"`           // Kernel version
-		DriverDate          string      `json:"driverdate"`          // Driver date
-		WebIFVer            string      `json:"webifver"`            // OWIF version
-		FPVersion           interface{} `json:"fp_version"`          // Front panel version (often null)
+		OEVer               string `json:"oever"`               // OE-Alliance version
+		ImageVer            string `json:"imagever"`            // OpenATV version
+		ImageDistro         string `json:"imagedistro"`         // "openatv"
+		FriendlyImageDistro string `json:"friendlyimagedistro"` // "OpenATV"
+		EnigmaVer           string `json:"enigmaver"`           // Enigma2 date
+		KernelVer           string `json:"kernelver"`           // Kernel version
+		DriverDate          string `json:"driverdate"`          // Driver date
+		WebIFVer            string `json:"webifver"`            // OWIF version
+		FPVersion           any    `json:"fp_version"`          // Front panel version (often null)
 
 		// Runtime
 		Uptime string `json:"uptime"` // e.g., "1d 07:40"
@@ -166,12 +166,12 @@ type AboutInfo struct {
 		// Storage and Network
 		HDD    []HDDInfo          `json:"hdd"`    // Storage devices
 		IFaces []NetworkInterface `json:"ifaces"` // Network interfaces
-		Shares []interface{}      `json:"shares"` // Network shares (often empty)
+		Shares []any              `json:"shares"` // Network shares (often empty)
 
 		// Additional fields
-		Streams interface{} `json:"streams"` // Active streams
+		Streams any `json:"streams"` // Active streams
 	} `json:"info"`
-	Service interface{} `json:"service"` // Current service info
+	Service any `json:"service"` // Current service info
 }
 
 // AboutTuner represents a tuner entry in /api/about.
@@ -195,19 +195,19 @@ type HDDInfo struct {
 
 // NetworkInterface represents a network interface.
 type NetworkInterface struct {
-	Name        string      `json:"name"`        // "eth0"
-	FriendlyNIC string      `json:"friendlynic"` // "Broadcom Gigabit Ethernet"
-	LinkSpeed   string      `json:"linkspeed"`   // "1 GBit/s"
-	MAC         string      `json:"mac"`         // "00:1d:ec:0f:e3:ed"
-	DHCP        bool        `json:"dhcp"`        // true if DHCP enabled
-	IP          string      `json:"ip"`          // IPv4 address
-	Mask        string      `json:"mask"`        // Netmask
-	Gateway     string      `json:"gw"`          // Gateway
-	IPv6        string      `json:"ipv6"`        // IPv6 address
-	IPMethod    string      `json:"ipmethod"`    // IP method
-	IPv4Method  string      `json:"ipv4method"`  // IPv4 method
-	V4Prefix    int         `json:"v4prefix"`    // IPv4 prefix
-	FirstPublic interface{} `json:"firstpublic"` // First public IP (often null)
+	Name        string `json:"name"`        // "eth0"
+	FriendlyNIC string `json:"friendlynic"` // "Broadcom Gigabit Ethernet"
+	LinkSpeed   string `json:"linkspeed"`   // "1 GBit/s"
+	MAC         string `json:"mac"`         // "00:1d:ec:0f:e3:ed"
+	DHCP        bool   `json:"dhcp"`        // true if DHCP enabled
+	IP          string `json:"ip"`          // IPv4 address
+	Mask        string `json:"mask"`        // Netmask
+	Gateway     string `json:"gw"`          // Gateway
+	IPv6        string `json:"ipv6"`        // IPv6 address
+	IPMethod    string `json:"ipmethod"`    // IP method
+	IPv4Method  string `json:"ipv4method"`  // IPv4 method
+	V4Prefix    int    `json:"v4prefix"`    // IPv4 prefix
+	FirstPublic any    `json:"firstpublic"` // First public IP (often null)
 }
 
 const (

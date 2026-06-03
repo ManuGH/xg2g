@@ -7,11 +7,11 @@ import "github.com/ManuGH/xg2g/internal/domain/session/model"
 
 // Transition is a single allowed edge in the lifecycle state machine.
 type Transition struct {
-	From       model.SessionState
-	To         model.SessionState
-	Event      EventKind
-	Reason     model.ReasonCode
-	DetailCode model.ReasonDetailCode
+	From        model.SessionState
+	To          model.SessionState
+	Event       EventKind
+	Reason      model.ReasonCode
+	DetailCode  model.ReasonDetailCode
 	DetailDebug string
 }
 

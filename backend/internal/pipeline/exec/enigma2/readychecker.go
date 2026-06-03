@@ -51,7 +51,7 @@ func NormalizeServiceRef(ref string) string {
 // WaitReady blocks until the tuner is locked to the expected service or ctx errors.
 // It uses singleflight keyed by the provided contention key (e.g. host:slot).
 func (rc *ReadyChecker) WaitReady(ctx context.Context, key, expectedRef string) error {
-	_, err, _ := rc.sf.Do(key, func() (interface{}, error) {
+	_, err, _ := rc.sf.Do(key, func() (any, error) {
 		return nil, rc.waitReadyInner(ctx, expectedRef)
 	})
 	return err

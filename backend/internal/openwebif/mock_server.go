@@ -37,12 +37,12 @@ type MockServer struct {
 
 // BouquetsResponse matches OpenWebIF API structure.
 type BouquetsResponse struct {
-	Services [][]interface{} `json:"services"`
+	Services [][]any `json:"services"`
 }
 
 // ServicesResponse matches OpenWebIF API structure.
 type ServicesResponse struct {
-	Services []map[string]interface{} `json:"services"`
+	Services []map[string]any `json:"services"`
 }
 
 // NewMockServer creates a new OpenWebIF mock server.
@@ -204,7 +204,7 @@ func (m *MockServer) handleBouquets(w http.ResponseWriter, _ *http.Request) {
 		bouquets = append(bouquets, []string{ref, name})
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"bouquets": bouquets,
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -232,15 +232,15 @@ func (m *MockServer) handleAllServices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Flat payload shape expected by /api/getallservices consumers.
-	servicesList := make([]map[string]interface{}, len(services))
+	servicesList := make([]map[string]any, len(services))
 	for i, svc := range services {
-		servicesList[i] = map[string]interface{}{
+		servicesList[i] = map[string]any{
 			"servicereference": svc[0],
 			"servicename":      svc[1],
 		}
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"services": servicesList,
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -279,9 +279,9 @@ func (m *MockServer) handleServices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build response
-	servicesList := make([]map[string]interface{}, len(services))
+	servicesList := make([]map[string]any, len(services))
 	for i, svc := range services {
-		servicesList[i] = map[string]interface{}{
+		servicesList[i] = map[string]any{
 			"servicereference": svc[0],
 			"servicename":      svc[1],
 		}
@@ -326,7 +326,7 @@ func (m *MockServer) handleZap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"result":  true,
 		"message": "Channel switched successfully",
 	}
@@ -336,8 +336,8 @@ func (m *MockServer) handleZap(w http.ResponseWriter, r *http.Request) {
 
 // handleAbout handles /api/about
 func (m *MockServer) handleAbout(w http.ResponseWriter, _ *http.Request) {
-	resp := map[string]interface{}{
-		"info": map[string]interface{}{
+	resp := map[string]any{
+		"info": map[string]any{
 			"model":     "Mock Receiver",
 			"brand":     "MockBrand",
 			"boxtype":   "mockbox",
@@ -387,9 +387,9 @@ func (m *MockServer) handleGetCurrent(w http.ResponseWriter, _ *http.Request) {
 		pmtpid = 5000
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"result": true,
-		"info": map[string]interface{}{
+		"info": map[string]any{
 			"serviceref": m.currentServiceRef,
 			"name":       "Mock Channel",
 			"vpid":       strconv.Itoa(vpid),
@@ -411,7 +411,7 @@ func (m *MockServer) handleSignal(w http.ResponseWriter, _ *http.Request) {
 		standbyStr = "true"
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"result":    true,
 		"snr":       m.snrSignal,
 		"agc":       50,
@@ -433,7 +433,7 @@ func (m *MockServer) handleStatusInfo(w http.ResponseWriter, _ *http.Request) {
 	}
 	isRecordingStr := "false"
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"result":                 true,
 		"inStandby":              standbyStr,
 		"isRecording":            isRecordingStr,

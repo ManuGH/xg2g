@@ -633,7 +633,7 @@ func (s *service) classifyFilePresence(m OWIMovie) model.FilePresenceClass {
 	// For now, let's rely on the fact that List parsing populated `m.Filesize`.
 
 	// Quick parse helper (could be moved, but keeping local for now)
-	parseSize := func(val interface{}) int64 {
+	parseSize := func(val any) int64 {
 		s := fmt.Sprintf("%v", val)
 		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
 			return i
