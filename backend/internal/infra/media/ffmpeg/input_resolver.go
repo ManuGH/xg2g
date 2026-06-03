@@ -22,13 +22,24 @@ const (
 	preflightTimeout           = 2 * time.Second
 	preflightMaxTries          = 3
 	preflightDirectWarmupTries = 8
+
+	// A stream-relay source (port 17999) can emit MPEG-TS packets with the
+	// transport_scrambling_control bits set for a brief interval at the start of a
+	// freshly-started stream; they clear once the stream stabilizes. Sampling only
+	// the first 48 packets (preflightScanBytes) can land entirely inside that initial
+	// interval and misclassify the whole stream — and each retry opens a fresh
+	// connection that lands in it again. For relay sources we read further and
+	// classify on the trailing window instead (see scrambleFractionForSource).
+	preflightRelayScanBytes = 188 * 1024 // ~188KB: well past the brief initial interval
+	preflightRelayTimeout   = 4 * time.Second
 )
 
 // Scramble detection thresholds — deliberately conservative so a clear channel
 // (or a tiny sample) can never be falsely classified as encrypted.
 const (
-	tsScrambleMinPackets = 24  // require a meaningful sample before classifying
-	tsScrambleThreshold  = 0.5 // majority of aligned packets must carry the scrambling bits
+	tsScrambleMinPackets  = 24  // require a meaningful sample before classifying
+	tsScrambleThreshold   = 0.5 // majority of aligned packets must carry the scrambling bits
+	tsScrambleTailPackets = 48  // relay streams are classified on this trailing window, past the brief initial interval
 )
 
 var ffmpegURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
@@ -218,9 +229,20 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 		}
 	}
 
+	relay := isStreamRelayURL(rawURL)
 	timeout := a.PreflightTimeout
 	if timeout <= 0 {
 		timeout = preflightTimeout
+	}
+	scanBytes := preflightScanBytes
+	if relay {
+		// A relay source can show the scrambling bits set briefly at the start of a
+		// fresh stream; read further and allow more time so the trailing window lands
+		// past that initial interval.
+		scanBytes = preflightRelayScanBytes
+		if timeout < preflightRelayTimeout {
+			timeout = preflightRelayTimeout
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -257,8 +279,8 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 		return result, fmt.Errorf("preflight http status %d", resp.StatusCode)
 	}
 
-	buf := make([]byte, preflightScanBytes)
-	n, err := io.ReadFull(io.LimitReader(resp.Body, int64(preflightScanBytes)), buf)
+	buf := make([]byte, scanBytes)
+	n, err := io.ReadFull(io.LimitReader(resp.Body, int64(scanBytes)), buf)
 	// ReadFull tries to fill the entire scan window; if the body ends
 	// earlier that is fine — we classify on whatever packets are present.
 	// The alternative (ReadAtLeast with a minimum) returns after only a few
@@ -304,7 +326,7 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 		return result, fmt.Errorf("preflight ts sync missing")
 	}
 
-	if fraction, packets := tsScrambledFraction(buf[:n]); packets >= tsScrambleMinPackets && fraction >= tsScrambleThreshold {
+	if fraction, packets := scrambleFractionForSource(buf[:n], relay); packets >= tsScrambleMinPackets && fraction >= tsScrambleThreshold {
 		result.Detail = "scrambled"
 		result.Reason = ports.PreflightReasonScrambled
 		a.Logger.Warn().
@@ -450,6 +472,51 @@ func tsScrambledFraction(buf []byte) (fraction float64, packets int) {
 		return 0, 0
 	}
 	return float64(scrambled) / float64(total), total
+}
+
+// scrambleFractionForSource picks the scramble-classification window by source type.
+// A direct source carries clear packets from the first one, so the whole sample is
+// scanned. A stream-relay source can show the transport_scrambling_control bits set
+// for a brief interval at the start of a freshly-started stream that clears once it
+// stabilizes, so it is classified on the TRAILING window — past that initial interval
+// — while a stream that stays flagged throughout (its tail is flagged too) is still
+// classified as scrambled.
+func scrambleFractionForSource(buf []byte, relay bool) (fraction float64, packets int) {
+	if relay {
+		return tsScrambledTailFraction(buf, tsScrambleTailPackets)
+	}
+	return tsScrambledFraction(buf)
+}
+
+// tsScrambledTailFraction reports the scrambled fraction over the last tailPackets
+// aligned 188-byte MPEG-TS packets in buf (or all of them if fewer). Like
+// tsScrambledFraction it scans only the aligned prefix (stops at the first packet
+// that loses 0x47 alignment); buf must be packet-aligned at offset 0 — callers gate
+// on hasTSSync. Returns (0, 0) when no aligned packet is found.
+func tsScrambledTailFraction(buf []byte, tailPackets int) (fraction float64, packets int) {
+	const pktLen = 188
+	flags := make([]bool, 0, len(buf)/pktLen+1)
+	for off := 0; off+pktLen <= len(buf); off += pktLen {
+		if buf[off] != 0x47 {
+			break // lost alignment; only trust the aligned prefix
+		}
+		flags = append(flags, buf[off+3]&0xC0 != 0)
+	}
+	if len(flags) == 0 {
+		return 0, 0
+	}
+	start := 0
+	if len(flags) > tailPackets {
+		start = len(flags) - tailPackets
+	}
+	tail := flags[start:]
+	scrambled := 0
+	for _, s := range tail {
+		if s {
+			scrambled++
+		}
+	}
+	return float64(scrambled) / float64(len(tail)), len(tail)
 }
 
 func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {
