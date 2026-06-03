@@ -23,7 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg/capability"
-	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
+	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"

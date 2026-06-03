@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/vod"
-	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
+	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 )
