@@ -27,7 +27,7 @@ jobs:
       deprecations_needed: ${{ steps.scope.outputs.deprecations_needed }}
       webui_lint_needed: ${{ steps.scope.outputs.webui_lint_needed }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
 
@@ -62,7 +62,7 @@ jobs:
         if: needs.scope.outputs.env_access_needed != 'true'
         run: echo "Env access invariant skipped by scope."
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         if: needs.scope.outputs.env_access_needed == 'true'
 
       - name: Enforce Config Determinism (Env Reads)
@@ -99,7 +99,7 @@ jobs:
         if: needs.scope.outputs.deprecations_needed != 'true'
         run: echo "Deprecation registry check skipped by scope."
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         if: needs.scope.outputs.deprecations_needed == 'true'
 
       - name: Check Deprecation Registry
@@ -118,7 +118,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "WebUI lint skipped by scope."
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         if: needs.scope.outputs.webui_lint_needed == 'true'
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         if: needs.scope.outputs.webui_lint_needed == 'true'
