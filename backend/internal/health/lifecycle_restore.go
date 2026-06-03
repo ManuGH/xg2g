@@ -44,6 +44,26 @@ func evaluateLifecycleRestoreAssessment(cfg config.AppConfig, opts LifecyclePref
 		RestoreRoot: strings.TrimSpace(opts.RestoreRoot),
 	}
 
+	assessLifecycleRestoreExternalSecretFindings(assessment, opts, add)
+
+	if !validateLifecycleRestoreRoot(assessment, add) {
+		return assessment
+	}
+
+	inventory, requiredSchemas := buildLifecycleRestoreInventory(cfg, assessment, add)
+	annotateLifecycleRestoreSchemas(inventory, requiredSchemas, add)
+
+	assessment.Inventory = inventory
+	slices.Sort(assessment.MissingRequired)
+	slices.Sort(assessment.MissingOptional)
+	return assessment
+}
+
+// assessLifecycleRestoreExternalSecretFindings populates the assessment with the
+// external secret requirements derived from the runtime snapshot and emits a
+// finding for each missing prerequisite (or a single finding when no snapshot
+// was provided).
+func assessLifecycleRestoreExternalSecretFindings(assessment *LifecycleRestoreAssessment, opts LifecyclePreflightOptions, add func(LifecyclePreflightFinding)) {
 	if opts.RuntimeSnapshot == nil {
 		add(LifecyclePreflightFinding{
 			Code:     "restore.runtime_snapshot.required",
@@ -53,23 +73,29 @@ func evaluateLifecycleRestoreAssessment(cfg config.AppConfig, opts LifecyclePref
 			Summary:  "restore preflight requires runtime truth snapshot",
 			Detail:   "re-run with --runtime-snapshot so restore gates can verify external secret and runtime prerequisites",
 		})
-	} else {
-		assessment.ExternalSecrets = assessLifecycleRestoreExternalSecrets(opts.RuntimeSnapshot)
-		for _, requirement := range assessment.ExternalSecrets {
-			if requirement.Satisfied {
-				continue
-			}
-			add(LifecyclePreflightFinding{
-				Code:     "restore.external_secret.missing",
-				Severity: LifecyclePreflightSeverityBlock,
-				Contract: "backup_restore_contract",
-				Field:    "runtime.env",
-				Summary:  "required runtime secret for restore is missing",
-				Detail:   requirement.Name,
-			})
-		}
+		return
 	}
 
+	assessment.ExternalSecrets = assessLifecycleRestoreExternalSecrets(opts.RuntimeSnapshot)
+	for _, requirement := range assessment.ExternalSecrets {
+		if requirement.Satisfied {
+			continue
+		}
+		add(LifecyclePreflightFinding{
+			Code:     "restore.external_secret.missing",
+			Severity: LifecyclePreflightSeverityBlock,
+			Contract: "backup_restore_contract",
+			Field:    "runtime.env",
+			Summary:  "required runtime secret for restore is missing",
+			Detail:   requirement.Name,
+		})
+	}
+}
+
+// validateLifecycleRestoreRoot verifies the restore artifact root is present,
+// exists, is readable, and is a directory. It emits the appropriate finding and
+// returns false when assessment must stop (the caller should return early).
+func validateLifecycleRestoreRoot(assessment *LifecycleRestoreAssessment, add func(LifecyclePreflightFinding)) bool {
 	if assessment.RestoreRoot == "" {
 		add(LifecyclePreflightFinding{
 			Code:     "restore.root.required",
@@ -79,7 +105,7 @@ func evaluateLifecycleRestoreAssessment(cfg config.AppConfig, opts LifecyclePref
 			Summary:  "restore preflight requires a restore artifact root",
 			Detail:   "provide --restore-root pointing at the backup set to assess",
 		})
-		return assessment
+		return false
 	}
 
 	restoreRootInfo, err := os.Stat(assessment.RestoreRoot)
@@ -93,7 +119,7 @@ func evaluateLifecycleRestoreAssessment(cfg config.AppConfig, opts LifecyclePref
 			Summary:  "restore artifact root does not exist",
 			Detail:   assessment.RestoreRoot,
 		})
-		return assessment
+		return false
 	case err != nil:
 		add(LifecyclePreflightFinding{
 			Code:     "restore.root.unreadable",
@@ -103,7 +129,7 @@ func evaluateLifecycleRestoreAssessment(cfg config.AppConfig, opts LifecyclePref
 			Summary:  "restore artifact root could not be inspected",
 			Detail:   err.Error(),
 		})
-		return assessment
+		return false
 	case !restoreRootInfo.IsDir():
 		add(LifecyclePreflightFinding{
 			Code:     "restore.root.not_directory",
@@ -113,9 +139,18 @@ func evaluateLifecycleRestoreAssessment(cfg config.AppConfig, opts LifecyclePref
 			Summary:  "restore artifact root must be a directory",
 			Detail:   assessment.RestoreRoot,
 		})
-		return assessment
+		return false
 	}
 
+	return true
+}
+
+// buildLifecycleRestoreInventory resolves and assesses each restore artifact,
+// recording missing required/optional artifacts on the assessment, emitting the
+// corresponding findings, verifying artifact integrity, and collecting the
+// SQLite schemas that require an upgrade check. It returns the inventory and the
+// schemas to be assessed.
+func buildLifecycleRestoreInventory(cfg config.AppConfig, assessment *LifecycleRestoreAssessment, add func(LifecyclePreflightFinding)) ([]LifecycleRestoreArtifactAssessment, []LifecycleRuntimeSQLiteSchema) {
 	restoreArtifacts := lifecycleRestoreArtifacts(cfg)
 	requiredSchemas := make([]LifecycleRuntimeSQLiteSchema, 0, len(restoreArtifacts))
 	inventory := make([]LifecycleRestoreArtifactAssessment, 0, len(restoreArtifacts))
@@ -184,6 +219,14 @@ func evaluateLifecycleRestoreAssessment(cfg config.AppConfig, opts LifecyclePref
 		inventory = append(inventory, entry)
 	}
 
+	return inventory, requiredSchemas
+}
+
+// annotateLifecycleRestoreSchemas runs the schema upgrade assessment over the
+// collected schemas, attaches each result to its inventory entry in place, and
+// emits a finding for migration-required, forward-incompatible, and unversioned
+// schema statuses.
+func annotateLifecycleRestoreSchemas(inventory []LifecycleRestoreArtifactAssessment, requiredSchemas []LifecycleRuntimeSQLiteSchema, add func(LifecyclePreflightFinding)) {
 	schemaChecks := assessLifecycleUpgradeSchemas(requiredSchemas)
 	byID := make(map[string]LifecycleUpgradeSchemaAssessment, len(schemaChecks))
 	for _, check := range schemaChecks {
@@ -226,11 +269,6 @@ func evaluateLifecycleRestoreAssessment(cfg config.AppConfig, opts LifecyclePref
 			})
 		}
 	}
-
-	assessment.Inventory = inventory
-	slices.Sort(assessment.MissingRequired)
-	slices.Sort(assessment.MissingOptional)
-	return assessment
 }
 
 func lifecycleRestoreArtifacts(cfg config.AppConfig) []storageinventory.Artifact {
