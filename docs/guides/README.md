@@ -8,9 +8,11 @@ contributor workflow lives in [`docs/dev/`](../dev/README.md).
 
 | Need | Document |
 | :--- | :--- |
+| Get streaming for the first time | [Getting Started](GETTING_STARTED.md) |
 | Configure xg2g (essentials first) | [Configuration](CONFIGURATION.md#essential-start-here) |
 | Full configuration reference | [Configuration](CONFIGURATION.md) |
 | Generated option reference | [Reference](REFERENCE.md) |
+| Fix a problem | [Troubleshooting](TROUBLESHOOTING.md) |
 
 ## Machine-Readable Reference
 

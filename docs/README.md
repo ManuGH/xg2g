@@ -9,10 +9,12 @@ You want to stream your Enigma2 receiver in a browser.
 
 | Step | Document |
 | :--- | :--- |
+| Get streaming, step by step | [Getting Started](guides/GETTING_STARTED.md) |
 | Install in one command | [Quickstart](../README.md#quickstart) |
 | Set the essential options | [Configuration → Essential](guides/CONFIGURATION.md#essential-start-here) |
 | Full configuration reference | [Configuration Guide](guides/CONFIGURATION.md) |
 | Understand playback & codecs | [Codec Matrix](arch/CODEC_MATRIX.md) |
+| Something not working? | [Troubleshooting](guides/TROUBLESHOOTING.md) |
 | Published API reference | [API Docs](https://manugh.github.io/xg2g/) |
 
 ## Operate xg2g — Operator
