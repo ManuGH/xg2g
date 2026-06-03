@@ -140,71 +140,20 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		logger.Warn().Err(err).Msg("failed to initialize capability registry, continuing without capability history")
 		capabilityRegistry = nil
 	}
-	entitlementStore, err := entitlements.NewStore(cfg.Store.Backend, cfg.Store.Path)
+	monetization, err := buildMonetizationServices(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("initialize entitlement store: %w", err)
+		return nil, err
 	}
-	entitlementService := entitlements.NewService(entitlementStore)
-	householdStore, err := household.NewStore(cfg.Store.Backend, cfg.Store.Path)
-	if err != nil {
-		return nil, fmt.Errorf("initialize household store: %w", err)
-	}
-	householdService := household.NewService(householdStore)
-	receiptVerifiers := make([]receipts.Verifier, 0, 2)
-	normalizedMonetization := cfg.Monetization.Normalized()
-	if normalizedMonetization.GooglePlay.PackageName != "" || normalizedMonetization.GooglePlay.ServiceAccountCredentialsFile != "" {
-		googleVerifier, err := receiptgoogle.NewVerifier(receiptgoogle.Config{
-			PackageName:                   normalizedMonetization.GooglePlay.PackageName,
-			ServiceAccountCredentialsFile: normalizedMonetization.GooglePlay.ServiceAccountCredentialsFile,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("initialize google play receipt verifier: %w", err)
-		}
-		receiptVerifiers = append(receiptVerifiers, googleVerifier)
-	}
-	if normalizedMonetization.Amazon.SharedSecretFile != "" || normalizedMonetization.Amazon.UseSandbox {
-		amazonVerifier, err := receiptamazon.NewVerifier(receiptamazon.Config{
-			SharedSecretFile: normalizedMonetization.Amazon.SharedSecretFile,
-			UseSandbox:       normalizedMonetization.Amazon.UseSandbox,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("initialize amazon appstore receipt verifier: %w", err)
-		}
-		receiptVerifiers = append(receiptVerifiers, amazonVerifier)
-	}
-	receiptService, err := receipts.NewService(normalizedMonetization, entitlementService, receiptVerifiers...)
-	if err != nil {
-		return nil, fmt.Errorf("initialize receipt service: %w", err)
-	}
+	entitlementService := monetization.entitlements
+	householdService := monetization.households
+	receiptService := monetization.receipts
 
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
 	if err != nil {
 		return nil, fmt.Errorf("invalid playlist path: %w", err)
 	}
 
-	e2Opts := enigma2.Options{
-		Timeout:               cfg.Enigma2.Timeout,
-		ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout,
-		MaxRetries:            cfg.Enigma2.Retries,
-		Backoff:               cfg.Enigma2.Backoff,
-		MaxBackoff:            cfg.Enigma2.MaxBackoff,
-		Username:              cfg.Enigma2.Username,
-		Password:              cfg.Enigma2.Password,
-		UserAgent:             cfg.Enigma2.UserAgent,
-		RateLimit:             rate.Limit(cfg.Enigma2.RateLimit),
-		RateLimitBurst:        cfg.Enigma2.RateBurst,
-		UseWebIFStreams:       cfg.Enigma2.UseWebIFStreams,
-		StreamPort:            cfg.Enigma2.StreamPort,
-	}
-	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
-	owiClient := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, openwebif.Options{
-		Timeout:             cfg.Enigma2.Timeout,
-		Username:            cfg.Enigma2.Username,
-		Password:            cfg.Enigma2.Password,
-		UseWebIFStreams:     cfg.Enigma2.UseWebIFStreams,
-		StreamBaseURL:       snap.Runtime.OpenWebIF.StreamBaseURL,
-		HTTPMaxConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
-	})
+	e2Client, owiClient := buildEnigmaClients(cfg, snap)
 
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
 	v3Scan.ActivePlaybackFn = newBackgroundScanPlaybackDetector(v3Store, owiClient)
@@ -246,45 +195,19 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	metricsAddr := resolveMetricsAddr(cfg)
 
 	deps := daemon.Deps{
-		Logger:          logger,
-		Config:          cfg,
-		ConfigManager:   configMgr,
-		APIHandler:      s.Handler(),
-		APIServerSetter: s,
-		MetricsHandler:  promhttp.Handler(),
-		MetricsAddr:     metricsAddr,
-		ProxyOnly:       false,
-		V3Bus:           v3Bus,
-		V3Store:         v3Store,
-		ResumeStore:     resumeStore,
-		ScanManager:     v3Scan,
-		ReceiverHealthCheck: func(ctx context.Context) error {
-			if e2Client == nil || e2Client.HTTPClient == nil {
-				return fmt.Errorf("enigma2 client is not available")
-			}
-			if strings.TrimSpace(e2Client.BaseURL) == "" {
-				return fmt.Errorf("XG2G_V3_E2_HOST is empty")
-			}
-			req, err := http.NewRequestWithContext(ctx, http.MethodHead, e2Client.BaseURL, nil)
-			if err != nil {
-				return err
-			}
-			if cfg.Enigma2.UserAgent != "" {
-				req.Header.Set("User-Agent", cfg.Enigma2.UserAgent)
-			}
-			if cfg.Enigma2.Username != "" || cfg.Enigma2.Password != "" {
-				req.SetBasicAuth(cfg.Enigma2.Username, cfg.Enigma2.Password)
-			}
-			resp, err := e2Client.HTTPClient.Do(req)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			if resp.StatusCode >= 500 {
-				return fmt.Errorf("receiver returned status %d", resp.StatusCode)
-			}
-			return nil
-		},
+		Logger:                logger,
+		Config:                cfg,
+		ConfigManager:         configMgr,
+		APIHandler:            s.Handler(),
+		APIServerSetter:       s,
+		MetricsHandler:        promhttp.Handler(),
+		MetricsAddr:           metricsAddr,
+		ProxyOnly:             false,
+		V3Bus:                 v3Bus,
+		V3Store:               v3Store,
+		ResumeStore:           resumeStore,
+		ScanManager:           v3Scan,
+		ReceiverHealthCheck:   newReceiverHealthCheck(cfg, e2Client),
 		MediaPipeline:         mediaPipeline,
 		V3OrchestratorFactory: buildV3OrchestratorFactory(),
 	}
@@ -294,31 +217,8 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		return nil, fmt.Errorf("create daemon manager: %w", err)
 	}
 
-	hm := s.HealthManager()
-	if hm != nil {
-		hm.SetReadyStrict(cfg.ReadyStrict)
-		hm.RegisterChecker(health.NewConnectivityContractChecker("public_connectivity_contract", func() config.AppConfig {
-			if cfgHolder == nil {
-				return cfg
-			}
-			return cfgHolder.Get()
-		}))
-		if cfg.ReadyStrict {
-			if strings.TrimSpace(cfg.Enigma2.BaseURL) == "" {
-				return nil, fmt.Errorf("strict readiness enabled but OpenWebIF base URL is missing")
-			}
-			checker := health.NewReceiverChecker(func(ctx context.Context) error {
-				client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
-					Timeout:  2 * time.Second,
-					Username: cfg.Enigma2.Username,
-					Password: cfg.Enigma2.Password,
-				})
-				_, err := client.About(ctx)
-				return err
-			})
-			hm.RegisterChecker(checker)
-			logger.Info().Msg("Strict readiness checks enabled: monitoring OpenWebIF connectivity")
-		}
+	if err := registerHealthCheckers(s.HealthManager(), cfg, cfgHolder, logger); err != nil {
+		return nil, err
 	}
 
 	app := daemon.NewApp(logger, mgr, cfgHolder, s, false)
@@ -335,6 +235,155 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		scanManager:      v3Scan,
 		verificationWork: verifyWorker,
 	}, nil
+}
+
+// monetizationServices bundles the entitlement, household and receipt services
+// produced from the application configuration.
+type monetizationServices struct {
+	entitlements *entitlements.Service
+	households   *household.Service
+	receipts     *receipts.Service
+}
+
+// buildMonetizationServices constructs the entitlement, household and receipt
+// services (including any configured store-front receipt verifiers) from cfg.
+func buildMonetizationServices(cfg config.AppConfig) (monetizationServices, error) {
+	entitlementStore, err := entitlements.NewStore(cfg.Store.Backend, cfg.Store.Path)
+	if err != nil {
+		return monetizationServices{}, fmt.Errorf("initialize entitlement store: %w", err)
+	}
+	entitlementService := entitlements.NewService(entitlementStore)
+	householdStore, err := household.NewStore(cfg.Store.Backend, cfg.Store.Path)
+	if err != nil {
+		return monetizationServices{}, fmt.Errorf("initialize household store: %w", err)
+	}
+	householdService := household.NewService(householdStore)
+	receiptVerifiers := make([]receipts.Verifier, 0, 2)
+	normalizedMonetization := cfg.Monetization.Normalized()
+	if normalizedMonetization.GooglePlay.PackageName != "" || normalizedMonetization.GooglePlay.ServiceAccountCredentialsFile != "" {
+		googleVerifier, err := receiptgoogle.NewVerifier(receiptgoogle.Config{
+			PackageName:                   normalizedMonetization.GooglePlay.PackageName,
+			ServiceAccountCredentialsFile: normalizedMonetization.GooglePlay.ServiceAccountCredentialsFile,
+		})
+		if err != nil {
+			return monetizationServices{}, fmt.Errorf("initialize google play receipt verifier: %w", err)
+		}
+		receiptVerifiers = append(receiptVerifiers, googleVerifier)
+	}
+	if normalizedMonetization.Amazon.SharedSecretFile != "" || normalizedMonetization.Amazon.UseSandbox {
+		amazonVerifier, err := receiptamazon.NewVerifier(receiptamazon.Config{
+			SharedSecretFile: normalizedMonetization.Amazon.SharedSecretFile,
+			UseSandbox:       normalizedMonetization.Amazon.UseSandbox,
+		})
+		if err != nil {
+			return monetizationServices{}, fmt.Errorf("initialize amazon appstore receipt verifier: %w", err)
+		}
+		receiptVerifiers = append(receiptVerifiers, amazonVerifier)
+	}
+	receiptService, err := receipts.NewService(normalizedMonetization, entitlementService, receiptVerifiers...)
+	if err != nil {
+		return monetizationServices{}, fmt.Errorf("initialize receipt service: %w", err)
+	}
+
+	return monetizationServices{
+		entitlements: entitlementService,
+		households:   householdService,
+		receipts:     receiptService,
+	}, nil
+}
+
+// buildEnigmaClients constructs the enigma2 and OpenWebIF clients used to talk
+// to the receiver from cfg and the active config snapshot.
+func buildEnigmaClients(cfg config.AppConfig, snap config.Snapshot) (*enigma2.Client, *openwebif.Client) {
+	e2Opts := enigma2.Options{
+		Timeout:               cfg.Enigma2.Timeout,
+		ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout,
+		MaxRetries:            cfg.Enigma2.Retries,
+		Backoff:               cfg.Enigma2.Backoff,
+		MaxBackoff:            cfg.Enigma2.MaxBackoff,
+		Username:              cfg.Enigma2.Username,
+		Password:              cfg.Enigma2.Password,
+		UserAgent:             cfg.Enigma2.UserAgent,
+		RateLimit:             rate.Limit(cfg.Enigma2.RateLimit),
+		RateLimitBurst:        cfg.Enigma2.RateBurst,
+		UseWebIFStreams:       cfg.Enigma2.UseWebIFStreams,
+		StreamPort:            cfg.Enigma2.StreamPort,
+	}
+	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
+	owiClient := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, openwebif.Options{
+		Timeout:             cfg.Enigma2.Timeout,
+		Username:            cfg.Enigma2.Username,
+		Password:            cfg.Enigma2.Password,
+		UseWebIFStreams:     cfg.Enigma2.UseWebIFStreams,
+		StreamBaseURL:       snap.Runtime.OpenWebIF.StreamBaseURL,
+		HTTPMaxConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
+	})
+	return e2Client, owiClient
+}
+
+// newReceiverHealthCheck returns the daemon receiver health-check probe, issuing
+// a HEAD request against the enigma2 base URL with the configured credentials.
+func newReceiverHealthCheck(cfg config.AppConfig, e2Client *enigma2.Client) func(context.Context) error {
+	return func(ctx context.Context) error {
+		if e2Client == nil || e2Client.HTTPClient == nil {
+			return fmt.Errorf("enigma2 client is not available")
+		}
+		if strings.TrimSpace(e2Client.BaseURL) == "" {
+			return fmt.Errorf("XG2G_V3_E2_HOST is empty")
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, e2Client.BaseURL, nil)
+		if err != nil {
+			return err
+		}
+		if cfg.Enigma2.UserAgent != "" {
+			req.Header.Set("User-Agent", cfg.Enigma2.UserAgent)
+		}
+		if cfg.Enigma2.Username != "" || cfg.Enigma2.Password != "" {
+			req.SetBasicAuth(cfg.Enigma2.Username, cfg.Enigma2.Password)
+		}
+		resp, err := e2Client.HTTPClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("receiver returned status %d", resp.StatusCode)
+		}
+		return nil
+	}
+}
+
+// registerHealthCheckers wires the connectivity-contract checker and, when
+// strict readiness is enabled, the OpenWebIF receiver checker onto hm. It is a
+// no-op when hm is nil.
+func registerHealthCheckers(hm *health.Manager, cfg config.AppConfig, cfgHolder *config.ConfigHolder, logger zerolog.Logger) error {
+	if hm == nil {
+		return nil
+	}
+	hm.SetReadyStrict(cfg.ReadyStrict)
+	hm.RegisterChecker(health.NewConnectivityContractChecker("public_connectivity_contract", func() config.AppConfig {
+		if cfgHolder == nil {
+			return cfg
+		}
+		return cfgHolder.Get()
+	}))
+	if cfg.ReadyStrict {
+		if strings.TrimSpace(cfg.Enigma2.BaseURL) == "" {
+			return fmt.Errorf("strict readiness enabled but OpenWebIF base URL is missing")
+		}
+		checker := health.NewReceiverChecker(func(ctx context.Context) error {
+			client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
+				Timeout:  2 * time.Second,
+				Username: cfg.Enigma2.Username,
+				Password: cfg.Enigma2.Password,
+			})
+			_, err := client.About(ctx)
+			return err
+		})
+		hm.RegisterChecker(checker)
+		logger.Info().Msg("Strict readiness checks enabled: monitoring OpenWebIF connectivity")
+	}
+	return nil
 }
 
 func prepareWireBootstrapState(ctx context.Context, version, explicitConfigPath string) (wireBootstrapState, error) {
