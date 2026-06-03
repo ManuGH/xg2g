@@ -1330,10 +1330,24 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		Str("startup_phase", "ffmpeg_args_build_started").
 		Str("input_url", sanitizeURLForLog(inputURL)).
 		Msg("ffmpeg args build started")
-	plan, err := a.buildArgsWithPlan(ctx, spec, inputURL)
+	// Span covering the playback decision + ffprobe probes (the untraced gap
+	// between request and spawn). No-op when tracing is off. planCtx lets any
+	// probe spans added later nest under this one.
+	planCtx, planSpan := telemetry.Tracer("xg2g.ffmpeg").Start(ctx, "playback.plan",
+		trace.WithAttributes(
+			attribute.String("xg2g.session_id", spec.SessionID),
+			attribute.String("xg2g.source_type", fmt.Sprintf("%v", spec.Source.Type)),
+		),
+	)
+	plan, err := a.buildArgsWithPlan(planCtx, spec, inputURL)
 	if err != nil {
+		planSpan.RecordError(err)
+		planSpan.SetStatus(codes.Error, "plan build failed")
+		planSpan.End()
 		return "", fmt.Errorf("failed to build args: %w", err)
 	}
+	planSpan.SetAttributes(attribute.String("xg2g.path_id", plan.pathID))
+	planSpan.End()
 	args := plan.args
 	a.Logger.Info().
 		Str("session_id", spec.SessionID).
