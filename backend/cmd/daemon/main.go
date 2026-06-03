@@ -17,7 +17,9 @@ import (
 	"syscall"
 
 	"github.com/ManuGH/xg2g/internal/app/bootstrap"
+	"github.com/ManuGH/xg2g/internal/config"
 	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 	appversion "github.com/ManuGH/xg2g/internal/version"
 )
 
@@ -174,6 +176,33 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// OpenTelemetry tracing is opt-in: it activates only when XG2G_OTEL_ENDPOINT is
+	// set. Unset (the default) installs a no-op provider, so the spans already wired
+	// across the codebase cost nothing. Failure to init never blocks startup.
+	otelEndpoint := strings.TrimSpace(config.ParseString("XG2G_OTEL_ENDPOINT", ""))
+	otelProtocol := config.ParseString("XG2G_OTEL_PROTOCOL", "grpc")
+	tracerProvider, otelErr := telemetry.NewProvider(ctx, telemetry.Config{
+		Enabled:        otelEndpoint != "",
+		ServiceName:    "xg2g",
+		ServiceVersion: appversion.Version,
+		Environment:    config.ParseString("XG2G_OTEL_ENVIRONMENT", "production"),
+		ExporterType:   otelProtocol,
+		Endpoint:       otelEndpoint,
+		SamplingRate:   config.ParseFloat("XG2G_OTEL_SAMPLING", 1.0),
+	})
+	if otelErr != nil {
+		logger.Error().Err(otelErr).Msg("failed to initialize OpenTelemetry tracing; continuing without traces")
+	} else {
+		defer func() {
+			if shErr := tracerProvider.Shutdown(context.Background()); shErr != nil {
+				logger.Warn().Err(shErr).Msg("OpenTelemetry tracer shutdown error")
+			}
+		}()
+		if otelEndpoint != "" {
+			logger.Info().Str("endpoint", otelEndpoint).Str("protocol", otelProtocol).Msg("OpenTelemetry tracing enabled")
+		}
+	}
 
 	container, err := bootstrap.WireServices(
 		ctx,
