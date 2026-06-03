@@ -32,7 +32,6 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
 	deps := s.sessionsModuleDeps()
-	cfg := deps.cfg
 	bus := deps.bus
 	store := deps.store
 
@@ -66,39 +65,14 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		intentType = model.IntentTypeStreamStart
 	}
 
-	serviceRef := strings.TrimSpace(derefString(req.ServiceRef))
-	if intentType == model.IntentTypeStreamStart {
-		if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
-			normalized, err := platformnet.ValidateOutboundURL(r.Context(), u.String(), outboundPolicyFromConfig(cfg))
-			if err != nil {
-				respondIntentFailure(w, r, IntentErrInvalidInput, "direct URL serviceRef rejected by outbound policy")
-				return
-			}
-			serviceRef = normalized
-		}
+	serviceRef, done := resolveIntentServiceRef(w, r, deps, intentType, derefString(req.ServiceRef))
+	if done {
+		return
 	}
 
-	var sessionID string
 	rawPlaybackDecisionToken := derefString(req.PlaybackDecisionToken)
-	switch intentType {
-	case model.IntentTypeStreamStart:
-		sessionID = uuid.New().String()
-		if correlationID == "" {
-			correlationID = uuid.New().String()
-		}
-	case model.IntentTypeStreamStop:
-		if req.SessionId == nil {
-			respondIntentFailure(w, r, IntentErrInvalidInput, "sessionId required for stop")
-			return
-		}
-		sessionID = req.SessionId.String()
-		if correlationID == "" {
-			if session, err := store.GetSession(r.Context(), sessionID); err == nil && session != nil {
-				correlationID = session.CorrelationID
-			}
-		}
-	default:
-		respondIntentFailure(w, r, IntentErrInvalidInput, "unsupported intent type")
+	sessionID, correlationID, done := resolveIntentSession(w, r, store, intentType, req, correlationID)
+	if done {
 		return
 	}
 
@@ -125,66 +99,13 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if intentType == model.IntentTypeStreamStart {
-		if strings.TrimSpace(rawPlaybackDecisionToken) == "" {
-			writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/token-missing", "Missing Decision Token", problemcode.CodeTokenMissing, "A valid playbackDecisionToken is required to start a live stream", nil)
+		traceID, tokenDone := s.verifyDecisionToken(w, r, deps, serviceRef, rawPlaybackDecisionToken, params, clientCapHash)
+		if tokenDone {
 			return
 		}
-
-		s.mu.RLock()
-		jwtSecret := append([]byte(nil), s.JWTSecret...)
-		s.mu.RUnlock()
-		if len(jwtSecret) == 0 {
-			writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "intent/security-unavailable", "Security Unavailable", problemcode.CodeSecurityUnavailable, "Decision token verification is not configured", nil)
-			return
-		}
-
-		claims, err := auth.VerifyStrict(rawPlaybackDecisionToken, jwtSecret, "xg2g/v3/intents", "xg2g")
-		if err != nil {
-			code := auth.ClassifyError(err)
-			writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/unauthorized", "Unauthorized Intent", code, err.Error(), nil)
-			return
-		}
-		if claims.TraceID != "" {
-			decisionTraceID = claims.TraceID
-			logger = logger.With().Str("traceId", claims.TraceID).Logger()
-		}
-
-		normRef := normalize.ServiceRef(serviceRef)
-		normTokenSub := normalize.ServiceRef(claims.Sub)
-		if normRef != normTokenSub {
-			writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this service_ref", nil)
-			return
-		}
-
-		reqMode := params["mode"]
-		if raw := normalize.Token(reqMode); raw != "" && raw != claims.Mode {
-			writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this playback mode", nil)
-			return
-		}
-
-		expectedHash := clientCapHash
-		if expectedHash == "" {
-			if rawCapHash := normalize.Token(params["capHash"]); rawCapHash != "" {
-				expectedHash = rawCapHash
-			} else if rawCapHash := normalize.Token(params["cap_hash"]); rawCapHash != "" {
-				expectedHash = rawCapHash
-			} else {
-				genericMap := make(map[string]any, len(params))
-				for k, v := range params {
-					genericMap[k] = v
-				}
-				if cHash, err := normalize.MapHash(genericMap); err == nil {
-					expectedHash = cHash
-				}
-			}
-		}
-		if claims.CapHash != "" && claims.CapHash != expectedHash {
-			writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for these playback capabilities", nil)
-			return
-		}
-
-		if enforcePreflight(r.Context(), w, r, deps, serviceRef) {
-			return
+		if traceID != "" {
+			decisionTraceID = traceID
+			logger = logger.With().Str("traceId", traceID).Logger()
 		}
 	}
 
@@ -229,6 +150,124 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		resp.CorrelationId = &result.CorrelationID
 	}
 	writeJSON(w, http.StatusAccepted, &resp)
+}
+
+// resolveIntentServiceRef trims the requested serviceRef and, for stream-start
+// intents that carry a direct HTTP(S) URL, validates it against the outbound
+// policy. It returns the resolved serviceRef and done=true when it has already
+// written a failure response and the caller must return.
+func resolveIntentServiceRef(w http.ResponseWriter, r *http.Request, deps sessionsModuleDeps, intentType model.IntentType, rawServiceRef string) (serviceRef string, done bool) {
+	serviceRef = strings.TrimSpace(rawServiceRef)
+	if intentType == model.IntentTypeStreamStart {
+		if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
+			normalized, err := platformnet.ValidateOutboundURL(r.Context(), u.String(), outboundPolicyFromConfig(deps.cfg))
+			if err != nil {
+				respondIntentFailure(w, r, IntentErrInvalidInput, "direct URL serviceRef rejected by outbound policy")
+				return "", true
+			}
+			serviceRef = normalized
+		}
+	}
+	return serviceRef, false
+}
+
+// resolveIntentSession derives the sessionID and (where missing) the
+// correlationID for the requested intent type. It returns done=true when it has
+// already written a failure response and the caller must return.
+func resolveIntentSession(w http.ResponseWriter, r *http.Request, store SessionStateStore, intentType model.IntentType, req IntentRequest, correlationID string) (sessionID string, resolvedCorrelationID string, done bool) {
+	switch intentType {
+	case model.IntentTypeStreamStart:
+		sessionID = uuid.New().String()
+		if correlationID == "" {
+			correlationID = uuid.New().String()
+		}
+	case model.IntentTypeStreamStop:
+		if req.SessionId == nil {
+			respondIntentFailure(w, r, IntentErrInvalidInput, "sessionId required for stop")
+			return "", "", true
+		}
+		sessionID = req.SessionId.String()
+		if correlationID == "" {
+			if session, err := store.GetSession(r.Context(), sessionID); err == nil && session != nil {
+				correlationID = session.CorrelationID
+			}
+		}
+	default:
+		respondIntentFailure(w, r, IntentErrInvalidInput, "unsupported intent type")
+		return "", "", true
+	}
+	return sessionID, correlationID, false
+}
+
+// verifyDecisionToken validates the playbackDecisionToken for a stream-start
+// intent: it checks token presence, the configured signing secret, the token
+// signature/claims (service_ref, mode, capabilities hash) and the preflight
+// gate. It returns the decision trace ID extracted from the token (if any) and
+// done=true when it has already written a problem response and the caller must
+// return.
+func (s *Server) verifyDecisionToken(w http.ResponseWriter, r *http.Request, deps sessionsModuleDeps, serviceRef, rawPlaybackDecisionToken string, params map[string]string, clientCapHash string) (decisionTraceID string, done bool) {
+	if strings.TrimSpace(rawPlaybackDecisionToken) == "" {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/token-missing", "Missing Decision Token", problemcode.CodeTokenMissing, "A valid playbackDecisionToken is required to start a live stream", nil)
+		return "", true
+	}
+
+	s.mu.RLock()
+	jwtSecret := append([]byte(nil), s.JWTSecret...)
+	s.mu.RUnlock()
+	if len(jwtSecret) == 0 {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "intent/security-unavailable", "Security Unavailable", problemcode.CodeSecurityUnavailable, "Decision token verification is not configured", nil)
+		return "", true
+	}
+
+	claims, err := auth.VerifyStrict(rawPlaybackDecisionToken, jwtSecret, "xg2g/v3/intents", "xg2g")
+	if err != nil {
+		code := auth.ClassifyError(err)
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/unauthorized", "Unauthorized Intent", code, err.Error(), nil)
+		return "", true
+	}
+	if claims.TraceID != "" {
+		decisionTraceID = claims.TraceID
+	}
+
+	normRef := normalize.ServiceRef(serviceRef)
+	normTokenSub := normalize.ServiceRef(claims.Sub)
+	if normRef != normTokenSub {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this service_ref", nil)
+		return "", true
+	}
+
+	reqMode := params["mode"]
+	if raw := normalize.Token(reqMode); raw != "" && raw != claims.Mode {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this playback mode", nil)
+		return "", true
+	}
+
+	expectedHash := clientCapHash
+	if expectedHash == "" {
+		if rawCapHash := normalize.Token(params["capHash"]); rawCapHash != "" {
+			expectedHash = rawCapHash
+		} else if rawCapHash := normalize.Token(params["cap_hash"]); rawCapHash != "" {
+			expectedHash = rawCapHash
+		} else {
+			genericMap := make(map[string]any, len(params))
+			for k, v := range params {
+				genericMap[k] = v
+			}
+			if cHash, err := normalize.MapHash(genericMap); err == nil {
+				expectedHash = cHash
+			}
+		}
+	}
+	if claims.CapHash != "" && claims.CapHash != expectedHash {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for these playback capabilities", nil)
+		return "", true
+	}
+
+	if enforcePreflight(r.Context(), w, r, deps, serviceRef) {
+		return "", true
+	}
+
+	return decisionTraceID, false
 }
 
 func derefStringIntentType(value *IntentRequestType) string {
