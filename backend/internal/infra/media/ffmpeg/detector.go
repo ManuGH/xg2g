@@ -132,6 +132,8 @@ func (d *Detector) PreflightVAAPI() error {
 	verifiedElapsed := make(map[string]time.Duration, len(vaapiEncodersToTest))
 	verdicts := make(map[string]hardware.EncoderVerdict, len(vaapiEncodersToTest))
 	reasons := make(map[string]string, len(vaapiEncodersToTest))
+	verified8 := make(map[string]bool, len(vaapiEncodersToTest))
+	verified10 := make(map[string]bool, len(vaapiEncodersToTest))
 	for _, enc := range vaapiEncodersToTest {
 		if !strings.Contains(encoderList, enc) {
 			d.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
@@ -139,15 +141,32 @@ func (d *Detector) PreflightVAAPI() error {
 			reasons[enc] = "encoder not in ffmpeg build"
 			continue
 		}
-		elapsed, verdict, reason := d.probeAndVerifyVaapiEncoder(enc)
+		// Judge each encoder at the bit depth production drives it at: AV1 at
+		// 10-bit (p010le, see encode_args), H.264/HEVC at 8-bit (nv12). For AV1
+		// also probe 8-bit so the record shows whether a host does AV1 8-bit but
+		// not 10-bit (a p010 driver-promotion that fails elsewhere in the fleet).
+		isAV1 := normalizeRequestedCodec(enc) == "av1"
+		prodFormat := "nv12"
+		if isAV1 {
+			prodFormat = "p010le"
+		}
+		elapsed, verdict, reason := d.probeAndVerifyVaapiEncoder(enc, prodFormat)
 		verdicts[enc] = verdict
 		reasons[enc] = reason
+		if isAV1 {
+			verified10[enc] = verdict == hardware.VerdictVerified
+			if _, v8, _ := d.probeAndVerifyVaapiEncoder(enc, "nv12"); v8 == hardware.VerdictVerified {
+				verified8[enc] = true
+			}
+		} else {
+			verified8[enc] = verdict == hardware.VerdictVerified
+		}
 		if verdict == hardware.VerdictVerified {
 			d.vaapiEncoders[enc] = true
 			verifiedElapsed[enc] = elapsed
-			d.Logger.Info().Str("encoder", enc).Dur("probe_elapsed", elapsed).Msg("vaapi preflight: encoder verified")
+			d.Logger.Info().Str("encoder", enc).Str("upload_format", prodFormat).Dur("probe_elapsed", elapsed).Bool("verified_8bit", verified8[enc]).Bool("verified_10bit", verified10[enc]).Msg("vaapi preflight: encoder verified")
 		} else {
-			d.Logger.Warn().Str("encoder", enc).Str("verdict", string(verdict)).Str("reason", reason).Msg("vaapi preflight: encoder not admitted")
+			d.Logger.Warn().Str("encoder", enc).Str("upload_format", prodFormat).Str("verdict", string(verdict)).Str("reason", reason).Msg("vaapi preflight: encoder not admitted")
 		}
 	}
 
@@ -179,6 +198,8 @@ func (d *Detector) PreflightVAAPI() error {
 		cap.Verdict = verdict
 		cap.Reason = reasons[enc]
 		cap.Verified = verdict == hardware.VerdictVerified
+		cap.Verified8Bit = verified8[enc]
+		cap.Verified10Bit = verified10[enc]
 		if !cap.Verified {
 			cap.AutoEligible = false
 		}
@@ -321,9 +342,10 @@ func (d *Detector) PreflightTranscodeProfiles() {
 }
 
 // probeAndVerifyVaapiEncoder encodes a short synthetic clip with the given VAAPI
-// encoder to a real file, then decode-verifies the output. It returns the encode
+// encoder at the given upload format (e.g. "nv12" for 8-bit, "p010le" for
+// 10-bit) to a real file, then decode-verifies the output. It returns the encode
 // elapsed time and a three-state verdict (verified/withheld/unverifiable).
-func (d *Detector) probeAndVerifyVaapiEncoder(encoder string) (time.Duration, hardware.EncoderVerdict, string) {
+func (d *Detector) probeAndVerifyVaapiEncoder(encoder, uploadFormat string) (time.Duration, hardware.EncoderVerdict, string) {
 	// Probe artifacts go under a guaranteed-writable working dir (HLSRoot, which
 	// the media pipeline already writes segments to) so a read-only/distroless
 	// rootfs with a non-writable /tmp does not turn a filesystem problem into a
@@ -352,7 +374,7 @@ func (d *Detector) probeAndVerifyVaapiEncoder(encoder string) (time.Duration, ha
 		"-vaapi_device", d.VaapiDevice,
 		"-f", "lavfi",
 		"-i", fmt.Sprintf("testsrc2=size=1280x720:rate=25:duration=%0.2f", dur),
-		"-vf", "format=nv12,hwupload",
+		"-vf", "format="+uploadFormat+",hwupload",
 		"-c:v", encoder,
 		"-frames:v", strconv.Itoa(decodeVerifyFrames),
 		outPath,
@@ -663,6 +685,12 @@ func (d *Detector) testNVENCH264Profile(profileID, encoder string) (time.Duratio
 // VaapiEncoderVerified returns true if the given encoder passed preflight.
 func (d *Detector) VaapiEncoderVerified(encoder string) bool {
 	return d.vaapiEncoders[encoder]
+}
+
+// VaapiEncoder10BitVerified reports whether the encoder's output was
+// decode-verified at 10-bit (p010le) — the depth production drives AV1 at.
+func (d *Detector) VaapiEncoder10BitVerified(encoder string) bool {
+	return d.vaapiEncoderCaps[encoder].Verified10Bit
 }
 
 // VaapiEncoderAutoEligible returns true if the encoder is verified and suitable
