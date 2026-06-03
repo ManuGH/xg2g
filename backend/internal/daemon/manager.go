@@ -308,8 +308,7 @@ func (m *manager) Shutdown(ctx context.Context) error {
 
 	// Execute shutdown hooks in reverse order (LIFO)
 	m.logger.Debug().Int("hooks", len(m.shutdownHooks)).Msg("Executing shutdown hooks")
-	for _, v := range slices.Backward(m.shutdownHooks) {
-		hook := v
+	for _, hook := range slices.Backward(m.shutdownHooks) {
 		m.logger.Debug().Str("hook", hook.name).Msg("Executing shutdown hook")
 
 		hookStart := time.Now()

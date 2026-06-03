@@ -132,13 +132,13 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsP
 	}
 
 	var resp []LogEntry
-	for _, e := range entries {
+	for i := range entries {
 		// Scoping for pointer safety in loop
 		resp = append(resp, LogEntry{
-			Level:   &e.Level,
-			Message: &e.Message,
-			Time:    &e.Time,
-			Fields:  &e.Fields,
+			Level:   &entries[i].Level,
+			Message: &entries[i].Message,
+			Time:    &entries[i].Time,
+			Fields:  &entries[i].Fields,
 		})
 	}
 

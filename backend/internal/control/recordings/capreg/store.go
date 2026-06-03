@@ -354,8 +354,7 @@ func (s *MemoryStore) LookupDecisionObservation(_ context.Context, requestID str
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, v := range slices.Backward(s.observations) {
-		observation := v
+	for _, observation := range slices.Backward(s.observations) {
 		if observation.RequestID != requestID || observation.ObservationKind != "decision" {
 			continue
 		}

@@ -262,7 +262,7 @@ func (m *ResourceMonitor) TotalActiveSessions() int64 {
 func (m *ResourceMonitor) hasPreemptibleSession(p Priority) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	for i := range p {
+	for i := PriorityPulse; i < p; i++ {
 		if len(m.sessionIDs[i]) > 0 {
 			return true
 		}
@@ -275,7 +275,7 @@ func (m *ResourceMonitor) SelectPreemptionTarget(p Priority) (string, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	// Pulse < Live < Recording
-	for i := range p {
+	for i := PriorityPulse; i < p; i++ {
 		ids := m.sessionIDs[i]
 		if len(ids) > 0 {
 			// Preempt the oldest one in this class for now
