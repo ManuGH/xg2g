@@ -113,3 +113,86 @@ func RecordTranscodeError(codec, reason string) {
 func RecordStreamDetectionError(port, errorType string) {
 	StreamDetectionErrors.WithLabelValues(port, errorType).Inc()
 }
+
+// --- Hardware encoder capability + runtime-demotion telemetry ---
+//
+// These make the otherwise process-local hardware-encode verdicts observable so
+// fleet AV1/HEVC safety is queryable, and so a baseline exists before stricter
+// admission checks change which encoders count as verified.
+
+var (
+	// EncoderVerified reports whether a hardware encoder passed startup preflight
+	// (1) or not (0), per encoder (e.g. "av1_vaapi", "hevc_vaapi", "h264_vaapi").
+	EncoderVerified = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "xg2g",
+			Subsystem: "gpu",
+			Name:      "encoder_verified",
+			Help:      "Whether a hardware encoder passed startup preflight (1) or not (0)",
+		},
+		[]string{"encoder"},
+	)
+
+	// EncoderAutoEligible reports whether a verified hardware encoder is eligible
+	// for automatic codec negotiation (1) or not (0), per encoder.
+	EncoderAutoEligible = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "xg2g",
+			Subsystem: "gpu",
+			Name:      "encoder_auto_eligible",
+			Help:      "Whether a verified hardware encoder is auto-eligible for negotiation (1) or not (0)",
+		},
+		[]string{"encoder"},
+	)
+
+	// RuntimeDemotionTotal counts hardware-encoder demotions triggered by repeated
+	// runtime encode failures, after which the backend falls back to CPU/software.
+	RuntimeDemotionTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "xg2g",
+			Subsystem: "gpu",
+			Name:      "runtime_demotion_total",
+			Help:      "Hardware encoder demotions caused by repeated runtime encode failures",
+		},
+		[]string{"backend"}, // "vaapi" | "nvenc"
+	)
+
+	// RuntimeEncodeFailureTotal counts individual runtime hardware-encode failures
+	// observed in ffmpeg output (the pre-demotion signal).
+	RuntimeEncodeFailureTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "xg2g",
+			Subsystem: "gpu",
+			Name:      "runtime_encode_failure_total",
+			Help:      "Individual runtime hardware-encode failures observed in ffmpeg output",
+		},
+		[]string{"backend"},
+	)
+)
+
+// SetEncoderVerified records whether a hardware encoder passed startup preflight.
+func SetEncoderVerified(encoder string, verified bool) {
+	EncoderVerified.WithLabelValues(encoder).Set(boolToGauge(verified))
+}
+
+// SetEncoderAutoEligible records whether a hardware encoder is auto-eligible.
+func SetEncoderAutoEligible(encoder string, eligible bool) {
+	EncoderAutoEligible.WithLabelValues(encoder).Set(boolToGauge(eligible))
+}
+
+// RecordRuntimeDemotion records a hardware-encoder backend demotion (vaapi|nvenc).
+func RecordRuntimeDemotion(backend string) {
+	RuntimeDemotionTotal.WithLabelValues(backend).Inc()
+}
+
+// RecordRuntimeEncodeFailure records a single runtime hardware-encode failure.
+func RecordRuntimeEncodeFailure(backend string) {
+	RuntimeEncodeFailureTotal.WithLabelValues(backend).Inc()
+}
+
+func boolToGauge(b bool) float64 {
+	if b {
+		return 1
+	}
+	return 0
+}

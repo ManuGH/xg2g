@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	metricsgpu "github.com/ManuGH/xg2g/internal/metrics/gpu"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/rs/zerolog"
 	"os/exec"
@@ -298,6 +299,7 @@ func (a *LocalAdapter) recordVAAPIRuntimeFailure(sessionID, failureLine string) 
 		return
 	}
 	failures, demoted := hardware.RecordVAAPIRuntimeFailure()
+	metricsgpu.RecordRuntimeEncodeFailure("vaapi")
 	event := a.Logger.Warn().
 		Str("session_id", sessionID).
 		Int("vaapi_runtime_failures", failures)
@@ -305,6 +307,10 @@ func (a *LocalAdapter) recordVAAPIRuntimeFailure(sessionID, failureLine string) 
 		event = event.Str("ffmpeg_log", failureLine)
 	}
 	if demoted {
+		metricsgpu.RecordRuntimeDemotion("vaapi")
+		metricsgpu.SetEncoderVerified("h264_vaapi", false)
+		metricsgpu.SetEncoderVerified("hevc_vaapi", false)
+		metricsgpu.SetEncoderVerified("av1_vaapi", false)
 		event.Msg("vaapi runtime failure threshold reached; gpu demoted to cpu fallback")
 		return
 	}
@@ -316,6 +322,7 @@ func (a *LocalAdapter) recordNVENCRuntimeFailure(sessionID, failureLine string) 
 		return
 	}
 	failures, demoted := hardware.RecordNVENCRuntimeFailure()
+	metricsgpu.RecordRuntimeEncodeFailure("nvenc")
 	event := a.Logger.Warn().
 		Str("session_id", sessionID).
 		Int("nvenc_runtime_failures", failures)
@@ -323,6 +330,10 @@ func (a *LocalAdapter) recordNVENCRuntimeFailure(sessionID, failureLine string) 
 		event = event.Str("ffmpeg_log", failureLine)
 	}
 	if demoted {
+		metricsgpu.RecordRuntimeDemotion("nvenc")
+		metricsgpu.SetEncoderVerified("h264_nvenc", false)
+		metricsgpu.SetEncoderVerified("hevc_nvenc", false)
+		metricsgpu.SetEncoderVerified("av1_nvenc", false)
 		event.Msg("nvenc runtime failure threshold reached; gpu demoted to cpu fallback")
 		return
 	}

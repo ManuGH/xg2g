@@ -9,6 +9,7 @@ import (
 	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg/capability"
+	metricsgpu "github.com/ManuGH/xg2g/internal/metrics/gpu"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/rs/zerolog"
@@ -51,7 +52,19 @@ func newDetector(binPath string, logger zerolog.Logger, vaapiDevice, hlsRoot str
 // PreflightVAAPI validates that the configured VAAPI device is functional.
 // Tests each available encoder (h264_vaapi, hevc_vaapi) independently.
 // Results are cached per-encoder: buildArgs checks the specific encoder.
+// publishEncoderGauges mirrors the per-encoder verified/auto-eligible verdicts
+// into Prometheus gauges so fleet hardware-encode capability is observable.
+// A nil caps map sets every listed encoder to 0 (not verified / not eligible).
+func publishEncoderGauges(encoders []string, caps map[string]hardware.HardwareEncoderCapability) {
+	for _, enc := range encoders {
+		c, ok := caps[enc]
+		metricsgpu.SetEncoderVerified(enc, ok && c.Verified)
+		metricsgpu.SetEncoderAutoEligible(enc, ok && c.AutoEligible)
+	}
+}
+
 func (d *Detector) PreflightVAAPI() error {
+	publishEncoderGauges(vaapiEncodersToTest, nil)
 	if d.VaapiDevice == "" {
 		return nil
 	}
@@ -136,6 +149,7 @@ func (d *Detector) PreflightVAAPI() error {
 
 	// Publish per-encoder results for higher layers (HTTP/profile selection).
 	hardware.SetVAAPIEncoderCapabilities(d.vaapiEncoderCaps)
+	publishEncoderGauges(vaapiEncodersToTest, d.vaapiEncoderCaps)
 
 	hardware.SetVAAPIPreflightResult(true)
 	d.Logger.Info().
@@ -147,6 +161,7 @@ func (d *Detector) PreflightVAAPI() error {
 
 // PreflightNVENC validates that the visible NVIDIA runtime can execute real NVENC encodes.
 func (d *Detector) PreflightNVENC() error {
+	publishEncoderGauges(nvencEncodersToTest, nil)
 	if !hardware.HasNVENC() {
 		return nil
 	}
@@ -219,6 +234,7 @@ func (d *Detector) PreflightNVENC() error {
 	}
 
 	hardware.SetNVENCEncoderCapabilities(d.nvencEncoderCaps)
+	publishEncoderGauges(nvencEncodersToTest, d.nvencEncoderCaps)
 	hardware.SetNVENCPreflightResult(true)
 	d.Logger.Info().
 		Int("verified_encoders", len(d.nvencEncoders)).
