@@ -27,6 +27,19 @@ func assessLifecycleRuntimeSnapshot(cfg config.AppConfig, snapshot LifecycleRunt
 		}
 	}
 
+	assessRuntimeUnitDrift(snapshot, add)
+	assessRuntimeComposeDrift(cfg, snapshot, add)
+	assessRuntimeEnvDrift(snapshot, add)
+	assessRuntimeStateDrift(snapshot, add)
+
+	return assessment
+}
+
+// assessRuntimeUnitDrift evaluates the systemd unit portion of the runtime
+// snapshot, emitting findings for missing installed/canonical units and for
+// drift between the installed unit, the canonical host copy, and the repo
+// deploy bundle.
+func assessRuntimeUnitDrift(snapshot LifecycleRuntimeSnapshot, add func(LifecycleRuntimeDriftFinding)) {
 	if !snapshot.Unit.Installed.Exists {
 		add(LifecycleRuntimeDriftFinding{
 			Code:    "runtime_snapshot.unit.installed_missing",
@@ -66,7 +79,13 @@ func assessLifecycleRuntimeSnapshot(cfg config.AppConfig, snapshot LifecycleRunt
 			Detail:  snapshot.Unit.Canonical.Path,
 		})
 	}
+}
 
+// assessRuntimeComposeDrift evaluates the docker compose portion of the runtime
+// snapshot, covering the base file, service/image presence, image drift,
+// env-file inclusion, stack selection overrides, volume coverage for configured
+// paths, and the XG2G_DATA environment mapping.
+func assessRuntimeComposeDrift(cfg config.AppConfig, snapshot LifecycleRuntimeSnapshot, add func(LifecycleRuntimeDriftFinding)) {
 	if !snapshot.Compose.BaseFile.Exists {
 		add(LifecycleRuntimeDriftFinding{
 			Code:    "runtime_snapshot.compose.base_missing",
@@ -161,7 +180,12 @@ func assessLifecycleRuntimeSnapshot(cfg config.AppConfig, snapshot LifecycleRunt
 			Detail:  fmt.Sprintf("compose=%s config=%s", dataEnv, cfg.DataDir),
 		})
 	}
+}
 
+// assessRuntimeEnvDrift evaluates the runtime env file: its existence, secure
+// file mode, presence of required keys, and that every selected compose file
+// referenced via COMPOSE_FILE actually exists on disk.
+func assessRuntimeEnvDrift(snapshot LifecycleRuntimeSnapshot, add func(LifecycleRuntimeDriftFinding)) {
 	if !snapshot.Env.File.Exists {
 		add(LifecycleRuntimeDriftFinding{
 			Code:    "runtime_snapshot.env.missing",
@@ -203,7 +227,11 @@ func assessLifecycleRuntimeSnapshot(cfg config.AppConfig, snapshot LifecycleRunt
 			}
 		}
 	}
+}
 
+// assessRuntimeStateDrift evaluates the persisted drift-state snapshot, flagging
+// an unsupported drift_state.json schema version.
+func assessRuntimeStateDrift(snapshot LifecycleRuntimeSnapshot, add func(LifecycleRuntimeDriftFinding)) {
 	if snapshot.State.DriftStateVersion != nil && *snapshot.State.DriftStateVersion != 1 {
 		add(LifecycleRuntimeDriftFinding{
 			Code:    "runtime_snapshot.state.drift_version_unknown",
@@ -213,8 +241,6 @@ func assessLifecycleRuntimeSnapshot(cfg config.AppConfig, snapshot LifecycleRunt
 			Detail:  fmt.Sprintf("got %d", *snapshot.State.DriftStateVersion),
 		})
 	}
-
-	return assessment
 }
 
 func runtimeDriftRank(class LifecycleRuntimeDriftClass) int {
