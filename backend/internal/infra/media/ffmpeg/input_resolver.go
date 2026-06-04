@@ -30,7 +30,7 @@ const (
 	// interval and misclassify the whole stream — and each retry opens a fresh
 	// connection that lands in it again. For relay sources we read further and
 	// classify on the trailing window instead (see scrambleFractionForSource).
-	preflightRelayScanBytes = 188 * 1024 // ~188KB: well past the brief initial interval
+	preflightRelayScanBytes = 188 * 4096 // ~752KB: past observed descrambler/ECM-lock (~367KB / ~2000 pkt on a real icam channel) + margin. 188*1024 landed INSIDE the lock -> false R_UPSTREAM_SCRAMBLED while VLC (waits longer) played fine. A genuinely scrambled channel stays scrambled throughout, so the trailing window still flags it.
 	preflightRelayTimeout   = 4 * time.Second
 )
 
