@@ -37,6 +37,21 @@ const (
 	decodeVerifyMinRange = 16.0
 )
 
+// signalStatsLumaVF is the ffmpeg -vf used for EVERY luma (YAVG) measurement
+// (decode-verify, the synthetic path-correctness probe, and the runtime
+// watchdog). The leading format=yuv420p forces an 8-bit decode BEFORE signalstats
+// so YAVG is always reported on the 0-255 scale that every threshold here assumes
+// (decodeVerifyMinYAvg, the synthetic-probe 32, and the runtime watchdog's
+// XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG default 8). Without it a 10-bit p010 AV1
+// decode makes signalstats report on the 0-1023 scale -- empirically (staging
+// av1_vaapi p010) raw signalstats YAVG 497.5 for a bright pattern that is 124.4 at
+// 8-bit, ~4x inflated. That made (a) the runtime black-detector ~4x too lenient on
+// the exact 10-bit interlaced-AV1 path and (b) the measurement ffmpeg-build
+// dependent (one build reported ~126, another ~497 for similar content). yuv420p
+// makes it scale- and build-stable. The encoded stream is untouched; this is the
+// measurement decode only.
+const signalStatsLumaVF = "format=yuv420p,signalstats,metadata=mode=print"
+
 type Detector struct {
 	BinPath     string
 	Logger      zerolog.Logger
@@ -488,7 +503,7 @@ func (d *Detector) decodeStats(ctx context.Context, path, swDecoder string) (fra
 		"-v", "info",
 		"-c:v", swDecoder,
 		"-i", path,
-		"-vf", "signalstats,metadata=mode=print",
+		"-vf", signalStatsLumaVF,
 		"-f", "null", "-",
 	)
 	out, runErr := cmd.CombinedOutput()
@@ -959,7 +974,7 @@ func (d *Detector) measureSignalStatsYAvg(ctx context.Context, mediaPath string)
 		"-v", "info",
 		"-hwaccel", "none",
 		"-i", mediaPath,
-		"-vf", "signalstats,metadata=mode=print",
+		"-vf", signalStatsLumaVF,
 		"-frames:v", "1",
 		"-f", "null", "-",
 	}
