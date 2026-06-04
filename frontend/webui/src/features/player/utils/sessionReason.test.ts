@@ -4,6 +4,8 @@ import { translatePlaybackReason } from './sessionReason';
 // Minimal TFunction stub: resolves the keys we assert, echoes others.
 const t = ((key: string) => {
   const table: Record<string, string> = {
+    'player.reason.R_CANCELLED': 'The session was cancelled.',
+    'player.reason.R_UPSTREAM_CORRUPT': 'This channel is currently unavailable or has no video.',
     'player.reason.R_UPSTREAM_SCRAMBLED': 'This channel is encrypted and could not be descrambled.',
     'player.reason.unknown': 'Playback failed.',
   };
@@ -25,6 +27,19 @@ describe('translatePlaybackReason', () => {
 
   it('falls back to the raw code when no detail is available', () => {
     expect(translatePlaybackReason('R_SOME_NEW_CODE', undefined, t)).toBe('R_SOME_NEW_CODE');
+  });
+
+  it('maps additionally added codes (R_CANCELLED, R_UPSTREAM_CORRUPT)', () => {
+    expect(translatePlaybackReason('R_CANCELLED', undefined, t)).toBe('The session was cancelled.');
+    expect(translatePlaybackReason('R_UPSTREAM_CORRUPT', undefined, t)).toBe(
+      'This channel is currently unavailable or has no video.',
+    );
+  });
+
+  it('maps R_UPSTREAM_CORRUPT and never leaks the raw token', () => {
+    const out = translatePlaybackReason('R_UPSTREAM_CORRUPT', 'upstream corrupt', t);
+    expect(out).toBe('This channel is currently unavailable or has no video.');
+    expect(out).not.toContain('R_UPSTREAM_CORRUPT');
   });
 
   it('returns a generic message when nothing is available', () => {

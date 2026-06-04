@@ -4,21 +4,30 @@ import type { TFunction } from 'i18next';
 // the OpenAPI reason enum (e.g. R_UPSTREAM_SCRAMBLED is passed through from the
 // domain ReasonCode set), so this set — not the spec — is the source of truth for
 // what we translate. Codes outside it fall back gracefully (see below).
+//
+// Keep this in sync with `backend/internal/domain/session/model/enums.go`
+// ReasonCode constants that can reach a terminal session response.
 const TRANSLATED_REASONS = new Set<string>([
-  'R_UPSTREAM_SCRAMBLED',
-  'R_TUNE_FAILED',
-  'R_TUNE_TIMEOUT',
+  'R_BAD_REQUEST',
+  'R_CANCELLED',
+  'R_CLIENT_STOP',
+  'R_DEADLINE_EXCEEDED',
+  'R_FFMPEG_START_FAILED',
+  'R_IDLE_TIMEOUT',
+  'R_INTERNAL_INVARIANT_BREACH',
+  'R_INVARIANT_VIOLATION',
   'R_LEASE_BUSY',
   'R_LEASE_EXPIRED',
-  'R_PACKAGER_FAILED',
-  'R_FFMPEG_START_FAILED',
-  'R_PROCESS_ENDED',
-  'R_INVARIANT_VIOLATION',
   'R_NOT_FOUND',
-  'R_BAD_REQUEST',
+  'R_PACKAGER_FAILED',
+  'R_PIPELINE_START_FAILED',
+  'R_PROCESS_ENDED',
   'R_RECORDING_NOT_READY',
-  'R_IDLE_TIMEOUT',
+  'R_TUNE_FAILED',
+  'R_TUNE_TIMEOUT',
   'R_UNKNOWN',
+  'R_UPSTREAM_CORRUPT',
+  'R_UPSTREAM_SCRAMBLED',
 ]);
 
 /**
