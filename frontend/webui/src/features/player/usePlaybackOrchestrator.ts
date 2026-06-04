@@ -1608,6 +1608,8 @@ export function usePlaybackOrchestrator(
     // returned cancel cleans it up if the page hides again mid-recovery.
     setStatus((current) => (current === 'paused' ? 'buffering' : current));
     return startResumePlaybackRecovery(video, {
+      // Keep a user pause sacred even if it happens during the ~2s recovery window.
+      shouldContinue: () => !userPauseIntentRef.current,
       onBlocked: (err: unknown) => {
         if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
           // iOS blocked the programmatic resume; the play/pause control is the
