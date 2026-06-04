@@ -66,6 +66,60 @@ func TestParsePreviewOffset(t *testing.T) {
 	}
 }
 
+func TestParsePlaylistSegmentNames(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a playlist with EXTINF entries referencing two segments.
+	playlist := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:6
+#EXT-X-MEDIA-SEQUENCE:2
+#EXTINF:6.000000,
+seg_000002.ts
+#EXTINF:6.000000,
+seg_000003.ts
+#EXTINF:6.000000,
+seg_000004.ts
+`
+	if err := os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte(playlist), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Also write an extra segment on disk that is NOT in the playlist.
+	if err := os.WriteFile(filepath.Join(dir, "seg_000001.ts"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	segs, err := parsePlaylistSegmentNames(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"seg_000002.ts", "seg_000003.ts", "seg_000004.ts"}
+	if len(segs) != len(want) {
+		t.Fatalf("got %v, want %v", segs, want)
+	}
+	for i := range want {
+		if segs[i] != want[i] {
+			t.Fatalf("order wrong: got %q want %q at index %d", segs[i], want[i], i)
+		}
+	}
+
+	// Negative control: missing playlist returns error.
+	emptyDir := t.TempDir()
+	if _, err := parsePlaylistSegmentNames(emptyDir); err == nil {
+		t.Fatal("expected error for missing playlist")
+	}
+
+	// Negative control: playlist with no EXTINF entries returns error.
+	emptyPlaylist := "#EXTM3U\n#EXT-X-VERSION:3\n"
+	if err := os.WriteFile(filepath.Join(emptyDir, "index.m3u8"), []byte(emptyPlaylist), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parsePlaylistSegmentNames(emptyDir); err == nil {
+		t.Fatal("expected error for playlist with no segments")
+	}
+}
+
 func TestListLiveSegments(t *testing.T) {
 	dir := t.TempDir()
 	// Files that should be ignored: playlist, init segment, partials, dirs.

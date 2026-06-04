@@ -45,10 +45,19 @@ const (
 // over the same 6s segment cost nothing after the first.
 func (s *Server) serveLivePreviewFrame(w http.ResponseWriter, r *http.Request, hlsRoot string, segSeconds int, ffmpegBin, sessionID string) {
 	dir := paths.LiveSessionDir(hlsRoot, sessionID)
-	segments, err := listLiveSegments(dir)
+
+	// Prefer the playlist's segment list over raw disk scan: the rolling DVR
+	// window can leave expired segments on disk after FFmpeg's async cleanup,
+	// and picking one of those would serve a thumbnail misaligned with the
+	// player's seekable range. Fall back to a disk scan if the playlist is not
+	// yet available (e.g. during session priming).
+	segments, err := parsePlaylistSegmentNames(dir)
 	if err != nil || len(segments) == 0 {
-		writeProblem(w, r, http.StatusNotFound, "live_preview/not_available", "Live Preview Not Available", "LIVE_PREVIEW_NOT_AVAILABLE", "no preview available", nil)
-		return
+		segments, err = listLiveSegments(dir)
+		if err != nil || len(segments) == 0 {
+			writeProblem(w, r, http.StatusNotFound, "live_preview/not_available", "Live Preview Not Available", "LIVE_PREVIEW_NOT_AVAILABLE", "no preview available", nil)
+			return
+		}
 	}
 
 	offset := parsePreviewOffset(r.URL.Query().Get("t"))
@@ -58,7 +67,17 @@ func (s *Server) serveLivePreviewFrame(w http.ResponseWriter, r *http.Request, h
 		return
 	}
 
-	key := sessionID + "/" + segName
+	// Include the segment file's modification time in the cache key so that a
+	// session restart/recycle — which writes new segments with the same names
+	// into a cleaned directory — does not serve stale previews from the
+	// previous generation. The in-memory cache is not cleared across restarts.
+	segPath := filepath.Join(dir, segName)
+	var mtimeSuffix string
+	if fi, stErr := os.Stat(segPath); stErr == nil {
+		mtimeSuffix = strconv.FormatInt(fi.ModTime().UnixNano(), 36)
+	}
+	key := sessionID + "/" + segName + "/" + mtimeSuffix
+
 	img, err := livePreviewCache.getOrBuild(key, func() ([]byte, error) {
 		return extractKeyframeJPEG(r.Context(), ffmpegBin, dir, segName)
 	})
@@ -128,6 +147,39 @@ func listLiveSegments(dir string) ([]string, error) {
 		}
 	}
 	sort.Strings(segs)
+	return segs, nil
+}
+
+// parsePlaylistSegmentNames reads the live HLS playlist (index.m3u8) and
+// returns the segment filenames currently referenced in it. Segments that have
+// rolled out of the DVR window can linger on disk after FFmpeg's async cleanup;
+// this function returns only the segments the player's seekable range actually
+// covers, so hover previews are never aliased to expired content.
+func parsePlaylistSegmentNames(dir string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "index.m3u8"))
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+	var segs []string
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(line, "#EXTINF:") {
+			// The segment filename is the next non-empty, non-comment line.
+			for j := i + 1; j < len(lines); j++ {
+				next := strings.TrimSpace(lines[j])
+				if next == "" || strings.HasPrefix(next, "#") {
+					continue
+				}
+				segs = append(segs, next)
+				i = j
+				break
+			}
+		}
+	}
+	if len(segs) == 0 {
+		return nil, fmt.Errorf("no segments found in playlist")
+	}
 	return segs, nil
 }
 
