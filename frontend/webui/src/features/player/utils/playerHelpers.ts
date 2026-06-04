@@ -160,7 +160,10 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
     // codec the engine can't decode. Default ON; escape hatch:
     // localStorage XG2G_HLSJS_SAFARI_KILL=1. Propagates through playbackProbe's
     // preferredHlsEngine (one source of truth) to the playHls engine decision.
-    if (hlsJsSupported && !isHlsJsSafariKillSwitchOn()) {
+    // Desktop WebKit only: route to hls.js + MMS so the app owns the buffer.
+    // Touch WebKit (iOS/iPadOS) keeps native HLS to preserve AirPlay and native
+    // mobile controls, which hls.js disables via disableRemotePlayback.
+    if (hlsJsSupported && !isHlsJsSafariKillSwitchOn() && !hasTouchInput()) {
       const mms = getManagedMseAv1Support();
       if (mms.hasManagedMediaSource && (mms.av1_10bit_l40 || mms.av1_10bit_l41)) {
         return false;
