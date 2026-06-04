@@ -81,6 +81,7 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     seekableEnd: 0,
     startTimeDisplay: '00:00',
     endTimeDisplay: '00:00',
+    currentPositionDisplay: '00:00',
     windowDuration: 0,
     relativePosition: 0,
     isLiveMode: false,

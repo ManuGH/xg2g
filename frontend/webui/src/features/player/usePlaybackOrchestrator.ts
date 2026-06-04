@@ -74,6 +74,7 @@ import {
   supportsManagedNativePlayback,
 } from './orchestrator/nativePlaybackHelpers';
 import { resolveSessionPhaseFromState } from './orchestrator/sessionPhase';
+import { formatDvrPositionDisplay } from './orchestrator/dvrPositionDisplay';
 import { useEpochManager } from './orchestrator/useEpochManager';
 import { usePlaybackStateSetters } from './orchestrator/usePlaybackStateSetters';
 import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCleanup';
@@ -165,6 +166,7 @@ export interface V3PlayerViewState {
   seekableEnd: number;
   startTimeDisplay: string;
   endTimeDisplay: string;
+  currentPositionDisplay: string;
   windowDuration: number;
   relativePosition: number;
   isLiveMode: boolean;
@@ -586,6 +588,8 @@ export function usePlaybackOrchestrator(
     showDvrModeButton,
     startTimeDisplay,
     endTimeDisplay,
+    currentTimeDisplay,
+    behindLiveSeconds,
     formatClock,
     seekTo,
     seekToLiveEdge,
@@ -1873,6 +1877,15 @@ export function usePlaybackOrchestrator(
       ffmpegPlanSummary !== '-' ? { label: t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' }), value: ffmpegPlanSummary } : null,
     ].filter((row): row is V3PlayerLabeledValue => row !== null)
     : [];
+  // Live DVR position readout: "14:23 · 7:00 behind live" when scrubbed back, or
+  // "14:23 · Live" at the edge; VOD shows the elapsed position. Pure helper so the
+  // edge/behind/VOD branching is unit-tested (see dvrPositionDisplay.test.ts).
+  const currentPositionDisplay = formatDvrPositionDisplay(
+    { isLiveMode, isAtLiveEdge, behindLiveSeconds, currentTimeDisplay },
+    formatClock,
+    (key, options) => t(key, options),
+  );
+
   const viewState: V3PlayerViewState = {
     channelName: channel?.name ?? null,
     // Live: the real EPG programme title (null until/unless known — the view
@@ -1927,6 +1940,7 @@ export function usePlaybackOrchestrator(
     seekableEnd,
     startTimeDisplay,
     endTimeDisplay,
+    currentPositionDisplay,
     windowDuration,
     relativePosition,
     isLiveMode,

@@ -211,20 +211,23 @@ export function V3PlayerView({
               </Button>
 
               <div className={styles.seekSliderGroup}>
-                <span className={styles.vodTime}>{viewState.startTimeDisplay}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max={viewState.windowDuration}
-                  step="0.1"
-                  className={styles.vodSlider}
-                  value={viewState.relativePosition}
-                  onChange={(e) => {
-                    const newVal = parseFloat(e.target.value);
-                    actions.seekTo(viewState.seekableStart + newVal);
-                  }}
-                />
-                <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
+                <span className={styles.currentPositionLabel}>{viewState.currentPositionDisplay}</span>
+                <div className={styles.seekSliderRow}>
+                  <span className={styles.vodTime}>{viewState.startTimeDisplay}</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max={viewState.windowDuration}
+                    step="0.1"
+                    className={styles.vodSlider}
+                    value={viewState.relativePosition}
+                    onChange={(e) => {
+                      const newVal = parseFloat(e.target.value);
+                      actions.seekTo(viewState.seekableStart + newVal);
+                    }}
+                  />
+                  <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
+                </div>
               </div>
 
               <div className={styles.seekButtons}>

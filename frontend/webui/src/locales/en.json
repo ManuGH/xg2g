@@ -139,6 +139,10 @@
     "seekForward15m": "Forward 15m",
     "seekTimeline": "Seek timeline",
     "goLive": "Go live",
+    "dvrPosition": {
+      "live": "{{time}} · Live",
+      "behindLive": "{{time}} · {{offset}} behind live"
+    },
     "fullscreenLabel": "Fullscreen",
     "exitFullscreenLabel": "Exit fullscreen",
     "nativeFullscreenLabel": "Native",
