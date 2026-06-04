@@ -1245,8 +1245,10 @@ export function usePlayerChrome({
   const currentTimeDisplay = playbackMode === 'LIVE'
     ? startUnix
       ? formatTimeOfDay(startUnix + playheadWindowPosition)
-      : formatClock(playheadWindowPosition)
-    : formatClock(playheadWindowPosition);
+      : formatClock(playheadWindowPosition)  // unanchored: use seekable-absolute so the
+                                              // readout and the scrubber never disagree
+    : formatClock(relativePosition);           // VOD: relative to seekableStart, matching the
+                                              // existing start/end label convention
   const behindLiveSeconds = isLiveMode
     ? Math.max(0, liveEdgePosition - playheadWindowPosition)
     : 0;
