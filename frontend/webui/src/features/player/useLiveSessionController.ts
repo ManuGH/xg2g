@@ -15,6 +15,7 @@ import type {
 import type { AppError } from '../../types/errors';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
+import { translatePlaybackReason } from './utils/sessionReason';
 
 const SESSION_READY_TIMEOUT_MS = 60_000;
 const SESSION_READY_POLL_MS = 250;
@@ -361,7 +362,6 @@ export function useLiveSessionController({
             (json && typeof json === 'object' ? (json.reason_detail ?? json.reasonDetail ?? json.detail) : undefined) as
             | string
             | undefined;
-          const combined = `${reason ?? 'GONE'}${reasonDetail ? `: ${reasonDetail}` : ''}`;
           const details = {
             url: res.url,
             status: res.status,
@@ -395,7 +395,7 @@ export function useLiveSessionController({
           if (recoveredSessionAuth) {
             throw createPlayerError(t('player.sessionExpired'), details);
           }
-          throw createPlayerError(`${t('player.sessionFailed')}: ${combined}`, details);
+          throw createPlayerError(`${t('player.sessionFailed')}: ${translatePlaybackReason(reason, reasonDetail, t)}`, details);
         }
 
         if (!res.ok) {
@@ -424,7 +424,7 @@ export function useLiveSessionController({
           if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
             throw new Error(t('player.leaseBusy'));
           }
-          throw new Error(`${t('player.sessionFailed')}: ${reason}${detail}`);
+          throw new Error(`${t('player.sessionFailed')}: ${translatePlaybackReason(session.reason, session.reasonDetail, t)}`);
         }
         if ((state === 'READY' || state === 'DRAINING') && session.playbackUrl) {
           if (!hasValidHeartbeatInterval(session.heartbeatIntervalSeconds)) {
