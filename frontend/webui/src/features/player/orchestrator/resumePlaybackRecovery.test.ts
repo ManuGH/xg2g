@@ -48,42 +48,48 @@ describe('startResumePlaybackRecovery (observe-first)', () => {
     };
   }
 
-  it('never touches a clean resume: no play() if the stream advances during the window', () => {
+  it('issues initial nudge but stops when stream recovers during observation window', () => {
     const v = fakeVideo(10);
     startResumePlaybackRecovery(v, { observeMs: 400, intervalMs: 250 });
+    // One immediate play() is always issued (React cleanup cannot suppress it).
+    expect(v.play).toHaveBeenCalledTimes(1);
     v.currentTime = 10.5; // recovered on its own during the observation window
     vi.advanceTimersByTime(400);
-    expect(v.play).not.toHaveBeenCalled();
+    expect(v.play).toHaveBeenCalledTimes(1); // no follow-up nudges
   });
 
-  it('nudges play() only AFTER the window confirms the stream is stuck, then stops once it advances', () => {
+  it('continues nudging after the observation window when the stream is still stuck, then stops once it advances', () => {
     const v = fakeVideo(10);
     startResumePlaybackRecovery(v, { observeMs: 400, intervalMs: 250, maxAttempts: 8 });
-    vi.advanceTimersByTime(400); // still stuck at 10 -> intervene
-    expect(v.play).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(250); // still stuck -> retry
+    // 1 immediate play + 1 at observation timeout + 1 after interval = 3 before recovery
+    vi.advanceTimersByTime(400); // still stuck at 10 -> nudge again
     expect(v.play).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(250); // still stuck -> retry
+    expect(v.play).toHaveBeenCalledTimes(3);
     v.currentTime = 11; // decoder accepted the resume
     vi.advanceTimersByTime(250);
-    expect(v.play).toHaveBeenCalledTimes(2); // settled, no further nudges
+    expect(v.play).toHaveBeenCalledTimes(3); // settled, no further nudges
   });
 
   it('respects a user pause that happens MID-recovery (shouldContinue=false) — manual pause stays sacred', () => {
     const v = fakeVideo(10);
     let userPaused = false;
     startResumePlaybackRecovery(v, { observeMs: 400, intervalMs: 250, shouldContinue: () => !userPaused });
-    vi.advanceTimersByTime(400);
+    // 1 immediate play is always issued
     expect(v.play).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(400);
+    expect(v.play).toHaveBeenCalledTimes(2); // observation window still stuck -> nudge
     userPaused = true; // the user pauses while we were recovering
     vi.advanceTimersByTime(250);
-    expect(v.play).toHaveBeenCalledTimes(1); // stopped — never overrides the user
+    expect(v.play).toHaveBeenCalledTimes(2); // stopped — never overrides the user
   });
 
-  it('cancel() aborts the loop (page hidden again mid-recovery)', () => {
+  it('cancel() stops subsequent nudges after the initial play (page hidden again mid-recovery)', () => {
     const v = fakeVideo(10);
     const cancel = startResumePlaybackRecovery(v, { observeMs: 400 });
+    // 1 immediate play happens synchronously before the cancel function is returned.
     cancel();
     vi.advanceTimersByTime(2000);
-    expect(v.play).not.toHaveBeenCalled();
+    expect(v.play).toHaveBeenCalledTimes(1); // only the synchronous first nudge
   });
 });

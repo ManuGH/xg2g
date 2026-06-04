@@ -86,7 +86,15 @@ export function startResumePlaybackRecovery(
     }, intervalMs);
   };
 
-  // Observe-first: do not act until the window confirms the stream is actually stuck.
+  // Issue an immediate play() first. React's effect lifecycle may clean up the
+  // returned cancel before the observation window timer fires (e.g. when the
+  // caller transitions status as part of the same render cycle), so the first
+  // attempt must not be deferred past cleanup. The initial synchronous call is a
+  // free attempt that never counts toward the maxAttempts bound.
+  void video.play().catch((err: unknown) => options.onBlocked?.(err));
+
+  // Observe: if the stream didn't recover after the first nudge, keep trying
+  // until it advances or attempts are exhausted.
   const observeStart = video.currentTime;
   timer = setTimeout(() => {
     if (!alive()) {
@@ -95,6 +103,8 @@ export function startResumePlaybackRecovery(
     if (resumeStreamRecovered(observeStart, video.currentTime, video.ended)) {
       return; // recovered on its own — never touch a waking element
     }
+    // First play() didn't take — continue nudging on interval.
+    // nudge() tracks its own attempt counter and will stop at maxAttempts.
     nudge();
   }, observeMs);
 
