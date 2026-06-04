@@ -7,9 +7,11 @@ package v3
 import (
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
@@ -38,6 +40,37 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	filename := chi.URLParam(r, "filename")
 	if !safeHLSSessionIDRouteRe.MatchString(sessionID) {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/invalid_id", "Invalid Session ID", problemcode.CodeInvalidSessionID, "The provided session ID contains unsafe characters", nil)
+		return
+	}
+	// DVR scrub preview: rides on this route (same session auth/scope) instead of
+	// a separate endpoint, so it inherits ServeHLS's access model and adds no new
+	// contract surface. Intercept before the segment/playlist allowlist, but after
+	// session validation — expired/terminated sessions must not serve previews even
+	// if their directory lingers on disk after muxer cleanup.
+	if filename == livePreviewFilename {
+		rec, storeErr := store.GetSession(r.Context(), sessionID)
+		if storeErr != nil || rec == nil {
+			writeRegisteredProblem(w, r, http.StatusNotFound, "sessions/not_found", "Session Not Found", problemcode.CodeSessionNotFound, "The session could not be located.", nil)
+			return
+		}
+		if rec.ExpiresAtUnix > 0 && time.Now().Unix() > rec.ExpiresAtUnix {
+			writeRegisteredProblem(w, r, http.StatusGone, "sessions/expired", "Session Expired", problemcode.CodeSessionGone, "This session has expired.", nil)
+			return
+		}
+		validState := rec.State == model.SessionReady ||
+			rec.State == model.SessionDraining ||
+			rec.State == model.SessionStarting ||
+			rec.State == model.SessionNew ||
+			rec.State == model.SessionPriming
+		if !validState {
+			if rec.State.IsTerminal() {
+				writeRegisteredProblem(w, r, http.StatusGone, "sessions/expired", "Session Ended", problemcode.CodeSessionGone, "stream ended", nil)
+				return
+			}
+			writeRegisteredProblem(w, r, http.StatusNotFound, "sessions/not_found", "Session Not Found", problemcode.CodeSessionNotFound, "session not ready", nil)
+			return
+		}
+		s.serveLivePreviewFrame(w, r, deps.cfg.HLS.Root, deps.cfg.HLS.SegmentSeconds, deps.cfg.FFmpeg.Bin, sessionID)
 		return
 	}
 	if !safeHLSFilenameRouteRe.MatchString(filename) {

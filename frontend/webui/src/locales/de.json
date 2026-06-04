@@ -139,6 +139,10 @@
     "seekForward15m": "15 Min. vor",
     "seekTimeline": "Zeitleiste",
     "goLive": "Live gehen",
+    "dvrPosition": {
+      "live": "{{time}} · Live",
+      "behindLive": "{{time}} · {{offset}} hinter Live"
+    },
     "fullscreenLabel": "Vollbild",
     "exitFullscreenLabel": "Vollbild beenden",
     "nativeFullscreenLabel": "Native",

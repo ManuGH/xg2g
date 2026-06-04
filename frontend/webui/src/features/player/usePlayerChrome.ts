@@ -69,6 +69,8 @@ interface PlayerChromeController {
   showDvrModeButton: boolean;
   startTimeDisplay: string;
   endTimeDisplay: string;
+  currentTimeDisplay: string;
+  behindLiveSeconds: number;
   formatClock: (value: number) => string;
   seekTo: (targetSeconds: number) => void;
   seekToLiveEdge: () => void;
@@ -1233,6 +1235,24 @@ export function usePlayerChrome({
       ? formatTimeOfDay(startUnix + windowDuration)
       : formatClock(windowDuration);
 
+  // The playhead itself: wall-clock time-of-day (LIVE with an EPG anchor) or the
+  // window-relative clock, plus how far behind the live edge we currently are. This
+  // is what lets the timeline answer "which minute of the stream am I on", instead
+  // of only labelling the window bounds. behindLiveSeconds is 0 for VOD and at the
+  // live edge. playheadWindowPosition mirrors the slider thumb (seekableStart +
+  // relativePosition) so the readout and the thumb never disagree.
+  const playheadWindowPosition = seekableStart + relativePosition;
+  const currentTimeDisplay = playbackMode === 'LIVE'
+    ? startUnix
+      ? formatTimeOfDay(startUnix + playheadWindowPosition)
+      : formatClock(playheadWindowPosition)  // unanchored: use seekable-absolute so the
+                                              // readout and the scrubber never disagree
+    : formatClock(relativePosition);           // VOD: relative to seekableStart, matching the
+                                              // existing start/end label convention
+  const behindLiveSeconds = isLiveMode
+    ? Math.max(0, liveEdgePosition - playheadWindowPosition)
+    : 0;
+
   useEffect(() => {
     if (
       typeof navigator === 'undefined' ||
@@ -1306,6 +1326,8 @@ export function usePlayerChrome({
     showDvrModeButton,
     startTimeDisplay,
     endTimeDisplay,
+    currentTimeDisplay,
+    behindLiveSeconds,
     formatClock,
     seekTo,
     seekToLiveEdge,

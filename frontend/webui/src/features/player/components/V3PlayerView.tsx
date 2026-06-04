@@ -7,6 +7,7 @@ import type {
   V3PlayerViewState,
 } from '../usePlaybackOrchestrator';
 import styles from './V3Player.module.css';
+import { DvrScrubSlider } from './DvrScrubSlider';
 
 interface V3PlayerViewProps {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -211,20 +212,19 @@ export function V3PlayerView({
               </Button>
 
               <div className={styles.seekSliderGroup}>
-                <span className={styles.vodTime}>{viewState.startTimeDisplay}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max={viewState.windowDuration}
-                  step="0.1"
-                  className={styles.vodSlider}
-                  value={viewState.relativePosition}
-                  onChange={(e) => {
-                    const newVal = parseFloat(e.target.value);
-                    actions.seekTo(viewState.seekableStart + newVal);
-                  }}
-                />
-                <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
+                <span className={styles.currentPositionLabel}>{viewState.currentPositionDisplay}</span>
+                <div className={styles.seekSliderRow}>
+                  <span className={styles.vodTime}>{viewState.startTimeDisplay}</span>
+                  <DvrScrubSlider
+                    value={viewState.relativePosition}
+                    max={viewState.windowDuration}
+                    sliderClassName={styles.vodSlider}
+                    onSeek={(offset) => actions.seekTo(viewState.seekableStart + offset)}
+                    previewBaseUrl={viewState.dvrPreviewBaseUrl}
+                    windowStartUnix={viewState.dvrPreviewWindowStartUnix}
+                  />
+                  <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
+                </div>
               </div>
 
               <div className={styles.seekButtons}>
