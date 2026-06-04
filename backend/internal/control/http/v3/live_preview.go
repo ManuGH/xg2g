@@ -73,7 +73,7 @@ func (s *Server) serveLivePreviewFrame(w http.ResponseWriter, r *http.Request, h
 	// previous generation. The in-memory cache is not cleared across restarts.
 	segPath := filepath.Join(dir, segName)
 	var mtimeSuffix string
-	if fi, stErr := os.Stat(segPath); stErr == nil {
+	if fi, stErr := os.Stat(segPath); stErr == nil { // #nosec G703 -- segName is from the validated segment list
 		mtimeSuffix = strconv.FormatInt(fi.ModTime().UnixNano(), 36)
 	}
 	key := sessionID + "/" + segName + "/" + mtimeSuffix
@@ -89,9 +89,9 @@ func (s *Server) serveLivePreviewFrame(w http.ResponseWriter, r *http.Request, h
 	w.Header().Set("Content-Type", "image/jpeg")
 	// Short cache: the segment for a given offset is immutable once written, but
 	// the rolling DVR window keeps moving, so do not let it linger.
-	w.Header().Set("Cache-Control", "private, max-age=30")
+	w.Header().Set("Cache-Control", "private, no-cache") // no-cache so the same ?t= offset served for different segments as the DVR window rolls is never stale
 	w.Header().Set("Content-Length", strconv.Itoa(len(img)))
-	_, _ = w.Write(img)
+	_, _ = w.Write(img) // #nosec G705 -- binary JPEG, Content-Type image/jpeg
 }
 
 // pickPreviewSegment maps an offset (seconds from the start of the seekable
@@ -156,7 +156,7 @@ func listLiveSegments(dir string) ([]string, error) {
 // this function returns only the segments the player's seekable range actually
 // covers, so hover previews are never aliased to expired content.
 func parsePlaylistSegmentNames(dir string) ([]string, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "index.m3u8"))
+	data, err := os.ReadFile(filepath.Join(dir, "index.m3u8")) // #nosec G304,G703 -- dir is LiveSessionDir(sessionID) where sessionID is regex-validated
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func extractKeyframeJPEG(ctx context.Context, ffmpegBin, dir, segName string) ([
 		"pipe:1",
 	}
 
-	cmd := exec.CommandContext(cctx, ffmpegBin, args...) // #nosec G204 -- ffmpeg binary is trusted config/default; args are built from a regex-validated session id and resolver-confined paths.
+	cmd := exec.CommandContext(cctx, ffmpegBin, args...) // #nosec G204,G702 -- ffmpeg binary is trusted config/default; args are built from a regex-validated session id and resolver-confined paths.
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
