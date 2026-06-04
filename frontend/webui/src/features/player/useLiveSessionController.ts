@@ -424,7 +424,7 @@ export function useLiveSessionController({
           if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
             throw new Error(t('player.leaseBusy'));
           }
-          throw new Error(`${t('player.sessionFailed')}: ${translatePlaybackReason(session.reason, session.reasonDetail, t)}`);
+          throw new Error(`${t('player.sessionFailed')}: ${translatePlaybackReason(reason, session.reasonDetail, t)}`);
         }
         if ((state === 'READY' || state === 'DRAINING') && session.playbackUrl) {
           if (!hasValidHeartbeatInterval(session.heartbeatIntervalSeconds)) {
