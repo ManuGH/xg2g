@@ -193,10 +193,7 @@ func (d *Detector) PreflightVAAPI() error {
 		// also probe 8-bit so the record shows whether a host does AV1 8-bit but
 		// not 10-bit (a p010 driver-promotion that fails elsewhere in the fleet).
 		isAV1 := normalizeRequestedCodec(enc) == "av1"
-		prodFormat := "nv12"
-		if isAV1 {
-			prodFormat = "p010le"
-		}
+		prodFormat := vaapiProductionUploadFormat(enc)
 		elapsed, verdict, reason := d.probeAndVerifyVaapiEncoder(enc, prodFormat)
 		verdicts[enc] = verdict
 		reasons[enc] = reason
@@ -923,7 +920,7 @@ func (d *Detector) testVAAPIInterlacedPathCorrectness(encoder string, full bool)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	outPath := filepath.Join(tempDir, "probe.mkv")
-	filter := "format=nv12,setfield=tff,hwupload,deinterlace_vaapi"
+	filter := "format=" + vaapiProductionUploadFormat(encoder) + ",setfield=tff,hwupload,deinterlace_vaapi"
 	if !full {
 		filter = vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder)
 	}

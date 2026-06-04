@@ -29,6 +29,18 @@ func profileBenchmarksForBackend(backend string) []string {
 	}
 }
 
+// vaapiProductionUploadFormat returns the hwupload pixel format the VAAPI
+// pipeline must encode at so it verifies the SAME bit depth production drives
+// the codec at (see encode_args.go: AV1 -> p010le 10-bit, H.264/HEVC -> nv12
+// 8-bit). Probing nv12 for AV1 "verifies" an 8-bit path that is never served --
+// production always uploads AV1 as p010le.
+func vaapiProductionUploadFormat(encoder string) string {
+	if normalizeRequestedCodec(encoder) == "av1" {
+		return "p010le"
+	}
+	return "nv12"
+}
+
 func vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder string) string {
 	parts := []string{
 		"setfield=tff",
@@ -37,7 +49,7 @@ func vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder string) string {
 	if normalizeRequestedCodec(encoder) == "av1" {
 		parts = append(parts, av1VAAPIGeometryPadFilter())
 	}
-	parts = append(parts, "format=nv12", "hwupload")
+	parts = append(parts, "format="+vaapiProductionUploadFormat(encoder), "hwupload")
 	return strings.Join(parts, ",")
 }
 
