@@ -10,14 +10,14 @@ import (
 // nv12 for AV1 "verifies" an 8-bit path that is never served (production uploads
 // AV1 as p010le, see encode_args.go). Negative control: route AV1 back to nv12
 // and these go red.
-func TestVaapiInterlacedProbeUploadFormat_MatchesProductionBitDepth(t *testing.T) {
+func TestVaapiProductionUploadFormat_MatchesProductionBitDepth(t *testing.T) {
 	cases := map[string]string{
 		"av1": "p010le", "av1_vaapi": "p010le", "libsvtav1": "p010le",
 		"hevc": "nv12", "hevc_vaapi": "nv12", "h264": "nv12", "h264_vaapi": "nv12",
 	}
 	for enc, want := range cases {
-		if got := vaapiInterlacedProbeUploadFormat(enc); got != want {
-			t.Errorf("vaapiInterlacedProbeUploadFormat(%q) = %q, want %q", enc, got, want)
+		if got := vaapiProductionUploadFormat(enc); got != want {
+			t.Errorf("vaapiProductionUploadFormat(%q) = %q, want %q", enc, got, want)
 		}
 	}
 }
