@@ -1245,8 +1245,8 @@ export function usePlayerChrome({
   const currentTimeDisplay = playbackMode === 'LIVE'
     ? startUnix
       ? formatTimeOfDay(startUnix + playheadWindowPosition)
-      : formatClock(relativePosition)
-    : formatClock(relativePosition);
+      : formatClock(playheadWindowPosition)
+    : formatClock(playheadWindowPosition);
   const behindLiveSeconds = isLiveMode
     ? Math.max(0, liveEdgePosition - playheadWindowPosition)
     : 0;
