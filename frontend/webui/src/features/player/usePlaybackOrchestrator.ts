@@ -1583,6 +1583,20 @@ export function usePlaybackOrchestrator(
     const wasHidden = wasHiddenRef.current;
     wasHiddenRef.current = false;
 
+    // hls.js + ManagedMediaSource hands the buffer back to the UA and the segment
+    // loader is throttled/parked while backgrounded (MMS 'endstreaming'); on return
+    // it can stay stalled, freezing buffering AND the DVR seekable window (so
+    // scrubbing dies). Nudge hls.js to resume loading on the hidden->visible edge so
+    // the buffer refills and the live/DVR playlist window refreshes. Gated on
+    // hlsRef.current, so the native-HLS path (browser-owned buffer) is untouched.
+    if (wasHidden && hlsRef.current) {
+      try {
+        hlsRef.current.startLoad();
+      } catch (err) {
+        debugWarn('[V3Player] hls resume startLoad failed', err);
+      }
+    }
+
     const action = decideForegroundResume({
       wasHidden,
       isPiP: document.pictureInPictureElement === video,
@@ -1627,7 +1641,7 @@ export function usePlaybackOrchestrator(
         }
       },
     });
-  }, [handleRetry, hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
+  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
 
   const showBufferingOverlay = useBufferingOverlay(status);
 
