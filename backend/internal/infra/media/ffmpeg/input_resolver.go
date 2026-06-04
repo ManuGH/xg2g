@@ -291,7 +291,15 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	// If we got at least the minimum sample, classify what we have even
 	// when the full scan window wasn't filled (e.g. timeout on a slow or
 	// bursty live source).
-	if n >= preflightMinBytes && err != nil {
+	// For relay streams we must have read far enough to clear the
+	// descrambler lock window (~2000 packets), otherwise the trailing
+	// 48-packet sample still lands inside the lock and a healthy stream
+	// is falsely flagged R_UPSTREAM_SCRAMBLED.
+	minRequiredBytes := preflightMinBytes
+	if relay {
+		minRequiredBytes = 188 * 2500 // ~2000 pkt lock + 48 pkt trailing window + margin
+	}
+	if n >= minRequiredBytes && err != nil {
 		err = nil
 	}
 	// If we got fewer bytes than the minimum required for sync/scramble
