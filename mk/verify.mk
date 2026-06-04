@@ -2,7 +2,7 @@
 # Governance and Verification Gates
 # ===================================================================================================
 
-.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
+.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
 
 verify: verify-generated-artifacts verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract ## Run all governance verification gates
 
@@ -40,7 +40,10 @@ verify-openapi-hard-mode: ## Verify OpenAPI hard-mode generated artifacts are up
 verify-embedded-webui-dist: ## Verify embedded WebUI dist is up-to-date
 	@./$(BACKEND_DIR)/scripts/verify-embedded-webui-dist.sh
 
-verify-generated-artifacts: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-embedded-webui-dist verify-generated-artifacts-contract ## Verify all committed generated artifacts and governance rules
+verify-client-ts-fresh: ## Verify generated TS API client is up-to-date with openapi.yaml
+	@MAKE="$(MAKE)" ./$(BACKEND_DIR)/scripts/verify-client-ts-fresh.sh
+
+verify-generated-artifacts: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-generated-artifacts-contract ## Verify all committed generated artifacts and governance rules
 	@echo "✅ Generated artifact governance passed"
 
 verify-release-output-contract: ## Verify the normative release/package output contract

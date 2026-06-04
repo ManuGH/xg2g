@@ -2,7 +2,7 @@
 # Backend Targets
 # ===================================================================================================
 
-.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev android-local-smoke android-tv-smoke install doctor check-tools dev-tools
+.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build generate-client build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev android-local-smoke android-tv-smoke install doctor check-tools dev-tools
 
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
@@ -12,6 +12,11 @@ ui-build: ## Build WebUI assets
 	@mkdir -p "$(WEBUI_DIST_DIR)"
 	@cp -R $(FRONTEND_DIR)/webui/dist/. "$(WEBUI_DIST_DIR)"/
 	@echo "✅ WebUI build complete"
+
+generate-client: ## Regenerate the TypeScript API client from the OpenAPI spec
+	@echo "Regenerating TS API client from backend/api/openapi.yaml..."
+	@cd $(FRONTEND_DIR)/webui && { [ -d node_modules ] || npm ci; } && npm run generate-client
+	@echo "✅ TS API client regenerated"
 
 build: ## Build xg2g binary (Go-only, offline-safe)
 	@echo "▶ build (Go-only, offline-safe)"
