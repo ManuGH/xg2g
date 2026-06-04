@@ -1,0 +1,7 @@
+Operational changes:
+- Desktop Safari live playback now uses an app-owned hls.js + ManagedMediaSource engine instead of native HLS. A pause now holds the buffered media and resumes instantly, instead of the browser discarding it and forcing a server re-prepare with a black frame. Default on; escape hatch: localStorage XG2G_HLSJS_SAFARI_KILL=1 reverts that client to native HLS.
+- Stream-relay (icam, port 17999) channels that are briefly scrambled while the receiver's descrambler/ECM locks are no longer falsely rejected with R_UPSTREAM_SCRAMBLED. The input preflight now reads past the lock window before classifying; genuinely scrambled channels are still rejected.
+- Interlaced AV1 VAAPI is now path-correctness-verified at the production 10-bit (p010le) bit depth. A host that can encode 8-bit but not 10-bit interlaced AV1 now downgrades that path to H.264 instead of serving a never-verified 10-bit path.
+- Hardware-encoder admission is honest about what it could not check: AV1 that cannot be decode-verified on a host is reported "unverifiable" rather than a false "withheld" or "verified", and av1_nvenc is fail-closed. H.264/HEVC are unaffected.
+- Session failure reasons shown to the user are now localized (German/English) instead of the raw backend reason code; unknown codes fall back to the server detail text.
+- The config validator no longer warns the directly-read transcode/runtime env keys (e.g. XG2G_TRANSCODE_SHARPEN, XG2G_ADAPTIVE_<CODEC>_MAXRATE_K) as unknown; they are recognized as live.
