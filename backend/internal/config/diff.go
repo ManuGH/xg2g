@@ -49,7 +49,7 @@ func (s *ChangeSummary) compareStruct(prefix string, oldVal, nextVal reflect.Val
 		nv := nextVal.Field(i)
 
 		// Handle pointers
-		if ov.Kind() == reflect.Ptr {
+		if ov.Kind() == reflect.Pointer {
 			if ov.IsNil() && nv.IsNil() {
 				continue
 			}
