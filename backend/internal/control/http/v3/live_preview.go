@@ -218,7 +218,7 @@ func (c *previewCache) getOrBuild(key string, build func() ([]byte, error)) ([]b
 	if b, ok := c.get(key); ok {
 		return b, nil
 	}
-	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+	v, err, _ := c.sf.Do(key, func() (any, error) {
 		if b, ok := c.get(key); ok {
 			return b, nil
 		}
