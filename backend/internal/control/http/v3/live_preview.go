@@ -47,14 +47,14 @@ func (s *Server) serveLivePreviewFrame(w http.ResponseWriter, r *http.Request, h
 	dir := paths.LiveSessionDir(hlsRoot, sessionID)
 	segments, err := listLiveSegments(dir)
 	if err != nil || len(segments) == 0 {
-		http.Error(w, "no preview available", http.StatusNotFound)
+		writeProblem(w, r, http.StatusNotFound, "live_preview/not_available", "Live Preview Not Available", "LIVE_PREVIEW_NOT_AVAILABLE", "no preview available", nil)
 		return
 	}
 
 	offset := parsePreviewOffset(r.URL.Query().Get("t"))
 	segName, ok := pickPreviewSegment(segments, offset, segSeconds)
 	if !ok {
-		http.Error(w, "no preview available", http.StatusNotFound)
+		writeProblem(w, r, http.StatusNotFound, "live_preview/not_available", "Live Preview Not Available", "LIVE_PREVIEW_NOT_AVAILABLE", "no preview available", nil)
 		return
 	}
 
@@ -63,7 +63,7 @@ func (s *Server) serveLivePreviewFrame(w http.ResponseWriter, r *http.Request, h
 		return extractKeyframeJPEG(r.Context(), ffmpegBin, dir, segName)
 	})
 	if err != nil {
-		http.Error(w, "preview unavailable", http.StatusNotFound)
+		writeProblem(w, r, http.StatusNotFound, "live_preview/unavailable", "Live Preview Unavailable", "LIVE_PREVIEW_UNAVAILABLE", "preview unavailable", nil)
 		return
 	}
 
