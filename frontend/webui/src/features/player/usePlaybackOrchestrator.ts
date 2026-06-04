@@ -1606,6 +1606,13 @@ export function usePlaybackOrchestrator(
     // the user mashes play a few times. Nudge play() until currentTime actually
     // advances (the only proof the decoder accepted the resume), bounded; the
     // returned cancel cleans it up if the page hides again mid-recovery.
+    //
+    // NOTE: `status` is intentionally OMITTED from the dependency list. The
+    // `setStatus('paused'→'buffering')` call below would otherwise trigger a
+    // re-render where React cleans up the current effect (calling the cancel
+    // function) before the observation timer can fire, defeating the retry loop.
+    // `hasTerminalStatus` (which tracks terminal states derived from `status`) is
+    // already in deps and correctly re-runs the effect when the session is reaped.
     setStatus((current) => (current === 'paused' ? 'buffering' : current));
     return startResumePlaybackRecovery(video, {
       // Keep a user pause sacred even if it happens during the ~2s recovery window.
@@ -1620,7 +1627,7 @@ export function usePlaybackOrchestrator(
         }
       },
     });
-  }, [handleRetry, hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
+  }, [handleRetry, hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
 
   const showBufferingOverlay = useBufferingOverlay(status);
 
