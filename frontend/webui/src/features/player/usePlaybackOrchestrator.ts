@@ -167,6 +167,8 @@ export interface V3PlayerViewState {
   startTimeDisplay: string;
   endTimeDisplay: string;
   currentPositionDisplay: string;
+  dvrPreviewBaseUrl: string | null;
+  dvrPreviewWindowStartUnix: number | null;
   windowDuration: number;
   relativePosition: number;
   isLiveMode: boolean;
@@ -1886,6 +1888,16 @@ export function usePlaybackOrchestrator(
     (key, options) => t(key, options),
   );
 
+  // Live DVR scrub preview: the hover thumbnail is served off the existing HLS
+  // route (.../hls/preview.jpg?t=offset), so it inherits the session's media
+  // cookie auth. Only live sessions with a real seek window get it; windowStartUnix
+  // anchors the hover time label to wall-clock when an EPG start is known.
+  const dvrPreviewBaseUrl =
+    isLiveMode && hasSeekWindow && effectiveSessionId
+      ? `${apiBase}/sessions/${effectiveSessionId}/hls/preview.jpg`
+      : null;
+  const dvrPreviewWindowStartUnix = startUnix && startUnix > 0 ? startUnix + seekableStart : null;
+
   const viewState: V3PlayerViewState = {
     channelName: channel?.name ?? null,
     // Live: the real EPG programme title (null until/unless known — the view
@@ -1941,6 +1953,8 @@ export function usePlaybackOrchestrator(
     startTimeDisplay,
     endTimeDisplay,
     currentPositionDisplay,
+    dvrPreviewBaseUrl,
+    dvrPreviewWindowStartUnix,
     windowDuration,
     relativePosition,
     isLiveMode,

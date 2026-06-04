@@ -1,0 +1,236 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package v3
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/sync/singleflight"
+
+	"github.com/ManuGH/xg2g/internal/platform/paths"
+)
+
+// livePreviewFilename is intercepted on the existing ServeHLS route
+// (/sessions/{sessionID}/hls/{filename}) so the DVR scrub preview inherits the
+// session's exact auth/scope/exposure — and never touches the session
+// orchestrator. The FE fetches .../hls/preview.jpg?t=<seconds-from-window-start>.
+const livePreviewFilename = "preview.jpg"
+
+const (
+	livePreviewBuildTimeout = 5 * time.Second
+	livePreviewMaxWidth     = 320
+	livePreviewCacheEntries = 256
+)
+
+// serveLivePreviewFrame extracts a single keyframe thumbnail from the live DVR
+// segments at the requested window offset and returns it as JPEG. Each HLS
+// segment starts with an IDR (independent_segments + force_key_frames), so we
+// extract that one keyframe — near-free CPU. Results are cached per
+// (session, segment) and deduped with singleflight, so repeated/adjacent hovers
+// over the same 6s segment cost nothing after the first.
+func (s *Server) serveLivePreviewFrame(w http.ResponseWriter, r *http.Request, hlsRoot string, segSeconds int, ffmpegBin, sessionID string) {
+	dir := paths.LiveSessionDir(hlsRoot, sessionID)
+	segments, err := listLiveSegments(dir)
+	if err != nil || len(segments) == 0 {
+		http.Error(w, "no preview available", http.StatusNotFound)
+		return
+	}
+
+	offset := parsePreviewOffset(r.URL.Query().Get("t"))
+	segName, ok := pickPreviewSegment(segments, offset, segSeconds)
+	if !ok {
+		http.Error(w, "no preview available", http.StatusNotFound)
+		return
+	}
+
+	key := sessionID + "/" + segName
+	img, err := livePreviewCache.getOrBuild(key, func() ([]byte, error) {
+		return extractKeyframeJPEG(r.Context(), ffmpegBin, dir, segName)
+	})
+	if err != nil {
+		http.Error(w, "preview unavailable", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	// Short cache: the segment for a given offset is immutable once written, but
+	// the rolling DVR window keeps moving, so do not let it linger.
+	w.Header().Set("Cache-Control", "private, max-age=30")
+	w.Header().Set("Content-Length", strconv.Itoa(len(img)))
+	_, _ = w.Write(img)
+}
+
+// pickPreviewSegment maps an offset (seconds from the start of the seekable
+// window) to a segment in the sorted list. Segments are uniform segSeconds long
+// and the oldest available segment is the window start, so the list index is
+// floor(offset/segSeconds), clamped into range. Coarse by design — a storyboard
+// tile only needs the right ~6s.
+func pickPreviewSegment(segments []string, offsetSeconds float64, segSeconds int) (string, bool) {
+	if len(segments) == 0 {
+		return "", false
+	}
+	if segSeconds <= 0 {
+		segSeconds = 6
+	}
+	if offsetSeconds < 0 || math.IsNaN(offsetSeconds) || math.IsInf(offsetSeconds, 0) {
+		offsetSeconds = 0
+	}
+	idx := int(offsetSeconds / float64(segSeconds))
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(segments) {
+		idx = len(segments) - 1
+	}
+	return segments[idx], true
+}
+
+// parsePreviewOffset parses the ?t= query (seconds from window start). Any
+// malformed/negative/non-finite value collapses to 0 (oldest segment).
+func parsePreviewOffset(raw string) float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	return v
+}
+
+// listLiveSegments returns the session's media segments (seg_*.ts / seg_*.m4s),
+// sorted. Zero-padded filenames sort lexically into numeric/playout order.
+func listLiveSegments(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var segs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		if strings.HasPrefix(n, "seg_") && (strings.HasSuffix(n, ".ts") || strings.HasSuffix(n, ".m4s")) {
+			segs = append(segs, n)
+		}
+	}
+	sort.Strings(segs)
+	return segs, nil
+}
+
+// extractKeyframeJPEG decodes the first (key)frame of a single segment and
+// encodes it as a small JPEG on stdout. fMP4 (.m4s) media segments are not
+// standalone-decodable, so the init segment is prepended via the concat protocol
+// (ftyp+moov || moof+mdat is a valid fMP4 byte stream).
+func extractKeyframeJPEG(ctx context.Context, ffmpegBin, dir, segName string) ([]byte, error) {
+	if strings.TrimSpace(ffmpegBin) == "" {
+		ffmpegBin = "ffmpeg"
+	}
+	segPath := filepath.Join(dir, segName)
+	input := segPath
+	if strings.HasSuffix(segName, ".m4s") {
+		input = "concat:" + filepath.Join(dir, "init.mp4") + "|" + segPath
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, livePreviewBuildTimeout)
+	defer cancel()
+
+	args := []string{
+		"-hide_banner",
+		"-loglevel", "error",
+		"-skip_frame", "nokey", // decode keyframes only -> near-free
+		"-i", input,
+		"-frames:v", "1",
+		"-vf", fmt.Sprintf("scale='min(%d,iw)':-2", livePreviewMaxWidth),
+		"-q:v", "5",
+		"-an",
+		"-f", "mjpeg",
+		"pipe:1",
+	}
+
+	cmd := exec.CommandContext(cctx, ffmpegBin, args...) // #nosec G204 -- ffmpeg binary is trusted config/default; args are built from a regex-validated session id and resolver-confined paths.
+	var out, errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg live preview: %w (%s)", err, strings.TrimSpace(errBuf.String()))
+	}
+	if out.Len() == 0 {
+		return nil, errors.New("ffmpeg live preview: empty output")
+	}
+	return out.Bytes(), nil
+}
+
+// livePreviewCache is a small FIFO-bounded in-memory cache of rendered preview
+// JPEGs, deduped with singleflight. It is intentionally not on disk: ffmpeg's
+// delete_segments rolls the DVR window, and a disk cache would leak preview files
+// the muxer never cleans up.
+var livePreviewCache = newPreviewCache(livePreviewCacheEntries)
+
+type previewCache struct {
+	mu      sync.Mutex
+	sf      singleflight.Group
+	entries map[string][]byte
+	order   []string
+	cap     int
+}
+
+func newPreviewCache(capacity int) *previewCache {
+	return &previewCache{entries: make(map[string][]byte), cap: capacity}
+}
+
+func (c *previewCache) get(key string) ([]byte, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	b, ok := c.entries[key]
+	return b, ok
+}
+
+func (c *previewCache) put(key string, val []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.entries[key]; ok {
+		return
+	}
+	if c.cap > 0 && len(c.order) >= c.cap {
+		oldest := c.order[0]
+		c.order = c.order[1:]
+		delete(c.entries, oldest)
+	}
+	c.entries[key] = val
+	c.order = append(c.order, key)
+}
+
+func (c *previewCache) getOrBuild(key string, build func() ([]byte, error)) ([]byte, error) {
+	if b, ok := c.get(key); ok {
+		return b, nil
+	}
+	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+		if b, ok := c.get(key); ok {
+			return b, nil
+		}
+		b, err := build()
+		if err != nil {
+			return nil, err
+		}
+		c.put(key, b)
+		return b, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]byte), nil
+}

@@ -40,6 +40,13 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/invalid_id", "Invalid Session ID", problemcode.CodeInvalidSessionID, "The provided session ID contains unsafe characters", nil)
 		return
 	}
+	// DVR scrub preview: rides on this route (same session auth/scope) instead of
+	// a separate endpoint, so it inherits ServeHLS's access model and adds no new
+	// contract surface. Intercept before the segment/playlist allowlist.
+	if filename == livePreviewFilename {
+		s.serveLivePreviewFrame(w, r, deps.cfg.HLS.Root, deps.cfg.HLS.SegmentSeconds, deps.cfg.FFmpeg.Bin, sessionID)
+		return
+	}
 	if !safeHLSFilenameRouteRe.MatchString(filename) {
 		writeRegisteredProblem(w, r, http.StatusForbidden, "sessions/hls_forbidden_artifact", "Access Denied", problemcode.CodeForbidden, "The requested HLS artifact is not allowed", nil)
 		return

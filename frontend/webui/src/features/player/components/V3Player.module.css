@@ -1026,6 +1026,45 @@
   opacity: 0.95;
 }
 
+.dvrSliderWrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.dvrPreview {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  width: 168px;
+  height: 94px;
+  border-radius: 8px;
+  background-color: var(--surface-highlight);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: var(--shadow-elevated, 0 8px 24px rgba(0, 0, 0, 0.45));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.18));
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  z-index: 40;
+}
+
+.dvrPreviewLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-feature-settings: 'tnum' 1;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
 .vodTime,
 .vodTimeTotal {
   font-family: var(--font-mono);
