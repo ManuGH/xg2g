@@ -37,17 +37,22 @@ function mseIsTypeSupported(mime: string): boolean {
   }
 }
 
+let cachedSupport: ManagedMseAv1Support | null = null;
+
 export function getManagedMseAv1Support(): ManagedMseAv1Support {
+  if (cachedSupport) return cachedSupport;
+
   const w = typeof window !== 'undefined'
     ? (window as unknown as { ManagedMediaSource?: unknown; MediaSource?: unknown })
     : undefined;
-  return {
+  cachedSupport = {
     hasManagedMediaSource: typeof w?.ManagedMediaSource !== 'undefined',
     hasMediaSource: typeof w?.MediaSource !== 'undefined',
     av1_10bit_l40: mseIsTypeSupported('video/mp4; codecs="av01.0.08M.10"'),
     av1_10bit_l41: mseIsTypeSupported('video/mp4; codecs="av01.0.09M.10"'),
     av1_8bit_l40: mseIsTypeSupported('video/mp4; codecs="av01.0.08M.08"'),
   };
+  return cachedSupport;
 }
 
 // One-line summary for the Stats panel — paste-free device gate readout.
