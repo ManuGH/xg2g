@@ -15,7 +15,7 @@ ui-build: ## Build WebUI assets
 
 generate-client: ## Regenerate the TypeScript API client from the OpenAPI spec
 	@echo "Regenerating TS API client from backend/api/openapi.yaml..."
-	@cd $(FRONTEND_DIR)/webui && npm ci && npm run generate-client
+	@cd $(FRONTEND_DIR)/webui && { [ -d node_modules ] || npm ci; } && npm run generate-client
 	@echo "✅ TS API client regenerated"
 
 build: ## Build xg2g binary (Go-only, offline-safe)

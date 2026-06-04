@@ -18,7 +18,7 @@ trap 'rm -f "$before_diff" "$after_diff" "$before_untracked" "$after_untracked"'
 git diff -- "$TARGET_PATH" > "$before_diff"
 git ls-files --others --exclude-standard -- "$TARGET_PATH" | LC_ALL=C sort > "$before_untracked"
 
-make generate-client
+"${MAKE:-make}" generate-client
 
 git diff -- "$TARGET_PATH" > "$after_diff"
 git ls-files --others --exclude-standard -- "$TARGET_PATH" | LC_ALL=C sort > "$after_untracked"

@@ -41,7 +41,7 @@ verify-embedded-webui-dist: ## Verify embedded WebUI dist is up-to-date
 	@./$(BACKEND_DIR)/scripts/verify-embedded-webui-dist.sh
 
 verify-client-ts-fresh: ## Verify generated TS API client is up-to-date with openapi.yaml
-	@./$(BACKEND_DIR)/scripts/verify-client-ts-fresh.sh
+	@MAKE="$(MAKE)" ./$(BACKEND_DIR)/scripts/verify-client-ts-fresh.sh
 
 verify-generated-artifacts: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-generated-artifacts-contract ## Verify all committed generated artifacts and governance rules
 	@echo "✅ Generated artifact governance passed"
