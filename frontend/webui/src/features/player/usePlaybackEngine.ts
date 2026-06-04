@@ -744,6 +744,10 @@ export function usePlaybackEngine({
       }
       const hls = new Hls({
         debug: false,
+        // Own the buffer via ManagedMediaSource on Safari 17.1+ (the app-owned path
+        // the migration relies on); pinned so a future hls.js default change can't
+        // silently fall back to plain MSE (which breaks AirPlay and the MMS lifecycle).
+        preferManagedMediaSource: true,
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 300,

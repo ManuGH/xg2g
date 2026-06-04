@@ -7,6 +7,8 @@
  */
 
 import type { VideoElementRef } from '../../../types/v3-player';
+import { isHlsJsSafariKillSwitchOn } from './engineExperiment';
+import { getManagedMseAv1Support } from './managedMseAv1';
 
 // --- Error Type ---
 
@@ -149,6 +151,25 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
   try {
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
     if (!hasNativeHls) return false;
+
+    // hls.js + ManagedMediaSource migration: release WebKit to the APP-OWNED MSE
+    // engine so a pause holds the buffer and recovery is a seamless re-init — instead
+    // of native HLS handing the buffer to the browser, which discards it on pause and
+    // forces a server re-prepare ("Transkodierter Stream wird vorbereitet"). Gated on
+    // MMS actually delivering our 10-bit AV1 (isTypeSupported) so we never route a
+    // codec the engine can't decode. Default ON; escape hatch:
+    // localStorage XG2G_HLSJS_SAFARI_KILL=1. Propagates through playbackProbe's
+    // preferredHlsEngine (one source of truth) to the playHls engine decision.
+    // Desktop WebKit only: route to hls.js + MMS so the app owns the buffer.
+    // Touch WebKit (iOS/iPadOS) keeps native HLS to preserve AirPlay and native
+    // mobile controls, which hls.js disables via disableRemotePlayback.
+    if (hlsJsSupported && !isHlsJsSafariKillSwitchOn() && !hasTouchInput()) {
+      const mms = getManagedMseAv1Support();
+      if (mms.hasManagedMediaSource && (mms.av1_10bit_l40 || mms.av1_10bit_l41)) {
+        return false;
+      }
+    }
+
     if (shouldForceNativeMobileHls(videoEl)) return true;
     if (canUseDesktopWebKitFullscreen(videoEl)) return true;
 
