@@ -144,7 +144,7 @@ func TestConfigAudit_RegistryDefaultsTypes(t *testing.T) {
 		}
 
 		// Handle Pointers
-		if curr.Kind() == reflect.Ptr {
+		if curr.Kind() == reflect.Pointer {
 			curr = curr.Elem()
 		}
 
@@ -160,7 +160,7 @@ func getFieldValue(t *testing.T, v reflect.Value, path string) (reflect.Value, b
 	parts := strings.Split(path, ".")
 	curr := v
 	for _, p := range parts {
-		if curr.Kind() == reflect.Ptr {
+		if curr.Kind() == reflect.Pointer {
 			curr = curr.Elem()
 		}
 		f := curr.FieldByName(p)
@@ -207,7 +207,7 @@ func TestConfigAudit_RegistryTruth_Defaults(t *testing.T) {
 		}
 
 		// Dereference pointer if default is value type but field is pointer
-		if val.Kind() == reflect.Ptr && !val.IsNil() {
+		if val.Kind() == reflect.Pointer && !val.IsNil() {
 			val = val.Elem()
 		}
 

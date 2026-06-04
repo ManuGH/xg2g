@@ -48,7 +48,7 @@ func buildSchemaString(t reflect.Type, prefix string) string {
 			} else if f.Type.Kind() == reflect.Slice && f.Type.Elem().Kind() == reflect.Struct {
 				// Slice of structs?
 				b.WriteString(buildSchemaString(f.Type.Elem(), prefix+"    "))
-			} else if f.Type.Kind() == reflect.Ptr && f.Type.Elem().Kind() == reflect.Struct {
+			} else if f.Type.Kind() == reflect.Pointer && f.Type.Elem().Kind() == reflect.Struct {
 				// Pointer to struct
 				b.WriteString(buildSchemaString(f.Type.Elem(), prefix+"    "))
 			}

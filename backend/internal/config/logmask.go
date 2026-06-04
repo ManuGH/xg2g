@@ -35,7 +35,7 @@ func MaskSecrets(data any) any {
 	val := reflect.ValueOf(data)
 
 	// Dereference pointers
-	for val.Kind() == reflect.Ptr {
+	for val.Kind() == reflect.Pointer {
 		if val.IsNil() {
 			return nil
 		}

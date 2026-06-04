@@ -345,7 +345,7 @@ func (r *Registry) validateStruct(prefix string, t reflect.Type) error {
 		}
 
 		fieldType := f.Type
-		if fieldType.Kind() == reflect.Ptr {
+		if fieldType.Kind() == reflect.Pointer {
 			fieldType = fieldType.Elem()
 		}
 
@@ -386,7 +386,7 @@ func setField(v reflect.Value, fieldPath string, value any) error {
 	parts := strings.Split(fieldPath, ".")
 	curr := v
 	for i, p := range parts {
-		if curr.Kind() == reflect.Ptr {
+		if curr.Kind() == reflect.Pointer {
 			if curr.IsNil() {
 				// Initialize pointer if it's a struct we need to go into
 				curr.Set(reflect.New(curr.Type().Elem()))
@@ -404,7 +404,7 @@ func setField(v reflect.Value, fieldPath string, value any) error {
 			val := reflect.ValueOf(value)
 
 			// Handle assignment to pointer leaf
-			if f.Kind() == reflect.Ptr && val.Kind() != reflect.Ptr {
+			if f.Kind() == reflect.Pointer && val.Kind() != reflect.Pointer {
 				// CRITICAL: Only set default if pointer is nil (unset).
 				// If pointer is not nil, it means it has been set explicitly (possibly to zero value like false/0),
 				// and we MUST NOT overwrite it with a default.
