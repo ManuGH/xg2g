@@ -86,9 +86,71 @@ var runtimeEnvKeys = []string{
 	"XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT",
 	"XG2G_SKIP_FPS_PROBE_WARMUP",
 	"XG2G_BACKGROUND_SCAN_ENABLED",
+
+	// --- Keys read directly via env helpers OUTSIDE the config loader ---
+	// (encode_args.go, runtime_hardening.go, pipeline/profiles, fps probing, …).
+	// These bypass the loader's ConsumedEnvKeys tracking and the registry. The
+	// config validator (ValidateEnvUsage) runs at load time, BEFORE these runtime
+	// reads happen, so a static allowlist is the only mechanism that can stop them
+	// being flagged "unknown XG2G env key (dead flag or typo)". All are live and
+	// tested; see the referenced files for the read sites.
+
+	// Transcode post-filters (encode_args.go).
+	"XG2G_TRANSCODE_SHARPEN",
+	"XG2G_TRANSCODE_DENOISE",
+	"XG2G_TRANSCODE_DEBAND",
+
+	// AV1 QVBR rate control (encode_args.go).
+	"XG2G_AV1_QVBR",
+	"XG2G_AV1_QVBR_QUALITY",
+
+	// HW-encoder auto-ratio caps (encode_args.go / detector).
+	"XG2G_AV1_NVENC_AUTO_RATIO_MAX",
+	"XG2G_AV1_VAAPI_AUTO_RATIO_MAX",
+	"XG2G_HEVC_NVENC_AUTO_RATIO_MAX",
+	"XG2G_HEVC_VAAPI_AUTO_RATIO_MAX",
+
+	// Adaptive transcode-quality budget (runtime_hardening.go). The per-codec keys
+	// are assembled at runtime as "XG2G_ADAPTIVE_"+UPPER(codec)+"_…" for codec in
+	// {av1,hevc,h264}, so the full literal never appears in source — list all.
+	"XG2G_ADAPTIVE_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_AV1_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_AV1_MAXRATE_K",
+	"XG2G_ADAPTIVE_AV1_BUFSIZE_K",
+	"XG2G_ADAPTIVE_HEVC_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_HEVC_MAXRATE_K",
+	"XG2G_ADAPTIVE_HEVC_BUFSIZE_K",
+	"XG2G_ADAPTIVE_H264_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_H264_MAXRATE_K",
+	"XG2G_ADAPTIVE_H264_BUFSIZE_K",
+
+	// Safari "dirty"/HQ rate control + runtime probe (runtime_hardening / profiles).
+	"XG2G_SAFARI_DIRTY_MAXRATE_K",
+	"XG2G_SAFARI_DIRTY_BUFSIZE_K",
+	"XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K",
+	"XG2G_SAFARI_HEVC_VAAPI_QP",
+	"XG2G_SAFARI_RUNTIME_PROBE_TIMEOUT_MS",
+
+	// FPS probing (pipeline/profiles).
+	"XG2G_FPS_MIN",
+	"XG2G_FPS_MAX",
+	"XG2G_FPS_FALLBACK",
+	"XG2G_FPS_PROBE_TIMEOUT_MS",
+
+	// Runtime path-correctness preflight.
+	"XG2G_ENABLE_SYNTHETIC_PATH_CORRECTNESS_PREFLIGHT",
+	"XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS",
+	"XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG",
+
+	// Misc runtime toggles.
+	"XG2G_LIVE_NOBUFFER",
+	"XG2G_INITIAL_REFRESH",
+	"XG2G_RATE_LIMIT_ENABLED",
 }
 
-// KnownRuntimeEnvKeys returns all env keys read by ReadEnv.
+// KnownRuntimeEnvKeys returns every env key recognized at runtime: those read by
+// ReadEnv plus encode/runtime-hardening keys read directly via env helpers outside
+// the config loader. ValidateEnvUsage uses this set as its allowlist.
 func KnownRuntimeEnvKeys() []string {
 	out := make([]string, len(runtimeEnvKeys))
 	copy(out, runtimeEnvKeys)

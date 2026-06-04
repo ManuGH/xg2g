@@ -74,6 +74,41 @@ func TestValidateEnvUsage_RuntimeKeyAllowed(t *testing.T) {
 	}
 }
 
+func TestKnownRuntimeEnvKeys_IncludesDirectReadEnvKeys(t *testing.T) {
+	// These keys are read directly via env helpers (envIntBounded/envFloatBounded/
+	// envBool/ParseBool) in the ffmpeg/pipeline packages, outside the config loader,
+	// so they never enter the loader's ConsumedEnvKeys set. They must be in the
+	// runtime allowlist or ValidateEnvUsage falsely flags them as
+	// "unknown XG2G env key (dead flag or typo)". Negative control: drop any one
+	// from runtimeEnvKeys and this goes red.
+	want := []string{
+		"XG2G_TRANSCODE_SHARPEN", "XG2G_TRANSCODE_DENOISE", "XG2G_TRANSCODE_DEBAND",
+		"XG2G_AV1_QVBR", "XG2G_AV1_QVBR_QUALITY",
+		"XG2G_AV1_NVENC_AUTO_RATIO_MAX", "XG2G_AV1_VAAPI_AUTO_RATIO_MAX",
+		"XG2G_HEVC_NVENC_AUTO_RATIO_MAX", "XG2G_HEVC_VAAPI_AUTO_RATIO_MAX",
+		"XG2G_ADAPTIVE_QUALITY_ENABLED",
+		"XG2G_ADAPTIVE_AV1_QUALITY_ENABLED", "XG2G_ADAPTIVE_AV1_MAXRATE_K", "XG2G_ADAPTIVE_AV1_BUFSIZE_K",
+		"XG2G_ADAPTIVE_HEVC_QUALITY_ENABLED", "XG2G_ADAPTIVE_HEVC_MAXRATE_K", "XG2G_ADAPTIVE_HEVC_BUFSIZE_K",
+		"XG2G_ADAPTIVE_H264_QUALITY_ENABLED", "XG2G_ADAPTIVE_H264_MAXRATE_K", "XG2G_ADAPTIVE_H264_BUFSIZE_K",
+		"XG2G_SAFARI_DIRTY_MAXRATE_K", "XG2G_SAFARI_DIRTY_BUFSIZE_K", "XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K",
+		"XG2G_SAFARI_HEVC_VAAPI_QP", "XG2G_SAFARI_RUNTIME_PROBE_TIMEOUT_MS",
+		"XG2G_FPS_MIN", "XG2G_FPS_MAX", "XG2G_FPS_FALLBACK", "XG2G_FPS_PROBE_TIMEOUT_MS",
+		"XG2G_ENABLE_SYNTHETIC_PATH_CORRECTNESS_PREFLIGHT",
+		"XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", "XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG",
+		"XG2G_LIVE_NOBUFFER", "XG2G_INITIAL_REFRESH", "XG2G_RATE_LIMIT_ENABLED",
+	}
+
+	known := make(map[string]struct{})
+	for _, k := range KnownRuntimeEnvKeys() {
+		known[k] = struct{}{}
+	}
+	for _, k := range want {
+		if _, ok := known[k]; !ok {
+			t.Errorf("runtime-read env key %q missing from KnownRuntimeEnvKeys -> ValidateEnvUsage would falsely warn it as unknown", k)
+		}
+	}
+}
+
 func mapLookup(values map[string]string) envLookupFunc {
 	return func(key string) (string, bool) {
 		v, ok := values[key]
