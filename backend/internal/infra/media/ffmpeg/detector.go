@@ -923,7 +923,7 @@ func (d *Detector) testVAAPIInterlacedPathCorrectness(encoder string, full bool)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	outPath := filepath.Join(tempDir, "probe.mkv")
-	filter := "format=nv12,setfield=tff,hwupload,deinterlace_vaapi"
+	filter := "format=" + vaapiInterlacedProbeUploadFormat(encoder) + ",setfield=tff,hwupload,deinterlace_vaapi"
 	if !full {
 		filter = vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder)
 	}
