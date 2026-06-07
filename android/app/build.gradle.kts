@@ -36,7 +36,7 @@ android {
             manifestPlaceholders["appLabel"] = "xg2g Dev"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             manifestPlaceholders["deepLinkScheme"] = "https"
-            manifestPlaceholders["deepLinkHost"] = "xg2g.home.matrixcentral.de"
+            manifestPlaceholders["deepLinkHost"] = "tv.example.com"
         }
         create("staging") {
             dimension = "environment"

@@ -228,7 +228,7 @@ describe('codecDetection', () => {
       configurable: true,
       value: 5,
     });
-    for (const hostname of ['xg2g.home.matrixcentral.de', 'xg2g.home.matrixcental.de']) {
+    for (const hostname of ['tv.example.com', 'tv.example.net']) {
       resetCachedCodecs();
       Object.defineProperty(window, 'location', {
         configurable: true,
@@ -273,8 +273,8 @@ describe('codecDetection', () => {
       configurable: true,
       value: {
         ...originalLocation,
-        hostname: 'xg2g.home.matrixcentral.de',
-        host: 'xg2g.home.matrixcentral.de',
+        hostname: 'tv.example.com',
+        host: 'tv.example.com',
         search: '',
       },
     });

@@ -222,7 +222,7 @@ Observed live-host delta on March 24, 2026 (installation drift still present):
 - Operational rule: for this host, treat the installed unit plus `/srv/xg2g/docker-compose.yml` as runtime truth and the GitHub docs as target-state documentation until `/srv/xg2g` and `/etc/systemd/system/xg2g.service` are redeployed together. The mere presence of `/srv/xg2g/scripts/compose-xg2g.sh` does not mean systemd is using the helper yet.
 
 Observed live-host delta on April 1, 2026 (runtime outage via stopped CT):
-- Public symptom: `https://xg2g.home.matrixcentral.de/ui/` returned `502`, and `/api/v3/services/bouquets` returned `503` through Caddy while the Proxmox guest itself was down.
+- Public symptom: `https://tv.example.com/ui/` returned `502`, and `/api/v3/services/bouquets` returned `503` through Caddy while the Proxmox guest itself was down.
 - Immediate runtime cause: Proxmox CT `110` (`hostname: xg2g`, `10.10.55.14`) was fully `stopped`; `pct start 110` restored the service path, after which `/ui/` returned `200` and the protected API returned `401`.
 - Proxmox audit trail showed a successful manual stop task on March 31, 2026: `vzstop:110:root@pam`. No crash evidence appeared in `xg2g.service` or Docker health logs after the container was brought back.
 - Installed systemd unit had mostly converged with the repo template again and now used `/srv/xg2g/scripts/compose-xg2g.sh`, but it still differed in one preflight gate:
