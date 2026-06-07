@@ -23,7 +23,7 @@ func TestOutputProbeInput_FMP4PrependsInit(t *testing.T) {
 
 	input, extra := outputProbeInput(seg)
 
-	want := "concat:" + initPath + "|" + seg
+	want := "concat:file:" + filepath.ToSlash(initPath) + "|file:" + filepath.ToSlash(seg)
 	if input != want {
 		t.Fatalf("input = %q, want %q", input, want)
 	}

@@ -136,7 +136,9 @@ func outputProbeInput(segmentPath string) (string, []string) {
 	if st, err := os.Stat(initPath); err != nil || st.Size() <= 0 {
 		return segmentPath, nil
 	}
-	return "concat:" + initPath + "|" + segmentPath, []string{"-protocol_whitelist", "concat,file"}
+	safeInit := "file:" + filepath.ToSlash(initPath)
+	safeSeg := "file:" + filepath.ToSlash(segmentPath)
+	return "concat:" + safeInit + "|" + safeSeg, []string{"-protocol_whitelist", "concat,file"}
 }
 
 func shouldRetryFPSProbe(err error) bool {
