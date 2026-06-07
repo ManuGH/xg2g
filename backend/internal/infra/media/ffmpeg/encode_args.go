@@ -238,7 +238,11 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
 		}
 		if av1QVBR {
-			args = append(args, "-global_quality", strconv.Itoa(envIntBounded("XG2G_AV1_QVBR_QUALITY", 110, 1, 255)))
+			// Default 90 (sharpened from 110): a higher AV1 quality target that
+			// the VideoMaxRateK ceiling still bounds, so it spends the available
+			// bitrate on visibly cleaner motion. Lower XG2G_AV1_QVBR_QUALITY for
+			// even higher quality (more bitrate); raise it to save bandwidth.
+			args = append(args, "-global_quality", strconv.Itoa(envIntBounded("XG2G_AV1_QVBR_QUALITY", 90, 1, 255)))
 		}
 		if isAV1 {
 			args = append(args, "-async_depth", "1")
