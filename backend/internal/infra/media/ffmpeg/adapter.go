@@ -147,12 +147,14 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		liveProbeSize = "1M" // 1MB for low-latency live ingest
 	}
 	// Stream-relay transcode inputs need a deeper probe than the general live
-	// default; 10s is conservative but visible at startup. Overridable so a
-	// fleet can dial it down once verified (e.g. 3s cut ffmpeg→first-frame from
-	// ~12s to ~4s on a 4K relay with no detection errors).
+	// default to resolve dimensions/audio. 5s is the sharpened default: it
+	// roughly halves the relay-transcode startup wait vs the old 10s while
+	// keeping margin for slower/burstier relays. (3s was verified clean on a 4K
+	// relay.) Raise XG2G_STREAMRELAY_ANALYZE_DURATION if a relay needs deeper
+	// probing; lower it (e.g. 3000000) for the fastest start.
 	streamRelayAnalyzeDuration := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_ANALYZE_DURATION", ""))
 	if streamRelayAnalyzeDuration == "" {
-		streamRelayAnalyzeDuration = "10000000" // 10s
+		streamRelayAnalyzeDuration = "5000000" // 5s
 	}
 	streamRelayProbeSize := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_PROBE_SIZE", ""))
 	if streamRelayProbeSize == "" {

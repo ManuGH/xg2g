@@ -1563,7 +1563,7 @@ func TestBuildArgs_StreamRelayTranscodeUsesRobustLiveProbe(t *testing.T) {
 
 	analyze, ok := valueAfter(args, "-analyzeduration")
 	require.True(t, ok)
-	assert.Equal(t, "10000000", analyze)
+	assert.Equal(t, "5000000", analyze)
 
 	probe, ok := valueAfter(args, "-probesize")
 	require.True(t, ok)

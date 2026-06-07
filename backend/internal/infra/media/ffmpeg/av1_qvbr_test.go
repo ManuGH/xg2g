@@ -30,7 +30,7 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 
 		gq, ok := valueAfter(args, "-global_quality")
 		assert.True(t, ok)
-		assert.Equal(t, "110", gq, "default quality target")
+		assert.Equal(t, "90", gq, "default quality target")
 
 		assert.Contains(t, args, "-async_depth")
 	})
