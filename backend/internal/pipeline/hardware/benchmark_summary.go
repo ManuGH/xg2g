@@ -13,6 +13,13 @@ const (
 	hostBenchmarkClassStrong   = "strong"
 )
 
+// SnapshotHostBenchmark exposes the current host encode-benchmark snapshot to
+// callers outside this package (e.g. the ffmpeg adapter deciding whether the
+// host can sustain a 50fps deinterlace).
+func SnapshotHostBenchmark() playbackprofile.HostBenchmarkSnapshot {
+	return snapshotHostBenchmark()
+}
+
 func snapshotHostBenchmark() playbackprofile.HostBenchmarkSnapshot {
 	codecs := []string{"h264", "hevc", "av1"}
 	results := make([]playbackprofile.HostCodecBenchmark, 0, len(codecs))

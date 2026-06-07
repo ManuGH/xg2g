@@ -387,6 +387,9 @@ func targetLiveOutputFPS(spec ports.StreamSpec) int {
 	if !spec.Profile.TranscodeVideo {
 		return 0
 	}
+	// HQ50 must NOT clamp the framerate: the send_field bob deinterlace already
+	// emits native 50fps and -force_key_frames keeps segment boundaries aligned
+	// (time-based). Only HQ25 pins -r 25.
 	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
 		return 0
 	}

@@ -3,7 +3,10 @@ package ffmpeg
 import (
 	"context"
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"math"
 	"os"
@@ -18,6 +21,13 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		return outputPlan{}, err
 	}
 	spec.Profile.VideoCodec = codec.resolvedCodec
+	if a.shouldPromoteInterlacedTo50p(spec) {
+		// Host benchmarked strong enough to sustain the doubled encode load, so
+		// keep the full motion of the interlaced source instead of collapsing 50
+		// fields to 25p. The existing send_field deinterlace + targetLiveOutputFPS
+		// (HQ50) then emit true 50p. EffectiveRuntimeMode wins over PolicyModeHint.
+		spec.Profile.EffectiveRuntimeMode = ports.RuntimeModeHQ50
+	}
 	// Use the pre-sanitisation URL so ffprobe/warmup probes can authenticate
 	// against protected sources.  adjustLiveFPSForRuntimeServiceOverride only
 	// extracts the service ref from the URL structure and works correctly with
@@ -59,6 +69,27 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	out.effectiveProfile.HWAccel = resolvedExecutedHWAccel(codec)
 
 	return out, nil
+}
+
+// shouldPromoteInterlacedTo50p reports whether an interlaced live transcode
+// should preserve full 50-field motion (50p) instead of the safe-default 25p.
+// We only promote when the host's startup benchmark for the 1080i50 profile came
+// back "strong" (encoder fast enough to sustain the doubled framerate). Moderate
+// or weak hosts stay at 25p so a 50p transcode can never overload them. The
+// interlaced flag comes from the scan (Deinterlace=true), so this is capability-
+// gated, not guesswork.
+func (a *LocalAdapter) shouldPromoteInterlacedTo50p(spec ports.StreamSpec) bool {
+	if spec.Mode != ports.ModeLive || spec.Format != ports.FormatHLS {
+		return false
+	}
+	if !spec.Profile.TranscodeVideo || !spec.Profile.Deinterlace {
+		return false
+	}
+	class := playbackprofile.BenchmarkClassForProfile(
+		hardware.SnapshotHostBenchmark(),
+		playbackports.BenchmarkProfileVideoH2641080I50,
+	)
+	return class == "strong"
 }
 
 func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegmentLayout, error) {
