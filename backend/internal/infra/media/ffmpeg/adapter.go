@@ -102,6 +102,10 @@ type LocalAdapter struct {
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
 	streamProbeFn func(context.Context, string) (*vod.StreamInfo, error)
+	// hostBenchmarkClassFn is a test-only hook returning the host benchmark class
+	// ("weak"/"moderate"/"strong"/"") for a profile id; nil in production (real
+	// host benchmark snapshot is used).
+	hostBenchmarkClassFn func(profileID string) string
 	// lastKnownFPS caches learned FPS by service_ref to survive probe failures.
 	lastKnownFPS map[string]fpsCacheEntry
 	FPSCacheTTL  time.Duration

@@ -217,7 +217,7 @@ func (s *Service) resolveProfileSpec(profileID, userAgent string, capability *sc
 	case profiles.ProfileH264FMP4:
 		resolveBackend = hw.h264Backend
 	}
-	return profiles.ResolveWithBenchmark(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveBackend, hwaccelMode, hardware.SnapshotHostBenchmark())
+	return profiles.Resolve(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveBackend, hwaccelMode)
 }
 
 func deriveStartHWAccelSummary(profileSpec model.ProfileSpec, hwaccelMode profiles.HWAccelMode, hasGPU bool) (effective, reason, backend string) {

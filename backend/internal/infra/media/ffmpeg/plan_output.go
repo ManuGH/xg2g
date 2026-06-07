@@ -18,9 +18,9 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		return outputPlan{}, err
 	}
 	spec.Profile.VideoCodec = codec.resolvedCodec
-	// 50p promotion for capable hosts now happens in profiles.ResolveWithBenchmark
-	// (capability-aware decision layer); the resolved Profile already carries
-	// EffectiveRuntimeMode=HQ50 when applicable.
+	// 50p (HQ50) promotion is decided in FinalizePlan's adaptive_transcode_quality
+	// evaluator (host-benchmark gated: weak hosts stay 25p); by the time we plan
+	// the output the Profile already carries the final EffectiveRuntimeMode.
 	// Use the pre-sanitisation URL so ffprobe/warmup probes can authenticate
 	// against protected sources.  adjustLiveFPSForRuntimeServiceOverride only
 	// extracts the service ref from the URL structure and works correctly with
