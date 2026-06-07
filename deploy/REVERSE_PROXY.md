@@ -7,25 +7,31 @@ behind, whatever you already run. This page covers every common topology and the
 xg2g is **secure by default**: it serves a strict set of security headers (HSTS,
 CSP, COOP/CORP, X-Frame-Options, …), CSRF protection, rate-limiting and
 HttpOnly+Secure+SameSite cookies natively — you do **not** need a reverse proxy
-to add them. A proxy is only needed for public TLS / a domain name.
+to add them.
+
+> **Use HTTPS for any access beyond `localhost`.** Public deployment profiles
+> (`reverse_proxy`, `tunnel`, `vps`) **require** TLS and will refuse to start
+> otherwise (see the contract below), and authenticated media + the playback
+> session cookie should never traverse cleartext. `http://localhost` is a
+> browser *secure context* and is the supported plaintext path for local dev;
+> plain HTTP to a LAN IP/hostname is not a supported way to run the web player.
 
 ---
 
-## The one rule that bites everyone: `XG2G_TRUSTED_PROXIES`
+## The setting that bites everyone: `XG2G_TRUSTED_PROXIES`
 
 When xg2g runs behind a proxy, the proxy's IP is what xg2g sees as the client.
-xg2g will **only** trust the `X-Forwarded-For` / `X-Forwarded-Proto` /
-`X-Forwarded-Host` headers (used for HTTPS detection, Secure cookies, the real
-client IP, rate-limiting and the LAN guard) if the **direct** connection comes
-from an IP listed in `XG2G_TRUSTED_PROXIES`.
+xg2g will **only** trust `X-Forwarded-For` / `X-Forwarded-Proto` /
+`X-Forwarded-Host` (used for HTTPS detection, Secure cookies, the real client
+IP, rate-limiting and the LAN guard) if the **direct** connection comes from an
+IP listed in `XG2G_TRUSTED_PROXIES`.
 
-> If you put a proxy in front and **don't** set `XG2G_TRUSTED_PROXIES`, those
-> forwarded headers are **silently ignored**. Symptoms: HSTS missing over HTTPS,
-> `Secure` cookies not set, every client logged as the proxy IP, rate-limit and
-> LAN guard keyed on the proxy. Nothing errors — it just quietly misbehaves.
+> Behind a proxy without `XG2G_TRUSTED_PROXIES` set, those headers are **silently
+> ignored**: HSTS missing over HTTPS, `Secure` cookies not set, every client
+> logged as the proxy, rate-limit/LAN-guard keyed on the proxy. Nothing errors.
 
-`XG2G_TRUSTED_PROXIES` is a comma-separated CIDR list and is **empty by default**
-(safe: no forwarded headers trusted). Set it to where the proxy connects *from*:
+It is a comma-separated CIDR list, **empty by default** (safe: nothing trusted).
+Set it to where the proxy connects *from*:
 
 | Proxy location relative to xg2g | Value to use |
 | --- | --- |
@@ -35,18 +41,36 @@ from an IP listed in `XG2G_TRUSTED_PROXIES`.
 
 ---
 
+## Deployment profile: `XG2G_CONNECTIVITY_PROFILE`
+
+The connectivity contract validates your topology at startup and **fails fast**
+on an insecure public setup. Pick the profile that matches reality:
+
+| Profile (`XG2G_CONNECTIVITY_PROFILE`) | Public? | Hard requirement (fatal at startup if unmet) |
+| --- | --- | --- |
+| `lan` (default) | no | none |
+| `reverse_proxy` | yes | `XG2G_TRUSTED_PROXIES` must be set |
+| `tunnel` | yes | `XG2G_TRUSTED_PROXIES` must be set |
+| `vps` | yes | `XG2G_TLS_ENABLED=true` (direct TLS) |
+
+`XG2G_CONNECTIVITY_ALLOW_LOCAL_HTTP` (default `false`) is a deliberate,
+**native-client-only** escape hatch for a supplemental plain-HTTP path; it does
+**not** turn the browser web player into a plain-HTTP experience.
+
+---
+
 ## Scenario matrix
 
-| # | Topology | TLS by | `XG2G_TRUSTED_PROXIES` | `XG2G_TLS_ENABLED` | Notes |
+| # | Topology | TLS by | `XG2G_CONNECTIVITY_PROFILE` | `XG2G_TRUSTED_PROXIES` | `XG2G_TLS_ENABLED` |
 | --- | --- | --- | --- | --- | --- |
-| 1 | **Direct, LAN-only (default)** | none (HTTP) | empty | `false` | `http://host:8088`. Fine on a trusted LAN. |
-| 2 | **Direct, in-process TLS** | xg2g itself | empty | `true` (+ cert/key) | Hardened TLS 1.2+ AEAD handshake out of the box (#548). No proxy. |
-| 3 | **Behind Caddy** | Caddy (auto) | proxy IP/CIDR | `false` | Easiest public HTTPS. See `reverse-proxy/caddy/`. |
-| 4 | **Behind nginx** | nginx | proxy IP/CIDR | `false` | See `reverse-proxy/nginx/`. |
-| 5 | **Behind Traefik** | Traefik (ACME) | Docker net CIDR | `false` | See `reverse-proxy/traefik/`. |
-| 6 | **Cloudflare Tunnel** | Cloudflare edge | `cloudflared` source IP | `false` | `cloudflared` sets `X-Forwarded-Proto: https`; trust its source. |
+| 1 | **Local dev** (`http://localhost`) | none (secure context) | `lan` | empty | `false` |
+| 2 | **Direct, public TLS** | xg2g itself | `vps` | empty | `true` (+ cert/key) |
+| 3 | **Behind Caddy** | Caddy (auto) | `reverse_proxy` | proxy IP/CIDR | `false` |
+| 4 | **Behind nginx** | nginx | `reverse_proxy` | proxy IP/CIDR | `false` |
+| 5 | **Behind Traefik** | Traefik (ACME) | `reverse_proxy` | Docker net CIDR | `false` |
+| 6 | **Cloudflare Tunnel** | Cloudflare edge | `tunnel` | `cloudflared` source IP | `false` |
 
-For scenarios 3–6, also set `XG2G_ALLOWED_ORIGINS=https://your.domain` so CORS
+For scenarios 2–6, also set `XG2G_ALLOWED_ORIGINS=https://your.domain` so CORS
 and CSRF accept the public origin.
 
 ---
@@ -60,8 +84,8 @@ host:port — `8088` prod / `8089` staging):
 - **nginx** — `reverse-proxy/nginx/xg2g.conf`
 - **Traefik** — `reverse-proxy/traefik/docker-compose.traefik.yml`
 
-Each file carries the required `XG2G_TRUSTED_PROXIES` value for that topology in
-a header comment.
+Each file carries the required `XG2G_TRUSTED_PROXIES` and
+`XG2G_CONNECTIVITY_PROFILE` values for that topology in a header comment.
 
 ---
 
@@ -73,10 +97,9 @@ all three reference configs do it (Caddy automatically, nginx via a `:80`
 `return 308`, Traefik via `redirectscheme`).
 
 `XG2G_FORCE_HTTPS` is an **HTTPS-posture flag** surfaced in the connectivity
-contract (it advertises "this deployment expects HTTPS"); it does not perform an
-app-level redirect. For repeat visitors, the `Strict-Transport-Security` (HSTS)
-header xg2g already sends over HTTPS makes the browser upgrade subsequent
-requests on its own.
+contract; it does not perform an app-level redirect. For repeat visitors, the
+`Strict-Transport-Security` (HSTS) header xg2g sends over HTTPS makes the browser
+upgrade subsequent requests on its own.
 
 ---
 
@@ -85,9 +108,11 @@ requests on its own.
 - xg2g **compresses its own responses** (text/JSON/JS/CSS + HLS playlists) and
   never compresses media segments. Do **not** enable gzip/`encode` at the proxy
   — it would double-compress. Proxies pass `Content-Encoding` through fine.
-- Media segments are served as plain files with `Range` support; the default
-  proxy settings work. The nginx sample sets `proxy_buffering off` to stream
-  bytes through with lower latency.
+- Media segments are served as plain files with `Range` support; default proxy
+  settings work. The nginx sample sets `proxy_buffering off` for lower latency.
 - Match the proxy's max body size to xg2g's **4 MiB** request ceiling (the
   samples use `8m`/`8MB` headroom) so the app returns its clean RFC-7807 `413`.
+- Media requests authenticate with the **session cookie** (not a bearer token),
+  so the browser origin and the playback origin must match — another reason to
+  serve the UI and the API from the same HTTPS origin.
 - No WebSocket/SSE endpoints — no `Upgrade` handling needed.

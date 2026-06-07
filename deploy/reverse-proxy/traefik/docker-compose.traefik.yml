@@ -10,6 +10,7 @@
 #
 #   XG2G_TRUSTED_PROXIES=172.18.0.0/16        # restrict to your specific Docker network CIDR (avoid trusting the entire 172.16.0.0/12 range)
 #   XG2G_ALLOWED_ORIGINS=https://tv.example.com
+#   XG2G_CONNECTIVITY_PROFILE=reverse_proxy   # enforces TrustedProxies (fatal if unset)
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:

@@ -12,8 +12,10 @@
 #
 # Same host as xg2g:           XG2G_TRUSTED_PROXIES=127.0.0.1/32
 # Caddy in the same Docker net: use that network's CIDR, e.g. 172.18.0.0/16
-# Also set the public origin so CORS/CSRF accept it:
+# Also set the public origin so CORS/CSRF accept it, and the deployment profile
+# (reverse_proxy enforces that XG2G_TRUSTED_PROXIES is set — fatal otherwise):
 #   XG2G_ALLOWED_ORIGINS=https://tv.example.com
+#   XG2G_CONNECTIVITY_PROFILE=reverse_proxy
 # ─────────────────────────────────────────────────────────────────────────────
 
 tv.example.com {
