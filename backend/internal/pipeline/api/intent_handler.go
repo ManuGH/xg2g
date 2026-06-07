@@ -124,7 +124,7 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	policyID := "universal"
 
 	// Resolve profile (universal)
-	prof := profiles.ResolveWithBenchmark(policyID, r.UserAgent(), dvrWindowSec, nil, hardware.PreferredGPUBackend(), profiles.HWAccelAuto, hardware.SnapshotHostBenchmark())
+	prof := profiles.Resolve(policyID, r.UserAgent(), dvrWindowSec, nil, hardware.PreferredGPUBackend(), profiles.HWAccelAuto)
 
 	var acquiredLeases []store.Lease
 	releaseLeases := func() {

@@ -6,7 +6,10 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
@@ -201,9 +204,32 @@ func (a *LocalAdapter) evaluateSafariRuntimeHQHardening(_ context.Context, spec 
 	}
 }
 
+// hostBenchmarkClass returns the host encode-benchmark class
+// ("weak"/"moderate"/"strong"/"") for a benchmark profile id. Overridable via a
+// test hook; in production it reads the live host benchmark snapshot.
+func (a *LocalAdapter) hostBenchmarkClass(profileID string) string {
+	if a.hostBenchmarkClassFn != nil {
+		return a.hostBenchmarkClassFn(profileID)
+	}
+	return playbackprofile.BenchmarkClassForProfile(hardware.SnapshotHostBenchmark(), profileID)
+}
+
 func (a *LocalAdapter) evaluateAdaptiveTranscodeQualityHardening(_ context.Context, spec ports.StreamSpec, inputURL string) runtimeHardeningDecision {
 	budget, ok := adaptiveTranscodeQualityBudgetFor(spec.Profile)
 	if !ok || !shouldPromoteAdaptiveTranscodeQuality(spec, inputURL, budget) {
+		return noRuntimeHardeningDecision()
+	}
+
+	// HQ50 doubles the encode framerate. Don't promote on a host whose 1080i50
+	// benchmark came back "weak" (>160ms probe) — it can't sustain the doubled
+	// load. Moderate/strong (and unmeasured/empty) hosts still promote: a
+	// "moderate" host (~95ms 1080i50, e.g. our VAAPI staging box) plays 50p
+	// cleanly, so the gate is "not weak" rather than the stricter "strong".
+	if a.hostBenchmarkClass(playbackports.BenchmarkProfileVideoH2641080I50) == "weak" {
+		a.Logger.Info().
+			Str("sessionId", spec.SessionID).
+			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
+			Msg("adaptive transcode quality: host benchmark weak, holding 25p instead of promoting to 50p")
 		return noRuntimeHardeningDecision()
 	}
 

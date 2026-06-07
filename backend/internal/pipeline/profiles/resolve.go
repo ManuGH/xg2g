@@ -10,7 +10,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
-	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -352,41 +351,7 @@ func PublicProfileName(profile string) string {
 // Resolve maps a requested profile and user agent to a concrete ProfileSpec.
 // dvrWindowSec controls the DVR window for DVR profiles; <=0 disables DVR.
 // hwaccelMode allows explicit GPU/CPU override (default: auto).
-// Resolve maps a requested profile + source capability to a concrete
-// ProfileSpec with the conservative defaults (no host-capability awareness).
-// Live call sites should prefer ResolveWithBenchmark so the resolution can be
-// capability-aware (e.g. 50p promotion).
 func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode) model.ProfileSpec {
-	return ResolveWithBenchmark(requested, userAgent, dvrWindowSec, cap, gpuBackend, hwaccelMode, playbackprofile.HostBenchmarkSnapshot{})
-}
-
-// ResolveWithBenchmark is Resolve plus the host encode-benchmark snapshot, so the
-// resolution can be capability-aware (e.g. promoting interlaced transcodes to
-// 50p only when the encoder can sustain the doubled framerate) instead of
-// relying on adapter-side workarounds.
-func ResolveWithBenchmark(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode, benchmark playbackprofile.HostBenchmarkSnapshot) model.ProfileSpec {
-	spec := resolveProfile(requested, userAgent, dvrWindowSec, cap, gpuBackend, hwaccelMode)
-	promoteInterlacedTo50pIfCapable(&spec, benchmark)
-	return spec
-}
-
-// promoteInterlacedTo50pIfCapable upgrades an interlaced live transcode from the
-// safe default 25p (HQ25) to full-motion 50p (HQ50) when the host benchmarked
-// "strong" for the 1080i50 profile — i.e. the encoder can sustain the doubled
-// framerate. Progressive/copy sources and moderate/weak hosts are untouched. The
-// HQ50 runtime mode only takes effect on the live-HLS transcode path downstream,
-// so setting it here is safe regardless of the eventual session mode.
-func promoteInterlacedTo50pIfCapable(spec *model.ProfileSpec, benchmark playbackprofile.HostBenchmarkSnapshot) {
-	if spec == nil || !spec.TranscodeVideo || !spec.Deinterlace {
-		return
-	}
-	if playbackprofile.BenchmarkClassForProfile(benchmark, playbackports.BenchmarkProfileVideoH2641080I50) != "strong" {
-		return
-	}
-	spec.EffectiveRuntimeMode = ports.RuntimeModeHQ50
-}
-
-func resolveProfile(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode) model.ProfileSpec {
 	isSafari := isSafariUA(userAgent)
 	canonical := resolveCanonicalProfile(requested, isSafari)
 
