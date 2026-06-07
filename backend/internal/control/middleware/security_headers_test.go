@@ -61,3 +61,32 @@ func TestSecurityHeaders_ProxyAwareness(t *testing.T) {
 	req3.TLS = &tls.ConnectionState{} // Simulate TLS connection
 	checkHSTS(t, "Direct TLS connection", req3, true)
 }
+
+// TestSecurityHeaders_CrossOriginIsolation pins the COOP hardening and the
+// deliberate absence of CORP and COEP globally:
+//   - COOP is set to same-origin to sever window.opener links.
+//   - CORP is deliberately absent from this global middleware because the
+//     backend serves public static resources (e.g. picon logos) that
+//     cross-origin clients load via <img> tags. Setting CORP: same-origin
+//     globally would block those no-cors cross-origin loads.
+//   - COEP must stay unset: require-corp would break cross-origin media in
+//     the player.
+func TestSecurityHeaders_CrossOriginIsolation(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handler := SecurityHeaders("", nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "http://example.com", nil))
+
+	if got := rec.Header().Get("Cross-Origin-Opener-Policy"); got != "same-origin" {
+		t.Errorf("Cross-Origin-Opener-Policy = %q, want %q", got, "same-origin")
+	}
+	// CORP is intentionally absent from global middleware (see doc comment).
+	if got := rec.Header().Get("Cross-Origin-Resource-Policy"); got != "" {
+		t.Errorf("Cross-Origin-Resource-Policy = %q, want unset (would block cross-origin static assets)", got)
+	}
+	// Negative control: COEP must stay unset so cross-origin media/blobs keep loading.
+	if got := rec.Header().Get("Cross-Origin-Embedder-Policy"); got != "" {
+		t.Errorf("Cross-Origin-Embedder-Policy = %q, want unset (would break HLS playback)", got)
+	}
+}
