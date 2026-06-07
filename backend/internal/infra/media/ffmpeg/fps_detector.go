@@ -97,13 +97,15 @@ func (a *LocalAdapter) probeOutputFPS(segmentPath string) (int, string, error) {
 		ffprobeBin = "ffprobe"
 	}
 
-	args := []string{
-		"-v", "error",
+	input, protoArgs := outputProbeInput(segmentPath)
+	args := []string{"-v", "error"}
+	args = append(args, protoArgs...)
+	args = append(args,
 		"-select_streams", "v:0",
 		"-show_entries", "stream=r_frame_rate,avg_frame_rate",
 		"-of", "default=noprint_wrappers=1",
-		segmentPath,
-	}
+		input,
+	)
 	// #nosec G204 -- ffprobe bin path is trusted
 	cmd := exec.CommandContext(probeCtx, ffprobeBin, args...)
 	var stderr bytes.Buffer
@@ -117,6 +119,26 @@ func (a *LocalAdapter) probeOutputFPS(segmentPath string) (int, string, error) {
 		return 0, "", fmt.Errorf("empty output")
 	}
 	return parseFPSProbeOutput(output)
+}
+
+// outputProbeInput builds the ffprobe input for a freshly written HLS output
+// segment. An fMP4 media segment (.m4s) carries only moof/mdat and is NOT
+// decodable on its own — it needs the init segment's moov, or ffprobe fails with
+// "no tfhd was found / Invalid data". So we prepend init.mp4 via the concat
+// protocol (the same approach used for the DVR scrub-preview keyframe). MPEG-TS
+// segments are self-contained and pass through unchanged. If the init segment
+// isn't there yet, fall back to the bare segment rather than failing outright.
+func outputProbeInput(segmentPath string) (string, []string) {
+	if !strings.EqualFold(filepath.Ext(segmentPath), ".m4s") {
+		return segmentPath, nil
+	}
+	initPath := filepath.Join(filepath.Dir(segmentPath), "init.mp4")
+	if st, err := os.Stat(initPath); err != nil || st.Size() <= 0 {
+		return segmentPath, nil
+	}
+	safeInit := "file:" + filepath.ToSlash(initPath)
+	safeSeg := "file:" + filepath.ToSlash(segmentPath)
+	return "concat:" + safeInit + "|" + safeSeg, []string{"-protocol_whitelist", "concat,file"}
 }
 
 func shouldRetryFPSProbe(err error) bool {
