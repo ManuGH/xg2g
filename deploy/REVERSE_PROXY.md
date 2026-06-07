@@ -126,7 +126,8 @@ and CSRF accept the public origin.
 > tunnel only fronts a **private LAN/VPN** (not exposed to the open internet),
 > keep `XG2G_CONNECTIVITY_PROFILE=lan` — the public profiles would force
 > public-grade requirements (strong token, published endpoints) you don't need.
-> You still get HTTPS from the proxy; only the *profile* stays `lan`.
+> You still get HTTPS from the proxy; only the *profile* stays `lan` (though you
+> must still set `XG2G_TRUSTED_PROXIES` so the proxy's headers are trusted).
 
 ---
 
