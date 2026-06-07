@@ -42,6 +42,19 @@ var compressibleContentTypes = []string{
 // Compression returns response-compression middleware (gzip/deflate negotiated
 // via Accept-Encoding) scoped to text-ish payloads and HLS playlists. Media
 // segments are never compressed — see compressibleContentTypes.
+//
+// Requests carrying a Range header bypass compression entirely: gzipping a
+// partial (206) response would produce an invalid gzip stream the client could
+// not decode, corrupting range-based media seeks and chunked asset loading.
 func Compression() func(http.Handler) http.Handler {
-	return chimw.Compress(defaultCompressionLevel, compressibleContentTypes...)
+	compressor := chimw.Compress(defaultCompressionLevel, compressibleContentTypes...)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Range") != "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			compressor(next).ServeHTTP(w, r)
+		})
+	}
 }

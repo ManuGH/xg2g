@@ -70,18 +70,22 @@ func SecurityHeaders(csp string, trustedProxies []*net.IPNet) func(http.Handler)
 			// Permissions-Policy: deny powerful features the app does not use.
 			w.Header().Set("Permissions-Policy", DefaultPermissionsPolicy)
 
-			// Cross-origin isolation. The app is fully same-origin (see DefaultCSP:
-			// no external script/style/img/media/connect origins, and the web UI is
-			// served by this same backend), so we keep our browsing context and our
-			// resources to our own origin:
-			//   - COOP severs window.opener links to cross-origin openers.
-			//   - CORP blocks other origins from embedding our responses (hotlinking
-			//     / speculative cross-origin reads).
-			// We deliberately do NOT send Cross-Origin-Embedder-Policy: require-corp
-			// would force every cross-origin media/blob the player touches to carry
+			// Cross-origin opener policy. The app is fully same-origin (see
+			// DefaultCSP: no external script/style/img/media/connect origins, and
+			// the web UI is served by this same backend), so COOP severs
+			// window.opener links to cross-origin openers.
+			//
+			// Cross-Origin-Resource-Policy is deliberately absent from this global
+			// middleware: the backend serves public static resources (e.g. picon
+			// logos under /logos/{filename}) that cross-origin clients load via
+			// <img> tags. Setting CORP: same-origin globally would block those
+			// no-cors cross-origin loads. Individual handlers or route groups that
+			// need to restrict resource embedding should set CORP explicitly.
+			//
+			// Cross-Origin-Embedder-Policy is also omitted: require-corp would
+			// force every cross-origin media/blob the player touches to carry
 			// CORP/CORS and would break HLS playback for no real gain here.
 			w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-			w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 
 			next.ServeHTTP(w, r)
 		})
