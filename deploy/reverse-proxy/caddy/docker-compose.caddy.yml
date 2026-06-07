@@ -1,0 +1,48 @@
+# Copy-paste Caddy + xg2g stack with automatic HTTPS.
+#
+#   docker compose -f docker-compose.caddy.yml up -d
+#   → open https://tv.example.com
+#
+# The network subnet is PINNED so XG2G_TRUSTED_PROXIES is deterministic (the #1
+# thing newcomers get wrong behind Docker). Only Caddy is exposed; xg2g is
+# reachable inside the network as "xg2g:8088".
+#
+# Before starting:
+#   1. Edit the mounted Caddyfile so the site is your domain and the upstream is
+#      `reverse_proxy xg2g:8088` (not 127.0.0.1).
+#   2. Replace tv.example.com below with your domain.
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest   # pin a release tag for production
+    restart: unless-stopped
+    environment:
+      - XG2G_LISTEN=:8088
+      - XG2G_CONNECTIVITY_PROFILE=reverse_proxy
+      # Caddy connects from the pinned subnet below — trust exactly that, nothing more.
+      - XG2G_TRUSTED_PROXIES=172.31.0.0/24
+      - XG2G_ALLOWED_ORIGINS=https://tv.example.com
+    # No published ports on purpose: reach xg2g only through Caddy.
+    networks: [edge]
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24   # keep XG2G_TRUSTED_PROXIES in sync if you change this
+
+volumes:
+  caddy_data:
+  caddy_config:
