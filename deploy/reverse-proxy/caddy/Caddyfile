@@ -19,6 +19,7 @@
 tv.example.com {
 	# Point at the xg2g container/host. Adjust host:port to your deployment
 	# (8088 is the production default; staging uses 8089).
+	# Use "xg2g:8088" if Caddy and xg2g are in the same Docker network.
 	reverse_proxy 127.0.0.1:8088 {
 		# Caddy already forwards X-Forwarded-For / -Proto / -Host; this is
 		# explicit for clarity and future-proofing.

@@ -8,7 +8,7 @@
 # xg2g sees the Traefik container's network IP as the source. Trust that CIDR,
 # or HSTS/Secure-cookies/real-IP/rate-limit/LAN-guard SILENTLY break:
 #
-#   XG2G_TRUSTED_PROXIES=172.16.0.0/12        # the Docker bridge network CIDR
+#   XG2G_TRUSTED_PROXIES=172.18.0.0/16        # restrict to your specific Docker network CIDR (avoid trusting the entire 172.16.0.0/12 range)
 #   XG2G_ALLOWED_ORIGINS=https://tv.example.com
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -16,6 +16,7 @@ services:
   xg2g:
     # Inherits image/env/volumes from docker-compose.yml; add routing labels and
     # drop the host port publish (Traefik fronts it on the Docker network).
+    # Note: !reset requires Docker Compose v2.20.0+
     ports: !reset []
     labels:
       - "traefik.enable=true"
