@@ -1285,6 +1285,32 @@ export function usePlaybackOrchestrator(
         }
         liveEngine = engineDecision.engine;
 
+        // hls.js cannot play HEVC: Apple's HLS spec requires fMP4 for HEVC and
+        // hls.js renders HEVC-in-MPEG-TS as a black screen. Native (WebKit) HLS
+        // decodes HEVC fine, so when the backend resolves an HEVC stream prefer
+        // the native engine if the platform offers native HLS. H.264 is
+        // untouched. (If there is no native HLS — e.g. Chrome — we leave hls.js
+        // as-is; the backend should not be copying HEVC to such clients.)
+        const resolvedLiveVideoCodec = String(
+          (liveInfoJson as { decision?: { selected?: { videoCodec?: string } }; videoCodec?: string })
+            ?.decision?.selected?.videoCodec ??
+            (liveInfoJson as { videoCodec?: string })?.videoCodec ??
+            ''
+        ).toLowerCase();
+        const liveStreamIsHevc =
+          resolvedLiveVideoCodec === 'hevc' || resolvedLiveVideoCodec === 'h265';
+        if (liveStreamIsHevc && liveEngine === 'hlsjs') {
+          const canPlayNativeHls = !!videoRef.current?.canPlayType?.(
+            'application/vnd.apple.mpegurl'
+          );
+          if (canPlayNativeHls) {
+            debugLog(
+              '[V3Player] HEVC live stream → forcing native HLS (hls.js cannot decode HEVC)'
+            );
+            liveEngine = 'native';
+          }
+        }
+
         const intentBody = buildLiveIntentBody(ref, liveDecisionToken, requestCaps, liveMode);
         sessionEpoch = allocateSessionEpoch(playbackEpoch);
 
