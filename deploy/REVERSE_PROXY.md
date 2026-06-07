@@ -98,6 +98,14 @@ on an insecure public setup. Pick the profile that matches reality:
 **native-client-only** escape hatch for a supplemental plain-HTTP path; it does
 **not** turn the browser web player into a plain-HTTP experience.
 
+> **Public vs. private — the profile follows your *exposure*, not whether you
+> have a proxy.** `reverse_proxy` / `tunnel` / `vps` are for deployments that are
+> genuinely reachable from the public internet, and they enforce public-grade
+> hardening (a strong API token, declared public endpoints). If your instance is
+> only reachable on your **LAN or over a private VPN** (e.g. WireGuard) — even
+> when a reverse proxy like Caddy terminates HTTPS purely for in-LAN use — stay
+> on **`lan`**. Running a proxy for local HTTPS does not make you public.
+
 ---
 
 ## Scenario matrix
@@ -113,6 +121,12 @@ on an insecure public setup. Pick the profile that matches reality:
 
 For scenarios 2–6, also set `XG2G_ALLOWED_ORIGINS=https://your.domain` so CORS
 and CSRF accept the public origin.
+
+> Scenarios 3–6 assume the instance is **publicly reachable**. If your proxy or
+> tunnel only fronts a **private LAN/VPN** (not exposed to the open internet),
+> keep `XG2G_CONNECTIVITY_PROFILE=lan` — the public profiles would force
+> public-grade requirements (strong token, published endpoints) you don't need.
+> You still get HTTPS from the proxy; only the *profile* stays `lan`.
 
 ---
 
