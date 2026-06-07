@@ -752,7 +752,18 @@ export function usePlaybackEngine({
         lowLatencyMode: false,
         backBufferLength: 300,
         maxBufferLength: 60,
-        capLevelToPlayerSize: true
+        capLevelToPlayerSize: true,
+        // Broadcast copy/passthrough sources (DVB relay) deliver imperfect DTS,
+        // so the muxed segments carry small timestamp gaps ("Invalid DTS …
+        // replacing by guess"). hls.js's default maxBufferHole (0.1s) is too
+        // tight to jump those, stranding live TV at the gap until the nudge
+        // retries are exhausted ("hlsjs stall recovery failed"). Widen the
+        // hole-skip and give the nudge a few more tries so playback rides over a
+        // bad-DTS gap instead of stalling. No effect on clean streams: with no
+        // buffer hole, none of these engage.
+        maxBufferHole: 0.5,
+        nudgeOffset: 0.2,
+        nudgeMaxRetry: 6
       });
       hlsRef.current = hls;
 
