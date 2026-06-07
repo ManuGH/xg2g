@@ -55,28 +55,7 @@ func TestDeinterlaceFilter_HQ25UsesSendFrame(t *testing.T) {
 	}
 }
 
-// The 50p promotion only applies to interlaced transcodes — progressive and
-// copy/passthrough never promote (these return before the host benchmark is even
-// consulted, so they are deterministic without benchmark state). Guards against
-// over-reaching to non-interlaced or copy streams.
-func TestShouldPromote50p_RequiresInterlacedTranscode(t *testing.T) {
-	a := &LocalAdapter{Logger: zerolog.Nop()}
-
-	progressive := liveTranscodeSpec(ports.RuntimeModeHQ25)
-	progressive.Profile.Deinterlace = false
-	if a.shouldPromoteInterlacedTo50p(progressive) {
-		t.Fatal("progressive source must never promote to 50p")
-	}
-
-	copyStream := liveTranscodeSpec(ports.RuntimeModeHQ25)
-	copyStream.Profile.TranscodeVideo = false
-	if a.shouldPromoteInterlacedTo50p(copyStream) {
-		t.Fatal("copy/passthrough must never promote to 50p")
-	}
-
-	vod := liveTranscodeSpec(ports.RuntimeModeHQ25)
-	vod.Mode = ports.ModeRecording
-	if a.shouldPromoteInterlacedTo50p(vod) {
-		t.Fatal("non-live must never promote to 50p")
-	}
-}
+// NOTE: the 50p promotion gate itself now lives in profiles.ResolveWithBenchmark
+// (capability-aware decision layer) — see promoteInterlacedTo50pIfCapable tests
+// in the profiles package. This file keeps only the downstream mechanics
+// (HQ50→send_field/50fps, HQ25→send_frame/25fps) the adapter is responsible for.
