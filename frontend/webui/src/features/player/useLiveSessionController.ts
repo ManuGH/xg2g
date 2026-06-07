@@ -500,7 +500,10 @@ export function useLiveSessionController({
 
     // Clamp the per-request deadline to one interval so a hung beat always
     // aborts before the next one fires (no pile-up of stuck requests).
-    const heartbeatRequestTimeoutMs = Math.max(1000, Math.min(intervalMs, HEARTBEAT_REQUEST_TIMEOUT_MS));
+    // Guard against non-finite intervalMs (e.g. malformed heartbeatInterval)
+    // so AbortSignal.timeout never receives NaN → 0 → immediate abort.
+    const safeIntervalMs = Number.isFinite(intervalMs) ? intervalMs : HEARTBEAT_REQUEST_TIMEOUT_MS;
+    const heartbeatRequestTimeoutMs = Math.max(1000, Math.min(safeIntervalMs, HEARTBEAT_REQUEST_TIMEOUT_MS));
 
     const timerId = window.setInterval(async () => {
       try {
