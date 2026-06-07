@@ -24,7 +24,7 @@ The shortest path to a working, secure deployment. Caddy gives you automatic
 HTTPS in a few lines and handles the redirect and forwarded headers for you.
 
 1. Point a DNS name at the host (e.g. `tv.example.com` → your server). No public
-   domain? See **"No public domain? (homelab)"** below.
+   domain? See **"No public domain? (homelab / internal only)"** below.
 2. Run xg2g normally — plain HTTP is fine, Caddy adds the TLS. (Don't set
    `XG2G_TLS_ENABLED`.)
 3. Drop in the reference `reverse-proxy/caddy/Caddyfile`, replacing
