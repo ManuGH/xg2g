@@ -542,7 +542,7 @@ type AppConfig struct {
 	TLSEnabled bool   // Enable TLS (auto-generate certs if cert/key empty)
 	TLSCert    string // Path to TLS certificate file
 	TLSKey     string // Path to TLS key file
-	ForceHTTPS bool   // Redirect HTTP to HTTPS
+	ForceHTTPS bool   // HTTPS-posture flag (connectivity contract). Note that xg2g does not perform HTTP→HTTPS redirects natively; redirects must be handled by an edge proxy if used.
 
 	// Feature Flags
 	// ReadyStrict enables strict readiness checks (e.g. OWI connectivity)

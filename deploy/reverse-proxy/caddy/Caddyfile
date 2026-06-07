@@ -1,0 +1,41 @@
+# xg2g behind Caddy — the lowest-effort HTTPS setup (automatic certificates).
+#
+# Caddy obtains and renews TLS certs automatically (Let's Encrypt / ZeroSSL),
+# redirects HTTP→HTTPS for you, and sets the X-Forwarded-* headers by default.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# REQUIRED on the xg2g side — set the proxy's source IP/CIDR as trusted, or
+# HSTS, Secure cookies, real client-IP, rate-limiting and the LAN guard all
+# SILENTLY break (xg2g ignores X-Forwarded-* from untrusted sources by design):
+#
+#   XG2G_TRUSTED_PROXIES=<ip-or-cidr-Caddy-connects-from>
+#
+# Same host as xg2g:           XG2G_TRUSTED_PROXIES=127.0.0.1/32
+# Caddy in the same Docker net: use that network's CIDR, e.g. 172.18.0.0/16
+# Also set the public origin so CORS/CSRF accept it, and the deployment profile
+# (reverse_proxy enforces that XG2G_TRUSTED_PROXIES is set — fatal otherwise):
+#   XG2G_ALLOWED_ORIGINS=https://tv.example.com
+#   XG2G_CONNECTIVITY_PROFILE=reverse_proxy
+# ─────────────────────────────────────────────────────────────────────────────
+
+tv.example.com {
+	# Point at the xg2g container/host. Adjust host:port to your deployment
+	# (8088 is the production default; staging uses 8089).
+	# Use "xg2g:8088" if Caddy and xg2g are in the same Docker network.
+	reverse_proxy 127.0.0.1:8088 {
+		# Caddy already forwards X-Forwarded-For / -Proto / -Host; this is
+		# explicit for clarity and future-proofing.
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+
+	# Match xg2g's own 4 MiB request-body ceiling (with headroom) so the app
+	# returns its clean RFC-7807 413 instead of Caddy cutting it off first.
+	request_body {
+		max_size 8MB
+	}
+
+	# Note: xg2g already gzip-compresses its own responses (text/JSON/JS/CSS +
+	# HLS playlists) and never compresses media segments — do NOT add `encode`
+	# here, it would double-compress.
+}

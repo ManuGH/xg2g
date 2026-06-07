@@ -10,6 +10,7 @@ This is the deploy-SSoT migration slice:
 - `deploy/docker-compose.nvidia.yml` is the intended canonical NVIDIA runtime / NVENC overlay.
 - `deploy/xg2g.env.schema.yaml` is the initial machine-readable contract for `/etc/xg2g/xg2g.env`.
 - `deploy/sync.sh` is the idempotent host sync entrypoint.
+- `deploy/REVERSE_PROXY.md` documents every reverse-proxy / HTTPS topology (direct, in-process TLS, Caddy, nginx, Traefik, Cloudflare Tunnel) and the settings each requires; `deploy/reverse-proxy/` holds drop-in reference configs.
 
 Current deployment boundary:
 

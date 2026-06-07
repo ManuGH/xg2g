@@ -123,7 +123,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	}
 	if cfg.TLSEnabled && !cfg.ForceHTTPS {
 		cfg.ForceHTTPS = true
-		logger.Info().Msg("tls enabled - forcing HTTPS redirects by default")
+		logger.Info().Msg("tls enabled - advertising HTTPS-only posture (ForceHTTPS)")
 	}
 
 	v3ScanStore, err := scan.NewStore(cfg.Store.Backend, cfg.Store.Path)

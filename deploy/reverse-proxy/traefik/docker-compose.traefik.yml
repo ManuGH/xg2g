@@ -1,0 +1,40 @@
+# xg2g behind Traefik (automatic TLS via ACME + HTTP→HTTPS redirect).
+#
+# Overlay this on the base bundle:
+#   docker compose -f docker-compose.yml -f reverse-proxy/traefik/docker-compose.traefik.yml up -d
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# REQUIRED on the xg2g side — Traefik reaches xg2g over the Docker network, so
+# xg2g sees the Traefik container's network IP as the source. Trust that CIDR,
+# or HSTS/Secure-cookies/real-IP/rate-limit/LAN-guard SILENTLY break:
+#
+#   XG2G_TRUSTED_PROXIES=172.18.0.0/16        # restrict to your specific Docker network CIDR (avoid trusting the entire 172.16.0.0/12 range)
+#   XG2G_ALLOWED_ORIGINS=https://tv.example.com
+#   XG2G_CONNECTIVITY_PROFILE=reverse_proxy   # enforces TrustedProxies (fatal if unset)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  xg2g:
+    # Inherits image/env/volumes from docker-compose.yml; add routing labels and
+    # drop the host port publish (Traefik fronts it on the Docker network).
+    # Note: !reset requires Docker Compose v2.20.0+
+    ports: !reset []
+    labels:
+      - "traefik.enable=true"
+
+      # HTTPS router (TLS terminated by Traefik via the `le` cert resolver).
+      - "traefik.http.routers.xg2g.rule=Host(`tv.example.com`)"
+      - "traefik.http.routers.xg2g.entrypoints=websecure"
+      - "traefik.http.routers.xg2g.tls.certresolver=le"
+      - "traefik.http.services.xg2g.loadbalancer.server.port=8088"
+
+      # HTTP router → redirect to HTTPS (the redirect lives at the edge).
+      - "traefik.http.routers.xg2g-http.rule=Host(`tv.example.com`)"
+      - "traefik.http.routers.xg2g-http.entrypoints=web"
+      - "traefik.http.routers.xg2g-http.middlewares=xg2g-https-redirect"
+      - "traefik.http.middlewares.xg2g-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.xg2g-https-redirect.redirectscheme.permanent=true"
+
+# Traefik forwards X-Forwarded-For / -Proto / -Host automatically. Ensure
+# Traefik itself trusts its upstream (entryPoints.*.forwardedHeaders) if it sits
+# behind yet another LB.
