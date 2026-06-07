@@ -23,6 +23,10 @@ type StackConfig struct {
 	EnableSecurityHeaders bool
 	CSP                   string
 
+	// EnableCompression gzips text-ish responses (HTML/CSS/JS/JSON/SVG + HLS
+	// playlists). Media segments are never compressed (see compress.go).
+	EnableCompression bool
+
 	// TrustedProxies defines which IPs are trusted to set X-Forwarded-Proto.
 	TrustedProxies []*net.IPNet
 
@@ -58,6 +62,11 @@ func ApplyStack(r chi.Router, cfg StackConfig) {
 	// 2b. Body-size backstop (bound memory before any handler reads the body)
 	if cfg.MaxRequestBodyBytes > 0 {
 		r.Use(MaxBodyBytes(cfg.MaxRequestBodyBytes))
+	}
+	// 2c. Compression (response transform; only touches text-ish content types,
+	// never media segments, so it sits outside the per-request logic below).
+	if cfg.EnableCompression {
+		r.Use(Compression())
 	}
 	// 3. CORS (so OPTIONS and browser clients behave)
 	if cfg.EnableCORS {

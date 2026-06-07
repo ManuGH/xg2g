@@ -42,6 +42,8 @@ func (s *Server) newRouter() chi.Router {
 		CSP:                   middleware.DefaultCSP,
 		TrustedProxies:        s.parsedTrustedProxies(),
 
+		EnableCompression: true,
+
 		EnableMetrics:  true,
 		TracingService: "xg2g-api",
 		EnableLogging:  true,

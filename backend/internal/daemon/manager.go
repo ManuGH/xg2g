@@ -19,6 +19,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/health"
+	xtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/rs/zerolog"
 )
 
@@ -171,6 +172,10 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 		tokenAuthConfigured := strings.TrimSpace(m.deps.Config.APIToken) != "" || len(m.deps.Config.APITokens) > 0
 
 		if tlsCert != "" && tlsKey != "" {
+			// Harden the TLS handshake (TLS 1.2 floor, AEAD-only ciphers, modern
+			// curves) so direct in-process HTTPS is A-grade by default instead of
+			// relying on Go's broader compatibility defaults.
+			m.apiServer.TLSConfig = xtls.HardenedServerConfig()
 			m.logger.Info().
 				Str("addr", m.serverCfg.ListenAddr).
 				Msg("API server listening (HTTPS)")

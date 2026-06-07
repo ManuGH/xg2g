@@ -61,3 +61,26 @@ func TestSecurityHeaders_ProxyAwareness(t *testing.T) {
 	req3.TLS = &tls.ConnectionState{} // Simulate TLS connection
 	checkHSTS(t, "Direct TLS connection", req3, true)
 }
+
+// TestSecurityHeaders_CrossOriginIsolation pins the COOP/CORP hardening and the
+// deliberate absence of COEP. The COEP negative control matters: setting
+// Cross-Origin-Embedder-Policy: require-corp would break cross-origin media in
+// the player, so this test fails if a future change adds it.
+func TestSecurityHeaders_CrossOriginIsolation(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handler := SecurityHeaders("", nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "http://example.com", nil))
+
+	if got := rec.Header().Get("Cross-Origin-Opener-Policy"); got != "same-origin" {
+		t.Errorf("Cross-Origin-Opener-Policy = %q, want %q", got, "same-origin")
+	}
+	if got := rec.Header().Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+		t.Errorf("Cross-Origin-Resource-Policy = %q, want %q", got, "same-origin")
+	}
+	// Negative control: COEP must stay unset so cross-origin media/blobs keep loading.
+	if got := rec.Header().Get("Cross-Origin-Embedder-Policy"); got != "" {
+		t.Errorf("Cross-Origin-Embedder-Policy = %q, want unset (would break HLS playback)", got)
+	}
+}
