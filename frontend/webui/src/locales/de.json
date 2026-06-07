@@ -2,6 +2,11 @@
   "a11y": {
     "skipToContent": "Zum Hauptinhalt springen"
   },
+  "insecureContext": {
+    "message": "Du bist über HTTP verbunden – die Wiedergabe funktioniert nur über HTTPS (oder localhost).",
+    "learnMore": "Einrichtung",
+    "dismiss": "Hinweis schließen"
+  },
   "nav": {
     "dashboard": "Start",
     "recordings": "Aufnahmen",
