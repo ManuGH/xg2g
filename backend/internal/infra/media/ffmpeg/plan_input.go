@@ -60,8 +60,22 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		// already know enough about the stream and pay a visible startup penalty.
 		if isStreamRelayURL(inputURL) {
 			if spec.Profile.TranscodeVideo {
-				analyzeDuration = "10000000"
-				probeSize = "20M"
+				// Relay MPEG-TS needs a deeper probe than the general live
+				// default to resolve dimensions/audio reliably. Default ≈10s,
+				// but overridable (XG2G_STREAMRELAY_ANALYZE_DURATION /
+				// XG2G_STREAMRELAY_PROBE_SIZE) so a fleet that has verified a
+				// faster probe can cut the visible relay-transcode startup
+				// penalty without patching code.
+				if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
+					analyzeDuration = v
+				} else {
+					analyzeDuration = "10000000"
+				}
+				if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
+					probeSize = v
+				} else {
+					probeSize = "20M"
+				}
 			}
 		}
 		if !strings.Contains(fflags, "igndts") {

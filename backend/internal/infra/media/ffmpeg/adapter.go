@@ -56,46 +56,48 @@ type pathProbeRequest struct {
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
-	BinPath                   string
-	FFprobeBin                string
-	HLSRoot                   string
-	AnalyzeDuration           string
-	ProbeSize                 string
-	LiveAnalyzeDuration       string
-	LiveProbeSize             string
-	LiveNoBuffer              bool
-	IngestFFlags              string
-	IngestErrDetect           string
-	IngestMaxErrorRate        string
-	IngestFlags2              string
-	DVRWindow                 time.Duration
-	KillTimeout               time.Duration
-	httpClient                *http.Client
-	Logger                    zerolog.Logger
-	E2                        *enigma2.Client // Dependency for Tuner operations
-	FallbackTo8001            bool
-	PreflightTimeout          time.Duration
-	SegmentSeconds            int
-	StartTimeout              time.Duration
-	StallTimeout              time.Duration
-	FPSProbeTimeout           time.Duration
-	FPSMin                    int
-	FPSMax                    int
-	FPSFallback               int
-	FPSFallbackInter          int
-	SafariDirtyFilter         string
-	SafariDirtyX264Tune       string
-	FPSProbeFFlags            string
-	FPSProbeErrDetect         string
-	FPSProbeAnalyze           string
-	FPSProbeSize              string
-	FPSProbeRetryAn           string
-	FPSProbeRetrySize         string
-	SkipFPSProbeOnCache       bool
-	SkipFPSProbeWarmup        time.Duration
-	SafariRuntimeProbeTimeout time.Duration
-	VaapiDevice               string // e.g. "/dev/dri/renderD128"; empty = no VAAPI
-	detector                  *Detector
+	BinPath                    string
+	FFprobeBin                 string
+	HLSRoot                    string
+	AnalyzeDuration            string
+	ProbeSize                  string
+	LiveAnalyzeDuration        string
+	LiveProbeSize              string
+	StreamRelayAnalyzeDuration string
+	StreamRelayProbeSize       string
+	LiveNoBuffer               bool
+	IngestFFlags               string
+	IngestErrDetect            string
+	IngestMaxErrorRate         string
+	IngestFlags2               string
+	DVRWindow                  time.Duration
+	KillTimeout                time.Duration
+	httpClient                 *http.Client
+	Logger                     zerolog.Logger
+	E2                         *enigma2.Client // Dependency for Tuner operations
+	FallbackTo8001             bool
+	PreflightTimeout           time.Duration
+	SegmentSeconds             int
+	StartTimeout               time.Duration
+	StallTimeout               time.Duration
+	FPSProbeTimeout            time.Duration
+	FPSMin                     int
+	FPSMax                     int
+	FPSFallback                int
+	FPSFallbackInter           int
+	SafariDirtyFilter          string
+	SafariDirtyX264Tune        string
+	FPSProbeFFlags             string
+	FPSProbeErrDetect          string
+	FPSProbeAnalyze            string
+	FPSProbeSize               string
+	FPSProbeRetryAn            string
+	FPSProbeRetrySize          string
+	SkipFPSProbeOnCache        bool
+	SkipFPSProbeWarmup         time.Duration
+	SafariRuntimeProbeTimeout  time.Duration
+	VaapiDevice                string // e.g. "/dev/dri/renderD128"; empty = no VAAPI
+	detector                   *Detector
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
@@ -139,6 +141,18 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	liveProbeSize := strings.TrimSpace(config.ParseString("XG2G_LIVE_PROBE_SIZE", ""))
 	if liveProbeSize == "" {
 		liveProbeSize = "1M" // 1MB for low-latency live ingest
+	}
+	// Stream-relay transcode inputs need a deeper probe than the general live
+	// default; 10s is conservative but visible at startup. Overridable so a
+	// fleet can dial it down once verified (e.g. 3s cut ffmpeg→first-frame from
+	// ~12s to ~4s on a 4K relay with no detection errors).
+	streamRelayAnalyzeDuration := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_ANALYZE_DURATION", ""))
+	if streamRelayAnalyzeDuration == "" {
+		streamRelayAnalyzeDuration = "10000000" // 10s
+	}
+	streamRelayProbeSize := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_PROBE_SIZE", ""))
+	if streamRelayProbeSize == "" {
+		streamRelayProbeSize = "20M"
 	}
 	liveNoBuffer := envBool("XG2G_LIVE_NOBUFFER", false)
 	if killTimeout <= 0 {
@@ -232,53 +246,55 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		},
 	}
 	adapter := &LocalAdapter{
-		BinPath:                   binPath,
-		FFprobeBin:                strings.TrimSpace(ffprobeBin),
-		HLSRoot:                   hlsRoot,
-		AnalyzeDuration:           analyzeDuration,
-		ProbeSize:                 probeSize,
-		LiveAnalyzeDuration:       liveAnalyzeDuration,
-		LiveProbeSize:             liveProbeSize,
-		LiveNoBuffer:              liveNoBuffer,
-		IngestFFlags:              ingestFFlags,
-		IngestErrDetect:           ingestErrDetect,
-		IngestMaxErrorRate:        ingestMaxErrorRate,
-		IngestFlags2:              ingestFlags2,
-		DVRWindow:                 dvrWindow,
-		KillTimeout:               killTimeout,
-		PreflightTimeout:          preflightTimeout,
-		SegmentSeconds:            segmentSeconds,
-		httpClient:                httpClient,
-		E2:                        e2,
-		Logger:                    logger,
-		FallbackTo8001:            fallbackTo8001,
-		StartTimeout:              startTimeout,
-		StallTimeout:              stallTimeout,
-		FPSProbeTimeout:           time.Duration(fpsProbeTimeoutMs) * time.Millisecond,
-		FPSMin:                    fpsMin,
-		FPSMax:                    fpsMax,
-		FPSFallback:               fpsFallback,
-		FPSFallbackInter:          fpsFallbackInter,
-		SafariDirtyFilter:         safariDirtyFilter,
-		SafariDirtyX264Tune:       safariDirtyTune,
-		FPSProbeFFlags:            fpsProbeFFlags,
-		FPSProbeErrDetect:         fpsProbeErrDetect,
-		FPSProbeAnalyze:           fpsProbeAnalyze,
-		FPSProbeSize:              fpsProbeSize,
-		FPSProbeRetryAn:           fpsProbeRetryAnalyze,
-		FPSProbeRetrySize:         fpsProbeRetrySize,
-		SkipFPSProbeOnCache:       skipFPSProbeOnCache,
-		SkipFPSProbeWarmup:        skipFPSProbeWarmup,
-		SafariRuntimeProbeTimeout: time.Duration(safariRuntimeProbeTimeoutMs) * time.Millisecond,
-		VaapiDevice:               strings.TrimSpace(vaapiDevice),
-		lastKnownFPS:              make(map[string]fpsCacheEntry),
-		FPSCacheTTL:               fpsCacheTTL,
-		activeProcs:               make(map[ports.RunHandle]*exec.Cmd),
-		finalizedProfiles:         make(map[ports.RunHandle]ports.ProfileSpec),
-		executedPlans:             make(map[ports.RunHandle]ports.ExecutedFFmpegPlan),
-		runtimeDiagnostics:        make(map[ports.RunHandle]ports.RuntimeDiagnostics),
-		processDetails:            make(map[ports.RunHandle]string),
-		completedProcessDetails:   make(map[ports.RunHandle]string),
+		BinPath:                    binPath,
+		FFprobeBin:                 strings.TrimSpace(ffprobeBin),
+		HLSRoot:                    hlsRoot,
+		AnalyzeDuration:            analyzeDuration,
+		ProbeSize:                  probeSize,
+		LiveAnalyzeDuration:        liveAnalyzeDuration,
+		LiveProbeSize:              liveProbeSize,
+		StreamRelayAnalyzeDuration: streamRelayAnalyzeDuration,
+		StreamRelayProbeSize:       streamRelayProbeSize,
+		LiveNoBuffer:               liveNoBuffer,
+		IngestFFlags:               ingestFFlags,
+		IngestErrDetect:            ingestErrDetect,
+		IngestMaxErrorRate:         ingestMaxErrorRate,
+		IngestFlags2:               ingestFlags2,
+		DVRWindow:                  dvrWindow,
+		KillTimeout:                killTimeout,
+		PreflightTimeout:           preflightTimeout,
+		SegmentSeconds:             segmentSeconds,
+		httpClient:                 httpClient,
+		E2:                         e2,
+		Logger:                     logger,
+		FallbackTo8001:             fallbackTo8001,
+		StartTimeout:               startTimeout,
+		StallTimeout:               stallTimeout,
+		FPSProbeTimeout:            time.Duration(fpsProbeTimeoutMs) * time.Millisecond,
+		FPSMin:                     fpsMin,
+		FPSMax:                     fpsMax,
+		FPSFallback:                fpsFallback,
+		FPSFallbackInter:           fpsFallbackInter,
+		SafariDirtyFilter:          safariDirtyFilter,
+		SafariDirtyX264Tune:        safariDirtyTune,
+		FPSProbeFFlags:             fpsProbeFFlags,
+		FPSProbeErrDetect:          fpsProbeErrDetect,
+		FPSProbeAnalyze:            fpsProbeAnalyze,
+		FPSProbeSize:               fpsProbeSize,
+		FPSProbeRetryAn:            fpsProbeRetryAnalyze,
+		FPSProbeRetrySize:          fpsProbeRetrySize,
+		SkipFPSProbeOnCache:        skipFPSProbeOnCache,
+		SkipFPSProbeWarmup:         skipFPSProbeWarmup,
+		SafariRuntimeProbeTimeout:  time.Duration(safariRuntimeProbeTimeoutMs) * time.Millisecond,
+		VaapiDevice:                strings.TrimSpace(vaapiDevice),
+		lastKnownFPS:               make(map[string]fpsCacheEntry),
+		FPSCacheTTL:                fpsCacheTTL,
+		activeProcs:                make(map[ports.RunHandle]*exec.Cmd),
+		finalizedProfiles:          make(map[ports.RunHandle]ports.ProfileSpec),
+		executedPlans:              make(map[ports.RunHandle]ports.ExecutedFFmpegPlan),
+		runtimeDiagnostics:         make(map[ports.RunHandle]ports.RuntimeDiagnostics),
+		processDetails:             make(map[ports.RunHandle]string),
+		completedProcessDetails:    make(map[ports.RunHandle]string),
 	}
 	adapter.detector = newDetector(binPath, logger, strings.TrimSpace(vaapiDevice), hlsRoot)
 	adapter.detector.recordProcessDetail = adapter.recordProcessDetail
