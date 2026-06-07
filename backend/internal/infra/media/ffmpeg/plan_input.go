@@ -68,9 +68,13 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 				// penalty without patching code.
 				if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
 					analyzeDuration = v
+				} else {
+					analyzeDuration = "10000000"
 				}
 				if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
 					probeSize = v
+				} else {
+					probeSize = "20M"
 				}
 			}
 		}
