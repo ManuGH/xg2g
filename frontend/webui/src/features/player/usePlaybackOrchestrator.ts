@@ -80,7 +80,9 @@ import { usePlaybackStateSetters } from './orchestrator/usePlaybackStateSetters'
 import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCleanup';
 import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
+import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
+import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import { startResumePlaybackRecovery } from './orchestrator/resumePlaybackRecovery';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
@@ -324,6 +326,7 @@ export function usePlaybackOrchestrator(
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
   const wasHiddenRef = useRef(false);
+  const wasOfflineRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
 
@@ -333,6 +336,7 @@ export function usePlaybackOrchestrator(
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
   const isDocumentVisible = useDocumentVisibility();
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     playbackStateRef.current = playbackState;
@@ -1648,6 +1652,83 @@ export function usePlaybackOrchestrator(
       },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
+
+  // Browser (non-TV) network-reconnect recovery. Flaky web — mobile data, wifi
+  // handoffs, laptop sleep/wake — drops connectivity; on the offline->online
+  // edge we re-establish a reaped session or nudge a still-alive stream back to
+  // play, instead of leaving the user to hit Retry by hand. Mirrors the
+  // foreground recovery above; TV keeps its own resume effect.
+  useEffect(() => {
+    if (hostEnvironment.isTv) {
+      return;
+    }
+    if (isNativePlaybackHost && nativePlaybackState?.activeRequest) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    if (!isOnline) {
+      wasOfflineRef.current = true;
+      return;
+    }
+
+    const wasOffline = wasOfflineRef.current;
+    wasOfflineRef.current = false;
+
+    const hasActiveSession = Boolean(
+      sessionIdRef.current || nativePlaybackState?.session?.sessionId,
+    );
+
+    // hls.js parks its segment loader on a fatal network error during the
+    // outage; nudge it to resume loading once connectivity is back (gated on
+    // hlsRef so the native-HLS path, with its UA-owned buffer, is untouched).
+    if (wasOffline && hasActiveSession && hlsRef.current) {
+      try {
+        hlsRef.current.startLoad();
+      } catch (err) {
+        debugWarn('[V3Player] hls reconnect startLoad failed', err);
+      }
+    }
+
+    const action = decideOnlineRecovery({
+      wasOffline,
+      hasActiveSession,
+      status,
+      userPaused: userPauseIntentRef.current,
+      hasTerminal: hasTerminalStatus,
+    });
+
+    if (action === 'none') {
+      return;
+    }
+
+    if (action === 'retry') {
+      // Session was reaped during the outage (heartbeat 410/404) — re-establish.
+      void handleRetry();
+      return;
+    }
+
+    // action === 'play'. As in foreground recovery, a single play() right after a
+    // network stall often fizzles (the element discards it), so nudge play()
+    // until currentTime advances, bounded; the returned cancel cleans it up if we
+    // go offline again mid-recovery. `status` is intentionally OMITTED from deps
+    // for the same reason documented on the foreground effect above.
+    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    return startResumePlaybackRecovery(video, {
+      shouldContinue: () => !userPauseIntentRef.current,
+      onBlocked: (err: unknown) => {
+        if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
+          setStatus('paused');
+        } else {
+          debugWarn('[V3Player] Reconnect resume play blocked', err);
+        }
+      },
+    });
+  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
 
   const showBufferingOverlay = useBufferingOverlay(status);
 

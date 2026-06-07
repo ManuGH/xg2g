@@ -16,6 +16,11 @@ import type { AppError } from '../../types/errors';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import { translatePlaybackReason } from './utils/sessionReason';
+import {
+  HEARTBEAT_REQUEST_TIMEOUT_MS,
+  SESSION_REQUEST_TIMEOUT_MS,
+  timeoutSignal,
+} from './utils/requestTimeout';
 
 const SESSION_READY_TIMEOUT_MS = 60_000;
 const SESSION_READY_POLL_MS = 250;
@@ -212,6 +217,7 @@ export function useLiveSessionController({
       method: 'HEAD',
       cache: 'no-store',
       credentials: 'same-origin',
+      signal: timeoutSignal(SESSION_REQUEST_TIMEOUT_MS),
     }));
 
     if (response.status === 401) {
@@ -314,7 +320,8 @@ export function useLiveSessionController({
         const { response: res, recovered } = await fetchWithRecoveredSessionCookie(
           'useLiveSessionController.waitForSessionReady',
           () => fetch(`${apiBase}/sessions/${trackedSessionId}`, {
-            headers: authHeaders()
+            headers: authHeaders(),
+            signal: timeoutSignal(SESSION_REQUEST_TIMEOUT_MS),
           })
         );
         recoveredSessionAuth = recoveredSessionAuth || recovered;
@@ -491,13 +498,18 @@ export function useLiveSessionController({
     const intervalMs = heartbeatInterval * 1000;
     debugLog('[V3Player][Heartbeat] Starting heartbeat loop:', { sessionId: trackedSessionId, intervalMs });
 
+    // Clamp the per-request deadline to one interval so a hung beat always
+    // aborts before the next one fires (no pile-up of stuck requests).
+    const heartbeatRequestTimeoutMs = Math.max(1000, Math.min(intervalMs, HEARTBEAT_REQUEST_TIMEOUT_MS));
+
     const timerId = window.setInterval(async () => {
       try {
         const { response: res } = await fetchWithRecoveredSessionCookie(
           'useLiveSessionController.heartbeat',
           () => fetch(`${apiBase}/sessions/${trackedSessionId}/heartbeat`, {
             method: 'POST',
-            headers: authHeaders(true)
+            headers: authHeaders(true),
+            signal: timeoutSignal(heartbeatRequestTimeoutMs),
           })
         );
 
