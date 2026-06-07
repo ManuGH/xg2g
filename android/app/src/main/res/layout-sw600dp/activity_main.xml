@@ -187,7 +187,7 @@
                             android:paddingVertical="14dp"
                             android:textAppearance="?attr/textAppearanceTitleMedium"
                             android:textColor="@color/ide_text_primary"
-                            tools:text="xg2g.home.matrixcentral.de/ui" />
+                            tools:text="tv.example.com/ui" />
 
                         <TextView
                             android:layout_width="match_parent"

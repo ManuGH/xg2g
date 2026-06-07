@@ -1,10 +1,10 @@
 const IOS_NATIVE_AV1_RELAXED_QUERY_PARAM = 'xg2g_ios_native_av1';
 const IOS_NATIVE_AV1_RELAXED_STORAGE_KEY = 'XG2G_IOS_NATIVE_AV1';
 const IOS_NATIVE_AV1_RELAXED_HOSTNAMES = new Set([
-  'xg2g.home.matrixcentral.de',
-  'xg2g2.home.matrixcentral.de',
-  'xg2g.home.matrixcental.de',
-  'xg2g2.home.matrixcental.de',
+  'tv.example.com',
+  'tv2.example.com',
+  'tv.example.net',
+  'tv2.example.net',
 ]);
 
 export function isTruthyOverrideValue(value: string | null | undefined): boolean {

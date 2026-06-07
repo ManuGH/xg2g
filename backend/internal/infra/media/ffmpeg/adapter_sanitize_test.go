@@ -9,11 +9,11 @@ import (
 )
 
 func TestSanitizeFFmpegLogLine_RemovesCredentialsFromEmbeddedURL(t *testing.T) {
-	line := "Input #0, mpegts, from 'http://root:Kiddy99@10.10.55.64:17999/1:0:19:132F:3EF:1:C00000:0:0:0':"
+	line := "Input #0, mpegts, from 'http://root:example-pass@192.0.2.64:17999/1:0:19:132F:3EF:1:C00000:0:0:0':"
 
 	sanitized := sanitizeFFmpegLogLine(line)
 
-	assert.Equal(t, "Input #0, mpegts, from 'http://10.10.55.64:17999/1:0:19:132F:3EF:1:C00000:0:0:0':", sanitized)
+	assert.Equal(t, "Input #0, mpegts, from 'http://192.0.2.64:17999/1:0:19:132F:3EF:1:C00000:0:0:0':", sanitized)
 }
 
 func TestFFmpegLogLevel_ClassifiesProgressAsDebug(t *testing.T) {
@@ -32,7 +32,7 @@ func TestFFmpegLogLevel_ClassifiesFailuresAsWarn(t *testing.T) {
 }
 
 func TestFFmpegLogLevel_ClassifiesPreambleAsInfo(t *testing.T) {
-	level := ffmpegLogLevel("Input #0, mpegts, from 'http://10.10.55.64:17999/stream':")
+	level := ffmpegLogLevel("Input #0, mpegts, from 'http://192.0.2.64:17999/stream':")
 	assert.Equal(t, zerolog.InfoLevel, level)
 }
 

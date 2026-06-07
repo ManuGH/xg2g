@@ -16,12 +16,12 @@ type preflightReceiverAdapter struct {
 
 func TestResolvePreflightSource_UsesReceiverAuthWithoutEmbeddingUserinfo(t *testing.T) {
 	cfg := config.AppConfig{}
-	cfg.Enigma2.BaseURL = "http://10.10.55.64"
+	cfg.Enigma2.BaseURL = "http://192.0.2.64"
 	cfg.Enigma2.StreamPort = 17999
 	cfg.Enigma2.Username = "root"
-	cfg.Enigma2.Password = "Kiddy99"
+	cfg.Enigma2.Password = "example-pass"
 	cfg.Network.Outbound.Enabled = true
-	cfg.Network.Outbound.Allow.CIDRs = []string{"10.10.55.64/32"}
+	cfg.Network.Outbound.Allow.CIDRs = []string{"192.0.2.64/32"}
 	cfg.Network.Outbound.Allow.Schemes = []string{"http"}
 	cfg.Network.Outbound.Allow.Ports = []int{17999}
 
@@ -40,7 +40,7 @@ func TestResolvePreflightSource_UsesReceiverAuthWithoutEmbeddingUserinfo(t *test
 
 	got, err := resolvePreflightSource(context.Background(), deps, "1:0:19:11:6:85:C00000:0:0:0:")
 	require.NoError(t, err)
-	require.Equal(t, "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0:", got.URL)
+	require.Equal(t, "http://192.0.2.64:17999/1:0:19:11:6:85:C00000:0:0:0:", got.URL)
 	require.Equal(t, "root", got.Username)
-	require.Equal(t, "Kiddy99", got.Password)
+	require.Equal(t, "example-pass", got.Password)
 }
