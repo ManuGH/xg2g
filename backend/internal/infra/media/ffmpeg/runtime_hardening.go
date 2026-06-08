@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
@@ -211,7 +210,7 @@ func (a *LocalAdapter) hostBenchmarkClass(profileID string) string {
 	if a.hostBenchmarkClassFn != nil {
 		return a.hostBenchmarkClassFn(profileID)
 	}
-	return playbackprofile.BenchmarkClassForProfile(hardware.SnapshotHostBenchmark(), profileID)
+	return playbackports.BenchmarkClassForProfile(hardware.SnapshotHostBenchmark(), profileID)
 }
 
 func (a *LocalAdapter) evaluateAdaptiveTranscodeQualityHardening(_ context.Context, spec ports.StreamSpec, inputURL string) runtimeHardeningDecision {
