@@ -1301,9 +1301,6 @@ export function usePlaybackEngine({
     videoEl.addEventListener('error', onError);
 
     return () => {
-      clearNetworkRetry();
-      clearNativeStallRecovery();
-      clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       videoEl.removeEventListener('waiting', onWaiting);
@@ -1315,7 +1312,21 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('timeupdate', onTimeUpdate);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+
+  // Unmount-only cleanup: clear all recovery/retry timers so stale callbacks
+  // can't fire after the component unmounts. Do NOT put these in the main
+  // useEffect cleanup above — that effect re-runs when deps change and would
+  // clear timers mid-recovery, breaking the hls.js network retry test.
+  useEffect(() => {
+    return () => {
+      clearNetworkRetry();
+      clearNativeStallRecovery();
+      clearHlsStallRecovery();
+      clearProbeConfirmation();
+      clearHlsRenderProbe(true);
+    };
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation]);
 
   return {
     resetPlaybackEngine,
