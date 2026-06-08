@@ -45,6 +45,11 @@ var (
 
 // NewWorker creates a new verification worker.
 func NewWorker(store Store, cadence time.Duration, checkers ...Checker) *Worker {
+	// Defense-in-depth: time.NewTicker panics on a non-positive cadence.
+	// Config validation rejects this, but keep the worker safe in isolation.
+	if cadence <= 0 {
+		cadence = 60 * time.Second
+	}
 	w := &Worker{
 		store:      store,
 		cadence:    cadence,

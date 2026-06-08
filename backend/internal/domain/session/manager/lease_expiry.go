@@ -31,9 +31,15 @@ type LeaseExpiryWorker struct {
 // Run starts the lease expiry check loop
 // ADR-009: CTO Patch 2/3 compliant (efficient query, multi-state expiry)
 func (w *LeaseExpiryWorker) Run(ctx context.Context) error {
-	// CTO Patch 1: Use config-driven interval (not hardcoded)
-	interval := w.Config.Sessions.ExpiryCheckInterval
-	if interval == 0 {
+	// CTO Patch 1: Use config-driven interval (not hardcoded).
+	// Guard against nil Config to avoid a startup panic if the worker is
+	// constructed without a config (e.g. in tests or from alternate paths).
+	var interval time.Duration
+	if w.Config != nil {
+		interval = w.Config.Sessions.ExpiryCheckInterval
+	}
+	if interval <= 0 {
+		// 0 means "use default"; a negative value would panic time.NewTicker.
 		interval = 10 * time.Second
 	}
 
