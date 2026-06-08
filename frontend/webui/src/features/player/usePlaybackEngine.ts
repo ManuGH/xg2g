@@ -130,6 +130,7 @@ export function usePlaybackEngine({
   const activeHlsRenderProbeSessionRef = useRef<string | null>(null);
   const completedHlsRenderProbeSessionRef = useRef<string | null>(null);
   const hlsRenderProbeTimerRef = useRef<number | null>(null);
+  const networkRetryTimerRef = useRef<number | null>(null);
 
   const reportMediaFailure = useCallback((error: AppError, options: PlaybackFailureReportOptions = {}) => {
     reportPlaybackFailure(error, {
@@ -228,6 +229,13 @@ export function usePlaybackEngine({
     if (probeConfirmationTimerRef.current !== null) {
       window.clearTimeout(probeConfirmationTimerRef.current);
       probeConfirmationTimerRef.current = null;
+    }
+  }, []);
+
+  const clearNetworkRetry = useCallback(() => {
+    if (networkRetryTimerRef.current !== null) {
+      window.clearTimeout(networkRetryTimerRef.current);
+      networkRetryTimerRef.current = null;
     }
   }, []);
 
@@ -407,6 +415,7 @@ export function usePlaybackEngine({
       clearPendingNativeAutoplay();
       clearNativeStallRecovery();
       clearHlsStallRecovery();
+      clearNetworkRetry();
       hlsStallRecoveryAttemptsRef.current = 0;
       lastHlsUrlRef.current = null;
       lastHlsEngineRef.current = 'auto';
@@ -431,7 +440,7 @@ export function usePlaybackEngine({
         isTeardownRef.current = false;
       }, 50);
     }
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearProbeConfirmation, hlsRef, isTeardownRef, videoRef]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearPendingNativeAutoplay, clearProbeConfirmation, hlsRef, isTeardownRef, videoRef]);
 
   const beginSessionDecodeRecovery = useCallback((
     code: number,
@@ -876,7 +885,16 @@ export function usePlaybackEngine({
               reportPlaybackWarning(PLAYBACK_WARNING_CODE_NETWORK_RETRY, 'hlsjs_network_retry', 'network', networkRetryCount);
               debugWarn(`[V3Player] NETWORK_ERROR recovery attempt ${networkRetryCount}/${maxNetworkRetries}, backoff ${backoffMs}ms`);
               setStatus('recovering');
-              window.setTimeout(() => hls.startLoad(), backoffMs);
+              networkRetryTimerRef.current = window.setTimeout(() => {
+                networkRetryTimerRef.current = null;
+                // The engine may have been torn down or replaced during the
+                // backoff window; calling startLoad() on a destroyed instance
+                // throws and pins it in memory.
+                if (isTeardownRef.current || hlsRef.current !== hls) {
+                  return;
+                }
+                hls.startLoad();
+              }, backoffMs);
             } else {
               if (sessionIdRef.current) {
                 void reportError('error', 0, `${data.type}: ${data.details}`, playbackEngineContext('network', {
@@ -978,7 +996,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, playbackEngineContext, reportError, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, isTeardownRef, lastDecodedRef, playbackEngineContext, reportError, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -1295,6 +1313,20 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('error', onError);
     };
   }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+
+  // Unmount-only cleanup: clear all recovery/retry timers so stale callbacks
+  // can't fire after the component unmounts. Do NOT put these in the main
+  // useEffect cleanup above — that effect re-runs when deps change and would
+  // clear timers mid-recovery, breaking the hls.js network retry test.
+  useEffect(() => {
+    return () => {
+      clearNetworkRetry();
+      clearNativeStallRecovery();
+      clearHlsStallRecovery();
+      clearProbeConfirmation();
+      clearHlsRenderProbe(true);
+    };
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation]);
 
   return {
     resetPlaybackEngine,
