@@ -503,7 +503,17 @@ func confidenceIsBufferingWarningCode(code int) bool {
 }
 
 func confidenceIsDecodeWarningCode(code int) bool {
-	return code == 103
+	// Keep in lock-step with capreg.isDecodeWarningCode. 103 is a generic decode
+	// warning; 242 is the HLS.js black-render code (playbackInfoCodeHLSJSRenderBlack)
+	// — a decode failure surfaced by the player. The windowed confidence engine
+	// must count it as a decode warning so repeated black-screening sets
+	// ConstraintNoProbeUp instead of letting the engine probe up.
+	switch code {
+	case 103, 242:
+		return true
+	default:
+		return false
+	}
 }
 
 func confidenceIsNetworkWarningCode(code int) bool {
