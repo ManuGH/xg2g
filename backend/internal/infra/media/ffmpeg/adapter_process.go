@@ -260,12 +260,17 @@ func awaitProcessExit(
 			out.resultErr = wdErr
 			return out
 		}
-		// wdErr == nil: the watchdog's (parentCtx-derived) context was canceled
-		// -> a stop, NOT a natural exit. Race-sibling of the parentCtx.Done()
-		// case, so report the same resultErr (the cancellation cause) rather than
-		// the kill error, so the same user stop classifies identically either way.
-		out.procErr = <-procErrCh
-		out.resultErr = parentCtx.Err()
+		// wdErr == nil: can happen either because parentCtx was canceled (user stop)
+		// or because the watchdog finished naturally (e.g. progress=end).
+		if parentCtx.Err() != nil {
+			onContextCanceled()
+			out.procErr = <-procErrCh
+			out.resultErr = parentCtx.Err()
+		} else {
+			out.procErr = <-procErrCh
+			out.resultErr = out.procErr
+			out.naturalExit = true
+		}
 	case <-parentCtx.Done():
 		onContextCanceled()
 		out.procErr = <-procErrCh
