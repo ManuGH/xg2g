@@ -206,6 +206,20 @@ func (a *LocalAdapter) ExecutedFFmpegPlan(handle ports.RunHandle) (ports.Execute
 	return plan, true
 }
 
+// shouldRecordHWRuntimeFailure reports whether a finished ffmpeg process should
+// count as a hardware-encoder runtime failure for the sticky GPU->CPU demotion
+// counter. Only a process that exited on its own (naturalExit) with a non-zero
+// status AND that emitted a recognized encoder failure line qualifies. A
+// deliberate stop (parentCtx cancel) or a watchdog stall termination kills the
+// process too — procErr is non-nil in those cases — but that is not evidence
+// the encoder failed, so it must not feed the demotion counter.
+func shouldRecordHWRuntimeFailure(naturalExit bool, procErr error, runtimeFailureLine string) bool {
+	if runtimeFailureLine == "" {
+		return false
+	}
+	return naturalExit && procErr != nil
+}
+
 func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time) {
 	defer func() {
 		a.mu.Lock()
@@ -327,10 +341,15 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 	var procErr error
 	var resultErr error
 	watchdogConsumed := false
+	// naturalExit is true only when ffmpeg terminated on its own — not killed by
+	// the watchdog or a user-initiated stop. Only a natural exit is evidence of
+	// an encoder failure for the sticky GPU->CPU demotion counter.
+	naturalExit := false
 
 	select {
 	case procErr = <-procErrCh:
 		resultErr = procErr
+		naturalExit = true
 	case wdErr := <-wdErrCh:
 		watchdogConsumed = true
 		if wdErr != nil {
@@ -344,6 +363,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		}
 		procErr = <-procErrCh
 		resultErr = procErr
+		naturalExit = true
 	case <-parentCtx.Done():
 		a.terminateProcessGroup(cmd, sessionID)
 		procErr = <-procErrCh
@@ -364,7 +384,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 
 	<-scanDone
 
-	if runtimeFailureLine != "" && (procErr != nil || resultErr != nil) {
+	if shouldRecordHWRuntimeFailure(naturalExit, procErr, runtimeFailureLine) {
 		switch hwBackend {
 		case profiles.GPUBackendVAAPI:
 			a.recordVAAPIRuntimeFailure(sessionID, runtimeFailureLine)
