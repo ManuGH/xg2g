@@ -160,6 +160,42 @@ func TestAuthMiddleware_MediaRequiresSessionCookie(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware_MediaRejectsLegacyTokenCookie(t *testing.T) {
+	// With legacy sources enabled, a request authenticated via the legacy
+	// X-API-Token COOKIE must NOT satisfy the media session-cookie invariant.
+	// Its source ("X-API-Token cookie") contains the word "cookie" but is not
+	// the real session cookie — a substring check let it bypass the media gate.
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken:                     "secret-token",
+			APITokenScopes:               []string{string(ScopeV3Read)},
+			APIDisableLegacyTokenSources: false, // legacy token sources ON
+		},
+	}
+	handler := s.authMiddleware(next)
+
+	// media endpoint + valid token via the legacy X-API-Token COOKIE -> rejected
+	reqMedia := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/abc/stream.mp4", nil)
+	reqMedia.AddCookie(&http.Cookie{Name: "X-API-Token", Value: "secret-token"})
+	wMedia := httptest.NewRecorder()
+	handler.ServeHTTP(wMedia, reqMedia)
+	assert.Equal(t, http.StatusUnauthorized, wMedia.Code,
+		"legacy X-API-Token cookie must not satisfy the media session-cookie requirement")
+
+	// sanity: the SAME legacy cookie authenticates a NON-media request (legacy
+	// enabled, valid token) — proving the 401 above is the media gate, not a bad token
+	reqAPI := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqAPI.AddCookie(&http.Cookie{Name: "X-API-Token", Value: "secret-token"})
+	wAPI := httptest.NewRecorder()
+	handler.ServeHTTP(wAPI, reqAPI)
+	assert.Equal(t, http.StatusOK, wAPI.Code,
+		"legacy cookie should authenticate a non-media request when legacy sources are enabled")
+}
+
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")

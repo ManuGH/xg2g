@@ -15,6 +15,16 @@ import (
 const (
 	sessionCookieName = "xg2g_session"
 	legacyCookieName  = "X-API-Token"
+
+	// Source descriptions returned by ExtractTokenDetailedWithOptions. The v3
+	// auth middleware enforces the media-endpoint session-cookie invariant by
+	// comparing against SessionCookieSource EXACTLY — never by substring, since
+	// the legacy LegacyCookieSource ("X-API-Token cookie") also contains the
+	// word "cookie" and would otherwise satisfy the check.
+	BearerSource        = "Authorization header (Bearer)"
+	SessionCookieSource = "xg2g_session cookie"
+	LegacyHeaderSource  = "X-API-Token header"
+	LegacyCookieSource  = "X-API-Token cookie"
 )
 
 // TokenExtractOptions controls accepted token sources during request parsing.
@@ -51,18 +61,18 @@ func ExtractTokenDetailedWithOptions(r *http.Request, opts TokenExtractOptions) 
 
 	// 1. Authorization Header
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimSpace(auth[7:]), "Authorization header (Bearer)"
+		return strings.TrimSpace(auth[7:]), BearerSource
 	}
 
 	// 2. Cookie
 	if sessionID := ExtractSessionToken(r); sessionID != "" {
 		if opts.ResolveSessionToken != nil {
 			if token, ok := opts.ResolveSessionToken(sessionID); ok && token != "" {
-				return token, "xg2g_session cookie"
+				return token, SessionCookieSource
 			}
 			return "", ""
 		}
-		return sessionID, "xg2g_session cookie"
+		return sessionID, SessionCookieSource
 	}
 
 	if !opts.AllowLegacySources {
@@ -71,12 +81,12 @@ func ExtractTokenDetailedWithOptions(r *http.Request, opts TokenExtractOptions) 
 
 	// 3. Legacy Header
 	if t := r.Header.Get("X-API-Token"); t != "" {
-		return t, "X-API-Token header"
+		return t, LegacyHeaderSource
 	}
 
 	// 4. Check for legacy Cookie (X-API-Token) as last resort
 	if c, err := r.Cookie(legacyCookieName); err == nil && c.Value != "" {
-		return c.Value, "X-API-Token cookie"
+		return c.Value, LegacyCookieSource
 	}
 
 	return "", ""

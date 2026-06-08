@@ -52,6 +52,24 @@ func TestParseString(t *testing.T) {
 			envSet:       true,
 			want:         "secret123",
 		},
+		{
+			// Regression: a set-but-empty sensitive var must fall back to the
+			// default, NOT return "" and silently wipe a file-configured value.
+			name:         "sensitive token empty falls back to default",
+			key:          "TEST_API_TOKEN",
+			defaultValue: "file-token",
+			envValue:     "",
+			envSet:       true,
+			want:         "file-token",
+		},
+		{
+			name:         "sensitive password empty falls back to default",
+			key:          "TEST_PASSWORD_EMPTY",
+			defaultValue: "file-secret",
+			envValue:     "",
+			envSet:       true,
+			want:         "file-secret",
+		},
 	}
 
 	for _, tt := range tests {

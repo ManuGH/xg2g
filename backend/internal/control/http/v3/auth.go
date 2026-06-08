@@ -78,8 +78,10 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 
-		// Security Invariant (P3-Auth): Media endpoints (HLS/Direct Stream) normally REQUIRE session cookies.
-		if isMediaRequest(r) && !strings.Contains(authSource, "cookie") {
+		// Security Invariant (P3-Auth): Media endpoints (HLS/Direct Stream) REQUIRE
+		// the real session cookie. Match the canonical source EXACTLY — a substring
+		// "cookie" check let the legacy "X-API-Token cookie" source satisfy this.
+		if isMediaRequest(r) && authSource != auth.SessionCookieSource {
 			logger.Warn().
 				Str("event", "auth.media_no_cookie").
 				Msg("media request attempted without session cookie (bearer not allowed for media)")
