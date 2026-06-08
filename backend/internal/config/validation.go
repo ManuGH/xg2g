@@ -577,6 +577,17 @@ func validateEngineAndResilience(v *validate.Validator, cfg AppConfig) {
 		v.AddError("Limits.MaxTranscodes", "must be >= 0", cfg.Limits.MaxTranscodes)
 	}
 
+	// These intervals feed time.NewTicker, which panics on a non-positive
+	// duration. Reject bad values at config-load instead of crashing the worker
+	// at startup. Sessions.ExpiryCheckInterval treats 0 as "use default", so
+	// only a negative value is rejected there.
+	if cfg.Verification.Enabled && cfg.Verification.Interval <= 0 {
+		v.AddError("Verification.Interval", "must be > 0 when verification is enabled", cfg.Verification.Interval)
+	}
+	if cfg.Sessions.ExpiryCheckInterval < 0 {
+		v.AddError("Sessions.ExpiryCheckInterval", "must be >= 0 (0 = use default)", cfg.Sessions.ExpiryCheckInterval)
+	}
+
 	if cfg.Timeouts.TranscodeStart <= 0 {
 		v.AddError("Timeouts.TranscodeStart", "must be > 0", cfg.Timeouts.TranscodeStart)
 	}

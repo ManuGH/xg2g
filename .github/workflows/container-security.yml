@@ -73,26 +73,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # Latest stable
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-
-      - name: Build production image
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
-        env:
-          SOURCE_DATE_EPOCH: "0"
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          load: true
-          tags: xg2g:${{ github.sha }}
-          provenance: false
-
       - name: Run Trivy config scanner
+        # `trivy config` is a filesystem/IaC misconfig scanner: it must scan the
+        # build context (Dockerfile etc.), NOT a built image ref. Passing
+        # image-ref here made it run `trivy config xg2g:<sha>`, which lstat-failed
+        # on the non-path ref and reddened this job on every release tag.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
-          image-ref: xg2g:${{ github.sha }}
           scan-type: "config"
+          scan-ref: "."
           format: "table"
           output: "trivy-config.txt"
           exit-code: "0"

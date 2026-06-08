@@ -33,7 +33,8 @@ type LeaseExpiryWorker struct {
 func (w *LeaseExpiryWorker) Run(ctx context.Context) error {
 	// CTO Patch 1: Use config-driven interval (not hardcoded)
 	interval := w.Config.Sessions.ExpiryCheckInterval
-	if interval == 0 {
+	if interval <= 0 {
+		// 0 means "use default"; a negative value would panic time.NewTicker.
 		interval = 10 * time.Second
 	}
 
