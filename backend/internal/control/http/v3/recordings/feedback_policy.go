@@ -406,7 +406,7 @@ func buildPlaybackConfidenceWindowsFromObservations(observations []capreg.Playba
 			if confidenceIsBufferingWarningCode(observation.FeedbackCode) {
 				current.feature.BufferWarnings++
 			}
-			if confidenceIsDecodeWarningCode(observation.FeedbackCode) {
+			if capreg.IsDecodeWarningCode(observation.FeedbackCode) {
 				current.feature.DecodeWarnings++
 			}
 			if confidenceIsNetworkWarningCode(observation.FeedbackCode) {
@@ -500,10 +500,6 @@ func confidenceIsBufferingWarningCode(code int) bool {
 	default:
 		return false
 	}
-}
-
-func confidenceIsDecodeWarningCode(code int) bool {
-	return code == 103
 }
 
 func confidenceIsNetworkWarningCode(code int) bool {

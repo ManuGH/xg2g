@@ -224,7 +224,7 @@ func summarizeFeedbackObservations(observations []PlaybackObservation) FeedbackS
 				if isBufferingWarningCode(observation.FeedbackCode) {
 					summary.ConsecutiveBufferWarnings++
 				}
-				if isDecodeWarningCode(observation.FeedbackCode) {
+				if IsDecodeWarningCode(observation.FeedbackCode) {
 					summary.ConsecutiveDecodeWarnings++
 				}
 				if isNetworkWarningCode(observation.FeedbackCode) {
@@ -266,7 +266,7 @@ func isBufferingWarningCode(code int) bool {
 	}
 }
 
-func isDecodeWarningCode(code int) bool {
+func IsDecodeWarningCode(code int) bool {
 	switch code {
 	case 103, 242:
 		return true
