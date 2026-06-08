@@ -118,3 +118,36 @@ func TestLeaseExpiryWorker_TerminalizesNewSessionsWithoutPublish(t *testing.T) {
 	assert.Equal(t, "LEASE_EXPIRED", gotExpired.StopReason)
 	assert.Empty(t, bus.topics)
 }
+
+func TestLeaseExpiryWorker_NilConfigDoesNotPanic(t *testing.T) {
+	// The review thread identified a potential nil-pointer dereference when
+	// w.Config is nil. Verify that Run() recovers with the default interval
+	// instead of panicking, and that expireStaleSessions also works without
+	// a Config.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	st := store.NewMemoryStore()
+	bus := &recordedStopEventBus{}
+
+	worker := &LeaseExpiryWorker{
+		Store:  st,
+		Bus:    bus,
+		Config: nil,
+	}
+
+	// expireStaleSessions must not panic with nil Config.
+	require.NotPanics(t, func() {
+		worker.expireStaleSessions(ctx)
+	})
+
+	// Run must not panic with nil Config; it should default to 10s.
+	// Use an already-canceled context so Run returns immediately.
+	cancelledCtx, cancel2 := context.WithCancel(context.Background())
+	cancel2() // cancel immediately
+
+	require.NotPanics(t, func() {
+		err := worker.Run(cancelledCtx)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
