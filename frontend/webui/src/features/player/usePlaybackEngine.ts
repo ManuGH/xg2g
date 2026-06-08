@@ -1301,6 +1301,9 @@ export function usePlaybackEngine({
     videoEl.addEventListener('error', onError);
 
     return () => {
+      clearNetworkRetry();
+      clearNativeStallRecovery();
+      clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       videoEl.removeEventListener('waiting', onWaiting);
@@ -1312,7 +1315,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('timeupdate', onTimeUpdate);
       videoEl.removeEventListener('error', onError);
     };
-  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
 
   return {
     resetPlaybackEngine,

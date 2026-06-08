@@ -269,6 +269,7 @@ function RecordingPreviewArtwork({ recording, authToken }: { recording: Recordin
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
+        setResolvedThumbnailUrl(null);
       }
     };
   }, [authToken, thumbnailUrl]);
