@@ -113,3 +113,26 @@ func TestAwaitProcessExit_WatchdogNilFromCtxCancelIsNotNatural(t *testing.T) {
 	require.False(t, out.naturalExit, "wdErr==nil is a context cancel, not a natural exit")
 	require.True(t, out.watchdogConsumed)
 }
+
+// On a real user stop BOTH the wdErr==nil case and the parentCtx.Done() case are
+// ready at once, and Go's select picks either at random. The classification must
+// be identical regardless of the dice: never a natural exit, and resultErr is the
+// cancellation cause (not the kill error). 50 iterations exercise both sides.
+func TestAwaitProcessExit_UserStopClassifiesIdenticallyRegardlessOfSelectRace(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		procErrCh := make(chan error, 1)
+		wdErrCh := make(chan error, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		wdErrCh <- nil // watchdog (parentCtx-derived ctx) returned nil
+		go func() { procErrCh <- errors.New("signal: killed") }()
+
+		out := awaitProcessExit(ctx, procErrCh, wdErrCh,
+			func(error) { t.Fatal("stall callback must not fire") },
+			func() {}, // fires only if the parentCtx.Done() branch wins the race
+		)
+
+		require.False(t, out.naturalExit, "a user stop is never a natural exit")
+		require.ErrorIs(t, out.resultErr, context.Canceled, "resultErr must be the cancellation cause either branch")
+	}
+}
