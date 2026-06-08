@@ -9,6 +9,7 @@ package epg
 
 import (
 	"encoding/xml"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -78,6 +79,27 @@ func GenerateXMLTV(channels []Channel, programs []Programme) TV {
 }
 
 // WriteXMLTV writes XMLTV data to a file atomically using temp file + rename.
+// WriteXMLTVTo writes the XMLTV document to w. It performs NO file management,
+// so the caller owns atomicity + durability — e.g. by writing into a renameio
+// PendingFile and calling CloseAtomicallyReplace (see jobs.writeXMLTV, which
+// mirrors writeM3U). Separating the content from the file dance is exactly what
+// keeps the durability fsync on the real data instead of an orphaned temp inode.
+func WriteXMLTVTo(w io.Writer, tv TV) error {
+	if _, err := io.WriteString(w, xml.Header); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, `<!DOCTYPE tv SYSTEM "xmltv.dtd">`+"\n"); err != nil {
+		return err
+	}
+
+	enc := xml.NewEncoder(w)
+	enc.Indent("", "  ")
+	return enc.Encode(tv)
+}
+
+// WriteXMLTV atomically and durably writes the XMLTV document to outputPath via
+// a same-directory temp file: write, fsync, then rename. The fsync BEFORE the
+// rename is what prevents a power loss from leaving a renamed-but-empty file.
 func WriteXMLTV(tv TV, outputPath string) error {
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0750); err != nil {
@@ -102,17 +124,13 @@ func WriteXMLTV(tv TV, outputPath string) error {
 		}
 	}()
 
-	// Write XML content to temporary file
-	if _, err := tmpFile.WriteString(xml.Header); err != nil {
-		return err
-	}
-	if _, err := tmpFile.WriteString(`<!DOCTYPE tv SYSTEM "xmltv.dtd">` + "\n"); err != nil {
+	if err := WriteXMLTVTo(tmpFile, tv); err != nil {
 		return err
 	}
 
-	enc := xml.NewEncoder(tmpFile)
-	enc.Indent("", "  ")
-	if err := enc.Encode(tv); err != nil {
+	// fsync the data to disk BEFORE the rename so a crash can't leave a
+	// renamed-but-empty (0-byte) file.
+	if err := tmpFile.Sync(); err != nil {
 		return err
 	}
 
