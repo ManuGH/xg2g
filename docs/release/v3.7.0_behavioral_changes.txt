@@ -1,0 +1,10 @@
+Operational changes:
+- Stream-relay (port 17999) transcoded channels start faster: the input-probe depth default dropped from ~10s to ~5s, roughly halving the relay-transcode startup wait (measured ~21s -> ~9.8s on a 4K relay). Dimension/audio detection is unchanged on normal broadcast TS. XG2G_STREAMRELAY_ANALYZE_DURATION tunes it (lower, e.g. 3000000, for fast relays; higher for slow/bursty ones). See deploy/PERFORMANCE_TUNING.md.
+- AV1 live transcodes target higher picture quality by default: the AV1 QVBR quality target dropped from 110 to 90, so the encoder spends more of the available bitrate on cleaner motion, still bounded by the per-resolution maxrate ceiling. XG2G_AV1_QVBR_QUALITY tunes it (lower = higher quality/more bitrate; higher = less).
+- Interlaced live channels are transcoded at full 50p motion instead of collapsing to 25p, but only when the host's 1080i50 encode benchmark can sustain the doubled framerate; hosts the benchmark measures as "weak" stay at 25p to avoid encoder overload. On capable hosts the deinterlacer uses bwdif send_field (one frame per field). The relay-transcode probe and HQ50 bitrate ceiling/buffer are documented as opt-in tunings in deploy/PERFORMANCE_TUNING.md.
+- Live playback rides over brief bad-DTS broadcast gaps instead of stalling: hls.js gap tolerance was widened so short timestamp discontinuities recover rather than triggering a hard stall.
+- Backgrounding then foregrounding the web player resumes hls.js loading, so background playback and DVR recover instead of staying stalled.
+- HTTP/HTTPS posture hardened: TLS handling, COOP/CORP headers, and response compression.
+- The web player warns when opened over an insecure context (non-localhost HTTP), where the browser blocks the APIs live playback needs.
+- The FE<->BE connection is resilient to flaky networks: transient failures reconnect/retry instead of dropping the session.
+- DVR timeline: a current-position readout plus a YouTube-style hover preview.
