@@ -8,6 +8,7 @@
 package epg
 
 import (
+	"bufio"
 	"encoding/xml"
 	"io"
 	"os"
@@ -85,16 +86,24 @@ func GenerateXMLTV(channels []Channel, programs []Programme) TV {
 // mirrors writeM3U). Separating the content from the file dance is exactly what
 // keeps the durability fsync on the real data instead of an orphaned temp inode.
 func WriteXMLTVTo(w io.Writer, tv TV) error {
-	if _, err := io.WriteString(w, xml.Header); err != nil {
+	// xml.Encoder with indentation issues many small writes; buffer them so the
+	// underlying os.File / renameio.PendingFile sees few syscalls on large EPGs.
+	bw := bufio.NewWriter(w)
+	if _, err := io.WriteString(bw, xml.Header); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, `<!DOCTYPE tv SYSTEM "xmltv.dtd">`+"\n"); err != nil {
+	if _, err := io.WriteString(bw, `<!DOCTYPE tv SYSTEM "xmltv.dtd">`+"\n"); err != nil {
 		return err
 	}
 
-	enc := xml.NewEncoder(w)
+	enc := xml.NewEncoder(bw)
 	enc.Indent("", "  ")
-	return enc.Encode(tv)
+	if err := enc.Encode(tv); err != nil {
+		return err
+	}
+
+	// Flush before returning so all data is in w before the caller fsyncs it.
+	return bw.Flush()
 }
 
 // WriteXMLTV atomically and durably writes the XMLTV document to outputPath via

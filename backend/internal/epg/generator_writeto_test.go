@@ -38,9 +38,9 @@ func TestWriteXMLTVTo_WritesCompleteParseableDocument(t *testing.T) {
 	require.Len(t, got.Programs, 1)
 }
 
-// failOnNthWrite fails on the Nth Write call onward, simulating a disk error
-// partway through the document. n=3 fails during the body encode (call 1 = XML
-// header, call 2 = DOCTYPE), exercising the encoder's error path specifically.
+// failOnNthWrite fails on the Nth Write call onward, simulating a disk error.
+// WriteXMLTVTo buffers via bufio and flushes once, so the underlying writer sees
+// a single write — n=1 makes that flush fail, exercising the error path.
 type failOnNthWrite struct {
 	n, calls int
 }
@@ -54,11 +54,11 @@ func (f *failOnNthWrite) Write(p []byte) (int, error) {
 }
 
 func TestWriteXMLTVTo_PropagatesWriterError(t *testing.T) {
-	// A mid-document write failure MUST surface as an error so the caller
-	// (renameio CloseAtomicallyReplace) never commits a partial / 0-byte file.
+	// A write failure MUST surface as an error so the caller (renameio
+	// CloseAtomicallyReplace) never commits a partial / 0-byte file.
 	tv := TV{
 		Channels: []Channel{{ID: "c1", DisplayName: []string{"Chan1"}}},
 		Programs: []Programme{{Start: "1", Stop: "2", Channel: "c1", Title: Title{Text: "x"}}},
 	}
-	require.Error(t, WriteXMLTVTo(&failOnNthWrite{n: 3}, tv))
+	require.Error(t, WriteXMLTVTo(&failOnNthWrite{n: 1}, tv))
 }
