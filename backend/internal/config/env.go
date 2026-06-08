@@ -31,20 +31,25 @@ func parseStringWithLookup(logger zerolog.Logger, lookup envLookupFunc, key, def
 	if value, exists := lookup(key); exists {
 		lowerKey := strings.ToLower(key)
 		switch {
-		case strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "password"):
-			// For sensitive vars, just log that it was set
-			logger.Debug().
-				Str("key", key).
-				Str("source", "environment").
-				Bool("sensitive", true).
-				Msg("using environment variable")
 		case value == "":
+			// An explicitly-empty env var falls back to the default for EVERY
+			// key, sensitive or not. This case must be first: otherwise a
+			// set-but-empty sensitive key (an API-token/password var set to "")
+			// matched the sensitive case below and returned "", silently wiping
+			// a file-configured token (auth then fails closed -> lockout).
 			logger.Debug().
 				Str("key", key).
 				Str("default", defaultValue).
 				Str("source", "default").
 				Msg("using default value (environment variable is empty)")
 			return defaultValue
+		case strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "password"):
+			// For sensitive vars, just log that it was set (never the value)
+			logger.Debug().
+				Str("key", key).
+				Str("source", "environment").
+				Bool("sensitive", true).
+				Msg("using environment variable")
 		default:
 			logger.Debug().
 				Str("key", key).
