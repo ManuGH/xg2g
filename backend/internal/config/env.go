@@ -34,9 +34,9 @@ func parseStringWithLookup(logger zerolog.Logger, lookup envLookupFunc, key, def
 		case value == "":
 			// An explicitly-empty env var falls back to the default for EVERY
 			// key, sensitive or not. This case must be first: otherwise a
-			// set-but-empty sensitive key (e.g. XG2G_API_TOKEN=) matched the
-			// sensitive case below and returned "", silently wiping a
-			// file-configured token (auth then fails closed -> lockout).
+			// set-but-empty sensitive key (an API-token/password var set to "")
+			// matched the sensitive case below and returned "", silently wiping
+			// a file-configured token (auth then fails closed -> lockout).
 			logger.Debug().
 				Str("key", key).
 				Str("default", defaultValue).
