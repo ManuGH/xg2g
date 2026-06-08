@@ -220,6 +220,58 @@ func shouldRecordHWRuntimeFailure(naturalExit bool, procErr error, runtimeFailur
 	return naturalExit && procErr != nil
 }
 
+// processExitClassification captures how an ffmpeg process finished.
+type processExitClassification struct {
+	procErr          error
+	resultErr        error
+	naturalExit      bool
+	watchdogConsumed bool
+}
+
+// awaitProcessExit blocks until the ffmpeg process finishes and classifies HOW
+// it ended. naturalExit is true ONLY when the process exited on its own (the
+// procErrCh case fired first). A watchdog stall and a context cancellation are
+// both deliberate terminations and leave naturalExit false.
+//
+// Subtlety that this function exists to get right: the watchdog context is
+// derived from parentCtx, so a parentCtx cancellation (user stop) ALSO cancels
+// the watchdog, which then returns nil — i.e. wdErrCh receives nil at the same
+// time parentCtx.Done() becomes ready. The select may pick either case, so the
+// wdErr==nil branch is a context cancellation too and must NOT be treated as a
+// natural exit (otherwise ~half of user stops would be misclassified).
+func awaitProcessExit(
+	parentCtx context.Context,
+	procErrCh <-chan error,
+	wdErrCh <-chan error,
+	onWatchdogStall func(stallErr error),
+	onContextCanceled func(),
+) processExitClassification {
+	var out processExitClassification
+	select {
+	case procErr := <-procErrCh:
+		out.procErr = procErr
+		out.resultErr = procErr
+		out.naturalExit = true
+	case wdErr := <-wdErrCh:
+		out.watchdogConsumed = true
+		if wdErr != nil {
+			onWatchdogStall(wdErr)
+			out.procErr = <-procErrCh
+			out.resultErr = wdErr
+			return out
+		}
+		// wdErr == nil: the watchdog's (parentCtx-derived) context was canceled
+		// -> a stop, NOT a natural exit. Race-sibling of the parentCtx.Done() case.
+		out.procErr = <-procErrCh
+		out.resultErr = out.procErr
+	case <-parentCtx.Done():
+		onContextCanceled()
+		out.procErr = <-procErrCh
+		out.resultErr = parentCtx.Err()
+	}
+	return out
+}
+
 func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time) {
 	defer func() {
 		a.mu.Lock()
@@ -338,37 +390,22 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		procErrCh <- cmd.Wait()
 	}()
 
-	var procErr error
-	var resultErr error
-	watchdogConsumed := false
-	// naturalExit is true only when ffmpeg terminated on its own — not killed by
-	// the watchdog or a user-initiated stop. Only a natural exit is evidence of
-	// an encoder failure for the sticky GPU->CPU demotion counter.
-	naturalExit := false
-
-	select {
-	case procErr = <-procErrCh:
-		resultErr = procErr
-		naturalExit = true
-	case wdErr := <-wdErrCh:
-		watchdogConsumed = true
-		if wdErr != nil {
+	classification := awaitProcessExit(
+		parentCtx, procErrCh, wdErrCh,
+		func(stallErr error) {
 			metrics.IncLiveFFmpegStall("watchdog_timeout")
 			a.recordProcessDetail(handle, "transcode stalled - no progress detected")
-			a.Logger.Error().Err(wdErr).Str("sessionId", sessionID).Msg("watchdog triggered process termination")
+			a.Logger.Error().Err(stallErr).Str("sessionId", sessionID).Msg("watchdog triggered process termination")
 			a.terminateProcessGroup(cmd, sessionID)
-			procErr = <-procErrCh
-			resultErr = wdErr
-			break
-		}
-		procErr = <-procErrCh
-		resultErr = procErr
-		naturalExit = true
-	case <-parentCtx.Done():
-		a.terminateProcessGroup(cmd, sessionID)
-		procErr = <-procErrCh
-		resultErr = parentCtx.Err()
-	}
+		},
+		func() {
+			a.terminateProcessGroup(cmd, sessionID)
+		},
+	)
+	procErr := classification.procErr
+	resultErr := classification.resultErr
+	watchdogConsumed := classification.watchdogConsumed
+	naturalExit := classification.naturalExit
 
 	wdCancel()
 	if !watchdogConsumed {
