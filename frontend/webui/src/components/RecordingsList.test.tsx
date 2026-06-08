@@ -116,6 +116,10 @@ describe('RecordingsList', () => {
       value: vi.fn(() => 'blob:recording-thumbnail'),
       configurable: true,
     });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: vi.fn(),
+      configurable: true,
+    });
   });
 
   it('refetches recordings on explicit refresh', async () => {
@@ -376,6 +380,39 @@ describe('RecordingsList', () => {
         })
       );
     });
+  });
+
+  it('revokes the thumbnail object URL on unmount (no blob leak)', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a',
+        currentPath: '',
+        roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: [
+          {
+            recordingId: 'rec-thumb',
+            title: 'Thumbnail Recording',
+            beginUnixSeconds: 1710000000,
+            length: '30m',
+            description: 'Has a real preview route',
+            status: 'completed',
+          },
+        ],
+      },
+    });
+
+    const view = renderWithQueryClient();
+
+    await screen.findByTestId('recording-thumbnail');
+    await waitFor(() => {
+      expect(URL.createObjectURL).toHaveBeenCalled();
+    });
+
+    view.unmount();
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:recording-thumbnail');
   });
 
   it('renames a recording from the admin card action', async () => {

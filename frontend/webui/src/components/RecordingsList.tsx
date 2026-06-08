@@ -89,7 +89,6 @@ const RECORDING_PREVIEW_ACCENTS = [
   'color-mix(in srgb, var(--accent-live) 46%, var(--surface-highlight) 54%)',
 ] as const;
 
-const recordingThumbnailObjectUrlCache = new Map<string, string>();
 const recordingThumbnailMissCache = new Set<string>();
 
 function buildRecordingAdminHeaders(authToken?: string | null, includeJSON: boolean = false): Record<string, string> {
@@ -202,12 +201,12 @@ function resolveRecordingThumbnailUrl(recording: RecordingItem): string | null {
 
 function RecordingPreviewArtwork({ recording, authToken }: { recording: RecordingItem; authToken?: string | null }) {
   const thumbnailUrl = resolveRecordingThumbnailUrl(recording);
-  const [resolvedThumbnailUrl, setResolvedThumbnailUrl] = useState<string | null>(() => {
-    if (!thumbnailUrl) {
-      return null;
-    }
-    return recordingThumbnailObjectUrlCache.get(thumbnailUrl) ?? null;
-  });
+  // This component owns its blob object URL and revokes it on cleanup. A shared
+  // module-level cache previously held every thumbnail's object URL for the
+  // document lifetime with no revoke -> unbounded blob memory growth while
+  // browsing a large DVR library.
+  const objectUrlRef = useRef<string | null>(null);
+  const [resolvedThumbnailUrl, setResolvedThumbnailUrl] = useState<string | null>(null);
   const [thumbnailUnavailable, setThumbnailUnavailable] = useState<boolean>(() => {
     if (!thumbnailUrl) {
       return true;
@@ -219,13 +218,6 @@ function RecordingPreviewArtwork({ recording, authToken }: { recording: Recordin
     if (!thumbnailUrl) {
       setResolvedThumbnailUrl(null);
       setThumbnailUnavailable(true);
-      return;
-    }
-
-    const cachedObjectUrl = recordingThumbnailObjectUrlCache.get(thumbnailUrl);
-    if (cachedObjectUrl) {
-      setResolvedThumbnailUrl(cachedObjectUrl);
-      setThumbnailUnavailable(false);
       return;
     }
 
@@ -259,7 +251,7 @@ function RecordingPreviewArtwork({ recording, authToken }: { recording: Recordin
           return;
         }
         const objectUrl = URL.createObjectURL(blob);
-        recordingThumbnailObjectUrlCache.set(thumbnailUrl, objectUrl);
+        objectUrlRef.current = objectUrl;
         setResolvedThumbnailUrl(objectUrl);
         setThumbnailUnavailable(false);
       })
@@ -274,6 +266,10 @@ function RecordingPreviewArtwork({ recording, authToken }: { recording: Recordin
 
     return () => {
       controller.abort();
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
     };
   }, [authToken, thumbnailUrl]);
 
