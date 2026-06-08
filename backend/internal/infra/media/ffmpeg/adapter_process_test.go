@@ -5,8 +5,10 @@
 package ffmpeg
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -36,5 +38,141 @@ func TestShouldRecordHWRuntimeFailure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, shouldRecordHWRuntimeFailure(tc.naturalExit, tc.procErr, tc.failureLine))
 		})
+	}
+}
+
+// awaitProcessExit classifies how ffmpeg ended. These tests drive each select
+// branch deterministically and assert naturalExit is set ONLY for a true self-exit.
+//
+// procErrCh is buffered (cap 1) everywhere so fills never block. The key
+// invariant: when the select runs, only the intended case(s) are ready.
+
+func TestAwaitProcessExit_NaturalSelfExit(t *testing.T) {
+	procErrCh := make(chan error, 1)
+	wdErrCh := make(chan error, 1)
+	procErrCh <- errors.New("exit status 1")
+
+	out := awaitProcessExit(context.Background(), procErrCh, wdErrCh,
+		func(error) { t.Fatal("stall callback must not fire") },
+		func() { t.Fatal("cancel callback must not fire") },
+	)
+
+	require.True(t, out.naturalExit, "a self-terminated process is a natural exit")
+	require.Error(t, out.procErr)
+	require.False(t, out.watchdogConsumed)
+}
+
+func TestAwaitProcessExit_WatchdogStallIsNotNatural(t *testing.T) {
+	procErrCh := make(chan error, 1)
+	wdErrCh := make(chan error, 1)
+	wdErrCh <- errors.New("stall: no progress")
+
+	stalled := false
+	out := awaitProcessExit(context.Background(), procErrCh, wdErrCh,
+		func(error) {
+			stalled = true
+			procErrCh <- errors.New("signal: killed")
+		},
+		func() { t.Fatal("cancel callback must not fire") },
+	)
+
+	require.False(t, out.naturalExit, "watchdog stall is a deliberate termination")
+	require.True(t, stalled, "stall callback must fire to terminate the process")
+	require.True(t, out.watchdogConsumed)
+}
+
+func TestAwaitProcessExit_ParentCtxCancelIsNotNatural(t *testing.T) {
+	procErrCh := make(chan error, 1)
+	wdErrCh := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	canceled := false
+	out := awaitProcessExit(ctx, procErrCh, wdErrCh,
+		func(error) { t.Fatal("stall callback must not fire") },
+		func() {
+			canceled = true
+			procErrCh <- errors.New("signal: killed")
+		},
+	)
+
+	require.False(t, out.naturalExit, "a user stop via parentCtx is not a natural exit")
+	require.True(t, canceled, "cancel callback must fire to terminate the process")
+}
+
+// Regression guard for the bug this refactor fixes: a user stop cancels
+// parentCtx, and because the watchdog context is derived from parentCtx the
+// watchdog returns nil -> wdErrCh receives nil. That branch is a context
+// cancellation, NOT a natural exit, and previously set naturalExit=true (so
+// ~half of user stops, by the random select, were misclassified and could feed
+// the GPU demotion counter).
+func TestAwaitProcessExit_WatchdogNilFromCtxCancelIsNotNatural(t *testing.T) {
+	procErrCh := make(chan error, 1)
+	wdErrCh := make(chan error, 1)
+	wdErrCh <- nil
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	canceled := false
+	out := awaitProcessExit(ctx, procErrCh, wdErrCh,
+		func(error) { t.Fatal("stall callback must not fire (wdErr was nil)") },
+		func() {
+			canceled = true
+			procErrCh <- errors.New("signal: killed")
+		},
+	)
+
+	require.False(t, out.naturalExit, "wdErr==nil with canceled context is not a natural exit")
+	require.True(t, canceled, "cancel callback must fire when context is canceled")
+	// watchdogConsumed depends on which select branch fires (wdErrCh vs
+	// parentCtx.Done()), so we do not assert it here. The regression guard
+	// is: wdErr==nil + ctx canceled must NOT set naturalExit=true.
+}
+
+// wdErrCh receives nil without a context cancel simulates a natural watchdog
+// completion (e.g. progress=end). The else branch must set naturalExit=true.
+func TestAwaitProcessExit_WatchdogNilWithoutCtxCancelIsNatural(t *testing.T) {
+	procErrCh := make(chan error)
+	wdErrCh := make(chan error, 1)
+	wdErrCh <- nil
+
+	// Brief sleep prevents the goroutine from registering as a waiting sender
+	// before select evaluates procErrCh, so only wdErrCh is ready at select
+	// time. After the select picks wdErrCh, the else branch reads from
+	// procErrCh — the goroutine delivers the value by then (<10ms).
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		procErrCh <- nil
+	}()
+	out := awaitProcessExit(context.Background(), procErrCh, wdErrCh,
+		func(error) { t.Fatal("stall callback must not fire") },
+		func() { t.Fatal("cancel callback must not fire") },
+	)
+
+	require.True(t, out.naturalExit, "wdErr==nil without context cancel (e.g. progress=end) is a natural exit")
+	require.True(t, out.watchdogConsumed)
+}
+
+// On a real user stop BOTH the wdErr==nil case and the parentCtx.Done() case are
+// ready at once, and Go's select picks either at random. The classification must
+// be identical regardless of the dice: never a natural exit, and resultErr is the
+// cancellation cause (not the kill error). 50 iterations exercise both sides.
+func TestAwaitProcessExit_UserStopClassifiesIdenticallyRegardlessOfSelectRace(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		procErrCh := make(chan error, 1)
+		wdErrCh := make(chan error, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		wdErrCh <- nil // watchdog (parentCtx-derived ctx) returned nil
+		go func() { procErrCh <- errors.New("signal: killed") }()
+
+		out := awaitProcessExit(ctx, procErrCh, wdErrCh,
+			func(error) { t.Fatal("stall callback must not fire") },
+			func() {}, // fires only if the parentCtx.Done() branch wins the race
+		)
+
+		require.False(t, out.naturalExit, "a user stop is never a natural exit")
+		require.ErrorIs(t, out.resultErr, context.Canceled, "resultErr must be the cancellation cause either branch")
 	}
 }
