@@ -406,7 +406,7 @@ func buildPlaybackConfidenceWindowsFromObservations(observations []capreg.Playba
 			if confidenceIsBufferingWarningCode(observation.FeedbackCode) {
 				current.feature.BufferWarnings++
 			}
-			if confidenceIsDecodeWarningCode(observation.FeedbackCode) {
+			if capreg.IsDecodeWarningCode(observation.FeedbackCode) {
 				current.feature.DecodeWarnings++
 			}
 			if confidenceIsNetworkWarningCode(observation.FeedbackCode) {
@@ -496,20 +496,6 @@ func allocatePlaybackConfidenceCleanMS(buckets map[int64]*playbackConfidenceBuck
 func confidenceIsBufferingWarningCode(code int) bool {
 	switch code {
 	case 101, 102:
-		return true
-	default:
-		return false
-	}
-}
-
-func confidenceIsDecodeWarningCode(code int) bool {
-	// Keep in lock-step with capreg.isDecodeWarningCode. 103 is a generic decode
-	// warning; 242 is the HLS.js black-render code (playbackInfoCodeHLSJSRenderBlack)
-	// — a decode failure surfaced by the player. The windowed confidence engine
-	// must count it as a decode warning so repeated black-screening sets
-	// ConstraintNoProbeUp instead of letting the engine probe up.
-	switch code {
-	case 103, 242:
 		return true
 	default:
 		return false

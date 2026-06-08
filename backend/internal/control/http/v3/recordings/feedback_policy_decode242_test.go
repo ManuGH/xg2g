@@ -14,14 +14,29 @@ import (
 )
 
 // Code 242 is the HLS.js black-render decode failure. The windowed confidence
-// engine must classify it as a decode warning (in lock-step with
-// capreg.isDecodeWarningCode), otherwise repeated black-screening never sets
+// engine must classify it as a decode warning (delegated to exported
+// capreg.IsDecodeWarningCode), otherwise repeated black-screening never sets
 // ConstraintNoProbeUp and the engine can keep probing up.
 func TestConfidenceIsDecodeWarningCode_CountsBlackRender242(t *testing.T) {
-	require.True(t, confidenceIsDecodeWarningCode(103), "103 generic decode warning")
-	require.True(t, confidenceIsDecodeWarningCode(242), "242 HLS.js black-render must count as decode")
-	require.False(t, confidenceIsDecodeWarningCode(104), "104 is a network warning, not decode")
-	require.False(t, confidenceIsDecodeWarningCode(0))
+	t.Run("capreg.IsDecodeWarningCode", func(t *testing.T) {
+		require.True(t, capreg.IsDecodeWarningCode(103), "103 generic decode warning")
+		require.True(t, capreg.IsDecodeWarningCode(242), "242 HLS.js black-render must count as decode")
+		require.False(t, capreg.IsDecodeWarningCode(104), "104 is a network warning, not decode")
+		require.False(t, capreg.IsDecodeWarningCode(0))
+	})
+
+	t.Run("via confidence engine", func(t *testing.T) {
+		now := time.Now().UTC()
+		obs := []capreg.PlaybackObservation{
+			{ObservedAt: now.Add(-1 * time.Second), Outcome: "warning", FeedbackCode: 103},
+		}
+		windows := buildPlaybackConfidenceWindowsFromObservations(obs, runtimepolicy.WindowFeatures{}, now)
+		total := 0
+		for _, w := range windows {
+			total += w.DecodeWarnings
+		}
+		require.Equal(t, 1, total, "103 decode warning must increment DecodeWarnings")
+	})
 }
 
 func TestBuildConfidenceWindows_BlackRender242DrivesDecodeWarnings(t *testing.T) {
