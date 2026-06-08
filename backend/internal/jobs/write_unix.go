@@ -65,9 +65,13 @@ func writeXMLTV(ctx context.Context, path string, tv epg.TV) error {
 		}
 	}()
 
-	// epg.WriteXMLTV needs a file path, so write to pending file path
-	tmpPath := pendingFile.Name()
-	if err := epg.WriteXMLTV(tv, tmpPath); err != nil {
+	// Write the XMLTV content directly into renameio's pending file (mirrors
+	// writeM3U above), so CloseAtomicallyReplace's fsync covers the real data.
+	// The old path called epg.WriteXMLTV(tv, pendingFile.Name()), which did its
+	// OWN temp+rename onto that name — orphaning the inode renameio holds open
+	// and fsyncs. A power loss could then leave a 0-byte XMLTV despite the
+	// "durable write" promise.
+	if err := epg.WriteXMLTVTo(pendingFile, tv); err != nil {
 		return WrapXMLTVWriteError(fmt.Errorf("write XMLTV data: %w", err))
 	}
 

@@ -77,9 +77,14 @@ func writeXMLTV(ctx context.Context, path string, tv epg.TV) error {
 		}
 	}()
 
-	// epg.WriteXMLTV needs a file path, so write to temp file path
-	if err := epg.WriteXMLTV(tv, tmpPath); err != nil {
+	// Write the XMLTV content directly into the temp file we hold (no nested
+	// temp+rename), so the data lands in the file we actually rename into place
+	// and gets fsync'd — not into an orphaned inode.
+	if err := epg.WriteXMLTVTo(tmpFile, tv); err != nil {
 		return WrapXMLTVWriteError(fmt.Errorf("write XMLTV data: %w", err))
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return WrapXMLTVWriteError(fmt.Errorf("sync temp XMLTV file: %w", err))
 	}
 
 	// Close before rename (Windows requires this)
