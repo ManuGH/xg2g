@@ -2,7 +2,6 @@ package playbackprofile
 
 import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
-	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 const (
@@ -16,44 +15,12 @@ const (
 
 // BenchmarkClassForCodec returns the most specific measured benchmark class for a codec.
 // If no codec-specific benchmark exists, it falls back to the aggregate benchmark class.
-func BenchmarkClassForCodec(snapshot HostBenchmarkSnapshot, codec string) string {
-	codec = normalize.Token(codec)
-	fallback := normalize.Token(snapshot.Class)
-	if codec == "" {
-		return fallback
-	}
-
-	for _, benchmark := range snapshot.Codecs {
-		if normalize.Token(benchmark.Codec) != codec {
-			continue
-		}
-		if class := normalize.Token(benchmark.Class); class != "" {
-			return class
-		}
-		break
-	}
-
-	return fallback
+func BenchmarkClassForCodec(snapshot ports.HostBenchmarkSnapshot, codec string) string {
+	return ports.BenchmarkClassForCodec(snapshot, codec)
 }
 
 // BenchmarkClassForProfile returns the most specific benchmark class for a transcode profile.
 // If no profile-specific benchmark exists, it falls back to the aggregate benchmark class.
-func BenchmarkClassForProfile(snapshot HostBenchmarkSnapshot, profileID string) string {
-	profileID = normalize.Token(profileID)
-	fallback := normalize.Token(snapshot.Class)
-	if profileID == "" {
-		return fallback
-	}
-
-	for _, benchmark := range snapshot.Profiles {
-		if normalize.Token(benchmark.ProfileID) != profileID {
-			continue
-		}
-		if class := normalize.Token(benchmark.Class); class != "" {
-			return class
-		}
-		break
-	}
-
-	return fallback
+func BenchmarkClassForProfile(snapshot ports.HostBenchmarkSnapshot, profileID string) string {
+	return ports.BenchmarkClassForProfile(snapshot, profileID)
 }
