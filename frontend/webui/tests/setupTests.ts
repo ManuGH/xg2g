@@ -1,6 +1,87 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+// Node 26 ships native experimental Web Storage globals (localStorage,
+// sessionStorage, Storage). Because vitest's jsdom environment makes
+// `window === globalThis`, those natives occupy the storage slots instead of
+// jsdom's: `window.localStorage` resolves to Node's native getter, which is
+// `undefined` unless the process is started with `--localstorage-file`, so
+// every test touching localStorage throws ("Cannot read properties of
+// undefined (reading 'clear')"). jsdom's own `Storage` is then unreachable, so
+// `new StorageEvent('storage', { storageArea: window.localStorage })` also
+// throws ("storageArea is not of type 'Storage'"). Install an in-memory
+// Storage plus a permissive StorageEvent when the environment is broken — a
+// no-op on Node versions / CI where jsdom provides a working localStorage.
+function installWebStorageCompat(): void {
+  const works = (() => {
+    try {
+      return (
+        typeof window !== 'undefined' &&
+        window.localStorage != null &&
+        typeof window.localStorage.clear === 'function'
+      );
+    } catch {
+      return false;
+    }
+  })();
+  if (works) {
+    return;
+  }
+
+  const makeStorage = (): Storage => {
+    const store = new Map<string, string>();
+    return {
+      get length() {
+        return store.size;
+      },
+      clear() {
+        store.clear();
+      },
+      getItem(key: string) {
+        return store.has(key) ? store.get(key)! : null;
+      },
+      key(index: number) {
+        return Array.from(store.keys())[index] ?? null;
+      },
+      removeItem(key: string) {
+        store.delete(key);
+      },
+      setItem(key: string, value: string) {
+        store.set(String(key), String(value));
+      },
+    } as Storage;
+  };
+
+  for (const name of ['localStorage', 'sessionStorage'] as const) {
+    const value = makeStorage();
+    Object.defineProperty(window, name, { configurable: true, value });
+    Object.defineProperty(globalThis, name, { configurable: true, value });
+  }
+
+  // jsdom's StorageEvent webidl-validates `storageArea` as a jsdom Storage,
+  // which the in-memory shim above is not. Replace it with a permissive event
+  // that just carries the init fields; the app only reads `.key`/`.storageArea`.
+  const BaseEvent = window.Event;
+  class CompatStorageEvent extends BaseEvent {
+    key: string | null;
+    oldValue: string | null;
+    newValue: string | null;
+    url: string;
+    storageArea: Storage | null;
+    constructor(type: string, init: StorageEventInit = {}) {
+      super(type, init);
+      this.key = init.key ?? null;
+      this.oldValue = init.oldValue ?? null;
+      this.newValue = init.newValue ?? null;
+      this.url = init.url ?? '';
+      this.storageArea = init.storageArea ?? null;
+    }
+  }
+  Object.defineProperty(window, 'StorageEvent', { configurable: true, value: CompatStorageEvent });
+  Object.defineProperty(globalThis, 'StorageEvent', { configurable: true, value: CompatStorageEvent });
+}
+installWebStorageCompat();
+
 const mediaProto = globalThis.HTMLMediaElement?.prototype;
 if (mediaProto) {
   Object.defineProperty(mediaProto, 'play', {
