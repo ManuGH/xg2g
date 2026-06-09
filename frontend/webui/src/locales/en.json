@@ -176,13 +176,15 @@
     "startupHints": {
       "safariCompatTranscode": "Preparing Safari-compatible stream…",
       "repairTranscode": "Repairing and transcoding stream…",
-      "transcodeStartup": "Preparing transcoded stream…"
+      "transcodeStartup": "Preparing transcoded stream…",
+      "recovering": "Reconnecting the stream…"
     },
     "startupSupport": {
       "default": "Playback starts automatically as soon as the first stable segments are ready.",
       "safariCompatTranscode": "Safari needs a compatible stream variant first. This can take a little longer.",
       "repairTranscode": "The incoming stream is being stabilized before playback starts.",
-      "transcodeStartup": "The stream is being prepared for this device and will start automatically."
+      "transcodeStartup": "The stream is being prepared for this device and will start automatically.",
+      "recovering": "The stream hit a snag and is being restored automatically."
     },
     "startupElapsed": "Wait {{seconds}}s",
     "startupSurfaceEyebrow": "Live startup",

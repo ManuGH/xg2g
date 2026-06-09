@@ -17,7 +17,13 @@ export function resolveStartupOverlayLabel(
   profileReason: string | null | undefined,
   t: TFunction,
 ): string {
-  if (status !== 'starting' && status !== 'priming' && status !== 'buffering' && status !== 'building') {
+  if (
+    status !== 'starting' &&
+    status !== 'priming' &&
+    status !== 'buffering' &&
+    status !== 'building' &&
+    status !== 'recovering'
+  ) {
     return '';
   }
 
@@ -35,6 +41,16 @@ export function resolveStartupOverlayLabel(
         defaultValue: 'Preparing transcoded stream…',
       });
     default:
+      // `recovering` (decode/stall reattach) previously fell through the gate
+      // above and rendered an empty overlay — a frozen/black frame with no
+      // feedback. Give it an explicit, honest label rather than the generic
+      // "<status>…" fallback (which would also double the ellipsis, since
+      // statusStates.recovering already ends in "…").
+      if (status === 'recovering') {
+        return t('player.startupHints.recovering', {
+          defaultValue: 'Reconnecting the stream…',
+        });
+      }
       return fallbackLabel;
   }
 }
@@ -42,6 +58,7 @@ export function resolveStartupOverlayLabel(
 export function resolveStartupOverlaySupport(
   profileReason: string | null | undefined,
   t: TFunction,
+  status?: PlayerStatus,
 ): string {
   switch (profileReason) {
     case 'safari_compat_transcode':
@@ -57,6 +74,11 @@ export function resolveStartupOverlaySupport(
         defaultValue: 'The stream is being prepared for this device and will start automatically.',
       });
     default:
+      if (status === 'recovering') {
+        return t('player.startupSupport.recovering', {
+          defaultValue: 'The stream hit a snag and is being restored automatically.',
+        });
+      }
       return t('player.startupSupport.default', {
         defaultValue: 'Playback starts automatically as soon as the first stable segments are ready.',
       });
