@@ -13,7 +13,10 @@ describe('codecDetection', () => {
   beforeEach(() => {
     resetCachedCodecs();
     vi.restoreAllMocks();
-    window.localStorage.clear();
+    // Note: codecDetection does not touch localStorage; the cache it owns is
+    // reset via resetCachedCodecs() above. (A vestigial window.localStorage
+    // .clear() here threw under Node 26, whose native experimental localStorage
+    // is undefined unless --localstorage-file is passed.)
   });
 
   afterEach(() => {
