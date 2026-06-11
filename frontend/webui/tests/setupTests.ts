@@ -13,10 +13,14 @@ import { vi } from 'vitest';
 // Storage plus a permissive StorageEvent when the environment is broken — a
 // no-op on Node versions / CI where jsdom provides a working localStorage.
 function installWebStorageCompat(): void {
+  // In a non-DOM environment (`@vitest-environment node`) there is nothing to
+  // patch — bail out before touching `window` below.
+  if (typeof window === 'undefined') {
+    return;
+  }
   const works = (() => {
     try {
       return (
-        typeof window !== 'undefined' &&
         window.localStorage != null &&
         typeof window.localStorage.clear === 'function'
       );
