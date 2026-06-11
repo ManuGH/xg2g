@@ -15,13 +15,6 @@ linters:
     - unused
     - gosec
     - errcheck # Enabled for strict quality gates
-  exclusions:
-    rules:
-      # Generated OpenAPI server stubs contain constant names (BearerAuthScopes,
-      # ProblemCodeTOKEN*) that trigger G101 false positives.
-      - path: server_gen\.go$
-        linters:
-          - gosec
 
 linters-settings:
   staticcheck:

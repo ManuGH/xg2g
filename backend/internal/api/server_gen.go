@@ -609,7 +609,7 @@ type APIError struct {
 	Code string `json:"code"`
 
 	// Details Optional additional context
-	Details any `json:"details,omitempty"`
+	Details interface{} `json:"details,omitempty"`
 
 	// Message Human-readable error message
 	Message string `json:"message"`
@@ -1141,10 +1141,10 @@ type LivePlaybackTruthProblemType string
 
 // LogEntry defines model for LogEntry.
 type LogEntry struct {
-	Fields  *map[string]any `json:"fields,omitempty"`
-	Level   *string         `json:"level,omitempty"`
-	Message *string         `json:"message,omitempty"`
-	Time    *time.Time      `json:"time,omitempty"`
+	Fields  *map[string]interface{} `json:"fields,omitempty"`
+	Level   *string                 `json:"level,omitempty"`
+	Message *string                 `json:"message,omitempty"`
+	Time    *time.Time              `json:"time,omitempty"`
 }
 
 // MonetizationStatus defines model for MonetizationStatus.
@@ -1404,7 +1404,7 @@ type PlaybackFeedbackRequest struct {
 	// Context Correlation context attached by the WebUI playback engine to feedback events.
 	// All fields optional; absence indicates the call-site could not determine the value.
 	Context *PlaybackEngineErrorContext  `json:"context,omitempty"`
-	Details *map[string]any              `json:"details,omitempty"`
+	Details *map[string]interface{}      `json:"details,omitempty"`
 	Event   PlaybackFeedbackRequestEvent `json:"event"`
 	Message *string                      `json:"message,omitempty"`
 }
@@ -1806,7 +1806,7 @@ type ProblemCapabilitiesInvalid struct {
 	Code      *ProblemCapabilitiesInvalidCode `json:"code,omitempty"`
 	Conflicts *[]TimerConflict                `json:"conflicts,omitempty"`
 	Detail    *string                         `json:"detail,omitempty"`
-	Fields    *map[string]any                 `json:"fields,omitempty"`
+	Fields    *map[string]interface{}         `json:"fields,omitempty"`
 	Instance  *string                         `json:"instance,omitempty"`
 
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
@@ -1824,7 +1824,7 @@ type ProblemCapabilitiesMissing struct {
 	Code      *ProblemCapabilitiesMissingCode `json:"code,omitempty"`
 	Conflicts *[]TimerConflict                `json:"conflicts,omitempty"`
 	Detail    *string                         `json:"detail,omitempty"`
-	Fields    *map[string]any                 `json:"fields,omitempty"`
+	Fields    *map[string]interface{}         `json:"fields,omitempty"`
 	Instance  *string                         `json:"instance,omitempty"`
 
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
@@ -1845,7 +1845,7 @@ type ProblemDecisionAmbiguous struct {
 	Code      *ProblemDecisionAmbiguousCode `json:"code,omitempty"`
 	Conflicts *[]TimerConflict              `json:"conflicts,omitempty"`
 	Detail    *string                       `json:"detail,omitempty"`
-	Fields    *map[string]any               `json:"fields,omitempty"`
+	Fields    *map[string]interface{}       `json:"fields,omitempty"`
 	Instance  *string                       `json:"instance,omitempty"`
 
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
@@ -1861,11 +1861,11 @@ type ProblemDecisionAmbiguousCode string
 // ProblemDetails defines model for ProblemDetails.
 type ProblemDetails struct {
 	// Code Registry-backed public machine-readable short code for RFC7807 responses.
-	Code      *ProblemCode     `json:"code,omitempty"`
-	Conflicts *[]TimerConflict `json:"conflicts,omitempty"`
-	Detail    *string          `json:"detail,omitempty"`
-	Fields    *map[string]any  `json:"fields,omitempty"`
-	Instance  *string          `json:"instance,omitempty"`
+	Code      *ProblemCode            `json:"code,omitempty"`
+	Conflicts *[]TimerConflict        `json:"conflicts,omitempty"`
+	Detail    *string                 `json:"detail,omitempty"`
+	Fields    *map[string]interface{} `json:"fields,omitempty"`
+	Instance  *string                 `json:"instance,omitempty"`
 
 	// RequestId Correlation ID (UUID or prefixed string like req_abc123)
 	RequestId string `json:"requestId"`
@@ -2152,11 +2152,11 @@ type SessionHeartbeatResponse struct {
 
 // SessionRecord defines model for SessionRecord.
 type SessionRecord struct {
-	ContextData    *map[string]string `json:"contextData,omitempty"`
-	CorrelationId  *string            `json:"correlationId,omitempty"`
-	CreatedAtUnix  *int64             `json:"createdAtUnix,omitempty"`
-	LastAccessUnix *int64             `json:"lastAccessUnix,omitempty"`
-	Profile        *map[string]any    `json:"profile,omitempty"`
+	ContextData    *map[string]string      `json:"contextData,omitempty"`
+	CorrelationId  *string                 `json:"correlationId,omitempty"`
+	CreatedAtUnix  *int64                  `json:"createdAtUnix,omitempty"`
+	LastAccessUnix *int64                  `json:"lastAccessUnix,omitempty"`
+	Profile        *map[string]interface{} `json:"profile,omitempty"`
 
 	// Reason Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
 	Reason       *SessionRecordReason `json:"reason,omitempty"`
@@ -2429,17 +2429,17 @@ type SystemInfoData struct {
 
 // Timer defines model for Timer.
 type Timer struct {
-	Begin         int64           `json:"begin"`
-	CreatedAt     *time.Time      `json:"createdAt,omitempty"`
-	Description   *string         `json:"description,omitempty"`
-	End           int64           `json:"end"`
-	Name          string          `json:"name"`
-	ReceiverState *map[string]any `json:"receiverState,omitempty"`
-	ServiceName   *string         `json:"serviceName,omitempty"`
-	ServiceRef    string          `json:"serviceRef"`
-	State         TimerState      `json:"state"`
-	TimerId       string          `json:"timerId"`
-	UpdatedAt     *time.Time      `json:"updatedAt,omitempty"`
+	Begin         int64                   `json:"begin"`
+	CreatedAt     *time.Time              `json:"createdAt,omitempty"`
+	Description   *string                 `json:"description,omitempty"`
+	End           int64                   `json:"end"`
+	Name          string                  `json:"name"`
+	ReceiverState *map[string]interface{} `json:"receiverState,omitempty"`
+	ServiceName   *string                 `json:"serviceName,omitempty"`
+	ServiceRef    string                  `json:"serviceRef"`
+	State         TimerState              `json:"state"`
+	TimerId       string                  `json:"timerId"`
+	UpdatedAt     *time.Time              `json:"updatedAt,omitempty"`
 }
 
 // TimerState defines model for Timer.State.
