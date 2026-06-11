@@ -13,8 +13,10 @@ describe('resolveStartupOverlayLabel', () => {
       'player.startupHints.safariCompatTranscode': 'Preparing Safari-compatible stream…',
       'player.startupHints.repairTranscode': 'Repairing and transcoding stream…',
       'player.startupHints.transcodeStartup': 'Preparing transcoded stream…',
+      'player.startupHints.recovering': 'Reconnecting the stream…',
       'player.startupSupport.safariCompatTranscode': 'Safari needs a compatible stream variant first. This can take a little longer.',
       'player.startupSupport.default': 'Playback starts automatically as soon as the first stable segments are ready.',
+      'player.startupSupport.recovering': 'The stream hit a snag and is being restored automatically.',
       'player.runtimePolicySupport.startup.probing': 'Testing {{profile}} briefly. If it stays stable, playback will continue there.',
       'player.runtimePolicySupport.error.cooldown': 'A short cooldown is active before another profile change is allowed.',
     };
@@ -40,6 +42,27 @@ describe('resolveStartupOverlayLabel', () => {
   it('returns the generic support copy when no specific profile reason exists', () => {
     expect(resolveStartupOverlaySupport(null, t as any)).toBe(
       'Playback starts automatically as soon as the first stable segments are ready.',
+    );
+  });
+
+  // Regression: the `recovering` state (decode/stall reattach — the dominant
+  // HEVC failure path) previously fell through the gate and returned '',
+  // leaving the user with a frozen/black frame and no overlay text.
+  it('returns an explicit hint for the recovering state instead of an empty label', () => {
+    expect(resolveStartupOverlayLabel('recovering', 'Recovering…', null, t as any)).toBe(
+      'Reconnecting the stream…',
+    );
+  });
+
+  it('prefers the repair-transcode hint when recovering into a repair profile', () => {
+    expect(resolveStartupOverlayLabel('recovering', 'Recovering…', 'repair_transcode', t as any)).toBe(
+      'Repairing and transcoding stream…',
+    );
+  });
+
+  it('returns recovering-specific support copy for the recovering state', () => {
+    expect(resolveStartupOverlaySupport(null, t as any, 'recovering')).toBe(
+      'The stream hit a snag and is being restored automatically.',
     );
   });
 });
