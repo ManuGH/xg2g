@@ -70,17 +70,11 @@ func ToFileConfig(cfg *AppConfig) FileConfig {
 		ConfigVersion: V3ConfigVersion,
 		DataDir:       cfg.DataDir,
 		LogLevel:      cfg.LogLevel,
-		OpenWebIF: OpenWebIFConfig{
-			BaseURL:    cfg.Enigma2.BaseURL,
-			Username:   cfg.Enigma2.Username,
-			Password:   cfg.Enigma2.Password,
-			StreamPort: cfg.Enigma2.StreamPort,
-			UseWebIF:   boolPtr(cfg.Enigma2.UseWebIFStreams),
-			Timeout:    cfg.Enigma2.Timeout.String(),
-			Retries:    cfg.Enigma2.Retries,
-			Backoff:    cfg.Enigma2.Backoff.String(),
-			MaxBackoff: cfg.Enigma2.MaxBackoff.String(),
-		},
+		// NOTE: OpenWebIF is intentionally left empty. The loader hard-rejects any
+		// config file that contains an openWebIF.* section (rejectLegacyOpenWebIFYAML),
+		// so emitting it here would make every saved file unloadable — bricking
+		// hot-reload and the next daemon restart. Canonical receiver settings are
+		// written under enigma2.* below.
 		Enigma2: Enigma2Config{
 			BaseURL:               cfg.Enigma2.BaseURL, // Now always the same as OpenWebIF
 			Username:              cfg.Enigma2.Username,
