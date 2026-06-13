@@ -19,12 +19,15 @@ import (
 func TestSaveLoadRoundTrip(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
-	// 1. Start from a valid canonical (enigma2.*) config.
+	// 1. Start from a valid canonical (enigma2.*) config with non-default
+	// receiver settings that must survive a Save -> Load round-trip.
 	srcPath := filepath.Join(t.TempDir(), "config.yaml")
 	src := strings.TrimSpace(`
 enigma2:
   baseUrl: "http://receiver.example.com"
   retries: 3
+  streamPort: 17999
+  useWebIFStreams: true
 `)
 	if err := os.WriteFile(srcPath, []byte(src), 0o644); err != nil {
 		t.Fatalf("write source config: %v", err)
@@ -50,7 +53,16 @@ enigma2:
 	}
 
 	// 4. The saved file must reload cleanly — this is what reload/restart does.
-	if _, err := NewLoader(savedPath, "dev").Load(); err != nil {
+	reloaded, err := NewLoader(savedPath, "dev").Load()
+	if err != nil {
 		t.Fatalf("re-loading saved config failed (config-brick regression): %v", err)
+	}
+
+	// 5. Receiver settings must survive the round-trip (no silent downgrade).
+	if reloaded.Enigma2.StreamPort != 17999 {
+		t.Errorf("streamPort not preserved across Save->Load: got %d, want 17999 (silent StreamRelay downgrade)", reloaded.Enigma2.StreamPort)
+	}
+	if !reloaded.Enigma2.UseWebIFStreams {
+		t.Errorf("useWebIFStreams not preserved across Save->Load: got false, want true")
 	}
 }

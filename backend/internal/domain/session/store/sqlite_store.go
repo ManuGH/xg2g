@@ -501,8 +501,17 @@ func (s *SqliteStore) RenewLease(ctx context.Context, key, owner string, ttl tim
 	}
 
 	newExpires := time.Now().Add(ttl).UnixMilli()
-	if _, err := tx.ExecContext(ctx, "UPDATE leases SET expires_at_ms = ? WHERE key = ? AND owner = ?", newExpires, key, owner); err != nil {
+	res, err := tx.ExecContext(ctx, "UPDATE leases SET expires_at_ms = ? WHERE key = ? AND owner = ?", newExpires, key, owner)
+	if err != nil {
 		return nil, false, err
+	}
+	// Fail closed if the row changed owner (or vanished) between the SELECT and the
+	// UPDATE: a 0-row update means we no longer hold the lease, so report loss
+	// instead of a successful renewal.
+	if affected, err := res.RowsAffected(); err != nil {
+		return nil, false, err
+	} else if affected == 0 {
+		return nil, false, nil
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, false, err

@@ -17,10 +17,10 @@ type sessionDeleter interface {
 // session and its idempotency mapping were already persisted. Without it the
 // session lingers in NEW forever (nothing will ever start it) and its idempotency
 // key replays the un-started session to every retry. The idempotency mapping is
-// dropped first so retries are not served the dead session as a replay; an
-// orphaned NEW session (if its delete fails) is then reaped by the sweeper's
-// stuck-session rule. Uses a detached context because the publish failure may
-// itself be a context cancellation.
+// dropped FIRST so retries always proceed with a fresh session even if the session
+// delete then fails; an orphaned NEW record holds no tuner/process resources (it
+// never started). Uses a detached context because the publish failure may itself
+// be a context cancellation.
 func rollbackPersistedStart(ctx context.Context, store SessionStore, logger zerolog.Logger, sessionID, idempotencyKey string) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()

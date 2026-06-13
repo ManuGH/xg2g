@@ -88,6 +88,11 @@ func ToFileConfig(cfg *AppConfig) FileConfig {
 			RateBurst:             cfg.Enigma2.RateBurst,
 			UserAgent:             cfg.Enigma2.UserAgent,
 			FallbackTo8001:        boolPtr(cfg.Enigma2.FallbackTo8001),
+			// Previously emitted only inside the (now-removed) openWebIF section.
+			// Without these, a save silently resets streamPort (e.g. StreamRelay
+			// 17999 -> default 8001) and useWebIFStreams on the next reload.
+			StreamPort: intPtr(cfg.Enigma2.StreamPort),
+			UseWebIF:   boolPtr(cfg.Enigma2.UseWebIFStreams),
 		},
 		Bouquets: splitCSV(cfg.Bouquet),
 		EPG: EPGConfig{
