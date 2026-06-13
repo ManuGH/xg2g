@@ -29,6 +29,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 
 	l.mergeFileCore(dst, src)
+	l.mergeFileGovernance(dst, src)
 	if err := l.mergeFileEnigma2Aliases(dst, src); err != nil {
 		return err
 	}
@@ -77,6 +78,26 @@ func (l *Loader) mergeFileCore(dst *AppConfig, src *FileConfig) {
 	}
 	if src.LogLevel != "" {
 		dst.LogLevel = src.LogLevel
+	}
+}
+
+// mergeFileGovernance applies the root-level governance keys (configStrict,
+// readyStrict, logService, trustedProxies). These are declared in FileConfig and
+// exposed in the registry as active YAML keys, but were never merged — so YAML
+// values were silently ignored and only ENV/default applied. ENV still overrides
+// afterward (precedence ENV > File > Default).
+func (l *Loader) mergeFileGovernance(dst *AppConfig, src *FileConfig) {
+	if src.ConfigStrict != nil {
+		dst.ConfigStrict = *src.ConfigStrict
+	}
+	if src.ReadyStrict != nil {
+		dst.ReadyStrict = *src.ReadyStrict
+	}
+	if src.LogService != "" {
+		dst.LogService = expandEnv(src.LogService)
+	}
+	if src.TrustedProxies != "" {
+		dst.TrustedProxies = expandEnv(src.TrustedProxies)
 	}
 }
 
