@@ -22,9 +22,11 @@ type Store struct {
 // NewStore initializes a new SQLite store and runs migrations.
 // Per P0+ Gate: Sets WAL mode + busy_timeout for read-heavy workload.
 func NewStore(dbPath string) (*Store, error) {
-	// Open database with pragmas
-	// busy_timeout avoids "database locked" errors
-	dsn := fmt.Sprintf("file:%s?_busy_timeout=5000&_journal_mode=WAL&_synchronous=NORMAL", dbPath)
+	// Open database with pragmas. The driver is modernc.org/sqlite (pure Go),
+	// which only honors the _pragma=name(value) DSN syntax — the mattn/go-sqlite3
+	// style (_busy_timeout/_journal_mode/_synchronous) is silently ignored, which
+	// left the DB on the defaults (no WAL, busy_timeout=0, synchronous=FULL).
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", dbPath)
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
