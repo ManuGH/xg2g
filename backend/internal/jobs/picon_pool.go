@@ -44,6 +44,13 @@ type PiconPool struct {
 	jobs    chan string // Job queue
 	workers int         // Number of workers
 
+	// sendMu guards sends to jobs against Stop() closing it. Senders take RLock
+	// (concurrent sends are channel-safe); Stop takes the write lock to close.
+	// Without this, a detached PrewarmPicons goroutine racing daemon shutdown can
+	// send on the closed channel and panic the whole process.
+	sendMu sync.RWMutex
+	closed bool
+
 	ctx    context.Context    // Pool context for cancellation
 	cancel context.CancelFunc // Cancel function for pool shutdown
 
@@ -157,8 +164,13 @@ func (p *PiconPool) Stop() {
 	p.stopOnce.Do(func() {
 		// Cancel in-flight requests
 		p.cancel()
-		// Stop accepting new jobs
+		// Stop accepting new jobs. The write lock waits for any in-flight Enqueue
+		// send to finish and blocks future sends (which see closed==true), so
+		// close() can never race a send.
+		p.sendMu.Lock()
+		p.closed = true
 		close(p.jobs)
+		p.sendMu.Unlock()
 		// Wait for workers to drain and cleanup loop to exit
 		p.wg.Wait()
 	})
@@ -187,8 +199,23 @@ func (p *PiconPool) Enqueue(ctx context.Context, ref string) (enqueued bool) {
 		return true // Handled via cache
 	}
 
+	// Hold the read lock for the duration of the (non-blocking) send so Stop()
+	// cannot close jobs underneath us. If the pool is already stopping/stopped,
+	// bail out instead of sending on a closed channel.
+	p.sendMu.RLock()
+	defer p.sendMu.RUnlock()
+	if p.closed {
+		p.clearInflight(ref)
+		return false
+	}
+
 	select {
 	case <-ctx.Done():
+		p.clearInflight(ref)
+		return false
+	case <-p.ctx.Done():
+		// Pool is shutting down (the detached PrewarmPicons ctx is never cancelled,
+		// so rely on the pool context here).
 		p.clearInflight(ref)
 		return false
 	case p.jobs <- ref:
