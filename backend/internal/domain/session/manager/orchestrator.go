@@ -200,25 +200,30 @@ func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
 				return errors.New("event channel closed")
 			}
 			if evt, ok := msg.(model.StartSessionEvent); ok {
-				// Check cancellation first before acquiring semaphore
+				// Check cancellation first before dispatching
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
 				default:
 				}
-				// Acquire semaphore (blocking, cancellable)
-				select {
-				case o.startSem <- struct{}{}:
-					if !o.goSessionWorker(func() {
-						defer func() { <-o.startSem }()
-						if err := o.handleStart(ctx, evt); err != nil {
-							log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
-						}
-					}) {
-						<-o.startSem
+				// Acquire the start slot INSIDE the worker, not here. A start slot is
+				// held for the whole session lifetime (handleStart blocks in
+				// waitForProcessExit), so acquiring in the Run loop meant a full
+				// startSem blocked this select from servicing stops and guardFail —
+				// stops could never run, no slot could ever free, and the control
+				// plane wedged permanently. Dispatching first keeps the loop live.
+				if !o.goSessionWorker(func() {
+					select {
+					case o.startSem <- struct{}{}:
+					case <-ctx.Done():
+						return
 					}
-				case <-ctx.Done():
-					return ctx.Err()
+					defer func() { <-o.startSem }()
+					if err := o.handleStart(ctx, evt); err != nil {
+						log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
+					}
+				}) {
+					log.L().Warn().Str("sid", evt.SessionID).Msg("session worker registry closing; dropping start")
 				}
 			}
 		case msg, ok := <-subStop.C():
@@ -226,25 +231,27 @@ func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
 				return errors.New("event channel closed")
 			}
 			if evt, ok := msg.(model.StopSessionEvent); ok {
-				// Check cancellation first before acquiring semaphore
+				// Check cancellation first before dispatching
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
 				default:
 				}
-				// Acquire semaphore (blocking, cancellable)
-				select {
-				case o.stopSem <- struct{}{}:
-					if !o.goSessionWorker(func() {
-						defer func() { <-o.stopSem }()
-						if err := o.handleStop(ctx, evt); err != nil {
-							log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session stop failed")
-						}
-					}) {
-						<-o.stopSem
+				// Acquire the stop slot inside the worker (symmetric with start) so a
+				// saturated stopSem can never block the Run loop from servicing
+				// further events.
+				if !o.goSessionWorker(func() {
+					select {
+					case o.stopSem <- struct{}{}:
+					case <-ctx.Done():
+						return
 					}
-				case <-ctx.Done():
-					return ctx.Err()
+					defer func() { <-o.stopSem }()
+					if err := o.handleStop(ctx, evt); err != nil {
+						log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session stop failed")
+					}
+				}) {
+					log.L().Warn().Str("sid", evt.SessionID).Msg("session worker registry closing; dropping stop")
 				}
 			}
 		}

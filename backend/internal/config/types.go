@@ -30,7 +30,12 @@ type FileConfig struct {
 	LogService     string `yaml:"logService,omitempty"`
 	TrustedProxies string `yaml:"trustedProxies,omitempty"`
 
-	OpenWebIF             OpenWebIFConfig         `yaml:"openWebIF"`
+	// OpenWebIF is a read-only legacy alias retained so the loader can detect and
+	// reject legacy openWebIF.* files (see alias_conflict.go). It must NEVER be
+	// emitted on save — the loader hard-rejects any file containing this key, so
+	// writing it would brick reload/restart. omitempty + an empty value on save
+	// guarantees the key is dropped.
+	OpenWebIF             OpenWebIFConfig         `yaml:"openWebIF,omitempty"`
 	Enigma2               Enigma2Config           `yaml:"enigma2,omitempty"`
 	Bouquets              []string                `yaml:"bouquets,omitempty"`
 	EPG                   EPGConfig               `yaml:"epg"`

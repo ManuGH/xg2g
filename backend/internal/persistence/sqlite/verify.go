@@ -10,9 +10,11 @@ import (
 // Mode can be "quick" (PRAGMA quick_check) or "full" (PRAGMA integrity_check).
 // It returns a slice of error messages if corruption is found, or nil if healthy.
 func VerifyIntegrity(path string, mode string) ([]string, error) {
-	// 1. Open in read-only mode with busy_timeout
-	// format: file:path?mode=ro&_busy_timeout=2000
-	dsn := fmt.Sprintf("file:%s?mode=ro&_busy_timeout=2000", path)
+	// 1. Open in read-only mode with busy_timeout. The driver is modernc.org/sqlite,
+	// which only honors the _pragma=name(value) DSN syntax; the mattn-style
+	// _busy_timeout=2000 was silently ignored, so integrity checks could fail
+	// spuriously with SQLITE_BUSY on a healthy but concurrently-accessed database.
+	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(2000)", path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database for verification: %w", err)

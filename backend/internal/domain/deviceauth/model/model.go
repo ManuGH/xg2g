@@ -520,6 +520,13 @@ func normalizeWebBootstrapTargetPath(value string) (string, error) {
 	if strings.ContainsAny(trimmed, "\r\n") {
 		return "", ErrInvalidWebBootstrapTargetPath
 	}
+	// Reject backslashes. Browsers normalize "\" to "/" before navigating, so a
+	// target like "/\evil.com" becomes the protocol-relative "//evil.com" — an
+	// open redirect to an external host that slips past the "//" prefix check
+	// below (url.Parse treats "\" as an ordinary path byte, not a separator).
+	if strings.Contains(trimmed, "\\") {
+		return "", ErrInvalidWebBootstrapTargetPath
+	}
 
 	parsed, err := url.Parse(trimmed)
 	if err != nil {

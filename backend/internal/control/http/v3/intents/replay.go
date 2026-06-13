@@ -2,9 +2,40 @@ package intents
 
 import (
 	"context"
+	"time"
 
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/rs/zerolog"
 )
+
+// sessionDeleter is the optional store capability to remove a session record.
+type sessionDeleter interface {
+	DeleteSession(ctx context.Context, id string) error
+}
+
+// rollbackPersistedStart compensates a start whose event publish failed after the
+// session and its idempotency mapping were already persisted. Without it the
+// session lingers in NEW forever (nothing will ever start it) and its idempotency
+// key replays the un-started session to every retry. The idempotency mapping is
+// dropped first so retries are not served the dead session as a replay; an
+// orphaned NEW session (if its delete fails) is then reaped by the sweeper's
+// stuck-session rule. Uses a detached context because the publish failure may
+// itself be a context cancellation.
+func rollbackPersistedStart(ctx context.Context, store SessionStore, logger zerolog.Logger, sessionID, idempotencyKey string) {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
+	if cleaner, ok := store.(sessionstore.IdempotencyCleaner); ok {
+		if _, err := cleaner.DeleteIdempotencyIfMatch(cleanupCtx, idempotencyKey, sessionID); err != nil {
+			logger.Error().Err(err).Str("idem_key", idempotencyKey).Msg("rollback: failed to delete idempotency mapping after publish failure")
+		}
+	}
+	if deleter, ok := store.(sessionDeleter); ok {
+		if err := deleter.DeleteSession(cleanupCtx, sessionID); err != nil {
+			logger.Error().Err(err).Str("sid", sessionID).Msg("rollback: failed to delete session after publish failure")
+		}
+	}
+}
 
 type startReplayResolution struct {
 	correlationID string

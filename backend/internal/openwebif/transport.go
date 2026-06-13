@@ -241,10 +241,15 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 		return nil, resilience.ErrCircuitOpen
 	}
 
+	// Record the permitted request as an attempt. Without it, EventAttempt is
+	// never recorded and the breaker's `attempts >= minAttempts` trip gate can
+	// never be satisfied, so it would never open no matter how many requests fail.
+	c.cb.RecordAttempt()
+
 	result, err := c.doGet(ctx, path, operation, decorate)
 	if err != nil {
 		// Only record technical failures (network, timeout, etc.)
-		if isTechnicalError(err) {
+		if c.isTechnicalError(err) {
 			c.cb.RecordTechnicalFailure()
 		}
 		return nil, err
@@ -252,22 +257,6 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 
 	c.cb.RecordSuccess()
 	return result, nil
-}
-
-func isTechnicalError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Connection errors, timeouts, and context cancellations are technical failures
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return true
-	}
-	// For HTTP, we might want to check status code if wrapped
-	return false
 }
 
 // doGet performs the actual HTTP request with retries (extracted from get)

@@ -19,6 +19,20 @@ const (
 
 const sessionListOrderBy = " ORDER BY updated_at_ms DESC, created_at_ms DESC, session_id ASC"
 
+// sessionColumns lists the sessions columns in the exact order scanSession scans
+// them. Reads MUST enumerate columns explicitly instead of using SELECT *:
+// migrate() upgrades legacy databases with ALTER TABLE ADD COLUMN, which appends
+// columns at the physical end of the table. SELECT * returns columns in physical
+// order, so on an upgraded DB the appended columns (reason_detail_code,
+// reason_detail_debug, playback_trace_json) would arrive out of scanSession's
+// positional order and corrupt every read. An explicit list is order-stable.
+const sessionColumns = "session_id, service_ref, profile_json, state, pipeline_state, reason, " +
+	"reason_detail, reason_detail_code, reason_detail_debug, " +
+	"fallback_reason, fallback_at_ms, correlation_id, created_at_ms, updated_at_ms, " +
+	"last_access_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval, " +
+	"last_heartbeat_ms, stop_reason, latest_segment_at, last_playlist_access_at, " +
+	"playlist_published_at, context_data_json, playback_trace_json"
+
 // SqliteStore implements StateStore using SQLite.
 type SqliteStore struct {
 	DB *sql.DB
@@ -261,13 +275,13 @@ func (s *SqliteStore) PutSessionWithIdempotency(ctx context.Context, rec *model.
 }
 
 func (s *SqliteStore) GetSession(ctx context.Context, id string) (*model.SessionRecord, error) {
-	query := `SELECT * FROM sessions WHERE session_id = ?`
+	query := "SELECT " + sessionColumns + " FROM sessions WHERE session_id = ?"
 	row := s.DB.QueryRowContext(ctx, query, id)
 	return scanSession(row)
 }
 
 func (s *SqliteStore) QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error) {
-	query := "SELECT * FROM sessions WHERE 1=1"
+	query := "SELECT " + sessionColumns + " FROM sessions WHERE 1=1"
 	args := []any{}
 
 	if len(filter.States) > 0 {
@@ -312,7 +326,7 @@ func (s *SqliteStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rec, err := scanSession(tx.QueryRowContext(ctx, "SELECT * FROM sessions WHERE session_id = ?", id))
+	rec, err := scanSession(tx.QueryRowContext(ctx, "SELECT "+sessionColumns+" FROM sessions WHERE session_id = ?", id))
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +376,7 @@ func (s *SqliteStore) ListSessions(ctx context.Context) ([]*model.SessionRecord,
 }
 
 func (s *SqliteStore) ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error {
-	rows, err := s.DB.QueryContext(ctx, "SELECT * FROM sessions")
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+sessionColumns+" FROM sessions")
 	if err != nil {
 		return err
 	}
@@ -453,8 +467,47 @@ func (s *SqliteStore) TryAcquireLease(ctx context.Context, key, owner string, tt
 	return &sqliteLease{key: key, owner: owner, expires: time.UnixMilli(expiresAt)}, true, nil
 }
 
+// RenewLease extends a lease the caller still holds. Unlike TryAcquireLease it is
+// fail-closed: if the lease is gone (released, swept, or never held) or has been
+// taken over by another owner, it returns ok=false WITHOUT recreating it. The old
+// implementation delegated to TryAcquireLease, whose INSERT OR REPLACE silently
+// re-created a lost lease and always returned ok=true — defeating the heartbeat
+// loop's lease-loss abort, so a session whose tuner lease was revoked kept running
+// and re-grabbed the slot (zombie session / split-brain risk). Mirrors
+// MemoryStore.RenewLease (existence + ownership check, then extend).
 func (s *SqliteStore) RenewLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error) {
-	return s.TryAcquireLease(ctx, key, owner, ttl)
+	if ttl <= 0 {
+		return nil, false, errors.New("invalid ttl")
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var currentOwner string
+	var currentExpires int64
+	err = tx.QueryRowContext(ctx, "SELECT owner, expires_at_ms FROM leases WHERE key = ?", key).Scan(&currentOwner, &currentExpires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil // lease lost — do NOT recreate
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if currentOwner != owner {
+		// Held by someone else now — fail closed, surface the current holder.
+		return &sqliteLease{key: key, owner: currentOwner, expires: time.UnixMilli(currentExpires)}, false, nil
+	}
+
+	newExpires := time.Now().Add(ttl).UnixMilli()
+	if _, err := tx.ExecContext(ctx, "UPDATE leases SET expires_at_ms = ? WHERE key = ? AND owner = ?", newExpires, key, owner); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, false, err
+	}
+	return &sqliteLease{key: key, owner: owner, expires: time.UnixMilli(newExpires)}, true, nil
 }
 
 func (s *SqliteStore) GetLease(ctx context.Context, key string) (Lease, bool, error) {
