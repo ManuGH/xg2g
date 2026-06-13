@@ -11,19 +11,41 @@ const (
 	IdleThreshold    = 30 * time.Second
 )
 
-// PlaylistAccessAge returns the age of the last confirmed consumer playlist access.
-// If no playlist was requested yet, PlaylistPublishedAt acts as the grace-period anchor.
+// PlaylistAccessAge returns the age of the last confirmed consumer access — a
+// playlist GET or a media-segment GET, whichever is more recent. If no consumer
+// request happened yet, PlaylistPublishedAt acts as the grace-period anchor.
 func PlaylistAccessAge(r *SessionRecord, now time.Time) (time.Duration, bool) {
 	if r == nil {
 		return 0, false
 	}
-	if !r.LastPlaylistAccessAt.IsZero() {
-		return now.Sub(r.LastPlaylistAccessAt), true
+	if access, ok := lastConsumerAccess(r); ok {
+		return now.Sub(access), true
 	}
 	if !r.PlaylistPublishedAt.IsZero() {
 		return now.Sub(r.PlaylistPublishedAt), true
 	}
 	return 0, false
+}
+
+// lastConsumerAccess returns the most recent confirmed consumer access. It counts
+// both playlist GETs (LastPlaylistAccessAt) and media-segment GETs (the consumer
+// segment-fetch timestamp in the HLS trace). VOD/recording playlists are complete
+// (EXT-X-ENDLIST), so a player fetches the playlist once and then pulls only
+// segments — without counting segment fetches such a session looks idle after the
+// idle threshold and the sweeper stops active playback. The segment timestamp is
+// the consumer fetch time (written only on a client segment request, not on
+// producer output), so an unwatched live stream still goes idle correctly.
+func lastConsumerAccess(r *SessionRecord) (time.Time, bool) {
+	latest := r.LastPlaylistAccessAt
+	if r.PlaybackTrace != nil && r.PlaybackTrace.HLS != nil && r.PlaybackTrace.HLS.LastSegmentAtUnix > 0 {
+		if segAt := time.UnixMilli(r.PlaybackTrace.HLS.LastSegmentAtUnix); segAt.After(latest) {
+			latest = segAt
+		}
+	}
+	if latest.IsZero() {
+		return time.Time{}, false
+	}
+	return latest, true
 }
 
 // PlaylistAccessFresh reports whether playlist access is still fresh within the given threshold.
