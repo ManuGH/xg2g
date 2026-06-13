@@ -249,7 +249,7 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 	result, err := c.doGet(ctx, path, operation, decorate)
 	if err != nil {
 		// Only record technical failures (network, timeout, etc.)
-		if isTechnicalError(err) {
+		if c.isTechnicalError(err) {
 			c.cb.RecordTechnicalFailure()
 		}
 		return nil, err
