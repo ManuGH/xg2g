@@ -17,7 +17,7 @@ func TestNormalizeWebBootstrapTargetPath_RejectsOpenRedirect(t *testing.T) {
 		`/\/evil.com`,
 		`\/evil.com`,
 		`/\\evil.com`,
-		`//evil.com`,    // protocol-relative
+		`//evil.com`, // protocol-relative
 		`https://evil.com`,
 		`http://evil.com/path`,
 		"/ui/\r\nSet-Cookie: x=1", // header injection
@@ -29,10 +29,10 @@ func TestNormalizeWebBootstrapTargetPath_RejectsOpenRedirect(t *testing.T) {
 	}
 
 	accept := map[string]string{
-		"/ui/":               "/ui/",
-		"/ui/devices":        "/ui/devices",
-		"/ui/x?next=/a":      "/ui/x?next=/a",
-		"":                   "/ui/", // empty defaults to /ui/
+		"/ui/":          "/ui/",
+		"/ui/devices":   "/ui/devices",
+		"/ui/x?next=/a": "/ui/x?next=/a",
+		"":              "/ui/", // empty defaults to /ui/
 	}
 	for in, want := range accept {
 		got, err := normalizeWebBootstrapTargetPath(in)
