@@ -32,6 +32,9 @@ type mockSessionStore struct {
 	deleteOk      bool
 	deleteErr     error
 	sessions      map[string]*model.SessionRecord
+
+	deleteSessionCalls int
+	deletedSessionID   string
 }
 
 type putSessionResult struct {
@@ -82,6 +85,15 @@ func (m *mockSessionStore) DeleteIdempotencyIfMatch(_ context.Context, idemKey, 
 		return false, m.deleteErr
 	}
 	return m.deleteOk, nil
+}
+
+func (m *mockSessionStore) DeleteSession(_ context.Context, id string) error {
+	m.deleteSessionCalls++
+	m.deletedSessionID = id
+	if m.sessions != nil {
+		delete(m.sessions, id)
+	}
+	return nil
 }
 
 type publishCall struct {

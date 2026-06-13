@@ -103,6 +103,10 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		return replay, nil
 	}
 	if err := s.publishStartSession(ctx, intent, bus, resolution.effectiveProfileID, phaseLabel); err != nil {
+		// The session and idempotency key were already persisted; the event never
+		// reached the orchestrator. Roll both back so the session does not linger in
+		// NEW forever and a retry is not served the un-started session as a replay.
+		rollbackPersistedStart(ctx, store, intent.Logger, session.SessionID, resolution.idempotencyKey)
 		return nil, err
 	}
 
