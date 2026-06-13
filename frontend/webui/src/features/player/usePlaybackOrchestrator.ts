@@ -1516,7 +1516,7 @@ export function usePlaybackOrchestrator(
   const shouldHoldNativeVideo =
     isNativeEngine && !showNativeVideo && !hasTerminalStatus;
   const isOverlayStartupStatus =
-    isImmediateStartupStatus || status === 'buffering' || shouldHoldNativeVideo;
+    isImmediateStartupStatus || status === 'buffering' || status === 'recovering' || shouldHoldNativeVideo;
   const overlayStatus: PlayerStatus = shouldHoldNativeVideo ? 'buffering' : status;
 
   useEffect(() => {
@@ -1783,11 +1783,11 @@ export function usePlaybackOrchestrator(
       : '';
   const spinnerSupport =
     isOverlayStartupStatus
-      ? resolveStartupOverlaySupport(sessionProfileReason, t)
+      ? resolveStartupOverlaySupport(sessionProfileReason, t, overlayStatus)
       : '';
   const showStartupOverlay =
     isImmediateStartupStatus ||
-    (status === 'buffering' && showBufferingOverlay) ||
+    ((status === 'buffering' || status === 'recovering') && showBufferingOverlay) ||
     shouldHoldNativeVideo;
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
   const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;

@@ -30,7 +30,8 @@ func TestOWIErrorUnwrapReachesTransportError(t *testing.T) {
 	if !errors.Is(owi, context.DeadlineExceeded) {
 		t.Error("errors.Is(err, context.DeadlineExceeded) must reach the nested transport error")
 	}
-	if !isTechnicalError(owi) {
+	c := &Client{}
+	if !c.isTechnicalError(owi) {
 		t.Error("breaker classifier must treat a timeout OWIError as technical (so the breaker can trip)")
 	}
 }
@@ -50,7 +51,8 @@ func TestOWIErrorUnwrapReachesNetError(t *testing.T) {
 	if !errors.Is(owi, ErrUpstreamUnavailable) {
 		t.Error("sentinel matching must still work")
 	}
-	if !isTechnicalError(owi) {
+	c := &Client{}
+	if !c.isTechnicalError(owi) {
 		t.Error("connection-refused OWIError must be classified technical")
 	}
 }
@@ -62,7 +64,8 @@ func TestOWIErrorUnwrapNoTransportError(t *testing.T) {
 	if !errors.Is(owi, ErrNotFound) {
 		t.Error("errors.Is(err, ErrNotFound) must match the sentinel")
 	}
-	if isTechnicalError(owi) {
+	c := &Client{}
+	if c.isTechnicalError(owi) {
 		t.Error("a 404 must not be a technical failure")
 	}
 }

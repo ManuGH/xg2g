@@ -1441,7 +1441,7 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, fflags, "+genpts")
 	assert.Contains(t, fflags, "+discardcorrupt")
-	assert.Contains(t, fflags, "+igndts")
+	assert.NotContains(t, fflags, "igndts")
 
 	errDetectIdx := indexOf(args, "-err_detect")
 	require.True(t, errDetectIdx >= 0 && errDetectIdx < iIdx, "err_detect must be before -i")
@@ -1461,6 +1461,34 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "1M", probe)
 	assert.NotContains(t, fflags, "nobuffer")
+}
+
+func TestBuildArgs_ForceIgnDTSOptIn(t *testing.T) {
+	t.Setenv("XG2G_FORCE_IGNDTS", "true")
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "force-igndts",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			TranscodeVideo: false,
+			VideoCodec:     "h264",
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	fflags, ok := valueAfter(args, "-fflags")
+	require.True(t, ok)
+	assert.Contains(t, fflags, "+igndts")
 }
 
 func TestBuildArgs_HEVCTranscodeUsesStrictLiveIngest(t *testing.T) {
@@ -1494,7 +1522,7 @@ func TestBuildArgs_HEVCTranscodeUsesStrictLiveIngest(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, fflags, "+genpts")
 	assert.Contains(t, fflags, "+discardcorrupt")
-	assert.Contains(t, fflags, "+igndts")
+	assert.NotContains(t, fflags, "igndts")
 
 	assert.Equal(t, -1, indexOf(args, "-err_detect"))
 	assert.Equal(t, -1, indexOf(args, "-max_error_rate"))
@@ -1697,7 +1725,7 @@ func TestBuildArgs_ResilientIngestToggleOff(t *testing.T) {
 	fflags, ok := valueAfter(args, "-fflags")
 	require.True(t, ok)
 	assert.Contains(t, fflags, "+genpts")
-	assert.Contains(t, fflags, "+igndts")
+	assert.NotContains(t, fflags, "igndts")
 	assert.NotContains(t, fflags, "discardcorrupt")
 	assert.Equal(t, -1, indexOf(args, "-err_detect"))
 

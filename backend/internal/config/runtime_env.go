@@ -137,6 +137,10 @@ var runtimeEnvKeys = []string{
 	"XG2G_FPS_FALLBACK",
 	"XG2G_FPS_PROBE_TIMEOUT_MS",
 
+	// Stream-relay probe depth overrides (ffmpeg/adapter.go).
+	"XG2G_STREAMRELAY_ANALYZE_DURATION",
+	"XG2G_STREAMRELAY_PROBE_SIZE",
+
 	// Runtime path-correctness preflight.
 	"XG2G_ENABLE_SYNTHETIC_PATH_CORRECTNESS_PREFLIGHT",
 	"XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS",
@@ -144,6 +148,7 @@ var runtimeEnvKeys = []string{
 
 	// Misc runtime toggles.
 	"XG2G_LIVE_NOBUFFER",
+	"XG2G_FORCE_IGNDTS",
 	"XG2G_INITIAL_REFRESH",
 	"XG2G_RATE_LIMIT_ENABLED",
 }
