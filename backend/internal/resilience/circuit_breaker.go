@@ -140,6 +140,11 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 		return ErrCircuitOpen
 	}
 
+	// A permitted request is an attempt. Without this, EventAttempt is never
+	// recorded, so evaluate()'s `attempts >= minAttempts` gate can never be
+	// satisfied and the breaker can never trip on the failure threshold.
+	cb.RecordAttempt()
+
 	if cb.panicRecovery {
 		defer func() {
 			if r := recover(); r != nil {

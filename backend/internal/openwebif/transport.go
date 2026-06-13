@@ -241,6 +241,11 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 		return nil, resilience.ErrCircuitOpen
 	}
 
+	// Record the permitted request as an attempt. Without it, EventAttempt is
+	// never recorded and the breaker's `attempts >= minAttempts` trip gate can
+	// never be satisfied, so it would never open no matter how many requests fail.
+	c.cb.RecordAttempt()
+
 	result, err := c.doGet(ctx, path, operation, decorate)
 	if err != nil {
 		// Only record technical failures (network, timeout, etc.)
