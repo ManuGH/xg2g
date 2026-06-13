@@ -78,7 +78,11 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 				}
 			}
 		}
-		if !strings.Contains(fflags, "igndts") {
+		// igndts discards healthy container DTS and forces a PTS-based
+		// reconstruction that breaks on B-pyramid GOPs (non-monotonic DTS,
+		// visible judder on copy paths — issue #581). Only opt in for
+		// sources whose DTS are genuinely broken.
+		if a.ForceIgnDTS && !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
 		}
 		if a.LiveNoBuffer && !strings.Contains(fflags, "nobuffer") {
