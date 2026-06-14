@@ -180,8 +180,20 @@ func TestTruthProvider_ImpossibleProbe_BlockedPreparing(t *testing.T) {
 func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 	cfg := &config.AppConfig{}
 
-	// Use a channel to synchronize probe execution
+	// probeCalled signals that the async probe has started; releaseProbe gates
+	// when it is allowed to finish and persist FAILED. Parking the probe until
+	// the test has observed Preparing removes the race between the async
+	// MarkFailed and the second truth read inside resolvePreparing: the first
+	// Resolve must observe Preparing before the probe is allowed to fail it.
 	probeCalled := make(chan struct{}, 10)
+	releaseProbe := make(chan struct{})
+	var closeOnce sync.Once
+	closeReleaseProbe := func() {
+		closeOnce.Do(func() {
+			close(releaseProbe)
+		})
+	}
+	defer closeReleaseProbe()
 	probeResultErr := errors.New("probe failed permanently")
 
 	// Seed with existing metadata (ResolvedPath) to check non-destructive update
@@ -195,6 +207,11 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 		},
 		ProbeHook: func(ctx context.Context, path string) (*vod.StreamInfo, error) {
 			probeCalled <- struct{}{} // Signal probe attempt
+			select {
+			case <-releaseProbe: // Block until the test has observed Preparing
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 			return nil, probeResultErr
 		},
 	}
@@ -208,13 +225,25 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 	res, err := NewResolver(cfg, mgr, opts)
 	require.NoError(t, err)
 
-	// 1. First Call: Should return Preparing and trigger probe
+	// 1. First Call: Should return Preparing and trigger probe.
+	// The probe is parked in ProbeHook (it has not persisted FAILED yet), so
+	// this observation of Preparing is deterministic, not timing-dependent.
 	got, err := res.Resolve(context.Background(), "ref", IntentStream, ProfileGeneric)
 	assert.Error(t, err)
 	assert.Equal(t, string(playback.MediaStatusPreparing), got.TruthStatus)
 
-	// Wait for async probe to error out and persist FAILED state.
-	// We rely on Eventually because we don't have a callback hook in this simple mock.
+	// The first Resolve must have triggered exactly one probe.
+	select {
+	case <-probeCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first Resolve did not trigger the async probe")
+	}
+
+	// Only now let the probe fail: FAILED is persisted strictly after Preparing
+	// was observed above, so the assertion can never race the persist.
+	closeReleaseProbe()
+
+	// Wait for the async probe to error out and persist FAILED state.
 	assert.Eventually(t, func() bool {
 		m, ok := mgr.GetMetadata("ref")
 		return ok && m.State == vod.ArtifactStateFailed
