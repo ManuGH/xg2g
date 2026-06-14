@@ -187,6 +187,13 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 	// Resolve must observe Preparing before the probe is allowed to fail it.
 	probeCalled := make(chan struct{}, 10)
 	releaseProbe := make(chan struct{})
+	var closeOnce sync.Once
+	closeReleaseProbe := func() {
+		closeOnce.Do(func() {
+			close(releaseProbe)
+		})
+	}
+	defer closeReleaseProbe()
 	probeResultErr := errors.New("probe failed permanently")
 
 	// Seed with existing metadata (ResolvedPath) to check non-destructive update
@@ -200,7 +207,11 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 		},
 		ProbeHook: func(ctx context.Context, path string) (*vod.StreamInfo, error) {
 			probeCalled <- struct{}{} // Signal probe attempt
-			<-releaseProbe            // Block until the test has observed Preparing
+			select {
+			case <-releaseProbe: // Block until the test has observed Preparing
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 			return nil, probeResultErr
 		},
 	}
@@ -230,7 +241,7 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 
 	// Only now let the probe fail: FAILED is persisted strictly after Preparing
 	// was observed above, so the assertion can never race the persist.
-	close(releaseProbe)
+	closeReleaseProbe()
 
 	// Wait for the async probe to error out and persist FAILED state.
 	assert.Eventually(t, func() bool {
