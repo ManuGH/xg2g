@@ -248,7 +248,10 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 
 	result, err := c.doGet(ctx, path, operation, decorate)
 	if err != nil {
-		// Only record technical failures (network, timeout, etc.)
+		// Only record technical failures. Use the method variant (c.isTechnicalError),
+		// which also classifies upstream HTTP 5xx (OWIError.Status >= 500) as technical.
+		// The package-level isTechnicalError is status-blind, so calling it here meant
+		// 5xx responses never reached the breaker and it could never trip on them.
 		if c.isTechnicalError(err) {
 			c.cb.RecordTechnicalFailure()
 		}

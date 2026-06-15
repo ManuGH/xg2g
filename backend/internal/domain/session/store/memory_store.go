@@ -329,6 +329,11 @@ func (m *MemoryStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 	if err := fn(cpy); err != nil {
 		return nil, err
 	}
+	// Advance the liveness clock on every update, mirroring SqliteStore.UpdateSession.
+	// This is the source of truth for staleness gates (e.g. the recovery sweep's
+	// shouldRecover): a store that froze UpdatedAtUnix would make every Memory-backed
+	// session look stale. The two store implementations must agree on this semantic.
+	cpy.UpdatedAtUnix = time.Now().Unix()
 	// Save back
 	m.sessions[id] = cloneSessionRecord(cpy)
 	return cloneSessionRecord(cpy), nil

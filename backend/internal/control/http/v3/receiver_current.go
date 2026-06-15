@@ -68,10 +68,14 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current service info with singleflight protection
-	// Get current service info with singleflight protection
+	// Get current service info with singleflight protection.
 	val, err, _ := s.receiverSfg.Do("getcurrent", func() (any, error) {
-		return client.GetCurrent(ctx)
+		// Detach from the first caller's request context: this singleflight result is shared
+		// by every concurrent waiter, so one caller disconnecting must not cancel the
+		// upstream call for all of them. Use an independent, bounded timeout instead.
+		sfCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		return client.GetCurrent(sfCtx)
 	})
 
 	if err != nil {

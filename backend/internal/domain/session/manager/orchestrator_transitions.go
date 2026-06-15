@@ -262,6 +262,7 @@ func (o *Orchestrator) finalizeDeferred(
 	ctx context.Context,
 	event model.StartSessionEvent,
 	sessionPtr **model.SessionRecord,
+	leasesPtr **leaseAcquisition,
 	sessionCtx *sessionContext,
 	logger zerolog.Logger,
 	startRecorded *bool,
@@ -389,6 +390,21 @@ func (o *Orchestrator) finalizeDeferred(
 	}
 	logEvt.Msg("session ended")
 
+	// Authoritative tuner-lease release for the session this process started: it uses the
+	// in-memory lease handle, NOT the ContextData mirror (B), so it frees the slot even when
+	// start aborted before transitionStarting persisted B (the leak window). It runs here,
+	// after the terminalization UpdateSession above committed, so the lease is never freed
+	// while the session is still in an intermediate state — preserving the recovery probe's
+	// invariant (B set ∧ intermediate ⟹ lease held ⟹ session alive).
+	if leases := *leasesPtr; leases != nil && leases.ReleaseTuner != nil {
+		leases.ReleaseTuner()
+	}
+
+	// ForceReleaseLeases is retained and ADDITIVE: it releases the dedup/service lease, and
+	// it is the ONLY release path for the sweeper's cold janitor (sweeper.go), which cleans
+	// terminal sessions it did not start and therefore has no in-memory handle — it must read
+	// B. Its tuner release via B is redundant here (idempotent + owner-scoped, so the double
+	// release is a no-op) and a no-op anyway in the leak case where B is empty.
 	o.ForceReleaseLeases(finalizeCtx, event.SessionID, event.ServiceRef, session)
 
 	if !*startRecorded {

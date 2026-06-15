@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { client } from '../client-ts/client.gen';
+import { mergeHeaders } from '../client-ts/client';
 import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import {
   buildClientHeaders,
@@ -44,16 +45,26 @@ describe('client-ts wrapper error mapping', () => {
     }
   });
 
-  it('preserves bearer auth when request-specific headers clear the household profile', () => {
+  it('strips the household profile header through the SDK merge while keeping bearer auth', () => {
     setClientAuthToken('test-token');
     setClientHouseholdProfileId('child-profile');
 
-    const headers = buildClientHeaders({
+    const requestHeaders = buildClientHeaders({
       'X-Household-Profile': null,
     });
 
-    expect(headers.get('Authorization')).toBe('Bearer test-token');
-    expect(headers.get('X-Household-Profile')).toBeNull();
+    // The override must be carried as an explicit null delete-marker (a Headers
+    // instance could only omit the key, which the merge would then re-fill).
+    expect(requestHeaders['Authorization']).toBe('Bearer test-token');
+    expect(requestHeaders['X-Household-Profile']).toBeNull();
+
+    // End-to-end: hey-api applies request headers via mergeHeaders(config, request).
+    // The config-level X-Household-Profile must actually be removed, while the bearer
+    // token survives. Before the fix the profile header leaked through and bricked
+    // cross-tab profile recovery (every /api/v3 request 400s).
+    const merged = mergeHeaders(client.getConfig().headers, requestHeaders);
+    expect(merged.get('Authorization')).toBe('Bearer test-token');
+    expect(merged.get('X-Household-Profile')).toBeNull();
   });
 
   it('keeps a bearer auth fallback for secured requests when the header is absent', async () => {

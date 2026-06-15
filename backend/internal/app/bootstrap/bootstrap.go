@@ -93,6 +93,16 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		return nil, err
 	}
 
+	// L22: promote ForceHTTPS BEFORE cfg is consumed below. buildWireConfigState snapshots
+	// this cfg (BuildSnapshot passes App through unchanged, and the holder snapshots the input
+	// cfg — no file re-load), and api.NewWithDeps builds the server from it. Promoting it
+	// afterwards (as the code did) left both the snapshot and the running server with
+	// ForceHTTPS=false despite TLS being enabled, so the HTTPS-only posture was never advertised.
+	if cfg.TLSEnabled && !cfg.ForceHTTPS {
+		cfg.ForceHTTPS = true
+		logger.Info().Msg("tls enabled - advertising HTTPS-only posture (ForceHTTPS)")
+	}
+
 	configMgr, cfgHolder, snap, cfg := buildWireConfigState(cfg, version, effectiveConfigPath)
 
 	apiDeps := buildAPIConstructorDeps(cfg, snap, logger)
@@ -120,10 +130,6 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		if err != nil {
 			return nil, fmt.Errorf("initialize fallback resume store: %w", err)
 		}
-	}
-	if cfg.TLSEnabled && !cfg.ForceHTTPS {
-		cfg.ForceHTTPS = true
-		logger.Info().Msg("tls enabled - advertising HTTPS-only posture (ForceHTTPS)")
 	}
 
 	v3ScanStore, err := scan.NewStore(cfg.Store.Backend, cfg.Store.Path)
@@ -543,7 +549,17 @@ func buildWireConfigState(cfg config.AppConfig, version, effectiveConfigPath str
 		configMgrPath = filepath.Join(cfg.DataDir, "config.yaml")
 	}
 	configMgr = config.NewManager(configMgrPath)
-	cfgHolder = config.NewConfigHolder(cfg, config.NewLoader(configMgrPath, version), configMgrPath)
+	// L23: the reload loader must load from the REAL config source, so it is wired with
+	// effectiveConfigPath (NOT the fabricated configMgrPath). For an env-only deploy
+	// effectiveConfigPath is "", so Reload()'s loader.Load() skips the (non-existent) file and
+	// re-derives from defaults+env — previously it was pointed at DataDir/config.yaml, which
+	// does not exist, so every SIGHUP/API reload failed. The Save Manager and the holder's
+	// save/watch metadata keep configMgrPath.
+	//
+	// env-only: Env is the source of truth across reloads; an API-saved config file is NOT
+	// re-read by design (source consistency — whatever was the source at startup, here Env,
+	// stays the source on reload). Do not "fix" this into reading the saved file.
+	cfgHolder = config.NewConfigHolder(cfg, config.NewLoader(effectiveConfigPath, version), configMgrPath)
 
 	if current := cfgHolder.Current(); current != nil {
 		snap = *current

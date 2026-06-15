@@ -83,6 +83,10 @@ type memSub struct {
 	// a publish blocked on a full channel behind a long-lived context would
 	// prevent Close from ever acquiring the write lock, causing a deadlock.
 	done chan struct{}
+
+	// closeOnce makes Close idempotent: close(s.done) below is unguarded, so a
+	// second Close would panic on closing an already-closed channel.
+	closeOnce sync.Once
 }
 
 func (s *memSub) C() <-chan Message {
@@ -138,7 +142,8 @@ func (s *memSub) Close() error {
 	// Signal in-flight delivers to bail out before acquiring the write lock.
 	// This avoids a deadlock where a publish blocked on a full channel behind a
 	// long-lived context holds the read lock and prevents Close from proceeding.
-	close(s.done)
+	// Guarded by closeOnce so a second Close does not panic on close(s.done).
+	s.closeOnce.Do(func() { close(s.done) })
 
 	// Close the channel under the write lock so it cannot race an in-flight
 	// deliver (which holds the read lock while selecting on ch). Closing the

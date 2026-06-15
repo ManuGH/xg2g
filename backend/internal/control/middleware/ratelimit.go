@@ -83,7 +83,13 @@ func RefreshRateLimit() func(http.Handler) http.Handler {
 }
 
 // APIRateLimit returns a rate limiter configured via AppConfig.
-func APIRateLimit(enabled bool, rps int, burst int, whitelist []string) func(http.Handler) http.Handler {
+//
+// There is intentionally NO burst parameter: this limiter (httprate) is a sliding-window
+// counter, as is the per-class exposureRateLimiter, and a window counter has no burst
+// capacity to configure. The former api.rateLimit.burst knob is deprecated and inert — see
+// DeprecatedBurstWarning. (The working burst lives elsewhere, on the Enigma2 client's
+// x/time/rate token bucket, and is unrelated to this API limiter.)
+func APIRateLimit(enabled bool, rps int, whitelist []string) func(http.Handler) http.Handler {
 	if !enabled {
 		// Passthrough if disabled
 		return func(next http.Handler) http.Handler {
@@ -104,6 +110,24 @@ func APIRateLimit(enabled bool, rps int, burst int, whitelist []string) func(htt
 		WindowSize:   time.Minute,
 		Whitelist:    whitelist,
 	})
+}
+
+// DeprecatedAPIRateLimitBurstDefault is the historical default of the now-inert
+// api.rateLimit.burst config knob. A configured value differing from it means the operator
+// explicitly tuned a setting that has no effect.
+const DeprecatedAPIRateLimitBurstDefault = 20
+
+// DeprecatedBurstWarning reports whether a configured API rate-limit burst value warrants a
+// one-time startup warning, plus the message to log. The API rate limiter is window-based and
+// has no burst capacity, so the value is inert; an operator who set a NON-DEFAULT value
+// expects an effect and deserves to be told there is none, rather than silently debugging why
+// their tuning does nothing. A value equal to the default (i.e. effectively unconfigured)
+// warrants no warning. Pure function so the decision is unit-tested without log capture.
+func DeprecatedBurstWarning(burst int) (string, bool) {
+	if burst == DeprecatedAPIRateLimitBurstDefault {
+		return "", false
+	}
+	return fmt.Sprintf("api.rateLimit.burst is set to %d but has no effect: the API rate limiter is window-based and does not support burst capacity (deprecated, inert)", burst), true
 }
 
 func parseWhitelist(entries []string) ([]net.IP, []*net.IPNet) {

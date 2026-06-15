@@ -151,7 +151,7 @@ func deriveSessionPlaybackHealthEvidence(
 	evidence.PlaylistRequests = hls.PlaylistRequestCount
 	evidence.LastPlaylistAtMs = hls.LastPlaylistAtUnix * 1000
 	evidence.SegmentRequests = hls.SegmentRequestCount
-	evidence.LastSegmentAtMs = hls.LastSegmentAtUnix * 1000
+	evidence.LastSegmentAtMs = hls.LastSegmentAtUnix // already milliseconds (set via now.UnixMilli)
 	evidence.LastSegmentName = strings.TrimSpace(hls.LastSegmentName)
 	evidence.LatestSegmentLagMs = int64(hls.LatestSegmentLagMs)
 	evidence.LastSegmentGapMs = int64(hls.LastSegmentGapMs)

@@ -2,8 +2,6 @@ package artifacts
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -75,8 +73,11 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	if !exists {
 		// First access: Start pipeline via EnsureSpec
 		if err := r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile); err != nil {
-			// If build trigger fails (e.g. source not found), map to correct error.
-			r.vodManager.TriggerProbe(metaID, "build trigger failed: "+err.Error())
+			// If build trigger fails (e.g. source not found), kick off a probe so the
+			// pipeline can resolve the real input path. Pass "" — NOT the error string:
+			// TriggerProbe stores a non-empty input verbatim as meta.ResolvedPath, so
+			// passing the error message permanently poisoned the probe input path.
+			r.vodManager.TriggerProbe(metaID, "")
 		}
 		// Return PREPARING to indicate process started
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing"}
@@ -398,26 +399,9 @@ func (r *DefaultResolver) resolveSource(serviceRef string) (string, string, stri
 	return "receiver", u.String(), "", nil
 }
 
+// decodeRef delegates to the single shared decoder so the household access gate and the
+// resolver can never diverge on which encodings they accept (the source of the base64
+// access-bypass). See recservice.DecodeRecordingRef.
 func decodeRef(id string) (string, bool) {
-	// Try Hex (Priority)
-	if b, err := hex.DecodeString(id); err == nil {
-		return string(b), true
-	}
-	// Try RawURL (No Padding)
-	if b, err := base64.RawURLEncoding.DecodeString(id); err == nil {
-		return string(b), true
-	}
-	// Try URL Encoding (Padding)
-	if b, err := base64.URLEncoding.DecodeString(id); err == nil {
-		return string(b), true
-	}
-	// Try RawStd (No Padding)
-	if b, err := base64.RawStdEncoding.DecodeString(id); err == nil {
-		return string(b), true
-	}
-	// Fallback to StdEncoding (Padding)
-	if b, err := base64.StdEncoding.DecodeString(id); err == nil {
-		return string(b), true
-	}
-	return "", false
+	return recservice.DecodeRecordingRef(id)
 }

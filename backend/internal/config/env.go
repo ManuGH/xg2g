@@ -24,47 +24,50 @@ func ParseString(key, defaultValue string) string {
 	return parseStringWithLookup(log.WithComponent("config"), currentProcessLookupEnv(), key, defaultValue)
 }
 
-func parseStringWithLookup(logger zerolog.Logger, lookup envLookupFunc, key, defaultValue string) string {
+// envPresent is the single source of truth for "is this env var effective?". It reports a
+// value only when the key is set to a NON-EMPTY string; an unset OR explicitly-empty var is
+// "not present" and the caller falls back to the lower-precedence value (file/default).
+//
+// This is deliberately the ONE definition of "set" shared by the env-merge
+// (parseString/Int/Duration below) AND the conflict check (checkVODConflicts), so the two
+// can never disagree on what counts as set. The empty-as-unset rule has a real reason: a
+// set-but-empty sensitive key (a token/password var set to "") must not override and wipe a
+// file-configured value, which would fail auth closed (lockout).
+func envPresent(lookup envLookupFunc, key string) (string, bool) {
 	if lookup == nil {
 		lookup = currentProcessLookupEnv()
 	}
-	if value, exists := lookup(key); exists {
-		lowerKey := strings.ToLower(key)
-		switch {
-		case value == "":
-			// An explicitly-empty env var falls back to the default for EVERY
-			// key, sensitive or not. This case must be first: otherwise a
-			// set-but-empty sensitive key (an API-token/password var set to "")
-			// matched the sensitive case below and returned "", silently wiping
-			// a file-configured token (auth then fails closed -> lockout).
-			logger.Debug().
-				Str("key", key).
-				Str("default", defaultValue).
-				Str("source", "default").
-				Msg("using default value (environment variable is empty)")
-			return defaultValue
-		case strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "password"):
-			// For sensitive vars, just log that it was set (never the value)
-			logger.Debug().
-				Str("key", key).
-				Str("source", "environment").
-				Bool("sensitive", true).
-				Msg("using environment variable")
-		default:
-			logger.Debug().
-				Str("key", key).
-				Str("value", value).
-				Str("source", "environment").
-				Msg("using environment variable")
-		}
-		return value
+	if value, ok := lookup(key); ok && value != "" {
+		return value, true
 	}
-	logger.Debug().
-		Str("key", key).
-		Str("default", defaultValue).
-		Str("source", "default").
-		Msg("using default value")
-	return defaultValue
+	return "", false
+}
+
+func parseStringWithLookup(logger zerolog.Logger, lookup envLookupFunc, key, defaultValue string) string {
+	value, present := envPresent(lookup, key)
+	if !present {
+		logger.Debug().
+			Str("key", key).
+			Str("default", defaultValue).
+			Str("source", "default").
+			Msg("using default value (environment variable unset or empty)")
+		return defaultValue
+	}
+	if lowerKey := strings.ToLower(key); strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "password") {
+		// For sensitive vars, just log that it was set (never the value).
+		logger.Debug().
+			Str("key", key).
+			Str("source", "environment").
+			Bool("sensitive", true).
+			Msg("using environment variable")
+	} else {
+		logger.Debug().
+			Str("key", key).
+			Str("value", value).
+			Str("source", "environment").
+			Msg("using environment variable")
+	}
+	return value
 }
 
 // ParseInt reads an integer from environment variable or returns default value.
@@ -80,74 +83,54 @@ func ParseDuration(key string, defaultValue time.Duration) time.Duration {
 }
 
 func parseIntWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue int) int {
-	if lookup == nil {
-		lookup = currentProcessLookupEnv()
-	}
-	if v, ok := lookup(key); ok {
-		if v == "" {
-			logger.Debug().
-				Str("key", key).
-				Int("default", defaultValue).
-				Str("source", "default").
-				Msg("using default value (environment variable is empty)")
-			return defaultValue
-		}
-		if i, err := strconv.Atoi(v); err == nil {
-			logger.Debug().
-				Str("key", key).
-				Int("value", i).
-				Str("source", "environment").
-				Msg("using environment variable")
-			return i
-		}
-		logger.Warn().
+	v, present := envPresent(lookup, key)
+	if !present {
+		logger.Debug().
 			Str("key", key).
-			Str("value", v).
 			Int("default", defaultValue).
-			Msg("invalid integer in environment variable, using default")
+			Str("source", "default").
+			Msg("using default value (environment variable unset or empty)")
 		return defaultValue
 	}
-	logger.Debug().
+	if i, err := strconv.Atoi(v); err == nil {
+		logger.Debug().
+			Str("key", key).
+			Int("value", i).
+			Str("source", "environment").
+			Msg("using environment variable")
+		return i
+	}
+	logger.Warn().
 		Str("key", key).
+		Str("value", v).
 		Int("default", defaultValue).
-		Str("source", "default").
-		Msg("using default value")
+		Msg("invalid integer in environment variable, using default")
 	return defaultValue
 }
 
 func parseDurationWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue time.Duration) time.Duration {
-	if lookup == nil {
-		lookup = currentProcessLookupEnv()
-	}
-	if v, ok := lookup(key); ok {
-		if v == "" {
-			logger.Debug().
-				Str("key", key).
-				Dur("default", defaultValue).
-				Str("source", "default").
-				Msg("using default value (environment variable is empty)")
-			return defaultValue
-		}
-		if d, err := time.ParseDuration(v); err == nil {
-			logger.Debug().
-				Str("key", key).
-				Dur("value", d).
-				Str("source", "environment").
-				Msg("using environment variable")
-			return d
-		}
-		logger.Warn().
+	v, present := envPresent(lookup, key)
+	if !present {
+		logger.Debug().
 			Str("key", key).
-			Str("value", v).
 			Dur("default", defaultValue).
-			Msg("invalid duration in environment variable, using default")
+			Str("source", "default").
+			Msg("using default value (environment variable unset or empty)")
 		return defaultValue
 	}
-	logger.Debug().
+	if d, err := time.ParseDuration(v); err == nil {
+		logger.Debug().
+			Str("key", key).
+			Dur("value", d).
+			Str("source", "environment").
+			Msg("using environment variable")
+		return d
+	}
+	logger.Warn().
 		Str("key", key).
+		Str("value", v).
 		Dur("default", defaultValue).
-		Str("source", "default").
-		Msg("using default value")
+		Msg("invalid duration in environment variable, using default")
 	return defaultValue
 }
 

@@ -132,7 +132,11 @@ func (w *Watchdog) ParseLine(line string) {
 	case "progress":
 		if val == "end" {
 			w.state = StateCompleted
-			w.cancel()
+			// cancel is only set once Run() starts; ParseLine can be driven by the
+			// stderr scanner before then, so a nil cancel would panic.
+			if w.cancel != nil {
+				w.cancel()
+			}
 		}
 	}
 }

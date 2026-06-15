@@ -40,6 +40,30 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvMonetization(cfg)
 	l.mergeEnvRecordings(cfg)
 	l.mergeEnvVerification(cfg)
+	l.mergeEnvVOD(cfg)
+}
+
+// mergeEnvVOD applies the XG2G_VOD_* environment overrides to the flat VOD fields (the
+// representation the runtime reads). It was missing entirely (merge_env had no VOD case), so
+// env-only VOD configuration was never applied — yet checkVODConflicts already errored on it
+// (M14). Per-key via the standard helpers, so it inherits the canonical precedence: env >
+// file (this runs after mergeFileConfig), per-key (only set keys override), and empty==unset
+// (an empty var falls back to the file/default via the SAME envPresent predicate the conflict
+// check uses).
+//
+// Scope (A+): it deliberately does NOT re-sync the typed cfg.VOD. That representation is not
+// seeded from the registry defaults without a YAML vod: block (separate finding M14b), so
+// rebuilding it from these flat fields would wipe its defaults. NOTE: of the five fields only
+// VODCacheTTL has a runtime reader today; VODProbeSize/AnalyzeDuration/StallTimeout/
+// MaxConcurrent are not read anywhere (the real probe params come from cfg.Enigma2.*) —
+// separate finding M14c. Merging the four is for env-contract completeness, not a runtime
+// effect; the tests label that honestly.
+func (l *Loader) mergeEnvVOD(cfg *AppConfig) {
+	cfg.VODProbeSize = l.envString("XG2G_VOD_PROBE_SIZE", cfg.VODProbeSize)
+	cfg.VODAnalyzeDuration = l.envString("XG2G_VOD_ANALYZE_DURATION", cfg.VODAnalyzeDuration)
+	cfg.VODStallTimeout = l.envDuration("XG2G_VOD_STALL_TIMEOUT", cfg.VODStallTimeout)
+	cfg.VODMaxConcurrent = l.envInt("XG2G_VOD_MAX_CONCURRENT", cfg.VODMaxConcurrent)
+	cfg.VODCacheTTL = l.envDuration("XG2G_VOD_CACHE_TTL", cfg.VODCacheTTL)
 }
 
 func (l *Loader) mergeEnvCore(cfg *AppConfig) {

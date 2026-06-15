@@ -356,10 +356,16 @@ func (m *mockPathResolver) ResolveRecordingPath(ref string) (string, string, str
 type mockManager struct {
 	mu        sync.Mutex
 	data      map[string]vod.Metadata
+	jobs      map[string]*vod.JobStatus // keyed by cache dir; nil/empty preserves the old "no active job" behavior
 	ProbeHook func(ctx context.Context, path string) (*vod.StreamInfo, error)
 }
 
 func (m *mockManager) Get(ctx context.Context, dir string) (*vod.JobStatus, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if j, ok := m.jobs[dir]; ok {
+		return j, true
+	}
 	return nil, false
 }
 func (m *mockManager) GetMetadata(ref string) (vod.Metadata, bool) {

@@ -153,12 +153,18 @@ export function usePlaybackEngine({
 
     const onLoadedMetadata = () => {
       pendingNativeAutoplayRef.current = null;
-      video.play().catch((err) => debugWarn(label, err));
+      video.play().catch((err) => {
+        debugWarn(label, err);
+        // Autoplay was rejected (e.g. Safari/iOS gesture policy or Low-Power-Mode).
+        // Mirror the hls.js path: clear the startup overlay and surface the play
+        // control instead of leaving the status pinned on 'buffering' forever.
+        setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+      });
     };
 
     pendingNativeAutoplayRef.current = onLoadedMetadata;
     video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
-  }, [clearPendingNativeAutoplay]);
+  }, [clearPendingNativeAutoplay, setStatus]);
 
   const startNativeHlsPlayback = useCallback((url: string, autoplayLabel: string) => {
     const video = videoRef.current;
@@ -842,6 +848,7 @@ export function usePlaybackEngine({
               const started = beginSessionDecodeRecovery(0, `${data.type}: ${data.details}`, (recoveryErr) => {
                 debugError('[V3Player] NETWORK_ERROR 401: session recovery failed', recoveryErr);
                 hlsRef.current?.destroy();
+                hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
                 setStatus('error');
                 reportPlaybackFailure({
                   title: recoveryErr instanceof Error && recoveryErr.message
@@ -864,6 +871,7 @@ export function usePlaybackEngine({
               });
               if (!started) {
                 hlsRef.current?.destroy();
+                hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
                 setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
@@ -904,6 +912,7 @@ export function usePlaybackEngine({
               }
               debugError(`[V3Player] NETWORK_ERROR: max retries (${maxNetworkRetries}) exhausted`);
               hlsRef.current?.destroy();
+              hlsRef.current = null; // null the ref so pending retry/stall timers bail instead of calling startLoad() on a destroyed instance
               setStatus('error');
               reportMediaFailure({
                 title: presentation.title,
@@ -930,6 +939,7 @@ export function usePlaybackEngine({
               const started = beginSessionDecodeRecovery(3, `${data.type}: ${data.details}`, () => {
                 debugError('[V3Player] MEDIA_ERROR: session reattach failed, failing terminally');
                 hlsRef.current?.destroy();
+                hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
                 setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
@@ -945,6 +955,7 @@ export function usePlaybackEngine({
               if (!started) {
                 debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
                 hlsRef.current?.destroy();
+                hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
                 setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
@@ -964,6 +975,7 @@ export function usePlaybackEngine({
               void reportError('error', 0, `${data.type}: ${data.details}`, playbackEngineContext('decode', { engine: 'hlsjs' }));
             }
             hlsRef.current?.destroy();
+            hlsRef.current = null; // null the ref so pending retry/stall timers bail instead of calling startLoad() on a destroyed instance
             setStatus('error');
             reportMediaFailure({
               title: presentation.title,
@@ -1020,8 +1032,13 @@ export function usePlaybackEngine({
     debugLog('[V3Player] Switching to Direct MP4 Mode:', url);
     video.src = url;
     video.load();
-    video.play().catch((err) => debugWarn('Autoplay failed', err));
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, videoRef]);
+    video.play().catch((err) => {
+      debugWarn('Autoplay failed', err);
+      // Autoplay rejected: clear the startup overlay and show the play control rather
+      // than staying stuck on 'buffering' (mirrors the hls.js and native-HLS paths).
+      setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+    });
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
 
   useEffect(() => {
     const videoEl = videoRef.current;

@@ -1,6 +1,7 @@
 package recordings
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"net/url"
@@ -152,6 +153,35 @@ func DecodeRecordingID(id string) (string, bool) {
 		return "", false
 	}
 	return decoded, true
+}
+
+// DecodeRecordingRef decodes a public recording ID into its serviceRef using EVERY
+// encoding the artifact resolver accepts (hex first, then the base64 variants). It is the
+// single source of truth shared by the resolver and the household access gate.
+//
+// SECURITY: the access gate MUST decode an ID exactly as the resolver does. The strict,
+// hex-only DecodeRecordingID returns (_, false) for a base64-encoded ID, and the gate
+// previously treated that as "allow" — so a restricted profile could reach a forbidden
+// recording by base64-encoding its ID (the gate failed open while the resolver still
+// resolved the base64 form). Unlike DecodeRecordingID this performs no ValidateRecordingRef
+// step, to remain byte-for-byte equivalent to the resolver's decoder.
+func DecodeRecordingRef(id string) (string, bool) {
+	if b, err := hex.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	if b, err := base64.RawURLEncoding.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	if b, err := base64.URLEncoding.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	if b, err := base64.RawStdEncoding.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	if b, err := base64.StdEncoding.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	return "", false
 }
 
 // CanonicalResumeKeyFromServiceRef returns the single canonical resume key for a

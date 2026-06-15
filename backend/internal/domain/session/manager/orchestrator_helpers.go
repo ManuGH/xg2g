@@ -83,10 +83,16 @@ func (o *Orchestrator) buildSessionContext(session *model.SessionRecord, e model
 }
 
 type leaseAcquisition struct {
-	Slot         int
-	TunerLease   store.Lease
-	DedupLease   store.Lease
-	HBCancel     context.CancelFunc
-	HBCtx        context.Context
+	Slot       int
+	TunerLease store.Lease
+	DedupLease store.Lease
+	HBCancel   context.CancelFunc
+	HBCtx      context.Context
+	// ReleaseDedup / ReleaseTuner are in-memory release closures bound at acquisition time.
+	// They are the AUTHORITATIVE release path for the session this process started: they do
+	// not depend on the ContextData tuner-slot mirror (B) being persisted, so they cover the
+	// window where start fails after the lease is acquired but before transitionStarting
+	// commits B. Both default to no-ops so an unacquired lease releases cleanly.
 	ReleaseDedup func()
+	ReleaseTuner func()
 }

@@ -78,7 +78,34 @@ func (m *Manager) Save() error {
 		return err
 	}
 
-	return os.WriteFile(m.filePath, data, 0600)
+	// Atomic write: a torn os.WriteFile (crash/disk-full mid-write) left a truncated
+	// channels.json that Load fatally rejects, bricking startup. Write to a temp file in
+	// the SAME directory and rename over the target.
+	//
+	// The temp MUST be created via filepath.Dir(target): os.Rename is only atomic within
+	// one filesystem, so a temp in /tmp (or any other mount — common with LXC/Proxmox bind
+	// mounts) would make rename degrade to copy+unlink and reintroduce the torn-write
+	// window. os.CreateTemp also gives a UNIQUE name, so concurrent Save() callers (Save
+	// only takes an RLock) cannot clobber each other's temp file.
+	tmp, err := os.CreateTemp(filepath.Dir(m.filePath), ".channels-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename succeeds
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// Rename within the same directory is atomic: a reader sees either the old or the new
+	// file, never a torn one. (We do not fsync the directory afterwards — matching the
+	// codebase's other atomic writers; the goal here is no-torn-write, not power-loss
+	// durability for what is re-derivable UI toggle state.)
+	return os.Rename(tmpName, m.filePath)
 }
 
 // IsEnabled checks if a channel is enabled

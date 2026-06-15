@@ -103,6 +103,15 @@ func DeriveRecordingStatus(now time.Time, file FilePresenceClass, timer *TimerTr
 				return RecordingStatusFailed, "timer_past_file_partial"
 			}
 		}
+
+		// C2. POST-ROLL GRACE: the window has ended but we are still within the grace
+		// period (isNowInWindow and isFuture are both false here, and !isPastGrace). A
+		// small/partial file is still being finalized/flushed — declaring FAILED now (via
+		// the residual branch below) is premature. Treat it as still recording until grace
+		// elapses, at which point section C resolves it definitively.
+		if !isPastGrace && (file == FilePresenceSmall || file == FilePresencePartial) {
+			return RecordingStatusRecording, "timer_grace_file_finalizing"
+		}
 	}
 
 	// 3. Evaluate File-Based States (Completed)

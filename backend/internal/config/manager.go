@@ -42,6 +42,10 @@ func (m *Manager) Save(cfg *AppConfig) error {
 		return fmt.Errorf("create temp config file: %w", err)
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
+	// Close the descriptor on every path (LIFO: runs before the os.Remove above).
+	// The error paths below returned without closing tmp, leaking the fd; the happy
+	// path also closes explicitly, and a double Close is harmless here.
+	defer func() { _ = tmp.Close() }()
 
 	enc := yaml.NewEncoder(tmp)
 	enc.SetIndent(2)

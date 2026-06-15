@@ -119,12 +119,27 @@ func (s *Service) Start(ctx context.Context, input StartInput) (*StartResult, er
 func (s *Service) Status(ctx context.Context, input StatusInput) (*StatusResult, error) {
 	record, err := s.lookupPairing(ctx, input.PairingID)
 	if err != nil {
+		// Do not leak whether the pairing exists: report a "not found" as the SAME forbidden
+		// error a secret mismatch returns, and mutate nothing. (Store/input errors are
+		// infrastructure/validation failures, not an existence signal, so they pass through.)
+		var pErr *Error
+		if errors.As(err, &pErr) && pErr.Kind == ErrorNotFound {
+			s.recordAudit(ctx, AuditEvent{
+				Action:    "pairing.status",
+				PairingID: input.PairingID,
+				Outcome:   "denied",
+				Reason:    "not_found",
+				At:        s.now(),
+			})
+			return nil, &Error{Kind: ErrorForbidden, Message: "pairing secret mismatch", Cause: err}
+		}
 		return nil, err
 	}
-	record, err = s.persistExpiryIfNeeded(ctx, input.PairingID, record)
-	if err != nil {
-		return nil, err
-	}
+
+	// Validate the secret BEFORE any state mutation. The previous order persisted a lazy
+	// expiry transition (a store write) and ran lookup-leaking logic before the caller was
+	// authenticated, so an unauthenticated caller with a valid pairing id could both probe
+	// existence and trigger a write.
 	if err := lifecycle.ValidatePairingSecret(record, hashOpaqueSecret(input.PairingSecret)); err != nil {
 		s.recordAudit(ctx, AuditEvent{
 			Action:    "pairing.status",
@@ -134,6 +149,12 @@ func (s *Service) Status(ctx context.Context, input StatusInput) (*StatusResult,
 			At:        s.now(),
 		})
 		return nil, &Error{Kind: ErrorForbidden, Message: "pairing secret mismatch", Cause: err}
+	}
+
+	// Authenticated: now it is safe to persist a lazy expiry transition.
+	record, err = s.persistExpiryIfNeeded(ctx, input.PairingID, record)
+	if err != nil {
+		return nil, err
 	}
 
 	s.recordAudit(ctx, AuditEvent{

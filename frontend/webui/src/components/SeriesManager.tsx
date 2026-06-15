@@ -17,6 +17,7 @@ import {
   type SeriesRuleUpdate
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
+import { throwOnClientResultError } from '../services/clientWrapper';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { ROUTE_MAP } from '../routes';
 import { Button, Card, StatusChip } from './ui';
@@ -143,7 +144,11 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
     });
     if (!ok) return;
     try {
-      await deleteSeriesRule({ path: { id } });
+      // The SDK resolves with { error } on HTTP failure instead of throwing, so the
+      // result MUST be checked — otherwise a rejected delete silently reloads the
+      // (unchanged) rule list and the rule reappears with no error feedback.
+      const result = await deleteSeriesRule({ path: { id } });
+      throwOnClientResultError(result, { source: 'SeriesManager.deleteSeriesRule' });
       await loadRules();
     } catch (err: any) {
       toast({ kind: 'error', message: 'Failed to delete rule', details: err.message || 'Unknown error' });
@@ -169,10 +174,11 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
           ...(currentRule.days?.length ? { days: currentRule.days } : {})
         };
 
-        await updateSeriesRule({
+        const result = await updateSeriesRule({
           path: { id: currentRule.id },
           body: updatePayload
         });
+        throwOnClientResultError(result, { source: 'SeriesManager.updateSeriesRule' });
       } else {
         // UI-INV-SERIES-001: Omit empty filters to avoid unnecessary state synthesis.
         const createPayload: SeriesRuleWritable = {
@@ -184,7 +190,8 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
           ...(currentRule.startWindow?.trim() ? { startWindow: currentRule.startWindow.trim() } : {})
         };
 
-        await createSeriesRule({ body: createPayload });
+        const result = await createSeriesRule({ body: createPayload });
+        throwOnClientResultError(result, { source: 'SeriesManager.createSeriesRule' });
       }
       setIsEditing(false);
       await loadRules();
@@ -200,6 +207,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         path: { id },
         query: { trigger: 'manual' }
       });
+      throwOnClientResultError(response, { source: 'SeriesManager.runSeriesRule' });
       const report = response.data;
       if (report) {
         toast({

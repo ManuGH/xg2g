@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,12 +19,15 @@ func (l *Loader) checkVODConflicts(src *FileConfig) error {
 		return nil
 	}
 
-	// Check each field for divergence (YAML typed vs ENV legacy)
-	// We only fail if BOTH are explicitly set AND they differ
+	// A field conflicts only if BOTH sources are EFFECTIVE and differ. "Effective" for env is
+	// the SAME predicate the env-merge uses (envPresent: set AND non-empty), so an empty
+	// XG2G_VOD_* var — which the merge ignores — cannot trigger a phantom conflict against a
+	// non-empty file value. Reads go through l.envLookup (not the process env) so the check
+	// and the merge observe one source of truth.
 
 	// ProbeSize
 	if src.VOD.ProbeSize != "" {
-		if envVal, ok := l.envLookup("XG2G_VOD_PROBE_SIZE"); ok {
+		if envVal, present := envPresent(l.envLookup, "XG2G_VOD_PROBE_SIZE"); present {
 			if strings.TrimSpace(src.VOD.ProbeSize) != strings.TrimSpace(envVal) {
 				return fmt.Errorf("vod.probeSize (%q) conflicts with XG2G_VOD_PROBE_SIZE env (%q). Remove one source", src.VOD.ProbeSize, envVal)
 			}
@@ -32,7 +36,7 @@ func (l *Loader) checkVODConflicts(src *FileConfig) error {
 
 	// AnalyzeDuration
 	if src.VOD.AnalyzeDuration != "" {
-		if envVal, ok := l.envLookup("XG2G_VOD_ANALYZE_DURATION"); ok {
+		if envVal, present := envPresent(l.envLookup, "XG2G_VOD_ANALYZE_DURATION"); present {
 			if strings.TrimSpace(src.VOD.AnalyzeDuration) != strings.TrimSpace(envVal) {
 				return fmt.Errorf("vod.analyzeDuration (%q) conflicts with XG2G_VOD_ANALYZE_DURATION env (%q). Remove one source", src.VOD.AnalyzeDuration, envVal)
 			}
@@ -41,7 +45,7 @@ func (l *Loader) checkVODConflicts(src *FileConfig) error {
 
 	// StallTimeout (duration comparison)
 	if src.VOD.StallTimeout != "" {
-		if envVal, ok := l.envLookup("XG2G_VOD_STALL_TIMEOUT"); ok {
+		if envVal, present := envPresent(l.envLookup, "XG2G_VOD_STALL_TIMEOUT"); present {
 			if !equalDuration(src.VOD.StallTimeout, envVal) {
 				return fmt.Errorf("vod.stallTimeout (%q) conflicts with XG2G_VOD_STALL_TIMEOUT env (%q). Remove one source", src.VOD.StallTimeout, envVal)
 			}
@@ -50,9 +54,11 @@ func (l *Loader) checkVODConflicts(src *FileConfig) error {
 
 	// MaxConcurrent
 	if src.VOD.MaxConcurrent > 0 {
-		if _, ok := l.envLookup("XG2G_VOD_MAX_CONCURRENT"); ok {
-			envInt := ParseInt("XG2G_VOD_MAX_CONCURRENT", 0)
-			if src.VOD.MaxConcurrent != envInt {
+		if envVal, present := envPresent(l.envLookup, "XG2G_VOD_MAX_CONCURRENT"); present {
+			// Parse the value envPresent returned (NOT ParseInt, which reads the process env
+			// and would bypass l.envLookup). A non-empty-but-unparseable env is ignored by
+			// the merge too, so it cannot conflict.
+			if envInt, err := strconv.Atoi(strings.TrimSpace(envVal)); err == nil && src.VOD.MaxConcurrent != envInt {
 				return fmt.Errorf("vod.maxConcurrent (%d) conflicts with XG2G_VOD_MAX_CONCURRENT env (%d). Remove one source", src.VOD.MaxConcurrent, envInt)
 			}
 		}
@@ -60,7 +66,7 @@ func (l *Loader) checkVODConflicts(src *FileConfig) error {
 
 	// CacheTTL (duration comparison)
 	if src.VOD.CacheTTL != "" {
-		if envVal, ok := l.envLookup("XG2G_VOD_CACHE_TTL"); ok {
+		if envVal, present := envPresent(l.envLookup, "XG2G_VOD_CACHE_TTL"); present {
 			if !equalDuration(src.VOD.CacheTTL, envVal) {
 				return fmt.Errorf("vod.cacheTTL (%q) conflicts with XG2G_VOD_CACHE_TTL env (%q). Remove one source", src.VOD.CacheTTL, envVal)
 			}
