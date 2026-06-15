@@ -18,7 +18,11 @@ import (
 // interval (so the pattern stays discoverable) and DEBUG for the suppressed remainder.
 const householdNoHeaderWarnInterval = 5 * time.Minute
 
-// householdNoHeaderWarnAt holds the unix-nano timestamp of the last emitted WARN.
+// householdNoHeaderWarnAt holds the unix-nano timestamp of the last emitted WARN. The
+// window is intentionally GLOBAL, not per-profile/per-tenant: on a self-hosted
+// single-household box that is exactly right (one line every 5 min). It is NOT worth adding
+// per-tenant tracking for a hypothetical multi-tenant deployment that does not exist today
+// (where a chatty client could otherwise swallow another tenant's warn window).
 var householdNoHeaderWarnAt atomic.Int64
 
 func (s *Server) householdMiddleware(next http.Handler) http.Handler {
