@@ -8,6 +8,9 @@ import (
 
 var ErrNilState = errors.New("resume state must not be nil")
 
+// ErrStoreClosed is returned by a closed store instead of panicking on a nil map.
+var ErrStoreClosed = errors.New("resume store is closed")
+
 // State represents the saved playback state for a user and recording.
 type State struct {
 	// PosSeconds is the last known playback position in seconds.

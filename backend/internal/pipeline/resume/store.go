@@ -56,6 +56,10 @@ func (s *MemoryStore) Put(ctx context.Context, principalID, recordingKey string,
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.data == nil {
+		// Close() nils the map; assigning to a nil map would panic.
+		return ErrStoreClosed
+	}
 	key := compositeKey(principalID, recordingKey)
 	s.data[key] = cloneState(state)
 	return nil
