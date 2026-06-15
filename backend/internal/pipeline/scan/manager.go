@@ -202,6 +202,14 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 
 	now := time.Now()
 	if err != nil {
+		// If the CALLER's context is canceled/expired (e.g. client disconnect), the
+		// probe was aborted, not failed. Persisting a failure record here would set a
+		// 24h retry lockout for a transient cancellation. The probe's own timeout uses a
+		// child context, so ctx.Err() stays nil for a genuine probe timeout — only a
+		// caller-side cancellation trips this guard.
+		if ctx.Err() != nil {
+			return existingCap, existingFound, err
+		}
 		cap := m.mergeFailedAttempt(existingCap, existingFound, serviceRef, channel.Name, now, err)
 		m.store.Update(cap)
 		return cap, true, err
