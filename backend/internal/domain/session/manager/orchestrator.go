@@ -301,12 +301,17 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		IsVOD:      false,
 	}
 
+	// Declared before the finalizeDeferred defer so the release path exists from before any
+	// lease is acquired. Passed by pointer (like &session) so finalizeDeferred reads the
+	// handle assigned by acquireLeases below, not its nil value at defer-registration time.
+	var leases *leaseAcquisition
+
 	defer func() {
 		if retErr != nil {
 			retErr = wrapWithReasonClass(retErr)
 		}
 	}()
-	defer o.finalizeDeferred(ctx, e, &session, sessionCtx, logger, &startRecorded, recordStart, startResultForReason, &retErr)
+	defer o.finalizeDeferred(ctx, e, &session, &leases, sessionCtx, logger, &startRecorded, recordStart, startResultForReason, &retErr)
 
 	if session == nil {
 		return newReasonError(model.RNotFound, "session not found", nil)
@@ -334,7 +339,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 			Msg("recording playback source selected")
 	}
 
-	leases, err := o.acquireLeases(ctx, sessionCtx, e, leaseOwner, logger)
+	leases, err = o.acquireLeases(ctx, sessionCtx, e, leaseOwner, logger)
 	if err != nil {
 		return err
 	}
