@@ -168,6 +168,15 @@ func (h *handle) monitor(stderr io.Reader) {
 
 	procErrCh := make(chan error, 1)
 	go func() {
+		// os/exec closes the StderrPipe read-end inside cmd.Wait() once the process is
+		// reaped. Draining stderr to its natural EOF first (scanDone) stops Wait from
+		// closing the pipe out from under the scanner mid-drain, which would truncate the
+		// final ffmpeg failure lines that Diagnostics surfaces. Mirrors the already-correct
+		// sibling adapter_process.go. Only THIS goroutine waits on scanDone — the select
+		// below still reacts to wdErrCh and runCtx.Done() independently, so a stalled
+		// process is still terminated promptly (the kill closes the child's stderr, which
+		// is exactly what lets the scanner reach EOF and unblocks this wait).
+		<-scanDone
 		procErrCh <- h.cmd.Wait()
 	}()
 
