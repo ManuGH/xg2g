@@ -5,8 +5,7 @@
 package http
 
 import (
-	"fmt"
-	"html"
+	"html/template"
 	"net/http"
 	"strings"
 )
@@ -89,10 +88,11 @@ func (g *cacheControlGuard) Write(b []byte) (int, error) {
 func writeUIHTMLResponse(w http.ResponseWriter, status int, title, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(
-		w,
-		"<!doctype html><html><head><meta charset=\"utf-8\"><title>xg2g</title></head><body><h1>%s</h1><p>%s</p></body></html>",
-		html.EscapeString(title),
-		html.EscapeString(message),
-	)
+	tmpl := template.Must(template.New("error").Parse(
+		"<!doctype html><html><head><meta charset=\"utf-8\"><title>xg2g</title></head><body><h1>{{.Title}}</h1><p>{{.Message}}</p></body></html>",
+	))
+	_ = tmpl.Execute(w, struct {
+		Title   string
+		Message string
+	}{Title: title, Message: message})
 }
