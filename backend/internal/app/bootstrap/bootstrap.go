@@ -93,6 +93,16 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		return nil, err
 	}
 
+	// L22: promote ForceHTTPS BEFORE cfg is consumed below. buildWireConfigState snapshots
+	// this cfg (BuildSnapshot passes App through unchanged, and the holder snapshots the input
+	// cfg — no file re-load), and api.NewWithDeps builds the server from it. Promoting it
+	// afterwards (as the code did) left both the snapshot and the running server with
+	// ForceHTTPS=false despite TLS being enabled, so the HTTPS-only posture was never advertised.
+	if cfg.TLSEnabled && !cfg.ForceHTTPS {
+		cfg.ForceHTTPS = true
+		logger.Info().Msg("tls enabled - advertising HTTPS-only posture (ForceHTTPS)")
+	}
+
 	configMgr, cfgHolder, snap, cfg := buildWireConfigState(cfg, version, effectiveConfigPath)
 
 	apiDeps := buildAPIConstructorDeps(cfg, snap, logger)
@@ -120,10 +130,6 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		if err != nil {
 			return nil, fmt.Errorf("initialize fallback resume store: %w", err)
 		}
-	}
-	if cfg.TLSEnabled && !cfg.ForceHTTPS {
-		cfg.ForceHTTPS = true
-		logger.Info().Msg("tls enabled - advertising HTTPS-only posture (ForceHTTPS)")
 	}
 
 	v3ScanStore, err := scan.NewStore(cfg.Store.Backend, cfg.Store.Path)
