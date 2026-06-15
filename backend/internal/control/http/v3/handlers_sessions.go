@@ -100,10 +100,12 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 
 	// 4. Trigger Fallback
 	if err != nil {
-		RespondError(w, r, http.StatusNotFound, ErrSessionFeedbackNotFound)
+		// A store error is transient, not a definitive "not found". Returning 404 told the
+		// client to STOP fallback recovery for a decode error; return 503 so it retries.
+		RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable, "session lookup failed")
 		return
 	}
-	if err != nil || sess == nil {
+	if sess == nil {
 		RespondError(w, r, http.StatusNotFound, ErrSessionFeedbackNotFound)
 		return
 	}

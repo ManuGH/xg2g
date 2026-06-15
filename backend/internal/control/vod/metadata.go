@@ -341,10 +341,11 @@ func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, f
 			meta.AudioCodec = info.Audio.CodecName
 		}
 		if info.Video.Duration > 0 {
-			// Validation: prevent zeroing out or wild regression if existing is valid
-			if meta.Duration == 0 || math.Abs(float64(meta.Duration-int64(info.Video.Duration))) < float64(meta.Duration)*0.5 {
-				meta.Duration = int64(math.Round(info.Video.Duration))
-			}
+			// Trust the latest probe's positive duration. The previous guard rejected any
+			// change larger than 50% of the stored value, which pinned a stale duration
+			// after a legitimate re-cut/transcode. Zeroing is already prevented by the
+			// outer `> 0` check.
+			meta.Duration = int64(math.Round(info.Video.Duration))
 		}
 		if info.Video.Width > 0 {
 			meta.Width = info.Video.Width
