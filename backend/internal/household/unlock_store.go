@@ -41,13 +41,28 @@ func (s *InMemoryUnlockStore) CreateUnlock(ttl time.Duration) (string, error) {
 		return "", err
 	}
 
+	now := time.Now()
 	s.mu.Lock()
+	// Opportunistic sweep: IsUnlocked only purges an entry when its exact ID is queried
+	// again, so an expired session that is never revisited leaks forever. Purging here (the
+	// sole growth path) bounds the map to roughly the live unlock count without needing a
+	// background sweeper goroutine and its lifecycle.
+	s.purgeExpiredLocked(now)
 	s.entries[sessionID] = unlockEntry{
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: now.Add(ttl),
 	}
 	s.mu.Unlock()
 
 	return sessionID, nil
+}
+
+// purgeExpiredLocked removes all expired entries. Caller must hold s.mu.
+func (s *InMemoryUnlockStore) purgeExpiredLocked(now time.Time) {
+	for id, entry := range s.entries {
+		if now.After(entry.expiresAt) {
+			delete(s.entries, id)
+		}
+	}
 }
 
 func (s *InMemoryUnlockStore) IsUnlocked(sessionID string) bool {

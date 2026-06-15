@@ -78,7 +78,18 @@ func (m *Manager) Save() error {
 		return err
 	}
 
-	return os.WriteFile(m.filePath, data, 0600)
+	// Atomic write: a torn os.WriteFile (crash/disk-full mid-write) left a truncated
+	// channels.json that Load fatally rejects, bricking startup. Write to a temp file and
+	// rename (atomic on the same filesystem).
+	tmp := m.filePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, m.filePath); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // IsEnabled checks if a channel is enabled

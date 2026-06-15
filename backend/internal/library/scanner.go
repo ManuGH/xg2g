@@ -59,14 +59,16 @@ func (sc *Scanner) ScanRoot(ctx context.Context, cfg RootConfig) (*ScanResult, e
 		result.LastError = fmt.Sprintf("begin transaction: %v", err)
 		return result, fmt.Errorf("begin tx: %w", err)
 	}
+	// Install the rollback BEFORE prepareScanSeenTable: if prepare fails we returned
+	// without ever rolling back, leaking the open transaction.
+	defer func() { _ = tx.Rollback() }()
+
 	if err := sc.store.prepareScanSeenTable(ctx, tx); err != nil {
 		result.Finished = time.Now()
 		result.FinalStatus = RootStatusFailed
 		result.LastError = fmt.Sprintf("prepare scan state: %v", err)
 		return result, fmt.Errorf("prepare scan state: %w", err)
 	}
-
-	defer func() { _ = tx.Rollback() }()
 
 	// Walk filesystem
 	scanTime := time.Now()
