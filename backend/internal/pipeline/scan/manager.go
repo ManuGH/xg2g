@@ -82,6 +82,13 @@ type Manager struct {
 	// serviceRef so different channels still scan in parallel; bounded by the channel count.
 	// Lock ordering: capLocks (per key) may nest m.mu (scanInternal status updates); no path
 	// takes m.mu before a capLocks key, so there is no cycle.
+	//
+	// The lock is held across the probe (real receiver I/O), which is required for RMW
+	// atomicity, but every probe attempt is hard-bounded by runProbeAttempt's
+	// context.WithTimeout (defaultProbeTimeout 8s / extendedProbeTimeout 20s), and the only
+	// other I/O under the lock (resolveProbeURL) is bounded by resolveM3UTimeout. So a hung
+	// receiver cannot hold a key's lock indefinitely — at most a finite sum of those
+	// timeouts for that one channel; other channels stay parallel.
 	capLocks sync.Map // serviceRef -> *sync.Mutex
 
 	lifecycleMu sync.Mutex
