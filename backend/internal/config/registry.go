@@ -206,7 +206,10 @@ func buildRegistry() (*Registry, error) {
 		{Path: "rateLimit.enabled", Env: "", FieldPath: "RateLimitEnabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
 		{Path: "rateLimit.global", Env: "", FieldPath: "RateLimitGlobal", Profile: ProfileAdvanced, Status: StatusActive, Default: 100},
 		{Path: "rateLimit.auth", Env: "", FieldPath: "RateLimitAuth", Profile: ProfileAdvanced, Status: StatusActive, Default: 10},
-		{Path: "rateLimit.burst", Env: "", FieldPath: "RateLimitBurst", Profile: ProfileAdvanced, Status: StatusActive, Default: 20},
+		// Deprecated/inert: the API rate limiter is a window counter (httprate / exposureRateLimiter)
+		// with no burst capacity. The field stays parseable (KnownFields(true) would reject removal,
+		// bricking existing configs) but is no longer wired; a non-default value logs a startup warning.
+		{Path: "rateLimit.burst", Env: "", FieldPath: "RateLimitBurst", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 20},
 		{Path: "rateLimit.whitelist", Env: "XG2G_RATE_LIMIT_WHITELIST", FieldPath: "RateLimitWhitelist", Profile: ProfileAdvanced, Status: StatusActive},
 
 		// --- PICONS ---
