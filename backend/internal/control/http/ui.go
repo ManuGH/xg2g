@@ -6,6 +6,7 @@ package http
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 )
@@ -91,7 +92,7 @@ func writeUIHTMLResponse(w http.ResponseWriter, status int, title, message strin
 	_, _ = fmt.Fprintf(
 		w,
 		"<!doctype html><html><head><meta charset=\"utf-8\"><title>xg2g</title></head><body><h1>%s</h1><p>%s</p></body></html>",
-		title,
-		message,
+		html.EscapeString(title),
+		html.EscapeString(message),
 	)
 }
