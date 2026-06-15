@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/household"
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
@@ -41,6 +42,30 @@ func (s *Server) resolveHouseholdProfile(r *http.Request) (household.Profile, ho
 	explicitHeader := headerValue != ""
 	unlocked := s.isHouseholdUnlocked(r)
 	pinConfigured := s.GetConfig().Household.PinConfigured()
+
+	// SECURITY (M24): absence of the profile header must never grant MORE privilege than
+	// presence. When a household PIN is configured (parental controls are active) and no
+	// profile is explicitly selected, resolve to the least-trusted restricted profile
+	// instead of the unrestricted adult default — otherwise a restricted user escalates
+	// simply by OMITTING the header. This holds regardless of unlock state (defense in
+	// depth: a leaked/stale unlock must not turn a no-header request into the adult
+	// identity, because that identity was never adult to begin with). Without a PIN there
+	// are no parental controls configured, so the historical adult default is preserved.
+	if !explicitHeader && pinConfigured {
+		log.L().Warn().
+			Str("method", r.Method).
+			Str("path", r.URL.Path).
+			Str("resolved_profile", household.RestrictedProfileID).
+			Msg("household: request without X-Household-Profile resolved to restricted profile (PIN configured)")
+		profile := household.CreateRestrictedProfile()
+		return profile, household.AccessState{
+			PinConfigured:  true,
+			Unlocked:       unlocked,
+			ExplicitHeader: false,
+			Protected:      false,
+		}, nil
+	}
+
 	if service == nil {
 		profile := household.CreateDefaultProfile()
 		return profile, household.AccessState{

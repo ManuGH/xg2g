@@ -13,8 +13,9 @@ const (
 	ProfileKindAdult ProfileKind = "adult"
 	ProfileKindChild ProfileKind = "child"
 
-	DefaultProfileID = "household-default"
-	ProfileHeader    = "X-Household-Profile"
+	DefaultProfileID    = "household-default"
+	RestrictedProfileID = "household-restricted"
+	ProfileHeader       = "X-Household-Profile"
 )
 
 var ErrInvalidProfileID = errors.New("household profile id must not be empty")
@@ -45,6 +46,27 @@ func CreateDefaultProfile() Profile {
 			DVRPlayback: true,
 			DVRManage:   true,
 			Settings:    true,
+		},
+	}
+}
+
+// CreateRestrictedProfile returns the least-trusted household profile: child kind, FSK 0,
+// and no DVR or settings permissions. It is the safe identity for a request that does NOT
+// carry an explicit X-Household-Profile header while a household PIN is configured —
+// absence of the header must never resolve to the privileged adult default (M24). Because
+// its permissions are all false, the DVR/settings access gates deny it; live/EPG browsing
+// (not permission-gated) still degrades gracefully rather than hard-failing.
+func CreateRestrictedProfile() Profile {
+	zeroFSK := 0
+	return Profile{
+		ID:     RestrictedProfileID,
+		Name:   "Eingeschränkt",
+		Kind:   ProfileKindChild,
+		MaxFSK: &zeroFSK,
+		Permissions: Permissions{
+			DVRPlayback: false,
+			DVRManage:   false,
+			Settings:    false,
 		},
 	}
 }
