@@ -112,7 +112,10 @@ func (h *handle) Stop(grace, kill time.Duration) error {
 	}
 
 	// Use procgroup for deterministic tree reaping
-	return procgroup.KillGroup(h.cmd.Process.Pid, grace, kill)
+	// KillGroupGraceful signals the group WITHOUT reaping: the monitor goroutine's
+	// h.cmd.Wait() is the sole reaper. KillGroup (which reaps via os.Process.Wait) would
+	// race that wait4 syscall and corrupt the observed exit status.
+	return procgroup.KillGroupGraceful(h.cmd.Process.Pid, grace, kill)
 }
 
 func (h *handle) Progress() <-chan vod.ProgressEvent {
@@ -210,7 +213,8 @@ func (h *handle) terminateProcess(grace, kill time.Duration) {
 	if h.cmd == nil || h.cmd.Process == nil {
 		return
 	}
-	if err := procgroup.KillGroup(h.cmd.Process.Pid, grace, kill); err != nil {
+	// Non-reaping: the monitor goroutine's h.cmd.Wait() is the sole reaper (see Stop).
+	if err := procgroup.KillGroupGraceful(h.cmd.Process.Pid, grace, kill); err != nil {
 		h.logger.Warn().Err(err).Msg("failed to terminate process group gracefully, sending direct kill")
 		_ = h.cmd.Process.Kill()
 	}
