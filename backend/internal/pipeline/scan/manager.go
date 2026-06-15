@@ -75,6 +75,15 @@ type Manager struct {
 	mu     sync.RWMutex
 	status ScanStatus
 
+	// capLocks serializes the store Get→probe→Update read-modify-write PER serviceRef across
+	// the background scan loop and targeted ProbeCapability. Without it, concurrent runs on
+	// the same channel both read the old capability, probe, then the later Update clobbers
+	// the earlier one (lost update — corrupting capability truth for up to 24h). Keyed per
+	// serviceRef so different channels still scan in parallel; bounded by the channel count.
+	// Lock ordering: capLocks (per key) may nest m.mu (scanInternal status updates); no path
+	// takes m.mu before a capLocks key, so there is no cycle.
+	capLocks sync.Map // serviceRef -> *sync.Mutex
+
 	lifecycleMu sync.Mutex
 	runtimeCtx  context.Context
 	cancel      context.CancelFunc
@@ -114,6 +123,16 @@ func (m *Manager) GetCapability(serviceRef string) (Capability, bool) {
 	return cap, true
 }
 
+// lockServiceRefCap acquires the per-serviceRef capability RMW lock and returns its unlock
+// func. Callers must hold it across the whole Get→probe→Update sequence (but not around
+// long unrelated waits such as the scan rate-limit sleep).
+func (m *Manager) lockServiceRefCap(serviceRef string) func() {
+	v, _ := m.capLocks.LoadOrStore(serviceRef, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
 func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capability, bool, error) {
 	if m == nil {
 		return Capability{}, false, fmt.Errorf("scan: manager unavailable")
@@ -131,6 +150,11 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 	if !found {
 		return Capability{}, false, nil
 	}
+
+	// Serialize this serviceRef's Get→probe→Update against the background scan loop and any
+	// other concurrent probe, so they cannot lose each other's update.
+	unlock := m.lockServiceRefCap(serviceRef)
+	defer unlock()
 
 	existingCap, existingFound := m.store.Get(serviceRef)
 	probeURL := channel.URL
@@ -572,45 +596,53 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 			continue
 		}
 
-		existingCap, found := m.store.Get(sRef)
+		// Hold the per-serviceRef lock across this channel's Get→probe→Update so a concurrent
+		// targeted ProbeCapability for the same channel cannot lose the update. Released
+		// before the rate-limit sleep below so the sleep does not serialize other channels.
+		func() {
+			unlock := m.lockServiceRefCap(sRef)
+			defer unlock()
 
-		probeURL := m.resolveProbeURL(ctx, ch, sRef)
+			existingCap, found := m.store.Get(sRef)
 
-		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
-		res, err := m.probeChannelMediaTruth(ctx, ch, sRef, probeURL, existingCap, found)
-		fromStore := found && existingCap.Usable()
+			probeURL := m.resolveProbeURL(ctx, ch, sRef)
 
-		scanned++
-		m.mu.Lock()
-		m.status.ScannedChannels = scanned
-		m.mu.Unlock()
+			log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
+			res, err := m.probeChannelMediaTruth(ctx, ch, sRef, probeURL, existingCap, found)
+			fromStore := found && existingCap.Usable()
 
-		if err != nil {
-			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: probe failed")
-			m.store.Update(m.mergeFailedAttempt(existingCap, found, sRef, ch.Name, time.Now(), err))
-			if !fromStore {
-				atomic.AddInt32(&m.consecutiveFailureCount, 1)
-			}
-		} else {
-			atomic.StoreInt32(&m.consecutiveFailureCount, 0)
-			cap := m.capabilityFromProbe(existingCap, found, sRef, ch.Name, time.Now(), res)
-
-			log.L().Info().
-				Str("sref", sRef).
-				Str("container", cap.Container).
-				Str("video_codec", cap.VideoCodec).
-				Str("audio_codec", cap.AudioCodec).
-				Bool("interlaced", cap.Interlaced).
-				Str("res", cap.Resolution).
-				Str("state", string(cap.State)).
-				Msg("scan: result")
-
-			m.store.Update(cap)
-			updates++
+			scanned++
 			m.mu.Lock()
-			m.status.UpdatedCount = updates
+			m.status.ScannedChannels = scanned
 			m.mu.Unlock()
-		}
+
+			if err != nil {
+				log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: probe failed")
+				m.store.Update(m.mergeFailedAttempt(existingCap, found, sRef, ch.Name, time.Now(), err))
+				if !fromStore {
+					atomic.AddInt32(&m.consecutiveFailureCount, 1)
+				}
+			} else {
+				atomic.StoreInt32(&m.consecutiveFailureCount, 0)
+				cap := m.capabilityFromProbe(existingCap, found, sRef, ch.Name, time.Now(), res)
+
+				log.L().Info().
+					Str("sref", sRef).
+					Str("container", cap.Container).
+					Str("video_codec", cap.VideoCodec).
+					Str("audio_codec", cap.AudioCodec).
+					Bool("interlaced", cap.Interlaced).
+					Str("res", cap.Resolution).
+					Str("state", string(cap.State)).
+					Msg("scan: result")
+
+				m.store.Update(cap)
+				updates++
+				m.mu.Lock()
+				m.status.UpdatedCount = updates
+				m.mu.Unlock()
+			}
+		}()
 
 		if err := m.applyScanRateLimit(ctx); err != nil {
 			return err
