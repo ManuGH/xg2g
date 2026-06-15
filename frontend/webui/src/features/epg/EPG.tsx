@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { epgReducer, createInitialEpgState } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';
 import { addTimer } from '../../client-ts';
+import { throwOnClientResultError } from '../../services/clientWrapper';
 import { useHouseholdProfiles } from '../../context/HouseholdProfilesContext';
 import type { EpgChannel, EpgBouquet, Timer, EpgEvent, EpgFilters } from './types';
 import { EPG_MAX_HORIZON_HOURS } from './types';
@@ -167,7 +168,11 @@ export default function EPG({
       if (!ok) return;
 
       try {
-        await addTimer({
+        // The SDK resolves with { error } instead of throwing on HTTP/network failures;
+        // without this check a rejected create (conflict, invalid serviceRef, DVR
+        // unavailable, expired token) would still show the green "recording scheduled"
+        // toast for a recording that was never created.
+        const result = await addTimer({
           body: {
             serviceRef: event.serviceRef,
             begin: event.start,
@@ -176,6 +181,7 @@ export default function EPG({
             description: normalizeEpgText(event.desc) || '',
           },
         });
+        throwOnClientResultError(result, { source: 'EPG.handleRecord' });
         toast({ kind: 'success', message: t('epg.recordSuccess') });
         loadTimers(); // Refresh feedback immediately
       } catch (err) {

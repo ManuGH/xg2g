@@ -15,6 +15,7 @@ import {
   type Service
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
+import { throwOnClientResultError } from '../services/clientWrapper';
 import { Button } from './ui';
 import styles from './EditTimerDialog.module.css';
 
@@ -196,7 +197,12 @@ export default function EditTimerDialog({
           ...(!formData.enabled ? { enabled: false } : {}),
         };
 
-        await addTimer({ body });
+        // The hey-api SDK resolves with { error } instead of throwing on HTTP/network
+        // failures, so the result MUST be checked — otherwise a rejected create is
+        // treated as success (dialog closes, parent refreshes) and the user believes a
+        // recording was scheduled that never existed.
+        const created = await addTimer({ body });
+        throwOnClientResultError(created, { source: 'EditTimerDialog.addTimer' });
         await onSave();
         onClose();
         return;
@@ -217,10 +223,11 @@ export default function EditTimerDialog({
         return;
       }
 
-      await updateTimer({
+      const updated = await updateTimer({
         path: { timerId: timer.timerId },
         body
       });
+      throwOnClientResultError(updated, { source: 'EditTimerDialog.updateTimer' });
       await onSave(); // Trigger parent refresh
       onClose();
     } catch (err: any) {

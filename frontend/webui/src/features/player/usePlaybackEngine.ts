@@ -153,12 +153,18 @@ export function usePlaybackEngine({
 
     const onLoadedMetadata = () => {
       pendingNativeAutoplayRef.current = null;
-      video.play().catch((err) => debugWarn(label, err));
+      video.play().catch((err) => {
+        debugWarn(label, err);
+        // Autoplay was rejected (e.g. Safari/iOS gesture policy or Low-Power-Mode).
+        // Mirror the hls.js path: clear the startup overlay and surface the play
+        // control instead of leaving the status pinned on 'buffering' forever.
+        setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+      });
     };
 
     pendingNativeAutoplayRef.current = onLoadedMetadata;
     video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
-  }, [clearPendingNativeAutoplay]);
+  }, [clearPendingNativeAutoplay, setStatus]);
 
   const startNativeHlsPlayback = useCallback((url: string, autoplayLabel: string) => {
     const video = videoRef.current;
@@ -1020,8 +1026,13 @@ export function usePlaybackEngine({
     debugLog('[V3Player] Switching to Direct MP4 Mode:', url);
     video.src = url;
     video.load();
-    video.play().catch((err) => debugWarn('Autoplay failed', err));
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, videoRef]);
+    video.play().catch((err) => {
+      debugWarn('Autoplay failed', err);
+      // Autoplay rejected: clear the startup overlay and show the play control rather
+      // than staying stuck on 'buffering' (mirrors the hls.js and native-HLS paths).
+      setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+    });
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
