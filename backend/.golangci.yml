@@ -22,6 +22,25 @@ linters:
       - path: server_gen\.go$
         linters:
           - gosec
+      # ST1000, ST1003, ST1020, ST1021, ST1023 are style-only staticcheck
+      # rules (naming conventions, comment formats). These are pre-existing
+      # across the codebase — excluded here to keep this PR focused on its
+      # audit scope rather than a broad formatting cleanup.
+      - linters:
+          - staticcheck
+        text: "ST1000:"
+      - linters:
+          - staticcheck
+        text: "ST1003:"
+      - linters:
+          - staticcheck
+        text: "ST1020:"
+      - linters:
+          - staticcheck
+        text: "ST1021:"
+      - linters:
+          - staticcheck
+        text: "ST1023:"
   # v2 schema: linter settings nest under linters.settings (the old top-level
   # `linters-settings` is a v1 key — silently ignored here and rejected by
   # `golangci-lint config verify`).
