@@ -242,7 +242,6 @@ func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSour
 
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
-		fmt.Printf("DEBUG: GetServices ReadFile failed: %s, err=%v\n", path, err)
 		if os.IsNotExist(err) {
 			// Playlist missing -> Legacy returns []
 			return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil

@@ -75,8 +75,11 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	if !exists {
 		// First access: Start pipeline via EnsureSpec
 		if err := r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile); err != nil {
-			// If build trigger fails (e.g. source not found), map to correct error.
-			r.vodManager.TriggerProbe(metaID, "build trigger failed: "+err.Error())
+			// If build trigger fails (e.g. source not found), kick off a probe so the
+			// pipeline can resolve the real input path. Pass "" — NOT the error string:
+			// TriggerProbe stores a non-empty input verbatim as meta.ResolvedPath, so
+			// passing the error message permanently poisoned the probe input path.
+			r.vodManager.TriggerProbe(metaID, "")
 		}
 		// Return PREPARING to indicate process started
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing"}

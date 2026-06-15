@@ -38,8 +38,10 @@ func (o *Orchestrator) acquireLeases(
 		}
 		res.DedupLease = dedupLease
 		res.ReleaseDedup = func() {
-			// Use parent context with timeout instead of Background to respect cancellation
-			ctxRel, cancel := context.WithTimeout(ctx, 5*time.Second)
+			// Detach from the parent context: a release/cleanup must run even when the
+			// session context is already canceled (e.g. orchestrator shutdown), which
+			// otherwise failed every dedup-lease release. Matches the tuner-lease release.
+			ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if err := o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner()); err != nil {
 				logger.Error().Err(err).
