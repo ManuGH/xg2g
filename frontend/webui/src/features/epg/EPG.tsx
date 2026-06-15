@@ -254,7 +254,12 @@ export default function EPG({
 
       dispatch({ type: 'LOAD_SUCCESS', payload: { events } });
     } catch (err) {
-      if (isAbortError(err)) return;
+      // When a newer load aborts this one (filter change / refresh), fetchEpgEvents wraps
+      // the DOMException('AbortError') into a ClientRequestError, so isAbortError(err) (which
+      // matches err.name === 'AbortError') no longer fires. Without the signal check the
+      // stale invocation dispatches LOAD_ERROR over the new invocation's LOAD_START, showing
+      // the error panel instead of the loading skeleton. The signal is authoritative.
+      if (signal.aborted || isAbortError(err)) return;
       debugError('EPG load failed:', formatError(err));
       if (isUnauthorizedError(err)) {
         return;

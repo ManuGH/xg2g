@@ -1456,6 +1456,20 @@ export function usePlaybackOrchestrator(
         });
         setStatus('error');
       }
+    } catch (err) {
+      // Safety net for synchronous throws on the paths that run inside this outer try but
+      // outside the live-session try above: the native-host bridge (beginNativePlayback)
+      // throws "Native playback bridge unavailable" when the host shell lacks
+      // startNativePlayback, and the src-path playHls throws "HLS playback engine not
+      // available". startStream is invoked un-awaited (`void startStream(...)` in retry and
+      // the autostart effect), so without this catch the throw becomes an unhandled
+      // rejection and the UI stays pinned on the startup spinner with no error and no retry.
+      // Convert it to a normal failure state like the inner handler does.
+      debugError(err);
+      reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.serverError')), {
+        source: 'orchestrator',
+      });
+      setStatus('error');
     } finally {
       startIntentInFlight.current = false;
     }

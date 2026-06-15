@@ -599,4 +599,90 @@ describe('V3Player hls.js decode recovery', () => {
     expect(hls.startLoad).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('does not call startLoad on a destroyed hls.js instance when a fatal error lands during the network-retry backoff', async () => {
+    const playbackUrl = `${window.location.origin}/api/v3/sessions/sess-hls-destroy/hls/index.m3u8`;
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes('/live/stream-info')) {
+        return jsonResponse(url, 200, {
+          mode: 'hlsjs',
+          requestId: 'live-decision-hls-destroy',
+          playbackDecisionToken: 'live-token-hls-destroy',
+          decision: { reasons: ['transcode_audio'] }
+        });
+      }
+
+      if (url.includes('/intents')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (body?.type === 'stream.start') {
+          return jsonResponse(url, 200, { sessionId: 'sess-hls-destroy' });
+        }
+        return jsonResponse(url, 200, {});
+      }
+
+      if (url.includes('/sessions/sess-hls-destroy/feedback')) {
+        return jsonResponse(url, 202, {});
+      }
+
+      if (url.includes('/sessions/sess-hls-destroy') && !url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          state: 'READY',
+          playbackUrl,
+          heartbeatIntervalSeconds: 1
+        });
+      }
+
+      if (url.includes('/heartbeat')) {
+        return jsonResponse(url, 200, {
+          sessionId: 'sess-hls-destroy',
+          acknowledged: true,
+          leaseExpiresAt: 'later'
+        });
+      }
+
+      return jsonResponse(url, 200, {});
+    }) as unknown as typeof globalThis.fetch);
+
+    render(<V3Player autoStart={true} channel={{ id: 'ch-hls-destroy', serviceRef: '1:0:1:destroy...' } as any} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(hlsInstances).toHaveLength(1);
+    const hls = hlsInstances[0];
+    const errorHandler = hls.handlers.get('hlsError');
+    expect(errorHandler).toBeDefined();
+
+    // 1) Fatal network error: schedules a backoff retry timer (startLoad is deferred). No destroy yet.
+    await act(async () => {
+      errorHandler?.('hlsError', { fatal: true, type: 'networkError', details: 'manifestLoadError' });
+      await Promise.resolve();
+    });
+    expect(hls.destroy).not.toHaveBeenCalled();
+    expect(hls.startLoad).not.toHaveBeenCalled();
+
+    // 2) A different fatal error lands DURING the backoff window: the default branch destroys the instance.
+    await act(async () => {
+      errorHandler?.('hlsError', { fatal: true, type: 'otherFatal', details: 'internalException' });
+      await Promise.resolve();
+    });
+    expect(hls.destroy).toHaveBeenCalled();
+
+    // 3) The pending network-retry timer fires. With hlsRef nulled after destroy, its guard
+    //    (hlsRef.current !== hls) bails. Without the fix the ref still points at the destroyed
+    //    instance, the guard passes, and startLoad() is called on a destroyed engine (throws).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+      await Promise.resolve();
+    });
+    expect(hls.startLoad).not.toHaveBeenCalled();
+  });
 });

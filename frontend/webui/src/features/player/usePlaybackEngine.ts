@@ -848,6 +848,7 @@ export function usePlaybackEngine({
               const started = beginSessionDecodeRecovery(0, `${data.type}: ${data.details}`, (recoveryErr) => {
                 debugError('[V3Player] NETWORK_ERROR 401: session recovery failed', recoveryErr);
                 hlsRef.current?.destroy();
+                hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
                 setStatus('error');
                 reportPlaybackFailure({
                   title: recoveryErr instanceof Error && recoveryErr.message
@@ -870,6 +871,7 @@ export function usePlaybackEngine({
               });
               if (!started) {
                 hlsRef.current?.destroy();
+                hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
                 setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
@@ -910,6 +912,7 @@ export function usePlaybackEngine({
               }
               debugError(`[V3Player] NETWORK_ERROR: max retries (${maxNetworkRetries}) exhausted`);
               hlsRef.current?.destroy();
+              hlsRef.current = null; // null the ref so pending retry/stall timers bail instead of calling startLoad() on a destroyed instance
               setStatus('error');
               reportMediaFailure({
                 title: presentation.title,
@@ -936,6 +939,7 @@ export function usePlaybackEngine({
               const started = beginSessionDecodeRecovery(3, `${data.type}: ${data.details}`, () => {
                 debugError('[V3Player] MEDIA_ERROR: session reattach failed, failing terminally');
                 hlsRef.current?.destroy();
+                hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
                 setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
@@ -951,6 +955,7 @@ export function usePlaybackEngine({
               if (!started) {
                 debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
                 hlsRef.current?.destroy();
+                hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
                 setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
@@ -970,6 +975,7 @@ export function usePlaybackEngine({
               void reportError('error', 0, `${data.type}: ${data.details}`, playbackEngineContext('decode', { engine: 'hlsjs' }));
             }
             hlsRef.current?.destroy();
+            hlsRef.current = null; // null the ref so pending retry/stall timers bail instead of calling startLoad() on a destroyed instance
             setStatus('error');
             reportMediaFailure({
               title: presentation.title,
