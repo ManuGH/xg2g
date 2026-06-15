@@ -163,6 +163,12 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 	unlock := m.lockServiceRefCap(serviceRef)
 	defer unlock()
 
+	// If context was canceled/timed out while waiting for the lock, bail out early instead
+	// of performing unnecessary I/O on an already-canceled operation.
+	if err := ctx.Err(); err != nil {
+		return Capability{}, false, err
+	}
+
 	existingCap, existingFound := m.store.Get(serviceRef)
 	probeURL := channel.URL
 	resolved := false
