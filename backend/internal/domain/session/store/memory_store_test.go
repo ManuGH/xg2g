@@ -248,3 +248,35 @@ func TestMemoryStore_GetSession_DeepCopiesPlaybackTrace(t *testing.T) {
 		t.Fatalf("fallback trace leaked through shared state: %q", again.PlaybackTrace.Fallbacks[0].Reason)
 	}
 }
+
+// TestMemoryStore_UpdateSessionAdvancesUpdatedAt is M4 Part 2's RED control. MemoryStore must
+// advance UpdatedAtUnix on every UpdateSession, mirroring SqliteStore.UpdateSession. The root
+// is a store-correctness invariant — the two implementations must agree on UpdatedAtUnix
+// semantics — not a recovery-specific detail: any consumer of the staleness clock (the
+// recovery sweep's shouldRecover, the sweeper's age math) inherits a frozen clock otherwise.
+// The store stamps the clock itself, so a no-op mutator must still bump it. RED before the
+// fix: UpdatedAtUnix stays at the stale baseline (1).
+func TestMemoryStore_UpdateSessionAdvancesUpdatedAt(t *testing.T) {
+	st := NewMemoryStore()
+	ctx := context.Background()
+
+	if err := st.PutSession(ctx, &model.SessionRecord{
+		SessionID:     "clock-1",
+		State:         model.SessionReady,
+		UpdatedAtUnix: 1, // stale baseline
+	}); err != nil {
+		t.Fatalf("PutSession failed: %v", err)
+	}
+
+	before := time.Now().Unix()
+	rec, err := st.UpdateSession(ctx, "clock-1", func(r *model.SessionRecord) error {
+		return nil // no-op: the store itself must stamp UpdatedAtUnix
+	})
+	if err != nil {
+		t.Fatalf("UpdateSession failed: %v", err)
+	}
+
+	if rec.UpdatedAtUnix < before {
+		t.Errorf("UpdateSession did not advance UpdatedAtUnix: got %d, want >= %d (was stale 1)", rec.UpdatedAtUnix, before)
+	}
+}

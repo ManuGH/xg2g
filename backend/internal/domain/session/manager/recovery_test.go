@@ -32,15 +32,17 @@ func TestRecoverySweep_RecoverStale(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. Setup Stale Session (STARTING, Expired Lease)
+	// 1. Setup Stale Session (STARTING). A real Live session records its tuner slot in
+	// transitionStarting, so it is a lease participant; recovery probes that slot's lease.
 	session := &model.SessionRecord{
-		SessionID:  "stale-1",
-		ServiceRef: "ref1",
-		State:      model.SessionStarting,
+		SessionID:   "stale-1",
+		ServiceRef:  "ref1",
+		State:       model.SessionStarting,
+		ContextData: map[string]string{model.CtxKeyTunerSlot: "0"},
 	}
 	_ = s.PutSession(ctx, session)
 
-	// No active lease -> recovery should proceed deterministically.
+	// No active lease on the slot -> probe acquires -> recovery should proceed.
 
 	// 2. Run Recovery
 	if err := orch.recoverStaleLeases(ctx); err != nil {
@@ -73,18 +75,19 @@ func TestRecoverySweep_IgnoreActive(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 1. Setup Active Session
+	// 1. Setup Active Session — a Live participant that recorded tuner slot 0 and still
+	// holds that slot's lease. Recovery must probe the slot key, find it held, and skip.
 	session := &model.SessionRecord{
-		SessionID:  "active-1",
-		ServiceRef: "ref1",
-		State:      model.SessionStarting,
+		SessionID:   "active-1",
+		ServiceRef:  "ref1",
+		State:       model.SessionStarting,
+		ContextData: map[string]string{model.CtxKeyTunerSlot: "0"},
 	}
 	_ = s.PutSession(ctx, session)
 
-	// Acquire valid lease
-	// Phase 8-2b: Must matches the fallback key used by recovery (namespaced)
-	key := model.LeaseKeyService("ref1")
-	_, _, _ = s.TryAcquireLease(ctx, key, "current-owner", 1*time.Second)
+	// Acquire a valid lease on the tuner slot the session claims (the key recovery probes).
+	key := model.LeaseKeyTunerSlot(0)
+	_, _, _ = s.TryAcquireLease(ctx, key, "current-owner", 60*time.Second)
 
 	// 2. Run Recovery
 	_ = orch.recoverStaleLeases(ctx)
@@ -145,8 +148,9 @@ func TestRecoverySweep_RecoverReady(t *testing.T) {
 		Store:    s,
 		LeaseTTL: 0,
 	}
-	// Setup Zombie READY session (Stale Lease)
-	_ = s.PutSession(ctx, &model.SessionRecord{SessionID: "zombie", State: model.SessionReady})
+	// Setup Zombie READY session: a Live participant (recorded tuner slot 0) whose lease
+	// has expired/vanished. The probe acquires the free slot -> recover to FAILED.
+	_ = s.PutSession(ctx, &model.SessionRecord{SessionID: "zombie", State: model.SessionReady, ContextData: map[string]string{model.CtxKeyTunerSlot: "0"}})
 	// Cheat: Acquire/Wait to expire lease (implicit or explicit)
 	// If no lease exists, TryAcquire works -> Recover works.
 	// If lease exists but expired, TryAcquire works -> Recover works.
@@ -162,5 +166,50 @@ func TestRecoverySweep_RecoverReady(t *testing.T) {
 	}
 	if r.ContextData["recovered"] != "true" {
 		t.Error("missing recovered flag")
+	}
+}
+
+// TestRecoverySweep_SkipsLeaselessSession is M4 Part 1's RED control. A session that never
+// participated in the tuner-lease protocol (recording/VOD style: no tuner_slot recorded) must
+// NOT be recovered by the lease-acquisition probe, even when shouldRecover flags it. Before
+// the fix, recoveryLeaseKey fell back to LeaseKeyService — a key the session never held — so
+// TryAcquireLease succeeded trivially and force-failed a live, leaseless session. With
+// LeaseTTL=0, shouldRecover is unconditionally true, isolating the probe/skip decision from
+// the freshness clock (Part 2). RED without the recoveryLeaseKey skip: the READY recording is
+// force-failed to FAILED.
+func TestRecoverySweep_SkipsLeaselessSession(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "recovery_leaseless")
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	s, _ := store.OpenStateStore("sqlite", filepath.Join(tmpDir, "sessions.sqlite"))
+	defer func() {
+		if closer, ok := s.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}()
+
+	orch := &Orchestrator{
+		Store:    s,
+		LeaseTTL: 0,
+	}
+	ctx := context.Background()
+
+	// Active recording-style session: READY (an intermediate state), no tuner slot recorded,
+	// so it holds no tuner lease. It must be left untouched by probe-recovery.
+	_ = s.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "recording-1",
+		ServiceRef: "rec-ref",
+		State:      model.SessionReady,
+	})
+
+	if err := orch.recoverStaleLeases(ctx); err != nil {
+		t.Fatalf("recovery failed: %v", err)
+	}
+
+	rec, _ := s.GetSession(ctx, "recording-1")
+	if rec.State != model.SessionReady {
+		t.Errorf("leaseless session was wrongly recovered (force-failed): got %s, want READY", rec.State)
+	}
+	if rec.ContextData["recovered"] == "true" {
+		t.Error("leaseless session was wrongly marked recovered")
 	}
 }
