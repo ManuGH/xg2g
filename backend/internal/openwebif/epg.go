@@ -28,7 +28,11 @@ func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent,
 		url.QueryEscape(sRef))
 
 	events, err := c.fetchEPGFromURL(ctx, primaryURL)
-	if err == nil && len(events) > 0 {
+	if err == nil {
+		// A successful response is authoritative even when empty: a channel may
+		// legitimately have no EPG events in the window. Treating empty-but-OK as a
+		// failure fell through to the fallback, logging a spurious "primary failed" and
+		// doubling receiver load.
 		return events, nil
 	}
 

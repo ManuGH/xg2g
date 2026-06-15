@@ -203,6 +203,18 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 					Msg("services fetch incompatible, trying fallback endpoint")
 				continue
 			}
+			// A primary endpoint already returned a valid (legitimately empty) payload;
+			// only the fallback failed. Do not discard the empty-but-successful primary
+			// result and abort the whole refresh — fall through to the empty-result path.
+			if successfulEndpoint != "" {
+				c.loggerFor(ctx).Warn().
+					Err(err).
+					Str("event", "openwebif.services").
+					Str("bouquet_ref", maskedRef).
+					Str("operation", ep.operation).
+					Msg("fallback endpoint failed after primary returned empty; using primary result")
+				break
+			}
 			return nil, err
 		}
 
