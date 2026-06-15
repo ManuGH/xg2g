@@ -51,6 +51,40 @@ func setUIHeaders(w http.ResponseWriter, path, csp string, mode uiCacheMode) {
 	}
 }
 
+// cacheControlGuard strips caching headers on error responses so a missing hashed asset
+// (404) is never served with the long-lived `immutable` Cache-Control that setUIHeaders
+// stamps up front for asset routes — otherwise a client caches the failure for a year and
+// never re-requests, even once the asset exists. It mutates the header map inside WriteHeader,
+// BEFORE the status line and headers are committed (afterwards is too late). Only >= 400 is
+// stripped: a 304 Not Modified is a successful revalidation of a hashed asset and MUST keep
+// its cache headers, so "anything but 200" would be wrong here.
+type cacheControlGuard struct {
+	http.ResponseWriter
+	wroteHeader bool
+}
+
+func (g *cacheControlGuard) WriteHeader(code int) {
+	if !g.wroteHeader {
+		g.wroteHeader = true
+		if code >= 400 {
+			h := g.Header()
+			h.Del("Cache-Control")
+			h.Del("Pragma")
+			h.Del("Expires")
+		}
+	}
+	g.ResponseWriter.WriteHeader(code)
+}
+
+func (g *cacheControlGuard) Write(b []byte) (int, error) {
+	if !g.wroteHeader {
+		// Implicit 200 (handler wrote a body without an explicit status): not an error, so
+		// cache headers stay; just record that the header is now committed.
+		g.WriteHeader(http.StatusOK)
+	}
+	return g.ResponseWriter.Write(b)
+}
+
 func writeUIHTMLResponse(w http.ResponseWriter, status int, title, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)

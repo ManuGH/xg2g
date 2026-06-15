@@ -28,8 +28,21 @@ func UIHandler(cfg UIConfig) http.Handler {
 		}
 	}
 
+	return uiHandler(cfg, fileServer, uiAvailable)
+}
+
+// uiHandler is the testable core. Split out so the !uiAvailable branch is reachable in tests:
+// with the UI bundle absent, a missing asset 404s via http.NotFound, which — unlike
+// http.FileServer (it clears caching headers on its own 404) — leaves the `immutable`
+// Cache-Control that setUIHeaders stamps for asset routes intact. Without the cacheControlGuard
+// that 404 would be cached for a year. The bug's real-world reach is therefore API-only / not-
+// yet-built deployments; the guard also stands as defense-in-depth for the FileServer path.
+func uiHandler(cfg UIConfig, fileServer http.Handler, uiAvailable bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setUIHeaders(w, r.URL.Path, cfg.CSP, uiCacheModeProd)
+		// setUIHeaders stamps `immutable` up front for asset routes; the guard strips the cache
+		// headers when the final status is >= 400 so a missing asset's 404 is not cached.
+		w = &cacheControlGuard{ResponseWriter: w}
 
 		if uiAvailable {
 			if isUIHTMLRoute(r.URL.Path) {
