@@ -1,4 +1,4 @@
-version: 2
+version: "2"
 
 # golangci-lint configuration file
 # see https://golangci-lint.run/usage/configuration/
@@ -22,10 +22,12 @@ linters:
       - path: server_gen\.go$
         linters:
           - gosec
-
-linters-settings:
-  staticcheck:
-    checks: ["all"]
+  # v2 schema: linter settings nest under linters.settings (the old top-level
+  # `linters-settings` is a v1 key — silently ignored here and rejected by
+  # `golangci-lint config verify`).
+  settings:
+    staticcheck:
+      checks: ["all"]
 
 formatters:
   enable:

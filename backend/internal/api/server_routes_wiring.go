@@ -33,6 +33,13 @@ var publicUIReservedPrefixes = []string{
 }
 
 func (s *Server) newRouter() chi.Router {
+	// One-time honesty breadcrumb: the API rate limiter is window-based and ignores burst.
+	// Warn only when the operator set a non-default value, so a deliberate (but inert) tuning
+	// is surfaced instead of silently swallowed. Startup-only (newRouter runs once), not hot-path.
+	if msg, warn := middleware.DeprecatedBurstWarning(s.cfg.RateLimitBurst); warn {
+		log.L().Warn().Int("api_rate_limit_burst", s.cfg.RateLimitBurst).Msg(msg)
+	}
+
 	r := middleware.NewRouter(middleware.StackConfig{
 		EnableCORS:           true,
 		AllowedOrigins:       s.cfg.AllowedOrigins,
@@ -51,7 +58,6 @@ func (s *Server) newRouter() chi.Router {
 		EnableRateLimit:    true,
 		RateLimitEnabled:   s.cfg.RateLimitEnabled,
 		RateLimitGlobalRPS: s.cfg.RateLimitGlobal,
-		RateLimitBurst:     s.cfg.RateLimitBurst,
 		RateLimitWhitelist: s.cfg.RateLimitWhitelist,
 
 		MaxRequestBodyBytes: middleware.DefaultMaxRequestBodyBytes,
@@ -204,7 +210,7 @@ func (s *Server) scopedRouters(r chi.Router) (chi.Router, chi.Router, chi.Router
 func (s *Server) registerOperatorRoutes(rAuth, rAdmin, rStatus chi.Router) {
 	_ = rAuth
 	rAdmin.Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
-	rStatus.Get(v3.V3BaseURL+"/status", controlhttp.NewStatusHandler(s.verificationStore).ServeHTTP)
+	rStatus.Get(v3.V3BaseURL+"/status", controlhttp.NewStatusHandler(s.verificationStore, s.cfg.FFmpeg.Bin).ServeHTTP)
 	rAdmin.Post("/internal/setup/validate", systemhttp.NewSetupValidateHandler(s.GetConfig))
 }
 

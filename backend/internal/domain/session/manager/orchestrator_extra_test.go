@@ -151,6 +151,7 @@ func TestOrchestrator_FinalizeDeferred_PreservesIdleTimeoutReason(t *testing.T) 
 	}
 	retErr := error(nil)
 	startRecorded := true
+	var leasesPtr *leaseAcquisition // no leases acquired in this finalization-only path
 
 	cancel()
 
@@ -158,6 +159,7 @@ func TestOrchestrator_FinalizeDeferred_PreservesIdleTimeoutReason(t *testing.T) 
 		ctx,
 		model.StartSessionEvent{SessionID: sessionID, ServiceRef: "ref:idle", ProfileID: "high"},
 		&sessionPtr,
+		&leasesPtr,
 		sessionCtx,
 		zerolog.Nop(),
 		&startRecorded,

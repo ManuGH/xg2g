@@ -161,7 +161,12 @@ func (t *truthProvider) GetMediaTruthOutcome(ctx context.Context, serviceRef str
 	log.Debug().Str("sref", serviceRef).Str("kind", kind).Str("source", source).Msg("GetMediaTruthOutcome: source resolved")
 
 	// 0. Job State Gate (Active Build?)
-	cacheDir, err := RecordingCacheDir(t.cfg.HLS.Root, serviceRef)
+	// Key by the SAME variant the build registers under (DefaultRecordingVariantHash, see
+	// service.go), NOT RecordingCacheDir (== variant ""). The empty-variant key never matched
+	// the build's job, so this gate silently never fired and an in-progress build was not
+	// reported as Preparing here. (The artifact layer guards this correctly via the variant
+	// dir; this aligns the truth-status layer with it.)
+	cacheDir, err := RecordingVariantCacheDir(t.cfg.HLS.Root, serviceRef, DefaultRecordingVariantHash())
 	if err == nil {
 		if status, exists := t.vodManager.Get(ctx, cacheDir); exists {
 			if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {

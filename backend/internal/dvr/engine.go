@@ -219,6 +219,27 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 	var decisions []RunDecision
 	kw := strings.ToLower(rule.Keyword)
 
+	// Parse the optional StartWindow ONCE (it is constant for the rule). A malformed window
+	// fails the rule run loudly — RunOnce records a per-rule "failed" — instead of silently
+	// matching with parseHHMM's -1 sentinel, which recorded the wrong programs (or nothing)
+	// while the run reported success. Parsing here (not per event) also avoids a log/error
+	// flood across the candidate loop.
+	winStart, winEnd, hasWindow := 0, 0, false
+	if rule.StartWindow != "" {
+		parts := strings.Split(rule.StartWindow, "-")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid series rule StartWindow %q: expected HHMM-HHMM", rule.StartWindow)
+		}
+		var errStart, errEnd error
+		if winStart, errStart = parseHHMM(parts[0]); errStart != nil {
+			return nil, fmt.Errorf("invalid series rule StartWindow %q: %w", rule.StartWindow, errStart)
+		}
+		if winEnd, errEnd = parseHHMM(parts[1]); errEnd != nil {
+			return nil, fmt.Errorf("invalid series rule StartWindow %q: %w", rule.StartWindow, errEnd)
+		}
+		hasWindow = true
+	}
+
 	for _, ev := range candidates {
 		// 1. Keyword Match
 		if kw != "" && !strings.Contains(strings.ToLower(ev.Title), kw) {
@@ -244,32 +265,25 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 			}
 		}
 
-		// 3. Time Window
-		if rule.StartWindow != "" {
-			// Format HHMM-HHMM
-			parts := strings.Split(rule.StartWindow, "-")
-			if len(parts) == 2 {
-				winStart, _ := parseHHMM(parts[0])
-				winEnd, _ := parseHHMM(parts[1])
+		// 3. Time Window (parsed once above into winStart/winEnd)
+		if hasWindow {
+			evTime := localStart.Hour()*100 + localStart.Minute()
 
-				evTime := localStart.Hour()*100 + localStart.Minute()
-
-				inWindow := false
-				if winStart <= winEnd {
-					// Normal window (e.g. 1000-1200)
-					if evTime >= winStart && evTime <= winEnd {
-						inWindow = true
-					}
-				} else {
-					// Wrap-around window (e.g. 2200-0200)
-					if evTime >= winStart || evTime <= winEnd {
-						inWindow = true
-					}
+			inWindow := false
+			if winStart <= winEnd {
+				// Normal window (e.g. 1000-1200)
+				if evTime >= winStart && evTime <= winEnd {
+					inWindow = true
 				}
-
-				if !inWindow {
-					continue
+			} else {
+				// Wrap-around window (e.g. 2200-0200)
+				if evTime >= winStart || evTime <= winEnd {
+					inWindow = true
 				}
+			}
+
+			if !inWindow {
+				continue
 			}
 		}
 

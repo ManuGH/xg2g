@@ -35,11 +35,11 @@ type StackConfig struct {
 	TracingService string // empty disables tracing
 	EnableLogging  bool
 
-	// Rate limiting (API)
+	// Rate limiting (API). No burst field: the API limiter is a window counter (httprate)
+	// with no burst capacity; the api.rateLimit.burst knob is deprecated/inert.
 	EnableRateLimit    bool
 	RateLimitEnabled   bool
 	RateLimitGlobalRPS int
-	RateLimitBurst     int
 	RateLimitWhitelist []string
 
 	// MaxRequestBodyBytes caps the size of inbound request bodies (0 disables).
@@ -92,6 +92,6 @@ func ApplyStack(r chi.Router, cfg StackConfig) {
 	}
 	// 9. Rate limit (global protection)
 	if cfg.EnableRateLimit {
-		r.Use(APIRateLimit(cfg.RateLimitEnabled, cfg.RateLimitGlobalRPS, cfg.RateLimitBurst, cfg.RateLimitWhitelist))
+		r.Use(APIRateLimit(cfg.RateLimitEnabled, cfg.RateLimitGlobalRPS, cfg.RateLimitWhitelist))
 	}
 }

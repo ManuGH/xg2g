@@ -24,6 +24,7 @@ func (o *Orchestrator) acquireLeases(
 	res := &leaseAcquisition{
 		Slot:         -1,
 		ReleaseDedup: func() {},
+		ReleaseTuner: func() {},
 		HBCancel:     func() {},
 	}
 
@@ -38,8 +39,10 @@ func (o *Orchestrator) acquireLeases(
 		}
 		res.DedupLease = dedupLease
 		res.ReleaseDedup = func() {
-			// Use parent context with timeout instead of Background to respect cancellation
-			ctxRel, cancel := context.WithTimeout(ctx, 5*time.Second)
+			// Detach from the parent context: a release/cleanup must run even when the
+			// session context is already canceled (e.g. orchestrator shutdown), which
+			// otherwise failed every dedup-lease release. Matches the tuner-lease release.
+			ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if err := o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner()); err != nil {
 				logger.Error().Err(err).
@@ -63,6 +66,21 @@ func (o *Orchestrator) acquireLeases(
 		}
 		res.Slot = slot
 		res.TunerLease = tunerLease
+		// Authoritative tuner-lease release, bound to the in-memory lease handle (mirrors
+		// ReleaseDedup). Used by finalizeDeferred after terminalization so the slot is freed
+		// regardless of whether ContextData[tuner_slot] (B) was ever persisted — closing the
+		// leak when start fails in the [acquired … B committed) window. Detached context so
+		// it runs even when the session context is already canceled.
+		res.ReleaseTuner = func() {
+			ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			if err := o.Store.ReleaseLease(ctxRel, tunerLease.Key(), tunerLease.Owner()); err != nil {
+				logger.Error().Err(err).
+					Str("lease_key", tunerLease.Key()).
+					Str("owner", tunerLease.Owner()).
+					Msg("failed to release tuner lease")
+			}
+		}
 	}
 
 	hbCtx, hbCancel := context.WithCancel(ctx)

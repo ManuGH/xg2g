@@ -128,8 +128,13 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var acquiredLeases []store.Lease
 	releaseLeases := func() {
+		// Release must run even when the request context is already canceled (client
+		// disconnect / error unwinding); using the request ctx directly no-opped the
+		// release and stranded the acquired service+tuner leases until their TTL.
+		relCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
 		for _, l := range acquiredLeases {
-			_ = h.Store.ReleaseLease(ctx, l.Key(), l.Owner())
+			_ = h.Store.ReleaseLease(relCtx, l.Key(), l.Owner())
 		}
 	}
 

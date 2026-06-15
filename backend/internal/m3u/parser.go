@@ -61,9 +61,22 @@ func Parse(content string) []Channel {
 				}
 			}
 
-			// Name is after the last comma
-			if idx := strings.LastIndex(line, ","); idx != -1 {
-				current.Name = strings.TrimSpace(line[idx+1:])
+			// Name is everything after the first comma that follows the attribute block.
+			// Using LastIndex(",") truncated names that contain a comma (e.g. "News, Sport"
+			// kept only "Sport"). Anchor on the last quoted attribute value's closing quote
+			// and take the first comma after it; if there are no attributes, use the first
+			// comma after the EXTINF duration. This also tolerates commas inside an
+			// attribute value (e.g. group-title="A,B").
+			nameStart := -1
+			if q := strings.LastIndex(line, `"`); q != -1 {
+				if c := strings.Index(line[q+1:], ","); c != -1 {
+					nameStart = q + 1 + c
+				}
+			} else if c := strings.Index(line, ","); c != -1 {
+				nameStart = c
+			}
+			if nameStart != -1 {
+				current.Name = strings.TrimSpace(line[nameStart+1:])
 			}
 		} else if len(line) > 0 && !strings.HasPrefix(line, "#") {
 			// URL line

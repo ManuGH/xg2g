@@ -46,9 +46,16 @@ func (o *Orchestrator) recoverStaleLeases(ctx context.Context) error {
 		if !shouldRecover(start, o.LeaseTTL, s) {
 			continue
 		}
-		// Check Lease Status (Probe)
-		// Phase 8-2b: Probe correct key (Tuner Slot if present, fallback to ServiceRef)
-		probeKey := o.recoveryLeaseKey(s)
+		// Probe-based recovery only applies to sessions that participate in the
+		// tuner-lease protocol — i.e. that recorded a held tuner slot. A leaseless
+		// session (recording/VOD) has no lease whose acquisition proves liveness;
+		// probing a fabricated key would trivially succeed and force-fail a live
+		// session. Skip it and let freshness-based mechanisms own leaseless liveness.
+		probeKey, ok := o.recoveryLeaseKey(s)
+		if !ok {
+			logger.Debug().Str("session_id", s.SessionID).Msg("skipping probe-recovery: session holds no tuner lease")
+			continue
+		}
 		probeOwner := fmt.Sprintf("recovery-probe-%d", os.Getpid())
 		lease, acquired, err := o.Store.TryAcquireLease(ctx, probeKey, probeOwner, o.LeaseTTL)
 		if err != nil {
@@ -162,14 +169,22 @@ func determineRecoveryTarget(s model.SessionState) model.SessionState {
 	}
 }
 
-func (o *Orchestrator) recoveryLeaseKey(s *model.SessionRecord) string {
+// recoveryLeaseKey returns the tuner-slot lease key a session recorded, plus whether the
+// session participates in the lease protocol at all. The probe's entire inference is "I
+// could acquire this session's lease, therefore its owner is gone" — which is only valid for
+// a key the session actually held. A session that persisted a tuner slot (Live, via
+// transitionStarting) holds such a lease; everything else (recording/VOD, or any future
+// leaseless mode) holds none, so ok is false and the caller must not probe. This keys on
+// lease-participation (a recorded slot), NOT on session type, so a future leaseless mode is
+// covered without another patch. The old LeaseKeyService fallback probed a key these
+// sessions never held, which acquired trivially and force-failed live, leaseless sessions.
+func (o *Orchestrator) recoveryLeaseKey(s *model.SessionRecord) (string, bool) {
 	if s != nil && s.ContextData != nil {
 		if raw := s.ContextData[model.CtxKeyTunerSlot]; raw != "" {
 			if slot, err := strconv.Atoi(raw); err == nil {
-				return model.LeaseKeyTunerSlot(slot)
+				return model.LeaseKeyTunerSlot(slot), true
 			}
 		}
 	}
-	// fallback (legacy/partial)
-	return model.LeaseKeyService(s.ServiceRef)
+	return "", false
 }

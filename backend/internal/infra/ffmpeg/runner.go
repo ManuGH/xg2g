@@ -112,7 +112,10 @@ func (h *handle) Stop(grace, kill time.Duration) error {
 	}
 
 	// Use procgroup for deterministic tree reaping
-	return procgroup.KillGroup(h.cmd.Process.Pid, grace, kill)
+	// KillGroupGraceful signals the group WITHOUT reaping: the monitor goroutine's
+	// h.cmd.Wait() is the sole reaper. KillGroup (which reaps via os.Process.Wait) would
+	// race that wait4 syscall and corrupt the observed exit status.
+	return procgroup.KillGroupGraceful(h.cmd.Process.Pid, grace, kill)
 }
 
 func (h *handle) Progress() <-chan vod.ProgressEvent {
@@ -165,6 +168,15 @@ func (h *handle) monitor(stderr io.Reader) {
 
 	procErrCh := make(chan error, 1)
 	go func() {
+		// os/exec closes the StderrPipe read-end inside cmd.Wait() once the process is
+		// reaped. Draining stderr to its natural EOF first (scanDone) stops Wait from
+		// closing the pipe out from under the scanner mid-drain, which would truncate the
+		// final ffmpeg failure lines that Diagnostics surfaces. Mirrors the already-correct
+		// sibling adapter_process.go. Only THIS goroutine waits on scanDone — the select
+		// below still reacts to wdErrCh and runCtx.Done() independently, so a stalled
+		// process is still terminated promptly (the kill closes the child's stderr, which
+		// is exactly what lets the scanner reach EOF and unblocks this wait).
+		<-scanDone
 		procErrCh <- h.cmd.Wait()
 	}()
 
@@ -210,7 +222,8 @@ func (h *handle) terminateProcess(grace, kill time.Duration) {
 	if h.cmd == nil || h.cmd.Process == nil {
 		return
 	}
-	if err := procgroup.KillGroup(h.cmd.Process.Pid, grace, kill); err != nil {
+	// Non-reaping: the monitor goroutine's h.cmd.Wait() is the sole reaper (see Stop).
+	if err := procgroup.KillGroupGraceful(h.cmd.Process.Pid, grace, kill); err != nil {
 		h.logger.Warn().Err(err).Msg("failed to terminate process group gracefully, sending direct kill")
 		_ = h.cmd.Process.Kill()
 	}

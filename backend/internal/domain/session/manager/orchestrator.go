@@ -301,12 +301,17 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		IsVOD:      false,
 	}
 
+	// Declared before the finalizeDeferred defer so the release path exists from before any
+	// lease is acquired. Passed by pointer (like &session) so finalizeDeferred reads the
+	// handle assigned by acquireLeases below, not its nil value at defer-registration time.
+	var leases *leaseAcquisition
+
 	defer func() {
 		if retErr != nil {
 			retErr = wrapWithReasonClass(retErr)
 		}
 	}()
-	defer o.finalizeDeferred(ctx, e, &session, sessionCtx, logger, &startRecorded, recordStart, startResultForReason, &retErr)
+	defer o.finalizeDeferred(ctx, e, &session, &leases, sessionCtx, logger, &startRecorded, recordStart, startResultForReason, &retErr)
 
 	if session == nil {
 		return newReasonError(model.RNotFound, "session not found", nil)
@@ -334,7 +339,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 			Msg("recording playback source selected")
 	}
 
-	leases, err := o.acquireLeases(ctx, sessionCtx, e, leaseOwner, logger)
+	leases, err = o.acquireLeases(ctx, sessionCtx, e, leaseOwner, logger)
 	if err != nil {
 		return err
 	}
@@ -527,6 +532,16 @@ func (o *Orchestrator) cleanupFiles(sid string) {
 		log.L().Error().Err(err).Str("path", targetDir).Msg("failed to remove session directory")
 	}
 }
+
+// ForceReleaseLeases is the COLD-PATH lease release: it reconstructs which leases a session
+// held from persisted state (the dedup key from serviceRef, the tuner slot from the
+// ContextData mirror B), because its callers — the sweeper's terminal-session janitor
+// (sweeper.go) and finalizeDeferred — may be cleaning up a session this process never started
+// and thus hold no in-memory lease handle. Reading B here is INTENTIONAL and is NOT the M3
+// leak: M3 added an in-memory, B-independent tuner release on the hot path (finalizeDeferred,
+// via leaseAcquisition.ReleaseTuner) for the case where B was never persisted. This B-based
+// release remains as the only mechanism available to the handle-less cold path; the overlap
+// with the hot-path release is harmless because ReleaseLease is idempotent and owner-scoped.
 func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, s *model.SessionRecord) {
 	logger := log.FromContext(ctx)
 	serviceRef := ref

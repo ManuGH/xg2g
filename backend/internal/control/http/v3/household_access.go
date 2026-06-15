@@ -63,7 +63,18 @@ func (s *Server) requireHouseholdRecordingAccess(w http.ResponseWriter, r *http.
 	}
 	profile = household.NormalizeProfile(profile)
 
-	serviceRef, decoded := recservice.DecodeRecordingID(recordingID)
+	// Decode exactly as the artifact resolver does (recservice.DecodeRecordingRef), so an
+	// alternately-encoded ID (e.g. base64 instead of the canonical hex) cannot slip past
+	// this gate while still resolving downstream. The bug was the DECODER GAP: the strict
+	// hex-only DecodeRecordingID returned (_, false) for a base64 ID, so a restricted
+	// profile could reach a forbidden recording (gate failed open, resolver still served
+	// the base64 form). Sharing one decoder closes that gap.
+	//
+	// An ID that even the shared decoder cannot decode is left to the downstream handler /
+	// resolver, which reject it the same way (400 / 404) — the resolver can no longer serve
+	// anything this gate cannot decode, so the lenient path is safe and preserves the
+	// strict-hex validation handlers perform.
+	serviceRef, decoded := recservice.DecodeRecordingRef(recordingID)
 	if !decoded {
 		return profile, true
 	}

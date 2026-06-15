@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
 )
@@ -133,11 +134,13 @@ func (s *SqliteStore) migrate() error {
 func (s *SqliteStore) Update(cap Capability) {
 	cap = cap.Normalized()
 	if cap.ServiceRef != "" {
-		_, _ = s.DB.Exec(
+		if _, err := s.DB.Exec(
 			`DELETE FROM capabilities WHERE RTRIM(service_ref, ':') = ? AND service_ref <> ?`,
 			cap.ServiceRef,
 			cap.ServiceRef,
-		)
+		); err != nil {
+			log.L().Warn().Err(err).Str("service_ref", cap.ServiceRef).Msg("scan: failed to prune legacy capability rows")
+		}
 	}
 	query := `
 		INSERT INTO capabilities (
@@ -174,7 +177,7 @@ func (s *SqliteStore) Update(cap Capability) {
 			audio_sample_rate = excluded.audio_sample_rate,
 			audio_channel_layout = excluded.audio_channel_layout
 		`
-	_, _ = s.DB.Exec(query,
+	if _, err := s.DB.Exec(query,
 		cap.ServiceRef,
 		cap.Interlaced,
 		dbTimeOrEmpty(cap.LastScan),
@@ -201,7 +204,9 @@ func (s *SqliteStore) Update(cap Capability) {
 		cap.AudioBitrateKbps,
 		cap.AudioSampleRate,
 		dbNullableString(cap.AudioChannelLayout),
-	)
+	); err != nil {
+		log.L().Error().Err(err).Str("service_ref", cap.ServiceRef).Msg("scan: failed to persist capability (scan result discarded)")
+	}
 }
 
 func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {

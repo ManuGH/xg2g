@@ -144,8 +144,9 @@ func TestAPIRateLimit_Configuration(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Apply API rate limiter: Enabled=true, RPS=1 (60 RPM), Burst=20, Whitelist=nil
-	limitedHandler := APIRateLimit(true, 1, 20, nil)(handler)
+	// Apply API rate limiter: Enabled=true, RPS=1 (60 RPM), Whitelist=nil. No burst param —
+	// the window limiter has no burst capacity (see DeprecatedBurstWarning).
+	limitedHandler := APIRateLimit(true, 1, nil)(handler)
 
 	// Make 60 requests (at limit)
 	for i := 0; i < 60; i++ {
@@ -208,5 +209,35 @@ func TestRateLimit_WhitelistCIDR(t *testing.T) {
 	limitedHandler.ServeHTTP(w, req)
 	if w.Code != http.StatusTooManyRequests {
 		t.Errorf("non-whitelisted second request: expected 429, got %d", w.Code)
+	}
+}
+
+// TestDeprecatedBurstWarning pins the operator-protection logic of the deprecated, inert
+// api.rateLimit.burst knob: a non-default value warns (the operator tuned something that does
+// nothing); the default warrants no warning (effectively unconfigured). Pure-function test,
+// no log capture — same deterministic style as householdNoHeaderShouldWarn.
+func TestDeprecatedBurstWarning(t *testing.T) {
+	cases := []struct {
+		name     string
+		burst    int
+		wantWarn bool
+	}{
+		{"default value is silent", DeprecatedAPIRateLimitBurstDefault, false},
+		{"non-default value warns", 50, true},
+		{"zero is non-default and warns", 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			msg, warn := DeprecatedBurstWarning(tc.burst)
+			if warn != tc.wantWarn {
+				t.Fatalf("DeprecatedBurstWarning(%d) warn = %v, want %v", tc.burst, warn, tc.wantWarn)
+			}
+			if warn && msg == "" {
+				t.Errorf("DeprecatedBurstWarning(%d) returned warn=true but empty message", tc.burst)
+			}
+			if !warn && msg != "" {
+				t.Errorf("DeprecatedBurstWarning(%d) returned warn=false but non-empty message %q", tc.burst, msg)
+			}
+		})
 	}
 }

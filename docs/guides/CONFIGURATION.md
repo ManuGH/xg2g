@@ -268,7 +268,7 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `rateLimit.auth` | - | `10` | Active | Advanced |
-| `rateLimit.burst` | - | `20` | Active | Advanced |
+| `rateLimit.burst` | - | `20` | Deprecated | Advanced |
 | `rateLimit.enabled` | - | `true` | Active | Advanced |
 | `rateLimit.global` | - | `100` | Active | Advanced |
 | `rateLimit.whitelist` | `XG2G_RATE_LIMIT_WHITELIST` | - | Active | Advanced |

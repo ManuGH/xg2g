@@ -26,6 +26,13 @@ func ParseRange(header string, size int64) (Range, error) {
 		return Range{}, ErrInvalidRange
 	}
 
+	// A non-positive resource size has no satisfiable byte range. Without this, a suffix
+	// range (bytes=-N) computed Start=0, End=size-1=-1 (End < Start) and returned that
+	// invalid Range with a nil error.
+	if size <= 0 {
+		return Range{}, ErrInvalidRange
+	}
+
 	const prefix = "bytes="
 	if !strings.HasPrefix(header, prefix) {
 		return Range{}, ErrInvalidRange

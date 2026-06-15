@@ -227,30 +227,40 @@ export function getApiBaseUrl(defaultBase: string = '/api/v3'): string {
   return (client.getConfig().baseUrl || defaultBase).replace(/\/$/, '');
 }
 
-export function buildClientHeaders(overrides?: Record<string, unknown>): Headers {
-  const headers = new Headers(client.getConfig().headers as HeadersInit);
-  const resolvedToken = normalizeToken(getClientAuthToken()) ?? normalizeToken(getStoredToken());
+// buildClientHeaders returns request-scoped headers that hey-api layers ON TOP of the
+// client config via mergeHeaders(config, requestHeaders). It deliberately returns a
+// plain object (not a Headers instance) so that a `null` override survives as a
+// delete-marker: mergeHeaders only removes a header when it sees an explicit `null` on
+// an object entry. A Headers instance can merely *omit* a key, which the merge then
+// re-fills from the client config — so buildClientHeaders({ 'X-Household-Profile': null })
+// would fail to strip the config-level profile and silently re-send a stale one
+// (bricking e.g. cross-tab profile recovery). The config headers themselves are not
+// copied here because the SDK already merges them as the base layer.
+export function buildClientHeaders(
+  overrides?: Record<string, unknown>,
+): Record<string, string | string[] | null> {
+  const headers: Record<string, string | string[] | null> = {};
 
+  // Refresh the bearer token so request headers carry the freshest credential even if
+  // the client config lags behind the stored token.
+  const resolvedToken = normalizeToken(getClientAuthToken()) ?? normalizeToken(getStoredToken());
   if (resolvedToken) {
-    headers.set('Authorization', `Bearer ${resolvedToken}`);
+    headers.Authorization = `Bearer ${resolvedToken}`;
   }
 
   for (const [key, value] of Object.entries(overrides || {})) {
     if (value === null) {
-      headers.delete(key);
+      headers[key] = null; // delete-marker: mergeHeaders removes the config-level header
       continue;
     }
     if (value === undefined) {
       continue;
     }
     if (Array.isArray(value)) {
-      headers.delete(key);
-      value.forEach((entry) => {
-        headers.append(key, String(entry));
-      });
+      headers[key] = value.map((entry) => String(entry));
       continue;
     }
-    headers.set(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    headers[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
   }
 
   return headers;
