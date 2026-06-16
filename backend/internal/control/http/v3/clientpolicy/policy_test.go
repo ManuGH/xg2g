@@ -91,6 +91,23 @@ func TestApplyStartPackagingPolicy_SafariNativeHEVCCopyForcesFMP4(t *testing.T) 
 	}
 }
 
+// iOS Safari native resolves to fMP4 already; the HEVC copy must still get
+// VideoCodec=hevc so the hvc1 tag engages (else hev1 + per-keyframe flash).
+func TestApplyStartPackagingPolicy_IOSNativeHEVCCopyAlreadyFMP4PinsHevc(t *testing.T) {
+	spec := ApplyStartPackagingPolicy(
+		playbackprofile.ClientIOSSafariNative,
+		profiles.ProfileSafari,
+		model.ProfileSpec{Name: "safari", Container: "fmp4", TranscodeVideo: false},
+		"hevc", "native",
+	)
+	if spec.Container != "fmp4" {
+		t.Fatalf("container = %q, want fmp4", spec.Container)
+	}
+	if spec.VideoCodec != "hevc" {
+		t.Fatalf("videoCodec = %q, want hevc (so the hvc1 tag engages on iOS)", spec.VideoCodec)
+	}
+}
+
 // Same shape but the client did NOT request native (hls.js) -> stays mpegts.
 func TestApplyStartPackagingPolicy_HEVCCopyHlsjsKeepsMpegts(t *testing.T) {
 	spec := ApplyStartPackagingPolicy(
