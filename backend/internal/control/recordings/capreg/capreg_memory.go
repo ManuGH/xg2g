@@ -268,7 +268,9 @@ func isBufferingWarningCode(code int) bool {
 
 func IsDecodeWarningCode(code int) bool {
 	switch code {
-	case 103, 242:
+	// 103 decoder-recovery, 242 hlsjs render-black, 243 measured dropped frames.
+	// All are decode-capability evidence: a sustained streak lowers MaxQualityRung.
+	case 103, 242, 243:
 		return true
 	default:
 		return false

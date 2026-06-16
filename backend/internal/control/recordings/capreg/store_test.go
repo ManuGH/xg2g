@@ -245,6 +245,43 @@ func TestSummarizeFeedbackObservations_TreatsBlackRenderAsDecodeWarning(t *testi
 	require.Equal(t, 0, summary.ConsecutiveNetworkWarnings)
 }
 
+func TestSummarizeFeedbackObservations_TreatsDroppedFramesAsDecodeWarning(t *testing.T) {
+	summary := summarizeFeedbackObservations([]PlaybackObservation{
+		{
+			ObservedAt:         time.Unix(1_700_000_300, 0).UTC(),
+			ObservationKind:    "feedback",
+			Outcome:            "warning",
+			FeedbackEvent:      "warning",
+			FeedbackCode:       243,
+			FeedbackMessage:    "render_quality dropped=80/500 ratio=16%",
+			SelectedVideoCodec: "av1",
+		},
+		{
+			ObservedAt:         time.Unix(1_700_000_200, 0).UTC(),
+			ObservationKind:    "feedback",
+			Outcome:            "warning",
+			FeedbackEvent:      "warning",
+			FeedbackCode:       243,
+			FeedbackMessage:    "render_quality dropped=70/500 ratio=14%",
+			SelectedVideoCodec: "av1",
+		},
+		{
+			ObservedAt:      time.Unix(1_700_000_100, 0).UTC(),
+			ObservationKind: "feedback",
+			Outcome:         "started",
+			FeedbackEvent:   "info",
+			FeedbackCode:    200,
+		},
+	})
+
+	require.Equal(t, 3, summary.SampleCount)
+	require.Equal(t, 2, summary.WarningCount)
+	require.Equal(t, 2, summary.ConsecutiveWarnings)
+	require.Equal(t, 2, summary.ConsecutiveDecodeWarnings)
+	require.Equal(t, 0, summary.ConsecutiveBufferWarnings)
+	require.Equal(t, 0, summary.ConsecutiveNetworkWarnings)
+}
+
 func TestSummarizeFeedbackObservations_TreatsRenderStableAsRecoveryStart(t *testing.T) {
 	summary := summarizeFeedbackObservations([]PlaybackObservation{
 		{

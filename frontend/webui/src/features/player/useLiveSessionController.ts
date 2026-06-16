@@ -37,6 +37,11 @@ const SESSION_READY_MAX_ATTEMPTS = Math.ceil(SESSION_READY_TIMEOUT_MS / SESSION_
 // against it — so a verdict only forms after a real steady-state window.
 const RENDER_QUALITY_SAMPLE_MS = 5_000;
 
+// Sits in the 24x render-feedback family (240 playing, 242 render-black). The
+// backend classifies it as a decode warning so a sustained drop streak lowers
+// the persisted MaxQualityRung for this device class.
+const PLAYBACK_WARNING_CODE_RENDER_DROPPED = 243;
+
 type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
 type ErrorBodyReader = (res: Response) => Promise<{ json: any | null; text: string | null }>;
 type PlayerErrorFactory = (message: string, details?: unknown) => Error;
@@ -167,6 +172,7 @@ export function useLiveSessionController({
         headers: authHeaders(true),
         body: JSON.stringify({
           event: 'warning',
+          code: PLAYBACK_WARNING_CODE_RENDER_DROPPED,
           message: `render_quality dropped=${verdict.droppedDelta}/${verdict.totalDelta} ratio=${ratioPct}%`,
           details: {
             kind: 'render_quality',
