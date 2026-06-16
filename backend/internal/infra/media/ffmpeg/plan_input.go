@@ -105,9 +105,16 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 			inputURL = u.String()
 		}
 
+		baseInputArgs = append(baseInputArgs, "-avoid_negative_ts", "make_zero")
+		// Only override the user-agent when explicitly configured. The previous
+		// hard-coded "VLC/..." UA breaks the OSCam stream-relay source-host
+		// resolution (it falls back to the client IP and the scrambled-source
+		// fetch fails), so the default is now FFmpeg's built-in UA. See
+		// XG2G_LIVE_USER_AGENT / NewLocalAdapter for the rationale.
+		if ua := strings.TrimSpace(a.LiveUserAgent); ua != "" {
+			baseInputArgs = append(baseInputArgs, "-user_agent", ua)
+		}
 		baseInputArgs = append(baseInputArgs,
-			"-avoid_negative_ts", "make_zero",
-			"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
 			"-headers", headers,
 		)
 		if v := strings.TrimSpace(a.IngestFlags2); v != "" && !strictIngest {
