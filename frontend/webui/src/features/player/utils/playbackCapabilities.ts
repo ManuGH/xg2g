@@ -385,6 +385,7 @@ export async function gatherPlaybackCapabilities(
     videoCodecs: probe.videoCodecs,
     videoCodecSignals: probe.videoCodecSignals,
     audioCodecs: probe.audioCodecs,
+    maxVideo: probe.maxVideo,
     hlsEngines: probe.hlsEngines.length > 0 ? probe.hlsEngines : undefined,
     preferredHlsEngine: probe.preferredHlsEngine ?? undefined,
     supportsHls: probe.hlsEngines.length > 0,

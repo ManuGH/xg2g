@@ -204,3 +204,98 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
 
   return Array.from(new Set(out));
 }
+
+export type MaxVideoCapability = { width: number; height: number; fps: number };
+
+let cachedMaxVideo: MaxVideoCapability | null | undefined;
+
+/** Reset cached maxVideo (for testing). */
+export function resetCachedMaxVideo(): void {
+  cachedMaxVideo = undefined;
+}
+
+// Probe whether the device can DECODE the given dimensions/framerate for ANY of
+// the codec strings. Copy/direct-play only needs decode capability, so we accept
+// `supported` and deliberately do NOT require `smooth` or `powerEfficient` — a
+// device may not render 4K "smoothly" on its panel yet still decode it perfectly
+// (and downscale in HW). Requiring `smooth` is exactly what wrongly capped an
+// iPhone 17 Pro at 1080p and forced a needless 4K-HEVC->AV1 transcode.
+async function decodesAt(
+  contentTypes: string[],
+  width: number,
+  height: number,
+  framerate: number
+): Promise<boolean> {
+  const mc = getMediaCapabilitiesProbe();
+  if (!mc?.decodingInfo) return false;
+  const bitrate = Math.max(2_000_000, Math.round(width * height * framerate * 0.1));
+  for (const contentType of contentTypes) {
+    const video = { contentType, width, height, bitrate, framerate };
+    for (const type of ['media-source', 'file'] as const) {
+      try {
+        const info = await mc.decodingInfo({ type, video });
+        if (info?.supported === true) return true;
+      } catch {
+        // try next type/codec
+      }
+    }
+  }
+  return false;
+}
+
+// HEVC Main 10 dominates UHD broadcast; probe Main10 first, then Main, AV1, H.264.
+const MAX_VIDEO_RUNGS: Array<{ width: number; height: number; types: string[] }> = [
+  {
+    width: 3840,
+    height: 2160,
+    types: [
+      'video/mp4; codecs="hvc1.2.4.L153.B0"', // HEVC Main10 L5.1
+      'video/mp4; codecs="hvc1.1.6.L153.90"', // HEVC Main L5.1
+      'video/mp4; codecs="av01.0.12M.10"',
+      'video/mp4; codecs="av01.0.12M.08"',
+    ],
+  },
+  {
+    width: 1920,
+    height: 1080,
+    types: [
+      'video/mp4; codecs="hvc1.2.4.L123.B0"',
+      'video/mp4; codecs="hvc1.1.6.L123.90"',
+      'video/mp4; codecs="av01.0.08M.10"',
+      'video/mp4; codecs="avc1.640028"',
+    ],
+  },
+  {
+    width: 1280,
+    height: 720,
+    types: [
+      'video/mp4; codecs="avc1.64001F"',
+      'video/mp4; codecs="hvc1.1.6.L93.90"',
+    ],
+  },
+];
+
+/**
+ * Determine the highest resolution the device can DECODE, by probing a ladder
+ * (2160 -> 1080 -> 720) at 50/60 fps. Returns undefined when MediaCapabilities
+ * can't tell us (the backend then falls back to its client fixture). This is the
+ * truthful `maxVideo` the copy/direct-play decision needs — decode capability,
+ * not render smoothness.
+ */
+export async function detectMaxVideo(): Promise<MaxVideoCapability | undefined> {
+  if (cachedMaxVideo !== undefined) return cachedMaxVideo ?? undefined;
+  if (!getMediaCapabilitiesProbe()?.decodingInfo) {
+    cachedMaxVideo = null;
+    return undefined;
+  }
+  for (const rung of MAX_VIDEO_RUNGS) {
+    for (const fps of [60, 50]) {
+      if (await decodesAt(rung.types, rung.width, rung.height, fps)) {
+        cachedMaxVideo = { width: rung.width, height: rung.height, fps };
+        return cachedMaxVideo;
+      }
+    }
+  }
+  cachedMaxVideo = null;
+  return undefined;
+}
