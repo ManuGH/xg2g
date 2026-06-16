@@ -374,11 +374,13 @@ func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, 
 		Msg("pipeline video: copy")
 
 	args = append(args, "-c:v", "copy")
-	// DVB stream-relay sources (port 17999) deliver non-monotonic DTS.
-	// -enc_time_base:v demux forces the muxer to derive timestamps from
-	// the demuxer timebase (which igndts+genpts have already cleaned)
-	// instead of the raw packet DTS, eliminating A/V desync in copy mode.
-	if liveCopy {
+	// -enc_time_base:v demux forces the muxer to derive video timestamps from the
+	// demuxer timebase that igndts+genpts have already cleaned. It is ONLY correct
+	// while genpts is regenerating PTS. With genpts disabled we pass the source's
+	// own PTS/DTS through untouched; adding demux then shifts the copied video
+	// relative to the transcoded (AAC) audio, so the audio lags by a fixed amount.
+	// Couple it to genpts so video and audio share one faithful source timeline.
+	if liveCopy && strings.Contains(a.IngestFFlags, "genpts") {
 		args = append(args, "-enc_time_base:v", "demux")
 	}
 	if hardenedBitstream {
