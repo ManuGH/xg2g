@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  detectMaxVideo,
   detectPreferredCodecs,
   detectVideoCodecSignals,
   resetCachedCodecs,
@@ -297,5 +298,47 @@ describe('codecDetection', () => {
 
     const preferred = await detectPreferredCodecs(video);
     expect(preferred).toEqual(['av1', 'hevc', 'h264']);
+  });
+
+  it('detectMaxVideo reports a 2160p ceiling when the device decodes 4K smoothly', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('hvc1') || contentType.includes('hev1') || contentType.includes('avc1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      }),
+    };
+
+    const max = await detectMaxVideo();
+    expect(max).toEqual({ width: 3840, height: 2160 });
+  });
+
+  it('detectMaxVideo caps at 1080p when 4K is supported but not smooth', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string; height?: number } }) => {
+        const contentType = video?.contentType ?? '';
+        const height = video?.height ?? 0;
+        const isHwCodec = contentType.includes('hvc1') || contentType.includes('hev1') || contentType.includes('avc1');
+        if (isHwCodec && height <= 1080) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        if (isHwCodec) {
+          // 4K rung: decoder accepts it but cannot sustain it.
+          return { supported: true, smooth: false, powerEfficient: false };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      }),
+    };
+
+    const max = await detectMaxVideo();
+    expect(max).toEqual({ width: 1920, height: 1080 });
+  });
+
+  it('detectMaxVideo returns null when MediaCapabilities is unavailable (no guessing)', async () => {
+    (navigator as any).mediaCapabilities = undefined;
+    const max = await detectMaxVideo();
+    expect(max).toBeNull();
   });
 });

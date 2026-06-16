@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EpgChannelList } from './EpgChannelList';
 import * as sdk from '../../../client-ts';
+import * as playbackCaps from '../../player/utils/playbackCapabilities';
 
 vi.mock('../../player/utils/playbackCapabilities', () => ({
   gatherPlaybackCapabilities: vi.fn().mockResolvedValue({
@@ -202,7 +203,7 @@ describe('EpgChannelList playback affordance', () => {
     });
 
     expect(await screen.findByText('Remux')).toBeTruthy();
-    expect(screen.getByText('1080p · v:copy/h264 · a:encode/aac')).toBeTruthy();
+    expect(screen.getByText('1080p · H.264 · AC3→AAC')).toBeTruthy();
     expect(mockedPostLivePlaybackInfo).toHaveBeenCalledWith(
       expect.objectContaining({
         headers: expect.objectContaining({
@@ -214,6 +215,42 @@ describe('EpgChannelList playback affordance', () => {
         }),
       })
     );
+  });
+
+  it('annotates the badge with the hardware-decode tier from videoCodecSignals', async () => {
+    vi.mocked(playbackCaps.gatherPlaybackCapabilities).mockResolvedValueOnce({
+      capabilitiesVersion: 3,
+      container: ['mp4', 'ts'],
+      videoCodecs: ['h264'],
+      audioCodecs: ['aac', 'ac3'],
+      supportsHls: true,
+      supportsRange: true,
+      deviceType: 'test',
+      runtimeProbeUsed: true,
+      runtimeProbeVersion: 2,
+      clientFamilyFallback: 'chromium_hlsjs',
+      allowTranscode: true,
+      hlsEngines: ['hlsjs'],
+      preferredHlsEngine: 'hlsjs',
+      videoCodecSignals: [
+        { codec: 'h264', supported: true, smooth: true, powerEfficient: true },
+      ],
+    } as Awaited<ReturnType<typeof playbackCaps.gatherPlaybackCapabilities>>);
+
+    await renderChannelList({
+      mode: 'main',
+      channels: [{ id: 'svc-hw', serviceRef: 'svc-hw', name: 'Das Erste', number: '101', resolution: '1920x1080', codec: 'h264' }],
+      eventsByServiceRef: new Map([
+        ['svc-hw', [{ serviceRef: 'svc-hw', start: 100, end: 200, title: 'Tagesschau' }]],
+      ]),
+      currentTime: 120,
+      timeRangeHours: 6,
+      expandedChannels: new Set(),
+      onToggleExpand: () => {},
+      onPlay: () => {},
+    });
+
+    expect(await screen.findByText('1080p · H.264 (HW) · AC3→AAC')).toBeTruthy();
   });
 
   it('fails closed when live playback info omits decision.mode', async () => {

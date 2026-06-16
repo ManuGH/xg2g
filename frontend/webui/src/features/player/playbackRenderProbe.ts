@@ -75,6 +75,64 @@ export function describeHlsRenderProbe(
   ].filter(Boolean).join(' ');
 }
 
+export interface RenderQualityThresholds {
+  /** Minimum decoded frames in the window before a verdict is trustworthy. */
+  minTotalFrames: number;
+  /** Dropped/total ratio at or above which the window counts as degraded. */
+  maxDroppedRatio: number;
+}
+
+export const DEFAULT_RENDER_QUALITY_THRESHOLDS: RenderQualityThresholds = {
+  // ~6 s at 50 fps — enough to look past a noisy startup before judging.
+  minTotalFrames: 300,
+  // 5 % sustained dropped frames is the line between "smooth" and "stutters".
+  maxDroppedRatio: 0.05,
+};
+
+export interface RenderQualityVerdict {
+  ratio: number | null;
+  droppedDelta: number | null;
+  totalDelta: number | null;
+  /** True only when there is enough signal AND the drop ratio is over threshold. */
+  exceeded: boolean;
+}
+
+/**
+ * Compare two cumulative frame-counter samples and decide whether the device is
+ * actually decoding smoothly — the ground truth that confirms or refutes the
+ * capability probe's `smooth`/`powerEfficient` estimate. Pure and side-effect
+ * free so the threshold logic is unit-testable in isolation.
+ */
+export function evaluateRenderQuality(
+  baseline: PlaybackFrameCounters,
+  current: PlaybackFrameCounters,
+  thresholds: RenderQualityThresholds = DEFAULT_RENDER_QUALITY_THRESHOLDS
+): RenderQualityVerdict {
+  if (
+    baseline.totalFrames === null ||
+    current.totalFrames === null ||
+    baseline.droppedFrames === null ||
+    current.droppedFrames === null
+  ) {
+    return { ratio: null, droppedDelta: null, totalDelta: null, exceeded: false };
+  }
+
+  const totalDelta = current.totalFrames - baseline.totalFrames;
+  const droppedDelta = current.droppedFrames - baseline.droppedFrames;
+
+  if (totalDelta < thresholds.minTotalFrames || totalDelta <= 0 || droppedDelta < 0) {
+    return { ratio: null, droppedDelta, totalDelta, exceeded: false };
+  }
+
+  const ratio = droppedDelta / totalDelta;
+  return {
+    ratio,
+    droppedDelta,
+    totalDelta,
+    exceeded: ratio >= thresholds.maxDroppedRatio,
+  };
+}
+
 export function isBlackRenderSuspect(start: HlsRenderProbeSnapshot, current: HlsRenderProbeSnapshot): boolean {
   const progressed = current.currentTime - start.currentTime;
   const hasBufferedPlayback = current.bufferedAhead >= 0.5 && current.readyState >= 2 && !current.paused;

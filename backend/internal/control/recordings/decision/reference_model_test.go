@@ -44,7 +44,13 @@ func ReferenceDecide(input DecisionInput) *Decision {
 
 	// Rule 3: Audio Support
 	canAudio := modelContains(input.Capabilities.AudioCodecs, input.Source.AudioCodec)
-	videoRepairRequired := input.Source.Interlaced || (input.Capabilities.MaxVideo != nil && (input.Source.Width <= 0 || input.Source.Height <= 0 || input.Source.FPS <= 0))
+	// Mirror sourceRequiresVideoRepair: only a dimension the client actually
+	// constrains, when unknown, forces a repair.
+	videoRepairRequired := input.Source.Interlaced ||
+		(input.Capabilities.MaxVideo != nil &&
+			((input.Capabilities.MaxVideo.Width > 0 && input.Source.Width <= 0) ||
+				(input.Capabilities.MaxVideo.Height > 0 && input.Source.Height <= 0) ||
+				(input.Capabilities.MaxVideo.FPS > 0 && input.Source.FPS <= 0)))
 
 	// Rule 4: DirectPlay (MP4/MOV/M4V + Ranges)
 	// FIX R2-001: Normalize container to match modelContains() behavior

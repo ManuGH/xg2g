@@ -76,7 +76,24 @@ function mergeDecodingInfoResult(current: DecodingInfoResult, next?: Partial<Dec
   };
 }
 
-async function decodeInfoForContentType(contentType: string): Promise<DecodingInfoResult> {
+type ResolutionDims = {
+  width: number;
+  height: number;
+  bitrate: number;
+  framerate: number;
+};
+
+const DEFAULT_PROBE_DIMS: ResolutionDims = {
+  width: 1920,
+  height: 1080,
+  bitrate: 5_000_000,
+  framerate: 30,
+};
+
+async function decodeInfoForContentType(
+  contentType: string,
+  dims: ResolutionDims = DEFAULT_PROBE_DIMS
+): Promise<DecodingInfoResult> {
   let result: DecodingInfoResult = {
     supported: false,
     smooth: false,
@@ -88,10 +105,10 @@ async function decodeInfoForContentType(contentType: string): Promise<DecodingIn
     if (mc?.decodingInfo) {
       const baseVideo = {
         contentType,
-        width: 1920,
-        height: 1080,
-        bitrate: 5_000_000,
-        framerate: 30
+        width: dims.width,
+        height: dims.height,
+        bitrate: dims.bitrate,
+        framerate: dims.framerate,
       };
 
       try {
@@ -203,4 +220,79 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
   out.push('h264');
 
   return Array.from(new Set(out));
+}
+
+export type MaxVideoCapability = {
+  width: number;
+  height: number;
+};
+
+// Resolution ladder probed high → low to find the device's real decode ceiling.
+// Probing only 1080p (the historical default) left 4K capability unknown, so the
+// backend's withinMaxVideo() check ran unbounded for browser clients.
+const RESOLUTION_LADDER: ReadonlyArray<{ width: number; height: number; bitrate: number }> = [
+  { width: 3840, height: 2160, bitrate: 18_000_000 },
+  { width: 1920, height: 1080, bitrate: 6_000_000 },
+  { width: 1280, height: 720, bitrate: 3_000_000 },
+];
+
+// The codec string encodes the level, and the level bounds the maximum
+// resolution the decoder will accept — so we MUST raise the level as we probe
+// higher, otherwise a capable 4K decoder reports "unsupported" for a 1080p-level
+// string. Levels: H.264 4.0/5.1/5.2, HEVC L120/L150/L153, AV1 by seq_level_idx.
+function resolutionProbeContentType(codec: PreferredCodec, height: number): string {
+  switch (codec) {
+    case 'h264':
+      if (height >= 2160) return 'video/mp4; codecs="avc1.640033"';
+      if (height >= 1080) return 'video/mp4; codecs="avc1.640028"';
+      return 'video/mp4; codecs="avc1.64001f"';
+    case 'hevc':
+      if (height >= 2160) return 'video/mp4; codecs="hvc1.1.6.L153.90"';
+      if (height >= 1080) return 'video/mp4; codecs="hvc1.1.6.L120.90"';
+      return 'video/mp4; codecs="hvc1.1.6.L93.90"';
+    case 'av1':
+      if (height >= 2160) return 'video/mp4; codecs="av01.0.12M.08"';
+      if (height >= 1080) return 'video/mp4; codecs="av01.0.08M.08"';
+      return 'video/mp4; codecs="av01.0.05M.08"';
+  }
+}
+
+/**
+ * Probe the highest resolution the device can decode *smoothly*, expressed as a
+ * single ceiling for the backend's withinMaxVideo() predicate.
+ *
+ * We only consider the codecs this device actually prefers (detectPreferredCodecs,
+ * which is already hardware-biased). Among hardware-supported codecs a device's
+ * decode ceiling is uniform in practice, so the highest smooth rung across them is
+ * the honest resolution ceiling. Returns null when MediaCapabilities is
+ * unavailable — leaving maxVideo unset keeps the backend's prior (unbounded)
+ * behaviour rather than guessing.
+ *
+ * NOTE: this is a single global ceiling, not per-codec. For the realistic DVB
+ * source set (H.264 HD, HEVC UHD, MPEG-2 SD) that is honest; truly per-codec
+ * resolution truth would need a contract extension (a follow-up).
+ */
+export async function detectMaxVideo(videoEl?: HTMLVideoElement | null): Promise<MaxVideoCapability | null> {
+  const mc = getMediaCapabilitiesProbe();
+  if (!mc?.decodingInfo) {
+    return null;
+  }
+
+  const preferred = await detectPreferredCodecs(videoEl);
+
+  for (const rung of RESOLUTION_LADDER) {
+    for (const codec of preferred) {
+      const info = await decodeInfoForContentType(resolutionProbeContentType(codec, rung.height), {
+        width: rung.width,
+        height: rung.height,
+        bitrate: rung.bitrate,
+        framerate: 30,
+      });
+      if (info.smooth) {
+        return { width: rung.width, height: rung.height };
+      }
+    }
+  }
+
+  return null;
 }

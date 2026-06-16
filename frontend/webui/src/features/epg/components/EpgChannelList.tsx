@@ -4,7 +4,12 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
-import { postLivePlaybackInfo, type PlaybackInfo, type PlaybackTargetProfile } from '../../../client-ts';
+import {
+  postLivePlaybackInfo,
+  type PlaybackInfo,
+  type PlaybackTargetProfile,
+  type PlaybackVideoCodecSignal,
+} from '../../../client-ts';
 import { isEventVisible } from '../epgModel';
 import { EpgEventRow } from './EpgEventList';
 import { Button } from '../../../components/ui';
@@ -33,12 +38,100 @@ const CHANNEL_BADGE_FOCUS_AHEAD = 8;
 
 type ChannelPlaybackMode = 'direct_play' | 'direct_stream' | 'transcode' | 'deny';
 
+// Confidence tier for the device decoding the *output* video codec, derived from
+// the browser's own MediaCapabilities probe (videoCodecSignals):
+//   hw         = hardware-accelerated (powerEfficient) — the modern, ideal path
+//   sw         = decodes smoothly but in software (no HW) — works, costs CPU/battery
+//   unverified = browser reports "supported" but neither smooth nor powerEfficient
+//   null       = no signal for this codec (cannot say)
+type PlaybackConfidenceTier = 'hw' | 'sw' | 'unverified';
+
 type ChannelPlaybackBadge = {
   mode: ChannelPlaybackMode;
   label: string;
   detail: string | null;
   title: string;
+  tier: PlaybackConfidenceTier | null;
 };
+
+function normalizeCodecName(codec?: string | null): string | null {
+  if (!codec) {
+    return null;
+  }
+  const c = codec.trim().toLowerCase();
+  if (c === 'h264' || c === 'avc' || c === 'avc1' || c.startsWith('avc1')) return 'h264';
+  if (c === 'hevc' || c === 'h265' || c === 'hvc1' || c === 'hev1' || c.startsWith('hvc1') || c.startsWith('hev1')) return 'hevc';
+  if (c === 'av1' || c.startsWith('av01')) return 'av1';
+  if (c === 'mpeg2' || c === 'mpeg2video' || c === 'mp2v') return 'mpeg2';
+  return c || null;
+}
+
+function displayCodecName(codec?: string | null): string | null {
+  switch (normalizeCodecName(codec)) {
+    case 'h264':
+      return 'H.264';
+    case 'hevc':
+      return 'HEVC';
+    case 'av1':
+      return 'AV1';
+    case 'mpeg2':
+      return 'MPEG-2';
+    case null:
+      return null;
+    default:
+      return codec ? codec.toUpperCase() : null;
+  }
+}
+
+// Look up the runtime decode signal the browser reported for the codec that will
+// actually be delivered, and reduce it to a confidence tier. This is the bit that
+// distinguishes "plays in hardware" from "plays, but only in software".
+function confidenceTierForCodec(
+  codec?: string | null,
+  signals?: PlaybackVideoCodecSignal[]
+): PlaybackConfidenceTier | null {
+  const norm = normalizeCodecName(codec);
+  if (!norm || !signals || signals.length === 0) {
+    return null;
+  }
+  const signal = signals.find((entry) => normalizeCodecName(entry.codec) === norm);
+  if (!signal || signal.supported !== true) {
+    return null;
+  }
+  if (signal.powerEfficient === true) {
+    return 'hw';
+  }
+  if (signal.smooth === true) {
+    return 'sw';
+  }
+  return 'unverified';
+}
+
+function tierSuffix(tier: PlaybackConfidenceTier | null): string {
+  switch (tier) {
+    case 'hw':
+      return ' (HW)';
+    case 'sw':
+      return ' (SW)';
+    case 'unverified':
+      return ' (SW?)';
+    default:
+      return '';
+  }
+}
+
+function tierTitlePhrase(tier: PlaybackConfidenceTier | null): string {
+  switch (tier) {
+    case 'hw':
+      return 'hardware-accelerated decode';
+    case 'sw':
+      return 'software decode (smooth, no hardware acceleration)';
+    case 'unverified':
+      return 'software decode (browser did not confirm smooth playback)';
+    default:
+      return '';
+  }
+}
 
 const channelPlaybackBadgeCache = new Map<string, ChannelPlaybackBadge>();
 const channelPlaybackBadgeInflight = new Map<string, Promise<ChannelPlaybackBadge | null>>();
@@ -85,74 +178,119 @@ function formatTargetResolutionLabel(targetProfile?: PlaybackTargetProfile): str
   return formatResolutionLabel(`${width}x${height}`);
 }
 
-function formatTargetLane(label: string, mode?: string | null, codec?: string | null): string | null {
-  if (!mode && !codec) {
-    return null;
-  }
-
-  const normalizedMode = mode === 'copy' ? 'copy' : mode === 'transcode' ? 'encode' : mode;
-  const detail = [normalizedMode, codec].filter(Boolean).join('/');
-  return detail ? `${label}:${detail}` : null;
+// The output video codec that will actually reach this device: the transcode
+// target when present, otherwise the (copied) source codec.
+function resolveOutputVideoCodec(channel: EpgChannel, info: PlaybackInfo): string | null {
+  const targetProfile = info.decision?.trace?.targetProfile;
+  return targetProfile?.video?.codec || info.videoCodec || channel.codec || null;
 }
 
-function buildChannelPlaybackDetail(channel: EpgChannel, info: PlaybackInfo): string | null {
+// Render one A/V lane as a human codec path: "HEVC→AV1" when re-encoded,
+// plain "H.264" when kept (copied). The presence of the arrow IS the "why".
+function formatCodecLane(
+  source: string | null,
+  targetCodec?: string | null,
+  targetMode?: string | null,
+  suffix = ''
+): string | null {
+  const target = displayCodecName(targetCodec);
+  if (targetMode === 'transcode' && source && target && source !== target) {
+    return `${source}→${target}${suffix}`;
+  }
+  const single = target || source;
+  return single ? `${single}${suffix}` : null;
+}
+
+function buildChannelPlaybackDetail(
+  channel: EpgChannel,
+  info: PlaybackInfo,
+  tier: PlaybackConfidenceTier | null
+): string | null {
   const targetProfile = info.decision?.trace?.targetProfile;
   const resolution = formatTargetResolutionLabel(targetProfile) || formatResolutionLabel(channel.resolution);
 
-  if (targetProfile) {
-    const videoLane = formatTargetLane('v', targetProfile.video?.mode, targetProfile.video?.codec);
-    const audioLane = formatTargetLane('a', targetProfile.audio?.mode, targetProfile.audio?.codec);
-    const detail = [resolution, videoLane, audioLane].filter(Boolean).join(' · ');
-    if (detail) {
-      return detail;
-    }
-  }
+  const sourceVideo = displayCodecName(info.videoCodec || channel.codec);
+  const videoLane = formatCodecLane(
+    sourceVideo,
+    targetProfile?.video?.codec,
+    targetProfile?.video?.mode,
+    tierSuffix(tier)
+  );
 
-  const videoCodec = info.videoCodec || channel.codec || null;
-  const audioCodec = info.audioCodec || null;
-  const codecSummary = [videoCodec, audioCodec].filter(Boolean).join('/');
-  const detail = [resolution, codecSummary || null].filter(Boolean).join(' · ');
+  const sourceAudio = displayCodecName(info.audioCodec);
+  const audioLane = formatCodecLane(
+    sourceAudio,
+    targetProfile?.audio?.codec,
+    targetProfile?.audio?.mode
+  );
+
+  const detail = [resolution, videoLane, audioLane].filter(Boolean).join(' · ');
   return detail || null;
 }
 
-function buildChannelPlaybackBadge(channel: EpgChannel, info: PlaybackInfo): ChannelPlaybackBadge | null {
+// Human, honest explanation of WHY this path was chosen, for the badge tooltip.
+function buildChannelPlaybackTitle(
+  info: PlaybackInfo,
+  mode: ChannelPlaybackMode,
+  tier: PlaybackConfidenceTier | null
+): string {
+  const outputCodec = displayCodecName(resolveOutputVideoCodec({} as EpgChannel, info)) || 'the selected codec';
+  const tierPhrase = tierTitlePhrase(tier);
+  const withTier = (base: string): string => (tierPhrase ? `${base} — ${outputCodec}: ${tierPhrase}` : base);
+
+  switch (mode) {
+    case 'direct_play':
+      return withTier('Plays on this device as-is, no remux or re-encode');
+    case 'direct_stream':
+      return withTier('Plays without re-encode, only repackaged to HLS');
+    case 'transcode': {
+      const why =
+        info.reason === 'transcode_audio'
+          ? 'audio codec not supported by this device'
+          : info.reason === 'transcode_video'
+            ? 'video codec not supported by this device'
+            : info.reason === 'transcode_all'
+              ? 'neither video nor audio supported as-is'
+              : info.reason === 'container_mismatch'
+                ? 'container not directly playable'
+                : 'source not directly playable on this device';
+      return withTier(`Re-encoded on the server (${why})`);
+    }
+    case 'deny':
+      return 'Cannot be played on this device with the current constraints';
+  }
+}
+
+const PLAYBACK_MODE_LABEL: Record<ChannelPlaybackMode, string> = {
+  direct_play: 'Direct',
+  direct_stream: 'Remux',
+  transcode: 'Encode',
+  deny: 'Blocked',
+};
+
+function buildChannelPlaybackBadge(
+  channel: EpgChannel,
+  info: PlaybackInfo,
+  capabilities: CapabilitySnapshot
+): ChannelPlaybackBadge | null {
   const rawMode = info.decision?.mode;
 
   if (rawMode !== 'direct_play' && rawMode !== 'direct_stream' && rawMode !== 'transcode' && rawMode !== 'deny') {
     return null;
   }
 
-  const detail = buildChannelPlaybackDetail(channel, info);
-  switch (rawMode) {
-    case 'direct_play':
-      return {
-        mode: rawMode,
-        label: 'Direct',
-        detail,
-        title: 'Runs on this device without remux or re-encode',
-      };
-    case 'direct_stream':
-      return {
-        mode: rawMode,
-        label: 'Remux',
-        detail,
-        title: 'Runs on this device without re-encode, packaged as HLS',
-      };
-    case 'transcode':
-      return {
-        mode: rawMode,
-        label: 'Encode',
-        detail,
-        title: 'Needs video or audio transcoding on this device',
-      };
-    case 'deny':
-      return {
-        mode: rawMode,
-        label: 'Blocked',
-        detail,
-        title: 'Cannot be played on this device with the current constraints',
-      };
-  }
+  const tier =
+    rawMode === 'deny'
+      ? null
+      : confidenceTierForCodec(resolveOutputVideoCodec(channel, info), capabilities.videoCodecSignals);
+
+  return {
+    mode: rawMode,
+    label: PLAYBACK_MODE_LABEL[rawMode],
+    detail: buildChannelPlaybackDetail(channel, info, tier),
+    title: buildChannelPlaybackTitle(info, rawMode, tier),
+    tier,
+  };
 }
 
 async function fetchChannelPlaybackBadge(
@@ -200,7 +338,7 @@ async function fetchChannelPlaybackBadge(
       return null;
     }
 
-    const badge = buildChannelPlaybackBadge(channel, result.data);
+    const badge = buildChannelPlaybackBadge(channel, result.data, capabilities);
     if (badge) {
       channelPlaybackBadgeCache.set(cacheKey, badge);
     }
@@ -517,6 +655,7 @@ function ChannelCard({
 
 // Search Results Group
 interface SearchGroupProps {
+  channelIndex: number;
   channel: EpgChannel;
   playbackBadge?: ChannelPlaybackBadge | null;
   isFavorite?: boolean;
@@ -531,6 +670,7 @@ interface SearchGroupProps {
 }
 
 function SearchGroup({
+  channelIndex,
   channel,
   playbackBadge,
   isFavorite,
@@ -557,6 +697,7 @@ function SearchGroup({
     <div className={styles.searchGroup}>
       <ChannelHeader
         channel={channel}
+        channelIndex={channelIndex}
         displayName={displayName}
         playbackBadge={playbackBadge}
         isFavorite={isFavorite}
@@ -869,6 +1010,55 @@ export function EpgChannelList({
     primePlaybackBadges(indices);
   }, [focusedChannelIndex, mode, primePlaybackBadges, sortedChannels.length]);
 
+  // Lazy-on-scroll: prime a channel's output-quality badge once its row enters
+  // (or nears) the viewport, so every channel gets a badge without fetching the
+  // whole list up front. Complements the initial-prefetch and focus-window
+  // effects above (those handle first paint and TV remote navigation).
+  React.useEffect(() => {
+    const root = listRef.current;
+    if (!root || orderedDisplayChannels.length === 0) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      // Environments without IntersectionObserver (e.g. jsdom, very old
+      // browsers): prime everything eagerly so badges still appear.
+      primePlaybackBadges(
+        Array.from({ length: orderedDisplayChannels.length }, (_, index) => index)
+      );
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const indices: number[] = [];
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            continue;
+          }
+          const value = (entry.target as HTMLElement).dataset.xg2gChannelIndex;
+          const index = value ? Number.parseInt(value, 10) : Number.NaN;
+          if (!Number.isNaN(index)) {
+            indices.push(index);
+          }
+          observer.unobserve(entry.target);
+        }
+        if (indices.length > 0) {
+          primePlaybackBadges(indices);
+        }
+      },
+      { root: null, rootMargin: '300px 0px', threshold: 0 }
+    );
+
+    root
+      .querySelectorAll<HTMLElement>('[data-xg2g-channel-index]')
+      .forEach((node) => observer.observe(node));
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [orderedDisplayChannels, primePlaybackBadges]);
+
   React.useEffect(() => {
     const root = listRef.current;
     if (!root) {
@@ -1155,7 +1345,7 @@ export function EpgChannelList({
 
   return (
     <div ref={listRef}>
-      {searchGroups.map(([serviceRef, events]) => {
+      {searchGroups.map(([serviceRef, events], channelIndex) => {
         const channel =
           channels.find((c) => c.serviceRef === serviceRef || c.id === serviceRef) ||
           ({ serviceRef: serviceRef, id: serviceRef, name: serviceRef } as EpgChannel);
@@ -1164,6 +1354,7 @@ export function EpgChannelList({
         return (
           <SearchGroup
             key={serviceRef}
+            channelIndex={channelIndex}
             channel={channel}
             playbackBadge={playbackBadges[serviceRef] || null}
             isFavorite={favoriteServiceRefs?.has(serviceRef.toLowerCase()) ?? false}

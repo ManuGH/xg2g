@@ -133,7 +133,20 @@ func sourceRequiresVideoRepair(source Source, maxVideo *MaxVideoDimensions) bool
 	if maxVideo == nil {
 		return false
 	}
-	return source.Width <= 0 || source.Height <= 0 || source.FPS <= 0
+	// Only refuse to copy when a dimension the client *actually constrains* is
+	// unknown. Guarding every dimension on the mere presence of maxVideo meant a
+	// source FPS the probe could not determine (FPS<=0) spuriously forced a
+	// transcode even when the client placed no FPS cap — an under-promise.
+	if maxVideo.Width > 0 && source.Width <= 0 {
+		return true
+	}
+	if maxVideo.Height > 0 && source.Height <= 0 {
+		return true
+	}
+	if maxVideo.FPS > 0 && source.FPS <= 0 {
+		return true
+	}
+	return false
 }
 
 // contains checks if a slice contains a specific string (case-insensitive).

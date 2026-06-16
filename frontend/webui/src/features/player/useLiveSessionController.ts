@@ -21,10 +21,21 @@ import {
   SESSION_REQUEST_TIMEOUT_MS,
   timeoutSignal,
 } from './utils/requestTimeout';
+import {
+  evaluateRenderQuality,
+  readPlaybackFrameCounters,
+  type PlaybackFrameCounters,
+  type RenderQualityVerdict,
+} from './playbackRenderProbe';
 
 const SESSION_READY_TIMEOUT_MS = 60_000;
 const SESSION_READY_POLL_MS = 250;
 const SESSION_READY_MAX_ATTEMPTS = Math.ceil(SESSION_READY_TIMEOUT_MS / SESSION_READY_POLL_MS);
+
+// How often to sample decode/dropped-frame counters during live playback. The
+// first tick establishes the baseline (well past startup), later ticks compare
+// against it — so a verdict only forms after a real steady-state window.
+const RENDER_QUALITY_SAMPLE_MS = 5_000;
 
 type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
 type ErrorBodyReader = (res: Response) => Promise<{ json: any | null; text: string | null }>;
@@ -136,6 +147,39 @@ export function useLiveSessionController({
       });
     } catch (err) {
       debugWarn('Failed to send feedback', err);
+    }
+  }, [apiBase, authHeaders]);
+
+  // Ground-truth render quality: report measured dropped frames as a non-blocking
+  // 'warning'. The backend records this as a per-session observation (codec +
+  // device class are known server-side) without triggering a session fallback —
+  // a warning never matches shouldTriggerPlaybackFallback.
+  const reportRenderQuality = useCallback(async (
+    verdict: RenderQualityVerdict,
+    videoWidth: number,
+    videoHeight: number,
+  ) => {
+    if (!sessionIdRef.current) return;
+    const ratioPct = verdict.ratio !== null ? Math.round(verdict.ratio * 1000) / 10 : null;
+    try {
+      await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
+        method: 'POST',
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          event: 'warning',
+          message: `render_quality dropped=${verdict.droppedDelta}/${verdict.totalDelta} ratio=${ratioPct}%`,
+          details: {
+            kind: 'render_quality',
+            droppedFrames: verdict.droppedDelta,
+            totalFrames: verdict.totalDelta,
+            droppedRatio: verdict.ratio,
+            videoWidth,
+            videoHeight,
+          },
+        }),
+      });
+    } catch (err) {
+      debugWarn('Failed to send render-quality feedback', err);
     }
   }, [apiBase, authHeaders]);
 
@@ -488,6 +532,47 @@ export function useLiveSessionController({
       pollMs: SESSION_READY_POLL_MS
     });
   }, [apiBase, applySessionInfo, authHeaders, createPlayerError, fetchWithRecoveredSessionCookie, onSessionSnapshot, readResponseBody, setStatus, t]);
+
+  // Sample decode/dropped-frame counters during live playback and, once a
+  // steady-state window shows the device is NOT decoding smoothly, report it
+  // once per session (ground truth that confirms or refutes the capability
+  // probe's estimate). Non-disruptive: the backend records it, no fallback.
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    const trackedSessionId = sessionId;
+    let baseline: PlaybackFrameCounters | null = null;
+    let reported = false;
+
+    const timerId = window.setInterval(() => {
+      if (reported || sessionIdRef.current !== trackedSessionId) {
+        return;
+      }
+      const videoEl = videoRef.current;
+      if (!videoEl || videoEl.paused || videoEl.readyState < 2) {
+        return;
+      }
+      const counters = readPlaybackFrameCounters(videoEl);
+      if (counters.totalFrames === null) {
+        return;
+      }
+      if (!baseline) {
+        baseline = counters;
+        return;
+      }
+      const verdict = evaluateRenderQuality(baseline, counters);
+      if (verdict.exceeded) {
+        reported = true;
+        void reportRenderQuality(verdict, videoEl.videoWidth, videoEl.videoHeight);
+      }
+    }, RENDER_QUALITY_SAMPLE_MS);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [sessionId, videoRef, reportRenderQuality]);
 
   useEffect(() => {
     if (!sessionId || !heartbeatInterval) {

@@ -12,6 +12,7 @@ import {
   probeRuntimePlaybackCapabilities,
   type RuntimePlaybackProbeScope,
 } from "./playbackProbe";
+import { detectMaxVideo } from "./codecDetection";
 
 export type CapabilitySnapshot = Pick<
   PlaybackCapabilitiesContract,
@@ -378,6 +379,9 @@ export async function gatherPlaybackCapabilities(
   const probe = await probeRuntimePlaybackCapabilities(videoEl, scope);
   const clientFamilyFallback = detectPlaybackClientFamily(videoEl);
   const familyFallback = fallbackPlaybackCapabilitiesForClientFamily(clientFamilyFallback, scope);
+  // Real resolution ceiling, so the backend's withinMaxVideo() check is no longer
+  // unbounded for browser clients (was probed only at 1080p before → 4K unknown).
+  const maxVideo = await detectMaxVideo(videoEl);
 
   return {
     capabilitiesVersion: 3,
@@ -396,5 +400,6 @@ export async function gatherPlaybackCapabilities(
     runtimeProbeUsed: probe.usedRuntimeProbe,
     runtimeProbeVersion: probe.version,
     clientFamilyFallback,
+    maxVideo: maxVideo ?? undefined,
   };
 }
