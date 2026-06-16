@@ -40,7 +40,7 @@ func ResolveProfileUserAgent(requestedPlaybackMode, clientFamily, requestUserAge
 // ApplyStartPackagingPolicy centralizes client-specific start-time packaging
 // safeguards. The policy only mutates the resolved execution shape, not the
 // selected profile identity.
-func ApplyStartPackagingPolicy(clientFamily, effectiveProfileID string, profileSpec model.ProfileSpec) model.ProfileSpec {
+func ApplyStartPackagingPolicy(clientFamily, effectiveProfileID string, profileSpec model.ProfileSpec, sourceVideoCodec, preferredEngine string) model.ProfileSpec {
 	switch normalize.Token(clientFamily) {
 	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
 	default:
@@ -53,7 +53,36 @@ func ApplyStartPackagingPolicy(clientFamily, effectiveProfileID string, profileS
 		// still shows black video or stalls.
 		profileSpec.Container = "fmp4"
 	}
+	if isNativeHevcCopyStart(profileSpec, sourceVideoCodec, preferredEngine) {
+		// An HEVC live SOURCE copied (no transcode) for a Safari client that
+		// explicitly asked for the native WebKit HLS engine must be fMP4/hvc1:
+		// native Safari HLS does not play HEVC in MPEG-TS, and hls.js/MSE cannot
+		// sustain 4K@50 HEVC Main10/HLG (it stalls). An Apple HW decoder (e.g. M4)
+		// plays HEVC fMP4/hvc1 natively. Gated on preferredEngine=="native", which
+		// the WebUI sends only for HEVC sources when the native-HEVC experiment
+		// flag is on — so flag-off traffic is byte-for-byte unchanged, and only
+		// HEVC sources flip (H.264 copy stays MPEG-TS for the hls.js/MSE path).
+		profileSpec.Container = "fmp4"
+		// The copy path defaults VideoCodec to "" -> planCodec resolves "h264", so
+		// appendLiveVideoContainerTags would skip the hvc1 tag and FFmpeg writes an
+		// hev1 fMP4 that native Safari HLS will not play ("HEVC is not hvc1").
+		// Pin the output video codec to hevc so the existing fMP4 hvc1-tag path
+		// engages. This stays a COPY: Name != "" keeps usesLegacyCPUDefaults false
+		// and TranscodeVideo is untouched, so buildCopyVideoArgs (-c:v copy) is used.
+		profileSpec.VideoCodec = "hevc"
+	}
 	return profileSpec
+}
+
+// isNativeHevcCopyStart reports whether this is an HEVC live source being copied
+// (not transcoded) for a client that explicitly requested the native WebKit HLS
+// engine — the one case where a browser-Safari copy must be packaged as fMP4 so
+// the parameter sets land in an hvc1 sample entry (see appendLiveVideoContainerTags).
+func isNativeHevcCopyStart(profileSpec model.ProfileSpec, sourceVideoCodec, preferredEngine string) bool {
+	return !profileSpec.TranscodeVideo &&
+		strings.EqualFold(strings.TrimSpace(profileSpec.Container), "mpegts") &&
+		strings.EqualFold(strings.TrimSpace(sourceVideoCodec), "hevc") &&
+		strings.EqualFold(strings.TrimSpace(preferredEngine), "native")
 }
 
 func requiresNativeWebKitFMP4(profileID string) bool {

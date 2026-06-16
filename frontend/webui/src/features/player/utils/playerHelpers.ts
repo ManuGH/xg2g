@@ -8,6 +8,7 @@
 
 import type { VideoElementRef } from '../../../types/v3-player';
 import { isHlsJsSafariKillSwitchOn } from './engineExperiment';
+import { isNativeHevcSafariExperimentEnabled } from './nativeHevcExperiment';
 import { getManagedMseAv1Support } from './managedMseAv1';
 
 // --- Error Type ---
@@ -146,11 +147,38 @@ export function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
   }
 }
 
+// HEVC Main 10 decode support probe (the profile of UHD HLG broadcasts).
+function canPlayHevcMain10(videoEl: VideoElementRef): boolean {
+  if (!videoEl) return false;
+  try {
+    return (
+      videoEl.canPlayType('video/mp4; codecs="hvc1.2.4.L120.90"') !== '' ||
+      videoEl.canPlayType('video/mp4; codecs="hev1.2.4.L120.90"') !== '' ||
+      videoEl.canPlayType('video/mp4; codecs="hvc1.1.6.L120.90"') !== ''
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupported: boolean = false): boolean {
   if (!videoEl) return false;
   try {
     const hasNativeHls = videoEl.canPlayType('application/vnd.apple.mpegurl') !== '';
     if (!hasNativeHls) return false;
+
+    // Native-HEVC experiment (flagged, default off): route HEVC-capable Safari to
+    // native WebKit HLS. hls.js/MSE cannot sustain 4K@50 HEVC Main10/HLG (it
+    // stalls in decode); native Safari + an Apple HW decoder (e.g. M4) plays it.
+    // Decided here at probe time so the engine is identical across
+    // /live/stream-info and the intent — the decision token's capHash covers the
+    // engine, so flipping it after the decision is rejected (CLAIM_MISMATCH).
+    // Takes precedence over the MMS/AV1 hls.js routing below. The backend only
+    // flips the container to fMP4/hvc1 for HEVC sources, so H.264 stays MPEG-TS
+    // (still plays via native Safari HLS). See nativeHevcExperiment.ts / ADR-026.
+    if (isNativeHevcSafariExperimentEnabled() && canPlayHevcMain10(videoEl)) {
+      return true;
+    }
 
     // hls.js + ManagedMediaSource migration: release WebKit to the APP-OWNED MSE
     // engine so a pause holds the buffer and recovery is a seamless re-init — instead
