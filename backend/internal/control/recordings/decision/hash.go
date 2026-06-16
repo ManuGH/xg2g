@@ -40,14 +40,15 @@ func (i DecisionInput) CanonicalJSONForHash() ([]byte, error) {
 			Interlaced:        i.Source.Interlaced,
 		},
 		Capabilities: canonicalCapabilities{
-			Version:       i.Capabilities.Version,
-			Containers:    sortedUnique(i.Capabilities.Containers),
-			VideoCodecs:   sortedUnique(i.Capabilities.VideoCodecs),
-			AudioCodecs:   sortedUnique(i.Capabilities.AudioCodecs),
-			SupportsHLS:   i.Capabilities.SupportsHLS,
-			SupportsRange: &supportsRange, // Always *bool, never nil
-			MaxVideo:      i.Capabilities.MaxVideo,
-			DeviceType:    robustNorm(i.Capabilities.DeviceType),
+			Version:           i.Capabilities.Version,
+			Containers:        sortedUnique(i.Capabilities.Containers),
+			VideoCodecs:       sortedUnique(i.Capabilities.VideoCodecs),
+			AudioCodecs:       sortedUnique(i.Capabilities.AudioCodecs),
+			SupportsHLS:       i.Capabilities.SupportsHLS,
+			SupportsRange:     &supportsRange, // Always *bool, never nil
+			MaxVideo:          i.Capabilities.MaxVideo,
+			DeviceType:        robustNorm(i.Capabilities.DeviceType),
+			VideoCodecSignals: canonicalSignalsForHash(i.Capabilities.VideoCodecSignals),
 		},
 		Policy: canonicalPolicy{
 			AllowTranscode: i.Policy.AllowTranscode,
@@ -83,14 +84,15 @@ func (i DecisionInput) CanonicalJSON() ([]byte, error) {
 			Interlaced:        i.Source.Interlaced,
 		},
 		Capabilities: canonicalCapabilities{
-			Version:       i.Capabilities.Version,
-			Containers:    sortedUnique(i.Capabilities.Containers),
-			VideoCodecs:   sortedUnique(i.Capabilities.VideoCodecs),
-			AudioCodecs:   sortedUnique(i.Capabilities.AudioCodecs),
-			SupportsHLS:   i.Capabilities.SupportsHLS,
-			SupportsRange: &supportsRange,
-			MaxVideo:      i.Capabilities.MaxVideo,
-			DeviceType:    robustNorm(i.Capabilities.DeviceType),
+			Version:           i.Capabilities.Version,
+			Containers:        sortedUnique(i.Capabilities.Containers),
+			VideoCodecs:       sortedUnique(i.Capabilities.VideoCodecs),
+			AudioCodecs:       sortedUnique(i.Capabilities.AudioCodecs),
+			SupportsHLS:       i.Capabilities.SupportsHLS,
+			SupportsRange:     &supportsRange,
+			MaxVideo:          i.Capabilities.MaxVideo,
+			DeviceType:        robustNorm(i.Capabilities.DeviceType),
+			VideoCodecSignals: canonicalSignalsForHash(i.Capabilities.VideoCodecSignals),
 		},
 		Policy: canonicalPolicy{
 			AllowTranscode: i.Policy.AllowTranscode,
@@ -168,14 +170,35 @@ type canonicalSource struct {
 }
 
 type canonicalCapabilities struct {
-	Version       int                 `json:"v"`
-	Containers    []string            `json:"c"`
-	VideoCodecs   []string            `json:"vc"`
-	AudioCodecs   []string            `json:"ac"`
-	SupportsHLS   bool                `json:"hls"`
-	SupportsRange *bool               `json:"rng,omitempty"`
-	MaxVideo      *MaxVideoDimensions `json:"mv,omitempty"`
-	DeviceType    string              `json:"dev"`
+	Version           int                 `json:"v"`
+	Containers        []string            `json:"c"`
+	VideoCodecs       []string            `json:"vc"`
+	AudioCodecs       []string            `json:"ac"`
+	SupportsHLS       bool                `json:"hls"`
+	SupportsRange     *bool               `json:"rng,omitempty"`
+	MaxVideo          *MaxVideoDimensions `json:"mv,omitempty"`
+	DeviceType        string              `json:"dev"`
+	VideoCodecSignals []VideoCodecSignal  `json:"vcs,omitempty"`
+}
+
+// canonicalSignalsForHash returns the signals in a stable order (by normalized
+// codec) so the cache key is deterministic. Returns nil for an empty input so
+// the omitempty tag keeps the hash byte-identical for signal-less requests.
+func canonicalSignalsForHash(signals []VideoCodecSignal) []VideoCodecSignal {
+	if len(signals) == 0 {
+		return nil
+	}
+	out := make([]VideoCodecSignal, 0, len(signals))
+	for _, s := range signals {
+		out = append(out, VideoCodecSignal{
+			Codec:          robustNorm(s.Codec),
+			Supported:      s.Supported,
+			Smooth:         s.Smooth,
+			PowerEfficient: s.PowerEfficient,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Codec < out[j].Codec })
+	return out
 }
 
 type canonicalPolicy struct {

@@ -14,7 +14,10 @@ func computePredicates(ctx context.Context, source Source, caps Capabilities, po
 	// ADR-009.1 §1 Scope Cut: codec compatibility is string-only (no profile/level).
 	// Exit condition: TruthProvider provides profile/level or RFC-6381, and Capabilities can express them.
 	canContainer := contains(caps.Containers, source.Container)
-	canVideo := contains(caps.VideoCodecs, source.VideoCodec) && withinMaxVideo(source, caps.MaxVideo)
+	// Unified capability matrix replaces the flat-list + global-MaxVideo pair.
+	// With minDirectVideoTier == TierUnverified and no signals this is identical
+	// to contains(caps.VideoCodecs, …) && withinMaxVideo(…); signals only refine.
+	canVideo := CanVideoFromMatrix(source, caps, caps.VideoCodecSignals, minDirectVideoTier)
 	canAudio := contains(caps.AudioCodecs, source.AudioCodec)
 	videoRepairRequired := sourceRequiresVideoRepair(source, caps.MaxVideo)
 	shadowEvaluateVideoCompatibility(ctx, source, caps, canVideo, videoRepairRequired)
@@ -54,8 +57,7 @@ func computePredicates(ctx context.Context, source Source, caps Capabilities, po
 // matches the current decision-engine predicate semantics so start resolution
 // and playback-info do not drift apart.
 func CanKeepVideoCopy(source Source, caps Capabilities) bool {
-	return contains(caps.VideoCodecs, source.VideoCodec) &&
-		withinMaxVideo(source, caps.MaxVideo) &&
+	return CanVideoFromMatrix(source, caps, caps.VideoCodecSignals, minDirectVideoTier) &&
 		!sourceRequiresVideoRepair(source, caps.MaxVideo)
 }
 

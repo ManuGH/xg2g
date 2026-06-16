@@ -53,6 +53,10 @@ type Capabilities struct {
 	SupportsRange *bool               `json:"rng,omitempty"`
 	MaxVideo      *MaxVideoDimensions `json:"mv,omitempty"`
 	DeviceType    string              `json:"dev"`
+	// VideoCodecSignals carries the per-codec runtime decode probe (smooth/
+	// powerEfficient). Consumed via the capability matrix; nil keeps the legacy
+	// flat-list behaviour exactly.
+	VideoCodecSignals []VideoCodecSignal `json:"vcs,omitempty"`
 }
 
 // Policy represents server policy constraints.

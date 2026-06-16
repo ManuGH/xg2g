@@ -85,6 +85,18 @@ func FromCapabilities(c capabilities.PlaybackCapabilities) Capabilities {
 			FPS:    c.MaxVideo.Fps,
 		}
 	}
+	if len(c.VideoCodecSignals) > 0 {
+		signals := make([]VideoCodecSignal, 0, len(c.VideoCodecSignals))
+		for _, s := range c.VideoCodecSignals {
+			signals = append(signals, VideoCodecSignal{
+				Codec:          s.Codec,
+				Supported:      s.Supported,
+				Smooth:         s.Smooth,
+				PowerEfficient: s.PowerEfficient,
+			})
+		}
+		dc.VideoCodecSignals = signals
+	}
 	return dc
 }
 
