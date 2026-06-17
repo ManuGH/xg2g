@@ -67,6 +67,7 @@ type LocalAdapter struct {
 	StreamRelayProbeSize       string
 	LiveNoBuffer               bool
 	ForceIgnDTS                bool
+	LiveAvsyncAtrim            bool
 	IngestFFlags               string
 	IngestErrDetect            string
 	IngestMaxErrorRate         string
@@ -163,6 +164,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	}
 	liveNoBuffer := envBool("XG2G_LIVE_NOBUFFER", false)
 	forceIgnDTS := envBool("XG2G_FORCE_IGNDTS", false)
+	liveAvsyncAtrim := envBool("XG2G_LIVE_AVSYNC_ATRIM", false)
 	if killTimeout <= 0 {
 		killTimeout = 5 * time.Second
 	}
@@ -265,6 +267,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		StreamRelayProbeSize:       streamRelayProbeSize,
 		LiveNoBuffer:               liveNoBuffer,
 		ForceIgnDTS:                forceIgnDTS,
+		LiveAvsyncAtrim:            liveAvsyncAtrim,
 		IngestFFlags:               ingestFFlags,
 		IngestErrDetect:            ingestErrDetect,
 		IngestMaxErrorRate:         ingestMaxErrorRate,

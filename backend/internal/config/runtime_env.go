@@ -149,6 +149,7 @@ var runtimeEnvKeys = []string{
 	// Misc runtime toggles.
 	"XG2G_LIVE_NOBUFFER",
 	"XG2G_FORCE_IGNDTS",
+	"XG2G_LIVE_AVSYNC_ATRIM",
 	"XG2G_INITIAL_REFRESH",
 	"XG2G_RATE_LIMIT_ENABLED",
 }
