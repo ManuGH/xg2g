@@ -38,7 +38,7 @@
 - **Your recordings, too** — browse and play the recordings on your receiver the same way.
 - **Built to run** — WebUI, a versioned `/api/v3`, health checks, Prometheus metrics, structured logs, and deployment runbooks.
 
-It bridges Enigma2/OpenWebIF (including receiver relay ports like `8001` or `17999`) and serves standards-based HLS — see the pipeline below.
+It bridges Enigma2/OpenWebIF and serves standards-based HLS — see the pipeline below.
 
 ## Playback Pipeline
 

@@ -9,7 +9,7 @@ effective stream URL for a service reference before FFmpeg starts. This is
 critical because:
 
 1. **Transcoding**: The receiver decides if and how to transcode the stream based on its capabilities and the request parameters.
-2. **Port Mapping**: The correct streaming port (8001, 8002, 17999, etc.) is determined by the receiver's configuration.
+2. **Port Mapping**: The correct streaming port (8001, 8002, <relay-port>, etc.) is determined by the receiver's configuration.
 3. **Authentication**: The `/web/stream.m3u` endpoint handles session tokens and anti-hijack tokens if configured.
 
 ### Critical Configuration Rule
@@ -34,7 +34,7 @@ critical because:
 - **Mechanism**: live playback still asks `/web/stream.m3u` first; if that
   fails, `xg2g` constructs `http://<ip>:<streamPort>/<ServiceRef>`.
 - **Risk**: the fallback can bypass receiver relay logic and may fail when the
-  actual stream is exposed through optional middleware such as port `17999`.
+  actual stream is exposed through optional middleware such as port `<relay-port>`.
 
 ## Credentials & Authentication
 
