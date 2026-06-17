@@ -38,7 +38,7 @@ DVB-S2 Satellite (e.g., Orbital Position 19.2°E)
          │
          ▼
 ┌─────────────────┐
-│ Optional        │  Port 17999 (Stream Processing)
+│ Optional        │  Port <relay-port> (Stream Processing)
 │ Middleware      │
 └────────┬────────┘
          │
@@ -70,11 +70,11 @@ DVB-S2 Satellite (e.g., Orbital Position 19.2°E)
 |-------|------------------|----------------------------------------------|---------------|
 | **80/443** | OpenWebIF    | Web UI, API endpoints, M3U generation        | HTTP(S)       |
 | **8001**   | Enigma2 Stream | **Native streaming port / direct fallback** | HTTP (MPEG-TS)|
-| **17999**  | Optional Middleware | Stream processing proxy (optional)        | HTTP (MPEG-TS) |
+| **<relay-port>**  | Optional Middleware | Stream processing proxy (optional)        | HTTP (MPEG-TS) |
 
 **Compatibility default:** `enigma2.streamPort = 8001` remains in the registry
 as a deprecated direct fallback. Live playback still queries
-`/web/stream.m3u` first so the receiver can return `8001`, `17999`, or another
+`/web/stream.m3u` first so the receiver can return `8001`, `<relay-port>`, or another
 effective stream endpoint.
 
 ---
@@ -108,7 +108,7 @@ Enigma2 uses a colon-delimited reference to uniquely identify DVB services:
 #EXTM3U
 #EXTINF:-1,Example HD Channel
 #EXTVLCOPT:program=239
-http://127.0.0.1:17999/1:0:19:EF:1A:85:C00000:0:0:0:
+http://127.0.0.1:<relay-port>/1:0:19:EF:1A:85:C00000:0:0:0:
 ```
 
 ---
@@ -138,19 +138,11 @@ xg2g requests 2nd stream     Tuner #3 (allocated)          (unchanged)
 
 ---
 
-### Optional Stream Middleware (Port 17999)
-
-**Configuration (if used):**
-
-```ini
-[middleware]
-stream_relay_enabled = 1
-stream_relay_port    = 17999
-```
+### Optional Stream Middleware (Port <relay-port>)
 
 **How Optional Middleware Works:**
 
-1. **Client** requests: `http://192.0.2.10:17999/{serviceref}`
+1. **Client** requests: `http://192.0.2.10:<relay-port>/{serviceref}`
 2. **Middleware** receives stream from **Enigma2:8001**
 3. **Middleware** processes stream as configured
 4. **Middleware** returns processed stream to client
@@ -179,12 +171,12 @@ Modern Enigma2 receivers with FBC support use **FBC (Flexible Band Concatenation
 
 ### The Stream Request Flow (Middleware Layer)
 
-In setups with optional relay middleware (e.g., StreamRelay), the flow is as follows:
+In setups with optional relay middleware, the flow is as follows:
 
 1. **Client** → OpenWebif (Port 80) `/web/stream.m3u?ref=...`
 2. **OpenWebif** → Determines if the stream requires relaying natively. OpenWebIF is purely the **API/URL-Generator**.
-3. **M3U Response** → Returns a Relay-URL like `http://IP:17999/{serviceref}`.
-4. **Client** → Port 17999 (relay endpoint provided by middleware).
+3. **M3U Response** → Returns a Relay-URL like `http://IP:<relay-port>/{serviceref}`.
+4. **Client** → Port <relay-port> (relay endpoint provided by middleware).
 5. **Middleware** → Fetches raw stream from `localhost:8001` (Enigma2 Native).
 6. **Enigma2:8001** → Delivers MPEG-TS via Tuner.
 7. **Middleware** → Processes the TS and returns it to the Client with `HTTP/1.0 200 OK` and `Server: stream_enigma2`.
@@ -194,15 +186,15 @@ In setups with optional relay middleware (e.g., StreamRelay), the flow is as fol
 style on OpenWebIF client surfaces that would otherwise build direct channel
 URLs.
 
-#### StreamRelay Technical Constraints
+#### relay middleware Technical Constraints
 
-When querying streams directly from StreamRelay (`17999`), several strict networking constraints apply:
+When querying streams directly from relay middleware (`<relay-port>`), several strict networking constraints apply:
 
 - **HTTP Methods:** It strictly requires `GET`. `HEAD` tests on these TS-Endpoints will often return "empty reply" or close the connection, even though `GET` streams perfectly.
 - **Preemptive Authentication:** If Enigma2 is secured, some relay middleware may drop the connection instead of sending a `401 Unauthorized` challenge. Clients (like `ffprobe`) must send the `Authorization: Basic ...` header *preemptively*.
 - **User-Agent Filtering:** The middleware drops connections instantly (0 bytes read) if the `User-Agent` is blank or non-standard. Spoofing standard player signatures (e.g., `VLC/3.0.21 LibVLC/3.0.21`) is required for probe tools mapping the stream.
 - **Probe Timeouts:** Tuning and preparing the relay stream takes significant time (3-5 seconds). Probe timeouts must be unusually generous (e.g., `8s`), otherwise the receiver kills the pipe before the first TS packet arrives.
-- **Rate Limiting:** Aggressive channel scanning (e.g., full EPG probing) on port `17999` can overload the relay process, resulting in `Connection refused` for subsequent streams. A delay of at least `1000ms` between consecutive stream requests is necessary to maintain stability.
+- **Rate Limiting:** Aggressive channel scanning (e.g., full EPG probing) on port `<relay-port>` can overload the relay process, resulting in `Connection refused` for subsequent streams. A delay of at least `1000ms` between consecutive stream requests is necessary to maintain stability.
 
 ---
 
@@ -219,7 +211,7 @@ Client → Enigma2:8001 (native stream)
 With optional middleware:
 
 ```
-Client → Middleware:17999 → Enigma2:8001 (proxy)
+Client → Middleware:<relay-port> → Enigma2:8001 (proxy)
 ```
 
 **xg2g compatibility default:**
@@ -241,7 +233,7 @@ Client → Middleware:17999 → Enigma2:8001 (proxy)
 - Modern live playback uses **receiver-side stream resolution** through OpenWebIF.
 - Optional middleware abstracts the underlying port.
 - Hardcoding 8001 in operator config hides whether the receiver actually
-  selected a relay endpoint such as `17999`.
+  selected a relay endpoint such as `<relay-port>`.
 
 ---
 
