@@ -237,20 +237,21 @@ describe('V3Player live DVR semantics', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
-    await screen.findByRole('status');
-
-    // Verify the session was fetched at startup
+    // Robust barrier: assert the startup session fetch directly. The centered
+    // status card is debounced (suppressed for sub-500ms work), so its role="status"
+    // is no longer a reliable "startup happened" signal.
     const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
-    const sessionFetches = fetchMock.mock.calls.filter(([input]) => {
-      const url = typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
-      return url.includes('/sessions/sid-live-dvr-1') && !url.includes('/heartbeat') && !url.includes('/feedback');
+    await waitFor(() => {
+      const sessionFetches = fetchMock.mock.calls.filter(([input]) => {
+        const url = typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        return url.includes('/sessions/sid-live-dvr-1') && !url.includes('/heartbeat') && !url.includes('/feedback');
+      });
+      expect(sessionFetches.length).toBeGreaterThan(0);
     });
-
-    expect(sessionFetches.length).toBeGreaterThan(0);
   });
 
 });
