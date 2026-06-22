@@ -140,112 +140,19 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	if probeSize == "" {
 		probeSize = "5M" // 5MB for live streams
 	}
-	liveAnalyzeDuration := strings.TrimSpace(config.ParseString("XG2G_LIVE_ANALYZE_DURATION", ""))
-	if liveAnalyzeDuration == "" {
-		liveAnalyzeDuration = "1000000" // 1s for low-latency live ingest
-	}
-	liveProbeSize := strings.TrimSpace(config.ParseString("XG2G_LIVE_PROBE_SIZE", ""))
-	if liveProbeSize == "" {
-		liveProbeSize = "1M" // 1MB for low-latency live ingest
-	}
-	// Live ingest user-agent. Default empty => use FFmpeg's built-in UA. A spoofed
-	// "VLC" UA trips the OSCam stream-relay (oscam-emu) source-host heuristic: it
-	// then fetches the scrambled source from the *client* IP:8001 instead of
-	// honoring the Host header, yielding an empty stream ("Stream ends prematurely
-	// at 0") for any remote client. A default (Lavf) UA makes OSCam honor the Host
-	// header. Override via XG2G_LIVE_USER_AGENT only if a source explicitly needs one.
-	liveUserAgent := strings.TrimSpace(config.ParseString("XG2G_LIVE_USER_AGENT", ""))
-	// Stream-relay transcode inputs need a deeper probe than the general live
-	// default to resolve dimensions/audio. 5s is the sharpened default: it
-	// roughly halves the relay-transcode startup wait vs the old 10s while
-	// keeping margin for slower/burstier relays. (3s was verified clean on a 4K
-	// relay.) Raise XG2G_STREAMRELAY_ANALYZE_DURATION if a relay needs deeper
-	// probing; lower it (e.g. 3000000) for the fastest start.
-	streamRelayAnalyzeDuration := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_ANALYZE_DURATION", ""))
-	if streamRelayAnalyzeDuration == "" {
-		streamRelayAnalyzeDuration = "5000000" // 5s
-	}
-	streamRelayProbeSize := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_PROBE_SIZE", ""))
-	if streamRelayProbeSize == "" {
-		streamRelayProbeSize = "20M"
-	}
-	liveNoBuffer := envBool("XG2G_LIVE_NOBUFFER", false)
-	forceIgnDTS := envBool("XG2G_FORCE_IGNDTS", false)
 	if killTimeout <= 0 {
 		killTimeout = 5 * time.Second
 	}
 	if segmentSeconds <= 0 {
 		segmentSeconds = config.DefaultHLSSegmentSeconds
 	}
-	fpsProbeTimeoutMs := envIntBounded("XG2G_FPS_PROBE_TIMEOUT_MS", 1500, 300, 5000)
-	fpsMin := envIntBounded("XG2G_FPS_MIN", 15, 10, 240)
-	fpsMax := envIntBounded("XG2G_FPS_MAX", 120, fpsMin, 240)
-	fpsFallback := envIntBounded("XG2G_FPS_FALLBACK", 25, 10, 120)
-	fpsFallbackInter := envIntBounded("XG2G_FPS_FALLBACK_INTERLACED", 50, 10, 120)
-	resilientIngest := envBool("XG2G_RESILIENT_INGEST", true)
-	safariDirtyFilter := strings.TrimSpace(config.ParseString("XG2G_SAFARI_DIRTY_DEINTERLACE_FILTER", ""))
-	if safariDirtyFilter == "" {
-		safariDirtyFilter = "bwdif=mode=send_field:parity=auto:deint=all"
-	}
-	safariDirtyTune := strings.TrimSpace(config.ParseString("XG2G_SAFARI_DIRTY_X264_TUNE", ""))
-	ingestFFlags := strings.TrimSpace(config.ParseString("XG2G_INGEST_FFLAGS", ""))
-	if ingestFFlags == "" {
-		if resilientIngest {
-			ingestFFlags = "+genpts+discardcorrupt+flush_packets"
-		} else {
-			ingestFFlags = "+genpts"
-		}
-	}
-	ingestErrDetect := strings.TrimSpace(config.ParseString("XG2G_INGEST_ERR_DETECT", ""))
-	if ingestErrDetect == "" && resilientIngest {
-		ingestErrDetect = "ignore_err"
-	}
-	ingestMaxErrorRate := strings.TrimSpace(config.ParseString("XG2G_INGEST_MAX_ERROR_RATE", ""))
-	if ingestMaxErrorRate == "" && resilientIngest {
-		ingestMaxErrorRate = "1.0"
-	}
-	ingestFlags2 := strings.TrimSpace(config.ParseString("XG2G_INGEST_FLAGS2", ""))
-	if ingestFlags2 == "" && resilientIngest {
-		ingestFlags2 = "+showall+export_mvs"
-	}
-	fpsProbeFFlags := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_FFLAGS", ""))
-	if fpsProbeFFlags == "" {
-		if resilientIngest {
-			fpsProbeFFlags = "+genpts+discardcorrupt+igndts"
-		} else {
-			fpsProbeFFlags = "+genpts+igndts"
-		}
-	}
-	fpsProbeErrDetect := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_ERR_DETECT", ""))
-	if fpsProbeErrDetect == "" && resilientIngest {
-		fpsProbeErrDetect = "ignore_err"
-	}
-	fpsProbeAnalyze := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_ANALYZE_DURATION", ""))
-	if fpsProbeAnalyze == "" {
-		fpsProbeAnalyze = analyzeDuration
-	}
-	fpsProbeSize := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_SIZE", ""))
-	if fpsProbeSize == "" {
-		fpsProbeSize = probeSize
-	}
-	fpsProbeRetryAnalyze := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_RETRY_ANALYZE_DURATION", ""))
-	if fpsProbeRetryAnalyze == "" {
-		fpsProbeRetryAnalyze = "10000000"
-	}
-	fpsProbeRetrySize := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_RETRY_SIZE", ""))
-	if fpsProbeRetrySize == "" {
-		fpsProbeRetrySize = "20M"
-	}
-	skipFPSProbeOnCache := envBool("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", false)
-	skipFPSProbeWarmup := config.ParseDuration("XG2G_SKIP_FPS_PROBE_WARMUP", 500*time.Millisecond)
-	if skipFPSProbeWarmup < 0 {
-		skipFPSProbeWarmup = 500 * time.Millisecond
-	}
-	safariRuntimeProbeTimeoutMs := envIntBounded("XG2G_SAFARI_RUNTIME_PROBE_TIMEOUT_MS", 6000, 1000, 15000)
-	fpsCacheTTL := config.ParseDuration("XG2G_FPS_CACHE_TTL", 24*time.Hour)
-	if fpsCacheTTL <= 0 {
-		fpsCacheTTL = 24 * time.Hour
-	}
+
+	// Every ENV-tunable ingest/FPS/Safari knob is resolved in one place
+	// (LoadAdapterConfig), keeping this constructor focused on wiring
+	// dependencies. The FPS probe falls back to the general analyze/probe depth
+	// when its own override is unset, so those already-defaulted values are
+	// passed in.
+	cfg := LoadAdapterConfig(analyzeDuration, probeSize)
 
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,
@@ -267,17 +174,17 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		HLSRoot:                    hlsRoot,
 		AnalyzeDuration:            analyzeDuration,
 		ProbeSize:                  probeSize,
-		LiveAnalyzeDuration:        liveAnalyzeDuration,
-		LiveProbeSize:              liveProbeSize,
-		LiveUserAgent:              liveUserAgent,
-		StreamRelayAnalyzeDuration: streamRelayAnalyzeDuration,
-		StreamRelayProbeSize:       streamRelayProbeSize,
-		LiveNoBuffer:               liveNoBuffer,
-		ForceIgnDTS:                forceIgnDTS,
-		IngestFFlags:               ingestFFlags,
-		IngestErrDetect:            ingestErrDetect,
-		IngestMaxErrorRate:         ingestMaxErrorRate,
-		IngestFlags2:               ingestFlags2,
+		LiveAnalyzeDuration:        cfg.LiveAnalyzeDuration,
+		LiveProbeSize:              cfg.LiveProbeSize,
+		LiveUserAgent:              cfg.LiveUserAgent,
+		StreamRelayAnalyzeDuration: cfg.StreamRelayAnalyzeDuration,
+		StreamRelayProbeSize:       cfg.StreamRelayProbeSize,
+		LiveNoBuffer:               cfg.LiveNoBuffer,
+		ForceIgnDTS:                cfg.ForceIgnDTS,
+		IngestFFlags:               cfg.IngestFFlags,
+		IngestErrDetect:            cfg.IngestErrDetect,
+		IngestMaxErrorRate:         cfg.IngestMaxErrorRate,
+		IngestFlags2:               cfg.IngestFlags2,
 		DVRWindow:                  dvrWindow,
 		KillTimeout:                killTimeout,
 		PreflightTimeout:           preflightTimeout,
@@ -288,25 +195,25 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FallbackTo8001:             fallbackTo8001,
 		StartTimeout:               startTimeout,
 		StallTimeout:               stallTimeout,
-		FPSProbeTimeout:            time.Duration(fpsProbeTimeoutMs) * time.Millisecond,
-		FPSMin:                     fpsMin,
-		FPSMax:                     fpsMax,
-		FPSFallback:                fpsFallback,
-		FPSFallbackInter:           fpsFallbackInter,
-		SafariDirtyFilter:          safariDirtyFilter,
-		SafariDirtyX264Tune:        safariDirtyTune,
-		FPSProbeFFlags:             fpsProbeFFlags,
-		FPSProbeErrDetect:          fpsProbeErrDetect,
-		FPSProbeAnalyze:            fpsProbeAnalyze,
-		FPSProbeSize:               fpsProbeSize,
-		FPSProbeRetryAn:            fpsProbeRetryAnalyze,
-		FPSProbeRetrySize:          fpsProbeRetrySize,
-		SkipFPSProbeOnCache:        skipFPSProbeOnCache,
-		SkipFPSProbeWarmup:         skipFPSProbeWarmup,
-		SafariRuntimeProbeTimeout:  time.Duration(safariRuntimeProbeTimeoutMs) * time.Millisecond,
+		FPSProbeTimeout:            cfg.FPSProbeTimeout,
+		FPSMin:                     cfg.FPSMin,
+		FPSMax:                     cfg.FPSMax,
+		FPSFallback:                cfg.FPSFallback,
+		FPSFallbackInter:           cfg.FPSFallbackInter,
+		SafariDirtyFilter:          cfg.SafariDirtyFilter,
+		SafariDirtyX264Tune:        cfg.SafariDirtyX264Tune,
+		FPSProbeFFlags:             cfg.FPSProbeFFlags,
+		FPSProbeErrDetect:          cfg.FPSProbeErrDetect,
+		FPSProbeAnalyze:            cfg.FPSProbeAnalyze,
+		FPSProbeSize:               cfg.FPSProbeSize,
+		FPSProbeRetryAn:            cfg.FPSProbeRetryAn,
+		FPSProbeRetrySize:          cfg.FPSProbeRetrySize,
+		SkipFPSProbeOnCache:        cfg.SkipFPSProbeOnCache,
+		SkipFPSProbeWarmup:         cfg.SkipFPSProbeWarmup,
+		SafariRuntimeProbeTimeout:  cfg.SafariRuntimeProbeTimeout,
 		VaapiDevice:                strings.TrimSpace(vaapiDevice),
 		lastKnownFPS:               make(map[string]fpsCacheEntry),
-		FPSCacheTTL:                fpsCacheTTL,
+		FPSCacheTTL:                cfg.FPSCacheTTL,
 		activeProcs:                make(map[ports.RunHandle]*exec.Cmd),
 		finalizedProfiles:          make(map[ports.RunHandle]ports.ProfileSpec),
 		executedPlans:              make(map[ports.RunHandle]ports.ExecutedFFmpegPlan),
