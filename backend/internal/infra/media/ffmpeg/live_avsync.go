@@ -101,7 +101,22 @@ func (a *LocalAdapter) prepareAvsyncPipe(ctx context.Context, rawURL, sessionID 
 
 	peekCtx, cancel := context.WithTimeout(ctx, avsyncPeekTimeout)
 	defer cancel()
+
+	// Close body on peek timeout to unblock any in-flight ReadFull; without this
+	// a stalled relay hangs the peek for the full timeout even though the context
+	// is cancelled. Use a channel to only apply during the peek phase - after a
+	// successful peek the session-context closer takes over.
+	peekDone := make(chan struct{})
+	go func() {
+		select {
+		case <-peekCtx.Done():
+			_ = resp.Body.Close()
+		case <-peekDone:
+		}
+	}()
+
 	head, orphan, ok := a.peekMeasure(peekCtx, resp.Body)
+	close(peekDone) // peek phase done — close-on-peek-timeout goroutine exits
 	if !ok {
 		_ = resp.Body.Close()
 		a.Logger.Info().
@@ -150,13 +165,17 @@ func (a *LocalAdapter) peekMeasure(ctx context.Context, body io.Reader) ([]byte,
 			buf = append(buf, chunk[:n]...)
 		}
 		if len(buf) >= nextProbe {
-			if orphan, ok := a.measureOrphan(tmpName, buf); ok {
+			if orphan, ok := a.measureOrphan(ctx, tmpName, buf); ok {
 				return buf, orphan, true
 			}
 			nextProbe = len(buf) + avsyncPeekProbeStep
-		}
-		if rerr != nil { // EOF / short read on the live head
-			if orphan, ok := a.measureOrphan(tmpName, buf); ok {
+			// Probe failed at this buffer size and we hit EOF — no more data
+			// arriving, so don't re-probe unchanged buf.
+			if rerr != nil {
+				return nil, 0, false
+			}
+		} else if rerr != nil { // EOF / short read before any probe threshold — try once
+			if orphan, ok := a.measureOrphan(ctx, tmpName, buf); ok {
 				return buf, orphan, true
 			}
 			return nil, 0, false
@@ -167,15 +186,15 @@ func (a *LocalAdapter) peekMeasure(ctx context.Context, body io.Reader) ([]byte,
 
 // measureOrphan writes the buffered head to tmpName and derives the orphan as the
 // first video keyframe PTS minus the first audio PTS.
-func (a *LocalAdapter) measureOrphan(tmpName string, head []byte) (float64, bool) {
+func (a *LocalAdapter) measureOrphan(ctx context.Context, tmpName string, head []byte) (float64, bool) {
 	if err := os.WriteFile(tmpName, head, 0o600); err != nil {
 		return 0, false
 	}
-	vk, ok := a.firstPacketPTS(tmpName, "v:0", true)
+	vk, ok := a.firstPacketPTS(ctx, tmpName, "v:0", true)
 	if !ok {
 		return 0, false
 	}
-	a0, ok := a.firstPacketPTS(tmpName, "a:0", false)
+	a0, ok := a.firstPacketPTS(ctx, tmpName, "a:0", false)
 	if !ok {
 		return 0, false
 	}
@@ -188,8 +207,8 @@ func (a *LocalAdapter) measureOrphan(tmpName string, head []byte) (float64, bool
 
 // firstPacketPTS returns the PTS of the first packet of the selected stream
 // (optionally the first keyframe packet) from a probed file.
-func (a *LocalAdapter) firstPacketPTS(path, stream string, keyframeOnly bool) (float64, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (a *LocalAdapter) firstPacketPTS(ctx context.Context, path, stream string, keyframeOnly bool) (float64, bool) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	ffprobeBin := strings.TrimSpace(a.FFprobeBin)
 	if ffprobeBin == "" {
@@ -255,7 +274,7 @@ func transformArgsForAvsyncPipeMode(args []string, orphan float64, insertTrim bo
 			i++ // skip the option value
 			continue
 		}
-		if insertTrim && tok == "-c:a" {
+		if insertTrim && tok == "-c:a" && i+1 < len(args) && args[i+1] != "copy" {
 			out = append(out, "-af", fmt.Sprintf("atrim=start=%.3f", orphan))
 		}
 		out = append(out, tok)
