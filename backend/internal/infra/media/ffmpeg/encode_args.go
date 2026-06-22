@@ -357,7 +357,14 @@ func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, 
 	// dump_extra=freq=keyframe repeats the extradata before every keyframe so
 	// each segment is independently decodable; it is a no-op when the parameter
 	// sets are already present. The allowlist still covers VOD/file copy.
-	hardenedBitstream := liveCopy || shouldHardenSafariCopyBitstream(spec, inputURL)
+	//
+	// fMP4 is excluded: its codec config lives in the init segment (hvcC), so the
+	// parameter sets are already available to every segment. Forcing them in-band
+	// per keyframe contradicts the hvc1 sample entry and re-injects HEVC/HLG SEI
+	// on every keyframe, which makes the HDR decoder re-initialise -> a periodic
+	// flash. dump_extra is an Annex-B/MPEG-TS hardening only.
+	isFMP4 := strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
+	hardenedBitstream := (liveCopy || shouldHardenSafariCopyBitstream(spec, inputURL)) && !isFMP4
 
 	a.Logger.Info().
 		Str("sessionId", spec.SessionID).
@@ -367,11 +374,19 @@ func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, 
 		Msg("pipeline video: copy")
 
 	args = append(args, "-c:v", "copy")
-	// DVB stream-relay sources (port 17999) deliver non-monotonic DTS.
-	// -enc_time_base:v demux forces the muxer to derive timestamps from
-	// the demuxer timebase (which igndts+genpts have already cleaned)
-	// instead of the raw packet DTS, eliminating A/V desync in copy mode.
-	if liveCopy {
+	// -enc_time_base:v demux forces the muxer to derive video timestamps from the
+	// demuxer timebase that igndts+genpts have already cleaned. It is ONLY correct
+	// while genpts is regenerating PTS. With genpts disabled we pass the source's
+	// own PTS/DTS through untouched; adding demux then shifts the copied video
+	// relative to the transcoded (AAC) audio, so the audio lags by a fixed amount.
+	// Couple it to genpts so video and audio share one faithful source timeline.
+	// planInput applies the same fallback when IngestFFlags is empty; mirror it
+	// here so the coupling is correct for the default +genpts config too.
+	fflags := strings.TrimSpace(a.IngestFFlags)
+	if fflags == "" {
+		fflags = "+genpts+discardcorrupt+flush_packets"
+	}
+	if liveCopy && strings.Contains(fflags, "genpts") {
 		args = append(args, "-enc_time_base:v", "demux")
 	}
 	if hardenedBitstream {

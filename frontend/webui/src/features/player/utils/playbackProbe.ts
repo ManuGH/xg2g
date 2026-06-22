@@ -2,8 +2,10 @@ import Hls from '../lib/hlsRuntime';
 import {
   detectPreferredCodecs,
   detectVideoCodecSignals,
+  detectMaxVideo,
   type PreferredCodec,
-  type VideoCodecSignal
+  type VideoCodecSignal,
+  type MaxVideoCapability
 } from './codecDetection';
 import { shouldPreferNativeWebKitHls } from './playerHelpers';
 
@@ -22,6 +24,7 @@ export type RuntimePlaybackProbe = {
   videoCodecSignals: VideoCodecSignal[];
   audioCodecs: string[];
   supportsRange: boolean;
+  maxVideo?: MaxVideoCapability;
 };
 
 function dedupeStrings<T extends string>(values: T[]): T[] {
@@ -50,9 +53,10 @@ export async function probeRuntimePlaybackCapabilities(
   videoEl: HTMLVideoElement | null,
   scope: RuntimePlaybackProbeScope = 'live'
 ): Promise<RuntimePlaybackProbe> {
-  const [preferredCodecs, videoCodecSignals] = await Promise.all([
+  const [preferredCodecs, videoCodecSignals, maxVideo] = await Promise.all([
     detectPreferredCodecs(videoEl),
     detectVideoCodecSignals(videoEl),
+    detectMaxVideo(),
   ]);
   const hlsJsSupported = Hls.isSupported();
   const nativeHls = probeNativeHls(videoEl);
@@ -96,5 +100,6 @@ export async function probeRuntimePlaybackCapabilities(
     videoCodecSignals,
     audioCodecs: dedupeStrings(audioCodecs),
     supportsRange: true,
+    maxVideo,
   };
 }

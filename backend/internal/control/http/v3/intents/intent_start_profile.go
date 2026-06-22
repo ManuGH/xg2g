@@ -172,7 +172,11 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 			resolution.hostOverrideApplied = true
 		}
 	}
-	resolution.profileSpec = clientpolicy.ApplyStartPackagingPolicy(clientFamily, resolution.effectiveProfileID, resolution.profileSpec)
+	startSourceVideoCodec := ""
+	if capability != nil {
+		startSourceVideoCodec = capability.VideoCodec
+	}
+	resolution.profileSpec = clientpolicy.ApplyStartPackagingPolicy(clientFamily, resolution.effectiveProfileID, resolution.profileSpec, startSourceVideoCodec, preferredEngineForIntent(intent))
 	resolution.effectiveProfileID, resolution.profileSpec = autocodec.ApplyClientCompatibilityPolicy(
 		clientFamily,
 		resolution.effectiveProfileID,

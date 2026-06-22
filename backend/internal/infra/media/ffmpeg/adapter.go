@@ -63,6 +63,7 @@ type LocalAdapter struct {
 	ProbeSize                  string
 	LiveAnalyzeDuration        string
 	LiveProbeSize              string
+	LiveUserAgent              string
 	StreamRelayAnalyzeDuration string
 	StreamRelayProbeSize       string
 	LiveNoBuffer               bool
@@ -147,6 +148,13 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 	if liveProbeSize == "" {
 		liveProbeSize = "1M" // 1MB for low-latency live ingest
 	}
+	// Live ingest user-agent. Default empty => use FFmpeg's built-in UA. A spoofed
+	// "VLC" UA trips the OSCam stream-relay (oscam-emu) source-host heuristic: it
+	// then fetches the scrambled source from the *client* IP:8001 instead of
+	// honoring the Host header, yielding an empty stream ("Stream ends prematurely
+	// at 0") for any remote client. A default (Lavf) UA makes OSCam honor the Host
+	// header. Override via XG2G_LIVE_USER_AGENT only if a source explicitly needs one.
+	liveUserAgent := strings.TrimSpace(config.ParseString("XG2G_LIVE_USER_AGENT", ""))
 	// Stream-relay transcode inputs need a deeper probe than the general live
 	// default to resolve dimensions/audio. 5s is the sharpened default: it
 	// roughly halves the relay-transcode startup wait vs the old 10s while
@@ -261,6 +269,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		ProbeSize:                  probeSize,
 		LiveAnalyzeDuration:        liveAnalyzeDuration,
 		LiveProbeSize:              liveProbeSize,
+		LiveUserAgent:              liveUserAgent,
 		StreamRelayAnalyzeDuration: streamRelayAnalyzeDuration,
 		StreamRelayProbeSize:       streamRelayProbeSize,
 		LiveNoBuffer:               liveNoBuffer,

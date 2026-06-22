@@ -49,9 +49,12 @@ var clientFixtures = map[string]ClientPlaybackProfile{
 		SupportsHLS:    true,
 		SupportsRange:  true,
 		AllowTranscode: boolPtr(true),
+		// Fallback only — the client now reports a probed maxVideo. Modern iPhones/
+		// iPads HW-decode 4K HEVC (A10+), so the iOS default must match macOS at
+		// 2160p; the old 1080p cap wrongly forced 4K-HEVC copies into transcode.
 		MaxVideo: &VideoConstraints{
-			Width:  1920,
-			Height: 1080,
+			Width:  3840,
+			Height: 2160,
 			FPS:    60,
 		},
 	}),
