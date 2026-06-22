@@ -380,7 +380,13 @@ func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, 
 	// own PTS/DTS through untouched; adding demux then shifts the copied video
 	// relative to the transcoded (AAC) audio, so the audio lags by a fixed amount.
 	// Couple it to genpts so video and audio share one faithful source timeline.
-	if liveCopy && strings.Contains(a.IngestFFlags, "genpts") {
+	// planInput applies the same fallback when IngestFFlags is empty; mirror it
+	// here so the coupling is correct for the default +genpts config too.
+	fflags := strings.TrimSpace(a.IngestFFlags)
+	if fflags == "" {
+		fflags = "+genpts+discardcorrupt+flush_packets"
+	}
+	if liveCopy && strings.Contains(fflags, "genpts") {
 		args = append(args, "-enc_time_base:v", "demux")
 	}
 	if hardenedBitstream {

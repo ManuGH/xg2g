@@ -148,13 +148,15 @@ export function shouldForceNativeMobileHls(videoEl?: VideoElementRef): boolean {
 }
 
 // HEVC Main 10 decode support probe (the profile of UHD HLG broadcasts).
+// Only check Main10 profiles (hvc1.2.4.* / hev1.2.4.*). Excluding hvc1.1.6.*
+// (Main 8-bit) avoids false-positives from devices that only decode 8-bit HEVC
+// and would fail on 10-bit HLG streams.
 function canPlayHevcMain10(videoEl: VideoElementRef): boolean {
   if (!videoEl) return false;
   try {
     return (
       videoEl.canPlayType('video/mp4; codecs="hvc1.2.4.L120.90"') !== '' ||
-      videoEl.canPlayType('video/mp4; codecs="hev1.2.4.L120.90"') !== '' ||
-      videoEl.canPlayType('video/mp4; codecs="hvc1.1.6.L120.90"') !== ''
+      videoEl.canPlayType('video/mp4; codecs="hev1.2.4.L120.90"') !== ''
     );
   } catch {
     return false;

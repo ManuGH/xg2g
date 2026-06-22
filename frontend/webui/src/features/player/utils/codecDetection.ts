@@ -207,11 +207,11 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
 
 export type MaxVideoCapability = { width: number; height: number; fps: number };
 
-let cachedMaxVideo: MaxVideoCapability | null | undefined;
+let maxVideoPromise: Promise<MaxVideoCapability | undefined> | undefined;
 
 /** Reset cached maxVideo (for testing). */
 export function resetCachedMaxVideo(): void {
-  cachedMaxVideo = undefined;
+  maxVideoPromise = undefined;
 }
 
 // Probe whether the device can DECODE the given dimensions/framerate for ANY of
@@ -282,20 +282,20 @@ const MAX_VIDEO_RUNGS: Array<{ width: number; height: number; types: string[] }>
  * truthful `maxVideo` the copy/direct-play decision needs — decode capability,
  * not render smoothness.
  */
-export async function detectMaxVideo(): Promise<MaxVideoCapability | undefined> {
-  if (cachedMaxVideo !== undefined) return cachedMaxVideo ?? undefined;
-  if (!getMediaCapabilitiesProbe()?.decodingInfo) {
-    cachedMaxVideo = null;
-    return undefined;
-  }
-  for (const rung of MAX_VIDEO_RUNGS) {
-    for (const fps of [60, 50]) {
-      if (await decodesAt(rung.types, rung.width, rung.height, fps)) {
-        cachedMaxVideo = { width: rung.width, height: rung.height, fps };
-        return cachedMaxVideo;
+export function detectMaxVideo(): Promise<MaxVideoCapability | undefined> {
+  if (maxVideoPromise) return maxVideoPromise;
+  maxVideoPromise = (async () => {
+    if (!getMediaCapabilitiesProbe()?.decodingInfo) {
+      return undefined;
+    }
+    for (const rung of MAX_VIDEO_RUNGS) {
+      for (const fps of [60, 50]) {
+        if (await decodesAt(rung.types, rung.width, rung.height, fps)) {
+          return { width: rung.width, height: rung.height, fps };
+        }
       }
     }
-  }
-  cachedMaxVideo = null;
-  return undefined;
+    return undefined;
+  })();
+  return maxVideoPromise;
 }
