@@ -137,7 +137,12 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		"-reconnect", "1",
 		"-reconnect_at_eof", "1",
 		"-reconnect_streamed", "1",
-		"-reconnect_delay_max", "5",
+		// Cold-start FBC tuning race: xg2g must never zap an in-use receiver, so it
+		// relies on background tuner allocation and the first connection can race the
+		// enigma2/FBC lock and get a premature EOF. A tighter backoff cap lets ffmpeg
+		// re-pick the source within ~2s of the lock completing (and recover faster from
+		// mid-stream blips) instead of waiting up to 5s.
+		"-reconnect_delay_max", "2",
 		"-reconnect_on_network_error", "1",
 		"-reconnect_on_http_error", "4xx,5xx",
 	)
