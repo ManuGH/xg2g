@@ -10,25 +10,29 @@ export function useDelayedFlag(active: boolean, delayMs: number): boolean {
   const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
     if (!active) {
       setShown(false);
-      return;
-    }
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = null;
-      setShown(true);
-    }, delayMs);
-    return () => {
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-    };
+      return;
+    }
+
+    timerRef.current = window.setTimeout(() => {
+      setShown(true);
+    }, delayMs);
   }, [active, delayMs]);
+
+  // Dedicated unmount-only cleanup: prevents premature timer clearing when
+  // dependencies change mid-process. Only runs when the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   return shown;
 }
