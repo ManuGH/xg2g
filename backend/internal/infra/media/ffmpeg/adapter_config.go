@@ -35,8 +35,10 @@ type AdapterConfig struct {
 	IngestFlags2       string
 
 	// Behaviour toggles.
-	LiveNoBuffer bool
-	ForceIgnDTS  bool
+	LiveNoBuffer         bool
+	ForceIgnDTS          bool
+	LiveAvsyncAtrim      bool
+	LiveAvsyncPipeNoTrim bool
 
 	// Safari dirty-source deinterlace + x264 tune.
 	SafariDirtyFilter   string
@@ -101,6 +103,8 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 	}
 	liveNoBuffer := envBool("XG2G_LIVE_NOBUFFER", false)
 	forceIgnDTS := envBool("XG2G_FORCE_IGNDTS", false)
+	liveAvsyncAtrim := envBool("XG2G_LIVE_AVSYNC_ATRIM", false)
+	liveAvsyncPipeNoTrim := envBool("XG2G_LIVE_AVSYNC_PIPE_NO_TRIM", false)
 	fpsProbeTimeoutMs := envIntBounded("XG2G_FPS_PROBE_TIMEOUT_MS", 1500, 300, 5000)
 	fpsMin := envIntBounded("XG2G_FPS_MIN", 15, 10, 240)
 	fpsMax := envIntBounded("XG2G_FPS_MAX", 120, fpsMin, 240)
@@ -183,6 +187,8 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		IngestFlags2:               ingestFlags2,
 		LiveNoBuffer:               liveNoBuffer,
 		ForceIgnDTS:                forceIgnDTS,
+		LiveAvsyncAtrim:            liveAvsyncAtrim,
+		LiveAvsyncPipeNoTrim:       liveAvsyncPipeNoTrim,
 		SafariDirtyFilter:          safariDirtyFilter,
 		SafariDirtyX264Tune:        safariDirtyTune,
 		FPSProbeTimeout:            time.Duration(fpsProbeTimeoutMs) * time.Millisecond,
