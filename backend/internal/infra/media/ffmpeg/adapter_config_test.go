@@ -21,6 +21,8 @@ var adapterEnvKeys = []string{
 	"XG2G_STREAMRELAY_PROBE_SIZE",
 	"XG2G_LIVE_NOBUFFER",
 	"XG2G_FORCE_IGNDTS",
+	"XG2G_LIVE_AVSYNC_ATRIM",
+	"XG2G_LIVE_AVSYNC_PIPE_NO_TRIM",
 	"XG2G_FPS_PROBE_TIMEOUT_MS",
 	"XG2G_FPS_MIN",
 	"XG2G_FPS_MAX",
@@ -73,6 +75,8 @@ func TestLoadAdapterConfig_Defaults(t *testing.T) {
 		{"StreamRelayProbeSize", cfg.StreamRelayProbeSize, "20M"},
 		{"LiveNoBuffer", cfg.LiveNoBuffer, false},
 		{"ForceIgnDTS", cfg.ForceIgnDTS, false},
+		{"LiveAvsyncAtrim", cfg.LiveAvsyncAtrim, false},
+		{"LiveAvsyncPipeNoTrim", cfg.LiveAvsyncPipeNoTrim, false},
 		{"SafariDirtyFilter", cfg.SafariDirtyFilter, "bwdif=mode=send_field:parity=auto:deint=all"},
 		{"SafariDirtyX264Tune", cfg.SafariDirtyX264Tune, ""},
 		// resilient ingest defaults to true -> resilient flag set.

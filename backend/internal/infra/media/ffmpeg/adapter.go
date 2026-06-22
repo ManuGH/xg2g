@@ -68,6 +68,8 @@ type LocalAdapter struct {
 	StreamRelayProbeSize       string
 	LiveNoBuffer               bool
 	ForceIgnDTS                bool
+	LiveAvsyncAtrim            bool
+	LiveAvsyncPipeNoTrim       bool
 	IngestFFlags               string
 	IngestErrDetect            string
 	IngestMaxErrorRate         string
@@ -181,6 +183,8 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		StreamRelayProbeSize:       cfg.StreamRelayProbeSize,
 		LiveNoBuffer:               cfg.LiveNoBuffer,
 		ForceIgnDTS:                cfg.ForceIgnDTS,
+		LiveAvsyncAtrim:            cfg.LiveAvsyncAtrim,
+		LiveAvsyncPipeNoTrim:       cfg.LiveAvsyncPipeNoTrim,
 		IngestFFlags:               cfg.IngestFFlags,
 		IngestErrDetect:            cfg.IngestErrDetect,
 		IngestMaxErrorRate:         cfg.IngestMaxErrorRate,
