@@ -305,7 +305,11 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 		if leadErr == io.EOF || leadErr == io.ErrUnexpectedEOF {
 			leadErr = nil
 		}
-		if leadErr == nil && nLead >= preflightMinBytes && hasTSSync(buf[:nLead]) {
+		if leadErr != nil {
+			result.Bytes = nLead
+			return result, leadErr
+		}
+		if nLead >= preflightMinBytes && hasTSSync(buf[:nLead]) {
 			if frac, pkts := tsScrambledFraction(buf[:nLead]); pkts >= tsScrambleMinPackets && frac < tsScrambleThreshold {
 				latency := time.Since(start)
 				a.Logger.Info().
