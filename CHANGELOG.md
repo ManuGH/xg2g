@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## [v3.8.0] - 2026-06-22
+
+### Behavioral Changes
+
+- The live player no longer flashes a ~140 ms black frame between the startup spinner and the first video frame on iPhone/Safari native HLS.
+- The centered "preparing" startup card is now debounced, so a sub-500 ms fast resume no longer flashes it; the stop control and status indicator remain available throughout startup.
+
+### Release Notes
+
+- Live A/V-sync orphan-atrim (opt-in `XG2G_LIVE_AVSYNC_ATRIM`, default off): for DVB/OSCam stream-relay sources, leading audio that arrives before the first decodable video keyframe is trimmed over a single relay connection so iOS AVPlayer no longer applies a constant audio-leads-video desync on `-c:v copy` fMP4 output. Video stays copy (no transcode, no quality loss); any peek or measurement failure falls back to the unchanged direct-URL path.
+
+### Technical Notes
+
+- LocalAdapter environment resolution was extracted into a typed `AdapterConfig` plus a single `LoadAdapterConfig` resolver, separating dependency wiring from the ~40 `XG2G_*` ingest/FPS/Safari tuning knobs and making the env resolution independently unit-testable.
+- Developer and operator start surfaces were clarified (`make dev` now runs the backend once in the foreground; the crash-restart loop moved to `make dev-loop`), with a new `verify-start-surface` governance gate and `XG2G_COMPOSE_FILES_LOCKED` compose-file pinning.
+
 ## [v3.4.9] - 2026-05-17
 
 ### Behavioral Changes
