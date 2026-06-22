@@ -2,70 +2,66 @@
 # Operations and Orchestration
 # ===================================================================================================
 
-.PHONY: start stop start-gpu stop-gpu start-nvidia stop-nvidia up down status ps logs restart prod-up prod-down prod-ps prod-logs prod-restart release-check release changelog setup build-ffmpeg repair-metadata workspace-clean-preview workspace-clean workspace-clean-aggressive
+.PHONY: start stop start-gpu stop-gpu start-nvidia stop-nvidia up down status ps logs restart prod-up prod-down release-check release changelog setup build-ffmpeg repair-metadata workspace-clean-preview workspace-clean workspace-clean-aggressive
 
-start: doctor ## Start the default local container stack on http://localhost:8088
-	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh base
-	@$(MAKE) up
+RUNTIME ?= base
+DEV_COMPOSE = ./$(BACKEND_DIR)/scripts/dev-compose.sh "$(RUNTIME)"
 
-stop: ## Stop the default local container stack
-	@$(MAKE) down
+start: doctor ## Start local containers (RUNTIME=base|vaapi|nvidia; default: base)
+	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh "$(RUNTIME)"
+	@$(DEV_COMPOSE) up -d
+	@echo "Local $(RUNTIME) stack started at http://localhost:8088"
 
-start-gpu: doctor ## Start the local container stack with /dev/dri render-node passthrough (Linux)
-	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh vaapi
-	@XG2G_COMPOSE_ROOT="$(CURDIR)/deploy" \
-	XG2G_ENV_FILE="$(CURDIR)/.env" \
-	COMPOSE_FILE="docker-compose.yml:../docker-compose.dev.yml:docker-compose.gpu.yml" \
-	./$(BACKEND_DIR)/scripts/compose-xg2g.sh up -d
-	@echo "✅ GPU stack started at http://localhost:8088"
+stop: ## Stop local containers (use the same RUNTIME value as start)
+	@$(DEV_COMPOSE) down
 
-stop-gpu: ## Stop the /dev/dri-backed local container stack
-	@XG2G_COMPOSE_ROOT="$(CURDIR)/deploy" \
-	XG2G_ENV_FILE="$(CURDIR)/.env" \
-	COMPOSE_FILE="docker-compose.yml:../docker-compose.dev.yml:docker-compose.gpu.yml" \
-	./$(BACKEND_DIR)/scripts/compose-xg2g.sh down
-	@echo "✅ GPU stack stopped"
+start-gpu:
+	@echo "NOTE: make start-gpu is deprecated; use 'make start RUNTIME=vaapi'."
+	@$(MAKE) start RUNTIME=vaapi
 
-start-nvidia: doctor ## Start the local container stack with the NVIDIA overlay
-	@./$(BACKEND_DIR)/scripts/check-local-runtime.sh nvidia
-	@XG2G_COMPOSE_ROOT="$(CURDIR)/deploy" \
-	XG2G_ENV_FILE="$(CURDIR)/.env" \
-	COMPOSE_FILE="docker-compose.yml:../docker-compose.dev.yml:docker-compose.nvidia.yml" \
-	./$(BACKEND_DIR)/scripts/compose-xg2g.sh up -d
-	@echo "✅ NVIDIA stack started at http://localhost:8088"
+stop-gpu:
+	@echo "NOTE: make stop-gpu is deprecated; use 'make stop RUNTIME=vaapi'."
+	@$(MAKE) stop RUNTIME=vaapi
 
-stop-nvidia: ## Stop the NVIDIA-backed local container stack
-	@XG2G_COMPOSE_ROOT="$(CURDIR)/deploy" \
-	XG2G_ENV_FILE="$(CURDIR)/.env" \
-	COMPOSE_FILE="docker-compose.yml:../docker-compose.dev.yml:docker-compose.nvidia.yml" \
-	./$(BACKEND_DIR)/scripts/compose-xg2g.sh down
-	@echo "✅ NVIDIA stack stopped"
+start-nvidia:
+	@echo "NOTE: make start-nvidia is deprecated; use 'make start RUNTIME=nvidia'."
+	@$(MAKE) start RUNTIME=nvidia
 
-up: ## Advanced raw Compose alias used by `make start`
-	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d
-	@echo "✅ Stack started at http://localhost:8088"
+stop-nvidia:
+	@echo "NOTE: make stop-nvidia is deprecated; use 'make stop RUNTIME=nvidia'."
+	@$(MAKE) stop RUNTIME=nvidia
 
-down: ## Advanced raw Compose alias used by `make stop`
-	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml down
-	@echo "✅ Stack stopped"
+up:
+	@echo "NOTE: make up is deprecated; use 'make start RUNTIME=$(RUNTIME)'."
+	@$(MAKE) start RUNTIME="$(RUNTIME)"
+
+down:
+	@echo "NOTE: make down is deprecated; use 'make stop RUNTIME=$(RUNTIME)'."
+	@$(MAKE) stop RUNTIME="$(RUNTIME)"
 
 status: ## Check the default local container stack on http://localhost:8088
-	@curl -fsS http://localhost:8088/healthz >/dev/null 2>&1 && echo "✅ OK" || echo "❌ Service not responding"
+	@curl -fsS http://localhost:8088/healthz >/dev/null 2>&1 \
+		&& echo "OK: local service is healthy" \
+		|| { echo "ERROR: local service is not responding" >&2; exit 1; }
 
 ps: ## Show running containers for the local Compose project
-	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml ps
+	@$(DEV_COMPOSE) ps
 
 logs: ## Show logs for the local Compose project
-	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml logs -f
+	@$(DEV_COMPOSE) logs -f
 
 restart: ## Restart the default local Compose service (advanced)
-	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml restart xg2g
+	@$(DEV_COMPOSE) restart xg2g
 
-prod-up: ## Start production stack
-	@docker compose -f deploy/docker-compose.yml up -d
+prod-up:
+	@echo "ERROR: Production deployment is not a Make target." >&2
+	@echo "Use: deploy/sync.sh --apply --ref <tag|sha>" >&2
+	@false
 
-prod-down: ## Stop production stack
-	@docker compose -f deploy/docker-compose.yml down
+prod-down:
+	@echo "ERROR: Production deployment is not a Make target." >&2
+	@echo "Use the installed lifecycle: systemctl stop xg2g" >&2
+	@false
 
 release-check: ## Validate release readiness
 	@$(MAKE) lint

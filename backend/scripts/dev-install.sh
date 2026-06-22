@@ -73,7 +73,7 @@ main() {
   echo "Next steps:"
   echo "  1. Run 'make dev-tools' once per machine if you have not installed the pinned repo CLI tools yet"
   echo "  2. Start the default local stack with 'make start'"
-  echo "  3. Use 'make dev-ui', 'make start-gpu', or 'make start-nvidia' only when you explicitly need those paths"
+  echo "  3. Use 'make start RUNTIME=vaapi|nvidia' or 'make dev-ui' only when you explicitly need those paths"
 }
 
 main "$@"

@@ -22,14 +22,16 @@ If you want to start with a small task, look for issues labeled:
     cd xg2g
     ```
 
-2.  **Initialize Go Workspace**:
+2.  **Bootstrap the development workspace**:
     ```bash
-    go work init ./backend
+    make install
+    make dev-tools
+    make doctor
     ```
 
-3.  **Start the development environment**:
+3.  **Start the local container environment**:
     ```bash
-    make dev
+    make start
     ```
 
 4.  **Run tests**:
@@ -53,20 +55,16 @@ The project is organized into a monorepo with a clear separation between backend
 The backend is located in [backend/](backend/).
 To run the daemon directly:
 ```bash
-cd backend
-go run ./cmd/daemon
-```
-Or via the root Makefile (recommended):
-```bash
 make dev
 ```
+
+`make dev` is a single foreground run. Use `make start` when you need the
+standard local container stack.
 
 ### Frontend (WebUI)
 Located in [frontend/webui/](frontend/webui/).
 ```bash
-cd frontend/webui
-npm ci
-npm run dev
+make dev-ui
 ```
 
 ## Quality Assurance

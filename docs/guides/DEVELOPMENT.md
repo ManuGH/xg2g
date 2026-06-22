@@ -10,7 +10,8 @@ Optional bootstrap helpers:
   [.devcontainer/devcontainer.json](../../.devcontainer/devcontainer.json)
   starts a containerized workstation that runs `make install`,
   `make dev-tools`, and `make doctor` on first create. The devcontainer expects
-  access to the host Docker socket for the `make start*` container paths.
+  access to the host Docker socket for the `make start RUNTIME=...` container
+  path.
 
 For a quick map of the repo layout, generated artifacts, and required gates, see
 [docs/dev/REPO_MAP.md](../dev/REPO_MAP.md).
@@ -35,19 +36,20 @@ make start
 
 Pick one path and stay on it for the task at hand:
 
-- `make start` for the default local container path
-- `make start-gpu` for Linux `/dev/dri` hardware acceleration in containers
-- `make start-nvidia` for the NVIDIA / NVENC container path
+- `make start` for the default CPU-backed local container path
+- `make start RUNTIME=vaapi` for Linux `/dev/dri` hardware acceleration
+- `make start RUNTIME=nvidia` for the NVIDIA / NVENC container path
 - `make backend-dev` for backend-only work
 - `make dev-ui` for frontend-heavy work with Vite HMR
-- `make dev` only when you explicitly want the crash-restart loop
+- `make dev` as the short alias for one foreground backend run
 
-Use `make stop`, `make stop-gpu`, or `make stop-nvidia` to shut down the
-matching container path again.
+Use `make stop RUNTIME=<same-value>` to shut down the matching container path.
+The internal `make dev-loop` compatibility target is intentionally absent from
+normal help and verification workflows because it restarts crashes indefinitely.
 
 ### Port Map
 
-- `make start`, `make start-gpu`, `make start-nvidia`: `http://localhost:8088`
+- `make start RUNTIME=base|vaapi|nvidia`: `http://localhost:8088`
 - `make backend-dev`: whatever `XG2G_LISTEN` resolves to in `.env` (the default
   local path is typically `:8088`)
 - `make dev-ui`: `http://localhost:8080/ui/`
@@ -57,7 +59,9 @@ matching container path again.
 - **Purpose**: Rapid iteration and local debugging.
 - **Behavior**: Infinite loop; auto-rebuilds and restarts on crash.
 - **Logs**: Captured in `logs/dev.log`.
-- **Usage**: Internal dev only; not valid for audit verification. Prefer `make backend-dev` for a single foreground run.
+- **Usage**: Internal compatibility only through `make dev-loop`; not valid for
+  audit verification. Prefer `make dev` or `make backend-dev` for a single
+  foreground run.
 
 ### Fast UI Development
 
@@ -94,7 +98,10 @@ Optional overrides:
 - **Standard**: **OCI Image is Source of Truth for Runtime.**
 - **Supervisor**: **systemd** (manages Docker/Podman lifecycle).
 - **Behavior**: Single execution lifecycle; formal hardening (v3.1.4).
-- **Usage**: Mandatory for releases, sign-offs, and verification.
+- **Deployment**: `deploy/sync.sh --apply --ref <tag|sha>` is the only supported
+  installation and upgrade entrypoint.
+- **Usage**: Mandatory for releases, sign-offs, and production verification.
+- **Boundary**: Make targets never start or stop a production installation.
 
 ## 🛠️ Recommended Shutdown Pattern
 
@@ -108,13 +115,14 @@ To stop the application and its dev-loop safely without killing SSH:
 
 ### Production / System (Docker Compose)
 
-Use the standard lifecycle commands:
+Use the installed systemd lifecycle:
 
 ```bash
-docker compose down
-# OR via systemd if installed
 systemctl stop xg2g
 ```
+
+Direct Compose commands are recovery diagnostics documented in the operator
+runbook, not a second supported production lifecycle.
 
 ### Local Compose Overrides
 
@@ -122,48 +130,20 @@ For standard local development with Compose:
 
 ```bash
 make start
+make start RUNTIME=vaapi
+make start RUNTIME=nvidia
 ```
 
-Equivalent raw command:
+Use the same selector when stopping or inspecting a hardware-specific stack:
 
 ```bash
-docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d
+make stop RUNTIME=vaapi
+make ps RUNTIME=vaapi
+make logs RUNTIME=vaapi
 ```
 
-Advanced or scriptable alias:
-
-```bash
-make up
-```
-
-Hardware-specific one-command variants:
-
-```bash
-make start-gpu
-make start-nvidia
-```
-
-Manual VAAPI helper equivalent:
-
-```bash
-COMPOSE_FILE=docker-compose.yml:../docker-compose.dev.yml:docker-compose.gpu.yml \
-  XG2G_COMPOSE_ROOT="$PWD/deploy" \
-  XG2G_ENV_FILE="$PWD/.env" \
-  backend/scripts/compose-xg2g.sh up -d
-```
-
-The checked-in `deploy/docker-compose.gpu.yml` file is a marker overlay. For
-`/dev/dri` hosts, use `backend/scripts/compose-xg2g.sh` so visible
-`renderD*` nodes are expanded into device entries at runtime.
-
-Manual NVIDIA helper equivalent:
-
-```bash
-COMPOSE_FILE=docker-compose.yml:../docker-compose.dev.yml:docker-compose.nvidia.yml \
-  XG2G_COMPOSE_ROOT="$PWD/deploy" \
-  XG2G_ENV_FILE="$PWD/.env" \
-  backend/scripts/compose-xg2g.sh up -d
-```
+`backend/scripts/dev-compose.sh` owns the Compose file selection so all local
+commands resolve the same base, development, and optional hardware overlays.
 
 ### Fast Container Rebuilds
 
@@ -171,10 +151,17 @@ For container-based backend iteration, you can cache FFmpeg in a separate local 
 
 ```bash
 make docker-ffmpeg-base
-make docker-dev-fast
+make docker-dev-fast-build
+make start
 ```
 
-`make docker-ffmpeg-base` builds `xg2g-ffmpeg:8.1.1` once from [Dockerfile.ffmpeg-base](../../Dockerfile.ffmpeg-base). `make docker-dev-fast` then rebuilds the app container with `XG2G_FFMPEG_BASE_IMAGE=xg2g-ffmpeg:8.1.1`, so the main [Dockerfile](../../Dockerfile) can reuse the cached FFmpeg runtime layer instead of rebuilding FFmpeg.
+`make docker-ffmpeg-base` builds `xg2g-ffmpeg:8.1.1` once from
+[Dockerfile.ffmpeg-base](../../Dockerfile.ffmpeg-base).
+`make docker-dev-fast-build` then builds the development image with
+`XG2G_FFMPEG_BASE_IMAGE=xg2g-ffmpeg:8.1.1`, so the main
+[Dockerfile](../../Dockerfile) can reuse the cached FFmpeg runtime layer instead
+of rebuilding FFmpeg. Building never starts or restarts a container; lifecycle
+changes remain explicit through `make start` and `make stop`.
 
 The tagged release pipeline follows the same pattern via
 `ghcr.io/manugh/xg2g-ffmpeg:8.1.1`, so release cuts do not recompile FFmpeg
@@ -186,14 +173,15 @@ If FFmpeg version or build flags change in `backend/scripts/build-ffmpeg.sh`, re
 make docker-ffmpeg-base
 ```
 
-*Note: This script targets only `xg2g` and `run_dev.sh` processes.*
+*Note: This script targets only xg2g development processes.*
 
 ### Containerized Testing
 
-Use `docker stop` to leverage graceful SIGTERM propagation without affecting the host environment:
+Use the development lifecycle so the selected Compose project is scoped
+correctly:
 
 ```bash
-docker stop $(docker ps -q --filter name=xg2g)
+make stop RUNTIME=base
 ```
 
 ## Process Safety
@@ -201,9 +189,8 @@ docker stop $(docker ps -q --filter name=xg2g)
 When stopping processes on a shared dev host, avoid broad signals that can
 kill your SSH session:
 
-- **Do**: `pkill -f xg2g` or `pkill -f run_dev.sh` (targeted)
 - **Do**: `./backend/scripts/safe-shutdown.sh` (scripted)
 - **Don't**: `pkill -u $USER` (kills SSH agent)
 
-For containers, use `docker stop` or `systemctl stop xg2g` instead of
-host-wide signals.
+For local containers, use `make stop RUNTIME=<same-value>`. For an installed
+production service, use `systemctl stop xg2g`.

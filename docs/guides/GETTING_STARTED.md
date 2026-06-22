@@ -26,7 +26,11 @@ You need:
   (VAAPI/NVENC); arm64 is software-only and much heavier. Plan for meaningful CPU
   (or a GPU encode session) per concurrent stream.
 
-## 1. Start xg2g
+## 1. Start a local evaluation instance
+
+This command is intended for same-host evaluation. For a persistent production
+installation, use the pinned, systemd-supervised workflow in
+[Deployment](../ops/DEPLOYMENT.md); do not promote this container manually.
 
 ```bash
 docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \

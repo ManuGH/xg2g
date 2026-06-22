@@ -19,7 +19,7 @@ check_docker_runtime() {
 }
 
 check_render_nodes() {
-  compgen -G "/dev/dri/renderD*" >/dev/null || fail "No /dev/dri/renderD* devices are visible. Use 'make start' for CPU-only, or expose a render node before 'make start-gpu'."
+  compgen -G "/dev/dri/renderD*" >/dev/null || fail "No /dev/dri/renderD* devices are visible. Use 'make start RUNTIME=base' for CPU-only, or expose a render node before using RUNTIME=vaapi."
 }
 
 main() {

@@ -229,11 +229,20 @@ function redact_url(value, redacted) {
 '
 }
 
+compose_files_locked="${XG2G_COMPOSE_FILES_LOCKED:-0}"
+compose_files_locked="${compose_files_locked,,}"
+
 if [[ -f "${ENV_FILE}" ]]; then
   assert_secure_env_file "${ENV_FILE}"
-  if compose_file_from_env="$(read_env_value "${ENV_FILE}" COMPOSE_FILE 2>/dev/null)"; then
-    COMPOSE_FILE="${compose_file_from_env}"
-  fi
+  case "${compose_files_locked}" in
+    1|true|yes|on)
+      ;;
+    *)
+      if compose_file_from_env="$(read_env_value "${ENV_FILE}" COMPOSE_FILE 2>/dev/null)"; then
+        COMPOSE_FILE="${compose_file_from_env}"
+      fi
+      ;;
+  esac
 fi
 
 compose_files=()

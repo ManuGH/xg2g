@@ -2,9 +2,9 @@
 # Governance and Verification Gates
 # ===================================================================================================
 
-.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
+.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
 
-verify: verify-generated-artifacts verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-systemd-runtime-contract verify-installation-contract ## Run all governance verification gates
+verify: verify-generated-artifacts verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract ## Run all governance verification gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -115,6 +115,9 @@ verify-dead-packages: ## Gate: block new unimported (whole-package dead) interna
 
 verify-compose-resolver: ## Verify compose resolver ordering and GPU-neutral base compose
 	@./$(BACKEND_DIR)/scripts/verify-compose-resolver.sh
+
+verify-start-surface: ## Verify the public development and production start boundaries
+	@./$(BACKEND_DIR)/scripts/verify-start-surface.sh
 
 verify-systemd-runtime-contract: ## Verify systemd/runtime env contract semantics
 	@./$(BACKEND_DIR)/scripts/verify-systemd-unit.sh

@@ -52,11 +52,11 @@ cd frontend/webui && npm run test     # frontend tests
 Recommended start paths after setup:
 
 ```bash
-make start         # standard local path (Compose)
-make start-gpu     # Linux /dev/dri path for VAAPI, QuickSync, AMD
-make start-nvidia  # NVIDIA overlay path for NVENC
-make dev-ui        # frontend HMR path on http://localhost:8080/ui/
-make backend-dev   # backend only, foreground, no containers
+make start                   # standard local Compose path (CPU)
+make start RUNTIME=vaapi     # Linux /dev/dri path
+make start RUNTIME=nvidia    # NVIDIA / NVENC path
+make dev-ui                  # frontend HMR on http://localhost:8080/ui/
+make backend-dev             # backend only, foreground, no containers
 ```
 
 For a broader local gate, run:
@@ -69,10 +69,10 @@ make ci-pr
 
 - Pre-push hooks use the repo-managed `golangci-lint` and fail with
   `Run: make dev-tools` if missing or mismatched.
-- `make stop` is the matching shutdown command for the default `make start`
-  path.
-- `make stop-gpu` and `make stop-nvidia` are the matching shutdown commands for
-  the hardware-specific container paths.
+- `make stop RUNTIME=<same-value>` is the matching shutdown command for
+  `make start RUNTIME=<value>`.
+- The legacy `start-gpu`, `start-nvidia`, `stop-gpu`, and `stop-nvidia` aliases
+  remain fail-safe compatibility shims, but are not part of the public workflow.
 - Avoid `--no-verify` for normal development; rely on reproducible local
   and CI gates.
 - For the full development workflow (dev loop, UI hot-reload, Compose),
