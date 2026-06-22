@@ -100,6 +100,14 @@ actual="$(cd /tmp && run_print_files "${root}" "${root}/xg2g.env")"
 expected="$(printf '%s\n%s' "${root}/docker-compose.alt.yml" "${root}/docker-compose.extra.yml")"
 assert_eq "${expected}" "${actual}" "explicit COMPOSE_FILE resolution"
 
+actual="$(
+  COMPOSE_FILE="docker-compose.yml:docker-compose.gpu.yml" \
+  XG2G_COMPOSE_FILES_LOCKED=1 \
+    run_print_files "${root}" "${root}/xg2g.env"
+)"
+expected="$(printf '%s\n%s' "${root}/docker-compose.yml" "${root}/docker-compose.gpu.yml")"
+assert_eq "${expected}" "${actual}" "locked COMPOSE_FILE must ignore env override"
+
 cat <<EOF > "${root}/xg2g-malicious.env"
 COMPOSE_FILE=docker-compose.alt.yml
 \$(touch "${root}/should-not-exist")

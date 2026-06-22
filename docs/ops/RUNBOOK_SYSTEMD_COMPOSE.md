@@ -20,11 +20,11 @@ Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
 - Data directory must exist and be writable at `/var/lib/xg2g`.
 - Compose service name must remain `xg2g` (health gate relies on it).
 
-Production compose is deterministic. For local development, apply the override:
-`docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d`.
-On `/dev/dri` hosts, use `compose-xg2g.sh` for GPU-aware operations so the checked-in
-`docker-compose.gpu.yml` marker expands into render-node-only device entries at runtime.
-On NVIDIA runtime hosts, add `-f deploy/docker-compose.nvidia.yml` or use the helper.
+Production compose is deterministic. For local development, use
+`make start RUNTIME=base|vaapi|nvidia`; the development helper resolves the
+development override and selected hardware overlay. On `/dev/dri` hosts, the
+checked-in `docker-compose.gpu.yml` marker expands into visible render-node-only
+device entries at runtime. The NVIDIA selector loads its dedicated overlay.
 
 Drift guard: `backend/scripts/verify-systemd-unit.sh` and `backend/scripts/verify-systemd-runtime-contract.sh` must pass before release.
 Canonical repo-side unit is `deploy/xg2g.service`; no repo-root `xg2g.service` is permitted.

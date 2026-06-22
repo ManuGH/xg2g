@@ -84,4 +84,6 @@ This matches `docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md` and avoids drift.
 - Use `/var/lib/xg2g` for data.
 - Manage via `systemctl` (start/reload/stop).
 
-Direct `docker compose up` is acceptable only for short-lived dev/testing.
+For short-lived development and testing, use
+`make start RUNTIME=base|vaapi|nvidia`; direct Compose invocation is an
+implementation detail, not a second lifecycle.

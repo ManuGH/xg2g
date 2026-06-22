@@ -19,6 +19,7 @@ help: ## Show this help message
 	@echo "  make dev-tools            Install pinned developer CLI tools"
 	@echo "  make doctor               Verify local toolchain and workspace"
 	@echo "  make start                Start the local container stack"
+	@echo "  make start RUNTIME=vaapi  Select VAAPI (or use nvidia)"
 	@echo "  make workspace-clean-preview"
 	@echo "                            Preview safe cleanup of local build/test outputs"
 	@echo ""

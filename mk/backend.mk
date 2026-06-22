@@ -2,7 +2,7 @@
 # Backend Targets
 # ===================================================================================================
 
-.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build generate-client build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev android-local-smoke android-tv-smoke install doctor check-tools dev-tools
+.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build generate-client build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev dev-loop android-local-smoke android-tv-smoke install doctor check-tools dev-tools
 
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
@@ -75,7 +75,10 @@ android-local-smoke: ## Build embedded UI, run local backend on :8080, and launc
 android-tv-smoke: ## Run the paired-device Android TV smoke with backend, guide, playback, and WebUI assertions
 	@./run_android_tv_smoke.sh
 
-dev: ## Run the crash-restart development loop (advanced/internal)
+dev: backend-dev ## Run the backend once in the foreground
+
+dev-loop:
+	@echo "NOTE: make dev-loop is an internal crash-restart compatibility path."
 	@./run_dev.sh
 
 install: ## Bootstrap local developer workspace (.env + WebUI dependencies)
