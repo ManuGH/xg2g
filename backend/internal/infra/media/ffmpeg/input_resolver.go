@@ -199,6 +199,11 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 	return "", ports.NewPreflightError(result)
 }
 
+// preflightRelayLeadProbeBytes is the leading sample read for the relay clear-lead
+// fast path: enough packets (>> tsScrambleMinPackets) to tell an FTA/clear head from
+// a scrambled one, yet tiny vs the full descrambler-lock scan window.
+const preflightRelayLeadProbeBytes = 188 * 128 // ~24KB / 128 packets
+
 func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result ports.PreflightResult, err error) {
 	start := time.Now()
 	defer func() {
@@ -280,7 +285,44 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	}
 
 	buf := make([]byte, scanBytes)
-	n, err := io.ReadFull(io.LimitReader(resp.Body, int64(scanBytes)), buf)
+	bodyReader := io.LimitReader(resp.Body, int64(scanBytes))
+
+	// Clear-lead fast path (stream-relay only): a channel that needs descrambling
+	// carries the transport_scrambling_control bits from its first packet until the
+	// ECM locks, so if the LEADING window is already clear the source is FTA/passthrough
+	// and we accept it without draining the full ~752KB descrambler-lock window, which
+	// cuts ~4s off startup for clear channels. A scrambled head (descrambling in
+	// progress or genuinely scrambled) fails this check and falls through to the
+	// unchanged trailing-window classification below.
+	n := 0
+	if relay {
+		lead := preflightRelayLeadProbeBytes
+		if lead > scanBytes {
+			lead = scanBytes
+		}
+		nLead, leadErr := io.ReadFull(bodyReader, buf[:lead])
+		n = nLead
+		if leadErr == io.EOF || leadErr == io.ErrUnexpectedEOF {
+			leadErr = nil
+		}
+		if leadErr == nil && nLead >= preflightMinBytes && hasTSSync(buf[:nLead]) {
+			if frac, pkts := tsScrambledFraction(buf[:nLead]); pkts >= tsScrambleMinPackets && frac < tsScrambleThreshold {
+				latency := time.Since(start)
+				a.Logger.Info().
+					Str("url", sanitizeURLForLog(rawURL)).
+					Int("bytes", nLead).
+					Dur("latency", latency).
+					Int("resolved_port", result.ResolvedPort).
+					Str("preflight_fast_path", "clear_lead").
+					Msg("preflight clear-lead fast path (FTA/passthrough relay source)")
+				result = ports.NewSuccessfulPreflightResult(nLead, latency.Milliseconds(), result.ResolvedPort)
+				return result, nil
+			}
+		}
+	}
+
+	m, err := io.ReadFull(bodyReader, buf[n:])
+	n += m
 	// ReadFull tries to fill the entire scan window; if the body ends
 	// earlier that is fine — we classify on whatever packets are present.
 	// The alternative (ReadAtLeast with a minimum) returns after only a few
