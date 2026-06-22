@@ -85,6 +85,18 @@ func TestTransformArgsForAvsyncPipe_NoAudioStreamDoesNotPanic(t *testing.T) {
 	}
 }
 
+func TestTransformArgsForAvsyncPipe_AudioCopySkipsTrim(t *testing.T) {
+	in := []string{"-i", "http://x/y", "-c:v", "copy", "-c:a", "copy", "-f", "hls"}
+	got := transformArgsForAvsyncPipeMode(in, 1.735, true)
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "-i pipe:0") {
+		t.Fatalf("expected pipe input: %s", joined)
+	}
+	if strings.Contains(joined, "atrim") {
+		t.Fatalf("-c:a copy must prevent atrim insertion: %s", joined)
+	}
+}
+
 func TestTransformArgsForAvsyncPipe_DiagnosticModeKeepsPipeWithoutTrim(t *testing.T) {
 	in := []string{"-i", "http://x/y", "-c:v", "copy", "-c:a", "aac", "-f", "hls"}
 	got := transformArgsForAvsyncPipeMode(in, 1.0, false)
