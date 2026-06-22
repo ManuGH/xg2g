@@ -159,10 +159,9 @@ resolve_compose_file() {
 
 config_redaction_enabled() {
   local mode="${XG2G_COMPOSE_CONFIG_REDACT:-1}"
-  mode="${mode,,}"
 
   case "${mode}" in
-    0|false|no|off)
+    0|[Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|[Oo][Ff][Ff])
       return 1
       ;;
   esac
@@ -230,12 +229,11 @@ function redact_url(value, redacted) {
 }
 
 compose_files_locked="${XG2G_COMPOSE_FILES_LOCKED:-0}"
-compose_files_locked="${compose_files_locked,,}"
 
 if [[ -f "${ENV_FILE}" ]]; then
   assert_secure_env_file "${ENV_FILE}"
   case "${compose_files_locked}" in
-    1|true|yes|on)
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn])
       ;;
     *)
       if compose_file_from_env="$(read_env_value "${ENV_FILE}" COMPOSE_FILE 2>/dev/null)"; then

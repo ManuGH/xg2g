@@ -34,10 +34,18 @@ echo "Starting backend dev server with -tags=dev on http://localhost:8080/ui/ ..
 make backend-dev-ui &
 backend_pid=$!
 
-set +e
-wait -n "${vite_pid}" "${backend_pid}"
-rc=$?
-set -e
+# Portable wait-any loop compatible with older Bash versions (e.g., macOS default Bash 3.2)
+while kill -0 "${vite_pid}" 2>/dev/null && kill -0 "${backend_pid}" 2>/dev/null; do
+    sleep 1
+done
+
+if ! kill -0 "${vite_pid}" 2>/dev/null; then
+    wait "${vite_pid}"
+    rc=$?
+else
+    wait "${backend_pid}"
+    rc=$?
+fi
 
 if [[ "${rc}" -eq 0 ]]; then
     echo "A development process exited unexpectedly." >&2
