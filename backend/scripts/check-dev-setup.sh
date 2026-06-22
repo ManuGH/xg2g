@@ -85,7 +85,7 @@ check_webui_deps() {
 
 check_docker_runtime_note() {
   if ! docker info >/dev/null 2>&1; then
-    note "Docker CLI is installed, but the engine is not reachable. 'make start', 'make start-gpu', and 'make start-nvidia' need a running Docker daemon."
+    note "Docker CLI is installed, but the engine is not reachable. 'make start RUNTIME=base|vaapi|nvidia' needs a running Docker daemon."
   fi
 }
 

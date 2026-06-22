@@ -66,7 +66,11 @@ in the Docker image; size your host for the concurrent streams you expect.
 
 [Read the codec/container matrix](docs/arch/CODEC_MATRIX.md)
 
-## Quickstart
+## Local Evaluation Quickstart
+
+This single-container path is for evaluating xg2g from the same host. It is not
+the supported production installation or upgrade workflow. Production hosts use
+the pinned, systemd-supervised [deployment path](docs/ops/DEPLOYMENT.md).
 
 **Prerequisites:** Docker, `openssl`, an Enigma2 receiver reachable on your
 network, and a host with enough CPU for transcoding (x86 hosts can offload video
@@ -124,8 +128,9 @@ Optional host bootstrap: `mise install` uses [mise.toml](mise.toml) to install
 the pinned Go and Node versions. Optional containerized bootstrap: reopen the
 repo in [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json).
 
-Then switch to `make start-gpu`, `make start-nvidia`, or `make dev-ui` only
-when you explicitly need a hardware-specific container path or frontend HMR.
+Use `make start RUNTIME=vaapi`, `make start RUNTIME=nvidia`, or `make dev-ui`
+only when you explicitly need a hardware-specific container path or frontend
+HMR. Make targets are development interfaces, not production deployment tools.
 
 If you are new to the repository layout, read the
 [Repository Map](docs/dev/REPO_MAP.md) before editing. Local runtime outputs

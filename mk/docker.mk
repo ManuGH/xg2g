@@ -2,7 +2,7 @@
 # Docker Operations
 # ===================================================================================================
 
-.PHONY: docker docker-build docker-security docker-tag docker-push docker-clean docker-ffmpeg-base docker-dev-fast
+.PHONY: docker docker-build docker-security docker-tag docker-push docker-clean docker-ffmpeg-base docker-dev-fast-build docker-dev-fast
 
 docker: ## Build Docker image
 	@echo "Building Docker image..."
@@ -57,8 +57,8 @@ docker-ffmpeg-base: ## Build reusable FFmpeg runtime base image
 		.
 	@echo "✅ FFmpeg base image built: $(FFMPEG_BASE_TAG)"
 
-docker-dev-fast: ## Rebuild dev container using cached FFmpeg base
-	@echo "🚀 Rebuilding xg2g dev container with cached FFmpeg base $(FFMPEG_BASE_TAG)..."
+docker-dev-fast-build: ## Build the dev image using the cached FFmpeg base
+	@echo "Building xg2g dev image with cached FFmpeg base $(FFMPEG_BASE_TAG)..."
 	@if ! docker image inspect $(FFMPEG_BASE_TAG) >/dev/null 2>&1; then \
 		echo "❌ Missing FFmpeg base image $(FFMPEG_BASE_TAG). Run 'make docker-ffmpeg-base' first."; \
 		exit 1; \
@@ -67,5 +67,8 @@ docker-dev-fast: ## Rebuild dev container using cached FFmpeg base
 		--build-arg FFMPEG_BASE_IMAGE=$(FFMPEG_BASE_TAG) \
 		-t $(DOCKER_IMAGE):dev \
 		.
-	@docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate xg2g
-	@echo "✅ Dev container rebuilt with cached FFmpeg base"
+	@echo "Dev image built. Start it with 'make start RUNTIME=base'."
+
+docker-dev-fast:
+	@echo "NOTE: make docker-dev-fast now builds only; use 'make docker-dev-fast-build'."
+	@$(MAKE) docker-dev-fast-build
