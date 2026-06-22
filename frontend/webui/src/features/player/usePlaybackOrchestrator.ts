@@ -1802,7 +1802,8 @@ export function usePlaybackOrchestrator(
   const showStartupOverlay =
     isImmediateStartupStatus ||
     ((status === 'buffering' || status === 'recovering') && showBufferingOverlay) ||
-    shouldHoldNativeVideo;
+    shouldHoldNativeVideo ||
+    (isNativeEngine && showNativeVideoVeil);
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
   const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;
   const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || Boolean(onClose));
