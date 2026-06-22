@@ -50,6 +50,7 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     hideVideoElement: false,
     showStartupBackdrop: false,
     showStartupOverlay: false,
+    showSpinnerCard: false,
     useNativeBufferingSafeOverlay: false,
     overlayStatusLabel: 'Buffering',
     overlayStatusState: 'live',

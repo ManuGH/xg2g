@@ -85,6 +85,7 @@ import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import { startResumePlaybackRecovery } from './orchestrator/resumePlaybackRecovery';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
+import { useDelayedFlag } from './orchestrator/useDelayedFlag';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
 import { useLiveNowPlaying } from './useLiveNowPlaying';
@@ -137,6 +138,7 @@ export interface V3PlayerViewState {
   hideVideoElement: boolean;
   showStartupBackdrop: boolean;
   showStartupOverlay: boolean;
+  showSpinnerCard: boolean;
   useNativeBufferingSafeOverlay: boolean;
   overlayStatusLabel: string;
   overlayStatusState: 'live' | 'idle';
@@ -1806,7 +1808,16 @@ export function usePlaybackOrchestrator(
     (isNativeEngine && showNativeVideoVeil);
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
   const showNativeBufferingMask = shouldHoldNativeVideo || showNativeVideoVeil;
-  const useMinimalStartupChrome = showStartupOverlay && (hostEnvironment.isTv || Boolean(onClose));
+  // Debounce the centered spinner card so a sub-500ms re-prepare (fast resume) does
+  // not flash the "preparing" card. The black-frame covers (showNativeBufferingMask /
+  // hideVideoElement) are derived separately and are NOT debounced, so delaying the
+  // card can never expose a black frame.
+  const showSpinnerCard = useDelayedFlag(showStartupOverlay, 500);
+  // Minimal startup chrome (which hides the full controls, incl. the stop button)
+  // tracks the DEBOUNCED card, not the raw overlay: during the pre-card debounce
+  // window the full playback chrome — and therefore a reachable stop control — stays
+  // mounted. Without this the stop affordance vanishes for 500ms on TV/overlay starts.
+  const useMinimalStartupChrome = showSpinnerCard && (hostEnvironment.isTv || Boolean(onClose));
   const showPlaybackChrome = !useMinimalStartupChrome;
 
   useEffect(() => {
@@ -2014,6 +2025,7 @@ export function usePlaybackOrchestrator(
     hideVideoElement: showNativeBufferingMask,
     showStartupBackdrop: useMinimalStartupChrome,
     showStartupOverlay,
+    showSpinnerCard,
     useNativeBufferingSafeOverlay,
     overlayStatusLabel: t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus }),
     overlayStatusState: overlayStatus === 'buffering' ? 'live' : 'idle',

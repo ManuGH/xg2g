@@ -95,7 +95,7 @@ export function V3PlayerView({
         {viewState.showStartupBackdrop && (
           <div className={styles.startupBackdrop} aria-hidden="true"></div>
         )}
-        {viewState.showStartupOverlay && (
+        {viewState.showSpinnerCard && (
           <div
             className={[
               styles.spinnerOverlay,
