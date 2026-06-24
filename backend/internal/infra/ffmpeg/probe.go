@@ -68,26 +68,7 @@ func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string,
 		path = u.String()
 	}
 
-	args := []string{
-		"-v", "error",
-		"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
-		"-headers", headers,
-	}
-	if whitelist, ok := InputProtocolWhitelist(path); ok {
-		args = append(args, "-protocol_whitelist", whitelist)
-	}
-	if opts.AnalyzeDuration > 0 {
-		args = append(args, "-analyzeduration", strconv.FormatInt(opts.AnalyzeDuration.Microseconds(), 10))
-	}
-	if opts.ProbeSizeBytes > 0 {
-		args = append(args, "-probesize", strconv.FormatInt(opts.ProbeSizeBytes, 10))
-	}
-	args = append(args,
-		"-print_format", "json",
-		"-show_format",
-		"-show_streams",
-		path,
-	)
+	args := buildProbeArgs(path, headers, opts)
 
 	ffprobeBin := strings.TrimSpace(binaryPath)
 	if ffprobeBin == "" {
@@ -306,4 +287,57 @@ type probeData struct {
 		BitRate    string `json:"bit_rate,omitempty"`
 		FormatName string `json:"format_name"`
 	} `json:"format"`
+}
+
+// buildProbeArgs assembles the ffprobe argument list for a probe of path.
+//
+// For HTTP(S) inputs it mirrors the live-playback reconnect tolerance (see
+// media/ffmpeg/plan_input.go). A capability probe of a live channel races the
+// receiver's cold tune + descramble (FBC lock / ECM); during that window the
+// stream relay returns a premature EOF / "Input/output error" at byte 0. Without
+// reconnect, ffprobe gives up and the channel is flagged failed/cold for 24h —
+// exactly the pay-TV channels that most need pre-warming. With the reconnect
+// options ffprobe re-opens through that cold window (bounded by the caller's
+// context timeout and -reconnect_delay_max) and probes once real data flows, the
+// same way live ffmpeg already succeeds on these channels. Non-HTTP inputs (local
+// files) get no reconnect flags, since they are HTTP-protocol options.
+func buildProbeArgs(path, headers string, opts ProbeOptions) []string {
+	args := []string{
+		"-v", "error",
+		"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
+		"-headers", headers,
+	}
+	if whitelist, ok := InputProtocolWhitelist(path); ok {
+		args = append(args, "-protocol_whitelist", whitelist)
+	}
+	if isHTTPProbeInput(path) {
+		args = append(args,
+			"-reconnect", "1",
+			"-reconnect_at_eof", "1",
+			"-reconnect_streamed", "1",
+			"-reconnect_delay_max", "2",
+			"-reconnect_on_network_error", "1",
+			"-reconnect_on_http_error", "4xx,5xx",
+		)
+	}
+	if opts.AnalyzeDuration > 0 {
+		args = append(args, "-analyzeduration", strconv.FormatInt(opts.AnalyzeDuration.Microseconds(), 10))
+	}
+	if opts.ProbeSizeBytes > 0 {
+		args = append(args, "-probesize", strconv.FormatInt(opts.ProbeSizeBytes, 10))
+	}
+	args = append(args,
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
+		path,
+	)
+	return args
+}
+
+// isHTTPProbeInput reports whether path is an http(s) URL, for which the reconnect
+// options are meaningful (they are HTTP-protocol options in libavformat).
+func isHTTPProbeInput(path string) bool {
+	p := strings.ToLower(strings.TrimSpace(path))
+	return strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://")
 }
