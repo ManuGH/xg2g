@@ -68,26 +68,7 @@ func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string,
 		path = u.String()
 	}
 
-	args := []string{
-		"-v", "error",
-		"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
-		"-headers", headers,
-	}
-	if whitelist, ok := InputProtocolWhitelist(path); ok {
-		args = append(args, "-protocol_whitelist", whitelist)
-	}
-	if opts.AnalyzeDuration > 0 {
-		args = append(args, "-analyzeduration", strconv.FormatInt(opts.AnalyzeDuration.Microseconds(), 10))
-	}
-	if opts.ProbeSizeBytes > 0 {
-		args = append(args, "-probesize", strconv.FormatInt(opts.ProbeSizeBytes, 10))
-	}
-	args = append(args,
-		"-print_format", "json",
-		"-show_format",
-		"-show_streams",
-		path,
-	)
+	args := buildProbeArgs(path, headers, opts)
 
 	ffprobeBin := strings.TrimSpace(binaryPath)
 	if ffprobeBin == "" {
@@ -306,4 +287,32 @@ type probeData struct {
 		BitRate    string `json:"bit_rate,omitempty"`
 		FormatName string `json:"format_name"`
 	} `json:"format"`
+}
+
+// buildProbeArgs assembles the ffprobe argument list for a probe of path.
+//
+// Non-HTTP inputs (local files) get no reconnect flags, since they are
+// HTTP-protocol options.
+func buildProbeArgs(path, headers string, opts ProbeOptions) []string {
+	args := []string{
+		"-v", "error",
+		"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
+		"-headers", headers,
+	}
+	if whitelist, ok := InputProtocolWhitelist(path); ok {
+		args = append(args, "-protocol_whitelist", whitelist)
+	}
+	if opts.AnalyzeDuration > 0 {
+		args = append(args, "-analyzeduration", strconv.FormatInt(opts.AnalyzeDuration.Microseconds(), 10))
+	}
+	if opts.ProbeSizeBytes > 0 {
+		args = append(args, "-probesize", strconv.FormatInt(opts.ProbeSizeBytes, 10))
+	}
+	args = append(args,
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
+		path,
+	)
+	return args
 }
