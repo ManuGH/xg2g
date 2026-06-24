@@ -1,7 +1,6 @@
 package ffmpeg
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -15,36 +14,12 @@ func probeArgsContain(args []string, flag, val string) bool {
 	return false
 }
 
-// TestBuildProbeArgs_HTTPGetsReconnectTolerance is the load-bearing assertion:
-// an HTTP capability probe must carry the live-style reconnect flags so it can
-// survive the cold-tune / descramble premature-EOF. Remove the reconnect block
-// and this goes red.
-func TestBuildProbeArgs_HTTPGetsReconnectTolerance(t *testing.T) {
+// TestBuildProbeArgs_NoReconnect: after reverting #607, HTTP capability probes
+// must NOT carry reconnect flags — the approach was disproven on staging.
+func TestBuildProbeArgs_NoReconnect(t *testing.T) {
 	args := buildProbeArgs("http://10.0.0.1:17999/1:0:19:8E:B:85:C00000:0:0:0:", "Connection: close\r\n", ProbeOptions{})
-
-	for _, pair := range [][2]string{
-		{"-reconnect", "1"},
-		{"-reconnect_at_eof", "1"},
-		{"-reconnect_streamed", "1"},
-		{"-reconnect_on_network_error", "1"},
-	} {
-		if !probeArgsContain(args, pair[0], pair[1]) {
-			t.Fatalf("http probe args missing %s %s; got: %v", pair[0], pair[1], args)
-		}
-	}
-
-	// Reconnect options must precede the input URL (they are input options).
-	reIdx, urlIdx := -1, -1
-	for i, a := range args {
-		if a == "-reconnect_at_eof" {
-			reIdx = i
-		}
-		if strings.HasPrefix(a, "http://") {
-			urlIdx = i
-		}
-	}
-	if reIdx < 0 || urlIdx < 0 || reIdx > urlIdx {
-		t.Fatalf("reconnect flags must come before the input URL: reIdx=%d urlIdx=%d args=%v", reIdx, urlIdx, args)
+	if probeArgsContain(args, "-reconnect", "1") || probeArgsContain(args, "-reconnect_at_eof", "1") {
+		t.Fatalf("probe must not get reconnect flags; got: %v", args)
 	}
 }
 

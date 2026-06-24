@@ -291,16 +291,8 @@ type probeData struct {
 
 // buildProbeArgs assembles the ffprobe argument list for a probe of path.
 //
-// For HTTP(S) inputs it mirrors the live-playback reconnect tolerance (see
-// media/ffmpeg/plan_input.go). A capability probe of a live channel races the
-// receiver's cold tune + descramble (FBC lock / ECM); during that window the
-// stream relay returns a premature EOF / "Input/output error" at byte 0. Without
-// reconnect, ffprobe gives up and the channel is flagged failed/cold for 24h —
-// exactly the pay-TV channels that most need pre-warming. With the reconnect
-// options ffprobe re-opens through that cold window (bounded by the caller's
-// context timeout and -reconnect_delay_max) and probes once real data flows, the
-// same way live ffmpeg already succeeds on these channels. Non-HTTP inputs (local
-// files) get no reconnect flags, since they are HTTP-protocol options.
+// Non-HTTP inputs (local files) get no reconnect flags, since they are
+// HTTP-protocol options.
 func buildProbeArgs(path, headers string, opts ProbeOptions) []string {
 	args := []string{
 		"-v", "error",
@@ -308,15 +300,7 @@ func buildProbeArgs(path, headers string, opts ProbeOptions) []string {
 		"-headers", headers,
 	}
 	if whitelist, ok := InputProtocolWhitelist(path); ok {
-		args = append(args,
-			"-protocol_whitelist", whitelist,
-			"-reconnect", "1",
-			"-reconnect_at_eof", "1",
-			"-reconnect_streamed", "1",
-			"-reconnect_delay_max", "2",
-			"-reconnect_on_network_error", "1",
-			"-reconnect_on_http_error", "4xx,5xx",
-		)
+		args = append(args, "-protocol_whitelist", whitelist)
 	}
 	if opts.AnalyzeDuration > 0 {
 		args = append(args, "-analyzeduration", strconv.FormatInt(opts.AnalyzeDuration.Microseconds(), 10))
