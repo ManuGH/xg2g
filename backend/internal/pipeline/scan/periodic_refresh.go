@@ -28,13 +28,21 @@ func (m *Manager) StartPeriodicRefresh(interval time.Duration) {
 		return
 	}
 
-	ctx, err := m.backgroundContext()
-	if err != nil {
-		log.L().Warn().Err(err).Msg("scan: periodic capability refresh not started (lifecycle context not attached)")
+	m.lifecycleMu.Lock()
+	if m.runtimeCtx == nil {
+		m.lifecycleMu.Unlock()
+		log.L().Warn().Msg("scan: periodic capability refresh not started (lifecycle context not attached)")
 		return
 	}
-
+	if m.runtimeCtx.Err() != nil {
+		m.lifecycleMu.Unlock()
+		log.L().Warn().Msg("scan: periodic capability refresh not started (lifecycle already cancelled)")
+		return
+	}
+	ctx := m.runtimeCtx
 	m.bgWG.Add(1)
+	m.lifecycleMu.Unlock()
+
 	go func() {
 		defer m.bgWG.Done()
 
