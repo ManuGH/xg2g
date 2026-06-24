@@ -2624,6 +2624,9 @@ func TestService_ResolvePlaybackInfo_LiveTargetedProbeFailureStillFailsClosed(t 
 }
 
 func TestService_ResolvePlaybackInfo_LiveStaleScanTruthUsesTargetedProbe(t *testing.T) {
+	prevWindow := liveTruthFreshnessWindow.Load()
+	SetLiveTruthFreshnessWindow(time.Hour)
+	t.Cleanup(func() { liveTruthFreshnessWindow.Store(prevWindow) })
 	recSvc := &stubRecordingsService{
 		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
 			t.Fatal("GetMediaTruth must not be called for live playback")
@@ -2685,6 +2688,9 @@ func TestService_ResolvePlaybackInfo_LiveStaleScanTruthUsesTargetedProbe(t *test
 }
 
 func TestService_ResolvePlaybackInfo_LiveStaleScanTruthFailsClosedWithoutFreshProbe(t *testing.T) {
+	prevWindow := liveTruthFreshnessWindow.Load()
+	SetLiveTruthFreshnessWindow(time.Hour)
+	t.Cleanup(func() { liveTruthFreshnessWindow.Store(prevWindow) })
 	recSvc := &stubRecordingsService{
 		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
 			t.Fatal("GetMediaTruth must not be called for live playback")
@@ -3288,4 +3294,66 @@ func TestService_ResolvePlaybackInfo_Problem(t *testing.T) {
 	require.NotNil(t, err.Problem)
 	assert.Equal(t, 400, err.Problem.Status)
 	assert.Equal(t, string(decision.ProblemCapabilitiesInvalid), err.Problem.Code)
+}
+
+// TestService_ResolvePlaybackInfo_LiveAgedTruthWithinWindowServedWithoutProbe is the
+// load-bearing assertion for the widened freshness window: a capability a few hours old
+// (well within the default 7d window) must be served straight from cache WITHOUT a
+// blocking synchronous probe. Narrow the window back toward 2h and this goes red.
+func TestService_ResolvePlaybackInfo_LiveAgedTruthWithinWindowServedWithoutProbe(t *testing.T) {
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+
+	agedCapability := scan.Capability{
+		ServiceRef:  "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		State:       scan.CapabilityStateOK,
+		Container:   "ts",
+		VideoCodec:  "h264",
+		AudioCodec:  "aac",
+		Codec:       "h264",
+		Resolution:  "1920x1080",
+		Width:       1920,
+		Height:      1080,
+		FPS:         25,
+		LastScan:    time.Now().UTC().Add(-3 * time.Hour),
+		LastSuccess: time.Now().UTC().Add(-3 * time.Hour),
+	}
+
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return agedCapability, true
+		},
+		probeCapabilityFn: func(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+			t.Fatal("ProbeCapability must not be called for truth within the freshness window")
+			return scan.Capability{}, false, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-aged-within-window",
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "ts", res.Truth.Container)
+	assert.Equal(t, "h264", res.Truth.VideoCodec)
+	assert.Equal(t, "aac", res.Truth.AudioCodec)
+	assert.Equal(t, 1, truthSource.calls)
+	assert.Equal(t, 0, truthSource.probeCalls)
 }
