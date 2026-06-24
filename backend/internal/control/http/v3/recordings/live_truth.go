@@ -26,13 +26,22 @@ const (
 	liveTruthOriginUnverified = "live_unverified"
 )
 
-// liveTruthFreshnessWindow is the maximum age of a scan-probed capability
-// entry before live playback truth considers it stale. Overridable at
-// startup via SetLiveTruthFreshnessWindow.
+// defaultLiveTruthFreshnessWindow is the maximum age of a scan-probed capability
+// entry before live playback truth considers it stale and re-verifies it. Media
+// truth (container/codecs/resolution/fps) is stable per channel for weeks, so the
+// previous 2h window forced a slow synchronous re-probe on essentially every cold
+// start; on stream-relay / pay-TV channels that probe can take ~20s+ (it races the
+// cold tune through several failing fallbacks) and then falls back to this very
+// truth anyway, producing a stuttery, autoplay-killing start. 7 days re-verifies
+// stale truth at a sane cadence while keeping warm cold starts fast.
+const defaultLiveTruthFreshnessWindow = 7 * 24 * time.Hour
+
+// liveTruthFreshnessWindow is the live-truth staleness threshold
+// (see defaultLiveTruthFreshnessWindow). Overridable via SetLiveTruthFreshnessWindow.
 var liveTruthFreshnessWindow atomic.Int64
 
 func init() {
-	liveTruthFreshnessWindow.Store(int64(2 * time.Hour))
+	liveTruthFreshnessWindow.Store(int64(defaultLiveTruthFreshnessWindow))
 }
 
 // SetLiveTruthFreshnessWindow allows operators to override the stale scan
