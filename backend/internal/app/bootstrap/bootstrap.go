@@ -697,6 +697,7 @@ func (c *Container) runInitialRefresh(ctx context.Context) {
 		if backgroundScanEnabled() {
 			c.Logger.Info().Msg("triggering media truth background scan")
 			c.scanManager.RunBackground()
+			c.scanManager.StartPeriodicRefresh(backgroundScanInterval())
 		} else {
 			c.Logger.Warn().Msg("Background media truth scan is disabled (XG2G_BACKGROUND_SCAN_ENABLED=false)")
 		}
@@ -705,6 +706,19 @@ func (c *Container) runInitialRefresh(ctx context.Context) {
 
 func backgroundScanEnabled() bool {
 	return config.ParseBool("XG2G_BACKGROUND_SCAN_ENABLED", true)
+}
+
+// defaultBackgroundScanInterval is the cadence at which the capability cache is
+// re-checked so still-cold channels (never probed, or past next_retry_at) are
+// drained. Once every channel is warm, RunBackground self-gates to a no-op, so
+// this is cheap in steady state.
+const defaultBackgroundScanInterval = time.Hour
+
+// backgroundScanInterval controls the periodic capability-refresh cadence.
+// XG2G_BACKGROUND_SCAN_INTERVAL=0 (or negative) disables periodic refresh,
+// leaving only the one-shot startup scan.
+func backgroundScanInterval() time.Duration {
+	return config.ParseDuration("XG2G_BACKGROUND_SCAN_INTERVAL", defaultBackgroundScanInterval)
 }
 
 func resolveConfigPath(explicit string) (path string, explicitMode bool, err error) {

@@ -86,6 +86,7 @@ var runtimeEnvKeys = []string{
 	"XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT",
 	"XG2G_SKIP_FPS_PROBE_WARMUP",
 	"XG2G_BACKGROUND_SCAN_ENABLED",
+	"XG2G_BACKGROUND_SCAN_INTERVAL",
 
 	// --- Keys read directly via env helpers OUTSIDE the config loader ---
 	// (encode_args.go, runtime_hardening.go, pipeline/profiles, fps probing, …).
