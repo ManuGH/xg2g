@@ -308,10 +308,8 @@ func buildProbeArgs(path, headers string, opts ProbeOptions) []string {
 		"-headers", headers,
 	}
 	if whitelist, ok := InputProtocolWhitelist(path); ok {
-		args = append(args, "-protocol_whitelist", whitelist)
-	}
-	if isHTTPProbeInput(path) {
 		args = append(args,
+			"-protocol_whitelist", whitelist,
 			"-reconnect", "1",
 			"-reconnect_at_eof", "1",
 			"-reconnect_streamed", "1",
@@ -333,11 +331,4 @@ func buildProbeArgs(path, headers string, opts ProbeOptions) []string {
 		path,
 	)
 	return args
-}
-
-// isHTTPProbeInput reports whether path is an http(s) URL, for which the reconnect
-// options are meaningful (they are HTTP-protocol options in libavformat).
-func isHTTPProbeInput(path string) bool {
-	p := strings.ToLower(strings.TrimSpace(path))
-	return strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://")
 }
