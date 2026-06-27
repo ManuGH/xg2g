@@ -6,6 +6,7 @@ import type {
 } from '../../../types/v3-player';
 import { usePlaybackOrchestrator } from '../usePlaybackOrchestrator';
 import { V3PlayerView } from './V3PlayerView';
+import { ChannelSwitcher } from './ChannelSwitcher';
 
 function V3Player(props: V3PlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -23,13 +24,22 @@ function V3Player(props: V3PlayerProps) {
   void viewState.playback.durationSeconds;
 
   return (
-    <V3PlayerView
-      containerRef={containerRef}
-      videoRef={videoRef}
-      resumePrimaryActionRef={resumePrimaryActionRef}
-      viewState={viewState}
-      actions={actions}
-    />
+    <>
+      <V3PlayerView
+        containerRef={containerRef}
+        videoRef={videoRef}
+        resumePrimaryActionRef={resumePrimaryActionRef}
+        viewState={viewState}
+        actions={actions}
+      />
+      {props.channels && props.channels.length > 0 && props.onSwitchChannel ? (
+        <ChannelSwitcher
+          channels={props.channels}
+          current={'channel' in props ? props.channel : undefined}
+          onSwitch={props.onSwitchChannel}
+        />
+      ) : null}
+    </>
   );
 }
 
