@@ -35,6 +35,7 @@ const PLAYBACK_WARNING_CODE_STALLED = 102;
 const PLAYBACK_WARNING_CODE_DECODER_RECOVERY = 103;
 const PLAYBACK_WARNING_CODE_NETWORK_RETRY = 104;
 const PLAYBACK_WARNING_CODE_HLS_NONFATAL = 105;
+const PLAYBACK_WARNING_CODE_HLS_LEADGAP = 106;
 
 // hls.js ErrorDetails (string-valued) for the non-fatal events that manifest a
 // live stall / rough cold-start. hls.js self-recovers from these, so they were
@@ -868,6 +869,24 @@ export function usePlaybackEngine({
               `hls_nonfatal:${data.details} ct=${sct.toFixed(2)} rs=${srs} buffered=[${sranges}]`,
               'decode',
             );
+            // Cold-start leading-gap unstick: when the first playable (audio+video)
+            // data begins a beat after video (cold tune - the audio transcode starts
+            // ~1-2s in), the playhead sits at 0 BEFORE the buffer with a gap wider than
+            // maxBufferHole, so the element stalls at 0 and hls.js will not auto-jump a
+            // gap that large. Seek to the start of real data so playback begins at once.
+            // Scoped to the startup leading gap (playhead before all buffer, near 0) so
+            // it never touches DVR seeks, which always land inside the buffered range.
+            if (sv && sv.buffered.length > 0) {
+              const leadStart = sv.buffered.start(0);
+              if (sv.currentTime < leadStart - 0.1 && sv.currentTime < 5) {
+                reportPlaybackWarning(
+                  PLAYBACK_WARNING_CODE_HLS_LEADGAP,
+                  `hls_leadgap_seek ${sv.currentTime.toFixed(2)}->${leadStart.toFixed(2)}`,
+                  'decode',
+                );
+                sv.currentTime = leadStart + 0.05;
+              }
+            }
           }
           return;
         }
