@@ -34,6 +34,18 @@ const PLAYBACK_WARNING_CODE_WAITING = 101;
 const PLAYBACK_WARNING_CODE_STALLED = 102;
 const PLAYBACK_WARNING_CODE_DECODER_RECOVERY = 103;
 const PLAYBACK_WARNING_CODE_NETWORK_RETRY = 104;
+const PLAYBACK_WARNING_CODE_HLS_NONFATAL = 105;
+
+// hls.js ErrorDetails (string-valued) for the non-fatal events that manifest a
+// live stall / rough cold-start. hls.js self-recovers from these, so they were
+// dropped silently - which left the backend blind to WHY playback froze. We now
+// surface this stall class to server telemetry for diagnosis.
+const NON_FATAL_STALL_DETAILS = new Set<string>([
+  'bufferStalledError',
+  'bufferSeekOverHole',
+  'bufferNudgeOnStall',
+  'bufferAppendError',
+]);
 const PLAYBACK_INFO_CODE_RECOVERED_BUFFERING = 211;
 const PLAYBACK_INFO_CODE_RECOVERED_NETWORK = 212;
 const PLAYBACK_INFO_CODE_RECOVERED_DECODER = 213;
@@ -835,6 +847,28 @@ export function usePlaybackEngine({
 
       hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal) {
+          // Non-fatal hls.js events are how a live stall / rough cold-start
+          // manifests, but were dropped silently here - leaving the backend
+          // blind to WHY playback froze. Surface the stall class to server
+          // telemetry (deduped per session by reportPlaybackWarning) so the
+          // reason is diagnosable from logs. Recovery behaviour is unchanged:
+          // hls.js still self-recovers; this only adds observability.
+          if (NON_FATAL_STALL_DETAILS.has(data.details as string)) {
+            const sv = videoRef.current;
+            const sct = sv ? sv.currentTime : -1;
+            const srs = sv ? sv.readyState : -1;
+            let sranges = '';
+            if (sv) {
+              for (let i = 0; i < sv.buffered.length; i++) {
+                sranges += sv.buffered.start(i).toFixed(2) + '-' + sv.buffered.end(i).toFixed(2) + ';';
+              }
+            }
+            reportPlaybackWarning(
+              PLAYBACK_WARNING_CODE_HLS_NONFATAL,
+              `hls_nonfatal:${data.details} ct=${sct.toFixed(2)} rs=${srs} buffered=[${sranges}]`,
+              'decode',
+            );
+          }
           return;
         }
 
