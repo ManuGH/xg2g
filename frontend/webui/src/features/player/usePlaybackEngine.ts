@@ -860,8 +860,12 @@ export function usePlaybackEngine({
             const srs = sv ? sv.readyState : -1;
             let sranges = '';
             if (sv) {
-              for (let i = 0; i < sv.buffered.length; i++) {
-                sranges += sv.buffered.start(i).toFixed(2) + '-' + sv.buffered.end(i).toFixed(2) + ';';
+              try {
+                for (let i = 0; i < sv.buffered.length; i++) {
+                  sranges += sv.buffered.start(i).toFixed(2) + '-' + sv.buffered.end(i).toFixed(2) + ';';
+                }
+              } catch {
+                sranges = 'unknown';
               }
             }
             reportPlaybackWarning(
@@ -876,16 +880,20 @@ export function usePlaybackEngine({
             // gap that large. Seek to the start of real data so playback begins at once.
             // Scoped to the startup leading gap (playhead before all buffer, near 0) so
             // it never touches DVR seeks, which always land inside the buffered range.
-            if (sv && sv.buffered.length > 0) {
-              const leadStart = sv.buffered.start(0);
-              if (sv.currentTime < leadStart - 0.1 && sv.currentTime < 5) {
-                reportPlaybackWarning(
-                  PLAYBACK_WARNING_CODE_HLS_LEADGAP,
-                  `hls_leadgap_seek ${sv.currentTime.toFixed(2)}->${leadStart.toFixed(2)}`,
-                  'decode',
-                );
-                sv.currentTime = leadStart + 0.05;
+            try {
+              if (sv && sv.buffered.length > 0) {
+                const leadStart = sv.buffered.start(0);
+                if (sv.currentTime < leadStart - 0.1 && sv.currentTime < 5) {
+                  reportPlaybackWarning(
+                    PLAYBACK_WARNING_CODE_HLS_LEADGAP,
+                    `hls_leadgap_seek ${sv.currentTime.toFixed(2)}->${leadStart.toFixed(2)}`,
+                    'decode',
+                  );
+                  sv.currentTime = leadStart + 0.05;
+                }
               }
+            } catch {
+              // Ignore DOMExceptions when accessing buffered ranges during error states
             }
           }
           return;

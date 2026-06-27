@@ -275,8 +275,16 @@ func awaitProcessExit(
 	select {
 	case procErr := <-procErrCh:
 		out.procErr = procErr
-		out.resultErr = procErr
-		out.naturalExit = true
+		// When the parent context is canceled (user stop), the proc may also
+		// finish at the same instant, making both this case and parentCtx.Done()
+		// ready. The select picks whichever is ready first, so we must check
+		// parentCtx here too — a user stop is never a natural exit.
+		if parentCtx.Err() != nil {
+			out.resultErr = parentCtx.Err()
+		} else {
+			out.resultErr = procErr
+			out.naturalExit = true
+		}
 	case wdErr := <-wdErrCh:
 		out.watchdogConsumed = true
 		if wdErr != nil {
