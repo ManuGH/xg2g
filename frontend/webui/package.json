@@ -36,7 +36,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-i18next": "^17.0.8",
-    "react-router-dom": "^7.18.0"
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -55,7 +55,7 @@
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.0",
+    "typescript-eslint": "^8.62.1",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"
   },
