@@ -28,6 +28,7 @@ on:
       - "frontend/webui/**"
       - "VERSION"
       - "WORKFLOW.md"
+      - "mk/**"
 
 permissions:
   contents: read
