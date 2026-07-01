@@ -9,11 +9,19 @@ package http
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 )
 
 //go:embed all:dist
 var uiFS embed.FS
+
+func init() {
+	// Go's built-in mime table has no entry for .webmanifest and slim
+	// container images ship no /etc/mime.types, so http.FileServer would
+	// fall back to content sniffing for the PWA manifest.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 // UIHandler serves the embedded Web UI (SPA) with correct caching + CSP.
 // It is self-contained: embed + serving live together in control.
