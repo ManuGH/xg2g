@@ -8,7 +8,7 @@
 # -dirty even when no source changed. Determine dirtiness from tracked files
 # excluding the generated dist tree instead.
 GIT_DESCRIBE := $(shell git describe --tags --always 2>/dev/null || echo dev)
-GIT_DIRTY := $(shell git status --porcelain --untracked-files=no -- . ':!backend/internal/control/http/dist' 2>/dev/null | head -c1)
+GIT_DIRTY := $(shell git status --porcelain --untracked-files=no -- . ':!backend/internal/control/http/dist' 2>/dev/null | head -n 1)
 VERSION := $(GIT_DESCRIBE)$(if $(GIT_DIRTY),-dirty,)
 COMMIT_HASH := $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
