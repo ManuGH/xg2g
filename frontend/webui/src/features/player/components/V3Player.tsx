@@ -39,9 +39,9 @@ function V3Player(props: V3PlayerProps) {
       />
       {hasChannels ? (
         <ChannelSwitcher
-          channels={props.channels}
+          channels={props.channels!}
           current={'channel' in props ? props.channel : undefined}
-          onSwitch={props.onSwitchChannel}
+          onSwitch={props.onSwitchChannel!}
           open={channelsOpen}
           onClose={handleCloseChannels}
         />

@@ -38,16 +38,14 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose }: 
     );
   }, [channels, query]);
 
-  // Reset search query each time the panel opens, then scroll to current channel
-  // after the DOM has settled from the query reset.
+  // Reset search when the panel closes, so the initial render after opening
+  // already contains all channels and the DOM elements are available for scrolling.
   useEffect(() => {
-    if (!open) return;
-    setQuery('');
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || filtered.length === 0) return;
-    // Use requestAnimationFrame so scrolling runs after the state-triggered re-render.
+    if (!open) {
+      setQuery('');
+      return;
+    }
+    if (filtered.length === 0) return;
     const raf = requestAnimationFrame(() => {
       listRef.current
         ?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(currentRef)}"]`)
