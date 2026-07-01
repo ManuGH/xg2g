@@ -242,21 +242,36 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 		source := s.deps.ChannelTruthSource()
 		requestContext := PlaybackInfoRequestContext(req)
 		truthResolution := resolveLiveTruthState(subjectID, source, requestContext)
-		if !truthResolution.Verified() && shouldProbeLiveTruth(truthResolution) {
+		if !truthResolution.Verified() && shouldProbeLiveTruth(truthResolution) && probeAllowedForContext(requestContext) {
 			if probeSource, ok := source.(channelTruthProbeSource); ok {
 				cachedResolution := truthResolution
-				probedCap, found, probeErr := probeSource.ProbeCapability(ctx, subjectID)
-				if probeErr != nil {
-					evt := log.L().Warn().
-						Err(probeErr).
-						Str("serviceRef", subjectID)
+				probedCap, found, completed, probeErr := s.probeLiveTruthBounded(ctx, probeSource, subjectID)
+				switch {
+				case !completed:
+					// The probe exceeded the interactive budget (cold relay / descrambler
+					// not yet locked). It keeps running in the background to populate the
+					// persistent truth cache, so the client's retry is served from cache
+					// instead of freezing here for ~20-33s.
+					evt := log.L().Info().
+						Str("serviceRef", subjectID).
+						Dur("budget", liveInteractiveProbeBudget())
 					if requestContext != "" {
 						evt = evt.Str("request_context", requestContext)
 					}
-					evt.Msg("live playback truth probe failed")
-				}
-				if found || cachedResolution.Reason == "missing_scan_truth" {
-					truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found, time.Now().UTC(), requestContext)
+					evt.Msg("live playback truth probe exceeded interactive budget; continuing in background")
+				default:
+					if probeErr != nil {
+						evt := log.L().Warn().
+							Err(probeErr).
+							Str("serviceRef", subjectID)
+						if requestContext != "" {
+							evt = evt.Str("request_context", requestContext)
+						}
+						evt.Msg("live playback truth probe failed")
+					}
+					if found || cachedResolution.Reason == "missing_scan_truth" {
+						truthResolution = resolveLiveTruthCapability(subjectID, probedCap, found, time.Now().UTC(), requestContext)
+					}
 				}
 			}
 		}
@@ -304,6 +319,17 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 			Message: "unsupported playback subject kind",
 		}
 	}
+}
+
+// probeAllowedForContext gates the synchronous relay probe by request context.
+// epg_badge requests are passive previews for the channel grid: fanning a cold relay
+// probe out across the whole visible list storms the tuner/relay and starves the
+// interactive play path (and the badge result is throwaway anyway). Badges are served
+// from persisted scan truth when present and stay blank otherwise; the scan manager's
+// background refresh warms their truth. Only interactive contexts (player_start and
+// legacy/unknown) drive on-demand probing.
+func probeAllowedForContext(requestContext string) bool {
+	return requestContext != PlaybackInfoContextEpgBadge
 }
 
 func shouldProbeLiveTruth(resolution liveTruthResolution) bool {

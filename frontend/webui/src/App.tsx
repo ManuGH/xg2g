@@ -119,6 +119,8 @@ function App() {
             channel={playback.playingChannel}
             autoStart={true}
             onClose={handlePlayerClose}
+            channels={filteredChannels}
+            onSwitchChannel={ctx.handlePlay}
           />
         </Suspense>
       )}

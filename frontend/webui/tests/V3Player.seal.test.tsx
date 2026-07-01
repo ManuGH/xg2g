@@ -194,7 +194,7 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
     await waitFor(() => expect(findFetchCall((global.fetch as any), '/sessions/sess-live-telemetry-1')).toBeDefined());
 
     const statsButton = screen.getAllByRole('button').find((button) =>
-      button.textContent?.includes('📊')
+      button.textContent?.includes('Stats')
     );
     expect(statsButton).toBeDefined();
     fireEvent.click(statsButton!);

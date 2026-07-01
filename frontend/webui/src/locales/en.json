@@ -160,6 +160,9 @@
     "hotkeysHint": "Space (Play/Pause) • F (Full) • M (Mute) • P (PiP) • I (Stats)",
     "pipLabel": "PiP",
     "statsLabel": "Stats",
+    "switchChannel": "Switch Channel",
+    "searchChannel": "Search channels…",
+    "noChannelFound": "No channel found",
     "statusStates": {
       "idle": "Idle",
       "starting": "Starting",

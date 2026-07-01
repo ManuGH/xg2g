@@ -37,3 +37,28 @@ export function FullscreenGlyph() {
     </svg>
   );
 }
+
+export function PipGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3.5 5.5h17v13h-17z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <rect x="12" y="11" width="7.5" height="5.5" rx="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function StatsGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M5 13v6M12 8v11M19 4v15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function ChannelsGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}

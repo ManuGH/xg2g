@@ -46,6 +46,9 @@ export interface V3PlayerBaseProps {
   duration?: number; // Duration in seconds (enables VOD mode)
   startPositionSeconds?: number;
   suppressResumePrompt?: boolean;
+  /** Live-only: full channel list + switch callback for the in-player zapper. */
+  channels?: Service[];
+  onSwitchChannel?: (channel: Service) => void;
 }
 
 export interface V3PlayerLiveProps extends V3PlayerBaseProps {

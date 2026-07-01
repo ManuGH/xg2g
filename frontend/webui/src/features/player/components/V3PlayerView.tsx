@@ -8,6 +8,7 @@ import type {
 } from '../usePlaybackOrchestrator';
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
+import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph } from './playerControlGlyphs';
 
 interface V3PlayerViewProps {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -15,6 +16,8 @@ interface V3PlayerViewProps {
   resumePrimaryActionRef: RefObject<HTMLButtonElement | null>;
   viewState: V3PlayerViewState;
   actions: PlaybackOrchestratorActions;
+  /** Live-only: opens the in-player channel list. Absent => no Sender button. */
+  onOpenChannels?: () => void;
 }
 
 export function V3PlayerView({
@@ -23,6 +26,7 @@ export function V3PlayerView({
   resumePrimaryActionRef,
   viewState,
   actions,
+  onOpenChannels,
 }: V3PlayerViewProps) {
   // On phone-sized surfaces apply the compact mobile player layout (full-bleed
   // video, repositioned chrome). The styles existed in V3Player.module.css but
@@ -188,29 +192,6 @@ export function V3PlayerView({
         <div className={styles.controlsHeader}>
           {viewState.showSeekControls ? (
             <div className={[styles.vodControls, styles.seekControls].join(' ')}>
-              <div className={styles.seekButtons}>
-                <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-900)} title={viewState.seekBack15mLabel} aria-label={viewState.seekBack15mLabel}>
-                  ↺ 15m
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-60)} title={viewState.seekBack60sLabel} aria-label={viewState.seekBack60sLabel}>
-                  ↺ 60s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-15)} title={viewState.seekBack15sLabel} aria-label={viewState.seekBack15sLabel}>
-                  ↺ 15s
-                </Button>
-              </div>
-
-              <Button
-                variant="primary"
-                size="icon"
-                className={styles.playPauseButton}
-                onClick={actions.togglePlayPause}
-                title={viewState.playPauseLabel}
-                aria-label={viewState.playPauseLabel}
-              >
-                {viewState.playPauseIcon}
-              </Button>
-
               <div className={styles.seekSliderGroup}>
                 <span className={styles.currentPositionLabel}>{viewState.currentPositionDisplay}</span>
                 <div className={styles.seekSliderRow}>
@@ -227,28 +208,53 @@ export function V3PlayerView({
                 </div>
               </div>
 
-              <div className={styles.seekButtons}>
-                <Button variant="ghost" size="sm" onClick={() => actions.seekBy(15)} title={viewState.seekForward15sLabel} aria-label={viewState.seekForward15sLabel}>
-                  +15s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => actions.seekBy(60)} title={viewState.seekForward60sLabel} aria-label={viewState.seekForward60sLabel}>
-                  +60s
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => actions.seekBy(900)} title={viewState.seekForward15mLabel} aria-label={viewState.seekForward15mLabel}>
-                  +15m
-                </Button>
-              </div>
+              <div className={styles.transportControls}>
+                <div className={styles.seekButtons}>
+                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-900)} title={viewState.seekBack15mLabel} aria-label={viewState.seekBack15mLabel}>
+                    ↺ 15m
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-60)} title={viewState.seekBack60sLabel} aria-label={viewState.seekBack60sLabel}>
+                    ↺ 60s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-15)} title={viewState.seekBack15sLabel} aria-label={viewState.seekBack15sLabel}>
+                    ↺ 15s
+                  </Button>
+                </div>
 
-              {viewState.isLiveMode && (
-                <button
-                  className={[styles.liveButton, viewState.isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                  onClick={() => actions.seekToLiveEdge()}
-                  title={viewState.liveButtonLabel}
-                  aria-label={viewState.liveButtonLabel}
+                <Button
+                  variant="primary"
+                  size="icon"
+                  className={styles.playPauseButton}
+                  onClick={actions.togglePlayPause}
+                  title={viewState.playPauseLabel}
+                  aria-label={viewState.playPauseLabel}
                 >
-                  LIVE
-                </button>
-              )}
+                  {viewState.playPauseIcon}
+                </Button>
+
+                <div className={styles.seekButtons}>
+                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(15)} title={viewState.seekForward15sLabel} aria-label={viewState.seekForward15sLabel}>
+                    ↻ 15s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(60)} title={viewState.seekForward60sLabel} aria-label={viewState.seekForward60sLabel}>
+                    ↻ 60s
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(900)} title={viewState.seekForward15mLabel} aria-label={viewState.seekForward15mLabel}>
+                    ↻ 15m
+                  </Button>
+                </div>
+
+                {viewState.isLiveMode && (
+                  <button
+                    className={[styles.liveButton, viewState.isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
+                    onClick={() => actions.seekToLiveEdge()}
+                    title={viewState.liveButtonLabel}
+                    aria-label={viewState.liveButtonLabel}
+                  >
+                    LIVE
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             viewState.showServiceInput && (
@@ -278,11 +284,25 @@ export function V3PlayerView({
 
           {viewState.showDvrModeButton && (
             <Button onClick={actions.enterDVRMode} title={viewState.dvrModeLabel}>
-              📺 DVR
+              DVR
             </Button>
           )}
 
           <div className={styles.utilityControls}>
+            {onOpenChannels && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={styles.channelsButton}
+                onClick={onOpenChannels}
+                title="Sender wechseln"
+                aria-label="Sender wechseln"
+              >
+                <ChannelsGlyph />
+                <span>Sender</span>
+              </Button>
+            )}
+
             {viewState.showNativeFullscreenButton && (
               <Button
                 variant="ghost"
@@ -302,22 +322,25 @@ export function V3PlayerView({
                 onClick={() => void actions.toggleFullscreen()}
                 title={viewState.fullscreenLabel}
               >
-                ⛶ {viewState.fullscreenLabel}
+                <FullscreenGlyph />
+                <span>{viewState.fullscreenLabel}</span>
               </Button>
             )}
 
             {viewState.showVolumeControls && (
               <div className={styles.volumeControl}>
                 <Button
-                  variant={viewState.audioToggleActive ? 'ghost' : 'primary'}
+                  variant="ghost"
                   size="sm"
-                  className={styles.audioToggleButton}
+                  className={[styles.audioToggleButton, viewState.audioToggleActive ? null : styles.audioMuted].filter(Boolean).join(' ')}
                   onClick={actions.toggleMute}
                   title={viewState.audioToggleLabel}
                   aria-label={viewState.audioToggleLabel}
                   aria-pressed={viewState.audioToggleActive}
                 >
-                  <span className={styles.audioToggleIcon} aria-hidden="true">{viewState.audioToggleIcon}</span>
+                  <span className={styles.audioToggleIcon} aria-hidden="true">
+                    <VolumeGlyph muted={!viewState.audioToggleActive} />
+                  </span>
                   <span>{viewState.audioToggleLabel}</span>
                 </Button>
                 {viewState.canAdjustVolume ? (
@@ -344,7 +367,8 @@ export function V3PlayerView({
                 onClick={() => void actions.togglePiP()}
                 title={viewState.pipTitle}
               >
-                📺 {viewState.pipLabel}
+                <PipGlyph />
+                <span>{viewState.pipLabel}</span>
               </Button>
             )}
 
@@ -355,7 +379,8 @@ export function V3PlayerView({
               onClick={actions.toggleStats}
               title={viewState.statsTitle}
             >
-              📊 {viewState.statsLabel}
+              <StatsGlyph />
+              <span>{viewState.statsLabel}</span>
             </Button>
 
             {viewState.showStopButton && (

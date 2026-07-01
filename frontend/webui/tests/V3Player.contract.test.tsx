@@ -205,7 +205,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     });
 
     const statsButton = screen.getAllByRole('button').find((button) =>
-      button.textContent?.includes('📊')
+      button.textContent?.includes('Stats')
     );
     expect(statsButton).toBeDefined();
     fireEvent.click(statsButton!);
@@ -266,7 +266,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     });
 
     const statsButton = screen.getAllByRole('button').find((button) =>
-      button.textContent?.includes('📊')
+      button.textContent?.includes('Stats')
     );
     expect(statsButton).toBeDefined();
     fireEvent.click(statsButton!);
