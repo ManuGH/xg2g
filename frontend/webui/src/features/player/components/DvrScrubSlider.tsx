@@ -68,6 +68,11 @@ export function DvrScrubSlider({
 
   const handleLeave = useCallback(() => setHover(HIDDEN), []);
 
+  // Filled-progress portion of the track (YouTube-style), driven purely by a CSS
+  // custom property so the native <input type=range> keeps owning all seek
+  // interaction — the visual fill never touches the DVR seek path.
+  const fillPct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+
   return (
     <div className={styles.dvrSliderWrap} ref={wrapRef}>
       {previewBaseUrl && hover.visible && (
@@ -85,6 +90,7 @@ export function DvrScrubSlider({
         max={max}
         step="0.1"
         className={sliderClassName}
+        style={{ '--dvr-fill': `${fillPct}%` } as React.CSSProperties}
         value={value}
         onChange={(e) => onSeek(parseFloat(e.target.value))}
         onMouseMove={handleMove}

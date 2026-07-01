@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type {
   HlsInstanceRef,
   V3PlayerProps,
@@ -13,6 +13,7 @@ function V3Player(props: V3PlayerProps) {
   const videoRef = useRef<VideoElementRef>(null);
   const hlsRef = useRef<HlsInstanceRef>(null);
   const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+  const [channelsOpen, setChannelsOpen] = useState(false);
   const { viewState, actions } = usePlaybackOrchestrator(props, {
     containerRef,
     videoRef,
@@ -23,6 +24,8 @@ function V3Player(props: V3PlayerProps) {
   // `durationSeconds` remains the normative duration truth at the composition seam.
   void viewState.playback.durationSeconds;
 
+  const hasChannels = !!(props.channels && props.channels.length > 0 && props.onSwitchChannel);
+
   return (
     <>
       <V3PlayerView
@@ -31,12 +34,15 @@ function V3Player(props: V3PlayerProps) {
         resumePrimaryActionRef={resumePrimaryActionRef}
         viewState={viewState}
         actions={actions}
+        onOpenChannels={hasChannels ? () => setChannelsOpen(true) : undefined}
       />
       {props.channels && props.channels.length > 0 && props.onSwitchChannel ? (
         <ChannelSwitcher
           channels={props.channels}
           current={'channel' in props ? props.channel : undefined}
           onSwitch={props.onSwitchChannel}
+          open={channelsOpen}
+          onClose={() => setChannelsOpen(false)}
         />
       ) : null}
     </>

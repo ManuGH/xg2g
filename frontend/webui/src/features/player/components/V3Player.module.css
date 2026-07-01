@@ -1084,13 +1084,23 @@
 
 .vodSlider {
   flex: 1;
-  height: 6px;
+  height: 9px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--surface-highlight);
+  background:
+    linear-gradient(
+      to right,
+      var(--accent-action) var(--dvr-fill, 0%),
+      color-mix(in srgb, var(--surface-highlight) 72%, transparent) var(--dvr-fill, 0%)
+    );
   border-radius: 999px;
   outline: none;
   cursor: pointer;
+  transition: height var(--motion-standard) var(--ease-standard);
+}
+
+.vodSlider:hover {
+  height: 11px;
 }
 
 .vodSlider::-webkit-slider-thumb {
@@ -1255,6 +1265,14 @@
   justify-content: flex-start;
   white-space: nowrap;
   flex: 0 0 auto;
+}
+
+/* Muted state: a subtle accent ring instead of a full primary fill, so it reads
+   as "tap to enable sound" without looking like a selected/active button. */
+.audioMuted {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-action) 45%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--accent-action) 12%, transparent);
 }
 
 .audioToggleIcon {
