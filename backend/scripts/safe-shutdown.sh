@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-backend_pattern="^${REPO_ROOT}/bin/xg2g(-dev)?$"
+backend_pattern="^${REPO_ROOT}/bin/xg2g(-dev)?([[:space:]]|$)"
 
 echo "Initiating safe process termination..."
 
