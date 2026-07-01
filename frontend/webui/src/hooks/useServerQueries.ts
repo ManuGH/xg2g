@@ -220,7 +220,7 @@ export function useSystemInfo() {
 /**
  * useSystemScanStatus - channel scan state
  *
- * Polling: 2s
+ * Polling: 2s while a scan is running, 30s otherwise
  * staleTime: 1s
  */
 export function useSystemScanStatus() {
@@ -236,7 +236,9 @@ export function useSystemScanStatus() {
       return unwrapClientResultOrThrow<ScanStatus>(result, { source: 'useSystemScanStatus' });
     },
     enabled,
-    refetchInterval: 2_000,
+    // Tight polling is only useful while a scan is actually in flight; idle
+    // Settings sessions relax to 30s and still pick up externally started scans.
+    refetchInterval: (query) => (query.state.data?.state === 'running' ? 2_000 : 30_000),
     staleTime: 1_000,
   });
 }

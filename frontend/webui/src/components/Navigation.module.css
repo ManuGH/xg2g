@@ -348,7 +348,7 @@
   display: none;
 }
 
-@media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
+@media (max-width: 959px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
   .desktopShell {
     display: none;
   }

@@ -775,7 +775,9 @@ export function usePlaybackEngine({
         // Own the buffer via ManagedMediaSource on Safari 17.1+ (the app-owned path
         // the migration relies on); pinned so a future hls.js default change can't
         // silently fall back to plain MSE (which breaks AirPlay and the MMS lifecycle).
-        preferManagedMediaSource: true,
+        // Exceptions: Background tabs MUST use plain MSE, as MMS strictly blocks
+        // sourceopen until the tab is visible, causing backend sessions to rot.
+        preferManagedMediaSource: typeof document !== 'undefined' ? document.visibilityState === 'visible' : true,
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 300,
