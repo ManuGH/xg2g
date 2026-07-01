@@ -15,6 +15,11 @@ import (
 	"time"
 )
 
+// slowRequestInfoThreshold is the duration above which a successful receiver
+// request is still logged at info level; faster successes go to debug since
+// metrics already cover them.
+const slowRequestInfoThreshold = 500 * time.Millisecond
+
 func (c *Client) isTechnicalError(err error) bool {
 	if err == nil {
 		return false
@@ -195,7 +200,14 @@ func (c *Client) logAttempt(
 	}
 	logger := builder.Logger()
 	if err == nil && status == http.StatusOK {
-		logger.Info().Msg("openwebif request completed")
+		// Success metrics are already recorded by recordAttemptMetrics; keep the
+		// steady-state polling traffic out of the info log and only surface
+		// unusually slow requests there.
+		evt := logger.Debug()
+		if duration >= slowRequestInfoThreshold {
+			evt = logger.Info()
+		}
+		evt.Msg("openwebif request completed")
 		return
 	}
 	if retry {
@@ -224,8 +236,14 @@ func recordAttemptMetrics(operation string, attempt, status int, duration time.D
 func (c *Client) get(ctx context.Context, path, operation string, decorate func(*zerolog.Context)) ([]byte, error) {
 	// Apply receiver rate limiting before making request
 	if err := c.receiverLimiter.Wait(ctx); err != nil {
-		c.loggerFor(ctx).Warn().
-			Err(err).
+		// A cancelled context is expected during shutdown or when a batch
+		// (e.g. EPG refresh) is aborted; every queued request fails at once,
+		// so warn-level logging would flood the log with one line per request.
+		evt := c.loggerFor(ctx).Warn()
+		if errors.Is(err, context.Canceled) {
+			evt = c.loggerFor(ctx).Debug()
+		}
+		evt.Err(err).
 			Str("event", "openwebif.rate_limit").
 			Str("operation", operation).
 			Msg("rate limit wait cancelled")
