@@ -389,12 +389,13 @@ func ffmpegLogLevel(line string) zerolog.Level {
 // single summary line when a different line arrives, the flush window
 // elapses mid-storm, or the stream ends (flush).
 type ffmpegLogDeduper struct {
-	window    time.Duration
-	now       func() time.Time
-	lastLine  string
-	lastLevel zerolog.Level
-	repeats   int
-	windowAt  time.Time
+	window      time.Duration
+	now         func() time.Time
+	initialized bool
+	lastLine    string
+	lastLevel   zerolog.Level
+	repeats     int
+	windowAt    time.Time
 }
 
 func newFFmpegLogDeduper(window time.Duration) *ffmpegLogDeduper {
@@ -405,6 +406,16 @@ func newFFmpegLogDeduper(window time.Duration) *ffmpegLogDeduper {
 // for a line that should be logged verbatim, or with repeats > 0 for a
 // summary covering that many suppressed duplicates of line.
 func (d *ffmpegLogDeduper) observe(line string, level zerolog.Level, emit func(level zerolog.Level, line string, repeats int)) {
+	if !d.initialized {
+		// Without this guard an empty first line would match the
+		// zero-value lastLine and be summarized instead of passed through.
+		d.initialized = true
+		emit(level, line, 0)
+		d.lastLine = line
+		d.lastLevel = level
+		d.windowAt = d.now()
+		return
+	}
 	if line == d.lastLine {
 		d.repeats++
 		if d.now().Sub(d.windowAt) >= d.window {

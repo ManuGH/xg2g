@@ -202,10 +202,13 @@ func (c *Client) logAttempt(
 	if err == nil && status == http.StatusOK {
 		// Success metrics are already recorded by recordAttemptMetrics; keep the
 		// steady-state polling traffic out of the info log and only surface
-		// unusually slow requests there.
-		evt := logger.Debug()
+		// unusually slow requests there. Initialize the event conditionally:
+		// an overwritten zerolog event would leak from the internal pool.
+		var evt *zerolog.Event
 		if duration >= slowRequestInfoThreshold {
 			evt = logger.Info()
+		} else {
+			evt = logger.Debug()
 		}
 		evt.Msg("openwebif request completed")
 		return
@@ -239,9 +242,13 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 		// A cancelled context is expected during shutdown or when a batch
 		// (e.g. EPG refresh) is aborted; every queued request fails at once,
 		// so warn-level logging would flood the log with one line per request.
-		evt := c.loggerFor(ctx).Warn()
+		// Initialize conditionally: an overwritten zerolog event would leak
+		// from the internal pool.
+		var evt *zerolog.Event
 		if errors.Is(err, context.Canceled) {
 			evt = c.loggerFor(ctx).Debug()
+		} else {
+			evt = c.loggerFor(ctx).Warn()
 		}
 		evt.Err(err).
 			Str("event", "openwebif.rate_limit").

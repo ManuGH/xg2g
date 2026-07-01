@@ -97,6 +97,25 @@ func TestFFmpegLogDeduperFlushEmitsPendingSummary(t *testing.T) {
 	}
 }
 
+func TestFFmpegLogDeduperFirstLineEmptyPassesThrough(t *testing.T) {
+	var got []dedupEmission
+	emit := collectEmissions(&got)
+	d := newFFmpegLogDeduper(10 * time.Second)
+
+	// An empty first line must not match the zero-value lastLine and be
+	// misreported as a duplicate summary.
+	d.observe("", zerolog.DebugLevel, emit)
+	d.flush(emit)
+
+	want := []dedupEmission{{zerolog.DebugLevel, "", 0}}
+	if len(got) != len(want) {
+		t.Fatalf("got %d emissions, want %d: %+v", len(got), len(want), got)
+	}
+	if got[0] != want[0] {
+		t.Errorf("got %+v, want %+v", got[0], want[0])
+	}
+}
+
 func TestFFmpegLogDeduperEmitsInterimSummaryWhenWindowElapses(t *testing.T) {
 	var got []dedupEmission
 	emit := collectEmissions(&got)
