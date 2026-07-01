@@ -193,7 +193,7 @@ describe('V3Player Browser Family Matrix', () => {
       await waitFor(() => expect(findFetchCall(global.fetch as any, `/sessions/sess-trace-${fixture.id}`)).toBeDefined());
 
       const statsButton = screen.getAllByRole('button').find((button) =>
-        button.textContent?.includes('📊')
+        button.textContent?.includes('Stats')
       );
       expect(statsButton).toBeDefined();
       fireEvent.click(statsButton!);
