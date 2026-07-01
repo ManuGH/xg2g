@@ -5,7 +5,8 @@ set -euo pipefail
 # Targets only local xg2g development processes.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-backend_pattern="(^|/)bin/xg2g(-dev)?([[:space:]]|$)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+backend_pattern="^${REPO_ROOT}/bin/xg2g(-dev)?$"
 
 echo "Initiating safe process termination..."
 
