@@ -357,6 +357,15 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		firstSegmentLogged := false
 		outputObserverStarted := false
 
+		logFFmpegLine := func(level zerolog.Level, line string, repeats int) {
+			evt := a.Logger.WithLevel(level).Str("sessionId", sessionID).Str("ffmpeg_log", line)
+			if repeats > 0 {
+				evt = evt.Int("repeated", repeats)
+			}
+			evt.Msg("ffmpeg output")
+		}
+		dedup := newFFmpegLogDeduper(10 * time.Second)
+
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !firstFrameLogged {
@@ -407,16 +416,10 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 					}
 				}
 			}
-			switch ffmpegLogLevel(sanitizedLine) {
-			case zerolog.WarnLevel:
-				a.Logger.Warn().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
-			case zerolog.InfoLevel:
-				a.Logger.Info().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
-			default:
-				a.Logger.Debug().Str("sessionId", sessionID).Str("ffmpeg_log", sanitizedLine).Msg("ffmpeg output")
-			}
+			dedup.observe(sanitizedLine, ffmpegLogLevel(sanitizedLine), logFFmpegLine)
 			wd.ParseLine(line)
 		}
+		dedup.flush(logFFmpegLine)
 		if scanErr := scanner.Err(); scanErr != nil {
 			a.Logger.Warn().Err(scanErr).Str("sessionId", sessionID).Msg("ffmpeg stderr scan failed")
 		}
