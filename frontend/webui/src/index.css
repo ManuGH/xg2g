@@ -623,6 +623,18 @@ a:hover {
   }
 }
 
+@keyframes csFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes csSlideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes csSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
 @keyframes runtimePolicyAlert {
   0%,
   100% {

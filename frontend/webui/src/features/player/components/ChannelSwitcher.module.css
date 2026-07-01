@@ -9,20 +9,24 @@
   display: flex;
   justify-content: flex-end;
   background: rgba(0, 0, 0, 0.28);
-  animation: csFade 0.16s ease;
+  animation-name: csFade;
+  animation-duration: 0.16s;
+  animation-timing-function: ease;
 }
 .sheet {
   width: min(390px, 88vw);
   height: 100%;
   display: flex;
   flex-direction: column;
-  color: #fff;
+  color: var(--text-primary);
   background: rgba(14, 15, 22, 0.62);
   -webkit-backdrop-filter: blur(26px) saturate(165%);
   backdrop-filter: blur(26px) saturate(165%);
   border-left: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: -24px 0 70px rgba(0, 0, 0, 0.45);
-  animation: csSlideIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-name: csSlideIn;
+  animation-duration: 0.24s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .header {
@@ -36,7 +40,7 @@
   min-width: 0;
   padding: 10px 14px;
   font-size: 15px;
-  color: #fff;
+  color: var(--text-primary);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 11px;
   background: rgba(255, 255, 255, 0.07);
@@ -61,7 +65,7 @@
 }
 .close:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .list {
@@ -82,7 +86,7 @@
   border: none;
   border-radius: 12px;
   background: transparent;
-  color: #fff;
+  color: var(--text-primary);
   text-align: left;
   cursor: pointer;
   transition: background 0.12s ease;
@@ -130,7 +134,7 @@
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
-  color: #6ee7a8;
+  color: var(--accent-live);
 }
 .empty {
   padding: 28px 12px;
@@ -151,13 +155,12 @@
     border-top: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 20px 20px 0 0;
     box-shadow: 0 -24px 70px rgba(0, 0, 0, 0.5);
-    animation: csSlideUp 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation-name: csSlideUp;
+    animation-duration: 0.26s;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 }
 
-@keyframes csFade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes csSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-@keyframes csSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
-  .scrim, .sheet { animation: none; }
+  .scrim, .sheet { animation-name: none; }
 }
