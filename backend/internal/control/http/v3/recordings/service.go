@@ -46,6 +46,7 @@ func liveInteractiveProbeBudget() time.Duration {
 	return time.Duration(liveInteractiveProbeBudgetNs.Load())
 }
 
+//nolint:unused // Called from live_probe_budget_test.go
 func setLiveInteractiveProbeBudget(d time.Duration) {
 	if d > 0 {
 		liveInteractiveProbeBudgetNs.Store(int64(d))
@@ -70,7 +71,7 @@ type liveProbeOutcome struct {
 // ProbeCapability enforces its own internal ffprobe timeouts, so the detached probe
 // cannot run unbounded. Returns completed=false when the budget elapsed first.
 func (s *Service) probeLiveTruthBounded(ctx context.Context, probeSource channelTruthProbeSource, serviceRef string) (cap scan.Capability, found bool, completed bool, err error) {
-	ch := s.liveProbeGroup.DoChan(serviceRef, func() (interface{}, error) {
+	ch := s.liveProbeGroup.DoChan(serviceRef, func() (any, error) {
 		// Detached: the probe must outlive this request's context so a budget-exceeded
 		// requester still gets its truth cached for the retry.
 		bg := context.WithoutCancel(ctx)
