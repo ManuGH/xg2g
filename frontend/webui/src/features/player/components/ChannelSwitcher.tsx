@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Service } from '../../../client-ts';
 import styles from './ChannelSwitcher.module.css';
 
@@ -27,23 +28,33 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose }: 
   const [query, setQuery] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const currentRef = refOf(current);
+  const { t } = useTranslation();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return channels;
     return channels.filter(
-      (c) => (c.name ?? '').toLowerCase().includes(q) || (c.number ?? '').includes(q),
+      (c) => (c.name ?? '').toLowerCase().includes(q) || String(c.number ?? '').includes(q),
     );
   }, [channels, query]);
 
-  // Reset search + center the current channel each time the panel opens.
+  // Reset search query each time the panel opens, then scroll to current channel
+  // after the DOM has settled from the query reset.
   useEffect(() => {
     if (!open) return;
     setQuery('');
-    listRef.current
-      ?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(currentRef)}"]`)
-      ?.scrollIntoView({ block: 'center' });
-  }, [open, currentRef]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || filtered.length === 0) return;
+    // Use requestAnimationFrame so scrolling runs after the state-triggered re-render.
+    const raf = requestAnimationFrame(() => {
+      listRef.current
+        ?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(currentRef)}"]`)
+        ?.scrollIntoView({ block: 'center' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open, currentRef, filtered.length]);
 
   // Esc closes (only while open).
   useEffect(() => {
@@ -59,17 +70,17 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose }: 
 
   return (
     <div className={styles.scrim} onClick={onClose}>
-      <aside className={styles.sheet} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Sender wechseln">
+      <aside className={styles.sheet} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={t('player.switchChannel', { defaultValue: 'Sender wechseln' })}>
         <div className={styles.header}>
           <input
             className={styles.search}
-            placeholder="Sender suchen…"
+            placeholder={t('player.searchChannel', { defaultValue: 'Sender suchen…' })}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
-            aria-label="Sender suchen"
+            aria-label={t('player.searchChannel', { defaultValue: 'Sender suchen' })}
           />
-          <button className={styles.close} onClick={onClose} aria-label="Schließen">✕</button>
+          <button className={styles.close} onClick={onClose} aria-label={t('common.close', { defaultValue: 'Schließen' })}>✕</button>
         </div>
         <div className={styles.list} ref={listRef}>
           {filtered.map((c) => {
@@ -96,7 +107,7 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose }: 
               </button>
             );
           })}
-          {filtered.length === 0 ? <div className={styles.empty}>Kein Sender gefunden</div> : null}
+          {filtered.length === 0 ? <div className={styles.empty}>{t('player.noChannelFound', { defaultValue: 'Kein Sender gefunden' })}</div> : null}
         </div>
       </aside>
     </div>

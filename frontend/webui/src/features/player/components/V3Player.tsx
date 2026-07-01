@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type {
   HlsInstanceRef,
   V3PlayerProps,
@@ -25,6 +25,7 @@ function V3Player(props: V3PlayerProps) {
   void viewState.playback.durationSeconds;
 
   const hasChannels = !!(props.channels && props.channels.length > 0 && props.onSwitchChannel);
+  const handleCloseChannels = useCallback(() => setChannelsOpen(false), []);
 
   return (
     <>
@@ -36,13 +37,13 @@ function V3Player(props: V3PlayerProps) {
         actions={actions}
         onOpenChannels={hasChannels ? () => setChannelsOpen(true) : undefined}
       />
-      {props.channels && props.channels.length > 0 && props.onSwitchChannel ? (
+      {hasChannels ? (
         <ChannelSwitcher
           channels={props.channels}
           current={'channel' in props ? props.channel : undefined}
           onSwitch={props.onSwitchChannel}
           open={channelsOpen}
-          onClose={() => setChannelsOpen(false)}
+          onClose={handleCloseChannels}
         />
       ) : null}
     </>

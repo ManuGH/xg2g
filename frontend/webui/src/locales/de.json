@@ -160,6 +160,9 @@
     "hotkeysHint": "Leertaste (Play/Pause) • F (Vollbild) • M (Stumm) • P (PiP) • I (Statistiken)",
     "pipLabel": "PiP",
     "statsLabel": "Statistiken",
+    "switchChannel": "Sender wechseln",
+    "searchChannel": "Sender suchen…",
+    "noChannelFound": "Kein Sender gefunden",
     "statusStates": {
       "idle": "Leerlauf",
       "starting": "Startet",
