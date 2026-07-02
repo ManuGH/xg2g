@@ -136,6 +136,8 @@ func (m *MockPreparingServer) HandleRecordingResume(w http.ResponseWriter, r *ht
 }
 func (m *MockPreparingServer) HandleRecordingResumeOptions(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
+func (m *MockPreparingServer) GetRecordingScrubFrame(w http.ResponseWriter, r *http.Request, recordingId string, params v3.GetRecordingScrubFrameParams) {
+}
 
 func (m *MockPreparingServer) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string) {
 	w.Header().Set("Retry-After", "5")
