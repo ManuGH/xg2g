@@ -11,9 +11,12 @@ interface UseResumeProps {
   videoRef: RefObject<HTMLVideoElement | null>;
   isPlaying: boolean;
   isSeekable?: boolean;
+  /** Display-metadata snapshots persisted with the resume point (continue-watching rail). */
+  title?: string;
+  channelName?: string;
 }
 
-export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekable = false }: UseResumeProps) {
+export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekable = false, title, channelName }: UseResumeProps) {
   const lastSavedTime = useRef<number>(0);
   const saveTimerRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
@@ -23,7 +26,7 @@ export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekab
     finishedRef.current = false;
   }, [recordingId]);
 
-  const save = useCallback(async (forceFinished: boolean = false) => {
+  const save = useCallback(async (forceFinished: boolean = false, options: { keepalive?: boolean } = {}) => {
     const videoElement = videoRef.current;
     if (!recordingId || !videoElement) return;
     if (!isSeekable) return;
@@ -44,16 +47,23 @@ export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekab
     }
 
     try {
-      await saveResume(recordingId, {
+      const payload = {
         position: currentTime,
         total: durationSec > 0 ? durationSec : undefined,
-        finished: isFinished
-      });
+        finished: isFinished,
+        title: title || undefined,
+        channel: channelName || undefined
+      };
+      if (options.keepalive) {
+        await saveResume(recordingId, payload, { keepalive: true });
+      } else {
+        await saveResume(recordingId, payload);
+      }
       lastSavedTime.current = currentTime;
     } catch (err) {
       debugWarn('[useResume] Failed to save resume state', formatError(err));
     }
-  }, [recordingId, videoRef, duration, isSeekable]);
+  }, [recordingId, videoRef, duration, isSeekable, title, channelName]);
 
   // Periodic Save
   useEffect(() => {
@@ -89,23 +99,26 @@ export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekab
         save();
       }
     };
+    // Teardown paths: the browser may kill a regular async fetch once the
+    // page is hidden or unloading (iOS Safari backgrounding, tab close), so
+    // these saves go out as keepalive requests.
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') save();
+      if (document.visibilityState === 'hidden') save(false, { keepalive: true });
     };
-    const handleBeforeUnload = () => save();
+    const handlePageHide = () => save(false, { keepalive: true });
 
     videoElement.addEventListener('pause', handlePause);
     videoElement.addEventListener('ended', handleEnded);
     videoElement.addEventListener('seeked', handleSeeked);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
 
     return () => {
       videoElement.removeEventListener('pause', handlePause);
       videoElement.removeEventListener('ended', handleEnded);
       videoElement.removeEventListener('seeked', handleSeeked);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, [videoRef, recordingId, isSeekable, save]);
 }

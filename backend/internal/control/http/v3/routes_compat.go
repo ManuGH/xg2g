@@ -16,6 +16,7 @@ type CompatibilityHandler interface {
 	GetRecordingPlaybackInfo(http.ResponseWriter, *http.Request, string)
 	StreamRecordingDirect(http.ResponseWriter, *http.Request, string)
 	HandleRecordingResume(http.ResponseWriter, *http.Request)
+	HandleRecordingsContinue(http.ResponseWriter, *http.Request)
 	PostItemsPlaybackInfo(http.ResponseWriter, *http.Request, string)
 }
 
@@ -37,6 +38,10 @@ func RegisterCompatibilityRoutes(rRead, rWrite chi.Router, handler Compatibility
 	})
 
 	rWrite.Put(V3BaseURL+"/recordings/{recordingId}/resume", handler.HandleRecordingResume)
+
+	// Chi prefers static segments over {recordingId}, so /recordings/continue
+	// cannot collide with the parameterized recording routes.
+	rRead.Get(V3BaseURL+"/recordings/continue", handler.HandleRecordingsContinue)
 
 	// Supports DirectPlay decision logic without backend coupling.
 	rRead.Post("/Items/{itemId}/PlaybackInfo", func(w http.ResponseWriter, r *http.Request) {

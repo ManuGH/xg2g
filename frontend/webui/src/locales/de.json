@@ -49,9 +49,24 @@
     "initializing": "Initialisierung..."
   },
   "auth": {
+    "title": "Authentifizierung erforderlich",
+    "placeholder": "API-Token eingeben",
+    "submit": "Anmelden",
     "requiredTitle": "Authentifizierung erforderlich",
+    "requiredEyebrow": "Anmelden",
+    "requiredCopy": "Gib dein API-Token ein, um die xg2g-Steuerfläche zu öffnen.",
+    "requiredHint": "Das Token wird nach erfolgreicher Anmeldung lokal in diesem Browser gespeichert.",
+    "expiredTitle": "Sitzung abgelaufen",
+    "expiredEyebrow": "Neu anmelden",
+    "expiredCopy": "Das gespeicherte API-Token wurde abgelehnt. Gib ein gültiges Token ein, um fortzufahren.",
+    "expiredHint": "Mit einem neuen Token wird der Start automatisch erneut versucht.",
+    "tokenLabel": "API-Token",
     "tokenPlaceholder": "API-Token eingeben",
-    "authenticate": "Authentifizieren"
+    "authenticate": "Authentifizieren",
+    "showToken": "Token zeigen",
+    "hideToken": "Token verbergen",
+    "clearToken": "Leeren",
+    "tvHint": "Auf dem TV kann das Token beim Tippen sichtbar bleiben, damit Tippfehler sofort auffallen."
   },
   "common": {
     "language": "Sprache",
@@ -435,7 +450,12 @@
     },
     "logLevelError": "Fehler",
     "logLevelWarn": "Warnung",
-    "logLevelInfo": "Info"
+    "logLevelInfo": "Info",
+    "continueWatching": {
+      "title": "Weiter schauen",
+      "remaining": "noch {{minutes}} Min",
+      "untitled": "Aufnahme"
+    }
   },
   "epg": {
     "backToGuide": "Zurück zu Fernsehen",
@@ -932,25 +952,5 @@
       "unknown": "Unbekannt",
       "skipped": "Übersprungen"
     }
-  },
-  "auth": {
-    "title": "Authentifizierung erforderlich",
-    "placeholder": "API-Token eingeben",
-    "submit": "Anmelden",
-    "requiredTitle": "Authentifizierung erforderlich",
-    "requiredEyebrow": "Anmelden",
-    "requiredCopy": "Gib dein API-Token ein, um die xg2g-Steuerfläche zu öffnen.",
-    "requiredHint": "Das Token wird nach erfolgreicher Anmeldung lokal in diesem Browser gespeichert.",
-    "expiredTitle": "Sitzung abgelaufen",
-    "expiredEyebrow": "Neu anmelden",
-    "expiredCopy": "Das gespeicherte API-Token wurde abgelehnt. Gib ein gültiges Token ein, um fortzufahren.",
-    "expiredHint": "Mit einem neuen Token wird der Start automatisch erneut versucht.",
-    "tokenLabel": "API-Token",
-    "tokenPlaceholder": "API-Token eingeben",
-    "authenticate": "Authentifizieren",
-    "showToken": "Token zeigen",
-    "hideToken": "Token verbergen",
-    "clearToken": "Leeren",
-    "tvHint": "Auf dem TV kann das Token beim Tippen sichtbar bleiben, damit Tippfehler sofort auffallen."
   }
 }

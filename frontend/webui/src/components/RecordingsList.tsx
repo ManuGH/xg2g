@@ -6,6 +6,7 @@
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
 import React, { useState, useEffect, Suspense, useRef, type CSSProperties } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
@@ -301,6 +302,7 @@ export default function RecordingsList() {
   const { auth } = useAppContext();
   const { confirm, toast } = useUiOverlay();
   const { selectedProfile, canAccessDvrPlayback, canManageDvr } = useHouseholdProfiles();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // State
   const [root, setRoot] = useState<string>(''); // Selected Root ID
@@ -380,6 +382,33 @@ export default function RecordingsList() {
       setPath(data.currentPath);
     }
   }, [data, path, root]);
+
+  // Deep-link from the continue-watching rail: ?play=<recordingId>&pos=<seconds>
+  // auto-starts the matching recording once after the listing has loaded, then
+  // strips the params so a reload doesn't restart playback.
+  const autoplayConsumedRef = useRef(false);
+  useEffect(() => {
+    if (!data || autoplayConsumedRef.current) return;
+    const target = searchParams.get('play');
+    if (!target) return;
+
+    autoplayConsumedRef.current = true;
+    const startPos = Number(searchParams.get('pos') || '0');
+    const item = (data.recordings || []).find((rec) => rec.recordingId === target);
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('play');
+    next.delete('pos');
+    setSearchParams(next, { replace: true });
+
+    if (item && canAccessDvrPlayback) {
+      void handlePlay(item, {
+        startPositionSeconds: Number.isFinite(startPos) && startPos > 0 ? startPos : undefined,
+        suppressResumePrompt: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot consumption after first listing load
+  }, [data]);
 
   // Handlers
   const handleRootChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

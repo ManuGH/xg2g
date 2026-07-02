@@ -65,6 +65,10 @@ func (m *MockResumeStore) Put(ctx context.Context, principalID, serviceRef strin
 func (m *MockResumeStore) Delete(ctx context.Context, principalID, serviceRef string) error {
 	return nil
 }
+func (m *MockResumeStore) ListRecent(ctx context.Context, principalID string, limit int) ([]resume.RecentEntry, error) {
+	return nil, nil
+}
+
 func (m *MockResumeStore) Close() error {
 	return nil
 }

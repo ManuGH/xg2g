@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -75,6 +77,39 @@ func (s *MemoryStore) Get(ctx context.Context, principalID, recordingKey string)
 		return cloneState(val), nil
 	}
 	return nil, nil
+}
+
+// ListRecent returns the principal's unfinished resume entries with a
+// position > 0, most recently updated first.
+func (s *MemoryStore) ListRecent(ctx context.Context, principalID string, limit int) ([]RecentEntry, error) {
+	_ = ctx
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	prefix := principalID + "\x00"
+	entries := make([]RecentEntry, 0, limit)
+	for key, state := range s.data {
+		if !strings.HasPrefix(key, prefix) || state == nil {
+			continue
+		}
+		if state.Finished || state.PosSeconds <= 0 {
+			continue
+		}
+		entries = append(entries, RecentEntry{
+			RecordingKey: strings.TrimPrefix(key, prefix),
+			State:        *cloneState(state),
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].State.UpdatedAt.After(entries[j].State.UpdatedAt)
+	})
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries, nil
 }
 
 func (s *MemoryStore) Delete(ctx context.Context, principalID, recordingKey string) error {
