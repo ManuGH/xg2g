@@ -202,7 +202,11 @@ func readBasePlaylist(path string) (basePlaylist, error) {
 func (t *Tracker) snapshot() (basePlaylist, openSegment, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.base, t.current, t.closed
+	cur := t.current
+	if len(cur.parts) > 0 {
+		cur.parts = append([]Fragment(nil), cur.parts...)
+	}
+	return t.base, cur, t.closed
 }
 
 // AwaitAndRender blocks per the LL-HLS blocking-reload contract until the

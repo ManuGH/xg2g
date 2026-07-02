@@ -38,7 +38,7 @@ type box struct {
 var errTruncatedBox = fmt.Errorf("truncated box")
 
 func readBoxHeader(r io.ReaderAt, offset, fileSize int64) (box, error) {
-	if offset+8 > fileSize {
+	if offset < 0 || fileSize-offset < 8 {
 		return box{}, errTruncatedBox
 	}
 	var hdr [8]byte
@@ -48,7 +48,7 @@ func readBoxHeader(r io.ReaderAt, offset, fileSize int64) (box, error) {
 	size := int64(binary.BigEndian.Uint32(hdr[:4]))
 	typ := string(hdr[4:8])
 	if size == 1 {
-		if offset+16 > fileSize {
+		if fileSize-offset < 16 {
 			return box{}, errTruncatedBox
 		}
 		var ext [8]byte
@@ -64,7 +64,7 @@ func readBoxHeader(r io.ReaderAt, offset, fileSize int64) (box, error) {
 	if size < 8 {
 		return box{}, fmt.Errorf("invalid box size %d at offset %d", size, offset)
 	}
-	if offset+size > fileSize {
+	if size > fileSize-offset {
 		return box{}, errTruncatedBox
 	}
 	return box{offset: offset, size: size, boxType: typ}, nil
@@ -180,11 +180,15 @@ func trafStartsWithSyncSample(r io.ReaderAt, traf box) (independent, found bool,
 		}
 		switch b.boxType {
 		case "tfhd":
+			if b.size < 12 {
+				return false, false, fmt.Errorf("tfhd box too small at offset %d", b.offset)
+			}
 			flagsWord, err := readFullBoxFlags(r, b)
 			if err != nil {
 				return false, false, err
 			}
 			pos := b.offset + 12 + 4 // fullbox header + track_id
+			boxEnd := b.offset + b.size
 			if flagsWord&tfhdBaseDataOffsetPresent != 0 {
 				pos += 8
 			}
@@ -198,6 +202,9 @@ func trafStartsWithSyncSample(r io.ReaderAt, traf box) (independent, found bool,
 				pos += 4
 			}
 			if flagsWord&tfhdDefaultSampleFlags != 0 {
+				if pos+4 > boxEnd {
+					return false, false, fmt.Errorf("tfhd box truncated")
+				}
 				v, err := readUint32At(r, pos)
 				if err != nil {
 					return false, false, err
@@ -206,15 +213,22 @@ func trafStartsWithSyncSample(r io.ReaderAt, traf box) (independent, found bool,
 				haveTfhdDefaults = true
 			}
 		case "trun":
+			if b.size < 16 {
+				return false, false, fmt.Errorf("trun box too small at offset %d", b.offset)
+			}
 			flagsWord, err := readFullBoxFlags(r, b)
 			if err != nil {
 				return false, false, err
 			}
 			pos := b.offset + 12 + 4 // fullbox header + sample_count
+			boxEnd := b.offset + b.size
 			if flagsWord&trunDataOffsetPresent != 0 {
 				pos += 4
 			}
 			if flagsWord&trunFirstSampleFlagsPresent != 0 {
+				if pos+4 > boxEnd {
+					return false, false, fmt.Errorf("trun box truncated")
+				}
 				v, err := readUint32At(r, pos)
 				if err != nil {
 					return false, false, err
@@ -238,6 +252,9 @@ func trafStartsWithSyncSample(r io.ReaderAt, traf box) (independent, found bool,
 }
 
 func readFullBoxFlags(r io.ReaderAt, b box) (uint32, error) {
+	if b.size < 12 {
+		return 0, fmt.Errorf("fullbox too small: size=%d at offset %d", b.size, b.offset)
+	}
 	v, err := readUint32At(r, b.offset+8)
 	if err != nil {
 		return 0, err
