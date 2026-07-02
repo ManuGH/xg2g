@@ -69,6 +69,13 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		segmentDurationSec: a.SegmentSeconds,
 		listSize:           10,
 	}
+	if a.LowLatencyHLS && strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") && layout.segmentDurationSec > llhlsSegmentSeconds {
+		// LL-HLS: short segments keep the playlist window tight; parts are
+		// cut inside them via frag_duration (see appendLiveHLSArgs). GOP
+		// derives from the segment duration above, so keyframes stay
+		// aligned with segment boundaries.
+		layout.segmentDurationSec = llhlsSegmentSeconds
+	}
 	if shouldUseShortFMP4StartupSegments(spec) && layout.segmentDurationSec > safariDirtyHLSTimeSec {
 		layout.segmentDurationSec = safariDirtyHLSTimeSec
 		layout.initSegmentDurationSec = min(safariDirtyHLSInitTimeSec, layout.segmentDurationSec)
@@ -146,6 +153,13 @@ func appendLiveVideoContainerTags(args []string, spec ports.StreamSpec, outputCo
 	return append(args, "-tag:v", "hvc1")
 }
 
+// LL-HLS layout: 2s segments fragmented into 500ms parts. Mirrored by the
+// playlist packager in internal/hls/llhls.
+const (
+	llhlsSegmentSeconds = 2
+	llhlsPartTargetMs   = 500
+)
+
 func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, layout liveSegmentLayout) []string {
 	segmentType := "mpegts"
 	sessionDir := ports.SessionHLSDir(a.HLSRoot, spec.SessionID)
@@ -163,6 +177,13 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 	)
 	if segmentType == "fmp4" {
 		args = append(args, "-hls_fmp4_init_filename", "init.mp4")
+		if a.LowLatencyHLS {
+			// Fragment each segment on the part-target grid so the LL-HLS
+			// packager (internal/hls/llhls) can advertise EXT-X-PART byte
+			// ranges. FFmpeg 8.x leaks the first segment into init.mp4 in
+			// this mode; the packager repairs that before serving.
+			args = append(args, "-hls_segment_options", fmt.Sprintf("frag_duration=%d", llhlsPartTargetMs*1000))
+		}
 	}
 	if layout.initSegmentDurationSec > 0 {
 		args = append(args, "-hls_init_time", strconv.Itoa(layout.initSegmentDurationSec))

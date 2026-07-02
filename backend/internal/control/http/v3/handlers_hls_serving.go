@@ -77,6 +77,15 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 		writeRegisteredProblem(w, r, http.StatusForbidden, "sessions/hls_forbidden_artifact", "Access Denied", problemcode.CodeForbidden, "The requested HLS artifact is not allowed", nil)
 		return
 	}
+	// Low-latency HLS: serve the part-augmented playlist with blocking
+	// reload when enabled; any not-ready condition falls back to the plain
+	// file path below so startup semantics stay identical.
+	if deps.cfg.HLS.LowLatency && filename == "index.m3u8" {
+		if s.serveLLHLSPlaylist(w, r, deps, sessionID) {
+			return
+		}
+	}
+
 	stage := playbackStageLabelFromLiveFilename(filename)
 
 	// 3. Serve via HLS helper

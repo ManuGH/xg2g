@@ -440,6 +440,9 @@ func (l *Loader) mergeFileHLS(dst *AppConfig, src *FileConfig) {
 		if src.HLS.SegmentSeconds > 0 {
 			dst.HLS.SegmentSeconds = src.HLS.SegmentSeconds
 		}
+		if src.HLS.LowLatency {
+			dst.HLS.LowLatency = true
+		}
 		if src.HLS.ReadySegments > 0 {
 			dst.HLS.ReadySegments = src.HLS.ReadySegments
 		}

@@ -177,6 +177,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "hls.dvrWindow", Env: "XG2G_HLS_DVR_WINDOW", FieldPath: "HLS.DVRWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 45 * time.Minute},                        // Fix B key
 		{Path: "hls.segmentSeconds", Env: "XG2G_HLS_SEGMENT_SECONDS", FieldPath: "HLS.SegmentSeconds", Profile: ProfileAdvanced, Status: StatusActive, Default: DefaultHLSSegmentSeconds}, // Best Practice 2026 Standard Profile (was 4, which failed validation)
 		{Path: "hls.readySegments", Env: "XG2G_HLS_READY_SEGMENTS", FieldPath: "HLS.ReadySegments", Profile: ProfileAdvanced, Status: StatusActive, Default: DefaultHLSReadySegments},
+		{Path: "hls.lowLatency", Env: "XG2G_HLS_LOW_LATENCY", FieldPath: "HLS.LowLatency", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 
 		// --- FFMPEG ---
 		{Path: "ffmpeg.bin", Env: "XG2G_FFMPEG_BIN", FieldPath: "FFmpeg.Bin", Profile: ProfileAdvanced, Status: StatusActive, Default: "ffmpeg"},

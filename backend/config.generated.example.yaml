@@ -77,6 +77,7 @@ hdhr:
   tunerCount: 0
 hls:
   dvrWindow: 45m
+  lowLatency: false
   readySegments: 3
   root: ""
   segmentSeconds: 6

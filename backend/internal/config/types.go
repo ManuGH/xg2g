@@ -743,6 +743,9 @@ type HLSConfig struct {
 	DVRWindow      time.Duration `yaml:"dvrWindow"`
 	SegmentSeconds int           `yaml:"segmentSeconds"` // Best Practice 2026: 6s
 	ReadySegments  int           `yaml:"readySegments"`
+	// LowLatency enables the LL-HLS packaging layer (EXT-X-PART, blocking
+	// reload) for fmp4 live sessions. Experimental; default off.
+	LowLatency bool `yaml:"lowLatency,omitempty"`
 }
 
 // StoreConfig holds the state store settings

@@ -607,6 +607,10 @@
           "default": "45m",
           "type": "string"
         },
+        "lowLatency": {
+          "default": false,
+          "type": "boolean"
+        },
         "readySegments": {
           "default": 3,
           "type": "integer"
