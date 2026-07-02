@@ -63,6 +63,7 @@ vi.mock('../features/player/components/V3Player', () => ({
   default: v3Player,
 }));
 
+import { MemoryRouter } from 'react-router-dom';
 import RecordingsList from './RecordingsList';
 
 function renderWithQueryClient() {
@@ -78,11 +79,13 @@ function renderWithQueryClient() {
   });
 
   return render(
-    <QueryClientProvider client={queryClient}>
-      <HouseholdProfilesProvider>
-        <RecordingsList />
-      </HouseholdProfilesProvider>
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <HouseholdProfilesProvider>
+          <RecordingsList />
+        </HouseholdProfilesProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 

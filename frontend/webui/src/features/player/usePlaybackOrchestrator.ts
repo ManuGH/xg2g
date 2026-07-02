@@ -684,7 +684,9 @@ export function usePlaybackOrchestrator(
     duration: durationSeconds,
     videoRef,
     isPlaying,
-    isSeekable: canSeek
+    isSeekable: canSeek,
+    title: recordingTitle,
+    channelName: channel?.name
   });
 
   const {
