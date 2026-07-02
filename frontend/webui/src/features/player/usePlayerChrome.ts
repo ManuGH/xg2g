@@ -36,6 +36,9 @@ interface UsePlayerChromeProps {
   mediaTitle?: string | null;
   mediaSubtitle?: string | null;
   mediaArtworkUrl?: string | null;
+  /** Live channel zapping via media-session nexttrack/previoustrack (lock screen, headset). */
+  onNextChannel?: (() => void) | null;
+  onPreviousChannel?: (() => void) | null;
 }
 
 interface PlayerChromeController {
@@ -130,6 +133,8 @@ export function usePlayerChrome({
   mediaTitle,
   mediaSubtitle,
   mediaArtworkUrl,
+  onNextChannel,
+  onPreviousChannel,
 }: UsePlayerChromeProps): PlayerChromeController {
   const [showStats, setShowStats] = useState(false);
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0);
@@ -780,6 +785,15 @@ export function usePlayerChrome({
     setHandler('stop', () => stop());
     setHandler('seekbackward', canMediaSeek ? () => seekBy(-15) : null);
     setHandler('seekforward', canMediaSeek ? () => seekBy(15) : null);
+    // Absolute seeks from the lock-screen/OS scrubber (iOS 15+, macOS).
+    setHandler('seekto', canMediaSeek ? (details) => {
+      if (typeof details.seekTime === 'number' && Number.isFinite(details.seekTime)) {
+        seekTo(details.seekTime);
+      }
+    } : null);
+    // Live channel zapping from lock screen / headset buttons.
+    setHandler('nexttrack', onNextChannel ? () => onNextChannel() : null);
+    setHandler('previoustrack', onPreviousChannel ? () => onPreviousChannel() : null);
 
     return () => {
       setHandler('play', null);
@@ -787,8 +801,44 @@ export function usePlayerChrome({
       setHandler('stop', null);
       setHandler('seekbackward', null);
       setHandler('seekforward', null);
+      setHandler('seekto', null);
+      setHandler('nexttrack', null);
+      setHandler('previoustrack', null);
     };
-  }, [canRunSeekCommand, pause, play, seekBy, stop]);
+  }, [canRunSeekCommand, onNextChannel, onPreviousChannel, pause, play, seekBy, seekTo, stop]);
+
+  // Auto-PiP (Chromium 120+): the browser fires this media-session action on
+  // its own when the user switches tabs/apps while media plays, letting the
+  // video continue in picture-in-picture without a user gesture. Browsers
+  // without the action reject setActionHandler, which setHandler-style
+  // try/catch below turns into a silent no-op.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+      return;
+    }
+    const mediaSession = navigator.mediaSession;
+    const setAutoPipHandler = (handler: MediaSessionActionHandler | null) => {
+      try {
+        mediaSession.setActionHandler('enterpictureinpicture' as MediaSessionAction, handler);
+      } catch {
+        // Action not supported by this browser; auto-PiP simply stays off.
+      }
+    };
+
+    setAutoPipHandler(() => {
+      const video = videoRef.current;
+      if (!video || document.pictureInPictureElement === video) {
+        return;
+      }
+      if (typeof video.requestPictureInPicture === 'function') {
+        video.requestPictureInPicture().catch((err: unknown) => {
+          debugWarn('Auto picture-in-picture request rejected', err);
+        });
+      }
+    });
+
+    return () => setAutoPipHandler(null);
+  }, [videoRef]);
 
   useEffect(() => {
     if (
