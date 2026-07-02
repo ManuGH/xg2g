@@ -132,6 +132,7 @@ var operationExposurePolicies = map[string]ExposurePolicy{
 	"PostRecordingDelete":              policy(ExposureClassWrite, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, true),
 	"PostRecordingRename":              policy(ExposureClassWrite, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, true),
 	"GetRecordingThumbnail":            policy(ExposureClassRead, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
+	"GetRecordingScrubFrame":           policy(ExposureClassRead, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
 	"GetSeriesRules":                   policy(ExposureClassRead, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
 	"CreateSeriesRule":                 policy(ExposureClassWrite, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, true),
 	"RunAllSeriesRules":                policy(ExposureClassWrite, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, true),

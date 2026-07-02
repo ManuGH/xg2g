@@ -173,6 +173,7 @@ export interface V3PlayerViewState {
   endTimeDisplay: string;
   currentPositionDisplay: string;
   dvrPreviewBaseUrl: string | null;
+  dvrPreviewSegmentSeconds: number;
   dvrPreviewWindowStartUnix: number | null;
   windowDuration: number;
   relativePosition: number;
@@ -2044,10 +2045,19 @@ export function usePlaybackOrchestrator(
   // route (.../hls/preview.jpg?t=offset), so it inherits the session's media
   // cookie auth. Only live sessions with a real seek window get it; windowStartUnix
   // anchors the hover time label to wall-clock when an EPG start is known.
-  const dvrPreviewBaseUrl =
+  const liveDvrPreviewBaseUrl =
     isLiveMode && hasSeekWindow && effectiveSessionId
       ? `${apiBase}/sessions/${effectiveSessionId}/hls/preview.jpg`
       : null;
+  // VOD counterpart: recordings serve grid-aligned scrub frames from their
+  // own cached endpoint; auth rides on the primed playback session cookie,
+  // same as the HLS media URLs.
+  const vodScrubPreviewBaseUrl =
+    playbackMode === 'VOD' && activeRecordingId && canSeek
+      ? `${apiBase}/recordings/${activeRecordingId}/scrub.jpg`
+      : null;
+  const dvrPreviewBaseUrl = liveDvrPreviewBaseUrl ?? vodScrubPreviewBaseUrl;
+  const dvrPreviewSegmentSeconds = liveDvrPreviewBaseUrl ? 6 : 10;
   const dvrPreviewWindowStartUnix = startUnix && startUnix > 0 ? startUnix + seekableStart : null;
 
   const viewState: V3PlayerViewState = {
@@ -2107,6 +2117,7 @@ export function usePlaybackOrchestrator(
     endTimeDisplay,
     currentPositionDisplay,
     dvrPreviewBaseUrl,
+    dvrPreviewSegmentSeconds,
     dvrPreviewWindowStartUnix,
     windowDuration,
     relativePosition,

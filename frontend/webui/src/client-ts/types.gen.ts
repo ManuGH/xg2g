@@ -2753,6 +2753,49 @@ export type PostRecordingRenameResponses = {
 
 export type PostRecordingRenameResponse = PostRecordingRenameResponses[keyof PostRecordingRenameResponses];
 
+export type GetRecordingScrubFrameData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+         */
+        recordingId: string;
+    };
+    query?: {
+        /**
+         * Offset in seconds from the start of the recording. Defaults to 0.
+         */
+        t?: number;
+    };
+    url: '/recordings/{recordingId}/scrub.jpg';
+};
+
+export type GetRecordingScrubFrameErrors = {
+    /**
+     * Invalid recording reference
+     */
+    400: ProblemDetails;
+    /**
+     * Access denied
+     */
+    403: ProblemDetails;
+    /**
+     * Recording or frame not found
+     */
+    404: ProblemDetails;
+};
+
+export type GetRecordingScrubFrameError = GetRecordingScrubFrameErrors[keyof GetRecordingScrubFrameErrors];
+
+export type GetRecordingScrubFrameResponses = {
+    /**
+     * JPEG preview frame
+     */
+    200: Blob | File;
+};
+
+export type GetRecordingScrubFrameResponse = GetRecordingScrubFrameResponses[keyof GetRecordingScrubFrameResponses];
+
 export type GetRecordingThumbnailData = {
     body?: never;
     path: {
