@@ -83,7 +83,8 @@ func (s *MemoryStore) Get(ctx context.Context, principalID, recordingKey string)
 // position > 0, most recently updated first.
 func (s *MemoryStore) ListRecent(ctx context.Context, principalID string, limit int) ([]RecentEntry, error) {
 	_ = ctx
-	if limit <= 0 {
+	limit = clampListRecentLimit(limit)
+	if limit == 0 {
 		return nil, nil
 	}
 

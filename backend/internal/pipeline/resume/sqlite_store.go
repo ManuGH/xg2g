@@ -138,7 +138,8 @@ func (s *SqliteStore) Get(ctx context.Context, principalID, recordingKey string)
 // ListRecent returns the principal's unfinished resume entries with a
 // position > 0, most recently updated first.
 func (s *SqliteStore) ListRecent(ctx context.Context, principalID string, limit int) ([]RecentEntry, error) {
-	if limit <= 0 {
+	limit = clampListRecentLimit(limit)
+	if limit == 0 {
 		return nil, nil
 	}
 	query := `

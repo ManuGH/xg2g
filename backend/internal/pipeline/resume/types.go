@@ -39,6 +39,22 @@ type State struct {
 	Channel string `json:"channel,omitempty"`
 }
 
+// maxListRecentLimit bounds ListRecent results (and their allocations)
+// regardless of what a caller passes; API handlers clamp earlier, this is
+// the store-level defense-in-depth bound.
+const maxListRecentLimit = 100
+
+// clampListRecentLimit normalizes a caller-provided limit into [0, maxListRecentLimit].
+func clampListRecentLimit(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	if limit > maxListRecentLimit {
+		return maxListRecentLimit
+	}
+	return limit
+}
+
 // RecentEntry pairs a canonical recording key with its saved state, as
 // returned by Store.ListRecent.
 type RecentEntry struct {
