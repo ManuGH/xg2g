@@ -394,14 +394,29 @@ export default function RecordingsList() {
 
     autoplayConsumedRef.current = true;
     const startPos = Number(searchParams.get('pos') || '0');
-    const item = (data.recordings || []).find((rec) => rec.recordingId === target);
+    let item = (data.recordings || []).find((rec) => rec.recordingId === target);
+    if (!item) {
+      // The rail can reference recordings in subfolders that the currently
+      // loaded listing does not contain; synthesize a minimal playable item
+      // from the deep-link metadata instead of silently doing nothing.
+      const fallbackTitle = searchParams.get('title') || '';
+      const fallbackDuration = Number(searchParams.get('duration') || '0');
+      item = {
+        recordingId: target,
+        serviceRef: '',
+        title: fallbackTitle || 'Recording',
+        durationSeconds: Number.isFinite(fallbackDuration) && fallbackDuration > 0 ? fallbackDuration : undefined,
+      } as RecordingItem;
+    }
 
     const next = new URLSearchParams(searchParams);
     next.delete('play');
     next.delete('pos');
+    next.delete('title');
+    next.delete('duration');
     setSearchParams(next, { replace: true });
 
-    if (item && canAccessDvrPlayback) {
+    if (canAccessDvrPlayback) {
       void handlePlay(item, {
         startPositionSeconds: Number.isFinite(startPos) && startPos > 0 ? startPos : undefined,
         suppressResumePrompt: true,

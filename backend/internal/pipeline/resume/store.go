@@ -96,7 +96,7 @@ func (s *MemoryStore) ListRecent(ctx context.Context, principalID string, limit 
 		if !strings.HasPrefix(key, prefix) || state == nil {
 			continue
 		}
-		if state.Finished || state.PosSeconds <= 0 {
+		if state.Finished || state.PosSeconds < minListRecentPosSeconds {
 			continue
 		}
 		entries = append(entries, RecentEntry{

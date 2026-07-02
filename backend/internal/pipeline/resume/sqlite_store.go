@@ -145,10 +145,10 @@ func (s *SqliteStore) ListRecent(ctx context.Context, principalID string, limit 
 	query := `
 	SELECT recording_id, pos_seconds, duration_seconds, finished, fingerprint, title, channel, updated_at
 	FROM resume_states
-	WHERE principal_id = ? AND finished = 0 AND pos_seconds > 0
+	WHERE principal_id = ? AND finished = 0 AND pos_seconds >= ?
 	ORDER BY updated_at DESC
 	LIMIT ?`
-	rows, err := s.DB.QueryContext(ctx, query, principalID, limit)
+	rows, err := s.DB.QueryContext(ctx, query, principalID, minListRecentPosSeconds, limit)
 	if err != nil {
 		return nil, err
 	}

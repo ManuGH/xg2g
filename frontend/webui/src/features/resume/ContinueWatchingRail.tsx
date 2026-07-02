@@ -40,9 +40,17 @@ export default function ContinueWatchingRail() {
   }
 
   const openRecording = (item: ContinueWatchingItem) => {
+    // Title/duration ride along so the listing can synthesize a playable item
+    // when the recording lives in a subfolder outside the loaded directory.
     const params = new URLSearchParams({ play: item.recordingId });
     if (item.posSeconds > 0) {
       params.set('pos', String(Math.floor(item.posSeconds)));
+    }
+    if (item.title) {
+      params.set('title', item.title);
+    }
+    if (item.durationSeconds && item.durationSeconds > 0) {
+      params.set('duration', String(Math.floor(item.durationSeconds)));
     }
     navigate(`${ROUTE_MAP.recordings}?${params.toString()}`);
   };

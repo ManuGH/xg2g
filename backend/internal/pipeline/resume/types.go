@@ -44,6 +44,11 @@ type State struct {
 // the store-level defense-in-depth bound.
 const maxListRecentLimit = 100
 
+// minListRecentPosSeconds is the minimum saved position for an entry to count
+// as resumable in ListRecent. Aligned with the UI threshold so briefly
+// previewed recordings cannot crowd out older, genuinely resumable ones.
+const minListRecentPosSeconds = 15
+
 // clampListRecentLimit normalizes a caller-provided limit into [0, maxListRecentLimit].
 func clampListRecentLimit(limit int) int {
 	if limit <= 0 {
