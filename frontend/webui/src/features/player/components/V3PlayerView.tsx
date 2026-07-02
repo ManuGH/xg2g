@@ -203,6 +203,7 @@ export function V3PlayerView({
                     onSeek={(offset) => actions.seekTo(viewState.seekableStart + offset)}
                     previewBaseUrl={viewState.dvrPreviewBaseUrl}
                     windowStartUnix={viewState.dvrPreviewWindowStartUnix}
+                    segmentSeconds={viewState.dvrPreviewSegmentSeconds}
                   />
                   <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
                 </div>

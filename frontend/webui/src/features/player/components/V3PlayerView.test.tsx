@@ -84,6 +84,7 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     endTimeDisplay: '00:00',
     currentPositionDisplay: '00:00',
     dvrPreviewBaseUrl: null,
+    dvrPreviewSegmentSeconds: 10,
     dvrPreviewWindowStartUnix: null,
     windowDuration: 0,
     relativePosition: 0,

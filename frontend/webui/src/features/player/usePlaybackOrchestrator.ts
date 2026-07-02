@@ -89,6 +89,7 @@ import { useDelayedFlag } from './orchestrator/useDelayedFlag';
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
 import { useLiveNowPlaying } from './useLiveNowPlaying';
+import { buildPlayerMediaSessionModel } from './components/playerMediaSessionModel';
 import { getManagedMseAv1Support, formatManagedMseAv1 } from './utils/managedMseAv1';
 import { useNativePlaybackBridge } from './orchestrator/useNativePlaybackBridge';
 import {
@@ -172,6 +173,7 @@ export interface V3PlayerViewState {
   endTimeDisplay: string;
   currentPositionDisplay: string;
   dvrPreviewBaseUrl: string | null;
+  dvrPreviewSegmentSeconds: number;
   dvrPreviewWindowStartUnix: number | null;
   windowDuration: number;
   relativePosition: number;
@@ -259,6 +261,9 @@ export function usePlaybackOrchestrator(
   const src = 'src' in props ? props.src : undefined;
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
   const recordingTitle = 'recordingTitle' in props ? props.recordingTitle : undefined;
+  const recordingDateLabel = 'recordingDateLabel' in props ? props.recordingDateLabel : undefined;
+  const zapChannels = 'channels' in props ? props.channels : undefined;
+  const onSwitchChannel = 'onSwitchChannel' in props ? props.onSwitchChannel : undefined;
 
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
@@ -568,6 +573,43 @@ export function usePlaybackOrchestrator(
     clearSessionLeaseStateBase();
   }, [clearSessionLeaseStateBase]);
 
+  // Live now-playing EPG (current programme title + synopsis, auto-refreshes
+  // when the programme changes). Disabled for recordings (fixed title).
+  const liveNowPlaying = useLiveNowPlaying(sRef, playbackMode === 'LIVE');
+
+  // Lock-screen / control-center metadata + hardware-key channel zapping.
+  const mediaSessionModel = useMemo(() => buildPlayerMediaSessionModel({
+    t,
+    playbackMode,
+    liveProgramTitle: liveNowPlaying?.title,
+    channelName: channel?.name,
+    channelLogoUrl: channel?.logoUrl,
+    normalizedRecordingTitle: recordingTitle ?? '',
+    recordingDateLabel,
+  }), [t, playbackMode, liveNowPlaying?.title, channel?.name, channel?.logoUrl, recordingTitle, recordingDateLabel]);
+
+  const zapAdjacentChannel = useCallback((direction: 1 | -1) => {
+    if (!zapChannels || zapChannels.length === 0 || !onSwitchChannel) return;
+    const currentRef = sRef;
+    const index = zapChannels.findIndex((c) => (c?.serviceRef || c?.id || '').trim() === currentRef);
+    const nextIndex = index >= 0
+      ? (index + direction + zapChannels.length) % zapChannels.length
+      : 0;
+    const target = zapChannels[nextIndex];
+    if (target) onSwitchChannel(target);
+  }, [zapChannels, onSwitchChannel, sRef]);
+
+  const canZapChannels = playbackMode === 'LIVE' && !!onSwitchChannel && (zapChannels?.length ?? 0) > 1;
+  const mediaSessionNextChannel = useMemo(
+    () => (canZapChannels ? () => zapAdjacentChannel(1) : null),
+    [canZapChannels, zapAdjacentChannel],
+  );
+  const mediaSessionPreviousChannel = useMemo(
+    () => (canZapChannels ? () => zapAdjacentChannel(-1) : null),
+    [canZapChannels, zapAdjacentChannel],
+  );
+
+
   const {
     showStats,
     currentPlaybackTime,
@@ -629,12 +671,13 @@ export function usePlaybackOrchestrator(
     liveSeekWindow: null,
     allowNativeFullscreen: activeHlsEngine === 'native',
     shouldForceNativeMobileHls,
-    canUseDesktopWebKitFullscreen
+    canUseDesktopWebKitFullscreen,
+    mediaTitle: mediaSessionModel.title,
+    mediaSubtitle: mediaSessionModel.subtitle,
+    mediaArtworkUrl: mediaSessionModel.artworkUrl,
+    onNextChannel: mediaSessionNextChannel,
+    onPreviousChannel: mediaSessionPreviousChannel
   });
-
-  // Live now-playing EPG (current programme title + synopsis, auto-refreshes
-  // when the programme changes). Disabled for recordings (fixed title).
-  const liveNowPlaying = useLiveNowPlaying(sRef, playbackMode === 'LIVE');
 
   // Resume Hook
   useResume({
@@ -2002,10 +2045,19 @@ export function usePlaybackOrchestrator(
   // route (.../hls/preview.jpg?t=offset), so it inherits the session's media
   // cookie auth. Only live sessions with a real seek window get it; windowStartUnix
   // anchors the hover time label to wall-clock when an EPG start is known.
-  const dvrPreviewBaseUrl =
+  const liveDvrPreviewBaseUrl =
     isLiveMode && hasSeekWindow && effectiveSessionId
       ? `${apiBase}/sessions/${effectiveSessionId}/hls/preview.jpg`
       : null;
+  // VOD counterpart: recordings serve grid-aligned scrub frames from their
+  // own cached endpoint; auth rides on the primed playback session cookie,
+  // same as the HLS media URLs.
+  const vodScrubPreviewBaseUrl =
+    playbackMode === 'VOD' && activeRecordingId && canSeek
+      ? `${apiBase}/recordings/${activeRecordingId}/scrub.jpg`
+      : null;
+  const dvrPreviewBaseUrl = liveDvrPreviewBaseUrl ?? vodScrubPreviewBaseUrl;
+  const dvrPreviewSegmentSeconds = liveDvrPreviewBaseUrl ? 6 : 10;
   const dvrPreviewWindowStartUnix = startUnix && startUnix > 0 ? startUnix + seekableStart : null;
 
   const viewState: V3PlayerViewState = {
@@ -2065,6 +2117,7 @@ export function usePlaybackOrchestrator(
     endTimeDisplay,
     currentPositionDisplay,
     dvrPreviewBaseUrl,
+    dvrPreviewSegmentSeconds,
     dvrPreviewWindowStartUnix,
     windowDuration,
     relativePosition,

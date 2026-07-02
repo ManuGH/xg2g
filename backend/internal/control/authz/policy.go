@@ -27,6 +27,7 @@ var operationScopes = map[string][]string{
 	"PostRecordingDelete":              {"v3:write"},
 	"PostRecordingRename":              {"v3:write"},
 	"GetRecordingThumbnail":            {"v3:read"},
+	"GetRecordingScrubFrame":           {"v3:read"},
 	"GetRecordingHLSPlaylist":          {"v3:read"},
 	"GetRecordingHLSPlaylistHead":      {"v3:read"},
 	"GetRecordingsRecordingIdStatus":   {"v3:read"},

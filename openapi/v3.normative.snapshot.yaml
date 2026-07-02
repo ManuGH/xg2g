@@ -3992,6 +3992,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
+  /recordings/{recordingId}/scrub.jpg:
+    get:
+      summary: Get a recording scrub-preview frame
+      description: >
+        Returns a small JPEG frame extracted at the requested offset for the
+        timeline hover preview (visual scrubbing). Offsets are aligned to a
+        10-second grid server-side and frames are cached on disk, so repeated
+        hovers over the same grid slot are served without re-extraction.
+      security:
+        - BearerAuth: [v3:read]
+      operationId: getRecordingScrubFrame
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
+        - name: t
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+          description: Offset in seconds from the start of the recording. Defaults to 0.
+      responses:
+        "200":
+          description: JPEG preview frame
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Private preview cache policy
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid recording reference
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Access denied
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Recording or frame not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /recordings/{recordingId}/thumbnail.jpg:
     get:
       summary: Get a recording thumbnail
