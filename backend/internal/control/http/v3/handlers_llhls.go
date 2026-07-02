@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/hls/llhls"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/hls/llhls"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 

@@ -55,7 +55,11 @@ func readBoxHeader(r io.ReaderAt, offset, fileSize int64) (box, error) {
 		if _, err := r.ReadAt(ext[:], offset+8); err != nil {
 			return box{}, err
 		}
-		size = int64(binary.BigEndian.Uint64(ext[:]))
+		extSize := binary.BigEndian.Uint64(ext[:])
+		if extSize > uint64(1<<63-1) {
+			return box{}, fmt.Errorf("extended box size %d overflows int64 at offset %d", extSize, offset)
+		}
+		size = int64(extSize)
 	}
 	if size < 8 {
 		return box{}, fmt.Errorf("invalid box size %d at offset %d", size, offset)
@@ -316,7 +320,7 @@ func (r readerAt) ReadAt(p []byte, off int64) (int, error) {
 
 func atomicWrite(path string, data []byte) error {
 	tmp := path + ".repair.tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil { // #nosec G306 -- served media artifact
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
