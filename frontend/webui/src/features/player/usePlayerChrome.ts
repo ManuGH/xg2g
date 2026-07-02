@@ -787,7 +787,7 @@ export function usePlayerChrome({
     setHandler('seekforward', canMediaSeek ? () => seekBy(15) : null);
     // Absolute seeks from the lock-screen/OS scrubber (iOS 15+, macOS).
     setHandler('seekto', canMediaSeek ? (details) => {
-      if (typeof details.seekTime === 'number' && Number.isFinite(details.seekTime)) {
+      if (typeof details?.seekTime === 'number' && Number.isFinite(details.seekTime)) {
         seekTo(details.seekTime);
       }
     } : null);

@@ -580,17 +580,17 @@ export function usePlaybackOrchestrator(
   const mediaSessionModel = useMemo(() => buildPlayerMediaSessionModel({
     t,
     playbackMode,
-    liveProgramTitle: liveNowPlaying.title,
+    liveProgramTitle: liveNowPlaying?.title,
     channelName: channel?.name,
     channelLogoUrl: channel?.logoUrl,
     normalizedRecordingTitle: recordingTitle ?? '',
     recordingDateLabel,
-  }), [t, playbackMode, liveNowPlaying.title, channel?.name, channel?.logoUrl, recordingTitle, recordingDateLabel]);
+  }), [t, playbackMode, liveNowPlaying?.title, channel?.name, channel?.logoUrl, recordingTitle, recordingDateLabel]);
 
   const zapAdjacentChannel = useCallback((direction: 1 | -1) => {
     if (!zapChannels || zapChannels.length === 0 || !onSwitchChannel) return;
     const currentRef = sRef;
-    const index = zapChannels.findIndex((c) => (c.serviceRef ?? c.id ?? '') === currentRef);
+    const index = zapChannels.findIndex((c) => (c?.serviceRef || c?.id || '').trim() === currentRef);
     const nextIndex = index >= 0
       ? (index + direction + zapChannels.length) % zapChannels.length
       : 0;
