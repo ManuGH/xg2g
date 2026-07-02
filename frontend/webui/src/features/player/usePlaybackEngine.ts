@@ -779,7 +779,10 @@ export function usePlaybackEngine({
         // sourceopen until the tab is visible, causing backend sessions to rot.
         preferManagedMediaSource: typeof document !== 'undefined' ? document.visibilityState === 'visible' : true,
         enableWorker: true,
-        lowLatencyMode: false,
+        // Engages only when the playlist advertises EXT-X-PART (server flag
+        // hls.lowLatency); on regular playlists this is a no-op, so the
+        // stable non-LL path is unchanged.
+        lowLatencyMode: true,
         backBufferLength: 300,
         maxBufferLength: 60,
         capLevelToPlayerSize: true,

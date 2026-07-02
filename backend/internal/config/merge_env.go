@@ -266,6 +266,7 @@ func (l *Loader) mergeEnvCanonicalHLS(cfg *AppConfig) {
 	cfg.HLS.DVRWindow = l.envDuration("XG2G_HLS_DVR_WINDOW", cfg.HLS.DVRWindow)
 	cfg.HLS.SegmentSeconds = l.envInt("XG2G_HLS_SEGMENT_SECONDS", cfg.HLS.SegmentSeconds)
 	cfg.HLS.ReadySegments = l.envInt("XG2G_HLS_READY_SEGMENTS", cfg.HLS.ReadySegments)
+	cfg.HLS.LowLatency = l.envBool("XG2G_HLS_LOW_LATENCY", cfg.HLS.LowLatency)
 }
 
 func (l *Loader) mergeEnvCanonicalFFmpeg(cfg *AppConfig) {

@@ -65,6 +65,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		cfg.Timeouts.TranscodeNoProgress,
 		cfg.FFmpeg.VaapiDevice,
 	)
+	adapter.LowLatencyHLS = cfg.HLS.LowLatency
 
 	if cfg.FFmpeg.VaapiDevice != "" {
 		if err := adapter.PreflightVAAPI(); err != nil {

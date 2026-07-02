@@ -82,26 +82,29 @@ type LocalAdapter struct {
 	FallbackTo8001             bool
 	PreflightTimeout           time.Duration
 	SegmentSeconds             int
-	StartTimeout               time.Duration
-	StallTimeout               time.Duration
-	FPSProbeTimeout            time.Duration
-	FPSMin                     int
-	FPSMax                     int
-	FPSFallback                int
-	FPSFallbackInter           int
-	SafariDirtyFilter          string
-	SafariDirtyX264Tune        string
-	FPSProbeFFlags             string
-	FPSProbeErrDetect          string
-	FPSProbeAnalyze            string
-	FPSProbeSize               string
-	FPSProbeRetryAn            string
-	FPSProbeRetrySize          string
-	SkipFPSProbeOnCache        bool
-	SkipFPSProbeWarmup         time.Duration
-	SafariRuntimeProbeTimeout  time.Duration
-	VaapiDevice                string // e.g. "/dev/dri/renderD128"; empty = no VAAPI
-	detector                   *Detector
+	// LowLatencyHLS switches fmp4 live sessions to the LL-HLS segment
+	// layout: short segments fragmented on the part-target grid.
+	LowLatencyHLS             bool
+	StartTimeout              time.Duration
+	StallTimeout              time.Duration
+	FPSProbeTimeout           time.Duration
+	FPSMin                    int
+	FPSMax                    int
+	FPSFallback               int
+	FPSFallbackInter          int
+	SafariDirtyFilter         string
+	SafariDirtyX264Tune       string
+	FPSProbeFFlags            string
+	FPSProbeErrDetect         string
+	FPSProbeAnalyze           string
+	FPSProbeSize              string
+	FPSProbeRetryAn           string
+	FPSProbeRetrySize         string
+	SkipFPSProbeOnCache       bool
+	SkipFPSProbeWarmup        time.Duration
+	SafariRuntimeProbeTimeout time.Duration
+	VaapiDevice               string // e.g. "/dev/dri/renderD128"; empty = no VAAPI
+	detector                  *Detector
 	// fpsProbeFn is test-only hook; nil in production.
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
