@@ -27,6 +27,11 @@ vi.mock('../hooks/useServerQueries', () => ({
   useDvrStatus: () => ({ data: null })
 }));
 
+vi.mock('../features/resume/ContinueWatchingRail', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
 vi.mock('../context/HouseholdProfilesContext', () => ({
   useHouseholdProfiles: () => mockUseHouseholdProfiles(),
 }));

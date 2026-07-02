@@ -258,6 +258,7 @@ export function usePlaybackOrchestrator(
   const channel = 'channel' in props ? props.channel : undefined;
   const src = 'src' in props ? props.src : undefined;
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
+  const recordingTitle = 'recordingTitle' in props ? props.recordingTitle : undefined;
 
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
@@ -641,7 +642,9 @@ export function usePlaybackOrchestrator(
     duration: durationSeconds,
     videoRef,
     isPlaying,
-    isSeekable: canSeek
+    isSeekable: canSeek,
+    title: recordingTitle,
+    channelName: channel?.name
   });
 
   const {
