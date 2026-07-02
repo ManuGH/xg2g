@@ -18,6 +18,27 @@ type ResumeRequest struct {
 	Position float64 `json:"position"`
 	Total    float64 `json:"total,omitempty"`
 	Finished bool    `json:"finished,omitempty"`
+	// Title/Channel are optional display-metadata snapshots the player
+	// already has loaded; they let continue-watching render without a
+	// receiver round-trip.
+	Title   string `json:"title,omitempty"`
+	Channel string `json:"channel,omitempty"`
+}
+
+// maxDisplayMetaLen bounds persisted display snapshots against oversized
+// client payloads.
+const maxDisplayMetaLen = 256
+
+func truncateDisplayMeta(s string) string {
+	if len(s) <= maxDisplayMetaLen {
+		return s
+	}
+	// Cut on a rune boundary so a multi-byte character is never split.
+	cut := maxDisplayMetaLen
+	for cut > 0 && (s[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return s[:cut]
 }
 
 // setCORSIfAllowed sets CORS headers only if the request Origin matches the
@@ -110,6 +131,8 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 		Finished:        req.Finished,
 		UpdatedAt:       time.Now(),
 		Fingerprint:     fingerprint,
+		Title:           truncateDisplayMeta(req.Title),
+		Channel:         truncateDisplayMeta(req.Channel),
 	}
 
 	// Log for debugging

@@ -15,6 +15,7 @@ import { Button, Card, StatusChip } from './ui';
 import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
 import StreamsList from './StreamsList';
+import ContinueWatchingRail from '../features/resume/ContinueWatchingRail';
 import styles from './Dashboard.module.css';
 
 type SummaryTone = 'streaming' | 'control' | 'standby';
@@ -428,6 +429,8 @@ export default function Dashboard() {
           </div>
         </div>
       </Card>
+
+      <ContinueWatchingRail />
 
       <Card className={styles.startSurface}>
         <div className={styles.startHeader}>

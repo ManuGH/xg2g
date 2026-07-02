@@ -28,6 +28,46 @@ type State struct {
 
 	// Finished indicates if the user has watched to the end (e.g. > 95%).
 	Finished bool `json:"finished,omitempty"`
+
+	// Title is a display-metadata snapshot taken at save time so surfaces
+	// like "continue watching" can render without a receiver round-trip.
+	// It may go stale if the recording is renamed; the canonical title
+	// still lives in the recordings listing.
+	Title string `json:"title,omitempty"`
+
+	// Channel is the channel-name snapshot taken at save time (see Title).
+	Channel string `json:"channel,omitempty"`
+}
+
+// maxListRecentLimit bounds ListRecent results (and their allocations)
+// regardless of what a caller passes; API handlers clamp earlier, this is
+// the store-level defense-in-depth bound.
+const maxListRecentLimit = 100
+
+// minListRecentPosSeconds is the minimum saved position for an entry to count
+// as resumable in ListRecent. Aligned with the UI threshold so briefly
+// previewed recordings cannot crowd out older, genuinely resumable ones.
+const minListRecentPosSeconds = 15
+
+// clampListRecentLimit normalizes a caller-provided limit into [0, maxListRecentLimit].
+func clampListRecentLimit(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	if limit > maxListRecentLimit {
+		return maxListRecentLimit
+	}
+	return limit
+}
+
+// RecentEntry pairs a canonical recording key with its saved state, as
+// returned by Store.ListRecent.
+type RecentEntry struct {
+	// RecordingKey is the canonical resume key (the public recording ID).
+	RecordingKey string
+
+	// State is the persisted resume state for the key.
+	State State
 }
 
 // Store defines the interface for persisting resume state.
@@ -42,6 +82,10 @@ type Store interface {
 
 	// Delete removes the resume state.
 	Delete(ctx context.Context, principalID, recordingKey string) error
+
+	// ListRecent returns the principal's unfinished resume entries with a
+	// position > 0, most recently updated first, capped at limit.
+	ListRecent(ctx context.Context, principalID string, limit int) ([]RecentEntry, error)
 
 	// Close cleans up resources.
 	Close() error
