@@ -52,6 +52,7 @@ type recordingRoutes interface {
 	PostRecordingDelete(w http.ResponseWriter, r *http.Request)
 	PostRecordingRename(w http.ResponseWriter, r *http.Request)
 	GetRecordingThumbnail(w http.ResponseWriter, r *http.Request)
+	GetRecordingScrubFrame(w http.ResponseWriter, r *http.Request)
 	GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request)
 	GetRecordingHLSPlaylistHead(w http.ResponseWriter, r *http.Request)
 	GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request)
