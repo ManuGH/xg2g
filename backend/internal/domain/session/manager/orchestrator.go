@@ -17,6 +17,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
@@ -519,11 +520,12 @@ func (o *Orchestrator) recordTransition(from, to model.SessionState) {
 }
 
 func (o *Orchestrator) cleanupFiles(sid string) {
-	if o.HLSRoot == "" {
-		return
-	}
 	if !model.IsSafeSessionID(sid) {
 		log.L().Warn().Str("sid", sid).Msg("refusing to cleanup unsafe session ID")
+		return
+	}
+	ringbuffer.DefaultRegistry.Delete(sid)
+	if o.HLSRoot == "" {
 		return
 	}
 	// Use Platform port for OS/FS operations

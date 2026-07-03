@@ -174,6 +174,10 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		),
 	)
 
+	if a.inMemoryIngest && a.ingestServer != nil {
+		a.ingestServer.Registry().GetOrCreate(spec.SessionID, nil)
+	}
+
 	if err := cmd.Start(); err != nil {
 		startupSpan.RecordError(err)
 		startupSpan.SetStatus(codes.Error, "ffmpeg start failed")

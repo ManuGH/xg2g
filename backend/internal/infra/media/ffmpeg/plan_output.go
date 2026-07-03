@@ -168,15 +168,29 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 		segmentType = "fmp4"
 		segmentFilename = filepath.Join(sessionDir, "seg_%06d.m4s")
 	}
+	if a.inMemoryIngest && a.ingestPort > 0 {
+		if segmentType == "fmp4" {
+			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.m4s", a.ingestPort, spec.SessionID)
+		} else {
+			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.ts", a.ingestPort, spec.SessionID)
+		}
+	}
 	args = append(args,
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
 		"-hls_list_size", strconv.Itoa(layout.listSize),
 		"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time",
 		"-hls_segment_type", segmentType,
-		"-hls_segment_filename", segmentFilename,
 	)
+	if a.inMemoryIngest && a.ingestPort > 0 {
+		args = append(args, "-method", "PUT")
+	}
+	args = append(args, "-hls_segment_filename", segmentFilename)
 	if segmentType == "fmp4" {
-		args = append(args, "-hls_fmp4_init_filename", "init.mp4")
+		initFilename := "init.mp4"
+		if a.inMemoryIngest && a.ingestPort > 0 {
+			initFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/init.mp4", a.ingestPort, spec.SessionID)
+		}
+		args = append(args, "-hls_fmp4_init_filename", initFilename)
 		if a.LowLatencyHLS {
 			// Fragment each segment on the part-target grid so the LL-HLS
 			// packager (internal/hls/llhls) can advertise EXT-X-PART byte
@@ -196,6 +210,9 @@ func (a *LocalAdapter) prepareLiveOutputPath(sessionID string) string {
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
 	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID); markerPath != "" {
 		_ = os.Remove(markerPath)
+	}
+	if a.inMemoryIngest && a.ingestPort > 0 {
+		outputPath = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/index.m3u8", a.ingestPort, sessionID)
 	}
 	a.Logger.Info().
 		Str("session_id", sessionID).

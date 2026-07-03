@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -788,4 +789,73 @@ func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
 	assert.Equal(t, 1, store.Session.PlaybackTrace.HLS.SegmentRequestCount)
 	assert.Equal(t, "seg_000123.ts", store.Session.PlaybackTrace.HLS.LastSegmentName)
 	assert.Equal(t, "low", store.Session.PlaybackTrace.HLS.StallRisk)
+}
+
+
+func TestServeHLS_InMemory_PlaylistAndSegment(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "inmemory-serve-test-session"
+	defer ringbuffer.DefaultRegistry.Delete(sessionID)
+
+	buf := ringbuffer.DefaultRegistry.GetOrCreate(sessionID, nil)
+	playlistContent := "#EXTM3U\n#EXTINF:2.000000,\nseg_000000.ts\n"
+	buf.Put("index.m3u8", []byte(playlistContent))
+	buf.Put("seg_000000.ts", []byte("in-memory-ts-data"))
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionReady,
+		},
+	}
+
+	// Request Playlist
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
+	w := httptest.NewRecorder()
+	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/vnd.apple.mpegurl", w.Header().Get("Content-Type"))
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+	assert.Equal(t, playlistContent, w.Body.String())
+
+	// Request Segment
+	reqSeg := httptest.NewRequest("GET", "/seg_000000.ts", nil)
+	wSeg := httptest.NewRecorder()
+	ServeHLS(wSeg, reqSeg, store, tmpDir, sessionID, "seg_000000.ts")
+
+	assert.Equal(t, http.StatusOK, wSeg.Code)
+	assert.Equal(t, "video/mp2t", wSeg.Header().Get("Content-Type"))
+	assert.Equal(t, "no-store", wSeg.Header().Get("Cache-Control"))
+	assert.Equal(t, "identity", wSeg.Header().Get("Content-Encoding"))
+	assert.Equal(t, "in-memory-ts-data", wSeg.Body.String())
+}
+
+func TestServeHLS_InMemory_Polling(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "inmemory-polling-test-session"
+	defer ringbuffer.DefaultRegistry.Delete(sessionID)
+
+	buf := ringbuffer.DefaultRegistry.GetOrCreate(sessionID, nil)
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionStarting,
+		},
+	}
+
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		buf.Put("seg_000000.m4s", []byte("in-memory-fmp4-data"))
+	}()
+
+	req := httptest.NewRequest("GET", "/seg_000000.m4s", nil)
+	w := httptest.NewRecorder()
+	ServeHLS(w, req, store, tmpDir, sessionID, "seg_000000.m4s")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "video/mp4", w.Header().Get("Content-Type"))
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+	assert.Equal(t, "in-memory-fmp4-data", w.Body.String())
 }
