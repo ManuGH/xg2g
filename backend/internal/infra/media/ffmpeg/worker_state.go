@@ -57,6 +57,9 @@ func ReadWorkerStates() ([]WorkerState, error) {
 		if !e.IsDir() {
 			continue
 		}
+		// #nosec G304 — e.Name() is from os.ReadDir, and we only read from subdirectories
+		// that contain a fixed "state.json" filename. Path traversal via directory names
+		// is meaningless since the caller controls session IDs (UUIDs), not arbitrary paths.
 		b, err := os.ReadFile(filepath.Join(sessionStateBaseDir, e.Name(), "state.json"))
 		if err == nil {
 			var st WorkerState
