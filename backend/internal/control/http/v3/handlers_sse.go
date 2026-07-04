@@ -86,13 +86,19 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-		case msg := <-stateSub.C():
+		case msg, open := <-stateSub.C():
+			if !open {
+				return
+			}
 			if event, ok := msg.(model.SessionStateChangedEvent); ok && event.SessionID == sessionID {
 				if err := writeSSEEvent(w, flusher, string(event.Type), event); err != nil {
 					return
 				}
 			}
-		case msg := <-telemSub.C():
+		case msg, open := <-telemSub.C():
+			if !open {
+				return
+			}
 			if event, ok := msg.(model.SessionTelemetryEvent); ok && event.SessionID == sessionID {
 				if err := writeSSEEvent(w, flusher, string(event.Type), event); err != nil {
 					return

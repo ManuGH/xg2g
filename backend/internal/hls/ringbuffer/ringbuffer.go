@@ -52,9 +52,12 @@ func NewBuffer(sessionID string, maxSegments int, dvrCb DVRCallback) *Buffer {
 }
 
 func (b *Buffer) dvrWorker() {
+	// Capture dvrCb once at goroutine start; it is set before the goroutine
+	// is launched (happens-before) and is never mutated after.
+	cb := b.dvrCb
 	for art := range b.dvrCh {
-		if b.dvrCb != nil {
-			b.dvrCb(b.sessionID, art.Filename, art.Data)
+		if cb != nil {
+			cb(b.sessionID, art.Filename, art.Data)
 		}
 	}
 }
@@ -86,16 +89,17 @@ func (b *Buffer) Put(filename string, data []byte) {
 			delete(b.artifacts, oldest)
 		}
 	}
-	dvrCh := b.dvrCh
-	b.mu.Unlock()
 
-	if dvrCh != nil {
+	// Send to DVR channel while holding the lock so Close() cannot race
+	// by closing the channel between the check and the send.
+	if b.dvrCh != nil {
 		select {
-		case dvrCh <- art:
+		case b.dvrCh <- art:
 		default:
 			// If DVR writer is overwhelmed, we don't block the live stream ingest
 		}
 	}
+	b.mu.Unlock()
 }
 
 // Get retrieves an artifact by filename.
@@ -123,6 +127,8 @@ type Registry struct {
 	mu          sync.RWMutex
 	buffers     map[string]*Buffer
 	maxSegments int
+	closeCh     chan struct{}
+	closeOnce   sync.Once
 }
 
 // NewRegistry initializes a Registry.
@@ -130,6 +136,7 @@ func NewRegistry(maxSegments int) *Registry {
 	r := &Registry{
 		buffers:     make(map[string]*Buffer),
 		maxSegments: maxSegments,
+		closeCh:     make(chan struct{}),
 	}
 	go r.cleanupLoop()
 	return r
@@ -179,20 +186,33 @@ func (r *Registry) Delete(sessionID string) {
 	}
 }
 
+// Stop shuts down the cleanup loop. Once stopped, the Registry must not be reused.
+func (r *Registry) Stop() {
+	r.closeOnce.Do(func() {
+		close(r.closeCh)
+	})
+}
+
 func (r *Registry) cleanupLoop() {
 	ticker := time.NewTicker(2 * time.Minute)
-	for range ticker.C {
-		now := time.Now()
-		r.mu.Lock()
-		for id, buf := range r.buffers {
-			buf.mu.RLock()
-			last := buf.lastUpdated
-			buf.mu.RUnlock()
-			if now.Sub(last) > 10*time.Minute {
-				delete(r.buffers, id)
-				buf.Close()
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.closeCh:
+			return
+		case <-ticker.C:
+			now := time.Now()
+			r.mu.Lock()
+			for id, buf := range r.buffers {
+				buf.mu.RLock()
+				last := buf.lastUpdated
+				buf.mu.RUnlock()
+				if now.Sub(last) > 10*time.Minute {
+					delete(r.buffers, id)
+					buf.Close()
+				}
 			}
+			r.mu.Unlock()
 		}
-		r.mu.Unlock()
 	}
 }

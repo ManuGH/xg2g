@@ -109,7 +109,12 @@ func (s *IngestServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := parts[0]
-	filename := parts[1]
+	filename := sanitizeIngestFilename(parts[1])
+	if filename == "" {
+		s.logger.Warn().Str("session_id", sessionID).Str("raw_filename", parts[1]).Msg("rejected ingest path traversal")
+		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
 
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -128,6 +133,20 @@ func (s *IngestServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 	buf.Put(filename, data)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// sanitizeIngestFilename rejects path-traversal filenames. It returns an empty string
+// if the filename contains any path separators or parent-directory references.
+func sanitizeIngestFilename(name string) string {
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "..") {
+		return ""
+	}
+	// Ensure the cleaned result is identical to the input (no hidden traversal).
+	cleaned := filepath.Base(name)
+	if cleaned != name {
+		return ""
+	}
+	return name
 }
 
 func (s *IngestServer) persistToDisk(sessionID, filename string, data []byte) {

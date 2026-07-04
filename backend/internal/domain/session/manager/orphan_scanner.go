@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -27,12 +28,16 @@ func (o *Orchestrator) ScanAndAdoptOrphans(ctx context.Context) {
 			err = process.Signal(syscall.Signal(0))
 			if err == nil {
 				alive = true
+			} else if errors.Is(err, syscall.EPERM) {
+				// We don't own this PID — it may belong to another user/container.
+				// Treat as alive to avoid false-positive adoption of foreign processes.
+				alive = true
 			}
 		}
 
 		if !alive {
 			log.L().Info().Str("session_id", state.SessionID).Int("pid", state.PID).Msg("Orphan scanner: dead session, cleaning tmpfs")
-			_ = os.RemoveAll(filepath.Join("/dev/shm/xg2g/sessions", state.SessionID))
+			_ = os.RemoveAll(filepath.Join(ffmpeg.SessionStateBaseDir(), state.SessionID))
 			continue
 		}
 

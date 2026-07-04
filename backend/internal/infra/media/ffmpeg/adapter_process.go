@@ -138,7 +138,10 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	var cmd *exec.Cmd
 	systemdRunPath, err := exec.LookPath("systemd-run")
 	_, statErr := os.Stat("/run/systemd/system")
-	useSystemd := err == nil && statErr == nil
+	// systemd-run --scope requires root or sufficient polkit permissions.
+	// Non-root users will get a permission error even when the binary and
+	// /run/systemd/system exist, so skip systemd-run when not root.
+	useSystemd := os.Geteuid() == 0 && err == nil && statErr == nil
 
 	if useSystemd {
 		scopeName := fmt.Sprintf("xg2g-media-%s", spec.SessionID)
