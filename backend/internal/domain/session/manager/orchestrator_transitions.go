@@ -61,7 +61,7 @@ func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunH
 }
 
 func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSessionEvent, sessionCtx *sessionContext, slot int) error {
-	o.recordTransition(model.SessionUnknown, model.SessionStarting)
+	o.recordTransition(ctx, e.SessionID, model.SessionUnknown, model.SessionStarting, "")
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() {
 			if !canRestartTerminalFallback(r) {
@@ -112,7 +112,7 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 }
 
 func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSessionEvent) error {
-	o.recordTransition(model.SessionPriming, model.SessionReady)
+	o.recordTransition(ctx, e.SessionID, model.SessionPriming, model.SessionReady, "")
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State == model.SessionStopping || r.State.IsTerminal() {
 			reason := r.Reason
@@ -159,7 +159,7 @@ func (o *Orchestrator) runExecutionLoop(
 	var failReason model.ReasonCode
 	var failDetail string
 
-	o.recordTransition(model.SessionStarting, model.SessionPriming)
+	o.recordTransition(ctx, e.SessionID, model.SessionStarting, model.SessionPriming, "")
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() || r.State == model.SessionStopping {
 			return fmt.Errorf("session state %s, aborting priming: %w", r.State, ErrSessionCanceled)
@@ -303,7 +303,7 @@ func (o *Orchestrator) finalizeDeferred(
 		}
 		outcome = finalOutcome{State: tr.To, Reason: tr.Reason, DetailDebug: tr.DetailDebug}
 
-		o.recordTransition(fromState, outcome.State)
+		o.recordTransition(finalizeCtx, event.SessionID, fromState, outcome.State, outcome.Reason)
 
 		r.UpdatedAtUnix = time.Now().Unix()
 		trace := ensurePlaybackTrace(r)

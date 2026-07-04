@@ -85,6 +85,7 @@ type serviceRoutes interface {
 type sessionRoutes interface {
 	ListSessions(w http.ResponseWriter, r *http.Request)
 	GetSessionState(w http.ResponseWriter, r *http.Request)
+	GetSessionEvents(w http.ResponseWriter, r *http.Request)
 	PostSessionHeartbeat(w http.ResponseWriter, r *http.Request)
 	ServeHLS(w http.ResponseWriter, r *http.Request)
 	ServeHLSHead(w http.ResponseWriter, r *http.Request)

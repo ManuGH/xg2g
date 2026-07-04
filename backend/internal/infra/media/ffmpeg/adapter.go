@@ -86,6 +86,7 @@ type LocalAdapter struct {
 	// LowLatencyHLS switches fmp4 live sessions to the LL-HLS segment
 	// layout: short segments fragmented on the part-target grid.
 	LowLatencyHLS             bool
+	ReadySegments             int
 	StartTimeout              time.Duration
 	StallTimeout              time.Duration
 	FPSProbeTimeout           time.Duration
@@ -115,10 +116,10 @@ type LocalAdapter struct {
 	// host benchmark snapshot is used).
 	hostBenchmarkClassFn func(profileID string) string
 	// lastKnownFPS caches learned FPS by service_ref to survive probe failures.
-	lastKnownFPS map[string]fpsCacheEntry
-	FPSCacheTTL  time.Duration
-	fpsCacheMu   sync.RWMutex
-	mu           sync.Mutex
+	lastKnownFPS   map[string]fpsCacheEntry
+	FPSCacheTTL    time.Duration
+	fpsCacheMu     sync.RWMutex
+	mu             sync.Mutex
 	inMemoryIngest bool
 	ingestPort     int
 	ingestServer   *ringbuffer.IngestServer

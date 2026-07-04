@@ -61,6 +61,7 @@ type Orchestrator struct {
 }
 
 func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
+	o.ScanAndAdoptOrphans(ctx)
 	defer func() {
 		runErr = o.drainSessionWorkers(ctx, runErr)
 	}()
@@ -515,8 +516,17 @@ func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner
 	return 0, nil, false, nil
 }
 
-func (o *Orchestrator) recordTransition(from, to model.SessionState) {
+func (o *Orchestrator) recordTransition(ctx context.Context, sessionID string, from, to model.SessionState, reason model.ReasonCode) {
 	fsmTransitions.WithLabelValues(string(from), string(to)).Inc()
+	if o.Bus != nil && sessionID != "" {
+		_ = o.Bus.Publish(ctx, string(model.EventSessionStateChanged), model.SessionStateChangedEvent{
+			Type:        model.EventSessionStateChanged,
+			SessionID:   sessionID,
+			State:       to,
+			Reason:      reason,
+			UpdatedAtUN: time.Now().Unix(),
+		})
+	}
 }
 
 func (o *Orchestrator) cleanupFiles(sid string) {

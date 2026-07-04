@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
-import { createSession, type IntentRequest, type PlaybackEngineErrorContext } from '../../client-ts';
+import { createSession, getSessionEvents, type IntentRequest, type PlaybackEngineErrorContext } from '../../client-ts';
 import { setClientAuthToken, throwOnClientResultError } from '../../services/clientWrapper';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import type {
@@ -124,6 +124,7 @@ export function useLiveSessionController({
   ) => {
     if (!sessionIdRef.current) return;
     try {
+      // raw-fetch-justified: session feedback reporting
       await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -251,6 +252,7 @@ export function useLiveSessionController({
         type: 'stream.stop',
         sessionId: idToStop
       };
+      // raw-fetch-justified: stream stop intent submission
       await fetch(`${apiBase}/intents`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -315,8 +317,10 @@ export function useLiveSessionController({
   ): Promise<V3SessionStatusResponse> => {
     let recoveredSessionAuth = false;
 
-    for (let i = 0; i < maxAttempts; i++) {
+    // 1. Initial quick check (in case existing session is already READY or fast-started)
+    for (let i = 0; i < Math.min(3, maxAttempts); i++) {
       try {
+        // raw-fetch-justified: initial live session readiness lookup
         const { response: res, recovered } = await fetchWithRecoveredSessionCookie(
           'useLiveSessionController.waitForSessionReady',
           () => fetch(`${apiBase}/sessions/${trackedSessionId}`, {
@@ -343,7 +347,7 @@ export function useLiveSessionController({
         }
 
         if (res.status === 404) {
-          if (recoveredSessionAuth) {
+          if (recoveredSessionAuth || i === Math.min(3, maxAttempts) - 1) {
             throw createPlayerError(t('player.sessionNotFound'), {
               url: res.url,
               status: 404,
@@ -449,43 +453,117 @@ export function useLiveSessionController({
         } else {
           setStatus('starting');
         }
-        await sleep(SESSION_READY_POLL_MS);
+        if (i < Math.min(3, maxAttempts) - 1) {
+          await sleep(SESSION_READY_POLL_MS);
+          continue;
+        }
+        break; // Initial check complete, transition to SSE stream
       } catch (err) {
         const details = errorDetails(err);
         const msg = errorMessage(err);
         const status = typeof details?.status === 'number' ? details.status : undefined;
-        if (details?.contractError === true) {
-          throw err;
-        }
-        if (
-          msg === t('player.leaseBusy')
-          || msg.startsWith(t('player.sessionFailed'))
-          || msg === t('player.authFailed')
-          || msg === t('player.sessionExpired')
-          || msg === t('player.sessionNotFound')
-        ) {
+        if (details?.contractError === true || msg === t('player.leaseBusy') || msg.startsWith(t('player.sessionFailed')) || msg === t('player.authFailed') || msg === t('player.sessionExpired') || msg === t('player.sessionNotFound')) {
           throw err;
         }
         if (typeof status === 'number' && status >= 400 && status < 500 && status !== 404 && status !== 429) {
           throw err;
         }
-        if (i === maxAttempts - 1) {
-          const details = {
-            ...(errorDetails(err) ?? {}),
-            sessionId: trackedSessionId,
-            waitedMs: maxAttempts * SESSION_READY_POLL_MS,
-            pollMs: SESSION_READY_POLL_MS
-          };
-          throw createPlayerError(`${t('player.readinessCheckFailed')}: ${msg}`, details);
+        if (i === Math.min(3, maxAttempts) - 1) {
+          break; // Fallback to SSE stream after initial retries
         }
         await sleep(500);
       }
     }
 
-    throw createPlayerError(t('player.sessionNotReadyInTime'), {
-      sessionId: trackedSessionId,
-      waitedMs: maxAttempts * SESSION_READY_POLL_MS,
-      pollMs: SESSION_READY_POLL_MS
+    // 2. Real-time SSE stream subscription for 0ms latency state transitions
+    const maxTimeoutMs = maxAttempts * SESSION_READY_POLL_MS;
+    return new Promise<V3SessionStatusResponse>((resolve, reject) => {
+      let isDone = false;
+      const abortController = new AbortController();
+
+      const timerId = window.setTimeout(() => {
+        if (isDone) return;
+        isDone = true;
+        abortController.abort();
+        reject(createPlayerError(t('player.sessionNotReadyInTime'), {
+          sessionId: trackedSessionId,
+          waitedMs: maxTimeoutMs,
+          pollMs: SESSION_READY_POLL_MS
+        }));
+      }, maxTimeoutMs);
+
+      const cleanup = () => {
+        if (isDone) return false;
+        isDone = true;
+        window.clearTimeout(timerId);
+        abortController.abort();
+        return true;
+      };
+
+      void getSessionEvents({
+        path: { sessionID: trackedSessionId },
+        signal: abortController.signal,
+        onSseEvent: (event) => {
+          if (isDone || abortController.signal.aborted) return;
+          if (event.event === 'session.state_changed' && event.data && typeof event.data === 'object') {
+            const stateData = event.data as { state?: string; reason?: string; reasonDetail?: string };
+            const state = stateData.state;
+            if (state === 'PRIMING') {
+              setStatus('priming');
+            } else if (state === 'READY' || state === 'DRAINING') {
+              if (!cleanup()) return;
+              fetchWithRecoveredSessionCookie(
+                'useLiveSessionController.waitForSessionReady.final',
+                // raw-fetch-justified: final ready live session lookup
+                () => fetch(`${apiBase}/sessions/${trackedSessionId}`, {
+                  headers: authHeaders(),
+                  signal: timeoutSignal(SESSION_REQUEST_TIMEOUT_MS),
+                })
+              ).then(async ({ response: finalRes }) => {
+                if (!finalRes.ok) {
+                  throw new Error(`Failed to fetch ready session (HTTP ${finalRes.status})`);
+                }
+                const finalSession: V3SessionStatusResponse = await finalRes.json();
+                applySessionInfo(finalSession);
+                if (!hasValidHeartbeatInterval(finalSession.heartbeatIntervalSeconds)) {
+                  throw createPlayerError(t('player.sessionFailed'), {
+                    contractError: true,
+                    requestId: finalSession.requestId,
+                    sessionId: trackedSessionId,
+                    missingField: 'heartbeatIntervalSeconds'
+                  });
+                }
+                resolve(finalSession);
+              }).catch((err) => reject(err));
+            } else if (state === 'FAILED' || state === 'STOPPED' || state === 'CANCELLED' || state === 'STOPPING') {
+              if (!cleanup()) return;
+              const reason = stateData.reason || state;
+              const detail = stateData.reasonDetail ? `: ${stateData.reasonDetail}` : '';
+              if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
+                reject(createPlayerError(t('player.leaseBusy')));
+              } else {
+                reject(createPlayerError(`${t('player.sessionFailed')}: ${translatePlaybackReason(reason, stateData.reasonDetail, t)}`));
+              }
+            }
+          }
+        },
+        onSseError: (err) => {
+          if (isDone || abortController.signal.aborted) return;
+          debugWarn('[V3Player] SSE connection error while waiting for session ready:', err);
+        }
+      }).then(async ({ stream }) => {
+        try {
+          for await (const _ of stream) {
+            if (isDone || abortController.signal.aborted) break;
+          }
+        } catch {
+          // Stream aborted or errored, ignore
+        }
+      }).catch((err) => {
+        if (cleanup()) {
+          reject(err);
+        }
+      });
     });
   }, [apiBase, applySessionInfo, authHeaders, createPlayerError, fetchWithRecoveredSessionCookie, onSessionSnapshot, readResponseBody, setStatus, t]);
 

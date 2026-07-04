@@ -4109,6 +4109,37 @@ export type GetSessionStateResponses = {
 
 export type GetSessionStateResponse = GetSessionStateResponses[keyof GetSessionStateResponses];
 
+export type GetSessionEventsData = {
+    body?: never;
+    path: {
+        sessionID: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/events';
+};
+
+export type GetSessionEventsErrors = {
+    /**
+     * Invalid session ID
+     */
+    400: ApiError;
+    /**
+     * Session not found
+     */
+    404: ApiError;
+};
+
+export type GetSessionEventsError = GetSessionEventsErrors[keyof GetSessionEventsErrors];
+
+export type GetSessionEventsResponses = {
+    /**
+     * Server-Sent Events stream
+     */
+    200: string;
+};
+
+export type GetSessionEventsResponse = GetSessionEventsResponses[keyof GetSessionEventsResponses];
+
 export type PostSessionHeartbeatData = {
     body?: never;
     path: {

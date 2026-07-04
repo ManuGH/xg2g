@@ -52,6 +52,7 @@ var operationScopes = map[string][]string{
 	"PostServicesIdToggle":             {"v3:write"},
 	"ListSessions":                     {"v3:admin"},
 	"GetSessionState":                  {"v3:read"},
+	"GetSessionEvents":                 {"v3:read"},
 	"PostSessionHeartbeat":             {"v3:read"},
 	"ServeHLS":                         {"v3:read"},
 	"ServeHLSHead":                     {"v3:read"},

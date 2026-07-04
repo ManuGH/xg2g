@@ -126,6 +126,7 @@ async function requestRecordingDelete(recordingId: string, authToken?: string | 
 }
 
 async function requestRecordingRename(recordingId: string, title: string, authToken?: string | null): Promise<void> {
+  // raw-fetch-justified: recording rename request
   const response = await fetch(`/api/v3/recordings/${encodeURIComponent(recordingId)}/rename`, {
     method: 'POST',
     credentials: 'same-origin',

@@ -791,7 +791,6 @@ func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
 	assert.Equal(t, "low", store.Session.PlaybackTrace.HLS.StallRisk)
 }
 
-
 func TestServeHLS_InMemory_PlaylistAndSegment(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "inmemory-serve-test-session"

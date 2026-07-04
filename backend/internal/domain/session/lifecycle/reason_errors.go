@@ -24,6 +24,9 @@ func (e *reasonError) Error() string {
 	if e.err != nil {
 		return e.err.Error()
 	}
+	if e.detailDebug != "" {
+		return fmt.Sprintf("%s: %s", e.reason, e.detailDebug)
+	}
 	return string(e.reason)
 }
 

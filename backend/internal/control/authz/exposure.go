@@ -78,10 +78,11 @@ func policy(class ExposureClass, auth ExposureAuthKind, rate ExposureRateLimitCl
 }
 
 var operationExposurePolicies = map[string]ExposurePolicy{
-	"CreateSession":   policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitAuth, ExposureBrowserTrustSameOrigin, true),
-	"DeleteSession":   policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitAuth, ExposureBrowserTrustSameOrigin, true),
-	"ListSessions":    policy(ExposureClassAdmin, ExposureAuthBearerScope, ExposureRateLimitAuth, ExposureBrowserTrustSameOrigin, true),
-	"GetSessionState": policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
+	"CreateSession":    policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitAuth, ExposureBrowserTrustSameOrigin, true),
+	"DeleteSession":    policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitAuth, ExposureBrowserTrustSameOrigin, true),
+	"ListSessions":     policy(ExposureClassAdmin, ExposureAuthBearerScope, ExposureRateLimitAuth, ExposureBrowserTrustSameOrigin, true),
+	"GetSessionState":  policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
+	"GetSessionEvents": policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
 	"PostSessionHeartbeat": policy(
 		ExposureClassSession,
 		ExposureAuthBearerScope,

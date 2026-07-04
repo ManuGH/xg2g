@@ -19,11 +19,11 @@ func TestV3_ResponseGolden(t *testing.T) {
 		// Create a representative PlaybackInfo DTO
 		// posSeconds=120, durationSeconds=3600
 		info := PlaybackInfo{
-			RequestId: reqID,
-			SessionId: sessionID,
-			Mode:      PlaybackInfoModeHls,
+			RequestId:  reqID,
+			SessionId:  sessionID,
+			Mode:       PlaybackInfoModeHls,
 			IsSeekable: true,
-			Url:       strPtr("/api/v3/recordings/test/playlist.m3u8"),
+			Url:        strPtr("/api/v3/recordings/test/playlist.m3u8"),
 			Resume: &ResumeSummary{
 				PosSeconds:      120, // int64
 				DurationSeconds: int64Ptr(3600),

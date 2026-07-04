@@ -5574,6 +5574,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/SessionTerminalProblem"
 
+  /sessions/{sessionID}/events:
+    parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Subscribe to real-time session telemetry and state events (SSE)
+      operationId: getSessionEvents
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: Server-Sent Events stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Invalid session ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
   /sessions/{sessionID}/heartbeat:
     parameters:
       - name: sessionID
