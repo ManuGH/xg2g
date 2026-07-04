@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -40,6 +41,7 @@ func (o *Orchestrator) waitForReady(
 		Dur("timeout", playlistReadyTimeout).
 		Msg("waiting for playlist to become ready")
 
+	var lastNotReadyReason string
 	for {
 		// Check process health first
 		status := o.Pipeline.Health(ctx, handle)
@@ -48,14 +50,24 @@ func (o *Orchestrator) waitForReady(
 			return false, model.RProcessEnded, "process died during startup: " + status.Message
 		}
 
-		ready, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, e.ProfileID, startTime)
+		ready, notReadyReason, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, e.ProfileID, startTime)
 		if err == nil && ready {
 			return true, "", ""
 		}
+		if notReadyReason != "" && notReadyReason != lastNotReadyReason {
+			logger.Debug().
+				Str("session_id", e.SessionID).
+				Str("not_ready_reason", notReadyReason).
+				Msg("playlist not ready yet")
+			lastNotReadyReason = notReadyReason
+		}
 
 		if time.Now().After(playlistDeadline) {
-			// reason, detail := o.classifyFailure(...) // Removed for now due to complexity of mapping logs
-			return false, model.RPackagerFailed, "playlist not ready timeout"
+			detail := "playlist not ready timeout"
+			if lastNotReadyReason != "" {
+				detail = fmt.Sprintf("playlist not ready timeout (last reason: %s)", lastNotReadyReason)
+			}
+			return false, model.RPackagerFailed, detail
 		}
 
 		select {
@@ -107,10 +119,10 @@ func (o *Orchestrator) checkPlaylistReady(
 	ttfpRecorded *bool,
 	profileID string,
 	startTime time.Time,
-) (bool, error) {
-	ready, err := o.checkPlaylistReadyAt(playlistPath, vodMode, ttfpRecorded, profileID, startTime)
+) (bool, string, error) {
+	ready, reason, err := o.checkPlaylistReadyAt(playlistPath, vodMode, ttfpRecorded, profileID, startTime)
 	if ready {
-		return true, nil
+		return true, "", nil
 	}
 
 	legacyPlaylistPath := ""
@@ -122,17 +134,20 @@ func (o *Orchestrator) checkPlaylistReady(
 		}
 	}
 	if legacyPlaylistPath == "" {
-		return false, err
+		return false, reason, err
 	}
 
-	legacyReady, legacyErr := o.checkPlaylistReadyAt(legacyPlaylistPath, vodMode, ttfpRecorded, profileID, startTime)
+	legacyReady, legacyReason, legacyErr := o.checkPlaylistReadyAt(legacyPlaylistPath, vodMode, ttfpRecorded, profileID, startTime)
 	if legacyReady {
-		return true, nil
+		return true, "", nil
 	}
 	if err == nil {
 		err = legacyErr
 	}
-	return false, err
+	if legacyReason != "" && (reason == "" || reason == "playlist file missing or empty") {
+		reason = legacyReason
+	}
+	return false, reason, err
 }
 
 func (o *Orchestrator) checkPlaylistReadyAt(
@@ -141,35 +156,35 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	ttfpRecorded *bool,
 	profileID string,
 	startTime time.Time,
-) (bool, error) {
+) (bool, string, error) {
 	info, err := os.Stat(playlistPath)
 	if err != nil || info.Size() == 0 {
-		return false, err
+		return false, "playlist file missing or empty", err
 	}
 	// #nosec G304
 	content, err := os.ReadFile(filepath.Clean(playlistPath))
 	if err != nil {
-		return false, err
+		return false, "playlist read error", err
 	}
 	contentText := string(content)
 	if !strings.Contains(contentText, "#EXTM3U") {
-		return false, nil
+		return false, "missing #EXTM3U tag", nil
 	}
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
-		return false, nil
+		return false, "vod playlist missing #EXT-X-ENDLIST", nil
 	}
 	if initURI := playlistInitSegment(content); initURI != "" {
 		initPath := filepath.Join(filepath.Dir(playlistPath), initURI)
 		//nolint:gosec // G703: initURI is sanitized by playlistInitSegment against traversals
 		initInfo, initErr := os.Stat(initPath)
 		if initErr != nil || initInfo.Size() == 0 {
-			return false, nil
+			return false, "init segment missing or empty: " + initURI, nil
 		}
 	}
 	segmentURIs := playlistSegments(content)
 	if vodMode {
 		if len(segmentURIs) == 0 {
-			return false, nil
+			return false, "vod playlist has no segments", nil
 		}
 		lastSegment := segmentURIs[len(segmentURIs)-1]
 		segmentPath := filepath.Join(filepath.Dir(playlistPath), lastSegment)
@@ -179,32 +194,32 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 				observeTTFP(profileID, startTime)
 				*ttfpRecorded = true
 			}
-			return true, nil
+			return true, "", nil
 		}
-		return false, nil
+		return false, "vod last segment missing or empty: " + lastSegment, nil
 	}
 
 	requiredSegments := o.liveReadySegments()
 	if len(segmentURIs) < requiredSegments {
-		return false, nil
+		return false, fmt.Sprintf("not enough segments: %d < %d required", len(segmentURIs), requiredSegments), nil
 	}
 	for _, segmentURI := range segmentURIs[:requiredSegments] {
 		segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
 		segInfo, segErr := os.Stat(segmentPath)
 		if segErr != nil || segInfo.Size() == 0 {
-			return false, nil
+			return false, "segment file missing or empty: " + segmentURI, nil
 		}
 	}
 	markerPath := filepath.Join(filepath.Dir(playlistPath), model.SessionFirstFrameMarkerFilename)
 	markerInfo, markerErr := os.Stat(markerPath)
 	if markerErr != nil || markerInfo.Size() == 0 {
-		return false, nil
+		return false, "first-frame marker file missing: " + markerPath, nil
 	}
 	if !*ttfpRecorded {
 		observeTTFP(profileID, startTime)
 		*ttfpRecorded = true
 	}
-	return true, nil
+	return true, "", nil
 }
 
 func (o *Orchestrator) liveReadySegments() int {

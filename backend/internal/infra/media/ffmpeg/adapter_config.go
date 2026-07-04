@@ -132,10 +132,11 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 	if ingestMaxErrorRate == "" && resilientIngest {
 		ingestMaxErrorRate = "1.0"
 	}
+	// No resilient-ingest default for -flags2: +export_mvs is debug-only
+	// overhead (motion-vector side data with no consumer) and +showall can
+	// surface pre-keyframe garbage frames from glitchy DVB sources. Opt in
+	// explicitly via XG2G_INGEST_FLAGS2 when needed.
 	ingestFlags2 := strings.TrimSpace(config.ParseString("XG2G_INGEST_FLAGS2", ""))
-	if ingestFlags2 == "" && resilientIngest {
-		ingestFlags2 = "+showall+export_mvs"
-	}
 	fpsProbeFFlags := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_FFLAGS", ""))
 	if fpsProbeFFlags == "" {
 		if resilientIngest {

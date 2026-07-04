@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from './lib/hlsRuntime';
 import {
+  getSessionEvents,
   postRecordingPlaybackInfo,
   type PlaybackTrace as PlaybackTraceContract,
 } from '../../client-ts';
@@ -544,8 +545,11 @@ export function usePlaybackOrchestrator(
       return;
     }
     let cancelled = false;
-    const pollNativeTrace = async () => {
+    const abortController = new AbortController();
+
+    const fetchInitialTrace = async () => {
       try {
+        // raw-fetch-justified: initial native session trace lookup
         const res = await fetch(`${apiBase}/sessions/${nativeSessionId}`, { headers: authHeadersRef.current() });
         if (cancelled || !res.ok) {
           return;
@@ -560,11 +564,38 @@ export function usePlaybackOrchestrator(
         // Best-effort telemetry; transient errors must never disturb playback.
       }
     };
-    void pollNativeTrace();
-    const intervalId = window.setInterval(pollNativeTrace, 5000);
+    void fetchInitialTrace();
+
+    void getSessionEvents({
+      path: { sessionID: nativeSessionId },
+      signal: abortController.signal,
+      onSseEvent: (event) => {
+        if (cancelled || abortController.signal.aborted) return;
+        if (event.event === 'session.telemetry' && event.data && typeof event.data === 'object') {
+          const telemetryData = event.data as { diagnostics?: Record<string, unknown> };
+          if (telemetryData.diagnostics) {
+            mergeSessionPlaybackTraceRef.current({ requestId: '', runtimeDiagnostics: telemetryData.diagnostics as any });
+          }
+        }
+      },
+      onSseError: () => {
+        // Best-effort telemetry; transient errors must never disturb playback.
+      }
+    }).then(async ({ stream }) => {
+      try {
+        for await (const _ of stream) {
+          if (cancelled || abortController.signal.aborted) break;
+        }
+      } catch {
+        // Stream aborted or errored, ignore
+      }
+    }).catch(() => {
+      // Ignore start errors
+    });
+
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      abortController.abort();
     };
   }, [nativeSessionId, apiBase]);
 

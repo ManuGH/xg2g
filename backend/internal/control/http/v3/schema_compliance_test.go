@@ -13,11 +13,11 @@ func TestPlaybackInfo_SchemaCompliance(t *testing.T) {
 	// 1. Generate a mock response
 	reqID := "req_schema_test"
 	info := PlaybackInfo{
-		RequestId: reqID,
-		SessionId: "sess_123",
-		Mode:      PlaybackInfoModeHls,
+		RequestId:  reqID,
+		SessionId:  "sess_123",
+		Mode:       PlaybackInfoModeHls,
 		IsSeekable: true,
-		Url:       strPtr("/test.m3u8"),
+		Url:        strPtr("/test.m3u8"),
 	}
 
 	w := httptest.NewRecorder()
@@ -31,23 +31,23 @@ func TestPlaybackInfo_SchemaCompliance(t *testing.T) {
 
 	// 3. Define the allowlist of fields based on PlaybackInfo schema
 	allowedFields := map[string]bool{
-		"requestId":          true,
-		"sessionId":          true,
-		"mode":               true,
-		"url":                true,
-		"seekable":           true,
-		"isSeekable":         true,
-		"dvrWindowSeconds":   true,
-		"liveEdgeUnix":       true,
-		"startUnix":          true,
-		"durationSeconds":    true,
-		"durationSource":     true,
-		"resume":             true,
-		"container":          true,
-		"videoCodec":         true,
-		"audioCodec":         true,
-		"reason":             true,
-		"decision":           true,
+		"requestId":        true,
+		"sessionId":        true,
+		"mode":             true,
+		"url":              true,
+		"seekable":         true,
+		"isSeekable":       true,
+		"dvrWindowSeconds": true,
+		"liveEdgeUnix":     true,
+		"startUnix":        true,
+		"durationSeconds":  true,
+		"durationSource":   true,
+		"resume":           true,
+		"container":        true,
+		"videoCodec":       true,
+		"audioCodec":       true,
+		"reason":           true,
+		"decision":         true,
 	}
 
 	// 4. Assert no additional properties exist

@@ -775,9 +775,11 @@ export function usePlaybackEngine({
         // Own the buffer via ManagedMediaSource on Safari 17.1+ (the app-owned path
         // the migration relies on); pinned so a future hls.js default change can't
         // silently fall back to plain MSE (which breaks AirPlay and the MMS lifecycle).
-        // Exceptions: Background tabs MUST use plain MSE, as MMS strictly blocks
-        // sourceopen until the tab is visible, causing backend sessions to rot.
-        preferManagedMediaSource: typeof document !== 'undefined' ? document.visibilityState === 'visible' : true,
+        // ALWAYS prefer MMS. Safari requires MMS for AV1 decoding.
+        // If MMS blocks sourceopen in background tabs, the backend session might rot,
+        // but it will seamlessly recover when foregrounded instead of permanently failing
+        // on unsupported plain MSE for AV1.
+        preferManagedMediaSource: true,
         enableWorker: true,
         // Engages only when the playlist advertises EXT-X-PART (server flag
         // hls.lowLatency); on regular playlists this is a no-op, so the
@@ -786,6 +788,8 @@ export function usePlaybackEngine({
         backBufferLength: 300,
         maxBufferLength: 60,
         capLevelToPlayerSize: true,
+        liveSyncDuration: 12,
+        maxLiveSyncPlaybackRate: 1.05,
         // Broadcast copy/passthrough sources (DVB relay) deliver imperfect DTS,
         // so the muxed segments carry small timestamp gaps ("Invalid DTS …
         // replacing by guess"). hls.js's default maxBufferHole (0.1s) is too
@@ -794,7 +798,7 @@ export function usePlaybackEngine({
         // hole-skip and give the nudge a few more tries so playback rides over a
         // bad-DTS gap instead of stalling. No effect on clean streams: with no
         // buffer hole, none of these engage.
-        maxBufferHole: 0.5,
+        maxBufferHole: 1.0,
         nudgeOffset: 0.2,
         nudgeMaxRetry: 6
       });

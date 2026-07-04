@@ -83,7 +83,7 @@ func TestLoadAdapterConfig_Defaults(t *testing.T) {
 		{"IngestFFlags", cfg.IngestFFlags, "+genpts+discardcorrupt+flush_packets"},
 		{"IngestErrDetect", cfg.IngestErrDetect, "ignore_err"},
 		{"IngestMaxErrorRate", cfg.IngestMaxErrorRate, "1.0"},
-		{"IngestFlags2", cfg.IngestFlags2, "+showall+export_mvs"},
+		{"IngestFlags2", cfg.IngestFlags2, ""},
 		{"FPSProbeFFlags", cfg.FPSProbeFFlags, "+genpts+discardcorrupt+igndts"},
 		{"FPSProbeErrDetect", cfg.FPSProbeErrDetect, "ignore_err"},
 		{"FPSProbeTimeout", cfg.FPSProbeTimeout, 1500 * time.Millisecond},

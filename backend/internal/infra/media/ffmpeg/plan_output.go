@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"context"
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"math"
@@ -65,9 +66,17 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 }
 
 func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegmentLayout, error) {
+	readySegs := a.ReadySegments
+	if readySegs <= 0 {
+		readySegs = config.DefaultHLSReadySegments
+	}
+	minSize := readySegs + 2
+	if minSize < 4 {
+		minSize = 4 // HLS safety floor for sliding windows
+	}
 	layout := liveSegmentLayout{
 		segmentDurationSec: a.SegmentSeconds,
-		listSize:           10,
+		listSize:           max(10, minSize),
 	}
 	if a.LowLatencyHLS && strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") && layout.segmentDurationSec > llhlsSegmentSeconds {
 		// LL-HLS: short segments keep the playlist window tight; parts are
@@ -84,7 +93,8 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		return liveSegmentLayout{}, fmt.Errorf("invalid hls segment seconds: %d", layout.segmentDurationSec)
 	}
 	if a.DVRWindow > 0 {
-		layout.listSize = max(int(math.Ceil(a.DVRWindow.Seconds()/float64(layout.segmentDurationSec))), 3)
+		dvrSize := int(math.Ceil(a.DVRWindow.Seconds() / float64(layout.segmentDurationSec)))
+		layout.listSize = max(dvrSize, minSize)
 	}
 	return layout, nil
 }
@@ -168,15 +178,29 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 		segmentType = "fmp4"
 		segmentFilename = filepath.Join(sessionDir, "seg_%06d.m4s")
 	}
+	if a.inMemoryIngest && a.ingestPort > 0 {
+		if segmentType == "fmp4" {
+			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.m4s", a.ingestPort, spec.SessionID)
+		} else {
+			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.ts", a.ingestPort, spec.SessionID)
+		}
+	}
 	args = append(args,
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
 		"-hls_list_size", strconv.Itoa(layout.listSize),
-		"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time",
+		"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time+temp_file",
 		"-hls_segment_type", segmentType,
-		"-hls_segment_filename", segmentFilename,
 	)
+	if a.inMemoryIngest && a.ingestPort > 0 {
+		args = append(args, "-method", "PUT")
+	}
+	args = append(args, "-hls_segment_filename", segmentFilename)
 	if segmentType == "fmp4" {
-		args = append(args, "-hls_fmp4_init_filename", "init.mp4")
+		initFilename := "init.mp4"
+		if a.inMemoryIngest && a.ingestPort > 0 {
+			initFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/init.mp4", a.ingestPort, spec.SessionID)
+		}
+		args = append(args, "-hls_fmp4_init_filename", initFilename)
 		if a.LowLatencyHLS {
 			// Fragment each segment on the part-target grid so the LL-HLS
 			// packager (internal/hls/llhls) can advertise EXT-X-PART byte
@@ -196,6 +220,9 @@ func (a *LocalAdapter) prepareLiveOutputPath(sessionID string) string {
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
 	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID); markerPath != "" {
 		_ = os.Remove(markerPath)
+	}
+	if a.inMemoryIngest && a.ingestPort > 0 {
+		outputPath = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/index.m3u8", a.ingestPort, sessionID)
 	}
 	a.Logger.Info().
 		Str("session_id", sessionID).

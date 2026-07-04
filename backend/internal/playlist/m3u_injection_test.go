@@ -53,13 +53,13 @@ func TestWriteM3UNeutralizesInjection(t *testing.T) {
 
 func TestSanitizeM3UField(t *testing.T) {
 	cases := map[string]string{
-		"plain":            "plain",
-		"a\nb":             "a b",
-		"a\r\nb":           "a  b",
-		"a\tb":             "a b",
-		`say "hi"`:         "say 'hi'",
-		"ctrl\x00char":     "ctrlchar",
-		"  trim me  ":      "trim me",
+		"plain":        "plain",
+		"a\nb":         "a b",
+		"a\r\nb":       "a  b",
+		"a\tb":         "a b",
+		`say "hi"`:     "say 'hi'",
+		"ctrl\x00char": "ctrlchar",
+		"  trim me  ":  "trim me",
 	}
 	for in, want := range cases {
 		if got := sanitizeM3UField(in); got != want {

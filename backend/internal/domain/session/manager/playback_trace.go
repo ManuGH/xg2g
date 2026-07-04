@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -68,6 +69,14 @@ func (o *Orchestrator) updatePlaybackRuntimeDiagnosticsBestEffort(ctx context.Co
 	o.updatePlaybackTraceBestEffort(ctx, sessionID, func(_ *model.SessionRecord, trace *model.PlaybackTrace) {
 		trace.RuntimeDiagnostics = &diagnostics
 	})
+	if o.Bus != nil && sessionID != "" {
+		_ = o.Bus.Publish(ctx, string(model.EventSessionTelemetry), model.SessionTelemetryEvent{
+			Type:        model.EventSessionTelemetry,
+			SessionID:   sessionID,
+			Diagnostics: diagnostics,
+			UpdatedAtUN: time.Now().Unix(),
+		})
+	}
 }
 
 func sessionIDFromRunHandle(handle ports.RunHandle) string {

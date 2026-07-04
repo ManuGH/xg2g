@@ -34,7 +34,7 @@ seg_000001.ts
 	orch := &Orchestrator{LiveReadySegments: 3}
 	ttfpRecorded := false
 
-	ready, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "high", time.Now())
+	ready, _, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "high", time.Now())
 	if err != nil {
 		t.Fatalf("checkPlaylistReadyAt() error = %v", err)
 	}
@@ -71,7 +71,7 @@ seg_000002.ts
 	orch := &Orchestrator{LiveReadySegments: 3}
 	ttfpRecorded := false
 
-	ready, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "high", time.Now())
+	ready, _, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "high", time.Now())
 	if err != nil {
 		t.Fatalf("checkPlaylistReadyAt() error = %v", err)
 	}
@@ -105,7 +105,7 @@ seg_000002.ts
 	orch := &Orchestrator{LiveReadySegments: 3}
 	ttfpRecorded := false
 
-	ready, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "high", time.Now())
+	ready, _, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "high", time.Now())
 	if err != nil {
 		t.Fatalf("checkPlaylistReadyAt() error = %v", err)
 	}
@@ -143,7 +143,7 @@ seg_000002.m4s
 	orch := &Orchestrator{LiveReadySegments: 3}
 	ttfpRecorded := false
 
-	ready, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "high", time.Now())
+	ready, _, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "high", time.Now())
 	if err != nil {
 		t.Fatalf("checkPlaylistReadyAt() error = %v", err)
 	}

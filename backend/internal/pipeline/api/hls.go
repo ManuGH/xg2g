@@ -14,11 +14,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/platform/httpx"
@@ -387,7 +390,39 @@ func awaitArtifact(ctx context.Context, filePath string, req hlsRequest, rec *mo
 	return info, err
 }
 
-func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, error) {
+func awaitInMemoryArtifact(ctx context.Context, buf *ringbuffer.Buffer, req hlsRequest, rec *model.SessionRecord, logger zerolog.Logger) (*ringbuffer.Artifact, error) {
+	art, found := buf.Get(req.filename)
+	if found && art != nil {
+		return art, nil
+	}
+	if shouldPollMissingArtifact(req, rec) {
+		logger.Info().Str("artifact", artifactKind(req)).Msg("in-memory artifact missing during start, polling")
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		timeout := time.NewTimer(hlsStartupArtifactWaitTimeout)
+		defer timeout.Stop()
+	PollLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-timeout.C:
+				break PollLoop
+			case <-ticker.C:
+				art, found = buf.Get(req.filename)
+				if found && art != nil {
+					logger.Info().Str("artifact", artifactKind(req)).Msg("in-memory artifact appeared during polling")
+					return art, nil
+				}
+			}
+		}
+	} else if req.isPlaylist && rec != nil {
+		logger.Info().Str("state", string(rec.State)).Msg("in-memory playlist missing, not polling (state mismatch)")
+	}
+	return nil, os.ErrNotExist
+}
+
+func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
 	forcePlaylistType := ""
 	insertStartTag := ""
 	var startupPolicy *hlsStartupPolicy
@@ -399,16 +434,16 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	// and clients hard-stop — observed as a clean cut at exactly the DVR-window
 	// duration. A plain live playlist slides indefinitely and stays seekable
 	// within the retained window, which is the actual DVR behaviour we want.
-	isDvrLive := !rec.Profile.VOD && rec.Profile.DVRWindowSec > 0
+	isLive := !rec.Profile.VOD && rec.Profile.DVRWindowSec > 0
 	if rec.Profile.VOD {
 		forcePlaylistType = "VOD"
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(source, 1024*1024))
 	if err != nil {
-		return nil, nil, fmt.Errorf("read playlist: %w", err)
+		return nil, nil, false, fmt.Errorf("read playlist: %w", err)
 	}
-	if isDvrLive {
+	if isLive {
 		// Start clients with explicit headroom behind the live edge instead of at
 		// the very head (EXT-X-START is valid for live playlists too). The reserve
 		// absorbs playlist-poll/segment-timing jitter that otherwise shows up as
@@ -423,10 +458,12 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	insertedStartTag := false
 	var b bytes.Buffer
 
+	var hasMap bool
+
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") && (forcePlaylistType != "" || isDvrLive) {
+		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") && (forcePlaylistType != "" || isLive) {
 			continue
 		}
 		if line == "#EXTM3U" && (forcePlaylistType != "" || insertStartTag != "") && !insertedHeader {
@@ -444,18 +481,18 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 			insertedHeader = true
 			continue
 		}
+		if strings.HasPrefix(line, "#EXT-X-MAP:") {
+			hasMap = true
+		}
 		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
 			line = normalizeProgramDateTimeLine(line)
-		}
-		if strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") {
-			continue
 		}
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, startupPolicy, fmt.Errorf("scan playlist: %w", err)
+		return nil, startupPolicy, false, fmt.Errorf("scan playlist: %w", err)
 	}
 
 	if insertStartTag != "" && insertedStartTag && startupPolicy != nil {
@@ -469,10 +506,17 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 			Msg("injected EXT-X-START tag from HLS startup policy")
 	}
 
-	return bytes.NewReader(b.Bytes()), startupPolicy, nil
+	valid := true
+	if len(raw) == 0 {
+		valid = false
+	} else if strings.EqualFold(rec.Profile.Container, "fmp4") && !hasMap {
+		valid = false
+	}
+
+	return bytes.NewReader(b.Bytes()), startupPolicy, valid, nil
 }
 
-func serveArtifact(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, info os.FileInfo, filePath string, logger zerolog.Logger) {
+func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, content io.ReadSeeker, modTime time.Time, logger zerolog.Logger) {
 	if req.isPlaylist {
 		w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
 		w.Header().Set("Cache-Control", "no-store")
@@ -494,28 +538,41 @@ func serveArtifact(w http.ResponseWriter, r *http.Request, store HLSStore, req h
 		w.Header().Set("Content-Encoding", "identity")
 	}
 
+	if req.isPlaylist {
+		playlist, startupPolicy, valid, rewriteErr := rewritePlaylist(content, rec, logger)
+		if rewriteErr != nil || !valid {
+			if lkgRaw, ok := lkgPlaylists.Load(req.sessionID); ok {
+				lkgBytes := lkgRaw.([]byte)
+				w.Header().Set("Content-Length", strconv.Itoa(len(lkgBytes)))
+				_, _ = w.Write(lkgBytes)
+				return
+			}
+			log.L().Error().Err(rewriteErr).Msg("failed to process playlist")
+			http.Error(w, "failed to process file", http.StatusInternalServerError)
+			return
+		}
+
+		payload, _ := io.ReadAll(playlist)
+		lkgPlaylists.Store(req.sessionID, payload)
+
+		if startupPolicy != nil {
+			persistHLSStartupPolicy(r.Context(), store, req.sessionID, *startupPolicy)
+		}
+		http.ServeContent(w, r, req.cleanName, modTime, bytes.NewReader(payload))
+		return
+	}
+
+	http.ServeContent(w, r, req.cleanName, modTime, content)
+}
+
+func serveArtifact(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, info os.FileInfo, filePath string, logger zerolog.Logger) {
 	f, err := os.Open(filePath) // #nosec G304 -- filePath constructed from safe session dir + validated filename
 	if err != nil {
 		http.Error(w, "failed to open file", http.StatusInternalServerError)
 		return
 	}
 	defer func() { _ = f.Close() }()
-
-	if req.isPlaylist {
-		playlist, startupPolicy, rewriteErr := rewritePlaylist(f, rec, logger)
-		if rewriteErr != nil {
-			log.L().Error().Err(rewriteErr).Msg("failed to process playlist")
-			http.Error(w, "failed to process file", http.StatusInternalServerError)
-			return
-		}
-		if startupPolicy != nil {
-			persistHLSStartupPolicy(r.Context(), store, req.sessionID, *startupPolicy)
-		}
-		http.ServeContent(w, r, req.cleanName, info.ModTime(), playlist)
-		return
-	}
-
-	http.ServeContent(w, r, req.cleanName, info.ModTime(), f)
+	serveStreamContent(w, r, store, req, rec, f, info.ModTime(), logger)
 }
 
 func setHLSFailureHintHeader(w http.ResponseWriter, rec *model.SessionRecord) {
@@ -542,6 +599,8 @@ func setHLSMissingArtifactHintHeader(w http.ResponseWriter, req hlsRequest, rec 
 
 // ServeHLS handles requests for HLS playlists and segments.
 // It enforces strict session validity and path security.
+var lkgPlaylists sync.Map
+
 func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, sessionID, filename string) {
 	req, ok := validateRequest(w, sessionID, filename)
 	if !ok {
@@ -589,6 +648,24 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	}
 
 	logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("path", filePath).Str("state", string(rec.State)).Logger()
+
+	if buf, ok := ringbuffer.DefaultRegistry.Get(req.sessionID); ok {
+		logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("state", string(rec.State)).Bool("in_memory", true).Logger()
+		art, err := awaitInMemoryArtifact(r.Context(), buf, req, rec, logger)
+		if err == nil && art != nil {
+			touchSegmentAccessTime(r.Context(), store, req, rec)
+			serveStreamContent(w, r, store, req, rec, bytes.NewReader(art.Data), art.ModTime, logger)
+			return
+		}
+		if os.IsNotExist(err) {
+			logger.Warn().Err(err).Msg("in-memory artifact not found (final)")
+			setHLSMissingArtifactHintHeader(w, req, rec)
+			http.Error(w, "file not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "internal check failed", http.StatusInternalServerError)
+		return
+	}
 
 	info, err := awaitArtifact(r.Context(), filePath, req, rec, logger)
 

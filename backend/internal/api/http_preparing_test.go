@@ -91,6 +91,8 @@ func (m *MockPreparingServer) ListSessions(w http.ResponseWriter, r *http.Reques
 }
 func (m *MockPreparingServer) GetSessionState(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
 }
+func (m *MockPreparingServer) GetSessionEvents(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
+}
 func (m *MockPreparingServer) PostSessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
 }
 func (m *MockPreparingServer) ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string) {

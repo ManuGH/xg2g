@@ -198,5 +198,5 @@ func TestContract_StopStream_DeleteStreamsId(t *testing.T) {
 }
 
 func (s *mockStore) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
-return nil, false, nil
+	return nil, false, nil
 }
