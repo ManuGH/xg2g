@@ -17,7 +17,7 @@ type WorkerState struct {
 
 func WriteWorkerState(sessionID, serviceRef, profileID string, pid int) error {
 	dir := filepath.Join("/dev/shm/xg2g/sessions", sessionID)
-	_ = os.MkdirAll(dir, 0755)
+	_ = os.MkdirAll(dir, 0750)
 	state := WorkerState{
 		SessionID:  sessionID,
 		PID:        pid,
@@ -26,7 +26,7 @@ func WriteWorkerState(sessionID, serviceRef, profileID string, pid int) error {
 		CreatedAt:  time.Now().Unix(),
 	}
 	b, _ := json.Marshal(state)
-	return os.WriteFile(filepath.Join(dir, "state.json"), b, 0644)
+	return os.WriteFile(filepath.Join(dir, "state.json"), b, 0600)
 }
 
 func ReadWorkerStates() ([]WorkerState, error) {

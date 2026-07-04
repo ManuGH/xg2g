@@ -544,7 +544,7 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 			if lkgRaw, ok := lkgPlaylists.Load(req.sessionID); ok {
 				lkgBytes := lkgRaw.([]byte)
 				w.Header().Set("Content-Length", strconv.Itoa(len(lkgBytes)))
-				w.Write(lkgBytes)
+				_, _ = w.Write(lkgBytes)
 				return
 			}
 			log.L().Error().Err(rewriteErr).Msg("failed to process playlist")

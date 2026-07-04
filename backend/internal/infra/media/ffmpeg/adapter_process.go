@@ -144,9 +144,9 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		scopeName := fmt.Sprintf("xg2g-media-%s", spec.SessionID)
 		systemdArgs := []string{"--scope", "--unit=" + scopeName, a.BinPath}
 		systemdArgs = append(systemdArgs, args...)
-		cmd = exec.CommandContext(ctx, systemdRunPath, systemdArgs...)
+		cmd = exec.CommandContext(ctx, systemdRunPath, systemdArgs...) // #nosec G204
 	} else {
-		cmd = exec.CommandContext(ctx, a.BinPath, args...)
+		cmd = exec.CommandContext(ctx, a.BinPath, args...) // #nosec G204
 	}
 
 	if avsyncStdin != nil {

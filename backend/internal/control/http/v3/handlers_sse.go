@@ -74,13 +74,13 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 	if subErr != nil {
 		return
 	}
-	defer stateSub.Close()
+	defer func() { _ = stateSub.Close() }()
 
 	telemSub, subErr2 := deps.bus.Subscribe(r.Context(), string(model.EventSessionTelemetry))
 	if subErr2 != nil {
 		return
 	}
-	defer telemSub.Close()
+	defer func() { _ = telemSub.Close() }()
 
 	for {
 		select {

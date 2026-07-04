@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/rs/zerolog"
@@ -21,7 +21,6 @@ import (
 // IngestServer listens for HTTP PUT/POST requests from FFmpeg and stores ingested
 // HLS segments and playlists in the in-memory ring buffer.
 type IngestServer struct {
-	mu           sync.RWMutex
 	listener     net.Listener
 	server       *http.Server
 	port         int
@@ -57,7 +56,8 @@ func NewIngestServer(port int, hlsRoot string, registry *Registry, logger zerolo
 	mux.HandleFunc("/ingest/", s.handleIngest)
 
 	s.server = &http.Server{
-		Handler: mux,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	return s, nil
@@ -138,7 +138,7 @@ func (s *IngestServer) persistToDisk(sessionID, filename string, data []byte) {
 	_ = os.MkdirAll(sessionDir, 0755) // #nosec G301
 	filePath := filepath.Join(sessionDir, filename)
 	tmpPath := filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err == nil { // #nosec G306
+	if err := os.WriteFile(tmpPath, data, 0600); err == nil { // #nosec G306
 		_ = os.Rename(tmpPath, filePath)
 	} else {
 		s.logger.Error().Err(err).Str("path", filePath).Msg("async dvr write failed")
