@@ -153,6 +153,12 @@ func (s *IngestServer) persistToDisk(sessionID, filename string, data []byte) {
 	if s.hlsRoot == "" {
 		return
 	}
+	// Defense-in-depth: ensure no path traversal reaches the disk writer.
+	filename = sanitizeIngestFilename(filename)
+	if filename == "" {
+		s.logger.Warn().Str("session_id", sessionID).Str("original", filename).Msg("persistToDisk: rejected path traversal")
+		return
+	}
 	sessionDir := ports.SessionHLSDir(s.hlsRoot, sessionID)
 	_ = os.MkdirAll(sessionDir, 0755) // #nosec G301
 	filePath := filepath.Join(sessionDir, filename)

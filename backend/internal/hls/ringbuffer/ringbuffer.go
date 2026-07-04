@@ -52,9 +52,11 @@ func NewBuffer(sessionID string, maxSegments int, dvrCb DVRCallback) *Buffer {
 }
 
 func (b *Buffer) dvrWorker() {
-	// Capture dvrCb once at goroutine start; it is set before the goroutine
-	// is launched (happens-before) and is never mutated after.
+	// Capture dvrCb once under read lock to formally satisfy the race detector,
+	// even though happens-before guarantees make it safe in practice.
+	b.mu.RLock()
 	cb := b.dvrCb
+	b.mu.RUnlock()
 	for art := range b.dvrCh {
 		if cb != nil {
 			cb(b.sessionID, art.Filename, art.Data)
