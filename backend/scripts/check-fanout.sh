@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Guardrail for the v3 package decomposition: block fan-out regressions.
-# Baseline 103 reflects the current intentional v3 composition:
+# Baseline 104 reflects the current intentional v3 composition:
 # - original 79-import hardening baseline (strict JWT verification + hwaccel enforcement)
 # - internal/admission for receiver/session admission state tracking
 # - internal/control/middleware + net for trusted-proxy HTTPS enforcement on session exchange
@@ -15,12 +15,13 @@ set -euo pipefail
 #   (crypto/rand, syscall, runtime/debug)
 # - Go 1.25 stdlib modernization: maps (maps.Copy in intent_client_request),
 #   slices (slices.Backward, slices.Contains, slices.ContainsFunc, slices.Sort)
+# - llhls: internal/hls/llhls for EXT-X-PART / blocking-reload playlist synthesis (#629)
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}/backend"
 
-MAX_V3_FANOUT="${MAX_V3_FANOUT:-103}"
+MAX_V3_FANOUT="${MAX_V3_FANOUT:-104}"
 ACTUAL_IMPORTS_RAW="$(go list -f '{{join .Imports "\n"}}' ./internal/control/http/v3 | sort)"
 mapfile -t ACTUAL_IMPORTS <<< "${ACTUAL_IMPORTS_RAW}"
 ACTUAL_V3_FANOUT="${#ACTUAL_IMPORTS[@]}"
