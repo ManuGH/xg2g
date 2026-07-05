@@ -59,6 +59,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		out.args = appendLiveCMAFStreamArgs(out.args)
 		out.cmafSegment = true
 		out.cmafTargetDurSec = layout.segmentDurationSec
+		out.listSize = layout.listSize
 	} else {
 		out.args = append(out.args, "-f", "hls")
 		out.args = a.appendLiveHLSArgs(out.args, spec, layout)
@@ -87,7 +88,7 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 	}
 	layout := liveSegmentLayout{
 		segmentDurationSec: a.SegmentSeconds,
-		listSize:           max(10, minSize),
+		listSize:           30, // enforced minimum to prevent stuttering during network retries
 	}
 	if a.LowLatencyHLS && strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") && layout.segmentDurationSec > llhlsSegmentSeconds {
 		// LL-HLS: short segments keep the playlist window tight; parts are

@@ -49,6 +49,7 @@ type Config struct {
 	// TargetDurationSec is the nominal segment duration; rotation happens at
 	// the first independent fragment at or past this boundary.
 	TargetDurationSec int
+	ListSize int
 	// Now returns the wall clock for EXT-X-PROGRAM-DATE-TIME stamps.
 	// Defaults to time.Now when nil.
 	Now func() time.Time
@@ -114,7 +115,7 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 		Int("init_bytes", len(initBytes)).
 		Msg("cmaf init published")
 
-	pl, err := newPlaylistWriter(cfg.Dir, cfg.TargetDurationSec)
+	pl, err := newPlaylistWriter(cfg.Dir, cfg.TargetDurationSec, cfg.ListSize)
 	if err != nil {
 		return fmt.Errorf("playlist init: %w", err)
 	}
@@ -502,18 +503,22 @@ var segNameRe = regexp.MustCompile(`^seg_(\d+)\.m4s$`)
 type playlistWriter struct {
 	path             string
 	targetDuration   int
+	listSize         int
 	mediaLines       []string
 	nextSegmentIndex int
+	mediaSequence    int
+	discontSequence  int
 }
 
 // newPlaylistWriter continues an existing session playlist when one is on
 // disk (worker restart into the same session dir): prior media entries are
 // preserved, a DISCONTINUITY separates the new encode, and numbering
 // resumes after the highest existing segment.
-func newPlaylistWriter(dir string, targetDuration int) (*playlistWriter, error) {
+func newPlaylistWriter(dir string, targetDuration int, listSize int) (*playlistWriter, error) {
 	pl := &playlistWriter{
 		path:           filepath.Join(dir, "index.m3u8"),
 		targetDuration: targetDuration,
+		listSize:       listSize,
 	}
 	raw, err := os.ReadFile(pl.path) // #nosec G304 -- session-confined path
 	if err != nil {
@@ -527,6 +532,18 @@ func newPlaylistWriter(dir string, targetDuration int) (*playlistWriter, error) 
 	for _, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || line == "#EXT-X-ENDLIST" {
+			continue
+		}
+		if strings.HasPrefix(line, "#EXT-X-MEDIA-SEQUENCE:") {
+			if n, err := strconv.Atoi(strings.TrimPrefix(line, "#EXT-X-MEDIA-SEQUENCE:")); err == nil {
+				pl.mediaSequence = n
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "#EXT-X-DISCONTINUITY-SEQUENCE:") {
+			if n, err := strconv.Atoi(strings.TrimPrefix(line, "#EXT-X-DISCONTINUITY-SEQUENCE:")); err == nil {
+				pl.discontSequence = n
+			}
 			continue
 		}
 		if m := segNameRe.FindStringSubmatch(line); m != nil {
@@ -557,6 +574,31 @@ func (p *playlistWriter) appendSegment(name string, duration float64, start time
 		"#EXT-X-PROGRAM-DATE-TIME:"+start.UTC().Format("2006-01-02T15:04:05.000Z07:00"),
 		name,
 	)
+	if p.listSize > 0 {
+		segmentsCount := 0
+		for _, line := range p.mediaLines {
+			if !strings.HasPrefix(line, "#") {
+				segmentsCount++
+			}
+		}
+		for segmentsCount > p.listSize {
+			for len(p.mediaLines) > 0 {
+				line := p.mediaLines[0]
+				p.mediaLines = p.mediaLines[1:]
+				
+				if line == "#EXT-X-DISCONTINUITY" {
+					p.discontSequence++
+				}
+				
+				if !strings.HasPrefix(line, "#") {
+					p.mediaSequence++
+					segmentsCount--
+					_ = os.Remove(filepath.Join(filepath.Dir(p.path), line))
+					break
+				}
+			}
+		}
+	}
 	return p.publish(false)
 }
 
