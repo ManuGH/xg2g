@@ -186,7 +186,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 		}
 	}
 	hlsFlags := "delete_segments+append_list+independent_segments+program_date_time"
-	if !(a.LowLatencyHLS && segmentType == "fmp4") {
+	if !a.LowLatencyHLS || segmentType != "fmp4" {
 		// temp_file hides the growing segment behind a .tmp rename. The LL-HLS
 		// packager (internal/hls/llhls) must scan exactly that open segment to
 		// cut EXT-X-PART entries, so the flag stays off on the LL path;
