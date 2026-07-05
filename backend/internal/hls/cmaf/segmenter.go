@@ -382,7 +382,7 @@ func parseMoovVideoTrack(init []byte) (trackID, timescale uint32) {
 func findTopLevelBox(data []byte, typ string) ([]byte, bool) {
 	for off := 0; off+8 <= len(data); {
 		size := int(binary.BigEndian.Uint32(data[off : off+4]))
-		if size < 8 || off+size > len(data) {
+		if size < 8 || len(data)-off < size {
 			return nil, false
 		}
 		if string(data[off+4:off+8]) == typ {
@@ -399,7 +399,7 @@ func childBoxes(container []byte, typ string) [][]byte {
 	var out [][]byte
 	for off := 8; off+8 <= len(container); {
 		size := int(binary.BigEndian.Uint32(container[off : off+4]))
-		if size < 8 || off+size > len(container) {
+		if size < 8 || len(container)-off < size {
 			break
 		}
 		if string(container[off+4:off+8]) == typ {
