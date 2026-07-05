@@ -138,6 +138,63 @@ func TestExecutedFFmpegPlanFromArgs(t *testing.T) {
 				AudioMode: "copy", AudioCodec: "copy",
 			},
 		},
+		{
+			// LL-HLS pipe mode: no hls muxer flags at all — ffmpeg streams one
+			// fragmented MP4 to stdout for the in-process cmaf segmenter. Must
+			// classify as fmp4, not fall back to mpegts (that fallback fired a
+			// spurious plan_mismatch on every LL-HLS session).
+			name: "llhls cmaf pipe (fragmented mp4 on stdout)",
+			args: []string{
+				"-vaapi_device", "/dev/dri/renderD128",
+				"-i", "http://tuner/x",
+				"-c:v", "av1_vaapi",
+				"-c:a", "aac",
+				"-f", "mp4",
+				"-movflags", "empty_moov+default_base_moof+skip_trailer+frag_keyframe",
+				"-frag_duration", "500000",
+				"-flush_packets", "1",
+				"pipe:1",
+			},
+			want: ports.ExecutedFFmpegPlan{
+				Container: "fmp4", Packaging: "fmp4", HWAccel: "vaapi_encode_only",
+				VideoMode: "transcode", VideoCodec: "av1",
+				AudioMode: "transcode", AudioCodec: "aac",
+			},
+		},
+		{
+			// An input-side -f names the demuxer of the FOLLOWING -i and must
+			// not leak into the output classification.
+			name: "input -f does not leak into output format",
+			args: []string{
+				"-f", "mpegts",
+				"-i", "http://tuner/x",
+				"-c:v", "copy",
+				"-c:a", "aac",
+				"-f", "mp4",
+				"-movflags", "empty_moov+frag_keyframe",
+				"pipe:1",
+			},
+			want: ports.ExecutedFFmpegPlan{
+				Container: "fmp4", Packaging: "fmp4", HWAccel: "none",
+				VideoMode: "copy", VideoCodec: "copy",
+				AudioMode: "transcode", AudioCodec: "aac",
+			},
+		},
+		{
+			name: "plain unfragmented mp4 output stays mp4",
+			args: []string{
+				"-i", "http://tuner/x",
+				"-c:v", "copy",
+				"-c:a", "aac",
+				"-f", "mp4",
+				"/x/out.mp4",
+			},
+			want: ports.ExecutedFFmpegPlan{
+				Container: "mp4", Packaging: "mp4", HWAccel: "none",
+				VideoMode: "copy", VideoCodec: "copy",
+				AudioMode: "transcode", AudioCodec: "aac",
+			},
+		},
 	}
 
 	for _, tc := range cases {

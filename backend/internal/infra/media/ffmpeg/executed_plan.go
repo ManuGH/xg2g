@@ -17,10 +17,26 @@ import (
 // packaging, video/audio mode+codec, and hardware acceleration.
 func executedFFmpegPlanFromArgs(args []string) ports.ExecutedFFmpegPlan {
 	var segmentType, segmentFile, hwaccel, vcodec, acodec string
+	var outFormat, movFlags string
+	fragmented := false
 	hasVaapiDevice := false
 
 	for i := range args {
 		switch args[i] {
+		case "-f":
+			if i+1 < len(args) {
+				outFormat = args[i+1]
+			}
+		case "-i":
+			// A -f seen before an -i described that INPUT's demuxer, not the
+			// output muxer. Only the -f after the last input names the output.
+			outFormat = ""
+		case "-movflags":
+			if i+1 < len(args) {
+				movFlags = args[i+1]
+			}
+		case "-frag_duration":
+			fragmented = true
 		case "-hls_segment_type":
 			if i+1 < len(args) {
 				segmentType = args[i+1]
@@ -46,7 +62,7 @@ func executedFFmpegPlanFromArgs(args []string) ports.ExecutedFFmpegPlan {
 		}
 	}
 
-	container, packaging := classifyContainerArgs(segmentType, segmentFile)
+	container, packaging := classifyContainerArgs(segmentType, segmentFile, outFormat, movFlags, fragmented)
 	videoMode, videoCodec := classifyVideoCodecArg(vcodec)
 	audioMode, audioCodec := classifyAudioCodecArg(acodec)
 
@@ -61,13 +77,26 @@ func executedFFmpegPlanFromArgs(args []string) ports.ExecutedFFmpegPlan {
 	}
 }
 
-// classifyContainerArgs maps the real HLS segment type to the container/packaging
-// labels. It falls back to the segment filename extension when the segment type
-// flag is implicit (.m4s -> fmp4, otherwise mpegts).
-func classifyContainerArgs(segmentType, segmentFile string) (container, packaging string) {
+// classifyContainerArgs maps the real output muxer flags to container/packaging
+// labels. HLS-muxer runs are classified by segment type (or the .m4s filename
+// when the type flag is implicit). The LL-HLS pipe mode never touches the hls
+// muxer: ffmpeg writes one fragmented MP4 stream ("-f mp4" with frag movflags)
+// to stdout and the in-process cmaf segmenter packages it into fMP4 segments —
+// that argv must classify as fmp4, not fall back to mpegts (a wrong fallback
+// here made the executed plan lie and fired a spurious plan_mismatch warning
+// on every LL-HLS session). A plain, unfragmented "-f mp4" (VOD-style output)
+// stays "mp4". Everything else is the mpegts stream path.
+func classifyContainerArgs(segmentType, segmentFile, outFormat, movFlags string, fragmented bool) (container, packaging string) {
 	if strings.EqualFold(strings.TrimSpace(segmentType), "fmp4") ||
 		strings.EqualFold(filepath.Ext(segmentFile), ".m4s") {
 		return "fmp4", "fmp4"
+	}
+	if strings.EqualFold(strings.TrimSpace(outFormat), "mp4") {
+		flags := strings.ToLower(movFlags)
+		if fragmented || strings.Contains(flags, "empty_moov") || strings.Contains(flags, "frag_") {
+			return "fmp4", "fmp4"
+		}
+		return "mp4", "mp4"
 	}
 	return "mpegts", "ts"
 }
