@@ -242,6 +242,14 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 		source := s.deps.ChannelTruthSource()
 		requestContext := PlaybackInfoRequestContext(req)
 		truthResolution := resolveLiveTruthState(subjectID, source, requestContext)
+		if truthResolution.Verified() && truthResolution.Stale && probeAllowedForContext(requestContext) {
+			// Stale-while-revalidate: the cached truth is being served, so only
+			// kick a detached background probe to re-verify it. epg_badge fan-out
+			// stays excluded (probeAllowedForContext) to avoid relay probe storms.
+			if probeSource, ok := source.(channelTruthProbeSource); ok {
+				s.refreshLiveTruthAsync(ctx, probeSource, subjectID)
+			}
+		}
 		if !truthResolution.Verified() && shouldProbeLiveTruth(truthResolution) && probeAllowedForContext(requestContext) {
 			if probeSource, ok := source.(channelTruthProbeSource); ok {
 				cachedResolution := truthResolution
@@ -333,8 +341,10 @@ func probeAllowedForContext(requestContext string) bool {
 }
 
 func shouldProbeLiveTruth(resolution liveTruthResolution) bool {
+	// stale_scan_truth is intentionally absent: stale-but-complete truth is served
+	// from cache (stale-while-revalidate) and never reaches this unverified path.
 	switch resolution.Reason {
-	case "missing_scan_truth", "partial_scan_truth", "incomplete_scan_truth", "failed_scan_truth", "stale_scan_truth":
+	case "missing_scan_truth", "partial_scan_truth", "incomplete_scan_truth", "failed_scan_truth":
 		return true
 	default:
 		return false
@@ -348,8 +358,6 @@ func playbackInfoErrorForLiveTruth(resolution liveTruthResolution) *PlaybackInfo
 		message = "Live scan truth unavailable"
 	case "missing_scan_truth":
 		message = "Live media truth missing"
-	case "stale_scan_truth":
-		message = "Live media truth stale"
 	case "inactive_event_feed":
 		message = "Live event feed inactive"
 	case "partial_scan_truth", "incomplete_scan_truth":

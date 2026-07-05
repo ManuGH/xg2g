@@ -2623,18 +2623,8 @@ func TestService_ResolvePlaybackInfo_LiveTargetedProbeFailureStillFailsClosed(t 
 	assert.Equal(t, 1, truthSource.probeCalls)
 }
 
-func TestService_ResolvePlaybackInfo_LiveStaleScanTruthUsesTargetedProbe(t *testing.T) {
-	prevWindow := liveTruthFreshnessWindow.Load()
-	SetLiveTruthFreshnessWindow(time.Hour)
-	t.Cleanup(func() { liveTruthFreshnessWindow.Store(prevWindow) })
-	recSvc := &stubRecordingsService{
-		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
-			t.Fatal("GetMediaTruth must not be called for live playback")
-			return playback.MediaTruth{}, nil
-		},
-	}
-
-	staleCapability := scan.Capability{
+func staleScanTruthTestCapability() scan.Capability {
+	return scan.Capability{
 		ServiceRef:  "1:0:1:2B66:3F3:1:C00000:0:0:0:",
 		State:       scan.CapabilityStateOK,
 		Container:   "ts",
@@ -2648,16 +2638,35 @@ func TestService_ResolvePlaybackInfo_LiveStaleScanTruthUsesTargetedProbe(t *test
 		LastScan:    time.Now().UTC().Add(-3 * time.Hour),
 		LastSuccess: time.Now().UTC().Add(-3 * time.Hour),
 	}
+}
+
+// Stale-while-revalidate: stale-but-complete scan truth is served from cache
+// immediately; the probe fires detached in the background and must not delay or
+// alter the response.
+func TestService_ResolvePlaybackInfo_LiveStaleScanTruthServedFromCacheAndRevalidated(t *testing.T) {
+	prevWindow := liveTruthFreshnessWindow.Load()
+	SetLiveTruthFreshnessWindow(time.Hour)
+	t.Cleanup(func() { liveTruthFreshnessWindow.Store(prevWindow) })
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+
+	staleCapability := staleScanTruthTestCapability()
 	probedCapability := staleCapability
 	probedCapability.AudioCodec = "ac3"
 	probedCapability.LastScan = time.Now().UTC()
 	probedCapability.LastSuccess = time.Now().UTC()
 
+	probeStarted := make(chan struct{})
 	truthSource := &stubTruthSource{
 		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
 			return staleCapability, true
 		},
 		probeCapabilityFn: func(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+			close(probeStarted)
 			return probedCapability, true, nil
 		},
 	}
@@ -2676,18 +2685,28 @@ func TestService_ResolvePlaybackInfo_LiveStaleScanTruthUsesTargetedProbe(t *test
 		SubjectKind: PlaybackSubjectLive,
 		APIVersion:  "v3.1",
 		SchemaType:  "live",
-		RequestID:   "req-live-stale-targeted-probe",
+		RequestID:   "req-live-stale-swr",
 	})
 	require.Nil(t, err)
 	require.NotNil(t, res.Decision)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "h264", res.Truth.VideoCodec)
-	assert.Equal(t, "ac3", res.Truth.AudioCodec)
+	// The CACHED truth is served, not the probe result — the probe runs detached.
+	assert.Equal(t, "aac", res.Truth.AudioCodec)
 	assert.Equal(t, 1, truthSource.calls)
+
+	select {
+	case <-probeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stale truth must trigger a detached background revalidation probe")
+	}
 	assert.Equal(t, 1, truthSource.probeCalls)
+	assert.Equal(t, "1:0:1:2B66:3F3:1:C00000:0:0:0:", truthSource.lastProbeRef)
 }
 
-func TestService_ResolvePlaybackInfo_LiveStaleScanTruthFailsClosedWithoutFreshProbe(t *testing.T) {
+// Even when the background probe finds nothing fresh (receiver cold, relay I/O
+// error), the stale cache entry keeps serving playback — it must not fail closed.
+func TestService_ResolvePlaybackInfo_LiveStaleScanTruthServedWhenProbeFindsNothing(t *testing.T) {
 	prevWindow := liveTruthFreshnessWindow.Load()
 	SetLiveTruthFreshnessWindow(time.Hour)
 	t.Cleanup(func() { liveTruthFreshnessWindow.Store(prevWindow) })
@@ -2698,24 +2717,15 @@ func TestService_ResolvePlaybackInfo_LiveStaleScanTruthFailsClosedWithoutFreshPr
 		},
 	}
 
-	staleCapability := scan.Capability{
-		ServiceRef:  "1:0:1:2B66:3F3:1:C00000:0:0:0:",
-		State:       scan.CapabilityStateOK,
-		Container:   "ts",
-		VideoCodec:  "h264",
-		AudioCodec:  "aac",
-		Codec:       "h264",
-		Resolution:  "1920x1080",
-		Width:       1920,
-		Height:      1080,
-		FPS:         25,
-		LastScan:    time.Now().UTC().Add(-3 * time.Hour),
-		LastSuccess: time.Now().UTC().Add(-3 * time.Hour),
-	}
-
+	staleCapability := staleScanTruthTestCapability()
+	probeStarted := make(chan struct{})
 	truthSource := &stubTruthSource{
 		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
 			return staleCapability, true
+		},
+		probeCapabilityFn: func(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+			close(probeStarted)
+			return scan.Capability{}, false, nil
 		},
 	}
 
@@ -2728,20 +2738,74 @@ func TestService_ResolvePlaybackInfo_LiveStaleScanTruthFailsClosedWithoutFreshPr
 		},
 	})
 
-	_, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
 		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
 		SubjectKind: PlaybackSubjectLive,
 		APIVersion:  "v3.1",
 		SchemaType:  "live",
-		RequestID:   "req-live-stale-no-fresh-probe",
+		RequestID:   "req-live-stale-probe-empty",
 	})
-	require.NotNil(t, err)
-	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
-	assert.Equal(t, "unverified", err.TruthState)
-	assert.Equal(t, "stale_scan_truth", err.TruthReason)
-	assert.Contains(t, err.ProblemFlags, "stale_scan_truth")
-	assert.Equal(t, 1, truthSource.calls)
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "ts", res.Truth.Container)
+	assert.Equal(t, "aac", res.Truth.AudioCodec)
+
+	select {
+	case <-probeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stale truth must trigger a detached background revalidation probe")
+	}
 	assert.Equal(t, 1, truthSource.probeCalls)
+}
+
+// epg_badge requests are passive fan-out over the channel grid: they get the
+// stale cache entry served but must NOT each fire a revalidation probe.
+func TestService_ResolvePlaybackInfo_LiveStaleScanTruthEpgBadgeDoesNotProbe(t *testing.T) {
+	prevWindow := liveTruthFreshnessWindow.Load()
+	SetLiveTruthFreshnessWindow(time.Hour)
+	t.Cleanup(func() { liveTruthFreshnessWindow.Store(prevWindow) })
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			t.Fatal("GetMediaTruth must not be called for live playback")
+			return playback.MediaTruth{}, nil
+		},
+	}
+
+	staleCapability := staleScanTruthTestCapability()
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(serviceRef string) (scan.Capability, bool) {
+			return staleCapability, true
+		},
+		probeCapabilityFn: func(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+			t.Error("epg_badge request must not trigger a revalidation probe")
+			return scan.Capability{}, false, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc:         recSvc,
+		truthSource: truthSource,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   "1:0:1:2B66:3F3:1:C00000:0:0:0:",
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-live-stale-epg-badge",
+		Headers:     map[string]string{PlaybackInfoContextHeader: PlaybackInfoContextEpgBadge},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	assert.Equal(t, "ts", res.Truth.Container)
+	assert.Equal(t, "aac", res.Truth.AudioCodec)
+
+	// Give a mistakenly fired detached probe a moment to surface before the test ends.
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestService_ResolvePlaybackInfo_LiveIncompleteScanTruthFailsClosed(t *testing.T) {

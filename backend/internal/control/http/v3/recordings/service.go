@@ -93,6 +93,23 @@ func (s *Service) probeLiveTruthBounded(ctx context.Context, probeSource channel
 	}
 }
 
+// refreshLiveTruthAsync revalidates stale-but-served scan truth without blocking
+// the playback request (stale-while-revalidate). It shares liveProbeGroup with
+// probeLiveTruthBounded, so a concurrent interactive probe for the same channel
+// collapses into the same relay probe, and it runs on a detached context so it
+// survives the originating request. ProbeCapability persists whatever it learns
+// to the truth store; on failure the (still served) stale entry simply remains.
+func (s *Service) refreshLiveTruthAsync(ctx context.Context, probeSource channelTruthProbeSource, serviceRef string) {
+	bg := context.WithoutCancel(ctx)
+	s.liveProbeGroup.DoChan(serviceRef, func() (any, error) {
+		c, f, e := probeSource.ProbeCapability(bg, serviceRef)
+		if e != nil {
+			log.L().Warn().Err(e).Str("serviceRef", serviceRef).Msg("live truth background revalidation failed")
+		}
+		return liveProbeOutcome{cap: c, found: f, err: e}, nil
+	})
+}
+
 func (s *Service) ResolveClientPlayback(ctx context.Context, itemID string, req ClientPlaybackRequest) (ClientPlaybackResponse, *ClientPlaybackError) {
 	svc := s.deps.RecordingsService()
 	if svc == nil {
