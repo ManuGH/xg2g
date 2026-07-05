@@ -49,7 +49,7 @@ type Config struct {
 	// TargetDurationSec is the nominal segment duration; rotation happens at
 	// the first independent fragment at or past this boundary.
 	TargetDurationSec int
-	ListSize int
+	ListSize          int
 	// Now returns the wall clock for EXT-X-PROGRAM-DATE-TIME stamps.
 	// Defaults to time.Now when nil.
 	Now func() time.Time
@@ -585,11 +585,11 @@ func (p *playlistWriter) appendSegment(name string, duration float64, start time
 			for len(p.mediaLines) > 0 {
 				line := p.mediaLines[0]
 				p.mediaLines = p.mediaLines[1:]
-				
+
 				if line == "#EXT-X-DISCONTINUITY" {
 					p.discontSequence++
 				}
-				
+
 				if !strings.HasPrefix(line, "#") {
 					p.mediaSequence++
 					segmentsCount--
