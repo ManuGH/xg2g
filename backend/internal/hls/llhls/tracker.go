@@ -79,7 +79,15 @@ func (t *Tracker) run(ctx context.Context) {
 	}()
 
 	repaired := false
-	poll := time.NewTicker(100 * time.Millisecond)
+
+	// Start with slow polling (1s) for standard HLS: FFmpeg's hls muxer
+	// writes each fMP4 segment to disk only on completion, so a fast scan
+	// would never find fragments — only waste CPU and disk I/O. Once the
+	// tracker actually indexes a real CMAF fragment (via the ingest server
+	// or another streaming source), the poll speeds up to 100ms.
+	const slowInterval = 1 * time.Second
+	const fastInterval = 100 * time.Millisecond
+	poll := time.NewTicker(slowInterval)
 	defer poll.Stop()
 	for {
 		select {
@@ -128,7 +136,10 @@ func (t *Tracker) run(ctx context.Context) {
 				if t.current.name == cur.name {
 					t.current.parts = append(t.current.parts, frags...)
 					t.current.scanOffset = next
-					t.everHadParts = true
+					if !t.everHadParts {
+						t.everHadParts = true
+						poll.Reset(fastInterval)
+					}
 					changed = true
 				}
 				t.mu.Unlock()
