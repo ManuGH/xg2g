@@ -185,10 +185,19 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.ts", a.ingestPort, spec.SessionID)
 		}
 	}
+	hlsFlags := "delete_segments+append_list+independent_segments+program_date_time"
+	if !a.LowLatencyHLS || segmentType != "fmp4" {
+		// temp_file hides the growing segment behind a .tmp rename. The LL-HLS
+		// packager (internal/hls/llhls) must scan exactly that open segment to
+		// cut EXT-X-PART entries, so the flag stays off on the LL path;
+		// playlist consistency there is covered by the atomic playlist
+		// publication guard instead.
+		hlsFlags += "+temp_file"
+	}
 	args = append(args,
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
 		"-hls_list_size", strconv.Itoa(layout.listSize),
-		"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time+temp_file",
+		"-hls_flags", hlsFlags,
 		"-hls_segment_type", segmentType,
 	)
 	if a.inMemoryIngest && a.ingestPort > 0 {
