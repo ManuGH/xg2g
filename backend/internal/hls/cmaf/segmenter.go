@@ -126,11 +126,7 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 	var lastDts uint64
 	var haveDts bool
 
-	for {
-		if ctx.Err() != nil {
-			break
-		}
-
+	for ctx.Err() == nil {
 		var frag []byte
 		frag, pending, err = readFragment(br, pending)
 		if err == io.EOF {
@@ -453,7 +449,7 @@ func (s *segmentWriter) open() bool { return s.file != nil }
 func segmentName(index int) string { return fmt.Sprintf("seg_%06d.m4s", index) }
 
 func (s *segmentWriter) start(startDts uint64, wall time.Time) error {
-	f, err := os.OpenFile(filepath.Join(s.dir, segmentName(s.index)), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o640) // #nosec G304 -- session-confined path
+	f, err := os.OpenFile(filepath.Join(s.dir, segmentName(s.index)), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304 -- session-confined path
 	if err != nil {
 		return fmt.Errorf("open segment %d: %w", s.index, err)
 	}
@@ -586,7 +582,7 @@ func (p *playlistWriter) publish(end bool) error {
 
 func atomicWriteFile(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
