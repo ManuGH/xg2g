@@ -39,6 +39,7 @@ type outputPlan struct {
 	// session artifacts instead of the hls muxer.
 	cmafSegment      bool
 	cmafTargetDurSec int
+	listSize         int
 }
 
 type finalizedPlan struct {
@@ -48,6 +49,7 @@ type finalizedPlan struct {
 
 	cmafSegment      bool
 	cmafTargetDurSec int
+	listSize         int
 }
 
 type liveSegmentLayout struct {
@@ -93,6 +95,7 @@ func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamS
 		result.effectiveProfile = liveOutput.effectiveProfile
 		result.cmafSegment = liveOutput.cmafSegment
 		result.cmafTargetDurSec = liveOutput.cmafTargetDurSec
+		result.listSize = liveOutput.listSize
 	}
 
 	return result, nil

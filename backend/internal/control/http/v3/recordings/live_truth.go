@@ -62,6 +62,10 @@ type liveTruthResolution struct {
 	State        liveTruthState
 	Reason       string
 	ProblemFlags []string
+	// Stale marks a verified resolution that was served from a scan-truth entry
+	// older than the freshness window (stale-while-revalidate). The caller is
+	// expected to trigger a detached background re-probe for interactive requests.
+	Stale bool
 }
 
 func (r liveTruthResolution) Verified() bool {
@@ -98,10 +102,32 @@ func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bo
 	}
 	if normalized.HasMediaTruth() {
 		if !liveTruthFreshEnough(normalized, now) {
-			return unverifiedLiveTruth(serviceRef, liveTruthStateUnverified, "stale_scan_truth", normalized, []string{
-				"live_truth_unverified",
-				"stale_scan_truth",
-			}, requestContext)
+			// Stale-while-revalidate: complete media truth (container/codecs/
+			// resolution) is stable per channel for weeks, and the on-demand relay
+			// probe can fail exactly when playback would succeed (a cold tune
+			// yields ffprobe I/O errors until the descrambler locks). Blocking the
+			// player behind a 503 here is therefore strictly worse than serving
+			// the cached truth. Serve it immediately and mark the resolution
+			// Stale; interactive callers revalidate via a detached background
+			// probe (refreshLiveTruthAsync).
+			metrics.IncLiveTruthSource("scan", "stale_cache_hit")
+			evt := log.L().Info().
+				Str("event", "live.truth_stale_served").
+				Str("serviceRef", serviceRef).
+				Str("container", normalized.Container).
+				Str("videoCodec", normalized.VideoCodec).
+				Str("audioCodec", normalized.AudioCodec)
+			if requestContext != "" {
+				evt = evt.Str("request_context", requestContext)
+			}
+			evt.Msg("Serving stale scan truth for live playback; revalidating in background")
+			return liveTruthResolution{
+				Truth:  liveTruthFromCapability(normalized, playback.MediaStatusReady),
+				Origin: liveTruthOriginScan,
+				State:  liveTruthStateVerified,
+				Reason: "stale_cache_hit",
+				Stale:  true,
+			}
 		}
 		metrics.IncLiveTruthSource("scan", "cache_hit")
 		evt := log.L().Debug().

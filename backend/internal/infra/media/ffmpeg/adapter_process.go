@@ -229,6 +229,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		segCfg := cmaf.Config{
 			Dir:               ports.SessionHLSDir(a.HLSRoot, spec.SessionID),
 			TargetDurationSec: plan.cmafTargetDurSec,
+			ListSize:          plan.listSize,
 			Logger:            segLogger,
 		}
 		go func(r *os.File) {
