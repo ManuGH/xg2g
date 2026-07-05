@@ -51,8 +51,19 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec)
 	out.args = appendLiveVideoContainerTags(out.args, spec, codec.resolvedCodec)
 	out.args = appendLiveAudioArgs(out.args, spec)
-	out.args = a.appendLiveHLSArgs(out.args, spec, layout)
-	out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID))
+	if a.useCMAFSegmenter(spec) {
+		// LL-HLS pipe mode: one fragmented MP4 stream on stdout; the cmaf
+		// segmenter writes init/segments/playlist so the open segment grows
+		// on disk fragment by fragment (the hls muxer buffers fMP4 segments
+		// in memory and would only publish them completed).
+		out.args = appendLiveCMAFStreamArgs(out.args)
+		out.cmafSegment = true
+		out.cmafTargetDurSec = layout.segmentDurationSec
+	} else {
+		out.args = append(out.args, "-f", "hls")
+		out.args = a.appendLiveHLSArgs(out.args, spec, layout)
+		out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID))
+	}
 
 	// One source of truth: record the hwAccel the emitted argv actually reflects,
 	// so the profile-derived predicted FFmpeg plan matches execution. The planner
@@ -149,7 +160,31 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec) []string {
 		"-ac", "2",
 		"-ar", "48000",
 		"-sn",
-		"-f", "hls",
+	)
+}
+
+// useCMAFSegmenter reports whether this session runs in LL-HLS pipe mode.
+// Restricted to transcode so the 2s IDR cadence is under our control;
+// copy sources with unknown GOPs fall back to the hls muxer (the HasParts
+// gate then keeps the playlist plain).
+func (a *LocalAdapter) useCMAFSegmenter(spec ports.StreamSpec) bool {
+	return a.LowLatencyHLS &&
+		spec.Profile.TranscodeVideo &&
+		strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
+}
+
+// appendLiveCMAFStreamArgs emits a single fragmented-MP4 stream on stdout:
+// frag_keyframe guarantees every 2s IDR starts a fragment (clean segment
+// rotation points), frag_duration cuts ~500ms parts between them, and
+// flush_packets defeats the 32KB AVIO buffer so fragments reach the
+// segmenter with encode latency instead of buffer-fill latency.
+func appendLiveCMAFStreamArgs(args []string) []string {
+	return append(args,
+		"-f", "mp4",
+		"-movflags", "empty_moov+default_base_moof+skip_trailer+frag_keyframe",
+		"-frag_duration", strconv.Itoa(llhlsPartTargetMs*1000),
+		"-flush_packets", "1",
+		"pipe:1",
 	)
 }
 

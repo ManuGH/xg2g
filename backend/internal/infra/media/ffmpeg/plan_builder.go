@@ -33,12 +33,21 @@ type codecPlan struct {
 type outputPlan struct {
 	args             []string
 	effectiveProfile ports.ProfileSpec
+
+	// cmafSegment marks the LL-HLS pipe mode: ffmpeg emits one fragmented
+	// MP4 stream on stdout and the in-process cmaf segmenter produces the
+	// session artifacts instead of the hls muxer.
+	cmafSegment      bool
+	cmafTargetDurSec int
 }
 
 type finalizedPlan struct {
 	args             []string
 	effectiveProfile ports.ProfileSpec
 	pathID           string
+
+	cmafSegment      bool
+	cmafTargetDurSec int
 }
 
 type liveSegmentLayout struct {
@@ -82,6 +91,8 @@ func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamS
 		}
 		result.args = append(result.args, liveOutput.args...)
 		result.effectiveProfile = liveOutput.effectiveProfile
+		result.cmafSegment = liveOutput.cmafSegment
+		result.cmafTargetDurSec = liveOutput.cmafTargetDurSec
 	}
 
 	return result, nil

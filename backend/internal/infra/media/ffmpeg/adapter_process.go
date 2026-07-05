@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/hls/cmaf"
 	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
@@ -178,6 +179,19 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	}
 	cmd.Stdout = nil
 
+	// LL-HLS pipe mode: ffmpeg streams one fragmented MP4 on stdout and the
+	// in-process segmenter produces the session artifacts. A manual os.Pipe
+	// (instead of StdoutPipe) keeps the read end out of cmd.Wait's lifecycle
+	// so the segmenter can drain the tail after process exit.
+	var cmafRead, cmafWrite *os.File
+	if plan.cmafSegment {
+		cmafRead, cmafWrite, err = os.Pipe()
+		if err != nil {
+			return "", fmt.Errorf("cmaf pipe: %w", err)
+		}
+		cmd.Stdout = cmafWrite
+	}
+
 	// Span covering ffmpeg spawn -> first HLS segment (the user-perceived startup
 	// latency). No-op when tracing is disabled; ended exactly once in the monitor.
 	spawnedAt := time.Now()
@@ -195,10 +209,32 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	}
 
 	if err := cmd.Start(); err != nil {
+		if cmafRead != nil {
+			_ = cmafRead.Close()
+			_ = cmafWrite.Close()
+		}
 		startupSpan.RecordError(err)
 		startupSpan.SetStatus(codes.Error, "ffmpeg start failed")
 		startupSpan.End()
 		return "", fmt.Errorf("ffmpeg start failed: %w", err)
+	}
+	if cmafRead != nil {
+		// The child holds its own copy of the write end; closing ours makes
+		// EOF reach the segmenter when ffmpeg exits.
+		_ = cmafWrite.Close()
+		segLogger := a.Logger.With().
+			Str("component", "cmaf_segmenter").
+			Str("session_id", spec.SessionID).
+			Logger()
+		segCfg := cmaf.Config{
+			Dir:               ports.SessionHLSDir(a.HLSRoot, spec.SessionID),
+			TargetDurationSec: plan.cmafTargetDurSec,
+			Logger:            segLogger,
+		}
+		go func(r *os.File) {
+			defer func() { _ = r.Close() }()
+			_ = cmaf.Run(ctx, r, segCfg)
+		}(cmafRead)
 	}
 
 	pid := cmd.Process.Pid

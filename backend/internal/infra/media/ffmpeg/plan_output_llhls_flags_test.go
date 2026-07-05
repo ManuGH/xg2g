@@ -12,6 +12,59 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestUseCMAFSegmenter pins the LL pipe-mode condition: transcode + fmp4 +
+// LowLatencyHLS. Copy sources keep the hls muxer (unknown GOP would break
+// rotation), as does mpegts.
+func TestUseCMAFSegmenter(t *testing.T) {
+	cases := []struct {
+		name       string
+		lowLatency bool
+		transcode  bool
+		container  string
+		want       bool
+	}{
+		{"ll transcode fmp4", true, true, "fmp4", true},
+		{"ll copy fmp4", true, false, "fmp4", false},
+		{"ll transcode ts", true, true, "ts", false},
+		{"standard transcode fmp4", false, true, "fmp4", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &LocalAdapter{LowLatencyHLS: tc.lowLatency}
+			spec := ports.StreamSpec{Profile: ports.ProfileSpec{
+				TranscodeVideo: tc.transcode,
+				Container:      tc.container,
+			}}
+			if got := a.useCMAFSegmenter(spec); got != tc.want {
+				t.Errorf("useCMAFSegmenter = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAppendLiveCMAFStreamArgs pins the stream contract the segmenter
+// depends on: fragments cut on keyframes and the part grid, no AVIO
+// buffering, output on stdout.
+func TestAppendLiveCMAFStreamArgs(t *testing.T) {
+	argStr := strings.Join(appendLiveCMAFStreamArgs(nil), " ")
+	for _, want := range []string{
+		"-f mp4",
+		"frag_keyframe",
+		"empty_moov",
+		"default_base_moof",
+		"-frag_duration 500000",
+		"-flush_packets 1",
+		"pipe:1",
+	} {
+		if !strings.Contains(argStr, want) {
+			t.Errorf("cmaf args missing %q: %s", want, argStr)
+		}
+	}
+	if strings.Contains(argStr, "hls") {
+		t.Errorf("cmaf args must not contain hls muxer options: %s", argStr)
+	}
+}
+
 // The LL-HLS packager (internal/hls/llhls) scans the segment FFmpeg is
 // currently writing to cut EXT-X-PART entries. With temp_file the open
 // segment only exists as seg_N.m4s.tmp until it completes, so the packager
