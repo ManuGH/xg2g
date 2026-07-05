@@ -100,6 +100,55 @@ func TestTrackerEndToEnd(t *testing.T) {
 	}
 }
 
+// TestTrackerHasParts covers the LL-advertising gate: as long as the open
+// segment never shows a flushed fragment on disk (FFmpeg's hls muxer writes
+// fMP4 segments only on completion), HasParts must stay false so the
+// handler keeps serving the plain playlist. Once a fragment appears,
+// HasParts flips true and stays true.
+func TestTrackerHasParts(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, data []byte) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ftyp := mkBox("ftyp", make([]byte, 16))
+	moov := mkBox("moov", make([]byte, 32))
+	styp := mkBox("styp", make([]byte, 16))
+
+	// Clean init (no leak), one complete segment, no open-segment file at
+	// all — the completed-segments-only pattern stock FFmpeg produces.
+	write("init.mp4", append(append([]byte{}, ftyp...), moov...))
+	write("seg_000000.m4s", append(append([]byte{}, styp...), mkFragment(true, 64)...))
+	write("index.m3u8", []byte(strings.Join([]string{
+		"#EXTM3U",
+		"#EXT-X-VERSION:7",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXT-X-MEDIA-SEQUENCE:0",
+		`#EXT-X-MAP:URI="init.mp4"`,
+		"#EXTINF:2.000000,",
+		"seg_000000.m4s",
+		"",
+	}, "\n")))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tr := NewTracker(ctx, dir, 500)
+
+	// Give the poll loop several cycles: no open segment ever appears, so
+	// no parts may be indexed.
+	time.Sleep(600 * time.Millisecond)
+	if tr.HasParts() {
+		t.Fatal("HasParts must stay false while no fragment was ever indexed")
+	}
+
+	// The open segment appears with one flushed fragment: gate must open.
+	write("seg_000001.m4s", append(append([]byte{}, styp...), mkFragment(true, 80)...))
+	waitFor(t, 3*time.Second, func() bool { return tr.HasParts() })
+}
+
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
