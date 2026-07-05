@@ -23,11 +23,12 @@ type Tracker struct {
 	dir          string
 	partTargetMs int
 
-	mu      sync.Mutex
-	cond    *sync.Cond
-	base    basePlaylist
-	current openSegment
-	closed  bool
+	mu           sync.Mutex
+	cond         *sync.Cond
+	base         basePlaylist
+	current      openSegment
+	closed       bool
+	everHadParts bool
 }
 
 type basePlaylist struct {
@@ -78,7 +79,15 @@ func (t *Tracker) run(ctx context.Context) {
 	}()
 
 	repaired := false
-	poll := time.NewTicker(100 * time.Millisecond)
+
+	// Start with slow polling (1s) for standard HLS: FFmpeg's hls muxer
+	// writes each fMP4 segment to disk only on completion, so a fast scan
+	// would never find fragments — only waste CPU and disk I/O. Once the
+	// tracker actually indexes a real CMAF fragment (via the ingest server
+	// or another streaming source), the poll speeds up to 100ms.
+	const slowInterval = 1 * time.Second
+	const fastInterval = 100 * time.Millisecond
+	poll := time.NewTicker(slowInterval)
 	defer poll.Stop()
 	for {
 		select {
@@ -127,6 +136,10 @@ func (t *Tracker) run(ctx context.Context) {
 				if t.current.name == cur.name {
 					t.current.parts = append(t.current.parts, frags...)
 					t.current.scanOffset = next
+					if !t.everHadParts {
+						t.everHadParts = true
+						poll.Reset(fastInterval)
+					}
 					changed = true
 				}
 				t.mu.Unlock()
@@ -196,6 +209,20 @@ func readBasePlaylist(path string) (basePlaylist, error) {
 		return basePlaylist{}, fmt.Errorf("playlist has no segments yet")
 	}
 	return base, nil
+}
+
+// HasParts reports whether the tracker has ever indexed a CMAF fragment in
+// this session. Until that happens the LL playlist must not be served:
+// advertising CAN-BLOCK-RELOAD and PART-HOLD-BACK without ever delivering
+// EXT-X-PART entries locks native players into full-segment blocking
+// reloads at a part-sized hold-back, which drains their buffer into
+// periodic stalls. FFmpeg's hls muxer buffers each fMP4 segment in memory
+// and writes it only on completion, so parts appear on disk only when the
+// segment pipeline actually streams fragments (e.g. via the ingest server).
+func (t *Tracker) HasParts() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.everHadParts
 }
 
 // snapshot returns a consistent view for rendering.

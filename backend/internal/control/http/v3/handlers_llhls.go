@@ -51,6 +51,13 @@ func (s *Server) serveLLHLSPlaylist(w http.ResponseWriter, r *http.Request, deps
 	dir := paths.LiveSessionDir(deps.cfg.HLS.Root, sessionID)
 	tracker := llhlsRegistry().Get(dir, sessionID)
 
+	// Serve the plain playlist until the tracker has indexed real parts (see
+	// Tracker.HasParts). Clients that never saw the LL tags do plain reloads
+	// at standard latency instead of starving behind a part-sized hold-back.
+	if !tracker.HasParts() {
+		return false
+	}
+
 	msn, part := parseBlockingReloadParams(r)
 	out, err := tracker.AwaitAndRender(r.Context(), msn, part, time.Now().Add(llhlsBlockingReloadTimeout))
 	if err != nil {
