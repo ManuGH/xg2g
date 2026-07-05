@@ -106,7 +106,7 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 	}
 	if a.DVRWindow > 0 {
 		dvrSize := int(math.Ceil(a.DVRWindow.Seconds() / float64(layout.segmentDurationSec)))
-		layout.listSize = max(dvrSize, minSize)
+		layout.listSize = max(dvrSize, layout.listSize, minSize)
 	}
 	return layout, nil
 }

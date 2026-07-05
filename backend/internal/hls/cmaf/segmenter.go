@@ -609,7 +609,10 @@ func (p *playlistWriter) publish(end bool) error {
 	b.WriteString("#EXTM3U\n")
 	b.WriteString("#EXT-X-VERSION:7\n")
 	fmt.Fprintf(&b, "#EXT-X-TARGETDURATION:%d\n", p.targetDuration)
-	b.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
+	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.mediaSequence)
+	if p.discontSequence > 0 {
+		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.discontSequence)
+	}
 	b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
 	b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
 	for _, line := range p.mediaLines {
