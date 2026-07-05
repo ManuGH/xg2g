@@ -181,6 +181,25 @@ func TestExecutedFFmpegPlanFromArgs(t *testing.T) {
 			},
 		},
 		{
+			// Input-side frag options (before -i) must not mark the OUTPUT
+			// as fragmented.
+			name: "input-side movflags do not leak into output",
+			args: []string{
+				"-movflags", "frag_keyframe",
+				"-f", "mp4",
+				"-i", "/x/in.mp4",
+				"-c:v", "copy",
+				"-c:a", "aac",
+				"-f", "mp4",
+				"/x/out.mp4",
+			},
+			want: ports.ExecutedFFmpegPlan{
+				Container: "mp4", Packaging: "mp4", HWAccel: "none",
+				VideoMode: "copy", VideoCodec: "copy",
+				AudioMode: "transcode", AudioCodec: "aac",
+			},
+		},
+		{
 			name: "plain unfragmented mp4 output stays mp4",
 			args: []string{
 				"-i", "http://tuner/x",

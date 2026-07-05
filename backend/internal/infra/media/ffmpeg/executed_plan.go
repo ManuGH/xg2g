@@ -28,9 +28,12 @@ func executedFFmpegPlanFromArgs(args []string) ports.ExecutedFFmpegPlan {
 				outFormat = args[i+1]
 			}
 		case "-i":
-			// A -f seen before an -i described that INPUT's demuxer, not the
-			// output muxer. Only the -f after the last input names the output.
+			// Options seen before an -i (-f, -movflags, -frag_duration)
+			// described that INPUT, not the output muxer. Only the flags
+			// after the last input describe the output.
 			outFormat = ""
+			movFlags = ""
+			fragmented = false
 		case "-movflags":
 			if i+1 < len(args) {
 				movFlags = args[i+1]
