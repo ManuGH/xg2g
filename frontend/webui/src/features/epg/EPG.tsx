@@ -3,7 +3,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import React, { useReducer, useEffect, useCallback, useMemo } from 'react';
+import React, { useReducer, useEffect, useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { epgReducer, createInitialEpgState } from './epgModel';
@@ -15,6 +15,8 @@ import type { EpgChannel, EpgBouquet, Timer, EpgEvent, EpgFilters } from './type
 import { EPG_MAX_HORIZON_HOURS } from './types';
 import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
+import { EpgTimelineGrid } from './components/EpgTimelineGrid';
+import { EpgEventDialog } from './components/EpgEventDialog';
 import ErrorPanel from '../../components/ErrorPanel';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import SectionContextBar from '../../components/SectionContextBar';
@@ -112,6 +114,8 @@ export default function EPG({
   const { search } = useLocation();
   const { confirm, toast } = useUiOverlay();
   const uiSurface = useUiSurface();
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(uiSurface.width < 768 ? 'list' : 'grid');
+  const [selectedEvent, setSelectedEvent] = useState<EpgEvent | null>(null);
   const {
     selectedProfile,
     isReady,
@@ -525,12 +529,20 @@ export default function EPG({
             onRefresh={loadEpgEvents}
             onToggleFavorites={() => setShowFavoritesOnly((current) => !current)}
             onSearch={runSearch}
-            extraActions={canManageDvr ? (
-              <button type="button" onClick={() => handleSectionChange('timers')}>
-                <span className={styles.actionIcon} aria-hidden="true">⏱</span>
-                <span className={styles.actionLabel}>{t('nav.timers')}</span>
-              </button>
-            ) : null}
+            extraActions={
+              <>
+                <button type="button" onClick={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}>
+                  <span className={styles.actionIcon} aria-hidden="true">{viewMode === 'grid' ? '☰' : '▦'}</span>
+                  <span className={styles.actionLabel}>{viewMode === 'grid' ? 'List' : 'Timeline'}</span>
+                </button>
+                {canManageDvr ? (
+                  <button type="button" onClick={() => handleSectionChange('timers')}>
+                    <span className={styles.actionIcon} aria-hidden="true">⏱</span>
+                    <span className={styles.actionLabel}>{t('nav.timers')}</span>
+                  </button>
+                ) : null}
+              </>
+            }
           />
 
           {showFavoritesOnly && visibleChannels.length === 0 && (
@@ -586,6 +598,7 @@ export default function EPG({
                   onToggleFavorite={toggleFavoriteService}
                   onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
                   isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
+                  onEventClick={(evt) => setSelectedEvent(evt)}
                 />
               </div>
             </div>
@@ -606,24 +619,48 @@ export default function EPG({
           )}
 
           {showMainList && (
-            <EpgChannelList
-              mode="main"
-              channels={visibleChannels}
-              eventsByServiceRef={visibleMainEventsByServiceRef}
-              favoriteServiceRefs={favoriteServiceRefs}
-              currentTime={state.currentTime}
-              timeRangeHours={state.filters.timeRange}
-              expandedChannels={state.expandedChannels}
-              onToggleExpand={handleToggleChannel}
-              onPlay={onPlay}
-              onToggleFavorite={toggleFavoriteService}
-              onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
-              isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
-            />
+            viewMode === 'list' ? (
+              <EpgChannelList
+                mode="main"
+                channels={visibleChannels}
+                eventsByServiceRef={visibleMainEventsByServiceRef}
+                favoriteServiceRefs={favoriteServiceRefs}
+                currentTime={state.currentTime}
+                timeRangeHours={state.filters.timeRange}
+                expandedChannels={state.expandedChannels}
+                onToggleExpand={handleToggleChannel}
+                onPlay={onPlay}
+                onToggleFavorite={toggleFavoriteService}
+                onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
+                isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
+                onEventClick={(evt) => setSelectedEvent(evt)}
+              />
+            ) : (
+              <EpgTimelineGrid
+                channels={visibleChannels}
+                eventsByServiceRef={visibleMainEventsByServiceRef}
+                favoriteServiceRefs={favoriteServiceRefs}
+                currentTime={state.currentTime}
+                timeRangeHours={state.filters.timeRange}
+                onToggleFavorite={toggleFavoriteService}
+                onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
+                isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
+                onPlay={onPlay}
+                onEventClick={(evt) => setSelectedEvent(evt)}
+              />
+            )
           )}
         </>
       ) : (
         <Timers showLegacyNotice={false} />
+      )}
+      {selectedEvent && (
+        <EpgEventDialog
+          event={selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+          onRecord={canManageDvr ? handleRecord : undefined}
+          isRecorded={selectedEvent ? isRecorded(selectedEvent) : false}
+        />
       )}
     </div>
   );

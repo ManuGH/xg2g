@@ -401,6 +401,7 @@ interface ChannelCardProps {
   onToggleFavorite?: (serviceRef: string) => void;
   onRecord?: (event: EpgEvent) => void;
   isRecorded?: (event: EpgEvent) => boolean;
+  onEventClick?: (event: EpgEvent) => void;
 }
 
 function ChannelCard({
@@ -417,6 +418,7 @@ function ChannelCard({
   onToggleFavorite,
   onRecord,
   isRecorded,
+  onEventClick,
 }: ChannelCardProps) {
   const { t } = useTranslation();
   const displayName = channel
@@ -458,6 +460,7 @@ function ChannelCard({
             highlight
             onRecord={onRecord}
             isRecorded={isRecorded ? isRecorded(current) : false}
+            onClick={() => onEventClick?.(current)}
           // Logic: Current event usually implies "Now/Today", so no date header unless we want to carry over
           // But usually current is obvious. User said "Today no date".
           />
@@ -502,6 +505,7 @@ function ChannelCard({
                       highlight={currentTime >= event.start && currentTime < event.end}
                       onRecord={onRecord}
                       isRecorded={isRecorded ? isRecorded(event) : false}
+                      onClick={() => onEventClick?.(event)}
                       dateLabel={showHeader ? eventDate : undefined}
                     />
                   );
@@ -528,6 +532,7 @@ interface SearchGroupProps {
   onToggleFavorite?: (serviceRef: string) => void;
   onRecord?: (event: EpgEvent) => void;
   isRecorded?: (event: EpgEvent) => boolean;
+  onEventClick?: (event: EpgEvent) => void;
 }
 
 function SearchGroup({
@@ -542,6 +547,7 @@ function SearchGroup({
   onToggleFavorite,
   onRecord,
   isRecorded,
+  onEventClick,
 }: SearchGroupProps) {
   const { t } = useTranslation();
   const serviceRef = channel.serviceRef || channel.id || '';
@@ -585,6 +591,7 @@ function SearchGroup({
               highlight={currentTime >= event.start && currentTime < event.end}
               onRecord={onRecord}
               isRecorded={isRecorded ? isRecorded(event) : false}
+                      onClick={() => onEventClick?.(event)}
               dateLabel={showHeader ? eventDate : undefined}
             />
           )
@@ -624,6 +631,7 @@ function SearchGroup({
                       highlight={currentTime >= event.start && currentTime < event.end}
                       onRecord={onRecord}
                       isRecorded={isRecorded ? isRecorded(event) : false}
+                      onClick={() => onEventClick?.(event)}
                       dateLabel={showHeader ? eventDate : undefined}
                     />
                   );
@@ -651,6 +659,7 @@ export interface EpgChannelListProps {
   onToggleFavorite?: (serviceRef: string) => void;
   onRecord?: (event: EpgEvent) => void;
   isRecorded?: (event: EpgEvent) => boolean;
+  onEventClick?: (event: EpgEvent) => void;
 }
 
 export function EpgChannelList({
@@ -666,6 +675,7 @@ export function EpgChannelList({
   onToggleFavorite,
   onRecord,
   isRecorded,
+  onEventClick,
 }: EpgChannelListProps) {
   const isTvHost = React.useMemo(() => resolveHostEnvironment().isTv, []);
   const listRef = React.useRef<HTMLDivElement | null>(null);
@@ -1146,6 +1156,7 @@ export function EpgChannelList({
               onToggleFavorite={onToggleFavorite}
               onRecord={onRecord}
               isRecorded={isRecorded}
+              onEventClick={onEventClick}
             />
           );
         })}

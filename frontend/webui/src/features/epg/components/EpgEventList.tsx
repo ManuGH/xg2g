@@ -25,6 +25,7 @@ export interface EpgEventRowProps {
   onRecord?: (event: EpgEvent) => void;
   isRecorded?: boolean;
   dateLabel?: string | null; // Optional date header (e.g. "Do 28.12.")
+  onClick?: () => void;
 }
 
 export function EpgEventRow({
@@ -34,6 +35,7 @@ export function EpgEventRow({
   onRecord,
   isRecorded = false,
   dateLabel,
+  onClick,
 }: EpgEventRowProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -46,13 +48,21 @@ export function EpgEventRow({
   const handleToggle = (e: React.MouseEvent) => {
     // Prevent toggle if clicking buttons
     if ((e.target as HTMLElement).closest('button')) return;
-    setExpanded(!expanded);
+    if (onClick) {
+      onClick();
+    } else {
+      setExpanded(!expanded);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      setExpanded(prev => !prev);
+      if (onClick) {
+        onClick();
+      } else {
+        setExpanded(prev => !prev);
+      }
     }
   };
 
