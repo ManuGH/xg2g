@@ -214,7 +214,6 @@ export function EpgToolbar({
           <div className={styles.pills}>
             {[
               { label: t('epg.rangeNow', { defaultValue: 'Now' }), value: 6 },
-              { label: t('epg.rangeEvening', { defaultValue: 'Evening' }), value: 12 },
               { label: t('epg.rangeDay', { defaultValue: '24h' }), value: 24 },
               { label: t('epg.rangeWeek', { defaultValue: '7d' }), value: 168 },
               { label: t('epg.rangeAll', { defaultValue: 'All' }), value: EPG_MAX_HORIZON_HOURS },
