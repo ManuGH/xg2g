@@ -77,6 +77,12 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 		writeRegisteredProblem(w, r, http.StatusForbidden, "sessions/hls_forbidden_artifact", "Access Denied", problemcode.CodeForbidden, "The requested HLS artifact is not allowed", nil)
 		return
 	}
+	// Playlist fetches renew the session lease: an attached player refetches
+	// the playlist every target duration, so consumption keeps the session
+	// alive even when the client's heartbeat loop is throttled or dead.
+	if filename == "index.m3u8" || filename == "stream.m3u8" {
+		s.renewLeaseFromConsumption(r.Context(), sessionID)
+	}
 	// Low-latency HLS: serve the part-augmented playlist with blocking
 	// reload when enabled; any not-ready condition falls back to the plain
 	// file path below so startup semantics stay identical.

@@ -271,8 +271,17 @@ export function useLiveSessionController({
       setDurationSeconds(session.durationSeconds);
     }
 
-    setHeartbeatInterval(hasValidHeartbeatInterval(session.heartbeatIntervalSeconds) ? session.heartbeatIntervalSeconds : null);
-    setLeaseExpiresAt(session.leaseExpiresAt ?? null);
+    // Only ever tighten lease state from a snapshot, never clear it: snapshots
+    // of a session that is still STARTING (e.g. during a zap) can lack
+    // heartbeatIntervalSeconds, and nulling the interval here would silently
+    // stop the heartbeat loop of the session that is still playing. Clearing
+    // is reserved for clearSessionLeaseState().
+    if (hasValidHeartbeatInterval(session.heartbeatIntervalSeconds)) {
+      setHeartbeatInterval(session.heartbeatIntervalSeconds);
+    }
+    if (session.leaseExpiresAt) {
+      setLeaseExpiresAt(session.leaseExpiresAt);
+    }
     onSessionSnapshot?.(session);
   }, [onSessionSnapshot, setDurationSeconds, setPlaybackMode]);
 
