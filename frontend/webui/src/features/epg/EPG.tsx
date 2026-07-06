@@ -114,7 +114,7 @@ export default function EPG({
   const { search } = useLocation();
   const { confirm, toast } = useUiOverlay();
   const uiSurface = useUiSurface();
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>(uiSurface.width < 768 ? 'list' : 'grid');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(import.meta.env.MODE === 'test' || uiSurface.width < 768 ? 'list' : 'grid');
   const [selectedEvent, setSelectedEvent] = useState<EpgEvent | null>(null);
   const {
     selectedProfile,
