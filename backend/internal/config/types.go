@@ -134,7 +134,7 @@ type EPGConfig struct {
 	Retries        *int   `yaml:"retries,omitempty"`
 	FuzzyMax       *int   `yaml:"fuzzyMax,omitempty"`
 	XMLTVPath      string `yaml:"xmltvPath,omitempty"`
-	Source         string `yaml:"source,omitempty"` // "bouquet" or "per-service" (default)
+	Source         string `yaml:"source,omitempty"` // "bouquet" (default) or "per-service"
 }
 
 type RecordingPlaybackConfig struct {
@@ -540,7 +540,7 @@ type AppConfig struct {
 	EPGMaxConcurrency  int           // Max parallel EPG requests (1-10)
 	EPGTimeoutMS       int           // Timeout per EPG request in milliseconds
 	EPGRetries         int           // Retry attempts for EPG requests
-	EPGSource          string        // EPG fetch strategy: "bouquet" (fast, single request) or "per-service" (default, per-channel requests)
+	EPGSource          string        // EPG fetch strategy: "bouquet" (default, fast, single request) or "per-service" (per-channel requests)
 	EPGRefreshInterval time.Duration // Interval for background EPG refreshes
 
 	// TLS Configuration
