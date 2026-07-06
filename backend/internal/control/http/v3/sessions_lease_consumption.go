@@ -6,11 +6,22 @@ package v3
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 )
+
+// fallbackHeartbeatIntervalSec caps renewal frequency when a session record
+// carries no positive heartbeat interval; matches the sessions.heartbeat_interval
+// config default.
+const fallbackHeartbeatIntervalSec = 30
+
+// errLeaseRenewalNoOp aborts an UpdateSession that turned out to be
+// unnecessary once inside the store's critical section (concurrent heartbeat
+// already extended further, or the session went terminal since the read).
+var errLeaseRenewalNoOp = errors.New("lease renewal no-op")
 
 // renewLeaseFromConsumption extends a live session's lease when a client is
 // actively consuming its HLS artifacts. A playing client refetches the
@@ -31,6 +42,10 @@ func (s *Server) renewLeaseFromConsumption(ctx context.Context, sessionID string
 		return
 	}
 
+	// The caller's request context ends with the playlist response; a client
+	// that disconnects mid-request must not abort the lease write.
+	ctx = context.WithoutCancel(ctx)
+
 	session, err := store.GetSession(ctx, sessionID)
 	if err != nil || session == nil {
 		return
@@ -43,7 +58,19 @@ func (s *Server) renewLeaseFromConsumption(ctx context.Context, sessionID string
 	if session.LeaseExpiresAtUnix > 0 && now > session.LeaseExpiresAtUnix {
 		return
 	}
-	if now-session.LastHeartbeatUnix < int64(session.HeartbeatInterval) {
+
+	// A record without a positive heartbeat interval must not bypass the
+	// idempotency window — that would mean one store write per playlist fetch.
+	interval := session.HeartbeatInterval
+	if interval <= 0 {
+		if d := deps.cfg.Sessions.HeartbeatInterval; d > 0 {
+			interval = int(d / time.Second)
+		}
+	}
+	if interval <= 0 {
+		interval = fallbackHeartbeatIntervalSec
+	}
+	if now-session.LastHeartbeatUnix < int64(interval) {
 		return
 	}
 
@@ -58,10 +85,21 @@ func (s *Server) renewLeaseFromConsumption(ctx context.Context, sessionID string
 
 	logger := log.WithComponentFromContext(ctx, "api")
 	if _, err := store.UpdateSession(ctx, sessionID, func(rec *model.SessionRecord) error {
+		// Re-check inside the store's critical section: the session can go
+		// terminal or receive a further-reaching heartbeat between the read
+		// above and this write, and a renewal must never shorten a lease.
+		if rec.State.IsTerminal() || newExpiry <= rec.LeaseExpiresAtUnix {
+			return errLeaseRenewalNoOp
+		}
 		rec.LeaseExpiresAtUnix = newExpiry
-		rec.LastHeartbeatUnix = now
+		if now > rec.LastHeartbeatUnix {
+			rec.LastHeartbeatUnix = now
+		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errLeaseRenewalNoOp) {
+			return
+		}
 		logger.Warn().
 			Err(err).
 			Str("sessionId", sessionID).

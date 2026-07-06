@@ -63,6 +63,36 @@ func TestRenewLeaseFromConsumption_IdempotentWithinInterval(t *testing.T) {
 	require.Equal(t, lastHB, updated.LastHeartbeatUnix)
 }
 
+func TestRenewLeaseFromConsumption_ZeroIntervalFallsBackToDefaultWindow(t *testing.T) {
+	s, st := newV3TestServer(t, t.TempDir())
+	s.cfg.Sessions.LeaseTTL = 120 * time.Second
+
+	sessionID := "550e8400-e29b-41d4-a716-446655440105"
+	now := time.Now().UTC()
+	expiry := now.Add(90 * time.Second).Unix()
+	lastHB := now.Add(-5 * time.Second).Unix()
+
+	// HeartbeatInterval 0 must not disable throttling: with the fallback
+	// window (30s), a heartbeat 5s ago keeps this renewal a no-op instead of
+	// producing one store write per playlist fetch.
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:          sessionID,
+		State:              model.SessionReady,
+		ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+		HeartbeatInterval:  0,
+		LeaseExpiresAtUnix: expiry,
+		LastHeartbeatUnix:  lastHB,
+	}))
+
+	s.renewLeaseFromConsumption(context.Background(), sessionID)
+
+	updated, err := st.GetSession(context.Background(), sessionID)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, expiry, updated.LeaseExpiresAtUnix, "zero interval must not bypass the idempotency window")
+	require.Equal(t, lastHB, updated.LastHeartbeatUnix)
+}
+
 func TestRenewLeaseFromConsumption_SkipsExpiredAndTerminal(t *testing.T) {
 	s, st := newV3TestServer(t, t.TempDir())
 	s.cfg.Sessions.LeaseTTL = 120 * time.Second
