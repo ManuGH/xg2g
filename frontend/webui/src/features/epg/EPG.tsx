@@ -104,6 +104,7 @@ function isAbortError(error: unknown): boolean {
 }
 
 const EPG_VIEW_MODE_STORAGE_KEY = 'xg2g:epg:viewMode';
+const EPG_GRID_MAX_RANGE_HOURS = 48;
 
 function readStoredEpgViewMode(): 'list' | 'grid' | null {
   try {
@@ -645,7 +646,7 @@ export default function EPG({
           )}
 
           {showMainList && (
-            viewMode === 'list' ? (
+            viewMode === 'list' || state.filters.timeRange > EPG_GRID_MAX_RANGE_HOURS ? (
               <EpgChannelList
                 mode="main"
                 channels={visibleChannels}
