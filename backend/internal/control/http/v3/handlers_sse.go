@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/go-chi/chi/v5"
@@ -17,6 +19,7 @@ import (
 
 // handleV3SessionEvents handles GET /sessions/{sessionID}/events.
 // It subscribes to real-time session telemetry and state events and streams them via SSE.
+// Subscribe-before-replay ensures no event is lost between state snapshot and subscription setup.
 func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -45,7 +48,28 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	// Send initial state event
+	// Subscribe to the bus before replaying initial state so that no event
+	// published between the state snapshot and the subscription is lost.
+	var (
+		stateSub bus.Subscriber
+		telemSub bus.Subscriber
+	)
+	if deps.bus != nil {
+		var subErr error
+		stateSub, subErr = deps.bus.Subscribe(r.Context(), string(model.EventSessionStateChanged))
+		if subErr != nil {
+			return
+		}
+		defer func() { _ = stateSub.Close() }()
+
+		telemSub, subErr = deps.bus.Subscribe(r.Context(), string(model.EventSessionTelemetry))
+		if subErr != nil {
+			return
+		}
+		defer func() { _ = telemSub.Close() }()
+	}
+
+	// Send initial state event (after subscription to avoid missing events)
 	initialState := model.SessionStateChangedEvent{
 		Type:        model.EventSessionStateChanged,
 		SessionID:   sessionID,
@@ -69,18 +93,6 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 		return
 	}
-
-	stateSub, subErr := deps.bus.Subscribe(r.Context(), string(model.EventSessionStateChanged))
-	if subErr != nil {
-		return
-	}
-	defer func() { _ = stateSub.Close() }()
-
-	telemSub, subErr2 := deps.bus.Subscribe(r.Context(), string(model.EventSessionTelemetry))
-	if subErr2 != nil {
-		return
-	}
-	defer func() { _ = telemSub.Close() }()
 
 	for {
 		select {
