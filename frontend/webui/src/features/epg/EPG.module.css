@@ -1233,17 +1233,28 @@
 .timelineCurrentTimeIndicator {
   position: absolute;
   top: 0;
-  bottom: -2000px; /* extends down into the body */
+  bottom: 0;
   width: 2px;
   background: var(--status-error);
   z-index: 10;
   pointer-events: none;
-  box-shadow: 0 0 10px var(--status-error-subtle);
 }
 
 .timelineBody {
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.timelineCurrentTimeLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--status-error);
+  z-index: 15;
+  pointer-events: none;
+  box-shadow: 0 0 10px var(--status-error-subtle);
 }
 
 .timelineRow {
@@ -1270,10 +1281,13 @@
   transition: background 0.2s;
 }
 
-.timelineChannelCard:hover,
-.timelineChannelCard:focus-visible {
+.timelineChannelCard:hover {
   background: var(--surface-panel);
-  outline: none;
+}
+
+.timelineChannelCard:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .timelineChannelContent {
@@ -1317,7 +1331,6 @@
   border: 1px solid var(--border-elevated);
   border-radius: 8px;
   background: var(--surface-panel);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   box-sizing: border-box;
   /* Use clip-path to hide overflow without breaking sticky */
   clip-path: inset(0 round 8px);
@@ -1327,15 +1340,19 @@
   outline: none;
 }
 
-.timelineEventBlock:hover,
-.timelineEventBlock:focus-visible {
+.timelineEventBlock:hover {
   background: var(--surface-panel-strong);
+}
+
+.timelineEventBlock:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .timelineEventBlockActive {
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 25%, var(--surface-panel)), color-mix(in srgb, var(--accent-action) 10%, var(--surface-panel)));
   border: 1px solid var(--accent-action);
-  box-shadow: 0 0 15px color-mix(in srgb, var(--accent-action) 30%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent-action) 30%, transparent);
 }
 
 .timelineEventBlockPast {
@@ -1379,18 +1396,4 @@
   justify-content: center;
   flex: 0 0 auto;
 }
-
-.timelineEventDesc {
-  position: sticky;
-  left: 260px;
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  white-space: normal;
-}
-
 

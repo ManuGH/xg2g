@@ -33,8 +33,8 @@ export function EpgTimelineEvent({
   const isPast = currentTime > event.end;
 
   // Show time and extra details only if the block is wide enough to avoid clutter
-  const showTime = widthPx > 180;
-  const showRecord = widthPx > 140;
+  const showTime = widthPx > 90;
+  const showRecord = widthPx > 60;
 
   return (
     <div

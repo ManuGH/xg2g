@@ -16,7 +16,7 @@ export interface EpgTimelineGridProps {
   onEventClick?: (event: EpgEvent) => void;
 }
 
-const PIXELS_PER_HOUR = 900;
+const PIXELS_PER_HOUR = 360;
 
 export function EpgTimelineGrid({
   channels,
@@ -45,6 +45,8 @@ export function EpgTimelineGrid({
   }
 
   const nowLeftPx = ((currentTime * 1000 - startTimestampMs) / (60 * 60 * 1000)) * PIXELS_PER_HOUR;
+  const showNowLine = nowLeftPx >= 0 && nowLeftPx <= timelineWidth;
+  const channelColumnWidth = 250;
 
   return (
     <div className={styles.timelineContainer} ref={containerRef} role="grid" aria-label="EPG Timeline">
@@ -56,14 +58,20 @@ export function EpgTimelineGrid({
               {tick.label}
             </div>
           ))}
-          {/* Current Time Indicator Line */}
-          {nowLeftPx >= 0 && nowLeftPx <= timelineWidth && (
+          {showNowLine && (
             <div className={styles.timelineCurrentTimeIndicator} style={{ left: nowLeftPx }} />
           )}
         </div>
       </div>
-      
+
       <div className={styles.timelineBody}>
+        {/* Spans the full row stack (any channel count) instead of the header's short ruler tick */}
+        {showNowLine && (
+          <div
+            className={styles.timelineCurrentTimeLine}
+            style={{ left: channelColumnWidth + nowLeftPx }}
+          />
+        )}
         {channels.map((channel) => {
           const ref = channel.serviceRef || channel.id || '';
           const events = eventsByServiceRef.get(ref) || [];
