@@ -103,6 +103,25 @@ function isAbortError(error: unknown): boolean {
   return isRecord(error) && error.name === 'AbortError';
 }
 
+const EPG_VIEW_MODE_STORAGE_KEY = 'xg2g:epg:viewMode';
+
+function readStoredEpgViewMode(): 'list' | 'grid' | null {
+  try {
+    const stored = window.localStorage.getItem(EPG_VIEW_MODE_STORAGE_KEY);
+    return stored === 'list' || stored === 'grid' ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredEpgViewMode(mode: 'list' | 'grid'): void {
+  try {
+    window.localStorage.setItem(EPG_VIEW_MODE_STORAGE_KEY, mode);
+  } catch {
+    // ignore (private browsing / storage quota)
+  }
+}
+
 export default function EPG({
   channels,
   bouquets = [],
@@ -114,7 +133,14 @@ export default function EPG({
   const { search } = useLocation();
   const { confirm, toast } = useUiOverlay();
   const uiSurface = useUiSurface();
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>(import.meta.env.MODE === 'test' || uiSurface.width < 768 ? 'list' : 'grid');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
+    const stored = readStoredEpgViewMode();
+    if (stored) return stored;
+    return import.meta.env.MODE === 'test' || uiSurface.width < 768 ? 'list' : 'grid';
+  });
+  useEffect(() => {
+    writeStoredEpgViewMode(viewMode);
+  }, [viewMode]);
   const [selectedEvent, setSelectedEvent] = useState<EpgEvent | null>(null);
   const {
     selectedProfile,
