@@ -30,6 +30,30 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 	deps := s.sessionsModuleDeps()
 	sessionID := chi.URLParam(r, "sessionID")
 
+	// Subscribe to the bus before querying state to close the race window:
+	// any event published between GetSession and the subscription would be lost.
+	var (
+		stateSub bus.Subscriber
+		telemSub bus.Subscriber
+	)
+	if deps.bus != nil {
+		var subErr error
+		stateSub, subErr = deps.bus.Subscribe(r.Context(), string(model.EventSessionStateChanged))
+		if subErr != nil {
+			writeProblem(w, r, http.StatusInternalServerError, "sessions/events/subscribe_failed", "Subscription Failed", "SUBSCRIBE_FAILED", "Failed to subscribe to session state events.", nil)
+			return
+		}
+		defer func() { _ = stateSub.Close() }()
+
+		telemSub, subErr = deps.bus.Subscribe(r.Context(), string(model.EventSessionTelemetry))
+		if subErr != nil {
+			writeProblem(w, r, http.StatusInternalServerError, "sessions/events/subscribe_failed", "Subscription Failed", "SUBSCRIBE_FAILED", "Failed to subscribe to session telemetry events.", nil)
+			return
+		}
+		defer func() { _ = telemSub.Close() }()
+	}
+
+	// Query the state snapshot (subscription already active, no event is missed)
 	result, err := s.sessionsProcessor().GetSession(r.Context(), v3sessions.GetSessionRequest{
 		SessionID: sessionID,
 		RequestID: requestID(r.Context()),
@@ -48,28 +72,7 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	// Subscribe to the bus before replaying initial state so that no event
-	// published between the state snapshot and the subscription is lost.
-	var (
-		stateSub bus.Subscriber
-		telemSub bus.Subscriber
-	)
-	if deps.bus != nil {
-		var subErr error
-		stateSub, subErr = deps.bus.Subscribe(r.Context(), string(model.EventSessionStateChanged))
-		if subErr != nil {
-			return
-		}
-		defer func() { _ = stateSub.Close() }()
-
-		telemSub, subErr = deps.bus.Subscribe(r.Context(), string(model.EventSessionTelemetry))
-		if subErr != nil {
-			return
-		}
-		defer func() { _ = telemSub.Close() }()
-	}
-
-	// Send initial state event (after subscription to avoid missing events)
+	// Send initial state event (subscription was already set up before GetSession)
 	initialState := model.SessionStateChangedEvent{
 		Type:        model.EventSessionStateChanged,
 		SessionID:   sessionID,
