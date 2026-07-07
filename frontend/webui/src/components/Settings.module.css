@@ -45,7 +45,7 @@
   border-radius: 16px;
   border: 1px solid var(--border-base);
   background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
-  box-shadow: inset 0 2px 4px color-mix(in srgb, #000 10%, transparent);
+  box-shadow: inset 0 2px 4px color-mix(in srgb, var(--color-bg-base) 10%, transparent);
 }
 
 .sectionTabs {
