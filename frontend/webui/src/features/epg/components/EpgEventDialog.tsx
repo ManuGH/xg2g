@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { EpgEvent } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
 import { Button } from '../../../components/ui';
@@ -24,6 +25,7 @@ function formatTime(ts: number): string {
 }
 
 export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEventDialogProps) {
+  const { t } = useTranslation();
   useEffect(() => {
     // Lock body scroll
     const originalOverflow = document.body.style.overflow;
@@ -39,7 +41,7 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEven
     };
   }, [onClose]);
 
-  const desc = event.desc ? normalizeEpgText(event.desc) : 'Keine Beschreibung verfügbar.';
+  const desc = event.desc ? normalizeEpgText(event.desc) : t('epg.noDescription', { defaultValue: 'No description available.' });
 
   return (
     <div
@@ -52,7 +54,7 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEven
       <div className={styles.card} role="dialog" aria-modal="true" aria-labelledby="epg-event-title">
         <div className={styles.header}>
           <h2 id="epg-event-title" className={styles.title}>
-            {event.title || 'Unbekannte Sendung'}
+            {event.title || t('epg.unknownTitle', { defaultValue: 'Unknown show' })}
           </h2>
           <div className={styles.time}>
             {formatDateTime(event.start)} – {formatTime(event.end)}
@@ -72,11 +74,11 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEven
                 onClose();
               }}
             >
-              {isRecorded ? 'Aufnahme geplant' : 'Aufnehmen'}
+              {isRecorded ? t('epg.recordingPlanned', { defaultValue: 'Recording scheduled' }) : t('epg.record', { defaultValue: 'Record' })}
             </Button>
           )}
           <Button variant="secondary" onClick={onClose}>
-            Schließen
+            {t('common.close', { defaultValue: 'Close' })}
           </Button>
         </div>
       </div>

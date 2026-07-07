@@ -1,4 +1,5 @@
 
+import { useTranslation } from 'react-i18next';
 import type { EpgEvent } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
 import styles from '../EPG.module.css';
@@ -29,6 +30,7 @@ export function EpgTimelineEvent({
   isRecorded = false,
   onClick,
 }: EpgTimelineEventProps) {
+  const { t } = useTranslation();
   const inProgress = currentTime >= event.start && currentTime < event.end;
   const isPast = currentTime > event.end;
 
@@ -68,7 +70,7 @@ export function EpgTimelineEvent({
         {onRecord && !isPast && showRecord && (
           <div className={styles.timelineEventRecordAction}>
             {isRecorded ? (
-              <span className={styles.recordIndicatorDot} title="Aufnahme geplant" />
+              <span className={styles.recordIndicatorDot} title={t('epg.recordingPlanned', { defaultValue: 'Recording scheduled' })} />
             ) : (
               <button
                 className={styles.recordButton}
@@ -76,7 +78,7 @@ export function EpgTimelineEvent({
                   e.stopPropagation();
                   onRecord(event);
                 }}
-                title="Aufnahme planen"
+                title={t('epg.planRecording', { defaultValue: 'Schedule recording' })}
               >
                 <span className={styles.recordButtonDot} />
               </button>

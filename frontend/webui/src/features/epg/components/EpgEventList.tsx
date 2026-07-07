@@ -2,6 +2,7 @@
 // Zero API imports
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { EpgEvent } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
 import styles from '../EPG.module.css';
@@ -37,6 +38,7 @@ export function EpgEventRow({
   dateLabel,
   onClick,
 }: EpgEventRowProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   const inProgress = currentTime >= event.start && currentTime < event.end;
@@ -83,7 +85,7 @@ export function EpgEventRow({
           {formatRange(event.start, event.end)}
           {onRecord &&
             (isRecorded ? (
-              <span title="Aufnahme geplant" className={styles.recordIndicator}>
+              <span title={t('epg.recordingPlanned', { defaultValue: 'Recording scheduled' })} className={styles.recordIndicator}>
                 <span className={styles.recordIndicatorDot} />
                 <span className={styles.recordIndicatorLabel}>REC</span>
               </span>
@@ -94,7 +96,7 @@ export function EpgEventRow({
                   e.stopPropagation();
                   onRecord(event);
                 }}
-                title="Aufnahme planen"
+                title={t('epg.planRecording', { defaultValue: 'Schedule recording' })}
               >
                 <span className={styles.recordButtonDot} />
               </button>

@@ -483,7 +483,12 @@
     "playStream": "Stream abspielen",
     "hideOtherShows": "Andere Sendungen ausblenden",
     "moreShows": "Weitere Sendungen ({{count}})",
-    "showLess": "Weniger anzeigen"
+    "showLess": "Weniger anzeigen",
+    "unknownTitle": "Unbekannte Sendung",
+    "noDescription": "Keine Beschreibung verfügbar.",
+    "record": "Aufnehmen",
+    "recordingPlanned": "Aufnahme geplant",
+    "planRecording": "Aufnahme planen"
   },
   "recordings": {
     "seriesRulesAction": "Serienregeln",
