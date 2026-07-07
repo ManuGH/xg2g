@@ -13,6 +13,7 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
@@ -275,8 +276,10 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 
 	// Create a client with the hardened transport.
 	// The per-request timeout is handled by the context passed to Do().
+	jar, _ := cookiejar.New(nil)
 	hardenedClient := &http.Client{
 		Transport: transport,
+		Jar:       jar,
 		// Safety net: overall cap per attempt to prevent slow body hangs.
 		Timeout: 30 * time.Second,
 	}
