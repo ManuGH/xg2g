@@ -337,7 +337,7 @@ func (r readerAt) ReadAt(p []byte, off int64) (int, error) {
 
 func atomicWrite(path string, data []byte) error {
 	tmp := path + ".repair.tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil { //nolint:gosec // G703: tmp path is os.CreateTemp result, not user-controlled
 		return err
 	}
 	return os.Rename(tmp, path)
