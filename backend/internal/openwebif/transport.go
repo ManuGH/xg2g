@@ -37,10 +37,7 @@ func (c *Client) isTechnicalError(err error) bool {
 		return true
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-	return false
+	return errors.As(err, &netErr)
 }
 
 func (c *Client) backoffDuration(attempt int) time.Duration {

@@ -146,11 +146,9 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 // It uses per-service fetching to ensure reliability (OpenATV 7.6.0 bugs with bouquet endpoints).
 func collectEPGProgrammes(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
-	logger.Info().Msg("Using per-service EPG fetch strategy (bouquet EPG disabled)")
+	logger.Info().Msg("Fetching EPG via per-service requests")
 	return collectEPGPerService(ctx, client, items, cfg)
 }
-
-
 
 // collectEPGPerService fetches EPG data using per-service requests with bounded concurrency
 func collectEPGPerService(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
@@ -260,8 +258,6 @@ func fetchEPGWithRetry(ctx context.Context, client epgFetchClient, sRef string, 
 
 	return nil, WrapEPGFetchError(fmt.Errorf("EPG request failed after %d retries: %w", cfg.EPGRetries, lastErr))
 }
-
-
 
 // extractSRefFromStreamURL extracts service reference from stream URL
 func extractSRefFromStreamURL(streamURL string) string {
