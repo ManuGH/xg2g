@@ -61,7 +61,7 @@ edit/verify loops):
 1. Build on the host that has the real working copy (not a laptop clone):
    `make build-with-ui` produces `bin/xg2g`.
 2. Push the binary into the running container's bind mount (e.g.
-   `pct push <ctid> bin/xg2g /srv/xg2g/xg2g-dev-binary.new && mv` into place —
+   `pct push <ctid> bin/xg2g /srv/xg2g/xg2g-dev-binary.new && pct exec <ctid> -- mv /srv/xg2g/xg2g-dev-binary.new /srv/xg2g/xg2g-dev-binary` into place —
    never overwrite the in-use file directly, some container runtimes return
    success on a busy-file write while leaving the old binary running).
 3. Restart the service (`systemctl restart xg2g`, or
