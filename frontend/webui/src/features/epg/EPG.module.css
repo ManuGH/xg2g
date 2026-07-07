@@ -1209,7 +1209,9 @@
   position: sticky;
   left: 0;
   z-index: 25;
-  background: var(--surface-default);
+  background: color-mix(in srgb, var(--surface-panel) 70%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-right: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
 }
 
@@ -1272,7 +1274,9 @@
   position: sticky;
   left: 0;
   z-index: 50;
-  background: var(--surface-default);
+  background: color-mix(in srgb, var(--surface-panel) 70%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-right: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
   padding: 6px 12px;
   height: 54px;
