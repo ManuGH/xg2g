@@ -7,10 +7,7 @@ import { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppRouter from './AppRouter';
-// Self-hosted fonts (no external Google CDN call). Variable axes match the
-// previous wght@400..700 / 400..600 / 400..500 usage.
-import '@fontsource-variable/space-grotesk';
-import '@fontsource-variable/ibm-plex-sans';
+// Self-hosted fonts (no external Google CDN call).
 import '@fontsource-variable/jetbrains-mono';
 import './index.css';
 import App from './App.tsx';

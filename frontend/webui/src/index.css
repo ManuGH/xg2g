@@ -12,29 +12,21 @@
   --ui-density-scale: calc(var(--ui-density-scale-user) * var(--ui-density-scale-surface));
 
   /* Typography Stack */
-  --font-heading: 'Space Grotesk Variable', 'Space Grotesk', -apple-system, sans-serif;
-  --font-body: 'IBM Plex Sans Variable', 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-heading: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
 
-  /* Type Scale (16px base) */
-  --text-display: 2rem;
-  /* 32px */
-  --text-h1: 1.5rem;
-  /* 24px */
-  --text-h2: 1.25rem;
-  /* 20px */
-  --text-h3: 1rem;
-  /* 16px */
-  --text-base: 1rem;
-  /* 16px */
-  --text-sm: 0.875rem;
-  /* 14px */
-  --text-xs: 0.75rem;
-  /* 12px */
-  --text-mono-base: 0.875rem;
-  /* 14px */
-  --text-mono-sm: 0.75rem;
-  /* 12px */
+  /* Type Scale (16px base, matching macOS SF Pro values) */
+  --text-display: 1.625rem;   /* 26px - Large Title */
+  --text-h1: 1.375rem;        /* 22px - Title 1 */
+  --text-h2: 1.0625rem;       /* 17px - Title 2 */
+  --text-h3: 0.9375rem;       /* 15px - Title 3 */
+  --text-base: 0.8125rem;     /* 13px - Body */
+  --text-sm: 0.75rem;         /* 12px - Callout */
+  --text-xs: 0.6875rem;       /* 11px - Subheadline */
+  --text-xxs: 0.625rem;       /* 10px - Footnote / Caption */
+  --text-mono-base: 0.75rem;  /* 12px */
+  --text-mono-sm: 0.6875rem;  /* 11px */
 
   /* Background Layers */
   --bg-base: #070b10;
