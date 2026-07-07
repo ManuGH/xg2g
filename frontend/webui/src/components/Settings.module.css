@@ -40,203 +40,22 @@
   line-height: 1.6;
 }
 
-.sectionCompass {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.sectionCompassIntro {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
-  align-items: end;
-  gap: 24px;
-  padding: 24px 28px;
-  border: 1px solid var(--border-base);
-  border-radius: 28px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 52%),
-    color-mix(in srgb, var(--surface-panel) 88%, var(--surface-stage) 12%);
-  box-shadow: var(--shadow-card);
-}
-
-.sectionCompassIntro::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-action-subtle) 62%, transparent), transparent 40%),
-    radial-gradient(circle at bottom left, color-mix(in srgb, var(--accent-live-subtle) 40%, transparent), transparent 34%);
-  opacity: 0.82;
-  pointer-events: none;
-}
-
-.sectionCompassIntro > * {
-  position: relative;
-  z-index: 1;
-}
-
-.sectionCompassIntro > :first-child {
-  max-width: 44rem;
-}
-
-.sectionCompassEyebrow {
-  margin: 0 0 6px;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.sectionCompassTitle {
-  margin: 0;
-  max-width: 13ch;
-  color: var(--text-primary);
-  font-size: clamp(1.45rem, 2.45vw, 2.3rem);
-  line-height: 1.02;
-}
-
-.sectionCompassCopy {
-  margin: 0;
-  max-width: 34ch;
-  min-height: 100%;
-  padding-left: 22px;
-  border-left: 1px solid color-mix(in srgb, var(--border-base) 80%, transparent);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.55;
-  display: flex;
-  align-items: flex-end;
-}
-
-.sectionCompassGrid {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 16px;
-  align-items: stretch;
-}
-
-.sectionHighlight {
-  position: relative;
-  overflow: hidden;
-  grid-column: span 3;
-  border-radius: 22px;
-  border: 1px solid color-mix(in srgb, var(--border-elevated) 88%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent 42%),
-    color-mix(in srgb, var(--surface-panel) 92%, var(--surface-stage) 8%);
-  box-shadow: var(--shadow-card);
-}
-
-.sectionHighlight::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-action-subtle) 68%, transparent), transparent 38%),
-    radial-gradient(circle at bottom left, color-mix(in srgb, var(--accent-live-subtle) 42%, transparent), transparent 34%);
-  opacity: 0.7;
-  pointer-events: none;
-}
-
-.sectionHighlightPrimary {
-  grid-column: span 6;
-}
-
-.sectionHighlightSecondary {}
-
-.sectionHighlightBody {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 206px;
-}
-
-.sectionHighlightTop,
-.sectionHighlightMeta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.sectionHighlightEyebrow,
-.sectionHighlightMetaLabel {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.sectionHighlightStatus {
-  flex: 0 0 auto;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border-elevated) 72%, transparent);
-  background: color-mix(in srgb, var(--surface-panel-safe) 84%, transparent);
-  color: var(--text-primary);
-  font-size: 0.78rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-}
-
-.sectionHighlightCopy {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sectionHighlightTitle {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: clamp(1.15rem, 1.8vw, 1.5rem);
-  line-height: 1.05;
-}
-
-.sectionHighlightSummary {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.55;
-}
-
-.sectionHighlightMeta {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid color-mix(in srgb, var(--border-base) 76%, transparent);
-}
-
-.sectionHighlightMetaValue {
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  text-align: right;
-}
-
 .sectionTabsShell {
-  padding: 10px;
-  border-radius: 26px;
+  padding: 6px;
+  border-radius: 16px;
   border: 1px solid var(--border-base);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent 100%),
-    color-mix(in srgb, var(--surface-panel-soft) 84%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
+  box-shadow: inset 0 2px 4px color-mix(in srgb, #000 10%, transparent);
 }
 
 .sectionTabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px;
 }
 
 .sectionTabs > * {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
 }
 
 .setup {

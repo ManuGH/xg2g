@@ -4,7 +4,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   min-height: 100%;
   color: var(--text-primary);
   background: transparent;
@@ -50,8 +50,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px;
+  gap: 18px;
+  padding: 28px;
   border-radius: 32px;
   border: 1px solid var(--border-elevated);
   background: color-mix(in srgb, var(--surface-shell-strong) 94%, var(--surface-stage) 6%);
@@ -1179,13 +1179,11 @@
   flex-direction: column;
   overflow-x: auto;
   overflow-y: auto;
-  max-height: calc(100vh - 240px);
-  min-height: 400px;
+  max-height: 75vh;
   position: relative;
-  background: color-mix(in srgb, var(--surface-default) 90%, transparent);
-  border: none;
-  border-radius: 20px;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.15);
+  background: var(--surface-default);
+  border: 1px solid var(--border-base);
+  border-radius: 12px;
   overscroll-behavior-x: contain;
   /* Hardware acceleration hints for smooth scrolling */
   will-change: scroll-position;
@@ -1197,22 +1195,21 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--surface-panel) 60%, transparent);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-bottom: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
+  background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-elevated);
 }
 
 .timelineCorner {
-  width: 200px;
-  min-width: 200px;
+  width: 250px;
+  min-width: 250px;
   position: sticky;
   left: 0;
   z-index: 25;
-  background: color-mix(in srgb, var(--surface-panel) 70%, transparent);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-right: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
+  transform: translateZ(0);
+  background: var(--surface-panel);
+  border-right: 1px solid var(--border-base);
 }
 
 .timelineTimeAxis {
@@ -1227,7 +1224,7 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
-  border-left: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
+  border-left: 1px solid var(--border-base);
   bottom: 0;
   top: 0;
   display: flex;
@@ -1237,47 +1234,35 @@
 .timelineCurrentTimeIndicator {
   position: absolute;
   top: 0;
-  bottom: 0;
+  bottom: -2000px; /* extends down into the body */
   width: 2px;
   background: var(--status-error);
   z-index: 10;
   pointer-events: none;
+  box-shadow: 0 0 10px var(--status-error-subtle);
 }
 
 .timelineBody {
   display: flex;
   flex-direction: column;
-  position: relative;
-}
-
-.timelineCurrentTimeLine {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--status-error);
-  z-index: 15;
-  pointer-events: none;
-  box-shadow: 0 0 10px var(--status-error-subtle);
 }
 
 .timelineRow {
   display: flex;
   min-width: max-content;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-base) 20%, transparent);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .timelineChannelCard {
-  width: 200px;
-  min-width: 200px;
-  max-width: 200px;
+  width: 250px;
+  min-width: 250px;
+  max-width: 250px;
   position: sticky;
   left: 0;
   z-index: 50;
-  background: color-mix(in srgb, var(--surface-panel) 70%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-right: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
+  transform: translateZ(0);
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-base);
   padding: 6px 12px;
   height: 54px;
   box-sizing: border-box;
@@ -1287,110 +1272,72 @@
   transition: background 0.2s;
 }
 
-.timelineChannelCard:hover {
-  background: color-mix(in srgb, var(--surface-panel) 50%, transparent);
-}
-
+.timelineChannelCard:hover,
 .timelineChannelCard:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: -2px;
+  background: var(--surface-panel);
+  outline: none;
 }
 
 .timelineChannelContent {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   width: 100%;
   min-width: 0;
   overflow: hidden;
 }
 
-.timelineFavoriteButton {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: none;
-  background: transparent;
-  color: var(--text-tertiary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 16px;
-  cursor: pointer;
-  transition: transform var(--motion-standard) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
-  padding: 0;
-}
-
-.timelineFavoriteButton:hover {
-  transform: scale(1.15);
-  color: var(--text-primary);
-}
-
-.timelineFavoriteButtonActive {
-  color: color-mix(in srgb, var(--accent-live) 90%, var(--status-warning));
-  text-shadow: 0 0 8px color-mix(in srgb, var(--accent-live) 40%, transparent);
-}
-
 .timelineChannelLogo {
   width: auto;
-  height: 24px;
-  max-width: 44px;
+  height: 28px;
+  max-width: 50px;
   object-fit: contain;
-  flex-shrink: 0;
 }
 
 .timelineChannelName {
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
+  max-width: 130px;
 }
 
 .timelineEventsContainer {
   position: relative;
   flex-grow: 1;
-  background: transparent;
+  background: var(--surface-muted);
   height: 54px;
   min-height: 54px;
 }
 
 .timelineEventBlock {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
-  border: none;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-panel-strong) 92%, var(--accent-action-subtle) 8%);
+  top: 4px;
+  bottom: 4px;
+  border: 1px solid var(--border-elevated);
+  border-radius: 8px;
+  background: var(--surface-panel);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   box-sizing: border-box;
   /* Use clip-path to hide overflow without breaking sticky */
-  clip-path: inset(0 round 12px);
-  padding: 0 10px;
-  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s, filter 0.2s;
+  clip-path: inset(0 round 8px);
+  padding: 0 6px;
+  transition: background 0.2s;
   cursor: pointer;
   outline: none;
-  transform: scale(1);
 }
 
-.timelineEventBlock:hover {
-  background: var(--surface-panel-strong);
-  filter: brightness(1.15);
-  transform: scaleY(1.05) scaleX(1.01);
-  z-index: 10;
-}
-
+.timelineEventBlock:hover,
 .timelineEventBlock:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: -2px;
+  background: var(--surface-panel-strong);
 }
 
 .timelineEventBlockActive {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 35%, var(--surface-panel)), color-mix(in srgb, var(--accent-action) 15%, var(--surface-panel)));
-  border: none;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 25%, var(--surface-panel)), color-mix(in srgb, var(--accent-action) 10%, var(--surface-panel)));
+  border: 1px solid var(--accent-action);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--accent-action) 30%, transparent);
 }
 
 .timelineEventBlockPast {
@@ -1399,13 +1346,12 @@
 
 .timelineEventTitleGroup {
   position: sticky;
-  left: 210px;
+  left: 260px;
   display: flex;
   align-items: center;
   height: 100%;
   gap: 8px;
-  width: max-content;
-  max-width: 100%;
+  width: 100%;
 }
 
 .timelineEventTitle {
@@ -1435,4 +1381,18 @@
   justify-content: center;
   flex: 0 0 auto;
 }
+
+.timelineEventDesc {
+  position: sticky;
+  left: 260px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+}
+
 

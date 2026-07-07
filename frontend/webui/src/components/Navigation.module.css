@@ -14,18 +14,20 @@
   height: 100%;
   padding: 16px 12px 14px;
   border-radius: var(--radius-xl);
-  border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--surface-shell-strong) 95%, var(--surface-stage) 5%);
-  box-shadow:
-    var(--shadow-shell-safe),
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
+  background: color-mix(in srgb, var(--surface-shell-strong) 40%, transparent);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: var(--shadow-shell-safe);
   display: flex;
   flex-direction: column;
   gap: 16px;
   overflow: hidden;
   transition:
+    width var(--motion-standard) var(--ease-standard),
     border-color var(--motion-standard) var(--ease-standard),
-    background var(--motion-standard) var(--ease-standard);
+    background var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
   pointer-events: auto;
 }
 
@@ -87,6 +89,8 @@
   min-width: 0;
   opacity: 1;
   transform: none;
+  white-space: nowrap;
+  overflow: hidden;
   transition: opacity var(--motion-standard) var(--ease-standard), width var(--motion-standard) var(--ease-standard);
 }
 
@@ -117,28 +121,29 @@
 }
 
 .profileLabel {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .profileSelect {
-  min-height: 46px;
+  min-height: 40px;
   width: 100%;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--accent-action) 18%, var(--border-base) 82%);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
-    color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  border-radius: 12px;
+  border: none;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   color: var(--text-primary);
-  padding: 0 14px;
+  padding: 0 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profileSelect:hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
 }
 
 .profileHint {
-  color: var(--text-secondary);
-  font-size: 0.84rem;
-  line-height: 1.4;
+  display: none;
 }
 
 .displaySection {
@@ -237,10 +242,11 @@
 }
 
 .sectionTitle {
-  padding: 0 12px;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  letter-spacing: 0.12em;
+  padding: 8px 12px 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--text-tertiary) 80%, transparent);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -257,10 +263,8 @@
   min-height: 56px;
   padding: 10px;
   border-radius: var(--radius-lg);
-  border: 1px solid transparent;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent),
-    color-mix(in srgb, var(--surface-muted) 48%, transparent);
+  border: none;
+  background: transparent;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
@@ -268,35 +272,21 @@
   text-align: left;
   transition:
     background var(--motion-standard) var(--ease-standard),
-    border-color var(--motion-standard) var(--ease-standard),
-    color var(--motion-standard) var(--ease-standard),
-    box-shadow var(--motion-standard) var(--ease-standard);
+    color var(--motion-standard) var(--ease-standard);
 }
 
 .navItem::after {
-  content: '';
-  position: absolute;
-  left: 9px;
-  top: 13px;
-  bottom: 13px;
-  width: 4px;
-  border-radius: 999px;
-  background: transparent;
-  transition: background var(--motion-standard) var(--ease-standard);
+  display: none;
 }
 
 .navItem:hover {
-  background: color-mix(in srgb, var(--accent-action-subtle) 46%, var(--surface-muted) 54%);
-  border-color: color-mix(in srgb, var(--accent-action) 24%, var(--border-base) 76%);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   color: var(--text-primary);
-  box-shadow: inset 3px 0 0 var(--accent-action);
 }
 
 .navItem[aria-current="page"] {
-  background: color-mix(in srgb, var(--accent-action-subtle) 70%, var(--surface-shell) 30%);
-  border-color: color-mix(in srgb, var(--accent-action) 42%, transparent);
+  background: var(--accent-action-subtle);
   color: var(--text-primary);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
 
 .navItem[aria-current="page"]::after {
@@ -525,34 +515,35 @@
   }
 }
 
-/* Collapsed Navigation Styles */
-:global(:root[data-nav-collapsed='true']) .profileSection,
-:global(:root[data-nav-collapsed='true']) .displaySection {
-  display: none;
+/* Collapsed Navigation Styles - Slim Rail */
+:global(:root[data-nav-collapsed='true']) .desktopNav {
+  width: var(--nav-rail-width);
+  /* Optional: lighter shadow when collapsed */
 }
 
-:global(:root[data-nav-collapsed='true']) .brandCopy,
-:global(:root[data-nav-collapsed='true']) .sectionTitle,
-:global(:root[data-nav-collapsed='true']) .itemText {
+:global(:root[data-nav-collapsed='true']) .desktopShell:hover .desktopNav,
+:global(:root[data-nav-collapsed='true']) .desktopShell:focus-within .desktopNav {
+  width: var(--nav-shell-width);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.4);
+}
+
+/* Hide texts when collapsed but not hovered */
+:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .brandCopy,
+:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .sectionTitle,
+:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .itemText,
+:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .profileSelect,
+:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .displaySection {
   opacity: 0;
   width: 0;
+  overflow: hidden;
   margin: 0;
   padding: 0;
   pointer-events: none;
+  border: none;
 }
 
-:global(:root[data-nav-collapsed='true']) .brand {
-  gap: 0;
-  justify-content: center;
-}
-
-:global(:root[data-nav-collapsed='true']) .navItem {
-  gap: 0;
-  padding: 10px 10px 10px 12px;
-}
-
-:global(:root[data-nav-collapsed='true']) .navItem::after {
-  left: 3px;
+:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .profileSelect {
+  color: transparent;
 }
 
 

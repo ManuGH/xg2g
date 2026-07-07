@@ -133,7 +133,10 @@ export default function Navigation({ onLogout }: NavigationProps) {
   } = useHouseholdProfiles();
   const { confirmPendingChanges } = usePendingChanges();
   const { scale, setScale } = useUiScale();
-  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem('nav-collapsed') === 'true');
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    const saved = localStorage.getItem('nav-collapsed-v2');
+    return saved !== null ? saved === 'true' : true;
+  });
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -274,10 +277,10 @@ export default function Navigation({ onLogout }: NavigationProps) {
   useEffect(() => {
     if (isCollapsed) {
       document.documentElement.setAttribute('data-nav-collapsed', 'true');
-      localStorage.setItem('nav-collapsed', 'true');
+      localStorage.setItem('nav-collapsed-v2', 'true');
     } else {
       document.documentElement.removeAttribute('data-nav-collapsed');
-      localStorage.setItem('nav-collapsed', 'false');
+      localStorage.setItem('nav-collapsed-v2', 'false');
     }
   }, [isCollapsed]);
 
@@ -444,7 +447,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
             <span className={styles.profileHint}>{profileAccessLabel}</span>
           </div>
 
-          {renderDisplayScaleControl('desktop')}
+
 
           <div className={styles.desktopSection}>
             <span className={styles.sectionTitle}>{sectionLabels.quick}</span>

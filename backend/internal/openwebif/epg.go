@@ -24,7 +24,7 @@ func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent,
 	// We rely on the receiver's EPG database having sufficient data
 
 	// Try primary endpoint: /api/epgservice
-	primaryURL := fmt.Sprintf("/api/epgservice?sRef=%s&time=-1",
+	primaryURL := fmt.Sprintf("/api/epgservice?sRef=%s",
 		url.QueryEscape(sRef))
 
 	events, err := c.fetchEPGFromURL(ctx, primaryURL)
@@ -44,7 +44,7 @@ func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent,
 		Msg("primary EPG endpoint failed, trying fallback")
 
 	// Fallback: /web/epgservice
-	fallbackURL := fmt.Sprintf("/web/epgservice?sRef=%s&time=-1",
+	fallbackURL := fmt.Sprintf("/web/epgservice?sRef=%s",
 		url.QueryEscape(sRef))
 
 	events, fallbackErr := c.fetchEPGFromURL(ctx, fallbackURL)

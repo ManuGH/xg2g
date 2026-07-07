@@ -327,7 +327,7 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		servicesCaps:    make(map[string]servicesCapability),
 		servicesCapTTL:  defaultServicesCapTTL,
 		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
-		cb:              resilience.NewCircuitBreaker("openwebif", 2, 2, 60*time.Second, 15*time.Minute),
+		cb:              resilience.NewCircuitBreaker("openwebif", 3, 3, 60*time.Second, 2*time.Minute),
 	}
 
 	// Log cache status

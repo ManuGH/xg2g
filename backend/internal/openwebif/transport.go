@@ -24,18 +24,21 @@ func (c *Client) isTechnicalError(err error) bool {
 	if err == nil {
 		return false
 	}
+	var owiErr *OWIError
+	if errors.As(err, &owiErr) {
+		if owiErr.Operation == "epg" {
+			return false
+		}
+		if owiErr.Status >= 500 {
+			return true
+		}
+	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return true
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		return true
-	}
-	var owiErr *OWIError
-	if errors.As(err, &owiErr) {
-		if owiErr.Status >= 500 {
-			return true
-		}
 	}
 	return false
 }
