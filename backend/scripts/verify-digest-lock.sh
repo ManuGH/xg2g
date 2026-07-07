@@ -14,7 +14,7 @@ if [[ ! -f "$LOCK_FILE" ]]; then
     exit 1
 fi
 
-echo "🔍 Validating Digest Stability for v${VERSION}..."
+echo "🔍 Validating Digest Stability for ${VERSION}..."
 
 # 1. Structural Validation (Basic YAML/JSON check)
 # Check if VERSION exists in releases
@@ -50,7 +50,7 @@ DIGEST_VAL=$(grep -A 1 "\"${VERSION}\":" "$LOCK_FILE" | grep "digest" | sed 's/.
 IMAGE_REPO=$(grep "\"image\":" "$LOCK_FILE" | sed 's/.*"image":[[:space:]]*//' | tr -d '"' | tr -d '[:space:]' | tr -d ',')
 
 if [[ -z "$DIGEST_VAL" ]]; then
-    echo "❌ Could not extract digest for v${VERSION} from DIGESTS.lock"
+    echo "❌ Could not extract digest for ${VERSION} from DIGESTS.lock"
     exit 1
 fi
 
