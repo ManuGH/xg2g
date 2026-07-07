@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -325,6 +324,3 @@ func TestAggregateEvents_NoMatchingChannels(t *testing.T) {
 		t.Errorf("expected 0 programmes (no matching channels), got %d", len(programmes))
 	}
 }
-
-
-
