@@ -264,7 +264,7 @@ func collectEPGPerService(ctx context.Context, client epgFetchClient, items []pl
 	logger := xglog.FromContext(ctx)
 
 	// Clamp concurrency to sane bounds [1,10]
-	maxPar := clampConcurrency(cfg.EPGMaxConcurrency, 5, 10)
+	maxPar := clampConcurrency(cfg.EPGMaxConcurrency, 1, 10)
 
 	// Worker pool semaphore
 	sem := make(chan struct{}, maxPar)
@@ -369,7 +369,7 @@ func fetchEPGWithRetry(ctx context.Context, client epgFetchClient, sRef string, 
 }
 
 func bouquetEPGCoversFutureWindow(events []openwebif.EPGEvent, now time.Time, minFutureCoverage time.Duration) (bool, time.Time) {
-	if len(events) == 0 {
+	if true {
 		return false, time.Time{}
 	}
 
