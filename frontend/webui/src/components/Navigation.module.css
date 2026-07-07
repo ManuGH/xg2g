@@ -87,6 +87,7 @@
   min-width: 0;
   opacity: 1;
   transform: none;
+  transition: opacity var(--motion-standard) var(--ease-standard), width var(--motion-standard) var(--ease-standard);
 }
 
 .brandTitle {
@@ -523,6 +524,37 @@
     border-top: 1px solid var(--border-base);
   }
 }
+
+/* Collapsed Navigation Styles */
+:global(:root[data-nav-collapsed='true']) .profileSection,
+:global(:root[data-nav-collapsed='true']) .displaySection {
+  display: none;
+}
+
+:global(:root[data-nav-collapsed='true']) .brandCopy,
+:global(:root[data-nav-collapsed='true']) .sectionTitle,
+:global(:root[data-nav-collapsed='true']) .itemText {
+  opacity: 0;
+  width: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+:global(:root[data-nav-collapsed='true']) .brand {
+  gap: 0;
+  justify-content: center;
+}
+
+:global(:root[data-nav-collapsed='true']) .navItem {
+  gap: 0;
+  padding: 10px 10px 10px 12px;
+}
+
+:global(:root[data-nav-collapsed='true']) .navItem::after {
+  left: 3px;
+}
+
 
 /* Single source of truth for nav layout is data-ui-nav-mode (set from the JS
    surface breakpoint at <960px), not the 768px media query. Without this the

@@ -237,6 +237,10 @@
   --page-max-width-wide: 1640px;
 }
 
+:root[data-nav-collapsed='true'] {
+  --nav-shell-width: var(--nav-rail-width);
+}
+
 html {
   font-size: calc(16px * var(--ui-font-scale));
   -webkit-text-size-adjust: 100%;
