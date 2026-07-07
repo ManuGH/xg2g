@@ -4,7 +4,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   min-height: 100%;
   color: var(--text-primary);
   background: transparent;
@@ -50,8 +50,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 28px;
+  gap: 14px;
+  padding: 20px;
   border-radius: 32px;
   border: 1px solid var(--border-elevated);
   background: color-mix(in srgb, var(--surface-shell-strong) 94%, var(--surface-stage) 6%);
@@ -1179,7 +1179,8 @@
   flex-direction: column;
   overflow-x: auto;
   overflow-y: auto;
-  max-height: 75vh;
+  max-height: calc(100vh - 240px);
+  min-height: 400px;
   position: relative;
   background: var(--surface-default);
   border: 1px solid var(--border-base);
@@ -1202,8 +1203,8 @@
 }
 
 .timelineCorner {
-  width: 250px;
-  min-width: 250px;
+  width: 200px;
+  min-width: 200px;
   position: sticky;
   left: 0;
   z-index: 25;
@@ -1264,9 +1265,9 @@
 }
 
 .timelineChannelCard {
-  width: 250px;
-  min-width: 250px;
-  max-width: 250px;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
   position: sticky;
   left: 0;
   z-index: 50;
@@ -1361,7 +1362,7 @@
 
 .timelineEventTitleGroup {
   position: sticky;
-  left: 260px;
+  left: 210px;
   display: flex;
   align-items: center;
   height: 100%;
