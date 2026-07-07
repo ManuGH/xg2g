@@ -257,7 +257,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
     return (
       <div className={cx(styles.container, styles.restartingOverlay)}>
         <div className="loading-spinner"></div>
-        <h2>{t('setup.restart.title')}</h2>
+        <h1>{t('setup.restart.title')}</h1>
         <p>{t('setup.restart.subtitle')}</p>
       </div>
     );
@@ -274,14 +274,14 @@ function Config(props: ConfigProps = { showTitle: true }) {
       className={cx(styles.container, props.compact ? styles.containerCompact : undefined)}
       data-testid={configured ? "config-settings" : "config-wizard"}
     >
-      {props.showTitle && <h2>{configured ? t('nav.config') : t('setup.title')}</h2>}
+      {props.showTitle && <h1>{configured ? t('nav.config') : t('setup.title')}</h1>}
 
       {error && <div className={cx(styles.alert, styles.alertError)}>{error}</div>}
       {successMsg && !restarting && <div className={cx(styles.alert, styles.alertSuccess)}>{successMsg}</div>}
 
       <form onSubmit={handleSave}>
         <section className={styles.section}>
-          <h3>{t('setup.step1.title')}</h3>
+          <h2>{t('setup.step1.title')}</h2>
           <p className={styles.hintText}>{t('setup.step1.hint')}</p>
 
           <div className={styles.formGroup}>
@@ -338,7 +338,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
 
         {connectionStatus === 'valid' && (
           <section className={cx(styles.section, 'animate-enter')}>
-            <h3>{t('setup.step2.title')}</h3>
+            <h2>{t('setup.step2.title')}</h2>
             <p className={styles.hintText}>{t('setup.step2.hint')}</p>
 
             <div className={styles.bouquetsGrid}>
@@ -364,7 +364,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
         )}
 
         <section className={styles.section}>
-          <h3>{t('setup.step3.title')}</h3>
+          <h2>{t('setup.step3.title')}</h2>
           <div className={cx(styles.formGroup, styles.checkboxGroup)}>
             <label>
               <input

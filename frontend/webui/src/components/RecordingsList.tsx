@@ -869,7 +869,7 @@ export default function RecordingsList() {
                 <div className={styles.preplayStageDock}>
                   <div className={styles.preplayStageCopy}>
                     <div className={styles.preplayEyebrow}>{t('recordings.preplayEyebrow')}</div>
-                    <h2 className={styles.preplayTitle}>{playing.title || t('recordings.untitled')}</h2>
+                    <h1 className={styles.preplayTitle}>{playing.title || t('recordings.untitled')}</h1>
                     <div className={styles.preplayMeta}>
                       {playing.beginUnixSeconds ? <span>{formatTime(playing.beginUnixSeconds)}</span> : null}
                       <span>{playing.lengthLabel}</span>
@@ -915,7 +915,7 @@ export default function RecordingsList() {
           <p className={styles.heroEyebrow}>{t('recordings.eyebrow')}</p>
           <div className={styles.heroHeadingRow}>
             <div>
-              <h2 className={styles.heroTitle}>{t('recordings.title')}</h2>
+              <h1 className={styles.heroTitle}>{t('recordings.title')}</h1>
               <p className={styles.heroSummary}>{t('recordings.summary')}</p>
             </div>
             <div className={styles.heroSignals}>
@@ -1041,7 +1041,7 @@ export default function RecordingsList() {
       {data?.directories?.length ? (
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <h3 className={styles.sectionTitle}>{t('recordings.metricFolders')}</h3>
+            <h2 className={styles.sectionTitle}>{t('recordings.metricFolders')}</h2>
           </div>
           <div className={styles.directoryRail}>
             {data.directories.map((dir, i) => (
@@ -1069,7 +1069,7 @@ export default function RecordingsList() {
       {continueWatching.length > 0 && (
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <h3 className={styles.sectionTitle}>{t('recordings.continueWatchingTitle')}</h3>
+            <h2 className={styles.sectionTitle}>{t('recordings.continueWatchingTitle')}</h2>
           </div>
           <div className={styles.resumeShelf}>
             {continueWatching.map((recording) => renderRecordingCard(recording, 'featured'))}
@@ -1080,9 +1080,9 @@ export default function RecordingsList() {
       {primaryRecordings.length > 0 && (
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <h3 className={styles.sectionTitle}>
+            <h2 className={styles.sectionTitle}>
               {continueWatching.length > 0 ? t('recordings.latestTitle') : t('recordings.title')}
-            </h3>
+            </h2>
           </div>
           <div className={[styles.grid, selectionMode && canManageDvr ? styles.selectionMode : null].filter(Boolean).join(' ')}>
             {primaryRecordings.map((recording) => renderRecordingCard(recording))}
@@ -1142,9 +1142,9 @@ export default function RecordingsList() {
               <div className={styles.preplayStageDock}>
                 <div className={styles.preplayStageCopy}>
                   <div className={styles.preplayEyebrow}>{t('recordings.preplayEyebrow')}</div>
-                  <h2 id="recording-preplay-title" className={styles.preplayTitle}>
+                  <h1 id="recording-preplay-title" className={styles.preplayTitle}>
                     {preplayRecording.title || t('recordings.untitled')}
-                  </h2>
+                  </h1>
                   <div className={styles.preplayMeta}>
                     <span>{formatTime(preplayRecording.beginUnixSeconds)}</span>
                     <span>{preplayRecording.length || formatRecordingLength(preplayRecording.durationSeconds)}</span>

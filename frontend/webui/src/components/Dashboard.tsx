@@ -345,7 +345,7 @@ export default function Dashboard() {
             <div className={styles.summaryHeader}>
               <div className={styles.summaryIdentity}>
                 <p className={styles.summaryEyebrow}>{t('dashboard.controlSummary')}</p>
-                <h2 className={styles.summaryTitle}>{summaryTitle}</h2>
+                <h1 className={styles.summaryTitle}>{summaryTitle}</h1>
                 <p className={styles.summaryDescription}>{summaryDescription}</p>
               </div>
               <div className={styles.summaryChips}>
@@ -404,7 +404,7 @@ export default function Dashboard() {
               <span className={styles.signalDialRing} />
               <span className={styles.signalDialSweep} />
             </div>
-            <h3 className={styles.summarySpotlightTitle}>{summarySpotlight.title}</h3>
+            <h2 className={styles.summarySpotlightTitle}>{summarySpotlight.title}</h2>
             <p className={styles.summarySpotlightCopy}>{summarySpotlight.detail}</p>
 
             <div className={styles.summarySpotlightMeta}>
@@ -436,7 +436,7 @@ export default function Dashboard() {
         <div className={styles.startHeader}>
           <div>
             <p className={styles.panelEyebrow}>{t('dashboard.start.eyebrow', { defaultValue: 'Start here' })}</p>
-            <h3 className={styles.panelTitle}>{t('dashboard.start.title', { defaultValue: 'Choose the task, not the tool' })}</h3>
+            <h2 className={styles.panelTitle}>{t('dashboard.start.title', { defaultValue: 'Choose the task, not the tool' })}</h2>
           </div>
           <p className={styles.startSubtitle}>
             {t('dashboard.start.subtitle', {
@@ -451,7 +451,7 @@ export default function Dashboard() {
               <div className={styles.startCardHeader}>
                 <div>
                   <p className={styles.startStep}>{card.stepLabel}</p>
-                  <h4 className={styles.startCardTitle}>{card.title}</h4>
+                  <h3 className={styles.startCardTitle}>{card.title}</h3>
                 </div>
                 <StatusChip state={card.chip.state} label={card.chip.label} />
               </div>
@@ -475,7 +475,7 @@ export default function Dashboard() {
           <div className={styles.panelHeader}>
             <div>
               <p className={styles.panelEyebrow}>{t('dashboard.shortcuts.eyebrow', { defaultValue: 'Direct paths' })}</p>
-              <h3 className={styles.panelTitle}>{t('dashboard.shortcuts.title', { defaultValue: 'Open a specific area directly' })}</h3>
+              <h2 className={styles.panelTitle}>{t('dashboard.shortcuts.title', { defaultValue: 'Open a specific area directly' })}</h2>
             </div>
           </div>
           <p className={styles.shortcutsDescription}>
@@ -504,7 +504,7 @@ export default function Dashboard() {
           <div className={styles.panelHeader}>
             <div>
               <p className={styles.panelEyebrow}>{t('dashboard.operatorSessions')}</p>
-              <h3 className={styles.panelTitle}>{t('dashboard.activeStreams')}</h3>
+              <h2 className={styles.panelTitle}>{t('dashboard.activeStreams')}</h2>
             </div>
             <StatusChip
               state={streamCount > 0 ? 'live' : 'idle'}
@@ -527,7 +527,7 @@ export default function Dashboard() {
           <div className={styles.panelHeader}>
             <div>
               <p className={styles.panelEyebrow}>{t('dashboard.systemState')}</p>
-              <h3 className={styles.panelTitle}>{t('dashboard.receiverAndGuideHealth')}</h3>
+              <h2 className={styles.panelTitle}>{t('dashboard.receiverAndGuideHealth')}</h2>
             </div>
           </div>
           <div className={styles.statusList}>

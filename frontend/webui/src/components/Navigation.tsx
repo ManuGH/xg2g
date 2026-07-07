@@ -133,7 +133,6 @@ export default function Navigation({ onLogout }: NavigationProps) {
   } = useHouseholdProfiles();
   const { confirmPendingChanges } = usePendingChanges();
   const { scale, setScale } = useUiScale();
-  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem('nav-collapsed') === 'true');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -270,16 +269,6 @@ export default function Navigation({ onLogout }: NavigationProps) {
       closeMoreMenu(false);
     }
   }, [closeMoreMenu, pathname, search]);
-
-  useEffect(() => {
-    if (isCollapsed) {
-      document.documentElement.setAttribute('data-nav-collapsed', 'true');
-      localStorage.setItem('nav-collapsed', 'true');
-    } else {
-      document.documentElement.removeAttribute('data-nav-collapsed');
-      localStorage.setItem('nav-collapsed', 'false');
-    }
-  }, [isCollapsed]);
 
   useEffect(() => {
     if (!showMoreMenu) {
@@ -474,27 +463,6 @@ export default function Navigation({ onLogout }: NavigationProps) {
                   </span>
                 </button>
               )}
-              <button 
-                type="button" 
-                className={styles.navItem} 
-                onClick={() => setIsCollapsed(!isCollapsed)}
-                title={isCollapsed ? t('nav.expand', { defaultValue: 'Erweitern' }) : t('nav.collapse', { defaultValue: 'Einklappen' })}
-              >
-                <span className={styles.iconShell}>
-                  <svg className={styles.icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    {isCollapsed ? (
-                      <path d="M13 18l6-6-6-6 M5 18l6-6-6-6" /> // double chevron right
-                    ) : (
-                      <path d="M11 18l-6-6 6-6 M19 18l-6-6 6-6" /> // double chevron left
-                    )}
-                  </svg>
-                </span>
-                <span className={styles.itemText}>
-                  <span className={styles.label}>
-                    {isCollapsed ? t('nav.expand', { defaultValue: 'Erweitern' }) : t('nav.collapse', { defaultValue: 'Einklappen' })}
-                  </span>
-                </span>
-              </button>
             </div>
           </div>
         </nav>

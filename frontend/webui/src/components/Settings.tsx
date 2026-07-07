@@ -690,7 +690,7 @@ function Settings() {
       <div className={styles.header}>
         <div>
           <p className={styles.kicker}>{t('settings.kicker')}</p>
-          <h2>{headerTitle}</h2>
+          <h1>{headerTitle}</h1>
           <p className={styles.subtitle}>
             {headerSubtitle}
           </p>
@@ -733,9 +733,9 @@ function Settings() {
                   <p className={styles.sectionCompassEyebrow}>
                     {t('settings.summary.eyebrow', { defaultValue: 'Choose the area' })}
                   </p>
-                  <h3 className={styles.sectionCompassTitle}>
+                  <h2 className={styles.sectionCompassTitle}>
                     {t('settings.summary.title', { defaultValue: 'Primary tasks stay large. Expert tools stay close.' })}
-                  </h3>
+                  </h2>
                 </div>
                 <p className={styles.sectionCompassCopy}>
                   {t('settings.summary.subtitle', {
@@ -762,7 +762,7 @@ function Settings() {
                         <span className={styles.sectionHighlightStatus}>{highlight.status}</span>
                       </div>
                       <div className={styles.sectionHighlightCopy}>
-                        <h4 className={styles.sectionHighlightTitle}>{highlight.title}</h4>
+                        <h3 className={styles.sectionHighlightTitle}>{highlight.title}</h3>
                         <p className={styles.sectionHighlightSummary}>{highlight.summary}</p>
                       </div>
                       <div className={styles.sectionHighlightMeta}>
@@ -862,7 +862,7 @@ function Settings() {
         ) : (
           <div className={styles.section}>
             <div className={styles.accordionHeader}>
-              <h3>{t('setup.title')}</h3>
+              <h2>{t('setup.title')}</h2>
               <Button
                 variant="secondary"
                 size="sm"
@@ -886,7 +886,7 @@ function Settings() {
 
       {showSection('household') ? (
         <div className={styles.section}>
-        <h3>{t('settings.household.title', { defaultValue: 'Haushaltsprofile' })}</h3>
+        <h2>{t('settings.household.title', { defaultValue: 'Haushaltsprofile' })}</h2>
         <p className={styles.subtitle}>
           {t('settings.household.subtitle', {
             defaultValue: 'Lege getrennte Profile fuer Erwachsene und Kinder an, speichere Senderfavoriten und steuere pro Profil den Zugriff auf DVR und Einstellungen.',
@@ -897,7 +897,7 @@ function Settings() {
           <div className={styles.profileEditorHeader}>
             <div>
               <p className={styles.kicker}>{t('settings.household.pin.eyebrow', { defaultValue: 'PIN-Schutz' })}</p>
-              <h4 className={styles.profileEditorTitle}>{t('settings.household.pin.title', { defaultValue: 'Erwachsenenprofile absichern' })}</h4>
+              <h3 className={styles.profileEditorTitle}>{t('settings.household.pin.title', { defaultValue: 'Erwachsenenprofile absichern' })}</h3>
             </div>
             <div className={styles.profileEditorActions}>
               <span className={styles.profileBadge}>
@@ -1022,7 +1022,7 @@ function Settings() {
           <div className={styles.profileEditorHeader}>
             <div>
               <p className={styles.kicker}>{t('settings.household.editorEyebrow', { defaultValue: 'Profil bearbeiten' })}</p>
-              <h4 className={styles.profileEditorTitle}>{editingProfile.name}</h4>
+              <h3 className={styles.profileEditorTitle}>{editingProfile.name}</h3>
             </div>
             <div className={styles.profileEditorActions}>
               <Button
@@ -1260,14 +1260,14 @@ function Settings() {
 
       {showSection('android-tv') ? (
         <div className={styles.section}>
-        <h3>{t('settings.androidTv.title')}</h3>
+        <h2>{t('settings.androidTv.title')}</h2>
         <p className={styles.subtitle}>{t('settings.androidTv.subtitle')}</p>
 
         <div className={styles.onboardingCard}>
           <div className={styles.onboardingHero}>
             <div className={styles.onboardingIntro}>
               <p className={styles.onboardingEyebrow}>{t('settings.androidTv.eyebrow')}</p>
-              <h4 className={styles.onboardingTitle}>{t('settings.androidTv.headline')}</h4>
+              <h3 className={styles.onboardingTitle}>{t('settings.androidTv.headline')}</h3>
               <p className={styles.onboardingCopy}>{t('settings.androidTv.subtitle')}</p>
             </div>
 
@@ -1320,7 +1320,7 @@ function Settings() {
 
       {showSection('scan') ? (
         <div className={styles.section}>
-        <h3>{t('settings.streaming.scan.title')}</h3>
+        <h2>{t('settings.streaming.scan.title')}</h2>
         <p className={styles.subtitle}>{t('settings.streaming.scan.description')}</p>
 
         <div className={styles.group}>
@@ -1395,7 +1395,7 @@ function Settings() {
 
       {showSection('streaming') ? (
         <div className={styles.section}>
-        <h3>{t('settings.streaming.title')}</h3>
+        <h2>{t('settings.streaming.title')}</h2>
 
         {/* Note: Profile selection removed in favor of Universal Policy */}
         <div className={styles.group}>
@@ -1419,7 +1419,7 @@ function Settings() {
 
       {showSection('advanced') ? (
         <div className={styles.section}>
-        <h3>{t('settings.advanced.title', { defaultValue: 'Advanced tools' })}</h3>
+        <h2>{t('settings.advanced.title', { defaultValue: 'Advanced tools' })}</h2>
         <p className={styles.subtitle}>
           {t('settings.advanced.subtitle', {
             defaultValue: 'File browser and diagnostic logs stay available here as expert tools without adding more main navigation.',

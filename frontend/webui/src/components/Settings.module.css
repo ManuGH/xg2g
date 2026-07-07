@@ -24,7 +24,7 @@
   color: var(--text-muted);
 }
 
-.page h2 {
+.page h1 {
   margin: 0;
   color: var(--text-primary);
   font-size: clamp(2rem, 3vw, 2.7rem);
@@ -255,7 +255,7 @@
   gap: 18px;
 }
 
-.section h3 {
+.section h2 {
   margin-top: 0;
   margin-bottom: 0;
   color: var(--text-primary);
@@ -864,7 +864,7 @@
     gap: 12px;
   }
 
-  .page h2 {
+  .page h1 {
     font-size: clamp(1.55rem, 2.8vw, 2rem);
   }
 
@@ -977,7 +977,7 @@
     border-radius: 22px;
   }
 
-  .section h3 {
+  .section h2 {
     padding-bottom: 10px;
     font-size: 1.05rem;
   }
@@ -1013,7 +1013,7 @@
     padding-bottom: 16px;
   }
 
-  .page h2 {
+  .page h1 {
     font-size: clamp(1.45rem, 2.5vw, 1.85rem);
   }
 
