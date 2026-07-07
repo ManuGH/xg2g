@@ -60,11 +60,11 @@
   /* Disabled */
 
   /* Dual-Accent System */
-  /* Blue = Action/Interactive */
-  --accent-action: #60a5fa;
-  --accent-action-hover: #93c5fd;
-  --accent-action-pressed: #2563eb;
-  --accent-action-subtle: rgba(96, 165, 250, 0.14);
+  /* Blue = Action/Interactive (Apple macOS Blue) */
+  --accent-action: #0a84ff;
+  --accent-action-hover: #409cff;
+  --accent-action-pressed: #0060d1;
+  --accent-action-subtle: rgba(10, 132, 255, 0.14);
 
   /* Amber = Live/Recording */
   --accent-live: #ffb24a;
@@ -96,9 +96,9 @@
   --overlay-backdrop-strong: rgba(0, 0, 0, 0.8);
 
   /* Borders */
-  --border-base: rgba(255, 255, 255, 0.12);
-  --border-elevated: rgba(255, 255, 255, 0.16);
-  --border-strong: rgba(255, 255, 255, 0.24);
+  --border-base: rgba(255, 255, 255, 0.08);
+  --border-elevated: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.20);
   --border-focus: var(--accent-action);
 
   /* Shadow System */
@@ -146,9 +146,9 @@
     color-mix(in srgb, var(--surface-panel) 88%, var(--surface-stage) 12%);
 
   /* Spacing */
-  --radius-sm: calc(6px * var(--ui-density-scale));
-  --radius-md: calc(10px * var(--ui-density-scale));
-  --radius-lg: calc(12px * var(--ui-density-scale));
+  --radius-sm: calc(8px * var(--ui-density-scale));
+  --radius-md: calc(12px * var(--ui-density-scale));
+  --radius-lg: calc(16px * var(--ui-density-scale));
   --radius-xl: calc(24px * var(--ui-density-scale));
 
   /* Legacy Aliases (for compatibility during migration) */
