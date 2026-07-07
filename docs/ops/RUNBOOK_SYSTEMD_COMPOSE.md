@@ -234,6 +234,12 @@ Observed live-host delta on April 1, 2026 (runtime outage via stopped CT):
   - container startup logs still emitted `version":"v3.3.0"` and `commit":"dev"`
 - Operational rule: for outages fronted by Caddy, check Proxmox guest state before assuming an app-level regression. A stopped CT can surface as proxy `502/503` even when the in-guest systemd unit, Compose file, and Docker health gates are all correct once the guest is up.
 
+Observed live-host delta on July 7, 2026 (image tag is not runtime truth on this host):
+- `/srv/xg2g/deploy/docker-compose.yml` declares `image: ghcr.io/manugh/xg2g:v3.7.2`, but `docker ps`/`docker inspect` on the running `xg2g` container (port 8088) showed image `xg2g:staging` — a locally built tag, not the GHCR release — resolved through a `docker-compose.staging.yml` overlay merged in by `compose-xg2g.sh` even for the `xg2g.service`-managed instance. `xg2g-staging` (port 8089) resolved to a separate local tag `xg2g:staging-ctl3`. The two containers' `org.opencontainers.image.version` labels disagreed (`v3.5.1` vs `v3.8.0-ctl3`).
+- Neither label was the real answer: both containers bind-mount a raw host binary (`/srv/xg2g/xg2g-dev-binary:/usr/local/bin/xg2g:ro`) over whatever the image ships, per the maintainer's fast-iteration workflow (`docs/ops/DEPLOYMENT.md` § Fast Iteration Path). `curl :8088/healthz` and `curl :8089/healthz` both reported the same real running version (`version` field, a `git describe` string) — identical on both ports, and unrelated to either image label.
+- That real version corresponded to a commit that did not exist in `origin/<branch>` at audit time — it existed only on `/root/xg2g` (the host's real working copy), 6 commits ahead of the last push.
+- Operational rule: on this host, `docker inspect`'s image/label fields and the compose file's `image:` line are not runtime truth for the daemon binary — only `curl <host>/healthz` (`version` field) is. When checking what's actually deployed, always cross-reference that version string against `git log origin/<branch>..HEAD` on `/root/xg2g`, not against the compose file or image labels.
+
 If you see the March 11 metrics-only health mismatch, fix the live env first by setting:
 
 ```bash

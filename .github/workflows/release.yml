@@ -20,6 +20,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify release manifest matches tag
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version_file="$(tr -d '[:space:]' < backend/VERSION)"
+          manifest_version="$(jq -r '.version' RELEASE_MANIFEST.json)"
+          if [[ "${version_file}" != "${tag}" ]]; then
+            echo "::error::backend/VERSION (${version_file}) does not match tag ${tag}." >&2
+            exit 1
+          fi
+          if [[ "${manifest_version}" != "${tag}" ]]; then
+            echo "::error::RELEASE_MANIFEST.json version (${manifest_version}) does not match tag ${tag}. Run backend/scripts/release-prepare.sh ${tag} before tagging." >&2
+            exit 1
+          fi
+          if ! jq -e --arg t "${tag}" '.releases[$t]' DIGESTS.lock > /dev/null; then
+            echo "::error::DIGESTS.lock has no entry for ${tag}. Run backend/scripts/release-prepare.sh ${tag} before tagging." >&2
+            exit 1
+          fi
+          echo "Release manifest and digest lock agree with tag ${tag}."
+
       - name: Setup Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
