@@ -2,6 +2,181 @@
 
 ## Unreleased
 
+> Reconstructed 2026-07-07 from `git log v3.8.0..main` (mechanical grouping by
+> commit type, not hand-authored impact prose — see PR numbers for detail).
+
+### Release Notes
+
+- Low-Latency HLS shipped end-to-end: real LL-HLS packaging with `EXT-X-PART`
+  and blocking playlist reload (#629), gated on observed parts so plain
+  playlists serve until real parts exist (#638), `temp_file` dropped from the
+  LL path (#637), and a CMAF stream segmenter for genuine LL-HLS parts (#640).
+- Session leases no longer expire under active playback: the lease now
+  renews from HLS playlist consumption, not only the JS heartbeat, closing a
+  failure mode where a failed channel zap orphaned the still-playing session
+  until the reaper killed it (#646).
+- Live truth resolution gained stale-while-revalidate plus an LL-HLS sliding
+  window (#641); a spurious `plan_mismatch` warning on the LL-HLS CMAF pipe
+  path was fixed (#642).
+- HLS session start hardened: session-ready floor, atomic playlist
+  publication, last-known-good guard (#636).
+- Player: in-player channel list/zapper (#619), cold-start freeze fixed via
+  leading-gap seek (#613), SSE subscribe-before-replay race fixed (#645).
+- Recordings: continue-watching rail with cross-device resume deep-links
+  (#626), timeline hover preview frames for VOD scrubbing (#628).
+- WebUI: PWA installability, icon set, polling/asset polish (#623).
+- Live truth freshness window widened 2h→7d to kill cold-start re-probe
+  (#609); periodic capability cache refresh added to drain cold channels
+  (#606) — a reconnect-tolerance variant of this was tried and reverted after
+  disproving on staging (#607/#608).
+
+### Technical Notes
+
+- `perf`: stream-relay reconnect backoff cap tightened 5s→2s (#602);
+  preflight clear-lead fast path skips a 752KB descrambler-lock read for FTA
+  relay sources (#601).
+- Steady-state log noise cut (receiver polling, ffmpeg storms) (#621);
+  embedded WebUI dist build no longer stamps `-dirty` on regeneration (#622).
+
+## [v3.7.2] - 2026-06-15
+
+> Reconstructed 2026-07-07 from `git log v3.7.1..v3.7.2`.
+
+### Release Notes
+
+- Backend medium/low and frontend audit findings merged onto main (#588).
+
+### Technical Notes
+
+- De-flaked `TestTruthProvider_ProbeFailure_PersistsState` (#586).
+
+## [v3.7.1] - 2026-06-13
+
+> Reconstructed 2026-07-07 from `git log v3.7.0..v3.7.1`. Most of this
+> release is a bundle of "ultrareview" audit fixes (#567–#573).
+
+### Release Notes
+
+- Fixed a config-interval startup panic and a Trivy config-scan finding
+  (#567).
+- GPU encoder runtime failure accounting no longer counts deliberate stops
+  (#568) or excludes the watchdog-nil/parentCtx-cancel race path from
+  demotion (#571) as false failures.
+- Recordings: black-render code 242 now counts as a decode warning, not an
+  error (#569).
+- WebUI: fixed two long-running-session memory leaks (#570); the recovering
+  state now surfaces in the UI instead of a silent black frame (#576).
+- Auth: fixed empty-token wipe and a media legacy-cookie bypass (#573).
+- XMLTV writes are now durable — stopped nesting `epg.WriteXMLTV` inside a
+  retry that could tear the file (#572).
+- FFmpeg: stopped force-appending `+igndts` on live ingest, fixing judder
+  (#584).
+- Stream-relay probe override keys allowlisted in config (#580).
+- README now states PolyForm NC is source-available, not OSI open-source
+  (#574).
+
+## [v3.7.0] - 2026-06-08
+
+> Reconstructed 2026-07-07 from `git log v3.6.0..v3.7.0`.
+
+### Release Notes
+
+- Live 50p motion is now preserved for interlaced sources when the host can
+  sustain it, gated on an adaptive host-capability benchmark rather than a
+  fixed default (#557–#560).
+- Stream-relay transcode probe depth is now configurable; default startup
+  dropped 21s→9.8s (#557).
+- Player now rides over bad-DTS broadcast gaps instead of stalling (#556);
+  DVR timeline gained a current-position readout and hover preview (#543).
+- HTTP/HTTPS posture hardened: TLS, COOP/CORP, compression (#548); WebUI
+  warns when opened over an insecure context (#552); FE↔BE connection made
+  resilient to flaky networks (#549).
+- Reverse-proxy/HTTPS deployment guides rewritten newcomer-first, covering
+  every exposure scenario (#550, #551, #554).
+
+### Technical Notes
+
+- Maintainer-private data scrubbed from the public repo (#553).
+
+## [v3.6.0] - 2026-06-04
+
+> Reconstructed 2026-07-07 from `git log v3.5.1..v3.6.0`. This range mixes a
+> large feature recovery with a large mechanical refactor wave; both are
+> summarized rather than itemized per PR.
+
+### Release Notes
+
+- Playback-truth rebuild recovered and landed (28 commits): AV1 10-bit
+  (p010le), adaptive bitrate ceiling, mobile player and resume (#476, #477).
+- GPU hardware-encoder capability is now observed at runtime with automatic
+  demotion on encoder-open failure (#517, #518), decode-verify with a
+  three-state verdict (#519), and AV1 verification at production bit depth
+  (#521).
+- Safari now routes to hls.js + ManagedMediaSource instead of native HLS, so
+  the app owns the buffer (#534); session failure reasons are localized
+  instead of showing raw `R_` codes (#539); resume recovery observes state
+  before acting (#533).
+- Opt-in OpenTelemetry tracing wired at startup: ffmpeg spawn → first HLS
+  segment, and the playback decision/probe step.
+- Documentation portal re-cut into User/Operator/Contributor lanes; Getting
+  Started and Troubleshooting guides added.
+
+### Technical Notes
+
+- Large internal refactor wave (~45 PRs, #480–#516): split multiple
+  1000+-line "god files" (ffmpeg LocalAdapter, health runtime_snapshot,
+  openwebif client, session orchestrator, v3 server) into focused
+  per-concern files. No intended behavior change; covered by existing tests.
+- `interface{}` modernized to `any` across the backend (Go 1.18+ idiom,
+  #478).
+
+## [v3.5.1] - 2026-06-03
+
+> Reconstructed 2026-07-07 from `git log v3.5.0..v3.5.1`.
+
+### Technical Notes
+
+- FFmpeg pinned version bumped 8.1→8.1.1 (#473).
+- Release pipeline migrated from GoReleaser `dockers`/`docker_manifests` to
+  `dockers_v2`; FFmpeg base image now builds multi-arch natively, dropping
+  QEMU (#468–#471).
+- GoReleaser `GOOS` restricted to linux; AI-attribution footer dropped from
+  `backend/.goreleaser.yml`.
+
+## [v3.5.0] - 2026-06-02
+
+> Reconstructed 2026-07-07 from `git log v3.4.8..v3.5.0`. A `v3.4.9` was
+> prepared (see the WebUI-refresh and playback-integration prep commits in
+> this range) but never tagged or released — the work rolled forward
+> directly into this release instead. The `v3.4.9` entry below predates this
+> reconstruction and describes what actually shipped under that heading in
+> practice.
+
+### Release Notes
+
+- Live player: rolling DVR, now-playing EPG, black-screen and seek fixes,
+  MediaSource Extensions groundwork (#467).
+- Central request-body size backstop added; PIN-unlock throttle proven under
+  test (#452).
+- FFmpeg: sub-720p AV1 upscaled to ≥720p for Apple hardware decode; session
+  lease TTL lowered to 120s and made configurable (#2fea2327); transcode
+  start budget raised to 30s for live broadcast joins.
+- Security: ffmpeg URL userinfo stripped from argv, CORS `Allow-*` gated on
+  origin (#462); M3U injection from upstream channel names neutralized.
+- Monitoring: tuner-leak alert re-pointed to the live session gauge; alerts
+  now fire only on live metrics, dropping dead-admission false positives
+  (#461).
+- WebUI: deep links now resolve under the `/ui` base path (#453); fonts
+  self-hosted, real favicon added (#449); EmptyState primitive added and
+  migrated across Timers/Logs/Recordings (#404).
+
+### Technical Notes
+
+- Dead code removed: `internal/cache`, `internal/v3`, Redis dependency
+  dropped (#d051b130).
+- `usePlaybackOrchestrator` split into focused modules across several
+  phases (#b32e184b, #4f139650, #58f0bc0e, #1e11436b).
+
 ## [v3.8.0] - 2026-06-22
 
 ### Behavioral Changes

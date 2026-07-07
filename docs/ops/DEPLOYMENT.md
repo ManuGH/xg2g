@@ -46,4 +46,38 @@ Deployment artifacts:
 - `deploy/xg2g.service` — systemd unit
 
 Direct host edits, ad-hoc file copies, and manual `/srv/xg2g` drift are not
-supported deployment workflows.
+supported deployment workflows for tagged releases, and are never acceptable
+on any host other than the maintainer's own.
+
+## Fast Iteration Path (maintainer's own host only)
+
+The tag-and-image path above is the only supported way to run xg2g anywhere
+outside the maintainer's own infrastructure, and the only path that produces
+an artifact anyone else can pull or audit. On the maintainer's own LXC/VM,
+day-to-day iteration instead uses a sanctioned fast path that skips the
+container image build (CI + FFmpeg image builds are too slow for tight
+edit/verify loops):
+
+1. Build on the host that has the real working copy (not a laptop clone):
+   `make build-with-ui` produces `bin/xg2g`.
+2. Push the binary into the running container's bind mount (e.g.
+   `pct push <ctid> bin/xg2g /srv/xg2g/xg2g-dev-binary.new && pct exec <ctid> -- mv /srv/xg2g/xg2g-dev-binary.new /srv/xg2g/xg2g-dev-binary` into place —
+   never overwrite the in-use file directly, some container runtimes return
+   success on a busy-file write while leaving the old binary running).
+3. Restart the service (`systemctl restart xg2g`, or
+   `docker compose up -d --force-recreate` for containers that only read env
+   at recreate time, not at `docker restart`).
+4. Verify the deployed commit before considering this done: compare
+   `curl <host>/healthz` (`version` field, a `git describe` string) against
+   `git log origin/<branch>..HEAD` on the host that built it.
+
+**Non-negotiable rule:** every commit reachable from a binary running on this
+path must already be pushed to `origin` before it is deployed. A clean
+`git status` is not sufficient evidence of this — a fully committed branch
+can still be several commits ahead of `origin/<branch>` and thus invisible to
+anyone but the person who built it. Deploying unpushed commits means the
+running system's actual code has no record anywhere reviewable.
+
+This path is never used for the OCI image or GHCR tags — those are produced
+exclusively by `.github/workflows/release.yml` from a pushed, tagged commit,
+per the [Release Output Contract](RELEASE_OUTPUT_CONTRACT.md).

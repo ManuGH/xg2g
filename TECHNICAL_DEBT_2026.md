@@ -147,3 +147,121 @@
   - `.github/workflows/pr-required-gates.yml`
   - `.github/workflows/phase4-guardrails.yml`
   - `.github/workflows/ci-deep-scheduled.yml`
+
+---
+
+## P5 — Release/Docs Governance Drift (found 2026-07-07)
+
+### P5.1 RELEASE_MANIFEST.json / DIGESTS.lock silently stale for 3 releases
+**Status:** Completed on 2026-07-07.
+
+**Target:** `RELEASE_MANIFEST.json` and `DIGESTS.lock` reflect the actual
+latest tag, and cannot silently drift again.
+
+**Root Cause**
+- `backend/scripts/release-prepare.sh` is the only thing that updates these
+  files, and it is a manual, opt-in script. Nothing in CI enforces it.
+- Tag commits for v3.7.1 (#584), v3.7.2 (#588), and v3.8.0 (#600) each only
+  bumped `backend/VERSION` and re-rendered docs; none touched
+  `RELEASE_MANIFEST.json` or `DIGESTS.lock`. The files were frozen at v3.7.0
+  (2026-06-08) while three more tags shipped.
+
+**Exit-Criteria**
+- `RELEASE_MANIFEST.json.version` and a `DIGESTS.lock` entry match the
+  latest tag.
+- `.github/workflows/release.yml` fails the build on a tag push if they
+  don't match.
+
+**Result**
+- Backfilled both files to `v3.8.0` (correct `git_sha` from the tag).
+- Added a gate step to `release.yml`, before GoReleaser runs, that checks
+  `backend/VERSION`, `RELEASE_MANIFEST.json`, and `DIGESTS.lock` all agree
+  with `GITHUB_REF_NAME` and fails loudly (pointing at
+  `release-prepare.sh`) if not.
+- `backend/scripts/verify-digest-lock.sh` and
+  `backend/scripts/verify-release-output-contract.sh` both pass against the
+  backfilled files.
+
+**Verification Note**
+- The registry `digest` field itself has never been populated with a real
+  value for any release in this project's history (every entry back to
+  `3.1.7` reads `"pending"`) — that part of the contract was aspirational
+  from the start and is unresolved by this fix. Left as-is rather than
+  fabricating digests.
+
+### P5.2 `docs/ops/DEPLOYMENT.md` described a process nobody follows
+**Status:** Completed on 2026-07-07.
+
+**Target:** The documented deployment path matches what actually runs in
+production.
+
+**Root Cause**
+- `DEPLOYMENT.md` stated the only supported path is `deploy/sync.sh` and
+  that manual `/srv/xg2g` drift is unsupported. Live forensics on LXC 110
+  (`docker inspect`, `pct exec`, `/root/xg2g` git log) showed both running
+  instances actually execute a binary built ad-hoc on the host and pushed
+  via `pct push` — the exact workflow the doc called unsupported — and at
+  the time of the audit that binary was 6 commits ahead of
+  `origin/fix/lease-consumption-renewal`, i.e. running unpushed code.
+
+**Exit-Criteria**
+- The doc names both real paths (tagged-release/OCI for anyone outside the
+  maintainer's own host, fast-iteration `pct push` for the maintainer's own
+  host) instead of pretending only one exists.
+
+**Result**
+- Added a "Fast Iteration Path (maintainer's own host only)" section to
+  `DEPLOYMENT.md` documenting the `pct push` workflow as sanctioned, with
+  the one rule that actually matters for it: nothing gets deployed that
+  isn't already pushed to `origin` (a clean `git status` on the build host
+  is not sufficient evidence of that).
+
+**Verification Note**
+- Per `AGENTS.md`'s own rule ("update `RUNBOOK_SYSTEMD_COMPOSE.md` with the
+  exact observed delta"), the specific observed facts (image label vs.
+  runtime binary mismatch, unpushed commit running in prod) were also added
+  there as an "Observed live-host delta on July 7, 2026" entry, matching the
+  existing March/April 2026 entries' format. `DEPLOYMENT.md` carries the
+  policy change (the path is sanctioned); the runbook carries the forensic
+  record of what was actually found.
+
+### P5.3 CHANGELOG.md missing six tagged releases
+**Status:** Completed on 2026-07-07.
+
+**Target:** Every tagged release from `v3.5.0` through `v3.8.0` has a
+`CHANGELOG.md` entry, and `Unreleased` reflects work merged since.
+
+**Root Cause**
+- `CHANGELOG.md` jumped directly from `[v3.8.0]` to `[v3.4.9]` — a version
+  that was itself never tagged or released (the `v3.4.9` prep commits rolled
+  forward into `v3.5.0` instead). `v3.5.0`, `v3.5.1`, `v3.6.0`, `v3.7.0`,
+  `v3.7.1`, and `v3.7.2` — six real releases per `gh release list` — had no
+  entry at all, and `Unreleased` was empty despite 46 merged commits since
+  `v3.8.0`.
+
+**Exit-Criteria**
+- All six missing releases and `Unreleased` have entries.
+
+**Result**
+- Added all six entries plus `Unreleased`, each reconstructed from
+  `git log <prev-tag>..<tag>` and marked as mechanically reconstructed
+  rather than hand-authored impact prose (see each entry's provenance
+  note).
+
+**Verification Note**
+- These entries are commit-subject groupings, not independently verified
+  user-impact claims the way `v3.8.0`'s hand-written "Behavioral Changes"
+  section is. Treat them as a factual index into the PR history, not as a
+  substitute for reading the linked PRs if precision matters.
+
+### P5.4 Minor cleanup found during the same pass
+**Status:** Completed on 2026-07-07 (P5.4a); tracked, not actioned (P5.4b).
+
+- **P5.4a:** `backend/scripts/verify-digest-lock.sh` printed `vv3.8.0`
+  (double `v`) in its log line, because `backend/VERSION` already includes
+  the `v` prefix and the script prepended another. Fixed.
+- **P5.4b:** `/srv/xg2g` on LXC 110 has five files (`IDENTITY.md`,
+  `SOUL.md`, `USER.md`, `HEARTBEAT.md`, `TOOLS.md`) with zero history
+  anywhere in this repo's git — orphaned artifacts on that host's stale
+  checkout, not a repo issue. Needs a decision on the live host, not a
+  commit; not actioned here.
