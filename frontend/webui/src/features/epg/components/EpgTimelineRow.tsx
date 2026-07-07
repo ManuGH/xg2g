@@ -49,7 +49,7 @@ export function EpgTimelineRow({
         <div className={styles.timelineChannelContent}>
           <button 
             type="button"
-            className={styles.favoriteButton}
+            className={`${styles.timelineFavoriteButton} ${isFavorite ? styles.timelineFavoriteButtonActive : ''}`}
             onClick={(e) => {
               e.stopPropagation();
               onToggleFavorite?.(ref);

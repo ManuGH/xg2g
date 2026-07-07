@@ -1294,27 +1294,56 @@
 .timelineChannelContent {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
   overflow: hidden;
 }
 
+.timelineFavoriteButton {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+  cursor: pointer;
+  transition: transform var(--motion-standard) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
+  padding: 0;
+}
+
+.timelineFavoriteButton:hover {
+  transform: scale(1.15);
+  color: var(--text-primary);
+}
+
+.timelineFavoriteButtonActive {
+  color: color-mix(in srgb, var(--accent-live) 90%, var(--status-warning));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent-live) 40%, transparent);
+}
+
 .timelineChannelLogo {
   width: auto;
-  height: 28px;
-  max-width: 50px;
+  height: 24px;
+  max-width: 44px;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .timelineChannelName {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 130px;
+  flex: 1;
+  min-width: 0;
 }
 
 .timelineEventsContainer {
