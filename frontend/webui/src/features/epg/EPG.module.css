@@ -1182,9 +1182,10 @@
   max-height: calc(100vh - 240px);
   min-height: 400px;
   position: relative;
-  background: var(--surface-default);
-  border: 1px solid var(--border-base);
-  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-default) 90%, transparent);
+  border: none;
+  border-radius: 20px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.15);
   overscroll-behavior-x: contain;
   /* Hardware acceleration hints for smooth scrolling */
   will-change: scroll-position;
@@ -1196,10 +1197,10 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-elevated);
+  background: color-mix(in srgb, var(--surface-panel) 60%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
 }
 
 .timelineCorner {
@@ -1208,8 +1209,8 @@
   position: sticky;
   left: 0;
   z-index: 25;
-  background: var(--surface-panel);
-  border-right: 1px solid var(--border-base);
+  background: transparent;
+  border-right: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
 }
 
 .timelineTimeAxis {
@@ -1224,7 +1225,7 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
-  border-left: 1px solid var(--border-base);
+  border-left: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
   bottom: 0;
   top: 0;
   display: flex;
@@ -1261,7 +1262,7 @@
 .timelineRow {
   display: flex;
   min-width: max-content;
-  border-bottom: 1px solid var(--border-base);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-base) 20%, transparent);
 }
 
 .timelineChannelCard {
@@ -1271,8 +1272,8 @@
   position: sticky;
   left: 0;
   z-index: 50;
-  background: var(--bg-base);
-  border-right: 1px solid var(--border-base);
+  background: transparent;
+  border-right: 1px solid color-mix(in srgb, var(--border-base) 40%, transparent);
   padding: 6px 12px;
   height: 54px;
   box-sizing: border-box;
@@ -1283,7 +1284,7 @@
 }
 
 .timelineChannelCard:hover {
-  background: var(--surface-panel);
+  background: color-mix(in srgb, var(--surface-panel) 50%, transparent);
 }
 
 .timelineChannelCard:focus-visible {
@@ -1349,29 +1350,33 @@
 .timelineEventsContainer {
   position: relative;
   flex-grow: 1;
-  background: var(--surface-muted);
+  background: transparent;
   height: 54px;
   min-height: 54px;
 }
 
 .timelineEventBlock {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
-  border: 1px solid var(--border-elevated);
-  border-radius: 8px;
-  background: var(--surface-panel);
+  top: 3px;
+  bottom: 3px;
+  border: none;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-panel-strong) 92%, var(--accent-action-subtle) 8%);
   box-sizing: border-box;
   /* Use clip-path to hide overflow without breaking sticky */
-  clip-path: inset(0 round 8px);
-  padding: 0 6px;
-  transition: background 0.2s;
+  clip-path: inset(0 round 12px);
+  padding: 0 10px;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s, filter 0.2s;
   cursor: pointer;
   outline: none;
+  transform: scale(1);
 }
 
 .timelineEventBlock:hover {
   background: var(--surface-panel-strong);
+  filter: brightness(1.15);
+  transform: scaleY(1.05) scaleX(1.01);
+  z-index: 10;
 }
 
 .timelineEventBlock:focus-visible {
@@ -1380,9 +1385,8 @@
 }
 
 .timelineEventBlockActive {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 25%, var(--surface-panel)), color-mix(in srgb, var(--accent-action) 10%, var(--surface-panel)));
-  border: 1px solid var(--accent-action);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent-action) 30%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 35%, var(--surface-panel)), color-mix(in srgb, var(--accent-action) 15%, var(--surface-panel)));
+  border: none;
 }
 
 .timelineEventBlockPast {
