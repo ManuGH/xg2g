@@ -1366,7 +1366,8 @@
   align-items: center;
   height: 100%;
   gap: 8px;
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
 }
 
 .timelineEventTitle {
