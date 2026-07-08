@@ -1396,3 +1396,253 @@
 }
 
 
+
+/* 2026 EPG Unified Studio Toolbar (2-Row Compact Architecture) */
+.toolbarCompact {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-card) 78%, transparent);
+  border: 1px solid var(--border-base);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.toolbarHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.toolbarTitleGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.toolbarTitleText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toolbarEyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent-action);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.toolbarTitle {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.toolbarStatsStrip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.statBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.statBadge strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.statBadgeDate {
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+
+.toolbarActionsGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbarActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
+  border: 1px solid var(--border-base);
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.toolbarActionBtn:hover {
+  background: color-mix(in srgb, var(--surface-muted) 65%, var(--accent-action-subtle) 35%);
+  border-color: var(--border-elevated);
+  transform: translateY(-1px);
+}
+
+.toolbarActionBtnActive {
+  background: color-mix(in srgb, var(--accent-action) 24%, var(--surface-card) 76%);
+  border-color: var(--accent-action);
+  color: var(--text-primary);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent-action) 35%, transparent);
+}
+
+/* Row 2: Unified Frosted Glass Filter & Search Strip */
+.toolbarFilterStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.filterSearchBox {
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 75%, transparent);
+  border: 1px solid var(--border-base);
+  transition: all 0.18s ease;
+}
+
+.filterSearchBox:focus-within {
+  border-color: var(--accent-action);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-action) 20%, transparent);
+  background: var(--surface-card);
+}
+
+.filterSearchIcon {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+}
+
+.filterSearchInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.filterSearchInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.filterSearchClear {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+}
+
+.filterSearchClear:hover {
+  color: var(--text-primary);
+}
+
+.filterControlsRight {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filterSelectGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
+  border: 1px solid var(--border-base);
+}
+
+.filterSelectIcon {
+  font-size: 0.95rem;
+}
+
+.filterSelect {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filterSelect option {
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+.filterTimePills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 85%, transparent);
+  border: 1px solid var(--border-subtle);
+}
+
+.timePill {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.timePill:hover {
+  color: var(--text-primary);
+}
+
+.timePillActive {
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+}

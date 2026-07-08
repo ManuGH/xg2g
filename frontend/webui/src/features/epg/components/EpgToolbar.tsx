@@ -31,7 +31,6 @@ export function EpgToolbar({
   filters,
   bouquets,
   loadState,
-  searchLoadState,
   extraActions,
   onFilterChange,
   onRefresh,
@@ -40,14 +39,7 @@ export function EpgToolbar({
 }: EpgToolbarProps) {
   const { t } = useTranslation();
   const isTvHost = React.useMemo(() => resolveHostEnvironment().isTv, []);
-  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [tvSearchEditing, setTvSearchEditing] = React.useState(false);
   const loading = loadState === 'loading';
-  const searchLoading = searchLoadState === 'loading';
-  const rangeLabel = t('epg.rangeNowTo' + filters.timeRange + 'h', {
-    defaultValue: 'now to +' + filters.timeRange + 'h'
-  });
-  const activeBouquet = bouquets.find((b) => b.name === filters.bouquetId)?.name || t('epg.allServices');
   const dateLabel = new Intl.DateTimeFormat(undefined, {
     weekday: 'long',
     day: 'numeric',
@@ -55,30 +47,39 @@ export function EpgToolbar({
   }).format(new Date());
 
   React.useEffect(() => {
-    if (!isTvHost || !tvSearchEditing) {
+    if (!isTvHost) {
       return;
     }
-
-    const frame = window.requestAnimationFrame(() => {
-      searchInputRef.current?.focus();
-    });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [isTvHost, tvSearchEditing]);
+  }, [isTvHost]);
 
   return (
-    <section className={styles.toolbar}>
-      <div className={styles.toolbarHero}>
-        <div className={styles.toolbarLeft}>
-          <p className={styles.toolbarEyebrow}>{t('epg.pageTitleEyebrow', { defaultValue: 'Live guide' })}</p>
-          <h3 className={styles.toolbarTitle}>{t('epg.pageTitle', { count: channelCount })}</h3>
-          <p className={styles.toolbarSummary}>
-            {t('epg.timeRange')}: {rangeLabel} · {dateLabel}
-          </p>
+    <section className={styles.toolbarCompact}>
+      {/* Row 1: Studio Header & Primary Action Buttons */}
+      <div className={styles.toolbarHeaderRow}>
+        <div className={styles.toolbarTitleGroup}>
+          <div className={styles.toolbarTitleText}>
+            <span className={styles.toolbarEyebrow}>{t('epg.pageTitleEyebrow', { defaultValue: 'LIVE GUIDE' })}</span>
+            <h3 className={styles.toolbarTitle}>{t('epg.pageTitle', { count: channelCount })}</h3>
+          </div>
+          <div className={styles.toolbarStatsStrip}>
+            <span className={styles.statBadge}>
+              <strong>{channelCount}</strong> {t('epg.allServices', { defaultValue: 'Sender' })}
+            </span>
+            <span className={styles.statBadge}>
+              ★ <strong>{favoriteCount}</strong> {t('epg.favorites', { defaultValue: 'Favoriten' })}
+            </span>
+            <span className={styles.statBadgeDate}>{dateLabel}</span>
+          </div>
         </div>
-        <div className={styles.toolbarRight}>
+
+        <div className={styles.toolbarActionsGroup}>
           {extraActions}
           <button
+            type="button"
+            className={[
+              styles.toolbarActionBtn,
+              showFavoritesOnly ? styles.toolbarActionBtnActive : null,
+            ].filter(Boolean).join(' ')}
             onClick={onToggleFavorites}
             disabled={favoriteCount === 0}
             aria-pressed={showFavoritesOnly}
@@ -86,141 +87,84 @@ export function EpgToolbar({
             <span className={styles.actionIcon} aria-hidden="true">{showFavoritesOnly ? '★' : '☆'}</span>
             <span className={styles.actionLabel}>
               {showFavoritesOnly
-                ? t('epg.favoritesOn', { defaultValue: 'Favoriten' })
+                ? t('epg.favoritesOn', { defaultValue: 'Favoriten aktiv' })
                 : t('epg.favoritesOff', { defaultValue: 'Favoritenfilter' })}
             </span>
           </button>
-          <button onClick={onRefresh} disabled={loading} aria-label={t('epg.reload')}>
+          <button
+            type="button"
+            className={styles.toolbarActionBtn}
+            onClick={onRefresh}
+            disabled={loading}
+            aria-label={t('epg.reload')}
+          >
             <span className={styles.actionIcon} aria-hidden="true">↻</span>
-            <span className={styles.actionLabel}>{t('epg.reload')}</span>
+            <span className={styles.actionLabel}>{t('epg.reload', { defaultValue: 'Neu laden' })}</span>
           </button>
         </div>
       </div>
 
-      <div className={styles.toolbarMeta}>
-        <div className={styles.metaPill}>
-          <span className={styles.metaLabel}>{t('epg.allServices')}</span>
-          <span className={styles.metaValue}>{channelCount}</span>
-        </div>
-        <div className={styles.metaPill}>
-          <span className={styles.metaLabel}>{t('epg.bouquet')}</span>
-          <span className={styles.metaValue}>{activeBouquet}</span>
-        </div>
-        <div className={styles.metaPill}>
-          <span className={styles.metaLabel}>{t('epg.timeRange')}</span>
-          <span className={styles.metaValue}>{rangeLabel}</span>
-        </div>
-        <div className={styles.metaPill}>
-          <span className={styles.metaLabel}>{t('epg.favorites', { defaultValue: 'Favoriten' })}</span>
-          <span className={styles.metaValue}>{favoriteCount}</span>
-        </div>
-      </div>
-
-      <div className={styles.search}>
-        <div className={styles.searchLeft}>
-          {isTvHost ? (
-            tvSearchEditing ? (
-              <>
-                <div className={styles.searchIcon}>⌕</div>
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={filters.query || ''}
-                  onChange={(e) => {
-                    onFilterChange({ query: e.target.value });
-                  }}
-                  placeholder={t('epg.searchServices')}
-                  onBlur={() => setTvSearchEditing(false)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      if (filters.query?.trim() && onSearch) {
-                        onSearch();
-                      }
-                      setTvSearchEditing(false);
-                      e.currentTarget.blur();
-                    }
-                    if (e.key === 'Escape') {
-                      setTvSearchEditing(false);
-                      e.currentTarget.blur();
-                    }
-                  }}
-                />
-              </>
-            ) : (
-              <button
-                type="button"
-                className={styles.tvSearchLauncher}
-                onClick={() => setTvSearchEditing(true)}
-                aria-label={t('epg.searchServices')}
-              >
-                <span className={styles.searchIcon} aria-hidden="true">⌕</span>
-                <span className={styles.actionLabel}>
-                  {filters.query?.trim() || t('epg.searchServices')}
-                </span>
-              </button>
-            )
-          ) : (
-            <>
-              <div className={styles.searchIcon}>⌕</div>
-              <input
-                type="text"
-                value={filters.query || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  onFilterChange({ query: val });
-                }}
-                placeholder={t('epg.searchServices')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && filters.query?.trim() && onSearch) {
-                    onSearch();
-                  }
-                }}
-              />
-            </>
+      {/* Row 2: Unified Frosted Glass Filter & Search Strip */}
+      <div className={styles.toolbarFilterStrip}>
+        <div className={styles.filterSearchBox}>
+          <span className={styles.filterSearchIcon}>⌕</span>
+          <input
+            type="text"
+            className={styles.filterSearchInput}
+            value={filters.query || ''}
+            onChange={(e) => onFilterChange({ query: e.target.value })}
+            placeholder={t('epg.searchServices', { defaultValue: 'Suche nach Sendungen (z.B. ZIB)...' })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && filters.query?.trim() && onSearch) {
+                onSearch();
+              }
+            }}
+          />
+          {filters.query && (
+            <button
+              type="button"
+              className={styles.filterSearchClear}
+              onClick={() => onFilterChange({ query: '' })}
+              aria-label="Löschen"
+            >
+              ✕
+            </button>
           )}
         </div>
-        <div className={styles.searchRight}>
-          <button
-            onClick={onSearch}
-            disabled={searchLoading || !filters.query?.trim()}
-            aria-label={t('epg.search')}
-          >
-            <span className={styles.actionIcon} aria-hidden="true">{searchLoading ? '…' : '⌕'}</span>
-            <span className={styles.actionLabel}>{searchLoading ? t('common.loading') : t('epg.search')}</span>
-          </button>
-        </div>
-      </div>
 
-      <div className={styles.controls}>
-        {bouquets.length > 0 && (
-          <label className={styles.filterField}>
-            <span>{t('epg.bouquet')}</span>
-            <select
-              value={filters.bouquetId || ''}
-              onChange={(e) => onFilterChange({ bouquetId: e.target.value })}
-            >
-              <option value="">{t('epg.allServices')}</option>
-              {bouquets.map((b) => (
-                <option key={b.name} value={b.name}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <div className={styles.filterControlsRight}>
+          {bouquets.length > 0 && (
+            <div className={styles.filterSelectGroup}>
+              <span className={styles.filterSelectIcon}>📁</span>
+              <select
+                className={styles.filterSelect}
+                value={filters.bouquetId || ''}
+                onChange={(e) => onFilterChange({ bouquetId: e.target.value })}
+              >
+                <option value="">{t('epg.allServices', { defaultValue: 'Alle Sender' })}</option>
+                {bouquets.map((b) => (
+                  <option key={b.name} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-        <div className={styles.rangeGroup}>
-          <label>{t('epg.timeRange')}</label>
-          <div className={styles.pills}>
+          <div className={styles.filterTimePills}>
             {[
-              { label: t('epg.rangeNow', { defaultValue: 'Now' }), value: 6 },
+              { label: t('epg.rangeNow', { defaultValue: 'Jetzt' }), value: 6 },
               { label: t('epg.rangeDay', { defaultValue: '24h' }), value: 24 },
               { label: t('epg.rangeWeek', { defaultValue: '7d' }), value: 168 },
-              { label: t('epg.rangeAll', { defaultValue: 'All' }), value: EPG_MAX_HORIZON_HOURS },
+              { label: t('epg.rangeAll', { defaultValue: 'Alle' }), value: EPG_MAX_HORIZON_HOURS },
             ].map((opt) => (
               <button
                 key={opt.value}
-                className={[styles.pill, filters.timeRange === opt.value ? styles.pillActive : null].filter(Boolean).join(' ')}
+                type="button"
+                className={[
+                  styles.timePill,
+                  filters.timeRange === opt.value ? styles.timePillActive : null,
+                ].filter(Boolean).join(' ')}
                 onClick={() => onFilterChange({ timeRange: opt.value })}
               >
                 {opt.label}
