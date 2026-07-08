@@ -586,13 +586,50 @@
   transform: scale(0.94);
 }
 
+/* Collapsed Navigation Styles - Slim Rail */
 :global(:root[data-nav-collapsed='true']) .desktopNav {
-  width: 0;
+  width: var(--nav-rail-width, 88px);
+  padding: 16px 8px;
+}
+
+:global(:root[data-nav-collapsed='true']) .brand {
+  padding: 0 4px;
+  justify-content: center;
+}
+
+:global(:root[data-nav-collapsed='true']) .brandCopy {
+  display: none;
+}
+
+:global(:root[data-nav-collapsed='true']) .headerToggleBtn {
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  background: transparent;
+}
+
+:global(:root[data-nav-collapsed='true']) .navSectionTitle {
   opacity: 0;
-  pointer-events: none;
-  transform: translateX(-110%);
+  height: 0;
   margin: 0;
-  padding: 0;
-  border: none;
   overflow: hidden;
+}
+
+:global(:root[data-nav-collapsed='true']) .navLink {
+  padding: 12px 0;
+  justify-content: center;
+  border-radius: 14px;
+}
+
+:global(:root[data-nav-collapsed='true']) .navIcon {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+:global(:root[data-nav-collapsed='true']) .navLabel {
+  display: none;
+}
+
+:global(:root[data-nav-collapsed='true']) .displayScaleSection {
+  display: none;
 }

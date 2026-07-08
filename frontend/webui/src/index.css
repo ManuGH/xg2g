@@ -231,7 +231,7 @@
 }
 
 :root[data-nav-collapsed='true'] {
-  --nav-content-margin: 64px;
+  --nav-content-margin: calc(var(--nav-rail-width) + 34px);
 }
 
 html {
