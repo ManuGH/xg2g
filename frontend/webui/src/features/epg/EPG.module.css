@@ -474,10 +474,10 @@
 }
 
 .channelName {
-  font-weight: 700;
-  font-size: 1.25rem;
+  font-weight: 600;
+  font-size: 0.95rem;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 .channelGroup {
@@ -665,16 +665,16 @@
 
 .programmeTitle {
   font-weight: 600;
-  font-size: 1.15rem;
+  font-size: 0.9rem;
   color: var(--text-primary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   letter-spacing: -0.01em;
 }
 
 .programmeDesc {
-  font-size: 0.98rem;
+  font-size: 0.82rem;
   color: var(--text-secondary);
-  line-height: 1.6;
+  line-height: 1.5;
   opacity: 0.92;
   white-space: pre-wrap;
   display: -webkit-box;
