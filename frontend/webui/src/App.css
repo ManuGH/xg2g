@@ -80,3 +80,18 @@
     border-radius: 18px;
   }
 }
+
+/* Apple HIG Portrait View Polish */
+@media (max-width: 768px) and (orientation: portrait) {
+  .app-container {
+    padding: max(10px, var(--sat, 0px)) 12px calc(92px + var(--sab, 0px)) 12px;
+  }
+
+  .content-area {
+    padding: 14px;
+    border-radius: 24px;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.3);
+  }
+}
