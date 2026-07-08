@@ -429,26 +429,18 @@ export default function Navigation({ onLogout }: NavigationProps) {
   return (
     <>
       {isCollapsed && (
-        <header className={styles.collapsedTopBar}>
-          <button
-            type="button"
-            className={styles.collapsedToggleBtn}
-            onClick={() => setIsCollapsed(false)}
-            title="Seitenleiste einblenden (⌘B)"
-            aria-label="Seitenleiste einblenden (⌘B)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={styles.toggleIcon}>
-              <rect x="3" y="3" width="18" height="18" rx="3" />
-              <line x1="9" y1="3" x2="9" y2="21" />
-            </svg>
-            <span className={styles.collapsedToggleLabel}>Seitenleiste</span>
-            <kbd className={styles.collapsedShortcut}>⌘B</kbd>
-          </button>
-          <div className={styles.collapsedBrandBadge}>
-            <span className={styles.brandPulse}></span>
-            <span className={styles.collapsedBrandText}>xg2g Studio</span>
-          </div>
-        </header>
+        <button
+          type="button"
+          className={styles.floatingSidebarToggle}
+          onClick={() => setIsCollapsed(false)}
+          title="Seitenleiste einblenden (⌘B)"
+          aria-label="Seitenleiste einblenden (⌘B)"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={styles.toggleIcon}>
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <line x1="9" y1="3" x2="9" y2="21" />
+          </svg>
+        </button>
       )}
       <aside className={styles.desktopShell}>
         <nav
