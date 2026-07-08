@@ -475,15 +475,15 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar (macOS Style) */
 :root {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--accent-action) 55%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 15%, transparent) transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -491,12 +491,16 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--accent-action) 55%, transparent);
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  border-radius: 10px;
+  border: 3px solid transparent; /* Creates padding around the thumb */
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-action-hover);
+  background: color-mix(in srgb, var(--text-primary) 24%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-corner {
