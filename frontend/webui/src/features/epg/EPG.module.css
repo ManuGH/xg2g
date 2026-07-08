@@ -477,7 +477,7 @@
 
 .channelName {
   font-weight: 700;
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
@@ -667,14 +667,14 @@
 
 .programmeTitle {
   font-weight: 600;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   color: var(--text-primary);
   margin-bottom: 6px;
   letter-spacing: -0.01em;
 }
 
 .programmeDesc {
-  font-size: 0.93rem;
+  font-size: 0.98rem;
   color: var(--text-secondary);
   line-height: 1.6;
   opacity: 0.92;
@@ -710,9 +710,11 @@
 
 .progressBar {
   height: 100%;
-  background: var(--accent-live);
+  background: #199B99;
+  box-shadow: 0 0 10px color-mix(in srgb, #199B99 40%, transparent);
   border-radius: 999px;
   width: var(--xg2g-progress, 0%);
+  transition: width 0.3s ease;
 }
 
 .progressMeta {
