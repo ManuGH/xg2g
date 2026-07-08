@@ -510,7 +510,7 @@
           "type": "string"
         },
         "timeoutMs": {
-          "default": 5000,
+          "default": 20000,
           "description": "Timeout in milliseconds for individual EPG requests (100-60000ms)",
           "examples": [
             15000,

@@ -68,7 +68,7 @@ func (s *Server) serveLLHLSPlaylist(w http.ResponseWriter, r *http.Request, deps
 	// Blocking-reload responses are inherently per-request; never cache.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Encoding", "identity")
-	_, _ = w.Write([]byte(out))
+	_, _ = w.Write([]byte(out)) //nolint:gosec // G705: playlist content is server-generated, no user input
 	return true
 }
 

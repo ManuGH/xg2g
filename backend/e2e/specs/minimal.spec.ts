@@ -17,6 +17,6 @@ test.describe('WebUI browser smoke', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByTestId('dashboard-view')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Das Erste HD' })).toBeVisible();
-    await expect(page.getByText('Control summary')).toBeVisible();
+    await expect(page.getByText('Operator sessions')).toBeVisible();
   });
 });

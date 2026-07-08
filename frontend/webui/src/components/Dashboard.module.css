@@ -3,8 +3,8 @@
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 4px 0 28px;
+  gap: 24px;
+  padding: 12px 0 32px;
 }
 
 .loadingState,
@@ -13,848 +13,219 @@
   color: var(--text-secondary);
 }
 
-.summaryCard,
-.startSurface,
-.shortcutsSurface,
-.streamSurface,
-.signalSurface {
+/* 1. HERO BANNER */
+.heroBanner {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-xl);
-  border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--surface-panel) 86%, var(--surface-stage) 14%);
-  box-shadow:
-    var(--shadow-card),
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
-}
-
-.summaryCard::before,
-.startSurface::before,
-.shortcutsSurface::before,
-.streamSurface::before,
-.signalSurface::before {
-  display: none;
-}
-
-.summaryCard::after {
-  display: none;
-}
-
-.summaryCard {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: clamp(22px, 2.2vw, 32px);
+  border: none;
+  background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  padding: clamp(16px, 2vw, 24px) clamp(22px, 3vw, 32px);
   min-height: 0;
-  background: color-mix(in srgb, var(--surface-panel-strong) 86%, var(--surface-stage) 14%);
-  border-color: color-mix(in srgb, var(--accent-action) 24%, var(--border-elevated) 76%);
+}
+
+.heroBanner::before,
+.heroBanner::after {
+  display: none;
+}
+
+.heroBanner {
+  background: 
+    radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--accent-action) 12%, transparent), transparent 50%),
+    color-mix(in srgb, var(--surface-panel-strong) 40%, transparent);
 }
 
 .summaryStreaming {
-  background: color-mix(in srgb, var(--surface-panel-strong) 86%, var(--accent-live-subtle) 14%);
+  background: 
+    radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--accent-live) 15%, transparent), transparent 50%),
+    color-mix(in srgb, var(--accent-live-subtle) 25%, transparent);
 }
 
 .summaryControl {
-  background: color-mix(in srgb, var(--surface-panel-strong) 88%, var(--accent-action-subtle) 12%);
+  background: 
+    radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--accent-action) 15%, transparent), transparent 50%),
+    color-mix(in srgb, var(--accent-action-subtle) 25%, transparent);
 }
 
 .summaryStandby {
-  background: color-mix(in srgb, var(--surface-shell) 88%, var(--status-warning-subtle) 12%);
+  background: 
+    radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--status-warning) 15%, transparent), transparent 50%),
+    color-mix(in srgb, var(--status-warning-subtle) 25%, transparent);
 }
 
-.summaryHeroGrid {
+.heroContent {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.72fr);
-  gap: 18px;
-  align-items: stretch;
-}
-
-.summaryHeroMain {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-.summaryHeader {
   display: flex;
   justify-content: space-between;
-  gap: 22px;
-  align-items: flex-start;
+  align-items: center;
+  gap: 24px;
 }
 
-.summaryIdentity {
+.heroIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   max-width: 48rem;
 }
 
-.summaryEyebrow,
-.panelEyebrow,
-.metricLabel,
-.contextLabel {
-  display: block;
-  margin: 0 0 10px;
-  color: color-mix(in srgb, var(--accent-action) 62%, var(--text-secondary) 38%);
-  font-size: var(--text-xs);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  font-weight: 700;
+.heroTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.summaryTitle {
+.heroTitle {
   margin: 0;
   font-family: var(--font-heading);
-  font-size: clamp(2rem, 3.3vw, 3.9rem);
-  line-height: 1;
-  letter-spacing: 0;
+  font-size: clamp(1.75rem, 2.5vw, 2.25rem);
+  line-height: 1.1;
   color: var(--text-primary);
-  max-width: 18ch;
   text-wrap: balance;
 }
 
-.summaryDescription {
-  margin: 12px 0 0;
-  max-width: 64ch;
+.heroDescription {
+  margin: 0;
   color: var(--text-secondary);
   font-size: var(--text-base);
   line-height: 1.5;
 }
 
-.summaryChips {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+.heroAction {
+  flex-shrink: 0;
 }
 
-.summarySpotlight {
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
+/* 2. MAIN SECTION (Streams) */
+.mainSection {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 20px;
-  min-width: 0;
-  border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in srgb, var(--accent-live) 18%, var(--border-elevated) 82%);
-  background: color-mix(in srgb, var(--surface-panel-safe) 88%, var(--surface-stage) 12%);
-  box-shadow:
-    var(--shadow-card),
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
+  margin-top: 12px;
 }
 
-.summarySpotlight::before {
-  display: none;
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 0 4px;
 }
 
-.summarySpotlight > * {
-  position: relative;
-  z-index: 1;
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.2rem, 1.8vw, 1.5rem);
+  color: var(--text-primary);
 }
 
-.summarySpotlightHeader {
+.emptyStreamsCard {
+  border-radius: var(--radius-xl);
+  border: none;
+  background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  padding: 40px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.signalDial {
-  position: relative;
-  width: min(100%, 220px);
-  aspect-ratio: 2.4;
-  margin: -2px 0 2px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent-action) 22%, var(--border-base) 78%);
-  background: color-mix(in srgb, var(--surface-muted) 94%, var(--accent-action-subtle) 6%);
-  overflow: hidden;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent),
-    inset 0 -16px 30px color-mix(in srgb, var(--bg-video) 20%, transparent);
-}
-
-.signalDialCore,
-.signalDialRing,
-.signalDialSweep {
-  position: absolute;
-  pointer-events: none;
-}
-
-.signalDialCore {
-  left: 14%;
-  top: 50%;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--accent-action);
-  transform: translateY(-50%);
-  box-shadow: 0 0 26px color-mix(in srgb, var(--accent-action) 48%, transparent);
-}
-
-.signalDialRing {
-  left: 16%;
-  top: 50%;
-  width: 82px;
-  height: 82px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent-action) 42%, transparent);
-  transform: translateY(-50%);
-}
-
-.signalDialSweep {
-  left: 24%;
-  right: 12%;
-  top: 50%;
-  height: 2px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent-action), color-mix(in srgb, var(--accent-live) 72%, transparent), transparent);
-  transform: translateY(-50%);
-  box-shadow: 0 0 22px color-mix(in srgb, var(--accent-live) 30%, transparent);
-}
-
-.summarySpotlightEyebrow,
-.summarySpotlightFactLabel {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.summarySpotlightTitle {
-  margin: 0;
-  max-width: 20ch;
-  color: var(--text-primary);
-  font-family: var(--font-heading);
-  font-size: clamp(1.35rem, 1.8vw, 1.75rem);
-  line-height: 1.08;
-  letter-spacing: 0;
-  text-wrap: balance;
-}
-
-.summarySpotlightCopy {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.55;
-}
-
-.summarySpotlightMeta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.summarySpotlightFact {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  padding: 13px 14px;
-  border-radius: 19px;
-  border: 1px solid color-mix(in srgb, var(--border-base) 86%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent),
-    color-mix(in srgb, var(--surface-muted) 78%, transparent);
-}
-
-.summarySpotlightFactValue {
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.summarySpotlightActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: auto;
-}
-
-.summaryMetrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.metricCard,
-.contextCard {
-  padding: 16px 18px;
-  border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
-    color-mix(in srgb, var(--surface-muted) 86%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
-}
-
-.metricCard {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.metricValue {
-  color: var(--text-primary);
-  font-family: var(--font-heading);
-  font-size: clamp(1.02rem, 1.35vw, 1.2rem);
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0;
-  overflow-wrap: anywhere;
-}
-
-.metricDetail {
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.45;
-}
-
-.timelineHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-}
-
-.timelineLabel,
-.timelineMeta {
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-}
-
-.timelineTrack {
-  margin-top: 14px;
-  height: 11px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-video) 50%, var(--surface-highlight) 50%);
-  overflow: hidden;
-  box-shadow: inset 0 1px 4px color-mix(in srgb, black 36%, transparent);
-}
-
-.timelineFill {
-  height: 100%;
-  width: var(--xg2g-progress, 0%);
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent-action), var(--accent-live));
-  box-shadow: 0 0 18px color-mix(in srgb, var(--accent-action) 32%, transparent);
-}
-
-.timelineNext,
-.contextDetail {
-  margin: 12px 0 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-}
-
-.contextValue {
-  display: block;
-  color: var(--text-primary);
-  font-family: var(--font-heading);
-  font-size: clamp(1.05rem, 1.4vw, 1.15rem);
-  font-weight: 600;
-}
-
-.startSurface,
-.shortcutsSurface {
-  padding: 20px;
-}
-
-.startHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 22px;
-  align-items: flex-start;
-  margin-bottom: 20px;
-}
-
-.startSubtitle,
-.shortcutsDescription {
-  margin: 0;
-  max-width: 56ch;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.55;
-}
-
-.startGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.startCard {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-  min-height: 220px;
-  padding: 18px;
-  border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 48%),
-    color-mix(in srgb, var(--surface-muted) 72%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
-  transition:
-    border-color var(--motion-standard) var(--ease-standard),
-    transform var(--motion-standard) var(--ease-standard),
-    box-shadow var(--motion-standard) var(--ease-standard);
-}
-
-.startCard:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent-action) 28%, var(--border-elevated) 72%);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent),
-    var(--shadow-hover);
-}
-
-.startCard::before {
-  display: none;
-}
-
-.startCard[data-card="live"] {
-  border-color: color-mix(in srgb, var(--accent-action) 46%, transparent);
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--accent-action-subtle) 80%, transparent), transparent 50%),
-    color-mix(in srgb, var(--surface-panel-safe) 82%, var(--surface-stage) 18%);
-}
-
-.startCard[data-card="recordings"] {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 46%),
-    color-mix(in srgb, var(--surface-panel) 84%, var(--surface-stage) 16%);
-}
-
-.startCard[data-card="settings"] {
-  border-color: color-mix(in srgb, var(--status-success) 28%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 46%),
-    color-mix(in srgb, var(--surface-panel-soft) 84%, var(--surface-stage) 16%);
-}
-
-.startCard > * {
-  position: relative;
-  z-index: 1;
-}
-
-.startCardHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.startStep {
-  margin: 0 0 6px;
-  color: color-mix(in srgb, var(--accent-action) 60%, var(--text-tertiary) 40%);
-  font-size: var(--text-xs);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.startCardTitle {
-  margin: 0;
-  color: var(--text-primary);
-  font-family: var(--font-heading);
-  font-size: clamp(1.12rem, 1.45vw, 1.35rem);
-  line-height: 1.08;
-  letter-spacing: 0;
-}
-
-.startCardDescription,
-.startCardDetail {
-  margin: 0;
-  color: var(--text-secondary);
-  line-height: 1.55;
-}
-
-.startCardDescription {
-  color: var(--text-primary);
-  font-size: 1rem;
-}
-
-.startCardDetail {
-  font-size: var(--text-sm);
-}
-
-.startAction {
-  margin-top: auto;
-  width: fit-content;
-}
-
-.shortcutsActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.shortcutButton {
-  min-width: 0;
-}
-
-.diagnosticsGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.28fr) minmax(330px, 0.9fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.streamSurface,
-.signalSurface {
-  padding: 22px;
-}
-
-.signalSurface {
-  height: fit-content;
-}
-
-.panelHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  align-items: flex-start;
-  margin-bottom: 16px;
-}
-
-.panelTitle {
-  margin: 0;
-  font-family: var(--font-heading);
-  font-size: clamp(1.05rem, 1.4vw, 1.3rem);
-  color: var(--text-primary);
-}
-
-.panelBody {
-  min-width: 0;
+  justify-content: center;
+  text-align: center;
 }
 
 .emptyState {
-  padding: 28px 10px;
   color: var(--text-secondary);
 }
 
 .emptyTitle {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: clamp(1.2rem, 1.8vw, 1.45rem);
+  font-size: 1.25rem;
 }
 
 .emptyText {
   margin: 0;
-  max-width: 50ch;
   line-height: 1.6;
 }
 
-.statusList {
+/* 3. FOOTER SECTION */
+.footerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.shortcutsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.shortcutButton {
+  min-width: 0;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06) !important;
+}
+
+.healthGrid {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
 }
 
-.statusRow {
-  display: grid;
-  gap: 4px;
-  padding: 16px 18px;
-  border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
-  border-radius: 20px;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent-action-subtle) 18%, transparent), transparent 58%),
-    color-mix(in srgb, var(--surface-muted) 70%, transparent);
+.healthWidget {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  border: none;
+  background: color-mix(in srgb, var(--surface-muted) 50%, transparent);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.04);
 }
 
-.statusRow:last-child {
-  padding: 16px 18px;
-}
-
-.statusLabel {
+.healthLabel {
   color: var(--text-secondary);
   font-size: var(--text-sm);
-}
-
-.statusValue {
-  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
   font-weight: 600;
 }
 
-.statusDetail {
+.healthValue {
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+.healthDetail {
   color: var(--text-tertiary);
   font-size: var(--text-sm);
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
-@media (max-width: 1180px) {
-  .summaryHeroGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .summarySpotlightMeta {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .startGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .summaryMetrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .diagnosticsGrid {
-    grid-template-columns: 1fr;
-  }
-}
-
+/* MEDIA QUERIES */
 @media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
-  .page {
-    gap: 14px;
-  }
-
-  .summaryCard,
-  .startSurface,
-  .shortcutsSurface,
-  .streamSurface,
-  .signalSurface {
-    border-radius: var(--radius-lg);
-  }
-
-  .summaryCard {
-    padding: 14px;
-    gap: 0;
-  }
-
-  .startSurface,
-  .shortcutsSurface {
-    padding: 14px;
-  }
-
-  .startSurface {
-    margin-top: calc(76px + var(--sab));
-  }
-
-  .summaryHeroGrid {
-    gap: 12px;
-  }
-
-  .summaryHeroMain {
-    gap: 12px;
-  }
-
-  .summaryHeader {
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .summarySpotlight {
-    gap: 12px;
-    padding: 14px;
-    border-radius: var(--radius-lg);
-    border-color: var(--border-base);
-    background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
-  }
-
-  .summarySpotlightHeader,
-  .summarySpotlightTitle,
-  .summarySpotlightCopy,
-  .summarySpotlightMeta {
-    display: none;
-  }
-
-  .summarySpotlightActions {
-    margin-top: 0;
-  }
-
-  .summarySpotlightActions > * {
-    flex: 1 1 100%;
-  }
-
-  .signalDial {
-    display: none;
-  }
-
-  .startHeader,
-  .summaryIdentity {
-    max-width: none;
-  }
-
-  .startHeader {
-    flex-direction: column;
-    margin-bottom: 12px;
-  }
-
-  .startCard {
-    min-height: 0;
-    padding: 14px;
-    border-radius: var(--radius-lg);
-  }
-
-  .startCardHeader {
-    flex-direction: column;
-  }
-
-  .startAction {
-    width: 100%;
-  }
-
-  .summaryIdentity {
-    max-width: none;
-  }
-
-  .summaryTitle {
-    max-width: none;
-    font-size: clamp(1.45rem, 4.6vw, 1.9rem);
-  }
-
-  .summaryDescription {
-    margin-top: 10px;
-    font-size: 0.9rem;
-    line-height: 1.5;
-  }
-
-  .summaryChips {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .summaryMetrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .metricCard,
-  .contextCard {
-    padding: 12px;
-    border-radius: var(--radius-lg);
-  }
-
-  .timelineHeader {
+  .heroContent {
     flex-direction: column;
     align-items: flex-start;
+    gap: 16px;
   }
 
-  .streamSurface,
-  .signalSurface {
-    padding: 14px;
+  .heroAction, .heroAction > * {
+    width: 100%;
+  }
+
+  .healthGrid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
 @media (max-width: 480px) {
-  .page {
-    gap: 14px;
-    padding-bottom: 20px;
-  }
-
-  .summarySpotlightMeta {
+  .healthGrid {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
-  .page {
-    gap: 12px;
-    padding-bottom: 12px;
-  }
-
-  .summaryCard,
-  .startSurface,
-  .shortcutsSurface,
-  .streamSurface,
-  .signalSurface {
-    border-radius: 20px;
-  }
-
-  .summaryCard {
-    padding: 16px 18px;
-    gap: 14px;
-  }
-
-  .summaryHeader {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 12px;
-  }
-
-  .startHeader {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    margin-bottom: 10px;
-  }
-
-  .summaryTitle {
-    max-width: 16ch;
-    font-size: clamp(1.35rem, 3.8vw, 1.95rem);
-  }
-
-  .summaryDescription {
-    margin-top: 8px;
-    max-width: none;
-    font-size: 0.86rem;
-    line-height: 1.45;
-  }
-
-  .summaryChips {
-    width: auto;
-    gap: 8px;
-    justify-content: flex-start;
-  }
-
-  .summaryMetrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .metricCard,
-  .contextCard {
-    padding: 12px 14px;
-    border-radius: 16px;
-  }
-
-  .timelineHeader {
-    flex-direction: row;
-    align-items: center;
-  }
-
-  .startSurface,
-  .shortcutsSurface,
-  .streamSurface,
-  .signalSurface {
-    padding: 14px 16px;
-  }
-
-  .startGrid {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
-  }
-
-  .startCard {
-    padding: 14px;
-    border-radius: 16px;
-  }
-
-  .diagnosticsGrid {
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 14px;
-  }
-
-  .panelHeader {
-    margin-bottom: 12px;
-  }
-
-  .statusRow,
-  .statusRow:last-child {
-    padding: 12px 14px;
-    border-radius: 16px;
   }
 }

@@ -12,29 +12,21 @@
   --ui-density-scale: calc(var(--ui-density-scale-user) * var(--ui-density-scale-surface));
 
   /* Typography Stack */
-  --font-heading: 'Space Grotesk Variable', 'Space Grotesk', -apple-system, sans-serif;
-  --font-body: 'IBM Plex Sans Variable', 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-heading: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
 
-  /* Type Scale (16px base) */
-  --text-display: 2rem;
-  /* 32px */
-  --text-h1: 1.5rem;
-  /* 24px */
-  --text-h2: 1.25rem;
-  /* 20px */
-  --text-h3: 1rem;
-  /* 16px */
-  --text-base: 1rem;
-  /* 16px */
-  --text-sm: 0.875rem;
-  /* 14px */
-  --text-xs: 0.75rem;
-  /* 12px */
-  --text-mono-base: 0.875rem;
-  /* 14px */
-  --text-mono-sm: 0.75rem;
-  /* 12px */
+  /* Type Scale (16px base, matching macOS SF Pro values) */
+  --text-display: 1.625rem;   /* 26px - Large Title */
+  --text-h1: 1.375rem;        /* 22px - Title 1 */
+  --text-h2: 1.0625rem;       /* 17px - Title 2 */
+  --text-h3: 0.9375rem;       /* 15px - Title 3 */
+  --text-base: 0.8125rem;     /* 13px - Body */
+  --text-sm: 0.75rem;         /* 12px - Callout */
+  --text-xs: 0.6875rem;       /* 11px - Subheadline */
+  --text-xxs: 0.625rem;       /* 10px - Footnote / Caption */
+  --text-mono-base: 0.75rem;  /* 12px */
+  --text-mono-sm: 0.6875rem;  /* 11px */
 
   /* Background Layers */
   --bg-base: #070b10;
@@ -42,7 +34,7 @@
   --bg-elevated: rgba(18, 27, 37, 0.78);
   --bg-overlay: rgba(8, 13, 20, 0.9);
   --bg-hover: rgba(255, 255, 255, 0.09);
-  --bg-input: rgba(12, 19, 29, 0.9);
+  --bg-input: rgba(0, 0, 0, 0.25);
 
   /* Surfaces */
   --surface-shell: rgba(11, 18, 27, 0.78);
@@ -68,11 +60,11 @@
   /* Disabled */
 
   /* Dual-Accent System */
-  /* Blue = Action/Interactive */
-  --accent-action: #60a5fa;
-  --accent-action-hover: #93c5fd;
-  --accent-action-pressed: #2563eb;
-  --accent-action-subtle: rgba(96, 165, 250, 0.14);
+  /* Blue = Action/Interactive (Apple macOS Blue) */
+  --accent-action: #0a84ff;
+  --accent-action-hover: #409cff;
+  --accent-action-pressed: #0060d1;
+  --accent-action-subtle: rgba(10, 132, 255, 0.14);
 
   /* Amber = Live/Recording */
   --accent-live: #ffb24a;
@@ -104,9 +96,9 @@
   --overlay-backdrop-strong: rgba(0, 0, 0, 0.8);
 
   /* Borders */
-  --border-base: rgba(255, 255, 255, 0.12);
-  --border-elevated: rgba(255, 255, 255, 0.16);
-  --border-strong: rgba(255, 255, 255, 0.24);
+  --border-base: rgba(255, 255, 255, 0.08);
+  --border-elevated: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.20);
   --border-focus: var(--accent-action);
 
   /* Shadow System */
@@ -154,9 +146,9 @@
     color-mix(in srgb, var(--surface-panel) 88%, var(--surface-stage) 12%);
 
   /* Spacing */
-  --radius-sm: calc(6px * var(--ui-density-scale));
-  --radius-md: calc(10px * var(--ui-density-scale));
-  --radius-lg: calc(12px * var(--ui-density-scale));
+  --radius-sm: calc(8px * var(--ui-density-scale));
+  --radius-md: calc(12px * var(--ui-density-scale));
+  --radius-lg: calc(16px * var(--ui-density-scale));
   --radius-xl: calc(24px * var(--ui-density-scale));
 
   /* Legacy Aliases (for compatibility during migration) */
@@ -188,8 +180,9 @@
 
   /* Navigation */
   --nav-shell-width: calc(248px * var(--ui-density-scale));
+  --nav-content-margin: calc(var(--nav-shell-width) + 34px);
   --nav-height: calc(60px * var(--ui-density-scale));
-  --nav-rail-width: calc(92px * var(--ui-density-scale));
+  --nav-rail-width: calc(88px * var(--ui-density-scale));
   --nav-rail-expanded: var(--nav-shell-width);
   --content-max-width: 1580px;
   --page-max-width-regular: 1180px;
@@ -235,6 +228,10 @@
   --content-max-width: 1760px;
   --page-max-width-regular: 1260px;
   --page-max-width-wide: 1640px;
+}
+
+:root[data-nav-collapsed='true'] {
+  --nav-content-margin: calc(var(--nav-rail-width) + 34px);
 }
 
 html {
@@ -358,11 +355,12 @@ textarea {
   max-width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border-base);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.12);
   color: var(--text-primary);
   border-radius: var(--radius-md);
   padding: 10px 14px;
   font-family: var(--font-body);
-  transition: border-color 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 180ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 input:focus,
@@ -749,4 +747,28 @@ a:hover {
   top: 0.5rem;
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes slideUpSpring {
+  from {
+    opacity: 0;
+    transform: translateY(60px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

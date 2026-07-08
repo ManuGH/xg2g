@@ -158,7 +158,7 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `epg.maxConcurrency` | `XG2G_EPG_MAX_CONCURRENCY` | `1` | Active | Advanced |
 | `epg.retries` | `XG2G_EPG_RETRIES` | `2` | Active | Advanced |
 | `epg.source` | `XG2G_EPG_SOURCE` | `per-service` | Active | Advanced |
-| `epg.timeoutMs` | `XG2G_EPG_TIMEOUT_MS` | `5000` | Active | Advanced |
+| `epg.timeoutMs` | `XG2G_EPG_TIMEOUT_MS` | `20000` | Active | Advanced |
 | `epg.xmltvPath` | `XG2G_XMLTV` | `xmltv.xml` | Active | Advanced |
 
 ### ffmpeg

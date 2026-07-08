@@ -180,12 +180,10 @@ describe('Settings', () => {
       },
     });
 
-    renderWithQueryClient();
+    renderWithQueryClient(['/settings?section=streaming']);
 
     expect(await screen.findByDisplayValue('Universal (H.264/AAC/fMP4)')).toBeInTheDocument();
-    expect(screen.getAllByText('Idle').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Files' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument();
+    expect(screen.getAllByText('Streaming').length).toBeGreaterThanOrEqual(1);
     expect(getSystemConfig).toHaveBeenCalledTimes(1);
     expect(getSystemScanStatus).toHaveBeenCalledTimes(1);
   });
@@ -240,7 +238,7 @@ describe('Settings', () => {
       return { data: { status: 'started' } };
     });
 
-    renderWithQueryClient();
+    renderWithQueryClient(['/settings?section=scan']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Start Scan' }));
 
@@ -274,7 +272,7 @@ describe('Settings', () => {
     });
     confirm.mockResolvedValue(false);
 
-    renderWithQueryClient();
+    renderWithQueryClient(['/settings?section=household']);
 
     fireEvent.change(await screen.findByDisplayValue('Haushalt'), {
       target: { value: 'Wohnzimmer' },
@@ -286,7 +284,7 @@ describe('Settings', () => {
     });
 
     expect(screen.getByDisplayValue('Wohnzimmer')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 4, name: 'Haushalt' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Haushalt' })).toBeInTheDocument();
   });
 
   it('disables the Android TV handoff when public connectivity has no native endpoint', async () => {
@@ -434,7 +432,7 @@ describe('Settings', () => {
       },
     });
 
-    renderWithQueryClient();
+    renderWithQueryClient(['/settings?section=android-tv']);
 
     expect(await screen.findByText('No published native endpoint')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open in xg2g App' })).toBeDisabled();

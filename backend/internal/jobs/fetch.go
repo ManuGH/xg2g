@@ -31,12 +31,8 @@ type epgResult struct {
 }
 
 type epgFetchClient interface {
-	Bouquets(ctx context.Context) (map[string]string, error)
-	GetBouquetEPG(ctx context.Context, bouquetRef string, days int) ([]openwebif.EPGEvent, error)
 	GetEPG(ctx context.Context, sRef string, days int) ([]openwebif.EPGEvent, error)
 }
-
-const minBouquetFutureCoverage = 6 * time.Hour
 
 // epgAggregator handles common EPG event aggregation logic.
 // It builds service reference maps, matches events to channels,
@@ -147,116 +143,11 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 }
 
 // collectEPGProgrammes is the main entry point for EPG collection.
-// It routes to either bouquet-based or per-service fetching based on cfg.EPGSource
+// It uses per-service fetching to ensure reliability (OpenATV 7.6.0 bugs with bouquet endpoints).
 func collectEPGProgrammes(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
-
-	// Route to appropriate EPG collection strategy
-	if cfg.EPGSource == "bouquet" {
-		logger.Info().Msg("Using bouquet-based EPG fetch strategy")
-		return collectEPGFromBouquet(ctx, client, items, cfg)
-	}
-
-	// Default: per-service strategy
-	logger.Info().Msg("Using per-service EPG fetch strategy")
+	logger.Info().Msg("Fetching EPG via per-service requests")
 	return collectEPGPerService(ctx, client, items, cfg)
-}
-
-// collectEPGFromBouquet fetches EPG for all channels by iterating over their bouquets
-func collectEPGFromBouquet(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
-	logger := xglog.FromContext(ctx)
-
-	// Identify all unique bouquets from the items
-	// We need to map bouquet name -> bouquet reference
-	bouquetRefs := make(map[string]string)
-
-	// First, get all available bouquets from the receiver to resolve references
-	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS)*time.Millisecond)
-	defer cancel()
-
-	availableBouquets, err := client.Bouquets(reqCtx)
-	if err != nil {
-		err = WrapBouquetsFetchError(fmt.Errorf("failed to fetch bouquets for EPG: %w", err))
-		logJobError("epg_fetch", logger.Error().Err(err), err).Msg("failed to fetch bouquets for EPG")
-		return nil
-	}
-
-	// Find unique bouquets used in our playlist
-	uniqueBouquets := make(map[string]bool)
-	for _, item := range items {
-		if item.Group != "" {
-			uniqueBouquets[item.Group] = true
-		}
-	}
-
-	// Resolve references for used bouquets
-	// If a bouquet name from M3U matches one on the receiver, we get its ref
-	var targetRefs []string
-	for name := range uniqueBouquets {
-		if ref, ok := availableBouquets[name]; ok {
-			targetRefs = append(targetRefs, ref)
-			bouquetRefs[name] = ref
-		} else {
-			logger.Debug().Str("bouquet", name).Msg("Bouquet from playlist not found on receiver, skipping EPG for this group")
-		}
-	}
-
-	// Fallback: If no bouquets matched (e.g. custom groups in M3U), try the configured fallback bouquet
-	if len(targetRefs) == 0 && cfg.Bouquet != "" {
-		if ref, ok := availableBouquets[cfg.Bouquet]; ok {
-			logger.Info().Str("fallback_bouquet", cfg.Bouquet).Msg("No playlist bouquets matched, using configured fallback")
-			targetRefs = append(targetRefs, ref)
-		}
-	}
-
-	if len(targetRefs) == 0 {
-		logger.Warn().Msg("No valid bouquets found for EPG fetch, falling back to per-service")
-		return collectEPGPerService(ctx, client, items, cfg)
-	}
-
-	logger.Info().Int("bouquets_count", len(targetRefs)).Msg("Fetching EPG for bouquets")
-
-	var allEvents []openwebif.EPGEvent
-
-	// Fetch EPG for each bouquet
-	for _, ref := range targetRefs {
-		// Per-bouquet timeout
-		bCtx, bCancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS)*time.Millisecond)
-
-		events, err := client.GetBouquetEPG(bCtx, ref, cfg.EPGDays)
-		bCancel() // Release context resources immediately
-
-		if err != nil {
-			err = WrapEPGFetchError(fmt.Errorf("failed to fetch bouquet EPG for %s: %w", ref, err))
-			logJobError("epg_fetch", logger.Error().Err(err).Str("bouquet_ref", ref), err).Msg("failed to fetch bouquet EPG")
-			continue
-		}
-
-		logger.Debug().Str("bouquet_ref", ref).Int("events", len(events)).Msg("Fetched bouquet EPG")
-		allEvents = append(allEvents, events...)
-	}
-
-	logger.Info().Int("total_raw_events", len(allEvents)).Msg("Received EPG events from all bouquets")
-
-	now := time.Now().UTC()
-	ok, latestEnd := bouquetEPGCoversFutureWindow(allEvents, now, minBouquetFutureCoverage)
-	if !ok {
-		logEvt := logger.Warn().
-			Int("total_raw_events", len(allEvents)).
-			Dur("required_future_coverage", minBouquetFutureCoverage)
-		if !latestEnd.IsZero() {
-			logEvt = logEvt.Time("latest_end", latestEnd)
-		}
-		logEvt.Msg("Bouquet EPG coverage too short, falling back to per-service")
-		return collectEPGPerService(ctx, client, items, cfg)
-	}
-
-	// Use aggregator to match events to channels and convert to programmes
-	aggregator := newEPGAggregator(ctx, items)
-	srefMap := aggregator.buildSRefMap()
-	allProgrammes := aggregator.aggregateEvents(allEvents, srefMap)
-
-	return allProgrammes
 }
 
 // collectEPGPerService fetches EPG data using per-service requests with bounded concurrency
@@ -264,7 +155,7 @@ func collectEPGPerService(ctx context.Context, client epgFetchClient, items []pl
 	logger := xglog.FromContext(ctx)
 
 	// Clamp concurrency to sane bounds [1,10]
-	maxPar := clampConcurrency(cfg.EPGMaxConcurrency, 5, 10)
+	maxPar := clampConcurrency(cfg.EPGMaxConcurrency, 1, 10)
 
 	// Worker pool semaphore
 	sem := make(chan struct{}, maxPar)
@@ -366,35 +257,6 @@ func fetchEPGWithRetry(ctx context.Context, client epgFetchClient, sRef string, 
 	}
 
 	return nil, WrapEPGFetchError(fmt.Errorf("EPG request failed after %d retries: %w", cfg.EPGRetries, lastErr))
-}
-
-func bouquetEPGCoversFutureWindow(events []openwebif.EPGEvent, now time.Time, minFutureCoverage time.Duration) (bool, time.Time) {
-	if len(events) == 0 {
-		return false, time.Time{}
-	}
-
-	now = now.UTC()
-	var latestEndUnix int64
-	for _, event := range events {
-		endUnix := event.Begin + int64(event.Duration)
-		if endUnix > latestEndUnix {
-			latestEndUnix = endUnix
-		}
-	}
-
-	if latestEndUnix == 0 {
-		return false, time.Time{}
-	}
-
-	latestEnd := time.Unix(latestEndUnix, 0).UTC()
-	if !latestEnd.After(now) {
-		return false, latestEnd
-	}
-	if minFutureCoverage > 0 && latestEnd.Before(now.Add(minFutureCoverage)) {
-		return false, latestEnd
-	}
-
-	return true, latestEnd
 }
 
 // extractSRefFromStreamURL extracts service reference from stream URL

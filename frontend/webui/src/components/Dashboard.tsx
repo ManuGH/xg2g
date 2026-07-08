@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { ChipState } from './ui/StatusChip';
@@ -19,23 +18,12 @@ import ContinueWatchingRail from '../features/resume/ContinueWatchingRail';
 import styles from './Dashboard.module.css';
 
 type SummaryTone = 'streaming' | 'control' | 'standby';
-type GuidedCard = {
-  id: 'live' | 'recordings' | 'settings';
-  stepLabel: string;
-  title: string;
-  description: string;
-  detail: string;
-  actionLabel: string;
-  chip: { state: ChipState; label: string };
-  disabled?: boolean;
-  onAction: () => void;
-};
+
 
 export default function Dashboard() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const {
-    selectedProfile,
     canAccessDvrPlayback,
     canManageDvr,
     canAccessSettings,
@@ -73,12 +61,7 @@ export default function Dashboard() {
   const next = receiver?.next;
   const missingChannels = health.epg?.missingChannels || 0;
   const summaryTone: SummaryTone = streamCount > 0 ? 'streaming' : receiverUnavailable ? 'standby' : 'control';
-  const hasProgramProgress = !!(now?.beginTimestamp && now?.durationSec);
-  const showReceiverContext = !hasProgramProgress && !receiverUnavailable;
-  const progressPercent = hasProgramProgress && now?.beginTimestamp && now?.durationSec
-    ? Math.min(100, Math.max(0, (((Date.now() / 1000) - now.beginTimestamp) / now.durationSec) * 100))
-    : 0;
-  const activeProfileName = selectedProfile?.name || t('dashboard.profileFallback', { defaultValue: 'Current profile' });
+
 
   const summaryTitle = currentChannel;
 
@@ -95,28 +78,7 @@ export default function Dashboard() {
     ? t('dashboard.guideSynced')
     : t('dashboard.missing', { count: missingChannels });
   const recorderLabel = recording?.serviceName || (recording?.isRecording ? t('dashboard.recordingActive') : t('dashboard.recorderIdle'));
-  const summaryItems = [
-    {
-      label: t('dashboard.receiverLabel'),
-      value: receiverUnavailable ? t('dashboard.standby') : currentChannel,
-      detail: receiverUnavailable ? t('dashboard.heroStandbySummary') : (now?.title || t('dashboard.readyForPlayback'))
-    },
-    {
-      label: t('dashboard.activeStreams'),
-      value: streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.readyForFirstSession'),
-      detail: streamCount > 0 ? t('dashboard.activePlaybackSessions') : t('dashboard.noActiveSessions')
-    },
-    {
-      label: t('dashboard.guideHealth'),
-      value: guideHealthLabel,
-      detail: t('dashboard.lastSync', { time: formatTimeAgo(health.receiver?.lastCheck, t) })
-    },
-    {
-      label: t('dashboard.recorder'),
-      value: recorderLabel,
-      detail: recording?.isRecording ? t('dashboard.recordingActive') : t('dashboard.noActiveRecordingTask')
-    }
-  ];
+
   const liveAction = {
     label: t('dashboard.start.live.action', { defaultValue: 'Open Live TV' }),
     onAction: () => navigate(ROUTE_MAP.epg),
@@ -180,20 +142,7 @@ export default function Dashboard() {
         primaryAction: liveAction,
         secondaryAction: recordingsAction ?? settingsAction,
       };
-  const summarySpotlightFacts = [
-    {
-      label: t('dashboard.heroAside.profileLabel', { defaultValue: 'Active profile' }),
-      value: activeProfileName,
-    },
-    {
-      label: t('dashboard.guideHealth'),
-      value: guideHealthLabel,
-    },
-    {
-      label: t('dashboard.recorder'),
-      value: recorderLabel,
-    },
-  ];
+
   const systemFacts = [
     {
       label: t('dashboard.receiverLabel'),
@@ -221,74 +170,7 @@ export default function Dashboard() {
       detail: healthChip.label
     }
   ];
-  const guidedCards: GuidedCard[] = [
-    {
-      id: 'live',
-      stepLabel: t('dashboard.start.live.step', { defaultValue: 'Step 1' }),
-      title: t('dashboard.start.live.title', { defaultValue: 'Watch live TV' }),
-      description: t('dashboard.start.live.description', {
-        defaultValue: 'Open the guide, browse channels and start playback from the simplest entry point.',
-      }),
-      detail: receiverUnavailable
-        ? t('dashboard.start.live.detailStandby', {
-          defaultValue: 'The receiver is in standby. Wake it first so guide and channel data can refresh.',
-        })
-        : t('dashboard.start.live.detailReady', {
-          defaultValue: 'Guide, channel list and timer planning now live in one place.',
-        }),
-      actionLabel: t('dashboard.start.live.action', { defaultValue: 'Open Live TV' }),
-      chip: receiverUnavailable
-        ? { state: 'warning', label: t('dashboard.start.status.standby', { defaultValue: 'Receiver in standby' }) }
-        : { state: 'success', label: t('dashboard.start.status.ready', { defaultValue: 'Ready now' }) },
-      onAction: () => navigate(ROUTE_MAP.epg),
-    },
-    {
-      id: 'recordings',
-      stepLabel: t('dashboard.start.recordings.step', { defaultValue: 'Step 2' }),
-      title: t('dashboard.start.recordings.title', { defaultValue: 'Open recordings' }),
-      description: t('dashboard.start.recordings.description', {
-        defaultValue: 'Resume unfinished sessions, browse folders and keep DVR playback separate from live TV.',
-      }),
-      detail: canAccessDvrPlayback
-        ? canManageDvr
-          ? t('dashboard.start.recordings.detailManage', {
-            defaultValue: 'Series rules stay inside this area when you need them.',
-          })
-          : t('dashboard.start.recordings.detailWatch', {
-            defaultValue: 'This profile can watch recordings but not change DVR rules.',
-          })
-        : t('dashboard.start.recordings.detailBlocked', {
-          defaultValue: 'This profile cannot open recordings right now.',
-        }),
-      actionLabel: t('dashboard.start.recordings.action', { defaultValue: 'Open Recordings' }),
-      chip: canAccessDvrPlayback
-        ? { state: 'success', label: t('dashboard.start.status.available', { defaultValue: 'Available in this profile' }) }
-        : { state: 'warning', label: t('dashboard.start.status.blocked', { defaultValue: 'Blocked in this profile' }) },
-      disabled: !canAccessDvrPlayback,
-      onAction: () => navigate(buildRecordingsRoute()),
-    },
-    {
-      id: 'settings',
-      stepLabel: t('dashboard.start.settings.step', { defaultValue: 'Step 3' }),
-      title: t('dashboard.start.settings.title', { defaultValue: 'Setup and household' }),
-      description: t('dashboard.start.settings.description', {
-        defaultValue: 'Receiver setup, household profiles and streaming defaults all stay under Settings.',
-      }),
-      detail: canAccessSettings
-        ? t('dashboard.start.settings.detailReady', {
-          defaultValue: 'Use this when a family member needs setup help instead of direct expert tools.',
-        })
-        : t('dashboard.start.settings.detailBlocked', {
-          defaultValue: 'This profile cannot open settings right now.',
-        }),
-      actionLabel: t('dashboard.start.settings.action', { defaultValue: 'Open Setup' }),
-      chip: canAccessSettings
-        ? { state: 'success', label: t('dashboard.start.status.available', { defaultValue: 'Available in this profile' }) }
-        : { state: 'warning', label: t('dashboard.start.status.blocked', { defaultValue: 'Blocked in this profile' }) },
-      disabled: !canAccessSettings,
-      onAction: () => navigate(buildSettingsRoute({ section: 'setup' })),
-    },
-  ];
+
   const directActions = [
     canAccessSettings
       ? {
@@ -326,168 +208,64 @@ export default function Dashboard() {
       }
       : null,
   ].filter((action): action is { id: string; label: string; onAction: () => void } => action !== null);
-  const spotlightPrimaryLabel = t('dashboard.heroAside.primaryActionLabel', {
-    action: summarySpotlight.primaryAction.label,
-    defaultValue: `Recommended: ${summarySpotlight.primaryAction.label}`,
-  });
-  const spotlightSecondaryLabel = summarySpotlight.secondaryAction
-    ? t('dashboard.heroAside.secondaryActionLabel', {
-      action: summarySpotlight.secondaryAction.label,
-      defaultValue: `Also: ${summarySpotlight.secondaryAction.label}`,
-    })
-    : null;
+
 
   return (
     <div className={`${styles.page} animate-enter`.trim()} data-testid="dashboard-view">
-      <Card variant="action" className={[styles.summaryCard, styles[`summary${capitalize(summaryTone)}`]].join(' ')}>
-        <div className={styles.summaryHeroGrid}>
-          <div className={styles.summaryHeroMain}>
-            <div className={styles.summaryHeader}>
-              <div className={styles.summaryIdentity}>
-                <p className={styles.summaryEyebrow}>{t('dashboard.controlSummary')}</p>
-                <h2 className={styles.summaryTitle}>{summaryTitle}</h2>
-                <p className={styles.summaryDescription}>{summaryDescription}</p>
-              </div>
-              <div className={styles.summaryChips}>
-                <StatusChip state={healthChip.state} label={healthChip.label} />
-                <StatusChip
-                  state={streamCount > 0 ? 'live' : 'idle'}
-                  label={streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.noSessions')}
-                />
-              </div>
+      
+      {/* 1. SLIM HERO BANNER */}
+      <Card variant="action" className={[styles.heroBanner, styles[`summary${capitalize(summaryTone)}`]].join(' ')}>
+        <div className={styles.heroContent}>
+          <div className={styles.heroIdentity}>
+            <div className={styles.heroTitleRow}>
+              <h1 className={styles.heroTitle}>{summaryTitle}</h1>
+              <StatusChip state={healthChip.state} label={healthChip.label} />
             </div>
-
-            <div className={styles.summaryMetrics}>
-              {summaryItems.map((item) => (
-                <div key={item.label} className={styles.metricCard}>
-                  <span className={styles.metricLabel}>{item.label}</span>
-                  <span className={styles.metricValue}>{item.value}</span>
-                  <span className={styles.metricDetail}>{item.detail}</span>
-                </div>
-              ))}
-            </div>
-
-            {hasProgramProgress && now?.beginTimestamp && now?.durationSec ? (
-              <div className={styles.contextCard}>
-                <div className={styles.timelineHeader}>
-                  <span className={styles.timelineLabel}>{t('dashboard.onReceiverNow')}</span>
-                  <span className={styles.timelineMeta}>
-                    {new Date(now.beginTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {' \u2192 '}
-                    {new Date((now.beginTimestamp + now.durationSec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-                <div className={styles.timelineTrack}>
-                  <div
-                    className={styles.timelineFill}
-                    style={{ '--xg2g-progress': `${progressPercent}%` } as CSSProperties & { [key: string]: string }}
-                  />
-                </div>
-                {next?.title && <p className={styles.timelineNext}>{t('dashboard.upNext', { title: next.title })}</p>}
-              </div>
-            ) : showReceiverContext ? (
-              <div className={styles.contextCard}>
-                <span className={styles.contextLabel}>{t('dashboard.receiverContext')}</span>
-                <span className={styles.contextValue}>{currentChannel}</span>
-                <span className={styles.contextDetail}>{t('dashboard.readyForPlayback')}</span>
-              </div>
-            ) : null}
+            <p className={styles.heroDescription}>{summaryDescription}</p>
           </div>
-
-          <div className={styles.summarySpotlight}>
-            <div className={styles.summarySpotlightHeader}>
-              <p className={styles.summarySpotlightEyebrow}>{summarySpotlight.eyebrow}</p>
-              <StatusChip state={summarySpotlight.chip.state} label={summarySpotlight.chip.label} />
-            </div>
-            <div className={styles.signalDial} aria-hidden="true">
-              <span className={styles.signalDialCore} />
-              <span className={styles.signalDialRing} />
-              <span className={styles.signalDialSweep} />
-            </div>
-            <h3 className={styles.summarySpotlightTitle}>{summarySpotlight.title}</h3>
-            <p className={styles.summarySpotlightCopy}>{summarySpotlight.detail}</p>
-
-            <div className={styles.summarySpotlightMeta}>
-              {summarySpotlightFacts.map((item) => (
-                <div key={item.label} className={styles.summarySpotlightFact}>
-                  <span className={styles.summarySpotlightFactLabel}>{item.label}</span>
-                  <span className={styles.summarySpotlightFactValue}>{item.value}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className={styles.summarySpotlightActions}>
-              <Button variant="primary" onClick={summarySpotlight.primaryAction.onAction}>
-                {spotlightPrimaryLabel}
-              </Button>
-              {summarySpotlight.secondaryAction ? (
-                <Button variant="secondary" onClick={summarySpotlight.secondaryAction.onAction}>
-                  {spotlightSecondaryLabel}
-                </Button>
-              ) : null}
-            </div>
+          <div className={styles.heroAction}>
+            <Button variant="primary" onClick={summarySpotlight.primaryAction.onAction}>
+              {summarySpotlight.primaryAction.label}
+            </Button>
           </div>
         </div>
       </Card>
 
       <ContinueWatchingRail />
 
-      <Card className={styles.startSurface}>
-        <div className={styles.startHeader}>
-          <div>
-            <p className={styles.panelEyebrow}>{t('dashboard.start.eyebrow', { defaultValue: 'Start here' })}</p>
-            <h3 className={styles.panelTitle}>{t('dashboard.start.title', { defaultValue: 'Choose the task, not the tool' })}</h3>
-          </div>
-          <p className={styles.startSubtitle}>
-            {t('dashboard.start.subtitle', {
-              defaultValue: 'Each area now follows the household task first. Direct expert paths stay separate below.',
-            })}
-          </p>
+      {/* 2. ACTIVE STREAMS (The Main Event) */}
+      <div className={styles.mainSection}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>{t('dashboard.operatorSessions', { defaultValue: 'Operator-Sitzungen' })}</h2>
+          <StatusChip
+            state={streamCount > 0 ? 'live' : 'idle'}
+            label={streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.noSessions')}
+          />
         </div>
-
-        <div className={styles.startGrid}>
-          {guidedCards.map((card) => (
-            <div key={card.id} className={styles.startCard} data-card={card.id}>
-              <div className={styles.startCardHeader}>
-                <div>
-                  <p className={styles.startStep}>{card.stepLabel}</p>
-                  <h4 className={styles.startCardTitle}>{card.title}</h4>
-                </div>
-                <StatusChip state={card.chip.state} label={card.chip.label} />
-              </div>
-              <p className={styles.startCardDescription}>{card.description}</p>
-              <p className={styles.startCardDetail}>{card.detail}</p>
-              <Button
-                variant={card.id === 'live' ? 'primary' : 'secondary'}
-                className={styles.startAction}
-                onClick={card.onAction}
-                disabled={card.disabled}
-              >
-                {card.actionLabel}
-              </Button>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {directActions.length > 0 && (
-        <Card className={styles.shortcutsSurface}>
-          <div className={styles.panelHeader}>
-            <div>
-              <p className={styles.panelEyebrow}>{t('dashboard.shortcuts.eyebrow', { defaultValue: 'Direct paths' })}</p>
-              <h3 className={styles.panelTitle}>{t('dashboard.shortcuts.title', { defaultValue: 'Open a specific area directly' })}</h3>
-            </div>
+        
+        {streamCount > 0 ? (
+          <div className={styles.streamsGrid}>
+             <StreamsList />
           </div>
-          <p className={styles.shortcutsDescription}>
-            {t('dashboard.shortcuts.subtitle', {
-              defaultValue: 'Use these shortcuts when you already know the exact destination.',
-            })}
-          </p>
-          <div className={styles.shortcutsActions}>
+        ) : (
+          <Card className={styles.emptyStreamsCard}>
+            <div className={styles.emptyState}>
+              <p className={styles.emptyTitle}>{t('dashboard.noActiveStreams')}</p>
+              <p className={styles.emptyText}>{t('dashboard.startPlaybackHint')}</p>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* 3. FOOTER: SHORTCUTS & HEALTH WIDGETS */}
+      <div className={styles.footerSection}>
+        
+        {directActions.length > 0 && (
+          <div className={styles.shortcutsRow}>
             {directActions.map((action) => (
               <Button
                 key={action.id}
-                variant="ghost"
+                variant="secondary"
                 size="sm"
                 className={styles.shortcutButton}
                 onClick={action.onAction}
@@ -496,51 +274,20 @@ export default function Dashboard() {
               </Button>
             ))}
           </div>
-        </Card>
-      )}
+        )}
 
-      <section className={styles.diagnosticsGrid}>
-        <Card className={styles.streamSurface}>
-          <div className={styles.panelHeader}>
-            <div>
-              <p className={styles.panelEyebrow}>{t('dashboard.operatorSessions')}</p>
-              <h3 className={styles.panelTitle}>{t('dashboard.activeStreams')}</h3>
-            </div>
-            <StatusChip
-              state={streamCount > 0 ? 'live' : 'idle'}
-              label={streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.noSessions')}
-            />
-          </div>
-          <div className={styles.panelBody}>
-            {streamCount > 0 ? (
-              <StreamsList compact />
-            ) : (
-              <div className={styles.emptyState}>
-                <p className={styles.emptyTitle}>{t('dashboard.noActiveStreams')}</p>
-                <p className={styles.emptyText}>{t('dashboard.startPlaybackHint')}</p>
-              </div>
-            )}
-          </div>
-        </Card>
+        <div className={styles.healthGrid}>
+          {systemFacts.map((item) => (
+            <Card key={item.label} className={styles.healthWidget}>
+              <span className={styles.healthLabel}>{item.label}</span>
+              <span className={styles.healthValue}>{item.value}</span>
+              <span className={styles.healthDetail}>{item.detail}</span>
+            </Card>
+          ))}
+        </div>
 
-        <Card className={styles.signalSurface}>
-          <div className={styles.panelHeader}>
-            <div>
-              <p className={styles.panelEyebrow}>{t('dashboard.systemState')}</p>
-              <h3 className={styles.panelTitle}>{t('dashboard.receiverAndGuideHealth')}</h3>
-            </div>
-          </div>
-          <div className={styles.statusList}>
-            {systemFacts.map((item) => (
-              <div key={item.label} className={styles.statusRow}>
-                <span className={styles.statusLabel}>{item.label}</span>
-                <span className={styles.statusValue}>{item.value}</span>
-                <span className={styles.statusDetail}>{item.detail}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </section>
+      </div>
+
     </div>
   );
 }

@@ -501,21 +501,23 @@
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .channelPlaybackBadge {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
   border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  font-size: 0.70rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   border: 1px solid var(--border-elevated);
+  white-space: nowrap;
 }
 
 .channelPlaybackBadgeDirect {
@@ -615,10 +617,13 @@
 }
 
 .recordIndicatorDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--accent-live);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--status-error);
+  box-shadow: 0 0 6px var(--status-error-subtle);
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 .recordIndicatorLabel {
@@ -649,10 +654,10 @@
 }
 
 .recordButtonDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--accent-live);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--status-error);
 }
 
 .programmeBody {
@@ -1164,3 +1169,230 @@
     min-width: 96px;
   }
 }
+
+/* ============================================================================
+   EPG Timeline Grid Styles (2D Timeline with Sticky Headers/Titles)
+   ============================================================================ */
+
+.timelineContainer {
+  display: flex;
+  flex-direction: column;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 75vh;
+  position: relative;
+  background: var(--surface-default);
+  border: 1px solid var(--border-base);
+  border-radius: 12px;
+  overscroll-behavior-x: contain;
+  /* Hardware acceleration hints for smooth scrolling */
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
+}
+
+.timelineHeader {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-elevated);
+}
+
+.timelineCorner {
+  width: 250px;
+  min-width: 250px;
+  position: sticky;
+  left: 0;
+  z-index: 25;
+  transform: translateZ(0);
+  background: var(--surface-panel);
+  border-right: 1px solid var(--border-base);
+}
+
+.timelineTimeAxis {
+  display: flex;
+  position: relative;
+  height: 36px;
+}
+
+.timelineTimeTick {
+  position: absolute;
+  padding-left: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-left: 1px solid var(--border-base);
+  bottom: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+}
+
+.timelineCurrentTimeIndicator {
+  position: absolute;
+  top: 0;
+  bottom: -2000px; /* extends down into the body */
+  width: 2px;
+  background: var(--status-error);
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: 0 0 10px var(--status-error-subtle);
+}
+
+.timelineBody {
+  display: flex;
+  flex-direction: column;
+}
+
+.timelineRow {
+  display: flex;
+  min-width: max-content;
+  border-bottom: 1px solid var(--border-base);
+}
+
+.timelineChannelCard {
+  width: 250px;
+  min-width: 250px;
+  max-width: 250px;
+  position: sticky;
+  left: 0;
+  z-index: 50;
+  transform: translateZ(0);
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-base);
+  padding: 6px 12px;
+  height: 54px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.timelineChannelCard:hover,
+.timelineChannelCard:focus-visible {
+  background: var(--surface-panel);
+  outline: none;
+}
+
+.timelineChannelContent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.timelineChannelLogo {
+  width: auto;
+  height: 28px;
+  max-width: 50px;
+  object-fit: contain;
+}
+
+.timelineChannelName {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
+
+.timelineEventsContainer {
+  position: relative;
+  flex-grow: 1;
+  background: var(--surface-muted);
+  height: 54px;
+  min-height: 54px;
+}
+
+.timelineEventBlock {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border: 1px solid var(--border-elevated);
+  border-radius: 8px;
+  background: var(--surface-panel);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-sizing: border-box;
+  /* Use clip-path to hide overflow without breaking sticky */
+  clip-path: inset(0 round 8px);
+  padding: 0 6px;
+  transition: background 0.2s;
+  cursor: pointer;
+  outline: none;
+}
+
+.timelineEventBlock:hover,
+.timelineEventBlock:focus-visible {
+  background: var(--surface-panel-strong);
+}
+
+.timelineEventBlockActive {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 25%, var(--surface-panel)), color-mix(in srgb, var(--accent-action) 10%, var(--surface-panel)));
+  border: 1px solid var(--accent-action);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--accent-action) 30%, transparent);
+}
+
+.timelineEventBlockPast {
+  opacity: 0.6;
+}
+
+.timelineEventTitleGroup {
+  position: sticky;
+  left: 260px;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 8px;
+  width: 100%;
+}
+
+.timelineEventTitle {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.timelineEventTime {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 2px 6px;
+  background: var(--surface-muted);
+  border-radius: 4px;
+}
+
+.timelineEventRecordAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.timelineEventDesc {
+  position: sticky;
+  left: 260px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+}
+
+

@@ -22,7 +22,7 @@ func (s *Server) StartMonitor(ctx context.Context) {
 
 	if s.storageMonitor != nil && !s.monitorStarted {
 		s.monitorStarted = true
-		go s.storageMonitor.Start(ctx, 30*time.Second, s)
+		go s.storageMonitor.Start(ctx, 5*time.Minute, s)
 		log.L().Info().Msg("storage_monitor: background loop started")
 	}
 }

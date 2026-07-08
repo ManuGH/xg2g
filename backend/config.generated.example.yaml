@@ -59,7 +59,7 @@ epg:
   maxConcurrency: 1
   retries: 2
   source: per-service
-  timeoutMs: 5000
+  timeoutMs: 20000
   xmltvPath: xmltv.xml
 ffmpeg:
   bin: ffmpeg

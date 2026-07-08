@@ -1878,9 +1878,11 @@ export function usePlaybackOrchestrator(
     isOverlayStartupStatus
       ? resolveStartupOverlaySupport(sessionProfileReason, t, overlayStatus)
       : '';
+  const isBufferingOverlayActive =
+    (status === 'buffering' || status === 'recovering') && showBufferingOverlay;
   const showStartupOverlay =
     isImmediateStartupStatus ||
-    ((status === 'buffering' || status === 'recovering') && showBufferingOverlay) ||
+    isBufferingOverlayActive ||
     shouldHoldNativeVideo ||
     (isNativeEngine && showNativeVideoVeil);
   const useNativeBufferingSafeOverlay = shouldHoldNativeVideo;
@@ -1888,8 +1890,14 @@ export function usePlaybackOrchestrator(
   // Debounce the centered spinner card so a sub-500ms re-prepare (fast resume) does
   // not flash the "preparing" card. The black-frame covers (showNativeBufferingMask /
   // hideVideoElement) are derived separately and are NOT debounced, so delaying the
-  // card can never expose a black frame.
-  const showSpinnerCard = useDelayedFlag(showStartupOverlay, 500);
+  // card can never expose a black frame. We only debounce immediate startup;
+  // buffering/recovering overlays are already debounced by useBufferingOverlay.
+  const delayedImmediateStartup = useDelayedFlag(isImmediateStartupStatus, 500);
+  const showSpinnerCard =
+    delayedImmediateStartup ||
+    isBufferingOverlayActive ||
+    shouldHoldNativeVideo ||
+    (isNativeEngine && showNativeVideoVeil);
   // Minimal startup chrome (which hides the full controls, incl. the stop button)
   // tracks the DEBOUNCED card, not the raw overlay: during the pre-card debounce
   // window the full playback chrome — and therefore a reachable stop control — stays

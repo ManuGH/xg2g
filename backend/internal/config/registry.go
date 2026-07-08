@@ -152,7 +152,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "epg.enabled", Env: "XG2G_EPG_ENABLED", FieldPath: "EPGEnabled", Profile: ProfileSimple, Status: StatusActive, Default: true},
 		{Path: "epg.days", Env: "XG2G_EPG_DAYS", FieldPath: "EPGDays", Profile: ProfileSimple, Status: StatusActive, Default: 14},
 		{Path: "epg.maxConcurrency", Env: "XG2G_EPG_MAX_CONCURRENCY", FieldPath: "EPGMaxConcurrency", Profile: ProfileAdvanced, Status: StatusActive, Default: 1},
-		{Path: "epg.timeoutMs", Env: "XG2G_EPG_TIMEOUT_MS", FieldPath: "EPGTimeoutMS", Profile: ProfileAdvanced, Status: StatusActive, Default: 5000},
+		{Path: "epg.timeoutMs", Env: "XG2G_EPG_TIMEOUT_MS", FieldPath: "EPGTimeoutMS", Profile: ProfileAdvanced, Status: StatusActive, Default: 20000},
 		{Path: "epg.retries", Env: "XG2G_EPG_RETRIES", FieldPath: "EPGRetries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "epg.source", Env: "XG2G_EPG_SOURCE", FieldPath: "EPGSource", Profile: ProfileAdvanced, Status: StatusActive, Default: "per-service"},
 		{Path: "epg.xmltvPath", Env: "XG2G_XMLTV", FieldPath: "XMLTVPath", Profile: ProfileAdvanced, Status: StatusActive, Default: "xmltv.xml"},

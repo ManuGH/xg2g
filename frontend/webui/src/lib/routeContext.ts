@@ -25,7 +25,6 @@ export interface AppRouteContext {
 const APP_NAME = 'xg2g';
 
 const SETTINGS_SECTIONS: SettingsSection[] = [
-  'overview',
   'setup',
   'household',
   'android-tv',
@@ -62,8 +61,6 @@ function buildRouteContext(trail: string[]): AppRouteContext {
 
 export function getSettingsSectionLabel(section: SettingsSection, t: TranslateFn): string {
   switch (section) {
-    case 'overview':
-      return t('settings.sections.overview', { defaultValue: 'Overview' });
     case 'setup':
       return t('setup.title', { defaultValue: 'Setup' });
     case 'household':
@@ -91,14 +88,12 @@ export function getSettingsToolLabel(tool: SettingsTool, t: TranslateFn): string
 function buildSettingsTrail(search: string, t: TranslateFn): string[] {
   const searchParams = new URLSearchParams(search);
   const requestedSection = searchParams.get('section');
-  const activeSection = isSettingsSection(requestedSection) ? requestedSection : 'overview';
+  const activeSection = isSettingsSection(requestedSection) ? requestedSection : 'setup';
   const requestedTool = searchParams.get('tool');
   const activeTool = activeSection === 'advanced' && isSettingsTool(requestedTool) ? requestedTool : null;
   const trail = [t('settings.title', { defaultValue: 'Settings' })];
 
-  if (activeSection !== 'overview') {
-    trail.push(getSettingsSectionLabel(activeSection, t));
-  }
+  trail.push(getSettingsSectionLabel(activeSection, t));
 
   if (activeTool) {
     trail.push(getSettingsToolLabel(activeTool, t));

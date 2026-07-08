@@ -238,7 +238,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         />
       ) : null}
       <div className={styles.header}>
-        <h2>Series Recording Rules</h2>
+        <h1>Series Recording Rules</h1>
         <Button onClick={() => handleEdit(null)} data-testid="series-add-btn">
           + New Rule
         </Button>
@@ -248,7 +248,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         {rules.map(rule => (
           <Card key={rule.id} className={styles.ruleCard}>
             <div className={styles.ruleHeader}>
-              <h3>{rule.keyword}</h3>
+              <h2>{rule.keyword}</h2>
               <StatusChip
                 state={rule.enabled ? 'success' : 'idle'}
                 label={rule.enabled ? 'ACTIVE' : 'DISABLED'}
@@ -326,7 +326,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
             <div className={styles.modalHeader}>
-              <h2>{currentRule.id ? 'Edit Rule' : 'New Series Rule'}</h2>
+              <h1>{currentRule.id ? 'Edit Rule' : 'New Series Rule'}</h1>
               <button
                 type="button"
                 className={styles.closeButton}

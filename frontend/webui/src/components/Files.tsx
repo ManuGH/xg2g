@@ -132,7 +132,7 @@ function Files({ showLegacyNotice = true }: FilesProps) {
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>{t('files.eyebrow')}</p>
-          <h2>{t('files.title')}</h2>
+          <h1>{t('files.title')}</h1>
           <p className={styles.lead}>{t('files.lead')}</p>
         </div>
 

@@ -11,7 +11,7 @@
   margin-bottom: 24px;
 }
 
-.header h2 {
+.header h1 {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
@@ -48,7 +48,7 @@
   padding-bottom: 12px;
 }
 
-.ruleHeader h3 {
+.ruleHeader h2 {
   margin: 0;
   font-size: 18px;
   color: var(--text-primary);
@@ -152,7 +152,7 @@
   align-items: center;
 }
 
-.modalHeader h2 {
+.modalHeader h1 {
   margin: 0;
   font-size: 20px;
 }

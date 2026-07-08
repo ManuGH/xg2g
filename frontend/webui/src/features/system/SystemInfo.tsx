@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { type SystemInfoData as ApiSystemInfoData } from '../../client-ts';
 import { useSystemInfo } from '../../hooks/useServerQueries';
-import { Card, CardBody, StatusChip, type ChipState } from '../../components/ui';
+import { StatusChip, type ChipState } from '../../components/ui';
 import styles from './SystemInfo.module.css';
 
 interface SystemInfoViewData {
@@ -74,13 +74,6 @@ interface SystemInfoViewData {
   };
 }
 
-interface SystemPulseItem {
-  label: string;
-  value: string;
-  detail: string;
-  tone: 'neutral' | 'action' | 'live' | 'warning';
-}
-
 export function SystemInfo() {
   const { t } = useTranslation();
   const {
@@ -111,198 +104,71 @@ export function SystemInfo() {
   if (!data) return null;
 
   const info = normalizeSystemInfo(data);
-  const ramLevel = getRamLevel(info.resource.memoryUsed, info.resource.memoryTotal);
-  const totalStorageLocations = info.storage.devices.length + info.storage.locations.length;
-  const mountedStorageLocations = [...info.storage.devices, ...info.storage.locations].filter((entry) => entry.mountStatus === 'mounted').length;
-  const activeTuners = info.tuners.filter((tuner) => tuner.status !== 'idle').length;
-  const connectedInterfaces = info.network.interfaces.filter((iface) => iface.ip || iface.ipv6).length;
-  const memoryUsagePercent = calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal);
-  const systemPulseItems: SystemPulseItem[] = [
-    {
-      label: t('system.tuners'),
-      value: activeTuners > 0 ? `${activeTuners}/${info.tuners.length}` : `${info.tuners.length}`,
-      detail: activeTuners > 0
-        ? t('system.glance.tunersActive', {
-          defaultValue: '{{count}} active of {{total}}',
-          count: activeTuners,
-          total: info.tuners.length,
-        })
-        : t('system.glance.tunersIdle', { defaultValue: 'All tuners idle' }),
-      tone: activeTuners > 0 ? 'live' : 'neutral',
-    },
-    {
-      label: t('system.storage'),
-      value: `${mountedStorageLocations}`,
-      detail: totalStorageLocations > 0
-        ? t('system.glance.storageReady', {
-          defaultValue: '{{count}} of {{total}} ready',
-          count: mountedStorageLocations,
-          total: totalStorageLocations,
-        })
-        : t('system.glance.storageEmpty', { defaultValue: 'No recording target' }),
-      tone: mountedStorageLocations > 0 ? 'action' : 'warning',
-    },
-    {
-      label: t('system.memory'),
-      value: `${memoryUsagePercent}%`,
-      detail: t(`system.memoryLevel.${ramLevel}`),
-      tone: ramLevel === 'critical' ? 'warning' : ramLevel === 'warning' ? 'action' : 'neutral',
-    },
-    {
-      label: t('system.network'),
-      value: `${connectedInterfaces}`,
-      detail: info.network.interfaces.length > 0
-        ? t('system.glance.networkReady', {
-          defaultValue: '{{count}} connected',
-          count: connectedInterfaces,
-        })
-        : t('system.noInformation'),
-      tone: connectedInterfaces > 0 ? 'action' : 'warning',
-    },
-  ];
 
   return (
     <div className={styles.page}>
-      <div className={styles.heroPanel}>
-        <div className={styles.header}>
-          <div>
-            <p className={styles.kicker}>{t('nav.system')}</p>
-            <h1>{t('system.receiverTitle')}</h1>
-            <p className={styles.subtitle}>{t('system.subtitle')}</p>
-          </div>
-        </div>
-
-        <div className={styles.glanceGrid} aria-label={t('system.sectionOverview')}>
-          {systemPulseItems.map((item) => (
-            <div key={item.label} className={styles.glanceCard} data-tone={item.tone}>
-              <span className={styles.glanceLabel}>{item.label}</span>
-              <strong className={styles.glanceValue}>{item.value}</strong>
-              <span className={styles.glanceDetail}>{item.detail}</span>
-            </div>
-          ))}
-        </div>
+      <div className={styles.pageHeader}>
+        <h1 className={styles.pageTitle}>{t('system.receiverTitle')}</h1>
       </div>
 
-      <div className={styles.grid}>
-        <Card className={[styles.card, styles.cardSpotlight, styles.cardHardware].join(' ')}>
-          <CardBody className={styles.cardBody}>
-            <div className={styles.cardHeader}>
-              <div>
-                <p className={styles.cardEyebrow}>{t('system.sectionOverview')}</p>
-                <h2 className={styles.cardTitle}>{t('system.hardware')}</h2>
-              </div>
+      <div className={styles.listContainer}>
+        {/* GERÄT */}
+        <div className={styles.listSection}>
+          <h2 className={styles.listSectionTitle}>{t('system.hardware')}</h2>
+          <div className={styles.listGroup}>
+            <div className={styles.listItem}>
+              <span className={styles.listItemLabel}>{t('system.brandModel')}</span>
+              <span className={styles.listItemValue}>{info.hardware.brand} {info.hardware.model}</span>
             </div>
-          <div className={styles.row}>
-            <span className={styles.label}>{t('system.brandModel')}:</span>
-            <span className={styles.value}>{info.hardware.brand} {info.hardware.model}</span>
-          </div>
-          <div className={styles.row}>
-            <span className={styles.label}>{t('system.chipset')}:</span>
-            <span className={styles.value}>{info.hardware.chipsetDescription}</span>
-          </div>
-          </CardBody>
-        </Card>
-
-        <Card className={[styles.card, styles.cardSpotlight, styles.cardSoftware].join(' ')}>
-          <CardBody className={styles.cardBody}>
-            <div className={styles.cardHeader}>
-              <div>
-                <p className={styles.cardEyebrow}>{t('system.sectionOverview')}</p>
-                <h2 className={styles.cardTitle}>{t('system.software')}</h2>
-              </div>
+            <div className={styles.listItem}>
+              <span className={styles.listItemLabel}>{t('system.chipset')}</span>
+              <span className={styles.listItemValue}>{info.hardware.chipsetDescription}</span>
             </div>
-          <div className={styles.row}>
-            <span className={styles.label}>{t('system.distribution')}:</span>
-            <span className={styles.value}>{info.software.imageDistro}</span>
-          </div>
-          <div className={styles.row}>
-            <span className={styles.label}>{t('system.version')}:</span>
-            <span className={styles.value}>{info.software.imageVersion}</span>
-          </div>
-          <div className={styles.row}>
-            <span className={styles.label}>{t('system.kernel')}:</span>
-            <span className={styles.value}>{info.software.kernelVersion}</span>
-          </div>
-          <div className={styles.row}>
-            <span className={styles.label}>{t('system.webif')}:</span>
-            <span className={styles.value}>{info.software.webifVersion}</span>
-          </div>
-          </CardBody>
-        </Card>
-
-        <Card className={[styles.card, styles.cardWide].join(' ')}>
-          <CardBody className={styles.cardBody}>
-            <div className={styles.cardHeader}>
-              <div>
-                <p className={styles.cardEyebrow}>{t('system.sectionLive')}</p>
-                <h2 className={styles.cardTitle}>{t('system.tuners')}</h2>
-              </div>
-              <StatusChip state="idle" label={t('system.tunersDetected', { count: info.tuners.length })} />
+            <div className={styles.listItem}>
+              <span className={styles.listItemLabel}>{t('system.uptime')}</span>
+              <span className={styles.listItemValue}>{info.runtime.uptime}</span>
             </div>
-          <div className={styles.tunerGrid}>
-            {info.tuners.map((tuner, idx) => (
-              <div key={idx} className={styles.tunerItem}>
-                <div className={styles.tunerHeader}>
-                  <span className={styles.tunerNumber}>#{idx + 1}</span>
-                  <StatusChip {...getTunerStatusChip(tuner.status, t)} />
-                </div>
-                <div className={styles.tunerType}>{tuner.type.replace('DVB-', '')}</div>
-              </div>
-            ))}
           </div>
-          </CardBody>
-        </Card>
+        </div>
 
-        {info.network.interfaces.length > 0 && (
-          <Card className={styles.card}>
-            <CardBody className={styles.cardBody}>
-              <div className={styles.cardHeader}>
-                <div>
-                  <p className={styles.cardEyebrow}>{t('system.sectionConnectivity')}</p>
-                  <h2 className={styles.cardTitle}>{t('system.network')}</h2>
-                </div>
-                <StatusChip state="idle" label={t('system.interfaces', { count: info.network.interfaces.length })} />
-              </div>
-            {info.network.interfaces.map((iface, idx) => (
-              <div key={idx} className={styles.section}>
-                <div className={styles.row}>
-                  <span className={styles.label}>{iface.name}:</span>
-                  <span className={styles.value}>{iface.type} ({iface.speed})</span>
-                </div>
-                <div className={styles.row}>
-                  <span className={styles.label}>{t('system.ipv4')}:</span>
-                  <span className={styles.value}>{iface.ip || t('common.notAvailable')}</span>
-                </div>
-                {iface.ipv6 && (
-                  <div className={styles.row}>
-                    <span className={styles.label}>{t('system.ipv6')}:</span>
-                    <span className={[styles.value, styles.small].join(' ')}>{iface.ipv6}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-            </CardBody>
-          </Card>
-        )}
-
-        <Card className={styles.card}>
-          <CardBody className={styles.cardBody}>
-            <div className={styles.cardHeader}>
-              <div>
-                <p className={styles.cardEyebrow}>{t('system.sectionStorage')}</p>
-                <h2 className={styles.cardTitle}>{t('system.storage')}</h2>
-              </div>
-              <StatusChip
-                state="idle"
-                label={t('system.storageLocations', { count: info.storage.devices.length + info.storage.locations.length })}
-              />
+        {/* SOFTWARE */}
+        <div className={styles.listSection}>
+          <h2 className={styles.listSectionTitle}>{t('system.software')}</h2>
+          <div className={styles.listGroup}>
+            <div className={styles.listItem}>
+              <span className={styles.listItemLabel}>{t('system.distribution')}</span>
+              <span className={styles.listItemValue}>{info.software.imageDistro}</span>
             </div>
-          {info.storage.devices.length > 0 && (
-            <div className={styles.section}>
-              <h3>{t('system.drives')}</h3>
-              {info.storage.devices.map((dev, idx) => (
-                <div key={idx} className={styles.row}>
-                  <div className={styles.storageStatusHeader}>
+            <div className={styles.listItem}>
+              <span className={styles.listItemLabel}>{t('system.version')}</span>
+              <span className={styles.listItemValue}>{info.software.imageVersion}</span>
+            </div>
+            <div className={styles.listItem}>
+              <span className={styles.listItemLabel}>{t('system.kernel')}</span>
+              <span className={styles.listItemValue}>{info.software.kernelVersion}</span>
+            </div>
+            <div className={styles.listItem}>
+              <span className={styles.listItemLabel}>{t('system.webif')}</span>
+              <span className={styles.listItemValue}>{info.software.webifVersion}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* RESSOURCEN (Storage + RAM) */}
+        <div className={styles.listSection}>
+          <h2 className={styles.listSectionTitle}>{t('system.sectionStorage')} & {t('system.memory')}</h2>
+          <div className={styles.listGroup}>
+            <div className={styles.listItem}>
+              <span className={styles.listItemLabel}>{t('system.memory')}</span>
+              <span className={styles.listItemValue}>
+                {formatBytes(parseMemory(info.resource.memoryAvailable))} {t('system.free').toLowerCase()} ({calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}% {t('system.memoryUsed').toLowerCase()})
+              </span>
+            </div>
+            
+            {info.storage.devices.map((dev, idx) => (
+              <div key={`dev-${idx}`} className={styles.listItemStorage}>
+                <div className={styles.storageHeaderRow}>
+                  <div className={styles.storageTitleWrap}>
                     <span
                       className={[
                         styles.statusDot,
@@ -316,43 +182,36 @@ export function SystemInfo() {
                       ].join(' ')}
                       title={`${t('system.healthLabel')}: ${dev.healthStatus}`}
                     />
-                    <span className={[styles.label, styles.textTruncate].join(' ')} title={dev.model}>
-                      {dev.model}:
-                    </span>
-                    <span className={[styles.tag, styles.tagIntern].join(' ')}>
-                      {resolveStorageOriginLabel(t, dev.origin)}
-                    </span>
-                    <span className={[styles.tag, dev.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
-                      {resolveStoragePathTypeLabel(t, dev.pathType, dev.isNas)}
-                      {dev.fsType && <small> ({dev.fsType})</small>}
+                    <span className={[styles.listItemLabel, styles.textTruncate].join(' ')} title={dev.model}>
+                      {dev.model}
                     </span>
                   </div>
-                  <div className={styles.storageSubinfo}>
-                    <div className={styles.storageStateRow}>
-                      <span className={styles.value}>{dev.capacity || t('common.notAvailable')}</span>
-                    <span
-                      className={[
-                        styles.accessBadge,
-                        dev.access === 'rw' ? styles.accessRw : dev.access === 'ro' ? styles.accessRo : null,
-                      ].filter(Boolean).join(' ')}
-                    >
-                        {t(`system.access.${dev.access}`)}
-                      </span>
-                    </div>
-                    {dev.checkedAt && (
-                      <span className={styles.checkedAt}>{t('system.check')}: {new Date(dev.checkedAt).toLocaleTimeString()}</span>
-                    )}
-                  </div>
+                  <span className={styles.listItemValue}>{dev.capacity || t('common.notAvailable')}</span>
                 </div>
-              ))}
-            </div>
-          )}
-          {info.storage.locations.length > 0 && (
-            <div className={styles.section}>
-              <h3>{t('system.paths')}</h3>
-              {info.storage.locations.map((loc, idx) => (
-                <div key={idx} className={styles.row}>
-                  <div className={styles.storageStatusHeader}>
+                <div className={styles.storageTags}>
+                  <span className={[styles.tag, styles.tagIntern].join(' ')}>
+                    {resolveStorageOriginLabel(t, dev.origin)}
+                  </span>
+                  <span className={[styles.tag, dev.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
+                    {resolveStoragePathTypeLabel(t, dev.pathType, dev.isNas)}
+                    {dev.fsType && <small> ({dev.fsType})</small>}
+                  </span>
+                  <span
+                    className={[
+                      styles.accessBadge,
+                      dev.access === 'rw' ? styles.accessRw : dev.access === 'ro' ? styles.accessRo : null,
+                    ].filter(Boolean).join(' ')}
+                  >
+                    {t(`system.access.${dev.access}`)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            
+            {info.storage.locations.map((loc, idx) => (
+              <div key={`loc-${idx}`} className={styles.listItemStorage}>
+                <div className={styles.storageHeaderRow}>
+                  <div className={styles.storageTitleWrap}>
                     <span
                       className={[
                         styles.statusDot,
@@ -366,123 +225,91 @@ export function SystemInfo() {
                       ].join(' ')}
                       title={`${t('system.healthLabel')}: ${loc.healthStatus}`}
                     />
-                    <span className={[styles.value, styles.mono, styles.textTruncate].join(' ')} title={loc.mount}>
+                    <span className={[styles.listItemLabel, styles.mono, styles.textTruncate].join(' ')} title={loc.mount}>
                       {loc.mount}
                     </span>
-                    <span className={[styles.tag, styles.tagIntern].join(' ')}>
-                      {resolveStorageOriginLabel(t, loc.origin)}
-                    </span>
-                    <span className={[styles.tag, loc.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
-                      {resolveStoragePathTypeLabel(t, loc.pathType, loc.isNas)}
-                      {loc.fsType && <small> ({loc.fsType})</small>}
-                    </span>
                   </div>
-                  <div className={styles.storageSubinfo}>
-                    <span
-                      className={[
-                        styles.statusText,
-                        loc.healthStatus === 'ok'
-                          ? styles.textOk
-                          : loc.healthStatus === 'error'
-                            ? styles.textError
-                            : loc.healthStatus === 'timeout'
-                              ? styles.textTimeout
-                              : null,
-                      ].filter(Boolean).join(' ')}
-                    >
-                      {loc.mountStatus === 'mounted' ? (
-                        loc.healthStatus === 'ok' ? `${t('system.status.mounted')} (${loc.access.toUpperCase()})` :
-                          t(`system.status.${loc.healthStatus}`)
-                      ) : t('system.status.unmounted')}
-                    </span>
-                    {loc.checkedAt && (
-                      <span className={styles.checkedAt}>{new Date(loc.checkedAt).toLocaleTimeString()}</span>
+                  <span
+                    className={[
+                      styles.statusText,
+                      loc.healthStatus === 'ok'
+                        ? styles.textOk
+                        : loc.healthStatus === 'error'
+                          ? styles.textError
+                          : loc.healthStatus === 'timeout'
+                            ? styles.textTimeout
+                            : null,
+                    ].filter(Boolean).join(' ')}
+                  >
+                    {loc.mountStatus === 'mounted' ? (
+                      loc.healthStatus === 'ok' ? `${t('system.status.mounted')} (${loc.access.toUpperCase()})` :
+                        t(`system.status.${loc.healthStatus}`)
+                    ) : t('system.status.unmounted')}
+                  </span>
+                </div>
+                <div className={styles.storageTags}>
+                  <span className={[styles.tag, styles.tagIntern].join(' ')}>
+                    {resolveStorageOriginLabel(t, loc.origin)}
+                  </span>
+                  <span className={[styles.tag, loc.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
+                    {resolveStoragePathTypeLabel(t, loc.pathType, loc.isNas)}
+                    {loc.fsType && <small> ({loc.fsType})</small>}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* NETZWERK */}
+        {info.network.interfaces.length > 0 && (
+          <div className={styles.listSection}>
+            <h2 className={styles.listSectionTitle}>{t('system.network')}</h2>
+            <div className={styles.listGroup}>
+              {info.network.interfaces.map((iface, idx) => (
+                <div key={idx} className={styles.listItemNetwork}>
+                  <div className={styles.networkHeaderRow}>
+                    <span className={styles.listItemLabel}>{iface.name}</span>
+                    <span className={styles.networkSpeed}>{iface.type} ({iface.speed})</span>
+                  </div>
+                  <div className={styles.networkIps}>
+                    <div className={styles.networkIpRow}>
+                      <span className={styles.networkIpLabel}>IPv4:</span>
+                      <span className={styles.networkIpValue}>{iface.ip || t('common.notAvailable')}</span>
+                    </div>
+                    {iface.ipv6 && (
+                      <div className={styles.networkIpRow}>
+                        <span className={styles.networkIpLabel}>IPv6:</span>
+                        <span className={[styles.networkIpValue, styles.small].join(' ')}>{iface.ipv6}</span>
+                      </div>
                     )}
                   </div>
                 </div>
               ))}
             </div>
-          )}
-          {info.storage.devices.length === 0 && info.storage.locations.length === 0 && (
-            <div className={styles.row}>
-              <span className={[styles.value, styles.italic].join(' ')}>{t('system.noInformation')}</span>
-            </div>
-          )}
-          </CardBody>
-        </Card>
-
-        <Card className={styles.card}>
-          <CardBody className={styles.cardBody}>
-            <div className={styles.cardHeader}>
-              <div>
-                <p className={styles.cardEyebrow}>{t('system.sectionHealth')}</p>
-                <h2 className={styles.cardTitle}>{t('system.runtime')}</h2>
-              </div>
-            </div>
-          <div className={styles.row}>
-            <span className={styles.label}>{t('system.uptime')}:</span>
-            <span className={styles.value}>{info.runtime.uptime}</span>
           </div>
-          </CardBody>
-        </Card>
+        )}
 
-        <Card className={styles.card}>
-          <CardBody className={styles.cardBody}>
-            <div className={styles.cardHeader}>
-              <div>
-                <p className={styles.cardEyebrow}>{t('system.sectionHealth')}</p>
-                <h2 className={styles.cardTitle}>{t('system.memory')}</h2>
+        {/* TUNER */}
+        <div className={styles.listSection}>
+          <h2 className={styles.listSectionTitle}>
+            {t('system.tuners')} <span className={styles.sectionBadge}>{info.tuners.length}</span>
+          </h2>
+          <div className={styles.listGroup}>
+            {info.tuners.map((tuner, idx) => (
+              <div key={idx} className={styles.listItem}>
+                <span className={styles.listItemLabel}>
+                  Tuner #{idx + 1}
+                  <span className={styles.tunerTypeLabel}>{tuner.type.replace('DVB-', '')}</span>
+                </span>
+                <span className={styles.listItemValue}>
+                  <StatusChip {...getTunerStatusChip(tuner.status, t)} />
+                </span>
               </div>
-              <StatusChip state={getRamChipState(ramLevel)} label={t(`system.memoryLevel.${ramLevel}`)} />
-            </div>
-          <div className={styles.ramSummary}>
-            <div className={styles.ramConsumption}>
-              <span className={styles.ramUsed}>{formatBytes(parseMemory(info.resource.memoryUsed))}</span>
-              <span className={styles.ramLabel}>{t('system.memoryUsed')}</span>
-            </div>
-            <div className={styles.ramBarContainer}>
-              <svg
-                width="100%"
-                height="100%"
-                viewBox="0 0 100 10"
-                preserveAspectRatio="none"
-                role="img"
-                aria-label={t('system.usage')}
-              >
-                <rect
-                  x="0"
-                  y="0"
-                  width={calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}
-                  height="10"
-                  rx="5"
-                  ry="5"
-                  fill={
-                    ramLevel === 'critical'
-                      ? 'var(--status-error)'
-                      : ramLevel === 'warning'
-                        ? 'var(--status-warning)'
-                        : 'var(--status-success)'
-                  }
-                />
-              </svg>
-            </div>
-            <div className={styles.ramStats}>
-              <span className={styles.ramStat}>
-                <span className={styles.ramStatLabel}>{t('system.free')}</span>
-                <span className={styles.ramStatValue}>{formatBytes(parseMemory(info.resource.memoryAvailable))}</span>
-              </span>
-              <span className={styles.ramStat}>
-                <span className={styles.ramStatLabel}>{t('system.total')}</span>
-                <span className={styles.ramStatValue}>{formatBytes(parseMemory(info.resource.memoryTotal))}</span>
-              </span>
-              <span className={styles.ramStat}>
-                <span className={styles.ramStatLabel}>{t('system.usage')}</span>
-                <span className={styles.ramStatValue}>{calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%</span>
-              </span>
-            </div>
+            ))}
           </div>
-          </CardBody>
-        </Card>
+        </div>
+
       </div>
     </div>
   );
@@ -639,24 +466,4 @@ function calculateMemoryPercent(usedStr: string, totalStr: string): number {
 
   if (total === 0) return 0;
   return Math.round((used / total) * 100);
-}
-
-type RamLevel = 'normal' | 'warning' | 'critical';
-
-function getRamChipState(level: RamLevel): ChipState {
-  switch (level) {
-    case 'critical':
-      return 'error';
-    case 'warning':
-      return 'warning';
-    default:
-      return 'success';
-  }
-}
-
-function getRamLevel(usedStr: string, totalStr: string): RamLevel {
-  const percent = calculateMemoryPercent(usedStr, totalStr);
-  if (percent >= 85) return 'critical';
-  if (percent >= 70) return 'warning';
-  return 'normal';
 }

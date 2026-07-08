@@ -1,7 +1,7 @@
 /* App shell - keep global footprint minimal */
 
 .app-container {
-  margin-left: calc(var(--nav-shell-width) + 34px);
+  margin-left: var(--nav-content-margin, calc(var(--nav-shell-width) + 34px));
   min-height: 100vh;
   min-height: 100dvh;
   padding: 16px 20px 28px 0;

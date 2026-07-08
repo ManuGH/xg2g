@@ -26,7 +26,6 @@ export const UNLOCK_ROUTE = '/unlock';
 export type EpgSection = 'guide' | 'timers';
 export type RecordingsSection = 'library' | 'series';
 export type SettingsSection =
-  | 'overview'
   | 'setup'
   | 'household'
   | 'android-tv'
@@ -69,7 +68,7 @@ export function buildSettingsRoute(options?: {
   section?: SettingsSection;
   tool?: SettingsTool;
 }): string {
-  if (!options?.section || options.section === 'overview') {
+  if (!options?.section || options.section === 'setup') {
     return ROUTE_MAP.settings;
   }
 

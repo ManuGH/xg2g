@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PlayerStatus } from '../../../types/v3-player';
 
-const BUFFERING_OVERLAY_DELAY_MS = 325;
+const BUFFERING_OVERLAY_DELAY_MS = 150;
 
 // Debounced flag for the transient "wait" overlay. It covers both `buffering`
 // and `recovering`: a stall/decode reattach (the dominant HEVC failure path)
