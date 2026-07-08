@@ -582,7 +582,11 @@ func newPlaylistWriter(dir string, targetDuration int, listSize int) (*playlistW
 		}
 		if strings.HasPrefix(line, "#EXTINF:") || strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") || strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") {
 			if raw, ok := strings.CutPrefix(line, "#EXTINF:"); ok {
-				raw = strings.TrimSuffix(strings.TrimSpace(raw), ",")
+				// RFC 8216: #EXTINF:<duration>,[<title>] — strip the optional title.
+				if idx := strings.IndexByte(raw, ','); idx >= 0 {
+					raw = raw[:idx]
+				}
+				raw = strings.TrimSpace(raw)
 				if d, err := strconv.ParseFloat(raw, 64); err == nil && d > pl.maxDuration {
 					pl.maxDuration = d
 				}

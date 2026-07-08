@@ -199,7 +199,7 @@ func TestSegmenterContinuation(t *testing.T) {
 		"#EXT-X-MEDIA-SEQUENCE:0",
 		"#EXT-X-INDEPENDENT-SEGMENTS",
 		`#EXT-X-MAP:URI="init.mp4"`,
-		"#EXTINF:2.000000,",
+		"#EXTINF:3.840000,orphan head",
 		"seg_000000.m4s",
 		"#EXT-X-ENDLIST",
 		"",
@@ -242,5 +242,10 @@ func TestSegmenterContinuation(t *testing.T) {
 	}
 	if strings.Count(pl, "#EXT-X-ENDLIST") != 1 || strings.Index(pl, "#EXT-X-ENDLIST") < idxNew {
 		t.Fatalf("ENDLIST must appear once, after the new entry:\n%s", pl)
+	}
+	// The prior playlist carries a titled 3.84s EXTINF: the parser must read
+	// the duration past the title and bump the published target duration.
+	if !strings.Contains(pl, "#EXT-X-TARGETDURATION:4") {
+		t.Fatalf("expected target duration bumped to 4 from titled 3.84s EXTINF:\n%s", pl)
 	}
 }
