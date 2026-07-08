@@ -555,208 +555,44 @@
   }
 }
 
-/* Collapsed Navigation Styles - Slim Rail */
+/* Collapsed Navigation Styles - Full Offscreen Slide with Floating Top-Left Button */
+.floatingSidebarToggle {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 1300;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-shell-safe) 88%, var(--surface-stage) 12%);
+  border: 1px solid var(--border-elevated);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.floatingSidebarToggle:hover {
+  background: color-mix(in srgb, var(--surface-shell-safe) 75%, var(--accent-action-subtle) 25%);
+  transform: scale(1.05);
+}
+
+.floatingSidebarToggle:active {
+  transform: scale(0.94);
+}
+
 :global(:root[data-nav-collapsed='true']) .desktopNav {
-  width: var(--nav-rail-width);
-  /* Optional: lighter shadow when collapsed */
-}
-
-:global(:root[data-nav-collapsed='true']) .desktopShell:hover .desktopNav,
-:global(:root[data-nav-collapsed='true']) .desktopShell:focus-within .desktopNav {
-  width: var(--nav-shell-width);
-  box-shadow: 0 12px 48px rgba(0,0,0,0.4);
-}
-
-/* Hide texts when collapsed but not hovered */
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .brandCopy,
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .sectionTitle,
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .itemText,
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .profileSelect,
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .displaySection {
-  opacity: 0;
   width: 0;
-  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-110%);
   margin: 0;
   padding: 0;
-  pointer-events: none;
   border: none;
-}
-
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .profileSelect {
-  color: transparent;
-}
-
-
-/* Single source of truth for nav layout is data-ui-nav-mode (set from the JS
-   surface breakpoint at <960px), not the 768px media query. Without this the
-   desktop rail stayed visible from 769–959px while the bottom nav also showed
-   (iPad portrait, large phones landscape, foldables). */
-:global(:root[data-ui-nav-mode='bottom']) .desktopShell {
-  display: none;
-}
-
-:global(:root[data-ui-nav-mode='bottom']) .mobileShell {
-  display: block;
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1200;
-  pointer-events: none;
-}
-
-@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
-  .mobileShell {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-    padding: 0 max(8px, var(--sar)) calc(6px + var(--sab)) max(8px, var(--sal));
-  }
-
-  .mobileNav {
-    flex: 0 1 404px;
-    width: min(404px, 100%);
-    margin: 0 0 0 auto;
-    padding: 5px;
-    border-radius: 18px;
-    gap: 4px;
-    background: color-mix(in srgb, var(--surface-shell-safe) 92%, var(--surface-stage) 8%);
-    box-shadow: var(--shadow-shell-safe);
-  }
-
-  .mobileContextBar {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin: 0;
-    padding: 9px 12px;
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--surface-shell-safe) 88%, var(--accent-action-subtle) 12%);
-    box-shadow: var(--shadow-shell-safe);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-  }
-
-  .mobileContextEyebrow {
-    display: none;
-  }
-
-  .mobileContextLabel {
-    font-size: 0.8rem;
-    line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .mobileItem {
-    min-height: 44px;
-    padding: 4px 3px 5px;
-    gap: 3px;
-    border-radius: 13px;
-  }
-
-  .mobileItem .label {
-    font-size: 8.5px;
-    line-height: 1;
-  }
-
-  .mobileItem .iconShell {
-    width: 28px;
-    height: 28px;
-    border-radius: 10px;
-  }
-
-  .mobileSheet {
-    left: auto;
-    right: max(8px, var(--sar));
-    width: min(420px, calc(100vw - 20px - var(--sal) - var(--sar)));
-    bottom: calc(58px + var(--sab));
-    max-height: min(72dvh, calc(100dvh - 70px - var(--sat) - var(--sab)));
-    padding: 12px;
-    border-radius: 20px;
-    background: color-mix(in srgb, var(--surface-shell-safe) 94%, var(--surface-stage) 6%);
-    box-shadow: var(--shadow-shell-safe);
-  }
-
-  .sheetHeader {
-    margin-bottom: 10px;
-    gap: 10px;
-  }
-
-  .sheetTitle {
-    font-size: clamp(1.05rem, 2.6vw, 1.3rem);
-  }
-
-  .sheetContext {
-    margin-top: 4px;
-    font-size: 0.82rem;
-    line-height: 1.3;
-  }
-
-  .sheetClose,
-  .sheetAction {
-    min-height: 34px;
-    border-radius: 12px;
-    padding: 0 10px;
-    gap: 6px;
-  }
-
-  .sheetSections {
-    gap: 8px;
-  }
-
-  .sheetProfileSection {
-    gap: 6px;
-    padding-bottom: 8px;
-  }
-
-  .sheetItem {
-    min-height: 42px;
-    padding: 5px;
-    border-radius: 14px;
-  }
-
-  .sheetItem .iconShell {
-    width: 30px;
-    height: 30px;
-    border-radius: 10px;
-  }
-
-  .sheetFooter {
-    margin-top: 8px;
-    padding-top: 8px;
-  }
-}
-
-@media (max-width: 932px) and (orientation: landscape) and (max-height: 430px) and (hover: none) and (pointer: coarse) {
-  .mobileShell {
-    gap: 6px;
-    padding-bottom: calc(4px + var(--sab));
-  }
-
-  .mobileContextBar {
-    padding: 8px 10px;
-    border-radius: 16px;
-  }
-
-  .mobileContextLabel {
-    font-size: 0.74rem;
-  }
-
-  .mobileNav {
-    flex-basis: 376px;
-  }
-
-  .mobileItem {
-    min-height: 40px;
-  }
-
-  .mobileItem .iconShell {
-    width: 26px;
-    height: 26px;
-  }
-
-  .mobileSheet {
-    bottom: calc(54px + var(--sab));
-  }
+  overflow: hidden;
 }
