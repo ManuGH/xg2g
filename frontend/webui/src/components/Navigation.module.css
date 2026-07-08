@@ -62,9 +62,9 @@
 }
 
 .brandMark {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-lg);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--accent-action-subtle) 82%, var(--surface-muted) 18%);
   border: 1px solid color-mix(in srgb, var(--accent-action) 34%, var(--border-elevated) 66%);
   display: flex;
@@ -75,12 +75,12 @@
 }
 
 .brandPulse {
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
   background: var(--bg-video);
-  border: 4px solid color-mix(in srgb, var(--text-primary) 88%, transparent);
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--bg-video) 24%, transparent);
+  border: 3px solid var(--text-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bg-video) 40%, transparent);
 }
 
 .brandCopy,
@@ -94,13 +94,45 @@
   transition: opacity var(--motion-standard) var(--ease-standard), width var(--motion-standard) var(--ease-standard);
 }
 
+
+.headerToggleBtn {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.16s ease;
+}
+
+.headerToggleBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
+}
+
+.headerToggleBtn:active {
+  transform: scale(0.92);
+}
+
+.toggleIcon {
+  width: 18px;
+  height: 18px;
+}
+
 .brandTitle {
   display: block;
   font-family: var(--font-heading);
-  font-size: 1.44rem;
-  font-weight: 700;
+  font-size: 0.95rem;
+  font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
 }
 
 .brandSubtitle {

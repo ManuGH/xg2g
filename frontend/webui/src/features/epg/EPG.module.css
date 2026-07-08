@@ -100,7 +100,7 @@
 .toolbarTitle,
 .toolbarLeft h3 {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3.3rem);
+  font-size: clamp(1.22rem, 1.6vw, 1.42rem); font-weight: 600; letter-spacing: -0.01em;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.05em;
@@ -884,7 +884,7 @@
 
 .page.surfaceCompact .toolbarTitle,
 .page.surfaceCompact .toolbarLeft h3 {
-  font-size: clamp(1.6rem, 5vw, 2.3rem);
+  font-size: clamp(1.12rem, 1.4vw, 1.3rem); font-weight: 600;
 }
 
 .page.surfaceCompact .toolbarSummary,

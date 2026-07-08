@@ -5,6 +5,7 @@
   min-height: 100vh;
   min-height: 100dvh;
   padding: 16px 20px 28px 0;
+  transition: margin-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), padding-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .content-area {
