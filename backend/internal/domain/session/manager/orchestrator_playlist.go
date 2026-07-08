@@ -177,6 +177,7 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		}
 		variantPath := filepath.Join(filepath.Dir(playlistPath), variantURIs[0])
 		// Read the resolved playlist to prevent infinite recursion on nested masters
+		// #nosec G304 — variantPath is constructed from content within the repo's playlist directory
 		if resolvedContent, err := os.ReadFile(filepath.Clean(variantPath)); err == nil {
 			if strings.Contains(string(resolvedContent), "#EXT-X-STREAM-INF:") {
 				return false, "nested master playlists are not supported", nil

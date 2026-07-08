@@ -33,23 +33,6 @@ type liveAudioSelection struct {
 	VarStreamMap string
 }
 
-func (a *LocalAdapter) selectLiveAudioMap(ctx context.Context, spec ports.StreamSpec, inputURL string) string {
-	sel := a.planLiveAudioSelection(ctx, spec, inputURL)
-	if len(sel.Maps) > 0 {
-		return sel.Maps[0]
-	}
-	return defaultLiveAudioMap
-}
-
-func (a *LocalAdapter) planLiveAudio(ctx context.Context, spec ports.StreamSpec, inputURL string) (string, []string) {
-	sel := a.planLiveAudioSelection(ctx, spec, inputURL)
-	mapArg := defaultLiveAudioMap
-	if len(sel.Maps) > 0 {
-		mapArg = sel.Maps[0]
-	}
-	return mapArg, sel.AudioArgs
-}
-
 func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.StreamSpec, inputURL string) liveAudioSelection {
 	defaultSel := liveAudioSelection{
 		Maps:      []string{defaultLiveAudioMap},
@@ -172,32 +155,6 @@ func extractAudioTitle(tags map[string]string, idx int, lang string) string {
 		return fmt.Sprintf("Stereo (%s)", lang)
 	}
 	return fmt.Sprintf("Audio %d (%s)", idx+1, lang)
-}
-
-func preferredLiveAudioStream(streams []liveAudioStream) (liveAudioStream, bool) {
-	var first liveAudioStream
-	haveFirst := false
-	for _, stream := range streams {
-		if !strings.EqualFold(strings.TrimSpace(stream.CodecType), "audio") {
-			continue
-		}
-		if !haveFirst {
-			first = stream
-			haveFirst = true
-		}
-		if isStereoAudioStream(stream) {
-			return stream, true
-		}
-	}
-	return first, haveFirst
-}
-
-func isStereoAudioStream(stream liveAudioStream) bool {
-	if stream.Channels == 2 {
-		return true
-	}
-	layout := strings.ToLower(strings.TrimSpace(stream.ChannelLayout))
-	return layout == "stereo" || strings.Contains(layout, "stereo")
 }
 
 func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]liveAudioStream, error) {

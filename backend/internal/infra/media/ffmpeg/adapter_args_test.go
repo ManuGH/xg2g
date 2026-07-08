@@ -126,15 +126,6 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 
 }
 
-func TestPreferredLiveAudioStreamFallsBackToFirstAudio(t *testing.T) {
-	selected, ok := preferredLiveAudioStream([]liveAudioStream{
-		{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)"},
-		{Index: 4, CodecType: "video", CodecName: "h264"},
-	})
-	require.True(t, ok)
-	assert.Equal(t, 2, selected.Index)
-}
-
 func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
