@@ -13,8 +13,8 @@
   overflow: hidden;
   max-width: calc(var(--content-max-width) + 24px);
   margin: 0 auto;
-  min-height: calc(100vh - 32px);
-  min-height: calc(100dvh - 32px);
+  min-height: calc(100vh - 44px);
+  min-height: calc(100dvh - 44px);
   padding: clamp(18px, 1.6vw, 28px);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-base);
