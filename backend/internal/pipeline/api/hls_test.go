@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/rs/zerolog"
 	"context"
 	"encoding/json"
 	"io"
@@ -857,4 +858,30 @@ func TestServeHLS_InMemory_Polling(t *testing.T) {
 	assert.Equal(t, "video/mp4", w.Header().Get("Content-Type"))
 	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 	assert.Equal(t, "in-memory-fmp4-data", w.Body.String())
+}
+
+func TestRewritePlaylist_MasterPlaylistFMP4(t *testing.T) {
+	masterContent := `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS="av01.0.08M.08"
+stream_0.m3u8
+`
+	rec := &model.SessionRecord{}
+	rec.Profile.Container = "fmp4"
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, zerolog.Logger{})
+	assert.NoError(t, err)
+	assert.True(t, valid, "master playlist should be valid even without EXT-X-MAP")
+	out, _ := io.ReadAll(rdr)
+	assert.Contains(t, string(out), "#EXT-X-STREAM-INF")
+}
+
+func TestValidateRequest_MasterPlaylistVariants(t *testing.T) {
+	w := httptest.NewRecorder()
+	req, ok := validateRequest(w, "session123", "stream_0.m3u8")
+	assert.True(t, ok)
+	assert.True(t, req.isPlaylist)
+
+	req2, ok2 := validateRequest(w, "session123", "init_0.mp4")
+	assert.True(t, ok2)
+	assert.True(t, req2.isInit)
 }

@@ -170,6 +170,14 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	if !strings.Contains(contentText, "#EXTM3U") {
 		return false, "missing #EXTM3U tag", nil
 	}
+	if strings.Contains(contentText, "#EXT-X-STREAM-INF:") {
+		variantURIs := playlistSegments(content)
+		if len(variantURIs) == 0 {
+			return false, "master playlist has no variant streams", nil
+		}
+		variantPath := filepath.Join(filepath.Dir(playlistPath), variantURIs[0])
+		return o.checkPlaylistReadyAt(variantPath, vodMode, ttfpRecorded, profileID, startTime)
+	}
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
 		return false, "vod playlist missing #EXT-X-ENDLIST", nil
 	}

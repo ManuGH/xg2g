@@ -207,3 +207,47 @@ func TestPlaylistReadyTimeout_ExtendsSafariHQ50Startup(t *testing.T) {
 		t.Fatalf("expected safari hq50 timeout %v, got %v", defaultSafariHQ50PlaylistReadyTimeout, timeout)
 	}
 }
+
+func TestCheckPlaylistReadyAt_MasterPlaylistSupport(t *testing.T) {
+	dir := t.TempDir()
+	masterPath := filepath.Join(dir, "index.m3u8")
+	variantPath := filepath.Join(dir, "stream_1.m3u8")
+	if err := os.WriteFile(masterPath, []byte(`#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS="av01.0.08M.08"
+stream_1.m3u8
+`), 0o600); err != nil {
+		t.Fatalf("write master: %v", err)
+	}
+	if err := os.WriteFile(variantPath, []byte(`#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:6
+#EXTINF:6.000000,
+seg_1_000000.m4s
+#EXTINF:6.000000,
+seg_1_000001.m4s
+#EXTINF:6.000000,
+seg_1_000002.m4s
+`), 0o600); err != nil {
+		t.Fatalf("write variant: %v", err)
+	}
+	for _, name := range []string{"seg_1_000000.m4s", "seg_1_000001.m4s", "seg_1_000002.m4s"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("data"), 0o600); err != nil {
+			t.Fatalf("write seg: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, model.SessionFirstFrameMarkerFilename), []byte("marker"), 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	orch := &Orchestrator{LiveReadySegments: 3}
+	ttfpRecorded := false
+
+	ready, reason, err := orch.checkPlaylistReadyAt(masterPath, false, &ttfpRecorded, "high", time.Now())
+	if err != nil {
+		t.Fatalf("checkPlaylistReadyAt error = %v", err)
+	}
+	if !ready {
+		t.Fatalf("expected master playlist to be ready, got reason = %s", reason)
+	}
+}

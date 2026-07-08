@@ -42,6 +42,8 @@ var pdtRe = regexp.MustCompile(`^#EXT-X-PROGRAM-DATE-TIME:(\d{4}-\d{2}-\d{2}T\d{
 var safeHLSSessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var safeHLSSegmentRe = regexp.MustCompile(`^seg_[A-Za-z0-9_-]+\.(?:ts|m4s)$`)
 var safeHLSLegacySegmentRe = regexp.MustCompile(`^stream[A-Za-z0-9_-]*\.ts$`)
+var safeHLSPlaylistRe = regexp.MustCompile(`^(?:index|(?:stream|audio)[A-Za-z0-9_-]*)\.m3u8$`)
+var safeHLSInitRe = regexp.MustCompile(`^init[A-Za-z0-9_-]*\.mp4$`)
 
 const (
 	minPlaylistAccessUpdateInterval = time.Second
@@ -113,13 +115,13 @@ func validateRequest(w http.ResponseWriter, sessionID, filename string) (hlsRequ
 
 	req.cleanName = cleanName
 	switch {
-	case filename == "index.m3u8" || filename == "stream.m3u8":
+	case safeHLSPlaylistRe.MatchString(filename):
 		req.isPlaylist = true
 	case safeHLSSegmentRe.MatchString(filename):
 		req.isSegment = true
 	case safeHLSLegacySegmentRe.MatchString(filename):
 		req.isLegacySegment = true
-	case filename == "init.mp4":
+	case safeHLSInitRe.MatchString(filename):
 		req.isInit = true
 	}
 
@@ -443,6 +445,7 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("read playlist: %w", err)
 	}
+	isMaster := bytes.Contains(raw, []byte("#EXT-X-STREAM-INF:"))
 	if isLive {
 		// Start clients with explicit headroom behind the live edge instead of at
 		// the very head (EXT-X-START is valid for live playlists too). The reserve
@@ -469,7 +472,7 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 		if line == "#EXTM3U" && (forcePlaylistType != "" || insertStartTag != "") && !insertedHeader {
 			b.WriteString(line)
 			b.WriteByte('\n')
-			if forcePlaylistType != "" {
+			if forcePlaylistType != "" && !isMaster {
 				b.WriteString("#EXT-X-PLAYLIST-TYPE:" + forcePlaylistType)
 				b.WriteByte('\n')
 			}
@@ -509,7 +512,7 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	valid := true
 	if len(raw) == 0 {
 		valid = false
-	} else if strings.EqualFold(rec.Profile.Container, "fmp4") && !hasMap {
+	} else if !isMaster && strings.EqualFold(rec.Profile.Container, "fmp4") && !hasMap {
 		valid = false
 	}
 

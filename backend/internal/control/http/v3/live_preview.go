@@ -156,11 +156,23 @@ func listLiveSegments(dir string) ([]string, error) {
 // this function returns only the segments the player's seekable range actually
 // covers, so hover previews are never aliased to expired content.
 func parsePlaylistSegmentNames(dir string) ([]string, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "index.m3u8")) // #nosec G304,G703 -- dir is LiveSessionDir(sessionID) where sessionID is regex-validated
+	data, err := os.ReadFile(filepath.Join(dir, "index.m3u8")) // #nosec G304,G703
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(string(data), "\n")
+	contentStr := string(data)
+	if strings.Contains(contentStr, "#EXT-X-STREAM-INF:") {
+		for _, l := range strings.Split(contentStr, "\n") {
+			lc := strings.TrimSpace(l)
+			if lc != "" && !strings.HasPrefix(lc, "#") && strings.HasSuffix(lc, ".m3u8") {
+				if vData, err := os.ReadFile(filepath.Join(dir, lc)); err == nil {
+					contentStr = string(vData)
+					break
+				}
+			}
+		}
+	}
+	lines := strings.Split(contentStr, "\n")
 	var segs []string
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
