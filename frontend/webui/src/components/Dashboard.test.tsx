@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ClientRequestError } from '../services/clientWrapper';
 import Dashboard from './Dashboard';
-import { buildRecordingsRoute, buildSettingsRoute } from '../routes';
+import { buildEpgRoute, buildRecordingsRoute, buildSettingsRoute } from '../routes';
 
 const mockNavigate = vi.fn();
 const mockRefetch = vi.fn();
@@ -62,25 +62,22 @@ describe('Dashboard', () => {
   it('renders a compact dashboard without duplicate health or log panels', () => {
     render(<Dashboard />);
 
-    screen.getByText('Control summary');
-    screen.getByText('Choose the task, not the tool');
     screen.getByRole('button', { name: 'Open Live TV' });
-    screen.getByRole('button', { name: 'Open Recordings' });
-    screen.getByRole('button', { name: 'Open Setup' });
     screen.getByRole('button', { name: 'Household profiles' });
+    screen.getByRole('button', { name: 'Timers' });
     expect(screen.getByRole('status', { name: 'System healthy - success' })).toBeInTheDocument();
     expect(screen.queryByText('Recent logs')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
-    screen.getByText('Receiver and guide health');
+    screen.getByText('Operator sessions');
   });
 
   it('navigates to guided and direct routes from the dashboard', () => {
     render(<Dashboard />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Recordings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Timers' }));
     fireEvent.click(screen.getByRole('button', { name: 'Household profiles' }));
 
-    expect(mockNavigate).toHaveBeenNthCalledWith(1, buildRecordingsRoute());
+    expect(mockNavigate).toHaveBeenNthCalledWith(1, buildEpgRoute('timers'));
     expect(mockNavigate).toHaveBeenNthCalledWith(2, buildSettingsRoute({ section: 'household' }));
   });
 
@@ -93,9 +90,9 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    expect(screen.getByRole('button', { name: 'Open Recordings' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Open Setup' })).toBeDisabled();
-    expect(screen.queryByText('Open a specific area directly')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Household profiles' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Timers' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Series Rules' })).toBeNull();
   });
 
   it('renders the section skeleton while health data is loading', () => {

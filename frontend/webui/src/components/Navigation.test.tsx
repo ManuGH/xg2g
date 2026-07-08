@@ -186,7 +186,7 @@ describe('Navigation', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
-    fireEvent.click(screen.getByRole('button', { name: 'Display size: Large' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Display size: Large', hidden: true }));
 
     await waitFor(() => {
       expect(document.documentElement.dataset.uiScale).toBe('large');
