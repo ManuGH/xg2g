@@ -28,12 +28,17 @@ const hlsFixture = path.resolve(__dirname, '../fixtures/hls/index.m3u8');
  * not defined") in case a contract field drifts.
  */
 test.describe('WebUI live playback (real hls.js)', () => {
-  test.beforeEach(async ({ request }) => {
+  test.beforeEach(async ({ page, request }) => {
     test.skip(!fs.existsSync(hlsFixture), 'HLS fixture missing — run backend/e2e/scripts/gen-hls-fixture.sh (needs ffmpeg)');
     const response = await request.post(`${fixtureServerUrl}/__admin/scenario`, {
       data: { id: 'playback-live' },
     });
     expect(response.ok()).toBeTruthy();
+    // EPG defaults to grid view on wide screens; grid view has no per-row
+    // Watch button. Force list view so the play CTA is available.
+    await page.addInitScript(() => {
+      localStorage.setItem('xg2g:epg:viewMode', 'list');
+    });
   });
 
   test('starts a live channel and advances video frames', async ({ page }) => {
@@ -86,6 +91,10 @@ test.describe('WebUI live playback errors', () => {
   async function startPlaybackUnder(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext, scenarioId: string) {
     const response = await request.post(`${fixtureServerUrl}/__admin/scenario`, { data: { id: scenarioId } });
     expect(response.ok()).toBeTruthy();
+    // Force list view so the Watch button is available (grid view has none).
+    await page.addInitScript(() => {
+      localStorage.setItem('xg2g:epg:viewMode', 'list');
+    });
     await page.goto('/epg');
     await page.getByRole('button', { name: /watch/i }).first().click();
   }
