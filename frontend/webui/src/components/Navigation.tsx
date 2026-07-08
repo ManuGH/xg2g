@@ -295,7 +295,23 @@ export default function Navigation({ onLogout }: NavigationProps) {
       }
     };
     window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Toggle on Cmd+B (Mac) or Ctrl+B (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsCollapsed(prev => !prev);
+      }
+    };
+    const handleGlobalToggle = () => {
+      setIsCollapsed(prev => !prev);
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('xg2g:toggle-sidebar', handleGlobalToggle);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('xg2g:toggle-sidebar', handleGlobalToggle);
+    };
   }, []);
 
   useEffect(() => {
