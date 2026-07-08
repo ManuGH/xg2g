@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -127,6 +128,23 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 	var lastDts uint64
 	var haveDts bool
 
+	// PROGRAM-DATE-TIME anchor: wall clock is sampled once at the first
+	// dts-carrying fragment; every segment's PDT is then derived from its
+	// media timeline offset against that anchor. Stamping now() per segment
+	// instead produces jittering deltas (segments are flushed in bursts) and
+	// duplicate PDTs on the startup burst, which breaks AVPlayer's live-edge
+	// math.
+	var anchorWall time.Time
+	var anchorDts uint64
+	var haveAnchor bool
+	segmentWall := func(startDts uint64) time.Time {
+		if !haveAnchor || startDts < anchorDts {
+			return now()
+		}
+		offset := float64(startDts-anchorDts) / float64(timescale)
+		return anchorWall.Add(time.Duration(offset * float64(time.Second)))
+	}
+
 	for ctx.Err() == nil {
 		var frag []byte
 		frag, pending, err = readFragment(br, pending)
@@ -141,6 +159,9 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 		independent := fragmentIndependent(frag)
 		if dtsOK {
 			lastDts, haveDts = dts, true
+			if !haveAnchor {
+				anchorWall, anchorDts, haveAnchor = now(), dts, true
+			}
 		}
 
 		if seg.open() && independent && dtsOK && dts >= seg.startDts+targetTicks {
@@ -157,7 +178,7 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 			if !haveDts {
 				startDts = 0
 			}
-			if err := seg.start(startDts, now()); err != nil {
+			if err := seg.start(startDts, segmentWall(startDts)); err != nil {
 				return err
 			}
 		}
@@ -508,6 +529,11 @@ type playlistWriter struct {
 	nextSegmentIndex int
 	mediaSequence    int
 	discontSequence  int
+	// maxDuration tracks the longest EXTINF ever published. The HLS spec
+	// requires EXT-X-TARGETDURATION >= every segment duration (rounded), so
+	// an over-long segment (e.g. a startup GOP overshoot) bumps the published
+	// target instead of violating the invariant and confusing native players.
+	maxDuration float64
 }
 
 // newPlaylistWriter continues an existing session playlist when one is on
@@ -555,6 +581,16 @@ func newPlaylistWriter(dir string, targetDuration int, listSize int) (*playlistW
 			continue
 		}
 		if strings.HasPrefix(line, "#EXTINF:") || strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") || strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") {
+			if raw, ok := strings.CutPrefix(line, "#EXTINF:"); ok {
+				// RFC 8216: #EXTINF:<duration>,[<title>] — strip the optional title.
+				if idx := strings.IndexByte(raw, ','); idx >= 0 {
+					raw = raw[:idx]
+				}
+				raw = strings.TrimSpace(raw)
+				if d, err := strconv.ParseFloat(raw, 64); err == nil && d > pl.maxDuration {
+					pl.maxDuration = d
+				}
+			}
 			inMedia = true
 			pl.mediaLines = append(pl.mediaLines, line)
 			continue
@@ -569,6 +605,9 @@ func newPlaylistWriter(dir string, targetDuration int, listSize int) (*playlistW
 }
 
 func (p *playlistWriter) appendSegment(name string, duration float64, start time.Time) error {
+	if duration > p.maxDuration {
+		p.maxDuration = duration
+	}
 	p.mediaLines = append(p.mediaLines,
 		fmt.Sprintf("#EXTINF:%.6f,", duration),
 		"#EXT-X-PROGRAM-DATE-TIME:"+start.UTC().Format("2006-01-02T15:04:05.000Z07:00"),
@@ -605,10 +644,16 @@ func (p *playlistWriter) appendSegment(name string, duration float64, start time
 func (p *playlistWriter) finalize() error { return p.publish(true) }
 
 func (p *playlistWriter) publish(end bool) error {
+	target := p.targetDuration
+	// Per RFC 8216 §4.3.3.1 the target duration must be >= each segment's
+	// rounded EXTINF; round-half-up matches the spec's rounding rule.
+	if rounded := int(math.Floor(p.maxDuration + 0.5)); rounded > target {
+		target = rounded
+	}
 	var b strings.Builder
 	b.WriteString("#EXTM3U\n")
 	b.WriteString("#EXT-X-VERSION:7\n")
-	fmt.Fprintf(&b, "#EXT-X-TARGETDURATION:%d\n", p.targetDuration)
+	fmt.Fprintf(&b, "#EXT-X-TARGETDURATION:%d\n", target)
 	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.mediaSequence)
 	if p.discontSequence > 0 {
 		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.discontSequence)
