@@ -339,30 +339,28 @@
 .card {
   position: relative;
   overflow: hidden;
-  background: color-mix(in srgb, var(--surface-panel) 86%, var(--surface-stage) 14%);
-  margin: 0 0 18px;
-  border-radius: 28px;
-  border: 1px solid var(--border-base);
-  padding: 24px;
+  background: color-mix(in srgb, var(--surface-panel) 20%, transparent);
+  margin: 0;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-base) 50%, transparent);
+  padding: 16px 20px;
   transition:
-    transform var(--motion-standard) var(--ease-standard),
-    border-color var(--motion-standard) var(--ease-standard),
-    background var(--motion-standard) var(--ease-standard);
+    background var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard);
+}
+
+.card:last-child {
+  border-bottom-color: transparent;
 }
 
 .card::before {
-  content: '';
-  position: absolute;
-  inset: -22% auto auto -12%;
-  width: 34%;
-  height: 44%;
-  background: color-mix(in srgb, var(--accent-action-subtle) 60%, transparent);
-  pointer-events: none;
+  display: none;
 }
 
 .card:hover {
-  border-color: var(--border-elevated);
-  transform: translateY(-3px);
+  background: color-mix(in srgb, var(--surface-panel) 60%, transparent);
+  border-color: color-mix(in srgb, var(--border-base) 80%, transparent);
 }
 
 .cardError {
@@ -393,12 +391,12 @@
 .channel {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 18px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--border-base);
+  gap: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-base) 30%, transparent);
   content-visibility: auto;
-  contain-intrinsic-size: 0 104px;
+  contain-intrinsic-size: 0 70px;
 }
 
 .channelPlayable {
@@ -412,15 +410,15 @@
 }
 
 .logo {
-  width: 68px;
-  height: 68px;
+  width: 56px;
+  height: 56px;
   background: color-mix(in srgb, var(--accent-action-subtle) 48%, var(--surface-muted) 52%);
-  border-radius: 20px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 10px;
+  padding: 6px;
   border: 1px solid var(--border-base);
   flex-shrink: 0;
 }
