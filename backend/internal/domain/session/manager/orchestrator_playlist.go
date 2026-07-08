@@ -176,6 +176,12 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 			return false, "master playlist has no variant streams", nil
 		}
 		variantPath := filepath.Join(filepath.Dir(playlistPath), variantURIs[0])
+		// Read the resolved playlist to prevent infinite recursion on nested masters
+		if resolvedContent, err := os.ReadFile(filepath.Clean(variantPath)); err == nil {
+			if strings.Contains(string(resolvedContent), "#EXT-X-STREAM-INF:") {
+				return false, "nested master playlists are not supported", nil
+			}
+		}
 		return o.checkPlaylistReadyAt(variantPath, vodMode, ttfpRecorded, profileID, startTime)
 	}
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {

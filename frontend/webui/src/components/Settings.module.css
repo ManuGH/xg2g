@@ -205,6 +205,11 @@
   margin-bottom: 8px;
 }
 
+.warningHint {
+  color: var(--status-warning);
+  margin-top: 4px;
+}
+
 .hint {
   display: block;
   font-size: 0.9em;

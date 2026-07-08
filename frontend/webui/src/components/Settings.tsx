@@ -1230,7 +1230,7 @@ function Settings() {
         </div>
 
         <div className={styles.group} style={{ marginTop: '24px' }}>
-          <label style={{ fontWeight: 600, fontSize: '1.05rem' }}>Audio-Ausgabemodus (HLS / fMP4)</label>
+          <label style={{ fontWeight: 600, fontSize: '1.05rem' }}>{t('settings.streaming.audioMode.title')}</label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
               <input
@@ -1240,14 +1240,14 @@ function Settings() {
                 checked={audioMode === 'stereo'}
                 onChange={() => {
                   setAudioMode('stereo');
-                  try { localStorage.setItem('xg2g.settings.audioMode', 'stereo'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.audioMode', 'stereo'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 style={{ marginTop: '4px' }}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>Standard / Mobil (Stereo AAC 192k)</div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.audioMode.stereo.label')}</div>
                 <div className={styles.hint}>
-                  Empfohlen für iPhone, iPad & Safari – inklusive automatischem 3D-Audio für Apple AirPods / Kopfhörer.
+                  {t('settings.streaming.audioMode.stereo.hint')}
                 </div>
               </div>
             </label>
@@ -1260,16 +1260,16 @@ function Settings() {
                 checked={audioMode === 'surround'}
                 onChange={() => {
                   setAudioMode('surround');
-                  try { localStorage.setItem('xg2g.settings.audioMode', 'surround'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.audioMode', 'surround'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 style={{ marginTop: '4px' }}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>Heimkino / Soundbar (5.1 Dolby Digital Plus)</div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.audioMode.surround.label')}</div>
                 <div className={styles.hint}>
-                  Empfohlen für Computer (Chrome / Firefox / Edge am Desktop) mit angeschlossener 5.1-Anlage oder Soundbar.
-                  <div style={{ marginTop: '4px', color: '#eab308' }}>
-                    ⚠️ <strong>Wichtiger Hinweis:</strong> Unter iOS, iPadOS und macOS Safari ist die Wiedergabe von 5.1-Ton über fMP4-HLS aufgrund von Apples Container-Regelwerk nicht möglich. Für Apple Safari immer „Standard / Mobil (Stereo AAC)“ wählen.
+                  {t('settings.streaming.audioMode.surround.hint')}
+                  <div className={styles.warningHint}>
+                    ⚠️ <strong>{t('settings.streaming.audioMode.surround.warningTitle')}</strong> {t('settings.streaming.audioMode.surround.warningText')}
                   </div>
                 </div>
               </div>
