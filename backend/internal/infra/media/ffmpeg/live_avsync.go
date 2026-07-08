@@ -45,15 +45,17 @@ const (
 	avsyncPeekMaxBytes   = 6 << 20   // give up past here -> fall back to direct path
 )
 
-// shouldAvsyncAtrim reports whether the orphan-atrim path applies to this spec:
-// flag on, live fMP4 video-copy over an HTTP/relay source. Container=="fmp4" +
-// !TranscodeVideo naturally scopes this to exactly the affected clients (iOS
-// fMP4 copy, native-HEVC fMP4 copy) and leaves every other path byte-identical.
+// shouldAvsyncAtrim reports whether the orphan-correction path applies to this
+// spec: flag on, live fMP4 over an HTTP/relay source. Video-copy gets a leading
+// audio atrim (video timestamps are immutable there); video-transcode gets an
+// input-side -ss to the first keyframe, which drops the orphan audio AND the
+// stray pre-GOP salvage frame the decoder emits from the corrupt head (observed
+// as a 1-frame segment followed by a ~2s video hole while audio runs on).
 func (a *LocalAdapter) shouldAvsyncAtrim(spec ports.StreamSpec) bool {
 	if !a.LiveAvsyncAtrim {
 		return false
 	}
-	if spec.Mode != ports.ModeLive || spec.Profile.TranscodeVideo {
+	if spec.Mode != ports.ModeLive {
 		return false
 	}
 	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
@@ -244,13 +246,17 @@ func (a *LocalAdapter) firstPacketPTS(ctx context.Context, path, stream string, 
 	return 0, false
 }
 
-// transformArgsForAvsyncPipeMode rewrites a normal live-copy argv for stdin
+// transformArgsForAvsyncPipeMode rewrites a normal live argv for stdin
 // (pipe:0) input: the HTTP input URL is replaced by pipe:0, HTTP-only input
-// options are dropped (FFmpeg rejects/ignores them for a pipe), and (when
-// insertTrim is set) a leading-audio atrim is inserted before the audio encoder
-// so copied video and transcoded audio share an origin. Pure function:
-// unit-tested independently of the live peek.
-func transformArgsForAvsyncPipeMode(args []string, orphan float64, insertTrim bool) []string {
+// options are dropped (FFmpeg rejects/ignores them for a pipe), and — when
+// insertTrim is set — the orphan correction is applied. For video-copy that is
+// a leading-audio atrim before the audio encoder so copied video and
+// transcoded audio share an origin. For video-transcode (transcodeVideo) it is
+// an input-side "-ss <orphan>" instead: both tracks then start together at the
+// first decodable keyframe, which also discards the salvage frame the decoder
+// otherwise emits from the pre-keyframe garbage. Pure function: unit-tested
+// independently of the live peek.
+func transformArgsForAvsyncPipeMode(args []string, orphan float64, insertTrim bool, transcodeVideo bool) []string {
 	stripValueFlag := map[string]bool{
 		"-headers":                    true,
 		"-user_agent":                 true,
@@ -266,6 +272,9 @@ func transformArgsForAvsyncPipeMode(args []string, orphan float64, insertTrim bo
 	for i := 0; i < len(args); i++ {
 		tok := args[i]
 		if tok == "-i" && i+1 < len(args) {
+			if insertTrim && transcodeVideo {
+				out = append(out, "-ss", fmt.Sprintf("%.3f", orphan))
+			}
 			out = append(out, "-i", "pipe:0")
 			i++ // skip the URL value
 			continue
@@ -274,7 +283,7 @@ func transformArgsForAvsyncPipeMode(args []string, orphan float64, insertTrim bo
 			i++ // skip the option value
 			continue
 		}
-		if insertTrim && tok == "-c:a" && i+1 < len(args) && args[i+1] != "copy" {
+		if insertTrim && !transcodeVideo && tok == "-c:a" && i+1 < len(args) && args[i+1] != "copy" {
 			out = append(out, "-af", fmt.Sprintf("atrim=start=%.3f", orphan))
 		}
 		out = append(out, tok)

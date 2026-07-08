@@ -18,6 +18,7 @@ type hlsPlaylistMetrics struct {
 	TargetDurationSec        int
 	RecentAvgSegmentDuration float64
 	RecentSegmentCount       int
+	TotalDurationSec         float64
 }
 
 type hlsStartupPolicy struct {
@@ -99,6 +100,22 @@ func deriveHLSStartupPolicy(rec *model.SessionRecord, content []byte) hlsStartup
 		headroom = maxHeadroomSec
 	}
 
+	// A TIME-OFFSET beyond the playlist's actual duration pins native players
+	// to the very first (startup) segment. Clamp the headroom so playback
+	// never starts more than one target duration from the head; when nothing
+	// is left to offset into, the caller omits the tag and the client default
+	// (three target durations from the end) applies.
+	if metrics.TotalDurationSec > 0 {
+		available := int(metrics.TotalDurationSec) - metrics.TargetDurationSec
+		if available < 0 {
+			available = 0
+		}
+		if headroom > available {
+			headroom = available
+			reasons = append(reasons, "available_media_clamp")
+		}
+	}
+
 	return hlsStartupPolicy{
 		ClientFamily:       clientFamily,
 		StartupHeadroomSec: headroom,
@@ -137,6 +154,7 @@ func parseHLSPlaylistMetrics(content []byte) hlsPlaylistMetrics {
 		if err != nil || duration <= 0 {
 			continue
 		}
+		metrics.TotalDurationSec += duration
 		if len(recentDurations) == recentSegmentCount {
 			copy(recentDurations, recentDurations[1:])
 			recentDurations[len(recentDurations)-1] = duration

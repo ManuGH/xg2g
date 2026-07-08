@@ -108,17 +108,18 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	planSpan.End()
 	args := plan.args
 
-	// Live-copy A/V-sync (flag-gated, default off): re-route the HTTP relay through
-	// a Go peek that measures the source's audio-before-keyframe "orphan" and trims
-	// it via a stdin pipe, so -c:v copy fMP4 no longer carries a constant
-	// audio-leads desync into iOS AVPlayer. Any peek/measure failure falls back to
-	// the unchanged direct-URL path.
+	// Live A/V-sync (flag-gated, default off): re-route the HTTP relay through
+	// a Go peek that measures the source's audio-before-keyframe "orphan" and
+	// corrects it via a stdin pipe — audio atrim for -c:v copy (constant
+	// audio-leads desync in iOS AVPlayer), input -ss for video transcode
+	// (startup segment with a leading video hole while audio runs on). Any
+	// peek/measure failure falls back to the unchanged direct-URL path.
 	var avsyncStdin io.Reader
 	avsyncSpec := spec
 	avsyncSpec.Profile = plan.effectiveProfile
 	if a.shouldAvsyncAtrim(avsyncSpec) {
 		if orphan, stdin, ok := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); ok {
-			args = transformArgsForAvsyncPipeMode(args, orphan, !a.LiveAvsyncPipeNoTrim)
+			args = transformArgsForAvsyncPipeMode(args, orphan, !a.LiveAvsyncPipeNoTrim, avsyncSpec.Profile.TranscodeVideo)
 			avsyncStdin = stdin
 			if a.LiveAvsyncPipeNoTrim {
 				a.Logger.Warn().
