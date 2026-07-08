@@ -122,6 +122,7 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, args, "0:3?", "live audio selection should prefer the stereo AC3 source track")
 	assert.NotContains(t, args, "0:a:0?", "stereo probe result should replace blind first-audio mapping")
+	assert.Contains(t, args, "aac", "stereo AC3 track should be transcoded to AAC when transcoding video to maintain PTS sync")
 
 }
 

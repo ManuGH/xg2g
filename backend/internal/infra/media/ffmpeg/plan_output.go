@@ -39,10 +39,12 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	}
 	gop := gopFPS * layout.segmentDurationSec
 
+	audioMap, audioArgs := a.planLiveAudio(ctx, spec, probeURL)
+
 	out := outputPlan{effectiveProfile: spec.Profile}
 	out.args = append(out.args,
 		"-map", "0:v:0?",
-		"-map", a.selectLiveAudioMap(ctx, spec, probeURL),
+		"-map", audioMap,
 	)
 	if targetOutputFPS > 0 {
 		out.args = append(out.args, "-r", strconv.Itoa(targetOutputFPS))
@@ -50,7 +52,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 
 	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec)
 	out.args = appendLiveVideoContainerTags(out.args, spec, codec.resolvedCodec)
-	out.args = appendLiveAudioArgs(out.args, spec)
+	out.args = append(out.args, audioArgs...)
 	if a.useCMAFSegmenter(spec) {
 		// LL-HLS pipe mode: one fragmented MP4 stream on stdout; the cmaf
 		// segmenter writes init/segments/playlist so the open segment grows
@@ -169,9 +171,7 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec) []string {
 // copy sources with unknown GOPs fall back to the hls muxer (the HasParts
 // gate then keeps the playlist plain).
 func (a *LocalAdapter) useCMAFSegmenter(spec ports.StreamSpec) bool {
-	return a.LowLatencyHLS &&
-		spec.Profile.TranscodeVideo &&
-		strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
+	return false
 }
 
 // appendLiveCMAFStreamArgs emits a single fragmented-MP4 stream on stdout:
@@ -182,7 +182,7 @@ func (a *LocalAdapter) useCMAFSegmenter(spec ports.StreamSpec) bool {
 func appendLiveCMAFStreamArgs(args []string) []string {
 	return append(args,
 		"-f", "mp4",
-		"-movflags", "empty_moov+default_base_moof+skip_trailer+frag_keyframe",
+		"-movflags", "empty_moov+default_base_moof+skip_trailer+frag_keyframe+delay_moov",
 		"-frag_duration", strconv.Itoa(llhlsPartTargetMs*1000),
 		"-flush_packets", "1",
 		"pipe:1",

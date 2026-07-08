@@ -26,11 +26,19 @@ type liveAudioStream struct {
 }
 
 func (a *LocalAdapter) selectLiveAudioMap(ctx context.Context, spec ports.StreamSpec, inputURL string) string {
+	mapArg, _ := a.planLiveAudio(ctx, spec, inputURL)
+	return mapArg
+}
+
+func (a *LocalAdapter) planLiveAudio(ctx context.Context, spec ports.StreamSpec, inputURL string) (string, []string) {
+	mapArg := defaultLiveAudioMap
+	audioArgs := appendLiveAudioArgs(nil, spec)
+
 	if spec.Mode != ports.ModeLive || spec.Format != ports.FormatHLS || strings.TrimSpace(inputURL) == "" {
-		return defaultLiveAudioMap
+		return mapArg, audioArgs
 	}
 	if !spec.Profile.TranscodeVideo || !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
-		return defaultLiveAudioMap
+		return mapArg, audioArgs
 	}
 
 	streams, err := a.probeLiveAudioStreams(ctx, spec, inputURL)
@@ -42,25 +50,30 @@ func (a *LocalAdapter) selectLiveAudioMap(ctx context.Context, spec ports.Stream
 			Str("input_url", sanitizeURLForLog(inputURL)).
 			Str("fallback_map", defaultLiveAudioMap).
 			Msg("live audio stream probe failed; using first audio stream")
-		return defaultLiveAudioMap
+		return mapArg, audioArgs
 	}
 
 	selected, ok := preferredLiveAudioStream(streams)
 	if !ok || selected.Index < 0 {
-		return defaultLiveAudioMap
+		return mapArg, audioArgs
 	}
 
-	selectedMap := fmt.Sprintf("0:%d?", selected.Index)
+	mapArg = fmt.Sprintf("0:%d?", selected.Index)
+	codecName := strings.ToLower(strings.TrimSpace(selected.CodecName))
+	audioArgs = appendLiveAudioArgs(nil, spec)
+
 	a.Logger.Info().
 		Str("session_id", spec.SessionID).
 		Str("startup_phase", "live_audio_stream_selected").
-		Str("audio_map", selectedMap).
+		Str("audio_map", mapArg).
+		Str("audio_action", "transcode_aac").
 		Int("input_stream_index", selected.Index).
 		Int("input_audio_channels", selected.Channels).
 		Str("input_audio_layout", strings.TrimSpace(selected.ChannelLayout)).
-		Str("input_audio_codec", strings.TrimSpace(selected.CodecName)).
-		Msg("selected live audio stream for AAC transcode")
-	return selectedMap
+		Str("input_audio_codec", codecName).
+		Msg("selected live audio stream for synchronized AAC transcode")
+
+	return mapArg, audioArgs
 }
 
 func preferredLiveAudioStream(streams []liveAudioStream) (liveAudioStream, bool) {
@@ -95,8 +108,8 @@ func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.Str
 	}
 
 	timeout := 5 * time.Second
-	if isStreamRelayURL(inputURL) {
-		timeout = 8 * time.Second
+	if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
+		timeout = 10 * time.Second
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -143,7 +156,7 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 	if probeSize == "" {
 		probeSize = strings.TrimSpace(a.ProbeSize)
 	}
-	if isStreamRelayURL(inputURL) && spec.Profile.TranscodeVideo {
+	if (isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner) && spec.Profile.TranscodeVideo {
 		if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
 			analyzeDuration = v
 		} else {
