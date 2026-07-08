@@ -165,7 +165,8 @@ func parsePlaylistSegmentNames(dir string) ([]string, error) {
 		for _, l := range strings.Split(contentStr, "\n") {
 			lc := strings.TrimSpace(l)
 			if lc != "" && !strings.HasPrefix(lc, "#") && strings.HasSuffix(lc, ".m3u8") {
-				if vData, err := os.ReadFile(filepath.Join(dir, lc)); err == nil { // #nosec G304,G703 -- lc is a parsed variant playlist name from a trusted local m3u8; err is checked in condition
+				vData, readErr := os.ReadFile(filepath.Join(dir, lc)) // #nosec G304,G703 -- lc is a parsed variant playlist name from a trusted local m3u8; err is checked immediately
+				if readErr == nil {
 					contentStr = string(vData)
 					break
 				}
