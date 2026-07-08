@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ClientRequestError } from '../services/clientWrapper';
 import Dashboard from './Dashboard';
-import { buildEpgRoute, buildRecordingsRoute, buildSettingsRoute } from '../routes';
+import { buildEpgRoute, buildSettingsRoute } from '../routes';
 
 const mockNavigate = vi.fn();
 const mockRefetch = vi.fn();

@@ -42,7 +42,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	out := outputPlan{effectiveProfile: spec.Profile}
 	out.args = append(out.args,
 		"-map", "0:v:0?",
-		"-map", "0:a:0?",
+		"-map", a.selectLiveAudioMap(ctx, spec, probeURL),
 	)
 	if targetOutputFPS > 0 {
 		out.args = append(out.args, "-r", strconv.Itoa(targetOutputFPS))

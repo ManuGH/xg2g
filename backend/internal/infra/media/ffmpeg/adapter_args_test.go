@@ -75,6 +75,65 @@ func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 	assert.Contains(t, args, "0:a:0?", "audio map should remain optional")
 }
 
+func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"ffprobe",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		0,
+		0,
+		"",
+	)
+	adapter.liveAudioProbeFn = func(context.Context, string) ([]liveAudioStream, error) {
+		return []liveAudioStream{
+			{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)"},
+			{Index: 3, CodecType: "audio", CodecName: "ac3", Channels: 2, ChannelLayout: "stereo"},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "iphone-audio-stereo",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			VideoCodec:     "av1",
+			TranscodeVideo: true,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "0:3?", "live audio selection should prefer the stereo AC3 source track")
+	assert.NotContains(t, args, "0:a:0?", "stereo probe result should replace blind first-audio mapping")
+
+}
+
+func TestPreferredLiveAudioStreamFallsBackToFirstAudio(t *testing.T) {
+	selected, ok := preferredLiveAudioStream([]liveAudioStream{
+		{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)"},
+		{Index: 4, CodecType: "video", CodecName: "h264"},
+	})
+	require.True(t, ok)
+	assert.Equal(t, 2, selected.Index)
+}
+
 func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),

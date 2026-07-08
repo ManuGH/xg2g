@@ -111,6 +111,8 @@ type LocalAdapter struct {
 	fpsProbeFn func(context.Context, string) (int, string, error)
 	// streamProbeFn is a test-only hook for runtime source truth; nil in production.
 	streamProbeFn func(context.Context, string) (*vod.StreamInfo, error)
+	// liveAudioProbeFn is a test-only hook for live audio stream selection; nil in production.
+	liveAudioProbeFn func(context.Context, string) ([]liveAudioStream, error)
 	// hostBenchmarkClassFn is a test-only hook returning the host benchmark class
 	// ("weak"/"moderate"/"strong"/"") for a profile id; nil in production (real
 	// host benchmark snapshot is used).
