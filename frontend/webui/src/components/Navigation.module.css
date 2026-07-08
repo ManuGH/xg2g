@@ -64,14 +64,11 @@
 .brandMark {
   width: 28px;
   height: 28px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--accent-action-subtle) 82%, var(--surface-muted) 18%);
-  border: 1px solid color-mix(in srgb, var(--accent-action) 34%, var(--border-elevated) 66%);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--accent-action);
 }
 
 .brandPulse {
@@ -274,11 +271,11 @@
 }
 
 .sectionTitle {
-  padding: 8px 12px 4px;
+  padding: 4px 12px 0;
   font-size: 0.65rem;
-  font-weight: 600;
+  font-weight: 700;
   color: color-mix(in srgb, var(--text-tertiary) 80%, transparent);
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -292,19 +289,17 @@
 .navItem {
   position: relative;
   width: 100%;
-  min-height: 56px;
-  padding: 10px;
-  border-radius: var(--radius-lg);
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   text-align: left;
-  transition:
-    background var(--motion-standard) var(--ease-standard),
-    color var(--motion-standard) var(--ease-standard);
+  transition: color var(--motion-standard) var(--ease-standard), background var(--motion-standard) var(--ease-standard);
 }
 
 .navItem::after {
@@ -312,41 +307,44 @@
 }
 
 .navItem:hover {
-  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
   color: var(--text-primary);
 }
 
 .navItem[aria-current="page"] {
-  background: var(--accent-action-subtle);
+  background: transparent;
   color: var(--text-primary);
 }
 
-.navItem[aria-current="page"]::after {
+.navItem[aria-current="page"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 2px 2px 0;
   background: var(--accent-action);
 }
 
 .navItem[aria-current="page"] .iconShell {
-  background: color-mix(in srgb, var(--surface-highlight) 72%, transparent);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--accent-action);
+  border: none;
 }
 
 .iconShell {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-base);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
-    var(--surface-muted);
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition:
-    background var(--motion-standard) var(--ease-standard),
-    border-color var(--motion-standard) var(--ease-standard),
-    color var(--motion-standard) var(--ease-standard);
+  background: transparent;
+  border: none;
+  color: currentColor;
+  transition: color var(--motion-standard) var(--ease-standard);
 }
 
 .icon {
@@ -362,8 +360,8 @@
 }
 
 .label {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 500;
   white-space: nowrap;
 }
 
