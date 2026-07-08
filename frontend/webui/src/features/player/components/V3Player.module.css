@@ -2401,3 +2401,22 @@
     border-radius: 22px;
   }
 }
+
+/* 2026 Liquid Glass Tactile Buttons (iPhone & iPad Touch Feedback) */
+@media (hover: none) and (pointer: coarse) {
+  .playPauseButton,
+  .channelNavButton,
+  .fullscreenButton {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.14s ease, border-color 0.14s ease;
+  }
+
+  .playPauseButton:active,
+  .channelNavButton:active,
+  .fullscreenButton:active {
+    transform: scale(0.92);
+    background: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+}

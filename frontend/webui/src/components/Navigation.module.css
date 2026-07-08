@@ -355,11 +355,14 @@
   }
 
   .mobileNav {
-    margin: 0 10px calc(10px + var(--sab));
-    padding: 7px;
-    border-radius: 18px;
-    border: 1px solid var(--border-elevated);
-    background: color-mix(in srgb, var(--surface-shell-strong) 94%, var(--surface-stage) 6%);
+    margin: 0 14px calc(12px + var(--sab));
+    padding: 8px;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: linear-gradient(180deg, rgba(32, 34, 40, 0.78) 0%, rgba(18, 20, 26, 0.86) 100%);
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48), 0 1px 0 rgba(255, 255, 255, 0.16) inset;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
@@ -372,7 +375,12 @@
     flex-direction: column;
     justify-content: center;
     gap: 6px;
-    border-radius: 14px;
+    border-radius: 20px;
+    transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.16s ease;
+  }
+
+  .mobileItem:active {
+    transform: scale(0.93);
   }
 
   .mobileItem .itemText {
