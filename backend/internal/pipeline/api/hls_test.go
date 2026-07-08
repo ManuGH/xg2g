@@ -407,6 +407,14 @@ seg_000000.ts
 #EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:00:02+0000
 #EXTINF:2.000000,
 seg_000001.ts
+#EXTINF:2.000000,
+seg_000002.ts
+#EXTINF:2.000000,
+seg_000003.ts
+#EXTINF:2.000000,
+seg_000004.ts
+#EXTINF:2.000000,
+seg_000005.ts
 `
 	manifestPath := filepath.Join(sessionDir, "index.m3u8")
 	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
@@ -511,18 +519,37 @@ seg_001351.ts
 
 func TestDeriveHLSStartupPolicy(t *testing.T) {
 	t.Run("uses recent segment cadence with conservative headroom", func(t *testing.T) {
-		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000000,\nseg_000000.ts\n")
+		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000000,\nseg_000000.ts\n#EXTINF:6.000000,\nseg_000001.ts\n#EXTINF:6.000000,\nseg_000002.ts\n#EXTINF:6.000000,\nseg_000003.ts\n")
 		assert.Equal(t, 12, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 
 	t.Run("keeps small targets away from the live edge", func(t *testing.T) {
-		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1.000000,\nseg_000000.ts\n")
-		assert.Equal(t, 8, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
+		var b strings.Builder
+		b.WriteString("#EXTM3U\n#EXT-X-TARGETDURATION:1\n")
+		for i := 0; i < 12; i++ {
+			b.WriteString("#EXTINF:1.000000,\nseg_00000" + string(rune('0'+i%10)) + ".ts\n")
+		}
+		assert.Equal(t, 8, deriveHLSStartupPolicy(nil, []byte(b.String())).StartupHeadroomSec)
 	})
 
 	t.Run("clamps very large targets", func(t *testing.T) {
-		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.000000,\nseg_000000.ts\n")
+		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.000000,\nseg_000000.ts\n#EXTINF:10.000000,\nseg_000001.ts\n#EXTINF:10.000000,\nseg_000002.ts\n")
 		assert.Equal(t, 12, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
+	})
+
+	t.Run("clamps headroom to available media", func(t *testing.T) {
+		// Two 2s segments at startup: only 2s of offsetable media exist, so a
+		// double-digit offset would pin native players to the (worst) very
+		// first segment.
+		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.000000,\nseg_000000.m4s\n#EXTINF:2.000000,\nseg_000001.m4s\n")
+		policy := deriveHLSStartupPolicy(nil, raw)
+		assert.Equal(t, 2, policy.StartupHeadroomSec)
+		assert.Contains(t, policy.Reasons, "available_media_clamp")
+	})
+
+	t.Run("suppresses offset when no media is offsetable", func(t *testing.T) {
+		raw := []byte("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.000000,\nseg_000000.m4s\n")
+		assert.Equal(t, 0, deriveHLSStartupPolicy(nil, raw).StartupHeadroomSec)
 	})
 
 	t.Run("tracks ORF1 style short segments with extra reserve", func(t *testing.T) {

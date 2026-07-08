@@ -454,7 +454,9 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 		// HLS clients.
 		policy := deriveHLSStartupPolicy(rec, raw)
 		startupPolicy = &policy
-		insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", startupPolicy.StartupHeadroomSec)
+		if startupPolicy.StartupHeadroomSec > 0 {
+			insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", startupPolicy.StartupHeadroomSec)
+		}
 	}
 
 	insertedHeader := false

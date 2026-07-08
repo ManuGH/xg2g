@@ -45,11 +45,14 @@ func TestTransformArgsForAvsyncPipe(t *testing.T) {
 		"-sn",
 		"-f", "hls",
 	}
-	got := transformArgsForAvsyncPipeMode(in, 1.735, true)
+	got := transformArgsForAvsyncPipeMode(in, 1.735, true, false)
 	joined := strings.Join(got, " ")
 
 	if !strings.Contains(joined, "-i pipe:0") {
 		t.Fatalf("expected -i pipe:0, got: %s", joined)
+	}
+	if avsyncContainsToken(got, "-ss") {
+		t.Fatalf("copy mode must not seek the input: %s", joined)
 	}
 	if strings.Contains(joined, "http://10.10.55.64") {
 		t.Fatalf("input URL must be replaced: %s", joined)
@@ -74,9 +77,43 @@ func TestTransformArgsForAvsyncPipe(t *testing.T) {
 	}
 }
 
+func TestTransformArgsForAvsyncPipe_TranscodeUsesInputSeek(t *testing.T) {
+	in := []string{
+		"-avoid_negative_ts", "make_zero",
+		"-user_agent", "Lavf",
+		"-i", "http://x/y",
+		"-c:v", "av1_vaapi",
+		"-c:a", "aac",
+		"-f", "mp4",
+	}
+	got := transformArgsForAvsyncPipeMode(in, 2.141, true, true)
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "-ss 2.141 -i pipe:0") {
+		t.Fatalf("transcode mode must seek the input to the orphan point: %s", joined)
+	}
+	if strings.Contains(joined, "atrim") {
+		t.Fatalf("transcode mode must not add an audio atrim: %s", joined)
+	}
+	if avsyncContainsToken(got, "-user_agent") {
+		t.Fatalf("HTTP-only flags must be stripped: %s", joined)
+	}
+}
+
+func TestTransformArgsForAvsyncPipe_TranscodeDiagnosticModeSkipsSeek(t *testing.T) {
+	in := []string{"-i", "http://x/y", "-c:v", "av1_vaapi", "-c:a", "aac", "-f", "mp4"}
+	got := transformArgsForAvsyncPipeMode(in, 2.141, false, true)
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "-i pipe:0") {
+		t.Fatalf("expected pipe input: %s", joined)
+	}
+	if avsyncContainsToken(got, "-ss") || strings.Contains(joined, "atrim") {
+		t.Fatalf("diagnostic mode must not correct anything: %s", joined)
+	}
+}
+
 func TestTransformArgsForAvsyncPipe_NoAudioStreamDoesNotPanic(t *testing.T) {
 	in := []string{"-i", "http://x/y", "-c:v", "copy", "-f", "hls"}
-	got := transformArgsForAvsyncPipeMode(in, 1.0, true)
+	got := transformArgsForAvsyncPipeMode(in, 1.0, true, false)
 	if !avsyncContainsToken(got, "pipe:0") {
 		t.Fatalf("expected pipe:0: %v", got)
 	}
@@ -87,7 +124,7 @@ func TestTransformArgsForAvsyncPipe_NoAudioStreamDoesNotPanic(t *testing.T) {
 
 func TestTransformArgsForAvsyncPipe_AudioCopySkipsTrim(t *testing.T) {
 	in := []string{"-i", "http://x/y", "-c:v", "copy", "-c:a", "copy", "-f", "hls"}
-	got := transformArgsForAvsyncPipeMode(in, 1.735, true)
+	got := transformArgsForAvsyncPipeMode(in, 1.735, true, false)
 	joined := strings.Join(got, " ")
 	if !strings.Contains(joined, "-i pipe:0") {
 		t.Fatalf("expected pipe input: %s", joined)
@@ -99,7 +136,7 @@ func TestTransformArgsForAvsyncPipe_AudioCopySkipsTrim(t *testing.T) {
 
 func TestTransformArgsForAvsyncPipe_DiagnosticModeKeepsPipeWithoutTrim(t *testing.T) {
 	in := []string{"-i", "http://x/y", "-c:v", "copy", "-c:a", "aac", "-f", "hls"}
-	got := transformArgsForAvsyncPipeMode(in, 1.0, false)
+	got := transformArgsForAvsyncPipeMode(in, 1.0, false, false)
 	joined := strings.Join(got, " ")
 	if !strings.Contains(joined, "-i pipe:0") {
 		t.Fatalf("expected pipe input: %s", joined)
@@ -109,7 +146,7 @@ func TestTransformArgsForAvsyncPipe_DiagnosticModeKeepsPipeWithoutTrim(t *testin
 	}
 }
 
-func TestShouldAvsyncAtrimOnlyAllowsLiveFMP4Copy(t *testing.T) {
+func TestShouldAvsyncAtrimOnlyAllowsLiveFMP4(t *testing.T) {
 	adapter := &LocalAdapter{LiveAvsyncAtrim: true}
 	spec := ports.StreamSpec{
 		Mode: ports.ModeLive,
@@ -120,12 +157,12 @@ func TestShouldAvsyncAtrimOnlyAllowsLiveFMP4Copy(t *testing.T) {
 		Source: ports.StreamSource{Type: ports.SourceTuner},
 	}
 	if !adapter.shouldAvsyncAtrim(spec) {
-		t.Fatal("expected live fMP4 copy to enable orphan atrim")
+		t.Fatal("expected live fMP4 copy to enable orphan correction")
 	}
 
 	spec.Profile.TranscodeVideo = true
-	if adapter.shouldAvsyncAtrim(spec) {
-		t.Fatal("video transcode must not enable orphan atrim")
+	if !adapter.shouldAvsyncAtrim(spec) {
+		t.Fatal("expected live fMP4 transcode to enable orphan correction")
 	}
 	spec.Profile.TranscodeVideo = false
 	spec.Profile.Container = "mpegts"

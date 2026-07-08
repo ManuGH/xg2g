@@ -23,6 +23,18 @@ seg_1.ts
 seg_2.ts
 #EXTINF:1.3,
 seg_3.ts
+#EXTINF:1.2,
+seg_4.ts
+#EXTINF:1.2,
+seg_5.ts
+#EXTINF:1.2,
+seg_6.ts
+#EXTINF:1.2,
+seg_7.ts
+#EXTINF:1.2,
+seg_8.ts
+#EXTINF:1.2,
+seg_9.ts
 `))
 
 	assert.Equal(t, "safari_native", policy.ClientFamily)
@@ -49,6 +61,18 @@ func TestDeriveHLSStartupPolicy_UsesTraceEvidenceConservatively(t *testing.T) {
 seg_1.ts
 #EXTINF:2.0,
 seg_2.ts
+#EXTINF:2.0,
+seg_3.ts
+#EXTINF:2.0,
+seg_4.ts
+#EXTINF:2.0,
+seg_5.ts
+#EXTINF:2.0,
+seg_6.ts
+#EXTINF:2.0,
+seg_7.ts
+#EXTINF:2.0,
+seg_8.ts
 `))
 
 	assert.Equal(t, 12, policy.StartupHeadroomSec)
@@ -72,6 +96,18 @@ func TestDeriveHLSStartupPolicy_DoesNotUseAdvisoryStallRiskAsPolicyTruth(t *test
 seg_1.ts
 #EXTINF:2.0,
 seg_2.ts
+#EXTINF:2.0,
+seg_3.ts
+#EXTINF:2.0,
+seg_4.ts
+#EXTINF:2.0,
+seg_5.ts
+#EXTINF:2.0,
+seg_6.ts
+#EXTINF:2.0,
+seg_7.ts
+#EXTINF:2.0,
+seg_8.ts
 `))
 
 	assert.Equal(t, 8, policy.StartupHeadroomSec)
