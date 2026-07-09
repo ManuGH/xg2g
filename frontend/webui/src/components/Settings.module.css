@@ -1,11 +1,12 @@
 /* Settings page - scoped */
 
 .page {
-  max-width: var(--page-max-width-regular);
+  width: 100%;
   margin: 0 auto;
   padding: 8px 0 28px;
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 20px;
 }
 
@@ -71,6 +72,7 @@
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 18px;
 }
 

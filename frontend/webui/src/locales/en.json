@@ -43,7 +43,8 @@
         "title": "Distribution Status",
         "outputLabel": "Connected Devices"
       }
-    }
+    },
+    "brandSubtitle": "Control Surface"
   },
   "app": {
     "initializing": "Initializing..."
@@ -318,7 +319,7 @@
     "heroStreamingMoment": "Streaming moment",
     "heroControlDeck": "Control deck",
     "heroStreamingSummary": "Streaming {{count}} active session(s) from the receiver bridge.",
-    "heroStandbySummary": "Wake it to restore channel and programme metadata.",
+    "heroStandbySummary": "The receiver is currently in standby mode.",
     "heroNextUp": "Next on the receiver: {{title}}",
     "heroDefaultSummary": "Launch live TV, timers, recordings, and diagnostics from a single control surface.",
     "readOnlySummary": "Read-only view of receiver, session, guide, and recorder state.",
@@ -398,14 +399,7 @@
     "timeMinutesAgo": "{{count}}m ago",
     "timeHoursAgo": "{{count}}h ago",
     "heroAside": {
-      "eyebrow": "Next best move",
-      "profileLabel": "Active profile",
-      "standbyTitle": "Start from live TV once the receiver wakes",
-      "standbyDetail": "The box is sleeping right now. Use the live TV path first so guide and channel state can rebuild cleanly.",
-      "streamingTitle": "Playback is already live on the bridge",
-      "streamingDetail": "Use recordings for the next task or jump back into live TV without losing the current operator overview.",
-      "readyTitle": "Everything is ready for the normal household path",
-      "readyDetail": "Live TV is the fastest entry. Recordings and setup stay one click away if the current profile allows them."
+      "standbyDetail": "The box is sleeping. Status and programme data will mirror once activity resumes."
     },
     "start": {
       "eyebrow": "Start here",
@@ -422,7 +416,7 @@
         "title": "Watch live TV",
         "description": "Open the guide, browse channels and start playback from the simplest entry point.",
         "detailReady": "Guide, channel list and timer planning now live in one place.",
-        "detailStandby": "The receiver is in standby. Wake it first so guide and channel data can refresh.",
+        "detailStandby": "The receiver is in standby. Data will refresh automatically once the box is active.",
         "action": "Open Live TV"
       },
       "recordings": {
@@ -455,6 +449,9 @@
       "title": "Continue watching",
       "remaining": "{{minutes}} min left",
       "untitled": "Recording"
+    },
+    "startLive": {
+      "detailStandby": "The receiver is in standby. Data will refresh automatically once the box is active."
     }
   },
   "epg": {

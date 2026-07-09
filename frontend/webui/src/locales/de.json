@@ -43,7 +43,8 @@
         "title": "Verteiler Status",
         "outputLabel": "Verbundene Geräte"
       }
-    }
+    },
+    "brandSubtitle": "Steuerzentrale"
   },
   "app": {
     "initializing": "Initialisierung..."
@@ -318,7 +319,7 @@
     "heroStreamingMoment": "Streaming aktiv",
     "heroControlDeck": "Steuerzentrale",
     "heroStreamingSummary": "{{count}} aktive Sitzung(en) über die Receiver-Bridge.",
-    "heroStandbySummary": "Aufwecken, um Kanal- und Sendungsdaten wieder zu laden.",
+    "heroStandbySummary": "Der Receiver befindet sich im Standby-Modus.",
     "heroNextUp": "Als Nächstes auf dem Receiver: {{title}}",
     "heroDefaultSummary": "Live-TV, Timer, Aufnahmen und Diagnose über eine einzige Steuerfläche starten.",
     "readOnlySummary": "Reine Statusübersicht für Receiver, Sitzungen, Programmführer und Recorder.",
@@ -398,14 +399,7 @@
     "timeMinutesAgo": "vor {{count}} Min.",
     "timeHoursAgo": "vor {{count}} Std.",
     "heroAside": {
-      "eyebrow": "Nächster sinnvoller Schritt",
-      "profileLabel": "Aktives Profil",
-      "standbyTitle": "Starte mit Fernsehen, sobald der Receiver wieder wach ist",
-      "standbyDetail": "Die Box schläft gerade. Gehe zuerst über Fernsehen, damit Guide- und Senderstatus wieder sauber aufgebaut werden.",
-      "streamingTitle": "Wiedergabe läuft bereits über die Bridge",
-      "streamingDetail": "Nutze Aufnahmen für die nächste Aufgabe oder springe zurück zu Fernsehen, ohne die aktuelle Operator-Übersicht zu verlieren.",
-      "readyTitle": "Alles ist bereit für den normalen Haushaltsweg",
-      "readyDetail": "Fernsehen ist der schnellste Einstieg. Aufnahmen und Einrichtung bleiben einen Klick entfernt, wenn das Profil sie erlaubt."
+      "standbyDetail": "Die Box ist im Ruhezustand. Status und Programm werden bei Aktivität wieder gespiegelt."
     },
     "start": {
       "eyebrow": "Hier anfangen",
@@ -422,7 +416,7 @@
         "title": "Fernsehen öffnen",
         "description": "Öffne Guide und Senderliste und starte Wiedergabe über den einfachsten Einstieg.",
         "detailReady": "Guide, Senderliste und Timer-Planung liegen jetzt an einem Ort.",
-        "detailStandby": "Der Receiver ist im Standby. Wecke ihn zuerst, damit Guide- und Senderdaten neu geladen werden.",
+        "detailStandby": "Der Receiver ist im Standby. Daten werden automatisch aktualisiert, sobald die Box aktiv ist.",
         "action": "Fernsehen öffnen"
       },
       "recordings": {
@@ -437,7 +431,7 @@
       "settings": {
         "step": "Schritt 3",
         "title": "Einrichtung und Haushalt",
-        "description": "Receiver-Setup, Haushaltsprofile und Streaming-Standards bleiben gesammelt unter Einstellungen.",
+        "description": "Receiver-Einstellungen, Haushaltsprofile und Streaming-Standards bleiben gesammelt unter Einstellungen.",
         "detailReady": "Nutze das für Hilfe beim Einrichten statt für direkte Expertenwerkzeuge.",
         "detailBlocked": "Dieses Profil kann Einstellungen gerade nicht öffnen.",
         "action": "Einrichtung öffnen"
@@ -455,6 +449,9 @@
       "title": "Weiter schauen",
       "remaining": "noch {{minutes}} Min",
       "untitled": "Aufnahme"
+    },
+    "startLive": {
+      "detailStandby": "Der Receiver ist im Standby. Daten werden automatisch aktualisiert, sobald die Box aktiv ist."
     }
   },
   "epg": {
@@ -628,7 +625,7 @@
     },
     "kicker": "System",
     "title": "Einstellungen",
-    "subtitle": "Receiver-Setup konfigurieren und Streaming-Defaults wählen. Das Setup bleibt hier nach der Ersteinrichtung.",
+    "subtitle": "Receiver-Einstellungen konfigurieren und Streaming-Defaults wählen. Das Setup bleibt hier nach der Ersteinrichtung.",
     "saved": "Einstellungen automatisch gespeichert",
     "summary": {
       "eyebrow": "Bereich wählen",
@@ -828,7 +825,7 @@
     }
   },
   "setup": {
-    "title": "Receiver-Setup",
+    "title": "Receiver-Einstellungen",
     "loading": "Konfiguration wird geladen...",
     "loadError": "Konfiguration konnte nicht geladen werden",
     "receiver": {

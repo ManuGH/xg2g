@@ -111,10 +111,13 @@ export function SystemInfo() {
         <h1 className={styles.pageTitle}>{t('system.receiverTitle')}</h1>
       </div>
 
-      <div className={styles.listContainer}>
+      <div className={styles.gridContainer}>
         {/* GERÄT */}
-        <div className={styles.listSection}>
-          <h2 className={styles.listSectionTitle}>{t('system.hardware')}</h2>
+        <div className={styles.card}>
+          <div className={styles.cardHeader}>
+            <div className={styles.cardIcon}>📺</div>
+            <h2 className={styles.cardTitle}>{t('system.hardware')}</h2>
+          </div>
           <div className={styles.listGroup}>
             <div className={styles.listItem}>
               <span className={styles.listItemLabel}>{t('system.brandModel')}</span>
@@ -132,8 +135,11 @@ export function SystemInfo() {
         </div>
 
         {/* SOFTWARE */}
-        <div className={styles.listSection}>
-          <h2 className={styles.listSectionTitle}>{t('system.software')}</h2>
+        <div className={styles.card}>
+          <div className={styles.cardHeader}>
+            <div className={styles.cardIcon}>💻</div>
+            <h2 className={styles.cardTitle}>{t('system.software')}</h2>
+          </div>
           <div className={styles.listGroup}>
             <div className={styles.listItem}>
               <span className={styles.listItemLabel}>{t('system.distribution')}</span>
@@ -154,17 +160,41 @@ export function SystemInfo() {
           </div>
         </div>
 
-        {/* RESSOURCEN (Storage + RAM) */}
-        <div className={styles.listSection}>
-          <h2 className={styles.listSectionTitle}>{t('system.sectionStorage')} & {t('system.memory')}</h2>
+        {/* RESSOURCEN (RAM) */}
+        <div className={styles.card}>
+          <div className={styles.cardHeader}>
+            <div className={styles.cardIcon}>⚡</div>
+            <h2 className={styles.cardTitle}>{t('system.memory')}</h2>
+          </div>
           <div className={styles.listGroup}>
-            <div className={styles.listItem}>
-              <span className={styles.listItemLabel}>{t('system.memory')}</span>
-              <span className={styles.listItemValue}>
-                {formatBytes(parseMemory(info.resource.memoryAvailable))} {t('system.free').toLowerCase()} ({calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}% {t('system.memoryUsed').toLowerCase()})
-              </span>
+            <div className={styles.listItemStorage}>
+              <div className={styles.storageHeaderRow}>
+                <span className={styles.listItemLabel}>RAM {t('system.memoryUsed')}</span>
+                <span className={styles.listItemValue}>
+                  {calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%
+                </span>
+              </div>
+              <div className={styles.progressBarContainer}>
+                <div 
+                  className={styles.progressBarFill} 
+                  style={{ width: `${calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%` }} 
+                />
+              </div>
+              <div className={styles.storageTags}>
+                <span className={styles.tag}>{formatBytes(parseMemory(info.resource.memoryAvailable))} {t('system.free').toLowerCase()}</span>
+                <span className={styles.tag}>{formatBytes(parseMemory(info.resource.memoryTotal))} Total</span>
+              </div>
             </div>
-            
+          </div>
+        </div>
+
+        {/* STORAGE */}
+        <div className={styles.card}>
+          <div className={styles.cardHeader}>
+            <div className={styles.cardIcon}>💾</div>
+            <h2 className={styles.cardTitle}>{t('system.sectionStorage')}</h2>
+          </div>
+          <div className={styles.listGroup}>
             {info.storage.devices.map((dev, idx) => (
               <div key={`dev-${idx}`} className={styles.listItemStorage}>
                 <div className={styles.storageHeaderRow}>
@@ -198,11 +228,14 @@ export function SystemInfo() {
                   </span>
                   <span
                     className={[
-                      styles.accessBadge,
-                      dev.access === 'rw' ? styles.accessRw : dev.access === 'ro' ? styles.accessRo : null,
-                    ].filter(Boolean).join(' ')}
+                      styles.tag,
+                      styles.tagIntern,
+                    ].join(' ')}
                   >
-                    {t(`system.access.${dev.access}`)}
+                    {dev.mountStatus === 'mounted' ? (
+                      dev.healthStatus === 'ok' ? `${t('system.status.mounted')} (${dev.access.toUpperCase()})` :
+                        t(`system.status.${dev.healthStatus}`)
+                    ) : t('system.status.unmounted')}
                   </span>
                 </div>
               </div>
@@ -225,22 +258,11 @@ export function SystemInfo() {
                       ].join(' ')}
                       title={`${t('system.healthLabel')}: ${loc.healthStatus}`}
                     />
-                    <span className={[styles.listItemLabel, styles.mono, styles.textTruncate].join(' ')} title={loc.mount}>
+                    <span className={[styles.listItemLabel, styles.textTruncate].join(' ')} title={loc.mount}>
                       {loc.mount}
                     </span>
                   </div>
-                  <span
-                    className={[
-                      styles.statusText,
-                      loc.healthStatus === 'ok'
-                        ? styles.textOk
-                        : loc.healthStatus === 'error'
-                          ? styles.textError
-                          : loc.healthStatus === 'timeout'
-                            ? styles.textTimeout
-                            : null,
-                    ].filter(Boolean).join(' ')}
-                  >
+                  <span className={styles.listItemValue}>
                     {loc.mountStatus === 'mounted' ? (
                       loc.healthStatus === 'ok' ? `${t('system.status.mounted')} (${loc.access.toUpperCase()})` :
                         t(`system.status.${loc.healthStatus}`)
@@ -263,26 +285,24 @@ export function SystemInfo() {
 
         {/* NETZWERK */}
         {info.network.interfaces.length > 0 && (
-          <div className={styles.listSection}>
-            <h2 className={styles.listSectionTitle}>{t('system.network')}</h2>
+          <div className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div className={styles.cardIcon}>🌐</div>
+              <h2 className={styles.cardTitle}>{t('system.network')}</h2>
+            </div>
             <div className={styles.listGroup}>
               {info.network.interfaces.map((iface, idx) => (
-                <div key={idx} className={styles.listItemNetwork}>
-                  <div className={styles.networkHeaderRow}>
+                <div key={idx} className={styles.listItemStorage}>
+                  <div className={styles.storageHeaderRow}>
                     <span className={styles.listItemLabel}>{iface.name}</span>
-                    <span className={styles.networkSpeed}>{iface.type} ({iface.speed})</span>
+                    <span className={styles.listItemValue}>{iface.type} ({iface.speed})</span>
                   </div>
-                  <div className={styles.networkIps}>
-                    <div className={styles.networkIpRow}>
-                      <span className={styles.networkIpLabel}>IPv4:</span>
-                      <span className={styles.networkIpValue}>{iface.ip || t('common.notAvailable')}</span>
-                    </div>
+                  <div className={styles.storageTags}>
+                    <span className={[styles.tag, styles.tagIntern].join(' ')}>IPv4: {iface.ip || t('common.notAvailable')}</span>
                     {iface.ipv6 && (
-                      <div className={styles.networkIpRow}>
-                        <span className={styles.networkIpLabel}>IPv6:</span>
-                        <span className={[styles.networkIpValue, styles.small].join(' ')}>{iface.ipv6}</span>
-                      </div>
+                      <span className={[styles.tag, styles.tagIntern].join(' ')}>IPv6: {iface.ipv6}</span>
                     )}
+                    <span className={[styles.tag, styles.tagNas].join(' ')}>DHCP: {iface.dhcp ? t('common.yes') : t('common.no')}</span>
                   </div>
                 </div>
               ))}
