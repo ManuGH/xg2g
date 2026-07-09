@@ -22,6 +22,7 @@ linters:
       - path: server_gen\.go$
         linters:
           - gosec
+          - gofmt
       # ST1000, ST1003, ST1020, ST1021, ST1023 are style-only staticcheck
       # rules (naming conventions, comment formats). These are pre-existing
       # across the codebase — excluded here to keep this PR focused on its
