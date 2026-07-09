@@ -75,7 +75,7 @@ describe('SystemInfo', () => {
 
     expect(await screen.findByText('Dreambox One')).toBeInTheDocument();
     expect(screen.getByText('OpenATV')).toBeInTheDocument();
-    expect(screen.getByText('192.168.1.10')).toBeInTheDocument();
+    expect(screen.getByText(/192\.168\.1\.10/)).toBeInTheDocument();
     expect(screen.getByText('1 day')).toBeInTheDocument();
   });
 
