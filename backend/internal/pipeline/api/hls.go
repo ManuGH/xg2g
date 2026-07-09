@@ -302,6 +302,9 @@ func stringSlicesEqual(a, b []string) bool {
 
 func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath string, err error) {
 	sessionDir := platformpaths.LiveSessionDir(hlsRoot, req.sessionID)
+	if sessionDir == "" {
+		return "", "", fmt.Errorf("empty session directory for hlsRoot=%q sessionID=%q", hlsRoot, req.sessionID)
+	}
 	// req.sessionID and req.filename are strictly validated by regex, no path traversal is possible.
 	filePath = filepath.Join(sessionDir, req.filename)
 
@@ -312,7 +315,7 @@ func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath s
 		legacyRelPath = filepath.Join(req.sessionID, "stream.m3u8")
 	}
 
-	if legacyRelPath == "" {
+	if legacyRelPath == "" || hlsRoot == "" {
 		return filePath, "", nil
 	}
 
