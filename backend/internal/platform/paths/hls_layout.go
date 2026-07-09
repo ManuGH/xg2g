@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -12,6 +13,11 @@ const (
 
 // LiveSessionsRoot returns the dedicated subtree for ephemeral live session artifacts.
 func LiveSessionsRoot(hlsRoot string) string {
+	// Use /dev/shm/xg2g for live sessions if available to save SSD wear
+	if stat, err := os.Stat("/dev/shm"); err == nil && stat.IsDir() {
+		return filepath.Join("/dev/shm/xg2g", LiveSessionsDirName)
+	}
+
 	root := strings.TrimSpace(hlsRoot)
 	if root == "" {
 		return ""

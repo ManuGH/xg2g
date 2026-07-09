@@ -222,7 +222,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 			segmentFilename = filepath.Join(sessionDir, "seg_%06d.m4s")
 		}
 	}
-	if a.inMemoryIngest && a.ingestPort > 0 {
+	if a.inMemoryIngest && a.ingestPort > 0 && !a.LowLatencyHLS {
 		if segmentType == "fmp4" {
 			if sel.IsMultiAudio {
 				segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%v_%%06d.m4s", a.ingestPort, spec.SessionID)
@@ -248,7 +248,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 		"-hls_flags", hlsFlags,
 		"-hls_segment_type", segmentType,
 	)
-	if a.inMemoryIngest && a.ingestPort > 0 {
+	if a.inMemoryIngest && a.ingestPort > 0 && !a.LowLatencyHLS {
 		args = append(args, "-method", "PUT")
 	}
 	args = append(args, "-hls_segment_filename", segmentFilename)
@@ -257,7 +257,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 		if sel.IsMultiAudio {
 			initFilename = "init_%v.mp4"
 		}
-		if a.inMemoryIngest && a.ingestPort > 0 {
+		if a.inMemoryIngest && a.ingestPort > 0 && !a.LowLatencyHLS {
 			if sel.IsMultiAudio {
 				initFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/init_%%v.mp4", a.ingestPort, spec.SessionID)
 			} else {
@@ -296,7 +296,7 @@ func (a *LocalAdapter) prepareLiveOutputPath(sessionID string, isMultiAudio ...b
 	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID); markerPath != "" {
 		_ = os.Remove(markerPath)
 	}
-	if a.inMemoryIngest && a.ingestPort > 0 {
+	if a.inMemoryIngest && a.ingestPort > 0 && !a.LowLatencyHLS {
 		if multi {
 			outputPath = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/stream_%%v.m3u8", a.ingestPort, sessionID)
 		} else {

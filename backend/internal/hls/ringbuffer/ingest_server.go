@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,6 +125,10 @@ func (s *IngestServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = r.Body.Close()
 
+	if strings.HasSuffix(filename, ".m3u8") {
+		data = injectDiscontinuities(data)
+	}
+
 	var dvrCb DVRCallback
 	if s.shouldRecord != nil && s.shouldRecord(sessionID) {
 		dvrCb = s.persistToDisk
@@ -133,6 +138,47 @@ func (s *IngestServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 	buf.Put(filename, data)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// injectDiscontinuities parses a playlist, looks for #EXT-X-PROGRAM-DATE-TIME jumps
+// greater than 2x the target duration, and automatically injects #EXT-X-DISCONTINUITY
+// to prevent player stalls during source signal drops.
+func injectDiscontinuities(data []byte) []byte {
+	lines := strings.Split(string(data), "\n")
+	var out []string
+
+	var targetDuration float64
+	var lastTime time.Time
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
+			td, _ := strconv.ParseFloat(strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:")), 64)
+			targetDuration = td
+			out = append(out, line)
+			continue
+		}
+
+		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
+			tsStr := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:"))
+			t, err := time.Parse(time.RFC3339Nano, tsStr)
+			if err == nil {
+				if !lastTime.IsZero() && targetDuration > 0 {
+					diff := t.Sub(lastTime).Seconds()
+					if diff < 0 {
+						diff = -diff
+					}
+					if diff > 2.0*targetDuration {
+						if len(out) > 0 && out[len(out)-1] != "#EXT-X-DISCONTINUITY" {
+							out = append(out, "#EXT-X-DISCONTINUITY")
+						}
+					}
+				}
+				lastTime = t
+			}
+		}
+		out = append(out, line)
+	}
+	return []byte(strings.Join(out, "\n"))
 }
 
 // sanitizeIngestFilename rejects path-traversal filenames. It returns an empty string
