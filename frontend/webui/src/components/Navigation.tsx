@@ -285,27 +285,20 @@ export default function Navigation({ onLogout }: NavigationProps) {
   }, [isCollapsed]);
 
   useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') {
-        const target = event.target as HTMLElement;
-        const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
-        if (isInput) return;
-        event.preventDefault();
-        setIsCollapsed((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleShortcut);
     const handleKeyDown = (e: KeyboardEvent) => {
       // Toggle on Cmd+B (Mac) or Ctrl+B (Windows/Linux)
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        const target = e.target as HTMLElement;
+        const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+        if (isInput) return;
         e.preventDefault();
-        setIsCollapsed(prev => !prev);
+        setIsCollapsed((prev) => !prev);
       }
     };
     const handleGlobalToggle = () => {
-      setIsCollapsed(prev => !prev);
+      setIsCollapsed((prev) => !prev);
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('xg2g:toggle-sidebar', handleGlobalToggle);
     return () => {
