@@ -5,6 +5,7 @@
   min-height: 100vh;
   min-height: 100dvh;
   padding: 16px 20px 28px 0;
+  transition: margin-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), padding-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .content-area {
@@ -12,8 +13,8 @@
   overflow: hidden;
   max-width: calc(var(--content-max-width) + 24px);
   margin: 0 auto;
-  min-height: calc(100vh - 32px);
-  min-height: calc(100dvh - 32px);
+  min-height: calc(100vh - 44px);
+  min-height: calc(100dvh - 44px);
   padding: clamp(18px, 1.6vw, 28px);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-base);
@@ -78,5 +79,20 @@
   .content-area {
     padding: 8px 10px 10px;
     border-radius: 18px;
+  }
+}
+
+/* Apple HIG Portrait View Polish */
+@media (max-width: 768px) and (orientation: portrait) {
+  .app-container {
+    padding: max(10px, var(--sat, 0px)) 12px calc(92px + var(--sab, 0px)) 12px;
+  }
+
+  .content-area {
+    padding: 14px;
+    border-radius: 24px;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.3);
   }
 }

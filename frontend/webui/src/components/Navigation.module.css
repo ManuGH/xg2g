@@ -62,25 +62,22 @@
 }
 
 .brandMark {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--accent-action-subtle) 82%, var(--surface-muted) 18%);
-  border: 1px solid color-mix(in srgb, var(--accent-action) 34%, var(--border-elevated) 66%);
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--accent-action);
 }
 
 .brandPulse {
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
   background: var(--bg-video);
-  border: 4px solid color-mix(in srgb, var(--text-primary) 88%, transparent);
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--bg-video) 24%, transparent);
+  border: 3px solid var(--text-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bg-video) 40%, transparent);
 }
 
 .brandCopy,
@@ -94,13 +91,45 @@
   transition: opacity var(--motion-standard) var(--ease-standard), width var(--motion-standard) var(--ease-standard);
 }
 
+
+.headerToggleBtn {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.16s ease;
+}
+
+.headerToggleBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
+}
+
+.headerToggleBtn:active {
+  transform: scale(0.92);
+}
+
+.toggleIcon {
+  width: 18px;
+  height: 18px;
+}
+
 .brandTitle {
   display: block;
   font-family: var(--font-heading);
-  font-size: 1.44rem;
-  font-weight: 700;
+  font-size: 0.95rem;
+  font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
 }
 
 .brandSubtitle {
@@ -242,11 +271,11 @@
 }
 
 .sectionTitle {
-  padding: 8px 12px 4px;
+  padding: 4px 12px 0;
   font-size: 0.65rem;
-  font-weight: 600;
+  font-weight: 700;
   color: color-mix(in srgb, var(--text-tertiary) 80%, transparent);
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -260,19 +289,17 @@
 .navItem {
   position: relative;
   width: 100%;
-  min-height: 56px;
-  padding: 10px;
-  border-radius: var(--radius-lg);
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   text-align: left;
-  transition:
-    background var(--motion-standard) var(--ease-standard),
-    color var(--motion-standard) var(--ease-standard);
+  transition: color var(--motion-standard) var(--ease-standard), background var(--motion-standard) var(--ease-standard);
 }
 
 .navItem::after {
@@ -280,41 +307,44 @@
 }
 
 .navItem:hover {
-  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
   color: var(--text-primary);
 }
 
 .navItem[aria-current="page"] {
-  background: var(--accent-action-subtle);
+  background: transparent;
   color: var(--text-primary);
 }
 
-.navItem[aria-current="page"]::after {
+.navItem[aria-current="page"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 2px 2px 0;
   background: var(--accent-action);
 }
 
 .navItem[aria-current="page"] .iconShell {
-  background: color-mix(in srgb, var(--surface-highlight) 72%, transparent);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--accent-action);
+  border: none;
 }
 
 .iconShell {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-base);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
-    var(--surface-muted);
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition:
-    background var(--motion-standard) var(--ease-standard),
-    border-color var(--motion-standard) var(--ease-standard),
-    color var(--motion-standard) var(--ease-standard);
+  background: transparent;
+  border: none;
+  color: currentColor;
+  transition: color var(--motion-standard) var(--ease-standard);
 }
 
 .icon {
@@ -330,8 +360,8 @@
 }
 
 .label {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -355,11 +385,14 @@
   }
 
   .mobileNav {
-    margin: 0 10px calc(10px + var(--sab));
-    padding: 7px;
-    border-radius: 18px;
-    border: 1px solid var(--border-elevated);
-    background: color-mix(in srgb, var(--surface-shell-strong) 94%, var(--surface-stage) 6%);
+    margin: 0 14px calc(12px + var(--sab));
+    padding: 8px;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: linear-gradient(180deg, rgba(32, 34, 40, 0.78) 0%, rgba(18, 20, 26, 0.86) 100%);
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48), 0 1px 0 rgba(255, 255, 255, 0.16) inset;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
@@ -372,7 +405,12 @@
     flex-direction: column;
     justify-content: center;
     gap: 6px;
-    border-radius: 14px;
+    border-radius: 20px;
+    transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.16s ease;
+  }
+
+  .mobileItem:active {
+    transform: scale(0.93);
   }
 
   .mobileItem .itemText {
@@ -515,208 +553,44 @@
   }
 }
 
-/* Collapsed Navigation Styles - Slim Rail */
+/* Collapsed Toggle Button - Sleek Top-Left Corner Icon */
+.floatingSidebarToggle {
+  position: fixed;
+  top: 16px;
+  left: 14px;
+  z-index: 1300;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-shell-safe) 88%, var(--surface-stage) 12%);
+  border: 1px solid var(--border-elevated);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.floatingSidebarToggle:hover {
+  background: color-mix(in srgb, var(--surface-shell-safe) 75%, var(--accent-action-subtle) 25%);
+  transform: scale(1.05);
+}
+
+.floatingSidebarToggle:active {
+  transform: scale(0.94);
+}
+
 :global(:root[data-nav-collapsed='true']) .desktopNav {
-  width: var(--nav-rail-width);
-  /* Optional: lighter shadow when collapsed */
-}
-
-:global(:root[data-nav-collapsed='true']) .desktopShell:hover .desktopNav,
-:global(:root[data-nav-collapsed='true']) .desktopShell:focus-within .desktopNav {
-  width: var(--nav-shell-width);
-  box-shadow: 0 12px 48px rgba(0,0,0,0.4);
-}
-
-/* Hide texts when collapsed but not hovered */
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .brandCopy,
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .sectionTitle,
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .itemText,
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .profileSelect,
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .displaySection {
-  opacity: 0;
   width: 0;
-  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-110%);
   margin: 0;
   padding: 0;
-  pointer-events: none;
   border: none;
-}
-
-:global(:root[data-nav-collapsed='true']) .desktopShell:not(:hover):not(:focus-within) .profileSelect {
-  color: transparent;
-}
-
-
-/* Single source of truth for nav layout is data-ui-nav-mode (set from the JS
-   surface breakpoint at <960px), not the 768px media query. Without this the
-   desktop rail stayed visible from 769–959px while the bottom nav also showed
-   (iPad portrait, large phones landscape, foldables). */
-:global(:root[data-ui-nav-mode='bottom']) .desktopShell {
-  display: none;
-}
-
-:global(:root[data-ui-nav-mode='bottom']) .mobileShell {
-  display: block;
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1200;
-  pointer-events: none;
-}
-
-@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
-  .mobileShell {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-    padding: 0 max(8px, var(--sar)) calc(6px + var(--sab)) max(8px, var(--sal));
-  }
-
-  .mobileNav {
-    flex: 0 1 404px;
-    width: min(404px, 100%);
-    margin: 0 0 0 auto;
-    padding: 5px;
-    border-radius: 18px;
-    gap: 4px;
-    background: color-mix(in srgb, var(--surface-shell-safe) 92%, var(--surface-stage) 8%);
-    box-shadow: var(--shadow-shell-safe);
-  }
-
-  .mobileContextBar {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin: 0;
-    padding: 9px 12px;
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--surface-shell-safe) 88%, var(--accent-action-subtle) 12%);
-    box-shadow: var(--shadow-shell-safe);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-  }
-
-  .mobileContextEyebrow {
-    display: none;
-  }
-
-  .mobileContextLabel {
-    font-size: 0.8rem;
-    line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .mobileItem {
-    min-height: 44px;
-    padding: 4px 3px 5px;
-    gap: 3px;
-    border-radius: 13px;
-  }
-
-  .mobileItem .label {
-    font-size: 8.5px;
-    line-height: 1;
-  }
-
-  .mobileItem .iconShell {
-    width: 28px;
-    height: 28px;
-    border-radius: 10px;
-  }
-
-  .mobileSheet {
-    left: auto;
-    right: max(8px, var(--sar));
-    width: min(420px, calc(100vw - 20px - var(--sal) - var(--sar)));
-    bottom: calc(58px + var(--sab));
-    max-height: min(72dvh, calc(100dvh - 70px - var(--sat) - var(--sab)));
-    padding: 12px;
-    border-radius: 20px;
-    background: color-mix(in srgb, var(--surface-shell-safe) 94%, var(--surface-stage) 6%);
-    box-shadow: var(--shadow-shell-safe);
-  }
-
-  .sheetHeader {
-    margin-bottom: 10px;
-    gap: 10px;
-  }
-
-  .sheetTitle {
-    font-size: clamp(1.05rem, 2.6vw, 1.3rem);
-  }
-
-  .sheetContext {
-    margin-top: 4px;
-    font-size: 0.82rem;
-    line-height: 1.3;
-  }
-
-  .sheetClose,
-  .sheetAction {
-    min-height: 34px;
-    border-radius: 12px;
-    padding: 0 10px;
-    gap: 6px;
-  }
-
-  .sheetSections {
-    gap: 8px;
-  }
-
-  .sheetProfileSection {
-    gap: 6px;
-    padding-bottom: 8px;
-  }
-
-  .sheetItem {
-    min-height: 42px;
-    padding: 5px;
-    border-radius: 14px;
-  }
-
-  .sheetItem .iconShell {
-    width: 30px;
-    height: 30px;
-    border-radius: 10px;
-  }
-
-  .sheetFooter {
-    margin-top: 8px;
-    padding-top: 8px;
-  }
-}
-
-@media (max-width: 932px) and (orientation: landscape) and (max-height: 430px) and (hover: none) and (pointer: coarse) {
-  .mobileShell {
-    gap: 6px;
-    padding-bottom: calc(4px + var(--sab));
-  }
-
-  .mobileContextBar {
-    padding: 8px 10px;
-    border-radius: 16px;
-  }
-
-  .mobileContextLabel {
-    font-size: 0.74rem;
-  }
-
-  .mobileNav {
-    flex-basis: 376px;
-  }
-
-  .mobileItem {
-    min-height: 40px;
-  }
-
-  .mobileItem .iconShell {
-    width: 26px;
-    height: 26px;
-  }
-
-  .mobileSheet {
-    bottom: calc(54px + var(--sab));
-  }
+  overflow: hidden;
 }

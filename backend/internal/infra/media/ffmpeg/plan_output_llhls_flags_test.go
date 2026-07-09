@@ -23,7 +23,7 @@ func TestUseCMAFSegmenter(t *testing.T) {
 		container  string
 		want       bool
 	}{
-		{"ll transcode fmp4", true, true, "fmp4", true},
+		{"ll transcode fmp4", true, true, "fmp4", false},
 		{"ll copy fmp4", true, false, "fmp4", false},
 		{"ll transcode ts", true, true, "ts", false},
 		{"standard transcode fmp4", false, true, "fmp4", false},

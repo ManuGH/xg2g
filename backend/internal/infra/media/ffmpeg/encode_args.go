@@ -63,6 +63,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
 	}
+	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args
 }
 
@@ -90,6 +91,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
 	}
+	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args
 }
 

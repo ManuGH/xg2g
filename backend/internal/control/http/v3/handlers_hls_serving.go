@@ -19,7 +19,7 @@ import (
 )
 
 var safeHLSSessionIDRouteRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:index\.m3u8|stream\.m3u8|init\.mp4|seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|stream[A-Za-z0-9_-]*\.ts)$`)
+var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:index\.m3u8|(?:stream|audio)[A-Za-z0-9_-]*\.m3u8|init[A-Za-z0-9_-]*\.mp4|(?:seg|stream|audio)[A-Za-z0-9_-]+\.(?:ts|m4s))$`)
 
 // Responsibility: Serves HLS playlists and segments from disk.
 // Non-goals: Playback lifecycle or session management.

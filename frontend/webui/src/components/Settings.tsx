@@ -172,6 +172,13 @@ function Settings() {
     );
 
   const configured = isConfigured(config);
+  const [audioMode, setAudioMode] = useState<'stereo' | 'surround'>(() => {
+    try {
+      return (localStorage.getItem('xg2g.settings.audioMode') as 'stereo' | 'surround') || 'stereo';
+    } catch {
+      return 'stereo';
+    }
+  });
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const requestedSection = searchParams.get('section');
   const requestedTool = searchParams.get('tool');
@@ -1219,6 +1226,54 @@ function Settings() {
               className={styles.inputReadonly}
             />
             <span className={styles.hint}>{t('settings.streaming.policy.hint')}</span>
+          </div>
+        </div>
+
+        <div className={styles.group} style={{ marginTop: '24px' }}>
+          <label style={{ fontWeight: 600, fontSize: '1.05rem' }}>{t('settings.streaming.audioMode.title')}</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="audioMode"
+                value="stereo"
+                checked={audioMode === 'stereo'}
+                onChange={() => {
+                  setAudioMode('stereo');
+                  try { localStorage.setItem('xg2g.settings.audioMode', 'stereo'); } catch { /* localStorage may throw in private browsing */ }
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.audioMode.stereo.label')}</div>
+                <div className={styles.hint}>
+                  {t('settings.streaming.audioMode.stereo.hint')}
+                </div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="audioMode"
+                value="surround"
+                checked={audioMode === 'surround'}
+                onChange={() => {
+                  setAudioMode('surround');
+                  try { localStorage.setItem('xg2g.settings.audioMode', 'surround'); } catch { /* localStorage may throw in private browsing */ }
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.audioMode.surround.label')}</div>
+                <div className={styles.hint}>
+                  {t('settings.streaming.audioMode.surround.hint')}
+                  <div className={styles.warningHint}>
+                    ⚠️ <strong>{t('settings.streaming.audioMode.surround.warningTitle')}</strong> {t('settings.streaming.audioMode.surround.warningText')}
+                  </div>
+                </div>
+              </div>
+            </label>
           </div>
         </div>
         </div>

@@ -629,18 +629,34 @@ export function usePlayerChrome({
   }, [allowNativeFullscreen, logNativeFullscreenProbe, shouldForceNativeMobileHls, toggleFullscreen, videoRef]);
 
   const togglePiP = useCallback(async () => {
-    const video = videoRef.current;
-    if (!video || !document.pictureInPictureEnabled || typeof video.requestPictureInPicture !== 'function') return;
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-        setIsPip(false);
-      } else {
-        await video.requestPictureInPicture();
-        setIsPip(true);
+    const video = videoRef.current as any;
+    if (!video) return;
+
+    // 1. Standard W3C API
+    if (document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function') {
+      try {
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+          setIsPip(false);
+        } else {
+          await video.requestPictureInPicture();
+          setIsPip(true);
+        }
+      } catch (err) {
+        debugWarn('PiP failed', err);
       }
-    } catch (err) {
-      debugWarn('PiP failed', err);
+      return;
+    }
+
+    // 2. Apple iPadOS / WebKit native presentation mode fallback
+    if (typeof video.webkitSetPresentationMode === 'function') {
+      try {
+        const currentMode = video.webkitPresentationMode;
+        video.webkitSetPresentationMode(currentMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+        setIsPip(video.webkitPresentationMode === 'picture-in-picture');
+      } catch (err) {
+        debugWarn('WebKit PiP failed', err);
+      }
     }
   }, [videoRef]);
 
@@ -1134,9 +1150,9 @@ export function usePlayerChrome({
     const nativeMobileHls = allowNativeFullscreen && shouldForceNativeMobileHls(video);
     const pipAvailable =
       typeof document !== 'undefined' &&
-      !!document.pictureInPictureEnabled &&
       !!video &&
-      typeof video.requestPictureInPicture === 'function';
+      ((!!document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function') ||
+        typeof (video as any).webkitSetPresentationMode === 'function');
     const fullscreenAvailable =
       shouldUseTouchWebKitFullscreen(video) ||
       (allowNativeFullscreen && !!video?.webkitEnterFullscreen) ||
@@ -1163,7 +1179,13 @@ export function usePlayerChrome({
         fullscreenElement === video
       ));
     };
-    const onPipChange = () => setIsPip(!!document.pictureInPictureElement);
+    const onPipChange = () => {
+      const videoEl = videoRef.current as any;
+      setIsPip(
+        !!document.pictureInPictureElement ||
+          (videoEl && videoEl.webkitPresentationMode === 'picture-in-picture')
+      );
+    };
 
     const video = videoRef.current;
     const supportsWebkitFullscreen =
@@ -1199,6 +1221,7 @@ export function usePlayerChrome({
     if (video) {
       video.addEventListener('enterpictureinpicture', onPipChange);
       video.addEventListener('leavepictureinpicture', onPipChange);
+      video.addEventListener('webkitpresentationmodechanged', onPipChange);
 
       if (supportsWebkitFullscreen) {
         video.addEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
@@ -1211,6 +1234,7 @@ export function usePlayerChrome({
       if (video) {
         video.removeEventListener('enterpictureinpicture', onPipChange);
         video.removeEventListener('leavepictureinpicture', onPipChange);
+        video.removeEventListener('webkitpresentationmodechanged', onPipChange);
 
         if (supportsWebkitFullscreen) {
           video.removeEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);

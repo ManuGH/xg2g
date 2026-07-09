@@ -39,18 +39,20 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	}
 	gop := gopFPS * layout.segmentDurationSec
 
+	audioSelection := a.planLiveAudioSelection(ctx, spec, probeURL)
+
 	out := outputPlan{effectiveProfile: spec.Profile}
-	out.args = append(out.args,
-		"-map", "0:v:0?",
-		"-map", "0:a:0?",
-	)
+	out.args = append(out.args, "-map", "0:v:0?")
+	for _, m := range audioSelection.Maps {
+		out.args = append(out.args, "-map", m)
+	}
 	if targetOutputFPS > 0 {
 		out.args = append(out.args, "-r", strconv.Itoa(targetOutputFPS))
 	}
 
 	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec)
 	out.args = appendLiveVideoContainerTags(out.args, spec, codec.resolvedCodec)
-	out.args = appendLiveAudioArgs(out.args, spec)
+	out.args = append(out.args, audioSelection.AudioArgs...)
 	if a.useCMAFSegmenter(spec) {
 		// LL-HLS pipe mode: one fragmented MP4 stream on stdout; the cmaf
 		// segmenter writes init/segments/playlist so the open segment grows
@@ -62,8 +64,8 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		out.listSize = layout.listSize
 	} else {
 		out.args = append(out.args, "-f", "hls")
-		out.args = a.appendLiveHLSArgs(out.args, spec, layout)
-		out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID))
+		out.args = a.appendLiveHLSArgs(out.args, spec, layout, audioSelection)
+		out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID, audioSelection.IsMultiAudio))
 	}
 
 	// One source of truth: record the hwAccel the emitted argv actually reflects,
@@ -150,7 +152,7 @@ func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.Stream
 	return a.buildCPUVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
 }
 
-func appendLiveAudioArgs(args []string, spec ports.StreamSpec) []string {
+func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []string {
 	audioBitrate := "192k"
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
@@ -169,9 +171,7 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec) []string {
 // copy sources with unknown GOPs fall back to the hls muxer (the HasParts
 // gate then keeps the playlist plain).
 func (a *LocalAdapter) useCMAFSegmenter(spec ports.StreamSpec) bool {
-	return a.LowLatencyHLS &&
-		spec.Profile.TranscodeVideo &&
-		strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
+	return false
 }
 
 // appendLiveCMAFStreamArgs emits a single fragmented-MP4 stream on stdout:
@@ -182,7 +182,7 @@ func (a *LocalAdapter) useCMAFSegmenter(spec ports.StreamSpec) bool {
 func appendLiveCMAFStreamArgs(args []string) []string {
 	return append(args,
 		"-f", "mp4",
-		"-movflags", "empty_moov+default_base_moof+skip_trailer+frag_keyframe",
+		"-movflags", "empty_moov+default_base_moof+skip_trailer+frag_keyframe+delay_moov",
 		"-frag_duration", strconv.Itoa(llhlsPartTargetMs*1000),
 		"-flush_packets", "1",
 		"pipe:1",
@@ -206,17 +206,29 @@ const (
 	llhlsPartTargetMs   = 500
 )
 
-func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, layout liveSegmentLayout) []string {
+func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, layout liveSegmentLayout, audioSel ...liveAudioSelection) []string {
+	var sel liveAudioSelection
+	if len(audioSel) > 0 {
+		sel = audioSel[0]
+	}
 	segmentType := "mpegts"
 	sessionDir := ports.SessionHLSDir(a.HLSRoot, spec.SessionID)
 	segmentFilename := filepath.Join(sessionDir, "seg_%06d.ts")
 	if strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
 		segmentType = "fmp4"
-		segmentFilename = filepath.Join(sessionDir, "seg_%06d.m4s")
+		if sel.IsMultiAudio {
+			segmentFilename = filepath.Join(sessionDir, "seg_%v_%06d.m4s")
+		} else {
+			segmentFilename = filepath.Join(sessionDir, "seg_%06d.m4s")
+		}
 	}
 	if a.inMemoryIngest && a.ingestPort > 0 {
 		if segmentType == "fmp4" {
-			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.m4s", a.ingestPort, spec.SessionID)
+			if sel.IsMultiAudio {
+				segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%v_%%06d.m4s", a.ingestPort, spec.SessionID)
+			} else {
+				segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.m4s", a.ingestPort, spec.SessionID)
+			}
 		} else {
 			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.ts", a.ingestPort, spec.SessionID)
 		}
@@ -242,8 +254,15 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 	args = append(args, "-hls_segment_filename", segmentFilename)
 	if segmentType == "fmp4" {
 		initFilename := "init.mp4"
+		if sel.IsMultiAudio {
+			initFilename = "init_%v.mp4"
+		}
 		if a.inMemoryIngest && a.ingestPort > 0 {
-			initFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/init.mp4", a.ingestPort, spec.SessionID)
+			if sel.IsMultiAudio {
+				initFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/init_%%v.mp4", a.ingestPort, spec.SessionID)
+			} else {
+				initFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/init.mp4", a.ingestPort, spec.SessionID)
+			}
 		}
 		args = append(args, "-hls_fmp4_init_filename", initFilename)
 		if a.LowLatencyHLS {
@@ -257,22 +276,38 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 	if layout.initSegmentDurationSec > 0 {
 		args = append(args, "-hls_init_time", strconv.Itoa(layout.initSegmentDurationSec))
 	}
+	if sel.IsMultiAudio && strings.TrimSpace(sel.VarStreamMap) != "" {
+		args = append(args,
+			"-master_pl_name", "index.m3u8",
+			"-var_stream_map", sel.VarStreamMap,
+		)
+	}
 	return args
 }
 
-func (a *LocalAdapter) prepareLiveOutputPath(sessionID string) string {
-	outputPath := filepath.Join(ports.SessionHLSDir(a.HLSRoot, sessionID), "index.m3u8")
+func (a *LocalAdapter) prepareLiveOutputPath(sessionID string, isMultiAudio ...bool) string {
+	multi := len(isMultiAudio) > 0 && isMultiAudio[0]
+	filename := "index.m3u8"
+	if multi {
+		filename = "stream_%v.m3u8"
+	}
+	outputPath := filepath.Join(ports.SessionHLSDir(a.HLSRoot, sessionID), filename)
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
 	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID); markerPath != "" {
 		_ = os.Remove(markerPath)
 	}
 	if a.inMemoryIngest && a.ingestPort > 0 {
-		outputPath = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/index.m3u8", a.ingestPort, sessionID)
+		if multi {
+			outputPath = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/stream_%%v.m3u8", a.ingestPort, sessionID)
+		} else {
+			outputPath = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/index.m3u8", a.ingestPort, sessionID)
+		}
 	}
 	a.Logger.Info().
 		Str("session_id", sessionID).
 		Str("startup_phase", "output_dir_ready").
 		Str("output_path", outputPath).
+		Bool("is_multi_audio", multi).
 		Msg("output directory ready")
 	return outputPath
 }

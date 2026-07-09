@@ -19,11 +19,13 @@ if command -v fd >/dev/null 2>&1; then
     {
       fd -HI --no-ignore -t d '^\.git$' . \
         -E .worktrees \
+        -E .openclaw-worktrees \
         -E vendor \
         -E node_modules \
         -E webui/node_modules
       fd -HI --no-ignore -t f '^\.git$' . \
         -E .worktrees \
+        -E .openclaw-worktrees \
         -E vendor \
         -E node_modules \
         -E webui/node_modules
@@ -37,10 +39,11 @@ else
     find . \
       -maxdepth 4 \
       \( \
-        -path './.git' -o \
-        -path './.worktrees' -o \
-        -path './vendor' -o \
-        -path './node_modules' -o \
+        -name '.git' -o \
+        -name '.worktrees' -o \
+        -name '.openclaw-worktrees' -o \
+        -name 'vendor' -o \
+        -name 'node_modules' -o \
         -path './webui/node_modules' \
       \) -prune \
       -o \

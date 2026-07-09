@@ -3,10 +3,10 @@
 
 .card {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent 42%),
-    var(--bg-elevated);
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-highlight) 32%, transparent), transparent 14%),
+    color-mix(in srgb, var(--surface-panel) 70%, transparent);
   border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
-  border-radius: calc(var(--radius-lg) + 6px);
+  border-radius: var(--radius-lg);
   padding: 24px;
   box-shadow:
     var(--shadow-card),

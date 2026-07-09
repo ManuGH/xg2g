@@ -285,6 +285,36 @@ export default function Navigation({ onLogout }: NavigationProps) {
   }, [isCollapsed]);
 
   useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') {
+        const target = event.target as HTMLElement;
+        const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+        if (isInput) return;
+        event.preventDefault();
+        setIsCollapsed((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Toggle on Cmd+B (Mac) or Ctrl+B (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsCollapsed(prev => !prev);
+      }
+    };
+    const handleGlobalToggle = () => {
+      setIsCollapsed(prev => !prev);
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('xg2g:toggle-sidebar', handleGlobalToggle);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('xg2g:toggle-sidebar', handleGlobalToggle);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!showMoreMenu) {
       return;
     }
@@ -414,6 +444,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
 
   return (
     <>
+
       <aside className={styles.desktopShell}>
         <nav
           className={styles.desktopNav}
@@ -428,6 +459,18 @@ export default function Navigation({ onLogout }: NavigationProps) {
               <span className={styles.brandTitle}>xg2g</span>
               <span className={styles.brandSubtitle}>Control Surface</span>
             </div>
+            <button
+              type="button"
+              className={styles.headerToggleBtn}
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              title="Toggle Sidebar ⌘B"
+              aria-label="Toggle Sidebar ⌘B"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={styles.toggleIcon}>
+                <rect x="3" y="3" width="18" height="18" rx="3" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+              </svg>
+            </button>
           </div>
 
           <div className={styles.profileSection}>

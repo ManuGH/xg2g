@@ -58,7 +58,7 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		// FFmpeg can resolve video dimensions and audio layout reliably.
 		// Keep that only for video-transcode paths; passthrough/remux sessions
 		// already know enough about the stream and pay a visible startup penalty.
-		if isStreamRelayURL(inputURL) {
+		if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
 			if spec.Profile.TranscodeVideo {
 				// Relay MPEG-TS needs a deeper probe than the general live
 				// default to resolve dimensions/audio reliably. Default ≈10s,

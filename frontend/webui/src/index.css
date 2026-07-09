@@ -36,16 +36,16 @@
   --bg-hover: rgba(255, 255, 255, 0.09);
   --bg-input: rgba(0, 0, 0, 0.25);
 
-  /* Surfaces */
-  --surface-shell: rgba(11, 18, 27, 0.78);
-  --surface-shell-strong: rgba(12, 20, 31, 0.95);
-  --surface-shell-safe: rgba(7, 11, 17, 0.97);
-  --surface-panel: rgba(17, 28, 39, 0.74);
-  --surface-panel-strong: rgba(23, 36, 50, 0.88);
-  --surface-panel-safe: rgba(15, 24, 35, 0.97);
-  --surface-panel-soft: rgba(8, 14, 22, 0.64);
-  --surface-highlight: rgba(255, 255, 255, 0.14);
-  --surface-muted: rgba(255, 255, 255, 0.05);
+  /* Surfaces (Golden Gate: More transparency for deeper glass effects) */
+  --surface-shell: rgba(11, 18, 27, 0.65);
+  --surface-shell-strong: rgba(12, 20, 31, 0.85);
+  --surface-shell-safe: rgba(7, 11, 17, 0.95);
+  --surface-panel: rgba(17, 28, 39, 0.60);
+  --surface-panel-strong: rgba(23, 36, 50, 0.78);
+  --surface-panel-safe: rgba(15, 24, 35, 0.95);
+  --surface-panel-soft: rgba(8, 14, 22, 0.50);
+  --surface-highlight: rgba(255, 255, 255, 0.12);
+  --surface-muted: rgba(255, 255, 255, 0.04);
   --surface-stage: rgba(7, 13, 21, 0.74);
   --surface-stage-strong: rgba(11, 19, 30, 0.94);
 
@@ -95,10 +95,10 @@
   --overlay-backdrop: rgba(0, 0, 0, 0.7);
   --overlay-backdrop-strong: rgba(0, 0, 0, 0.8);
 
-  /* Borders */
-  --border-base: rgba(255, 255, 255, 0.08);
-  --border-elevated: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.20);
+  /* Borders (Golden Gate: Highly reduced, max 4-8% for base elements) */
+  --border-base: rgba(255, 255, 255, 0.04);
+  --border-elevated: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
   --border-focus: var(--accent-action);
 
   /* Shadow System */
@@ -145,11 +145,11 @@
     linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 5%, transparent), transparent 44%),
     color-mix(in srgb, var(--surface-panel) 88%, var(--surface-stage) 12%);
 
-  /* Spacing */
-  --radius-sm: calc(8px * var(--ui-density-scale));
-  --radius-md: calc(12px * var(--ui-density-scale));
-  --radius-lg: calc(16px * var(--ui-density-scale));
-  --radius-xl: calc(24px * var(--ui-density-scale));
+  /* Spacing (Golden Gate: More rounded, organic shapes) */
+  --radius-sm: calc(10px * var(--ui-density-scale));
+  --radius-md: calc(14px * var(--ui-density-scale));
+  --radius-lg: calc(18px * var(--ui-density-scale));
+  --radius-xl: calc(26px * var(--ui-density-scale));
 
   /* Legacy Aliases (for compatibility during migration) */
   --bg-app: var(--bg-base);
@@ -231,7 +231,7 @@
 }
 
 :root[data-nav-collapsed='true'] {
-  --nav-content-margin: calc(var(--nav-rail-width) + 34px);
+  --nav-content-margin: 20px;
 }
 
 html {
@@ -475,15 +475,15 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar (macOS Style) */
 :root {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--accent-action) 55%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 15%, transparent) transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -491,12 +491,16 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--accent-action) 55%, transparent);
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  border-radius: 10px;
+  border: 3px solid transparent; /* Creates padding around the thumb */
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-action-hover);
+  background: color-mix(in srgb, var(--text-primary) 24%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-corner {

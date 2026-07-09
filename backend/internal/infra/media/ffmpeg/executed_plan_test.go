@@ -150,7 +150,7 @@ func TestExecutedFFmpegPlanFromArgs(t *testing.T) {
 				"-c:v", "av1_vaapi",
 				"-c:a", "aac",
 				"-f", "mp4",
-				"-movflags", "empty_moov+default_base_moof+skip_trailer+frag_keyframe",
+				"-movflags", "empty_moov+default_base_moof+skip_trailer+frag_keyframe+delay_moov",
 				"-frag_duration", "500000",
 				"-flush_packets", "1",
 				"pipe:1",

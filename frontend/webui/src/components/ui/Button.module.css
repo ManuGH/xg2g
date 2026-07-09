@@ -6,7 +6,7 @@
   justify-content: center;
   gap: 10px;
   padding: 0 16px;
-  border-radius: calc(var(--radius-md) + 3px);
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   font-family: var(--font-body);
   font-size: var(--text-base);
@@ -59,16 +59,14 @@
 }
 
 .button[data-variant="secondary"] {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 4%, transparent), transparent),
-    var(--bg-input);
+  background: color-mix(in srgb, var(--surface-muted) 60%, transparent);
   color: var(--text-primary);
-  border-color: var(--border-base);
+  border-color: transparent;
 }
 
 .button[data-variant="secondary"]:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border-elevated);
+  background: color-mix(in srgb, var(--surface-highlight) 40%, transparent);
+  border-color: transparent;
 }
 
 .button[data-variant="danger"] {

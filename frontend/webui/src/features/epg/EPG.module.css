@@ -100,7 +100,7 @@
 .toolbarTitle,
 .toolbarLeft h3 {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3.3rem);
+  font-size: clamp(1.22rem, 1.6vw, 1.42rem); font-weight: 600; letter-spacing: -0.01em;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.05em;
@@ -339,30 +339,28 @@
 .card {
   position: relative;
   overflow: hidden;
-  background: color-mix(in srgb, var(--surface-panel) 86%, var(--surface-stage) 14%);
-  margin: 0 0 18px;
-  border-radius: 28px;
-  border: 1px solid var(--border-base);
-  padding: 24px;
+  background: color-mix(in srgb, var(--surface-panel) 20%, transparent);
+  margin: 0;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-base) 50%, transparent);
+  padding: 16px 20px;
   transition:
-    transform var(--motion-standard) var(--ease-standard),
-    border-color var(--motion-standard) var(--ease-standard),
-    background var(--motion-standard) var(--ease-standard);
+    background var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard);
+}
+
+.card:last-child {
+  border-bottom-color: transparent;
 }
 
 .card::before {
-  content: '';
-  position: absolute;
-  inset: -22% auto auto -12%;
-  width: 34%;
-  height: 44%;
-  background: color-mix(in srgb, var(--accent-action-subtle) 60%, transparent);
-  pointer-events: none;
+  display: none;
 }
 
 .card:hover {
-  border-color: var(--border-elevated);
-  transform: translateY(-3px);
+  background: color-mix(in srgb, var(--surface-panel) 60%, transparent);
+  border-color: color-mix(in srgb, var(--border-base) 80%, transparent);
 }
 
 .cardError {
@@ -393,12 +391,12 @@
 .channel {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 18px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--border-base);
+  gap: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-base) 30%, transparent);
   content-visibility: auto;
-  contain-intrinsic-size: 0 104px;
+  contain-intrinsic-size: 0 70px;
 }
 
 .channelPlayable {
@@ -412,15 +410,15 @@
 }
 
 .logo {
-  width: 68px;
-  height: 68px;
+  width: 56px;
+  height: 56px;
   background: color-mix(in srgb, var(--accent-action-subtle) 48%, var(--surface-muted) 52%);
-  border-radius: 20px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 10px;
+  padding: 6px;
   border: 1px solid var(--border-base);
   flex-shrink: 0;
 }
@@ -476,10 +474,10 @@
 }
 
 .channelName {
-  font-weight: 700;
-  font-size: 1.15rem;
+  font-weight: 600;
+  font-size: 1.05rem;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 .channelGroup {
@@ -520,28 +518,13 @@
   white-space: nowrap;
 }
 
-.channelPlaybackBadgeDirect {
-  color: var(--status-success);
-  background: var(--status-success-subtle);
-  border-color: var(--status-success-border);
-}
-
-.channelPlaybackBadgeRemux {
-  color: var(--status-info);
-  background: var(--status-info-subtle);
-  border-color: var(--status-info-border);
-}
-
-.channelPlaybackBadgeEncode {
-  color: var(--status-warning);
-  background: var(--status-warning-subtle);
-  border-color: var(--status-warning-border);
-}
-
+.channelPlaybackBadgeDirect,
+.channelPlaybackBadgeRemux,
+.channelPlaybackBadgeEncode,
 .channelPlaybackBadgeBlocked {
-  color: var(--status-error);
-  background: var(--status-error-subtle);
-  border-color: var(--status-error-border);
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  border-color: var(--border-base);
 }
 
 .channelPlaybackDetail {
@@ -566,22 +549,20 @@
 .programme {
   display: flex;
   gap: 18px;
-  padding: 18px;
-  border-radius: 22px;
+  padding: 12px 16px;
+  border-radius: 12px;
   border: 1px solid transparent;
-  background: color-mix(in srgb, var(--surface-muted) 60%, transparent);
+  background: transparent;
   transition:
     background var(--motion-standard) var(--ease-standard),
-    border-color var(--motion-standard) var(--ease-standard),
-    transform var(--motion-standard) var(--ease-standard);
+    border-color var(--motion-standard) var(--ease-standard);
   position: relative;
   overflow: hidden;
 }
 
 .programme:hover {
-  background: var(--surface-muted);
-  border-color: var(--border-base);
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
+  border-color: transparent;
 }
 
 .programme:focus-visible {
@@ -590,8 +571,8 @@
 }
 
 .programmeCurrent {
-  background: color-mix(in srgb, var(--accent-action-subtle) 70%, var(--accent-live-subtle) 30%);
-  border-color: color-mix(in srgb, var(--accent-action) 20%, transparent);
+  background: transparent;
+  border-color: transparent;
 }
 
 .programmeTime {
@@ -667,16 +648,16 @@
 
 .programmeTitle {
   font-weight: 600;
-  font-size: 1.05rem;
+  font-size: 1rem;
   color: var(--text-primary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   letter-spacing: -0.01em;
 }
 
 .programmeDesc {
-  font-size: 0.93rem;
+  font-size: 0.9rem;
   color: var(--text-secondary);
-  line-height: 1.6;
+  line-height: 1.55;
   opacity: 0.92;
   white-space: pre-wrap;
   display: -webkit-box;
@@ -710,9 +691,11 @@
 
 .progressBar {
   height: 100%;
-  background: var(--accent-live);
+  background: var(--status-success);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--status-success) 40%, transparent);
   border-radius: 999px;
   width: var(--xg2g-progress, 0%);
+  transition: width 0.3s ease;
 }
 
 .progressMeta {
@@ -884,7 +867,7 @@
 
 .page.surfaceCompact .toolbarTitle,
 .page.surfaceCompact .toolbarLeft h3 {
-  font-size: clamp(1.6rem, 5vw, 2.3rem);
+  font-size: clamp(1.12rem, 1.4vw, 1.3rem); font-weight: 600;
 }
 
 .page.surfaceCompact .toolbarSummary,
@@ -1396,3 +1379,253 @@
 }
 
 
+
+/* 2026 EPG Unified Studio Toolbar (2-Row Compact Architecture) */
+.toolbarCompact {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-card) 78%, transparent);
+  border: 1px solid var(--border-base);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.toolbarHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.toolbarTitleGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.toolbarTitleText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toolbarEyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent-action);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.toolbarTitle {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.toolbarStatsStrip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.statBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.statBadge strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.statBadgeDate {
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+
+.toolbarActionsGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbarActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
+  border: 1px solid var(--border-base);
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.toolbarActionBtn:hover {
+  background: color-mix(in srgb, var(--surface-muted) 65%, var(--accent-action-subtle) 35%);
+  border-color: var(--border-elevated);
+  transform: translateY(-1px);
+}
+
+.toolbarActionBtnActive {
+  background: color-mix(in srgb, var(--accent-action) 24%, var(--surface-card) 76%);
+  border-color: var(--accent-action);
+  color: var(--text-primary);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent-action) 35%, transparent);
+}
+
+/* Row 2: Unified Frosted Glass Filter & Search Strip */
+.toolbarFilterStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.filterSearchBox {
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 75%, transparent);
+  border: 1px solid var(--border-base);
+  transition: all 0.18s ease;
+}
+
+.filterSearchBox:focus-within {
+  border-color: var(--accent-action);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-action) 20%, transparent);
+  background: var(--surface-card);
+}
+
+.filterSearchIcon {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+}
+
+.filterSearchInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.filterSearchInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.filterSearchClear {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+}
+
+.filterSearchClear:hover {
+  color: var(--text-primary);
+}
+
+.filterControlsRight {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filterSelectGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
+  border: 1px solid var(--border-base);
+}
+
+.filterSelectIcon {
+  font-size: 0.95rem;
+}
+
+.filterSelect {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filterSelect option {
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+.filterTimePills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 85%, transparent);
+  border: 1px solid var(--border-subtle);
+}
+
+.timePill {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.timePill:hover {
+  color: var(--text-primary);
+}
+
+.timePillActive {
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+}

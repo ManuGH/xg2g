@@ -738,6 +738,19 @@
           "loadStatus": "Scan status could not be loaded.",
           "start": "Scan could not be started."
         }
+      },
+      "audioMode": {
+        "title": "Audio Output Mode (HLS / fMP4)",
+        "stereo": {
+          "label": "Standard / Mobile (Stereo AAC 192k)",
+          "hint": "Recommended for iPhone, iPad & Safari – including automatic spatial audio for Apple AirPods / headphones."
+        },
+        "surround": {
+          "label": "Home Theater / Soundbar (5.1 Dolby Digital Plus)",
+          "hint": "Recommended for desktop computers (Chrome / Firefox / Edge) with a connected 5.1 system or soundbar.",
+          "warningTitle": "Important:",
+          "warningText": "On iOS, iPadOS and macOS Safari, 5.1 audio playback via fMP4-HLS is not possible due to Apple container policy. Always select “Standard / Mobile (Stereo AAC)” for Apple Safari."
+        }
       }
     },
     "household": {

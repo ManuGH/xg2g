@@ -2342,3 +2342,81 @@
   height: 34px;
   font-size: 14px;
 }
+
+/* ==========================================================================
+   Apple HIG iPhone Mobile Layout Optimization (Portrait & Landscape)
+   ========================================================================== */
+
+/* iPhone Portrait Optimization */
+@media (max-width: 768px) and (orientation: portrait) {
+  .container {
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  }
+
+  .controlsHeader {
+    padding: calc(14px + var(--sat, 0px)) 16px 14px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.35) 60%, transparent 100%);
+  }
+
+  .controlsFooter {
+    padding: 14px 16px calc(14px + var(--sab, 0px));
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 65%, transparent 100%);
+  }
+
+  .playPauseButton,
+  .channelNavButton,
+  .fullscreenButton {
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.16);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+}
+
+/* iPhone Landscape / Dynamic Island Safe-Area Optimization */
+@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  .container {
+    border-radius: 0;
+  }
+
+  .controlsHeader {
+    padding: max(12px, var(--sat, 0px)) max(24px, var(--sar, 0px)) 14px max(24px, var(--sal, 0px));
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.3) 70%, transparent 100%);
+  }
+
+  .controlsFooter {
+    padding: 12px max(24px, var(--sar, 0px)) max(16px, var(--sab, 0px)) max(24px, var(--sal, 0px));
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 70%, transparent 100%);
+  }
+
+  .playPauseButton,
+  .channelNavButton,
+  .fullscreenButton {
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 22px;
+  }
+}
+
+/* 2026 Liquid Glass Tactile Buttons (iPhone & iPad Touch Feedback) */
+@media (hover: none) and (pointer: coarse) {
+  .playPauseButton,
+  .channelNavButton,
+  .fullscreenButton {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.14s ease, border-color 0.14s ease;
+  }
+
+  .playPauseButton:active,
+  .channelNavButton:active,
+  .fullscreenButton:active {
+    transform: scale(0.92);
+    background: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+}
