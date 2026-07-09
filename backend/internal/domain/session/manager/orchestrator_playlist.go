@@ -170,24 +170,12 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	if !strings.Contains(contentText, "#EXTM3U") {
 		return false, "missing #EXTM3U tag", nil
 	}
-	if strings.Contains(contentText, "#EXT-X-STREAM-INF:") {
-		variantURIs := playlistSegments(content)
-		if len(variantURIs) == 0 {
-			return false, "master playlist has no variant streams", nil
+	if strings.Contains(contentText, "#EXT-X-STREAM-INF") {
+		segmentURIs := playlistSegments(content)
+		if len(segmentURIs) == 0 {
+			return false, "master playlist has no variants", nil
 		}
-		baseDir := filepath.Dir(playlistPath)
-		variantPath := filepath.Join(baseDir, variantURIs[0])
-		// Security: guard against path traversal attacks from malicious variant URIs
-		if rel, relErr := filepath.Rel(baseDir, variantPath); relErr != nil || strings.HasPrefix(rel, "..") {
-			return false, "invalid variant playlist path", nil
-		}
-		// Read the resolved playlist to prevent infinite recursion on nested masters
-		// #nosec G304 — variantPath is validated against traversal above
-		if resolvedContent, err := os.ReadFile(variantPath); err == nil {
-			if strings.Contains(string(resolvedContent), "#EXT-X-STREAM-INF:") {
-				return false, "nested master playlists are not supported", nil
-			}
-		}
+		variantPath := filepath.Join(filepath.Dir(playlistPath), segmentURIs[0])
 		return o.checkPlaylistReadyAt(variantPath, vodMode, ttfpRecorded, profileID, startTime)
 	}
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {

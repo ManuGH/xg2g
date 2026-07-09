@@ -58,7 +58,7 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		// FFmpeg can resolve video dimensions and audio layout reliably.
 		// Keep that only for video-transcode paths; passthrough/remux sessions
 		// already know enough about the stream and pay a visible startup penalty.
-		if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
+		if isStreamRelayURL(inputURL) {
 			if spec.Profile.TranscodeVideo {
 				// Relay MPEG-TS needs a deeper probe than the general live
 				// default to resolve dimensions/audio reliably. Default ≈10s,
@@ -76,6 +76,14 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 				} else {
 					probeSize = "20M"
 				}
+			} else {
+				// Fast path for stream copy (passthrough). We just copy whatever
+				// streams we find, so we don't need a deep probe to configure
+				// scalers or hardware decoders. 
+				// We use 2.5s to ensure we capture at least one IDR/Keyframe (SPS/PPS),
+				// as shorter times (e.g. 0.5s) break H264/HLS completely.
+				analyzeDuration = "2500000" // 2.5s
+				probeSize = "5M"
 			}
 		}
 		// igndts discards healthy container DTS and forces a PTS-based

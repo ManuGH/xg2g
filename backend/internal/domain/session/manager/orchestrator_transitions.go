@@ -181,8 +181,8 @@ func (o *Orchestrator) runExecutionLoop(
 	}
 
 	playlistPath := ""
-	if o.HLSRoot != "" {
-		playlistPath = filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
+	if sessionDir := ports.SessionHLSDir(o.HLSRoot, e.SessionID); sessionDir != "" {
+		playlistPath = filepath.Join(sessionDir, "index.m3u8")
 	}
 
 	for attempt := 0; attempt <= defaultStartupProcessRetryLimit; attempt++ {
