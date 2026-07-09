@@ -84,7 +84,7 @@ func TestLoadAdapterConfig_Defaults(t *testing.T) {
 		{"IngestErrDetect", cfg.IngestErrDetect, "ignore_err"},
 		{"IngestMaxErrorRate", cfg.IngestMaxErrorRate, "1.0"},
 		{"IngestFlags2", cfg.IngestFlags2, ""},
-		{"FPSProbeFFlags", cfg.FPSProbeFFlags, "+genpts+discardcorrupt+igndts"},
+		{"FPSProbeFFlags", cfg.FPSProbeFFlags, "+genpts+discardcorrupt"},
 		{"FPSProbeErrDetect", cfg.FPSProbeErrDetect, "ignore_err"},
 		{"FPSProbeTimeout", cfg.FPSProbeTimeout, 1500 * time.Millisecond},
 		{"FPSMin", cfg.FPSMin, 15},
@@ -96,7 +96,7 @@ func TestLoadAdapterConfig_Defaults(t *testing.T) {
 		{"FPSProbeSize", cfg.FPSProbeSize, "5M"},
 		{"FPSProbeRetryAn", cfg.FPSProbeRetryAn, "10000000"},
 		{"FPSProbeRetrySize", cfg.FPSProbeRetrySize, "20M"},
-		{"SkipFPSProbeOnCache", cfg.SkipFPSProbeOnCache, false},
+		{"SkipFPSProbeOnCache", cfg.SkipFPSProbeOnCache, true},
 		{"SkipFPSProbeWarmup", cfg.SkipFPSProbeWarmup, 500 * time.Millisecond},
 		{"FPSCacheTTL", cfg.FPSCacheTTL, 24 * time.Hour},
 		{"SafariRuntimeProbeTimeout", cfg.SafariRuntimeProbeTimeout, 6000 * time.Millisecond},
@@ -170,7 +170,7 @@ func TestLoadAdapterConfig_ResilientIngestOff(t *testing.T) {
 		{"IngestErrDetect", cfg.IngestErrDetect, ""},
 		{"IngestMaxErrorRate", cfg.IngestMaxErrorRate, ""},
 		{"IngestFlags2", cfg.IngestFlags2, ""},
-		{"FPSProbeFFlags", cfg.FPSProbeFFlags, "+genpts+igndts"},
+		{"FPSProbeFFlags", cfg.FPSProbeFFlags, "+genpts"},
 		{"FPSProbeErrDetect", cfg.FPSProbeErrDetect, ""},
 	}
 	for _, c := range checks {
