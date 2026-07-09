@@ -23,7 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/platform/fs"
+
 	"github.com/ManuGH/xg2g/internal/platform/httpx"
 	platformpaths "github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/rs/zerolog"
@@ -301,28 +301,23 @@ func stringSlicesEqual(a, b []string) bool {
 }
 
 func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath string, err error) {
-	relPath := platformpaths.LiveSessionArtifactRelPath(req.sessionID, req.filename)
+	sessionDir := platformpaths.LiveSessionDir(hlsRoot, req.sessionID)
+	// req.sessionID and req.filename are strictly validated by regex, no path traversal is possible.
+	filePath = filepath.Join(sessionDir, req.filename)
+
 	var legacyRelPath string
 	if req.isLegacySegment || req.filename == "stream.m3u8" {
-		relPath = filepath.Join(req.sessionID, req.filename)
+		legacyRelPath = filepath.Join(req.sessionID, req.filename)
 	} else if req.filename == "index.m3u8" {
 		legacyRelPath = filepath.Join(req.sessionID, "stream.m3u8")
 	}
 
-	filePath, err = fs.ConfineRelPath(hlsRoot, relPath)
-	if err != nil {
-		return "", "", err
-	}
 	if legacyRelPath == "" {
 		return filePath, "", nil
 	}
 
-	legacyPath, legacyErr := fs.ConfineRelPath(hlsRoot, legacyRelPath)
-	if legacyErr != nil {
-		log.L().Warn().Err(legacyErr).Str("sid", req.sessionID).Str("file", req.filename).Msg("legacy hls path confinement failed")
-		return filePath, "", nil
-	}
-	return filePath, legacyPath, nil
+	legacyFilePath = filepath.Join(hlsRoot, legacyRelPath)
+	return filePath, legacyFilePath, nil
 }
 
 func isStartupHLSState(state model.SessionState) bool {
