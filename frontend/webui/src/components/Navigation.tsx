@@ -388,6 +388,8 @@ export default function Navigation({ onLogout }: NavigationProps) {
         appearance === 'mobile' ? styles.mobileItem : null,
         appearance === 'sheet' ? styles.sheetItem : null
       ].filter(Boolean).join(' ')}
+      aria-label={item.label}
+      title={appearance === 'desktop' && isCollapsed ? item.label : undefined}
     >
       <span className={styles.iconShell}>
         <NavIcon name={item.id} className={styles.icon} />
@@ -505,7 +507,13 @@ export default function Navigation({ onLogout }: NavigationProps) {
             <div className={styles.navList}>
               {visibleNavItems.filter((item) => item.section === 'footer').map((item) => renderNavItem(item, 'desktop'))}
               {onLogout && (
-                <button type="button" className={styles.navItem} onClick={() => { void handleLogoutClick(); }}>
+                <button 
+                  type="button" 
+                  className={styles.navItem} 
+                  onClick={() => { void handleLogoutClick(); }}
+                  aria-label={t('nav.logout')}
+                  title={isCollapsed ? t('nav.logout') : undefined}
+                >
                   <span className={styles.iconShell}>
                     <NavIcon name="logout" className={styles.icon} />
                   </span>
@@ -518,6 +526,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
                 type="button" 
                 className={styles.navItem} 
                 onClick={() => setIsCollapsed(!isCollapsed)}
+                aria-label={isCollapsed ? t('nav.expand', { defaultValue: 'Erweitern' }) : t('nav.collapse', { defaultValue: 'Einklappen' })}
                 title={isCollapsed ? t('nav.expand', { defaultValue: 'Erweitern' }) : t('nav.collapse', { defaultValue: 'Einklappen' })}
               >
                 <span className={styles.iconShell}>
