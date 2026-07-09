@@ -2,7 +2,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HouseholdProfilesProvider } from '../../context/HouseholdProfilesContext';
 import { ClientRequestError, setClientAuthToken } from '../../services/clientWrapper';
 import type { EpgEvent, Timer } from './types';
 import styles from './EPG.module.css';
@@ -45,6 +44,27 @@ vi.mock('../../context/UiSurfaceContext', () => ({
   useUiSurface: () => useUiSurfaceMock(),
 }));
 
+vi.mock('../../context/HouseholdProfilesContext', () => ({
+  useHouseholdProfiles: () => ({
+    selectedProfile: { favoriteServiceRefs: [] },
+    isReady: true,
+    isFavoriteService: () => false,
+    toggleFavoriteService: vi.fn(),
+    canManageDvr: true,
+    canAccessDvrPlayback: true,
+    canAccessSettings: true,
+    profiles: [],
+    selectedProfileId: 'default',
+    pinConfigured: false,
+    isUnlocked: true,
+    selectProfile: vi.fn(),
+    ensureUnlocked: vi.fn(),
+    saveProfile: vi.fn(),
+    deleteProfile: vi.fn(),
+  }),
+  HouseholdProfilesProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
 vi.mock('./components/EpgChannelList', () => ({
   EpgChannelList: () => <div data-testid="epg-channel-list" />,
 }));
@@ -72,9 +92,7 @@ function createUiSurface(overrides: Record<string, unknown> = {}) {
 function renderWithProviders(ui: ReactNode, initialEntries: string[] = ['/epg']) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
-      <HouseholdProfilesProvider>
-        {ui}
-      </HouseholdProfilesProvider>
+      {ui}
     </MemoryRouter>
   );
 }
@@ -132,10 +150,12 @@ describe('EPG shared primitives', () => {
 
     renderWithProviders(<EPG channels={[]} />);
 
-    fireEvent.change(screen.getByPlaceholderText(/Search Services/i), {
+    const input = screen.getByPlaceholderText(/Search Services/i);
+    fireEvent.change(input, {
       target: { value: 'news' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    // Search is triggered via Enter key in the refactored toolbar
+    fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(await screen.findByRole('status', { name: /Loading/i })).toHaveAttribute(
       'data-loading-variant',

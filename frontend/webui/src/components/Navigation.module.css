@@ -324,11 +324,16 @@
   align-items: center;
   gap: 12px;
   text-align: left;
-  transition: color 0.2s ease, background 0.2s ease, transform 0.1s ease;
+  transition: color var(--motion-standard) var(--ease-standard), background var(--motion-standard) var(--ease-standard), transform 0.1s ease;
 }
 
 .navItem::after {
   display: none;
+}
+
+.navItem:hover {
+  background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
+  color: var(--text-primary);
 }
 
 .navItem:active {
@@ -595,5 +600,3 @@
 .floatingSidebarToggle:active {
   transform: scale(0.94);
 }
-
-
