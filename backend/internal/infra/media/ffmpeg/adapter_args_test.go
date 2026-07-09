@@ -1692,7 +1692,7 @@ func TestBuildFPSProbeArgs_DefaultAndRetry(t *testing.T) {
 	assert.Equal(t, "crypto,http,https,tcp,tls", protocolWhitelist)
 	fflags, ok := valueAfter(args, "-fflags")
 	require.True(t, ok)
-	assert.Equal(t, "+genpts+discardcorrupt+igndts", fflags)
+	assert.Equal(t, "+genpts+discardcorrupt", fflags)
 
 	errDetect, ok := valueAfter(args, "-err_detect")
 	require.True(t, ok)
@@ -1783,7 +1783,7 @@ func TestBuildArgs_ResilientIngestToggleOff(t *testing.T) {
 	probeArgs := adapter.buildFPSProbeArgs("http://example.com/stream", false)
 	probeFFlags, ok := valueAfter(probeArgs, "-fflags")
 	require.True(t, ok)
-	assert.Equal(t, "+genpts+igndts", probeFFlags)
+	assert.Equal(t, "+genpts", probeFFlags)
 	assert.Equal(t, -1, indexOf(probeArgs, "-err_detect"))
 }
 

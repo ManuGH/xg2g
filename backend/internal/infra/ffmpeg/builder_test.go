@@ -22,7 +22,7 @@ func TestMapProfileToArgs_ProfileDefaultEnsuresAACAudio(t *testing.T) {
 	}
 
 	wantPairs := map[string]string{
-		"-fflags":            "+genpts+discardcorrupt+igndts",
+		"-fflags":            "+genpts+discardcorrupt",
 		"-avoid_negative_ts": "make_zero",
 		"-c:v":               "copy",
 		"-c:a":               "aac",
@@ -120,7 +120,7 @@ func TestMapProfileToArgs_TargetProfileOverridesLegacyProfile(t *testing.T) {
 	}
 
 	wantPairs := map[string]string{
-		"-fflags":            "+genpts+discardcorrupt+igndts",
+		"-fflags":            "+genpts+discardcorrupt",
 		"-avoid_negative_ts": "make_zero",
 		"-c:v":               "copy",
 		"-c:a":               "aac",
@@ -179,7 +179,7 @@ func TestMapProfileToArgs_TargetProfileCanTranscodeVideoAndCopyAudio(t *testing.
 	}
 
 	wantPairs := map[string]string{
-		"-fflags":            "+genpts+discardcorrupt+igndts",
+		"-fflags":            "+genpts+discardcorrupt",
 		"-avoid_negative_ts": "make_zero",
 		"-c:v":               "libx264",
 		"-preset":            "fast",
@@ -231,7 +231,7 @@ func TestMapProfileToArgs_TargetProfileUsesExplicitVideoLadderValues(t *testing.
 	}
 
 	wantPairs := map[string]string{
-		"-fflags":            "+genpts+discardcorrupt+igndts",
+		"-fflags":            "+genpts+discardcorrupt",
 		"-avoid_negative_ts": "make_zero",
 		"-c:v":               "libx264",
 		"-preset":            "slow",
@@ -283,7 +283,7 @@ func TestMapProfileToArgs_TargetProfilePackagingFMP4DefaultsSegmentType(t *testi
 	}
 
 	wantPairs := map[string]string{
-		"-fflags":                 "+genpts+discardcorrupt+igndts",
+		"-fflags":                 "+genpts+discardcorrupt",
 		"-avoid_negative_ts":      "make_zero",
 		"-af":                     stableTranscodeAudioFilter,
 		"-hls_time":               "4",

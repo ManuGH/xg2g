@@ -13,22 +13,48 @@
   width: var(--nav-shell-width);
   height: 100%;
   padding: 16px 12px 14px;
-  border-radius: var(--radius-xl);
-  border: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
+  border-radius: calc(var(--radius-xl) + 4px);
+  border: none;
   background: color-mix(in srgb, var(--surface-shell-strong) 40%, transparent);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  box-shadow: var(--shadow-shell-safe);
+  backdrop-filter: blur(48px) saturate(200%);
+  -webkit-backdrop-filter: blur(48px) saturate(200%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.04), var(--shadow-shell-safe);
   display: flex;
   flex-direction: column;
   gap: 16px;
   overflow: hidden;
   transition:
     width var(--motion-standard) var(--ease-standard),
-    border-color var(--motion-standard) var(--ease-standard),
     background var(--motion-standard) var(--ease-standard),
     box-shadow var(--motion-standard) var(--ease-standard);
   pointer-events: auto;
+}
+
+.desktopNav[data-collapsed="true"] {
+  width: var(--nav-rail-width);
+  padding: 16px 8px 14px;
+}
+
+.desktopNav[data-collapsed="true"] .brandCopy,
+.desktopNav[data-collapsed="true"] .brandMark,
+.desktopNav[data-collapsed="true"] .sectionTitle,
+.desktopNav[data-collapsed="true"] .itemText,
+.desktopNav[data-collapsed="true"] .profileSection {
+  display: none;
+}
+
+.desktopNav[data-collapsed="true"] .brand {
+  justify-content: center;
+  padding: 6px 0 16px;
+}
+
+.desktopNav[data-collapsed="true"] .headerToggleBtn {
+  margin: 0;
+}
+
+.desktopNav[data-collapsed="true"] .navItem {
+  justify-content: center;
+  padding: 10px;
 }
 
 .desktopNav::before {
@@ -58,7 +84,6 @@
   gap: 14px;
   min-height: 64px;
   padding: 6px 8px 16px;
-  border-bottom: 1px solid var(--border-base);
 }
 
 .brandMark {
@@ -299,7 +324,7 @@
   align-items: center;
   gap: 12px;
   text-align: left;
-  transition: color var(--motion-standard) var(--ease-standard), background var(--motion-standard) var(--ease-standard);
+  transition: color var(--motion-standard) var(--ease-standard), background var(--motion-standard) var(--ease-standard), transform 0.1s ease;
 }
 
 .navItem::after {
@@ -311,21 +336,13 @@
   color: var(--text-primary);
 }
 
-.navItem[aria-current="page"] {
-  background: transparent;
-  color: var(--text-primary);
+.navItem:active {
+  transform: scale(0.97);
 }
 
-.navItem[aria-current="page"]::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 16px;
-  border-radius: 0 2px 2px 0;
-  background: var(--accent-action);
+.navItem[aria-current="page"] {
+  background: color-mix(in srgb, var(--accent-action) 12%, transparent);
+  color: var(--accent-action);
 }
 
 .navItem[aria-current="page"] .iconShell {
@@ -582,15 +599,4 @@
 
 .floatingSidebarToggle:active {
   transform: scale(0.94);
-}
-
-:global(:root[data-nav-collapsed='true']) .desktopNav {
-  width: 0;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-110%);
-  margin: 0;
-  padding: 0;
-  border: none;
-  overflow: hidden;
 }

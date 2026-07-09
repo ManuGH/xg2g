@@ -660,21 +660,23 @@ export default function EPG({
 
           {showMainList && (
             viewMode === 'list' || state.filters.timeRange > EPG_GRID_MAX_RANGE_HOURS ? (
-              <EpgChannelList
-                mode="main"
-                channels={visibleChannels}
-                eventsByServiceRef={visibleMainEventsByServiceRef}
-                favoriteServiceRefs={favoriteServiceRefs}
-                currentTime={state.currentTime}
-                timeRangeHours={state.filters.timeRange}
-                expandedChannels={state.expandedChannels}
-                onToggleExpand={handleToggleChannel}
-                onPlay={onPlay}
-                onToggleFavorite={toggleFavoriteService}
-                onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
-                isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
-                onEventClick={(evt) => setSelectedEvent(evt)}
-              />
+              <div className={styles.programmes}>
+                <EpgChannelList
+                  mode="main"
+                  channels={visibleChannels}
+                  eventsByServiceRef={visibleMainEventsByServiceRef}
+                  favoriteServiceRefs={favoriteServiceRefs}
+                  currentTime={state.currentTime}
+                  timeRangeHours={state.filters.timeRange}
+                  expandedChannels={state.expandedChannels}
+                  onToggleExpand={handleToggleChannel}
+                  onPlay={onPlay}
+                  onToggleFavorite={toggleFavoriteService}
+                  onRecord={RECORD_SUPPORTED && canManageDvr ? handleRecord : undefined}
+                  isRecorded={RECORD_SUPPORTED ? isRecorded : undefined}
+                  onEventClick={(evt) => setSelectedEvent(evt)}
+                />
+              </div>
             ) : (
               <EpgTimelineGrid
                 channels={visibleChannels}

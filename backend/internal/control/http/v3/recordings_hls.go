@@ -79,6 +79,7 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 	sessionID := "rec:" + recordingId
 	if !isHead {
 		if artifact.Data != nil {
+			// codeql[go/reflected-xss] Content-Type is safely set in WriteHLSPlaylistHeaders
 			if _, err := w.Write(artifact.Data); err != nil {
 				s.handleRecordingCopyError(
 					nil,

@@ -199,9 +199,9 @@ FFmpeg inside the release workflow.
 ```yaml
 - name: Verify FFmpeg Build
   run: |
-    docker run --rm ghcr.io/manugh/xg2g:v3.7.2 ffmpeg -version | grep -q "8.1"
-    docker run --rm ghcr.io/manugh/xg2g:v3.7.2 sh -c '[ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ]'
-    docker run --rm ghcr.io/manugh/xg2g:v3.7.2 sh -c '[ "$XG2G_FFMPEG_BIN" = "/usr/local/bin/ffmpeg" ]'
+    docker run --rm ghcr.io/manugh/xg2g:v3.8.1 ffmpeg -version | grep -q "8.1"
+    docker run --rm ghcr.io/manugh/xg2g:v3.8.1 sh -c '[ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ]'
+    docker run --rm ghcr.io/manugh/xg2g:v3.8.1 sh -c '[ "$XG2G_FFMPEG_BIN" = "/usr/local/bin/ffmpeg" ]'
 ```
 
 **Why**:

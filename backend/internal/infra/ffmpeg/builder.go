@@ -39,7 +39,7 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 
 	args := []string{
 		"-y", "-nostdin", "-hide_banner", "-progress", "pipe:2", "-loglevel", "warning",
-		"-fflags", "+genpts+discardcorrupt+igndts",
+		"-fflags", "+genpts+discardcorrupt",
 		"-avoid_negative_ts", "make_zero",
 		"-i", inputPath,
 	}

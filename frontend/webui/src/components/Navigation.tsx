@@ -285,27 +285,20 @@ export default function Navigation({ onLogout }: NavigationProps) {
   }, [isCollapsed]);
 
   useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') {
-        const target = event.target as HTMLElement;
-        const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
-        if (isInput) return;
-        event.preventDefault();
-        setIsCollapsed((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleShortcut);
     const handleKeyDown = (e: KeyboardEvent) => {
       // Toggle on Cmd+B (Mac) or Ctrl+B (Windows/Linux)
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        const target = e.target as HTMLElement;
+        const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+        if (isInput) return;
         e.preventDefault();
-        setIsCollapsed(prev => !prev);
+        setIsCollapsed((prev) => !prev);
       }
     };
     const handleGlobalToggle = () => {
-      setIsCollapsed(prev => !prev);
+      setIsCollapsed((prev) => !prev);
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('xg2g:toggle-sidebar', handleGlobalToggle);
     return () => {
@@ -395,6 +388,8 @@ export default function Navigation({ onLogout }: NavigationProps) {
         appearance === 'mobile' ? styles.mobileItem : null,
         appearance === 'sheet' ? styles.sheetItem : null
       ].filter(Boolean).join(' ')}
+      aria-label={item.label}
+      title={appearance === 'desktop' && isCollapsed ? item.label : undefined}
     >
       <span className={styles.iconShell}>
         <NavIcon name={item.id} className={styles.icon} />
@@ -448,6 +443,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
       <aside className={styles.desktopShell}>
         <nav
           className={styles.desktopNav}
+          data-collapsed={isCollapsed}
           role="navigation"
           aria-label={t('nav.mainNavigationLabel', { defaultValue: 'Main navigation' })}
         >
@@ -457,7 +453,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
             </div>
             <div className={styles.brandCopy}>
               <span className={styles.brandTitle}>xg2g</span>
-              <span className={styles.brandSubtitle}>Control Surface</span>
+              <span className={styles.brandSubtitle}>{t('nav.brandSubtitle', { defaultValue: 'Control Surface' })}</span>
             </div>
             <button
               type="button"
@@ -511,7 +507,13 @@ export default function Navigation({ onLogout }: NavigationProps) {
             <div className={styles.navList}>
               {visibleNavItems.filter((item) => item.section === 'footer').map((item) => renderNavItem(item, 'desktop'))}
               {onLogout && (
-                <button type="button" className={styles.navItem} onClick={() => { void handleLogoutClick(); }}>
+                <button 
+                  type="button" 
+                  className={styles.navItem} 
+                  onClick={() => { void handleLogoutClick(); }}
+                  aria-label={t('nav.logout')}
+                  title={isCollapsed ? t('nav.logout') : undefined}
+                >
                   <span className={styles.iconShell}>
                     <NavIcon name="logout" className={styles.icon} />
                   </span>
@@ -524,6 +526,7 @@ export default function Navigation({ onLogout }: NavigationProps) {
                 type="button" 
                 className={styles.navItem} 
                 onClick={() => setIsCollapsed(!isCollapsed)}
+                aria-label={isCollapsed ? t('nav.expand', { defaultValue: 'Erweitern' }) : t('nav.collapse', { defaultValue: 'Einklappen' })}
                 title={isCollapsed ? t('nav.expand', { defaultValue: 'Erweitern' }) : t('nav.collapse', { defaultValue: 'Einklappen' })}
               >
                 <span className={styles.iconShell}>

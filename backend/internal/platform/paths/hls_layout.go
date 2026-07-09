@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -14,6 +15,10 @@ const (
 func LiveSessionsRoot(hlsRoot string) string {
 	root := strings.TrimSpace(hlsRoot)
 	if root == "" {
+		// No explicit root: use /dev/shm/xg2g if available for tmpfs, else empty
+		if stat, err := os.Stat("/dev/shm"); err == nil && stat.IsDir() {
+			return filepath.Join("/dev/shm/xg2g", LiveSessionsDirName)
+		}
 		return ""
 	}
 	return filepath.Join(root, LiveSessionsDirName)

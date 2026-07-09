@@ -1038,3 +1038,6 @@ Operational changes:
 - DVR timeline: a current-position readout plus a YouTube-style hover preview.
 
 
+### Behavioral Changes (v3.8.1)
+
+

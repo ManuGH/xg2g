@@ -1,8 +1,9 @@
 .page {
-  max-width: var(--page-max-width-wide);
+  width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 24px;
   padding: 12px 0 32px;
 }
@@ -101,6 +102,7 @@
 .mainSection {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 16px;
   margin-top: 12px;
 }
@@ -189,9 +191,7 @@
 .healthLabel {
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .healthValue {

@@ -175,10 +175,15 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		if len(variantURIs) == 0 {
 			return false, "master playlist has no variant streams", nil
 		}
-		variantPath := filepath.Join(filepath.Dir(playlistPath), variantURIs[0])
+		baseDir := filepath.Dir(playlistPath)
+		variantPath := filepath.Join(baseDir, variantURIs[0])
+		// Security: guard against path traversal attacks from malicious variant URIs
+		if rel, relErr := filepath.Rel(baseDir, variantPath); relErr != nil || strings.HasPrefix(rel, "..") {
+			return false, "invalid variant playlist path", nil
+		}
 		// Read the resolved playlist to prevent infinite recursion on nested masters
-		// #nosec G304 — variantPath is constructed from content within the repo's playlist directory
-		if resolvedContent, err := os.ReadFile(filepath.Clean(variantPath)); err == nil {
+		// #nosec G304 — variantPath is validated against traversal above
+		if resolvedContent, err := os.ReadFile(variantPath); err == nil {
 			if strings.Contains(string(resolvedContent), "#EXT-X-STREAM-INF:") {
 				return false, "nested master playlists are not supported", nil
 			}

@@ -140,9 +140,9 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 	fpsProbeFFlags := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_FFLAGS", ""))
 	if fpsProbeFFlags == "" {
 		if resilientIngest {
-			fpsProbeFFlags = "+genpts+discardcorrupt+igndts"
+			fpsProbeFFlags = "+genpts+discardcorrupt"
 		} else {
-			fpsProbeFFlags = "+genpts+igndts"
+			fpsProbeFFlags = "+genpts"
 		}
 	}
 	fpsProbeErrDetect := strings.TrimSpace(config.ParseString("XG2G_FPS_PROBE_ERR_DETECT", ""))
@@ -165,7 +165,7 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 	if fpsProbeRetrySize == "" {
 		fpsProbeRetrySize = "20M"
 	}
-	skipFPSProbeOnCache := envBool("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", false)
+	skipFPSProbeOnCache := envBool("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", true)
 	skipFPSProbeWarmup := config.ParseDuration("XG2G_SKIP_FPS_PROBE_WARMUP", 500*time.Millisecond)
 	if skipFPSProbeWarmup < 0 {
 		skipFPSProbeWarmup = 500 * time.Millisecond

@@ -4,17 +4,21 @@
   margin-left: var(--nav-content-margin, calc(var(--nav-shell-width) + 34px));
   min-height: 100vh;
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   padding: 16px 20px 28px 0;
   transition: margin-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), padding-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .content-area {
   position: relative;
-  overflow: hidden;
+  width: 100%;
   max-width: calc(var(--content-max-width) + 24px);
   margin: 0 auto;
   min-height: calc(100vh - 44px);
   min-height: calc(100dvh - 44px);
+  display: flex;
+  flex-direction: column;
   padding: clamp(18px, 1.6vw, 28px);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-base);
