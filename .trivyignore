@@ -1,9 +1,5 @@
-# xg2g Trivy Ignore List
-# Whitelist intentional bootstrap credentials and known false positives
+# Ignore vendored files, which often contain test Dockerfiles
+vendor/
 
-# Asymmetric Private Key
-private-key
-# Specific path (alternate mechanism)
-backend/internal/app/bootstrap/certs/xg2g.key
-# Rule ID variant
-AsymmetricPrivateKey
+# Also ignore typical build artifacts or test vectors if they exist
+test/

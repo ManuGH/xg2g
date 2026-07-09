@@ -313,7 +313,10 @@ func planLocalRecordingRenames(localPath string, artifacts []string, title strin
 			continue
 		}
 
-		newPath := filepath.Join(filepath.Dir(artifactPath), newName)
+		newPath := filepath.Clean(filepath.Join(filepath.Dir(artifactPath), newName))
+		if !strings.HasPrefix(newPath, filepath.Dir(artifactPath)) {
+			return nil, fmt.Errorf("invalid title causes path traversal")
+		}
 		if artifactPath == newPath {
 			continue
 		}
