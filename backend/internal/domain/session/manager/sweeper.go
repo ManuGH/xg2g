@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"os"
 	"path/filepath"
 	"time"
@@ -198,8 +199,13 @@ func (s *Sweeper) sweepFiles(ctx context.Context) {
 	if s.Orch.HLSRoot == "" {
 		return
 	}
-	sessionsDir := filepath.Join(s.Orch.HLSRoot, "sessions")
+	s.sweepSessionsDir(ctx, filepath.Join(s.Orch.HLSRoot, "sessions"))
+	if shmDir := ports.SessionsHLSRoot(s.Orch.HLSRoot); shmDir != "" && shmDir != filepath.Join(s.Orch.HLSRoot, "sessions") {
+		s.sweepSessionsDir(ctx, shmDir)
+	}
+}
 
+func (s *Sweeper) sweepSessionsDir(ctx context.Context, sessionsDir string) {
 	// Check if sessionsDir exists
 	if _, err := os.Stat(sessionsDir); os.IsNotExist(err) {
 		return

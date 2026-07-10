@@ -6,13 +6,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -400,7 +398,7 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(logs, `"startup_phase":"first_segment_write"`))
 	assert.Contains(t, logs, `"frame":1`)
 	assert.Contains(t, logs, `"segment_path":"/tmp/seg_000001.m4s"`)
-	markerPath := filepath.Join(adapter.HLSRoot, "sessions", "session-3", model.SessionFirstFrameMarkerFilename)
+	markerPath := ports.SessionFirstFrameMarkerPath(adapter.HLSRoot, "session-3")
 	marker, err := os.ReadFile(markerPath)
 	require.NoError(t, err)
 	assert.NotEmpty(t, strings.TrimSpace(string(marker)))
@@ -457,7 +455,7 @@ func TestMonitorProcess_RuntimePathCorrectnessMarksBrokenAndStopsProcess(t *test
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-broken", profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now())
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-broken", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now())
 		close(done)
 	}()
 
@@ -524,7 +522,7 @@ func TestMonitorProcess_RuntimePathCorrectnessMarksVerified(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-verified", profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now())
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-verified", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now())
 		close(done)
 	}()
 
@@ -673,7 +671,7 @@ func TestMonitorProcess_RecordsNVENCRuntimeFailureForNVENCError(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", profiles.GPUBackendNVENC, "", adapter.StartTimeout, noopStartupSpan(), time.Now())
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", 0, profiles.GPUBackendNVENC, "", adapter.StartTimeout, noopStartupSpan(), time.Now())
 		close(done)
 	}()
 

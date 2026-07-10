@@ -182,7 +182,7 @@ describe('Settings', () => {
 
     renderWithQueryClient(['/settings?section=streaming']);
 
-    expect(await screen.findByDisplayValue('Universal (H.264/AAC/fMP4)')).toBeInTheDocument();
+    expect(await screen.findByText('ADAPTIVE ENGINE')).toBeInTheDocument();
     expect(screen.getAllByText('Streaming').length).toBeGreaterThanOrEqual(1);
     expect(getSystemConfig).toHaveBeenCalledTimes(1);
     expect(getSystemScanStatus).toHaveBeenCalledTimes(1);

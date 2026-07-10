@@ -12,12 +12,12 @@ export function formatBooleanLabel(value: boolean): string {
 export function formatTargetProfileSummary(target: PlaybackTargetProfile | null): string {
   if (!target) return '-';
 
-  // display-only: target profile summary renders backend-provided fields, not client policy.
   const videoMode = target.video?.mode || '-';
   const videoCodec = target.video?.codec ? `/${target.video.codec}` : '';
+  const videoRes = target.video?.width && target.video?.height ? `/${target.video.width}x${target.video.height}` : '';
   const videoCRF = target.video?.crf ? `/crf${target.video.crf}` : '';
   const videoPreset = target.video?.preset ? `/${target.video.preset}` : '';
-  // display-only: target profile summary renders backend-provided fields, not client policy.
+
   const audioMode = target.audio?.mode || '-';
   const audioCodec = target.audio?.codec ? `/${target.audio.codec}` : '';
   const audioChannels = target.audio?.channels ? `/${target.audio.channels}ch` : '';
@@ -26,7 +26,7 @@ export function formatTargetProfileSummary(target: PlaybackTargetProfile | null)
 
   return [
     packaging,
-    `v:${videoMode}${videoCodec}${videoCRF}${videoPreset}`,
+    `v:${videoMode}${videoCodec}${videoRes}${videoCRF}${videoPreset}`,
     `a:${audioMode}${audioCodec}${audioChannels}${audioBitrate}`
   ].join(' · ');
 }

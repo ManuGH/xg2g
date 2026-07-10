@@ -49,7 +49,7 @@ DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?=
 PLATFORMS := linux/amd64
 # Keep in sync with backend/scripts/build-ffmpeg.sh.
-FFMPEG_VERSION := 8.1.1
+FFMPEG_VERSION := 8.1.2
 FFMPEG_BASE_IMAGE ?= $(DOCKER_IMAGE)-ffmpeg
 FFMPEG_BASE_TAG := $(FFMPEG_BASE_IMAGE):$(FFMPEG_VERSION)
 

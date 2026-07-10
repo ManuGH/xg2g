@@ -39,10 +39,10 @@ const (
 	// buffered - the relay delivers the tune-in head slowly, so every byte we don't
 	// over-read shortens the startup window (during which the client has no playlist
 	// yet and briefly shows a transient network error).
-	avsyncPeekReadChunk  = 64 << 10  // relay read granularity
-	avsyncPeekFirstProbe = 256 << 10 // start probing once this much head is buffered
-	avsyncPeekProbeStep  = 128 << 10 // re-probe after each additional step
-	avsyncPeekMaxBytes   = 6 << 20   // give up past here -> fall back to direct path
+	avsyncPeekReadChunk  = 64 << 10 // relay read granularity
+	avsyncPeekFirstProbe = 64 << 10 // start probing once this much head is buffered
+	avsyncPeekProbeStep  = 64 << 10 // re-probe after each additional step
+	avsyncPeekMaxBytes   = 6 << 20  // give up past here -> fall back to direct path
 )
 
 // shouldAvsyncAtrim reports whether the orphan-correction path applies to this
@@ -284,7 +284,7 @@ func transformArgsForAvsyncPipeMode(args []string, orphan float64, insertTrim bo
 			continue
 		}
 		if insertTrim && !transcodeVideo && tok == "-c:a" && i+1 < len(args) && args[i+1] != "copy" {
-			out = append(out, "-af", fmt.Sprintf("atrim=start=%.3f", orphan))
+			out = append(out, "-af", fmt.Sprintf("aresample=async=1,atrim=start=%.3f", orphan))
 		}
 		out = append(out, tok)
 	}

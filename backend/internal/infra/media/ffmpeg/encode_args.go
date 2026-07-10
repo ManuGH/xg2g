@@ -62,9 +62,21 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
+	} else {
+		args = appendAV1VAAPILevelArgs(args)
 	}
 	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args
+}
+
+// appendAV1VAAPILevelArgs pins the AV1 seq_level_idx to 5.0. The AMD VAAPI
+// encoder derives the level from picture size alone and ignores frame rate:
+// 1920x1088@50 gets level 4.1 (max ~70.8M samples/s) although it needs ~104M.
+// macOS decoders tolerate the violation; the iPhone hardware decoder does not
+// and never outputs a frame (endless buffering, then a decode error). Level
+// 5.0 covers 1088p50 10-bit with headroom.
+func appendAV1VAAPILevelArgs(args []string) []string {
+	return append(args, "-level", "5.0")
 }
 
 func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
@@ -90,6 +102,8 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	args = appendVideoGOPArgs(args, gop, segmentSec)
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
+	} else {
+		args = appendAV1VAAPILevelArgs(args)
 	}
 	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args

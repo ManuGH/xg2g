@@ -24,10 +24,26 @@ func SessionHLSDir(hlsRoot, sessionID string) string {
 	return platformpaths.LiveSessionDir(hlsRoot, sessionID)
 }
 
+func SessionHLSDirForPolicy(hlsRoot, sessionID string, dvrWindowSec int) string {
+	return platformpaths.LiveSessionDirForPolicy(hlsRoot, sessionID, dvrWindowSec)
+}
+
 func SessionFirstFrameMarkerPath(hlsRoot, sessionID string) string {
 	dir := SessionHLSDir(hlsRoot, sessionID)
 	if dir == "" {
 		return ""
 	}
 	return filepath.Join(dir, SessionFirstFrameMarkerFilename)
+}
+
+func SessionFirstFrameMarkerPathForPolicy(hlsRoot, sessionID string, dvrWindowSec int) string {
+	dir := SessionHLSDirForPolicy(hlsRoot, sessionID, dvrWindowSec)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, SessionFirstFrameMarkerFilename)
+}
+
+func SessionsHLSRoot(hlsRoot string) string {
+	return platformpaths.LiveSessionsRoot(hlsRoot)
 }

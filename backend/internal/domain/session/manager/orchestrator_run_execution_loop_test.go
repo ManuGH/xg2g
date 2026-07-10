@@ -156,7 +156,7 @@ func (p *startupRetryPipeline) Health(ctx context.Context, handle ports.RunHandl
 }
 
 func (p *startupRetryPipeline) writeReadyArtifacts(sessionID, payload string) error {
-	sessionDir := filepath.Join(p.hlsRoot, "sessions", sessionID)
+	sessionDir := ports.SessionHLSDirForPolicy(p.hlsRoot, sessionID, 0)
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func TestRunExecutionLoop_RetriesEarlyUpstreamProcessExitOnceAndCleansStaleArtif
 	case <-pipe.secondStartCalled:
 	}
 
-	sessionDir := filepath.Join(hlsRoot, "sessions", sid)
+	sessionDir := ports.SessionHLSDirForPolicy(hlsRoot, sid, 0)
 	for _, name := range []string{
 		"index.m3u8",
 		"seg_000000.ts",
@@ -298,7 +298,7 @@ func (p *startupProfileFallbackPipeline) Start(ctx context.Context, spec ports.S
 	p.mu.Unlock()
 
 	if attempt == 2 {
-		if err := p.writeReadyArtifacts(spec.SessionID); err != nil {
+		if err := p.writeReadyArtifacts(spec.SessionID, spec.Profile.DVRWindowSec); err != nil {
 			return "", err
 		}
 	}
@@ -329,8 +329,8 @@ func (p *startupProfileFallbackPipeline) Health(ctx context.Context, handle port
 	return ports.HealthStatus{Healthy: true}
 }
 
-func (p *startupProfileFallbackPipeline) writeReadyArtifacts(sessionID string) error {
-	sessionDir := filepath.Join(p.hlsRoot, "sessions", sessionID)
+func (p *startupProfileFallbackPipeline) writeReadyArtifacts(sessionID string, dvrWindowSec int) error {
+	sessionDir := ports.SessionHLSDirForPolicy(p.hlsRoot, sessionID, dvrWindowSec)
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		return err
 	}
