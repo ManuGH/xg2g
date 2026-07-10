@@ -82,8 +82,8 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 				// scalers or hardware decoders. 
 				// We use 2.5s to ensure we capture at least one IDR/Keyframe (SPS/PPS),
 				// as shorter times (e.g. 0.5s) break H264/HLS completely.
-				analyzeDuration = "2500000" // 2.5s
-				probeSize = "5M"
+				analyzeDuration = "5000000" // 5s
+				probeSize = "20M"
 			}
 		}
 		// igndts discards healthy container DTS and forces a PTS-based

@@ -1609,13 +1609,13 @@ func TestBuildArgs_StreamRelayPassthroughUsesFastLiveProbe(t *testing.T) {
 	require.True(t, analyzeIdx >= 0 && analyzeIdx < iIdx, "analyzeduration must be before -i")
 	analyze, ok := valueAfter(args, "-analyzeduration")
 	require.True(t, ok)
-	assert.Equal(t, "1000000", analyze)
+	assert.Equal(t, "5000000", analyze)
 
 	probeIdx := indexOf(args, "-probesize")
 	require.True(t, probeIdx >= 0 && probeIdx < iIdx, "probesize must be before -i")
 	probe, ok := valueAfter(args, "-probesize")
 	require.True(t, ok)
-	assert.Equal(t, "1M", probe)
+	assert.Equal(t, "20M", probe)
 }
 
 func TestBuildArgs_StreamRelayTranscodeUsesRobustLiveProbe(t *testing.T) {
