@@ -1237,7 +1237,7 @@ function Settings() {
             </div>
             <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
               {t('settings.streaming.cardEngineText', {
-                defaultValue: 'Erkennt automatisch Hardware-Beschleunigung (GPU: VAAPI, NVENC, QSV, VideoToolbox) auf dem Server und greift bei Bedarf nahtlos auf optimiertes CPU-Encoding zurück. Passt Bitrate und Auflösung dynamisch an (strikte 720p-Untergrenze bis hin zu nativem 1080p/4K).'
+                defaultValue: 'Erkennt automatisch Hardware-Beschleunigung (GPU: VAAPI, NVENC, QSV, VideoToolbox) auf dem Server und greift bei Bedarf nahtlos auf optimiertes CPU-Encoding zurück. Passt Bitrate und Auflösung dynamisch an (strikte 720p-Untergrenze bis hin zu nativem 1080p. Hinweis: 4K/UHD ist aktuell vorübergehend pausiert – wir arbeiten bereits daran!).'
               })}
             </p>
           </div>
@@ -1265,7 +1265,7 @@ function Settings() {
             </div>
             <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
               {t('settings.streaming.cardContainersText', {
-                defaultValue: 'Modernes Low-Latency HLS (fMP4 / CMAF) für blitzschnelles Umschalten bei HD-Sendern. Schutz bei 4K-Sendern: Da 4K/UHD-Streams in fMP4 im Browser häufig zu Pufferstaus/Rucklern führen, wählt xg2g bei 4K automatisch den robusten MPEG-TS-Container für absolut flüssige Wiedergabe.'
+                defaultValue: 'Modernes Low-Latency HLS (fMP4 / CMAF) für blitzschnelles Umschalten bei HD-Sendern. Schutz bei 4K-Sendern: Da 4K/UHD-Streams in fMP4 im Browser häufig zu Pufferstaus/Rucklern führen, sind 4K/UHD-Sender momentan vorübergehend pausiert, bis die Pipeline dafür vollständig optimiert ist (wir arbeiten daran!).'
               })}
             </p>
           </div>
@@ -1279,7 +1279,7 @@ function Settings() {
             </div>
             <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
               {t('settings.streaming.cardInterlacedText', {
-                defaultValue: 'Progressive Sender (720p, 1080p, 4K) können 1:1 durchgereicht werden. Interlaced Sender (z. B. 1080i / 576i) werden von Browsern/Smartphones nicht nativ unterstützt (Zeilenflimmern) und daher von xg2g immer automatisch in flüssiges 50-fps-Progressive-Video konvertiert.'
+                defaultValue: 'Progressive Sender (720p, 1080p) können 1:1 durchgereicht werden (4K/UHD in Vorbereitung – wir arbeiten daran!). Interlaced Sender (z. B. 1080i / 576i) werden von Browsern/Smartphones nicht nativ unterstützt (Zeilenflimmern) und daher von xg2g immer automatisch in flüssiges 50-fps-Progressive-Video konvertiert.'
               })}
             </p>
           </div>
