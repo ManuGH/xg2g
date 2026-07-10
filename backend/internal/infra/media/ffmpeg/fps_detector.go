@@ -25,11 +25,11 @@ type fpsCacheEntry struct {
 	LearnedAt time.Time
 }
 
-func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string) {
+func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string, dvrWindowSec int) {
 	if sourceKey == "" || sessionID == "" {
 		return
 	}
-	sessionDir := ports.SessionHLSDir(a.HLSRoot, sessionID)
+	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec)
 	deadline := time.Now().Add(25 * time.Second)
 	for time.Now().Before(deadline) {
 		segment, ok := findFirstOutputSegment(sessionDir)

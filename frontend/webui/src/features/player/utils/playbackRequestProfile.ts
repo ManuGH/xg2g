@@ -1,7 +1,7 @@
 import { getNativePlaybackCapabilities, resolveHostEnvironment } from '../../../lib/hostBridge';
 import type { CapabilitySnapshot } from './playbackCapabilities';
 
-export type PlaybackRequestProfile = 'quality' | 'compatible' | 'repair';
+export type PlaybackRequestProfile = 'quality' | 'compatible' | 'repair' | 'bandwidth';
 
 export type PlaybackClientDeviceContext = {
   brand?: string;
@@ -200,7 +200,7 @@ export function resolvePlaybackRequestProfile(
     || network?.effectiveType === '2g'
     || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps < 6)
   ) {
-    return 'repair';
+    return 'bandwidth';
   }
 
   if (
@@ -209,7 +209,7 @@ export function resolvePlaybackRequestProfile(
     || network?.effectiveType === '3g'
     || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps < 15)
   ) {
-    return 'compatible';
+    return 'bandwidth';
   }
 
   if (

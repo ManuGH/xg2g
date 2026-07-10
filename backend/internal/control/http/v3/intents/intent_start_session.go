@@ -1,6 +1,7 @@
 package intents
 
 import (
+	"strconv"
 	"context"
 	"fmt"
 	"github.com/ManuGH/xg2g/internal/control/admission"
@@ -104,6 +105,17 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	targetVideoQualityRung := model.TraceVideoQualityRungFromProfile(resolution.profileSpec)
 	targetStep := runtimepolicy.PlaybackLadderStepFromTargetProfile(targetProfile, playbackprofile.NormalizeQualityRung(targetVideoQualityRung))
 	startupProfile, _ := capLiveStartupProfile(intent, resolution.profileSpec, targetStep)
+	if v := intent.Params["dvr_window_sec"]; v != "" {
+		if sec, err := strconv.Atoi(v); err == nil && sec >= 0 {
+			startupProfile.DVRWindowSec = sec
+		}
+	} else if intent.Params["dvr"] == "true" || intent.Params["dvr_window"] == "true" {
+		if startupProfile.DVRWindowSec <= 0 {
+			startupProfile.DVRWindowSec = 7200
+		}
+	} else if intent.Params["dvr"] == "false" || intent.Params["dvr_window"] == "false" {
+		startupProfile.DVRWindowSec = 0
+	}
 	videoQualityRung := model.TraceVideoQualityRungFromProfile(startupProfile)
 	now := time.Now()
 	session := lifecycle.NewSessionRecord(now)

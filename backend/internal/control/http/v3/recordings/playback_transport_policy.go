@@ -59,6 +59,12 @@ func applyPlaybackTransportPolicy(req PlaybackInfoRequest, resolvedCaps capabili
 	}
 }
 
+
+
+func clientWantsFMP4(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, _ *decision.Decision) bool {
+	return clientpolicy.WantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback)
+}
+
 func resolvePlaybackTransportPlan(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) playbackTransportPlan {
 	switch req.SubjectKind {
 	case PlaybackSubjectLive:
@@ -74,7 +80,7 @@ func resolveLiveNativeTransportPlan(req PlaybackInfoRequest, resolvedCaps capabi
 	if dec == nil || dec.TargetProfile == nil {
 		return noPlaybackTransportPlan()
 	}
-	if !clientpolicy.WantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
+	if !clientWantsFMP4(req, resolvedCaps, dec) {
 		return noPlaybackTransportPlan()
 	}
 	if clientpolicy.AllowExperimentalNativeAV1TransportStream(resolvedCaps, dec.Selected.VideoCodec, *dec.TargetProfile) {
@@ -100,7 +106,7 @@ func resolveRecordingNativeTransportPlan(req PlaybackInfoRequest, resolvedCaps c
 	if dec == nil || dec.TargetProfile == nil {
 		return noPlaybackTransportPlan()
 	}
-	if !clientpolicy.WantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {
+	if !clientWantsFMP4(req, resolvedCaps, dec) {
 		return noPlaybackTransportPlan()
 	}
 	if shouldPreferNativeDirectStream(dec) && recordingClientSupportsDirectTransportStream(req.RequestedProfile, resolvedCaps.ClientFamilyFallback) {

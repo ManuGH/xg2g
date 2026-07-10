@@ -7,7 +7,7 @@ package manager
 import (
 	"context"
 	"os"
-	"path/filepath"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"strings"
 	"time"
 
@@ -39,7 +39,7 @@ type FSWatcherHeartbeatSource struct {
 
 // LatestSegmentAt polls the session directory for the latest .ts or .m4s segment.
 func (s *FSWatcherHeartbeatSource) LatestSegmentAt(ctx context.Context, sessionID string) (time.Time, bool, error) {
-	sessionDir := filepath.Join(s.HLSRoot, "sessions", sessionID)
+	sessionDir := ports.SessionHLSDir(s.HLSRoot, sessionID)
 
 	entries, err := os.ReadDir(sessionDir)
 	if err != nil {

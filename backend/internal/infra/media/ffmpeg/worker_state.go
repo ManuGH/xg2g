@@ -22,7 +22,7 @@ var sessionStateBaseDir = func() string {
 	if _, err := os.Stat(base); err != nil {
 		base = os.TempDir()
 	}
-	return filepath.Join(base, "xg2g", "sessions")
+	return filepath.Join(base, "xg2g", "workers")
 }()
 
 // SessionStateBaseDir returns the base directory for worker state files.

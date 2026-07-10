@@ -180,11 +180,6 @@ func (o *Orchestrator) runExecutionLoop(
 		})
 	}
 
-	playlistPath := ""
-	if sessionDir := ports.SessionHLSDir(o.HLSRoot, e.SessionID); sessionDir != "" {
-		playlistPath = filepath.Join(sessionDir, "index.m3u8")
-	}
-
 	for attempt := 0; attempt <= defaultStartupProcessRetryLimit; attempt++ {
 		var effectiveProfile model.ProfileSpec
 		handle, effectiveProfile, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
@@ -192,6 +187,11 @@ func (o *Orchestrator) runExecutionLoop(
 			return "", model.ProfileSpec{}, err
 		}
 		currentProfileSpec = effectiveProfile
+
+		playlistPath := ""
+		if sessionDir := ports.SessionHLSDirForPolicy(o.HLSRoot, e.SessionID, currentProfileSpec.DVRWindowSec); sessionDir != "" {
+			playlistPath = filepath.Join(sessionDir, "index.m3u8")
+		}
 
 		playlistReadyResult := false
 		if playlistPath != "" {

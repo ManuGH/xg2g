@@ -58,31 +58,15 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		// FFmpeg can resolve video dimensions and audio layout reliably.
 		// Keep that only for video-transcode paths; passthrough/remux sessions
 		// already know enough about the stream and pay a visible startup penalty.
-		if isStreamRelayURL(inputURL) {
-			if spec.Profile.TranscodeVideo {
-				// Relay MPEG-TS needs a deeper probe than the general live
-				// default to resolve dimensions/audio reliably. Default ≈10s,
-				// but overridable (XG2G_STREAMRELAY_ANALYZE_DURATION /
-				// XG2G_STREAMRELAY_PROBE_SIZE) so a fleet that has verified a
-				// faster probe can cut the visible relay-transcode startup
-				// penalty without patching code.
-				if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
-					analyzeDuration = v
-				} else {
-					analyzeDuration = "10000000"
-				}
-				if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
-					probeSize = v
-				} else {
-					probeSize = "20M"
-				}
+		if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
+			if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
+				analyzeDuration = v
 			} else {
-				// Fast path for stream copy (passthrough). We just copy whatever
-				// streams we find, so we don't need a deep probe to configure
-				// scalers or hardware decoders. 
-				// We use 2.5s to ensure we capture at least one IDR/Keyframe (SPS/PPS),
-				// as shorter times (e.g. 0.5s) break H264/HLS completely.
-				analyzeDuration = "5000000" // 5s
+				analyzeDuration = "15000000" // 15s for OSCam decryption & DVB PMT discovery
+			}
+			if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
+				probeSize = v
+			} else {
 				probeSize = "20M"
 			}
 		}

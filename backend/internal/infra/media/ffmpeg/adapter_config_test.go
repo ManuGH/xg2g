@@ -97,7 +97,7 @@ func TestLoadAdapterConfig_Defaults(t *testing.T) {
 		{"FPSProbeRetryAn", cfg.FPSProbeRetryAn, "10000000"},
 		{"FPSProbeRetrySize", cfg.FPSProbeRetrySize, "20M"},
 		{"SkipFPSProbeOnCache", cfg.SkipFPSProbeOnCache, true},
-		{"SkipFPSProbeWarmup", cfg.SkipFPSProbeWarmup, 500 * time.Millisecond},
+		{"SkipFPSProbeWarmup", cfg.SkipFPSProbeWarmup, time.Duration(0)},
 		{"FPSCacheTTL", cfg.FPSCacheTTL, 24 * time.Hour},
 		{"SafariRuntimeProbeTimeout", cfg.SafariRuntimeProbeTimeout, 6000 * time.Millisecond},
 	}

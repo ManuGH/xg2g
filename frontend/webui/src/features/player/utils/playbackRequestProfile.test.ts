@@ -46,7 +46,7 @@ describe('resolvePlaybackRequestProfile', () => {
     expect(resolvePlaybackRequestProfile(buildContext(), buildCapabilities(), 'live')).toBe('quality');
   });
 
-  it('drops to repair on constrained links', () => {
+  it('uses the capped bandwidth profile on constrained links', () => {
     expect(resolvePlaybackRequestProfile(
       buildContext({
         network: {
@@ -61,10 +61,10 @@ describe('resolvePlaybackRequestProfile', () => {
       }),
       buildCapabilities(),
       'live'
-    )).toBe('repair');
+    )).toBe('bandwidth');
   });
 
-  it('uses compatible on metered cellular links', () => {
+  it('uses the capped bandwidth profile on metered cellular links', () => {
     expect(resolvePlaybackRequestProfile(
       buildContext({
         network: {
@@ -79,7 +79,7 @@ describe('resolvePlaybackRequestProfile', () => {
       }),
       buildCapabilities(),
       'recording'
-    )).toBe('compatible');
+    )).toBe('bandwidth');
   });
 });
 
@@ -88,6 +88,9 @@ describe('buildPlaybackProfileHeaders', () => {
     expect(buildPlaybackProfileHeaders()).toEqual({});
     expect(buildPlaybackProfileHeaders('repair')).toEqual({
       'X-XG2G-Profile': 'repair',
+    });
+    expect(buildPlaybackProfileHeaders('bandwidth')).toEqual({
+      'X-XG2G-Profile': 'bandwidth',
     });
   });
 });

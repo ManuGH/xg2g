@@ -166,9 +166,9 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		fpsProbeRetrySize = "20M"
 	}
 	skipFPSProbeOnCache := envBool("XG2G_SKIP_FPS_PROBE_ON_CACHE_HIT", true)
-	skipFPSProbeWarmup := config.ParseDuration("XG2G_SKIP_FPS_PROBE_WARMUP", 500*time.Millisecond)
+	skipFPSProbeWarmup := config.ParseDuration("XG2G_SKIP_FPS_PROBE_WARMUP", 0)
 	if skipFPSProbeWarmup < 0 {
-		skipFPSProbeWarmup = 500 * time.Millisecond
+		skipFPSProbeWarmup = 0
 	}
 	safariRuntimeProbeTimeoutMs := envIntBounded("XG2G_SAFARI_RUNTIME_PROBE_TIMEOUT_MS", 6000, 1000, 15000)
 	fpsCacheTTL := config.ParseDuration("XG2G_FPS_CACHE_TTL", 24*time.Hour)

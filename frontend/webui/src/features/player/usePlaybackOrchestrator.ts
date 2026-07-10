@@ -37,6 +37,10 @@ import {
   gatherPlaybackClientContext,
   resolvePlaybackRequestProfile,
 } from './utils/playbackRequestProfile';
+import {
+  applyPlaybackNetworkProbe,
+  measurePlaybackNetwork,
+} from './utils/playbackNetworkProbe';
 import { normalizePlayerError } from '../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import { useTvInitialFocus } from '../../hooks/useTvInitialFocus';
@@ -909,8 +913,14 @@ export function usePlaybackOrchestrator(
       try {
         const maxMetaRetries = 20;
         requestCaps = await gatherPlaybackCapabilitiesForPlayer('recording');
-        const requestProfile = resolvePlaybackRequestProfile(
+        const requestContext = applyPlaybackNetworkProbe(
+          requestCaps,
           gatherPlaybackClientContext(),
+          await measurePlaybackNetwork(apiBase),
+        );
+        if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+        const requestProfile = resolvePlaybackRequestProfile(
+          requestContext,
           requestCaps,
           'recording'
         );
@@ -1229,8 +1239,14 @@ export function usePlaybackOrchestrator(
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
 
         const requestCaps = await gatherPlaybackCapabilitiesForPlayer('live');
-        const requestProfile = resolvePlaybackRequestProfile(
+        const requestContext = applyPlaybackNetworkProbe(
+          requestCaps,
           gatherPlaybackClientContext(),
+          await measurePlaybackNetwork(apiBase),
+        );
+        if (isStalePlaybackEpoch(playbackEpoch)) return;
+        const requestProfile = resolvePlaybackRequestProfile(
+          requestContext,
           requestCaps,
           'live'
         );

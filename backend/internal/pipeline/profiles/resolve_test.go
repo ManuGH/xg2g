@@ -293,6 +293,16 @@ func TestNormalizeRequestedProfileID_MapsPublicAliases(t *testing.T) {
 	assert.Equal(t, "generic", NormalizeRequestedProfileID("generic"))
 }
 
+func TestResolve_BandwidthProfileHasLiveSafeRateCeiling(t *testing.T) {
+	spec := Resolve("bandwidth", "", 0, nil, GPUBackendNone, HWAccelAuto)
+
+	assert.True(t, spec.TranscodeVideo)
+	assert.Equal(t, 1280, spec.VideoMaxWidth)
+	assert.Equal(t, 3000, spec.VideoMaxRateK)
+	assert.Equal(t, 6000, spec.VideoBufSizeK)
+	assert.Equal(t, 160, spec.AudioBitrateK)
+}
+
 func TestPrefersNativeFMP4Packaging_MapsProfileBias(t *testing.T) {
 	assert.True(t, PrefersNativeFMP4Packaging("android_native"))
 	assert.True(t, PrefersNativeFMP4Packaging("android_tv_native"))

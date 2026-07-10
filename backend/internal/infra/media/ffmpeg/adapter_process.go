@@ -228,7 +228,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 			Str("session_id", spec.SessionID).
 			Logger()
 		segCfg := cmaf.Config{
-			Dir:               ports.SessionHLSDir(a.HLSRoot, spec.SessionID),
+			Dir:               ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec),
 			TargetDurationSec: plan.cmafTargetDurSec,
 			ListSize:          plan.listSize,
 			Logger:            segLogger,
@@ -256,9 +256,9 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	if sourceKey != "" {
-		go a.learnFPSFromOutput(sourceKey, spec.SessionID)
+		go a.learnFPSFromOutput(sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
 	}
 
 	metrics.RecordPipelineSpawn("ffmpeg", "admitted")
@@ -371,7 +371,7 @@ func awaitProcessExit(
 	return out
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time) {
 	defer func() {
 		a.mu.Lock()
 		a.removeActiveProcessLocked(handle, true)
@@ -431,7 +431,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 				if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
 					firstFrameLogged = true
 					wd.ObserveProgress()
-					a.writeFirstFrameMarker(sessionID)
+					a.writeFirstFrameMarker(sessionID, dvrWindowSec)
 					a.Logger.Info().
 						Str("session_id", sessionID).
 						Str("startup_phase", "first_frame").
@@ -591,11 +591,11 @@ func argsHardwareBackend(args []string) profiles.GPUBackend {
 	return profiles.GPUBackendNone
 }
 
-func (a *LocalAdapter) writeFirstFrameMarker(sessionID string) {
+func (a *LocalAdapter) writeFirstFrameMarker(sessionID string, dvrWindowSec int) {
 	if !ports.IsSafeSessionID(sessionID) {
 		return
 	}
-	markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID)
+	markerPath := ports.SessionFirstFrameMarkerPathForPolicy(a.HLSRoot, sessionID, dvrWindowSec)
 	if markerPath != "" {
 		if err := os.MkdirAll(filepath.Dir(markerPath), 0o750); err != nil {
 			a.Logger.Warn().Err(err).Str("session_id", sessionID).Msg("failed to prep marker dir")

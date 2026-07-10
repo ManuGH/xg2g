@@ -225,15 +225,34 @@ export function resolveLiveEngineFromMode(
   return { unsupported: true };
 }
 
+export function getStoredDvrWindowSec(): number | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const dvrSetting = window.localStorage.getItem('xg2g.settings.dvrMode');
+    if (dvrSetting === 'live_only') return 0;
+    if (dvrSetting === '1h') return 3600;
+    if (dvrSetting === '2h') return 7200;
+    if (dvrSetting === '4h') return 14400;
+  } catch {}
+  return undefined;
+}
+
 export function buildLiveIntentBody(
   serviceRef: string,
   decisionToken: string,
   requestCaps: CapabilitySnapshot,
   liveMode: NonNullable<VodStreamMode>,
+  dvrWindowSecOverride?: number,
 ): IntentRequest {
   const intentParams: Record<string, string> = {
     playback_mode: liveMode,
   };
+  const effectiveDvrWindowSec = typeof dvrWindowSecOverride === 'number'
+    ? dvrWindowSecOverride
+    : getStoredDvrWindowSec();
+  if (typeof effectiveDvrWindowSec === 'number') {
+    intentParams.dvr_window_sec = String(effectiveDvrWindowSec);
+  }
   if (requestCaps.clientFamilyFallback) {
     intentParams.client_family = requestCaps.clientFamilyFallback;
   }

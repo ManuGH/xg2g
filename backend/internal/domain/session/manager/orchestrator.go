@@ -5,6 +5,7 @@
 package manager
 
 import (
+	"os"
 	"context"
 	"errors"
 	"fmt"
@@ -542,6 +543,9 @@ func (o *Orchestrator) cleanupFiles(sid string) {
 	targetDir := o.Platform.Join(o.HLSRoot, "sessions", sid)
 	if err := o.Platform.RemoveAll(targetDir); err != nil {
 		log.L().Error().Err(err).Str("path", targetDir).Msg("failed to remove session directory")
+	}
+	if liveDir := ports.SessionHLSDir(o.HLSRoot, sid); liveDir != "" && liveDir != targetDir {
+		_ = os.RemoveAll(liveDir)
 	}
 }
 
