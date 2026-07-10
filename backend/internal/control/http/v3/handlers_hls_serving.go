@@ -7,6 +7,7 @@ package v3
 import (
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -19,7 +20,7 @@ import (
 )
 
 var safeHLSSessionIDRouteRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:index\.m3u8|(?:stream|audio)[A-Za-z0-9_-]*\.m3u8|init[A-Za-z0-9_-]*\.mp4|(?:seg|stream|audio)[A-Za-z0-9_-]+\.(?:ts|m4s))$`)
+var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:index\.m3u8|stream(?:_[A-Za-z0-9_-]+)?\.m3u8|init(?:_[A-Za-z0-9_-]+)?\.mp4|seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|stream[A-Za-z0-9_-]*\.ts)$`)
 
 // Responsibility: Serves HLS playlists and segments from disk.
 // Non-goals: Playback lifecycle or session management.
@@ -80,7 +81,7 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	// Playlist fetches renew the session lease: an attached player refetches
 	// the playlist every target duration, so consumption keeps the session
 	// alive even when the client's heartbeat loop is throttled or dead.
-	if filename == "index.m3u8" || filename == "stream.m3u8" {
+	if filename == "index.m3u8" || filename == "stream.m3u8" || (strings.HasPrefix(filename, "stream_") && strings.HasSuffix(filename, ".m3u8")) {
 		s.renewLeaseFromConsumption(r.Context(), sessionID)
 	}
 	// Low-latency HLS: serve the part-augmented playlist with blocking

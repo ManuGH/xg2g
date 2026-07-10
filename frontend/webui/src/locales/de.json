@@ -748,6 +748,25 @@
           "warningTitle": "Wichtiger Hinweis:",
           "warningText": "Unter iOS, iPadOS und macOS Safari ist die Wiedergabe von 5.1-Ton über fMP4-HLS aufgrund von Apples Container-Regelwerk nicht möglich. Für Apple Safari immer „Standard / Mobil (Stereo AAC)“ wählen."
         }
+      },
+      "dvrMode": {
+        "title": "Live-TV Speichermodus (DVR / Live-Only)",
+        "liveOnly": {
+          "label": "Live-Only (im RAM /dev/shm, schont SSD)",
+          "hint": "Optimiert für maximale Geschwindigkeit & minimale SSD-Abnutzung. Live-Stream läuft direkt im Arbeitsspeicher ohne Zurückspulen."
+        },
+        "dvr1h": {
+          "label": "DVR - 1 Stunde Zurückspulen",
+          "hint": "Ermöglicht bis zu 60 Minuten Timeshift / Zurückspulen."
+        },
+        "dvr2h": {
+          "label": "DVR - 2 Stunden Zurückspulen (Standard)",
+          "hint": "Ermöglicht bis zu 120 Minuten Timeshift / Zurückspulen."
+        },
+        "dvr4h": {
+          "label": "DVR - 4 Stunden Zurückspulen",
+          "hint": "Ermöglicht bis zu 240 Minuten Timeshift für längere Sendungen."
+        }
       }
     },
     "household": {

@@ -748,6 +748,25 @@
           "warningTitle": "Important:",
           "warningText": "On iOS, iPadOS and macOS Safari, 5.1 audio playback via fMP4-HLS is not possible due to Apple container policy. Always select “Standard / Mobile (Stereo AAC)” for Apple Safari."
         }
+      },
+      "dvrMode": {
+        "title": "Live TV Storage Mode (DVR / Live-Only)",
+        "liveOnly": {
+          "label": "Live-Only (in RAM /dev/shm, saves SSD wear)",
+          "hint": "Optimized for speed & zero SSD wear. Live stream runs directly in RAM without rewind buffer."
+        },
+        "dvr1h": {
+          "label": "DVR - 1 Hour Rewind",
+          "hint": "Allows up to 60 minutes of timeshift / rewind."
+        },
+        "dvr2h": {
+          "label": "DVR - 2 Hours Rewind (Default)",
+          "hint": "Allows up to 120 minutes of timeshift / rewind."
+        },
+        "dvr4h": {
+          "label": "DVR - 4 Hours Rewind",
+          "hint": "Allows up to 240 minutes of timeshift for long broadcasts."
+        }
       }
     },
     "household": {

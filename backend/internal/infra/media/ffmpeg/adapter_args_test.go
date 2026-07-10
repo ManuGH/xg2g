@@ -152,8 +152,8 @@ func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 	assert.Equal(t, "copy", videoCodec, "zero-valued profile now defaults to copy instead of legacy CPU transcode")
 
 	audioCodec, ok := valueAfter(args, "-c:a")
-	require.True(t, ok, "live HLS path should still transcode audio for compatibility")
-	assert.Equal(t, "aac", audioCodec)
+	require.True(t, ok, "live HLS path should still emit an audio codec")
+	assert.Equal(t, "copy", audioCodec, "live HLS path now copies audio for native compatibility")
 
 	assert.NotContains(t, args, "libx264", "default copy path must not force legacy CPU transcode")
 	assert.NotContains(t, args, "bwdif=mode=send_field:parity=auto:deint=all", "default copy path must not inject deinterlace filters")
@@ -192,7 +192,7 @@ func TestBuildArgs_HighProfileUsesVideoCopy(t *testing.T) {
 	assert.NotContains(t, args, "libx264", "explicit passthrough profiles must not fall back to legacy CPU transcode")
 	assert.NotContains(t, args, "yadif", "explicit passthrough profiles must not inject deinterlace filters")
 	assert.Contains(t, args, "-c:a")
-	assert.Contains(t, args, "aac")
+	assert.Contains(t, args, "copy")
 }
 
 func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
@@ -234,7 +234,7 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 	assert.NotContains(t, args, "libx264", "runtime-probed remux path must not transcode video")
 	assert.NotContains(t, args, "yadif", "runtime-probed remux path must not inject deinterlace filters")
 	assert.Contains(t, args, "-c:a")
-	assert.Contains(t, args, "aac")
+	assert.Contains(t, args, "copy")
 	assert.Contains(t, args, "dump_extra=freq=keyframe", "live copy must repeat SPS/PPS on keyframes so each HLS segment is independently decodable (no frozen opening frame)")
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
@@ -1609,13 +1609,13 @@ func TestBuildArgs_StreamRelayPassthroughUsesFastLiveProbe(t *testing.T) {
 	require.True(t, analyzeIdx >= 0 && analyzeIdx < iIdx, "analyzeduration must be before -i")
 	analyze, ok := valueAfter(args, "-analyzeduration")
 	require.True(t, ok)
-	assert.Equal(t, "1000000", analyze)
+	assert.Equal(t, "5000000", analyze)
 
 	probeIdx := indexOf(args, "-probesize")
 	require.True(t, probeIdx >= 0 && probeIdx < iIdx, "probesize must be before -i")
 	probe, ok := valueAfter(args, "-probesize")
 	require.True(t, ok)
-	assert.Equal(t, "1M", probe)
+	assert.Equal(t, "20M", probe)
 }
 
 func TestBuildArgs_StreamRelayTranscodeUsesRobustLiveProbe(t *testing.T) {

@@ -276,11 +276,13 @@ function ChannelHeader({
   const { t } = useTranslation();
   const [imageFailed, setImageFailed] = React.useState(false);
   const logo = channel?.logoUrl || channel?.logoUrl || channel?.logo;
-  const isPlayable = Boolean(onPlay);
+  const isUhd = Boolean(channel?.name?.toUpperCase().includes('UHD') || channel?.name?.toUpperCase().includes('4K'));
+  const isPlayable = Boolean(onPlay) && !isUhd;
   const fallbackLabel = buildChannelFallback(displayName, channel);
   const favoriteServiceRef = channel.serviceRef || channel.id || '';
 
   const triggerPlay = (): void => {
+    if (isUhd) return;
     if (onPlay) {
       onPlay(channel);
     }

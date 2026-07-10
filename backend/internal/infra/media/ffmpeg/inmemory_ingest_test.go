@@ -45,7 +45,7 @@ func TestInMemoryIngest_LiveHLSArgs_MPEGTS(t *testing.T) {
 		t.Errorf("expected args to contain %q, got: %s", expectedSegmentFilename, argStr)
 	}
 
-	outPath := adapter.prepareLiveOutputPath(spec.SessionID)
+	outPath := adapter.prepareLiveOutputPath(spec.SessionID, 0)
 	expectedOutPath := fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/index.m3u8", adapter.ingestPort, spec.SessionID)
 	if outPath != expectedOutPath {
 		t.Errorf("expected outPath %q, got: %q", expectedOutPath, outPath)

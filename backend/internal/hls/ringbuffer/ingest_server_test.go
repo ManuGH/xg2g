@@ -4,6 +4,7 @@
 package ringbuffer
 
 import (
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"bytes"
 	"context"
 	"fmt"
@@ -95,13 +96,13 @@ func TestIngestServer_DVRIsolation(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Check live session on disk (should not exist)
-	liveFile := filepath.Join(tmpDir, "sessions", "live_sess", "seg_000001.ts")
+	liveFile := filepath.Join(ports.SessionHLSDir(tmpDir, "live_sess"), "seg_000001.ts")
 	if _, err := os.Stat(liveFile); !os.IsNotExist(err) {
 		t.Fatalf("live session file should NOT exist on disk, but found: %v", err)
 	}
 
 	// Check rec session on disk (should exist with content "rec_data")
-	recFile := filepath.Join(tmpDir, "sessions", "rec_sess", "seg_000001.ts")
+	recFile := filepath.Join(ports.SessionHLSDir(tmpDir, "rec_sess"), "seg_000001.ts")
 	data, err := os.ReadFile(recFile)
 	if err != nil {
 		t.Fatalf("rec session file should exist on disk, got err: %v", err)

@@ -155,16 +155,16 @@ make docker-dev-fast-build
 make start
 ```
 
-`make docker-ffmpeg-base` builds `xg2g-ffmpeg:8.1.1` once from
+`make docker-ffmpeg-base` builds `xg2g-ffmpeg:8.1.2` once from
 [Dockerfile.ffmpeg-base](../../Dockerfile.ffmpeg-base).
 `make docker-dev-fast-build` then builds the development image with
-`XG2G_FFMPEG_BASE_IMAGE=xg2g-ffmpeg:8.1.1`, so the main
+`XG2G_FFMPEG_BASE_IMAGE=xg2g-ffmpeg:8.1.2`, so the main
 [Dockerfile](../../Dockerfile) can reuse the cached FFmpeg runtime layer instead
 of rebuilding FFmpeg. Building never starts or restarts a container; lifecycle
 changes remain explicit through `make start` and `make stop`.
 
 The tagged release pipeline follows the same pattern via
-`ghcr.io/manugh/xg2g-ffmpeg:8.1.1`, so release cuts do not recompile FFmpeg
+`ghcr.io/manugh/xg2g-ffmpeg:8.1.2`, so release cuts do not recompile FFmpeg
 from source on every tag.
 
 If FFmpeg version or build flags change in `backend/scripts/build-ffmpeg.sh`, rebuild the base image first:

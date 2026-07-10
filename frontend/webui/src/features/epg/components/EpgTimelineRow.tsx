@@ -36,6 +36,7 @@ export function EpgTimelineRow({
     : 'Unknown';
 
   const ref = channel.serviceRef || channel.id || '';
+  const isUhd = Boolean(channel?.name?.toUpperCase().includes('UHD') || channel?.name?.toUpperCase().includes('4K'));
 
   return (
     <div className={styles.timelineRow} style={{ minWidth: timelineWidth + 320 }}>
@@ -62,6 +63,11 @@ export function EpgTimelineRow({
             <img src={channel.logoUrl} alt="" className={styles.timelineChannelLogo} loading="lazy" />
           )}
           <span className={styles.timelineChannelName}>{displayName}</span>
+          {isUhd && (
+            <span style={{ fontSize: '0.65rem', background: 'var(--status-warning-subtle)', color: 'var(--status-warning)', padding: '1px 5px', borderRadius: '4px', fontWeight: 600, marginLeft: '6px' }}>
+              4K Pausiert
+            </span>
+          )}
         </div>
       </div>
 

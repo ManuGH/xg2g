@@ -105,6 +105,10 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 
 // GetSystemHealthz implements ServerInterface (Simple liveness check)
 func (s *Server) GetSystemHealthz(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("playbackProbe") == "1" {
+		s.servePlaybackNetworkProbe(w, r)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

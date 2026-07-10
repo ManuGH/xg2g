@@ -376,6 +376,13 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.TranscodeVideo = true
 		spec.VideoCRF = 26
 		spec.VideoMaxWidth = 1280
+		// This profile is selected for measured constrained links. A CRF-only
+		// encode may briefly exceed the line rate on scene changes, which makes a
+		// live HLS buffer drain even though its average bitrate looks acceptable.
+		// Keep a hard ceiling below the 5 Mbit/s class after AAC and transport
+		// overhead, rather than using the quality-profile 12/16 Mbit/s limits.
+		spec.VideoMaxRateK = 3000
+		spec.VideoBufSizeK = 6000
 		spec.AudioBitrateK = 160
 	case ProfileHigh:
 		spec.PolicyModeHint = ports.RuntimeModeCopy

@@ -65,7 +65,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	} else {
 		out.args = append(out.args, "-f", "hls")
 		out.args = a.appendLiveHLSArgs(out.args, spec, layout, audioSelection)
-		out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID, audioSelection.IsMultiAudio))
+		out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID, spec.Profile.DVRWindowSec, audioSelection.IsMultiAudio))
 	}
 
 	// One source of truth: record the hwAccel the emitted argv actually reflects,
@@ -153,6 +153,9 @@ func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.Stream
 }
 
 func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []string {
+	if !spec.Profile.TranscodeVideo {
+		return append(args, "-c:a", "copy", "-sn")
+	}
 	audioBitrate := "192k"
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
@@ -212,7 +215,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 		sel = audioSel[0]
 	}
 	segmentType := "mpegts"
-	sessionDir := ports.SessionHLSDir(a.HLSRoot, spec.SessionID)
+	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec)
 	segmentFilename := filepath.Join(sessionDir, "seg_%06d.ts")
 	if strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
 		segmentType = "fmp4"
@@ -285,13 +288,13 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 	return args
 }
 
-func (a *LocalAdapter) prepareLiveOutputPath(sessionID string, isMultiAudio ...bool) string {
+func (a *LocalAdapter) prepareLiveOutputPath(sessionID string, dvrWindowSec int, isMultiAudio ...bool) string {
 	multi := len(isMultiAudio) > 0 && isMultiAudio[0]
 	filename := "index.m3u8"
 	if multi {
 		filename = "stream_%v.m3u8"
 	}
-	outputPath := filepath.Join(ports.SessionHLSDir(a.HLSRoot, sessionID), filename)
+	outputPath := filepath.Join(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec), filename)
 	_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
 	if markerPath := ports.SessionFirstFrameMarkerPath(a.HLSRoot, sessionID); markerPath != "" {
 		_ = os.Remove(markerPath)

@@ -1,6 +1,7 @@
 package storageinventory
 
 import (
+	platformpaths "github.com/ManuGH/xg2g/internal/platform/paths"
 	"path/filepath"
 	"testing"
 )
@@ -38,7 +39,7 @@ func TestInventoryIncludesSeparatedHLSArtifactClasses(t *testing.T) {
 	if recordingsClass != ClassMaterialized {
 		t.Fatalf("recording_artifacts_root class = %q, want %q", recordingsClass, ClassMaterialized)
 	}
-	if livePath != filepath.Join(hlsRoot, "sessions") {
+	if livePath != platformpaths.LiveSessionsRoot(hlsRoot) {
 		t.Fatalf("live_sessions_root path = %q", livePath)
 	}
 	if recordingsPath != filepath.Join(hlsRoot, "recordings") {
