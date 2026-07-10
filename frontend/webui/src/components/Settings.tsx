@@ -179,6 +179,17 @@ function Settings() {
       return 'stereo';
     }
   });
+  const [dvrMode, setDvrMode] = useState<'live_only' | '1h' | '2h' | '4h'>(() => {
+    try {
+      const stored = localStorage.getItem('xg2g.settings.dvrMode');
+      if (stored === 'live_only' || stored === '1h' || stored === '2h' || stored === '4h') {
+        return stored;
+      }
+      return '2h';
+    } catch {
+      return '2h';
+    }
+  });
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const requestedSection = searchParams.get('section');
   const requestedTool = searchParams.get('tool');
@@ -1210,22 +1221,67 @@ function Settings() {
       {showSection('streaming') ? (
         <div className={styles.section}>
         <h2>{t('settings.streaming.title')}</h2>
+        <p className={styles.subtitle}>
+          {t('settings.streaming.engineSubtitle', {
+            defaultValue: 'xg2g regelt Video-Bitrate, Auflösung und Codecs vollautomatisch und adaptiv anhand deiner aktuellen Verbindung. Es ist kein starres manuelles Profil mehr nötig.'
+          })}
+        </p>
 
-        {/* Note: Profile selection removed in favor of Universal Policy */}
-        <div className={styles.group}>
-          <label>{t('settings.streaming.policy.label')}</label>
-          <div className={styles.inputRow}>
-            <input
-              type="text"
-              value={
-                config?.streaming?.deliveryPolicy === 'universal'
-                  ? t('settings.streaming.policy.universal')
-                  : (config?.streaming?.deliveryPolicy || t('common.loading'))
-              }
-              disabled
-              className={styles.inputReadonly}
-            />
-            <span className={styles.hint}>{t('settings.streaming.policy.hint')}</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginTop: '16px' }}>
+          <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                ADAPTIVE ENGINE
+              </span>
+              <strong style={{ fontSize: '0.95rem' }}>CPU & GPU Transcoding</strong>
+            </div>
+            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
+              {t('settings.streaming.cardEngineText', {
+                defaultValue: 'Erkennt automatisch Hardware-Beschleunigung (GPU: VAAPI, NVENC, QSV, VideoToolbox) auf dem Server und greift bei Bedarf nahtlos auf optimiertes CPU-Encoding zurück. Passt Bitrate und Auflösung dynamisch an (strikte 720p-Untergrenze bis hin zu nativem 1080p/4K).'
+              })}
+            </p>
+          </div>
+
+          <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                CODECS
+              </span>
+              <strong style={{ fontSize: '0.95rem' }}>AV1 · HEVC · H.264 · MPEG-2</strong>
+            </div>
+            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
+              {t('settings.streaming.cardCodecsText', {
+                defaultValue: 'Dynamische Aushandlung der besten Codecs: AV1 & HEVC (H.265) für maximale Qualität bei kleinstem Datenvolumen, H.264 für universelle Kompatibilität und MPEG-2 für verlustfreies Direct Play im LAN.'
+              })}
+            </p>
+          </div>
+
+          <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                CONTAINER
+              </span>
+              <strong style={{ fontSize: '0.95rem' }}>fMP4 · CMAF · MPEG-TS</strong>
+            </div>
+            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
+              {t('settings.streaming.cardContainersText', {
+                defaultValue: 'Modernes Low-Latency HLS (fMP4 / CMAF) für blitzschnelles Umschalten bei HD-Sendern. Schutz bei 4K-Sendern: Da 4K/UHD-Streams in fMP4 im Browser häufig zu Pufferstaus/Rucklern führen, wählt xg2g bei 4K automatisch den robusten MPEG-TS-Container für absolut flüssige Wiedergabe.'
+              })}
+            </p>
+          </div>
+
+          <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                DEINTERLACING
+              </span>
+              <strong style={{ fontSize: '0.95rem' }}>Interlaced vs. Progressive</strong>
+            </div>
+            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
+              {t('settings.streaming.cardInterlacedText', {
+                defaultValue: 'Progressive Sender (720p, 1080p, 4K) können 1:1 durchgereicht werden. Interlaced Sender (z. B. 1080i / 576i) werden von Browsern/Smartphones nicht nativ unterstützt (Zeilenflimmern) und daher von xg2g immer automatisch in flüssiges 50-fps-Progressive-Video konvertiert.'
+              })}
+            </p>
           </div>
         </div>
 
@@ -1272,6 +1328,83 @@ function Settings() {
                     ⚠️ <strong>{t('settings.streaming.audioMode.surround.warningTitle')}</strong> {t('settings.streaming.audioMode.surround.warningText')}
                   </div>
                 </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div className={styles.group} style={{ marginTop: '24px' }}>
+          <label style={{ fontWeight: 600, fontSize: '1.05rem' }}>{t('settings.streaming.dvrMode.title')}</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="dvrMode"
+                value="live_only"
+                checked={dvrMode === 'live_only'}
+                onChange={() => {
+                  setDvrMode('live_only');
+                  try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch {}
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.liveOnly.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.dvrMode.liveOnly.hint')}</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="dvrMode"
+                value="1h"
+                checked={dvrMode === '1h'}
+                onChange={() => {
+                  setDvrMode('1h');
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch {}
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.dvr1h.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr1h.hint')}</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="dvrMode"
+                value="2h"
+                checked={dvrMode === '2h'}
+                onChange={() => {
+                  setDvrMode('2h');
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch {}
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.dvr2h.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr2h.hint')}</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="dvrMode"
+                value="4h"
+                checked={dvrMode === '4h'}
+                onChange={() => {
+                  setDvrMode('4h');
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch {}
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.dvr4h.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr4h.hint')}</div>
               </div>
             </label>
           </div>

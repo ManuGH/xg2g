@@ -7,6 +7,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/http/v3/clientpolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -183,6 +184,7 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 		resolution.profileSpec,
 		resolveProfileSpec,
 	)
+	resolution.profileSpec = adaptStartProfileForNetworkContext(intent, resolution.profileSpec)
 	requestedCodecs := requestedCodecsForIntent(intent, requestedPlaybackMode)
 	if shouldTraceAutoCodecDecision(intent, requestedCodecs) {
 		resolution.autoCodecTrace = autocodec.DescribeSelection(requestedCodecs, resolution.effectiveProfileID, s.deps.HostRuntime(ctx))
@@ -285,6 +287,7 @@ func (s *Service) logStartProfileResolution(intent Intent, resolution startProfi
 		Str("auto_codec_benchmark_class", resolution.autoCodecTrace.CodecBenchmarkClass).
 		Str("encoder_backend", encoderBackend).
 		Str("video_codec", resolution.profileSpec.VideoCodec).
+		Int("video_maxrate_k", resolution.profileSpec.VideoMaxRateK).
 		Str("container", resolution.profileSpec.Container).
 		Bool("llhls", resolution.profileSpec.LLHLS)
 	if clientFamily != "" {
@@ -300,6 +303,14 @@ func (s *Service) logStartProfileResolution(intent Intent, resolution startProfi
 		event = event.Str("cap_hash", capHash)
 	}
 	if canonicalCaps != nil {
+		if canonicalCaps.NetworkContext != nil {
+			if kind := normalize.Token(canonicalCaps.NetworkContext.Kind); kind != "" {
+				event = event.Str("network_kind", kind)
+			}
+			if canonicalCaps.NetworkContext.DownlinkKbps > 0 {
+				event = event.Int("network_downlink_kbps", canonicalCaps.NetworkContext.DownlinkKbps)
+			}
+		}
 		if source := normalize.Token(canonicalCaps.ClientCapsSource); source != "" {
 			event = event.Str("client_caps_source", source)
 		}
@@ -331,4 +342,66 @@ func requiredVerifiedHardwareCodecForProfile(profileID string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func adaptStartProfileForNetworkContext(intent Intent, spec model.ProfileSpec) model.ProfileSpec {
+	if intent.ClientCaps == nil || intent.ClientCaps.NetworkContext == nil {
+		return spec
+	}
+	netCtx := intent.ClientCaps.NetworkContext
+	if strings.EqualFold(strings.TrimSpace(netCtx.Kind), "lan") && spec.Name != profiles.ProfileLow {
+		return spec
+	}
+	if netCtx.DownlinkKbps <= 0 {
+		return spec
+	}
+
+	downlinkKbps := netCtx.DownlinkKbps
+	if !spec.TranscodeVideo && downlinkKbps >= 15000 && spec.Name != profiles.ProfileLow {
+		return spec
+	}
+
+	budgetKbps := (downlinkKbps * 75) / 100
+	audioKbps := spec.AudioBitrateK
+	if audioKbps <= 0 {
+		audioKbps = 160
+	}
+	videoRateK := budgetKbps - audioKbps
+	if videoRateK < 400 {
+		videoRateK = 400
+	}
+
+	maxCeiling := 8000
+	if spec.Name == profiles.ProfileLow || downlinkKbps < 15000 {
+		maxCeiling = 3000
+	} else if spec.VideoMaxRateK > 0 {
+		maxCeiling = spec.VideoMaxRateK
+	}
+	if videoRateK > maxCeiling {
+		videoRateK = maxCeiling
+	}
+
+	next := spec
+	next.TranscodeVideo = true
+	if next.VideoCodec == "" {
+		next.VideoCodec = "libx264"
+	}
+	next.VideoMaxRateK = videoRateK
+	next.VideoBufSizeK = videoRateK * 2
+	if next.AudioBitrateK <= 0 {
+		next.AudioBitrateK = audioKbps
+	}
+
+	if next.VideoMaxWidth <= 0 || next.VideoMaxWidth > 1280 {
+		next.VideoMaxWidth = 1280
+	}
+	if videoRateK <= 1000 {
+		next.VideoCRF = 28
+	} else if videoRateK <= 1500 {
+		next.VideoCRF = 27
+	} else if next.VideoCRF < 26 {
+		next.VideoCRF = 26
+	}
+	next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
+	return next
 }

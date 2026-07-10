@@ -48,7 +48,7 @@ describe('playerRuntimeMetaFormat', () => {
 
   it('summarizes backend target profile fields without deciding policy', () => {
     expect(formatTargetProfileSummary(targetProfile)).toBe(
-      'hls · v:transcode/h264/crf23/veryfast · a:transcode/aac/2ch@192k'
+      'hls · v:transcode/h264/1920x1080/crf23/veryfast · a:transcode/aac/2ch@192k'
     );
   });
 
