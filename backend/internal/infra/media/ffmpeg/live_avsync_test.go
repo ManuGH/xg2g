@@ -66,7 +66,7 @@ func TestTransformArgsForAvsyncPipe(t *testing.T) {
 			t.Fatalf("HTTP-only flag %q must be stripped: %s", banned, joined)
 		}
 	}
-	if !strings.Contains(joined, "-af atrim=start=1.735 -c:a aac") {
+	if !strings.Contains(joined, "-af aresample=async=1,atrim=start=1.735 -c:a aac") {
 		t.Fatalf("atrim must precede the audio codec: %s", joined)
 	}
 	if !strings.Contains(joined, "-c:v copy") || !strings.Contains(joined, "-ar 48000") {
