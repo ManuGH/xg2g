@@ -39,5 +39,8 @@ RUN if ! getent group "${USER_GID}" >/dev/null 2>&1; then \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
     chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
+# Dev container has no long-running service; disable HEALTHCHECK to suppress Trivy DS-0026.
+HEALTHCHECK NONE
+
 USER ${USERNAME}
 WORKDIR /workspaces/xg2g
