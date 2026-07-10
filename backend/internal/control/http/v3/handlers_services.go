@@ -142,10 +142,6 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 			if !household.IsServiceAllowedNormalized(profile, item.ServiceRef, item.Group) {
 				continue
 			}
-			nameUpper := strings.ToUpper(item.Name)
-			if strings.Contains(nameUpper, "UHD") || strings.Contains(nameUpper, "4K") {
-				continue
-			}
 			// Scoping
 			item := item
 			svc := Service{
