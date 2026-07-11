@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
@@ -152,8 +153,8 @@ func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 	assert.Equal(t, "copy", videoCodec, "zero-valued profile now defaults to copy instead of legacy CPU transcode")
 
 	audioCodec, ok := valueAfter(args, "-c:a")
-	require.True(t, ok, "live HLS path should still transcode audio for compatibility")
-	assert.Equal(t, "aac", audioCodec)
+	require.True(t, ok, "live HLS path should emit an audio codec decision")
+	assert.Equal(t, "copy", audioCodec, "passthrough should preserve source audio")
 
 	assert.NotContains(t, args, "libx264", "default copy path must not force legacy CPU transcode")
 	assert.NotContains(t, args, "bwdif=mode=send_field:parity=auto:deint=all", "default copy path must not inject deinterlace filters")
@@ -191,8 +192,9 @@ func TestBuildArgs_HighProfileUsesVideoCopy(t *testing.T) {
 	assert.Contains(t, args, "copy", "explicit passthrough profiles must use video copy")
 	assert.NotContains(t, args, "libx264", "explicit passthrough profiles must not fall back to legacy CPU transcode")
 	assert.NotContains(t, args, "yadif", "explicit passthrough profiles must not inject deinterlace filters")
-	assert.Contains(t, args, "-c:a")
-	assert.Contains(t, args, "aac")
+	audioCodec, ok := valueAfter(args, "-c:a")
+	require.True(t, ok)
+	assert.Equal(t, "copy", audioCodec)
 }
 
 func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
@@ -233,8 +235,9 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 	assert.Contains(t, args, "copy", "runtime-probed progressive h264 safari streams should use video copy")
 	assert.NotContains(t, args, "libx264", "runtime-probed remux path must not transcode video")
 	assert.NotContains(t, args, "yadif", "runtime-probed remux path must not inject deinterlace filters")
-	assert.Contains(t, args, "-c:a")
-	assert.Contains(t, args, "aac")
+	audioCodec, ok := valueAfter(args, "-c:a")
+	require.True(t, ok)
+	assert.Equal(t, "copy", audioCodec)
 	assert.Contains(t, args, "dump_extra=freq=keyframe", "live copy must repeat SPS/PPS on keyframes so each HLS segment is independently decodable (no frozen opening frame)")
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
@@ -567,7 +570,7 @@ func TestBuildArgs_SafariHQAllowlistUsesHighBitrate25pTranscode(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "256k", audioBitrate)
 
-	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
+	expectedGOP := strconv.Itoa(config.QuickStartHLSSegmentSeconds * 25)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "hq safari path should keep the 25fps live GOP for corrupt relay inputs")
@@ -641,7 +644,7 @@ func TestBuildArgs_SafariHQAllowlistKeepsProgressive50fpsSourcesProgressive(t *t
 	require.True(t, ok)
 	assert.Equal(t, "256k", audioBitrate)
 
-	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 50)
+	expectedGOP := strconv.Itoa(config.QuickStartHLSSegmentSeconds * 50)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "progressive HQ safari path should preserve 50fps GOP cadence")
@@ -696,7 +699,7 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 
 	assert.NotContains(t, args, "yadif", "progressive HQ25 fallback must stay progressive")
 
-	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
+	expectedGOP := strconv.Itoa(config.QuickStartHLSSegmentSeconds * 25)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "forced HQ25 should clamp progressive sources to 25fps GOP cadence")
@@ -747,7 +750,7 @@ func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *
 
 	assert.NotContains(t, args, "yadif", "progressive HQ25 env override must stay progressive")
 
-	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
+	expectedGOP := strconv.Itoa(config.QuickStartHLSSegmentSeconds * 25)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop)

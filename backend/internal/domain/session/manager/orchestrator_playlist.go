@@ -50,7 +50,7 @@ func (o *Orchestrator) waitForReady(
 			return false, model.RProcessEnded, "process died during startup: " + status.Message
 		}
 
-		ready, notReadyReason, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, e.ProfileID, startTime)
+		ready, notReadyReason, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, currentProfileSpec.Name, startTime)
 		if err == nil && ready {
 			return true, "", ""
 		}
@@ -207,7 +207,7 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		return false, "vod last segment missing or empty: " + lastSegment, nil
 	}
 
-	requiredSegments := o.liveReadySegments()
+	requiredSegments := o.liveReadySegments(profileID)
 	if len(segmentURIs) < requiredSegments {
 		return false, fmt.Sprintf("not enough segments: %d < %d required", len(segmentURIs), requiredSegments), nil
 	}
@@ -230,11 +230,18 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	return true, "", nil
 }
 
-func (o *Orchestrator) liveReadySegments() int {
-	if o.LiveReadySegments > 0 {
-		return o.LiveReadySegments
+func (o *Orchestrator) liveReadySegments(profileID string) int {
+	required := o.LiveReadySegments
+	if required <= 0 {
+		required = 3
 	}
-	return 3
+	// Two-second Safari startup needs three completed segments. Honouring a
+	// global two-segment override here would expose only four seconds of media,
+	// leaving native HLS too close to the live edge for normal network jitter.
+	if profiles.UsesQuickStartHLSSegments(profileID) && required < 3 {
+		return 3
+	}
+	return required
 }
 
 func playlistSegments(content []byte) []string {

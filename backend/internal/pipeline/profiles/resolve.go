@@ -269,6 +269,26 @@ func NormalizeRequestedProfileID(requested string) string {
 	return requested
 }
 
+// UsesQuickStartHLSSegments reports whether a live profile should trade the
+// standard six-second HLS cadence for two-second startup segments. These are
+// the native Safari profiles (including their recovery/runtime variants) plus
+// the constrained-link profile selected by the public playback probe.
+func UsesQuickStartHLSSegments(profile string) bool {
+	switch NormalizeRequestedProfileID(profile) {
+	case ProfileLow,
+		ProfileSafari,
+		ProfileSafariDirty,
+		ProfileSafariDVR,
+		ProfileSafariHEVC,
+		ProfileSafariHEVCHW,
+		ProfileSafariHEVCHWLL,
+		ProfileSafariRuntimeHQ:
+		return true
+	default:
+		return false
+	}
+}
+
 // PrefersNativeFMP4Packaging reports whether the requested internal/public
 // profile carries an explicit native HLS fMP4 packaging bias. Client-family
 // fallback belongs in higher-level policy layers.

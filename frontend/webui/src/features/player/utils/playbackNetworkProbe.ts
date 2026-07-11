@@ -4,13 +4,23 @@ import type { PlaybackClientContext } from './playbackRequestProfile';
 const PROBE_BYTES = 512 * 1024;
 const PROBE_TIMEOUT_MS = 3000;
 const PROBE_HEADER = 'X-XG2G-Playback-Probe';
+const PROBE_CACHE_TTL_MS = 2 * 60 * 1000;
+const CONSTRAINED_CACHE_TTL_MS = 15 * 1000;
+
+type CachedPlaybackNetworkProbe = {
+	expiresAt: number;
+	value: PlaybackNetworkProbe;
+};
+
+const probeCache = new Map<string, CachedPlaybackNetworkProbe>();
+const probesInFlight = new Map<string, Promise<PlaybackNetworkProbe | undefined>>();
 
 export type PlaybackNetworkProbe =
   | { kind: 'lan' }
   | { kind: 'measured'; downlinkMbps: number }
   | { kind: 'constrained' };
 
-export async function measurePlaybackNetwork(apiBase: string): Promise<PlaybackNetworkProbe | undefined> {
+async function runPlaybackNetworkProbe(apiBase: string): Promise<PlaybackNetworkProbe | undefined> {
 	if (typeof window === 'undefined' || navigator.onLine === false) {
 		return undefined;
 	}
@@ -45,6 +55,34 @@ export async function measurePlaybackNetwork(apiBase: string): Promise<PlaybackN
 	} finally {
 		window.clearTimeout(timeout);
 	}
+}
+
+export function measurePlaybackNetwork(apiBase: string): Promise<PlaybackNetworkProbe | undefined> {
+	const now = Date.now();
+	const cached = probeCache.get(apiBase);
+	if (cached && cached.expiresAt > now) {
+		return Promise.resolve(cached.value);
+	}
+	if (cached) {
+		probeCache.delete(apiBase);
+	}
+
+	const inFlight = probesInFlight.get(apiBase);
+	if (inFlight) {
+		return inFlight;
+	}
+
+	const probe = runPlaybackNetworkProbe(apiBase).then((result) => {
+		if (result) {
+			const ttl = result.kind === 'constrained' ? CONSTRAINED_CACHE_TTL_MS : PROBE_CACHE_TTL_MS;
+			probeCache.set(apiBase, { expiresAt: Date.now() + ttl, value: result });
+		}
+		return result;
+	}).finally(() => {
+		probesInFlight.delete(apiBase);
+	});
+	probesInFlight.set(apiBase, probe);
+	return probe;
 }
 
 export function applyPlaybackNetworkProbe(

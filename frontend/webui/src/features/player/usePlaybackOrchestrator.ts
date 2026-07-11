@@ -912,11 +912,15 @@ export function usePlaybackOrchestrator(
 
       try {
         const maxMetaRetries = 20;
-        requestCaps = await gatherPlaybackCapabilitiesForPlayer('recording');
+        const [capabilities, networkProbe] = await Promise.all([
+          gatherPlaybackCapabilitiesForPlayer('recording'),
+          measurePlaybackNetwork(apiBase),
+        ]);
+        requestCaps = capabilities;
         const requestContext = applyPlaybackNetworkProbe(
           requestCaps,
           gatherPlaybackClientContext(),
-          await measurePlaybackNetwork(apiBase),
+          networkProbe,
         );
         if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
         const requestProfile = resolvePlaybackRequestProfile(
@@ -1238,11 +1242,14 @@ export function usePlaybackOrchestrator(
         let liveMode: VodStreamMode = null;
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
 
-        const requestCaps = await gatherPlaybackCapabilitiesForPlayer('live');
+        const [requestCaps, networkProbe] = await Promise.all([
+          gatherPlaybackCapabilitiesForPlayer('live'),
+          measurePlaybackNetwork(apiBase),
+        ]);
         const requestContext = applyPlaybackNetworkProbe(
           requestCaps,
           gatherPlaybackClientContext(),
-          await measurePlaybackNetwork(apiBase),
+          networkProbe,
         );
         if (isStalePlaybackEpoch(playbackEpoch)) return;
         const requestProfile = resolvePlaybackRequestProfile(
