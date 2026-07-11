@@ -57,6 +57,12 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     spinnerEyebrow: 'Live startup',
     spinnerLabel: 'Preparing stream',
     spinnerSupport: 'This can take a moment.',
+    startupPhaseSteps: [
+      { key: 'connect', label: 'Connect', state: 'done' as const },
+      { key: 'transcode', label: 'Transcode', state: 'active' as const },
+      { key: 'buffer', label: 'Buffer', state: 'pending' as const },
+    ],
+    startupProgressPercent: 58,
     startupElapsedLabel: 'Wait 1s',
     showOverlayStopAction: false,
     overlayStopLabel: 'Stop',

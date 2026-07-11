@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { Fragment, type RefObject } from 'react';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { useUiSurface } from '../../../context/UiSurfaceContext';
 import type { VideoElementRef } from '../../../types/v3-player';
@@ -108,19 +108,46 @@ export function V3PlayerView({
             aria-live="polite"
           >
             <div className={styles.spinnerBadge}>
-              <div className={`${styles.spinner} spinner-base`}></div>
+              <div className={styles.startupRing} aria-hidden="true">
+                <span className={styles.startupRingArc}></span>
+                <span className={styles.startupRingCore}></span>
+              </div>
             </div>
             <div className={styles.spinnerContent}>
               <div className={styles.spinnerEyebrow}>{viewState.spinnerEyebrow}</div>
               {viewState.channelName && <h2 className={styles.spinnerTitle}>{viewState.channelName}</h2>}
-              <div className={styles.spinnerStatusRow}>
-                <StatusChip state={viewState.overlayStatusState} label={viewState.overlayStatusLabel} />
-              </div>
               <div className={styles.spinnerLabel}>{viewState.spinnerLabel}</div>
               <div className={styles.spinnerSupport}>{viewState.spinnerSupport}</div>
+              <div className={styles.phaseTrack}>
+                {viewState.startupPhaseSteps.map((step, index) => (
+                  <Fragment key={step.key}>
+                    {index > 0 && (
+                      <span
+                        className={[
+                          styles.phaseConnector,
+                          step.state !== 'pending' ? styles.phaseConnectorDone : null,
+                        ].filter(Boolean).join(' ')}
+                      ></span>
+                    )}
+                    <span
+                      className={[
+                        styles.phaseStep,
+                        step.state === 'active' ? styles.phaseStepActive : null,
+                        step.state === 'done' ? styles.phaseStepDone : null,
+                      ].filter(Boolean).join(' ')}
+                    >
+                      <span className={styles.phaseDot}>{step.state === 'done' ? '✓' : ''}</span>
+                      <span className={styles.phaseLabel}>{step.label}</span>
+                    </span>
+                  </Fragment>
+                ))}
+              </div>
               <div className={styles.spinnerMeta}>
                 <div className={styles.spinnerProgressTrack} aria-hidden="true">
-                  <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
+                  <div
+                    className={styles.spinnerProgressFill}
+                    style={{ width: `${viewState.startupProgressPercent}%` }}
+                  ></div>
                 </div>
                 <div className={styles.spinnerElapsed}>{viewState.startupElapsedLabel}</div>
               </div>

@@ -151,6 +151,8 @@ export interface V3PlayerViewState {
   spinnerEyebrow: string;
   spinnerLabel: string;
   spinnerSupport: string;
+  startupPhaseSteps: Array<{ key: string; label: string; state: 'done' | 'active' | 'pending' }>;
+  startupProgressPercent: number;
   startupElapsedLabel: string;
   showOverlayStopAction: boolean;
   overlayStopLabel: string;
@@ -1564,6 +1566,10 @@ export function usePlaybackOrchestrator(
           phase: 'starting',
           requestId: intentRequestId ?? null,
         });
+        // From here the backend is tuning + spinning up the transcoder; surface
+        // that as its own startup phase ('priming') so the overlay can separate
+        // "connecting" from "transcoder starting" from "buffering".
+        setStatus('priming');
         const session = await waitForSessionReady(newSessionId);
         if (isStaleSessionEpoch(playbackEpoch, sessionEpoch)) {
           await sendStopIntent(newSessionId);
@@ -1950,6 +1956,32 @@ export function usePlaybackOrchestrator(
     isOverlayStartupStatus
       ? resolveStartupOverlaySupport(sessionProfileReason, t, overlayStatus)
       : '';
+  // Startup phase stepper: map the coarse player status onto the three
+  // user-facing startup stages so the overlay can show WHERE the start
+  // currently is instead of a generic indeterminate spinner.
+  //   connect   -> intent/tuner handshake ('starting')
+  //   transcode -> backend session spin-up ('priming' | 'building')
+  //   buffer    -> first segments arriving ('buffering' | 'recovering')
+  const startupPhaseIndex =
+    overlayStatus === 'buffering' || overlayStatus === 'recovering'
+      ? 2
+      : overlayStatus === 'priming' || overlayStatus === 'building'
+        ? 1
+        : 0;
+  const startupPhaseSteps = [
+    { key: 'connect', label: t('player.startupPhases.connect', { defaultValue: 'Connect' }) },
+    { key: 'transcode', label: t('player.startupPhases.transcode', { defaultValue: 'Transcode' }) },
+    { key: 'buffer', label: t('player.startupPhases.buffer', { defaultValue: 'Buffer' }) },
+  ].map((step, index) => ({
+    ...step,
+    state:
+      index < startupPhaseIndex
+        ? ('done' as const)
+        : index === startupPhaseIndex
+          ? ('active' as const)
+          : ('pending' as const),
+  }));
+  const startupProgressPercent = [22, 58, 86][startupPhaseIndex] ?? 22;
   const isBufferingOverlayActive =
     (status === 'buffering' || status === 'recovering') && showBufferingOverlay;
   const showStartupOverlay =
@@ -2205,6 +2237,8 @@ export function usePlaybackOrchestrator(
     spinnerEyebrow: t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' }),
     spinnerLabel,
     spinnerSupport,
+    startupPhaseSteps,
+    startupProgressPercent,
     startupElapsedLabel: t('player.startupElapsed', {
       defaultValue: 'Wait {{seconds}}s',
       seconds: startupElapsedSeconds,

@@ -807,6 +807,48 @@ export function usePlaybackEngine({
       });
       hlsRef.current = hls;
 
+      // Live startup gate: on a fresh live session the encoder edge is only
+      // ~1 segment ahead, and starting playback the moment the first segment
+      // is buffered leaves zero headroom — every PDT/encoder jitter then
+      // surfaces as an immediate bufferStalledError (visible stall + recovery
+      // jolt seconds after start). Live input is realtime-paced, so headroom
+      // can only come from waiting: hold play() until a small buffer target
+      // exists (or a cap elapses). VOD playlists open the gate immediately.
+      const START_GATE_TARGET_SECONDS = 3.2;
+      const START_GATE_TIMEOUT_MS = 4000;
+      let startGateOpen = false;
+      let startGateTimer: number | null = null;
+      const bufferedAheadSeconds = (): number => {
+        const gateVideo = videoRef.current;
+        if (!gateVideo || gateVideo.buffered.length === 0) {
+          return 0;
+        }
+        const from = Math.max(gateVideo.currentTime, gateVideo.buffered.start(0));
+        return gateVideo.buffered.end(gateVideo.buffered.length - 1) - from;
+      };
+      const openStartGate = (reason: string) => {
+        if (startGateOpen) {
+          return;
+        }
+        startGateOpen = true;
+        if (startGateTimer !== null) {
+          window.clearTimeout(startGateTimer);
+          startGateTimer = null;
+        }
+        if (hlsRef.current !== hls) {
+          return;
+        }
+        debugLog('[V3Player] Startup gate open', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
+        videoRef.current?.play().catch((err) => {
+          debugWarn('[V3Player] Autoplay failed', err);
+          setStatus('ready');
+        });
+      };
+      // The element-level autoplay attribute would bypass the gate (the
+      // browser starts playback as soon as it deems readyState sufficient),
+      // so playback ownership moves entirely to the gated play() call.
+      video.autoplay = false;
+
       hls.on(Hls.Events.LEVEL_SWITCHED, () => updateStats(hls));
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, data: ManifestParsedData) => {
         onPlaybackMilestone?.('manifest');
@@ -823,13 +865,19 @@ export function usePlaybackEngine({
             setStats((prev) => ({ ...prev, fps: first.frameRate || 0 }));
           }
         }
-        videoRef.current?.play().catch((err) => {
-          debugWarn('[V3Player] Autoplay failed', err);
-          setStatus('ready');
-        });
+        startGateTimer = window.setTimeout(() => openStartGate('timeout'), START_GATE_TIMEOUT_MS);
+      });
+
+      hls.on(Hls.Events.BUFFER_APPENDED, () => {
+        if (!startGateOpen && bufferedAheadSeconds() >= START_GATE_TARGET_SECONDS) {
+          openStartGate('buffer_target');
+        }
       });
 
       hls.on(Hls.Events.LEVEL_LOADED, (_event, data: LevelLoadedData) => {
+        if (!startGateOpen && data.details.live === false) {
+          openStartGate('vod');
+        }
         const hasContent = data.details.totalduration > 0 || (data.details.fragments && data.details.fragments.length > 0);
         setStatus((prev) => {
           if (hasContent && prev === 'buffering') {

@@ -205,6 +205,11 @@
       "transcodeStartup": "The stream is being prepared for this device and will start automatically.",
       "recovering": "The stream hit a snag and is being restored automatically."
     },
+    "startupPhases": {
+      "connect": "Connect",
+      "transcode": "Transcode",
+      "buffer": "Buffer"
+    },
     "startupElapsed": "Wait {{seconds}}s",
     "startupSurfaceEyebrow": "Live startup",
     "playlistNotReady": "Playlist not ready",
