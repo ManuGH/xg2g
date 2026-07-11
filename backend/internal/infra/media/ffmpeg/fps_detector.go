@@ -34,6 +34,7 @@ func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string, dvrWindow
 	for time.Now().Before(deadline) {
 		segment, ok := findFirstOutputSegment(sessionDir)
 		if ok {
+			a.markFastProbeEligible(sourceKey)
 			fps, basis, err := a.probeOutputFPS(segment)
 			if err != nil {
 				a.Logger.Debug().
@@ -67,6 +68,40 @@ func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string, dvrWindow
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+func (a *LocalAdapter) markFastProbeEligible(sourceKey string) {
+	if sourceKey == "" {
+		return
+	}
+	a.fastProbeMu.Lock()
+	if a.fastProbeReady == nil {
+		a.fastProbeReady = make(map[string]time.Time)
+	}
+	a.fastProbeReady[sourceKey] = time.Now()
+	a.fastProbeMu.Unlock()
+}
+
+// consumeFastProbeEligibility is deliberately one-shot. A channel earns the
+// fast probe only after producing a real HLS segment. If that next fast start
+// fails, the orchestrator retry falls back to the deep 5s/20M probe; another
+// successful segment earns the optimization again.
+func (a *LocalAdapter) consumeFastProbeEligibility(sourceKey string) bool {
+	if sourceKey == "" {
+		return false
+	}
+	ttl := a.FPSCacheTTL
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	a.fastProbeMu.Lock()
+	defer a.fastProbeMu.Unlock()
+	learnedAt, ok := a.fastProbeReady[sourceKey]
+	if !ok {
+		return false
+	}
+	delete(a.fastProbeReady, sourceKey)
+	return !learnedAt.IsZero() && time.Since(learnedAt) <= ttl
 }
 
 func findFirstOutputSegment(sessionDir string) (string, bool) {

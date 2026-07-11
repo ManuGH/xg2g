@@ -181,7 +181,12 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 // copy sources with unknown GOPs fall back to the hls muxer (the HasParts
 // gate then keeps the playlist plain).
 func (a *LocalAdapter) useCMAFSegmenter(spec ports.StreamSpec) bool {
-	return false
+	return a.ExperimentalCMAFSegmenter &&
+		a.LowLatencyHLS &&
+		spec.Mode == ports.ModeLive &&
+		spec.Format == ports.FormatHLS &&
+		spec.Profile.TranscodeVideo &&
+		strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
 }
 
 // appendLiveCMAFStreamArgs emits a single fragmented-MP4 stream on stdout:
