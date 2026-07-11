@@ -373,6 +373,18 @@ export function V3PlayerView({
               </Button>
             )}
 
+            {viewState.ttffBadgeLabel && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={styles.ttffBadge}
+                onClick={actions.toggleStats}
+                title={viewState.ttffTitle ?? 'Time to First Frame'}
+              >
+                <span>⚡ {viewState.ttffBadgeLabel}</span>
+              </Button>
+            )}
+
             <Button
               variant="ghost"
               size="sm"

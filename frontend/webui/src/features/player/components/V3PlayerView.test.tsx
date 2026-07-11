@@ -78,6 +78,8 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     seekForward15mLabel: 'Forward 15m',
     playPauseLabel: 'Play',
     playPauseIcon: '▶',
+    ttffBadgeLabel: null,
+    ttffTitle: null,
     seekableStart: 0,
     seekableEnd: 0,
     startTimeDisplay: '00:00',

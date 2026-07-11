@@ -172,6 +172,8 @@ export interface V3PlayerViewState {
   seekForward15mLabel: string;
   playPauseLabel: string;
   playPauseIcon: string;
+  ttffBadgeLabel: string | null;
+  ttffTitle: string | null;
   seekableStart: number;
   seekableEnd: number;
   startTimeDisplay: string;
@@ -273,6 +275,51 @@ export function usePlaybackOrchestrator(
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
   );
+  const ttffStartT0Ref = useRef<number | null>(null);
+  const ttffManifestT1Ref = useRef<number | null>(null);
+  const [ttffMetrics, setTtffMetrics] = useState<{
+    ttffMs: number;
+    manifestMs: number;
+    bufferMs: number;
+  } | null>(null);
+
+  const handleAttemptStarted = useCallback(() => {
+    ttffStartT0Ref.current = performance.now();
+    ttffManifestT1Ref.current = null;
+    setTtffMetrics(null);
+  }, []);
+
+  const handlePlaybackMilestone = useCallback((milestone: 'manifest' | 'firstFrame') => {
+    const startT0 = ttffStartT0Ref.current;
+    if (startT0 === null) return;
+
+    const now = performance.now();
+    if (milestone === 'manifest') {
+      if (ttffManifestT1Ref.current === null) {
+        ttffManifestT1Ref.current = now;
+        debugLog(`[V3Player] TTFF Milestone: Manifest loaded in ${Math.round(now - startT0)}ms`);
+      }
+    } else if (milestone === 'firstFrame') {
+      const manifestT1 = ttffManifestT1Ref.current ?? now;
+      const ttffMs = Math.round(now - startT0);
+      const manifestMs = Math.round(manifestT1 - startT0);
+      const bufferMs = Math.round(now - manifestT1);
+
+      setTtffMetrics({ ttffMs, manifestMs, bufferMs });
+      ttffStartT0Ref.current = null;
+
+      telemetry.emit('ui.player.ttff', {
+        ttffMs,
+        manifestMs,
+        bufferMs,
+        playbackMode: playbackStateRef.current.playbackMode,
+        serviceRef: sRef,
+      });
+
+      debugLog(`[V3Player] TTFF Complete: ${ttffMs}ms (Manifest: ${manifestMs}ms, Buffer: ${bufferMs}ms)`);
+    }
+  }, [sRef]);
+
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
   const [playbackState, dispatchPlayback] = useReducer(
     playbackMachine,
@@ -295,6 +342,7 @@ export function usePlaybackOrchestrator(
     trackedEpoch: playbackState.epoch,
     dispatchPlayback,
     requestedDuration,
+    onAttemptStarted: handleAttemptStarted,
   });
 
   const {
@@ -743,7 +791,8 @@ export function usePlaybackOrchestrator(
     setStats,
     setStatus,
     clearPlaybackFailure,
-    reportPlaybackFailure
+    reportPlaybackFailure,
+    onPlaybackMilestone: handlePlaybackMilestone,
   });
 
   // --- Core Helpers & Wrappers (Memoized) ---
@@ -2044,7 +2093,14 @@ export function usePlaybackOrchestrator(
   // Stage 0 capability gate readout for the Stats panel (paste-free device check).
   const mseAv1Readout = useMemo(() => formatManagedMseAv1(getManagedMseAv1Support()), []);
 
+  const ttffReadout = ttffMetrics
+    ? `${(ttffMetrics.ttffMs / 1000).toFixed(2)}s (${ttffMetrics.manifestMs}ms manifest + ${ttffMetrics.bufferMs}ms buffer)`
+    : status === 'starting' || status === 'buffering'
+      ? t('player.measuring', { defaultValue: 'Messen…' })
+      : '-';
+
   const statsRows: V3PlayerLabeledValue[] = [
+    { label: t('player.ttff', { defaultValue: 'Startzeit (TTFF)' }), value: ttffReadout },
     { label: t('player.av1Mms', { defaultValue: 'AV1/MMS' }), value: mseAv1Readout },
     { label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
     { label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
@@ -2173,6 +2229,10 @@ export function usePlaybackOrchestrator(
     seekForward15mLabel: t('player.seekForward15m'),
     playPauseLabel: isPlaying ? t('player.pause') : t('player.play'),
     playPauseIcon: isPlaying ? '⏸' : '▶',
+    ttffBadgeLabel: ttffMetrics ? `${(ttffMetrics.ttffMs / 1000).toFixed(2)}s` : null,
+    ttffTitle: ttffMetrics
+      ? `TTFF: ${ttffMetrics.ttffMs}ms (${ttffMetrics.manifestMs}ms manifest + ${ttffMetrics.bufferMs}ms decode)`
+      : null,
     seekableStart,
     seekableEnd,
     startTimeDisplay,

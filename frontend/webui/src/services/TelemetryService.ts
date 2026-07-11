@@ -14,6 +14,7 @@ export type TelemetryEventType =
   | 'ui.player.transition'
   | 'ui.player.recovery_attempt'
   | 'ui.player.recovery_result'
+  | 'ui.player.ttff'
   | 'playback_auth_blocked'
   | 'playback_session_failed'
   | 'playback_contract_blocked'

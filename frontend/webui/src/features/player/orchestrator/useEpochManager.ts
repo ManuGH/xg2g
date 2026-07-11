@@ -11,6 +11,7 @@ interface UseEpochManagerArgs {
   trackedEpoch: PlaybackEpochState;
   dispatchPlayback: Dispatch<PlaybackMachineEvent>;
   requestedDuration: number | null;
+  onAttemptStarted?: () => void;
 }
 
 export interface EpochManager {
@@ -35,6 +36,7 @@ export function useEpochManager({
   trackedEpoch,
   dispatchPlayback,
   requestedDuration,
+  onAttemptStarted,
 }: UseEpochManagerArgs): EpochManager {
   const playbackEpochRef = useRef(initialEpoch.playback);
   const sessionEpochRef = useRef(initialEpoch.session);
@@ -57,6 +59,7 @@ export function useEpochManager({
     nextPlaybackMode: 'LIVE' | 'VOD' | 'UNKNOWN',
     nextStatus: PlayerStatus,
   ) => {
+    onAttemptStarted?.();
     acceptedPlaybackEpochRef.current = epoch;
     acceptedSessionEpochRef.current = 0;
     dispatchPlayback({
@@ -66,7 +69,7 @@ export function useEpochManager({
       status: nextStatus,
       requestedDuration,
     });
-  }, [dispatchPlayback, requestedDuration]);
+  }, [dispatchPlayback, onAttemptStarted, requestedDuration]);
 
   const markPlaybackStopped = useCallback((epoch: number) => {
     acceptedPlaybackEpochRef.current = epoch;

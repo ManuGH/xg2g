@@ -70,6 +70,7 @@ interface UsePlaybackEngineProps {
   waitForSessionReady: WaitForSessionReadyFn;
   shouldPreferNativeHls: PreferNativeFn;
   primePlaybackAuth?: PrimePlaybackAuthFn;
+  onPlaybackMilestone?: (milestone: 'manifest' | 'firstFrame') => void;
   runtimeProbeActive?: boolean;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
@@ -119,6 +120,7 @@ export function usePlaybackEngine({
   waitForSessionReady,
   shouldPreferNativeHls,
   primePlaybackAuth,
+  onPlaybackMilestone,
   runtimeProbeActive = false,
   setStats,
   setStatus,
@@ -166,6 +168,7 @@ export function usePlaybackEngine({
 
     const onLoadedMetadata = () => {
       pendingNativeAutoplayRef.current = null;
+      onPlaybackMilestone?.('manifest');
       video.play().catch((err) => {
         debugWarn(label, err);
         // Autoplay was rejected (e.g. Safari/iOS gesture policy or Low-Power-Mode).
@@ -806,6 +809,7 @@ export function usePlaybackEngine({
 
       hls.on(Hls.Events.LEVEL_SWITCHED, () => updateStats(hls));
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, data: ManifestParsedData) => {
+        onPlaybackMilestone?.('manifest');
         debugLog('[V3Player] HLS Manifest Parsed', { levels: data.levels.length });
 
         if (hls.currentLevel === -1 && data.levels.length > 0) {
@@ -1208,6 +1212,7 @@ export function usePlaybackEngine({
     };
 
     const onPlaying = () => {
+      onPlaybackMilestone?.('firstFrame');
       debugLog('[V3Player] Event: playing -> playing');
       clearNativeStallRecovery();
       clearHlsStallRecovery();
@@ -1385,6 +1390,10 @@ export function usePlaybackEngine({
     videoEl.addEventListener('playing', onPlaying);
     videoEl.addEventListener('pause', onPause);
     videoEl.addEventListener('timeupdate', onTimeUpdate);
+    const onLoadedMetadataGeneral = () => {
+      onPlaybackMilestone?.('manifest');
+    };
+    videoEl.addEventListener('loadedmetadata', onLoadedMetadataGeneral);
     videoEl.addEventListener('error', onError);
 
     return () => {
@@ -1397,6 +1406,7 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('playing', onPlaying);
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('timeupdate', onTimeUpdate);
+      videoEl.removeEventListener('loadedmetadata', onLoadedMetadataGeneral);
       videoEl.removeEventListener('error', onError);
     };
   }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
