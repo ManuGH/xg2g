@@ -58,7 +58,8 @@ describe('Telemetry Contract Consumption', () => {
       expect(consumed?.payload.fields).toContain('playback.outputUrl');
     });
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/v3/system/healthz?playbackProbe=1');
   });
 
   it('emits failclosed when backend omits decision selection', async () => {
@@ -109,6 +110,7 @@ describe('Telemetry Contract Consumption', () => {
       expect(consumed?.payload.kind).toBe('playable');
     });
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/v3/system/healthz?playbackProbe=1');
   });
 });

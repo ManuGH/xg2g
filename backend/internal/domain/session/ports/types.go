@@ -108,6 +108,10 @@ type ProfileSpec struct {
 	AudioBitrateK          int               `json:"audioBitrateK,omitempty"`
 	Preset                 string            `json:"preset,omitempty"`
 	Container              string            `json:"container,omitempty"` // "ts" (default) or "fmp4"
+	SourceTruthVerified    bool              `json:"sourceTruthVerified,omitempty"`
+	SourceVideoCodec       string            `json:"sourceVideoCodec,omitempty"`
+	SourceAudioCodec       string            `json:"sourceAudioCodec,omitempty"`
+	SourceFPS              float64           `json:"sourceFps,omitempty"`
 }
 
 // RunHandle is an opaque token for a running pipeline.

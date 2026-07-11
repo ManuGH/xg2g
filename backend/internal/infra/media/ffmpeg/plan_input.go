@@ -59,7 +59,10 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		// Keep that only for video-transcode paths; passthrough/remux sessions
 		// already know enough about the stream and pay a visible startup penalty.
 		if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
-			fastProbe := !spec.Profile.TranscodeVideo && a.consumeFastProbeEligibility(fpsCacheKey(spec.Source, inputURL))
+			fastProbe := !spec.Profile.TranscodeVideo && a.consumeFastProbeEligibility(
+				fpsCacheKey(spec.Source, inputURL),
+				spec.Profile.SourceTruthVerified,
+			)
 			if fastProbe {
 				analyzeDuration = strings.TrimSpace(a.CachedRelayAnalyzeDuration)
 				probeSize = strings.TrimSpace(a.CachedRelayProbeSize)

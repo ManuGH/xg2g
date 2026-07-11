@@ -126,6 +126,7 @@ type LocalAdapter struct {
 	fpsCacheMu     sync.RWMutex
 	fastProbeMu    sync.Mutex
 	fastProbeReady map[string]time.Time
+	fastProbeUsed  map[string]time.Time
 	mu             sync.Mutex
 	inMemoryIngest bool
 	ingestPort     int
@@ -236,6 +237,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		VaapiDevice:                strings.TrimSpace(vaapiDevice),
 		lastKnownFPS:               make(map[string]fpsCacheEntry),
 		fastProbeReady:             make(map[string]time.Time),
+		fastProbeUsed:              make(map[string]time.Time),
 		FPSCacheTTL:                cfg.FPSCacheTTL,
 		activeProcs:                make(map[ports.RunHandle]*exec.Cmd),
 		finalizedProfiles:          make(map[ports.RunHandle]ports.ProfileSpec),

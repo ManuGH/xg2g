@@ -79,6 +79,7 @@ func (a *LocalAdapter) markFastProbeEligible(sourceKey string) {
 		a.fastProbeReady = make(map[string]time.Time)
 	}
 	a.fastProbeReady[sourceKey] = time.Now()
+	delete(a.fastProbeUsed, sourceKey)
 	a.fastProbeMu.Unlock()
 }
 
@@ -86,7 +87,7 @@ func (a *LocalAdapter) markFastProbeEligible(sourceKey string) {
 // fast probe only after producing a real HLS segment. If that next fast start
 // fails, the orchestrator retry falls back to the deep 5s/20M probe; another
 // successful segment earns the optimization again.
-func (a *LocalAdapter) consumeFastProbeEligibility(sourceKey string) bool {
+func (a *LocalAdapter) consumeFastProbeEligibility(sourceKey string, persistentTruth bool) bool {
 	if sourceKey == "" {
 		return false
 	}
@@ -96,12 +97,24 @@ func (a *LocalAdapter) consumeFastProbeEligibility(sourceKey string) bool {
 	}
 	a.fastProbeMu.Lock()
 	defer a.fastProbeMu.Unlock()
-	learnedAt, ok := a.fastProbeReady[sourceKey]
-	if !ok {
+	if a.fastProbeUsed == nil {
+		a.fastProbeUsed = make(map[string]time.Time)
+	}
+	if learnedAt, ok := a.fastProbeReady[sourceKey]; ok {
+		delete(a.fastProbeReady, sourceKey)
+		if !learnedAt.IsZero() && time.Since(learnedAt) <= ttl {
+			a.fastProbeUsed[sourceKey] = time.Now()
+			return true
+		}
+	}
+	if !persistentTruth {
 		return false
 	}
-	delete(a.fastProbeReady, sourceKey)
-	return !learnedAt.IsZero() && time.Since(learnedAt) <= ttl
+	if usedAt, ok := a.fastProbeUsed[sourceKey]; ok && !usedAt.IsZero() && time.Since(usedAt) <= ttl {
+		return false
+	}
+	a.fastProbeUsed[sourceKey] = time.Now()
+	return true
 }
 
 func findFirstOutputSegment(sessionDir string) (string, bool) {
