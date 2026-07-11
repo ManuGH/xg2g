@@ -13,6 +13,7 @@ const (
 	BenchmarkProfileVideoH2641080I50 = "video_h264_1080i50"
 	BenchmarkProfileVideoH2642160P   = "video_h264_2160p"
 	BenchmarkProfileVideoH2642160P50 = "video_h264_2160p50"
+	BenchmarkProfileVideoAV11080I50  = "video_av1_1080i50"
 )
 
 // BenchmarkClassForCodec returns the most specific measured benchmark class for a codec.

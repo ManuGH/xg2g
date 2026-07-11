@@ -63,6 +63,7 @@ func TestSnapshotHostBenchmark_PrefersMeasuredProfileBenchmarksOverDerivedFallba
 		"video_h264_1080p":   {Verified: true, ProbeElapsed: 70 * time.Millisecond},
 		"video_h264_1080i":   {Verified: true, ProbeElapsed: 180 * time.Millisecond},
 		"video_h264_1080i50": {Verified: true, ProbeElapsed: 260 * time.Millisecond},
+		"video_av1_1080i50":  {Verified: true, ProbeElapsed: 440 * time.Millisecond},
 	})
 	SetNVENCProfileBenchmarks(map[string]HardwareProfileCapability{
 		"video_h264_2160p50": {Verified: true, ProbeElapsed: 600 * time.Millisecond},
@@ -92,5 +93,8 @@ func TestSnapshotHostBenchmark_PrefersMeasuredProfileBenchmarksOverDerivedFallba
 	}
 	if profilesByID["video_h264_2160p50"].Backend != "nvenc" || profilesByID["video_h264_2160p50"].Class != "weak" {
 		t.Fatalf("expected measured nvenc 2160p50 profile benchmark, got %#v", profilesByID["video_h264_2160p50"])
+	}
+	if profilesByID["video_av1_1080i50"].Backend != "vaapi" || profilesByID["video_av1_1080i50"].Class != "strong" {
+		t.Fatalf("expected strong measured vaapi AV1 full-chain benchmark, got %#v", profilesByID["video_av1_1080i50"])
 	}
 }

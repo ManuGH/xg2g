@@ -11,6 +11,7 @@ const (
 	BenchmarkProfileVideoH2641080I50 = ports.BenchmarkProfileVideoH2641080I50
 	BenchmarkProfileVideoH2642160P   = ports.BenchmarkProfileVideoH2642160P
 	BenchmarkProfileVideoH2642160P50 = ports.BenchmarkProfileVideoH2642160P50
+	BenchmarkProfileVideoAV11080I50  = ports.BenchmarkProfileVideoAV11080I50
 )
 
 // BenchmarkClassForCodec returns the most specific measured benchmark class for a codec.

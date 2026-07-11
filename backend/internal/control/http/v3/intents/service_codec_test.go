@@ -282,6 +282,34 @@ func TestPickProfileForCodecsWithCapabilitiesAndHost_DemotesWeakAV1BenchmarkToHE
 	}
 }
 
+func TestPickProfileForCodecsWithCapabilitiesAndHost_UsesAV1FullChainBenchmark(t *testing.T) {
+	got := autocodec.PickProfileForCodecsWithCapabilitiesAndHost(
+		"av1,hevc,h264",
+		profiles.HWAccelAuto,
+		map[string]hardware.VAAPIEncoderCapability{
+			"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 10 * time.Millisecond},
+			"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+			"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+		},
+		playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "high",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Codecs: []playbackprofile.HostCodecBenchmark{
+					{Codec: "av1", Class: "strong"},
+					{Codec: "hevc", Class: "strong"},
+					{Codec: "h264", Class: "strong"},
+				},
+				Profiles: []playbackprofile.HostProfileBenchmark{
+					{ProfileID: "video_av1_1080i50", Codec: "av1", Class: "weak"},
+				},
+			},
+		},
+	)
+	if got != profiles.ProfileSafariHEVCHW {
+		t.Fatalf("PickProfileForCodecsWithCapabilitiesAndHost() = %q, want %q", got, profiles.ProfileSafariHEVCHW)
+	}
+}
+
 func TestPickProfileForCodecsForClient_IOSNativeHEVCSelectionStillPrefersHEVCOverH264WhenRequested(t *testing.T) {
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"h264_vaapi": {

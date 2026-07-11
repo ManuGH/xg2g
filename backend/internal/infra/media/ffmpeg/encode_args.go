@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"strconv"
 	"strings"
@@ -132,13 +133,13 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	// sports — still real-time for one session, thinner for concurrent ones), so
 	// they default conservatively and are env-tunable. Only transcode paths reach
 	// here — copy passthrough stays bit-exact and untouched.
-	if f := transcodeDenoiseFilter(); f != "" {
+	if f := transcodeDenoiseFilterForProfile(spec.Profile); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeDebandFilter(); f != "" {
+	if f := transcodeDebandFilterForProfile(spec.Profile); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeSharpenFilter(); f != "" {
+	if f := transcodeSharpenFilterForProfile(spec.Profile); f != "" {
 		parts = append(parts, f)
 	}
 	uploadFormat := "nv12"
@@ -158,6 +159,18 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 // but cannot restore fine detail the source or the re-encode already discarded.
 func transcodeSharpenFilter() string {
 	amount := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 1.5, 0.0, 3.0)
+	return transcodeSharpenFilterWithAmount(amount)
+}
+
+func transcodeSharpenFilterForProfile(profile ports.ProfileSpec) string {
+	amount, explicitlyConfigured := configuredFilterStrength("XG2G_TRANSCODE_SHARPEN", 0.0, 3.0)
+	if !explicitlyConfigured {
+		amount = defaultTranscodeSharpenStrength(profile.VideoSourceHeight)
+	}
+	return transcodeSharpenFilterWithAmount(amount)
+}
+
+func transcodeSharpenFilterWithAmount(amount float64) string {
 	if amount <= 0 {
 		return ""
 	}
@@ -171,6 +184,18 @@ func transcodeSharpenFilter() string {
 // pure quality knob (lower = gentler, preserves more fine detail).
 func transcodeDenoiseFilter() string {
 	s := envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5)
+	return transcodeDenoiseFilterWithStrength(s)
+}
+
+func transcodeDenoiseFilterForProfile(profile ports.ProfileSpec) string {
+	strength, explicitlyConfigured := configuredFilterStrength("XG2G_TRANSCODE_DENOISE", 0.0, 1.5)
+	if !explicitlyConfigured {
+		strength = defaultTranscodeDenoiseStrength(profile.VideoSourceHeight)
+	}
+	return transcodeDenoiseFilterWithStrength(strength)
+}
+
+func transcodeDenoiseFilterWithStrength(s float64) string {
 	if s <= 0 {
 		return ""
 	}
@@ -184,6 +209,67 @@ func transcodeDebandFilter() string {
 		return ""
 	}
 	return "deband"
+}
+
+func transcodeDebandFilterForProfile(profile ports.ProfileSpec) string {
+	raw := strings.TrimSpace(config.ParseString("XG2G_TRANSCODE_DEBAND", ""))
+	if raw != "" {
+		if !config.ParseBool("XG2G_TRANSCODE_DEBAND", true) {
+			return ""
+		}
+		return "deband"
+	}
+	// Debanding is useful for low-bitrate SD and unknown sources. On known HD
+	// sources the 10-bit AV1 output already protects newly introduced gradients;
+	// a global software deband pass costs detail and CPU headroom.
+	if profile.VideoSourceHeight > 576 {
+		return ""
+	}
+	return "deband"
+}
+
+func configuredFilterStrength(key string, minValue, maxValue float64) (float64, bool) {
+	raw := strings.TrimSpace(config.ParseString(key, ""))
+	if raw == "" {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, false
+	}
+	if value < minValue {
+		value = minValue
+	}
+	if value > maxValue {
+		value = maxValue
+	}
+	return value, true
+}
+
+func defaultTranscodeDenoiseStrength(sourceHeight int) float64 {
+	switch {
+	case sourceHeight <= 0:
+		return 0.6 // Preserve the established safe default when scan truth is absent.
+	case sourceHeight <= 576:
+		return 0.6
+	case sourceHeight <= 720:
+		return 0.3
+	default:
+		return 0 // Preserve native HD texture and motion detail.
+	}
+}
+
+func defaultTranscodeSharpenStrength(sourceHeight int) float64 {
+	switch {
+	case sourceHeight <= 0:
+		return 1.5 // Preserve the established safe default when scan truth is absent.
+	case sourceHeight <= 576:
+		return 1.0
+	case sourceHeight <= 720:
+		return 0.75
+	default:
+		return 0.5
+	}
 }
 
 func av1VAAPIGeometryPadFilter() string {

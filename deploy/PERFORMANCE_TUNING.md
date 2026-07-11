@@ -19,6 +19,22 @@ The 50p host-gate and the configurable startup probe are **code** (apply
 automatically once you update the image). The values below are **deployment env
 tuning** — set them per install.
 
+Transcode enhancement defaults are source-aware when scan truth includes the
+source height:
+
+| Source | Denoise | Sharpen | Deband | Rationale |
+|---|---:|---:|---:|---|
+| unknown | `0.6` | `1.5` | on | preserve the established fail-safe behavior |
+| SD (up to 576) | `0.6` | `1.0` | on | clean broadcast noise before upscaling |
+| 720p | `0.3` | `0.75` | off | mild cleanup without flattening HD texture |
+| 1080p and above | off | `0.5` | off | preserve motion detail; 10-bit AV1 protects new gradients |
+
+Explicit `XG2G_TRANSCODE_DENOISE`, `XG2G_TRANSCODE_SHARPEN`, and
+`XG2G_TRANSCODE_DEBAND` values always override this table. VAAPI AV1 hosts also
+run a one-second 1080i25-to-1080p50 production-chain preflight; automatic AV1
+selection and HQ50 promotion use that result instead of trusting the short
+encoder-only probe.
+
 ## Optional tuning
 
 | Env | Default | Lower → | Raise → |

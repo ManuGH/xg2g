@@ -392,8 +392,18 @@ func (d *Detector) PreflightTranscodeProfiles() {
 	cpuSamples := d.measureProfileBenchmarks("cpu", "libx264")
 	hardware.SetCPUProfileBenchmarks(capability.DeriveProfileCapabilities(cpuSamples))
 
+	vaapiSamples := make(map[string]time.Duration)
 	if d.VaapiEncoderVerified("h264_vaapi") {
-		vaapiSamples := d.measureProfileBenchmarks("vaapi", "h264_vaapi")
+		for profileID, elapsed := range d.measureProfileBenchmarks("vaapi", "h264_vaapi") {
+			vaapiSamples[profileID] = elapsed
+		}
+	}
+	if d.VaapiEncoderVerified("av1_vaapi") {
+		for profileID, elapsed := range d.measureProfileBenchmarks("vaapi", "av1_vaapi") {
+			vaapiSamples[profileID] = elapsed
+		}
+	}
+	if len(vaapiSamples) > 0 {
 		hardware.SetVAAPIProfileBenchmarks(capability.DeriveProfileCapabilities(vaapiSamples))
 	} else {
 		hardware.SetVAAPIProfileBenchmarks(nil)
@@ -637,7 +647,7 @@ func (d *Detector) testNVENCEncoder(encoder string) (time.Duration, error) {
 }
 
 func (d *Detector) measureProfileBenchmarks(backend, encoder string) map[string]time.Duration {
-	profilesToBenchmark := profileBenchmarksForBackend(backend)
+	profilesToBenchmark := profileBenchmarksForBackend(backend, encoder)
 	samples := make(map[string]time.Duration, len(profilesToBenchmark))
 	for _, profileID := range profilesToBenchmark {
 		elapsed, err := d.testProfileBenchmark(backend, encoder, profileID)
@@ -739,9 +749,19 @@ func (d *Detector) testVAAPIH264Profile(profileID, encoder string) (time.Duratio
 		"-i", profileBenchmarkInput(profileID),
 		"-vf", filter,
 		"-c:v", encoder,
-		"-frames:v", "5",
-		"-f", "null", "-",
 	}
+	frames := "5"
+	if profileID == playbackports.BenchmarkProfileVideoAV11080I50 {
+		profile := ports.ProfileSpec{
+			VideoMaxRateK: 16000,
+			VideoBufSizeK: 32000,
+		}
+		args = appendVaapiRateControlArgs(args, profile, "av1")
+		args = appendAV1VAAPILevelArgs(args)
+		args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
+		frames = "50"
+	}
+	args = append(args, "-frames:v", frames, "-f", "null", "-")
 	return runProfileBenchmarkCommand(ctx, d.BinPath, args)
 }
 

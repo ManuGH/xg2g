@@ -20,7 +20,7 @@ import (
 
 func TestPreflightTranscodeProfiles_PublishesMeasuredProfileBenchmarks(t *testing.T) {
 	adapter := NewLocalAdapter("ffmpeg", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128")
-	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true}
+	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "av1_vaapi": true}
 	adapter.detector.nvencEncoders = map[string]bool{"h264_nvenc": true}
 	adapter.detector.profileProbeFn = func(_ context.Context, req profileProbeRequest) (time.Duration, error) {
 		switch req.Backend + ":" + req.ProfileID {
@@ -42,6 +42,8 @@ func TestPreflightTranscodeProfiles_PublishesMeasuredProfileBenchmarks(t *testin
 			return 410 * time.Millisecond, nil
 		case "vaapi:" + playbackprofile.BenchmarkProfileVideoH2642160P50:
 			return 760 * time.Millisecond, nil
+		case "vaapi:" + playbackprofile.BenchmarkProfileVideoAV11080I50:
+			return 440 * time.Millisecond, nil
 		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2641080P:
 			return 95 * time.Millisecond, nil
 		case "nvenc:" + playbackprofile.BenchmarkProfileVideoH2641080I:
@@ -118,6 +120,39 @@ func TestPreflightTranscodeProfiles_PublishesMeasuredProfileBenchmarks(t *testin
 	}
 	if uhd50Backend != "nvenc" || uhd50Cap.ProbeElapsed != 610*time.Millisecond {
 		t.Fatalf("expected fastest measured backend to win for 2160p50, got backend=%q cap=%#v", uhd50Backend, uhd50Cap)
+	}
+
+	av1Cap, av1Backend, ok := hardware.HardwareProfileCapabilityFor(playbackprofile.BenchmarkProfileVideoAV11080I50)
+	if !ok {
+		t.Fatal("expected published AV1 1080i50 full-chain benchmark")
+	}
+	if av1Backend != "vaapi" || av1Cap.ProbeElapsed != 440*time.Millisecond {
+		t.Fatalf("expected measured vaapi AV1 full-chain benchmark, got backend=%q cap=%#v", av1Backend, av1Cap)
+	}
+}
+
+func TestAV1FullChainBenchmarkMatchesProductionQualityPath(t *testing.T) {
+	profiles := profileBenchmarksForBackend("vaapi", "av1_vaapi")
+	if len(profiles) != 1 || profiles[0] != playbackprofile.BenchmarkProfileVideoAV11080I50 {
+		t.Fatalf("unexpected AV1 benchmark profiles: %#v", profiles)
+	}
+
+	filter, err := vaapiProfileBenchmarkFilter(playbackprofile.BenchmarkProfileVideoAV11080I50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"bwdif=mode=send_field",
+		"scale=w=trunc(max(720\\,ih)",
+		"unsharp=5:5:0.50",
+		"format=p010le,hwupload",
+	} {
+		if !strings.Contains(filter, required) {
+			t.Fatalf("AV1 full-chain benchmark filter missing %q: %s", required, filter)
+		}
+	}
+	if strings.Contains(filter, "hqdn3d") || strings.Contains(filter, "deband") {
+		t.Fatalf("known-HD benchmark must use detail-preserving defaults: %s", filter)
 	}
 }
 
