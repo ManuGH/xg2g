@@ -134,6 +134,8 @@ export function usePlaybackEngine({
   const decodeRecoveryAttemptsRef = useRef(0);
   const pendingNativeAutoplayRef = useRef<(() => void) | null>(null);
   const nativeStallRecoveryTimerRef = useRef<number | null>(null);
+  const revealHoldRef = useRef(false);
+  const revealTimerRef = useRef<number | null>(null);
   const hlsStallRecoveryTimerRef = useRef<number | null>(null);
   const hlsStallRecoveryAttemptsRef = useRef(0);
   const reportedPlayingSessionRef = useRef<string | null>(null);
@@ -738,6 +740,12 @@ export function usePlaybackEngine({
     clearNativeStallRecovery();
     clearHlsStallRecovery();
     clearHlsRenderProbe(true);
+    revealHoldRef.current = false;
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+    video.playbackRate = 1;
     hlsStallRecoveryAttemptsRef.current = 0;
     lastDecodedRef.current = 0;
 
@@ -814,8 +822,13 @@ export function usePlaybackEngine({
       // jolt seconds after start). Live input is realtime-paced, so headroom
       // can only come from waiting: hold play() until a small buffer target
       // exists (or a cap elapses). VOD playlists open the gate immediately.
-      const START_GATE_TARGET_SECONDS = 3.2;
-      const START_GATE_TIMEOUT_MS = 4000;
+      const START_GATE_TARGET_SECONDS = 4.5;
+      const START_GATE_TIMEOUT_MS = 6000;
+      const SLOW_BUILD_RATE = 0.955;
+      const SLOW_BUILD_TARGET_AHEAD_SECONDS = 8;
+      const SLOW_BUILD_MAX_MS = 150000;
+      let slowBuildActive = false;
+      let slowBuildTimer: number | null = null;
       let startGateOpen = false;
       let startGateTimer: number | null = null;
       const bufferedAheadSeconds = (): number => {
@@ -825,6 +838,24 @@ export function usePlaybackEngine({
         }
         const from = Math.max(gateVideo.currentTime, gateVideo.buffered.start(0));
         return gateVideo.buffered.end(gateVideo.buffered.length - 1) - from;
+      };
+      const restorePlaybackRate = (reason: string) => {
+        if (!slowBuildActive) {
+          return;
+        }
+        slowBuildActive = false;
+        if (slowBuildTimer !== null) {
+          window.clearTimeout(slowBuildTimer);
+          slowBuildTimer = null;
+        }
+        const rateVideo = videoRef.current;
+        if (rateVideo && hlsRef.current === hls && rateVideo.playbackRate !== 1) {
+          rateVideo.playbackRate = 1;
+          debugLog('[V3Player] Slow-build complete', {
+            reason,
+            bufferedAhead: bufferedAheadSeconds().toFixed(2),
+          });
+        }
       };
       const openStartGate = (reason: string) => {
         if (startGateOpen) {
@@ -839,6 +870,12 @@ export function usePlaybackEngine({
           return;
         }
         debugLog('[V3Player] Startup gate open', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
+        const gateVideo = videoRef.current;
+        if (reason !== 'vod' && gateVideo && bufferedAheadSeconds() < SLOW_BUILD_TARGET_AHEAD_SECONDS) {
+          slowBuildActive = true;
+          gateVideo.playbackRate = SLOW_BUILD_RATE;
+          slowBuildTimer = window.setTimeout(() => restorePlaybackRate('timeout'), SLOW_BUILD_MAX_MS);
+        }
         videoRef.current?.play().catch((err) => {
           debugWarn('[V3Player] Autoplay failed', err);
           setStatus('ready');
@@ -848,6 +885,8 @@ export function usePlaybackEngine({
       // browser starts playback as soon as it deems readyState sufficient),
       // so playback ownership moves entirely to the gated play() call.
       video.autoplay = false;
+      revealHoldRef.current = true;
+      setStatus('buffering');
 
       hls.on(Hls.Events.LEVEL_SWITCHED, () => updateStats(hls));
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, data: ManifestParsedData) => {
@@ -872,14 +911,23 @@ export function usePlaybackEngine({
         if (!startGateOpen && bufferedAheadSeconds() >= START_GATE_TARGET_SECONDS) {
           openStartGate('buffer_target');
         }
+        if (slowBuildActive && bufferedAheadSeconds() >= SLOW_BUILD_TARGET_AHEAD_SECONDS) {
+          restorePlaybackRate('target_reached');
+        }
       });
 
       hls.on(Hls.Events.LEVEL_LOADED, (_event, data: LevelLoadedData) => {
-        if (!startGateOpen && data.details.live === false) {
-          openStartGate('vod');
+        if (data.details.live === false) {
+          revealHoldRef.current = false;
+          if (!startGateOpen) {
+            openStartGate('vod');
+          }
         }
         const hasContent = data.details.totalduration > 0 || (data.details.fragments && data.details.fragments.length > 0);
         setStatus((prev) => {
+          if (revealHoldRef.current) {
+            return prev;
+          }
           if (hasContent && prev === 'buffering') {
             debugLog('[V3Player] Level Loaded with content, forcing READY state');
             return 'ready';
@@ -1146,6 +1194,12 @@ export function usePlaybackEngine({
     }
     const video = videoRef.current;
     if (!video) return;
+    revealHoldRef.current = false;
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+    video.playbackRate = 1;
 
     lastHlsUrlRef.current = null;
     lastHlsEngineRef.current = 'auto';
@@ -1165,6 +1219,13 @@ export function usePlaybackEngine({
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
+
+    const cancelPendingReveal = () => {
+      if (revealTimerRef.current !== null) {
+        window.clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+    };
 
     const onWaiting = () => {
       if (decodeRecoveryInFlightRef.current) {
@@ -1190,6 +1251,7 @@ export function usePlaybackEngine({
       }
 
       debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
+      cancelPendingReveal();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       setStatus('buffering');
@@ -1222,6 +1284,7 @@ export function usePlaybackEngine({
       }
 
       debugLog('[V3Player] Event: stalled -> buffering');
+      cancelPendingReveal();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       setStatus('buffering');
@@ -1261,7 +1324,7 @@ export function usePlaybackEngine({
 
     const onPlaying = () => {
       onPlaybackMilestone?.('firstFrame');
-      debugLog('[V3Player] Event: playing -> playing');
+      debugLog('[V3Player] Event: playing');
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       decodeRecoveryInFlightRef.current = false;
@@ -1309,7 +1372,17 @@ export function usePlaybackEngine({
       }
       pendingWarningRecoveryRef.current = null;
       reportedWarningKeysRef.current.clear();
-      setStatus('playing');
+      if (revealHoldRef.current) {
+        if (revealTimerRef.current === null) {
+          revealTimerRef.current = window.setTimeout(() => {
+            revealTimerRef.current = null;
+            revealHoldRef.current = false;
+            setStatus('playing');
+          }, 1800);
+        }
+      } else {
+        setStatus('playing');
+      }
       clearPlaybackFailure();
     };
 
@@ -1317,16 +1390,20 @@ export function usePlaybackEngine({
       if (isTeardownRef.current) {
         return;
       }
+      cancelPendingReveal();
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
-      setStatus((prev) => (prev === 'error' ? prev : 'paused'));
+      setStatus((prev) => (prev === 'error' ? prev : (revealHoldRef.current ? 'buffering' : 'paused')));
     };
 
     const onSeeked = () => {
       clearNativeStallRecovery();
       clearHlsStallRecovery();
+      if (revealHoldRef.current) {
+        return;
+      }
       setStatus((prev) => (prev === 'error' ? prev : (videoEl.paused ? 'paused' : 'playing')));
     };
 
@@ -1356,6 +1433,7 @@ export function usePlaybackEngine({
       clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
+      cancelPendingReveal();
       const presentation = classifyMediaElementError({
         code: err?.code,
         message: err?.message,
@@ -1416,6 +1494,9 @@ export function usePlaybackEngine({
       if (isTeardownRef.current || videoEl.paused || videoEl.readyState < 3) {
         return;
       }
+      if (revealHoldRef.current) {
+        return;
+      }
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       setStatus((prev) => {
@@ -1445,6 +1526,7 @@ export function usePlaybackEngine({
     videoEl.addEventListener('error', onError);
 
     return () => {
+      cancelPendingReveal();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       videoEl.removeEventListener('waiting', onWaiting);
