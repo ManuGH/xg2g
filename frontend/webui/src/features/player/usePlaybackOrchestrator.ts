@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, useReducer } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from './lib/hlsRuntime';
@@ -14,7 +14,8 @@ import type {
   PlayerStatus,
   V3SessionSnapshot,
   HlsInstanceRef,
-  VideoElementRef
+  VideoElementRef,
+  PlayerAudioTrack,
 } from '../../types/v3-player';
 import { useLiveSessionController } from './useLiveSessionController';
 import { usePlaybackEngine } from './usePlaybackEngine';
@@ -48,7 +49,7 @@ import {
   createInitialPlaybackDomainState,
 } from './orchestrator/playbackMachine';
 import { usePlaybackMachineRuntime } from './orchestrator/usePlaybackMachineRuntime';
-import type { PlaybackCommand, PlaybackCommandExecutor } from './orchestrator/playbackTypes';
+import type { PlaybackCommand } from './orchestrator/playbackTypes';
 import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
@@ -226,7 +227,7 @@ export interface V3PlayerViewState {
   startOverLabel: string;
   resumePositionSeconds: number | null;
   explicitProfile: string;
-  audioTracks: Array<{ id: number; name: string; language?: string }>;
+  audioTracks: PlayerAudioTrack[];
   activeAudioTrack: number;
   playback: {
     durationSeconds: number | null;
@@ -299,7 +300,7 @@ export function usePlaybackOrchestrator(
     bufferMs: number;
   } | null>(null);
 
-  const [audioTracks, setAudioTracks] = useState<Array<{ id: number; name: string; language?: string }>>([]);
+  const [audioTracks, setAudioTracks] = useState<PlayerAudioTrack[]>([]);
   const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
 
   const handleAttemptStarted = useCallback(() => {
@@ -339,7 +340,7 @@ export function usePlaybackOrchestrator(
     }
   }, [sRef]);
 
-  const executeCommandRef = useRef<PlaybackCommandExecutor | null>(null);
+  const executeCommandRef = useRef<((cmd: PlaybackCommand) => void) | null>(null);
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
   const [playbackState, dispatchPlayback] = usePlaybackMachineRuntime(
     () => createInitialPlaybackDomainState(requestedDuration),
@@ -1694,7 +1695,7 @@ export function usePlaybackOrchestrator(
         void stopStream(!command.notifyClose);
         break;
       case 'command.telemetry.emit':
-        telemetry.emit(command.eventName, command.payload);
+        telemetry.emit(command.eventName as any, command.payload);
         break;
       case 'command.playback.schedule_auto_fallback':
         setTimeout(() => {
@@ -1702,7 +1703,7 @@ export function usePlaybackOrchestrator(
             dispatchPlayback({
               type: 'intent.start.requested',
               epoch: command.epoch,
-              kind: playbackStateRef.current.playbackMode === 'VOD' ? 'vod' : (playbackStateRef.current.playbackMode === 'SRC' ? 'src' : 'live'),
+              kind: src ? 'src' : (playbackStateRef.current.playbackMode === 'VOD' ? 'vod' : 'live'),
               serviceRef: sRef,
               recordingId: recordingId || undefined,
               srcUrl: src || undefined,

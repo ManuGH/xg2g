@@ -3,7 +3,7 @@ import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'reac
 import type { TFunction } from 'i18next';
 import Hls from './lib/hlsRuntime';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
-import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
+import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef, PlayerAudioTrack } from '../../types/v3-player';
 import type { AppError } from '../../types/errors';
 import type { PlaybackEngineErrorContext } from '../../client-ts';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
@@ -78,7 +78,7 @@ interface UsePlaybackEngineProps {
   clearPlaybackFailure: () => void;
   reportPlaybackFailure: (error: AppError, options?: PlaybackFailureReportOptions) => void;
   dispatchPlayerAction?: (action: any) => void;
-  onAudioTracksUpdated?: (tracks: Array<{ id: number; name: string; language?: string }>) => void;
+  onAudioTracksUpdated?: (tracks: PlayerAudioTrack[]) => void;
   onAudioTrackSwitched?: (trackId: number) => void;
 }
 
@@ -958,7 +958,7 @@ export function usePlaybackEngine({
 
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
         if (data.audioTracks && onAudioTracksUpdated) {
-          onAudioTracksUpdated(data.audioTracks.map(t => ({ id: t.id, name: t.name, language: t.lang })));
+          onAudioTracksUpdated(data.audioTracks.map(t => ({ id: t.id, name: t.name, language: t.lang, key: 'hls-' + t.id, engineIndex: t.id })));
         }
       });
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
@@ -1553,7 +1553,7 @@ export function usePlaybackEngine({
       const tracks = (videoEl as any).audioTracks;
       if (!tracks || tracks.length === 0) return;
 
-      const mappedTracks: Array<{ id: number; name: string; language?: string }> = [];
+      const mappedTracks: PlayerAudioTrack[] = [];
       let activeId = -1;
 
       for (let i = 0; i < tracks.length; i++) {
@@ -1562,6 +1562,8 @@ export function usePlaybackEngine({
           id: i,
           name: track.label || track.language || `Track ${i + 1}`,
           language: track.language,
+          key: 'native-' + i,
+          engineIndex: i,
         });
         if (track.enabled) {
           activeId = i;

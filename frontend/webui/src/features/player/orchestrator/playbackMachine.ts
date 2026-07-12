@@ -94,6 +94,11 @@ export function createInitialPlaybackDomainState(requestedDuration: number | nul
     contract: null,
     failure: null,
     lastAdvisory: null,
+    explicitProfilePinned: false,
+    hasSessionIntent: false,
+    recovery: {
+      autoFallbackUsed: false,
+    },
   };
 }
 
