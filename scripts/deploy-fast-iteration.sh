@@ -24,6 +24,19 @@ wait_healthy() {
   die "timed out waiting for ${container} health"
 }
 
+promote_production="${XG2G_PROMOTE_PRODUCTION:-false}"
+case "${promote_production,,}" in
+  true|1|yes|on)
+    promote_production=true
+    ;;
+  false|0|no|off|"")
+    promote_production=false
+    ;;
+  *)
+    die "invalid XG2G_PROMOTE_PRODUCTION=${promote_production}"
+    ;;
+esac
+
 deploy_binary() {
   local destination="$1"
   local next="${destination}.next"
@@ -47,14 +60,22 @@ pct exec "${CTID}" -- docker compose --project-directory /srv/xg2g-staging -f /s
 wait_healthy xg2g-staging
 pct exec "${CTID}" -- docker exec xg2g-staging xg2g healthcheck -mode live -port 8089
 
+expected="$(sha256sum "${BINARY}" | awk '{print $1}')"
+staging="$(pct exec "${CTID}" -- docker exec xg2g-staging sha256sum /usr/local/bin/xg2g | awk '{print $1}')"
+[[ "${expected}" == "${staging}" ]] || die "staging binary hash mismatch"
+
+if [[ "${promote_production}" != "true" ]]; then
+  echo "Staging deployment complete on port 8089: ${expected}"
+  echo "Production was not changed. Set XG2G_PROMOTE_PRODUCTION=true to promote explicitly."
+  exit 0
+fi
+
 echo "Staging healthy; promoting identical binary to production..."
 deploy_binary "${PRODUCTION_BINARY}"
 pct exec "${CTID}" -- systemctl restart xg2g
 wait_healthy xg2g
 pct exec "${CTID}" -- docker exec xg2g xg2g healthcheck -mode live
 
-expected="$(sha256sum "${BINARY}" | awk '{print $1}')"
-staging="$(pct exec "${CTID}" -- docker exec xg2g-staging sha256sum /usr/local/bin/xg2g | awk '{print $1}')"
 production="$(pct exec "${CTID}" -- docker exec xg2g sha256sum /usr/local/bin/xg2g | awk '{print $1}')"
 [[ "${expected}" == "${staging}" && "${expected}" == "${production}" ]] || die "deployed binary hash mismatch"
 echo "Deployment complete: ${expected}"
