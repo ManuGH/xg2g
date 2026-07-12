@@ -29,6 +29,7 @@ function createActions(): PlaybackOrchestratorActions {
     resumeFrom: vi.fn(),
     startOver: vi.fn(),
     changeProfile: vi.fn(),
+    changeAudioTrack: vi.fn(),
   };
 }
 
@@ -42,6 +43,8 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     showCloseButton: false,
     closeButtonLabel: 'Close player',
     explicitProfile: 'auto',
+    audioTracks: [],
+    activeAudioTrack: -1,
     showStatsOverlay: false,
     statsTitle: 'Technical Stats',
     statusLabel: 'Status',

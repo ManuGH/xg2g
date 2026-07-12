@@ -432,7 +432,7 @@ func appendConservativeHEVCVAAPIArgs(args []string, spec ports.StreamSpec, outpu
 		"-bf", "0",
 		"-aud", "1",
 		"-idr_interval", "1",
-		"-tier", "main",
+		"-tier", "high", "-level", "153",
 	)
 }
 
@@ -443,8 +443,8 @@ func useConservativeHEVCVAAPILivePreset(spec ports.StreamSpec, outputCodec strin
 	if normalizeRequestedCodec(outputCodec) != "hevc" {
 		return false
 	}
-	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
-		return false
+	if effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeUnknown {
+		// allow any mode, keep going
 	}
 	return strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
 }

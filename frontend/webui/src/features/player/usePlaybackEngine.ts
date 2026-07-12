@@ -77,6 +77,8 @@ interface UsePlaybackEngineProps {
   clearPlaybackFailure: () => void;
   reportPlaybackFailure: (error: AppError, options?: PlaybackFailureReportOptions) => void;
   dispatchPlayerAction?: (action: any) => void;
+  onAudioTracksUpdated?: (tracks: Array<{ id: number; name: string; language?: string }>) => void;
+  onAudioTrackSwitched?: (trackId: number) => void;
 }
 
 interface PlaybackEngineController {
@@ -125,7 +127,9 @@ export function usePlaybackEngine({
   setStats,
   setStatus,
   clearPlaybackFailure,
-  reportPlaybackFailure
+  reportPlaybackFailure,
+  onAudioTracksUpdated,
+  onAudioTrackSwitched
 }: UsePlaybackEngineProps): PlaybackEngineController {
   const lastHlsUrlRef = useRef<string | null>(null);
   const lastHlsEngineRef = useRef<PlaybackEngineName>('auto');
@@ -950,6 +954,17 @@ export function usePlaybackEngine({
       hls.loadSource(url);
       hls.attachMedia(video);
 
+      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
+        if (data.audioTracks && onAudioTracksUpdated) {
+          onAudioTracksUpdated(data.audioTracks.map(t => ({ id: t.id, name: t.name, language: t.lang })));
+        }
+      });
+      hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+        if (onAudioTrackSwitched) {
+          onAudioTrackSwitched(data.id);
+        }
+      });
+
       let mediaRecoveryAttempted = false;
       let networkRetryCount = 0;
       const maxNetworkRetries = 6;
@@ -1525,6 +1540,45 @@ export function usePlaybackEngine({
     videoEl.addEventListener('loadedmetadata', onLoadedMetadataGeneral);
     videoEl.addEventListener('error', onError);
 
+    const mapNativeAudioTracks = () => {
+      if (!('audioTracks' in videoEl)) return;
+      const tracks = (videoEl as any).audioTracks;
+      if (!tracks || tracks.length === 0) return;
+
+      const mappedTracks: Array<{ id: number; name: string; language?: string }> = [];
+      let activeId = -1;
+
+      for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+        mappedTracks.push({
+          id: i,
+          name: track.label || track.language || `Track ${i + 1}`,
+          language: track.language,
+        });
+        if (track.enabled) {
+          activeId = i;
+        }
+      }
+
+      if (onAudioTracksUpdated) {
+        onAudioTracksUpdated(mappedTracks);
+      }
+      if (activeId !== -1 && onAudioTrackSwitched) {
+        onAudioTrackSwitched(activeId);
+      }
+    };
+
+    if ('audioTracks' in videoEl) {
+      const tracks = (videoEl as any).audioTracks;
+      if (tracks && tracks.addEventListener) {
+        tracks.addEventListener('addtrack', mapNativeAudioTracks);
+        tracks.addEventListener('removetrack', mapNativeAudioTracks);
+        tracks.addEventListener('change', mapNativeAudioTracks);
+        // Fire initially in case tracks already exist
+        mapNativeAudioTracks();
+      }
+    }
+
     return () => {
       cancelPendingReveal();
       clearProbeConfirmation();
@@ -1538,8 +1592,17 @@ export function usePlaybackEngine({
       videoEl.removeEventListener('timeupdate', onTimeUpdate);
       videoEl.removeEventListener('loadedmetadata', onLoadedMetadataGeneral);
       videoEl.removeEventListener('error', onError);
+
+      if ('audioTracks' in videoEl) {
+        const tracks = (videoEl as any).audioTracks;
+        if (tracks && tracks.removeEventListener) {
+          tracks.removeEventListener('addtrack', mapNativeAudioTracks);
+          tracks.removeEventListener('removetrack', mapNativeAudioTracks);
+          tracks.removeEventListener('change', mapNativeAudioTracks);
+        }
+      }
     };
-  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, playbackEngineContext, reportError, reportPlaybackWarning, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
 
   // Unmount-only cleanup: clear all recovery/retry timers so stale callbacks
   // can't fire after the component unmounts. Do NOT put these in the main

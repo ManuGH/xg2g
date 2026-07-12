@@ -76,7 +76,7 @@ func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 	assert.Contains(t, args, "0:a:0?", "audio map should remain optional")
 }
 
-func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
+func TestBuildArgs_LiveAudioProbePreservesAvailableTracks(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
 		"ffprobe",
@@ -107,11 +107,12 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			VideoCodec:     "av1",
-			TranscodeVideo: true,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoCodec:       "av1",
+			TranscodeVideo:   true,
+			AudioBitrateK:    192,
+			EnableMultiAudio: true,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",
@@ -121,9 +122,10 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
-	assert.Contains(t, args, "0:3?", "live audio selection should prefer the stereo AC3 source track")
-	assert.NotContains(t, args, "0:a:0?", "stereo probe result should replace blind first-audio mapping")
-	assert.Contains(t, args, "aac", "stereo AC3 track should be transcoded to AAC when transcoding video to maintain PTS sync")
+	assert.Contains(t, args, "0:2?", "multi-audio selection should preserve the first AC3 source track")
+	assert.Contains(t, args, "0:3?", "multi-audio selection should preserve the stereo AC3 source track")
+	assert.NotContains(t, args, "0:a:0?", "probe results should replace blind first-audio mapping")
+	assert.Contains(t, args, "aac", "AC3 tracks should be transcoded to AAC to maintain PTS sync")
 
 }
 
@@ -827,7 +829,10 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 
 	tier, ok := valueAfter(args, "-tier")
 	require.True(t, ok)
-	assert.Equal(t, "main", tier)
+	assert.Equal(t, "high", tier)
+	level, ok := valueAfter(args, "-level")
+	require.True(t, ok)
+	assert.Equal(t, "153", level)
 
 	assert.Contains(t, args, "hevc_vaapi")
 	qp, ok := valueAfter(args, "-qp")
@@ -2490,11 +2495,11 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 
 	hlsSegmentFilename, ok := valueAfter(args, "-hls_segment_filename")
 	require.True(t, ok)
-	assert.Contains(t, hlsSegmentFilename, "seg_%06d.m4s")
+	assert.Contains(t, hlsSegmentFilename, "seg_%v_%06d.m4s")
 
 	hlsInitFilename, ok := valueAfter(args, "-hls_fmp4_init_filename")
 	require.True(t, ok)
-	assert.Equal(t, "init.mp4", hlsInitFilename)
+	assert.Equal(t, "init_%v.mp4", hlsInitFilename)
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
@@ -2543,11 +2548,11 @@ func TestBuildArgs_UsesFMP4SegmentsWhenContainerRequested(t *testing.T) {
 
 	hlsSegmentFilename, ok := valueAfter(args, "-hls_segment_filename")
 	require.True(t, ok)
-	assert.Contains(t, hlsSegmentFilename, "seg_%06d.m4s")
+	assert.Contains(t, hlsSegmentFilename, "seg_%v_%06d.m4s")
 
 	hlsInitFilename, ok := valueAfter(args, "-hls_fmp4_init_filename")
 	require.True(t, ok)
-	assert.Equal(t, "init.mp4", hlsInitFilename)
+	assert.Equal(t, "init_%v.mp4", hlsInitFilename)
 }
 
 func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
@@ -2698,11 +2703,12 @@ func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			VideoCodec:     "av1",
-			TranscodeVideo: true,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoCodec:       "av1",
+			TranscodeVideo:   true,
+			AudioBitrateK:    192,
+			EnableMultiAudio: true,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",

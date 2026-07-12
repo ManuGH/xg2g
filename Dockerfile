@@ -46,6 +46,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # generic VAAPI libs and Mesa path without a fake Intel package dependency.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
+    tzdata \
+    procps \
+    jq \
+    iproute2 \
     mesa-va-drivers \
     libva-drm2 \
     libva2 \
